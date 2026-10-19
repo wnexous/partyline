@@ -222,7 +222,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | ACL-08 | P1: Rooms and sharing | Tasks | Pending |
 | ROOM-01 | P1: Rooms and sharing | Tasks | Pending |
 | ROOM-02 | P1: Rooms and sharing | Tasks | Pending |
-| MSG-01 | P1: Messages and delivery | Tasks | Pending |
+| MSG-01 | P1: Messages and delivery | Tasks | Implementing |
 | MSG-02 | P1: Messages and delivery | Tasks | Pending |
 | DLV-01 | P1: Messages and delivery | Tasks | Pending |
 | DLV-02 | P1: Messages and delivery | Tasks | Pending |

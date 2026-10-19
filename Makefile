@@ -8,7 +8,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/wnexous/partyline/internal/cli.Version=$(VERSION)
 
 # Paths written by `make generate`; they are committed and must not drift.
-GENERATED :=
+GENERATED := internal/store/db
 
 HAS_WEB := $(wildcard web/package.json)
 
@@ -18,6 +18,7 @@ all: check
 
 ## generate: regenerate committed code
 generate:
+	$(SQLC) generate
 
 ## check-generate: fail when generated code differs from what is committed (or staged)
 check-generate: generate

@@ -106,9 +106,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: MSG-01 (unique seq), CON-10 (dedupe index)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Migrate is idempotent; foreign keys enforced (insert with bad FK fails)
-- [ ] `WithTx` rolls back on error
-- [ ] `make generate` regenerates sqlc code without diff
+- [x] Migrate is idempotent; foreign keys enforced (insert with bad FK fails)
+- [x] `WithTx` rolls back on error
+- [x] `make generate` regenerates sqlc code without diff
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(store): add sqlite store with embedded migrations and sqlc`
