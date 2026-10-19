@@ -1,0 +1,90 @@
+// Package config loads the server configuration from PARTYLINE_* environment variables.
+package config
+
+import (
+	"fmt"
+	"log/slog"
+	"net/netip"
+	"net/url"
+	"strconv"
+	"strings"
+)
+
+// Config is the validated server configuration.
+type Config struct {
+	Addr           string
+	DataDir        string
+	PublicURL      *url.URL
+	SecretKey      string // base64 key from PARTYLINE_SECRET_KEY; empty means generate and persist one
+	MaxUploadBytes int64
+	LogLevel       slog.Level
+	LogFormat      string // "json" or "text"
+	TrustedProxies []netip.Prefix
+}
+
+// SecureCookies reports whether cookies must carry the Secure attribute.
+func (c *Config) SecureCookies() bool {
+	return c.PublicURL.Scheme == "https"
+}
+
+// Load reads the configuration through getenv (usually os.Getenv), applying defaults.
+// Validation errors name the offending variable.
+func Load(getenv func(string) string) (*Config, error) {
+	get := func(name, def string) string {
+		if v := strings.TrimSpace(getenv(name)); v != "" {
+			return v
+		}
+		return def
+	}
+
+	cfg := &Config{
+		Addr:      get("PARTYLINE_ADDR", ":8080"),
+		DataDir:   get("PARTYLINE_DATA_DIR", "/data"),
+		SecretKey: get("PARTYLINE_SECRET_KEY", ""),
+		LogFormat: get("PARTYLINE_LOG_FORMAT", "json"),
+	}
+
+	u, err := url.Parse(get("PARTYLINE_PUBLIC_URL", "http://localhost:8080"))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, fmt.Errorf("PARTYLINE_PUBLIC_URL: must be an absolute http or https URL")
+	}
+	cfg.PublicURL = u
+
+	mb, err := strconv.ParseInt(get("PARTYLINE_MAX_UPLOAD_MB", "25"), 10, 64)
+	if err != nil || mb <= 0 {
+		return nil, fmt.Errorf("PARTYLINE_MAX_UPLOAD_MB: must be a positive integer")
+	}
+	cfg.MaxUploadBytes = mb << 20
+
+	if err := cfg.LogLevel.UnmarshalText([]byte(get("PARTYLINE_LOG_LEVEL", "info"))); err != nil {
+		return nil, fmt.Errorf("PARTYLINE_LOG_LEVEL: must be debug, info, warn or error")
+	}
+	if cfg.LogFormat != "json" && cfg.LogFormat != "text" {
+		return nil, fmt.Errorf("PARTYLINE_LOG_FORMAT: must be json or text")
+	}
+
+	for _, item := range strings.Split(get("PARTYLINE_TRUSTED_PROXIES", ""), ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		p, err := parsePrefix(item)
+		if err != nil {
+			return nil, fmt.Errorf("PARTYLINE_TRUSTED_PROXIES: invalid CIDR or IP %q", item)
+		}
+		cfg.TrustedProxies = append(cfg.TrustedProxies, p)
+	}
+	return cfg, nil
+}
+
+func parsePrefix(s string) (netip.Prefix, error) {
+	if strings.Contains(s, "/") {
+		p, err := netip.ParsePrefix(s)
+		return p.Masked(), err
+	}
+	addr, err := netip.ParseAddr(s)
+	if err != nil {
+		return netip.Prefix{}, err
+	}
+	return netip.PrefixFrom(addr, addr.BitLen()), nil
+}

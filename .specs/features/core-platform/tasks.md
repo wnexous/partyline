@@ -91,8 +91,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: SEC-03, SEC-04 (inputs)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Defaults applied; invalid URL/number/CIDR returns error naming the variable
-- [ ] `SecureCookies()` true iff public URL scheme is https
+- [x] Defaults applied; invalid URL/number/CIDR returns error naming the variable
+- [x] `SecureCookies()` true iff public URL scheme is https
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(config): load and validate environment configuration`

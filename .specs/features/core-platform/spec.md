@@ -240,8 +240,8 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | LIVE-04 | P1: Live updates | Tasks | Pending |
 | SEC-01 | P1: Secure deployment | Tasks | Pending |
 | SEC-02 | P1: Secure deployment | Tasks | Pending |
-| SEC-03 | P1: Secure deployment | Tasks | Pending |
-| SEC-04 | P1: Secure deployment | Tasks | Pending |
+| SEC-03 | P1: Secure deployment | Tasks | Implementing |
+| SEC-04 | P1: Secure deployment | Tasks | Implementing |
 | SEC-05 | P1: Secure deployment | Tasks | Pending |
 | OPS-01 | P1: Secure deployment | Tasks | Pending |
 | OPS-02 | P1: Secure deployment | Tasks | Pending |
