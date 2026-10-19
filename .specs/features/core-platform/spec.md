@@ -213,13 +213,13 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | TOK-03 | P1: Tokens | Tasks | Implementing |
 | TOK-04 | P1: Tokens | Tasks | Implementing |
 | ACL-01 | P1: Rooms and sharing | Tasks | Pending |
-| ACL-02 | P1: Rooms and sharing | Tasks | Pending |
+| ACL-02 | P1: Rooms and sharing | Tasks | Implementing |
 | ACL-03 | P1: Rooms and sharing | Tasks | Pending |
 | ACL-04 | P1: Rooms and sharing | Tasks | Pending |
 | ACL-05 | P1: Rooms and sharing | Tasks | Pending |
 | ACL-06 | P1: Rooms and sharing | Tasks | Pending |
-| ACL-07 | P1: Rooms and sharing | Tasks | Pending |
-| ACL-08 | P1: Rooms and sharing | Tasks | Pending |
+| ACL-07 | P1: Rooms and sharing | Tasks | Implementing |
+| ACL-08 | P1: Rooms and sharing | Tasks | Implementing |
 | ROOM-01 | P1: Rooms and sharing | Tasks | Pending |
 | ROOM-02 | P1: Rooms and sharing | Tasks | Pending |
 | MSG-01 | P1: Messages and delivery | Tasks | Implementing |

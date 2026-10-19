@@ -297,9 +297,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: ACL-02, ACL-07, ACL-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Level = max(ownership, user grant, `*` grant); admin without grant → none
-- [ ] Visibility private/shared/public replaces grants exactly as ACL-07
-- [ ] Disabled grantee resolves to none
+- [x] Level = max(ownership, user grant, `*` grant); admin without grant → none
+- [x] Visibility private/shared/public replaces grants exactly as ACL-07
+- [x] Disabled grantee resolves to none
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(access): add authorizer, grants and visibility presets`
