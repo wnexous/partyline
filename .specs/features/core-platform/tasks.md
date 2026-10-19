@@ -217,9 +217,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: TOK-01, TOK-02, TOK-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Secret returned once; list never contains it
-- [ ] Revoked/expired/unknown → unauthorized
-- [ ] Two authentications within 60 s write `last_used_at` once
+- [x] Secret returned once; list never contains it
+- [x] Revoked/expired/unknown → unauthorized
+- [x] Two authentications within 60 s write `last_used_at` once
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(users): add personal and agent api tokens`
