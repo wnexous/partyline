@@ -329,9 +329,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: ACL-01, ACL-03, ACL-05, ACL-06, ROOM-01, ROOM-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Creator is owner/manage; stranger gets ErrNotFound
-- [ ] Adding agent/chat without use permission → ErrForbidden
-- [ ] Delete removes messages, attachments rows, cursors, outbox (count 0 after)
+- [x] Creator is owner/manage; stranger gets ErrNotFound
+- [x] Adding agent/chat without use permission → ErrForbidden
+- [x] Delete removes messages, attachments rows, cursors, outbox (count 0 after)
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(rooms): add rooms and members service`

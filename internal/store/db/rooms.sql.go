@@ -84,6 +84,24 @@ func (q *Queries) CreateRoomMember(ctx context.Context, arg CreateRoomMemberPara
 	return err
 }
 
+const deleteRoom = `-- name: DeleteRoom :exec
+DELETE FROM rooms WHERE id = ?
+`
+
+func (q *Queries) DeleteRoom(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteRoom, id)
+	return err
+}
+
+const deleteRoomMember = `-- name: DeleteRoomMember :exec
+DELETE FROM room_members WHERE id = ?
+`
+
+func (q *Queries) DeleteRoomMember(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteRoomMember, id)
+	return err
+}
+
 const getRoom = `-- name: GetRoom :one
 SELECT id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at FROM rooms WHERE id = ?
 `
@@ -105,4 +123,216 @@ func (q *Queries) GetRoom(ctx context.Context, id string) (Room, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getRoomMember = `-- name: GetRoomMember :one
+SELECT id, room_id, kind, member_id, outbound, added_by, created_at FROM room_members WHERE id = ? AND room_id = ?
+`
+
+type GetRoomMemberParams struct {
+	ID     string
+	RoomID string
+}
+
+func (q *Queries) GetRoomMember(ctx context.Context, arg GetRoomMemberParams) (RoomMember, error) {
+	row := q.db.QueryRowContext(ctx, getRoomMember, arg.ID, arg.RoomID)
+	var i RoomMember
+	err := row.Scan(
+		&i.ID,
+		&i.RoomID,
+		&i.Kind,
+		&i.MemberID,
+		&i.Outbound,
+		&i.AddedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRoomWithOwner = `-- name: GetRoomWithOwner :one
+SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, u.username AS owner_username, u.display_name AS owner_display_name
+FROM rooms r JOIN users u ON u.id = r.owner_id
+WHERE r.id = ?
+`
+
+type GetRoomWithOwnerRow struct {
+	Room             Room
+	OwnerUsername    string
+	OwnerDisplayName string
+}
+
+func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithOwnerRow, error) {
+	row := q.db.QueryRowContext(ctx, getRoomWithOwner, id)
+	var i GetRoomWithOwnerRow
+	err := row.Scan(
+		&i.Room.ID,
+		&i.Room.OwnerID,
+		&i.Room.Name,
+		&i.Room.Description,
+		&i.Room.BridgeChats,
+		&i.Room.RetentionDays,
+		&i.Room.NextSeq,
+		&i.Room.AgentStreak,
+		&i.Room.AgentsPaused,
+		&i.Room.CreatedAt,
+		&i.Room.UpdatedAt,
+		&i.OwnerUsername,
+		&i.OwnerDisplayName,
+	)
+	return i, err
+}
+
+const listRoomMembers = `-- name: ListRoomMembers :many
+SELECT m.id, m.room_id, m.kind, m.member_id, m.outbound, m.added_by, m.created_at,
+       CAST(CASE m.kind
+            WHEN 'agent' THEN COALESCE(a.name, '')
+            WHEN 'chat' THEN COALESCE(c.title, '')
+            ELSE COALESCE(NULLIF(u.display_name, ''), u.username, '')
+            END AS TEXT) AS name,
+       CAST(COALESCE(ao.username, '') AS TEXT) AS agent_owner,
+       CAST(COALESCE(cn.kind, '') AS TEXT) AS connector_kind,
+       CAST(COALESCE(c.kind, '') AS TEXT) AS chat_kind
+FROM room_members m
+LEFT JOIN agents a ON m.kind = 'agent' AND a.id = m.member_id
+LEFT JOIN users ao ON ao.id = a.owner_id
+LEFT JOIN chats c ON m.kind = 'chat' AND c.id = m.member_id
+LEFT JOIN connectors cn ON cn.id = c.connector_id
+LEFT JOIN users u ON m.kind = 'user' AND u.id = m.member_id
+WHERE m.room_id = ?
+ORDER BY m.created_at, m.id
+`
+
+type ListRoomMembersRow struct {
+	RoomMember    RoomMember
+	Name          string
+	AgentOwner    string
+	ConnectorKind string
+	ChatKind      string
+}
+
+func (q *Queries) ListRoomMembers(ctx context.Context, roomID string) ([]ListRoomMembersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRoomMembers, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoomMembersRow
+	for rows.Next() {
+		var i ListRoomMembersRow
+		if err := rows.Scan(
+			&i.RoomMember.ID,
+			&i.RoomMember.RoomID,
+			&i.RoomMember.Kind,
+			&i.RoomMember.MemberID,
+			&i.RoomMember.Outbound,
+			&i.RoomMember.AddedBy,
+			&i.RoomMember.CreatedAt,
+			&i.Name,
+			&i.AgentOwner,
+			&i.ConnectorKind,
+			&i.ChatKind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoomsForUser = `-- name: ListRoomsForUser :many
+SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, u.username AS owner_username, u.display_name AS owner_display_name
+FROM rooms r JOIN users u ON u.id = r.owner_id
+WHERE r.owner_id = ?1
+   OR r.id IN (SELECT g.resource_id FROM grants g
+               WHERE g.resource_kind = 'room' AND g.subject IN (?1, '*'))
+ORDER BY r.name COLLATE NOCASE, r.id
+`
+
+type ListRoomsForUserRow struct {
+	Room             Room
+	OwnerUsername    string
+	OwnerDisplayName string
+}
+
+func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRoomsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRoomsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoomsForUserRow
+	for rows.Next() {
+		var i ListRoomsForUserRow
+		if err := rows.Scan(
+			&i.Room.ID,
+			&i.Room.OwnerID,
+			&i.Room.Name,
+			&i.Room.Description,
+			&i.Room.BridgeChats,
+			&i.Room.RetentionDays,
+			&i.Room.NextSeq,
+			&i.Room.AgentStreak,
+			&i.Room.AgentsPaused,
+			&i.Room.CreatedAt,
+			&i.Room.UpdatedAt,
+			&i.OwnerUsername,
+			&i.OwnerDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateRoom = `-- name: UpdateRoom :exec
+UPDATE rooms SET name = ?, description = ?, bridge_chats = ?, retention_days = ?, updated_at = ?
+WHERE id = ?
+`
+
+type UpdateRoomParams struct {
+	Name          string
+	Description   string
+	BridgeChats   bool
+	RetentionDays int64
+	UpdatedAt     int64
+	ID            string
+}
+
+func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) error {
+	_, err := q.db.ExecContext(ctx, updateRoom,
+		arg.Name,
+		arg.Description,
+		arg.BridgeChats,
+		arg.RetentionDays,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
+}
+
+const updateRoomMemberOutbound = `-- name: UpdateRoomMemberOutbound :exec
+UPDATE room_members SET outbound = ? WHERE id = ?
+`
+
+type UpdateRoomMemberOutboundParams struct {
+	Outbound bool
+	ID       string
+}
+
+func (q *Queries) UpdateRoomMemberOutbound(ctx context.Context, arg UpdateRoomMemberOutboundParams) error {
+	_, err := q.db.ExecContext(ctx, updateRoomMemberOutbound, arg.Outbound, arg.ID)
+	return err
 }
