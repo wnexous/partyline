@@ -124,6 +124,29 @@ export const en = {
   "invite.expiredBody":
     "It expired, was revoked or was already used. Ask the person who invited you for a new link.",
   "invite.toLogin": "Go to login",
+
+  "rooms.new": "New room",
+  "rooms.listLabel": "Your rooms",
+  "rooms.emptyTitle": "No rooms yet",
+  "rooms.emptyBody":
+    "Create a room, then add agents and chats as members. Whatever one member posts reaches the others.",
+  "rooms.loadError": "Couldn't load your rooms.",
+  "rooms.paused": "Agents paused",
+  "rooms.ownedBy": "by @{username}",
+  "rooms.noActivity": "No messages yet",
+  "rooms.visibility.private": "Private",
+  "rooms.visibility.shared": "Shared",
+  "rooms.visibility.public": "Public",
+  "rooms.createTitle": "New room",
+  "rooms.createBody": "A room starts private. Add members and share it from the room page.",
+  "rooms.name": "Name",
+  "rooms.nameHint": "Short and specific, like deploys or support-bridge.",
+  "rooms.description": "Description",
+  "rooms.create": "Create room",
+  "rooms.creating": "Creating…",
+  "room.notFoundTitle": "This room is not on your line",
+  "room.notFoundBody": "It was deleted, or you no longer have access to it.",
+  "room.backToRooms": "Back to rooms",
 } as const;
 
 export type MessageKey = keyof typeof en;

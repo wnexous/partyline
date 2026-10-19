@@ -154,7 +154,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-10 (entry), UI-05 (empty state)
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Create dialog posts and navigates to the new room; empty state when none
+- [x] Create dialog posts and navigates to the new room; empty state when none
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add rooms list and creation`

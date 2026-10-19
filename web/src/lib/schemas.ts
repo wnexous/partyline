@@ -15,7 +15,7 @@ export const usernameSchema = z.string().regex(usernameRe, msg("validation.usern
 
 export const passwordSchema = z.string().min(PasswordMinLength, msg("validation.passwordMin"));
 
-const optionalDisplayName = z
+const optionalText = z
   .string()
   .trim()
   .optional()
@@ -26,7 +26,7 @@ export const setupSchema = z.object({
   token: z.string().trim().min(1, msg("validation.required")),
   username: usernameSchema,
   password: passwordSchema,
-  display_name: optionalDisplayName,
+  display_name: optionalText,
 });
 
 /** POST /auth/login: only presence is checked; the server decides validity (UI-02). */
@@ -39,7 +39,13 @@ export const loginSchema = z.object({
 export const acceptInviteSchema = z.object({
   username: usernameSchema,
   password: passwordSchema,
-  display_name: optionalDisplayName,
+  display_name: optionalText,
+});
+
+/** POST /rooms: a name is required; the description is optional. */
+export const createRoomSchema = z.object({
+  name: z.string().trim().min(1, msg("validation.required")),
+  description: optionalText,
 });
 
 /** Message text (MSG-02): non-empty unless files are attached, at most MaxTextLength. */
@@ -48,6 +54,7 @@ export const messageTextSchema = z.string().max(MaxTextLength, msg("validation.t
 export type SetupForm = z.input<typeof setupSchema>;
 export type LoginForm = z.input<typeof loginSchema>;
 export type AcceptInviteForm = z.input<typeof acceptInviteSchema>;
+export type CreateRoomForm = z.input<typeof createRoomSchema>;
 
 /** Placeholder values of the schema message keys, for rendering zod issues with useT(). */
 export const validationVars = {

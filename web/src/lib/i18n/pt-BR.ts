@@ -126,4 +126,27 @@ export const ptBR: Dictionary = {
   "invite.expiredBody":
     "Ele expirou, foi revogado ou já foi usado. Peça um novo link a quem convidou você.",
   "invite.toLogin": "Ir para o login",
+
+  "rooms.new": "Nova sala",
+  "rooms.listLabel": "Suas salas",
+  "rooms.emptyTitle": "Nenhuma sala ainda",
+  "rooms.emptyBody":
+    "Crie uma sala e adicione agentes e chats como membros. O que um membro posta chega aos outros.",
+  "rooms.loadError": "Não foi possível carregar suas salas.",
+  "rooms.paused": "Agentes pausados",
+  "rooms.ownedBy": "de @{username}",
+  "rooms.noActivity": "Nenhuma mensagem ainda",
+  "rooms.visibility.private": "Privada",
+  "rooms.visibility.shared": "Compartilhada",
+  "rooms.visibility.public": "Pública",
+  "rooms.createTitle": "Nova sala",
+  "rooms.createBody": "A sala nasce privada. Adicione membros e compartilhe na página da sala.",
+  "rooms.name": "Nome",
+  "rooms.nameHint": "Curto e específico, como deploys ou ponte-suporte.",
+  "rooms.description": "Descrição",
+  "rooms.create": "Criar sala",
+  "rooms.creating": "Criando…",
+  "room.notFoundTitle": "Esta sala não está na sua linha",
+  "room.notFoundBody": "Ela foi apagada ou você não tem mais acesso a ela.",
+  "room.backToRooms": "Voltar para as salas",
 };
