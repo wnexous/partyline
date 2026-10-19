@@ -224,16 +224,16 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | ROOM-02 | P1: Rooms and sharing | Tasks | Pending |
 | MSG-01 | P1: Messages and delivery | Tasks | Implementing |
 | MSG-02 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-01 | P1: Messages and delivery | Tasks | Pending |
-| DLV-02 | P1: Messages and delivery | Tasks | Pending |
-| DLV-03 | P1: Messages and delivery | Tasks | Pending |
-| DLV-04 | P1: Messages and delivery | Tasks | Pending |
-| DLV-05 | P1: Messages and delivery | Tasks | Pending |
-| DLV-06 | P1: Messages and delivery | Tasks | Pending |
+| DLV-01 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-02 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-03 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-04 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-05 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-06 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-07 | P1: Messages and delivery | Tasks | Pending |
-| DLV-08 | P1: Messages and delivery | Tasks | Pending |
+| DLV-08 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-09 | P1: Messages and delivery | Tasks | Pending |
-| DLV-10 | P1: Messages and delivery | Tasks | Pending |
+| DLV-10 | P1: Messages and delivery | Tasks | Implementing |
 | LIVE-01 | P1: Live updates | Tasks | Implementing |
 | LIVE-02 | P1: Live updates | Tasks | Pending |
 | LIVE-03 | P1: Live updates | Tasks | Pending |

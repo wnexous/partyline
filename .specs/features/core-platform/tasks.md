@@ -313,9 +313,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: DLV-01, DLV-02, DLV-03, DLV-04, DLV-05, DLV-06, DLV-08, DLV-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Table tests per author kind × outbound flags × recipients × bridge_chats
-- [ ] Trusted true only for equal user ids, false for empty author user
-- [ ] 25th consecutive agent message pauses; user/chat message resets to 0
+- [x] Table tests per author kind × outbound flags × recipients × bridge_chats
+- [x] Trusted true only for equal user ids, false for empty author user
+- [x] 25th consecutive agent message pauses; user/chat message resets to 0
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(delivery): add delivery plan, trust and loop guard rules`
