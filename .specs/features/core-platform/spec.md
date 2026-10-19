@@ -210,7 +210,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | AUTH-10 | P1: Setup and accounts | Tasks | Implementing |
 | TOK-01 | P1: Tokens | Tasks | Implementing |
 | TOK-02 | P1: Tokens | Tasks | Implementing |
-| TOK-03 | P1: Tokens | Tasks | Pending |
+| TOK-03 | P1: Tokens | Tasks | Implementing |
 | TOK-04 | P1: Tokens | Tasks | Implementing |
 | ACL-01 | P1: Rooms and sharing | Tasks | Pending |
 | ACL-02 | P1: Rooms and sharing | Tasks | Pending |
@@ -238,8 +238,8 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | LIVE-02 | P1: Live updates | Tasks | Pending |
 | LIVE-03 | P1: Live updates | Tasks | Pending |
 | LIVE-04 | P1: Live updates | Tasks | Pending |
-| SEC-01 | P1: Secure deployment | Tasks | Pending |
-| SEC-02 | P1: Secure deployment | Tasks | Pending |
+| SEC-01 | P1: Secure deployment | Tasks | Implementing |
+| SEC-02 | P1: Secure deployment | Tasks | Implementing |
 | SEC-03 | P1: Secure deployment | Tasks | Implementing |
 | SEC-04 | P1: Secure deployment | Tasks | Implementing |
 | SEC-05 | P1: Secure deployment | Tasks | Pending |

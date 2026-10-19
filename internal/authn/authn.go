@@ -3,6 +3,7 @@
 package authn
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -157,4 +158,17 @@ func isBase62(s string) bool {
 		}
 	}
 	return true
+}
+
+type principalKey struct{}
+
+// WithPrincipal returns a context carrying the authenticated principal.
+func WithPrincipal(ctx context.Context, p Principal) context.Context {
+	return context.WithValue(ctx, principalKey{}, p)
+}
+
+// PrincipalFrom returns the principal stored by WithPrincipal, if any.
+func PrincipalFrom(ctx context.Context) (Principal, bool) {
+	p, ok := ctx.Value(principalKey{}).(Principal)
+	return p, ok
 }

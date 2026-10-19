@@ -233,9 +233,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: SEC-01, SEC-02, SEC-03, TOK-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Cookie POST with foreign Origin → 403; bearer POST without Origin → allowed
-- [ ] Agent token on `/api/v1/rooms` → 403; on `/api/v1/agent/rooms` → passes
-- [ ] Panic → 500 envelope; headers present on responses
+- [x] Cookie POST with foreign Origin → 403; bearer POST without Origin → allowed
+- [x] Agent token on `/api/v1/rooms` → 403; on `/api/v1/agent/rooms` → passes
+- [x] Panic → 500 envelope; headers present on responses
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(api): add security, auth and csrf middleware`
