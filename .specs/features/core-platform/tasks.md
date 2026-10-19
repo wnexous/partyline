@@ -137,8 +137,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUTH-08, TOK-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Hash never contains the password; verify true/false correct; PHC params m=19456,t=2,p=1
-- [ ] Token format and prefix length asserted; hash is hex sha256
+- [x] Hash never contains the password; verify true/false correct; PHC params m=19456,t=2,p=1
+- [x] Token format and prefix length asserted; hash is hex sha256
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(authn): add argon2id passwords, api tokens and principal`
