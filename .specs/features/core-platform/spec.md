@@ -198,20 +198,20 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AUTH-01 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-02 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-03 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-04 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-05 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-06 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-07 | P1: Setup and accounts | Tasks | Pending |
+| AUTH-01 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-02 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-03 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-04 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-05 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-06 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-07 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-08 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-09 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-10 | P1: Setup and accounts | Tasks | Pending |
+| AUTH-09 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-10 | P1: Setup and accounts | Tasks | Implementing |
 | TOK-01 | P1: Tokens | Tasks | Implementing |
-| TOK-02 | P1: Tokens | Tasks | Pending |
-| TOK-03 | P1: Tokens | Tasks | Pending |
-| TOK-04 | P1: Tokens | Tasks | Pending |
+| TOK-02 | P1: Tokens | Tasks | Implementing |
+| TOK-03 | P1: Tokens | Tasks | Implementing |
+| TOK-04 | P1: Tokens | Tasks | Implementing |
 | ACL-01 | P1: Rooms and sharing | Tasks | Pending |
 | ACL-02 | P1: Rooms and sharing | Tasks | Pending |
 | ACL-03 | P1: Rooms and sharing | Tasks | Pending |
@@ -238,12 +238,12 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | LIVE-02 | P1: Live updates | Tasks | Pending |
 | LIVE-03 | P1: Live updates | Tasks | Pending |
 | LIVE-04 | P1: Live updates | Tasks | Pending |
-| SEC-01 | P1: Secure deployment | Tasks | Pending |
-| SEC-02 | P1: Secure deployment | Tasks | Pending |
+| SEC-01 | P1: Secure deployment | Tasks | Implementing |
+| SEC-02 | P1: Secure deployment | Tasks | Implementing |
 | SEC-03 | P1: Secure deployment | Tasks | Implementing |
 | SEC-04 | P1: Secure deployment | Tasks | Implementing |
 | SEC-05 | P1: Secure deployment | Tasks | Pending |
-| OPS-01 | P1: Secure deployment | Tasks | Pending |
+| OPS-01 | P1: Secure deployment | Tasks | Implementing |
 | OPS-02 | P1: Secure deployment | Tasks | Pending |
 | OPS-03 | P1: Secure deployment | Tasks | Implementing |
 | AUD-01 | P2: Audit trail | Tasks | Pending |

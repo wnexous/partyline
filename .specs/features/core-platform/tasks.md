@@ -184,10 +184,10 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Setup only with correct token and zero users; second setup → conflict error
-- [ ] Unknown user and wrong password return the same error value
-- [ ] 6th failed login in a minute from one IP → rate-limited error
-- [ ] Revoked/expired session fails validation
+- [x] Setup only with correct token and zero users; second setup → conflict error
+- [x] Unknown user and wrong password return the same error value
+- [x] 6th failed login in a minute from one IP → rate-limited error
+- [x] Revoked/expired session fails validation
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(users): add setup, login and session management`
@@ -201,9 +201,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUTH-06, AUTH-07, AUTH-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Used, revoked or expired invite → error; accepted invite marked used
-- [ ] Username outside `^[a-z0-9_-]{3,32}$` or password < 10 → validation error naming field
-- [ ] Disabled user's sessions and tokens fail validation
+- [x] Used, revoked or expired invite → error; accepted invite marked used
+- [x] Username outside `^[a-z0-9_-]{3,32}$` or password < 10 → validation error naming field
+- [x] Disabled user's sessions and tokens fail validation (token half asserted with the tokens service in T10)
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(users): add invites and user administration`
@@ -217,9 +217,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: TOK-01, TOK-02, TOK-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Secret returned once; list never contains it
-- [ ] Revoked/expired/unknown → unauthorized
-- [ ] Two authentications within 60 s write `last_used_at` once
+- [x] Secret returned once; list never contains it
+- [x] Revoked/expired/unknown → unauthorized
+- [x] Two authentications within 60 s write `last_used_at` once
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(users): add personal and agent api tokens`
@@ -233,9 +233,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: SEC-01, SEC-02, SEC-03, TOK-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Cookie POST with foreign Origin → 403; bearer POST without Origin → allowed
-- [ ] Agent token on `/api/v1/rooms` → 403; on `/api/v1/agent/rooms` → passes
-- [ ] Panic → 500 envelope; headers present on responses
+- [x] Cookie POST with foreign Origin → 403; bearer POST without Origin → allowed
+- [x] Agent token on `/api/v1/rooms` → 403; on `/api/v1/agent/rooms` → passes
+- [x] Panic → 500 envelope; headers present on responses
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(api): add security, auth and csrf middleware`
@@ -249,8 +249,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: OPS-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `/healthz` 200 unauthenticated; `/readyz` 503 before migrations finish, 200 after
-- [ ] testkit used by a sample test that logs in
+- [x] `/healthz` 200 unauthenticated; `/readyz` 503 before migrations finish, 200 after
+- [x] testkit used by a sample test that logs in
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(app): wire application and add test kit and health endpoints`
@@ -264,8 +264,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Login sets cookie HttpOnly, SameSite=Lax, Max-Age 30 d, Secure per config
-- [ ] Status codes: setup 201/409/401, login 200/401/429, logout 204, me 401 when logged out
+- [x] Login sets cookie HttpOnly, SameSite=Lax, Max-Age 30 d, Secure per config
+- [x] Status codes: setup 201/409/401, login 200/401/429, logout 204, me 401 when logged out
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(api): add setup, login and profile endpoints`
@@ -279,9 +279,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUTH-06, AUTH-07, AUTH-10, TOK-01, TOK-02, TOK-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Non-admin on admin routes → 403; invite accept 201 then 410 on reuse
-- [ ] Disabled user's cookie → 401 on next request
-- [ ] Token create returns secret once; list hides it
+- [x] Non-admin on admin routes → 403; invite accept 201 then 410 on reuse
+- [x] Disabled user's cookie → 401 on next request
+- [x] Token create returns secret once; list hides it
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): add invite, admin and token endpoints`
