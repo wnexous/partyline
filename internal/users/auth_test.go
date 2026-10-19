@@ -1,0 +1,236 @@
+package users
+
+import (
+	"context"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/store"
+)
+
+// fakeClock is a manually advanced clock shared by the service under test.
+type fakeClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *fakeClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	c.now = c.now.Add(d)
+	c.mu.Unlock()
+}
+
+type fixture struct {
+	svc   *Service
+	store *store.Store
+	clock *fakeClock
+}
+
+func newFixture(t *testing.T) *fixture {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "partyline.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	require.NoError(t, st.Migrate(context.Background()))
+	clock := &fakeClock{now: time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}
+	svc, err := NewService(st, Options{Now: clock.Now})
+	require.NoError(t, err)
+	return &fixture{svc: svc, store: st, clock: clock}
+}
+
+const adminPassword = "correct-horse-battery"
+
+func (f *fixture) setupAdmin(t *testing.T) {
+	t.Helper()
+	_, err := f.svc.Setup(context.Background(), f.svc.SetupToken(), AccountInput{Username: "admin", Password: adminPassword})
+	require.NoError(t, err)
+}
+
+func (f *fixture) userCount(t *testing.T) int64 {
+	t.Helper()
+	n, err := f.store.R().CountUsers(context.Background())
+	require.NoError(t, err)
+	return n
+}
+
+func login(f *fixture, ip, username, password string) (NewSession, error) {
+	_, sess, err := f.svc.Login(context.Background(), LoginInput{Username: username, Password: password, IP: ip})
+	return sess, err
+}
+
+// AUTH-01: setup is accepted only with the in-memory setup token while there are zero users.
+func TestSetupRequiresSetupTokenAndZeroUsers(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	require.NotEmpty(t, f.svc.SetupToken())
+
+	needs, err := f.svc.NeedsSetup(ctx)
+	require.NoError(t, err)
+	require.True(t, needs)
+
+	_, err = f.svc.Setup(ctx, "not-the-token", AccountInput{Username: "admin", Password: adminPassword})
+	require.ErrorIs(t, err, ErrBadSetupToken)
+	require.Zero(t, f.userCount(t))
+
+	_, err = f.svc.Setup(ctx, "", AccountInput{Username: "admin", Password: adminPassword})
+	require.ErrorIs(t, err, ErrBadSetupToken)
+	require.Zero(t, f.userCount(t))
+
+	u, err := f.svc.Setup(ctx, f.svc.SetupToken(), AccountInput{Username: "admin", Password: adminPassword, DisplayName: "Admin"})
+	require.NoError(t, err)
+	require.Equal(t, "admin", u.Username)
+	require.Equal(t, "admin", u.Role)
+	require.Equal(t, "Admin", u.DisplayName)
+	require.EqualValues(t, 1, f.userCount(t))
+
+	needs, err = f.svc.NeedsSetup(ctx)
+	require.NoError(t, err)
+	require.False(t, needs)
+}
+
+// AUTH-02: a second setup, even with the right token, is a conflict and creates nothing.
+func TestSetupAfterUserExistsIsConflict(t *testing.T) {
+	f := newFixture(t)
+	f.setupAdmin(t)
+
+	_, err := f.svc.Setup(context.Background(), f.svc.SetupToken(), AccountInput{Username: "second", Password: adminPassword})
+	require.ErrorIs(t, err, ErrSetupDone)
+	require.EqualValues(t, 1, f.userCount(t))
+}
+
+// AUTH-07 rules applied at setup: username pattern and password length name the field.
+func TestSetupValidatesUsernameAndPassword(t *testing.T) {
+	f := newFixture(t)
+
+	_, err := f.svc.Setup(context.Background(), f.svc.SetupToken(), AccountInput{Username: "No Spaces", Password: "short"})
+	var verr *ValidationError
+	require.ErrorAs(t, err, &verr)
+	require.Contains(t, verr.Fields, "username")
+	require.Contains(t, verr.Fields, "password")
+	require.Zero(t, f.userCount(t))
+}
+
+// AUTH-04: unknown user and wrong password fail with the same error value.
+func TestLoginFailuresAreIndistinguishable(t *testing.T) {
+	f := newFixture(t)
+	f.setupAdmin(t)
+
+	_, errUnknown := login(f, "192.0.2.1", "nobody", adminPassword)
+	_, errWrong := login(f, "192.0.2.1", "admin", "wrong-password-123")
+
+	require.ErrorIs(t, errUnknown, ErrInvalidCredentials)
+	require.ErrorIs(t, errWrong, ErrInvalidCredentials)
+	require.Equal(t, errUnknown, errWrong)
+}
+
+// AUTH-03 + AUTH-08: login creates a 30-day session whose secret is stored only as sha256.
+func TestLoginCreatesThirtyDaySessionStoredAsHash(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.setupAdmin(t)
+
+	u, sess, err := f.svc.Login(ctx, LoginInput{Username: "admin", Password: adminPassword, IP: "192.0.2.1", UserAgent: "test-agent"})
+	require.NoError(t, err)
+	require.Equal(t, "admin", u.Username)
+	require.NotEmpty(t, sess.Secret)
+	require.Equal(t, f.clock.Now().Add(30*24*time.Hour), sess.ExpiresAt)
+
+	row, err := f.store.R().GetSessionByTokenHash(ctx, authn.HashToken(sess.Secret))
+	require.NoError(t, err)
+	require.NotEqual(t, sess.Secret, row.TokenHash)
+	require.Equal(t, sess.ID, row.ID)
+	require.Equal(t, "192.0.2.1", row.Ip)
+	require.Equal(t, "test-agent", row.UserAgent)
+
+	p, err := f.svc.ValidateSession(ctx, sess.Secret)
+	require.NoError(t, err)
+	require.Equal(t, authn.KindUser, p.Kind)
+	require.Equal(t, u.ID, p.UserID)
+	require.Equal(t, "admin", p.Role)
+	require.Equal(t, sess.ID, p.SessionID)
+}
+
+// AUTH-05: after 5 failures from one IP within a minute, further attempts are rate-limited
+// for the rest of that minute, even with the right password; other IPs are unaffected.
+func TestLoginRateLimitPerIP(t *testing.T) {
+	f := newFixture(t)
+	f.setupAdmin(t)
+	const ip = "192.0.2.7"
+
+	for i := range 5 {
+		_, err := login(f, ip, "admin", "wrong-password-123")
+		require.ErrorIs(t, err, ErrInvalidCredentials, "attempt %d", i+1)
+		f.clock.Advance(5 * time.Second)
+	}
+	_, err := login(f, ip, "admin", "wrong-password-123")
+	require.ErrorIs(t, err, ErrRateLimited)
+	_, err = login(f, ip, "admin", adminPassword)
+	require.ErrorIs(t, err, ErrRateLimited)
+
+	_, err = login(f, "192.0.2.8", "admin", adminPassword)
+	require.NoError(t, err)
+
+	// The window opened at the first failure; 25 s have passed, so 35 s remain.
+	f.clock.Advance(34 * time.Second)
+	_, err = login(f, ip, "admin", adminPassword)
+	require.ErrorIs(t, err, ErrRateLimited)
+
+	f.clock.Advance(1 * time.Second)
+	_, err = login(f, ip, "admin", adminPassword)
+	require.NoError(t, err)
+}
+
+// AUTH-09: a revoked session no longer validates.
+func TestRevokedSessionFailsValidation(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.setupAdmin(t)
+	sess, err := login(f, "192.0.2.1", "admin", adminPassword)
+	require.NoError(t, err)
+
+	p, err := f.svc.ValidateSession(ctx, sess.Secret)
+	require.NoError(t, err)
+	require.NoError(t, f.svc.RevokeSession(ctx, p.UserID, sess.ID))
+
+	_, err = f.svc.ValidateSession(ctx, sess.Secret)
+	require.ErrorIs(t, err, ErrUnauthenticated)
+}
+
+// AUTH-03: sessions expire after 30 days without use; use slides the expiry.
+func TestSessionExpiryIsSliding(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.setupAdmin(t)
+
+	idle, err := login(f, "192.0.2.1", "admin", adminPassword)
+	require.NoError(t, err)
+	used, err := login(f, "192.0.2.1", "admin", adminPassword)
+	require.NoError(t, err)
+
+	f.clock.Advance(29 * 24 * time.Hour)
+	_, err = f.svc.ValidateSession(ctx, used.Secret)
+	require.NoError(t, err)
+
+	f.clock.Advance(24*time.Hour + time.Millisecond)
+	_, err = f.svc.ValidateSession(ctx, idle.Secret)
+	require.ErrorIs(t, err, ErrUnauthenticated)
+	_, err = f.svc.ValidateSession(ctx, used.Secret)
+	require.NoError(t, err)
+}
+
+func TestUnknownSessionFailsValidation(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.svc.ValidateSession(context.Background(), "does-not-exist")
+	require.ErrorIs(t, err, ErrUnauthenticated)
+}

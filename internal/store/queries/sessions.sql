@@ -10,3 +10,6 @@ UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?;
 
 -- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?;
+
+-- name: DeleteUserSession :execrows
+DELETE FROM sessions WHERE id = ? AND user_id = ?;

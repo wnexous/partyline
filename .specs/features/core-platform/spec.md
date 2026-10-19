@@ -198,15 +198,15 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AUTH-01 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-02 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-03 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-04 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-05 | P1: Setup and accounts | Tasks | Pending |
+| AUTH-01 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-02 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-03 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-04 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-05 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-06 | P1: Setup and accounts | Tasks | Pending |
 | AUTH-07 | P1: Setup and accounts | Tasks | Pending |
 | AUTH-08 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-09 | P1: Setup and accounts | Tasks | Pending |
+| AUTH-09 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-10 | P1: Setup and accounts | Tasks | Pending |
 | TOK-01 | P1: Tokens | Tasks | Implementing |
 | TOK-02 | P1: Tokens | Tasks | Pending |

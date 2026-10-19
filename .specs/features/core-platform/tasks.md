@@ -184,10 +184,10 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Setup only with correct token and zero users; second setup → conflict error
-- [ ] Unknown user and wrong password return the same error value
-- [ ] 6th failed login in a minute from one IP → rate-limited error
-- [ ] Revoked/expired session fails validation
+- [x] Setup only with correct token and zero users; second setup → conflict error
+- [x] Unknown user and wrong password return the same error value
+- [x] 6th failed login in a minute from one IP → rate-limited error
+- [x] Revoked/expired session fails validation
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(users): add setup, login and session management`
