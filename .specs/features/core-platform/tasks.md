@@ -201,9 +201,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUTH-06, AUTH-07, AUTH-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Used, revoked or expired invite → error; accepted invite marked used
-- [ ] Username outside `^[a-z0-9_-]{3,32}$` or password < 10 → validation error naming field
-- [ ] Disabled user's sessions and tokens fail validation
+- [x] Used, revoked or expired invite → error; accepted invite marked used
+- [x] Username outside `^[a-z0-9_-]{3,32}$` or password < 10 → validation error naming field
+- [x] Disabled user's sessions and tokens fail validation (token half asserted with the tokens service in T10)
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(users): add invites and user administration`

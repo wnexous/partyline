@@ -1,0 +1,240 @@
+package users
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"time"
+
+	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/store"
+	"github.com/wnexous/partyline/internal/store/db"
+)
+
+// InviteTTL is how long an invite stays usable (AUTH-06).
+const InviteTTL = 7 * 24 * time.Hour
+
+// Invite is an invite as listed for admins, with its computed status.
+type Invite struct {
+	db.ListInvitesRow
+	Status dto.InviteStatus
+}
+
+func validRole(r dto.Role) bool { return r == dto.RoleAdmin || r == dto.RoleMember }
+
+// inviteStatus computes the state of an invite at now.
+func inviteStatus(inv db.Invite, now time.Time) dto.InviteStatus {
+	switch {
+	case inv.UsedAt.Valid:
+		return dto.InviteStatusUsed
+	case inv.RevokedAt.Valid:
+		return dto.InviteStatusRevoked
+	case ms(now) >= inv.ExpiresAt:
+		return dto.InviteStatusExpired
+	default:
+		return dto.InviteStatusPending
+	}
+}
+
+// CreateInvite creates a single-use invite and returns it with its secret token, which is
+// shown once and stored only as a hash.
+func (s *Service) CreateInvite(ctx context.Context, createdBy string, role dto.Role) (db.Invite, string, error) {
+	if !validRole(role) {
+		return db.Invite{}, "", &ValidationError{Fields: map[string]string{"role": "must be admin or member"}}
+	}
+	secret, err := authn.NewSessionToken()
+	if err != nil {
+		return db.Invite{}, "", err
+	}
+	now := s.now()
+	inv := db.Invite{
+		ID: store.NewID(), TokenHash: authn.HashToken(secret), Role: string(role),
+		CreatedBy: createdBy, CreatedAt: ms(now), ExpiresAt: ms(now.Add(InviteTTL)),
+	}
+	err = s.store.WithTx(ctx, func(q *db.Queries) error {
+		return q.CreateInvite(ctx, db.CreateInviteParams{
+			ID: inv.ID, TokenHash: inv.TokenHash, Role: inv.Role,
+			CreatedBy: inv.CreatedBy, CreatedAt: inv.CreatedAt, ExpiresAt: inv.ExpiresAt,
+		})
+	})
+	if err != nil {
+		return db.Invite{}, "", err
+	}
+	return inv, secret, nil
+}
+
+// GetInvite returns the pending invite for token: ErrNotFound when unknown, ErrInviteGone
+// when used, revoked or expired.
+func (s *Service) GetInvite(ctx context.Context, token string) (db.Invite, error) {
+	inv, err := s.store.R().GetInviteByTokenHash(ctx, authn.HashToken(token))
+	if errors.Is(err, sql.ErrNoRows) {
+		return db.Invite{}, ErrNotFound
+	}
+	if err != nil {
+		return db.Invite{}, err
+	}
+	if inviteStatus(inv, s.now()) != dto.InviteStatusPending {
+		return db.Invite{}, ErrInviteGone
+	}
+	return inv, nil
+}
+
+// AcceptInvite creates an account with the invite's role and marks the invite used (AUTH-07).
+func (s *Service) AcceptInvite(ctx context.Context, token string, in AccountInput) (db.User, error) {
+	inv, err := s.GetInvite(ctx, token)
+	if err != nil {
+		return db.User{}, err
+	}
+	if err := in.validate(); err != nil {
+		return db.User{}, err
+	}
+	hash, err := authn.HashPassword(in.Password)
+	if err != nil {
+		return db.User{}, err
+	}
+	var u db.User
+	err = s.store.WithTx(ctx, func(q *db.Queries) error {
+		now := s.now()
+		var err error
+		u, err = insertUser(ctx, q, in, hash, inv.Role, now)
+		if err != nil {
+			return err
+		}
+		n, err := q.MarkInviteUsed(ctx, db.MarkInviteUsedParams{
+			UsedBy: sql.NullString{String: u.ID, Valid: true}, UsedAt: sql.NullInt64{Int64: ms(now), Valid: true},
+			ID: inv.ID, ExpiresAt: ms(now),
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return ErrInviteGone
+		}
+		return nil
+	})
+	if err != nil {
+		return db.User{}, err
+	}
+	return u, nil
+}
+
+// RevokeInvite revokes an invite so it can no longer be used.
+func (s *Service) RevokeInvite(ctx context.Context, id string) error {
+	return s.store.WithTx(ctx, func(q *db.Queries) error {
+		n, err := q.RevokeInvite(ctx, db.RevokeInviteParams{RevokedAt: sql.NullInt64{Int64: ms(s.now()), Valid: true}, ID: id})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}
+
+// ListInvites returns every invite, newest first, with creator and user names.
+func (s *Service) ListInvites(ctx context.Context) ([]Invite, error) {
+	rows, err := s.store.R().ListInvites(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	out := make([]Invite, len(rows))
+	for i, r := range rows {
+		out[i] = Invite{ListInvitesRow: r, Status: inviteStatus(r.Invite, now)}
+	}
+	return out, nil
+}
+
+// CreateUser creates an active account with the given role, applying the account rules.
+func (s *Service) CreateUser(ctx context.Context, in AccountInput, role dto.Role) (db.User, error) {
+	if err := in.validate(); err != nil {
+		return db.User{}, err
+	}
+	if !validRole(role) {
+		return db.User{}, &ValidationError{Fields: map[string]string{"role": "must be admin or member"}}
+	}
+	hash, err := authn.HashPassword(in.Password)
+	if err != nil {
+		return db.User{}, err
+	}
+	var u db.User
+	err = s.store.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		u, err = insertUser(ctx, q, in, hash, string(role), s.now())
+		return err
+	})
+	return u, err
+}
+
+// insertUser creates a user row; a taken username (case-insensitive) is ErrUsernameTaken.
+func insertUser(ctx context.Context, q *db.Queries, in AccountInput, hash, role string, now time.Time) (db.User, error) {
+	_, err := q.GetUserByUsername(ctx, in.Username)
+	if err == nil {
+		return db.User{}, ErrUsernameTaken
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return db.User{}, err
+	}
+	u := db.User{
+		ID: store.NewID(), Username: in.Username, DisplayName: in.DisplayName,
+		PasswordHash: hash, Role: role, CreatedAt: ms(now),
+	}
+	err = q.CreateUser(ctx, db.CreateUserParams{
+		ID: u.ID, Username: u.Username, DisplayName: u.DisplayName,
+		PasswordHash: u.PasswordHash, Role: u.Role, CreatedAt: u.CreatedAt,
+	})
+	return u, err
+}
+
+// ListUsers returns every account ordered by username.
+func (s *Service) ListUsers(ctx context.Context) ([]db.User, error) {
+	return s.store.R().ListUsers(ctx)
+}
+
+// UserUpdate holds the admin changes to an account; nil fields are unchanged.
+type UserUpdate struct {
+	Role     *dto.Role
+	Disabled *bool
+}
+
+// UpdateUser changes an account's role or disabled state. Disabling revokes every session
+// of the user; its tokens stop authenticating while it stays disabled (AUTH-10).
+func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.User, error) {
+	if up.Role != nil && !validRole(*up.Role) {
+		return db.User{}, &ValidationError{Fields: map[string]string{"role": "must be admin or member"}}
+	}
+	var u db.User
+	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		u, err = q.GetUser(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if up.Role != nil {
+			u.Role = string(*up.Role)
+			if err := q.UpdateUserRole(ctx, db.UpdateUserRoleParams{Role: u.Role, ID: id}); err != nil {
+				return err
+			}
+		}
+		if up.Disabled != nil && *up.Disabled != u.DisabledAt.Valid {
+			u.DisabledAt = sql.NullInt64{}
+			if *up.Disabled {
+				u.DisabledAt = sql.NullInt64{Int64: ms(s.now()), Valid: true}
+				if err := q.DeleteSessionsByUser(ctx, id); err != nil {
+					return err
+				}
+			}
+			return q.SetUserDisabledAt(ctx, db.SetUserDisabledAtParams{DisabledAt: u.DisabledAt, ID: id})
+		}
+		return nil
+	})
+	if err != nil {
+		return db.User{}, err
+	}
+	return u, nil
+}

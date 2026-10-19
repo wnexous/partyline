@@ -18,12 +18,14 @@ import (
 
 // Errors returned by the service. The API maps each to one status code.
 var (
-	ErrSetupDone          = errors.New("setup already done")             // 409
-	ErrBadSetupToken      = errors.New("invalid setup token")            // 401
-	ErrInvalidCredentials = errors.New("invalid username or password")   // 401, same for every cause (AUTH-04)
-	ErrRateLimited        = errors.New("too many failed logins")         // 429
-	ErrUnauthenticated    = errors.New("invalid or expired credentials") // 401
-	ErrNotFound           = errors.New("not found")                      // 404
+	ErrSetupDone          = errors.New("setup already done")              // 409
+	ErrBadSetupToken      = errors.New("invalid setup token")             // 401
+	ErrInvalidCredentials = errors.New("invalid username or password")    // 401, same for every cause (AUTH-04)
+	ErrRateLimited        = errors.New("too many failed logins")          // 429
+	ErrUnauthenticated    = errors.New("invalid or expired credentials")  // 401
+	ErrNotFound           = errors.New("not found")                       // 404
+	ErrInviteGone         = errors.New("invite used, revoked or expired") // 410
+	ErrUsernameTaken      = errors.New("username already taken")          // 409
 )
 
 // ValidationError names each rejected input field and the reason.

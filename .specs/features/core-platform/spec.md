@@ -203,11 +203,11 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | AUTH-03 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-04 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-05 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-06 | P1: Setup and accounts | Tasks | Pending |
-| AUTH-07 | P1: Setup and accounts | Tasks | Pending |
+| AUTH-06 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-07 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-08 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-09 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-10 | P1: Setup and accounts | Tasks | Pending |
+| AUTH-10 | P1: Setup and accounts | Tasks | Implementing |
 | TOK-01 | P1: Tokens | Tasks | Implementing |
 | TOK-02 | P1: Tokens | Tasks | Pending |
 | TOK-03 | P1: Tokens | Tasks | Pending |

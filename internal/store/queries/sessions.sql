@@ -13,3 +13,6 @@ DELETE FROM sessions WHERE id = ?;
 
 -- name: DeleteUserSession :execrows
 DELETE FROM sessions WHERE id = ? AND user_id = ?;
+
+-- name: DeleteSessionsByUser :exec
+DELETE FROM sessions WHERE user_id = ?;

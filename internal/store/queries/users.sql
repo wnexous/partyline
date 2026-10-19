@@ -10,3 +10,12 @@ SELECT * FROM users WHERE id = ?;
 
 -- name: GetUserByUsername :one
 SELECT * FROM users WHERE username = ?;
+
+-- name: ListUsers :many
+SELECT * FROM users ORDER BY username;
+
+-- name: UpdateUserRole :exec
+UPDATE users SET role = ? WHERE id = ?;
+
+-- name: SetUserDisabledAt :exec
+UPDATE users SET disabled_at = ? WHERE id = ?;

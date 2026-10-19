@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const countUsers = `-- name: CountUsers :one
@@ -86,4 +87,68 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT id, username, display_name, password_hash, role, locale, disabled_at, created_at FROM users ORDER BY username
+`
+
+func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, listUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.DisplayName,
+			&i.PasswordHash,
+			&i.Role,
+			&i.Locale,
+			&i.DisabledAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setUserDisabledAt = `-- name: SetUserDisabledAt :exec
+UPDATE users SET disabled_at = ? WHERE id = ?
+`
+
+type SetUserDisabledAtParams struct {
+	DisabledAt sql.NullInt64
+	ID         string
+}
+
+func (q *Queries) SetUserDisabledAt(ctx context.Context, arg SetUserDisabledAtParams) error {
+	_, err := q.db.ExecContext(ctx, setUserDisabledAt, arg.DisabledAt, arg.ID)
+	return err
+}
+
+const updateUserRole = `-- name: UpdateUserRole :exec
+UPDATE users SET role = ? WHERE id = ?
+`
+
+type UpdateUserRoleParams struct {
+	Role string
+	ID   string
+}
+
+func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserRole, arg.Role, arg.ID)
+	return err
 }
