@@ -51,7 +51,11 @@ const (
 	loginWindow      = time.Minute
 )
 
-// touchInterval bounds how often a session's sliding expiry is written.
+// SessionSlideInterval bounds how often a session's sliding expiry moves, and so how often
+// its cookie is re-issued.
+const SessionSlideInterval = time.Hour
+
+// touchInterval bounds how often a session's last_seen_at is written.
 const touchInterval = time.Minute
 
 // Options tune the service; zero values use the defaults.

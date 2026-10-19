@@ -34,16 +34,7 @@ func toMe(u db.User) dto.Me {
 
 // setSessionCookie stores a new session in the browser (AUTH-03).
 func (s *server) setSessionCookie(w http.ResponseWriter, sess users.NewSession) {
-	// #nosec G124 -- Secure follows the public URL scheme (plain HTTP is allowed for localhost).
-	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookie,
-		Value:    sess.Secret,
-		Path:     "/",
-		MaxAge:   int(users.SessionTTL / time.Second),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   s.Config.SecureCookies(),
-	})
+	http.SetCookie(w, sessionCookie(sess.Secret, s.Config.SecureCookies()))
 }
 
 func (s *server) clearSessionCookie(w http.ResponseWriter) {
