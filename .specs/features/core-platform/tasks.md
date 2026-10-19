@@ -249,8 +249,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: OPS-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `/healthz` 200 unauthenticated; `/readyz` 503 before migrations finish, 200 after
-- [ ] testkit used by a sample test that logs in
+- [x] `/healthz` 200 unauthenticated; `/readyz` 503 before migrations finish, 200 after
+- [x] testkit used by a sample test that logs in
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(app): wire application and add test kit and health endpoints`
