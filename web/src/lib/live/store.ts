@@ -29,8 +29,8 @@ export interface ConnectorState {
 
 export interface LiveState {
   status: SocketStatus;
-  /** When `status` last changed (ms since epoch). */
-  statusSince: number;
+  /** Since when the socket has not been open (ms since epoch); null while open or idle. */
+  offlineSince: number | null;
   presence: Record<string, Presence>;
   connectors: Record<string, ConnectorState>;
   /** The most recent identity.linked event, for the pairing dialog (UI-18). */
@@ -57,7 +57,7 @@ function initialLocale(): Locale {
 
 export const useLiveStore = create<LiveState>()((set) => ({
   status: "closed",
-  statusSince: Date.now(),
+  offlineSince: null,
   presence: {},
   connectors: {},
   lastLinkedIdentity: null,
@@ -66,7 +66,12 @@ export const useLiveStore = create<LiveState>()((set) => ({
   paletteOpen: false,
 
   setStatus: (status) =>
-    set((s) => (s.status === status ? s : { status, statusSince: Date.now() })),
+    set((s) => {
+      if (s.status === status) return s;
+      if (status === "open") return { status, offlineSince: null };
+      // Retries flip between connecting and closed; the outage started at the first drop.
+      return { status, offlineSince: s.offlineSince ?? Date.now() };
+    }),
   setPresence: (agentId, presence) =>
     set((s) => ({ presence: { ...s.presence, [agentId]: presence } })),
   setConnectorState: (connectorId, state) =>
@@ -84,7 +89,7 @@ export const useLiveStore = create<LiveState>()((set) => ({
   resetLive: () =>
     set({
       status: "closed",
-      statusSince: Date.now(),
+      offlineSince: null,
       presence: {},
       connectors: {},
       lastLinkedIdentity: null,

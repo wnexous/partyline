@@ -123,8 +123,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-02, UI-06, UI-21, UI-23
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Unauthenticated → `/login?redirect=/rooms`; admin link hidden for members
-- [ ] Banner visible when socket status is not open for > 2 s
+- [x] Unauthenticated → `/login?redirect=/rooms`; admin link hidden for members
+- [x] Banner visible when socket status is not open for > 2 s
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add authenticated app shell with sidebar and live banner`

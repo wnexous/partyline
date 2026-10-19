@@ -9,50 +9,277 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteImport } from './routes/_app'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppAdminRouteRouteImport } from './routes/_app/admin/route'
+import { Route as AppAgentsRouteImport } from './routes/_app/agents'
+import { Route as AppIdentitiesRouteImport } from './routes/_app/identities'
+import { Route as AppSettingsRouteImport } from './routes/_app/settings'
+import { Route as AppTokensRouteImport } from './routes/_app/tokens'
+import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
+import { Route as AppConnectorsIndexRouteImport } from './routes/_app/connectors/index'
+import { Route as AppRoomsIndexRouteImport } from './routes/_app/rooms/index'
 
-const IndexRoute = IndexRouteImport.update({
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminRouteRoute = AppAdminRouteRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAgentsRoute = AppAgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppIdentitiesRoute = AppIdentitiesRouteImport.update({
+  id: '/identities',
+  path: '/identities',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTokensRoute = AppTokensRouteImport.update({
+  id: '/tokens',
+  path: '/tokens',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AppAdminRouteRoute,
+} as any)
+const AppConnectorsIndexRoute = AppConnectorsIndexRouteImport.update({
+  id: '/connectors/',
+  path: '/connectors/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppRoomsIndexRoute = AppRoomsIndexRouteImport.update({
+  id: '/rooms/',
+  path: '/rooms/',
+  getParentRoute: () => AppRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof AppIndexRoute
+  '/login': typeof LoginRoute
+  '/admin': typeof AppAdminRouteRouteWithChildren
+  '/agents': typeof AppAgentsRoute
+  '/identities': typeof AppIdentitiesRoute
+  '/settings': typeof AppSettingsRoute
+  '/tokens': typeof AppTokensRoute
+  '/admin/users': typeof AppAdminUsersRoute
+  '/connectors/': typeof AppConnectorsIndexRoute
+  '/rooms/': typeof AppRoomsIndexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/admin': typeof AppAdminRouteRouteWithChildren
+  '/agents': typeof AppAgentsRoute
+  '/identities': typeof AppIdentitiesRoute
+  '/settings': typeof AppSettingsRoute
+  '/tokens': typeof AppTokensRoute
+  '/': typeof AppIndexRoute
+  '/admin/users': typeof AppAdminUsersRoute
+  '/connectors': typeof AppConnectorsIndexRoute
+  '/rooms': typeof AppRoomsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
+  '/login': typeof LoginRoute
+  '/_app/admin': typeof AppAdminRouteRouteWithChildren
+  '/_app/agents': typeof AppAgentsRoute
+  '/_app/identities': typeof AppIdentitiesRoute
+  '/_app/settings': typeof AppSettingsRoute
+  '/_app/tokens': typeof AppTokensRoute
+  '/_app/': typeof AppIndexRoute
+  '/_app/admin/users': typeof AppAdminUsersRoute
+  '/_app/connectors/': typeof AppConnectorsIndexRoute
+  '/_app/rooms/': typeof AppRoomsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/admin'
+    | '/agents'
+    | '/identities'
+    | '/settings'
+    | '/tokens'
+    | '/admin/users'
+    | '/connectors/'
+    | '/rooms/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/login'
+    | '/admin'
+    | '/agents'
+    | '/identities'
+    | '/settings'
+    | '/tokens'
+    | '/'
+    | '/admin/users'
+    | '/connectors'
+    | '/rooms'
+  id:
+    | '__root__'
+    | '/_app'
+    | '/login'
+    | '/_app/admin'
+    | '/_app/agents'
+    | '/_app/identities'
+    | '/_app/settings'
+    | '/_app/tokens'
+    | '/_app/'
+    | '/_app/admin/users'
+    | '/_app/connectors/'
+    | '/_app/rooms/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
+  LoginRoute: typeof LoginRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/': {
+      id: '/_app/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin': {
+      id: '/_app/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AppAdminRouteRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/agents': {
+      id: '/_app/agents'
+      path: '/agents'
+      fullPath: '/agents'
+      preLoaderRoute: typeof AppAgentsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/identities': {
+      id: '/_app/identities'
+      path: '/identities'
+      fullPath: '/identities'
+      preLoaderRoute: typeof AppIdentitiesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/settings': {
+      id: '/_app/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/tokens': {
+      id: '/_app/tokens'
+      path: '/tokens'
+      fullPath: '/tokens'
+      preLoaderRoute: typeof AppTokensRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/users': {
+      id: '/_app/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AppAdminUsersRouteImport
+      parentRoute: typeof AppAdminRouteRoute
+    }
+    '/_app/connectors/': {
+      id: '/_app/connectors/'
+      path: '/connectors'
+      fullPath: '/connectors/'
+      preLoaderRoute: typeof AppConnectorsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/rooms/': {
+      id: '/_app/rooms/'
+      path: '/rooms'
+      fullPath: '/rooms/'
+      preLoaderRoute: typeof AppRoomsIndexRouteImport
+      parentRoute: typeof AppRoute
     }
   }
 }
 
+interface AppAdminRouteRouteChildren {
+  AppAdminUsersRoute: typeof AppAdminUsersRoute
+}
+
+const AppAdminRouteRouteChildren: AppAdminRouteRouteChildren = {
+  AppAdminUsersRoute: AppAdminUsersRoute,
+}
+
+const AppAdminRouteRouteWithChildren = AppAdminRouteRoute._addFileChildren(
+  AppAdminRouteRouteChildren,
+)
+
+interface AppRouteChildren {
+  AppAdminRouteRoute: typeof AppAdminRouteRouteWithChildren
+  AppAgentsRoute: typeof AppAgentsRoute
+  AppIdentitiesRoute: typeof AppIdentitiesRoute
+  AppSettingsRoute: typeof AppSettingsRoute
+  AppTokensRoute: typeof AppTokensRoute
+  AppIndexRoute: typeof AppIndexRoute
+  AppConnectorsIndexRoute: typeof AppConnectorsIndexRoute
+  AppRoomsIndexRoute: typeof AppRoomsIndexRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppAdminRouteRoute: AppAdminRouteRouteWithChildren,
+  AppAgentsRoute: AppAgentsRoute,
+  AppIdentitiesRoute: AppIdentitiesRoute,
+  AppSettingsRoute: AppSettingsRoute,
+  AppTokensRoute: AppTokensRoute,
+  AppIndexRoute: AppIndexRoute,
+  AppConnectorsIndexRoute: AppConnectorsIndexRoute,
+  AppRoomsIndexRoute: AppRoomsIndexRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
+  LoginRoute: LoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

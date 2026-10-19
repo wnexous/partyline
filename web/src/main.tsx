@@ -2,10 +2,11 @@ import "@fontsource-variable/archivo/wdth.css";
 import "@fontsource-variable/jetbrains-mono";
 import "./index.css";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { AppProviders } from "./components/app-providers";
 import { createAppRouter } from "./router";
 
 const queryClient = new QueryClient({
@@ -18,8 +19,8 @@ if (!root) throw new Error("missing #root element");
 
 createRoot(root).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
+    <AppProviders queryClient={queryClient}>
       <RouterProvider router={router} />
-    </QueryClientProvider>
+    </AppProviders>
   </StrictMode>,
 );

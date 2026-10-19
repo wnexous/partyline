@@ -1,4 +1,4 @@
-import type { Message } from "@/lib/api/types.gen";
+import type { Me, Message } from "@/lib/api/types.gen";
 
 /** Synthetic fixtures; never real names, numbers or chat ids. */
 export function makeMessage(over: Partial<Message> = {}): Message {
@@ -14,6 +14,18 @@ export function makeMessage(over: Partial<Message> = {}): Message {
     text: `message ${seq}`,
     attachments: [],
     created_at: "2026-10-19T12:00:00Z",
+    ...over,
+  };
+}
+
+export function makeMe(over: Partial<Me> = {}): Me {
+  return {
+    id: "u1",
+    username: "ana",
+    display_name: "Ana Souza",
+    role: "member",
+    locale: "en",
+    created_at: "2026-10-01T12:00:00Z",
     ...over,
   };
 }

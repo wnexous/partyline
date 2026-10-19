@@ -1,19 +1,23 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { render } from "@testing-library/react";
+import { AppProviders } from "@/components/app-providers";
 import { createAppRouter } from "@/router";
 
-/** Renders the real route tree at `path` with an isolated query client and memory history. */
-export function renderRoute(path: string) {
-  const queryClient = new QueryClient({
+export function makeQueryClient() {
+  return new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false } },
   });
+}
+
+/** Renders the real route tree at `path` with an isolated query client and memory history. */
+export function renderRoute(path: string, queryClient = makeQueryClient()) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const router = createAppRouter(queryClient, history);
   const utils = render(
-    <QueryClientProvider client={queryClient}>
+    <AppProviders queryClient={queryClient}>
       <RouterProvider router={router} />
-    </QueryClientProvider>,
+    </AppProviders>,
   );
   return { ...utils, router, queryClient, history };
 }

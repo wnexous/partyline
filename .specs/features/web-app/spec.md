@@ -173,7 +173,7 @@ Users need one place to see and steer everything: who is online, which chats fee
 | UI-18 | P1: Agents etc. | Tasks | Pending |
 | UI-19 | P1: Agents etc. | Tasks | Pending |
 | UI-20 | P1: Admin | Tasks | Pending |
-| UI-21 | P1: Admin | Tasks | Pending |
+| UI-21 | P1: Admin | Tasks | Implementing |
 | UI-22 | P2: Polish | Tasks | Pending |
 | UI-23 | P2: Polish | Tasks | Implementing |
 | UI-24 | P2: Polish | Tasks | Pending |
