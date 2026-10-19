@@ -19,3 +19,9 @@ UPDATE users SET role = ? WHERE id = ?;
 
 -- name: SetUserDisabledAt :exec
 UPDATE users SET disabled_at = ? WHERE id = ?;
+
+-- name: UpdateUserProfile :exec
+UPDATE users SET display_name = ?, locale = ? WHERE id = ?;
+
+-- name: UpdateUserPassword :exec
+UPDATE users SET password_hash = ? WHERE id = ?;

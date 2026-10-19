@@ -44,8 +44,11 @@ type Env struct {
 	T      testing.TB
 	App    *app.App
 	Server *httptest.Server
-	// URL is the server base URL; it is also the configured public URL.
+	// URL is the server base URL. It is also the public URL unless WithEnv overrides
+	// PARTYLINE_PUBLIC_URL.
 	URL string
+	// Origin is the public URL's origin; clients send it as their Origin header.
+	Origin string
 
 	admin *Client
 }
@@ -59,7 +62,8 @@ type options struct {
 // Option customizes New.
 type Option func(*options)
 
-// WithEnv sets PARTYLINE_* variables (data dir and public URL are always set by the kit).
+// WithEnv sets PARTYLINE_* variables. The kit always sets the data dir and defaults the
+// public URL to the server URL.
 func WithEnv(vars map[string]string) Option {
 	return func(o *options) {
 		for k, v := range vars {
@@ -77,15 +81,16 @@ func WithClock(now func() time.Time) Option { return func(o *options) { o.now = 
 // New starts an app on a temp data dir behind an httptest server; both stop at test cleanup.
 func New(t testing.TB, opts ...Option) *Env {
 	t.Helper()
-	o := options{env: map[string]string{}, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	srv := httptest.NewUnstartedServer(nil)
+	base := "http://" + srv.Listener.Addr().String()
+	o := options{
+		env:    map[string]string{"PARTYLINE_PUBLIC_URL": base},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
 	for _, opt := range opts {
 		opt(&o)
 	}
-
-	srv := httptest.NewUnstartedServer(nil)
-	base := "http://" + srv.Listener.Addr().String()
 	o.env["PARTYLINE_DATA_DIR"] = t.TempDir()
-	o.env["PARTYLINE_PUBLIC_URL"] = base
 	cfg, err := config.Load(func(k string) string { return o.env[k] })
 	require.NoError(t, err)
 
@@ -98,7 +103,7 @@ func New(t testing.TB, opts ...Option) *Env {
 		srv.Close()
 		_ = a.Shutdown(context.Background())
 	})
-	return &Env{T: t, App: a, Server: srv, URL: base}
+	return &Env{T: t, App: a, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host}
 }
 
 // Anon returns a client without credentials (it keeps cookies it receives).
@@ -147,12 +152,20 @@ func (e *Env) LoginAs(username, password string) *Client {
 	u, sess, err := e.App.Users.Login(context.Background(),
 		users.LoginInput{Username: username, Password: password, IP: "127.0.0.1", UserAgent: "testkit"})
 	require.NoError(e.T, err)
-	c := e.Anon()
+	c := e.SessionClient(sess.Secret)
 	c.User = u
-	c.Session = sess.Secret
+	return c
+}
+
+// SessionClient returns a client that sends secret as its session cookie, e.g. to replay a
+// cookie after logout. Its User is not filled in.
+func (e *Env) SessionClient(secret string) *Client {
+	e.T.Helper()
+	c := e.Anon()
+	c.Session = secret
 	base, err := url.Parse(e.URL)
 	require.NoError(e.T, err)
-	cookie := &http.Cookie{Name: api.SessionCookie, Value: sess.Secret, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode} // #nosec G124 -- jar entry for the plain-HTTP test server
+	cookie := &http.Cookie{Name: api.SessionCookie, Value: secret, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode} // #nosec G124 -- jar entry for the plain-HTTP test server
 	c.http.Jar.SetCookies(base, []*http.Cookie{cookie})
 	return c
 }
@@ -215,8 +228,8 @@ func (c *Client) Patch(path string, body any) *Response { return c.Do(http.Metho
 func (c *Client) Delete(path string) *Response { return c.Do(http.MethodDelete, path, nil) }
 
 // Do sends a request with body encoded as JSON (nil for none). Requests carry the instance's
-// own Origin, as a browser would, so cookie writes pass the CSRF check; override it with
-// WithHeader("Origin", ...).
+// own Origin (Env.Origin), as a browser would, so cookie writes pass the CSRF check; override
+// it with WithHeader("Origin", ...).
 func (c *Client) Do(method, path string, body any) *Response {
 	c.T.Helper()
 	var rd io.Reader
@@ -235,7 +248,7 @@ func (c *Client) DoRaw(method, path, contentType string, body io.Reader) *Respon
 	c.T.Helper()
 	req, err := http.NewRequest(method, c.env.URL+path, body)
 	require.NoError(c.T, err)
-	req.Header.Set("Origin", c.env.URL)
+	req.Header.Set("Origin", c.env.Origin)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}

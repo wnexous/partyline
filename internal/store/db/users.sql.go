@@ -139,6 +139,35 @@ func (q *Queries) SetUserDisabledAt(ctx context.Context, arg SetUserDisabledAtPa
 	return err
 }
 
+const updateUserPassword = `-- name: UpdateUserPassword :exec
+UPDATE users SET password_hash = ? WHERE id = ?
+`
+
+type UpdateUserPasswordParams struct {
+	PasswordHash string
+	ID           string
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserPassword, arg.PasswordHash, arg.ID)
+	return err
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :exec
+UPDATE users SET display_name = ?, locale = ? WHERE id = ?
+`
+
+type UpdateUserProfileParams struct {
+	DisplayName string
+	Locale      string
+	ID          string
+}
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserProfile, arg.DisplayName, arg.Locale, arg.ID)
+	return err
+}
+
 const updateUserRole = `-- name: UpdateUserRole :exec
 UPDATE users SET role = ? WHERE id = ?
 `

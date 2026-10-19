@@ -16,3 +16,6 @@ DELETE FROM sessions WHERE id = ? AND user_id = ?;
 
 -- name: DeleteSessionsByUser :exec
 DELETE FROM sessions WHERE user_id = ?;
+
+-- name: ListSessionsByUser :many
+SELECT * FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY last_seen_at DESC, id DESC;

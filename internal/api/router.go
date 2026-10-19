@@ -1,11 +1,13 @@
 package api
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
+	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/users"
 )
@@ -44,6 +46,72 @@ func New(d Deps) http.Handler {
 func (s *server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)
+	s.authRoutes(mux)
+}
+
+// apiFunc is a handler that returns its error; handle renders it as the error envelope.
+type apiFunc func(w http.ResponseWriter, r *http.Request) error
+
+// principalFunc is a handler for authenticated requests.
+type principalFunc func(w http.ResponseWriter, r *http.Request, p authn.Principal) error
+
+var errNotLoggedIn = httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "authentication required")
+
+// handle registers h on mux, rendering returned errors with mapError.
+func (s *server) handle(mux *http.ServeMux, pattern string, h apiFunc) {
+	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		if err := h(w, r); err != nil {
+			s.writeError(w, r, err)
+		}
+	})
+}
+
+// authed requires a user principal (session or user token); anonymous requests get 401.
+func authed(h principalFunc) apiFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		p, ok := authn.PrincipalFrom(r.Context())
+		if !ok {
+			return errNotLoggedIn
+		}
+		return h(w, r, p)
+	}
+}
+
+// writeError maps service errors to API errors; unknown errors are logged and become 500.
+func (s *server) writeError(w http.ResponseWriter, r *http.Request, err error) {
+	mapped := mapError(err)
+	var he *httpx.Error
+	if !errors.As(mapped, &he) {
+		s.Logger.ErrorContext(r.Context(), "request failed", "err", err,
+			"request_id", httpx.RequestID(r.Context()), "method", r.Method, "path", r.URL.Path)
+	}
+	httpx.WriteError(w, mapped)
+}
+
+// mapError translates service errors into API errors with their status code.
+func mapError(err error) error {
+	var verr *users.ValidationError
+	switch {
+	case errors.As(err, &verr):
+		return httpx.Invalid(verr.Fields)
+	case errors.Is(err, users.ErrSetupDone):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "setup already done")
+	case errors.Is(err, users.ErrBadSetupToken):
+		return httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "invalid setup token")
+	case errors.Is(err, users.ErrInvalidCredentials):
+		return httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "invalid username or password")
+	case errors.Is(err, users.ErrUnauthenticated):
+		return errUnauthorized
+	case errors.Is(err, users.ErrRateLimited):
+		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many failed logins, try again later")
+	case errors.Is(err, users.ErrNotFound):
+		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
+	case errors.Is(err, users.ErrInviteGone):
+		return httpx.NewError(http.StatusGone, dto.ErrorCodeGone, "invite already used, revoked or expired")
+	case errors.Is(err, users.ErrUsernameTaken):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "username already taken")
+	}
+	return err
 }
 
 func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {

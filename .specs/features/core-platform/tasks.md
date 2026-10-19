@@ -264,8 +264,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Login sets cookie HttpOnly, SameSite=Lax, Max-Age 30 d, Secure per config
-- [ ] Status codes: setup 201/409/401, login 200/401/429, logout 204, me 401 when logged out
+- [x] Login sets cookie HttpOnly, SameSite=Lax, Max-Age 30 d, Secure per config
+- [x] Status codes: setup 201/409/401, login 200/401/429, logout 204, me 401 when logged out
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(api): add setup, login and profile endpoints`

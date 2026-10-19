@@ -94,6 +94,47 @@ func (q *Queries) GetSessionByTokenHash(ctx context.Context, tokenHash string) (
 	return i, err
 }
 
+const listSessionsByUser = `-- name: ListSessionsByUser :many
+SELECT id, token_hash, user_id, created_at, expires_at, last_seen_at, user_agent, ip FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY last_seen_at DESC, id DESC
+`
+
+type ListSessionsByUserParams struct {
+	UserID    string
+	ExpiresAt int64
+}
+
+func (q *Queries) ListSessionsByUser(ctx context.Context, arg ListSessionsByUserParams) ([]Session, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionsByUser, arg.UserID, arg.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Session
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.TokenHash,
+			&i.UserID,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.LastSeenAt,
+			&i.UserAgent,
+			&i.Ip,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const touchSession = `-- name: TouchSession :exec
 UPDATE sessions SET last_seen_at = ?, expires_at = ? WHERE id = ?
 `
