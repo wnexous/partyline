@@ -245,7 +245,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | SEC-05 | P1: Secure deployment | Tasks | Pending |
 | OPS-01 | P1: Secure deployment | Tasks | Pending |
 | OPS-02 | P1: Secure deployment | Tasks | Pending |
-| OPS-03 | P1: Secure deployment | Tasks | Pending |
+| OPS-03 | P1: Secure deployment | Tasks | Implementing |
 | AUD-01 | P2: Audit trail | Tasks | Pending |
 | AUD-02 | P2: Audit trail | Tasks | Pending |
 

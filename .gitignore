@@ -1,0 +1,24 @@
+# Build output
+/bin/
+/dist/
+
+# Local runtime state
+/data/
+*.db
+*.db-shm
+*.db-wal
+secret.key
+.env
+
+# Test and tooling artifacts
+coverage.out
+*.test
+
+# Web
+web/node_modules/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store

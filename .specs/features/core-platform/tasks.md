@@ -75,9 +75,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: OPS-03 (foundation)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `go build ./...` and `partyline version` print version from ldflags (default `dev`)
-- [ ] Unknown subcommand exits 2 with usage
-- [ ] `make check` runs (golangci-lint installed via `go run` pinned version or documented)
+- [x] `go build ./...` and `partyline version` print version from ldflags (default `dev`)
+- [x] Unknown subcommand exits 2 with usage
+- [x] `make check` runs (golangci-lint installed via `go run` pinned version or documented)
 **Tests**: unit
 **Gate**: build
 **Commit**: `build: bootstrap go module, cli skeleton and tooling`
