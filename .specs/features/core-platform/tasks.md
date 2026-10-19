@@ -167,8 +167,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: SEC-03, MSG-02 (constants)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Oversized JSON → 413 envelope `too_large`; malformed JSON → 400 `invalid`
-- [ ] `make generate` produces TS types with constants; drift check in `make check`
+- [x] Oversized JSON → 413 envelope `too_large`; malformed JSON → 400 `invalid`
+- [x] `make generate` produces TS types with constants; drift check in `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(api): add http helpers and dto contract with ts generation`

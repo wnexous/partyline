@@ -18,7 +18,7 @@ decisions and `.specs/features/*/` for specs, designs and task plans.
 | Go | 1.27+ | everything |
 | golangci-lint | v2.15+ | `make lint` |
 | sqlc | v1.31+ | `make generate` |
-| tygo | latest | `make generate` |
+| tygo | v0.2.21+ | `make generate` |
 | bun | 1.4+ | web app (`web/`) |
 
 Override a tool path with the Makefile variables, e.g. `make lint GOLANGCI_LINT=/path/to/bin`.
