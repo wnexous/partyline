@@ -152,8 +152,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: LIVE-01 (transport)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Every subscriber receives published events in order
-- [ ] Full subscriber gets `Lagged` and publisher never blocks
+- [x] Every subscriber receives published events in order
+- [x] Full subscriber gets `Lagged` and publisher never blocks
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(events): add in-process event bus`
