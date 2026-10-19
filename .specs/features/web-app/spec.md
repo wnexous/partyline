@@ -154,8 +154,8 @@ Users need one place to see and steer everything: who is online, which chats fee
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
 | UI-01 | P1: Access flows | Tasks | Pending |
-| UI-02 | P1: Access flows | Tasks | Pending |
-| UI-03 | P1: Access flows | Tasks | Pending |
+| UI-02 | P1: Access flows | Tasks | Implementing |
+| UI-03 | P1: Access flows | Tasks | Implementing |
 | UI-04 | P1: Live rooms | Tasks | Pending |
 | UI-05 | P1: Live rooms | Tasks | Pending |
 | UI-06 | P1: Live rooms | Tasks | Pending |
@@ -177,7 +177,7 @@ Users need one place to see and steer everything: who is online, which chats fee
 | UI-22 | P2: Polish | Tasks | Pending |
 | UI-23 | P2: Polish | Tasks | Implementing |
 | UI-24 | P2: Polish | Tasks | Pending |
-| UI-25 | P2: Polish | Tasks | Pending |
+| UI-25 | P2: Polish | Tasks | Implementing |
 
 **Coverage:** 25 total, mapped in tasks.md
 

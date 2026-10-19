@@ -91,9 +91,9 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-02, UI-03, UI-25
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Error envelope parsed into ApiError fields; 401 triggers redirect callback with current path
-- [ ] Username/password zod rules reject `ab`, `UPPER`, 9-char password
-- [ ] Missing pt-BR key fails a parity test
+- [x] Error envelope parsed into ApiError fields; 401 triggers redirect callback with current path
+- [x] Username/password zod rules reject `ab`, `UPPER`, 9-char password
+- [x] Missing pt-BR key fails a parity test
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add typed api client, query hooks, schemas and i18n`
