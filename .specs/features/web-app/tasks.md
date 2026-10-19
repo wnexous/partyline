@@ -107,9 +107,9 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-04, UI-06, UI-15, UI-17
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `room.message` appends to the room's infinite query data without duplicates
-- [ ] `lagged` invalidates; reconnect requests `after_seq=lastSeq`
-- [ ] presence/connector events update the store
+- [x] `room.message` appends to the room's infinite query data without duplicates
+- [x] `lagged` invalidates; reconnect requests `after_seq=lastSeq`
+- [x] presence/connector events update the store
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add live socket with cache-patching handlers`

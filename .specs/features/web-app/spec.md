@@ -156,9 +156,9 @@ Users need one place to see and steer everything: who is online, which chats fee
 | UI-01 | P1: Access flows | Tasks | Pending |
 | UI-02 | P1: Access flows | Tasks | Implementing |
 | UI-03 | P1: Access flows | Tasks | Implementing |
-| UI-04 | P1: Live rooms | Tasks | Pending |
+| UI-04 | P1: Live rooms | Tasks | Implementing |
 | UI-05 | P1: Live rooms | Tasks | Pending |
-| UI-06 | P1: Live rooms | Tasks | Pending |
+| UI-06 | P1: Live rooms | Tasks | Implementing |
 | UI-07 | P1: Live rooms | Tasks | Pending |
 | UI-08 | P1: Live rooms | Tasks | Pending |
 | UI-09 | P1: Live rooms | Tasks | Pending |
@@ -167,9 +167,9 @@ Users need one place to see and steer everything: who is online, which chats fee
 | UI-12 | P1: Rooms management | Tasks | Pending |
 | UI-13 | P1: Rooms management | Tasks | Pending |
 | UI-14 | P1: Agents etc. | Tasks | Pending |
-| UI-15 | P1: Agents etc. | Tasks | Pending |
+| UI-15 | P1: Agents etc. | Tasks | Implementing |
 | UI-16 | P1: Agents etc. | Tasks | Pending |
-| UI-17 | P1: Agents etc. | Tasks | Pending |
+| UI-17 | P1: Agents etc. | Tasks | Implementing |
 | UI-18 | P1: Agents etc. | Tasks | Pending |
 | UI-19 | P1: Agents etc. | Tasks | Pending |
 | UI-20 | P1: Admin | Tasks | Pending |
