@@ -47,6 +47,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)
 	s.authRoutes(mux)
+	s.adminRoutes(mux)
 }
 
 // apiFunc is a handler that returns its error; handle renders it as the error envelope.
@@ -75,6 +76,16 @@ func authed(h principalFunc) apiFunc {
 		}
 		return h(w, r, p)
 	}
+}
+
+// adminOnly requires an admin user principal; other users get 403.
+func adminOnly(h principalFunc) apiFunc {
+	return authed(func(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+		if p.Role != string(dto.RoleAdmin) {
+			return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "admin role required")
+		}
+		return h(w, r, p)
+	})
 }
 
 // writeError maps service errors to API errors; unknown errors are logged and become 500.

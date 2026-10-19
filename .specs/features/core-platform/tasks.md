@@ -279,9 +279,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUTH-06, AUTH-07, AUTH-10, TOK-01, TOK-02, TOK-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Non-admin on admin routes → 403; invite accept 201 then 410 on reuse
-- [ ] Disabled user's cookie → 401 on next request
-- [ ] Token create returns secret once; list hides it
+- [x] Non-admin on admin routes → 403; invite accept 201 then 410 on reuse
+- [x] Disabled user's cookie → 401 on next request
+- [x] Token create returns secret once; list hides it
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): add invite, admin and token endpoints`
