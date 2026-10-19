@@ -11,12 +11,14 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAdminRouteRouteImport } from './routes/_app/admin/route'
 import { Route as AppAgentsRouteImport } from './routes/_app/agents'
 import { Route as AppIdentitiesRouteImport } from './routes/_app/identities'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppTokensRouteImport } from './routes/_app/tokens'
+import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppConnectorsIndexRouteImport } from './routes/_app/connectors/index'
 import { Route as AppRoomsIndexRouteImport } from './routes/_app/rooms/index'
@@ -28,6 +30,11 @@ const AppRoute = AppRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -60,6 +67,11 @@ const AppTokensRoute = AppTokensRouteImport.update({
   path: '/tokens',
   getParentRoute: () => AppRoute,
 } as any)
+const InviteTokenRoute = InviteTokenRouteImport.update({
+  id: '/invite/$token',
+  path: '/invite/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -79,22 +91,26 @@ const AppRoomsIndexRoute = AppRoomsIndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
+  '/setup': typeof SetupRoute
   '/admin': typeof AppAdminRouteRouteWithChildren
   '/agents': typeof AppAgentsRoute
   '/identities': typeof AppIdentitiesRoute
   '/settings': typeof AppSettingsRoute
   '/tokens': typeof AppTokensRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/connectors/': typeof AppConnectorsIndexRoute
   '/rooms/': typeof AppRoomsIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
+  '/setup': typeof SetupRoute
   '/admin': typeof AppAdminRouteRouteWithChildren
   '/agents': typeof AppAgentsRoute
   '/identities': typeof AppIdentitiesRoute
   '/settings': typeof AppSettingsRoute
   '/tokens': typeof AppTokensRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/': typeof AppIndexRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/connectors': typeof AppConnectorsIndexRoute
@@ -104,11 +120,13 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/setup': typeof SetupRoute
   '/_app/admin': typeof AppAdminRouteRouteWithChildren
   '/_app/agents': typeof AppAgentsRoute
   '/_app/identities': typeof AppIdentitiesRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/tokens': typeof AppTokensRoute
+  '/invite/$token': typeof InviteTokenRoute
   '/_app/': typeof AppIndexRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/connectors/': typeof AppConnectorsIndexRoute
@@ -119,22 +137,26 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/setup'
     | '/admin'
     | '/agents'
     | '/identities'
     | '/settings'
     | '/tokens'
+    | '/invite/$token'
     | '/admin/users'
     | '/connectors/'
     | '/rooms/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/setup'
     | '/admin'
     | '/agents'
     | '/identities'
     | '/settings'
     | '/tokens'
+    | '/invite/$token'
     | '/'
     | '/admin/users'
     | '/connectors'
@@ -143,11 +165,13 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/login'
+    | '/setup'
     | '/_app/admin'
     | '/_app/agents'
     | '/_app/identities'
     | '/_app/settings'
     | '/_app/tokens'
+    | '/invite/$token'
     | '/_app/'
     | '/_app/admin/users'
     | '/_app/connectors/'
@@ -157,6 +181,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  SetupRoute: typeof SetupRoute
+  InviteTokenRoute: typeof InviteTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -173,6 +199,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/': {
@@ -216,6 +249,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/tokens'
       preLoaderRoute: typeof AppTokensRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/invite/$token': {
+      id: '/invite/$token'
+      path: '/invite/$token'
+      fullPath: '/invite/$token'
+      preLoaderRoute: typeof InviteTokenRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/admin/users': {
       id: '/_app/admin/users'
@@ -280,6 +320,8 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  SetupRoute: SetupRoute,
+  InviteTokenRoute: InviteTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

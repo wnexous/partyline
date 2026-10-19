@@ -138,7 +138,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-01, UI-02, UI-03
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Setup shown when `needs_setup`; login returns to `redirect`; invalid invite shows expired state
+- [x] Setup shown when `needs_setup`; login returns to `redirect`; invalid invite shows expired state
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add setup, login and invite pages`

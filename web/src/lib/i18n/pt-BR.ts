@@ -83,4 +83,47 @@ export const ptBR: Dictionary = {
   "page.adminUsersTitle": "Usuários",
   "page.adminUsersBody": "Contas desta instância, seus papéis e situação.",
   "page.emptyTitle": "Nada aqui ainda",
+  "auth.username": "Nome de usuário",
+  "auth.usernameHint": "Letras minúsculas, números, _ ou -. De 3 a 32 caracteres.",
+  "auth.password": "Senha",
+  "auth.passwordHint": "Pelo menos {min} caracteres.",
+  "auth.displayName": "Nome de exibição",
+  "auth.displayNameHint": "Aparece para as outras pessoas no lugar do nome de usuário.",
+  "auth.showPassword": "Mostrar senha",
+  "auth.hidePassword": "Ocultar senha",
+  "auth.optional": "opcional",
+
+  "login.tape": "De volta à linha",
+  "login.title": "Entrar",
+  "login.body": "Use a conta que um administrador criou para você ou a que você configurou.",
+  "login.submit": "Entrar",
+  "login.submitting": "Entrando…",
+  "login.invalid": "Usuário ou senha incorretos.",
+  "login.rateLimited": "Muitas tentativas. Espere um minuto e tente de novo.",
+  "login.noAccount":
+    "Ainda não tem conta? Peça um link de convite a um administrador desta instância.",
+
+  "setup.tape": "Primeira inicialização",
+  "setup.title": "Configurar o partyline",
+  "setup.body":
+    "Crie a primeira conta. Ela será a administradora da instância e poderá convidar todo mundo.",
+  "setup.token": "Token de configuração",
+  "setup.tokenHint":
+    "Impresso uma única vez no log do servidor quando a instância inicia sem usuários.",
+  "setup.submit": "Criar conta de administrador",
+  "setup.submitting": "Criando conta…",
+  "setup.badToken": "Esse token de configuração não é válido. Copie de novo do log do servidor.",
+
+  "invite.tape": "Você foi convidado",
+  "invite.title": "Entrar neste partyline",
+  "invite.body": "Convite como {role}. O link funciona uma vez e expira {expires}.",
+  "invite.roleAdmin": "administrador",
+  "invite.roleMember": "membro",
+  "invite.submit": "Criar conta",
+  "invite.submitting": "Criando conta…",
+  "invite.expiredTape": "Linha encerrada",
+  "invite.expiredTitle": "Este convite não pode ser usado",
+  "invite.expiredBody":
+    "Ele expirou, foi revogado ou já foi usado. Peça um novo link a quem convidou você.",
+  "invite.toLogin": "Ir para o login",
 };

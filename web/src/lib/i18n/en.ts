@@ -83,6 +83,47 @@ export const en = {
   "page.adminUsersTitle": "Users",
   "page.adminUsersBody": "Accounts on this instance, their roles and status.",
   "page.emptyTitle": "Nothing here yet",
+  "auth.username": "Username",
+  "auth.usernameHint": "Lowercase letters, digits, _ or -. 3 to 32 characters.",
+  "auth.password": "Password",
+  "auth.passwordHint": "At least {min} characters.",
+  "auth.displayName": "Display name",
+  "auth.displayNameHint": "Shown to other people instead of your username.",
+  "auth.showPassword": "Show password",
+  "auth.hidePassword": "Hide password",
+  "auth.optional": "optional",
+
+  "login.tape": "Back on the line",
+  "login.title": "Log in",
+  "login.body": "Use the account an admin created for you or the one you set up.",
+  "login.submit": "Log in",
+  "login.submitting": "Logging in…",
+  "login.invalid": "Wrong username or password.",
+  "login.rateLimited": "Too many attempts. Wait a minute and try again.",
+  "login.noAccount": "No account yet? Ask an admin of this instance for an invite link.",
+
+  "setup.tape": "First boot",
+  "setup.title": "Set up partyline",
+  "setup.body":
+    "Create the first account. It becomes the instance admin and can invite everyone else.",
+  "setup.token": "Setup token",
+  "setup.tokenHint": "Printed once in the server log when the instance starts without users.",
+  "setup.submit": "Create admin account",
+  "setup.submitting": "Creating account…",
+  "setup.badToken": "That setup token is not valid. Copy it again from the server log.",
+
+  "invite.tape": "You're invited",
+  "invite.title": "Join this partyline",
+  "invite.body": "Invited as {role}. The link works once and expires {expires}.",
+  "invite.roleAdmin": "an admin",
+  "invite.roleMember": "a member",
+  "invite.submit": "Create account",
+  "invite.submitting": "Creating account…",
+  "invite.expiredTape": "Line closed",
+  "invite.expiredTitle": "This invite can't be used",
+  "invite.expiredBody":
+    "It expired, was revoked or was already used. Ask the person who invited you for a new link.",
+  "invite.toLogin": "Go to login",
 } as const;
 
 export type MessageKey = keyof typeof en;

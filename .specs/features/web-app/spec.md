@@ -153,7 +153,7 @@ Users need one place to see and steer everything: who is online, which chats fee
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| UI-01 | P1: Access flows | Tasks | Pending |
+| UI-01 | P1: Access flows | Tasks | Implementing |
 | UI-02 | P1: Access flows | Tasks | Implementing |
 | UI-03 | P1: Access flows | Tasks | Implementing |
 | UI-04 | P1: Live rooms | Tasks | Implementing |
