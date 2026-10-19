@@ -122,8 +122,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: SEC-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Round trip works; tampered ciphertext fails; wrong key fails
-- [ ] Generated key file has mode 0600 and is reused on next load
+- [x] Round trip works; tampered ciphertext fails; wrong key fails
+- [x] Generated key file has mode 0600 and is reused on next load
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(secrets): add aes-gcm secret box with persisted key`
