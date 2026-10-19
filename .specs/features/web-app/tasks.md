@@ -76,8 +76,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-23 (theme tokens)
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] `bun run build` outputs `web/dist`; Go embed serves it
-- [ ] One smoke test renders the root route
+- [x] `bun run build` outputs `web/dist`; Go embed serves it (embedding itself is core-platform T25)
+- [x] One smoke test renders the root route
 **Tests**: unit
 **Gate**: build
 **Commit**: `build(web): scaffold vite react app with shadcn and tanstack router`

@@ -1,0 +1,242 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * partyline design tokens. The world is a telegraph wire office: paper ground, a buff rail,
+ * blue-black ink, and telegram-tape yellow for what is live. Colors are OKLCH; every component
+ * reads them through the Tailwind theme below, never as literals.
+ */
+:root {
+  --radius: 0.375rem;
+
+  --background: oklch(0.985 0.004 95);
+  --foreground: oklch(0.235 0.03 262);
+  --card: oklch(0.996 0.002 95);
+  --card-foreground: oklch(0.235 0.03 262);
+  --popover: oklch(0.996 0.002 95);
+  --popover-foreground: oklch(0.235 0.03 262);
+  --primary: oklch(0.27 0.045 262);
+  --primary-foreground: oklch(0.985 0.004 95);
+  --secondary: oklch(0.948 0.012 90);
+  --secondary-foreground: oklch(0.235 0.03 262);
+  --muted: oklch(0.955 0.01 90);
+  --muted-foreground: oklch(0.47 0.025 262);
+  --accent: oklch(0.938 0.028 94);
+  --accent-foreground: oklch(0.235 0.03 262);
+  --destructive: oklch(0.54 0.2 28);
+  --destructive-foreground: oklch(0.985 0.004 95);
+  --border: oklch(0.888 0.013 90);
+  --input: oklch(0.86 0.015 90);
+  --ring: oklch(0.5 0.14 262);
+
+  /* Telegram tape: live traffic, the current selection, the connection line. */
+  --tape: oklch(0.9 0.135 96);
+  --tape-strong: oklch(0.82 0.16 88);
+  --tape-foreground: oklch(0.235 0.03 262);
+
+  --success: oklch(0.58 0.14 152);
+  --warning: oklch(0.7 0.15 70);
+  --info: oklch(0.52 0.12 250);
+
+  --sidebar: oklch(0.952 0.019 88);
+  --sidebar-foreground: oklch(0.3 0.03 262);
+  --sidebar-primary: oklch(0.27 0.045 262);
+  --sidebar-primary-foreground: oklch(0.985 0.004 95);
+  --sidebar-accent: oklch(0.912 0.03 90);
+  --sidebar-accent-foreground: oklch(0.2 0.03 262);
+  --sidebar-border: oklch(0.875 0.022 88);
+  --sidebar-ring: oklch(0.5 0.14 262);
+
+  --shadow-color: 262 30% 20%;
+}
+
+.dark {
+  --background: oklch(0.19 0.022 262);
+  --foreground: oklch(0.94 0.012 92);
+  --card: oklch(0.222 0.024 262);
+  --card-foreground: oklch(0.94 0.012 92);
+  --popover: oklch(0.235 0.026 262);
+  --popover-foreground: oklch(0.94 0.012 92);
+  --primary: oklch(0.88 0.135 95);
+  --primary-foreground: oklch(0.2 0.03 262);
+  --secondary: oklch(0.27 0.026 262);
+  --secondary-foreground: oklch(0.94 0.012 92);
+  --muted: oklch(0.255 0.022 262);
+  --muted-foreground: oklch(0.73 0.02 262);
+  --accent: oklch(0.29 0.03 262);
+  --accent-foreground: oklch(0.96 0.012 92);
+  --destructive: oklch(0.68 0.18 25);
+  --destructive-foreground: oklch(0.16 0.02 262);
+  --border: oklch(0.31 0.025 262);
+  --input: oklch(0.35 0.025 262);
+  --ring: oklch(0.84 0.13 92);
+
+  --tape: oklch(0.88 0.135 95);
+  --tape-strong: oklch(0.8 0.15 88);
+  --tape-foreground: oklch(0.2 0.03 262);
+
+  --success: oklch(0.74 0.15 152);
+  --warning: oklch(0.8 0.14 75);
+  --info: oklch(0.74 0.11 250);
+
+  --sidebar: oklch(0.162 0.02 262);
+  --sidebar-foreground: oklch(0.86 0.014 92);
+  --sidebar-primary: oklch(0.88 0.135 95);
+  --sidebar-primary-foreground: oklch(0.2 0.03 262);
+  --sidebar-accent: oklch(0.24 0.026 262);
+  --sidebar-accent-foreground: oklch(0.96 0.012 92);
+  --sidebar-border: oklch(0.27 0.024 262);
+  --sidebar-ring: oklch(0.84 0.13 92);
+
+  --shadow-color: 262 50% 4%;
+}
+
+@theme inline {
+  --font-sans: "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", monospace;
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-tape: var(--tape);
+  --color-tape-strong: var(--tape-strong);
+  --color-tape-foreground: var(--tape-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --shadow-xs: 0 1px 1px hsl(var(--shadow-color) / 0.06);
+  --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.08), 0 1px 1px hsl(var(--shadow-color) / 0.04);
+  --shadow-md:
+    0 4px 10px -2px hsl(var(--shadow-color) / 0.1), 0 2px 4px -2px hsl(var(--shadow-color) / 0.08);
+  --shadow-lg:
+    0 12px 28px -8px hsl(var(--shadow-color) / 0.18), 0 4px 10px -4px hsl(var(--shadow-color) / 0.1);
+
+  --animate-tape-settle: tape-settle 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-line-pulse: line-pulse 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+
+  @keyframes tape-settle {
+    from {
+      background-color: color-mix(in oklch, var(--tape) 70%, transparent);
+    }
+    to {
+      background-color: transparent;
+    }
+  }
+
+  @keyframes line-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in oklch, var(--tape-strong) 60%, transparent);
+    }
+    70%,
+    100% {
+      box-shadow: 0 0 0 6px color-mix(in oklch, var(--tape-strong) 0%, transparent);
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "ss01", "cv11";
+    font-optical-sizing: auto;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklch, var(--tape) 75%, transparent);
+    color: var(--tape-foreground);
+  }
+
+  :focus-visible {
+    outline-offset: 2px;
+  }
+
+  a {
+    text-underline-offset: 0.2em;
+  }
+
+  input,
+  textarea {
+    caret-color: var(--ring);
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    @apply font-mono;
+    font-variant-ligatures: none;
+  }
+
+  /* Numerals that line up: sequence numbers, times, counts. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 22%, transparent) transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      /* biome-ignore-start lint/complexity/noImportantStyles: reduced motion must beat every component animation */
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      /* biome-ignore-end lint/complexity/noImportantStyles: reduced motion must beat every component animation */
+    }
+  }
+}
+
+@layer utilities {
+  /* Condensed uppercase label voice, for small section labels only. */
+  .label-caps {
+    font-stretch: 78%;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+}
