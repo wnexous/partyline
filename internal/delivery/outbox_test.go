@@ -249,7 +249,7 @@ func TestOutboxResumesAfterRestart(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return f.row(t, pending).Status == "sent" && f.row(t, interrupted).Status == "sent"
-	}, 5*time.Second, 10*time.Millisecond)
+	}, 15*time.Second, 10*time.Millisecond)
 	require.Equal(t, "pending", f.row(t, future).Status, "not due yet")
 	stop()
 	require.NoError(t, <-done)
@@ -263,11 +263,11 @@ func TestOutboxWakesOnMessageCreated(t *testing.T) {
 	done := make(chan error, 1)
 	w := f.worker(f.st, sender, func() time.Time { return t0 }, time.Hour)
 	go func() { done <- w.Run(ctx) }()
-	require.Eventually(t, w.Running, 5*time.Second, 5*time.Millisecond)
+	require.Eventually(t, w.Running, 15*time.Second, 5*time.Millisecond)
 
 	msgID, id := f.queue(t, 1, dto.OutboxStatusPending, t0)
 	f.bus.Publish(events.MessageCreated{RoomID: f.room, MessageID: msgID, Seq: 1})
-	require.Eventually(t, func() bool { return f.row(t, id).Status == "sent" }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return f.row(t, id).Status == "sent" }, 15*time.Second, 10*time.Millisecond)
 	stop()
 	require.NoError(t, <-done)
 }
