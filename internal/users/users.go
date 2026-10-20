@@ -70,6 +70,9 @@ type Service struct {
 	limiter    *failureLimiter
 	audit      *audit.Log
 	bus        *events.Bus
+	// verifyPassword checks a password against its argon2id hash (authn.VerifyPassword);
+	// tests wrap it to count the slow checks a login burst runs.
+	verifyPassword func(hash, password string) (bool, error)
 
 	dummyOnce sync.Once
 	dummyHash string
@@ -91,6 +94,8 @@ func NewService(st *store.Store, opts Options) (*Service, error) {
 		limiter:    newFailureLimiter(loginMaxFailures, loginWindow),
 		audit:      audit.New(st, opts.Now),
 		bus:        opts.Bus,
+
+		verifyPassword: authn.VerifyPassword,
 	}, nil
 }
 

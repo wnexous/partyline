@@ -199,6 +199,12 @@ func TestLoginRateLimitPerIP(t *testing.T) {
 func TestLoginRateLimitConcurrentBurst(t *testing.T) {
 	f := newFixture(t)
 	f.setupAdmin(t)
+	var checks atomic.Int32
+	verify := f.svc.verifyPassword
+	f.svc.verifyPassword = func(hash, password string) (bool, error) {
+		checks.Add(1)
+		return verify(hash, password)
+	}
 	var invalid, limited atomic.Int32
 	var wg sync.WaitGroup
 	for range 30 {
@@ -217,7 +223,8 @@ func TestLoginRateLimitConcurrentBurst(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	require.Equal(t, int32(5), invalid.Load(), "password checks in a 30-request burst")
+	require.Equal(t, int32(5), checks.Load(), "password verifications in a 30-request burst")
+	require.Equal(t, int32(5), invalid.Load())
 	require.Equal(t, int32(25), limited.Load())
 }
 

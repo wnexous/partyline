@@ -788,8 +788,8 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 **Requirement**: AUTH-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A 30-request parallel burst of wrong logins runs exactly 5 password verifications (5×401, 25×429)
-- [ ] Reserving after the check (iteration-1 bug) fails the test
+- [x] A 30-request parallel burst of wrong logins runs exactly 5 password verifications (5×401, 25×429)
+- [x] Reserving after the check (iteration-1 bug) fails the test
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(users): count password verifications in the concurrent login burst`

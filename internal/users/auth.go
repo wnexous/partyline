@@ -128,13 +128,13 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (db.User, NewSession
 func (s *Service) checkPassword(ctx context.Context, username, password string) (db.User, error) {
 	u, err := s.store.R().GetUserByUsername(ctx, username)
 	if errors.Is(err, sql.ErrNoRows) {
-		_, _ = authn.VerifyPassword(s.dummyPasswordHash(), password)
+		_, _ = s.verifyPassword(s.dummyPasswordHash(), password)
 		return db.User{}, ErrInvalidCredentials
 	}
 	if err != nil {
 		return db.User{}, err
 	}
-	ok, err := authn.VerifyPassword(u.PasswordHash, password)
+	ok, err := s.verifyPassword(u.PasswordHash, password)
 	if err != nil {
 		return db.User{}, fmt.Errorf("verify password: %w", err)
 	}
