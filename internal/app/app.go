@@ -59,7 +59,9 @@ type App struct {
 	// Presence tracks connected agents; Agents is the agent registry.
 	Presence *agents.Presence
 	Agents   *agents.Registry
-	Live     *live.Hub
+	// Gateway serves the agent WebSocket and pushes messages to connected agents.
+	Gateway *agents.Gateway
+	Live    *live.Hub
 
 	handler http.Handler
 	ready   atomic.Bool
@@ -119,20 +121,24 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	}
 	a.Presence = agents.NewPresence(st, bus, opts.Now)
 	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Now: opts.Now})
+	a.Gateway = agents.NewGateway(agents.GatewayDeps{
+		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Logger: opts.Logger,
+	})
 	a.Live = live.New(live.Deps{
 		Bus: bus, Access: az, Rooms: a.Rooms, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
 	})
 	a.handler = api.New(api.Deps{
-		Config: cfg,
-		Users:  usersSvc,
-		Rooms:  a.Rooms,
-		Agents: a.Agents,
-		Blobs:  blobs,
-		Audit:  audit.New(st, opts.Now),
-		Live:   a.Live,
-		WebUI:  webui.Handler(cfg.PublicURL),
-		Logger: opts.Logger,
-		Ready:  a.ready.Load,
+		Config:  cfg,
+		Users:   usersSvc,
+		Rooms:   a.Rooms,
+		Agents:  a.Agents,
+		Blobs:   blobs,
+		Audit:   audit.New(st, opts.Now),
+		Live:    a.Live,
+		AgentWS: a.Gateway,
+		WebUI:   webui.Handler(cfg.PublicURL),
+		Logger:  opts.Logger,
+		Ready:   a.ready.Load,
 	})
 	return a, nil
 }
@@ -181,6 +187,7 @@ func (a *App) Shutdown(_ context.Context) error {
 	if a.stop != nil {
 		a.stop()
 	}
+	a.Gateway.Close()
 	a.Live.Close()
 	a.bg.Wait()
 	return a.Store.Close()

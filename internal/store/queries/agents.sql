@@ -36,3 +36,33 @@ RETURNING room_id;
 
 -- name: DeleteAgent :exec
 DELETE FROM agents WHERE id = ?;
+
+-- name: ListAgentRoomStates :many
+SELECT r.id, r.name, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor
+FROM room_members m
+JOIN rooms r ON r.id = m.room_id
+LEFT JOIN agent_cursors c ON c.agent_id = m.member_id AND c.room_id = m.room_id
+WHERE m.kind = 'agent' AND m.member_id = ?
+ORDER BY r.name, r.id;
+
+-- name: CountAgentBacklog :one
+SELECT COUNT(*) FROM messages
+WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
+  AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id));
+
+-- name: ListAgentBacklog :many
+SELECT * FROM message_views
+WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
+  AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id))
+ORDER BY seq DESC
+LIMIT sqlc.arg(limit);
+
+-- name: GetMessageRoomSeq :one
+SELECT room_id, seq FROM messages WHERE id = ?;
+
+-- name: AdvanceAgentCursor :exec
+INSERT INTO agent_cursors (agent_id, room_id, seq) VALUES (?, ?, ?)
+ON CONFLICT (agent_id, room_id) DO UPDATE SET seq = MAX(agent_cursors.seq, excluded.seq);
+
+-- name: GetAgentCursor :one
+SELECT seq FROM agent_cursors WHERE agent_id = ? AND room_id = ?;

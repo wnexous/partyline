@@ -28,6 +28,8 @@ type Deps struct {
 	Audit  *audit.Log
 	// Live serves the live WebSocket at GET /api/v1/live.
 	Live http.Handler
+	// AgentWS serves the agent WebSocket at GET /api/v1/agent/ws.
+	AgentWS http.Handler
 	// WebUI serves the web app for every other GET path (SPA fallback).
 	WebUI  http.Handler
 	Logger *slog.Logger
@@ -66,6 +68,9 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.agentRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
+	}
+	if s.AgentWS != nil {
+		mux.Handle("GET /api/v1/agent/ws", s.AgentWS)
 	}
 	// Unknown API paths get the JSON envelope, never the web app.
 	s.handle(mux, "/api/", func(http.ResponseWriter, *http.Request) error {

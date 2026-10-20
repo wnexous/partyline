@@ -78,9 +78,9 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: AGT-01, AGT-03, AGT-04, AGT-07, AGT-08, AGT-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Second connection closes the first with reason `replaced`
-- [ ] 3 offline messages delivered in seq order after connect; 60 pending → notice "10 older messages skipped…" then last 50
-- [ ] Ack advances cursor; presence online then offline after close
+- [x] Second connection closes the first with reason `replaced`
+- [x] 3 offline messages delivered in seq order after connect; 60 pending → notice "10 older messages skipped…" then last 50
+- [x] Ack advances cursor; presence online then offline after close
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(agents): add agent websocket gateway with backlog and acks`
