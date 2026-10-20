@@ -260,8 +260,8 @@ T7 → T8 → T9 → T10 → T11
 **Requirement**: WA-01, WA-03, WA-04, WA-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake evolution server: WS event → Inbound; `/send/text` body includes `quoted` on reply; `/send/media` base64 + type
-- [ ] Instance not in allowlist ignored; UA header `partyline/<version>` sent
+- [x] Fake evolution server: WS event → Inbound; `/send/text` body includes `quoted` on reply; `/send/media` base64 + type
+- [x] Instance not in allowlist ignored; UA header `partyline/<version>` sent
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(whatsapp): add evolution-go connector`

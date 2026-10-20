@@ -19,6 +19,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/connectors/whatsapp"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/identities"
@@ -59,7 +60,9 @@ type Options struct {
 // BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
 // registration line here (AD-007).
 func BuiltinKinds() []connectors.Kind {
-	return nil
+	return []connectors.Kind{
+		whatsapp.Kind(),
+	}
 }
 
 // App is one running Partyline instance.

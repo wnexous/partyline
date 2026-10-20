@@ -188,9 +188,9 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | CON-12 | P1: Chats and inbound | Tasks | Implementing |
 | WA-01 | P1: WhatsApp | Tasks | Implementing |
 | WA-02 | P1: WhatsApp | Tasks | Implementing |
-| WA-03 | P1: WhatsApp | Tasks | Pending |
-| WA-04 | P1: WhatsApp | Tasks | Pending |
-| WA-05 | P1: WhatsApp | Tasks | Pending |
+| WA-03 | P1: WhatsApp | Tasks | Implementing |
+| WA-04 | P1: WhatsApp | Tasks | Implementing |
+| WA-05 | P1: WhatsApp | Tasks | Implementing |
 | TG-01 | P1: Telegram | Tasks | Pending |
 | TG-02 | P1: Telegram | Tasks | Pending |
 | TG-03 | P1: Telegram | Tasks | Pending |
