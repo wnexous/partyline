@@ -206,6 +206,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Audit:      auditLog,
 		Live:       a.Live,
 		AgentWS:    a.Gateway,
+		Inbox:      a.Gateway,
 		WebUI:      webui.Handler(cfg.PublicURL),
 		Logger:     opts.Logger,
 		Ready:      a.ready.Load,

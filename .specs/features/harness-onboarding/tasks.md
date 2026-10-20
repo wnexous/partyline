@@ -262,7 +262,7 @@ T15 → T16 → T17
 **Requirement**: TURN-01, TURN-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Pending → exact block/deny JSON per harness; none → allow; wait times out at the given seconds (fake clock or short real bound)
+- [x] Pending → exact block/deny JSON per harness; none → allow; wait times out at the given seconds (fake clock or short real bound)
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): deliver pending messages at turn end for codex and gemini`

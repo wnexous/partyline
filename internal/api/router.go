@@ -43,6 +43,8 @@ type Deps struct {
 	Live http.Handler
 	// AgentWS serves the agent WebSocket at GET /api/v1/agent/ws.
 	AgentWS http.Handler
+	// Inbox serves GET /api/v1/agent/pending.
+	Inbox AgentInbox
 	// WebUI serves the web app for every other GET path (SPA fallback).
 	WebUI  http.Handler
 	Logger *slog.Logger

@@ -61,6 +61,13 @@ WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
 ORDER BY seq DESC
 LIMIT sqlc.arg(limit);
 
+-- name: ListAgentPending :many
+SELECT * FROM message_views
+WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
+  AND NOT (author_kind = 'agent' AND author_id = sqlc.arg(agent_id))
+ORDER BY seq ASC
+LIMIT sqlc.arg(limit);
+
 -- name: GetMessageRoomSeq :one
 SELECT room_id, seq FROM messages WHERE id = ?;
 

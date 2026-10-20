@@ -299,6 +299,66 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 	return items, nil
 }
 
+const listAgentPending = `-- name: ListAgentPending :many
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views
+WHERE room_id = ?1 AND seq > ?2
+  AND NOT (author_kind = 'agent' AND author_id = ?3)
+ORDER BY seq ASC
+LIMIT ?4
+`
+
+type ListAgentPendingParams struct {
+	RoomID   string
+	AfterSeq int64
+	AgentID  string
+	Limit    int64
+}
+
+func (q *Queries) ListAgentPending(ctx context.Context, arg ListAgentPendingParams) ([]MessageView, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentPending,
+		arg.RoomID,
+		arg.AfterSeq,
+		arg.AgentID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MessageView
+	for rows.Next() {
+		var i MessageView
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Seq,
+			&i.AuthorKind,
+			&i.AuthorID,
+			&i.AuthorUserID,
+			&i.SenderID,
+			&i.SenderAltID,
+			&i.SenderName,
+			&i.Kind,
+			&i.Text,
+			&i.ReplyTo,
+			&i.RecipientsJson,
+			&i.ExternalID,
+			&i.CreatedAt,
+			&i.AuthorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAgentRoomStates = `-- name: ListAgentRoomStates :many
 SELECT r.id, r.name, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor,
        m.display_name, m.delivery, m.keywords_json, r.instructions, r.instructions_by

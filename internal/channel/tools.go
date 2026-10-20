@@ -86,14 +86,17 @@ type toolFunc func(ctx context.Context, args json.RawMessage) (string, error)
 
 // guard reports the link's state (invalid token, replaced, deleted, unreachable) instead of
 // calling the server, bounds the call and turns errors into isError results.
-func (t *tools) guard(fn toolFunc) mcp.ToolFunc {
+func (t *tools) guard(fn toolFunc) mcp.ToolFunc { return t.guardFor(toolTimeout, fn) }
+
+// guardFor is guard with its own time bound.
+func (t *tools) guardFor(timeout time.Duration, fn toolFunc) mcp.ToolFunc {
 	return func(ctx context.Context, args json.RawMessage) (mcp.ToolResult, error) {
 		if t.link != nil {
 			if err := t.link.Err(); err != nil {
 				return mcp.ErrorResult(err.Error()), nil
 			}
 		}
-		ctx, cancel := context.WithTimeout(ctx, toolTimeout)
+		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		text, err := fn(ctx, args)
 		if err != nil {

@@ -28,6 +28,8 @@ Commands:
   channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_AGENT or the config file);
                          --tools-only serves the tools without receiving messages
   listen                 print incoming messages as JSON lines (used by the pi and OpenCode adapters)
+  hook codex-stop|gemini-after-agent
+                         turn-end hook: continue the session with undelivered room messages
   doctor                 check this machine: binary, config file, server, token, harnesses, versions
   claude [args...]       start Claude Code with the Partyline channel loaded
   healthcheck            exit 0 when the local server answers /healthz with 200
@@ -80,6 +82,8 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return channelCmd(ctx, args[2:], io)
 	case "listen":
 		return listenCmd(ctx, args[2:], io)
+	case "hook":
+		return hookCmd(ctx, args[2:], io)
 	case "doctor":
 		return doctor(ctx, io)
 	case "claude":

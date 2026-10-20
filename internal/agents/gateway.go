@@ -86,6 +86,8 @@ type Gateway struct {
 
 	// uniqueMu serializes unique-mode registrations from the name choice to the attach.
 	uniqueMu sync.Mutex
+	// pendingMu serializes Pending calls, so two callers never get the same message.
+	pendingMu sync.Mutex
 
 	// afterBacklogCount runs between the backlog count and list reads; tests use it to post
 	// a message in between. Nil in production.

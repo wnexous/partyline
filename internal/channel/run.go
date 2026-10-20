@@ -94,6 +94,7 @@ func Run(ctx context.Context, o Options) error {
 		}
 		t.api = &client{base: base, token: o.Token, agent: name, http: o.HTTPClient}
 		t.register(srv)
+		t.registerWait(srv)
 		go t.api.register(ctx, o.Stderr)
 		err := srv.Serve(ctx)
 		if errors.Is(err, context.Canceled) {

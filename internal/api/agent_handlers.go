@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/convert"
@@ -46,6 +48,63 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/react", s.agentOnly(s.agentReact))
 	s.handle(mux, "GET /api/v1/agent/attachments/{id}", s.agentOnly(s.downloadAttachment))
 	s.handle(mux, "POST /api/v1/agent/register", s.agentRegister)
+	s.handle(mux, "GET /api/v1/agent/pending", s.agentOnly(s.agentPending))
+}
+
+// AgentInbox reads an agent's undelivered messages for harnesses without the WebSocket
+// (TURN-01, TURN-02); the agent gateway implements it.
+type AgentInbox interface {
+	Pending(ctx context.Context, a db.Agent, limit int) ([]dto.AgentMessage, error)
+	Online(agentID string) bool
+}
+
+// MaxPendingWait bounds GET /agent/pending?wait= in seconds (TURN-01).
+const MaxPendingWait = 300
+
+// pendingPoll is how often a waiting GET /agent/pending looks for new messages.
+var pendingPoll = 500 * time.Millisecond
+
+var errPushedSession = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "messages are pushed to this agent's session; there is nothing to wait for")
+
+// agentPending returns up to 20 undelivered messages, oldest first, and counts them as
+// delivered. With wait=N (1-300 s) it waits up to N seconds for the first one and returns an
+// empty list on timeout. An agent connected over the WebSocket gets 409: its messages are
+// pushed there.
+func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	wait := 0
+	if v := r.URL.Query().Get("wait"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > MaxPendingWait {
+			c := validation.Check{}
+			c.Add("wait", "must be a whole number of seconds from 0 to 300")
+			return c.Err()
+		}
+		wait = n
+	}
+	a, err := s.Agents.Lookup(r.Context(), p.UserID, p.AgentName)
+	if err != nil {
+		return err
+	}
+	if s.Inbox.Online(a.ID) {
+		return errPushedSession
+	}
+	deadline := time.Now().Add(time.Duration(wait) * time.Second)
+	for {
+		msgs, err := s.Inbox.Pending(r.Context(), a, agents.PendingLimit)
+		if err != nil {
+			return err
+		}
+		left := time.Until(deadline)
+		if len(msgs) > 0 || left <= 0 {
+			httpx.WriteJSON(w, http.StatusOK, dto.List[dto.AgentMessage]{Items: msgs})
+			return nil
+		}
+		select {
+		case <-r.Context().Done():
+			return r.Context().Err()
+		case <-time.After(min(pendingPoll, left)):
+		}
+	}
 }
 
 // agentRegister registers the agent named by X-Partyline-Agent without a WebSocket, for
