@@ -174,9 +174,9 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| CON-01 | P1: Manage connectors | Tasks | Pending |
-| CON-02 | P1: Manage connectors | Tasks | Pending |
-| CON-03 | P1: Manage connectors | Tasks | Pending |
+| CON-01 | P1: Manage connectors | Tasks | Implementing |
+| CON-02 | P1: Manage connectors | Tasks | Implementing |
+| CON-03 | P1: Manage connectors | Tasks | Implementing |
 | CON-04 | P1: Manage connectors | Tasks | Pending |
 | CON-05 | P1: Manage connectors | Tasks | Pending |
 | CON-06 | P1: Manage connectors | Tasks | Pending |

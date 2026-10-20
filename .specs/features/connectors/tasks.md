@@ -64,8 +64,8 @@ T7 → T8 → T9 → T10 → T11
 **Requirement**: CON-01, CON-02, CON-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Missing required → error map `{field: "required"}`; bad url → `{field: "invalid url"}`
-- [ ] Masked read never contains secret; PATCH with mask keeps original secret
+- [x] Missing required → error map `{field: "required"}`; bad url → `{field: "invalid url"}`
+- [x] Masked read never contains secret; PATCH with mask keeps original secret
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(connectors): add kind registry, config schema and secret masking`
