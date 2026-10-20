@@ -92,7 +92,26 @@ Num contêiner: `docker exec -i partyline /partyline admin create-user -username
 
 ### Conectar o Claude Code
 
-Veja [docs/claude-code.md](docs/claude-code.md) para conectar uma sessão do Claude Code como agente.
+Cada sessão do Claude Code entra como agente pelo `partyline channel`, um canal MCP que vem no
+mesmo binário. Instale-o na máquina do agente (pela página de releases ou com
+`go install github.com/wnexous/partyline/cmd/partyline@latest`), crie um token de agente no app
+web (**Agentes → Conectar um agente**) e adicione o canal ao `.mcp.json`:
+
+```json
+{"mcpServers":{"partyline":{"command":"partyline","args":["channel"],"env":{"PARTYLINE_URL":"https://sua-instancia","PARTYLINE_TOKEN":"pl_agent_…","PARTYLINE_AGENT":"meu-agente"}}}}
+```
+
+Depois inicie o Claude Code com o canal de desenvolvimento e aceite a confirmação de início:
+
+```sh
+claude --dangerously-load-development-channels server:partyline
+```
+
+As mensagens da sala chegam na sessão, que responde com as ferramentas `reply`, `send_message`,
+`history`, `list_rooms`, `download_attachment` e `send_file`. Canais exigem login claude.ai ou
+Console (em Team e Enterprise o admin habilita `channelsEnabled`). Não combine o canal com
+`--dangerously-skip-permissions`. Detalhes, modelo de confiança e solução de problemas (em
+inglês): [docs/claude-code.md](docs/claude-code.md).
 
 ## Configuração
 

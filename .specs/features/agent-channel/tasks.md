@@ -190,8 +190,8 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: AGT-01, MCP-01, TOOL-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] E2E passes; agent name defaults to slug of working directory basename
-- [ ] Docs explain `--dangerously-load-development-channels server:partyline`, the startup confirmation and the trust model
+- [x] E2E passes; agent name defaults to slug of working directory basename
+- [x] Docs explain `--dangerously-load-development-channels server:partyline`, the startup confirmation and the trust model
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): add channel command with end-to-end test`

@@ -20,6 +20,7 @@ Commands:
   serve                  run the server (configured with PARTYLINE_* environment variables)
   admin create-user      create an account; the password is read from stdin
   admin reset-password   set a new password and end the user's sessions; reads stdin
+  channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_AGENT)
   healthcheck            exit 0 when the local server answers /healthz with 200
   version                print the build version
 `
@@ -29,6 +30,7 @@ type stdio struct {
 	stdin          io.Reader
 	stdout, stderr io.Writer
 	getenv         func(string) string
+	getwd          func() (string, error) // nil means os.Getwd
 }
 
 // Run executes the command named in args[1] and returns the process exit code. SIGINT and
@@ -36,7 +38,7 @@ type stdio struct {
 func Run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return execute(ctx, args, stdio{stdin: os.Stdin, stdout: stdout, stderr: stderr, getenv: os.Getenv})
+	return execute(ctx, args, stdio{stdin: os.Stdin, stdout: stdout, stderr: stderr, getenv: os.Getenv, getwd: os.Getwd})
 }
 
 func execute(ctx context.Context, args []string, io stdio) int {
@@ -52,6 +54,8 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return serve(ctx, io)
 	case "admin":
 		return admin(ctx, args[2:], io)
+	case "channel":
+		return channelCmd(ctx, args[2:], io)
 	case "healthcheck":
 		return healthcheck(ctx, io)
 	default:
