@@ -132,7 +132,7 @@ T15 → T16 → T17
 **Requirement**: ONB-01, ONB-02, ONB-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Installs from an httptest fixture into a temp dir; bad checksum → non-zero and no binary; PATH hint shown when needed; served script contains the instance URL
+- [x] Installs from an httptest fixture into a temp dir; bad checksum → non-zero and no binary; PATH hint shown when needed; served script contains the instance URL
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(cli): add a one-line installer`

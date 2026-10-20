@@ -75,6 +75,7 @@ func New(d Deps) http.Handler {
 func (s *server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)
+	mux.HandleFunc("GET /install.sh", s.installScript)
 	s.authRoutes(mux)
 	s.adminRoutes(mux)
 	s.roomRoutes(mux)
