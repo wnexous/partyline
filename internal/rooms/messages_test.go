@@ -524,6 +524,34 @@ func TestNoBroadcastRoomQueuesNoChatWithoutRecipients(t *testing.T) {
 	require.Equal(t, dto.NoBroadcastWarning, toOwn.Warning)
 }
 
+// ROUTE-06: in a room with broadcast off, a reply to a message of a listen-only chat reaches no
+// chat: nothing is queued, no recipient is stored and the post answers the warning, for users
+// and agents alike.
+func TestNoBroadcastReplyToListenOnlyChat(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	a1 := f.agent(t, alice, "a1")
+	_, quiet := f.chat(t, alice, "quiet")
+	_, open := f.chat(t, alice, "open")
+	r := f.room(t, alice, "inbox")
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, quiet, false)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, open, true)
+	_, err := f.svc.Update(ctx, alice, r.ID, UpdateInput{Broadcast: ptr(false)})
+	require.NoError(t, err)
+	fromQuiet, err := f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: quiet, SenderID: "1", Text: "just listening"})
+	require.NoError(t, err)
+
+	for _, p := range []authn.Principal{alice, agentPrincipal(alice, a1)} {
+		reply, err := f.svc.Post(ctx, p, r.ID, PostInput{Text: "answer", ReplyTo: fromQuiet.ID})
+		require.NoError(t, err)
+		require.Empty(t, reply.Recipients())
+		require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM outbox WHERE message_id = ?", reply.ID), "queued to no chat")
+		require.Equal(t, "not sent to any chat: this room only answers explicit chats (use reply or chat_ids)", reply.Warning)
+	}
+}
+
 // ROUTE-07: while a connector routes new chats to a room, broadcast and bridge_chats cannot
 // be turned on (422 on the field, nothing applied), for the owner and for another manager;
 // turning them off, and other settings, still work.

@@ -624,13 +624,13 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 #### T38: Reply to a listen-only chat in a broadcast-off room (B2)
 
 **What**: A reply to a message of a listen-only chat in a room with broadcast off reaches no chat and carries the warning.
-**Where**: `internal/rooms/messages_test.go`, `internal/api/no_broadcast_test.go`
+**Where**: `internal/rooms/messages_test.go`
 **Depends on**: T37
-**Reuses**: rooms fixture, `newAgentRoom`
+**Reuses**: rooms fixture
 **Requirement**: ROUTE-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] No outbox row, empty recipients, exact warning; kills B2
+- [x] No outbox row, empty recipients, exact warning; kills B2
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(rooms): send no reply to a listen-only chat in broadcast-off rooms`

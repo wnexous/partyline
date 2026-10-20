@@ -208,7 +208,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROUTE-03 | P1: Catch-all | Tasks | Implementing |
 | ROUTE-04 | P1: Catch-all | Tasks | Amended (T27), re-verify |
 | ROUTE-05 | P1: Catch-all | Tasks | Implementing |
-| ROUTE-06 | P1: Catch-all | Fix iteration 1 | Implemented (T23, T24, T31) |
+| ROUTE-06 | P1: Catch-all | Fix iteration 1 | Implemented (T23, T24, T31), listen-only reply tested (T38), re-verify |
 | ROUTE-07 | P1: Catch-all | Fix iteration 1 | Implemented (T23, T31) |
 | ROUTE-08 | P1: Catch-all | Fix iteration 1 | Implemented (T25), concurrent burst tested (T37), re-verify |
 | ROUTE-09 | P1: Catch-all | Fix iteration 1 | Implemented (T26) |
