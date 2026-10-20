@@ -742,7 +742,7 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 **Requirement**: REACT-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Table rejects bare ©, ®, ™, ‼, ↔ and a 5-component chain; accepts them with VS16 and 4-component chains
+- [x] Table rejects bare ©, ®, ™, ‼, ↔, ❤ and 5- and 8-component chains; accepts them with VS16, 4-component chains and an 11-code-point sequence; HTTP 422 for bare © and a 5-component chain
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(validation): refuse text-style symbols and long emoji chains`

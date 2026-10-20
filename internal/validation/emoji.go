@@ -5,9 +5,13 @@ import (
 	"unicode/utf8"
 )
 
-// MaxEmojiLength bounds one emoji in code points: enough for flags, keycaps, skin tones and
-// ZWJ sequences such as a family with skin tones.
-const MaxEmojiLength = 16
+// MaxEmojiZWJComponents is the most emoji a ZWJ sequence may join (REACT-05): longer chains
+// are one grapheme cluster but render as several emoji where the sequence is not supported.
+const MaxEmojiZWJComponents = 4
+
+// MaxEmojiLength bounds one emoji in code points: MaxEmojiZWJComponents emoji with a VS16 or
+// skin-tone modifier each, and the joiners between them.
+const MaxEmojiLength = 3*MaxEmojiZWJComponents - 1
 
 const (
 	zwj         = '‍'
@@ -41,12 +45,44 @@ var pictographic = [][2]rune{
 	{0x1F90C, 0x1F93A}, {0x1F93C, 0x1F945}, {0x1F947, 0x1FAFF}, {0x1FC00, 0x1FFFD},
 }
 
+// emojiPresentation lists the Emoji_Presentation ranges of Unicode emoji-data (15.0; 15.1
+// added no code points), sorted: pictographs that show as emoji without VS16.
+var emojiPresentation = [][2]rune{
+	{0x231A, 0x231B}, {0x23E9, 0x23EC}, {0x23F0, 0x23F0}, {0x23F3, 0x23F3}, {0x25FD, 0x25FE},
+	{0x2614, 0x2615}, {0x2648, 0x2653}, {0x267F, 0x267F}, {0x2693, 0x2693}, {0x26A1, 0x26A1},
+	{0x26AA, 0x26AB}, {0x26BD, 0x26BE}, {0x26C4, 0x26C5}, {0x26CE, 0x26CE}, {0x26D4, 0x26D4},
+	{0x26EA, 0x26EA}, {0x26F2, 0x26F3}, {0x26F5, 0x26F5}, {0x26FA, 0x26FA}, {0x26FD, 0x26FD},
+	{0x2705, 0x2705}, {0x270A, 0x270B}, {0x2728, 0x2728}, {0x274C, 0x274C}, {0x274E, 0x274E},
+	{0x2753, 0x2755}, {0x2757, 0x2757}, {0x2795, 0x2797}, {0x27B0, 0x27B0}, {0x27BF, 0x27BF},
+	{0x2B1B, 0x2B1C}, {0x2B50, 0x2B50}, {0x2B55, 0x2B55}, {0x1F004, 0x1F004}, {0x1F0CF, 0x1F0CF},
+	{0x1F18E, 0x1F18E}, {0x1F191, 0x1F19A}, {0x1F1E6, 0x1F1FF}, {0x1F201, 0x1F201},
+	{0x1F21A, 0x1F21A}, {0x1F22F, 0x1F22F}, {0x1F232, 0x1F236}, {0x1F238, 0x1F23A},
+	{0x1F250, 0x1F251}, {0x1F300, 0x1F320}, {0x1F32D, 0x1F335}, {0x1F337, 0x1F37C},
+	{0x1F37E, 0x1F393}, {0x1F3A0, 0x1F3CA}, {0x1F3CF, 0x1F3D3}, {0x1F3E0, 0x1F3F0},
+	{0x1F3F4, 0x1F3F4}, {0x1F3F8, 0x1F43E}, {0x1F440, 0x1F440}, {0x1F442, 0x1F4FC},
+	{0x1F4FF, 0x1F53D}, {0x1F54B, 0x1F54E}, {0x1F550, 0x1F567}, {0x1F57A, 0x1F57A},
+	{0x1F595, 0x1F596}, {0x1F5A4, 0x1F5A4}, {0x1F5FB, 0x1F64F}, {0x1F680, 0x1F6C5},
+	{0x1F6CC, 0x1F6CC}, {0x1F6D0, 0x1F6D2}, {0x1F6D5, 0x1F6D7}, {0x1F6DC, 0x1F6DF},
+	{0x1F6EB, 0x1F6EC}, {0x1F6F4, 0x1F6FC}, {0x1F7E0, 0x1F7EB}, {0x1F7F0, 0x1F7F0},
+	{0x1F90C, 0x1F93A}, {0x1F93C, 0x1F945}, {0x1F947, 0x1F9FF}, {0x1FA70, 0x1FA7C},
+	{0x1FA80, 0x1FA88}, {0x1FA90, 0x1FABD}, {0x1FABF, 0x1FAC5}, {0x1FACE, 0x1FADB},
+	{0x1FAE0, 0x1FAE8}, {0x1FAF0, 0x1FAF8},
+}
+
 func isPictographic(r rune) bool {
 	if r < pictoLowCut {
 		return false
 	}
-	i := sort.Search(len(pictographic), func(i int) bool { return pictographic[i][1] >= r })
-	return i < len(pictographic) && pictographic[i][0] <= r
+	return inRanges(pictographic, r)
+}
+
+// isEmojiPresentation tells whether r shows as an emoji by default; other pictographs such as
+// ©, ™ or arrows are text symbols unless VS16 or a skin tone follows them.
+func isEmojiPresentation(r rune) bool { return inRanges(emojiPresentation, r) }
+
+func inRanges(ranges [][2]rune, r rune) bool {
+	i := sort.Search(len(ranges), func(i int) bool { return ranges[i][1] >= r })
+	return i < len(ranges) && ranges[i][0] <= r
 }
 
 func isRegionalIndicator(r rune) bool { return r >= riFirst && r <= riLast }
@@ -56,27 +92,32 @@ func isSkinTone(r rune) bool { return r >= toneFirst && r <= toneLast }
 func isKeycapBase(r rune) bool { return (r >= '0' && r <= '9') || r == '#' || r == '*' }
 
 // OneEmoji reports whether s is exactly one emoji grapheme (REACT-05): a keycap ([0-9#*],
-// optional VS16, U+20E3), a flag (two regional indicators), or a ZWJ sequence of
-// Extended_Pictographic characters, each optionally followed by VS16 or a skin-tone
-// modifier. Anything else, including letters, digits alone and several emoji, is refused.
+// optional VS16, U+20E3), a flag (two regional indicators), or a ZWJ sequence of at most
+// MaxEmojiZWJComponents Extended_Pictographic characters, each optionally followed by VS16 or
+// a skin-tone modifier; a pictograph without emoji presentation (©, ®, ™, ‼, arrows, ❤…)
+// needs one of them. Anything else, including letters, digits alone, text-style symbols and
+// several emoji, is refused.
 func OneEmoji(s string) bool {
-	rs := []rune(s)
-	if len(rs) == 0 || len(rs) > MaxEmojiLength || !utf8.ValidString(s) {
+	if n := utf8.RuneCountInString(s); n == 0 || n > MaxEmojiLength || !utf8.ValidString(s) {
 		return false
 	}
+	rs := []rune(s)
 	switch {
 	case isKeycapBase(rs[0]):
 		return (len(rs) == 2 && rs[1] == keycapMark) || (len(rs) == 3 && rs[1] == vs16 && rs[2] == keycapMark)
 	case isRegionalIndicator(rs[0]):
 		return len(rs) == 2 && isRegionalIndicator(rs[1])
 	}
-	for i := 0; ; {
-		if !isPictographic(rs[i]) {
+	for i, components := 0, 1; ; components++ {
+		if components > MaxEmojiZWJComponents || !isPictographic(rs[i]) {
 			return false
 		}
+		base := rs[i]
 		i++
 		if i < len(rs) && (rs[i] == vs16 || isSkinTone(rs[i])) {
 			i++
+		} else if !isEmojiPresentation(base) {
+			return false // a text-style symbol without VS16
 		}
 		if i == len(rs) {
 			return true
