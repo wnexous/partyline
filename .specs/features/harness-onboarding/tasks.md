@@ -346,7 +346,7 @@ From `uat.md` (T17) follow-ups 1 and 2, the omp instructions mismatch and a flak
 **Requirement**: PUSH-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Failing fake host: a failed send is kept and delivered by a later retry; order kept; one notice per outage; no model → nothing sent until a model is there; `agent_end` retries at once
+- [x] Failing fake host: a failed send is kept and delivered by a later retry; order kept; one notice per outage; no model → nothing sent until a model is there; `agent_end` retries at once
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(integrations): hold omp messages until the session can take them`
