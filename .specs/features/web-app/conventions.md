@@ -108,3 +108,45 @@ Binding for every later web task.
 - `Connector` has no inbound URL: the webhook detail builds `${origin}/api/v1/hooks/{id}`.
 - Pairing countdown compares `PairingCode.expires_at` with the browser clock (no server time offset).
 - Admins cannot demote or disable themselves in the UI; the server has no such guard yet.
+
+# Additions from web-app Phase 4a (dashboard, palette, a11y pass)
+
+## Structure and shared components
+- Dashboard (`routes/_app/index.tsx`): switchboard (agents, connectors) beside the wire (recent
+  activity). Panels are `section aria-labelledby` with a `label-caps` h2; empty states inside a
+  titled section pass `headingLevel="h3"` to `EmptyState`.
+- `lib/presence.ts`: `withPresence`, `byLiveness`, `AgentView` (agents page and dashboard).
+- `message-item.tsx` also exports `AUTHOR_KIND` (icon, label, tile per author kind) and
+  `contentKindLabel(kind)` for text-less messages.
+- Command palette: `components/command-menu.tsx` (mounted once in `_app.tsx`, Ctrl/Cmd+K, open flag
+  `paletteOpen` in the live store, body mounts only while open). `components/search-button.tsx`
+  opens it from the sidebar; the mobile top bar has an icon button. Pages come from `NAV_GROUPS`,
+  so a new nav entry appears in the palette too.
+- Destructive confirmations: always `ui/alert-dialog.tsx` (role `alertdialog`, action styled
+  `bg-destructive text-white hover:bg-destructive/90`, `e.preventDefault()` then close on success).
+  Member removal keeps the undo toast.
+- The shell has a skip link to `<main id="main">` (`SidebarInset`).
+
+## Data
+- Dashboard feed: `useActivity()` / `queryKeys.activity` caches `Message[]` newest first, shaped by
+  `trimActivity` (≤ `ACTIVITY_PER_ROOM` per room, ≤ `ACTIVITY_SIZE` total). The live `room.message`
+  handler prepends into it only when cached; `room.deleted` drops that room; `catchUp` invalidates it.
+- DTO gap: no cross-room message feed; the dashboard samples the newest page of the
+  `ACTIVITY_ROOMS` most recently active rooms (SPEC_DEVIATION in `queries.ts`). A server
+  `GET /activity` would replace the N requests.
+
+## Accessibility and copy
+- `src/routes/a11y.test.tsx` runs vitest-axe (colour-contrast off: happy-dom has no layout) on the
+  shell, room and login pages in en and pt-BR. Add a page there when it gets a new layout.
+  `src/test/axe.d.ts` types `toHaveNoViolations` for vitest 5; extend matchers per file.
+- shadcn primitives must not carry English literals: use `useT()` inside them (dialog/sheet close,
+  sidebar sheet title, toggle labels).
+- No `transition-all`: list the properties. Overlays and scrolling lists use `overscroll-contain`.
+- English copy uses typographic apostrophes (’); tests asserting such copy must use them too.
+- `translate="no"` on the wordmark and code blocks; `theme-color` metas follow the theme
+  (`THEME_COLORS` in `lib/theme.ts`).
+
+## Tests
+- Query-cache-driven UI updates after a live event render on the next tick: wrap the assertion in
+  `waitFor` (zustand-driven updates are synchronous inside `act`).
+- Visual checks run against `/tmp/claude-1001/pl-visual/mock.ts` + `shot.mjs` (outside the repo).
