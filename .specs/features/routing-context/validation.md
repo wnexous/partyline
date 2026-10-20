@@ -29,7 +29,7 @@
 
 **Date**: 2026-10-20. **Range**: `67e3700..5ddd570`: db5fce7 (T48), 515929b (T49), 69252cd (T50), 426d4f0 (T51), 28e81a7 (T52), 9a9d660 (T53), 5ddd570 (T54). **Worktree**: `partyline-verify-rc` at 5ddd570 (detached). **Verifier**: a fresh sub-agent, not the author.
 
-**Result**: FAIL ❌. Gates are green, every escalated gap is closed, and 3 survivors on the new trimming remain (F7, F8, F9).
+**Outcome (before gap closure)**: FAIL ❌. Gates are green, every escalated gap is closed, and 3 survivors on the new trimming remain (F7, F8, F9).
 
 ### Gates
 
@@ -82,7 +82,7 @@ Scratch: `git worktree add --detach /tmp/claude-1001/pl-rc-close 5ddd570`, with 
 | F18 | `composer.tsx` trigger | picker trigger loses `ref={triggerRef}` | ✅ killed |
 
 **Sensor depth**: expanded (P0: trust labels)
-**Result**: 20/23 killed. All 5 re-applied iteration-3 survivors are killed; 3 fresh survivors remain (F7, F8, F9): FAIL ❌.
+**Sensor outcome (before gap closure)**: 20/23 killed. All 5 re-applied iteration-3 survivors are killed; 3 fresh survivors remain (F7, F8, F9): FAIL ❌.
 
 ### Laundering probe (finding 9), scratch only, discarded
 
@@ -295,7 +295,7 @@ Scratch: `git worktree add --detach /tmp/claude-1001/pl-rc-mutants3 35b48bc`, pl
 | N32 | `composer.tsx:117` | picker not marked invalid | ✅ |
 
 **Sensor depth**: expanded (P0: catch-all exposure, trust labels, mass messaging)
-**Result**: 35/40 killed. All 8 iteration-2 survivors killed; 5 fresh survivors (N6, N10, N13, N14, N30). **FAIL ❌**
+**Sensor outcome (iteration 3)**: 35/40 killed. All 8 iteration-2 survivors killed; 5 fresh survivors (N6, N10, N13, N14, N30). **FAIL ❌**
 
 ### Security probe (scratch only, discarded)
 
