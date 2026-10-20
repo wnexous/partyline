@@ -47,10 +47,10 @@ type PipelineDeps struct {
 // Pipeline turns messages received by connectors into chats and room messages.
 type Pipeline struct {
 	d PipelineDeps
-	// routeMu serializes catch-all additions so the caps hold under concurrent messages.
-	routeMu sync.Mutex
-	// routed holds, per connector, when chats were auto-added within the last hour (ROUTE-08).
-	routed map[string][]time.Time
+	// mu guards routes.
+	mu sync.Mutex
+	// routes holds the catch-all routing state of each connector (ROUTE-08, ROUTE-11).
+	routes map[string]*routeState
 	// routeHook, when set, runs once a catch-all route passed the caps and before the chat
 	// is added (tests hold routes with it).
 	routeHook func(connectorID string)
@@ -64,12 +64,33 @@ func NewPipeline(d PipelineDeps) *Pipeline {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Pipeline{d: d, routed: map[string][]time.Time{}}
+	return &Pipeline{d: d, routes: map[string]*routeState{}}
+}
+
+// routeState serializes one connector's catch-all additions, so its caps hold under
+// concurrent messages without holding up other connectors (ROUTE-11), and keeps when it
+// auto-added chats within the last hour (ROUTE-08).
+type routeState struct {
+	mu     sync.Mutex
+	routed []time.Time
+}
+
+// routeState returns the connector's routing state, creating it on first use.
+func (p *Pipeline) routeState(connectorID string) *routeState {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	st := p.routes[connectorID]
+	if st == nil {
+		st = &routeState{}
+		p.routes[connectorID] = st
+	}
+	return st
 }
 
 // Handle processes one received message: own messages are dropped (CON-12), pairing
 // commands link the sender on this connector and stop (IDN-02, IDN-03, IDN-05), the chat is
-// recorded (CON-07), a chat in no room may join the connector's catch-all room (ROUTE-01)
+// recorded (CON-07) unless a catch-all cap refuses it (ROUTE-11), a chat in no room may join
+// the connector's catch-all room (ROUTE-01)
 // and, when the chat belongs to rooms, the message is stored once per room with its media
 // (CON-08, CON-10, CON-11). Failures are logged without message content.
 func (p *Pipeline) Handle(ctx context.Context, src Source, m Inbound) {
@@ -99,19 +120,36 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 	if at.IsZero() {
 		at = p.d.Now()
 	}
-	chat, err := UpsertChat(ctx, p.d.Store, p.d.Bus, src.ConnectorID, ChatInfo{ID: m.ChatID, Title: m.ChatTitle, Kind: m.ChatKind}, at, p.d.Now())
+	info := ChatInfo{ID: m.ChatID, Title: m.ChatTitle, Kind: m.ChatKind}
+	upsert := func() (db.Chat, error) {
+		return UpsertChat(ctx, p.d.Store, p.d.Bus, src.ConnectorID, info, at, p.d.Now())
+	}
+	known, found, err := p.findChat(ctx, src.ConnectorID, m.ChatID)
 	if err != nil {
 		return err
 	}
-	roomIDs, err := p.d.Store.R().ListChatRoomIDs(ctx, chat.ID)
-	if err != nil {
+	var roomIDs []string
+	if found {
+		if roomIDs, err = p.d.Store.R().ListChatRoomIDs(ctx, known.ID); err != nil {
+			return err
+		}
+	}
+	var chat db.Chat
+	switch {
+	case strings.TrimSpace(m.Text) == "" && len(m.Media) == 0:
+		_, err := upsert()
 		return err
-	}
-	if strings.TrimSpace(m.Text) == "" && len(m.Media) == 0 {
-		return nil
-	}
-	if len(roomIDs) == 0 {
-		roomID, err := p.autoRoute(ctx, src, chat)
+	case len(roomIDs) > 0:
+		if chat, err = upsert(); err != nil {
+			return err
+		}
+	default:
+		kind := info.Kind
+		if kind == "" {
+			kind = known.Kind
+		}
+		var roomID string
+		chat, roomID, err = p.autoRoute(ctx, src, m.ChatID, kind, upsert)
 		if err != nil || roomID == "" {
 			return err // CON-07: unrouted chats keep no message
 		}
@@ -168,73 +206,111 @@ const (
 	AutoRouteLimited = "auto-route limit reached"
 )
 
-// autoRoute adds a chat that belongs to no room to the connector's catch-all room when its
-// kind matches the scope and no skip holds it out (ROUTE-01, ROUTE-02), with the connector
-// owner's rights, and returns the room id. It returns "" when the chat is not routed; a
+// autoRoute handles a message with content from a chat that belongs to no room. It records
+// the chat with upsert (CON-07) and, when its kind matches the connector's catch-all scope and
+// no skip holds it out, adds it to the catch-all room with the connector owner's rights
+// (ROUTE-01, ROUTE-02) and returns the room id; it returns "" when the chat is not routed. A
 // missing room or an owner without manage sets the status detail AutoRouteUnavailable
-// (ROUTE-03). Concurrent first messages add the chat once.
-func (p *Pipeline) autoRoute(ctx context.Context, src Source, chat db.Chat) (string, error) {
+// (ROUTE-03). A chat refused by a cap is not recorded at all: only the status detail
+// AutoRouteLimited says so (ROUTE-08, ROUTE-11). Additions of one connector are serialized,
+// so concurrent first messages add a chat once and the caps hold.
+func (p *Pipeline) autoRoute(ctx context.Context, src Source, externalID, kind string, upsert func() (db.Chat, error)) (db.Chat, string, error) {
 	c, err := p.d.Store.R().GetConnector(ctx, src.ConnectorID)
 	if err != nil {
-		return "", err
+		return db.Chat{}, "", err
 	}
-	if !scopeMatches(dto.AutoRouteScope(c.AutoRouteScope), chat.Kind) {
-		return "", nil
+	if !scopeMatches(dto.AutoRouteScope(c.AutoRouteScope), kind) {
+		chat, err := upsert()
+		return chat, "", err
 	}
-	until, err := p.d.Store.R().GetAutoRouteSkip(ctx, db.GetAutoRouteSkipParams{ConnectorID: c.ID, ChatID: chat.ID})
-	switch {
-	case err == nil && until > p.d.Now().UnixMilli():
-		return "", nil
-	case err != nil && !errors.Is(err, sql.ErrNoRows):
-		return "", err
+	st := p.routeState(c.ID)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	known, found, err := p.findChat(ctx, c.ID, externalID)
+	if err != nil {
+		return db.Chat{}, "", err
+	}
+	if found {
+		until, err := p.d.Store.R().GetAutoRouteSkip(ctx, db.GetAutoRouteSkipParams{ConnectorID: c.ID, ChatID: known.ID})
+		switch {
+		case err == nil && until > p.d.Now().UnixMilli():
+			chat, err := upsert()
+			return chat, "", err
+		case err != nil && !errors.Is(err, sql.ErrNoRows):
+			return db.Chat{}, "", err
+		}
 	}
 	if !c.AutoRouteRoomID.Valid {
-		return "", p.setDetail(ctx, c, AutoRouteUnavailable)
+		chat, err := upsert()
+		if err != nil {
+			return db.Chat{}, "", err
+		}
+		return chat, "", p.setDetail(ctx, c, AutoRouteUnavailable)
 	}
-	p.routeMu.Lock()
-	defer p.routeMu.Unlock()
-	if n, err := p.d.Store.R().CountRoomMember(ctx, db.CountRoomMemberParams{
-		RoomID: c.AutoRouteRoomID.String, Kind: string(dto.MemberKindChat), MemberID: chat.ID,
-	}); err != nil || n > 0 {
-		return c.AutoRouteRoomID.String, err // a concurrent first message added it
+	roomID := c.AutoRouteRoomID.String
+	if found {
+		n, err := p.d.Store.R().CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: roomID, Kind: string(dto.MemberKindChat), MemberID: known.ID})
+		if err != nil {
+			return db.Chat{}, "", err
+		}
+		if n > 0 { // a concurrent first message added it
+			chat, err := upsert()
+			return chat, roomID, err
+		}
 	}
 	now := p.d.Now()
-	full, err := p.d.Store.R().CountRoomChatMembers(ctx, c.AutoRouteRoomID.String)
+	full, err := p.d.Store.R().CountRoomChatMembers(ctx, roomID)
 	if err != nil {
-		return "", err
+		return db.Chat{}, "", err
 	}
-	if full >= AutoRouteRoomMax || p.recentRoutes(c.ID, now) >= AutoRoutePerHour {
-		return "", p.setDetail(ctx, c, AutoRouteLimited)
+	if full >= AutoRouteRoomMax || st.recent(now) >= AutoRoutePerHour {
+		return db.Chat{}, "", p.setDetail(ctx, c, AutoRouteLimited)
 	}
 	if p.routeHook != nil {
 		p.routeHook(c.ID)
 	}
+	chat, err := upsert()
+	if err != nil {
+		return db.Chat{}, "", err
+	}
 	owner := authn.Principal{Kind: authn.KindUser, UserID: c.OwnerID}
 	on := true
-	_, err = p.d.Rooms.AddMember(ctx, owner, c.AutoRouteRoomID.String, rooms.MemberInput{Kind: dto.MemberKindChat, MemberID: chat.ID, Outbound: &on})
+	_, err = p.d.Rooms.AddMember(ctx, owner, roomID, rooms.MemberInput{Kind: dto.MemberKindChat, MemberID: chat.ID, Outbound: &on})
 	switch {
 	case err == nil:
-		p.routed[c.ID] = append(p.routed[c.ID], now)
-		return c.AutoRouteRoomID.String, p.clearDetail(ctx, c)
+		st.routed = append(st.routed, now)
+		return chat, roomID, p.clearDetail(ctx, c)
 	case errors.Is(err, rooms.ErrAlreadyMember):
-		return c.AutoRouteRoomID.String, p.clearDetail(ctx, c)
+		return chat, roomID, p.clearDetail(ctx, c)
 	case errors.Is(err, access.ErrNotFound), errors.Is(err, access.ErrForbidden):
-		return "", p.setDetail(ctx, c, AutoRouteUnavailable)
+		return chat, "", p.setDetail(ctx, c, AutoRouteUnavailable)
 	default:
-		return "", err
+		return db.Chat{}, "", err
 	}
 }
 
-// recentRoutes drops the connector's auto-routes older than an hour and counts the rest.
-// Callers hold routeMu.
-func (p *Pipeline) recentRoutes(connectorID string, now time.Time) int {
-	times := p.routed[connectorID]
+// findChat returns the connector's chat with the platform id, if it is recorded.
+func (p *Pipeline) findChat(ctx context.Context, connectorID, externalID string) (db.Chat, bool, error) {
+	chat, err := p.d.Store.R().GetChatByExternalID(ctx, db.GetChatByExternalIDParams{ConnectorID: connectorID, ExternalID: externalID})
+	switch {
+	case err == nil:
+		return chat, true, nil
+	case errors.Is(err, sql.ErrNoRows):
+		return db.Chat{}, false, nil
+	default:
+		return db.Chat{}, false, err
+	}
+}
+
+// recent drops the connector's auto-routes older than an hour and counts the rest. Callers
+// hold mu.
+func (st *routeState) recent(now time.Time) int {
 	i := 0
-	for i < len(times) && !times[i].After(now.Add(-time.Hour)) {
+	for i < len(st.routed) && !st.routed[i].After(now.Add(-time.Hour)) {
 		i++
 	}
-	p.routed[connectorID] = times[i:]
-	return len(times) - i
+	st.routed = st.routed[i:]
+	return len(st.routed)
 }
 
 // scopeMatches tells whether a catch-all scope takes a chat kind.

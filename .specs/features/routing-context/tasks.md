@@ -714,10 +714,10 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 **Requirement**: ROUTE-08, ROUTE-11
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Capped new chat absent from the chat list; out-of-scope chat still recorded; a held route on connector A does not block connector B
+- [x] Capped new chat absent from the chat list; out-of-scope chat still recorded; a held route on connector A does not block connector B
 **Tests**: integration
 **Gate**: build
-**Commit**: `fix(connectors): record capped chats nowhere and lock routes per connector`
+**Commit**: `fix(connectors): drop capped chats and lock routes per connector`
 
 #### T45: Room name and description carry a trust label
 

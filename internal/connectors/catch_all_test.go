@@ -241,9 +241,10 @@ func TestCatchAllLostManageIsUnavailable(t *testing.T) {
 // dmPeer is a synthetic WhatsApp-style DM id.
 func dmPeer(n int) string { return fmt.Sprintf("55119%08d@s.whatsapp.net", n) }
 
-// ROUTE-08: a connector auto-adds at most 60 chats per hour. The 61st new chat in the hour is
-// not added and nothing is stored, the connector reports "auto-route limit reached", and
-// chats already routed keep flowing. An hour later the chat is added and the detail clears.
+// ROUTE-08, ROUTE-11: a connector auto-adds at most 60 chats per hour. The 61st new chat in
+// the hour is not added, not even recorded as a chat, and nothing is stored; the connector
+// reports "auto-route limit reached", and chats already routed keep flowing. An hour later the
+// chat is added and the detail clears.
 func TestCatchAllHourlyCap(t *testing.T) {
 	clock := testkit.NewClock(time.Now())
 	c := newCatchAll(t, testkit.WithClock(clock.Now))
@@ -256,7 +257,8 @@ func TestCatchAllHourlyCap(t *testing.T) {
 
 	before := c.messageCount(t)
 	c.emit(dmText(dmPeer(60), "M60", "one too many"))
-	require.NotContains(t, c.chatMembers(t, c.room.ID), c.chatID(t, dmPeer(60)))
+	require.Len(t, c.chatMembers(t, c.room.ID), 60)
+	require.False(t, c.hasChat(t, dmPeer(60)), "a capped chat leaves no chat record")
 	require.Equal(t, before, c.messageCount(t), "nothing stored")
 	require.Equal(t, "auto-route limit reached", c.connector(t).LastError)
 	c.emit(dmText(dmPeer(0), "M0b", "already routed"))
@@ -268,8 +270,9 @@ func TestCatchAllHourlyCap(t *testing.T) {
 	require.Empty(t, c.connector(t).LastError, "the next successful route clears the detail")
 }
 
-// ROUTE-08: a catch-all room holds at most 1,000 chats: with 999 chats it takes one more,
-// then a new chat is not added, nothing is stored and the connector reports the limit.
+// ROUTE-08, ROUTE-11: a catch-all room holds at most 1,000 chats: with 999 chats it takes one
+// more, then a new chat is not added nor recorded, nothing is stored and the connector reports
+// the limit.
 func TestCatchAllRoomCap(t *testing.T) {
 	c := newCatchAll(t)
 	c.setScope(t, dto.AutoRouteScopeAll, c.room.ID)
@@ -282,6 +285,7 @@ func TestCatchAllRoomCap(t *testing.T) {
 	before := c.messageCount(t)
 	c.emit(dmText(dmB, "B1", "room is full"))
 	require.Len(t, c.chatMembers(t, c.room.ID), 1000)
+	require.False(t, c.hasChat(t, dmB), "a capped chat leaves no chat record")
 	require.Equal(t, before, c.messageCount(t), "nothing stored")
 	require.Equal(t, "auto-route limit reached", c.connector(t).LastError)
 }
@@ -470,4 +474,82 @@ func TestCatchAllClearedDetailIsAnnounced(t *testing.T) {
 	c.setScope(t, dto.AutoRouteScopeDMs, c.room.ID)
 	require.Empty(t, c.connector(t).LastError)
 	require.Equal(t, cleared, drain(), "a catch-all save announces the cleared detail")
+}
+
+// hasChat tells whether the connector recorded a chat with the platform id.
+func (c *catchAll) hasChat(t *testing.T, external string) bool {
+	t.Helper()
+	for _, chat := range c.chats(t) {
+		if chat.ExternalID == external {
+			return true
+		}
+	}
+	return false
+}
+
+// ROUTE-11, CON-07: chats that are not routed for other reasons are still recorded: a chat
+// outside the scope, a chat of a connector whose catch-all room is gone, and a chat that only
+// sent an empty message.
+func TestCatchAllUnroutedChatsAreRecorded(t *testing.T) {
+	c := newCatchAll(t)
+	c.setScope(t, dto.AutoRouteScopeGroups, c.room.ID)
+	c.emit(dmText(dmA, "A1", "out of scope"))
+	require.True(t, c.hasChat(t, dmA))
+	empty := dmText(dmB, "B1", "")
+	c.emit(empty)
+	require.True(t, c.hasChat(t, dmB))
+
+	c.setScope(t, dto.AutoRouteScopeAll, c.room.ID)
+	c.alice.Delete("/api/v1/rooms/" + c.room.ID).RequireStatus(http.StatusNoContent)
+	c.emit(dmText(dmC, "C1", "room gone"))
+	require.True(t, c.hasChat(t, dmC))
+	require.Equal(t, "auto-route room unavailable", c.connector(t).LastError)
+}
+
+// ROUTE-11: catch-all additions lock per connector: while a route of alice's connector is held
+// between its cap check and the addition, a new chat of her second connector is routed to the
+// same room without waiting.
+func TestCatchAllRoutesLockPerConnector(t *testing.T) {
+	c := newCatchAll(t)
+	c.setScope(t, dto.AutoRouteScopeAll, c.room.ID)
+	all := dto.AutoRouteScopeAll
+	second := testkit.Decode[dto.Connector](c.alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+		Kind: connectortest.KindName, Name: "wa 2", Config: map[string]any{"token": "fake-token-not-real"},
+	}).RequireStatus(http.StatusCreated))
+	c.alice.Patch("/api/v1/connectors/"+second.ID, dto.UpdateConnectorRequest{AutoRouteScope: &all, AutoRouteRoomID: &c.room.ID}).RequireStatus(http.StatusOK)
+
+	held, release := make(chan struct{}), make(chan struct{})
+	p := c.ownPipeline(func(connectorID string) {
+		if connectorID == c.conn.ID {
+			close(held)
+			<-release
+		}
+	})
+	ctx := context.Background()
+	doneFirst := make(chan struct{})
+	go func() {
+		defer close(doneFirst)
+		p.Handle(ctx, c.source(), dmText(dmA, "A1", "flood"))
+	}()
+	select {
+	case <-held:
+	case <-time.After(connectortest.Timeout):
+		t.Fatal("the first connector's route never reached the hook")
+	}
+	doneSecond := make(chan struct{})
+	go func() {
+		defer close(doneSecond)
+		p.Handle(ctx, connectors.Source{ConnectorID: second.ID, Kind: connectortest.KindName, OwnerID: c.alice.User.ID}, dmText(dmB, "B1", "other connector"))
+	}()
+	select {
+	case <-doneSecond:
+	case <-time.After(connectortest.Timeout):
+		close(release)
+		<-doneFirst
+		t.Fatal("the second connector waited for the first connector's route")
+	}
+	require.Len(t, c.chatMembers(t, c.room.ID), 1, "only the second connector's chat joined so far")
+	close(release)
+	<-doneFirst
+	require.Len(t, c.chatMembers(t, c.room.ID), 2)
 }
