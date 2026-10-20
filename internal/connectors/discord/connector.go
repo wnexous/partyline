@@ -53,6 +53,7 @@ type session interface {
 	GuildChannels(guildID string, options ...discordgo.RequestOption) ([]*discordgo.Channel, error)
 	Channel(channelID string, options ...discordgo.RequestOption) (*discordgo.Channel, error)
 	Guild(guildID string, options ...discordgo.RequestOption) (*discordgo.Guild, error)
+	MessageReactionAdd(channelID, messageID, emojiID string, options ...discordgo.RequestOption) error
 }
 
 var _ session = (*discordgo.Session)(nil)

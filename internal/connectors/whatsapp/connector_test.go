@@ -45,7 +45,7 @@ type fakeEvolution struct {
 	requests []request
 	wsUA     string
 	wsToken  string
-	sendErr  int // status for /send/* when not zero
+	sendErr  int // status for /send/* and /message/react when not zero
 	// groupName is the group subject /group/info answers; groupInfoErr fails it when set.
 	groupName    string
 	groupInfoErr int
@@ -83,6 +83,10 @@ func newFakeEvolution(t *testing.T) *fakeEvolution {
 	}))
 	mux.HandleFunc("POST /send/media", f.rest("", func(request) any {
 		return map[string]any{"data": map[string]any{"Info": map[string]any{"ID": "SENT-MEDIA"}}}
+	}))
+	// POST /message/react answers like the other send endpoints of evolution-go 0.7.2.
+	mux.HandleFunc("POST /message/react", f.rest("", func(request) any {
+		return json.RawMessage(`{"data":{"Info":{"ID":"SENT-REACTION"}},"message":"success"}`)
 	}))
 	mux.HandleFunc("POST /message/downloadmedia", f.rest("", func(r request) any {
 		if _, ok := r.Body["message"].(map[string]any)["audioMessage"]; ok {
@@ -133,7 +137,7 @@ func (f *fakeEvolution) rest(key string, answer func(request) any) http.HandlerF
 			http.Error(w, "group info failed", infoErr)
 			return
 		}
-		if sendErr != 0 && strings.HasPrefix(r.URL.Path, "/send/") {
+		if sendErr != 0 && (strings.HasPrefix(r.URL.Path, "/send/") || r.URL.Path == "/message/react") {
 			http.Error(w, "send failed for "+req.APIKey, sendErr)
 			return
 		}

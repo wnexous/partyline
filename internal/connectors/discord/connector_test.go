@@ -47,6 +47,9 @@ type fakeSession struct {
 	closed   chan struct{}
 	sends    []sent
 	nextID   int
+	// reactions records MessageReactionAdd calls; reactErr fails them.
+	reactions []reaction
+	reactErr  error
 }
 
 func newFakeSession() *fakeSession {
@@ -121,6 +124,19 @@ func (f *fakeSession) Guild(id string, _ ...discordgo.RequestOption) (*discordgo
 		return &discordgo.Guild{ID: id, Name: "Test Guild"}, nil
 	}
 	return nil, errors.New("unknown guild")
+}
+
+// reaction is one MessageReactionAdd call.
+type reaction struct{ ChannelID, MessageID, Emoji string }
+
+func (f *fakeSession) MessageReactionAdd(ch, msg, emoji string, _ ...discordgo.RequestOption) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.reactErr != nil {
+		return f.reactErr
+	}
+	f.reactions = append(f.reactions, reaction{ChannelID: ch, MessageID: msg, Emoji: emoji})
+	return nil
 }
 
 func (f *fakeSession) sent() []sent {

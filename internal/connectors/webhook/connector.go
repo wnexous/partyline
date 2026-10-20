@@ -330,14 +330,63 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 		}
 		msg.Attachments = append(msg.Attachments, outAttachment{Name: f.Name, Mime: f.Mime, Size: f.Size, URL: link})
 	}
-	body, err := json.Marshal(msg)
+	data, err := c.post(ctx, msg)
 	if err != nil {
 		return "", err
+	}
+	var ack struct {
+		MessageID string `json:"message_id"`
+	}
+	if json.Unmarshal(data, &ack) == nil && ack.MessageID != "" {
+		return ack.MessageID, nil
+	}
+	return m.MessageID, nil
+}
+
+// outReaction is the outbound reaction payload (REACT-01).
+type outReaction struct {
+	Event           string          `json:"event"`
+	ConnectorID     string          `json:"connector_id"`
+	ChatID          string          `json:"chat_id"`
+	TargetMessageID string          `json:"target_message_id"`
+	Emoji           string          `json:"emoji"`
+	Message         outReactionBody `json:"message"`
+}
+
+type outReactionBody struct {
+	ID         string    `json:"id"`
+	RoomID     string    `json:"room_id"`
+	AuthorName string    `json:"author_name"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+var _ connectors.Reactor = (*Connector)(nil)
+
+// React POSTs a signed "reaction" event to the outbound URL (REACT-01): the chat, the
+// platform id of the message reacted to and the emoji, plus the room's reaction message.
+// Any non-2xx answer is a failure, as for messages.
+func (c *Connector) React(ctx context.Context, r connectors.Reaction) error {
+	if c.outboundURL == "" {
+		return errors.New("no outbound URL configured")
+	}
+	_, err := c.post(ctx, outReaction{
+		Event: "reaction", ConnectorID: c.id, ChatID: r.ChatID, TargetMessageID: r.TargetID, Emoji: r.Emoji,
+		Message: outReactionBody{ID: r.MessageID, RoomID: r.RoomID, AuthorName: r.AuthorName, CreatedAt: r.CreatedAt},
+	})
+	return err
+}
+
+// post sends v as signed JSON to the outbound URL and returns at most MaxBody bytes of a
+// 2xx answer.
+func (c *Connector) post(ctx context.Context, v any) ([]byte, error) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
 	}
 	ts := strconv.FormatInt(c.now().Unix(), 10)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.outboundURL, bytes.NewReader(body))
 	if err != nil {
-		return "", errors.New("outbound: invalid URL")
+		return nil, errors.New("outbound: invalid URL")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", c.userAgent)
@@ -345,24 +394,19 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 	req.Header.Set(SignatureHeader, Sign(c.secret, ts, body))
 	resp, err := c.client.Do(req)
 	if errors.Is(err, safehttp.ErrBlockedAddress) {
-		return "", errors.New("outbound: destination address not allowed")
+		return nil, errors.New("outbound: destination address not allowed")
 	}
 	if err != nil {
 		var ue *url.Error
 		if errors.As(err, &ue) {
 			err = ue.Err
 		}
-		return "", fmt.Errorf("outbound: %w", err)
+		return nil, fmt.Errorf("outbound: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", fmt.Errorf("outbound: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("outbound: status %d", resp.StatusCode)
 	}
-	var ack struct {
-		MessageID string `json:"message_id"`
-	}
-	if data, _ := io.ReadAll(io.LimitReader(resp.Body, MaxBody)); json.Unmarshal(data, &ack) == nil && ack.MessageID != "" {
-		return ack.MessageID, nil
-	}
-	return m.MessageID, nil
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, MaxBody))
+	return data, nil
 }

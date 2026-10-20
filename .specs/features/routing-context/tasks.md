@@ -239,7 +239,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: REACT-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Each fake receives the exact platform payload (WhatsApp includes participant only for groups)
+- [x] Each fake receives the exact platform payload (WhatsApp includes participant only for groups)
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): send reactions on every platform`
