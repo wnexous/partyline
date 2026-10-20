@@ -694,7 +694,7 @@ T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → 
 **Requirement**: AUTH-01, SEC-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] The test passes with `-count=10` under load
+- [x] The test passes with `-count=10` under load
 **Tests**: e2e
 **Gate**: full
 **Commit**: `test(cli): wait for the server start with a generous deadline`
