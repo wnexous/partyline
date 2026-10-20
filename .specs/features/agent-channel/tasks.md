@@ -244,7 +244,7 @@ T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
 - [x] A message delivered by the backlog and pushed live again arrives as exactly one frame; a newer pushed message still arrives
 **Tests**: e2e
 **Gate**: full
-**Commit**: `test(agents): send a message once when a live push overlaps the backlog`
+**Commit**: `test(api): send a message once when a live push overlaps the backlog`
 
 #### T13: Agent sockets close on token revocation and user disable
 
@@ -328,7 +328,7 @@ T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
 **Requirement**: all
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] contract-notes.md describes the revocation close, the private download dir and the test deadlines
+- [x] contract-notes.md describes the revocation close, the private download dir and the test deadlines
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record agent channel contract notes for fix iteration 1`

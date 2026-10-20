@@ -283,8 +283,8 @@ Binding conventions every later task and feature follows. Source of truth for ty
   user, when the re-check after a `lagged` bus finds it inactive, or on the periodic 60 s re-check. If the re-check
   itself fails (store error) the socket closes with 1013 `session check failed` (fail closed); clients reconnect and the
   upgrade authenticates again.
-- The agent gateway (`internal/agents`) does not consume `SessionsRevoked`; agent sockets are covered by the
-  agent-channel feature.
+- The agent gateway consumes the same event (agent-channel T13): revoking an agent token or disabling its owner
+  closes the agent socket with 1008.
 
 ## Delivery
 - `delivery.Plan` drops an explicit recipient whose chat member has `Outbound` off (defense in depth);
