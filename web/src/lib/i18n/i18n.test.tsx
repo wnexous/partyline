@@ -43,11 +43,15 @@ describe("translate", () => {
     expect(translate("en", "validation.passwordMin", { min: 10 })).toBe("At least 10 characters");
   });
 
-  it("detects pt-BR for Portuguese browsers and English otherwise", () => {
+  it("picks the first supported browser language, English when none is", () => {
     expect(detectLocale(["pt-BR", "en-US"])).toBe("pt-BR");
     expect(detectLocale(["pt"])).toBe("pt-BR");
-    expect(detectLocale(["en-US", "pt-BR"])).toBe("pt-BR");
+    expect(detectLocale(["pt-PT", "en"])).toBe("pt-BR");
+    // The browser prefers English; Portuguese is only a fallback there.
+    expect(detectLocale(["en-US", "pt-BR"])).toBe("en");
+    expect(detectLocale(["fr-FR", "pt-BR", "en"])).toBe("pt-BR");
     expect(detectLocale(["de-DE", "en"])).toBe("en");
+    expect(detectLocale(["fr"])).toBe("en");
     expect(detectLocale([])).toBe("en");
   });
 

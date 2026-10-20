@@ -66,6 +66,32 @@ describe("live socket (UI-06)", () => {
     live.stop();
   });
 
+  it("resets the delay to 1 s once a connection opens", () => {
+    const live = createLiveSocket({
+      url: "ws://test/api/v1/live",
+      createSocket: FakeSocket.create,
+      onEvent: () => {},
+    });
+    live.start();
+    // Three failed attempts: 1 s, 2 s, then 4 s would be next.
+    FakeSocket.latest().drop();
+    vi.advanceTimersByTime(1_000);
+    FakeSocket.latest().drop();
+    vi.advanceTimersByTime(2_000);
+    FakeSocket.latest().drop();
+    vi.advanceTimersByTime(4_000);
+    expect(FakeSocket.instances).toHaveLength(4);
+
+    // This one connects; the next drop retries after 1 s again.
+    FakeSocket.latest().open();
+    FakeSocket.latest().drop();
+    vi.advanceTimersByTime(999);
+    expect(FakeSocket.instances).toHaveLength(4);
+    vi.advanceTimersByTime(1);
+    expect(FakeSocket.instances).toHaveLength(5);
+    live.stop();
+  });
+
   it("parses frames into events and ignores malformed ones", () => {
     const onEvent = vi.fn();
     const live = createLiveSocket({ url: "ws://t", createSocket: FakeSocket.create, onEvent });

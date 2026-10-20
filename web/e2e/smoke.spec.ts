@@ -1,10 +1,10 @@
 import type { BrowserContext, Page, TestInfo } from "@playwright/test";
-import type { CreatedInvite, List, Me, Token } from "../src/lib/api/types.gen";
+import type { CreatedInvite, List, Me, Room, Token } from "../src/lib/api/types.gen";
 import { ADMIN, apiCall, expect, MEMBER, test } from "./fixtures";
 import type { Instance } from "./server";
 
-// Smoke suite against the built binary (web-app T19: UI-01, UI-02, UI-04, UI-14). The tests
-// share one fresh instance per project and run in order: the first one creates the admin.
+// Smoke suite against the built binary (web-app T19, T22: UI-01, UI-02, UI-04, UI-14, UI-24). The
+// tests share one fresh instance per project and run in order: the first one creates the admin.
 test.describe.configure({ mode: "serial" });
 
 const MOBILE_MAX_WIDTH = 767;
@@ -157,4 +157,50 @@ test("connect an agent shows the .mcp.json snippet with the instance URL and a n
   const created = tokens.items.filter((t) => t.kind === "agent" && t.name === "e2e-agent");
   expect(created).toHaveLength(1);
   expect(server.env.PARTYLINE_TOKEN.startsWith(created[0]?.prefix ?? "-")).toBe(true);
+});
+
+test("main pages fit the viewport with no horizontal page scroll (UI-24)", async ({
+  context,
+  page,
+  instance,
+}) => {
+  await loginAs(context, instance, ADMIN);
+  const room = await apiCall<Room>(context.request, instance, "POST", "/rooms", {
+    name: "e2e-narrow",
+  });
+  // A long unbroken token is the usual way a timeline row pushes a page sideways.
+  await apiCall(context.request, instance, "POST", `/rooms/${room.id}/messages`, {
+    text: `See https://example.com/${"a-very-long-path-segment".repeat(8)} for details`,
+  });
+
+  const pages: [string, string][] = [
+    ["/", "Overview"],
+    ["/rooms", "Rooms"],
+    [`/rooms/${room.id}`, "e2e-narrow"],
+    ["/agents", "Agents"],
+    ["/connectors", "Connectors"],
+    ["/settings", "Settings"],
+  ];
+  for (const [path, heading] of pages) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
+    if (path === `/rooms/${room.id}`) {
+      // The room page scrolls inside its timeline, so also check the long line wraps on screen.
+      const line = page.getByText(/a-very-long-path-segment/);
+      await expect(line).toBeVisible();
+      const right = await line.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getBoundingClientRect().right;
+      });
+      expect(right, "long message runs off screen").toBeLessThanOrEqual(
+        await page.evaluate(() => window.innerWidth),
+      );
+    }
+    const width = await page.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth,
+      viewport: window.innerWidth,
+    }));
+    expect(width.scroll, `${path} scrolls sideways`).toBeLessThanOrEqual(width.viewport);
+  }
 });
