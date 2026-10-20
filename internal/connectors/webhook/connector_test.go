@@ -141,6 +141,33 @@ func TestReplayIsRefused(t *testing.T) {
 	require.NoError(t, c.ReceiveHook(context.Background(), request(now, body)), "the same body with a new timestamp is a new request")
 }
 
+// HOOK-04, HOOK-05: the replay check comes before the budget. A replay of an accepted
+// request is refused as a replay (409) even when the budget is spent, and replays never use
+// the budget: with budget left, the remaining fresh requests are all accepted after them.
+func TestReplayIsRefusedBeforeTheBudget(t *testing.T) {
+	now := time.Unix(1792497600, 0)
+	c, rec := startHook(t, &now)
+	first := request(now, numbered(0))
+	require.NoError(t, c.ReceiveHook(context.Background(), first))
+	for range 2 * RateLimit {
+		require.ErrorIs(t, c.ReceiveHook(context.Background(), first), connectors.ErrReplayed)
+	}
+	for i := 1; i < RateLimit; i++ {
+		require.NoError(t, c.ReceiveHook(context.Background(), request(now, numbered(i))), "fresh request %d", i+1)
+	}
+	require.ErrorIs(t, c.ReceiveHook(context.Background(), request(now, numbered(RateLimit))), connectors.ErrRateLimited,
+		"the budget is now spent")
+
+	for _, i := range []int{0, RateLimit - 1} {
+		require.ErrorIs(t, c.ReceiveHook(context.Background(), request(now, numbered(i))), connectors.ErrReplayed,
+			"a replay with the budget spent is still a replay (request %d)", i+1)
+	}
+	for i := range RateLimit {
+		require.Equal(t, "m-"+strconv.Itoa(i), rec.NextInbound(t).MessageID)
+	}
+	require.True(t, rec.NoInbound())
+}
+
 // HOOK-02, HOOK-05: the signature header is trimmed and its hex is case-insensitive, so a
 // padded or upper-cased copy of an accepted request is a replay, not a new request.
 func TestReplayDetectionNormalizesTheSignature(t *testing.T) {

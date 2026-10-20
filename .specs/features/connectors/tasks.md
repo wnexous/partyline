@@ -573,9 +573,9 @@ replays never consume that budget.
 **Requirement**: HOOK-04, HOOK-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Budget spent (60 accepted), replay of an accepted request → `ErrReplayed`, not `ErrRateLimited`
-- [ ] With budget left, N replays do not use it: the remaining fresh requests are all accepted
-- [ ] The N17 mutant (no `seen` check in `admit`) fails the test
+- [x] Budget spent (60 accepted), replay of an accepted request → `ErrReplayed`, not `ErrRateLimited`
+- [x] With budget left, N replays do not use it: the remaining fresh requests are all accepted
+- [x] The N17 mutant (no `seen` check in `admit`) fails the test
 **Tests**: unit
 **Gate**: full
 **Commit**: `test(webhook): refuse replays before counting the rate budget`
