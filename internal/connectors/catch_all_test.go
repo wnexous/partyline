@@ -580,3 +580,35 @@ func TestCatchAllHourlyCapIsPerConnector(t *testing.T) {
 	got := testkit.Decode[dto.Connector](c.alice.Get("/api/v1/connectors/" + second.ID).RequireStatus(http.StatusOK))
 	require.Empty(t, got.LastError, "the second connector is under its own cap")
 }
+
+// ROUTE-11, CTX-08: a chat held out by the 24-hour skip is still recorded: its message updates
+// the stored title and last-seen time, while the chat stays out of the room and nothing is
+// stored.
+func TestCatchAllSkippedChatIsRecorded(t *testing.T) {
+	clock := testkit.NewClock(time.Now())
+	c := newCatchAll(t, testkit.WithClock(clock.Now))
+	c.setScope(t, dto.AutoRouteScopeAll, c.room.ID)
+	c.emit(dmText(dmA, "A1", "first"))
+	chatA := c.chatID(t, dmA)
+	member := c.chatMembers(t, c.room.ID)[chatA]
+	c.alice.Delete("/api/v1/rooms/" + c.room.ID + "/members/" + member.ID).RequireStatus(http.StatusNoContent)
+	before := c.messageCount(t)
+
+	clock.Advance(time.Hour)
+	later := dmText(dmA, "A2", "while skipped")
+	later.ChatTitle = "Customer Renamed"
+	later.At = clock.Now()
+	c.emit(later)
+	require.NotContains(t, c.chatMembers(t, c.room.ID), chatA, "still skipped")
+	require.Equal(t, before, c.messageCount(t), "nothing stored")
+	var got dto.Chat
+	for _, chat := range c.chats(t) {
+		if chat.ExternalID == dmA {
+			got = chat
+		}
+	}
+	require.Equal(t, chatA, got.ID)
+	require.Equal(t, "Customer Renamed", got.Title)
+	require.NotNil(t, got.LastSeenAt)
+	require.Equal(t, later.At.UnixMilli(), got.LastSeenAt.UnixMilli())
+}

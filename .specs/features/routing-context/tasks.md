@@ -822,7 +822,7 @@ T48 → T49 → T50 → T51 → T52 → T53 → T54
 **Requirement**: ROUTE-11, CTX-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] N10 re-applied in a scratch worktree is killed
+- [x] N10 re-applied in a scratch worktree is killed
 **Tests**: integration
 **Gate**: build
 **Commit**: `test(connectors): record chats held out by the catch-all skip`

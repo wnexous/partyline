@@ -206,7 +206,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | CTX-05 | P1: Chat titles | Tasks | Implementing |
 | CTX-06 | P1: Chat titles | Tasks | Amended (T30), re-verify |
 | CTX-07 | P1: Chat titles | Tasks | Implementing |
-| CTX-08 | P1: Chat titles | Tasks | Implementing |
+| CTX-08 | P1: Chat titles | Tasks | Implementing, skipped-chat title tested (T51) |
 | ROUTE-01 | P1: Catch-all | Tasks | Implementing |
 | ROUTE-02 | P1: Catch-all | Tasks | Implementing |
 | ROUTE-03 | P1: Catch-all | Tasks | Implementing |
@@ -217,7 +217,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROUTE-08 | P1: Catch-all | Fix iteration 1 | Implemented (T25), concurrent burst tested (T37), amended: capped chats not recorded (T44), per-connector window tested (T50), re-verify |
 | ROUTE-09 | P1: Catch-all | Fix iteration 1 | Implemented (T26), status event tested (T40), re-verify |
 | ROUTE-10 | P1: Catch-all | Fix iteration 2 | Implemented (T43) |
-| ROUTE-11 | P1: Catch-all | Fix iteration 2 | Implemented (T44), per-connector window tested (T50), re-verify |
+| ROUTE-11 | P1: Catch-all | Fix iteration 2 | Implemented (T44), per-connector window and skipped-chat recording tested (T50, T51), re-verify |
 | MEM-01 | P1: Membership settings | Tasks | Implementing |
 | MEM-02 | P1: Membership settings | Tasks | Implementing |
 | MEM-03 | P1: Membership settings | Tasks | Fixed (T18), re-verify |
