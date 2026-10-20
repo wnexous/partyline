@@ -196,7 +196,8 @@ func TestOutboxFollowsDeliveryPlan(t *testing.T) {
 	require.ErrorAs(t, err, &verr)
 	require.Contains(t, verr.Fields, "recipients")
 
-	// DLV-05: chat messages reach the other chats only when the room bridges chats.
+	// DLV-05: chat messages reach the other outbound chats only when the room bridges chats;
+	// c2 has outbound off and receives nothing.
 	m, err = f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: c1, SenderID: "5511999990000", Text: "from c1"})
 	require.NoError(t, err)
 	require.Empty(t, outboxChats(m))
@@ -204,7 +205,7 @@ func TestOutboxFollowsDeliveryPlan(t *testing.T) {
 	require.NoError(t, err)
 	m, err = f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: c1, SenderID: "5511999990000", Text: "bridged"})
 	require.NoError(t, err)
-	require.Equal(t, sorted(c2, c3), outboxChats(m))
+	require.Equal(t, []string{c3}, outboxChats(m))
 
 	// ROOM-01: a removed chat gets nothing afterwards.
 	require.NoError(t, f.svc.RemoveMember(ctx, alice, r.ID, m1.ID))

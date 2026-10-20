@@ -43,9 +43,10 @@ func TestPlanTable(t *testing.T) {
 		{"user, no recipients", false, Draft{AuthorKind: dto.AuthorKindUser, AuthorID: "U1"}, []string{"A1", "A2"}, []string{"C1", "C3"}},
 		{"non-member user, no recipients", true, Draft{AuthorKind: dto.AuthorKindUser, AuthorID: "U9"}, []string{"A1", "A2"}, []string{"C1", "C3"}},
 		{"user to C3", false, Draft{AuthorKind: dto.AuthorKindUser, AuthorID: "U1", Recipients: []string{"C3"}}, []string{"A1", "A2"}, []string{"C3"}},
-		// DLV-05: chat posts reach the other chats only when the room bridges chats.
+		// DLV-05: chat posts reach the other outbound chats only when the room bridges chats;
+		// C2 (outbound off) receives nothing, not even bridged messages.
 		{"chat C1, no bridge", false, Draft{AuthorKind: dto.AuthorKindChat, AuthorID: "C1"}, []string{"A1", "A2"}, nil},
-		{"chat C1, bridge", true, Draft{AuthorKind: dto.AuthorKindChat, AuthorID: "C1"}, []string{"A1", "A2"}, []string{"C2", "C3"}},
+		{"chat C1, bridge", true, Draft{AuthorKind: dto.AuthorKindChat, AuthorID: "C1"}, []string{"A1", "A2"}, []string{"C3"}},
 		{"chat C2, bridge", true, Draft{AuthorKind: dto.AuthorKindChat, AuthorID: "C2"}, []string{"A1", "A2"}, []string{"C1", "C3"}},
 		{"chat recipients ignored", false, Draft{AuthorKind: dto.AuthorKindChat, AuthorID: "C1", Recipients: []string{"C3"}}, []string{"A1", "A2"}, nil},
 		// System messages (loop guard notices) reach agents only.
@@ -112,7 +113,7 @@ func checkPlan(t *testing.T, name string, members []Member, msg Draft, bridge bo
 			case isAuthor: // DLV-01
 				want = false
 			case msg.AuthorKind == dto.AuthorKindChat: // DLV-05
-				want = bridge
+				want = bridge && m.Outbound
 			case msg.AuthorKind == dto.AuthorKindSystem:
 				want = false
 			case len(msg.Recipients) > 0: // DLV-04

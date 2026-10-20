@@ -100,7 +100,7 @@ Binding conventions every later task and feature follows. Source of truth for ty
 ## delivery rules (`internal/delivery/rules.go`, pure)
 - `Plan(RoomState{BridgeChats}, []Member{Kind, ID, Outbound}, Draft{AuthorKind, AuthorID, Recipients}) Targets{AgentIDs, ChatIDs}`.
   Never the author; every other agent; agent/user posts → explicit recipients only, else chats with outbound on; chat posts →
-  every other chat when bridging (outbound is not consulted, literal DLV-05), else none; system posts → agents only.
+  every other chat with outbound on when bridging (DLV-05), else none; system posts → agents only.
   Plan does not look at the pause flag: the agent dispatcher must skip rooms with `agents_paused`.
 - `Trusted(authorUserID, recipientOwnerID)`; `LoopGuard{Limit}.Next(LoopState{Streak, Paused}, authorKind) (state, pausedNow)`,
   `DefaultLoopLimit = 25`; user/chat messages reset the streak without unpausing; system messages change nothing.

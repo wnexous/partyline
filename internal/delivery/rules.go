@@ -10,7 +10,8 @@ type Member struct {
 	Kind dto.MemberKind
 	// ID is the agent, chat or user id (room_members.member_id).
 	ID string
-	// Outbound tells whether agent and user posts without explicit recipients reach this chat.
+	// Outbound tells whether agent and user posts without explicit recipients (DLV-03) and
+	// bridged chat posts (DLV-05) reach this chat.
 	Outbound bool
 }
 
@@ -42,7 +43,8 @@ type Targets struct {
 //   - every other agent member (DLV-02);
 //   - agent and user posts: the listed chats when Recipients is set (DLV-04), otherwise every
 //     chat with Outbound on (DLV-03);
-//   - chat posts: every other chat when the room bridges chats, else none (DLV-05);
+//   - chat posts: every other chat with Outbound on when the room bridges chats, else none
+//     (DLV-05);
 //   - system posts: no chats.
 func Plan(room RoomState, members []Member, msg Draft) Targets {
 	listed := make(map[string]bool, len(msg.Recipients))
@@ -77,7 +79,7 @@ func chatReceives(room RoomState, m Member, msg Draft, listed map[string]bool) b
 		}
 		return m.Outbound
 	case dto.AuthorKindChat:
-		return room.BridgeChats
+		return room.BridgeChats && m.Outbound
 	default:
 		return false
 	}
