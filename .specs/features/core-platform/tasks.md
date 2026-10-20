@@ -877,7 +877,7 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 **Requirement**: ROOM-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A 59 s old unshared blob is kept and a 61 s old one is removed
+- [x] A 59 s old unshared blob is kept and a 61 s old one is removed
 **Tests**: integration
 **Gate**: quick
 **Commit**: `test(rooms): test the one minute blob grace on room delete`
