@@ -547,3 +547,23 @@ T33 → T34 → T35 → T36 → T37 → T38
 - [x] conventions.md has a Phase 6 section; resolved DTO gaps are marked; traceability names T33-T37; `make check` passes
 **Tests**: none (docs; i18n parity test covers new strings)
 **Gate**: build
+
+## Phase 7: Generated connector fields (after connectors T34)
+
+The webhook kind now flags its `secret` as `generated` (connectors T34), so the form can leave it empty and the
+secret-once dialog from T36 becomes reachable.
+
+```
+T39
+```
+
+#### T39: Schema form lets generated fields stay empty
+**Where**: `web/src/components/schema-form.tsx`
+**Depends on**: T38
+**Requirement**: UI-16, UI-19
+**Done when**:
+- [ ] A field is required in the form only when `required && !generated`; generated fields show their help and may be empty
+- [ ] Creating a webhook with an empty secret sends `secret: ""` and shows the generated secret once; editing keeps secrets masked
+- [ ] conventions.md marks the generated-flag gap resolved
+**Tests**: unit
+**Gate**: full

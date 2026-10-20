@@ -66,6 +66,15 @@ S6, S8.
 T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → T30 → T31
 ```
 
+### Phase 5: Closure (final verifier, iteration 3)
+
+Residuals from the iteration-3 verifier: survivor N17 (HOOK-05 replay vs. a spent budget), the migration `0005` edge
+case, the generated-secret flag the web form needs (web part: web-app T39) and the S6 allowlist note.
+
+```
+T32 → T33 → T34 → T35 → T36
+```
+
 ---
 
 ## Task Breakdown
@@ -552,3 +561,81 @@ through while `PARTYLINE_ALLOW_PRIVATE_NETWORKS` stays false; README tables.
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record connectors fix iteration 2`
+
+### Phase 5: Closure (final verifier, iteration 3)
+
+#### T32: Replays are refused before the budget (N17)
+
+**What**: a replay of an accepted request answers `ErrReplayed` even when the authenticated budget is spent, and
+replays never consume that budget.
+**Where**: `internal/connectors/webhook/connector_test.go`
+**Depends on**: T31
+**Requirement**: HOOK-04, HOOK-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Budget spent (60 accepted), replay of an accepted request → `ErrReplayed`, not `ErrRateLimited`
+- [ ] With budget left, N replays do not use it: the remaining fresh requests are all accepted
+- [ ] The N17 mutant (no `seen` check in `admit`) fails the test
+**Tests**: unit
+**Gate**: full
+**Commit**: `test(webhook): refuse replays before counting the rate budget`
+
+#### T33: Migration 0005 drops codes without a connector
+
+**What**: a database at migration 0004 with a pairing code (no connector) is migrated; the code is gone and
+`pairing_codes.connector_id` is `NOT NULL`.
+**Where**: `internal/store/store_test.go`
+**Depends on**: T32
+**Requirement**: IDN-01 (edge case "pairing-code migration")
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] `TestPairingCodesPerConnectorMigrationDropsOldCodes` passes; a migration that only adds a nullable column fails it
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(store): cover the pairing-code migration dropping old codes`
+
+#### T34: Generated config fields
+
+**What**: `connectors.Field.Generated` and `dto.ConnectorField.generated` (`omitempty`); the webhook `secret` sets it.
+Create unchanged (Prepare fills it before validation); on update an empty value for a generated field keeps the
+stored value. tygo regenerated.
+**Where**: `internal/connectors/kind.go`, `internal/connectors/webhook/connector.go`, `internal/api/dto/connectors.go`,
+`internal/api/connectors_handlers.go`, `web/src/lib/api/types.gen.ts`
+**Depends on**: T33
+**Requirement**: CON-01, CON-03, HOOK-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] `GET /connector-kinds` reports `generated: true` on the webhook `secret` and omits it elsewhere
+- [ ] PATCH with `secret: ""` keeps the stored secret (old signature still accepted); a non-generated required field
+  sent empty still answers 422 `required`
+**Tests**: unit, e2e
+**Gate**: full
+**Commit**: `feat(connectors): flag generated config fields`
+
+#### T35: Allowlist guidance in the READMEs (S6 residual)
+
+**What**: README.md and README.pt-BR.md notes for `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST`: prefer `host:port` or CIDR
+entries, a bare name opens every port, list only names whose DNS you control, the list applies to every user's
+connectors.
+**Where**: `README.md`, `README.pt-BR.md`
+**Depends on**: T34
+**Requirement**: CON-13
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Both READMEs carry the four points next to the variable
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(readme): explain how to scope the private network allowlist`
+
+#### T36: Contract notes and traceability (closure)
+
+**What**: contract notes for T32-T35 and web-app T39; traceability; `make check`.
+**Where**: `.specs/features/connectors/{spec,contract-notes,tasks}.md`
+**Depends on**: T35
+**Requirement**: CON-01, HOOK-05, IDN-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Contract notes describe `Field.Generated` and the update rule; traceability names T32-T34; `make check` passes
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record connectors closure items`
