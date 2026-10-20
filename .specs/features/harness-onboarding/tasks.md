@@ -61,6 +61,12 @@ T10 → T11 → T12 → T13 → T14
 T15 → T16 → T17
 ```
 
+### Phase 5: UAT follow-ups
+
+```
+T18 → T19 → T20 → T21 → T22
+```
+
 ---
 
 ## Task Breakdown
@@ -310,3 +316,80 @@ T15 → T16 → T17
 **Tests**: e2e
 **Gate**: build
 **Commit**: `docs(specs): record real harness smoke tests`
+
+### Phase 5: UAT follow-ups
+
+From `uat.md` (T17) follow-ups 1 and 2, the omp instructions mismatch and a flaky gate test.
+
+#### T18: Trust-aware framing line
+
+**What**: the line after `<partyline …>` depends on `trusted` (PUSH-06 amended; AD-006 unchanged): owner wording for `trusted="true"`, third-party data wording otherwise. The channel and tools-only MCP instructions explain both cases.
+**Where**: `internal/channel/frame.go`, `internal/channel/instructions.go`, `integrations/{omp,pi,opencode}/partyline.ts`, `integrations/testdata/framing.json`
+**Depends on**: T17
+**Reuses**: shared framing cases (Go/TS parity)
+**Requirement**: PUSH-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] `trusted="true"` frames end with the owner line, every other value with the third-party line, in Go and in all three adapters (shared `framing.json` cases, literal spec wording)
+- [x] Hooks and `wait_for_messages` use the trust-aware line
+- [x] Channel and tools-only instructions explain both cases
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(channel): tell agents when a framed message comes from their owner`
+
+#### T19: omp holds messages it could not deliver
+
+**What**: the omp extension keeps undelivered messages in an in-memory queue (no model selected, send threw or rejected), retries with backoff (1 s doubling to 30 s) and on `agent_end`, in order, and shows one notice per outage.
+**Where**: `integrations/omp/partyline.ts`
+**Depends on**: T18
+**Reuses**: `FakeTime` from `testdata/fakes.ts`
+**Requirement**: PUSH-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Failing fake host: a failed send is kept and delivered by a later retry; order kept; one notice per outage; no model → nothing sent until a model is there; `agent_end` retries at once
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(integrations): hold omp messages until the session can take them`
+
+#### T20: `channel --harness omp`
+
+**What**: `partyline channel --harness omp` serves the full channel with MCP instructions that describe the `<partyline …>` framing the omp extension produces; setup and the web's manual entry register `["channel", "--harness", "omp"]`.
+**Where**: `internal/cli/channel.go`, `internal/channel/instructions.go`, `internal/channel/run.go`, `internal/harness/files.go`, `web/src/lib/agent-connect.ts`
+**Depends on**: T19
+**Reuses**: instruction paragraphs
+**Requirement**: PUSH-03, PUSH-06, HAR-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] `--harness omp` instructions describe `<partyline …>` framing, push delivery and the connect notice, no `<channel` and no `wait_for_messages`; unknown harness or `--tools-only` with it → exit 2
+- [ ] omp registrar writes `args: ["channel", "--harness", "omp"]`; the wizard's manual omp entry matches
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(cli): describe the partyline framing to omp sessions`
+
+#### T21: Deterministic paused-room notice test
+
+**What**: `TestAgentWSInstructionsNoticeInPausedRoom` pauses the room before posting, so the live dispatcher can never see the room unpaused and push the message.
+**Where**: `internal/api/room_info_test.go`
+**Depends on**: T20
+**Reuses**: `TestDispatchSkipsPausedRoom` ordering
+**Requirement**: INS-03 (routing-context), DLV-08
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Passes with `-count=20`, and with an injected dispatcher delay that fails the old ordering
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(api): pause the room before posting in the paused notice test`
+
+#### T22: Record the follow-up fixes
+
+**What**: contract notes for T18-T21, `uat.md` notes on the fixes, traceability.
+**Where**: `.specs/features/harness-onboarding/contract-notes.md`, `uat.md`, `spec.md`
+**Depends on**: T21
+**Reuses**: none
+**Requirement**: PUSH-03, PUSH-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Contract notes, uat.md and traceability describe the shipped behavior
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record the harness uat follow-up fixes`
