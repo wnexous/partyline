@@ -3,6 +3,7 @@
 package channel
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,6 +51,25 @@ func TestToolDownloadRefusesSharedDirectory(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, entries, "nothing is written into a shared directory")
 	})
+
+	// Any group or other permission bit is enough to refuse the directory.
+	for _, mode := range []os.FileMode{0o750, 0o705} {
+		t.Run(fmt.Sprintf("agent dir mode %04o", mode), func(t *testing.T) {
+			e := newChanEnv(t)
+			o := e.options()
+			dir := filepath.Join(o.TempDir, "partyline", "builder")
+			require.NoError(t, os.MkdirAll(dir, 0o700))
+			require.NoError(t, os.Chmod(dir, mode)) // #nosec G302 -- the test plants a shared directory
+			s := e.connected(o)
+			m := e.postFile("report.txt", "secret report")
+			text, isErr := s.call("download_attachment", toolArgs("attachment_id", m.Attachments[0].ID))
+			require.True(t, isErr, text)
+			require.Contains(t, text, fmt.Sprintf("download directory %s is open to other users (mode %04o)", dir, mode))
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			require.Empty(t, entries, "nothing is written into a shared directory")
+		})
+	}
 }
 
 // TOOL-06 hardening (S1): a symlink planted at the download's file name is replaced by the

@@ -365,8 +365,8 @@ T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: TOOL-06 (S1 hardening)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 0750 and 0705 agent dirs → isError, nothing written
-- [ ] The test fails with the mask `0o077` narrowed to `0o007` or `0o070` (N3)
+- [x] 0750 and 0705 agent dirs → isError, nothing written
+- [x] The test fails with the mask `0o077` narrowed to `0o007` or `0o070` (N3)
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(channel): refuse download dirs open to the group or to others`
