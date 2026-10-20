@@ -303,6 +303,27 @@ func TestFailureLimiterIsBounded(t *testing.T) {
 	require.Contains(t, l.byKey, "new")
 }
 
+// AUTH-05 (DoS bound): a full limiter prunes expired windows whenever a new key arrives, not
+// only once per window, so new networks are refused only until some window expires.
+func TestFullLimiterAcceptsNewKeysOnceAWindowExpires(t *testing.T) {
+	l := newFailureLimiter(2, time.Minute)
+	l.maxKeys = 3
+	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
+	at := func(d time.Duration) time.Time { return now.Add(d) }
+
+	require.True(t, l.Begin("a", at(0)))
+	require.True(t, l.Begin("b", at(10*time.Second)))
+	require.True(t, l.Begin("c", at(20*time.Second)))
+	// a expired at 60 s: the full limiter makes room for d.
+	require.True(t, l.Begin("d", at(61*time.Second)))
+	require.Len(t, l.byKey, 3)
+	// Full again (b, c, d). b expired at 70 s; e must fit at 75 s even though the last
+	// prune ran only 14 s ago.
+	require.True(t, l.Begin("e", at(75*time.Second)), "new key refused after a window expired")
+	require.NotContains(t, l.byKey, "b")
+	require.Contains(t, l.byKey, "c", "an active window is never evicted")
+}
+
 // AUTH-05 (DoS bound): the service's limiter allows 5 failures per minute and tracks at most
 // 10,000 client networks.
 func TestLoginLimiterDefaults(t *testing.T) {
