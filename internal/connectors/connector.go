@@ -133,6 +133,9 @@ type Deps struct {
 	// AllowPrivateNetworks lets the connector reach non-public addresses; pass it to
 	// safehttp for every platform call (CON-13).
 	AllowPrivateNetworks bool
+	// Replays remembers accepted hook signatures across restarts (HOOK-05); nil for kinds
+	// without InboundHook or in tests.
+	Replays Replays
 }
 
 // MaxHookBody is the largest accepted body of POST /api/v1/hooks/{connector_id}.

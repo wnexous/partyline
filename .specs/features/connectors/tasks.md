@@ -451,9 +451,9 @@ deleted on insert. The webhook checks and records signatures there.
 **Requirement**: HOOK-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Accept, disable → enable, replay → 409, one message stored
-- [ ] Accept, restart the app on the same data dir, replay → 409
-- [ ] Expired rows are removed when a new signature is recorded
+- [x] Accept, disable → enable, replay → 409, one message stored
+- [x] Accept, restart the app on the same data dir, replay → 409
+- [x] Expired rows are removed when a new signature is recorded
 **Tests**: integration, e2e
 **Gate**: full
 **Commit**: `fix(webhook): persist accepted signatures across restarts`

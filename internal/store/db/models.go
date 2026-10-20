@@ -214,3 +214,9 @@ type User struct {
 	DisabledAt   sql.NullInt64
 	CreatedAt    int64
 }
+
+type WebhookReplay struct {
+	ConnectorID string
+	SigHash     string
+	ExpiresAt   int64
+}

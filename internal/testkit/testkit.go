@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -52,7 +53,10 @@ type Env struct {
 	// Origin is the public URL's origin; clients send it as their Origin header.
 	Origin string
 
-	admin *Client
+	admin   *Client
+	cfg     *config.Config
+	appOpts app.Options
+	handler atomic.Pointer[http.Handler]
 }
 
 type options struct {
@@ -112,16 +116,35 @@ func New(t testing.TB, opts ...Option) *Env {
 	cfg, err := config.Load(func(k string) string { return o.env[k] })
 	require.NoError(t, err)
 
-	a, err := app.New(cfg, app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox})
-	require.NoError(t, err)
-	require.NoError(t, a.Start(context.Background()))
-	srv.Config.Handler = a.Handler()
+	e := &Env{
+		T: t, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host, cfg: cfg,
+		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox},
+	}
+	e.startApp()
+	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*e.handler.Load()).ServeHTTP(w, r) })
 	srv.Start()
 	t.Cleanup(func() {
 		srv.Close()
-		_ = a.Shutdown(context.Background())
+		_ = e.App.Shutdown(context.Background())
 	})
-	return &Env{T: t, App: a, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host}
+	return e
+}
+
+func (e *Env) startApp() {
+	a, err := app.New(e.cfg, e.appOpts)
+	require.NoError(e.T, err)
+	require.NoError(e.T, a.Start(context.Background()))
+	h := a.Handler()
+	e.App = a
+	e.handler.Store(&h)
+}
+
+// Restart shuts the app down and starts a new one on the same data dir and config behind
+// the same server, like a server restart. Sessions and tokens stay valid.
+func (e *Env) Restart() {
+	e.T.Helper()
+	require.NoError(e.T, e.App.Shutdown(context.Background()))
+	e.startApp()
 }
 
 // Anon returns a client without credentials (it keeps cookies it receives).

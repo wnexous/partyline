@@ -103,11 +103,12 @@ type Connector struct {
 	client      *http.Client
 	now         func() time.Time
 
+	replays     connectors.Replays
+
 	mu      sync.Mutex
 	run     *running
-	window  window               // authenticated requests
-	invalid map[string]window    // invalid requests by client IP
-	seen    map[string]time.Time // accepted signature → forget after
+	window  window            // authenticated requests
+	invalid map[string]window // invalid requests by client IP
 }
 
 // window counts requests in a one-minute window.
@@ -141,10 +142,14 @@ func New(cfg connectors.Config, d connectors.Deps) *Connector {
 	if log == nil {
 		log = slog.Default()
 	}
+	replays := d.Replays
+	if replays == nil {
+		replays = connectors.NewMemoryReplays()
+	}
 	return &Connector{
 		id: d.ID, secret: cfg.String("secret"), outboundURL: cfg.String("outbound_url"), userAgent: d.UserAgent,
 		fileURL: d.FileURL, log: log, client: safehttp.NewClient(safehttp.Options{AllowPrivate: d.AllowPrivateNetworks, Timeout: requestTimeout}), now: time.Now,
-		invalid: map[string]window{}, seen: map[string]time.Time{},
+		replays: replays, invalid: map[string]window{},
 	}
 }
 
@@ -185,7 +190,7 @@ func (c *Connector) ReceiveHook(ctx context.Context, r connectors.HookRequest) e
 		}
 		return connectors.ErrBadSignature
 	}
-	if err := c.admit(want); err != nil {
+	if err := c.admit(ctx, want); err != nil {
 		return err
 	}
 	var p payload
@@ -230,24 +235,31 @@ func (c *Connector) validTimestamp(ts string) bool {
 	return d <= MaxSkew && d >= -MaxSkew
 }
 
-// admit refuses a signature seen within ReplayTTL (ErrReplayed), then counts the request
-// in the connector's one-minute window (ErrRateLimited) and remembers the signature.
-func (c *Connector) admit(signature string) error {
+// admit refuses a signature accepted within ReplayTTL (ErrReplayed), then counts the
+// request in the connector's one-minute window (ErrRateLimited) and remembers the
+// signature. Accepted signatures live in Deps.Replays (the database in the app), so they
+// survive connector and server restarts (HOOK-05). Replays never consume the budget.
+func (c *Connector) admit(ctx context.Context, signature string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.now()
-	for sig, until := range c.seen { // at most RateLimit × ReplayTTL/minute entries
-		if now.After(until) {
-			delete(c.seen, sig)
-		}
+	seen, err := c.replays.Seen(ctx, c.id, signature, now)
+	if err != nil {
+		return err
 	}
-	if _, ok := c.seen[signature]; ok {
+	if seen {
 		return connectors.ErrReplayed
 	}
 	if !c.window.add(now, RateLimit) {
 		return connectors.ErrRateLimited
 	}
-	c.seen[signature] = now.Add(ReplayTTL)
+	added, err := c.replays.Remember(ctx, c.id, signature, now, now.Add(ReplayTTL))
+	if err != nil {
+		return err
+	}
+	if !added {
+		return connectors.ErrReplayed
+	}
 	return nil
 }
 

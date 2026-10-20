@@ -93,6 +93,8 @@ type ManagerDeps struct {
 	FileURL func(attachmentID string) string
 	// AllowPrivateNetworks is passed to connectors (CON-13).
 	AllowPrivateNetworks bool
+	// Replays is passed to connectors (HOOK-05); nil leaves it unset.
+	Replays Replays
 	// Inbound receives every message of a running connector (the inbound pipeline); nil
 	// drops them.
 	Inbound func(ctx context.Context, src Source, m Inbound)
@@ -207,7 +209,7 @@ func (m *Manager) Apply(id string) {
 	sec := k.SecretValues(cfg)
 	conn, err := k.New(cfg, Deps{
 		ID: id, Logger: m.d.Logger.With("connector_id", id, "kind", k.Name), UserAgent: m.d.UserAgent, FileURL: m.d.FileURL,
-		AllowPrivateNetworks: m.d.AllowPrivateNetworks,
+		AllowPrivateNetworks: m.d.AllowPrivateNetworks, Replays: m.d.Replays,
 	})
 	if err != nil {
 		m.persist(id, StatusError, Redact(err.Error(), sec))
