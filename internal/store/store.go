@@ -79,6 +79,17 @@ func (s *Store) WithTx(ctx context.Context, fn func(q *db.Queries) error) error 
 	return nil
 }
 
+// ReadTx runs fn inside a read-only transaction on the read pool. Every query in fn reads
+// the same snapshot (WAL): writes committed meanwhile are not seen.
+func (s *Store) ReadTx(ctx context.Context, fn func(q *db.Queries) error) error {
+	tx, err := s.read.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("begin read: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	return fn(db.New(tx))
+}
+
 // Migrate applies the embedded migrations that are not yet recorded in schema_migrations.
 func (s *Store) Migrate(ctx context.Context) error {
 	if _, err := s.write.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (

@@ -455,7 +455,7 @@ T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AGT-09 (S6)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A post between the count and the list (test hook) leaves the notice count equal to the messages before the first delivered one; the new post arrives after the backlog
+- [x] A post between the count and the list (test hook) leaves the notice count equal to the messages before the first delivered one; the new post arrives after the backlog
 **Tests**: e2e
 **Gate**: full
 **Commit**: `fix(agents): read the backlog count and messages from one snapshot`

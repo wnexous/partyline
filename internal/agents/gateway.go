@@ -74,6 +74,10 @@ type Gateway struct {
 	mu     sync.Mutex
 	closed bool
 	wg     sync.WaitGroup
+
+	// afterBacklogCount runs between the backlog count and list reads; tests use it to post
+	// a message in between. Nil in production.
+	afterBacklogCount func()
 }
 
 // NewGateway returns a Gateway.
@@ -344,16 +348,27 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 			continue // DLV-08: no agent delivery while the loop guard holds the room
 		}
 		ref := dto.RoomRef{ID: st.ID, Name: st.Name}
-		pending, err := g.d.Store.R().CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, AgentID: a.ID})
+		// The count and the list read one snapshot, so a message posted in between cannot
+		// make the skipped count disagree with the cursor jump (S6).
+		var pending int64
+		var views []db.MessageView
+		err := g.d.Store.ReadTx(ctx, func(q *db.Queries) error {
+			var err error
+			pending, err = q.CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, AgentID: a.ID})
+			if err != nil || pending == 0 {
+				return err
+			}
+			if g.afterBacklogCount != nil {
+				g.afterBacklogCount()
+			}
+			views, err = q.ListAgentBacklog(ctx, db.ListAgentBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, AgentID: a.ID, Limit: BacklogLimit})
+			return err
+		})
 		if err != nil {
 			return nil, err
 		}
 		if pending == 0 {
 			continue
-		}
-		views, err := g.d.Store.R().ListAgentBacklog(ctx, db.ListAgentBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, AgentID: a.ID, Limit: BacklogLimit})
-		if err != nil {
-			return nil, err
 		}
 		slices.Reverse(views) // oldest first
 		if skipped := pending - int64(len(views)); skipped > 0 {
