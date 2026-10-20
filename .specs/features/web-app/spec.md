@@ -98,7 +98,7 @@ Users need one place to see and steer everything: who is online, which chats fee
 
 **Acceptance Criteria**:
 
-1. WHEN the user opens "Connect an agent" THEN the app SHALL create an agent token and show a ready-to-copy `.mcp.json` snippet and launch command containing the instance URL. (UI-14)
+1. WHEN the user opens "Connect an agent" THEN the app SHALL create an agent token and show a ready-to-copy `.mcp.json` snippet containing the instance URL and the token, and the launch command. (UI-14)
 2. The app SHALL show each agent with live online/offline state and last-seen time. (UI-15)
 3. WHEN adding a connector THEN the app SHALL render the form from the kind's field schema with secret fields as password inputs. (UI-16)
 4. The app SHALL show each connector's live status and last error. (UI-17)
