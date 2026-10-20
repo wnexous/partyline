@@ -16,6 +16,7 @@ import {
 import { Form } from "@/components/ui/form";
 import { isApiError } from "@/lib/api/client";
 import { useCreateRoom } from "@/lib/api/queries";
+import type { Room } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/lib/forms";
 import { useT } from "@/lib/i18n";
 import { type CreateRoomForm, createRoomSchema } from "@/lib/schemas";
@@ -40,20 +41,21 @@ export function CreateRoomDialog({ trigger }: { trigger: ReactNode }) {
     }
   };
 
-  const onSubmit = form.handleSubmit((values) => {
+  // mutateAsync, not mutate callbacks: the first room replaces the empty state that holds this
+  // dialog, and mutate's per-call callbacks never run once the component has unmounted.
+  const onSubmit = form.handleSubmit(async (values) => {
     setFormError(null);
-    const parsed = createRoomSchema.parse(values);
-    create.mutate(parsed, {
-      onSuccess: (room) => {
-        setOpen(false);
-        form.reset();
-        void navigate({ to: "/rooms/$roomId", params: { roomId: room.id } });
-      },
-      onError: (err) => {
-        if (applyFieldErrors(err, form.setError, ["name", "description"])) return;
-        setFormError(isApiError(err) && err.status === 0 ? t("error.network") : t("error.generic"));
-      },
-    });
+    let room: Room;
+    try {
+      room = await create.mutateAsync(createRoomSchema.parse(values));
+    } catch (err) {
+      if (applyFieldErrors(err, form.setError, ["name", "description"])) return;
+      setFormError(isApiError(err) && err.status === 0 ? t("error.network") : t("error.generic"));
+      return;
+    }
+    setOpen(false);
+    form.reset();
+    void navigate({ to: "/rooms/$roomId", params: { roomId: room.id } });
   });
 
   return (
