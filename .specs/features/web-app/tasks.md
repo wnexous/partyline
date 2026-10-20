@@ -374,7 +374,7 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T20
 **Requirement**: UI-07
 **Done when**:
-- [ ] `my_level: "view"` → read-only notice and no message textbox; `post` → message textbox
+- [x] `my_level: "view"` → read-only notice and no message textbox; `post` → message textbox
 **Tests**: unit
 **Gate**: quick
 

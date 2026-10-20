@@ -177,6 +177,22 @@ describe("member picker (UI-10)", () => {
   });
 });
 
+describe("composer by access level (UI-07)", () => {
+  it("shows a read-only notice and no composer to view-only users", async () => {
+    roomApi({ my_level: "view" });
+    renderRoute("/rooms/r1");
+    expect(await screen.findByText(/You can read this room but not post/)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Message deploys" })).toBeNull();
+  });
+
+  it("shows the composer to users with post", async () => {
+    roomApi({ my_level: "post" });
+    renderRoute("/rooms/r1");
+    expect(await screen.findByRole("textbox", { name: "Message deploys" })).toBeInTheDocument();
+    expect(screen.queryByText(/You can read this room but not post/)).toBeNull();
+  });
+});
+
 describe("loop guard banner (UI-08)", () => {
   it("shows a resume button to managers that posts /resume", async () => {
     const { calls } = roomApi(
