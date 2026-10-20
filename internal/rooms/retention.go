@@ -13,6 +13,9 @@ const (
 	RetentionInterval = 24 * time.Hour
 	// blobGrace protects blobs stored recently: a message referencing them may still be committing.
 	blobGrace = time.Hour
+	// deleteBlobGrace is the same guard when a room is deleted: blobs written within it are
+	// left to the sweep.
+	deleteBlobGrace = time.Minute
 	// retentionBatch bounds each delete so the single writer is never held for long.
 	retentionBatch = 1000
 )
@@ -71,5 +74,21 @@ func (s *Service) RunRetention(ctx context.Context, interval time.Duration, log 
 			return nil
 		case <-ticker.C:
 		}
+	}
+}
+
+// removeRoomBlobs deletes, best effort, the blobs of a deleted room that no attachment
+// references any more (ROOM-02); the retention sweep remains the backstop.
+func (s *Service) removeRoomBlobs(ctx context.Context, shas []string) {
+	if s.blobs == nil {
+		return
+	}
+	cutoff := s.now().Add(-deleteBlobGrace)
+	for _, sha := range shas {
+		n, err := s.store.R().CountAttachmentsBySHA(ctx, sha)
+		if err != nil || n > 0 {
+			continue
+		}
+		_, _ = s.blobs.DeleteIfOlder(sha, cutoff)
 	}
 }

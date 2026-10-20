@@ -42,7 +42,7 @@ type Deps struct {
 	Now func() time.Time
 	// LoopGuard pauses agent delivery after consecutive agent messages (DLV-08).
 	LoopGuard delivery.LoopGuard
-	// Blobs is swept by the retention job; nil skips the blob sweep.
+	// Blobs is swept by the retention job and cleaned when a room is deleted; nil skips both.
 	Blobs *attachments.Store
 }
 
@@ -252,12 +252,16 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 }
 
 // Delete removes a room with its members, grants, messages, attachments, cursors and outbox
-// entries (ROOM-02); requires manage.
+// entries, then its blob files no other attachment references (ROOM-02); requires manage.
 func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) error {
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
 		return err
 	}
-	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+	var shas []string
+	err := s.store.WithTx(ctx, func(q *db.Queries) (err error) {
+		if shas, err = q.ListRoomAttachmentSHAs(ctx, roomID); err != nil {
+			return err
+		}
 		if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(access.KindRoom), ResourceID: roomID}); err != nil {
 			return err
 		}
@@ -267,6 +271,7 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) 
 	if err != nil {
 		return err
 	}
+	s.removeRoomBlobs(ctx, shas)
 	s.bus.Publish(events.RoomChanged{RoomID: roomID, Deleted: true})
 	return nil
 }

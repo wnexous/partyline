@@ -580,7 +580,7 @@ T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → 
 **Requirement**: ROOM-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Deleting a room removes its unshared blob files at once and keeps blobs another room references
+- [x] Deleting a room removes its unshared blob files at once and keeps blobs another room references
 **Tests**: integration
 **Gate**: full
 **Commit**: `fix(rooms): remove unshared blobs right after deleting a room`

@@ -93,3 +93,37 @@ func TestRetentionCleanup(t *testing.T) {
 	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM messages WHERE room_id = ?", forever.ID))
 	require.False(t, blobExists(blobDir, shared.SHA256))
 }
+
+// ROOM-02: deleting a room removes its blob files right after the delete commits, except
+// blobs another room's attachments still reference and blobs written in the last minute
+// (an upload of the same content may still be committing; the sweep removes those later).
+func TestDeleteRoomRemovesUnsharedBlobs(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	blobDir := filepath.Join(f.dir, "blobs")
+	blobs, err := attachments.Open(blobDir)
+	require.NoError(t, err)
+	f.svc = New(Deps{Store: f.st, Access: f.az, Bus: f.bus, Now: f.clock.Now, Blobs: blobs})
+
+	alice := f.user(t, "alice", dto.RoleMember)
+	doomed := f.room(t, alice, "doomed")
+	kept := f.room(t, alice, "kept")
+	old := t0.Add(-time.Hour)
+	only := putBlob(t, blobs, blobDir, "only-in-doomed", old)
+	twice := putBlob(t, blobs, blobDir, "twice-in-doomed", old)
+	shared := putBlob(t, blobs, blobDir, "shared", old)
+	fresh := putBlob(t, blobs, blobDir, "fresh", t0)
+	_, err = f.svc.Post(ctx, alice, doomed.ID, PostInput{Text: "files", Files: []File{only, twice, shared, fresh}})
+	require.NoError(t, err)
+	_, err = f.svc.Post(ctx, alice, doomed.ID, PostInput{Text: "again", Files: []File{twice}})
+	require.NoError(t, err)
+	_, err = f.svc.Post(ctx, alice, kept.ID, PostInput{Text: "shared", Files: []File{shared}})
+	require.NoError(t, err)
+
+	require.NoError(t, f.svc.Delete(ctx, alice, doomed.ID))
+
+	require.False(t, blobExists(blobDir, only.SHA256), "a blob only the deleted room used is removed at once")
+	require.False(t, blobExists(blobDir, twice.SHA256), "a blob used twice in the deleted room is removed")
+	require.True(t, blobExists(blobDir, shared.SHA256), "a blob another room references stays")
+	require.True(t, blobExists(blobDir, fresh.SHA256), "a blob written in the last minute is left to the sweep")
+}

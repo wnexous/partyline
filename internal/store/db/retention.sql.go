@@ -40,3 +40,31 @@ func (q *Queries) DeleteExpiredMessages(ctx context.Context, arg DeleteExpiredMe
 	}
 	return result.RowsAffected()
 }
+
+const listRoomAttachmentSHAs = `-- name: ListRoomAttachmentSHAs :many
+SELECT DISTINCT a.sha256 FROM attachments a JOIN messages m ON m.id = a.message_id
+WHERE m.room_id = ?
+`
+
+func (q *Queries) ListRoomAttachmentSHAs(ctx context.Context, roomID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listRoomAttachmentSHAs, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var sha256 string
+		if err := rows.Scan(&sha256); err != nil {
+			return nil, err
+		}
+		items = append(items, sha256)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

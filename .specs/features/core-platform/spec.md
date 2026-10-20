@@ -193,6 +193,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 - WHEN a grant targets a disabled user THEN the system SHALL keep it but deny access while the user is disabled (AUTH-10).
 - WHEN a session ends (logout, session delete, password change or reset, user disabled) THEN the system SHALL close that session's live WebSockets within 1 second, and SHALL re-check every live socket's session, token and user at least every 60 seconds (AUTH-09, AUTH-10).
 - WHEN a user changes their password THEN the system SHALL end the user's other sessions and keep the current one (AUTH-09).
+- WHEN a room is deleted THEN the system SHALL remove, right after the delete, its attachment files that no other attachment references; files written in the last minute are left to the daily orphan sweep, since an upload of the same content may still be committing (ROOM-02).
 
 ---
 
@@ -223,7 +224,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | ACL-07 | P1: Rooms and sharing | Tasks | Implementing |
 | ACL-08 | P1: Rooms and sharing | Tasks | Implementing |
 | ROOM-01 | P1: Rooms and sharing | Fix T28 | Fixed, re-verify |
-| ROOM-02 | P1: Rooms and sharing | Tasks | Implementing |
+| ROOM-02 | P1: Rooms and sharing | Fix T33 | Fixed, re-verify |
 | MSG-01 | P1: Messages and delivery | Tasks | Implementing |
 | MSG-02 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-01 | P1: Messages and delivery | Tasks | Implementing |
