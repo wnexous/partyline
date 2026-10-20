@@ -165,10 +165,10 @@ Users need one place to see and steer everything: who is online, which chats fee
 | UI-10 | P1: Rooms management | Tasks | Implementing |
 | UI-11 | P1: Rooms management | Tasks | Implementing |
 | UI-12 | P1: Rooms management | Tasks | Implementing |
-| UI-13 | P1: Rooms management | Tasks | Pending |
+| UI-13 | P1: Rooms management | Tasks | Implementing |
 | UI-14 | P1: Agents etc. | Tasks | Implementing |
 | UI-15 | P1: Agents etc. | Tasks | Implementing |
-| UI-16 | P1: Agents etc. | Tasks | Pending |
+| UI-16 | P1: Agents etc. | Tasks | Implementing |
 | UI-17 | P1: Agents etc. | Tasks | Implementing |
 | UI-18 | P1: Agents etc. | Tasks | Pending |
 | UI-19 | P1: Agents etc. | Tasks | Pending |

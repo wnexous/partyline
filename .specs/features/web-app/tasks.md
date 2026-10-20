@@ -243,8 +243,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-13, UI-16, UI-17
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Field types map to inputs (secret → password); required errors shown from zod and 422
-- [ ] "Route to agent" calls `/chats/{id}/route` and navigates to the room
+- [x] Field types map to inputs (secret → password); required errors shown from zod and 422
+- [x] "Route to agent" calls `/chats/{id}/route` and navigates to the room
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add connector pages with schema-driven forms`

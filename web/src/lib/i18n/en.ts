@@ -347,6 +347,67 @@ export const en = {
   "connect.waiting": "Waiting for {name} to come online…",
   "connect.online": "{name} is online",
   "connect.done": "Done",
+  "common.saving": "Saving…",
+  "validation.url": "Enter a full URL, like https://example.com",
+  "schema.removeTag": "Remove {value}",
+  "schema.tagPlaceholder": "Type a value and press Enter",
+
+  "connectors.listLabel": "Your connectors",
+  "connectors.loadError": "Couldn't load your connectors.",
+  "connectors.emptyTitle": "No connectors yet",
+  "connectors.emptyBody":
+    "Connect a WhatsApp, Telegram, Discord or webhook account. Its chats can then join rooms and reach your agents.",
+  "connectors.add": "Add connector",
+  "connectors.addTitle": "Add connector",
+  "connectors.addBody":
+    "Pick the platform, then fill in the account details. Secrets are stored encrypted and never shown again.",
+  "connectors.platform": "Platform",
+  "connectors.kindsError": "Couldn't load the platforms. Close and try again.",
+  "connectors.name": "Name",
+  "connectors.nameHint": "Yours to pick, like ops-bot or support-whatsapp.",
+  "connectors.status.stopped": "Stopped",
+  "connectors.status.connecting": "Connecting",
+  "connectors.status.connected": "Connected",
+  "connectors.status.error": "Error",
+  "connectors.disabled": "Disabled",
+
+  "connector.notFoundTitle": "This connector is not on your line",
+  "connector.notFoundBody": "It was deleted, or it is no longer shared with you.",
+  "connector.back": "Back to connectors",
+  "connector.lastError": "Last error",
+  "connector.enabled": "Enabled",
+  "connector.enabledHint": "When off, partyline disconnects the account and stops its chats.",
+  "connector.updateFailed": "Couldn't update the connector.",
+  "connector.inboundTitle": "Inbound webhook",
+  "connector.inboundBody":
+    "POST chat messages here, signed with the connector secret in the X-Partyline-Signature and X-Partyline-Timestamp headers.",
+  "connector.inboundUrl": "Inbound URL",
+  "connector.chats": "Chats",
+  "connector.refresh": "Refresh chats",
+  "connector.refreshFailed": "Couldn't refresh the chats.",
+  "connector.noChats":
+    "No chats yet. A chat shows up here when the account receives its first message.",
+  "connector.settings": "Connector settings",
+  "connector.settingsBody":
+    "Secrets show as dots: leave them to keep the stored value. Saving reconnects the account.",
+  "connector.saved": "Connector saved",
+  "connector.deleteHint": "Deleting removes its chats from every room.",
+  "connector.delete": "Delete connector",
+  "connector.deleteTitle": "Delete {name}?",
+  "connector.deleteBody":
+    "The account disconnects and its chats leave every room. Messages already in rooms stay.",
+  "connector.deleted": "{name} deleted",
+  "connector.deleteFailed": "Couldn't delete the connector.",
+
+  "route.open": "Route {chat} to an agent",
+  "route.short": "Route to agent",
+  "route.title": "Route {chat} to an agent",
+  "route.body":
+    "Creates a private room with this chat and the agent you pick, then opens it. Change members or sharing there.",
+  "route.filter": "Filter agents",
+  "route.noAgents": "No agents you can use yet.",
+  "route.done": "{chat} now reaches {agent}",
+  "route.failed": "Couldn't create the room. Try again.",
 } as const;
 
 export type MessageKey = keyof typeof en;
