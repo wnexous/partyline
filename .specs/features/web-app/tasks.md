@@ -228,8 +228,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-14, UI-15
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Snippet contains `partyline channel`, the URL from `window.location.origin` and the new token
-- [ ] Presence event flips the row's status dot
+- [x] Snippet contains `partyline channel`, the URL from `window.location.origin` and the new token
+- [x] Presence event flips the row's status dot
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add agents page with connect wizard`

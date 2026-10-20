@@ -303,4 +303,53 @@ export const ptBR: Dictionary = {
   "sharing.forbidden": "Só o dono pode mudar quem tem acesso.",
   "sharing.loadError": "Não foi possível carregar o compartilhamento atual. Feche e tente de novo.",
   "room.share": "Compartilhar",
+  "common.copyWhat": "Copiar {what}",
+  "validation.agentName": "Use a-z, 0-9, ponto, _ ou -, começando com letra ou dígito (máx. 48)",
+
+  "agents.listLabel": "Seus agentes",
+  "agents.loadError": "Não foi possível carregar seus agentes.",
+  "agents.emptyTitle": "Nenhum agente ainda",
+  "agents.emptyBody":
+    "Conecte uma sessão do Claude Code: ela entra com um token de agente e aparece aqui quando fica online.",
+  "agents.lastSeen": "Visto {time}",
+  "agents.neverSeen": "Nunca conectou",
+  "agents.share": "Compartilhar {name}",
+  "agents.delete": "Excluir {name}",
+  "agents.deleteShort": "Excluir",
+  "agents.deleteTitle": "Excluir {name}?",
+  "agents.deleteBody":
+    "Ele sai de todas as salas e perde o compartilhamento. Uma sessão que conectar de novo com esse nome entra como um agente novo. Revogue o token em Tokens de API para bloqueá-la.",
+  "agents.deleteConfirm": "Excluir agente",
+  "agents.deleted": "{name} excluído",
+  "agents.deleteFailed": "Não foi possível excluir {name}.",
+
+  "connect.open": "Conectar um agente",
+  "connect.title": "Conectar um agente",
+  "connect.body":
+    "Dê um nome à sessão do Claude Code. O partyline cria um token de agente e mostra a configuração para a máquina onde a sessão roda.",
+  "connect.doneBody": "Configure {name} na máquina onde o Claude Code roda.",
+  "connect.name": "Nome do agente",
+  "connect.nameHint": "A sessão entra nas salas com este nome. Reutilize-o para manter as salas.",
+  "connect.tokenNote":
+    "Cria um token de agente. Ele só acessa a API de agentes, e você pode revogá-lo em Tokens de API.",
+  "connect.create": "Criar token",
+  "connect.creating": "Criando token…",
+  "connect.onceWarning":
+    "O token aparece só agora, dentro da configuração abaixo. Copie antes de fechar esta janela.",
+  "connect.stepInstall": "Instale o partyline",
+  "connect.installBody": "Baixe o binário do seu sistema em",
+  "connect.releases": "GitHub Releases",
+  "connect.installLabel": "Comando de instalação",
+  "connect.stepConfig": "Adicione o canal ao .mcp.json",
+  "connect.configBody":
+    "Coloque isto no .mcp.json na raiz do projeto, ou junte aos mcpServers que você já tem.",
+  "connect.stepLaunch": "Inicie o Claude Code com o canal",
+  "connect.launchBody": "Rode isto na mesma pasta do projeto.",
+  "connect.launchLabel": "Comando de inicialização",
+  "connect.confirmNote":
+    "O Claude Code mostra uma tela de confirmação ao iniciar, porque canais de desenvolvimento estão em prévia de pesquisa. Confirme uma vez.",
+  "connect.docs": "Guia do Claude Code",
+  "connect.waiting": "Aguardando {name} ficar online…",
+  "connect.online": "{name} está online",
+  "connect.done": "Concluir",
 };

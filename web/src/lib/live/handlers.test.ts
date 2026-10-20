@@ -97,6 +97,24 @@ describe("live handlers", () => {
     expect(qc.getQueryData<RoomMember[]>(queryKeys.roomMembers("r1"))?.[0]?.online).toBe(true);
   });
 
+  it("agent.presence for an agent missing from the cached list refetches the list (UI-14)", () => {
+    qc.setQueryData<Agent[]>(queryKeys.agents, [{ id: "a1", online: false } as Agent]);
+    handleLiveEvent(qc, actions(), {
+      type: "agent.presence",
+      data: { agent_id: "a9", online: true },
+    });
+    expect(qc.getQueryState(queryKeys.agents)?.isInvalidated).toBe(true);
+  });
+
+  it("agent.presence for a cached agent patches without refetching", () => {
+    qc.setQueryData<Agent[]>(queryKeys.agents, [{ id: "a1", online: false } as Agent]);
+    handleLiveEvent(qc, actions(), {
+      type: "agent.presence",
+      data: { agent_id: "a1", online: true },
+    });
+    expect(qc.getQueryState(queryKeys.agents)?.isInvalidated).toBe(false);
+  });
+
   it("connector.status updates the store and the cached connector (UI-17)", () => {
     qc.setQueryData<Connector>(queryKeys.connector("c1"), {
       id: "c1",

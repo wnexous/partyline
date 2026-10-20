@@ -134,6 +134,11 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
         online,
         last_seen_at: last_seen_at ?? a.last_seen_at,
       }));
+      // Agents are created on their first connection: an unknown id means the list is stale.
+      const cached = qc.getQueryData<Agent[]>(queryKeys.agents);
+      if (cached && !cached.some((a) => a.id === agent_id)) {
+        qc.invalidateQueries({ queryKey: queryKeys.agents, exact: true });
+      }
       for (const [key, members] of qc.getQueriesData<RoomMember[]>({ queryKey: ["rooms"] })) {
         if (key[2] !== "members" || !members) continue;
         if (!members.some((mb) => mb.kind === "agent" && mb.member_id === agent_id)) continue;

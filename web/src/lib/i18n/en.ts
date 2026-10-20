@@ -298,6 +298,55 @@ export const en = {
   "sharing.forbidden": "Only the owner can change who has access.",
   "sharing.loadError": "Couldn't load the current sharing. Close and try again.",
   "room.share": "Share",
+  "common.copyWhat": "Copy {what}",
+  "validation.agentName": "Use a-z, 0-9, dot, _ or -, starting with a letter or digit (max 48)",
+
+  "agents.listLabel": "Your agents",
+  "agents.loadError": "Couldn't load your agents.",
+  "agents.emptyTitle": "No agents yet",
+  "agents.emptyBody":
+    "Connect a Claude Code session: it joins with an agent token and shows up here when it's online.",
+  "agents.lastSeen": "Last seen {time}",
+  "agents.neverSeen": "Never connected",
+  "agents.share": "Share {name}",
+  "agents.delete": "Delete {name}",
+  "agents.deleteShort": "Delete",
+  "agents.deleteTitle": "Delete {name}?",
+  "agents.deleteBody":
+    "It leaves every room and loses its sharing. A session that connects again with this name registers as a new agent. Revoke its token under API tokens to keep it out.",
+  "agents.deleteConfirm": "Delete agent",
+  "agents.deleted": "{name} deleted",
+  "agents.deleteFailed": "Couldn't delete {name}.",
+
+  "connect.open": "Connect an agent",
+  "connect.title": "Connect an agent",
+  "connect.body":
+    "Name the Claude Code session. Partyline creates an agent token and prints the config for the machine where the session runs.",
+  "connect.doneBody": "Set up {name} on the machine where Claude Code runs.",
+  "connect.name": "Agent name",
+  "connect.nameHint": "The session joins rooms under this name. Reuse it so it keeps its rooms.",
+  "connect.tokenNote":
+    "Creates an agent token. It can only reach the agent API, and you can revoke it under API tokens.",
+  "connect.create": "Create token",
+  "connect.creating": "Creating token…",
+  "connect.onceWarning":
+    "The token is shown only now, inside the config below. Copy it before you close this window.",
+  "connect.stepInstall": "Install partyline",
+  "connect.installBody": "Download the binary for your system from",
+  "connect.releases": "GitHub Releases",
+  "connect.installLabel": "Install command",
+  "connect.stepConfig": "Add the channel to .mcp.json",
+  "connect.configBody":
+    "Put this in .mcp.json at the root of the project, or merge it into the mcpServers you already have.",
+  "connect.stepLaunch": "Start Claude Code with the channel",
+  "connect.launchBody": "Run this in the same project folder.",
+  "connect.launchLabel": "Launch command",
+  "connect.confirmNote":
+    "Claude Code shows a confirmation screen at startup, because development channels are a research preview. Confirm it once.",
+  "connect.docs": "Claude Code guide",
+  "connect.waiting": "Waiting for {name} to come online…",
+  "connect.online": "{name} is online",
+  "connect.done": "Done",
 } as const;
 
 export type MessageKey = keyof typeof en;
