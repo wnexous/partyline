@@ -56,3 +56,55 @@ Binding for every later web task.
 - Agent Markdown: react-markdown without rehype-raw (raw HTML shows as text), default URL transform, links open in a new tab with `noopener noreferrer nofollow`, images become links.
 - DTO gaps for the backend: `Room` has no member count (rooms list omits it); `Message` has no viewer-relative trust flag (derived as above).
 - `make check` needs `sqlc` and `tygo` on PATH; without them run `make check SQLC="go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1" TYGO="go run github.com/gzuidhof/tygo@v0.2.21"`.
+
+# Additions from web-app Phase 3 (management)
+
+## Structure and shared components
+- A dialog opened from a page that can switch between its empty state and its list (connect wizard,
+  add connector, pairing, new token, new invite) is controlled by the page (`open` state lifted, plain
+  `Button` triggers). A trigger inside `EmptyState` unmounts when the first item appears and would
+  close the dialog mid-flow.
+- Reuse: `CopyButton` / `CodeBlock` (`copy-field.tsx`; a block is a `figure` captioned by its label),
+  `SecretOnceDialog` (`secret-once-dialog.tsx`; token secrets and invite links; outside clicks do not
+  close it), `ConnectorForm` + `connectorFormSchema` + `connectorFormDefaults` (`schema-form.tsx`),
+  `ConnectorStatusBadge` + `useConnectorState` (`connector-status.tsx`), `RouteChatDialog`,
+  `ConnectAgentDialog`, `AddConnectorDialog`, `useChooseLocale(syncAccount)` (`language-switch.tsx`).
+- Destructive confirmations use `ui/alert-dialog.tsx` (added; role `alertdialog`): delete connector,
+  remove identity, revoke token/invite, disable account. The agents page delete still uses `Dialog`.
+- `lib/agent-connect.ts` builds the `.mcp.json` entry and holds the launch, install, releases and docs
+  constants; the wizard reads `window.location.origin`.
+- Detail pages (`/connectors/$connectorId`) use a back link + title header and a left-aligned
+  `max-w-3xl` body; 404 renders an `EmptyState` "not on your line".
+
+## i18n namespaces
+- `agents.`, `connect.` (wizard), `connectors.` (list/add), `connector.` (detail), `route.`, `schema.`,
+  `identities.`, `pairing.`, `tokens.`, `account.` (account settings page; `settings.` stays the room
+  settings sheet), `admin.`, `invites.`, `audit.`.
+
+## Live and preferences
+- `agent.presence` for an agent id missing from the cached list invalidates `["agents"]` (agents
+  register on first connection), so the wizard's "waiting → online" line works.
+- Language: `useChooseLocale(true)` writes localStorage and `PATCH /me {locale}` (sidebar menu and
+  settings); `_app.tsx` adopts `Me.locale` only when the browser has no stored choice. Theme stays
+  per browser.
+
+## Tests
+- Timers: `vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] })` keeps user-event and
+  TanStack Query timeouts real; advance inside `act`.
+- Clipboard: `userEvent.setup()` stubs `navigator.clipboard`; assert with `navigator.clipboard.readText()`.
+- Code blocks: `within(x).getByRole("figure", { name }).querySelector("pre")?.textContent`.
+- Fixtures: `makeConnector`, `makeConnectorKind` (one field of every type).
+- Radix `Select` is avoided in forms that tests drive; use `RadioGroup` cards or `ToggleGroup`.
+
+## Contract notes and DTO gaps
+- `PostMessageRequest.recipients` are chat ids (`RoomMember.member_id`), see Phase 2 note (fixed).
+- Agent tokens are `POST /tokens {kind: "agent"}`; the token is not bound to a name, the wizard uses the
+  agent name as the token name and as `PARTYLINE_AGENT`.
+- No generated constant for the agent name rule: `AgentNamePattern` in `schemas.ts` mirrors
+  `^[a-z0-9][a-z0-9._-]{0,47}$` from the agent-channel design.
+- `ConnectorField.label`/`help` arrive from the server in English only (forms are not localized there).
+- Connector 422 field keys: the form maps `name`, `config.<field>` and bare `<field>`; the backend should
+  pick one (suggest `config.<field>`).
+- `Connector` has no inbound URL: the webhook detail builds `${origin}/api/v1/hooks/{id}`.
+- Pairing countdown compares `PairingCode.expires_at` with the browser clock (no server time offset).
+- Admins cannot demote or disable themselves in the UI; the server has no such guard yet.
