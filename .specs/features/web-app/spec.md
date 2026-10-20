@@ -163,7 +163,7 @@ Users need one place to see and steer everything: who is online, which chats fee
 | UI-08 | P1: Live rooms | Tasks | Implementing |
 | UI-09 | P1: Live rooms | Tasks | Implementing |
 | UI-10 | P1: Rooms management | Tasks | Implementing |
-| UI-11 | P1: Rooms management | Tasks | Pending |
+| UI-11 | P1: Rooms management | Tasks | Implementing |
 | UI-12 | P1: Rooms management | Tasks | Implementing |
 | UI-13 | P1: Rooms management | Tasks | Pending |
 | UI-14 | P1: Agents etc. | Tasks | Pending |

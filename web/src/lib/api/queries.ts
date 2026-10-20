@@ -236,7 +236,9 @@ export function useUpdateSharing(kind: SharingResource, id: string) {
     mutationFn: (req: Sharing) => api<Sharing>("PUT", `/${kind}/${id}/sharing`, req),
     onSuccess: (sharing) => {
       qc.setQueryData(queryKeys.sharing(kind, id), sharing);
-      qc.invalidateQueries({ queryKey: [kind] });
+      // Visibility shows on the list and the resource itself; timelines and members are unaffected.
+      qc.invalidateQueries({ queryKey: [kind], exact: true });
+      qc.invalidateQueries({ queryKey: [kind, id], exact: true });
     },
   });
 }

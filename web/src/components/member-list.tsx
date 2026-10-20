@@ -1,5 +1,5 @@
 import { BotIcon, MessageCircleIcon, UserIcon, XIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 import { toast } from "sonner";
 import { platformLabel } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
@@ -111,6 +111,7 @@ function MemberRow({
   onOutbound: (outbound: boolean) => void;
 }) {
   const { t } = useI18n();
+  const switchId = useId();
   let icon: ReactNode;
   let meta: ReactNode = null;
   if (m.kind === "agent") {
@@ -149,15 +150,18 @@ function MemberRow({
         ) : null}
         {m.kind === "chat" ? (
           canManage ? (
-            <label className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
               <Switch
+                id={switchId}
                 size="sm"
                 checked={m.outbound}
                 onCheckedChange={onOutbound}
                 aria-label={t("members.outboundFor", { name: m.name })}
               />
-              <span aria-hidden="true">{t("members.outbound")}</span>
-            </label>
+              <label htmlFor={switchId} aria-hidden="true">
+                {t("members.outbound")}
+              </label>
+            </div>
           ) : (
             <p className="mt-1 text-xs text-muted-foreground">
               {m.outbound ? t("members.outboundOn") : t("members.outboundOff")}

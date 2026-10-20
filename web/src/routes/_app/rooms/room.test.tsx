@@ -241,5 +241,17 @@ describe("room settings", () => {
     renderRoute("/rooms/r1");
     await screen.findByTestId("member-mb-bot");
     expect(screen.queryByRole("button", { name: "Room settings" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+  });
+});
+
+describe("room sharing entry (UI-11)", () => {
+  it("opens the sharing dialog for this room", async () => {
+    roomApi({}, { "GET /rooms/r1/sharing": json(200, { mode: "private", users: [] }) });
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    await user.click(await screen.findByRole("button", { name: "Share" }));
+    const dialog = await screen.findByRole("dialog", { name: "Share deploys" });
+    expect(await within(dialog).findByRole("radio", { name: /Private/ })).toBeChecked();
   });
 });

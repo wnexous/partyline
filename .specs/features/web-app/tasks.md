@@ -212,7 +212,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-11
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Each mode submits the exact `dto.Sharing` payload; summary lists who can access
+- [x] Each mode submits the exact `dto.Sharing` payload; summary lists who can access
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add reusable sharing dialog`
