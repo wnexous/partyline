@@ -25,9 +25,9 @@ var (
 	ErrResponseTooLarge = errors.New("response too large")
 )
 
-// DefaultMaxResponse bounds response bodies when Options.MaxResponseBytes is 0. It matches
-// the largest platform payload Partyline accepts (inline base64 media).
-const DefaultMaxResponse = 256 << 20
+// DefaultMaxResponse bounds response bodies when Options.MaxResponseBytes is 0: 4 MiB, the
+// cap for JSON API answers. Media downloads pass their own limit (S8).
+const DefaultMaxResponse = 4 << 20
 
 // Options configure a client.
 type Options struct {

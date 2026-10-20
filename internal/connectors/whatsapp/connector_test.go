@@ -425,3 +425,76 @@ func TestWebSocketClientRefusesPrivateBaseURL(t *testing.T) {
 	}
 	require.Equal(t, "/instance/all", f.next("/instance/all").Path, "the REST call was allowed")
 }
+
+// S8: REST answers are capped at 4 MiB; /message/downloadmedia, a JSON answer carrying
+// base64 media, and WebSocket frames, which carry inline media, at the base64 size of the
+// upload limit plus 4 MiB.
+func TestResponseCaps(t *testing.T) {
+	const limit = 1000
+	envelope := (limit+2)/3*4 + connectors.MaxJSONResponse
+	size := 0
+	pad := func(w http.ResponseWriter, head, tail string) {
+		_, _ = w.Write([]byte(head + strings.Repeat(" ", size-len(head)-len(tail)) + tail))
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /instance/all", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"name":"acme","token":"` + acmeToken + `","websocketEnable":true}]}`))
+	})
+	mux.HandleFunc("GET /group/list", func(w http.ResponseWriter, _ *http.Request) { pad(w, `{"data":[]`, `}`) })
+	mux.HandleFunc("POST /message/downloadmedia", func(w http.ResponseWriter, _ *http.Request) {
+		pad(w, `{"data":"`+base64.StdEncoding.EncodeToString([]byte(strings.Repeat("m", limit)))+`"`, `}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c, err := New(connectors.Config{"base_url": srv.URL, "api_key": globalKey},
+		connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: limit, UserAgent: userAgent})
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	size = connectors.MaxJSONResponse
+	_, err = c.ListChats(ctx)
+	require.NoError(t, err, "a REST answer of exactly 4 MiB")
+	size = connectors.MaxJSONResponse + 1
+	_, err = c.ListChats(ctx)
+	require.Error(t, err, "a REST answer over 4 MiB")
+
+	size = envelope
+	content, err := c.download(ctx, "acme", json.RawMessage(`{}`))
+	require.NoError(t, err, "media at the upload limit")
+	require.Len(t, content, (limit+2)/3*4)
+	size = envelope + 1
+	_, err = c.download(ctx, "acme", json.RawMessage(`{}`))
+	require.Error(t, err, "an answer over the media envelope")
+
+	require.Equal(t, int64(envelope), c.maxFrame, "WebSocket frames share the media envelope")
+}
+
+// S8: a WebSocket frame over the media envelope ends Run; one at the envelope does not.
+func TestWebSocketFrameCap(t *testing.T) {
+	const limit = 1000
+	envelope := (limit+2)/3*4 + connectors.MaxJSONResponse
+	f := newFakeEvolution(t)
+	c, err := New(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey},
+		connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: limit, UserAgent: userAgent})
+	require.NoError(t, err)
+	rec := connectortest.NewRecorder()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx, rec) }()
+	sock := f.socket()
+	require.Equal(t, connectors.StatusConnected, rec.NextStatus(t))
+
+	push(t, sock, []byte(strings.Repeat(" ", envelope))) // undecodable, ignored
+	push(t, sock, frame(t, testInstance, groupInfo("AFTER"), `{"conversation":"still here"}`))
+	require.Equal(t, "still here", rec.NextInbound(t).Text)
+
+	_ = sock.Write(context.Background(), websocket.MessageText, []byte(strings.Repeat(" ", envelope+1)))
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		require.NotErrorIs(t, err, context.Canceled)
+	case <-time.After(wait):
+		t.Fatal("a frame over the cap did not end Run")
+	}
+}

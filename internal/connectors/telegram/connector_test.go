@@ -430,3 +430,53 @@ func TestPrivateAPIBaseIsRefusedByDefault(t *testing.T) {
 	require.ErrorIs(t, err, safehttp.ErrBlockedAddress)
 	require.NotContains(t, err.Error(), botToken)
 }
+
+// capServer is a Bot API answering getMe with a JSON body of exactly ?size bytes (set per
+// request through want) and file downloads with that many bytes.
+func capServer(t *testing.T, size *int) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/getFile"):
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_path":"f"}}`))
+		case strings.Contains(r.URL.Path, "/file/bot"):
+			_, _ = w.Write([]byte(strings.Repeat("x", *size)))
+		default: // a JSON answer of exactly *size bytes
+			head, tail := `{"ok":true,"result":"`, `"}`
+			_, _ = w.Write([]byte(head + strings.Repeat("x", *size-len(head)-len(tail)) + tail))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// S8: Bot API answers are capped at 4 MiB and file downloads at the upload limit.
+func TestResponseCaps(t *testing.T) {
+	size := 0
+	srv := capServer(t, &size)
+	cfg, errs := Kind().Validate(connectors.Config{"bot_token": botToken, "api_base": srv.URL})
+	require.Empty(t, errs)
+	c, err := New(cfg, connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: 1000, UserAgent: userAgent})
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	size = connectors.MaxJSONResponse
+	require.NoError(t, c.call(ctx, "getMe", nil, nil), "an answer of exactly 4 MiB")
+	size = connectors.MaxJSONResponse + 1
+	require.Error(t, c.call(ctx, "getMe", nil, nil), "an answer over 4 MiB")
+
+	open := c.opener("file-id")
+	for n, want := range map[int]error{1000: nil, 1001: safehttp.ErrResponseTooLarge} {
+		size = n
+		r, err := open(ctx)
+		require.NoError(t, err)
+		data, err := io.ReadAll(r)
+		require.NoError(t, r.Close())
+		if want == nil {
+			require.NoError(t, err)
+			require.Len(t, data, n)
+		} else {
+			require.ErrorIs(t, err, want, "a download over the upload limit")
+		}
+	}
+}

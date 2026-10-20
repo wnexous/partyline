@@ -533,7 +533,9 @@ through while `PARTYLINE_ALLOW_PRIVATE_NETWORKS` stays false; README tables.
 **Requirement**: CON-13
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A JSON answer of exactly 4 MiB passes, 4 MiB + 1 fails; a media download at the upload limit passes, +1 fails
+- [x] A JSON answer of exactly 4 MiB passes, 4 MiB + 1 fails; a media download at the upload limit passes, +1 fails
+  (WhatsApp: base64 media in JSON and WebSocket frames capped at base64(limit) + 4 MiB); a cut-off download is
+  `too_large`
 **Tests**: unit, integration
 **Gate**: full
 **Commit**: `fix(connectors): cap platform responses by call kind`

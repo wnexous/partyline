@@ -138,9 +138,29 @@ type Deps struct {
 	// (CON-13).
 	AllowPrivateNetworks bool
 	PrivateAllowlist     *safehttp.Allowlist
+	// MaxMediaBytes is the upload limit (PARTYLINE_MAX_UPLOAD_MB), which bounds media
+	// downloads; 0 means DefaultMaxMedia.
+	MaxMediaBytes int64
 	// Replays remembers accepted hook signatures across restarts (HOOK-05); nil for kinds
 	// without InboundHook or in tests.
 	Replays Replays
+}
+
+// Response caps (CON-13, S8).
+const (
+	// MaxJSONResponse bounds a JSON/API answer of a platform.
+	MaxJSONResponse = 4 << 20
+	// DefaultMaxMedia is the media cap when Deps.MaxMediaBytes is unset (the default
+	// upload limit).
+	DefaultMaxMedia = 25 << 20
+)
+
+// MediaLimit is the largest media download: the upload limit.
+func (d Deps) MediaLimit() int64 {
+	if d.MaxMediaBytes > 0 {
+		return d.MaxMediaBytes
+	}
+	return DefaultMaxMedia
 }
 
 // HTTPClient returns the client for request/response platform calls: the network policy
@@ -149,6 +169,16 @@ func (d Deps) HTTPClient(timeout time.Duration, maxResponse int64) *http.Client 
 	return safehttp.NewClient(safehttp.Options{
 		AllowPrivate: d.AllowPrivateNetworks, Allowlist: d.PrivateAllowlist, Timeout: timeout, MaxResponseBytes: maxResponse,
 	})
+}
+
+// JSONClient returns a client for JSON/API calls, capped at MaxJSONResponse (S8).
+func (d Deps) JSONClient(timeout time.Duration) *http.Client {
+	return d.HTTPClient(timeout, MaxJSONResponse)
+}
+
+// MediaClient returns a client for media downloads, capped at the upload limit (S8).
+func (d Deps) MediaClient(timeout time.Duration) *http.Client {
+	return d.HTTPClient(timeout, d.MediaLimit())
 }
 
 // StreamClient returns the client for WebSocket handshakes under the same network policy.

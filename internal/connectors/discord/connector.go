@@ -98,7 +98,7 @@ func newWithSession(s session, d connectors.Deps) *Connector {
 	if log == nil {
 		log = slog.Default()
 	}
-	c := &Connector{s: s, userAgent: d.UserAgent, log: log, client: d.HTTPClient(60*time.Second, 0), titles: map[string]string{}}
+	c := &Connector{s: s, userAgent: d.UserAgent, log: log, client: d.MediaClient(60 * time.Second), titles: map[string]string{}}
 	s.AddHandler(c.onMessage)
 	return c
 }

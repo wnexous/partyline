@@ -1,11 +1,13 @@
 package discord
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -320,4 +322,25 @@ func TestPrivateAttachmentURLIsRefusedByDefault(t *testing.T) {
 	_, err := c.opener(cdn.URL + "/a.png")(context.Background())
 	require.ErrorIs(t, err, safehttp.ErrBlockedAddress)
 	require.Zero(t, hits.Load())
+}
+
+// S8: attachment downloads are capped at the upload limit.
+func TestAttachmentDownloadIsCappedAtTheUploadLimit(t *testing.T) {
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n, _ := strconv.Atoi(r.URL.Query().Get("n"))
+		_, _ = w.Write(bytes.Repeat([]byte("x"), n))
+	}))
+	t.Cleanup(cdn.Close)
+	c := newWithSession(newFakeSession(), connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: 1000})
+	read := func(n int) ([]byte, error) {
+		r, err := c.opener(cdn.URL + "/a.png?n=" + strconv.Itoa(n))(context.Background())
+		require.NoError(t, err)
+		defer func() { _ = r.Close() }()
+		return io.ReadAll(r)
+	}
+	data, err := read(1000)
+	require.NoError(t, err)
+	require.Len(t, data, 1000)
+	_, err = read(1001)
+	require.ErrorIs(t, err, safehttp.ErrResponseTooLarge)
 }

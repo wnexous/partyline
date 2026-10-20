@@ -54,7 +54,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 4. WHEN a connector is created or enabled THEN the system SHALL start it within 2 seconds and report status changes as `connector.status` events. (CON-04)
 5. WHEN a connector is disabled or deleted THEN the system SHALL stop it and stop all its outbound sends. (CON-05)
 6. IF a connector's transport fails THEN the system SHALL set status `error` with the error text (secrets redacted) and retry with backoff. (CON-06)
-7. WHILE `PARTYLINE_ALLOW_PRIVATE_NETWORKS` is not `true` the system SHALL refuse connector HTTP and WebSocket connections whose resolved address is loopback, private, link-local, CGNAT, multicast or unspecified, except destinations listed in `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` (CIDRs, or addresses and host names with an optional port), SHALL NOT follow redirects, SHALL bound response sizes and SHALL NOT copy platform error bodies into status or error text. (CON-13)
+7. WHILE `PARTYLINE_ALLOW_PRIVATE_NETWORKS` is not `true` the system SHALL refuse connector HTTP and WebSocket connections whose resolved address is loopback, private, link-local, CGNAT, multicast or unspecified, except destinations listed in `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` (CIDRs, or addresses and host names with an optional port), SHALL NOT follow redirects, SHALL bound response sizes (4 MiB for JSON/API answers, the upload limit for media downloads, plus base64 overhead where media arrive inside JSON or WebSocket frames) and SHALL NOT copy platform error bodies into status or error text. (CON-13)
 
 **Independent Test**: Create a webhook connector, read it back with the secret masked, disable it, observe status events.
 
@@ -195,7 +195,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | CON-10 | P1: Chats and inbound | Execute (T17) | Implemented, re-verify |
 | CON-11 | P1: Chats and inbound | Execute (T17) | Implemented, re-verify |
 | CON-12 | P1: Chats and inbound | Tasks | Verified |
-| CON-13 | P1: Manage connectors | Execute (T13, T23, T29) | Implemented, re-verify |
+| CON-13 | P1: Manage connectors | Execute (T13, T23, T29, T30) | Implemented, re-verify |
 | CON-14 | P1: Chats and inbound | Execute (T19) | Implemented, re-verify |
 | WA-01 | P1: WhatsApp | Tasks | Verified |
 | WA-02 | P1: WhatsApp | Tasks | Verified |

@@ -61,7 +61,8 @@ type Connector struct {
 	token     string
 	userAgent string
 	log       *slog.Logger
-	client    *http.Client
+	client    *http.Client // Bot API calls (JSON)
+	media     *http.Client // file downloads
 	// pollTimeout is the getUpdates timeout in seconds.
 	pollTimeout int
 
@@ -84,7 +85,7 @@ func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
 	}
 	return &Connector{
 		base: base, token: cfg.String("bot_token"), userAgent: d.UserAgent, log: log,
-		client: d.HTTPClient(0, 0), pollTimeout: pollTimeout,
+		client: d.JSONClient(0), media: d.MediaClient(0), pollTimeout: pollTimeout,
 	}, nil
 }
 
@@ -290,7 +291,7 @@ func (c *Connector) opener(fileID string) func(ctx context.Context) (io.ReadClos
 			return nil, errors.New("file: invalid request")
 		}
 		req.Header.Set("User-Agent", c.userAgent)
-		resp, err := c.client.Do(req)
+		resp, err := c.media.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("file download: %w", plainError(err))
 		}

@@ -119,3 +119,23 @@ func TestClientTimeoutAndDefaultLimit(t *testing.T) {
 	require.ErrorAs(t, err, &ne)
 	require.True(t, ne.Timeout())
 }
+
+// S8: without an explicit cap a client bounds answers at 4 MiB (JSON/API calls).
+func TestClientDefaultCapIsFourMiB(t *testing.T) {
+	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 4<<20+len(r.URL.Query().Get("extra"))))
+	})
+	c := NewClient(Options{AllowPrivate: true})
+	resp, err := c.Get(srv.URL)
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Len(t, body, 4<<20)
+	require.NoError(t, resp.Body.Close())
+
+	resp, err = c.Get(srv.URL + "?extra=1")
+	require.NoError(t, err)
+	_, err = io.ReadAll(resp.Body)
+	require.ErrorIs(t, err, ErrResponseTooLarge)
+	require.NoError(t, resp.Body.Close())
+}

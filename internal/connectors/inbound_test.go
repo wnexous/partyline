@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/wnexous/partyline/internal/app"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -208,6 +210,29 @@ func TestInboundMedia(t *testing.T) {
 	require.Equal(t, int64(1<<20+1), atts[2].Size)
 	require.Equal(t, 1, blobCount(t, e.env), "only the small file is in the blob store")
 }
+
+// CON-11, S8: a download the platform client cuts off at the upload limit is recorded as
+// too_large, not unavailable.
+func TestInboundMediaCutOffByTheClientCapIsTooLarge(t *testing.T) {
+	e := newInboundEnv(t)
+	e.emit(text(groupID, "M1", "first"))
+	room := e.routedRoom(t, "A", e.chatID(t, groupID))
+	m := text(groupID, "M2", "video")
+	m.Media = []connectors.Media{{Name: "clip.mp4", Mime: "video/mp4", Open: func(context.Context) (io.ReadCloser, error) {
+		return io.NopCloser(io.MultiReader(bytes.NewReader([]byte("partial")), errReader{fmt.Errorf("file download: %w", safehttp.ErrResponseTooLarge)})), nil
+	}}}
+	e.emit(m)
+
+	msgs := e.messages(t, room.ID)
+	require.Len(t, msgs, 1)
+	require.Len(t, msgs[0].Attachments, 1)
+	require.Equal(t, dto.AttachmentStatusTooLarge, msgs[0].Attachments[0].Status)
+	require.Zero(t, blobCount(t, e.env))
+}
+
+type errReader struct{ err error }
+
+func (r errReader) Read([]byte) (int, error) { return 0, r.err }
 
 // CON-10, CON-11: a repeated message is not stored again and its media is not downloaded
 // again.

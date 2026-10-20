@@ -148,7 +148,7 @@ func New(cfg connectors.Config, d connectors.Deps) *Connector {
 	}
 	return &Connector{
 		id: d.ID, secret: cfg.String("secret"), outboundURL: cfg.String("outbound_url"), userAgent: d.UserAgent,
-		fileURL: d.FileURL, log: log, client: d.HTTPClient(requestTimeout, 0), now: time.Now,
+		fileURL: d.FileURL, log: log, client: d.JSONClient(requestTimeout), now: time.Now,
 		replays: replays, invalid: map[string]window{},
 	}
 }
