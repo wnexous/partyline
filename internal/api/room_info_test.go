@@ -157,3 +157,39 @@ func TestRoomInfoInstructionsTrust(t *testing.T) {
 	require.Empty(t, got.InstructionsBy)
 	require.False(t, got.InstructionsTrusted)
 }
+
+// forgetInstructionsAuthor clears the recorded author of a room's instructions, as migration
+// 0008 leaves instructions saved before authors were recorded.
+func forgetInstructionsAuthor(t *testing.T, env *testkit.Env, roomID string) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		r, err := q.GetRoom(ctx, roomID)
+		if err != nil {
+			return err
+		}
+		return q.UpdateRoom(ctx, db.UpdateRoomParams{
+			Name: r.Name, Description: r.Description, Instructions: r.Instructions, InstructionsBy: "",
+			BridgeChats: r.BridgeChats, Broadcast: r.Broadcast, RetentionDays: r.RetentionDays, UpdatedAt: r.UpdatedAt, ID: r.ID,
+		})
+	}))
+}
+
+// INS-03, INS-04: instructions whose author is unknown (saved before authors were recorded)
+// are untrusted even for the agent of the room's owner: room_info names nobody and says
+// untrusted, and the connect notice is the untrusted one.
+func TestRoomInfoUnknownAuthorIsUntrusted(t *testing.T) {
+	f := newAgentRoom(t)
+	setInstructions(f.alice, f.room.ID, "Answer in Portuguese.")
+	forgetInstructionsAuthor(t, f.env, f.room.ID)
+
+	raw := f.rest().Get(agentRoomPath(f.room.ID, "/info")).RequireStatus(http.StatusOK)
+	got := testkit.Decode[map[string]any](raw)
+	require.Equal(t, "Answer in Portuguese.", got["instructions"])
+	require.NotContains(t, got, "instructions_by", "no author is named")
+	require.Equal(t, false, got["instructions_trusted"])
+
+	conn := f.dial(t)
+	conn.Welcome(wsWait)
+	require.Equal(t, insNoticeUntrusted, conn.Notice(wsWait).Text)
+}

@@ -73,6 +73,12 @@ T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → 
 T31 → T32 → T33 → T34
 ```
 
+### Phase 7: Verifier fixes and hardening (fix iteration 2)
+
+```
+T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → T45 → T46 → T47
+```
+
 ---
 
 ## Task Breakdown
@@ -570,3 +576,187 @@ T31 → T32 → T33 → T34
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record routing-context fix iteration 1`
+
+### Phase 7: Verifier fixes and hardening (fix iteration 2)
+
+#### T35: Unknown-author instructions stay untrusted (T1, T2)
+
+**What**: Instructions with no recorded author (`instructions_by = ''`, as migration 0008 leaves them) are untrusted in `room_info`, the tool note and the connect notice.
+**Where**: `internal/api/room_info_test.go`, `internal/channel/room_info_test.go`
+**Depends on**: T34
+**Reuses**: `newAgentRoom`, `newChanEnv`, `insNoticeUntrusted`
+**Requirement**: INS-03, INS-04, INS-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] `instructions_trusted` false, `instructions_by` omitted, `instructions_note` exact, untrusted notice literal; kills T1 and T2
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(rooms): keep instructions without a known author untrusted`
+
+#### T36: Room create records the author (T8)
+
+**What**: `POST /rooms` with instructions records the creator as their author.
+**Where**: `internal/api/room_info_test.go`
+**Depends on**: T35
+**Reuses**: `newTwoAgents`
+**Requirement**: INS-04
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] `instructions_by` = creator; trusted for the creator's agent, not for another owner's; kills T8
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(rooms): record the author of instructions given at room creation`
+
+#### T37: Caps hold under a concurrent burst (C4)
+
+**What**: Five concurrent first messages from new chats with 59 routed in the hour (and with 999 room chats) add exactly one chat; a test seam holds a route between the cap check and the addition.
+**Where**: `internal/connectors/inbound.go`, `internal/connectors/export_test.go`, `internal/connectors/catch_all_test.go`
+**Depends on**: T36
+**Reuses**: `newCatchAll`, `dmPeer`
+**Requirement**: ROUTE-08
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Exactly 60 (and 1,000) chats, detail `auto-route limit reached`; kills C4 deterministically
+**Tests**: integration
+**Gate**: build
+**Commit**: `test(connectors): hold the catch-all caps under a concurrent burst`
+
+#### T38: Reply to a listen-only chat in a broadcast-off room (B2)
+
+**What**: A reply to a message of a listen-only chat in a room with broadcast off reaches no chat and carries the warning.
+**Where**: `internal/rooms/messages_test.go`, `internal/api/no_broadcast_test.go`
+**Depends on**: T37
+**Reuses**: rooms fixture, `newAgentRoom`
+**Requirement**: ROUTE-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] No outbox row, empty recipients, exact warning; kills B2
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(rooms): send no reply to a listen-only chat in broadcast-off rooms`
+
+#### T39: The 16-code-point emoji bound (E5)
+
+**What**: A valid one-grapheme emoji of exactly 16 code points is accepted; 17 stays rejected.
+**Where**: `internal/validation/emoji_test.go`
+**Depends on**: T38
+**Reuses**: emoji table test
+**Requirement**: REACT-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] 16 accepted, 17 rejected; kills E5
+**Tests**: unit
+**Gate**: build
+**Commit**: `test(validation): pin the emoji code-point bound`
+
+#### T40: Status event when an auto-route detail clears (S4, S5)
+
+**What**: A successful route and a catch-all PATCH that clear the detail publish `connector.status` with an empty detail.
+**Where**: `internal/connectors/catch_all_test.go`
+**Depends on**: T39
+**Reuses**: `DialLive`, `newCatchAll`
+**Requirement**: ROUTE-09
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Live `connector.status` event with empty detail after each clear; kills S4 and S5
+**Tests**: integration
+**Gate**: build
+**Commit**: `test(connectors): announce cleared auto-route details`
+
+#### T41: Broadcast stays off once the catch-all is cleared
+
+**What**: After the connector stops targeting the room, `GET /rooms/{id}` still says `broadcast: false` until a manager turns it on.
+**Where**: `internal/api/no_broadcast_test.go`
+**Depends on**: T40
+**Reuses**: `newCatchAllEnv`
+**Requirement**: ROUTE-07 (edge case)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] `broadcast` false and `catch_all` false right after clearing
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(api): keep broadcast off after the catch-all is cleared`
+
+#### T42: Lock reason on the bridge switch; inline message when no chat is picked
+
+**What**: In a catch-all room the bridge switch is described by the lock reason; in a broadcast-off room Enter or Send without a picked chat shows "Pick a chat to answer" inline and posts nothing.
+**Where**: `web/src/components/room-settings-sheet.tsx`, `web/src/components/composer.tsx`, `web/src/locales/*`
+**Depends on**: T41
+**Reuses**: composer and room tests
+**Requirement**: ROUTE-06, ROUTE-07, A11Y-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Bridge switch accessible description has the lock reason; Enter and Send show the message (`role="alert"`) and post nothing
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(web): explain locked bridging and unpicked chats`
+
+#### T43: At most 10 chats per message
+
+**What**: Explicit `recipients`/`chat_ids` are capped at 10 distinct chats per post: 422 `recipients: at most 10 chats per message`, nothing stored; tool docs say so.
+**Where**: `internal/rooms/messages.go`, `internal/channel/tools.go`, `internal/channel/instructions.go`
+**Depends on**: T42
+**Reuses**: `validation.Check`
+**Requirement**: ROUTE-10
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] 10 accepted; 11 refused with the exact reason and nothing stored; tool description mentions the limit
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(rooms): cap explicit recipients at 10 chats per message`
+
+#### T44: Capped chats leave no record; per-connector route locks
+
+**What**: A new chat refused by a catch-all cap is not recorded (only the status detail says so); other unrouted chats are recorded as before (CON-07). Catch-all additions lock per connector, so one connector's flood does not hold another's routing.
+**Where**: `internal/connectors/inbound.go`
+**Depends on**: T43
+**Reuses**: route hook from T37
+**Requirement**: ROUTE-08, ROUTE-11
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Capped new chat absent from the chat list; out-of-scope chat still recorded; a held route on connector A does not block connector B
+**Tests**: integration
+**Gate**: build
+**Commit**: `fix(connectors): record capped chats nowhere and lock routes per connector`
+
+#### T45: Room name and description carry a trust label
+
+**What**: Migration `0010_room_text_author.sql` adds `rooms.updated_by` (the user who created the room or last changed its name or description, '' before 0010); `room_info` returns `room_text_trusted`; the tool adds `room_text_note` when untrusted.
+**Where**: `internal/store/migrations/0010_room_text_author.sql`, `internal/rooms/rooms.go`, `internal/api/agent_handlers.go`, `internal/channel/tools.go`
+**Depends on**: T44
+**Reuses**: instructions trust (T29)
+**Requirement**: INS-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Creator's agent trusted, another owner's edit untrusted, legacy '' untrusted; note text exact; migration default tested
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(rooms): label who wrote a room's name and description`
+
+#### T46: Stricter emoji validator
+
+**What**: Text-presentation symbols (Extended_Pictographic without default emoji presentation, such as ©, ®, ™, ‼ and arrows) need VS16; ZWJ sequences have at most 4 components.
+**Where**: `internal/validation/emoji.go`
+**Depends on**: T45
+**Reuses**: emoji table test
+**Requirement**: REACT-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Table rejects bare ©, ®, ™, ‼, ↔ and a 5-component chain; accepts them with VS16 and 4-component chains
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(validation): refuse text-style symbols and long emoji chains`
+
+#### T47: Contract notes and traceability
+
+**What**: contract-notes and spec traceability updated for T35-T46.
+**Where**: `.specs/features/routing-context/`
+**Depends on**: T46
+**Reuses**: existing notes
+**Requirement**: all
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Notes cover every new behavior
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record routing-context fix iteration 2`
