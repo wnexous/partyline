@@ -191,10 +191,10 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | WA-03 | P1: WhatsApp | Tasks | Implementing |
 | WA-04 | P1: WhatsApp | Tasks | Implementing |
 | WA-05 | P1: WhatsApp | Tasks | Implementing |
-| TG-01 | P1: Telegram | Tasks | Pending |
-| TG-02 | P1: Telegram | Tasks | Pending |
-| TG-03 | P1: Telegram | Tasks | Pending |
-| TG-04 | P1: Telegram | Tasks | Pending |
+| TG-01 | P1: Telegram | Tasks | Implementing |
+| TG-02 | P1: Telegram | Tasks | Implementing |
+| TG-03 | P1: Telegram | Tasks | Implementing |
+| TG-04 | P1: Telegram | Tasks | Implementing |
 | DC-01 | P1: Discord | Tasks | Pending |
 | DC-02 | P1: Discord | Tasks | Pending |
 | DC-03 | P1: Discord | Tasks | Pending |

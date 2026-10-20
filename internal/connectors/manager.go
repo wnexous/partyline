@@ -84,6 +84,8 @@ type ManagerDeps struct {
 	// Inbound receives every message of a running connector (the inbound pipeline); nil
 	// drops them.
 	Inbound func(ctx context.Context, src Source, m Inbound)
+	// MigrateChat moves a chat of a running connector to a new platform id; nil ignores it.
+	MigrateChat func(ctx context.Context, src Source, oldID, newID string)
 	// Wait sleeps for d or until ctx is done; defaults to a timer. Tests pass a fake clock.
 	Wait func(ctx context.Context, d time.Duration) error
 }
@@ -316,6 +318,13 @@ func (h handler) Inbound(ctx context.Context, msg Inbound) {
 		return
 	}
 	h.m.d.Inbound(ctx, Source{ConnectorID: h.s.id, Kind: h.s.kind.Name}, msg)
+}
+
+func (h handler) MigrateChat(ctx context.Context, oldID, newID string) {
+	if h.m.d.MigrateChat == nil || h.m.current(h.s.id) != h.s {
+		return
+	}
+	h.m.d.MigrateChat(ctx, Source{ConnectorID: h.s.id, Kind: h.s.kind.Name}, oldID, newID)
 }
 
 func (h handler) Status(st Status, detail string) {

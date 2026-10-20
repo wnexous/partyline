@@ -219,6 +219,27 @@ func (q *Queries) ListUsableChats(ctx context.Context, userID string) ([]ListUsa
 	return items, nil
 }
 
+const migrateChatExternalID = `-- name: MigrateChatExternalID :execrows
+UPDATE chats SET external_id = ?1
+WHERE chats.connector_id = ?2 AND chats.external_id = ?3
+  AND NOT EXISTS (SELECT 1 FROM chats o
+                  WHERE o.connector_id = ?2 AND o.external_id = ?1)
+`
+
+type MigrateChatExternalIDParams struct {
+	NewExternalID string
+	ConnectorID   string
+	OldExternalID string
+}
+
+func (q *Queries) MigrateChatExternalID(ctx context.Context, arg MigrateChatExternalIDParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, migrateChatExternalID, arg.NewExternalID, arg.ConnectorID, arg.OldExternalID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const upsertChat = `-- name: UpsertChat :one
 INSERT INTO chats (id, connector_id, external_id, title, kind, last_seen_at, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)

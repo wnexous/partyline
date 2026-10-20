@@ -28,6 +28,8 @@ const KindName = "fake"
 // Timeout bounds every wait; generous because the test host may be loaded.
 const Timeout = 30 * time.Second
 
+func afterTimeout() <-chan time.Time { return time.After(Timeout) }
+
 // Fake creates fake connector instances and remembers them by connector id.
 type Fake struct {
 	mu        sync.Mutex
@@ -201,6 +203,11 @@ func (i *Instance) handler() connectors.Handler {
 		panic(errors.New("connectortest: Run has not been called"))
 	}
 	return i.h
+}
+
+// MigrateChat reports a chat migration through the handler of the current Run.
+func (i *Instance) MigrateChat(ctx context.Context, oldID, newID string) {
+	i.handler().MigrateChat(ctx, oldID, newID)
 }
 
 // WaitSend waits for the next successful send and returns it.

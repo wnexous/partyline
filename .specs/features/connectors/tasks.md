@@ -275,8 +275,8 @@ T7 → T8 → T9 → T10 → T11
 **Requirement**: TG-01, TG-02, TG-03, TG-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake Bot API: offset increments; 9,000-char text → 3 ordered calls; png → sendPhoto, pdf → sendDocument
-- [ ] Token never appears in errors returned to the manager
+- [x] Fake Bot API: offset increments; 9,000-char text → 3 ordered calls; png → sendPhoto, pdf → sendDocument
+- [x] Token never appears in errors returned to the manager
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(telegram): add bot api connector`

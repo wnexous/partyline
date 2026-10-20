@@ -190,6 +190,34 @@ func (p *Pipeline) download(ctx context.Context, md Media, limit int64) (string,
 	return p.d.Blobs.Put(r, limit)
 }
 
+// MigrateChat changes a chat's platform id from oldID to newID, keeping the chat record
+// and therefore its rooms (TG-01 edge case: group upgraded to a supergroup). Nothing changes
+// when oldID is unknown or newID is already a chat of the connector.
+func (p *Pipeline) MigrateChat(ctx context.Context, src Source, oldID, newID string) {
+	if oldID == "" || newID == "" || oldID == newID {
+		return
+	}
+	var n int64
+	err := p.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		n, err = q.MigrateChatExternalID(ctx, db.MigrateChatExternalIDParams{
+			NewExternalID: newID, ConnectorID: src.ConnectorID, OldExternalID: oldID,
+		})
+		return err
+	})
+	if err != nil {
+		p.d.Logger.Error("connectors: chat migration failed", "connector_id", src.ConnectorID, "err", err)
+		return
+	}
+	if n == 0 {
+		return
+	}
+	chat, err := p.d.Store.R().GetChatByExternalID(ctx, db.GetChatByExternalIDParams{ConnectorID: src.ConnectorID, ExternalID: newID})
+	if err == nil {
+		p.d.Bus.Publish(events.ChatDiscovered{ConnectorID: src.ConnectorID, ChatID: chat.ID})
+	}
+}
+
 // UpsertChat records a chat of a connector (title and kind are kept when given empty) and
 // publishes ChatDiscovered when it is new or its title or kind changed. seen, when not
 // zero, becomes its last_seen_at.

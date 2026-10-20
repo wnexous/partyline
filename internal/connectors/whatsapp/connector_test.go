@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/connectors/connectortest"
 )
 
 // Synthetic credentials.
@@ -150,30 +151,6 @@ func (f *fakeEvolution) socket() *websocket.Conn {
 	}
 }
 
-// recorder is a connectors.Handler that records what the connector reports.
-type recorder struct {
-	inbound  chan connectors.Inbound
-	statuses chan connectors.Status
-}
-
-func newRecorder() *recorder {
-	return &recorder{inbound: make(chan connectors.Inbound, 16), statuses: make(chan connectors.Status, 16)}
-}
-
-func (r *recorder) Inbound(_ context.Context, m connectors.Inbound) { r.inbound <- m }
-func (r *recorder) Status(s connectors.Status, _ string)            { r.statuses <- s }
-
-func (r *recorder) nextInbound(t *testing.T) connectors.Inbound {
-	t.Helper()
-	select {
-	case m := <-r.inbound:
-		return m
-	case <-time.After(wait):
-		t.Fatal("no inbound message")
-		return connectors.Inbound{}
-	}
-}
-
 func newConnector(t *testing.T, f *fakeEvolution, instances ...string) *Connector {
 	t.Helper()
 	cfg := connectors.Config{"base_url": f.srv.URL, "api_key": globalKey}
@@ -188,7 +165,7 @@ func newConnector(t *testing.T, f *fakeEvolution, instances ...string) *Connecto
 }
 
 // start runs the connector until the test ends and returns the server side of its socket.
-func start(t *testing.T, c *Connector, f *fakeEvolution, rec *recorder) *websocket.Conn {
+func start(t *testing.T, c *Connector, f *fakeEvolution, rec *connectortest.Recorder) *websocket.Conn {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -203,12 +180,7 @@ func start(t *testing.T, c *Connector, f *fakeEvolution, rec *recorder) *websock
 		}
 	})
 	sock := f.socket()
-	select {
-	case s := <-rec.statuses:
-		require.Equal(t, connectors.StatusConnected, s)
-	case <-time.After(wait):
-		t.Fatal("no connected status")
-	}
+	require.Equal(t, connectors.StatusConnected, rec.NextStatus(t))
 	return sock
 }
 
@@ -222,7 +194,7 @@ func push(t *testing.T, sock *websocket.Conn, data []byte) {
 func TestRunDeliversMessagesOfAllowedInstances(t *testing.T) {
 	f := newFakeEvolution(t)
 	c := newConnector(t, f, "acme")
-	rec := newRecorder()
+	rec := connectortest.NewRecorder()
 	sock := start(t, c, f, rec)
 
 	f.mu.Lock()
@@ -233,7 +205,7 @@ func TestRunDeliversMessagesOfAllowedInstances(t *testing.T) {
 
 	push(t, sock, frame(t, "other", groupInfo("NOT-ALLOWED"), `{"conversation":"ignored"}`))
 	push(t, sock, frame(t, testInstance, groupInfo("ALLOWED"), `{"conversation":"hello"}`))
-	in := rec.nextInbound(t)
+	in := rec.NextInbound(t)
 	require.Equal(t, "ALLOWED", in.MessageID, "the instance outside the allowlist was ignored")
 	require.Equal(t, "acme|120363000000000001@g.us", in.ChatID)
 	require.Equal(t, "hello", in.Text)
@@ -243,10 +215,10 @@ func TestRunDeliversMessagesOfAllowedInstances(t *testing.T) {
 func TestRunWithoutAllowlistAcceptsEveryInstance(t *testing.T) {
 	f := newFakeEvolution(t)
 	c := newConnector(t, f)
-	rec := newRecorder()
+	rec := connectortest.NewRecorder()
 	sock := start(t, c, f, rec)
 	push(t, sock, frame(t, "other", groupInfo("FROM-OTHER"), `{"conversation":"x"}`))
-	require.Equal(t, "other|120363000000000001@g.us", rec.nextInbound(t).ChatID)
+	require.Equal(t, "other|120363000000000001@g.us", rec.NextInbound(t).ChatID)
 }
 
 // CON-06: a rejected global key fails Run with "unauthorized"; the key is not in the error.
@@ -255,7 +227,7 @@ func TestRunUnauthorized(t *testing.T) {
 	cfg := connectors.Config{"base_url": f.srv.URL, "api_key": "wrong-key-0123456789"}
 	c, err := New(cfg, connectors.Deps{UserAgent: userAgent})
 	require.NoError(t, err)
-	err = c.Run(context.Background(), newRecorder())
+	err = c.Run(context.Background(), connectortest.NewRecorder())
 	require.ErrorIs(t, err, ErrUnauthorized)
 	require.Equal(t, "unauthorized", err.Error())
 }
@@ -264,7 +236,7 @@ func TestRunFailureDoesNotLeakTheKey(t *testing.T) {
 	f := newFakeEvolution(t)
 	f.srv.Close()
 	c := newConnector(t, f)
-	err := c.Run(context.Background(), newRecorder())
+	err := c.Run(context.Background(), connectortest.NewRecorder())
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), globalKey)
 }
@@ -274,12 +246,12 @@ func TestRunFailureDoesNotLeakTheKey(t *testing.T) {
 func TestMediaOpensInlineOrDownloads(t *testing.T) {
 	f := newFakeEvolution(t)
 	c := newConnector(t, f)
-	rec := newRecorder()
+	rec := connectortest.NewRecorder()
 	sock := start(t, c, f, rec)
 
 	push(t, sock, frame(t, testInstance, groupInfo("IMG"),
 		`{"imageMessage":{"mimetype":"image/png","fileLength":6},"base64":"data:image/png;base64,`+base64.StdEncoding.EncodeToString([]byte("inline"))+`"}`))
-	in := rec.nextInbound(t)
+	in := rec.NextInbound(t)
 	require.Len(t, in.Media, 1)
 	require.Equal(t, "image/png", in.Media[0].Mime)
 	require.Equal(t, int64(6), in.Media[0].Size)
@@ -287,14 +259,14 @@ func TestMediaOpensInlineOrDownloads(t *testing.T) {
 
 	push(t, sock, frame(t, testInstance, groupInfo("DOC"),
 		`{"ephemeralMessage":{"message":{"documentMessage":{"mimetype":"application/pdf","fileName":"a.pdf"}}}}`))
-	in = rec.nextInbound(t)
+	in = rec.NextInbound(t)
 	require.Equal(t, "downloaded-bytes", readMedia(t, in.Media[0]))
 	req := f.next("/message/downloadmedia")
 	require.Equal(t, acmeToken, req.APIKey)
 	require.Contains(t, req.Body["message"], "documentMessage", "the unwrapped message is sent")
 
 	push(t, sock, frame(t, testInstance, groupInfo("AUD"), `{"audioMessage":{"mimetype":"audio/ogg"}}`))
-	in = rec.nextInbound(t)
+	in = rec.NextInbound(t)
 	require.Equal(t, "voice-bytes", readMedia(t, in.Media[0]), "data may be the base64 string itself")
 }
 

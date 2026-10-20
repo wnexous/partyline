@@ -34,6 +34,10 @@ type Handler interface {
 	Inbound(ctx context.Context, m Inbound)
 	// Status reports a status change with a detail text (an error message for StatusError).
 	Status(s Status, detail string)
+	// MigrateChat moves a chat to a new platform id (a Telegram group upgraded to a
+	// supergroup), keeping its rooms. It does nothing when the old id is unknown or the new
+	// id is already a chat.
+	MigrateChat(ctx context.Context, oldID, newID string)
 }
 
 // Status is the runtime state of a connector; the values match dto.ConnectorStatus.

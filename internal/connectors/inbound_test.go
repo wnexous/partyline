@@ -269,3 +269,25 @@ func TestInboundReplyPointsAtTheQuotedMessage(t *testing.T) {
 	require.Len(t, msgs, 2)
 	require.Equal(t, msgs[1].ID, msgs[0].ReplyTo)
 }
+
+// TG-01 edge case: a migrated chat keeps its record and rooms under the new platform id;
+// a migration onto an existing chat changes nothing.
+func TestMigrateChatKeepsRooms(t *testing.T) {
+	e := newInboundEnv(t)
+	e.emit(text("-4000000001", "M1", "before"))
+	chat := e.chatID(t, "-4000000001")
+	room := e.routedRoom(t, "A", chat)
+
+	e.inst.MigrateChat(context.Background(), "-4000000001", "-1001000000001")
+	require.Equal(t, chat, e.chatID(t, "-1001000000001"), "same chat, new external id")
+	require.Len(t, e.chats(t), 1)
+
+	e.emit(text("-1001000000001", "M2", "after"))
+	msgs := e.messages(t, room.ID)
+	require.Len(t, msgs, 1)
+	require.Equal(t, "after", msgs[0].Text, "messages at the new id reach the chat's rooms")
+
+	e.emit(text(otherID, "M3", "x"))
+	e.inst.MigrateChat(context.Background(), "-1001000000001", otherID)
+	require.Equal(t, chat, e.chatID(t, "-1001000000001"), "the new id was already a chat: nothing moves")
+}

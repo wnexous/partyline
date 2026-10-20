@@ -19,6 +19,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/connectors/telegram"
 	"github.com/wnexous/partyline/internal/connectors/whatsapp"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
@@ -62,6 +63,7 @@ type Options struct {
 func BuiltinKinds() []connectors.Kind {
 	return []connectors.Kind{
 		whatsapp.Kind(),
+		telegram.Kind(),
 	}
 }
 
@@ -164,7 +166,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	})
 	a.ConnectorManager = connectors.NewManager(connectors.ManagerDeps{
 		Store: st, Bus: bus, Box: box, Kinds: registry, Logger: opts.Logger, UserAgent: "partyline/" + version,
-		Inbound: pipeline.Handle,
+		Inbound: pipeline.Handle, MigrateChat: pipeline.MigrateChat,
 	})
 	a.sender = opts.Sender
 	if a.sender == nil && !opts.DisableOutbox {

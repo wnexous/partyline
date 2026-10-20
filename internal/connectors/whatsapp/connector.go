@@ -272,10 +272,7 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 
 // formatText prefixes the author's name in bold (WhatsApp markup).
 func formatText(m connectors.Outbound) string {
-	if m.Text == "" || m.AuthorName == "" {
-		return m.Text
-	}
-	return "*" + m.AuthorName + "*\n" + m.Text
+	return connectors.AuthorLine(m.AuthorName, "*", "*\n", m.Text)
 }
 
 func readFile(f connectors.OutFile) ([]byte, error) {
