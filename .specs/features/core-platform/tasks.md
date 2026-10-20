@@ -440,7 +440,7 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: OPS-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Messages older than N days deleted; retention 0 keeps all; orphan blobs removed, shared blobs kept
+- [x] Messages older than N days deleted; retention 0 keeps all; orphan blobs removed, shared blobs kept
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(rooms): add retention cleanup job`

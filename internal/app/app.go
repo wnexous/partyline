@@ -107,7 +107,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Bus:    bus,
 		Users:  usersSvc,
 		Access: az,
-		Rooms:  rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now}),
+		Rooms:  rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
 		Blobs:  blobs,
 		sender: opts.Sender,
 		now:    opts.Now,
@@ -148,6 +148,9 @@ func (a *App) Start(ctx context.Context) error {
 		})
 		a.background(bg, "outbox", w.Run)
 	}
+	a.background(bg, "retention", func(ctx context.Context) error {
+		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger)
+	})
 	a.ready.Store(true)
 	return nil
 }
