@@ -130,6 +130,9 @@ type Deps struct {
 	// FileURL returns a signed download link of a stored attachment, valid 10 minutes, for
 	// platforms that fetch files by URL (the webhook payload); nil when unavailable.
 	FileURL func(attachmentID string) string
+	// AllowPrivateNetworks lets the connector reach non-public addresses; pass it to
+	// safehttp for every platform call (CON-13).
+	AllowPrivateNetworks bool
 }
 
 // MaxHookBody is the largest accepted body of POST /api/v1/hooks/{connector_id}.

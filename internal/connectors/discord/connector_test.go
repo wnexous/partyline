@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 )
 
 // Synthetic ids.
@@ -120,7 +122,7 @@ func (f *fakeSession) sent() []sent {
 
 func start(t *testing.T, f *fakeSession) (*Connector, *connectortest.Recorder) {
 	t.Helper()
-	c := newWithSession(f, connectors.Deps{ID: "c1", UserAgent: "partyline/test"})
+	c := newWithSession(f, connectors.Deps{AllowPrivateNetworks: true, ID: "c1", UserAgent: "partyline/test"})
 	rec := connectortest.NewRecorder()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -296,4 +298,15 @@ func TestKindSchema(t *testing.T) {
 	conn, err := k.New(connectors.Config{"bot_token": "synthetic.token.value"}, connectors.Deps{UserAgent: "partyline/test"})
 	require.NoError(t, err)
 	require.Equal(t, intents, conn.(*Connector).s.(*discordgo.Session).Identify.Intents)
+}
+
+// CON-13: by default an attachment URL on a private address is not downloaded.
+func TestPrivateAttachmentURLIsRefusedByDefault(t *testing.T) {
+	var hits atomic.Int32
+	cdn := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+	t.Cleanup(cdn.Close)
+	c := newWithSession(newFakeSession(), connectors.Deps{})
+	_, err := c.opener(cdn.URL + "/a.png")(context.Background())
+	require.ErrorIs(t, err, safehttp.ErrBlockedAddress)
+	require.Zero(t, hits.Load())
 }

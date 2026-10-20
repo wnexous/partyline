@@ -19,6 +19,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 )
 
 // KindName is the connector kind name.
@@ -84,7 +85,7 @@ func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
 	}
 	return &Connector{
 		base: base, token: cfg.String("bot_token"), userAgent: d.UserAgent, log: log,
-		client: &http.Client{}, pollTimeout: pollTimeout,
+		client: safehttp.NewClient(safehttp.Options{AllowPrivate: d.AllowPrivateNetworks}), pollTimeout: pollTimeout,
 	}, nil
 }
 
@@ -445,7 +446,9 @@ func (c *Connector) do(ctx context.Context, method, contentType string, body io.
 		if env.ErrorCode == http.StatusUnauthorized || resp.StatusCode == http.StatusUnauthorized {
 			return ErrUnauthorized
 		}
-		return fmt.Errorf("%s: %d %s", method, env.ErrorCode, env.Description)
+		// The description is platform text (any text, with a custom api_base): keep it out
+		// of statuses and errors.
+		return fmt.Errorf("%s: error %d", method, env.ErrorCode)
 	}
 	if out != nil && len(env.Result) > 0 {
 		if err := json.Unmarshal(env.Result, out); err != nil {

@@ -23,6 +23,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/validation"
 )
 
@@ -117,7 +118,7 @@ func New(cfg connectors.Config, d connectors.Deps) *Connector {
 	}
 	return &Connector{
 		id: d.ID, secret: cfg.String("secret"), outboundURL: cfg.String("outbound_url"), userAgent: d.UserAgent,
-		fileURL: d.FileURL, log: log, client: &http.Client{Timeout: requestTimeout}, now: time.Now,
+		fileURL: d.FileURL, log: log, client: safehttp.NewClient(safehttp.Options{AllowPrivate: d.AllowPrivateNetworks, Timeout: requestTimeout}), now: time.Now,
 	}
 }
 
@@ -262,6 +263,9 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 	req.Header.Set(TimestampHeader, ts)
 	req.Header.Set(SignatureHeader, Sign(c.secret, ts, body))
 	resp, err := c.client.Do(req)
+	if errors.Is(err, safehttp.ErrBlockedAddress) {
+		return "", errors.New("outbound: destination address not allowed")
+	}
 	if err != nil {
 		var ue *url.Error
 		if errors.As(err, &ue) {

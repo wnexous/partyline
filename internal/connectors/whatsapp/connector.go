@@ -19,6 +19,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 )
 
 // KindName is the connector kind name.
@@ -60,6 +61,7 @@ type Connector struct {
 	userAgent string
 	log       *slog.Logger
 	client    *http.Client
+	stream    *http.Client // WebSocket handshakes
 	now       func() time.Time
 
 	mu        sync.Mutex
@@ -96,7 +98,8 @@ func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
 	}
 	return &Connector{
 		base: base, apiKey: cfg.String("api_key"), allowed: allowed, userAgent: d.UserAgent, log: log,
-		client: &http.Client{Timeout: requestTimeout}, now: time.Now,
+		client: safehttp.NewClient(safehttp.Options{AllowPrivate: d.AllowPrivateNetworks, Timeout: requestTimeout}),
+		stream: safehttp.NewStreamClient(d.AllowPrivateNetworks), now: time.Now,
 	}, nil
 }
 
@@ -107,7 +110,7 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 		return err
 	}
 	conn, resp, err := websocket.Dial(ctx, c.wsURL(), &websocket.DialOptions{
-		HTTPClient: &http.Client{}, HTTPHeader: http.Header{"User-Agent": {c.userAgent}},
+		HTTPClient: c.stream, HTTPHeader: http.Header{"User-Agent": {c.userAgent}},
 	})
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()

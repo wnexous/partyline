@@ -20,6 +20,9 @@ type Config struct {
 	LogLevel       slog.Level
 	LogFormat      string // "json" or "text"
 	TrustedProxies []netip.Prefix
+	// AllowPrivateNetworks lets connectors reach loopback, private and link-local
+	// addresses (PARTYLINE_ALLOW_PRIVATE_NETWORKS); off by default (CON-13).
+	AllowPrivateNetworks bool
 }
 
 // SecureCookies reports whether cookies must carry the Secure attribute.
@@ -62,6 +65,12 @@ func Load(getenv func(string) string) (*Config, error) {
 	if cfg.LogFormat != "json" && cfg.LogFormat != "text" {
 		return nil, fmt.Errorf("PARTYLINE_LOG_FORMAT: must be json or text")
 	}
+
+	allow, err := strconv.ParseBool(get("PARTYLINE_ALLOW_PRIVATE_NETWORKS", "false"))
+	if err != nil {
+		return nil, fmt.Errorf("PARTYLINE_ALLOW_PRIVATE_NETWORKS: must be true or false")
+	}
+	cfg.AllowPrivateNetworks = allow
 
 	for _, item := range strings.Split(get("PARTYLINE_TRUSTED_PROXIES", ""), ",") {
 		item = strings.TrimSpace(item)

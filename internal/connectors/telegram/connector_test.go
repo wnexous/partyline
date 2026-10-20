@@ -17,6 +17,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 )
 
 // Synthetic values.
@@ -171,7 +172,7 @@ func newConnector(t *testing.T, f *fakeBotAPI) *Connector {
 	t.Helper()
 	cfg, errs := Kind().Validate(connectors.Config{"bot_token": botToken, "api_base": f.srv.URL})
 	require.Empty(t, errs)
-	c, err := New(cfg, connectors.Deps{ID: "c1", UserAgent: userAgent})
+	c, err := New(cfg, connectors.Deps{AllowPrivateNetworks: true, ID: "c1", UserAgent: userAgent})
 	require.NoError(t, err)
 	c.pollTimeout = 0
 	return c
@@ -384,6 +385,7 @@ func TestErrorsNeverContainTheToken(t *testing.T) {
 	_, err := c.Send(context.Background(), connectors.Outbound{ChatID: "1", Text: "x"})
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), botToken)
+	require.Equal(t, "sendMessage: error 400", err.Error(), "CON-13: the platform's description text is not echoed")
 
 	f.srv.Close()
 	_, err = c.Send(context.Background(), connectors.Outbound{ChatID: "1", Text: "x"})
@@ -401,7 +403,7 @@ func escaped(s string) string { return strings.ReplaceAll(s, ":", "%3A") }
 func TestRunUnauthorized(t *testing.T) {
 	f := newFakeBotAPI(t)
 	cfg := connectors.Config{"bot_token": "999:wrong", "api_base": f.srv.URL}
-	c, err := New(cfg, connectors.Deps{UserAgent: userAgent})
+	c, err := New(cfg, connectors.Deps{AllowPrivateNetworks: true, UserAgent: userAgent})
 	require.NoError(t, err)
 	require.ErrorIs(t, c.Run(context.Background(), connectortest.NewRecorder()), ErrUnauthorized)
 }
@@ -415,4 +417,16 @@ func TestKindSchema(t *testing.T) {
 	require.Equal(t, DefaultAPIBase, cfg.String("api_base"))
 	_, errs = k.Validate(connectors.Config{})
 	require.Equal(t, map[string]string{"bot_token": "required"}, errs)
+}
+
+// CON-13: by default the connector refuses an api_base on a private address.
+func TestPrivateAPIBaseIsRefusedByDefault(t *testing.T) {
+	f := newFakeBotAPI(t)
+	cfg, errs := Kind().Validate(connectors.Config{"bot_token": botToken, "api_base": f.srv.URL})
+	require.Empty(t, errs)
+	c, err := New(cfg, connectors.Deps{UserAgent: userAgent})
+	require.NoError(t, err)
+	err = c.Run(context.Background(), connectortest.NewRecorder())
+	require.ErrorIs(t, err, safehttp.ErrBlockedAddress)
+	require.NotContains(t, err.Error(), botToken)
 }

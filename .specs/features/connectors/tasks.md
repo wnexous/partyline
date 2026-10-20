@@ -267,10 +267,10 @@ Discord media and webhook outbound use it. Platform error bodies (Telegram `desc
 **Requirement**: CON-13, CON-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Loopback/private/link-local/CGNAT/multicast/unspecified destinations fail at dial time, also through a hostname
-- [ ] Redirects are not followed; oversized responses fail
-- [ ] Webhook outbound to a loopback URL fails by default and works with the escape hatch
-- [ ] Telegram error descriptions are not in the error text
+- [x] Loopback/private/link-local/CGNAT/multicast/unspecified destinations fail at dial time, also through a hostname
+- [x] Redirects are not followed; oversized responses fail
+- [x] Webhook outbound to a loopback URL fails by default and works with the escape hatch
+- [x] Telegram error descriptions are not in the error text
 **Tests**: unit, e2e
 **Gate**: full
 **Commit**: `fix(connectors): block private network destinations for outbound calls`

@@ -17,6 +17,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 )
 
 // Synthetic credentials.
@@ -159,7 +160,7 @@ func newConnector(t *testing.T, f *fakeEvolution, instances ...string) *Connecto
 	}
 	norm, errs := Kind().Validate(cfg)
 	require.Empty(t, errs)
-	c, err := New(norm, connectors.Deps{ID: "c1", UserAgent: userAgent})
+	c, err := New(norm, connectors.Deps{AllowPrivateNetworks: true, ID: "c1", UserAgent: userAgent})
 	require.NoError(t, err)
 	return c
 }
@@ -225,7 +226,7 @@ func TestRunWithoutAllowlistAcceptsEveryInstance(t *testing.T) {
 func TestRunUnauthorized(t *testing.T) {
 	f := newFakeEvolution(t)
 	cfg := connectors.Config{"base_url": f.srv.URL, "api_key": "wrong-key-0123456789"}
-	c, err := New(cfg, connectors.Deps{UserAgent: userAgent})
+	c, err := New(cfg, connectors.Deps{AllowPrivateNetworks: true, UserAgent: userAgent})
 	require.NoError(t, err)
 	err = c.Run(context.Background(), connectortest.NewRecorder())
 	require.ErrorIs(t, err, ErrUnauthorized)
@@ -375,4 +376,15 @@ func TestKindSchema(t *testing.T) {
 	require.True(t, k.CanListChats)
 	_, errs := k.Validate(connectors.Config{})
 	require.Equal(t, map[string]string{"base_url": "required", "api_key": "required"}, errs)
+}
+
+// CON-13: by default the connector refuses a base_url on a private address.
+func TestPrivateBaseURLIsRefusedByDefault(t *testing.T) {
+	f := newFakeEvolution(t)
+	cfg := connectors.Config{"base_url": f.srv.URL, "api_key": globalKey}
+	c, err := New(cfg, connectors.Deps{UserAgent: userAgent})
+	require.NoError(t, err)
+	err = c.Run(context.Background(), connectortest.NewRecorder())
+	require.ErrorIs(t, err, safehttp.ErrBlockedAddress)
+	require.NotContains(t, err.Error(), globalKey)
 }

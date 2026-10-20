@@ -87,6 +87,8 @@ type ManagerDeps struct {
 	UserAgent string
 	// FileURL is passed to connectors (signed attachment links); nil leaves it unset.
 	FileURL func(attachmentID string) string
+	// AllowPrivateNetworks is passed to connectors (CON-13).
+	AllowPrivateNetworks bool
 	// Inbound receives every message of a running connector (the inbound pipeline); nil
 	// drops them.
 	Inbound func(ctx context.Context, src Source, m Inbound)
@@ -201,6 +203,7 @@ func (m *Manager) Apply(id string) {
 	sec := k.SecretValues(cfg)
 	conn, err := k.New(cfg, Deps{
 		ID: id, Logger: m.d.Logger.With("connector_id", id, "kind", k.Name), UserAgent: m.d.UserAgent, FileURL: m.d.FileURL,
+		AllowPrivateNetworks: m.d.AllowPrivateNetworks,
 	})
 	if err != nil {
 		m.persist(id, StatusError, Redact(err.Error(), sec))

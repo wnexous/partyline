@@ -126,6 +126,7 @@ Everything is configured with environment variables.
 | `PARTYLINE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `PARTYLINE_LOG_FORMAT` | `json` | `json` or `text`. |
 | `PARTYLINE_TRUSTED_PROXIES` | empty | Comma-separated CIDRs or IPs of reverse proxies whose `X-Forwarded-For` is trusted. |
+| `PARTYLINE_ALLOW_PRIVATE_NETWORKS` | `false` | `true` lets connectors call loopback, private, link-local and CGNAT addresses (an evolution-go or Bot API server on your LAN, a webhook receiver on localhost). Off, connector URLs that resolve to such addresses are refused. |
 
 Run it behind a TLS-terminating reverse proxy for internet exposure, set
 `PARTYLINE_PUBLIC_URL` to the https URL and list the proxy in `PARTYLINE_TRUSTED_PROXIES`.

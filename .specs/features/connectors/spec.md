@@ -54,6 +54,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 4. WHEN a connector is created or enabled THEN the system SHALL start it within 2 seconds and report status changes as `connector.status` events. (CON-04)
 5. WHEN a connector is disabled or deleted THEN the system SHALL stop it and stop all its outbound sends. (CON-05)
 6. IF a connector's transport fails THEN the system SHALL set status `error` with the error text (secrets redacted) and retry with backoff. (CON-06)
+7. WHILE `PARTYLINE_ALLOW_PRIVATE_NETWORKS` is not `true` the system SHALL refuse connector HTTP and WebSocket connections whose resolved address is loopback, private, link-local, CGNAT, multicast or unspecified, SHALL NOT follow redirects, SHALL bound response sizes and SHALL NOT copy platform error bodies into status or error text. (CON-13)
 
 **Independent Test**: Create a webhook connector, read it back with the secret masked, disable it, observe status events.
 
@@ -188,7 +189,8 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | CON-09 | P1: Chats and inbound | Tasks | Implementing |
 | CON-10 | P1: Chats and inbound | Tasks | Implementing |
 | CON-11 | P1: Chats and inbound | Tasks | Implementing |
-| CON-12 | P1: Chats and inbound | Tasks | Implementing |
+| CON-12 | P1: Chats and inbound | Tasks | Verified |
+| CON-13 | P1: Manage connectors | Execute (T13) | Implemented, re-verify |
 | WA-01 | P1: WhatsApp | Tasks | Implementing |
 | WA-02 | P1: WhatsApp | Tasks | Implementing |
 | WA-03 | P1: WhatsApp | Tasks | Implementing |
@@ -210,7 +212,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | IDN-04 | P1: Identities | Execute (T12) | Implemented, re-verify |
 | IDN-05 | P1: Identities | Execute (T12) | Implemented, re-verify |
 
-**Coverage:** 32 total, mapped in tasks.md
+**Coverage:** 33 total, mapped in tasks.md
 
 ---
 

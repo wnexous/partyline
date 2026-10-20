@@ -71,11 +71,16 @@ type hookEnv struct {
 }
 
 // newHookEnv runs an app with the webhook kind and the outbox worker, and a running
-// webhook connector of alice whose secret was generated.
-func newHookEnv(t *testing.T) *hookEnv {
+// webhook connector of alice whose secret was generated. The outbound receiver listens on
+// loopback, so private networks are allowed unless opts say otherwise.
+func newHookEnv(t *testing.T, opts ...testkit.Option) *hookEnv {
 	t.Helper()
 	out := newReceiver(t)
-	env := testkit.New(t, testkit.WithConnectorKinds(webhook.Kind()), testkit.WithOutbox())
+	opts = append([]testkit.Option{
+		testkit.WithConnectorKinds(webhook.Kind()), testkit.WithOutbox(),
+		testkit.WithEnv(map[string]string{"PARTYLINE_ALLOW_PRIVATE_NETWORKS": "true"}),
+	}, opts...)
+	env := testkit.New(t, opts...)
 	alice := env.NewUser("alice")
 	conn := testkit.Decode[dto.Connector](alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 		Kind: webhook.KindName, Name: "ci", Config: map[string]any{"outbound_url": out.srv.URL},
@@ -291,21 +296,42 @@ func TestWebhookOutboundFailureIsRetried(t *testing.T) {
 	msg := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "ping"}).RequireStatus(http.StatusCreated))
 	e.out.next(t)
 
+	item := e.firstAttempt(t, room.ID, msg.ID)
+	require.Equal(t, dto.OutboxStatusPending, item.Status, "queued for a retry")
+	require.Equal(t, "outbound: status 500", item.LastError)
+}
+
+// firstAttempt waits until the message's single delivery made an attempt.
+func (e *hookEnv) firstAttempt(t *testing.T, roomID, messageID string) dto.OutboxItem {
+	t.Helper()
 	deadline := time.Now().Add(connectortest.Timeout)
 	for {
-		var item *dto.OutboxItem
-		for _, m := range e.messages(t, room.ID) {
-			if m.ID == msg.ID && len(m.Outbox) == 1 && m.Outbox[0].Attempts >= 1 {
-				item = &m.Outbox[0]
+		for _, m := range e.messages(t, roomID) {
+			if m.ID == messageID && len(m.Outbox) == 1 && m.Outbox[0].Attempts >= 1 {
+				return m.Outbox[0]
 			}
-		}
-		if item != nil {
-			require.Equal(t, dto.OutboxStatusPending, item.Status, "queued for a retry")
-			require.Equal(t, "outbound: status 500", item.LastError)
-			return
 		}
 		require.False(t, time.Now().After(deadline), "the failed attempt was never recorded")
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// CON-13: without PARTYLINE_ALLOW_PRIVATE_NETWORKS an outbound URL on a private address is
+// never called; the attempt fails with a short reason and is retried.
+func TestWebhookOutboundToPrivateAddressIsRefusedByDefault(t *testing.T) {
+	e := newHookEnv(t, testkit.WithEnv(map[string]string{"PARTYLINE_ALLOW_PRIVATE_NETWORKS": "false"}))
+	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "deploys", "sender_id": "ci", "text": "hi"})).
+		RequireStatus(http.StatusAccepted)
+	room := e.roomWith(t, e.chats(t)[0].ID)
+	msg := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "ping"}).RequireStatus(http.StatusCreated))
+
+	item := e.firstAttempt(t, room.ID, msg.ID)
+	require.Equal(t, dto.OutboxStatusPending, item.Status)
+	require.Equal(t, "outbound: destination address not allowed", item.LastError)
+	select {
+	case <-e.out.calls:
+		t.Fatal("the private outbound URL was called")
+	default:
 	}
 }
 
