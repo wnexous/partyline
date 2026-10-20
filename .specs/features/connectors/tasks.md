@@ -290,7 +290,7 @@ T7 → T8 → T9 → T10 → T11
 **Requirement**: DC-01, DC-02, DC-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake session: bot author ignored; 4,500 chars → 3 sends, first with reference; channels listed
+- [x] Fake session: bot author ignored; 4,500 chars → 3 sends, first with reference; channels listed
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(discord): add gateway connector`

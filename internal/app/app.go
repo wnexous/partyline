@@ -19,6 +19,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/connectors/discord"
 	"github.com/wnexous/partyline/internal/connectors/telegram"
 	"github.com/wnexous/partyline/internal/connectors/whatsapp"
 	"github.com/wnexous/partyline/internal/delivery"
@@ -64,6 +65,7 @@ func BuiltinKinds() []connectors.Kind {
 	return []connectors.Kind{
 		whatsapp.Kind(),
 		telegram.Kind(),
+		discord.Kind(),
 	}
 }
 
