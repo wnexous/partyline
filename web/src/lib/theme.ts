@@ -37,9 +37,18 @@ export function resolveTheme(pref: ThemePreference): "light" | "dark" {
   return pref;
 }
 
-/** Applies the resolved scheme to <html> (the `dark` class drives the tokens). */
+/** Browser chrome colour per scheme: the `--background` token in sRGB. */
+export const THEME_COLORS = { light: "#fbfaf7", dark: "#0e141e" } as const;
+
+/**
+ * Applies the resolved scheme to <html> (the `dark` class drives the tokens) and points every
+ * theme-color meta at it, so an explicit choice also wins over the system scheme in the chrome.
+ */
 export function applyTheme(pref: ThemePreference) {
   const resolved = resolveTheme(pref);
   document.documentElement.classList.toggle("dark", resolved === "dark");
   document.documentElement.style.colorScheme = resolved;
+  for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+    meta.content = THEME_COLORS[resolved];
+  }
 }

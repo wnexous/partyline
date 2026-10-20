@@ -20,6 +20,8 @@ export const ptBR: Dictionary = {
   "error.network": "Não foi possível falar com o servidor. Verifique sua conexão e tente de novo.",
   "error.generic": "Algo deu errado. Tente de novo.",
   "nav.label": "Principal",
+  "nav.sheetDescription": "Páginas desta instância do partyline.",
+  "nav.skip": "Pular para o conteúdo",
   "nav.overview": "Visão geral",
   "nav.rooms": "Salas",
   "nav.agents": "Agentes",

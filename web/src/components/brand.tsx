@@ -19,7 +19,10 @@ export function Wordmark({ className }: { className?: string }) {
   return (
     <span className={cn("flex items-center gap-2.5", className)}>
       <LogoMark />
-      <span className="text-[1.05rem] font-bold tracking-[-0.02em] [font-stretch:112%]">
+      <span
+        translate="no"
+        className="text-[1.05rem] font-bold tracking-[-0.02em] [font-stretch:112%]"
+      >
         partyline
       </span>
     </span>

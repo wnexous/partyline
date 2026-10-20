@@ -12,12 +12,15 @@ export function EmptyState({
   children,
   action,
   className,
+  headingLevel: Heading = "h2",
 }: {
   icon: LucideIcon;
   title: ReactNode;
   children?: ReactNode;
   action?: ReactNode;
   className?: string;
+  /** h3 when the empty state sits inside a titled section. */
+  headingLevel?: "h2" | "h3";
 }) {
   return (
     <section
@@ -30,7 +33,7 @@ export function EmptyState({
         <span className="absolute inset-x-0 top-1/2 h-7 -translate-y-1/2 -rotate-2 rounded-[3px] bg-tape/70 shadow-sm dark:bg-tape/20" />
         <Icon className="relative size-6 text-tape-foreground dark:text-tape" strokeWidth={1.75} />
       </div>
-      <h2 className="text-lg font-semibold tracking-[-0.01em] text-balance">{title}</h2>
+      <Heading className="text-lg font-semibold tracking-[-0.01em] text-balance">{title}</Heading>
       {children ? (
         <div className="mt-2 text-sm text-pretty text-muted-foreground">{children}</div>
       ) : null}

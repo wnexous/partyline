@@ -176,7 +176,7 @@ Users need one place to see and steer everything: who is online, which chats fee
 | UI-21 | P1: Admin | Tasks | Implementing |
 | UI-22 | P2: Polish | Tasks | Implementing |
 | UI-23 | P2: Polish | Tasks | Implementing |
-| UI-24 | P2: Polish | Tasks | Pending |
+| UI-24 | P2: Polish | Tasks | Implementing |
 | UI-25 | P2: Polish | Tasks | Implementing |
 
 **Coverage:** 25 total, mapped in tasks.md

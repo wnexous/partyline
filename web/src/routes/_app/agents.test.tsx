@@ -120,7 +120,8 @@ describe("agents page (UI-15)", () => {
     const user = userEvent.setup();
     renderRoute("/agents");
     await user.click(await screen.findByRole("button", { name: "Delete release-bot" }));
-    const dialog = await screen.findByRole("dialog");
+    // Destructive confirmations are alert dialogs, like every other one in the app.
+    const dialog = await screen.findByRole("alertdialog", { name: "Delete release-bot?" });
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
     await user.click(within(dialog).getByRole("button", { name: "Delete agent" }));
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "release-bot" })).toBeNull());

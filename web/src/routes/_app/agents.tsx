@@ -7,15 +7,17 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { SharingDialog } from "@/components/sharing-dialog";
 import { StatusDot } from "@/components/status-dot";
-import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAgents, useDeleteAgent, useMe } from "@/lib/api/queries";
 import { type Agent, LevelManage } from "@/lib/api/types.gen";
@@ -149,33 +151,37 @@ function AgentRow({ agent, onDelete }: { agent: AgentView; onDelete: () => void 
 function DeleteAgentDialog({ agent, onClose }: { agent: Agent | null; onClose: () => void }) {
   const { t } = useI18n();
   const remove = useDeleteAgent();
-  const confirm = () => {
-    if (!agent) return;
-    remove.mutate(agent.id, {
-      onSuccess: () => {
-        toast(t("agents.deleted", { name: agent.name }));
-        onClose();
-      },
-      onError: () => toast.error(t("agents.deleteFailed", { name: agent.name })),
-    });
-  };
   return (
-    <Dialog open={agent !== null} onOpenChange={(open) => (open ? null : onClose())}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{t("agents.deleteTitle", { name: agent?.name ?? "" })}</DialogTitle>
-          <DialogDescription>{t("agents.deleteBody")}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            {t("common.cancel")}
-          </Button>
-          <Button variant="destructive" onClick={confirm} disabled={remove.isPending}>
+    <AlertDialog open={agent !== null} onOpenChange={(open) => (open ? null : onClose())}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {t("agents.deleteTitle", { name: agent?.name ?? "" })}
+          </AlertDialogTitle>
+          <AlertDialogDescription>{t("agents.deleteBody")}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-white hover:bg-destructive/90"
+            disabled={remove.isPending}
+            onClick={(e) => {
+              e.preventDefault();
+              if (!agent) return;
+              remove.mutate(agent.id, {
+                onSuccess: () => {
+                  toast(t("agents.deleted", { name: agent.name }));
+                  onClose();
+                },
+                onError: () => toast.error(t("agents.deleteFailed", { name: agent.name })),
+              });
+            }}
+          >
             {t("agents.deleteConfirm")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

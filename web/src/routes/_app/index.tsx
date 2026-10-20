@@ -188,7 +188,7 @@ function RowsSkeleton({ rows }: { rows: number }) {
 
 /** Compact empty state for a panel: same voice as the page-level one, less air. */
 function PanelEmpty(props: Parameters<typeof EmptyState>[0]) {
-  return <EmptyState {...props} className="py-8 md:py-10" />;
+  return <EmptyState {...props} headingLevel="h3" className="py-8 md:py-10" />;
 }
 
 function MoreRow({ count, label }: { count: number; label: string }) {

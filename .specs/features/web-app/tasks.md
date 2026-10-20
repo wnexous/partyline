@@ -330,7 +330,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-24, UI-25
 **Tools**: MCP: NONE; Skill: `web-design-guidelines`
 **Done when**:
-- [ ] i18n parity test passes; axe check (vitest-axe) on shell, room and login has no violations
+- [x] i18n parity test passes; axe check (vitest-axe) on shell, room and login has no violations
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): complete responsive, accessibility and pt-br pass`

@@ -121,7 +121,7 @@ describe("settings page", () => {
     await user.type(within(form).getByLabelText("New password"), "new-password-22");
     await user.type(within(form).getByLabelText("Repeat new password"), "new-password-23");
     await user.click(within(form).getByRole("button", { name: "Change password" }));
-    expect(await within(form).findByText("Passwords don't match")).toBeInTheDocument();
+    expect(await within(form).findByText("Passwords don’t match")).toBeInTheDocument();
     expect(calls.some((c) => c.path === "/me/password")).toBe(false);
 
     await user.clear(within(form).getByLabelText("Repeat new password"));
