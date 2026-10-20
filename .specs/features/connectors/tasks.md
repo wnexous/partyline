@@ -245,8 +245,8 @@ T7 → T8 → T9 → T10 → T11
 **Requirement**: WA-01, WA-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fixtures (synthetic, no real data) for text, extended text, image with caption, ephemeral wrapper, view-once, edit, revoke, reaction, location, unknown
-- [ ] `5541…:12@s.whatsapp.net` → `5541…@s.whatsapp.net`; chat id `<instance>|<jid>`
+- [x] Fixtures (synthetic, no real data) for text, extended text, image with caption, ephemeral wrapper, view-once, edit, revoke, reaction, location, unknown
+- [x] `5541…:12@s.whatsapp.net` → `5541…@s.whatsapp.net`; chat id `<instance>|<jid>`
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(whatsapp): parse evolution-go message events`
