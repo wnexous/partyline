@@ -756,7 +756,7 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 **Requirement**: all
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Notes cover every new behavior
+- [x] Notes cover every new behavior
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record routing-context fix iteration 2`
