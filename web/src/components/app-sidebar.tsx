@@ -225,7 +225,7 @@ function UserMenu({ me, initials }: { me: Me; initials: string }) {
             {t("locale.label")}
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
-            <LanguageRadioGroup />
+            <LanguageRadioGroup syncAccount />
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSeparator />

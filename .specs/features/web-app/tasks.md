@@ -272,7 +272,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-19, UI-23, UI-25
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Secret shown once with warning; list shows prefix only; theme/language persist in localStorage
+- [x] Secret shown once with warning; list shows prefix only; theme/language persist in localStorage
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add tokens and settings pages`
