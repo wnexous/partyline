@@ -18,7 +18,9 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-const wsWait = 5 * time.Second
+// wsWait bounds waits for an agent frame or close; they return as soon as it arrives, so the
+// bound only matters on a loaded machine.
+const wsWait = time.Minute
 
 // agentRoom is a room of alice with her agent "builder" as a member.
 type agentRoom struct {

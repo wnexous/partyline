@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	liveWait = 2 * time.Second
+	// liveWait bounds waits for an expected live frame; they return as soon as it arrives.
+	liveWait = time.Minute
 	// quiet is how long a user without access must receive nothing (T22: 500 ms).
 	quiet = 500 * time.Millisecond
 )

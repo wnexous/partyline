@@ -108,7 +108,7 @@ func (a *AgentConn) Ack(messageID string) {
 	a.T.Helper()
 	data, err := json.Marshal(dto.AgentAckFrame{Type: dto.AgentFrameTypeAck, MessageID: messageID})
 	require.NoError(a.T, err)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), IOTimeout)
 	defer cancel()
 	require.NoError(a.T, a.Conn.Write(ctx, websocket.MessageText, data))
 }

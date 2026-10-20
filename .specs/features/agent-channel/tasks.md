@@ -48,6 +48,12 @@ T1 → T2 → T3 → T4
 T5 → T6 → T7 → T8 → T9
 ```
 
+### Phase 3: Verifier fix iteration 1
+
+```
+T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
+```
+
 ---
 
 ## Task Breakdown
@@ -195,3 +201,133 @@ T5 → T6 → T7 → T8 → T9
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): add channel command with end-to-end test`
+
+### Phase 3: Verifier fix iteration 1
+
+#### T10: Load-tolerant testkit and api waits (F1)
+
+**What**: The testkit dial and ack timeouts and the api test frame waits (`wsWait`, `liveWait`) become one minute; every wait returns as soon as its frame arrives, so only a loaded host notices. `make test` already has `-timeout 20m` (core T45).
+**Where**: `internal/testkit/live.go`, `internal/testkit/agent.go`, `internal/api/agent_ws_test.go`, `internal/api/live_test.go`
+**Depends on**: None
+**Reuses**: frameStream
+**Requirement**: gate stability (no AC)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] `TestDispatchPushesWithRecipientRelativeTrust`, `TestAgentRoomsListsMembersWithPresence` and `TestDispatchSkipsPausedRoom` pass with `-race -count=5` under load
+**Tests**: e2e
+**Gate**: full
+**Commit**: `test(testkit): give websocket dials and frame waits a load-tolerant deadline`
+
+#### T11: Ack of a foreign room's message (F2, M16)
+
+**What**: A gateway test acks a message of a room the agent is not a member of and asserts no cursor row appears, while an ack in its own room advances.
+**Where**: `internal/api/agent_ws_test.go`
+**Depends on**: T10
+**Reuses**: testkit AgentConn.Ack
+**Requirement**: AGT-07
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] An ack for a non-member room's message leaves no cursor for that room; an ack in a member room advances the cursor
+**Tests**: e2e
+**Gate**: full
+**Commit**: `test(api): ignore agent acks for rooms the agent is not in`
+
+#### T12: Live push overlapping the backlog (F5, M17)
+
+**What**: A gateway test queues a live push of a message the backlog already sent and asserts the agent receives it once.
+**Where**: `internal/agents/gateway_test.go`
+**Depends on**: T11
+**Reuses**: Gateway.Push
+**Requirement**: AGT-08
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] A message delivered by the backlog and pushed live again arrives as exactly one frame; a newer pushed message still arrives
+**Tests**: e2e
+**Gate**: full
+**Commit**: `test(agents): send a message once when a live push overlaps the backlog`
+
+#### T13: Agent sockets close on token revocation and user disable
+
+**What**: The gateway subscribes to `SessionsRevoked`: revoking the agent's token or disabling its owner closes the agent socket at once (1008); after a lagged bus it re-checks the token.
+**Where**: `internal/agents/gateway.go`
+**Depends on**: T12
+**Reuses**: events.SessionsRevoked.Revokes, users.PrincipalActive
+**Requirement**: AGT-02, AUTH-10 (core)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Revoking the agent token closes the agent socket within 1 s with 1008; another agent token's socket stays open
+- [ ] Disabling the owner closes its agent sockets within 1 s
+**Tests**: e2e
+**Gate**: full
+**Commit**: `fix(agents): close agent sockets when their token is revoked`
+
+#### T14: Real instructions in the initialize answer (F3, M21)
+
+**What**: The channel command's initialize answer carries `channel.Instructions`.
+**Where**: `internal/cli/channel_test.go`
+**Depends on**: T13
+**Reuses**: mcpClient
+**Requirement**: MCP-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] `partyline channel`'s initialize result has `instructions` equal to `channel.Instructions`
+**Tests**: e2e
+**Gate**: full
+**Commit**: `test(cli): assert the channel instructions in the initialize answer`
+
+#### T15: Reconnect backoff in the link loop (F4, M15)
+
+**What**: `link.run` waits through an injectable function; a test records the waits across repeated dial failures.
+**Where**: `internal/channel/link.go`
+**Depends on**: T14
+**Reuses**: timing
+**Requirement**: AGT-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Repeated dial failures wait 1, 2, 4, 8, 16, 30, 30 s (scaled timing in the test), starting over after a successful connection
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(channel): assert the reconnect backoff of the link loop`
+
+#### T16: Slugified download dir (F6, M20b)
+
+**What**: A test runs the channel with agent `../Night Shift` and asserts downloads land in `<TempDir>/partyline/night-shift`.
+**Where**: `internal/channel/tools_test.go`
+**Depends on**: T15
+**Reuses**: agents.Slug
+**Requirement**: AGT-01, TOOL-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] With agent `../Night Shift` the download path is under `<TempDir>/partyline/night-shift/`
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(channel): slugify the agent name in the download directory`
+
+#### T17: Private download directory (F7, S1)
+
+**What**: `download_attachment` creates `<tmp>/partyline/<agent>` with 0700 and refuses a directory that is a symlink, not owned by the user or open to group/others; files are written to a fresh temp file (O_EXCL, 0600) and renamed into place, so a planted symlink is never followed.
+**Where**: `internal/channel/tools.go`
+**Depends on**: T16
+**Reuses**: safeName
+**Requirement**: TOOL-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] A symlinked or group/other-accessible download dir → isError, nothing written through it
+- [ ] A symlink planted at the target file name is replaced, its target untouched; the file is 0600
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(channel): keep attachment downloads in a private directory`
+
+#### T18: Contract notes and traceability for fix iteration 1
+
+**What**: Record the gateway revocation, the link wait hook and the download dir rules; update traceability.
+**Where**: `contract-notes.md`
+**Depends on**: T17
+**Reuses**: none
+**Requirement**: all
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] contract-notes.md describes the revocation close, the private download dir and the test deadlines
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record agent channel contract notes for fix iteration 1`
