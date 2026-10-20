@@ -547,12 +547,12 @@ describe("broadcast setting (ROUTE-06, ROUTE-07)", () => {
     const toggle = within(sheet).getByRole("switch", { name: /Send to every chat/ });
     expect(toggle).not.toBeChecked();
     expect(toggle).toBeDisabled();
-    expect(within(sheet).getByRole("switch", { name: /Bridge chats/ })).toBeDisabled();
-    expect(
-      within(sheet).getByText(
-        "This is a catch-all room: posts only reach the chats you pick, and chats are not bridged.",
-      ),
-    ).toBeInTheDocument();
+    const bridge = within(sheet).getByRole("switch", { name: /Bridge chats/ });
+    expect(bridge).toBeDisabled();
+    const locked =
+      "This is a catch-all room: posts only reach the chats you pick, and chats are not bridged.";
+    expect(toggle).toHaveAccessibleDescription(locked);
+    expect(bridge).toHaveAccessibleDescription(locked);
   });
 
   it("shows a 422 broadcast reason", async () => {

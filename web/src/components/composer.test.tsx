@@ -243,7 +243,7 @@ describe("composer in a room that answers chats explicitly (ROUTE-06)", () => {
     );
   }
 
-  it("asks for a chat and sends only once one is picked", async () => {
+  it("asks for a chat, says so on Enter or Send, and sends once one is picked", async () => {
     const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
     const user = userEvent.setup();
     renderExplicit();
@@ -251,8 +251,15 @@ describe("composer in a room that answers chats explicitly (ROUTE-06)", () => {
     expect(screen.getByText("Answer a chat explicitly")).toBeInTheDocument();
     expect(box).toHaveAccessibleDescription(/Answer a chat explicitly/);
     await user.type(box, "hello{Enter}");
-    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Pick a chat to answer");
+    expect(screen.getByRole("button", { name: /To: choose a chat/ })).toHaveAccessibleDescription(
+      "Pick a chat to answer",
+    );
     expect(posts(calls)).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Pick a chat to answer");
+    expect(posts(calls)).toHaveLength(0);
+    expect(box).toHaveValue("hello");
 
     await user.click(screen.getByRole("button", { name: /To: choose a chat/ }));
     const dialog = await screen.findByRole("dialog");
@@ -263,7 +270,7 @@ describe("composer in a room that answers chats explicitly (ROUTE-06)", () => {
     ).toBeInTheDocument();
     await user.click(within(dialog).getByRole("checkbox", { name: /Ops on call/ }));
     await user.keyboard("{Escape}");
-    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    expect(screen.queryByRole("alert")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(posts(calls)).toHaveLength(1));
     expect(posts(calls)[0]?.body).toEqual({ text: "hello", recipients: ["c1"] });

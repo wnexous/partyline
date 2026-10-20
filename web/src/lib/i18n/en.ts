@@ -211,6 +211,7 @@ export const en = {
   "composer.rateLimited": "Too many messages at once. Wait a moment and send again.",
   "composer.toDefault": "To: chats with outbound on",
   "composer.toPick": "To: choose a chat",
+  "composer.pickChat": "Pick a chat to answer",
   "composer.explicitHint": "Answer a chat explicitly",
   "composer.recipientsBodyExplicit":
     "This room only answers the chats you pick; without one, the post reaches no chat.",

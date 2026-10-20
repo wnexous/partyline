@@ -680,13 +680,13 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 #### T42: Lock reason on the bridge switch; inline message when no chat is picked
 
 **What**: In a catch-all room the bridge switch is described by the lock reason; in a broadcast-off room Enter or Send without a picked chat shows "Pick a chat to answer" inline and posts nothing.
-**Where**: `web/src/components/room-settings-sheet.tsx`, `web/src/components/composer.tsx`, `web/src/locales/*`
+**Where**: `web/src/components/room-settings-sheet.tsx`, `web/src/components/composer.tsx`, `web/src/lib/i18n/*`
 **Depends on**: T41
 **Reuses**: composer and room tests
 **Requirement**: ROUTE-06, ROUTE-07, A11Y-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Bridge switch accessible description has the lock reason; Enter and Send show the message (`role="alert"`) and post nothing
+- [x] Bridge switch accessible description has the lock reason; Enter and Send show the message (`role="alert"`) and post nothing
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(web): explain locked bridging and unpicked chats`

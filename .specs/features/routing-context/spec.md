@@ -177,6 +177,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 2. WHEN a manager saves agent settings with a keyword typed but not yet added THEN the app SHALL add it (or show its error and send nothing). (A11Y-02)
 3. The room instructions counter SHALL describe the instructions textarea. (A11Y-03)
 4. WHILE the catch-all form has no change, Save SHALL stay disabled and be described by `No changes to save.` (A11Y-04)
+5. WHEN a user presses Enter or Send without a picked chat in a room that does not broadcast and has chats with outbound on THEN the composer SHALL post nothing and show `Pick a chat to answer` (pt-BR: `Escolha um chat para responder`) as an alert that describes the chat picker; in a catch-all room the bridge switch, like the broadcast switch, SHALL be described by the lock reason. (A11Y-05, fix iteration 2)
 
 ---
 
@@ -185,7 +186,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 - IF two first messages from the same new chat arrive at once THEN the system SHALL add the chat to the catch-all room only once (ROUTE-01).
 - WHEN a catch-all chat is later removed from the room THEN it SHALL NOT be re-added automatically for 24 hours unless a manager adds it (ROUTE-02).
 - WHEN a room with `bridge_chats` on is chosen as a catch-all room THEN bridging SHALL be turned off with broadcast (ROUTE-07).
-- WHILE a room does not broadcast and has chats with outbound on, the web composer SHALL show `Answer a chat explicitly` and keep Send disabled until a chat is picked; with no chat to pick it SHALL post to the agents only (ROUTE-06). The room settings SHALL show the broadcast switch, disabled with an explanation in a catch-all room, as is the bridge switch (ROUTE-07).
+- WHILE a room does not broadcast and has chats with outbound on, the web composer SHALL show `Answer a chat explicitly`, and Enter or Send without a picked chat SHALL post nothing and say `Pick a chat to answer` (A11Y-05); with no chat to pick it SHALL post to the agents only (ROUTE-06). The room settings SHALL show the broadcast switch, disabled with an explanation in a catch-all room, as is the bridge switch (ROUTE-07).
 - WHEN no connector targets a room any more THEN its `broadcast` SHALL stay off until a manager turns it on (ROUTE-07).
 - WHEN a mention keyword matches inside a longer word THEN it SHALL still count only on word boundaries (MEM-03).
 
@@ -234,8 +235,9 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | A11Y-02 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
 | A11Y-03 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
 | A11Y-04 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
+| A11Y-05 | P2: Accessible forms | Fix iteration 2 | Implemented (T42) |
 
-**Coverage:** 39 total, mapped in tasks.md
+**Coverage:** 40 total, mapped in tasks.md
 
 ---
 

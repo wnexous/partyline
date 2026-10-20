@@ -106,15 +106,17 @@ function ComposerForm({
   const length = textLength(text);
   const tooLong = length > MaxTextLength;
   const trimmed = text.trim();
-  const canSend =
-    !tooLong &&
-    (trimmed.length > 0 || files.length > 0) &&
-    (!needsChat || chosen.length > 0) &&
-    !post.isPending;
+  const canSend = !tooLong && (trimmed.length > 0 || files.length > 0) && !post.isPending;
   const fmt = (n: number) => new Intl.NumberFormat(locale).format(n);
 
   const send = () => {
     if (!canSend) return;
+    if (needsChat && chosen.length === 0) {
+      // ROUTE-06: say why nothing is sent instead of ignoring Enter or Send.
+      setError(t("composer.pickChat"));
+      setRecipientsInvalid(true);
+      return;
+    }
     setError(null);
     setRecipientsInvalid(false);
     post.mutate(
@@ -235,6 +237,7 @@ function ComposerForm({
               needsChat={needsChat}
               onChange={(ids) => {
                 setRecipients(ids);
+                if (recipientsInvalid) setError(null);
                 setRecipientsInvalid(false);
               }}
               errorId={recipientsInvalid && error ? errorId : undefined}
