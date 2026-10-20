@@ -1,8 +1,11 @@
-// Package devices approves new machines from the web app (DEV-01..04): `partyline setup
+// Package devices approves new machines from the web app (DEV-01..06): `partyline setup
 // --browser` creates a request and polls it with a secret; a logged-in user opens
-// <instance>/devices/<code> and approves it, which creates an agent token for that user. The
-// polling CLI receives the token once. Only hashes of the code and of the poll secret are
-// stored, and the token stays sealed with the instance key until it is delivered.
+// <instance>/devices, types the code the terminal shows and approves it, which creates an
+// agent token for that user. The polling CLI receives the token once, with the approver's
+// username. The code never travels in a link, so a forwarded link cannot approve anything,
+// and a user who types wrong codes is slowed down (DEV-05). Only hashes of the code and of
+// the poll secret are stored, and the token stays sealed with the instance key until it is
+// delivered.
 package devices
 
 import (
@@ -15,7 +18,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -48,6 +53,9 @@ const (
 	MaxMachineLength = 64
 	// NameSuffix follows the machine name in the name of the agent token an approval creates.
 	NameSuffix = " (via setup)"
+	// CodeAttemptLimit wrong codes per CodeAttemptWindow and user; more answer 429 (DEV-05).
+	CodeAttemptLimit  = 5
+	CodeAttemptWindow = time.Minute
 	// keep is how long requests are kept (the creation limit counts them).
 	keep = CreateWindow
 )
@@ -59,6 +67,7 @@ var (
 	ErrNotFound      = httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "device request not found")
 	ErrExpired       = httpx.NewError(http.StatusGone, dto.ErrorCodeGone, "device request expired")
 	ErrDecided       = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "device request already approved or denied")
+	ErrTooManyCodes  = httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many wrong codes: wait a minute and try again")
 )
 
 // Audit actions and target kind.
@@ -83,6 +92,10 @@ type Deps struct {
 // Service manages device requests.
 type Service struct {
 	d Deps
+
+	mu sync.Mutex
+	// wrong holds the times of each user's recent wrong codes (DEV-05).
+	wrong map[string][]time.Time
 }
 
 // New returns a Service.
@@ -90,7 +103,7 @@ func New(d Deps) *Service {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Service{d: d}
+	return &Service{d: d, wrong: map[string][]time.Time{}}
 }
 
 // Created is a new request as the CLI sees it once.
@@ -106,10 +119,12 @@ type Request struct {
 	Status dto.DeviceStatus
 }
 
-// Poll is the answer to a poll; Token is set only on the poll that delivers it.
+// Poll is the answer to a poll; Token and ApprovedBy (the approver's username) are set only
+// on the poll that delivers the token.
 type Poll struct {
-	Status dto.DeviceStatus
-	Token  string
+	Status     dto.DeviceStatus
+	Token      string
+	ApprovedBy string
 }
 
 func hash(s string) string {
@@ -216,9 +231,46 @@ func (s *Service) view(row db.DeviceRequest) Request {
 	return Request{DeviceRequest: row, Status: st}
 }
 
-// Get returns the request with the code for the approval page (WIZ-02).
-func (s *Service) Get(ctx context.Context, code string) (Request, error) {
+// attempt reserves one code attempt for the user before the code is looked up, so a burst
+// cannot pass the limit (DEV-05). The caller calls done(false) when the code exists, which
+// gives the attempt back; an unknown code keeps counting for CodeAttemptWindow.
+func (s *Service) attempt(userID string) (done func(wrong bool), err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.d.Now()
+	recent := slices.DeleteFunc(s.wrong[userID], func(t time.Time) bool { return !now.Before(t.Add(CodeAttemptWindow)) })
+	if len(recent) >= CodeAttemptLimit {
+		s.wrong[userID] = recent
+		return nil, ErrTooManyCodes
+	}
+	s.wrong[userID] = append(recent, now)
+	return func(wrong bool) {
+		if wrong {
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		list := s.wrong[userID]
+		if i := slices.IndexFunc(list, now.Equal); i >= 0 {
+			list = slices.Delete(list, i, i+1)
+		}
+		if len(list) == 0 {
+			delete(s.wrong, userID)
+		} else {
+			s.wrong[userID] = list
+		}
+	}, nil
+}
+
+// Lookup returns the request with the code the user typed, for the approval page (WIZ-02).
+// Unknown codes count against the user's attempts (DEV-05).
+func (s *Service) Lookup(ctx context.Context, p authn.Principal, code string) (Request, error) {
+	done, err := s.attempt(p.UserID)
+	if err != nil {
+		return Request{}, err
+	}
 	row, err := s.d.Store.R().GetDeviceRequestByCode(ctx, hash(NormalizeCode(code)))
+	done(errors.Is(err, sql.ErrNoRows))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Request{}, ErrNotFound
 	}
@@ -250,8 +302,12 @@ func TokenName(machine string) string {
 }
 
 func (s *Service) decide(ctx context.Context, p authn.Principal, code string, approve bool) (Request, error) {
+	done, err := s.attempt(p.UserID)
+	if err != nil {
+		return Request{}, err
+	}
 	var out Request
-	err := s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		row, err := q.GetDeviceRequestByCode(ctx, hash(NormalizeCode(code)))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
@@ -293,6 +349,7 @@ func (s *Service) decide(ctx context.Context, p authn.Principal, code string, ap
 			Action: action, TargetKind: TargetDevice, TargetID: row.ID, Detail: map[string]any{"machine": row.Machine},
 		})
 	})
+	done(errors.Is(err, ErrNotFound))
 	return out, err
 }
 
@@ -331,7 +388,12 @@ func (s *Service) Poll(ctx context.Context, secret string) (Poll, error) {
 		if err := q.TakeDeviceToken(ctx, row.ID); err != nil {
 			return err
 		}
+		approver, err := q.GetUser(ctx, row.UserID.String)
+		if err != nil {
+			return err
+		}
 		out.Token = string(token)
+		out.ApprovedBy = approver.Username
 		return s.d.Audit.Record(ctx, q, audit.Entry{
 			ActorID: row.UserID.String, Action: ActionDeliver, TargetKind: TargetDevice, TargetID: row.ID,
 			Detail: map[string]any{"machine": row.Machine},

@@ -431,11 +431,11 @@ the web changes.
 **Requirement**: DEV-01, DEV-02, DEV-05, DEV-06, WIZ-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `approve_url` is `<instance>/devices`; the CLI output has no URL with the code
-- [ ] lookup/approve/deny read the code from the body; old `{code}` routes are gone
-- [ ] 5 unknown codes per user and minute, the 6th → 429 even with a valid code; another user unaffected; a minute later accepted
-- [ ] delivering poll has `approved_by`; CLI prints `Approved by @<user> on <instance>`, declined confirmation saves nothing and exits 1
-- [ ] page: code field first, details after lookup, Approve sends the typed code; `/devices/<code>` lands on `/devices` with an empty field
+- [x] `approve_url` is `<instance>/devices`; the CLI output has no URL with the code
+- [x] lookup/approve/deny read the code from the body; old `{code}` routes are gone
+- [x] 5 unknown codes per user and minute, the 6th → 429 even with a valid code; another user unaffected; a minute later accepted
+- [x] delivering poll has `approved_by`; CLI prints `Approved by @<user> on <instance>`, declined confirmation saves nothing and exits 1
+- [x] page: code field first, details after lookup, Approve sends the typed code; `/devices/<code>` lands on `/devices` with an empty field
 **Tests**: e2e (API), unit (CLI, web), e2e (web)
 **Gate**: build + e2e
 **Commit**: `feat(devices): approve machines by typing the code from the terminal`

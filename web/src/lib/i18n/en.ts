@@ -339,7 +339,17 @@ export const en = {
 
   "devices.title": "Approve a machine",
   "devices.body":
-    "partyline setup on another machine asks to connect as your agent. Approve only if you just ran it and the code matches the one in your terminal.",
+    "partyline setup on another machine asks to connect as your agent. Approve only if you just ran it yourself.",
+  "devices.enterBody":
+    "Type the code that {cmd} shows in your terminal. Only approve a machine you are setting up yourself.",
+  "devices.codeLabel": "Code from your terminal",
+  "devices.codeShape": "Codes have 8 letters and digits, like ABCD-EFGH.",
+  "devices.codeNotFound":
+    "No pending request has this code. Check it in your terminal; codes last 10 minutes.",
+  "devices.tooManyCodes": "Too many wrong codes. Wait a minute and try again.",
+  "devices.continue": "Continue",
+  "devices.checking": "Checking…",
+  "devices.otherCode": "Use another code",
   "devices.request": "Approval request",
   "devices.machine": "Machine",
   "devices.code": "Code",
@@ -347,7 +357,7 @@ export const en = {
   "devices.requested": "Requested",
   "devices.expires": "Expires in",
   "devices.warning":
-    "Never approve a link someone sent you: the machine that asked gets an agent token in your name.",
+    "Never type a code someone sent you: the machine that asked gets an agent token in your name, and its messages count as yours.",
   "devices.tokenNote":
     "Approving creates an agent token named after this machine, owned by you. Revoke it under API tokens to cut the machine off.",
   "devices.approve": "Approve",
@@ -362,11 +372,7 @@ export const en = {
   "devices.deniedBody":
     "partyline setup on that machine stops with “approval denied”. Nothing was created.",
   "devices.expiredTitle": "This request expired",
-  "devices.expiredBody": "Codes last 10 minutes. Run {cmd} again for a new link.",
-  "devices.notFoundTitle": "No request with this code",
-  "devices.notFoundBody":
-    "Check the link in your terminal. Requests are removed an hour after they are made.",
-  "devices.loadFailed": "Couldn’t load this request.",
+  "devices.expiredBody": "Codes last 10 minutes. Run {cmd} again for a new code.",
   "connect.open": "Connect an agent",
   "connect.title": "Connect an agent",
   "connect.body":

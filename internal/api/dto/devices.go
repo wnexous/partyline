@@ -20,7 +20,8 @@ type CreateDeviceRequest struct {
 }
 
 // DeviceRequestCreated answers POST /devices (201). The user opens ApproveURL
-// (<instance>/devices/<code>); the CLI polls with PollSecret until ExpiresAt (DEV-01).
+// (<instance>/devices, without the code) and types Code there; the CLI polls with PollSecret
+// until ExpiresAt (DEV-01).
 type DeviceRequestCreated struct {
 	Code       string    `json:"code"`
 	PollSecret string    `json:"poll_secret"`
@@ -34,15 +35,23 @@ type DevicePollRequest struct {
 }
 
 // DevicePoll answers POST /devices/poll. The poll that first sees the approval carries the new
-// agent token and the instance URL; later polls carry only the status (DEV-02).
+// agent token, the instance URL and the approver's username; later polls carry only the
+// status (DEV-02, DEV-06).
 type DevicePoll struct {
-	Status DeviceStatus `json:"status"`
-	Token  string       `json:"token,omitempty"`
-	URL    string       `json:"url,omitempty"`
+	Status     DeviceStatus `json:"status"`
+	Token      string       `json:"token,omitempty"`
+	URL        string       `json:"url,omitempty"`
+	ApprovedBy string       `json:"approved_by,omitempty"`
 }
 
-// DeviceRequest is a request as the approval page shows it: GET /devices/{code} and the answer
-// of POST /devices/{code}/approve and /deny (WIZ-02).
+// DeviceCode is the body of POST /devices/lookup, /devices/approve and /devices/deny: the
+// code the user typed from the terminal (WIZ-02). It never travels in a URL.
+type DeviceCode struct {
+	Code string `json:"code"`
+}
+
+// DeviceRequest is a request as the approval page shows it: the answer of POST
+// /devices/lookup, /devices/approve and /devices/deny (WIZ-02).
 type DeviceRequest struct {
 	Code      string       `json:"code"`
 	Machine   string       `json:"machine"`

@@ -344,7 +344,17 @@ export const ptBR: Dictionary = {
 
   "devices.title": "Aprovar uma máquina",
   "devices.body":
-    "O partyline setup em outra máquina pede para se conectar como seu agente. Aprove só se foi você quem acabou de rodá-lo e o código é o mesmo do seu terminal.",
+    "O partyline setup em outra máquina pede para se conectar como seu agente. Aprove só se foi você quem acabou de rodá-lo.",
+  "devices.enterBody":
+    "Digite o código que o {cmd} mostra no seu terminal. Aprove só uma máquina que você mesmo está configurando.",
+  "devices.codeLabel": "Código do seu terminal",
+  "devices.codeShape": "Os códigos têm 8 letras e números, como ABCD-EFGH.",
+  "devices.codeNotFound":
+    "Nenhum pedido pendente tem este código. Confira no terminal; os códigos valem 10 minutos.",
+  "devices.tooManyCodes": "Códigos errados demais. Espere um minuto e tente de novo.",
+  "devices.continue": "Continuar",
+  "devices.checking": "Conferindo…",
+  "devices.otherCode": "Usar outro código",
   "devices.request": "Pedido de aprovação",
   "devices.machine": "Máquina",
   "devices.code": "Código",
@@ -352,7 +362,7 @@ export const ptBR: Dictionary = {
   "devices.requested": "Pedido",
   "devices.expires": "Expira em",
   "devices.warning":
-    "Nunca aprove um link que alguém mandou: a máquina que pediu recebe um token de agente em seu nome.",
+    "Nunca digite um código que alguém mandou: a máquina que pediu recebe um token de agente em seu nome, e as mensagens dela contam como suas.",
   "devices.tokenNote":
     "Aprovar cria um token de agente com o nome desta máquina, em seu nome. Revogue-o em Tokens de API para desconectar a máquina.",
   "devices.approve": "Aprovar",
@@ -367,11 +377,7 @@ export const ptBR: Dictionary = {
   "devices.deniedBody":
     "O partyline setup naquela máquina para com “approval denied”. Nada foi criado.",
   "devices.expiredTitle": "Este pedido expirou",
-  "devices.expiredBody": "Os códigos valem 10 minutos. Rode {cmd} de novo para gerar outro link.",
-  "devices.notFoundTitle": "Nenhum pedido com este código",
-  "devices.notFoundBody":
-    "Confira o link no terminal. Os pedidos são apagados uma hora depois de criados.",
-  "devices.loadFailed": "Não foi possível carregar este pedido.",
+  "devices.expiredBody": "Os códigos valem 10 minutos. Rode {cmd} de novo para gerar outro código.",
   "connect.open": "Conectar um agente",
   "connect.title": "Conectar um agente",
   "connect.body":

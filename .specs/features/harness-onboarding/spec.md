@@ -69,10 +69,12 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 
 **Acceptance Criteria**:
 
-1. WHEN `partyline setup --browser` starts THEN the server SHALL create a device request with an 8-character code valid for 10 minutes and the CLI SHALL print the approval URL `<instance>/devices/<code>`. (DEV-01)
-2. WHEN a logged-in user approves the request THEN the server SHALL create an agent token named after the machine hostname and deliver it once to the polling CLI. (DEV-02)
+1. WHEN `partyline setup --browser` starts THEN the server SHALL create a device request with an 8-character code valid for 10 minutes and the CLI SHALL print the approval page `<instance>/devices` and the code (shown as `ABCD-EFGH`); no printed URL SHALL carry the code. (DEV-01; amended in fix iteration 1: typed code instead of a link with the code)
+2. WHEN a logged-in user types the code and approves the request THEN the server SHALL create an agent token named after the machine hostname and deliver it once to the polling CLI, together with the approver's username. (DEV-02)
 3. IF the request expires or is denied THEN the CLI SHALL exit non-zero with `approval expired` or `approval denied`. (DEV-03)
 4. The server SHALL rate-limit device polling to 1 request per 2 seconds per request and creation to 10 per hour per IP. (DEV-04)
+5. The server SHALL take the code in the request body of `POST /devices/lookup`, `/devices/approve` and `/devices/deny`, never in a URL, and IF a user has entered 5 unknown codes within the last minute THEN it SHALL answer further code entries of that user with 429 until a minute has passed since them. (DEV-05; fix iteration 1)
+6. WHEN the token is delivered THEN the CLI SHALL print `Approved by @<username> on <instance>` and, unless `--yes` is given, ask for confirmation; IF the user declines (or the input ends) THEN setup SHALL save nothing and exit non-zero. (DEV-06; fix iteration 1)
 
 **Independent Test**: CLI starts, user approves in the web app, CLI saves the token.
 
@@ -154,7 +156,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 **Acceptance Criteria**:
 
 1. The wizard SHALL show `curl -fsSL <instance>/install.sh | sh` and `partyline setup --browser`, a harness selector (Claude Code, OpenCode, pi, omp, Codex, Gemini) with its start command, and keep the manual JSON (without the token inline) under "Advanced". (WIZ-01)
-2. WHEN a device approval page `/devices/<code>` is opened THEN the app SHALL show the machine name and code with Approve/Deny. (WIZ-02)
+2. WHEN the approval page `/devices` is opened THEN the app SHALL ask the logged-in user to type the code from the terminal and only then show the machine name, address and age with Approve/Deny; an old `/devices/<code>` link SHALL open `/devices` with an empty code field. (WIZ-02; amended in fix iteration 1)
 
 **Independent Test**: Wizard renders commands; approval page approves a pending request.
 
@@ -183,6 +185,8 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | DEV-02 | P1: Browser approval | Tasks | Implementing |
 | DEV-03 | P1: Browser approval | Tasks | Implementing |
 | DEV-04 | P1: Browser approval | Tasks | Implementing |
+| DEV-05 | P1: Browser approval | Tasks (T24) | Implemented |
+| DEV-06 | P1: Browser approval | Tasks (T24) | Implemented |
 | NAME-01 | P1: Agent names | Tasks | Implementing |
 | NAME-02 | P1: Agent names | Tasks | Implementing |
 | NAME-03 | P1: Agent names | Tasks | Implementing |

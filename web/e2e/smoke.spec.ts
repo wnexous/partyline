@@ -3,8 +3,9 @@ import type { CreatedInvite, List, Me, Room, Token } from "../src/lib/api/types.
 import { ADMIN, apiCall, expect, MEMBER, test } from "./fixtures";
 import type { Instance } from "./server";
 
-// Smoke suite against the built binary (web-app T19, T22: UI-01, UI-02, UI-04, UI-14, UI-24). The
-// tests share one fresh instance per project and run in order: the first one creates the admin.
+// Smoke suite against the built binary (web-app T19, T22: UI-01, UI-02, UI-04, UI-14, UI-24;
+// harness-onboarding WIZ-02). The tests share one fresh instance per project and run in order:
+// the first one creates the admin.
 test.describe.configure({ mode: "serial" });
 
 const MOBILE_MAX_WIDTH = 767;
@@ -171,6 +172,41 @@ test("connect an agent shows the install and setup commands and each harness's s
   // Nothing in the wizard creates a token: setup gets one through the browser approval.
   const after = await apiCall<List<Token>>(context.request, instance, "GET", "/tokens");
   expect(after.items).toEqual(before.items);
+});
+
+test("a machine is approved by typing its code; an old link with the code pre-fills nothing (WIZ-02, DEV-06)", async ({
+  context,
+  page,
+  instance,
+}) => {
+  // What `partyline setup --browser` does: create a request anonymously, then poll it.
+  const created = await (
+    await context.request.post(`${instance.url}/api/v1/devices`, { data: { machine: "e2e-box" } })
+  ).json();
+  expect(created.approve_url).toBe(`${instance.url}/devices`);
+  await loginAs(context, instance, ADMIN);
+
+  await page.goto(`/devices/${created.code}`);
+  await expect(page).toHaveURL(`${instance.url}/devices`);
+  const input = page.getByLabel("Code from your terminal");
+  await expect(input).toHaveValue("");
+
+  await input.fill(`${created.code.slice(0, 4)}-${created.code.slice(4)}`.toLowerCase());
+  await page.getByRole("button", { name: "Continue" }).click();
+  const request = page.getByRole("region", { name: "Approval request" });
+  await expect(request.getByText("e2e-box")).toBeVisible();
+  await page.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "e2e-box is approved" })).toBeVisible();
+
+  const poll = await (
+    await context.request.post(`${instance.url}/api/v1/devices/poll`, {
+      data: { poll_secret: created.poll_secret },
+      headers: { Origin: instance.url },
+    })
+  ).json();
+  expect(poll.status).toBe("approved");
+  expect(poll.token).toMatch(/^pl_agent_/);
+  expect(poll.approved_by).toBe(ADMIN.username);
 });
 
 test("main pages fit the viewport with no horizontal page scroll (UI-24)", async ({

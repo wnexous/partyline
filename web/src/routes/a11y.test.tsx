@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
@@ -110,11 +111,11 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
-  it("the machine approval page has no axe violations", async () => {
+  it("the machine approval page has no axe violations, before and after the code", async () => {
     const now = Date.now();
     mockApi({
       "GET /me": json(200, makeMe({ locale })),
-      "GET /devices/K7P2QX9M": json(200, {
+      "POST /devices/lookup": json(200, {
         code: "K7P2QX9M",
         machine: "ana-laptop",
         ip: "203.0.113.24",
@@ -123,7 +124,16 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
         expires_at: new Date(now + 9 * 60_000).toISOString(),
       }),
     });
-    const { container } = renderRoute("/devices/K7P2QX9M");
+    const user = userEvent.setup();
+    const { container } = renderRoute("/devices");
+    const input = await screen.findByLabelText(
+      locale === "en" ? "Code from your terminal" : "Código do seu terminal",
+    );
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+    await user.type(input, "K7P2-QX9M");
+    await user.click(
+      screen.getByRole("button", { name: locale === "en" ? "Continue" : "Continuar" }),
+    );
     await screen.findByRole("button", { name: locale === "en" ? "Approve" : "Aprovar" });
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });

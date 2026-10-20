@@ -160,9 +160,17 @@ func setupCredentials(ctx context.Context, f setupFlags, saved cliconfig.Config,
 		}
 	}
 	if token == "" {
-		got, gotURL, err := approveInBrowser(ctx, base, io)
+		got, gotURL, approver, err := approveInBrowser(ctx, base, io)
 		if err != nil {
 			fmt.Fprintln(io.stderr, "partyline setup:", err)
+			return cliconfig.Config{}, 1
+		}
+		// DEV-06: name the account the token belongs to, so an approval by someone else
+		// (a phished or misdirected code) is noticed before anything is saved.
+		fmt.Fprintf(io.stdout, "Approved by @%s on %s\n", approver, base)
+		if !f.yes && !p.confirm(fmt.Sprintf("Save this agent token of @%s on this machine?", approver)) {
+			fmt.Fprintf(io.stderr, "partyline setup: not saved: the token belongs to @%s. If that is not you, revoke the %q token in the web app (Tokens).\n",
+				approver, machineName(io)+" (via setup)")
 			return cliconfig.Config{}, 1
 		}
 		token = got
@@ -278,31 +286,32 @@ func verifyAgentToken(ctx context.Context, base, token string) error {
 	}
 }
 
-// approveInBrowser runs the device flow (DEV-01..03): it creates a request named after the
-// machine, prints the approval URL and polls until the request is approved, denied or
-// expired. It returns the delivered agent token and the instance URL the server reports.
-func approveInBrowser(ctx context.Context, base string, io stdio) (token, instance string, err error) {
+// approveInBrowser runs the device flow (DEV-01..03, DEV-06): it creates a request named after
+// the machine, prints the approval page (without the code) and the code to type there, and
+// polls until the request is approved, denied or expired. It returns the delivered agent
+// token, the instance URL the server reports and the approver's username.
+func approveInBrowser(ctx context.Context, base string, io stdio) (token, instance, approver string, err error) {
 	machine := machineName(io)
 	resp, err := request(ctx, http.MethodPost, base+"/api/v1/devices", dto.CreateDeviceRequest{Machine: machine}, nil)
 	if err != nil {
-		return "", "", fmt.Errorf("cannot reach %s: %w", base, err)
+		return "", "", "", fmt.Errorf("cannot reach %s: %w", base, err)
 	}
 	if resp.StatusCode != http.StatusCreated {
 		e := decodeError(resp)
 		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusTooManyRequests {
-			return "", "", errors.New("too many approval requests from this address; try again later or use --token")
+			return "", "", "", errors.New("too many approval requests from this address; try again later or use --token")
 		}
-		return "", "", fmt.Errorf("could not start the approval (%d %s)", resp.StatusCode, e.Message)
+		return "", "", "", fmt.Errorf("could not start the approval (%d %s)", resp.StatusCode, e.Message)
 	}
 	var created dto.DeviceRequestCreated
 	err = json.NewDecoder(resp.Body).Decode(&created)
 	_ = resp.Body.Close()
 	if err != nil {
-		return "", "", fmt.Errorf("could not start the approval: %w", err)
+		return "", "", "", fmt.Errorf("could not start the approval: %w", err)
 	}
-	fmt.Fprintf(io.stdout, "Open this link in a browser where you are logged in to Partyline and approve %q (code %s):\n\n  %s\n\nWaiting for approval…\n",
-		machine, created.Code, created.ApproveURL)
+	fmt.Fprintf(io.stdout, "Open %s in a browser where you are logged in to Partyline and type this code to approve %q:\n\n  %s\n\nWaiting for approval…\n",
+		created.ApproveURL, machine, displayCode(created.Code))
 
 	sleep := io.sleep
 	if sleep == nil {
@@ -310,35 +319,34 @@ func approveInBrowser(ctx context.Context, base string, io stdio) (token, instan
 	}
 	for {
 		if !sleep(ctx, devicePollInterval) {
-			return "", "", ctx.Err()
+			return "", "", "", ctx.Err()
 		}
 		poll, status, err := pollDevice(ctx, base, created.PollSecret)
 		if err != nil {
-			return "", "", err
+			return "", "", "", err
 		}
 		switch {
 		case status == http.StatusTooManyRequests:
 			continue
 		case status == http.StatusNotFound:
-			return "", "", errors.New("approval expired")
+			return "", "", "", errors.New("approval expired")
 		case status != http.StatusOK:
-			return "", "", fmt.Errorf("unexpected answer %d while waiting for the approval", status)
+			return "", "", "", fmt.Errorf("unexpected answer %d while waiting for the approval", status)
 		}
 		switch poll.Status {
 		case dto.DeviceStatusPending:
 			continue
 		case dto.DeviceStatusDenied:
-			return "", "", errors.New("approval denied")
+			return "", "", "", errors.New("approval denied")
 		case dto.DeviceStatusExpired:
-			return "", "", errors.New("approval expired")
+			return "", "", "", errors.New("approval expired")
 		case dto.DeviceStatusApproved:
 			if poll.Token == "" {
-				return "", "", errors.New("the token was already delivered to another poll; run partyline setup again")
+				return "", "", "", errors.New("the token was already delivered to another poll; run partyline setup again")
 			}
-			fmt.Fprintln(io.stdout, "Approved.")
-			return poll.Token, poll.URL, nil
+			return poll.Token, poll.URL, poll.ApprovedBy, nil
 		default:
-			return "", "", fmt.Errorf("unexpected approval status %q", poll.Status)
+			return "", "", "", fmt.Errorf("unexpected approval status %q", poll.Status)
 		}
 	}
 }
@@ -356,6 +364,15 @@ func pollDevice(ctx context.Context, base, secret string) (dto.DevicePoll, int, 
 		}
 	}
 	return p, resp.StatusCode, nil
+}
+
+// displayCode splits an 8-character code in two halves (ABCD-EFGH) so it is easy to read
+// and type; the server ignores the hyphen.
+func displayCode(code string) string {
+	if len(code) != 8 {
+		return code
+	}
+	return code[:4] + "-" + code[4:]
 }
 
 // machineName is the hostname cut to what the server accepts.

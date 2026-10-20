@@ -222,10 +222,27 @@ func deviceSetupEnv(t *testing.T) (*testkit.Env, *testkit.Clock, *testkit.Client
 	return env, clock, env.NewUser("alice")
 }
 
-var approveURLPattern = regexp.MustCompile(`(http://\S+)/devices/([A-Z0-9]{8})`)
+// approvalPattern finds the approval page and the code setup prints (DEV-01): the page is
+// <instance>/devices without the code, and the code is shown as ABCD-EFGH to type there.
+var approvalPattern = regexp.MustCompile(`Open (http://\S+) in a browser[^\n]*\n\n  ([A-HJ-NP-Z2-9]{4})-([A-HJ-NP-Z2-9]{4})\n`)
 
-// DEV-01, DEV-02 (browser path): setup prints <instance>/devices/<code>, polls every 2 s and,
-// once a logged-in user approves, saves the delivered agent token with the instance URL.
+// approvalCode returns the code setup printed, or "" before it is printed.
+func approvalCode(stdout string) string {
+	m := approvalPattern.FindStringSubmatch(stdout)
+	if m == nil {
+		return ""
+	}
+	return m[2] + m[3]
+}
+
+// typeCode approves or denies the request as user, typing the code like the approval page.
+func typeCode(user *testkit.Client, action, code string) *testkit.Response {
+	return user.Post("/api/v1/devices/"+action, dto.DeviceCode{Code: code})
+}
+
+// DEV-01, DEV-02, DEV-06 (browser path): setup prints <instance>/devices and the code to type
+// there, polls every 2 s and, once a logged-in user approves, names the approver, asks for
+// confirmation and saves the delivered agent token with the instance URL.
 func TestSetupBrowserApproval(t *testing.T) {
 	env, clock, alice := deviceSetupEnv(t)
 	home := t.TempDir()
@@ -233,24 +250,26 @@ func TestSetupBrowserApproval(t *testing.T) {
 	sleeps := 0
 	var waits []time.Duration
 	r := runSetup(t, setupOpts{
-		env: map[string]string{"HOME": home}, hostname: "devbox-7", waits: &waits,
+		env: map[string]string{"HOME": home}, hostname: "devbox-7", waits: &waits, stdin: "y\n",
 		onSleep: func(stdout string) bool {
 			mu.Lock()
 			defer mu.Unlock()
 			sleeps++
 			clock.Advance(2 * time.Second)
 			if sleeps == 2 { // approved while the CLI waits
-				m := approveURLPattern.FindStringSubmatch(stdout)
-				require.NotNil(t, m, "approval URL printed: %s", stdout)
-				alice.Post("/api/v1/devices/"+m[2]+"/approve", nil).RequireStatus(http.StatusOK)
+				code := approvalCode(stdout)
+				require.NotEmpty(t, code, "approval page and code printed: %s", stdout)
+				typeCode(alice, "approve", code).RequireStatus(http.StatusOK)
 			}
 			return true
 		},
 	}, "--url", env.URL, "--browser")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
-	m := approveURLPattern.FindStringSubmatch(r.stdout)
-	require.NotNil(t, m)
-	require.Equal(t, env.URL, m[1], "DEV-01: approval URL is <instance>/devices/<code>")
+	m := approvalPattern.FindStringSubmatch(r.stdout)
+	require.NotNil(t, m, r.stdout)
+	require.Equal(t, env.URL+"/devices", m[1], "DEV-01: the approval page is <instance>/devices")
+	require.NotContains(t, r.stdout, "/devices/", "DEV-01: no link carries the code")
+	require.Contains(t, r.stdout, "\nApproved by @alice on "+env.URL+"\nSave this agent token of @alice on this machine? [Y/n]: ", "DEV-06")
 	require.Equal(t, 2, sleeps, "polled until approved")
 	require.Equal(t, []time.Duration{2 * time.Second, 2 * time.Second}, waits, "DEV-04: one poll per 2 s")
 
@@ -273,11 +292,11 @@ func TestSetupEmptyTokenAnswerStartsBrowserApproval(t *testing.T) {
 	env, clock, alice := deviceSetupEnv(t)
 	home := t.TempDir()
 	r := runSetup(t, setupOpts{
-		env: map[string]string{"HOME": home}, hostname: "devbox", stdin: "\n",
+		env: map[string]string{"HOME": home}, hostname: "devbox", stdin: "\ny\n",
 		onSleep: func(stdout string) bool {
 			clock.Advance(2 * time.Second)
-			if m := approveURLPattern.FindStringSubmatch(stdout); m != nil {
-				alice.Post("/api/v1/devices/"+m[2]+"/approve", nil)
+			if code := approvalCode(stdout); code != "" {
+				typeCode(alice, "approve", code)
 			}
 			return true
 		},
@@ -296,8 +315,7 @@ func TestSetupBrowserDenied(t *testing.T) {
 		env: map[string]string{"HOME": home}, hostname: "devbox",
 		onSleep: func(stdout string) bool {
 			clock.Advance(2 * time.Second)
-			m := approveURLPattern.FindStringSubmatch(stdout)
-			alice.Post("/api/v1/devices/"+m[2]+"/deny", nil)
+			typeCode(alice, "deny", approvalCode(stdout))
 			return true
 		},
 	}, "--url", env.URL, "--browser")
@@ -305,6 +323,48 @@ func TestSetupBrowserDenied(t *testing.T) {
 	require.Contains(t, r.stderr, "approval denied")
 	_, err := os.Stat(configPath(home))
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// DEV-06: when the person at the terminal does not confirm the approver (answers "n", or the
+// input ends), setup saves nothing and exits 1; --yes accepts without asking.
+func TestSetupBrowserApproverConfirmation(t *testing.T) {
+	for _, tc := range []struct {
+		name, stdin string
+		args        []string
+		saved       bool
+	}{
+		{name: "declined", stdin: "n\n"},
+		{name: "end of input", stdin: ""},
+		{name: "yes flag", args: []string{"--yes"}, saved: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, clock, _ := deviceSetupEnv(t)
+			bob := env.NewUser("bob")
+			home := t.TempDir()
+			r := runSetup(t, setupOpts{
+				env: map[string]string{"HOME": home}, hostname: "devbox", stdin: tc.stdin,
+				onSleep: func(stdout string) bool {
+					clock.Advance(2 * time.Second)
+					if code := approvalCode(stdout); code != "" {
+						typeCode(bob, "approve", code)
+					}
+					return true
+				},
+			}, append([]string{"--url", env.URL, "--browser", "--harness", "none"}, tc.args...)...)
+			require.Contains(t, r.stdout, "Approved by @bob on "+env.URL+"\n")
+			_, err := os.Stat(configPath(home))
+			if tc.saved {
+				require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+				require.NotContains(t, r.stdout, "Save this agent token", "--yes does not ask")
+				require.NoError(t, err)
+				return
+			}
+			require.Equal(t, 1, r.code)
+			require.Contains(t, r.stdout, "Save this agent token of @bob on this machine? [Y/n]: ")
+			require.Contains(t, r.stderr, "not saved: the token belongs to @bob")
+			require.ErrorIs(t, err, os.ErrNotExist, "nothing saved")
+		})
+	}
 }
 
 // DEV-03: a request nobody approves within 10 minutes makes setup exit non-zero with

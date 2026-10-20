@@ -536,7 +536,8 @@ export interface CreateDeviceRequest {
 }
 /**
  * DeviceRequestCreated answers POST /devices (201). The user opens ApproveURL
- * (<instance>/devices/<code>); the CLI polls with PollSecret until ExpiresAt (DEV-01).
+ * (<instance>/devices, without the code) and types Code there; the CLI polls with PollSecret
+ * until ExpiresAt (DEV-01).
  */
 export interface DeviceRequestCreated {
   code: string;
@@ -552,16 +553,25 @@ export interface DevicePollRequest {
 }
 /**
  * DevicePoll answers POST /devices/poll. The poll that first sees the approval carries the new
- * agent token and the instance URL; later polls carry only the status (DEV-02).
+ * agent token, the instance URL and the approver's username; later polls carry only the
+ * status (DEV-02, DEV-06).
  */
 export interface DevicePoll {
   status: DeviceStatus;
   token?: string;
   url?: string;
+  approved_by?: string;
 }
 /**
- * DeviceRequest is a request as the approval page shows it: GET /devices/{code} and the answer
- * of POST /devices/{code}/approve and /deny (WIZ-02).
+ * DeviceCode is the body of POST /devices/lookup, /devices/approve and /devices/deny: the
+ * code the user typed from the terminal (WIZ-02). It never travels in a URL.
+ */
+export interface DeviceCode {
+  code: string;
+}
+/**
+ * DeviceRequest is a request as the approval page shows it: the answer of POST
+ * /devices/lookup, /devices/approve and /devices/deny (WIZ-02).
  */
 export interface DeviceRequest {
   code: string;

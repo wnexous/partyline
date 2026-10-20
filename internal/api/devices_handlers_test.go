@@ -46,17 +46,22 @@ func (e *deviceEnv) poll(secret string) *testkit.Response {
 	return e.cli("203.0.113.10").Post("/api/v1/devices/poll", dto.DevicePollRequest{PollSecret: secret})
 }
 
+// decide posts the typed code to /devices/<action> (lookup, approve or deny) as c.
+func decide(c *testkit.Client, action, code string) *testkit.Response {
+	return c.Post("/api/v1/devices/"+action, dto.DeviceCode{Code: code})
+}
+
 // DEV-01: a request has an 8-character code valid for 10 minutes and the approval URL
-// <instance>/devices/<code>.
+// <instance>/devices, which does not carry the code (the user types it).
 func TestDeviceCreate(t *testing.T) {
 	e := newDeviceEnv(t)
 	c := e.create(t, "laptop-01")
 	require.Regexp(t, regexp.MustCompile(`^[A-HJ-NP-Z2-9]{8}$`), c.Code)
-	require.Equal(t, e.env.URL+"/devices/"+c.Code, c.ApproveURL)
+	require.Equal(t, e.env.URL+"/devices", c.ApproveURL)
 	require.True(t, deviceT0.Add(10*time.Minute).Equal(c.ExpiresAt), "expires_at %s", c.ExpiresAt)
 	require.NotEmpty(t, c.PollSecret)
 
-	d := testkit.Decode[dto.DeviceRequest](e.alice.Get("/api/v1/devices/" + c.Code).RequireStatus(http.StatusOK))
+	d := testkit.Decode[dto.DeviceRequest](decide(e.alice, "lookup", c.Code).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DeviceRequest{
 		Code: c.Code, Machine: "laptop-01", IP: "203.0.113.10", Status: dto.DeviceStatusPending,
 		CreatedAt: deviceT0, ExpiresAt: deviceT0.Add(10 * time.Minute),
@@ -81,13 +86,14 @@ func TestDeviceCreateValidatesMachine(t *testing.T) {
 func TestDeviceApproveDeliversTokenOnce(t *testing.T) {
 	e := newDeviceEnv(t)
 	c := e.create(t, "laptop-01")
-	d := testkit.Decode[dto.DeviceRequest](e.alice.Post("/api/v1/devices/"+c.Code+"/approve", nil).RequireStatus(http.StatusOK))
+	d := testkit.Decode[dto.DeviceRequest](decide(e.alice, "approve", c.Code).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DeviceStatusApproved, d.Status)
 
 	p := testkit.Decode[dto.DevicePoll](e.poll(c.PollSecret).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DeviceStatusApproved, p.Status)
 	require.True(t, strings.HasPrefix(p.Token, "pl_agent_"), "token %q", p.Token)
 	require.Equal(t, e.env.URL, p.URL)
+	require.Equal(t, "alice", p.ApprovedBy, "DEV-06: the CLI names who approved")
 
 	tokens := testkit.Decode[dto.List[dto.Token]](e.alice.Get("/api/v1/tokens").RequireStatus(http.StatusOK))
 	require.Len(t, tokens.Items, 1)
@@ -107,8 +113,9 @@ func TestDeviceTokenBelongsToApprover(t *testing.T) {
 	e := newDeviceEnv(t)
 	bob := e.env.NewUser("bob")
 	c := e.create(t, "desktop")
-	bob.Post("/api/v1/devices/"+c.Code+"/approve", nil).RequireStatus(http.StatusOK)
+	decide(bob, "approve", c.Code).RequireStatus(http.StatusOK)
 	p := testkit.Decode[dto.DevicePoll](e.poll(c.PollSecret).RequireStatus(http.StatusOK))
+	require.Equal(t, "bob", p.ApprovedBy)
 	conn, _ := e.env.Anon().WithBearer(p.Token).DialAgent("setup-check")
 	require.NotNil(t, conn)
 	require.Equal(t, "bob", conn.Welcome(wsWait).Agent.Owner)
@@ -119,18 +126,18 @@ func TestDeviceTokenBelongsToApprover(t *testing.T) {
 func TestDeviceDeny(t *testing.T) {
 	e := newDeviceEnv(t)
 	c := e.create(t, "laptop-01")
-	d := testkit.Decode[dto.DeviceRequest](e.alice.Post("/api/v1/devices/"+c.Code+"/deny", nil).RequireStatus(http.StatusOK))
+	d := testkit.Decode[dto.DeviceRequest](decide(e.alice, "deny", c.Code).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DeviceStatusDenied, d.Status)
 
 	p := testkit.Decode[dto.DevicePoll](e.poll(c.PollSecret).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DevicePoll{Status: dto.DeviceStatusDenied}, p)
-	e.alice.Post("/api/v1/devices/"+c.Code+"/approve", nil).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+	decide(e.alice, "approve", c.Code).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 	require.Empty(t, testkit.Decode[dto.List[dto.Token]](e.alice.Get("/api/v1/tokens").RequireStatus(http.StatusOK)).Items)
 
 	// An approved request cannot be denied afterwards either.
 	c2 := e.create(t, "laptop-02")
-	e.alice.Post("/api/v1/devices/"+c2.Code+"/approve", nil).RequireStatus(http.StatusOK)
-	e.alice.Post("/api/v1/devices/"+c2.Code+"/deny", nil).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+	decide(e.alice, "approve", c2.Code).RequireStatus(http.StatusOK)
+	decide(e.alice, "deny", c2.Code).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 }
 
 // DEV-01, DEV-03: a request can be approved strictly within 10 minutes; afterwards it reads
@@ -141,12 +148,12 @@ func TestDeviceExpiry(t *testing.T) {
 	outside := e.create(t, "outside")
 
 	e.clock.Advance(10*time.Minute - time.Second)
-	e.alice.Post("/api/v1/devices/"+inside.Code+"/approve", nil).RequireStatus(http.StatusOK)
+	decide(e.alice, "approve", inside.Code).RequireStatus(http.StatusOK)
 
 	e.clock.Advance(2 * time.Second) // 10 min + 1 s
-	e.alice.Post("/api/v1/devices/"+outside.Code+"/approve", nil).RequireError(http.StatusGone, dto.ErrorCodeGone)
-	e.alice.Post("/api/v1/devices/"+outside.Code+"/deny", nil).RequireError(http.StatusGone, dto.ErrorCodeGone)
-	d := testkit.Decode[dto.DeviceRequest](e.alice.Get("/api/v1/devices/" + outside.Code).RequireStatus(http.StatusOK))
+	decide(e.alice, "approve", outside.Code).RequireError(http.StatusGone, dto.ErrorCodeGone)
+	decide(e.alice, "deny", outside.Code).RequireError(http.StatusGone, dto.ErrorCodeGone)
+	d := testkit.Decode[dto.DeviceRequest](decide(e.alice, "lookup", outside.Code).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DeviceStatusExpired, d.Status)
 	p := testkit.Decode[dto.DevicePoll](e.poll(outside.PollSecret).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DevicePoll{Status: dto.DeviceStatusExpired}, p)
@@ -225,7 +232,7 @@ func TestDeviceTooFastPollKeepsToken(t *testing.T) {
 	e := newDeviceEnv(t)
 	c := e.create(t, "laptop-01")
 	e.poll(c.PollSecret).RequireStatus(http.StatusOK)
-	e.alice.Post("/api/v1/devices/"+c.Code+"/approve", nil).RequireStatus(http.StatusOK)
+	decide(e.alice, "approve", c.Code).RequireStatus(http.StatusOK)
 	e.poll(c.PollSecret).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
 	e.clock.Advance(2 * time.Second)
 	p := testkit.Decode[dto.DevicePoll](e.poll(c.PollSecret).RequireStatus(http.StatusOK))
@@ -235,10 +242,70 @@ func TestDeviceTooFastPollKeepsToken(t *testing.T) {
 // Unknown codes and poll secrets answer 404.
 func TestDeviceUnknown(t *testing.T) {
 	e := newDeviceEnv(t)
-	e.alice.Get("/api/v1/devices/ABCDEFGH").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	e.alice.Post("/api/v1/devices/ABCDEFGH/approve", nil).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	e.alice.Post("/api/v1/devices/ABCDEFGH/deny", nil).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	for _, action := range []string{"lookup", "approve", "deny"} {
+		decide(e.alice, action, "ABCDEFGH").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	}
 	e.poll("not-a-secret").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+}
+
+// WIZ-02, DEV-01: the code never travels in a URL: the routes that took it in the path are
+// gone, so a forwarded link cannot read or approve a request.
+func TestDeviceCodeNotInPath(t *testing.T) {
+	e := newDeviceEnv(t)
+	c := e.create(t, "laptop-01")
+	require.NotEqual(t, http.StatusOK, e.alice.Get("/api/v1/devices/"+c.Code).Status)
+	for _, action := range []string{"/approve", "/deny"} {
+		require.NotEqual(t, http.StatusOK, e.alice.Post("/api/v1/devices/"+c.Code+action, nil).Status)
+	}
+	d := testkit.Decode[dto.DeviceRequest](decide(e.alice, "lookup", c.Code).RequireStatus(http.StatusOK))
+	require.Equal(t, dto.DeviceStatusPending, d.Status)
+	require.Empty(t, testkit.Decode[dto.List[dto.Token]](e.alice.Get("/api/v1/tokens").RequireStatus(http.StatusOK)).Items)
+}
+
+// DEV-05: a user may type 5 unknown codes per minute; the 6th attempt answers 429 even with a
+// valid code. Known codes do not count, other users are not affected, and the attempts are
+// counted again once a minute has passed since them.
+func TestDeviceWrongCodeLimit(t *testing.T) {
+	e := newDeviceEnv(t)
+	bob := e.env.NewUser("bob")
+	c := e.create(t, "laptop-01")
+	for range 3 {
+		decide(e.alice, "lookup", c.Code).RequireStatus(http.StatusOK)
+	}
+	for i, action := range []string{"lookup", "approve", "deny", "lookup", "approve"} {
+		decide(e.alice, action, fmt.Sprintf("WRONG%03d", i)).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	}
+	for _, action := range []string{"lookup", "approve", "deny"} {
+		decide(e.alice, action, c.Code).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	}
+	decide(bob, "lookup", c.Code).RequireStatus(http.StatusOK)
+
+	e.clock.Advance(59 * time.Second)
+	decide(e.alice, "lookup", c.Code).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	e.clock.Advance(2 * time.Second)
+	d := testkit.Decode[dto.DeviceRequest](decide(e.alice, "approve", c.Code).RequireStatus(http.StatusOK))
+	require.Equal(t, dto.DeviceStatusApproved, d.Status)
+}
+
+// DEV-05: the limit holds under a concurrent burst of wrong codes: exactly 5 of 12 are looked
+// up, the others answer 429.
+func TestDeviceWrongCodeLimitConcurrentBurst(t *testing.T) {
+	e := newDeviceEnv(t)
+	var (
+		mu       sync.Mutex
+		statuses = map[int]int{}
+		wg       sync.WaitGroup
+	)
+	for i := range 12 {
+		wg.Go(func() {
+			resp := decide(e.alice, "lookup", fmt.Sprintf("BURST%03d", i))
+			mu.Lock()
+			statuses[resp.Status]++
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	require.Equal(t, map[int]int{http.StatusNotFound: 5, http.StatusTooManyRequests: 7}, statuses)
 }
 
 // Auth matrix: reading, approving and denying need a logged-in user (401 anonymous, 403 for
@@ -248,17 +315,15 @@ func TestDeviceAuthMatrix(t *testing.T) {
 	c := e.create(t, "laptop-01")
 	anon := e.env.Anon()
 	agent := e.alice.Token(dto.TokenKindAgent, "laptop")
-	for _, path := range []string{"/approve", "/deny"} {
-		anon.Post("/api/v1/devices/"+c.Code+path, nil).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
-		agent.Post("/api/v1/devices/"+c.Code+path, nil).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	for _, action := range []string{"lookup", "approve", "deny"} {
+		decide(anon, action, c.Code).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+		decide(agent, action, c.Code).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	}
-	anon.Get("/api/v1/devices/"+c.Code).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
-	agent.Get("/api/v1/devices/"+c.Code).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	agent.Post("/api/v1/devices", dto.CreateDeviceRequest{Machine: "m"}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	agent.Post("/api/v1/devices/poll", dto.DevicePollRequest{PollSecret: c.PollSecret}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 
 	// A user token may approve (scripts), and nothing above changed the request.
-	d := testkit.Decode[dto.DeviceRequest](e.alice.Token(dto.TokenKindUser, "script").Get("/api/v1/devices/" + c.Code).RequireStatus(http.StatusOK))
+	d := testkit.Decode[dto.DeviceRequest](decide(e.alice.Token(dto.TokenKindUser, "script"), "lookup", c.Code).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DeviceStatusPending, d.Status)
 }
 
@@ -268,8 +333,8 @@ func TestDeviceAudit(t *testing.T) {
 	admin := e.env.NewAdmin("root")
 	approved := e.create(t, "laptop-01")
 	denied := e.create(t, "laptop-02")
-	e.alice.Post("/api/v1/devices/"+approved.Code+"/approve", nil).RequireStatus(http.StatusOK)
-	e.alice.Post("/api/v1/devices/"+denied.Code+"/deny", nil).RequireStatus(http.StatusOK)
+	decide(e.alice, "approve", approved.Code).RequireStatus(http.StatusOK)
+	decide(e.alice, "deny", denied.Code).RequireStatus(http.StatusOK)
 	p := testkit.Decode[dto.DevicePoll](e.poll(approved.PollSecret).RequireStatus(http.StatusOK))
 
 	page := auditPage(admin, "")

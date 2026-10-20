@@ -8,7 +8,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { api, isApiError } from "./client";
+import { api } from "./client";
 import {
   type AcceptInviteRequest,
   type ActivityItem,
@@ -89,7 +89,6 @@ export const queryKeys = {
   adminInvites: ["admin", "invites"] as const,
   adminAudit: ["admin", "audit"] as const,
   activity: ["activity"] as const,
-  device: (code: string) => ["devices", code] as const,
 };
 
 const items = <T>(list: List<T>) => list.items;
@@ -665,28 +664,15 @@ export const useAudit = () =>
   });
 
 // ---------------------------------------------------------------------------------------------
-// Machine approval (WIZ-02, DEV-02)
+// Machine approval (WIZ-02, DEV-02, DEV-05): the user types the code the terminal shows; it
+// travels in the request body only, never in a URL.
 
-export const deviceRequestQuery = (code: string) =>
-  queryOptions({
-    queryKey: queryKeys.device(code),
-    queryFn: () => api<DeviceRequest>("GET", `/devices/${encodeURIComponent(code)}`),
-    retry: false,
-  });
+export type DeviceAction = "lookup" | "approve" | "deny";
 
-export const useDeviceRequest = (code: string) => useQuery(deviceRequestQuery(code));
-
-/** Approve or deny; the answer replaces the cached request. A 409 (decided elsewhere) refetches. */
-export function useDecideDevice(code: string) {
-  const qc = useQueryClient();
+/** Looks up, approves or denies the request with a typed code; answers the request. */
+export function useDeviceAction() {
   return useMutation({
-    mutationFn: (decision: "approve" | "deny") =>
-      api<DeviceRequest>("POST", `/devices/${encodeURIComponent(code)}/${decision}`),
-    onSuccess: (request) => qc.setQueryData(queryKeys.device(code), request),
-    onError: (err) => {
-      if (isApiError(err) && err.status === 409) {
-        void qc.invalidateQueries({ queryKey: queryKeys.device(code), exact: true });
-      }
-    },
+    mutationFn: ({ action, code }: { action: DeviceAction; code: string }) =>
+      api<DeviceRequest>("POST", `/devices/${action}`, { code }),
   });
 }
