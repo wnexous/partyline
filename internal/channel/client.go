@@ -22,7 +22,7 @@ var errUnreachable = errors.New("partyline: server unreachable")
 type client struct {
 	base  *url.URL
 	token string
-	agent string
+	agent func() string // the agent name in use
 	http  *http.Client
 }
 
@@ -37,7 +37,7 @@ func (c *client) do(ctx context.Context, method, path string, q url.Values, cont
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set(dto.HeaderAgent, c.agent)
+	req.Header.Set(dto.HeaderAgent, c.agent())
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -101,4 +101,13 @@ func (c *client) json(ctx context.Context, method, path string, q url.Values, v,
 		return fmt.Errorf("partyline: unexpected answer: %w", err)
 	}
 	return nil
+}
+
+// register registers the agent without a WebSocket (tools-only channel, PUSH-02); a failure
+// is reported on stderr and the tools answer with the server's error later.
+func (c *client) register(ctx context.Context, stderr io.Writer) {
+	var info dto.AgentInfo
+	if err := c.json(ctx, http.MethodPost, "agent/register", nil, nil, &info); err != nil && ctx.Err() == nil {
+		fmt.Fprintf(stderr, "partyline: cannot register agent %s: %v\n", c.agent(), err)
+	}
 }

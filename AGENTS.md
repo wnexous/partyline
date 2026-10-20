@@ -31,7 +31,8 @@ Override a tool path with the Makefile variables, e.g. `make lint GOLANGCI_LINT=
 ## Workflow
 
 - `make generate` after changing SQL queries, migrations or `internal/api/dto`.
-- `make test` runs all tests with the race detector.
+- `make test` runs all tests with the race detector; `make integrations-test` runs the TypeScript
+  adapters' tests in `integrations/` (`bun test`, fake host APIs).
 - `make check` is the gate: generated-code drift, lint, vet, tests, build. It must pass before
   every commit.
 - Commits follow Conventional Commits (`feat(scope): ...`, `fix: ...`), one logical change each.

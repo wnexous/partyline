@@ -90,6 +90,22 @@ type Connector struct {
 	AutoRouteRoomID sql.NullString
 }
 
+type DeviceRequest struct {
+	ID             string
+	CodeHash       string
+	PollSecretHash string
+	Machine        string
+	CreatedIp      string
+	IpKey          string
+	Status         string
+	UserID         sql.NullString
+	TokenID        sql.NullString
+	TokenOnceEnc   []byte
+	CreatedAt      int64
+	ExpiresAt      int64
+	LastPollAt     sql.NullInt64
+}
+
 type Grant struct {
 	ResourceKind string
 	ResourceID   string

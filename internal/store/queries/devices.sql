@@ -1,0 +1,25 @@
+-- name: DeleteOldDeviceRequests :exec
+DELETE FROM device_requests WHERE created_at <= ?;
+
+-- name: CountDeviceRequestsSince :one
+SELECT COUNT(*) FROM device_requests WHERE ip_key = ? AND created_at > ?;
+
+-- name: CreateDeviceRequest :exec
+INSERT INTO device_requests (id, code_hash, poll_secret_hash, machine, created_ip, ip_key, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: GetDeviceRequestByCode :one
+SELECT * FROM device_requests WHERE code_hash = ?;
+
+-- name: GetDeviceRequestByPollSecret :one
+SELECT * FROM device_requests WHERE poll_secret_hash = ?;
+
+-- name: ClaimDevicePoll :execrows
+UPDATE device_requests SET last_poll_at = sqlc.arg(now)
+WHERE id = sqlc.arg(id) AND (last_poll_at IS NULL OR last_poll_at <= sqlc.arg(allowed_before));
+
+-- name: DecideDeviceRequest :exec
+UPDATE device_requests SET status = ?, user_id = ?, token_id = ?, token_once_enc = ? WHERE id = ?;
+
+-- name: TakeDeviceToken :exec
+UPDATE device_requests SET token_once_enc = NULL WHERE id = ?;

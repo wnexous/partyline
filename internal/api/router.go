@@ -14,6 +14,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
@@ -34,8 +35,10 @@ type Deps struct {
 	FileLinks *connectors.FileLinks
 	// Identities manages pairing codes and verified chat identities.
 	Identities *identities.Service
-	Blobs      *attachments.Store
-	Audit      *audit.Log
+	// Devices approves new machines (partyline setup --browser).
+	Devices *devices.Service
+	Blobs   *attachments.Store
+	Audit   *audit.Log
 	// Live serves the live WebSocket at GET /api/v1/live.
 	Live http.Handler
 	// AgentWS serves the agent WebSocket at GET /api/v1/agent/ws.
@@ -45,6 +48,8 @@ type Deps struct {
 	Logger *slog.Logger
 	// Ready reports whether the app finished starting (migrations applied).
 	Ready func() bool
+	// Version is the server build version, reported by /healthz (partyline doctor, ONB-06).
+	Version string
 }
 
 // server holds the handler dependencies.
@@ -72,6 +77,7 @@ func New(d Deps) http.Handler {
 func (s *server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)
+	mux.HandleFunc("GET /install.sh", s.installScript)
 	s.authRoutes(mux)
 	s.adminRoutes(mux)
 	s.roomRoutes(mux)
@@ -81,6 +87,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.identityRoutes(mux)
 	s.chatRoutes(mux)
 	s.hookRoutes(mux)
+	s.deviceRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}
@@ -187,8 +194,9 @@ func mapError(err error) error {
 	return err
 }
 
+// healthz answers 200 with the server version.
 func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": s.Version})
 }
 
 func (s *server) readyz(w http.ResponseWriter, _ *http.Request) {
@@ -196,5 +204,5 @@ func (s *server) readyz(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteError(w, httpx.NewError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable, "starting"))
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": s.Version})
 }

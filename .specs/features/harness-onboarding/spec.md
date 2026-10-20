@@ -172,30 +172,30 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| ONB-01 | P1: Install and setup | Tasks | Pending |
-| ONB-02 | P1: Install and setup | Tasks | Pending |
-| ONB-03 | P1: Install and setup | Tasks | Pending |
-| ONB-04 | P1: Install and setup | Tasks | Pending |
-| ONB-05 | P1: Install and setup | Tasks | Pending |
-| ONB-06 | P1: Install and setup | Tasks | Pending |
-| ONB-07 | P1: Install and setup | Tasks | Pending |
-| DEV-01 | P1: Browser approval | Tasks | Pending |
-| DEV-02 | P1: Browser approval | Tasks | Pending |
-| DEV-03 | P1: Browser approval | Tasks | Pending |
-| DEV-04 | P1: Browser approval | Tasks | Pending |
-| NAME-01 | P1: Agent names | Tasks | Pending |
-| NAME-02 | P1: Agent names | Tasks | Pending |
-| NAME-03 | P1: Agent names | Tasks | Pending |
-| HAR-01 | P1: Harness registration | Tasks | Pending |
-| HAR-02 | P1: Harness registration | Tasks | Pending |
-| HAR-03 | P1: Harness registration | Tasks | Pending |
-| HAR-04 | P1: Harness registration | Tasks | Pending |
-| PUSH-01 | P1: Push adapters | Tasks | Pending |
-| PUSH-02 | P1: Push adapters | Tasks | Pending |
-| PUSH-03 | P1: Push adapters | Tasks | Pending |
-| PUSH-04 | P1: Push adapters | Tasks | Pending |
+| ONB-01 | P1: Install and setup | Tasks | Implementing |
+| ONB-02 | P1: Install and setup | Tasks | Implementing |
+| ONB-03 | P1: Install and setup | Tasks | Implementing |
+| ONB-04 | P1: Install and setup | Tasks | Implementing |
+| ONB-05 | P1: Install and setup | Tasks | Implementing |
+| ONB-06 | P1: Install and setup | Tasks | Implementing |
+| ONB-07 | P1: Install and setup | Tasks | Implementing |
+| DEV-01 | P1: Browser approval | Tasks | Implementing |
+| DEV-02 | P1: Browser approval | Tasks | Implementing |
+| DEV-03 | P1: Browser approval | Tasks | Implementing |
+| DEV-04 | P1: Browser approval | Tasks | Implementing |
+| NAME-01 | P1: Agent names | Tasks | Implementing |
+| NAME-02 | P1: Agent names | Tasks | Implementing |
+| NAME-03 | P1: Agent names | Tasks | Implementing |
+| HAR-01 | P1: Harness registration | Tasks | Implementing |
+| HAR-02 | P1: Harness registration | Tasks | Implementing |
+| HAR-03 | P1: Harness registration | Tasks | Implementing |
+| HAR-04 | P1: Harness registration | Tasks | Implementing |
+| PUSH-01 | P1: Push adapters | Tasks | Implementing |
+| PUSH-02 | P1: Push adapters | Tasks | Implementing |
+| PUSH-03 | P1: Push adapters | Tasks | Implementing |
+| PUSH-04 | P1: Push adapters | Tasks | Implementing |
 | PUSH-05 | P1: Push adapters | Tasks | Pending |
-| PUSH-06 | P1: Push adapters | Tasks | Pending |
+| PUSH-06 | P1: Push adapters | Tasks | Implementing |
 | TURN-01 | P2: Codex and Gemini | Tasks | Pending |
 | TURN-02 | P2: Codex and Gemini | Tasks | Pending |
 | WIZ-01 | P2: Web wizard | Tasks | Pending |

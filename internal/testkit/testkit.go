@@ -66,6 +66,7 @@ type options struct {
 	liveSessionCheck time.Duration
 	kinds            []connectors.Kind
 	outbox           bool
+	version          string
 }
 
 // Option customizes New.
@@ -100,6 +101,9 @@ func WithConnectorKinds(kinds ...connectors.Kind) Option {
 	return func(o *options) { o.kinds = append(o.kinds, kinds...) }
 }
 
+// WithVersion sets the server build version (default "dev").
+func WithVersion(v string) Option { return func(o *options) { o.version = v } }
+
 // New starts an app on a temp data dir behind an httptest server; both stop at test cleanup.
 func New(t testing.TB, opts ...Option) *Env {
 	t.Helper()
@@ -118,7 +122,7 @@ func New(t testing.TB, opts ...Option) *Env {
 
 	e := &Env{
 		T: t, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host, cfg: cfg,
-		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox},
+		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, Version: o.version},
 	}
 	e.startApp()
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*e.handler.Load()).ServeHTTP(w, r) })

@@ -76,7 +76,7 @@ T15 → T16 → T17
 **Requirement**: ONB-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] ldflags value wins; module version used otherwise; `(devel)` → `dev`
+- [x] ldflags value wins; module version used otherwise; `(devel)` → `dev`
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(cli): report the module version when installed with go install`
@@ -90,7 +90,7 @@ T15 → T16 → T17
 **Requirement**: ONB-04, ONB-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 0644 file refused with chmod hint; env overrides file; atomic write leaves 0600
+- [x] 0644 file refused with chmod hint; env overrides file; atomic write leaves 0600
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(cli): store instance credentials in a private config file`
@@ -104,7 +104,7 @@ T15 → T16 → T17
 **Requirement**: NAME-01, NAME-02, NAME-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Two derived sessions → `proj`, `proj-2`; explicit name still replaces; cap still enforced; git root beats subdir
+- [x] Two derived sessions → `proj`, `proj-2`; explicit name still replaces; cap still enforced; git root beats subdir
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): give derived agent names a free suffix per session`
@@ -118,7 +118,7 @@ T15 → T16 → T17
 **Requirement**: DEV-01, DEV-02, DEV-03, DEV-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Approve → poll returns token once, then never again; deny/expiry statuses; 11th create/hour → 429; poll faster than 2 s → 429; auth matrix
+- [x] Approve → poll returns token once, then never again; deny/expiry statuses; 11th create/hour → 429; poll faster than 2 s → 429; auth matrix
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): approve new machines from the web app`
@@ -132,7 +132,7 @@ T15 → T16 → T17
 **Requirement**: ONB-01, ONB-02, ONB-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Installs from an httptest fixture into a temp dir; bad checksum → non-zero and no binary; PATH hint shown when needed; served script contains the instance URL
+- [x] Installs from an httptest fixture into a temp dir; bad checksum → non-zero and no binary; PATH hint shown when needed; served script contains the instance URL
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(cli): add a one-line installer`
@@ -148,7 +148,7 @@ T15 → T16 → T17
 **Requirement**: ONB-04, DEV-01, DEV-02, DEV-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Token path and browser path against testkit; invalid token → error, no file written
+- [x] Token path and browser path against testkit; invalid token → error, no file written
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(cli): add partyline setup`
@@ -162,7 +162,7 @@ T15 → T16 → T17
 **Requirement**: HAR-01, HAR-02, HAR-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake CLIs record exact args; hook files edited preserving other entries; uninstall removes only ours
+- [x] Fake CLIs record exact args; hook files edited preserving other entries; uninstall removes only ours
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(harness): register partyline in claude code, codex and gemini`
@@ -176,7 +176,7 @@ T15 → T16 → T17
 **Requirement**: HAR-01, HAR-02, HAR-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Other keys byte-for-byte; invalid JSON untouched with error; uninstall restores
+- [x] Other keys byte-for-byte; invalid JSON untouched with error; uninstall restores
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(harness): register partyline in opencode, pi and omp`
@@ -190,7 +190,7 @@ T15 → T16 → T17
 **Requirement**: ONB-06, HAR-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Each check fails with its hint in a crafted bad environment; launcher builds the exact argv (exec seam)
+- [x] Each check fails with its hint in a crafted bad environment; launcher builds the exact argv (exec seam)
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(cli): add doctor and the claude launcher`
@@ -206,7 +206,7 @@ T15 → T16 → T17
 **Requirement**: PUSH-01, PUSH-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] listen prints the exact line format and acks after writing; tools-only opens no push socket
+- [x] listen prints the exact line format and acks after writing; tools-only opens no push socket
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): add listen and a tools-only channel`
@@ -220,7 +220,7 @@ T15 → T16 → T17
 **Requirement**: PUSH-03, PUSH-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake host: notification → one user message with framing; other servers/methods ignored
+- [x] Fake host: notification → one user message with framing; other servers/methods ignored
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(integrations): add the oh-my-pi extension`
@@ -234,7 +234,7 @@ T15 → T16 → T17
 **Requirement**: PUSH-04, PUSH-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake host + fake listen process: each line → one message; process exit → restart with backoff; stderr logged
+- [x] Fake host + fake listen process: each line → one message; process exit → restart with backoff; stderr logged
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(integrations): add the pi extension`

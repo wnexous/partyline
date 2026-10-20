@@ -29,6 +29,24 @@ type TokenInput struct {
 // CreateToken creates an API token for userID and returns it with its secret, which is shown
 // once and stored only as a SHA-256 hash (TOK-01).
 func (s *Service) CreateToken(ctx context.Context, userID string, in TokenInput) (db.ApiToken, string, error) {
+	var (
+		tok    db.ApiToken
+		secret string
+	)
+	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		tok, secret, err = s.CreateTokenTx(ctx, q, userID, in)
+		return err
+	})
+	if err != nil {
+		return db.ApiToken{}, "", err
+	}
+	return tok, secret, nil
+}
+
+// CreateTokenTx is CreateToken inside the caller's write transaction q (the token and its
+// audit entry commit with the caller's changes).
+func (s *Service) CreateTokenTx(ctx context.Context, q *db.Queries, userID string, in TokenInput) (db.ApiToken, string, error) {
 	now := s.now()
 	name := strings.TrimSpace(in.Name)
 	fields := map[string]string{}
@@ -56,19 +74,16 @@ func (s *Service) CreateToken(ctx context.Context, userID string, in TokenInput)
 	if in.ExpiresAt != nil {
 		tok.ExpiresAt = sql.NullInt64{Int64: ms(*in.ExpiresAt), Valid: true}
 	}
-	err = s.store.WithTx(ctx, func(q *db.Queries) error {
-		if err := q.CreateToken(ctx, db.CreateTokenParams{
-			ID: tok.ID, UserID: tok.UserID, Kind: tok.Kind, Name: tok.Name, Prefix: tok.Prefix,
-			TokenHash: tok.TokenHash, CreatedAt: tok.CreatedAt, ExpiresAt: tok.ExpiresAt,
-		}); err != nil {
-			return err
-		}
-		return s.audit.Record(ctx, q, audit.Entry{
-			Action: audit.ActionTokenCreate, TargetKind: audit.TargetToken, TargetID: tok.ID,
-			Detail: map[string]any{"kind": tok.Kind, "name": tok.Name, "prefix": tok.Prefix},
-		})
-	})
-	if err != nil {
+	if err := q.CreateToken(ctx, db.CreateTokenParams{
+		ID: tok.ID, UserID: tok.UserID, Kind: tok.Kind, Name: tok.Name, Prefix: tok.Prefix,
+		TokenHash: tok.TokenHash, CreatedAt: tok.CreatedAt, ExpiresAt: tok.ExpiresAt,
+	}); err != nil {
+		return db.ApiToken{}, "", err
+	}
+	if err := s.audit.Record(ctx, q, audit.Entry{
+		Action: audit.ActionTokenCreate, TargetKind: audit.TargetToken, TargetID: tok.ID,
+		Detail: map[string]any{"kind": tok.Kind, "name": tok.Name, "prefix": tok.Prefix},
+	}); err != nil {
 		return db.ApiToken{}, "", err
 	}
 	return tok, secret, nil

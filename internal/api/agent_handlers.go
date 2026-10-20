@@ -45,6 +45,25 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/reply", s.agentOnly(s.agentReply))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/react", s.agentOnly(s.agentReact))
 	s.handle(mux, "GET /api/v1/agent/attachments/{id}", s.agentOnly(s.downloadAttachment))
+	s.handle(mux, "POST /api/v1/agent/register", s.agentRegister)
+}
+
+// agentRegister registers the agent named by X-Partyline-Agent without a WebSocket, for
+// `partyline channel --tools-only` (PUSH-02); the agent stays offline. Agent tokens only.
+func (s *server) agentRegister(w http.ResponseWriter, r *http.Request) error {
+	p, ok := authn.PrincipalFrom(r.Context())
+	if !ok {
+		return errNotLoggedIn
+	}
+	if p.Kind != authn.KindAgent {
+		return agents.ErrAgentTokenRequired
+	}
+	row, err := s.Agents.Register(r.Context(), p.UserID, p.AgentName)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, dto.AgentInfo{ID: row.Agent.ID, Name: row.Agent.Name, Owner: row.OwnerUsername})
+	return nil
 }
 
 // agentOnly requires an agent token and resolves the agent from the token's owner and the

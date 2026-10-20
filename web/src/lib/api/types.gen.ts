@@ -173,6 +173,17 @@ export const SecretMask = "********";
  */
 export const HeaderAgent = "X-Partyline-Agent";
 /**
+ * HeaderAgentMode set to AgentModeUnique on the agent WebSocket asks for a free name: when
+ * the named agent is online in another session, the server registers the next free
+ * "<name>-N" (N ≥ 2) and the welcome frame carries it (NAME-02). Without it the newest
+ * connection replaces the older one (NAME-03).
+ */
+export const HeaderAgentMode = "X-Partyline-Agent-Mode";
+/**
+ * AgentModeUnique is the HeaderAgentMode value for derived agent names.
+ */
+export const AgentModeUnique = "unique";
+/**
  * HeaderSignature carries "sha256=<hex HMAC>" on webhook requests in both directions.
  */
 export const HeaderSignature = "X-Partyline-Signature";
@@ -510,6 +521,65 @@ export interface HookAttachment {
   mime: string;
   size: number /* int64 */;
   url: string;
+}
+
+//////////
+// source: devices.go
+
+/**
+ * DeviceStatus is the state of a device approval request (DEV-01..03).
+ */
+export const DeviceStatusPending = "pending";
+export const DeviceStatusApproved = "approved";
+export const DeviceStatusDenied = "denied";
+export const DeviceStatusExpired = "expired";
+/**
+ * Device request states. A pending request past its expiry reads as expired.
+ */
+export type DeviceStatus = typeof DeviceStatusPending | typeof DeviceStatusApproved | typeof DeviceStatusDenied | typeof DeviceStatusExpired;
+/**
+ * CreateDeviceRequest is the body of POST /devices (anonymous): `partyline setup --browser`
+ * names the machine (its hostname).
+ */
+export interface CreateDeviceRequest {
+  machine: string;
+}
+/**
+ * DeviceRequestCreated answers POST /devices (201). The user opens ApproveURL
+ * (<instance>/devices/<code>); the CLI polls with PollSecret until ExpiresAt (DEV-01).
+ */
+export interface DeviceRequestCreated {
+  code: string;
+  poll_secret: string;
+  approve_url: string;
+  expires_at: string /* RFC 3339 */;
+}
+/**
+ * DevicePollRequest is the body of POST /devices/poll (anonymous, at most one per 2 s).
+ */
+export interface DevicePollRequest {
+  poll_secret: string;
+}
+/**
+ * DevicePoll answers POST /devices/poll. The poll that first sees the approval carries the new
+ * agent token and the instance URL; later polls carry only the status (DEV-02).
+ */
+export interface DevicePoll {
+  status: DeviceStatus;
+  token?: string;
+  url?: string;
+}
+/**
+ * DeviceRequest is a request as the approval page shows it: GET /devices/{code} and the answer
+ * of POST /devices/{code}/approve and /deny (WIZ-02).
+ */
+export interface DeviceRequest {
+  code: string;
+  machine: string;
+  ip: string;
+  status: DeviceStatus;
+  created_at: string /* RFC 3339 */;
+  expires_at: string /* RFC 3339 */;
 }
 
 //////////

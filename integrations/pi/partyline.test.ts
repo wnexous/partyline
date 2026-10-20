@@ -1,0 +1,183 @@
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { FakeTime, fakeSpawn, spawned } from "../testdata/fakes.ts";
+import { framingCases } from "../testdata/framing.ts";
+
+mock.module("node:child_process", () => ({ spawn: fakeSpawn }));
+const { default: partyline } = await import("./partyline.ts");
+
+type Handler = (event: unknown, ctx: unknown) => unknown;
+type Sent = { message: { customType: string; content: string; display: boolean }; options: unknown };
+
+function fakePi(opts: { hasUI?: boolean; throwOnSend?: boolean } = {}) {
+	const handlers = new Map<string, Handler>();
+	const sent: Sent[] = [];
+	const notices: Array<{ message: string; level?: string }> = [];
+	const api = {
+		on(event: string, handler: Handler) {
+			handlers.set(event, handler);
+		},
+		sendMessage(message: Sent["message"], options?: unknown) {
+			if (opts.throwOnSend) throw new Error("session closed");
+			sent.push({ message, options });
+		},
+	};
+	const ctx = {
+		cwd: "/work/proj",
+		hasUI: opts.hasUI ?? true,
+		ui: { notify: (message: string, level?: string) => notices.push({ message, level }) },
+	};
+	partyline(api);
+	return {
+		handlers,
+		sent,
+		notices,
+		start: () => handlers.get("session_start")?.({ type: "session_start" }, ctx),
+		shutdown: () => handlers.get("session_shutdown")?.({ type: "session_shutdown" }, ctx),
+	};
+}
+
+let time: FakeTime;
+beforeEach(() => {
+	spawned.length = 0;
+	time = new FakeTime();
+});
+afterEach(() => time.restore());
+
+const expected = (content: string): Sent => ({
+	message: { customType: "partyline", content, display: true },
+	options: { triggerTurn: true, deliverAs: "followUp" },
+});
+
+describe("pi extension", () => {
+	test("PUSH-04: session_start runs partyline listen in the session directory, once", () => {
+		const pi = fakePi();
+		expect(spawned).toEqual([]);
+		pi.start();
+		pi.start();
+		expect(spawned.length).toBe(1);
+		expect(spawned[0].command).toBe("partyline");
+		expect(spawned[0].args).toEqual(["listen"]);
+		expect(spawned[0].options.cwd).toBe("/work/proj");
+		expect(spawned[0].options.env?.PARTYLINE_SESSION).toBe(String(process.pid));
+		expect(spawned[0].options.env?.PATH).toBe(process.env.PATH);
+	});
+
+	test("PUSH-04: each line becomes one sendMessage that triggers a turn or follows up", () => {
+		const pi = fakePi();
+		pi.start();
+		const [a, b] = [framingCases[0], framingCases[1]];
+		const lineA = JSON.stringify(a.record);
+		spawned[0].out(lineA.slice(0, 10));
+		expect(pi.sent).toEqual([]);
+		spawned[0].out(`${lineA.slice(10)}\n${JSON.stringify(b.record)}\n`);
+		expect(pi.sent).toEqual([expected(a.text), expected(b.text)]);
+	});
+
+	for (const c of framingCases) {
+		test(`PUSH-06: framing - ${c.name}`, () => {
+			const pi = fakePi();
+			pi.start();
+			spawned[0].out(`${JSON.stringify(c.record)}\n`);
+			expect(pi.sent).toEqual([expected(c.text)]);
+		});
+	}
+
+	test("stderr lines and lines that are not JSON are logged", () => {
+		const pi = fakePi();
+		pi.start();
+		spawned[0].err("partyline: server unreachable\n");
+		spawned[0].out("not json\n");
+		expect(pi.sent).toEqual([]);
+		expect(pi.notices).toEqual([
+			{ message: "partyline: server unreachable", level: "warning" },
+			{ message: "partyline: ignored a line from partyline listen that is not JSON", level: "warning" },
+		]);
+	});
+
+	test("without a UI the log goes to stderr", () => {
+		const errors: unknown[] = [];
+		const saved = console.error;
+		console.error = (...args: unknown[]) => errors.push(args.join(" "));
+		try {
+			const pi = fakePi({ hasUI: false });
+			pi.start();
+			spawned[0].err("partyline: server unreachable\n");
+			expect(errors).toEqual(["partyline: server unreachable"]);
+			expect(pi.notices).toEqual([]);
+		} finally {
+			console.error = saved;
+		}
+	});
+
+	test("a failed delivery is logged", () => {
+		const pi = fakePi({ throwOnSend: true });
+		pi.start();
+		spawned[0].out(`${JSON.stringify(framingCases[0].record)}\n`);
+		expect(pi.notices).toEqual([{ message: "partyline: could not deliver a room message: session closed", level: "warning" }]);
+	});
+
+	test("an exited listen restarts with backoff: 1s, 2s, 4s … 30s at most", () => {
+		const pi = fakePi();
+		pi.start();
+		const seen: number[] = [];
+		for (let i = 0; i < 7; i++) {
+			spawned[spawned.length - 1].exit(1);
+			seen.push(...time.delays());
+			time.fire();
+		}
+		expect(seen).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);
+		expect(spawned.length).toBe(8);
+		expect(pi.notices[0]).toEqual({ message: "partyline: listen exited (code 1); restarting in 1s", level: "warning" });
+	});
+
+	test("the backoff starts over after a listen ran for a minute", () => {
+		const pi = fakePi();
+		pi.start();
+		spawned[0].exit(1);
+		time.fire();
+		spawned[1].exit(1);
+		expect(time.delays()).toEqual([2000]);
+		time.fire();
+		time.now += 60_000;
+		spawned[2].exit(1);
+		expect(time.delays()).toEqual([1000]);
+	});
+
+	test("a listen that cannot start is logged and retried", () => {
+		const pi = fakePi();
+		pi.start();
+		spawned[0].emit("error", new Error("spawn partyline ENOENT"));
+		spawned[0].exit(null);
+		expect(pi.notices.map((n) => n.message)).toEqual([
+			"partyline: cannot run partyline listen: spawn partyline ENOENT",
+			"partyline: listen exited (code null); restarting in 1s",
+		]);
+		expect(time.delays()).toEqual([1000]);
+	});
+
+	test("exit code 2 (not configured) is not retried", () => {
+		const pi = fakePi();
+		pi.start();
+		spawned[0].exit(2);
+		expect(time.delays()).toEqual([]);
+		expect(pi.notices.map((n) => n.message)).toEqual([
+			"partyline: listen is not configured; run partyline setup, then restart the session",
+		]);
+	});
+
+	test("session_shutdown stops listen and its restarts", () => {
+		const pi = fakePi();
+		pi.start();
+		spawned[0].exit(1);
+		expect(time.delays()).toEqual([1000]);
+		pi.shutdown();
+		expect(time.delays()).toEqual([]);
+		pi.start();
+		expect(spawned.length).toBe(2);
+		pi.shutdown();
+		expect(spawned[1].killed).toBe(true);
+		spawned[1].exit(null);
+		expect(time.delays()).toEqual([]);
+		expect(spawned.length).toBe(2);
+	});
+});
