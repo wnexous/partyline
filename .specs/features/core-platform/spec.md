@@ -244,7 +244,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | SEC-04 | P1: Secure deployment | Tasks | Implementing |
 | SEC-05 | P1: Secure deployment | Tasks | Implementing |
 | OPS-01 | P1: Secure deployment | Tasks | Implementing |
-| OPS-02 | P1: Secure deployment | Tasks | Implementing |
+| OPS-02 | P1: Secure deployment | Fix T32 | Fixed, re-verify |
 | OPS-03 | P1: Secure deployment | Tasks | Implementing |
 | AUD-01 | P2: Audit trail | Tasks | Implementing |
 | AUD-02 | P2: Audit trail | Tasks | Implementing |

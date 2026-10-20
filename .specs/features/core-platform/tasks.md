@@ -566,7 +566,7 @@ T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → 
 **Requirement**: OPS-02, DLV-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `TestStartRunsRetention` passes with `-count=20`
+- [x] `TestStartRunsRetention` passes with `-count=20`
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(app): wait for background jobs with a generous deadline`
