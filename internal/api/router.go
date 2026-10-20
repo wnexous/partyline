@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/config"
+	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/validation"
@@ -24,8 +25,10 @@ type Deps struct {
 	Users  *users.Service
 	Rooms  *rooms.Service
 	Agents *agents.Registry
-	Blobs  *attachments.Store
-	Audit  *audit.Log
+	// Connectors manages connectors and their chats.
+	Connectors *connectors.Service
+	Blobs      *attachments.Store
+	Audit      *audit.Log
 	// Live serves the live WebSocket at GET /api/v1/live.
 	Live http.Handler
 	// AgentWS serves the agent WebSocket at GET /api/v1/agent/ws.
@@ -67,6 +70,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.roomRoutes(mux)
 	s.agentRoutes(mux)
 	s.agentAPIRoutes(mux)
+	s.connectorRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}

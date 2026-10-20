@@ -41,6 +41,44 @@ func (q *Queries) CreateConnector(ctx context.Context, arg CreateConnectorParams
 	return err
 }
 
+const deleteConnector = `-- name: DeleteConnector :exec
+DELETE FROM connectors WHERE id = ?
+`
+
+func (q *Queries) DeleteConnector(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteConnector, id)
+	return err
+}
+
+const deleteConnectorChatMemberships = `-- name: DeleteConnectorChatMemberships :many
+DELETE FROM room_members
+WHERE kind = 'chat' AND member_id IN (SELECT id FROM chats WHERE connector_id = ?)
+RETURNING room_id
+`
+
+func (q *Queries) DeleteConnectorChatMemberships(ctx context.Context, connectorID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, deleteConnectorChatMemberships, connectorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getConnector = `-- name: GetConnector :one
 SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at FROM connectors WHERE id = ?
 `
@@ -62,4 +100,115 @@ func (q *Queries) GetConnector(ctx context.Context, id string) (Connector, error
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getConnectorWithOwner = `-- name: GetConnectorWithOwner :one
+SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, u.username AS owner_username, u.display_name AS owner_display_name
+FROM connectors c JOIN users u ON u.id = c.owner_id
+WHERE c.id = ?
+`
+
+type GetConnectorWithOwnerRow struct {
+	Connector        Connector
+	OwnerUsername    string
+	OwnerDisplayName string
+}
+
+func (q *Queries) GetConnectorWithOwner(ctx context.Context, id string) (GetConnectorWithOwnerRow, error) {
+	row := q.db.QueryRowContext(ctx, getConnectorWithOwner, id)
+	var i GetConnectorWithOwnerRow
+	err := row.Scan(
+		&i.Connector.ID,
+		&i.Connector.OwnerID,
+		&i.Connector.Kind,
+		&i.Connector.Name,
+		&i.Connector.ConfigJson,
+		&i.Connector.SecretsEnc,
+		&i.Connector.Enabled,
+		&i.Connector.Status,
+		&i.Connector.LastError,
+		&i.Connector.CreatedAt,
+		&i.Connector.UpdatedAt,
+		&i.OwnerUsername,
+		&i.OwnerDisplayName,
+	)
+	return i, err
+}
+
+const listConnectorsForUser = `-- name: ListConnectorsForUser :many
+SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, u.username AS owner_username, u.display_name AS owner_display_name
+FROM connectors c JOIN users u ON u.id = c.owner_id
+WHERE c.owner_id = ?1
+   OR c.id IN (SELECT g.resource_id FROM grants g
+               WHERE g.resource_kind = 'connector' AND g.subject IN (?1, '*'))
+ORDER BY c.name, u.username, c.id
+`
+
+type ListConnectorsForUserRow struct {
+	Connector        Connector
+	OwnerUsername    string
+	OwnerDisplayName string
+}
+
+func (q *Queries) ListConnectorsForUser(ctx context.Context, userID string) ([]ListConnectorsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listConnectorsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListConnectorsForUserRow
+	for rows.Next() {
+		var i ListConnectorsForUserRow
+		if err := rows.Scan(
+			&i.Connector.ID,
+			&i.Connector.OwnerID,
+			&i.Connector.Kind,
+			&i.Connector.Name,
+			&i.Connector.ConfigJson,
+			&i.Connector.SecretsEnc,
+			&i.Connector.Enabled,
+			&i.Connector.Status,
+			&i.Connector.LastError,
+			&i.Connector.CreatedAt,
+			&i.Connector.UpdatedAt,
+			&i.OwnerUsername,
+			&i.OwnerDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateConnector = `-- name: UpdateConnector :exec
+UPDATE connectors SET name = ?, config_json = ?, secrets_enc = ?, enabled = ?, updated_at = ?
+WHERE id = ?
+`
+
+type UpdateConnectorParams struct {
+	Name       string
+	ConfigJson string
+	SecretsEnc []byte
+	Enabled    bool
+	UpdatedAt  int64
+	ID         string
+}
+
+func (q *Queries) UpdateConnector(ctx context.Context, arg UpdateConnectorParams) error {
+	_, err := q.db.ExecContext(ctx, updateConnector,
+		arg.Name,
+		arg.ConfigJson,
+		arg.SecretsEnc,
+		arg.Enabled,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/config"
+	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/live"
@@ -43,6 +44,14 @@ type Options struct {
 	// Sender delivers outbox entries to external chats. When nil the outbox worker does not
 	// run and entries stay pending.
 	Sender delivery.Sender
+	// ConnectorKinds are the supported connector kinds; nil means BuiltinKinds().
+	ConnectorKinds []connectors.Kind
+}
+
+// BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
+// registration line here (AD-007).
+func BuiltinKinds() []connectors.Kind {
+	return nil
 }
 
 // App is one running Partyline instance.
@@ -59,6 +68,8 @@ type App struct {
 	// Presence tracks connected agents; Agents is the agent registry.
 	Presence *agents.Presence
 	Agents   *agents.Registry
+	// Connectors manages connectors (CRUD, sharing).
+	Connectors *connectors.Service
 	// Gateway serves the agent WebSocket and pushes messages to connected agents.
 	Gateway *agents.Gateway
 	Live    *live.Hub
@@ -124,21 +135,29 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
 		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Logger: opts.Logger,
 	})
+	kinds := opts.ConnectorKinds
+	if kinds == nil {
+		kinds = BuiltinKinds()
+	}
+	a.Connectors = connectors.NewService(connectors.ServiceDeps{
+		Store: st, Access: az, Bus: bus, Box: box, Kinds: connectors.NewRegistry(kinds...), Now: opts.Now,
+	})
 	a.Live = live.New(live.Deps{
 		Bus: bus, Access: az, Rooms: a.Rooms, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
 	})
 	a.handler = api.New(api.Deps{
-		Config:  cfg,
-		Users:   usersSvc,
-		Rooms:   a.Rooms,
-		Agents:  a.Agents,
-		Blobs:   blobs,
-		Audit:   audit.New(st, opts.Now),
-		Live:    a.Live,
-		AgentWS: a.Gateway,
-		WebUI:   webui.Handler(cfg.PublicURL),
-		Logger:  opts.Logger,
-		Ready:   a.ready.Load,
+		Config:     cfg,
+		Users:      usersSvc,
+		Rooms:      a.Rooms,
+		Agents:     a.Agents,
+		Connectors: a.Connectors,
+		Blobs:      blobs,
+		Audit:      audit.New(st, opts.Now),
+		Live:       a.Live,
+		AgentWS:    a.Gateway,
+		WebUI:      webui.Handler(cfg.PublicURL),
+		Logger:     opts.Logger,
+		Ready:      a.ready.Load,
 	})
 	return a, nil
 }

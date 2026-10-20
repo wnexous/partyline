@@ -301,6 +301,11 @@ export interface Connector {
   status: ConnectorStatus;
   last_error?: string;
   config: { [key: string]: unknown };
+  /**
+   * InboundURL is where a webhook connector receives messages
+   * (<public URL>/api/v1/hooks/<id>); empty for other kinds.
+   */
+  inbound_url?: string;
   created_at: string /* RFC 3339 */;
   updated_at: string /* RFC 3339 */;
 }

@@ -56,8 +56,11 @@ type Connector struct {
 	Status    ConnectorStatus `json:"status"`
 	LastError string          `json:"last_error,omitempty"`
 	Config    map[string]any  `json:"config" tstype:"{ [key: string]: unknown }"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
+	// InboundURL is where a webhook connector receives messages
+	// (<public URL>/api/v1/hooks/<id>); empty for other kinds.
+	InboundURL string    `json:"inbound_url,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // CreateConnectorRequest is the body of POST /connectors. Enabled defaults to true.

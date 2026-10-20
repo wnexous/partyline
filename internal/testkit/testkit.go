@@ -30,6 +30,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/app"
 	"github.com/wnexous/partyline/internal/config"
+	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/users"
 )
@@ -58,6 +59,7 @@ type options struct {
 	env    map[string]string
 	logger *slog.Logger
 	now    func() time.Time
+	kinds  []connectors.Kind
 }
 
 // Option customizes New.
@@ -79,6 +81,12 @@ func WithLogger(logger *slog.Logger) Option { return func(o *options) { o.logger
 // WithClock makes the app use now as its clock.
 func WithClock(now func() time.Time) Option { return func(o *options) { o.now = now } }
 
+// WithConnectorKinds makes the app support exactly kinds (e.g. a fake kind from
+// connectors/connectortest) instead of the built-in ones.
+func WithConnectorKinds(kinds ...connectors.Kind) Option {
+	return func(o *options) { o.kinds = append(o.kinds, kinds...) }
+}
+
 // New starts an app on a temp data dir behind an httptest server; both stop at test cleanup.
 func New(t testing.TB, opts ...Option) *Env {
 	t.Helper()
@@ -95,7 +103,7 @@ func New(t testing.TB, opts ...Option) *Env {
 	cfg, err := config.Load(func(k string) string { return o.env[k] })
 	require.NoError(t, err)
 
-	a, err := app.New(cfg, app.Options{Logger: o.logger, Now: o.now})
+	a, err := app.New(cfg, app.Options{Logger: o.logger, Now: o.now, ConnectorKinds: o.kinds})
 	require.NoError(t, err)
 	require.NoError(t, a.Start(context.Background()))
 	srv.Config.Handler = a.Handler()

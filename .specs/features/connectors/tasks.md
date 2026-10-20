@@ -79,7 +79,7 @@ T7 → T8 → T9 → T10 → T11
 **Requirement**: CON-01, CON-02, CON-03, CON-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Auth matrix owner/use-grantee/stranger/admin; 422 names field; secrets masked in every response
+- [x] Auth matrix owner/use-grantee/stranger/admin; 422 names field; secrets masked in every response
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(connectors): add connector management endpoints`
