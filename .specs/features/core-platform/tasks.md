@@ -737,7 +737,7 @@ T35 → T43 → T44
 **Requirement**: DLV-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `TestOutboxResumesAfterRestart` and `TestOutboxWakesOnMessageCreated` pass under load with `-count=10`
+- [x] `TestOutboxResumesAfterRestart` and `TestOutboxWakesOnMessageCreated` pass under load with `-count=10`
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(delivery): wait for the outbox worker with a generous deadline`
