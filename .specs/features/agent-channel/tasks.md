@@ -469,7 +469,7 @@ T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: all
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] contract-notes.md describes the agent cap, the delivery queue and the backlog snapshot
+- [x] contract-notes.md describes the agent cap, the delivery queue and the backlog snapshot
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record agent channel contract notes for fix iteration 2`

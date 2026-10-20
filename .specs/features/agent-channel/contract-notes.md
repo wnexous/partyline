@@ -88,3 +88,29 @@ Binding conventions Phase 2 (channel side, T5-T9) and the web app follow. Types 
 - testkit WebSocket dials and ack writes use `testkit.IOTimeout` (1 min); api tests wait up to 1 min (`wsWait`,
   `liveWait`) for expected frames, and channel tests up to 1 min (`wait`, `chanWait`). All return as soon as the frame
   arrives; keep negative waits (`ExpectNone`, `Closed` on a socket that must stay open) short and explicit.
+
+# Contract Notes (from agent-channel fix iteration 2: T19-T27)
+
+## Gateway and registry
+- An owner has at most `agents.MaxAgentsPerOwner` (50) agents. Connecting under a new name beyond it answers the upgrade
+  with 409 `conflict` "agent limit reached" (`agents.ErrAgentLimit`) and registers nothing; existing agents still
+  connect. Deleting an agent frees a slot. The channel treats the 409 like any other refused dial (it backs off and
+  reports the server unreachable); a dedicated message is not part of this iteration.
+- The token check before the upgrade is tested: an inactive token answers 401 `unauthorized` and registers no agent.
+- Backlog: per room, the pending count and the list of the last 50 come from one read-only transaction
+  (`store.ReadTx`, one WAL snapshot). A message posted in between is not counted and not listed; it arrives as a live
+  message after the backlog. The notice count always equals the messages between the cursor and the first delivered
+  message, which is where the cursor jumps. `Gateway.afterBacklogCount` is a test hook (nil in production).
+
+## Channel
+- The link's WebSocket reader never waits for Claude Code: frames go to an in-memory queue (not bounded; before
+  initialization it holds the backlog and the first live messages) and a delivery goroutine handles them in order once
+  `notifications/initialized` arrived (`mcp.Server.Initialized`). Pings are answered and closes (`replaced`, `deleted`,
+  `lagged`) are seen before initialization. Frames still queued when the connection ends are not acknowledged, so the
+  backlog sends them again; acks still follow the notification write (AGT-07).
+- The dedupe window is the last 1,000 delivered message ids (AGT-10); the 1,001st evicts the oldest.
+
+## Tests
+- Download-dir hardening tests isolate each check: the symlinked dir points at a 0700 directory of the user (only the
+  `Lstat` check refuses it), 0750 and 0705 agent dirs are refused by the mode mask, and `checkPrivate` is unit-tested
+  with file info carrying another UID.

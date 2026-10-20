@@ -125,29 +125,29 @@ A Claude Code session can only receive pushed events through a channel: an MCP s
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
 | MCP-01 | P1: Connect | Tasks | Verified |
-| MCP-02 | P1: Connect | Fix T14 | Fixed, re-verify |
+| MCP-02 | P1: Connect | Fix T14 | Verified |
 | MCP-03 | P1: Connect | Tasks | Verified |
 | AGT-01 | P1: Connect | Tasks | Verified |
-| AGT-02 | P1: Connect | Fix T13 | Fixed, re-verify |
-| AGT-03 | P1: Connect | Fix T15 | Fixed, re-verify |
+| AGT-02 | P1: Connect | Fix T13, T23 | Fixed, re-verify |
+| AGT-03 | P1: Connect | Fix T15, T25 | Fixed, re-verify |
 | AGT-04 | P1: Connect | Tasks | Verified |
 | AGT-05 | P1: Receive | Tasks | Verified |
 | AGT-06 | P1: Receive | Tasks | Verified |
-| AGT-07 | P1: Receive | Fix T11 | Fixed, re-verify |
-| AGT-08 | P1: Receive | Fix T12 | Fixed, re-verify |
-| AGT-09 | P1: Receive | Tasks | Verified |
-| AGT-10 | P1: Receive | Tasks | Verified |
+| AGT-07 | P1: Receive | Fix T11, T25 | Fixed, re-verify |
+| AGT-08 | P1: Receive | Fix T12 | Verified |
+| AGT-09 | P1: Receive | Fix T26 | Fixed, re-verify |
+| AGT-10 | P1: Receive | Fix T22 | Fixed, re-verify |
 | TOOL-01 | P1: Tools | Tasks | Verified |
 | TOOL-02 | P1: Tools | Tasks | Verified |
 | TOOL-03 | P1: Tools | Tasks | Verified |
 | TOOL-04 | P1: Tools | Tasks | Verified |
 | TOOL-05 | P1: Tools | Tasks | Verified |
-| TOOL-06 | P1: Tools | Fix T16-T17 | Fixed, re-verify |
+| TOOL-06 | P1: Tools | Fix T16-T17, T19-T21 | Fixed, re-verify |
 | TOOL-07 | P1: Tools | Tasks | Verified |
 | TOOL-08 | P1: Tools | Tasks | Verified |
 | TOOL-09 | P2: Agent directory | Tasks | Verified |
 
-**Coverage:** 22 total, mapped in tasks.md (T1-T9); fix iteration 1 (T10-T18) re-opens the rows marked "Fixed, re-verify". T13 (AGT-02) closes agent sockets when their token is revoked or the owner disabled.
+**Coverage:** 22 total, mapped in tasks.md (T1-T9); fix iteration 1 (T10-T18) re-opens the rows marked "Fixed, re-verify". T13 (AGT-02) closes agent sockets when their token is revoked or the owner disabled. Fix iteration 2 (T19-T27) re-opens AGT-02, AGT-03, AGT-07, AGT-09, AGT-10 and TOOL-06; it also caps agents at 50 per owner (security note S2, no AC; T24).
 
 ---
 
