@@ -202,7 +202,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | AUTH-02 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-03 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-04 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-05 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-05 | P1: Setup and accounts | Fix T29 | Fixed, re-verify |
 | AUTH-06 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-07 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-08 | P1: Setup and accounts | Tasks | Implementing |

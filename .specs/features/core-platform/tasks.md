@@ -521,9 +521,9 @@ T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → 
 **Requirement**: AUTH-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A parallel burst of 30 wrong logins from one IP runs at most 5 password checks, the rest get 429
-- [ ] Sequential behavior unchanged; success clears the failures
-- [ ] The limiter never holds more keys than its cap
+- [x] A parallel burst of 30 wrong logins from one IP runs at most 5 password checks, the rest get 429
+- [x] Sequential behavior unchanged; success clears the failures
+- [x] The limiter never holds more keys than its cap
 **Tests**: integration
 **Gate**: full
 **Commit**: `fix(users): reserve login attempts before verifying the password`

@@ -91,21 +91,24 @@ type NewSession struct {
 // Login checks credentials and opens a session. Every failure cause returns
 // ErrInvalidCredentials (AUTH-04); an IP over the failure limit gets ErrRateLimited (AUTH-05).
 func (s *Service) Login(ctx context.Context, in LoginInput) (db.User, NewSession, error) {
-	now := s.now()
-	if s.limiter.Blocked(in.IP, now) {
+	// Reserve the attempt before the slow hash, so concurrent attempts cannot all pass.
+	if !s.limiter.Begin(in.IP, s.now()) {
 		return db.User{}, NewSession{}, ErrRateLimited
 	}
 	u, err := s.checkPassword(ctx, in.Username, in.Password)
-	if errors.Is(err, ErrInvalidCredentials) {
-		s.limiter.Fail(in.IP, now)
-		// The attempted username is not recorded: people sometimes type a password there.
+	switch {
+	case errors.Is(err, ErrInvalidCredentials):
+		// The reservation stays as the failure. The attempted username is not recorded:
+		// people sometimes type a password there.
 		if aerr := s.audit.Append(ctx, audit.Entry{Action: audit.ActionLoginFailed, IP: in.IP}); aerr != nil {
 			return db.User{}, NewSession{}, aerr
 		}
-	}
-	if err != nil {
+		return db.User{}, NewSession{}, err
+	case err != nil:
+		s.limiter.Release(in.IP)
 		return db.User{}, NewSession{}, err
 	}
+	s.limiter.Succeed(in.IP)
 	sess, err := s.createSession(ctx, u.ID, in.IP, in.UserAgent)
 	if err != nil {
 		return db.User{}, NewSession{}, err
