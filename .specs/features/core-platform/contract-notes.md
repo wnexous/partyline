@@ -137,3 +137,75 @@ Binding conventions every later task and feature follows. Source of truth for ty
   `m.as(t, role)` binds a client to a subtest, `statuses(owner, viewer, poster, stranger, admin)`, and
   `m.run(t, setup, []matrixRoute{{name, call, want}})` runs each route as each role on a fresh resource from `setup`.
   For agents/connectors use viewer as the use grantee. Test agents/chats are inserted with `CreateAgent`/`CreateConnector`/`CreateChat`.
+
+# Contract Notes (from core-platform Phase 4: delivery runtime, live, operations)
+
+## Delivery
+- DLV-05 decision: a chat member with `outbound=false` receives nothing broadcast from the room, bridged chat posts
+  included. Explicit `recipients` (DLV-04) still reach a listed chat whatever its outbound flag.
+- `delivery.OutboxWorker` (`NewOutboxWorker(OutboxOptions{Store, Bus, Sender, Now, Logger, PollInterval, SendTimeout})`,
+  `Run(ctx)`, `Flush(ctx)`, `Running()`). `delivery.Sender.Send(ctx, Delivery{OutboxID, MessageID, RoomID, ChatID, Attempt})
+  (externalID, error)`: the sender loads the message, attachments and chat itself (connectors T6 implements it).
+  `Backoff(n) = 2s·2^(n-1)`, `MaxAttempts = 5`. Sends run one at a time; `sending` rows are requeued at start (at-least-once).
+  Every status change publishes `OutboxChanged`. The error text is stored in `outbox.last_error` (truncated, 500 bytes)
+  and never logged: senders must redact secrets from their errors.
+- `app.Options.Sender`: the app runs the worker only when a sender is set; otherwise entries stay `pending`.
+
+## App lifecycle
+- `App.Start` migrates, then starts background workers (`a.background(ctx, name, fn)`): outbox (when a sender is set) and
+  retention. `App.Shutdown` stops them, closes the live hub, then the store. New long-running workers go there.
+
+## Live (`internal/live`)
+- `live.New(Deps{Bus, Access, Rooms, Store, PublicURL, Logger, Now, PingInterval})` → `*Hub` (`ServeHTTP`, `Close`), wired as
+  `api.Deps.Live` at `GET /api/v1/live`. User principals only (401 otherwise); `Origin` must equal the public URL origin (403).
+- One bus subscription per connection (buffer 256, `lagged` frame on overflow). Each event is re-authorized per user at send
+  time: messages via `Rooms.GetMessage`, rooms via `Rooms.Get` (rendered with the user's `my_level`), members/outbox via
+  `UserRoomLevel`, presence/access via `AgentLevel`, connector status/chats via `ConnectorLevel`, identities only to their user.
+  A connection remembers the rooms it knows; losing access or deletion sends `room.deleted` only to connections that knew it.
+  `GrantsChanged` on a room sends `room.changed` (+ `access.changed`) or `room.deleted`.
+- Event → frame data: `AgentPresence` → `dto.AgentPresence{agent_id, online}`; `ConnectorStatus{Status, Detail}` →
+  `ConnectorStatusData{status, last_error: Detail}` (Detail must already be redacted); `ChatDiscovered` loads chat + connector.
+- `testkit`: `Client.DialLive(origin) (*LiveConn, *Response)`; `LiveConn.Next`, `Expect(type, &v, timeout)`,
+  `ExpectNone(d, ignore...)`, `Closed(timeout)`; frames are read by a background goroutine.
+
+## DTO conversion
+- `internal/api/convert`: `Time`, `OptTime`, `Room`, `Message`, `OutboxItem`, `Chat(chat, connector)`, `Identity`. Shared by
+  handlers and the live hub; add converters needed by both here instead of duplicating them.
+
+## Audit (`internal/audit`)
+- `audit.New(store, now)`; `Record(ctx, q, Entry)` inside the change's write tx, `Append(ctx, Entry)` standalone, `List(ctx,
+  before)` (50 per page, newest first by UUIDv7 id). `Entry{ActorID, Action, TargetKind, TargetID, Detail, IP}`; actor and IP
+  default to the request principal and `httpx.ClientIP(ctx)`. Action constants live in the package (`auth.login`,
+  `grants.set`, ...); connectors add `connector.*` actions with their own constants. Detail never holds secrets; failed logins
+  do not record the attempted username.
+- users and access create their own `audit.Log`; `api.Deps.Audit` serves `GET /api/v1/admin/audit?before=<id>`.
+- New queries: `GetOutbox`, `GetIdentity` (in `identities.sql`; identities work adds its queries to that file).
+
+## Retention and blobs
+- `rooms.Deps.Blobs`; `Service.Cleanup(ctx) CleanupResult{Messages, Blobs}` and `RunRetention(ctx, interval, log)`
+  (`RetentionInterval` 24 h, runs at start). Deletes in batches of 1000; then `attachments.Store.Sweep(cutoff, referenced)`
+  removes blobs unreferenced and older than 1 h, plus stale `.upload-*` files. `Put` of existing content refreshes the
+  blob's mtime, so a blob stored for an in-flight post is never swept.
+
+## Web UI and HTTP
+- `internal/webui`: `Handler(publicURL)` serves the embedded `internal/webui/dist` (copied from `web/dist` by
+  `make web-build`, gitignored except `.gitkeep`); without a build it serves `fallback/index.html`. `CSP(origin)` is the
+  HTML policy (`script-src 'self'`, `connect-src 'self' ws(s)://host`). `/assets/*` get immutable caching, other files
+  `no-cache`; a missing file with an extension or under `assets/` is a 404, every other GET path returns index.html.
+- The api mux answers unknown `/api/...` paths (any method) with the JSON 404 envelope, so a wrong method on a known API
+  path is now 404, not 405. The web UI is mounted at `/` and answers 405 to methods other than GET/HEAD.
+
+## CLI and deployment
+- `cli.Run(args, stdout, stderr)` wraps `execute(ctx, args, stdio{stdin, stdout, stderr, getenv})`; tests drive `execute`.
+- `partyline serve`: logs to stderr via `newLogger(cfg, w)` (slog JSON/text) which redacts attribute keys `password`,
+  `token`, `secret`, `text`, `authorization`, `cookie`, `api_key` (case-insensitive). Never log those values under other
+  keys. The setup token is logged at WARN with message `FIRST-RUN SETUP: ...` and attr `setup_token`, only while no user
+  exists. Log messages `listening` (attr `addr`) and `stopped` are stable. http.Server has no WriteTimeout (WebSockets).
+- `partyline admin create-user -username N [-display-name D] [-admin]` and `admin reset-password -username N` read the
+  password from the first line of stdin; exit 2 on usage errors, 1 on failures. `users.ResetPassword` ends sessions and
+  audits `user.password_reset`.
+- `partyline healthcheck` GETs `/healthz` on `PARTYLINE_ADDR` (empty or wildcard host → 127.0.0.1); the image HEALTHCHECK.
+- Image: `ghcr.io/wnexous/partyline`, distroless static nonroot (65532), `/data` pre-created with that owner, env
+  `PARTYLINE_ADDR=:8080 PARTYLINE_DATA_DIR=/data`, entrypoint `/partyline`, cmd `serve`. Build stages run on
+  `$BUILDPLATFORM` and cross-compile, so multi-arch builds need no QEMU. Releases: GoReleaser on `v*` tags (`{{ .Tag }}` as
+  version), image tags semver + `latest` (not for pre-releases).
