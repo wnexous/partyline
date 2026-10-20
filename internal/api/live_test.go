@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,6 +158,11 @@ func TestLiveUpgradeChecks(t *testing.T) {
 	_, resp := alice.DialLive("https://evil.example")
 	require.Equal(t, http.StatusForbidden, resp.Status)
 	_, resp = alice.DialLive("null")
+	require.Equal(t, http.StatusForbidden, resp.Status)
+	// Same host, other scheme is another origin.
+	otherScheme := strings.Replace(env.Origin, "http://", "https://", 1)
+	require.NotEqual(t, env.Origin, otherScheme)
+	_, resp = alice.DialLive(otherScheme)
 	require.Equal(t, http.StatusForbidden, resp.Status)
 
 	_, resp = env.Anon().DialLive("")

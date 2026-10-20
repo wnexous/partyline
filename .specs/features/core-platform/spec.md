@@ -236,7 +236,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | DLV-10 | P1: Messages and delivery | Tasks | Implementing |
 | LIVE-01 | P1: Live updates | Tasks | Implementing |
 | LIVE-02 | P1: Live updates | Tasks | Implementing |
-| LIVE-03 | P1: Live updates | Tasks | Implementing |
+| LIVE-03 | P1: Live updates | Fix T30 | Fixed, re-verify |
 | LIVE-04 | P1: Live updates | Tasks | Implementing |
 | SEC-01 | P1: Secure deployment | Tasks | Implementing |
 | SEC-02 | P1: Secure deployment | Tasks | Implementing |

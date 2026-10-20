@@ -537,7 +537,7 @@ T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → 
 **Requirement**: LIVE-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Dial with the public host and the other scheme returns 403
+- [x] Dial with the public host and the other scheme returns 403
 **Tests**: e2e
 **Gate**: full
 **Commit**: `test(live): reject same host origin with another scheme`
