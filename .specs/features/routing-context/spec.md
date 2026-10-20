@@ -184,7 +184,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROUTE-05 | P1: Catch-all | Tasks | Implementing |
 | MEM-01 | P1: Membership settings | Tasks | Implementing |
 | MEM-02 | P1: Membership settings | Tasks | Implementing |
-| MEM-03 | P1: Membership settings | Tasks | Implementing |
+| MEM-03 | P1: Membership settings | Tasks | Fixed (T18), re-verify |
 | MEM-04 | P1: Membership settings | Tasks | Implementing |
 | MEM-05 | P1: Membership settings | Tasks | Implementing |
 | INS-01 | P2: Room instructions | Tasks | Implementing |

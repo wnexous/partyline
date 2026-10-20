@@ -61,6 +61,18 @@ T9 → T10 → T11 → T12
 T13 → T14 → T15 → T16 → T17
 ```
 
+### Phase 5: Verifier fixes and hardening (fix iteration 1)
+
+```
+T18 → T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → T30
+```
+
+### Phase 6: Web hardening and records
+
+```
+T31 → T32 → T33 → T34
+```
+
 ---
 
 ## Task Breakdown
@@ -316,3 +328,245 @@ T13 → T14 → T15 → T16 → T17
 **Gate**: build
 **Commit**: `feat(web): delete rooms from the room settings`
 
+### Phase 5: Verifier fixes and hardening (fix iteration 1)
+
+#### T18: Reply-to-me names this agent (G5)
+
+**What**: Two agents in mentions mode; a reply to agent A's message reaches A only, live and in the backlog.
+**Where**: `internal/api/delivery_filter_test.go`
+**Depends on**: T17
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: MEM-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Test kills mutant G5 (reply-to-me true for a reply to any agent)
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(delivery): prove replies reach only the replied agent`
+
+#### T19: Instructions notice wording and paused rooms (G23, G26)
+
+**What**: INS-03 states the literal notice text; tests compare to that literal; a paused room with instructions still sends the notice and no messages.
+**Where**: `internal/api/room_info_test.go`, `internal/channel/room_info_test.go`, `spec.md`
+**Depends on**: T18
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: INS-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Tests kill G23 (notice text replaced) and G26 (no notice for paused rooms)
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(agents): pin the instructions notice wording and paused rooms`
+
+#### T20: React to a listen-only chat
+
+**What**: Reactions honor outbound=false like messages: 422 `recipients: listen-only`, nothing stored.
+**Where**: `internal/api/react_test.go`, `spec.md`
+**Depends on**: T19
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: REACT-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] 422 field recipients "listen-only"; no message stored; no outbox row
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(api): refuse reactions to listen-only chats`
+
+#### T21: Unsigned webhook reactions omit the author
+
+**What**: Webhook reaction payload omits `message.author_name` when the agent member has `sign_outbound` off.
+**Where**: `internal/connectors/webhook/connector.go`, `internal/api/hook_reaction_test.go`
+**Depends on**: T20
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: REACT-04
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Payload has no author_name key when unsigned; signed payload unchanged
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(connectors): omit the author of unsigned webhook reactions`
+
+#### T22: Migration 0008 and DTO
+
+**What**: `rooms.broadcast` (default 1) and `rooms.instructions_by`; DTO Room.broadcast, UpdateRoomRequest.broadcast, RoomInfo.instructions_by/instructions_trusted, Message.warning; tygo regen.
+**Where**: `internal/store/migrations/0008_room_safety.sql`
+**Depends on**: T21
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: ROUTE-06, INS-04 (shapes)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Migration test: defaults on existing rows
+- [ ] `make generate` drift-free
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(store): add room broadcast and instructions author`
+
+#### T23: No broadcast in catch-all rooms
+
+**What**: Rooms with broadcast=false queue posts without recipients to no chat (replies go to the replied chat) and answer a warning; choosing a room as catch-all forces broadcast and bridge off; PATCH broadcast/bridge_chats true answers 422 while it is a catch-all target.
+**Where**: `internal/rooms/messages.go`, `internal/rooms/rooms.go`, `internal/connectors/service.go`, `internal/api/*`
+**Depends on**: T22
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: ROUTE-06, ROUTE-07
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Service + HTTP tests: no outbox rows, stored, pushed to agents, exact warning text; reply goes to the replied chat; forcing; 422s; second owner
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(rooms): stop broadcasts in catch-all rooms`
+
+#### T24: Channel tool says when nothing went to a chat
+
+**What**: `send_message`, `reply` and `send_file` results append the warning.
+**Where**: `internal/channel/tools.go`
+**Depends on**: T23
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: ROUTE-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Tool result text exact for a broadcast=false room; unchanged otherwise
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(channel): tell agents when a post reached no chat`
+
+#### T25: Catch-all caps
+
+**What**: At most 60 auto-added chats per connector per hour and 1,000 chats per catch-all room; beyond that the chat is not added, nothing is stored, status detail `auto-route limit reached`.
+**Where**: `internal/connectors/inbound.go`
+**Depends on**: T24
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: ROUTE-08
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Fake clock: 61st chat in the hour refused, accepted after the hour; room at 1,000 chats refused; detail set
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(connectors): cap catch-all routing`
+
+#### T26: Clear sticky auto-route status
+
+**What**: A successful route or a catch-all settings change clears `auto-route room unavailable` / `auto-route limit reached` and publishes the status.
+**Where**: `internal/connectors/inbound.go`, `internal/connectors/service.go`
+**Depends on**: T25
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: ROUTE-09
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Detail cleared after success and after PATCH; other details untouched
+**Tests**: integration
+**Gate**: build
+**Commit**: `fix(connectors): clear auto-route status once routing works again`
+
+#### T27: No room-existence oracle
+
+**What**: Connector PATCH with an unknown or hidden room answers the same 403 `forbidden` message.
+**Where**: `internal/connectors/service.go`, `internal/api/catch_all_settings_test.go`
+**Depends on**: T26
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: ROUTE-04
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Unknown and hidden ids answer identical status, code and message
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(connectors): answer unknown and hidden catch-all rooms alike`
+
+#### T28: One emoji grapheme
+
+**What**: `react` accepts exactly one emoji grapheme (pictographic, VS16, skin tones, ZWJ, keycaps, flags).
+**Where**: `internal/api/emoji.go`
+**Depends on**: T27
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: REACT-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Table test accepts and rejects each class
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(api): accept only one emoji per reaction`
+
+#### T29: Instructions trust
+
+**What**: Store `instructions_by`; room_info returns `instructions_by` and `instructions_trusted`; the tool labels untrusted instructions as data; the notice says whether the writer is trusted.
+**Where**: `internal/rooms/rooms.go`, `internal/api/agent_handlers.go`, `internal/channel/tools.go`, `internal/agents/gateway.go`
+**Depends on**: T28
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: INS-03, INS-04, INS-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] A second owner's edit is untrusted for alice's agent; the owner's edit is trusted; literal notice texts
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(rooms): mark who wrote room instructions`
+
+#### T30: Mask DM numbers in titles
+
+**What**: The DM title fallback shows only the last 4 digits of the number.
+**Where**: `internal/connectors/whatsapp/parse.go`
+**Depends on**: T29
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: CTX-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Title `+•••• 0000`; chat id unchanged
+**Tests**: integration
+**Gate**: build
+**Commit**: `fix(connectors): mask phone numbers in DM titles`
+
+### Phase 6: Web hardening and records
+
+#### T31: Broadcast-off rooms in the web app
+
+**What**: Composer hint "Answer a chat explicitly" and a required recipient when broadcast is off; settings show the broadcast state (locked while the room is a catch-all target).
+**Where**: `web/src/components/composer.tsx`, `web/src/components/room-settings-sheet.tsx`
+**Depends on**: T30
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: ROUTE-06, ROUTE-07
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Send disabled until a chat is picked; hint visible; settings reflect state; 422 mapped
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(web): require an explicit chat in catch-all rooms`
+
+#### T32: Mentions is not a security filter
+
+**What**: Delivery select help text and channel instructions (+ pt-BR).
+**Where**: `web/src/components/member-settings.tsx`, `internal/channel/instructions.go`
+**Depends on**: T31
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: MEM-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Exact help text in both locales; instructions contain the sentence
+**Tests**: unit
+**Gate**: build
+**Commit**: `docs(web): say mentions mode is not a security filter`
+
+#### T33: Form accessibility fixes
+
+**What**: aria-live + aria-describedby for keyword and scope errors; commit a typed keyword on Save; instructions counter described; catch-all Save explains why it is disabled.
+**Where**: `web/src/components/member-settings.tsx`, `connector-catch-all.tsx`, `room-settings-sheet.tsx`
+**Depends on**: T32
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: A11Y-01, A11Y-02, A11Y-03, A11Y-04
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Vitest assertions per item
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(web): announce form errors and keep typed keywords`
+
+#### T34: Contract notes and traceability
+
+**What**: contract-notes and spec traceability updated for T18-T33.
+**Where**: `.specs/features/routing-context/`
+**Depends on**: T33
+**Reuses**: existing test helpers (contract notes)
+**Requirement**: all
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Notes cover every new behavior
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record routing-context fix iteration 1`

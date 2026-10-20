@@ -142,3 +142,35 @@ func TestMentionsModeBacklogSkipsAndAdvancesCursor(t *testing.T) {
 	require.Equal(t, g.ID, again.Message(wsWait).Message.ID)
 	require.Equal(t, last.Seq, f.cursor(t), "a backlog of skipped messages moves the cursor past them")
 }
+
+// MEM-03 (reply to me, two agents): with two agents in mentions mode, a reply to agent A's
+// message reaches A only, live and in the backlog. Each agent's next frame proves the skip.
+func TestMentionsModeReplyReachesOnlyTheRepliedAgent(t *testing.T) {
+	f := newTwoAgents(t)
+	for _, id := range []string{f.agentID, f.helperID} {
+		setMember(t, f.alice, f.room.ID, id, dto.UpdateMemberRequest{Delivery: ptr(dto.DeliveryModeMentions)})
+	}
+	own := f.postAsAgent(t, "build is green")
+	reply := testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+f.room.ID+"/messages",
+		dto.PostMessageRequest{Text: "thanks", ReplyTo: own.ID}).RequireStatus(http.StatusCreated))
+	marker := f.post(f.alice, "@helper marker")
+
+	require.Equal(t, reply.ID, f.builder.Message(wsWait).Message.ID, "the reply reaches the replied agent")
+	require.Equal(t, marker.ID, f.helper.Message(wsWait).Message.ID, "the reply to builder skips helper")
+
+	f.helper.Ack(marker.ID)
+	require.Eventually(t, func() bool {
+		seq, err := f.env.App.Store.R().GetAgentCursor(context.Background(), dbCursorParams(f.helperID, f.room.ID))
+		return err == nil && seq == marker.Seq
+	}, wsWait, 20*time.Millisecond)
+	f.helper.Close()
+	require.Eventually(t, func() bool { return !f.env.App.Presence.Online(f.helperID) }, wsWait, 20*time.Millisecond)
+	f.post(f.alice, "again, thanks")
+	f.alice.Post("/api/v1/rooms/"+f.room.ID+"/messages",
+		dto.PostMessageRequest{Text: "one more", ReplyTo: own.ID}).RequireStatus(http.StatusCreated)
+	last := f.post(f.alice, "@helper back")
+	again, resp := f.bob.Token(dto.TokenKindAgent, "desk").DialAgent("helper")
+	require.NotNil(t, again, "upgrade refused: %d", resp.Status)
+	again.Welcome(wsWait)
+	require.Equal(t, last.ID, again.Message(wsWait).Message.ID, "the backlog skips the reply to builder")
+}
