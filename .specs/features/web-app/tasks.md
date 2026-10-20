@@ -344,7 +344,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-01, UI-04, UI-14
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Suite passes locally and in CI at 1280 px and 360 px
+- [x] Suite passes locally and in CI at 1280 px and 360 px
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(web): add playwright smoke suite`
