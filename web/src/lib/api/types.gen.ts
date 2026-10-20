@@ -379,11 +379,19 @@ export interface Identity {
   created_at: string /* RFC 3339 */;
 }
 /**
+ * PairingRequest is the body of POST /identities/pairing: the connector the code is for.
+ * The user must own the connector or hold use on it (IDN-01).
+ */
+export interface PairingRequest {
+  connector_id: string;
+}
+/**
  * PairingCode is returned by POST /identities/pairing; send "!link CODE" or "/link CODE" from
- * the chat account before ExpiresAt (IDN-01).
+ * the chat account, through the connector ConnectorID, before ExpiresAt (IDN-01, IDN-02).
  */
 export interface PairingCode {
   code: string;
+  connector_id: string;
   expires_at: string /* RFC 3339 */;
 }
 /**

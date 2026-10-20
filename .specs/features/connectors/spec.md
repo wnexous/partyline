@@ -157,8 +157,8 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 
 **Acceptance Criteria**:
 
-1. WHEN a user requests a pairing code THEN the system SHALL return a 6-character code (A-Z, 2-9) valid for 10 minutes. (IDN-01)
-2. WHEN a connector receives `!link CODE` or `/link CODE` with a valid code THEN the system SHALL link (connector id, sender id and alternate sender id) to that user, consume the code and not route the message; the identity SHALL resolve only messages received through that same connector. (IDN-02)
+1. WHEN a user requests a pairing code for a connector they own or hold `use` on (`POST /api/v1/identities/pairing {connector_id}`) THEN the system SHALL return a 6-character code (A-Z, 2-9) valid for 10 minutes on that connector only; a connector the user cannot use SHALL answer 404 and a missing `connector_id` 422. (IDN-01)
+2. WHEN a connector receives `!link CODE` or `/link CODE` with a valid code issued for that connector THEN the system SHALL link (connector id, sender id and alternate sender id) to that user, consume the code and not route the message; the identity SHALL resolve only messages received through that same connector. A code issued for another connector SHALL link nothing, stay unused, and the message SHALL not be routed. (IDN-02)
 3. IF the code is unknown or expired THEN the system SHALL ignore the command and not route the message. (IDN-03)
 4. WHEN a user deletes an identity, or deletes the connector it was linked through, THEN the system SHALL resolve messages received afterwards from that sender on that connector to no user, so they are delivered with `trusted=false`. (IDN-04)
 5. WHERE a connector kind lets the caller choose sender ids (webhook) the system SHALL link only pairing codes of the connector's owner; a code of another user SHALL link nothing and stay unused. (IDN-05)
@@ -173,6 +173,8 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 - IF a Telegram chat migrates to a supergroup (`migrate_to_chat_id`) THEN the connector SHALL update the chat's external id (TG-01).
 - IF an outbound target chat no longer exists on the platform THEN the send SHALL fail and follow the retry rules (CON-06).
 - IF a linked sender id arrives through another connector, even of the same kind, THEN the system SHALL resolve it to no user (IDN-02).
+- IF a user's pairing code is typed in a chat where another user's connector also listens THEN that connector SHALL link nothing and SHALL NOT route the command; the code stays usable on its own connector (IDN-02).
+- WHEN the pairing-code migration (`0005`) runs THEN codes issued before it are dropped, because they name no connector; users request a new code (IDN-01).
 - WHEN the identities migration (`0003`) runs THEN identities linked before it are dropped, because they do not record a connector; users link again (IDN-02).
 
 ---
@@ -212,8 +214,8 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | HOOK-03 | P1: Webhook | Tasks | Verified |
 | HOOK-04 | P1: Webhook | Execute (T14) | Implemented, re-verify |
 | HOOK-05 | P1: Webhook | Execute (T15) | Implemented, re-verify |
-| IDN-01 | P1: Identities | Tasks | Verified |
-| IDN-02 | P1: Identities | Execute (T12) | Implemented, re-verify |
+| IDN-01 | P1: Identities | Execute (T26) | Implemented, re-verify |
+| IDN-02 | P1: Identities | Execute (T12, T26) | Implemented, re-verify |
 | IDN-03 | P1: Identities | Tasks | Verified |
 | IDN-04 | P1: Identities | Execute (T12) | Implemented, re-verify |
 | IDN-05 | P1: Identities | Execute (T12) | Implemented, re-verify |

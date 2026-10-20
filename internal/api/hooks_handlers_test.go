@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -20,6 +21,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/connectors/webhook"
+	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -429,7 +431,7 @@ func chatByExternalID(t *testing.T, c *testkit.Client, connectorID, external str
 func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 	e := newHookEnv(t)
 	now := time.Now()
-	code := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", nil).RequireStatus(http.StatusCreated))
+	code := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: e.conn.ID}).RequireStatus(http.StatusCreated))
 	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "alice-chat", "sender_id": "alice-id", "text": "!link " + code.Code})).
 		RequireStatus(http.StatusAccepted)
 	ids := identitiesOf(e.alice)
@@ -444,8 +446,12 @@ func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 	msecret := mconn.GeneratedSecrets["secret"]
 	waitHookConnected(t, mallory, mconn.ID)
 
-	// IDN-05: a webhook connector links only its owner's codes; the refused code stays usable.
-	code2 := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", nil).RequireStatus(http.StatusCreated))
+	// IDN-05: a webhook connector links only its owner's codes, even a code issued for it (mallory
+	// shared it with alice); the refused code stays usable.
+	mallory.Put("/api/v1/connectors/"+mconn.ID+"/sharing", dto.Sharing{
+		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: e.alice.User.ID, Level: dto.LevelUse}},
+	}).RequireStatus(http.StatusOK)
+	code2 := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: mconn.ID}).RequireStatus(http.StatusCreated))
 	signedHook(e.env, mconn.ID, msecret, now, payload(t, map[string]any{"chat_id": "m-chat", "sender_id": "alice-id", "text": "!link " + code2.Code})).
 		RequireStatus(http.StatusAccepted)
 	require.Len(t, identitiesOf(e.alice), 1, "mallory's connector linked nothing")
@@ -483,8 +489,12 @@ func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 	require.Equal(t, e.alice.User.ID, got.Message.AuthorUserID)
 	require.True(t, got.Trusted)
 
-	// The code mallory's connector refused was not consumed.
-	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "alice-chat", "sender_id": "alice-phone", "text": "/link " + code2.Code})).
-		RequireStatus(http.StatusAccepted)
+	// The code mallory's connector refused was not consumed: it still links on its connector
+	// when no owner check applies.
+	_, ok, err := e.env.App.Identities.Link(context.Background(), code2.Code, identities.Account{
+		ConnectorID: mconn.ID, ConnectorKind: webhook.KindName, SenderID: "alice-phone",
+	}, "")
+	require.NoError(t, err)
+	require.True(t, ok)
 	require.Len(t, identitiesOf(e.alice), 2)
 }

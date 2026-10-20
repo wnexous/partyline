@@ -65,6 +65,7 @@
 - **Scope**: connectors, identities, web-app (identities page).
 - **Date**: 2026-10-20
 - **Status**: active
+- **Amended** (2026-10-20, connectors fix iteration 2, S5): a pairing code is requested for one connector the user owns or may use and links only through it (migration `0005`); changing a connector's endpoint fields deletes the identities linked through it (audited). Linking through a shared connector is now always the user's explicit choice.
 
 ## Handoff
 

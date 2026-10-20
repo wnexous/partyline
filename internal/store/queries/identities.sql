@@ -2,13 +2,13 @@
 SELECT * FROM identities WHERE id = ?;
 
 -- name: CreatePairingCode :exec
-INSERT INTO pairing_codes (code_hash, user_id, expires_at) VALUES (?, ?, ?);
+INSERT INTO pairing_codes (code_hash, user_id, connector_id, expires_at) VALUES (?, ?, ?, ?);
 
 -- name: DeleteExpiredPairingCodes :exec
 DELETE FROM pairing_codes WHERE expires_at <= ?;
 
 -- name: TakePairingCode :one
-DELETE FROM pairing_codes WHERE code_hash = ?
+DELETE FROM pairing_codes WHERE code_hash = sqlc.arg(code_hash) AND connector_id = sqlc.arg(connector_id)
 RETURNING user_id, expires_at;
 
 -- name: DeleteIdentitiesForSender :exec

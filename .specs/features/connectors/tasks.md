@@ -471,9 +471,9 @@ IDN-01/IDN-02 + edge case, AD-008 amendment.
 **Requirement**: IDN-01, IDN-02, IDN-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Pairing for a connector the user cannot see → 404; missing `connector_id` → 422; use grantee → 201
-- [ ] Probe: Alice's code typed through Mallory's connector links nothing, is not routed, and still links on Alice's
-- [ ] Migration drops codes without a connector
+- [x] Pairing for a connector the user cannot see → 404; missing `connector_id` → 422; use grantee → 201
+- [x] Probe: Alice's code typed through Mallory's connector links nothing, is not routed, and still links on Alice's
+- [x] Migration drops codes without a connector
 **Tests**: integration, e2e
 **Gate**: full
 **Commit**: `fix(identities): bind pairing codes to one connector`

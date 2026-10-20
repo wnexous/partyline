@@ -37,8 +37,9 @@ func TestIdentityEndpoints(t *testing.T) {
 	aliceLive, _ := alice.DialLive("")
 	bobLive, _ := bob.DialLive("")
 
-	code := testkit.Decode[dto.PairingCode](alice.Post("/api/v1/identities/pairing", nil).RequireStatus(http.StatusCreated))
+	code := testkit.Decode[dto.PairingCode](alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: conn.ID}).RequireStatus(http.StatusCreated))
 	require.Regexp(t, `^[A-HJ-NP-Z2-9]{6}$`, code.Code)
+	require.Equal(t, conn.ID, code.ConnectorID)
 	require.Equal(t, clock.Now().Add(10*time.Minute), code.ExpiresAt)
 
 	_, ok, err := env.App.Identities.Link(context.Background(), code.Code, identities.Account{
@@ -65,4 +66,31 @@ func TestIdentityEndpoints(t *testing.T) {
 	user, err := env.App.Identities.ResolveSender(context.Background(), conn.ID, "4242", "")
 	require.NoError(t, err)
 	require.Empty(t, user, "IDN-04: a deleted identity resolves to no user")
+}
+
+// IDN-01 (S5): a pairing code is requested for one connector the user owns or may use;
+// another user's connector answers 404 and a missing connector 422.
+func TestPairingNeedsAUsableConnector(t *testing.T) {
+	fake := connectortest.New()
+	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()))
+	alice := env.NewUser("alice")
+	bob := env.NewUser("bob")
+	off := false
+	create := func(c *testkit.Client, name string) dto.Connector {
+		return testkit.Decode[dto.Connector](c.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+			Kind: connectortest.KindName, Name: name, Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &off,
+		}).RequireStatus(http.StatusCreated))
+	}
+	bobs := create(bob, "bob-tg")
+	shared := create(bob, "bob-shared")
+	bob.Put("/api/v1/connectors/"+shared.ID+"/sharing", dto.Sharing{
+		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: alice.User.ID, Level: dto.LevelUse}},
+	}).RequireStatus(http.StatusOK)
+
+	bad := alice.Post("/api/v1/identities/pairing", dto.PairingRequest{}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+	require.Equal(t, map[string]string{"connector_id": "required"}, bad.Fields)
+	alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: bobs.ID}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: "missing"}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	code := testkit.Decode[dto.PairingCode](alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: shared.ID}).RequireStatus(http.StatusCreated))
+	require.Equal(t, shared.ID, code.ConnectorID, "a use grantee may pair through a shared connector")
 }
