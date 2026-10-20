@@ -143,6 +143,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 2. IF the target message did not come from a chat THEN `react` SHALL return `isError: true` with `can only react to chat messages`. (REACT-02)
 3. IF the target message's chat is listen-only in the room (`outbound` off) THEN `react` SHALL respond 422 with field `recipients` = `listen-only`, as for messages, and store nothing. (REACT-03)
 4. WHEN the reacting agent member has `sign_outbound` off THEN the webhook reaction payload SHALL leave out `message.author_name`. (REACT-04)
+5. WHEN an agent reacts THEN the emoji SHALL be exactly one emoji grapheme (an Extended_Pictographic character with optional VS16 or skin-tone modifier, a ZWJ sequence of those, a keycap or a regional-indicator flag, at most 16 code points); anything else SHALL get 422 field `emoji` `must be one emoji`. (REACT-05)
 
 **Independent Test**: Fake connectors receive the reaction with the original external id.
 
@@ -206,10 +207,11 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | REACT-02 | P2: Reactions | Tasks | Implementing |
 | REACT-03 | P2: Reactions | Fix iteration 1 | Implemented (T20) |
 | REACT-04 | P2: Reactions | Fix iteration 1 | Implemented (T21) |
+| REACT-05 | P2: Reactions | Fix iteration 1 | Implemented (T28) |
 | ROOMDEL-01 | P1: Delete a room | Tasks | Implementing |
 | ROOMDEL-02 | P1: Delete a room | Tasks | Implementing |
 
-**Coverage:** 31 total, mapped in tasks.md
+**Coverage:** 32 total, mapped in tasks.md
 
 ---
 

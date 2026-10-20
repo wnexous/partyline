@@ -474,13 +474,13 @@ T31 → T32 → T33 → T34
 #### T28: One emoji grapheme
 
 **What**: `react` accepts exactly one emoji grapheme (pictographic, VS16, skin tones, ZWJ, keycaps, flags).
-**Where**: `internal/api/emoji.go`
+**Where**: `internal/validation/emoji.go`
 **Depends on**: T27
 **Reuses**: existing test helpers (contract notes)
 **Requirement**: REACT-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Table test accepts and rejects each class
+- [x] Table test accepts and rejects each class
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(api): accept only one emoji per reaction`

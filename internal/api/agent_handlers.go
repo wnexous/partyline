@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"unicode"
 
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/convert"
@@ -16,6 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
+	"github.com/wnexous/partyline/internal/validation"
 )
 
 // Agent history page sizes (TOOL-05).
@@ -30,10 +30,6 @@ var (
 	errMessageNotFound  = httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "message not found")
 	errReactNotChat     = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid, "can only react to chat messages")
 )
-
-// maxEmojiLength bounds one reaction emoji in code points: enough for flags, keycaps, skin
-// tones and ZWJ sequences.
-const maxEmojiLength = 16
 
 // errNotMember answers a room reference the agent is not a member of (TOOL-04).
 func errNotMember(room string) error {
@@ -262,7 +258,7 @@ func (s *server) agentReact(w http.ResponseWriter, r *http.Request, p authn.Prin
 		return errReactNotChat
 	}
 	emoji := strings.TrimSpace(req.Emoji)
-	if !oneEmoji(emoji) {
+	if !validation.OneEmoji(emoji) { // REACT-05
 		return httpx.Invalid(map[string]string{"emoji": "must be one emoji"})
 	}
 	if !s.Agents.AllowPost(p.AgentID) {
@@ -276,17 +272,4 @@ func (s *server) agentReact(w http.ResponseWriter, r *http.Request, p authn.Prin
 	}
 	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
 	return nil
-}
-
-// oneEmoji accepts a short symbol sequence: not empty, at most maxEmojiLength code points,
-// without letters or whitespace (so plain words are refused).
-func oneEmoji(s string) bool {
-	n := 0
-	for _, r := range s {
-		n++
-		if unicode.IsLetter(r) || unicode.IsSpace(r) {
-			return false
-		}
-	}
-	return n > 0 && n <= maxEmojiLength
 }
