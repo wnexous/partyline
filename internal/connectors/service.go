@@ -103,6 +103,10 @@ type UpdateInput struct {
 	Name    *string
 	Config  Config // nil = unchanged; merged into the stored config (Kind.Merge)
 	Enabled *bool
+	// AutoRouteScope and AutoRouteRoomID change the catch-all settings (ROUTE-04); an empty
+	// room id clears the room.
+	AutoRouteScope  *dto.AutoRouteScope
+	AutoRouteRoomID *string
 }
 
 // authorize requires the user to hold want on the connector: no access is
@@ -312,10 +316,22 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	if in.Enabled != nil {
 		enabled = *in.Enabled
 	}
+	scope, routeRoom, err := s.autoRoute(ctx, p, c, in)
+	if err != nil {
+		return View{}, err
+	}
+	if string(scope) != c.AutoRouteScope || routeRoom != c.AutoRouteRoomID {
+		changed = append(changed, "auto_route")
+	}
 	toggled := enabled != c.Enabled
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		if err := q.UpdateConnector(ctx, db.UpdateConnectorParams{
 			Name: name, ConfigJson: public, SecretsEnc: sealed, Enabled: enabled, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
+		}); err != nil {
+			return err
+		}
+		if err := q.UpdateConnectorAutoRoute(ctx, db.UpdateConnectorAutoRouteParams{
+			AutoRouteScope: string(scope), AutoRouteRoomID: routeRoom, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
 		}); err != nil {
 			return err
 		}
@@ -365,6 +381,42 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 		}
 	}
 	return s.Get(ctx, p, id)
+}
+
+// autoRoute returns the catch-all settings after in (ROUTE-04): the scope must be one of
+// off, dms, groups, all; a room must exist (422) and the caller must hold manage on it (403);
+// a scope other than off needs a room.
+func (s *Service) autoRoute(ctx context.Context, p authn.Principal, c db.Connector, in UpdateInput) (dto.AutoRouteScope, sql.NullString, error) {
+	scope, room := dto.AutoRouteScope(c.AutoRouteScope), c.AutoRouteRoomID
+	if in.AutoRouteScope != nil {
+		switch *in.AutoRouteScope {
+		case dto.AutoRouteScopeOff, dto.AutoRouteScopeDMs, dto.AutoRouteScopeGroups, dto.AutoRouteScopeAll:
+			scope = *in.AutoRouteScope
+		default:
+			return "", room, &validation.Error{Fields: map[string]string{"auto_route_scope": "must be off, dms, groups or all"}}
+		}
+	}
+	if in.AutoRouteRoomID != nil {
+		room = sql.NullString{String: strings.TrimSpace(*in.AutoRouteRoomID), Valid: strings.TrimSpace(*in.AutoRouteRoomID) != ""}
+		if room.Valid {
+			if _, err := s.d.Store.R().GetRoom(ctx, room.String); errors.Is(err, sql.ErrNoRows) {
+				return "", room, &validation.Error{Fields: map[string]string{"auto_route_room_id": "unknown room"}}
+			} else if err != nil {
+				return "", room, err
+			}
+			l, err := s.d.Access.RoomLevel(ctx, p, room.String)
+			if err != nil {
+				return "", room, err
+			}
+			if !access.AtLeast(l, dto.LevelManage) {
+				return "", room, access.ErrForbidden
+			}
+		}
+	}
+	if scope != dto.AutoRouteScopeOff && !room.Valid {
+		return "", room, &validation.Error{Fields: map[string]string{"auto_route_room_id": "required when the scope is not off"}}
+	}
+	return scope, room, nil
 }
 
 // Delete stops and removes the connector with its chats (and their room memberships and

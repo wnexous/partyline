@@ -119,7 +119,7 @@ T13 → T14 → T15 → T16
 **Requirement**: ROUTE-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Valid settings saved; room without manage → 403; unknown room → 422; scope outside enum → 422
+- [x] Valid settings saved; room without manage → 403; unknown room → 422; scope outside enum → 422
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors): add catch-all routing settings`
