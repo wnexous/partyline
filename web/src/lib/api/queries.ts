@@ -37,6 +37,7 @@ import {
   MultipartMessageField,
   type Page,
   type PairingCode,
+  type PairingRequest,
   type PostMessageRequest,
   type Room,
   type RoomMember,
@@ -595,7 +596,11 @@ export const useIdentities = () =>
 
 export function useStartPairing() {
   return useMutation({
-    mutationFn: () => api<PairingCode>("POST", "/identities/pairing"),
+    // A code is bound to the connector it is requested for (IDN-01, IDN-02).
+    mutationFn: (connectorId: string) =>
+      api<PairingCode>("POST", "/identities/pairing", {
+        connector_id: connectorId,
+      } satisfies PairingRequest),
   });
 }
 

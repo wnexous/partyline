@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
@@ -91,8 +92,13 @@ type ManagerDeps struct {
 	UserAgent string
 	// FileURL is passed to connectors (signed attachment links); nil leaves it unset.
 	FileURL func(attachmentID string) string
-	// AllowPrivateNetworks is passed to connectors (CON-13).
+	// AllowPrivateNetworks and PrivateAllowlist are passed to connectors (CON-13).
 	AllowPrivateNetworks bool
+	PrivateAllowlist     *safehttp.Allowlist
+	// MaxMediaBytes is passed to connectors (the upload limit, S8).
+	MaxMediaBytes int64
+	// Replays is passed to connectors (HOOK-05); nil leaves it unset.
+	Replays Replays
 	// Inbound receives every message of a running connector (the inbound pipeline); nil
 	// drops them.
 	Inbound func(ctx context.Context, src Source, m Inbound)
@@ -207,7 +213,8 @@ func (m *Manager) Apply(id string) {
 	sec := k.SecretValues(cfg)
 	conn, err := k.New(cfg, Deps{
 		ID: id, Logger: m.d.Logger.With("connector_id", id, "kind", k.Name), UserAgent: m.d.UserAgent, FileURL: m.d.FileURL,
-		AllowPrivateNetworks: m.d.AllowPrivateNetworks,
+		AllowPrivateNetworks: m.d.AllowPrivateNetworks, PrivateAllowlist: m.d.PrivateAllowlist,
+		MaxMediaBytes: m.d.MaxMediaBytes, Replays: m.d.Replays,
 	})
 	if err != nil {
 		m.persist(id, StatusError, Redact(err.Error(), sec))

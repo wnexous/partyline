@@ -164,9 +164,10 @@ type Outbox struct {
 }
 
 type PairingCode struct {
-	CodeHash  string
-	UserID    string
-	ExpiresAt int64
+	CodeHash    string
+	UserID      string
+	ConnectorID string
+	ExpiresAt   int64
 }
 
 type Room struct {
@@ -213,4 +214,10 @@ type User struct {
 	Locale       string
 	DisabledAt   sql.NullInt64
 	CreatedAt    int64
+}
+
+type WebhookReplay struct {
+	ConnectorID string
+	SigHash     string
+	ExpiresAt   int64
 }

@@ -172,7 +172,7 @@ Binding for the re-verify, the web app and later platforms.
 - Order: timestamp + signature → replay check → 60/min budget → payload. `HookRequest.RemoteIP` is the client IP
   (`httpx.ClientIP`); invalid requests count 30/min per IP and then get `ErrRateLimited` (429, not audited).
 - Accepted signatures are kept 10 minutes (`ReplayTTL`); a repeat returns `connectors.ErrReplayed` → 409 `conflict`.
-  The cache is per running connector, so a restart or config change clears it.
+  The cache is per running connector, so a restart or config change clears it (superseded by iteration 2 below).
 
 ## Other
 - Inbound text over `dto.MaxTextLength` (16,000 code points) is stored cut, ending with `connectors.TruncatedMarker`
@@ -181,3 +181,48 @@ Binding for the re-verify, the web app and later platforms.
   answers 502 `unavailable` "the platform did not answer the request" (CON-09). The redacted detail is logged.
 - Testing: `connectortest.Instance.SetListError(err)`.
 - Split limits (TG-02, DC-02) count Unicode code points (`connectors.SplitText` is rune-based).
+
+# Contract Notes (from connectors fix iteration 2: T22-T30)
+
+Binding for the final re-verify, the web app and later platforms.
+
+## Pairing codes belong to a connector (IDN-01, IDN-02; S5)
+- `POST /identities/pairing` takes `dto.PairingRequest{connector_id}` (422 `connector_id: required` when empty; 404 when
+  the user neither owns the connector nor holds `use` on it) and answers `dto.PairingCode{code, connector_id,
+  expires_at}`. `identities.CreatePairing(ctx, userID, connectorID)`.
+- `pairing_codes.connector_id` (migration `0005`, older codes dropped). `Link` consumes a code only on its connector;
+  through any other connector the code links nothing, stays unused, and the `!link` message is not routed.
+  `Kind.LinkOwnerOnly` (webhook) still applies on top.
+- `connectors.Field.Endpoint` marks fields naming the platform server (`base_url`, `api_base`, `outbound_url`).
+  `Service.Update` deletes the connector's identities when one changes (`Kind.EndpointChanged`) and audits
+  `connector.identities_reset` (`detail: {kind, name, reason: "endpoint_changed", removed}`), never values. New kinds
+  must mark their endpoint fields.
+- Web: the `/identities` pairing dialog asks for the connector (preselected when there is one; empty state with a link
+  to `/connectors` when none) and shows `/link CODE` for Telegram, `!link CODE` elsewhere.
+
+## Webhook replays survive restarts (HOOK-05; S7, N35)
+- The signature header is trimmed and lower-cased before the constant-time compare; the replay key is the computed
+  signature, so padded or upper-cased copies are replays.
+- `connectors.Replays` (`Seen`, `Remember`) in `Deps.Replays`: `StoreReplays` keeps SHA-256 hashes in `webhook_replays`
+  (migration `0004`, unique `(connector_id, sig_hash)`, cascade on connector delete) until `expires_at` (inclusive);
+  expired rows are deleted on every insert. `MemoryReplays` is the fallback when `Deps.Replays` is nil (unit tests).
+- `testkit.Env.Restart()` restarts the app on the same data dir behind the same server.
+
+## Network policy and response caps (CON-13; S6, S8)
+- Adapters build clients only through `Deps.JSONClient(timeout)` (4 MiB, `connectors.MaxJSONResponse`),
+  `Deps.MediaClient(timeout)` (`Deps.MediaLimit()`: `PARTYLINE_MAX_UPLOAD_MB`, 25 MiB when unset),
+  `Deps.HTTPClient(timeout, cap)` and `Deps.StreamClient()`; all apply `AllowPrivateNetworks` and `PrivateAllowlist`.
+  `safehttp.DefaultMaxResponse` is now 4 MiB.
+- WhatsApp: REST answers 4 MiB; `/message/downloadmedia` answers and WebSocket frames `base64(limit) + 4 MiB`.
+  Telegram: Bot API 4 MiB, file downloads the upload limit. Discord: attachments the upload limit. Webhook outbound:
+  4 MiB (it reads at most 64 KiB of the answer).
+- A media download cut off by a cap (`safehttp.ErrResponseTooLarge`) is stored as `too_large`.
+- `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` (`safehttp.ParseAllowlist`): comma-separated CIDRs (any port), IPs or host
+  names with an optional port. Address entries match the dialed address; host entries match the host written in the
+  URL (whatever it resolves to). Invalid entries fail startup naming the variable.
+- `connectortest.Instance.Deps` exposes what the manager passed.
+
+## Migrations
+- `0004_webhook_replays.sql`, `0005_pairing_codes_per_connector.sql`. Another branch adding a migration must
+  renumber after these.
+

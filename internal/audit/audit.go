@@ -36,6 +36,9 @@ const (
 	ActionConnectorDelete  = "connector.delete"
 	ActionConnectorEnable  = "connector.enable"
 	ActionConnectorDisable = "connector.disable"
+	// ActionConnectorIdentitiesReset records the identities deleted because an endpoint
+	// field of the connector changed (S5).
+	ActionConnectorIdentitiesReset = "connector.identities_reset"
 	// ActionWebhookRejected is a hook request refused for its signature or timestamp.
 	ActionWebhookRejected = "webhook.rejected"
 )

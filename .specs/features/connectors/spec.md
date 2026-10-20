@@ -54,7 +54,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 4. WHEN a connector is created or enabled THEN the system SHALL start it within 2 seconds and report status changes as `connector.status` events. (CON-04)
 5. WHEN a connector is disabled or deleted THEN the system SHALL stop it and stop all its outbound sends. (CON-05)
 6. IF a connector's transport fails THEN the system SHALL set status `error` with the error text (secrets redacted) and retry with backoff. (CON-06)
-7. WHILE `PARTYLINE_ALLOW_PRIVATE_NETWORKS` is not `true` the system SHALL refuse connector HTTP and WebSocket connections whose resolved address is loopback, private, link-local, CGNAT, multicast or unspecified, SHALL NOT follow redirects, SHALL bound response sizes and SHALL NOT copy platform error bodies into status or error text. (CON-13)
+7. WHILE `PARTYLINE_ALLOW_PRIVATE_NETWORKS` is not `true` the system SHALL refuse connector HTTP and WebSocket connections whose resolved address is loopback, private, link-local, CGNAT, multicast or unspecified, except destinations listed in `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` (CIDRs, or addresses and host names with an optional port), SHALL NOT follow redirects, SHALL bound response sizes (4 MiB for JSON/API answers, the upload limit for media downloads, plus base64 overhead where media arrive inside JSON or WebSocket frames) and SHALL NOT copy platform error bodies into status or error text. (CON-13)
 
 **Independent Test**: Create a webhook connector, read it back with the secret masked, disable it, observe status events.
 
@@ -157,10 +157,10 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 
 **Acceptance Criteria**:
 
-1. WHEN a user requests a pairing code THEN the system SHALL return a 6-character code (A-Z, 2-9) valid for 10 minutes. (IDN-01)
-2. WHEN a connector receives `!link CODE` or `/link CODE` with a valid code THEN the system SHALL link (connector id, sender id and alternate sender id) to that user, consume the code and not route the message; the identity SHALL resolve only messages received through that same connector. (IDN-02)
+1. WHEN a user requests a pairing code for a connector they own or hold `use` on (`POST /api/v1/identities/pairing {connector_id}`) THEN the system SHALL return a 6-character code (A-Z, 2-9) valid for 10 minutes on that connector only; a connector the user cannot use SHALL answer 404 and a missing `connector_id` 422. (IDN-01)
+2. WHEN a connector receives `!link CODE` or `/link CODE` with a valid code issued for that connector THEN the system SHALL link (connector id, sender id and alternate sender id) to that user, consume the code and not route the message; the identity SHALL resolve only messages received through that same connector. A code issued for another connector SHALL link nothing, stay unused, and the message SHALL not be routed. (IDN-02)
 3. IF the code is unknown or expired THEN the system SHALL ignore the command and not route the message. (IDN-03)
-4. WHEN a user deletes an identity, or deletes the connector it was linked through, THEN the system SHALL resolve messages received afterwards from that sender on that connector to no user, so they are delivered with `trusted=false`. (IDN-04)
+4. WHEN a user deletes an identity, deletes the connector it was linked through, or changes an endpoint field of that connector (`base_url`, `api_base`, `outbound_url`) THEN the system SHALL delete the identity (the endpoint change audited as `connector.identities_reset`) and resolve messages received afterwards from that sender on that connector to no user, so they are delivered with `trusted=false`. (IDN-04)
 5. WHERE a connector kind lets the caller choose sender ids (webhook) the system SHALL link only pairing codes of the connector's owner; a code of another user SHALL link nothing and stay unused. (IDN-05)
 
 **Independent Test**: Request code, inject a `!link` message through the fake connector, list identities. Post the same sender id through another user's webhook connector: it stays untrusted.
@@ -173,6 +173,8 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 - IF a Telegram chat migrates to a supergroup (`migrate_to_chat_id`) THEN the connector SHALL update the chat's external id (TG-01).
 - IF an outbound target chat no longer exists on the platform THEN the send SHALL fail and follow the retry rules (CON-06).
 - IF a linked sender id arrives through another connector, even of the same kind, THEN the system SHALL resolve it to no user (IDN-02).
+- IF a user's pairing code is typed in a chat where another user's connector also listens THEN that connector SHALL link nothing and SHALL NOT route the command; the code stays usable on its own connector (IDN-02).
+- WHEN the pairing-code migration (`0005`) runs THEN codes issued before it are dropped, because they name no connector; users request a new code (IDN-01).
 - WHEN the identities migration (`0003`) runs THEN identities linked before it are dropped, because they do not record a connector; users link again (IDN-02).
 
 ---
@@ -186,37 +188,37 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | CON-03 | P1: Manage connectors | Tasks | Verified |
 | CON-04 | P1: Manage connectors | Tasks | Verified |
 | CON-05 | P1: Manage connectors | Tasks | Verified |
-| CON-06 | P1: Manage connectors | Execute (T13) | Implemented, re-verify |
+| CON-06 | P1: Manage connectors | Execute (T13) | Verified |
 | CON-07 | P1: Chats and inbound | Tasks | Verified |
 | CON-08 | P1: Chats and inbound | Tasks | Verified |
-| CON-09 | P1: Chats and inbound | Execute (T20) | Implemented, re-verify |
-| CON-10 | P1: Chats and inbound | Execute (T17) | Implemented, re-verify |
-| CON-11 | P1: Chats and inbound | Execute (T17) | Implemented, re-verify |
+| CON-09 | P1: Chats and inbound | Execute (T20) | Verified |
+| CON-10 | P1: Chats and inbound | Execute (T17) | Verified |
+| CON-11 | P1: Chats and inbound | Execute (T17) | Verified |
 | CON-12 | P1: Chats and inbound | Tasks | Verified |
-| CON-13 | P1: Manage connectors | Execute (T13) | Implemented, re-verify |
-| CON-14 | P1: Chats and inbound | Execute (T19) | Implemented, re-verify |
+| CON-13 | P1: Manage connectors | Execute (T13, T23, T29, T30) | Implemented, re-verify |
+| CON-14 | P1: Chats and inbound | Execute (T19, T22) | Implemented, re-verify |
 | WA-01 | P1: WhatsApp | Tasks | Verified |
 | WA-02 | P1: WhatsApp | Tasks | Verified |
-| WA-03 | P1: WhatsApp | Execute (T16) | Implemented, re-verify |
+| WA-03 | P1: WhatsApp | Execute (T16) | Verified |
 | WA-04 | P1: WhatsApp | Tasks | Verified |
 | WA-05 | P1: WhatsApp | Tasks | Verified |
 | TG-01 | P1: Telegram | Tasks | Verified |
-| TG-02 | P1: Telegram | Execute (T21) | Implemented, re-verify |
+| TG-02 | P1: Telegram | Execute (T21) | Verified |
 | TG-03 | P1: Telegram | Tasks | Verified |
 | TG-04 | P1: Telegram | Tasks | Verified |
-| DC-01 | P1: Discord | Execute (T18) | Implemented, re-verify |
-| DC-02 | P1: Discord | Execute (T21) | Implemented, re-verify |
-| DC-03 | P1: Discord | Execute (T18) | Implemented, re-verify |
-| HOOK-01 | P1: Webhook | Execute (T14) | Implemented, re-verify |
-| HOOK-02 | P1: Webhook | Execute (T14) | Implemented, re-verify |
+| DC-01 | P1: Discord | Execute (T18) | Verified |
+| DC-02 | P1: Discord | Execute (T21) | Verified |
+| DC-03 | P1: Discord | Execute (T18) | Verified |
+| HOOK-01 | P1: Webhook | Execute (T14) | Verified |
+| HOOK-02 | P1: Webhook | Execute (T14, T24) | Implemented, re-verify |
 | HOOK-03 | P1: Webhook | Tasks | Verified |
-| HOOK-04 | P1: Webhook | Execute (T14) | Implemented, re-verify |
-| HOOK-05 | P1: Webhook | Execute (T15) | Implemented, re-verify |
-| IDN-01 | P1: Identities | Tasks | Verified |
-| IDN-02 | P1: Identities | Execute (T12) | Implemented, re-verify |
+| HOOK-04 | P1: Webhook | Execute (T14) | Verified |
+| HOOK-05 | P1: Webhook | Execute (T15, T24, T25) | Implemented, re-verify |
+| IDN-01 | P1: Identities | Execute (T26) | Implemented, re-verify |
+| IDN-02 | P1: Identities | Execute (T12, T26) | Implemented, re-verify |
 | IDN-03 | P1: Identities | Tasks | Verified |
-| IDN-04 | P1: Identities | Execute (T12) | Implemented, re-verify |
-| IDN-05 | P1: Identities | Execute (T12) | Implemented, re-verify |
+| IDN-04 | P1: Identities | Execute (T12, T27) | Implemented, re-verify |
+| IDN-05 | P1: Identities | Execute (T12, T26 tests) | Implemented, re-verify |
 
 **Coverage:** 36 total, mapped in tasks.md
 

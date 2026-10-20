@@ -2,11 +2,13 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/validation"
 )
 
 // identityRoutes are the verified identity endpoints of the current user (IDN-01, IDN-04).
@@ -29,12 +31,25 @@ func (s *server) listIdentities(w http.ResponseWriter, r *http.Request, p authn.
 	return nil
 }
 
+// createPairing issues a code bound to one connector the user owns or may use (IDN-01);
+// another user's connector answers 404.
 func (s *server) createPairing(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	code, expires, err := s.Identities.CreatePairing(r.Context(), p.UserID)
+	var req dto.PairingRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	connectorID := strings.TrimSpace(req.ConnectorID)
+	if connectorID == "" {
+		return &validation.Error{Fields: map[string]string{"connector_id": "required"}}
+	}
+	if err := s.Connectors.Require(r.Context(), p, connectorID, dto.LevelUse); err != nil {
+		return err
+	}
+	code, expires, err := s.Identities.CreatePairing(r.Context(), p.UserID, connectorID)
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, dto.PairingCode{Code: code, ExpiresAt: expires.UTC()})
+	httpx.WriteJSON(w, http.StatusCreated, dto.PairingCode{Code: code, ConnectorID: connectorID, ExpiresAt: expires.UTC()})
 	return nil
 }
 

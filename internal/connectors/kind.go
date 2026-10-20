@@ -20,6 +20,20 @@ type Field struct {
 	Help     string
 	// Default is applied when the field is absent (never for secrets).
 	Default any
+	// Endpoint marks a field naming the server the connector talks to (base_url, api_base,
+	// outbound_url). Whoever controls that server chooses the sender ids the connector
+	// reports, so changing it deletes the identities linked through the connector (S5).
+	Endpoint bool
+}
+
+// EndpointChanged reports whether an endpoint field differs between two configs.
+func (k Kind) EndpointChanged(before, after Config) bool {
+	for _, f := range k.Fields {
+		if f.Endpoint && before.String(f.Name) != after.String(f.Name) {
+			return true
+		}
+	}
+	return false
 }
 
 // Secret reports whether the field holds a secret (CON-03).

@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/attachments"
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/rooms"
@@ -188,8 +189,8 @@ func (p *Pipeline) saveMedia(ctx context.Context, src Source, media []Media) []r
 		}
 		sha, size, err := p.download(ctx, md, limit)
 		switch {
-		case errors.Is(err, attachments.ErrTooLarge):
-			f.Status = dto.AttachmentStatusTooLarge
+		case errors.Is(err, attachments.ErrTooLarge), errors.Is(err, safehttp.ErrResponseTooLarge):
+			f.Status = dto.AttachmentStatusTooLarge // over the limit, or cut off by the client cap
 		case err != nil:
 			p.d.Logger.Warn("connectors: media download failed", "connector_id", src.ConnectorID, "err", err)
 			f.Status = dto.AttachmentStatusUnavailable

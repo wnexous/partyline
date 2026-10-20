@@ -271,7 +271,8 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]View, error) {
 }
 
 // Update changes name, config and enabled flag; requires ownership (manage). A config change
-// or enabling restarts the connector, disabling stops it (CON-04, CON-05).
+// or enabling restarts the connector, disabling stops it (CON-04, CON-05). A change of an
+// endpoint field deletes the identities linked through the connector (S5, audited).
 func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in UpdateInput) (View, error) {
 	if _, err := s.authorize(ctx, p, id, dto.LevelManage); err != nil {
 		return View{}, err
@@ -283,6 +284,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	k, known := s.d.Kinds.Lookup(c.Kind)
 	name, public, sealed, enabled := c.Name, c.ConfigJson, c.SecretsEnc, c.Enabled
 	var changed []string
+	endpointChanged := false
 	if in.Name != nil {
 		name = strings.TrimSpace(*in.Name)
 		if !validName(name) {
@@ -305,6 +307,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 			return View{}, err
 		}
 		changed = append(changed, "config")
+		endpointChanged = k.EndpointChanged(stored, cfg)
 	}
 	if in.Enabled != nil {
 		enabled = *in.Enabled
@@ -322,6 +325,20 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 				Detail: map[string]any{"kind": c.Kind, "name": name, "changed": changed},
 			}); err != nil {
 				return err
+			}
+		}
+		if endpointChanged {
+			removed, err := q.DeleteConnectorIdentities(ctx, id)
+			if err != nil {
+				return err
+			}
+			if removed > 0 {
+				if err := s.audit.Record(ctx, q, audit.Entry{
+					ActorID: p.UserID, Action: audit.ActionConnectorIdentitiesReset, TargetKind: audit.TargetConnector, TargetID: id,
+					Detail: map[string]any{"kind": c.Kind, "name": name, "reason": "endpoint_changed", "removed": removed},
+				}); err != nil {
+					return err
+				}
 			}
 		}
 		if !toggled {

@@ -7,6 +7,7 @@
 package safehttp
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -24,15 +25,18 @@ var (
 	ErrResponseTooLarge = errors.New("response too large")
 )
 
-// DefaultMaxResponse bounds response bodies when Options.MaxResponseBytes is 0. It matches
-// the largest platform payload Partyline accepts (inline base64 media).
-const DefaultMaxResponse = 256 << 20
+// DefaultMaxResponse bounds response bodies when Options.MaxResponseBytes is 0: 4 MiB, the
+// cap for JSON API answers. Media downloads pass their own limit (S8).
+const DefaultMaxResponse = 4 << 20
 
 // Options configure a client.
 type Options struct {
 	// AllowPrivate disables the address check (PARTYLINE_ALLOW_PRIVATE_NETWORKS=true), for
 	// platforms on the local network and for tests.
 	AllowPrivate bool
+	// Allowlist lets the listed private destinations through while AllowPrivate is false
+	// (PARTYLINE_PRIVATE_NETWORK_ALLOWLIST); nil allows none.
+	Allowlist *Allowlist
 	// Timeout bounds a whole request, body included; 0 leaves it to the request context.
 	Timeout time.Duration
 	// MaxResponseBytes bounds a response body; 0 means DefaultMaxResponse.
@@ -83,23 +87,26 @@ func Blocked(addr netip.Addr) bool {
 	return false
 }
 
-// control refuses connections to blocked addresses; it runs on every dialed address, after
-// name resolution.
-func control(_, address string, _ syscall.RawConn) error {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return ErrBlockedAddress
+// control refuses connections to blocked addresses that allow does not list; it runs on
+// every dialed address, after name resolution.
+func control(allow *Allowlist) func(_, address string, _ syscall.RawConn) error {
+	return func(_, address string, _ syscall.RawConn) error {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return ErrBlockedAddress
+		}
+		addr, err := netip.ParseAddr(host)
+		if err != nil || (Blocked(addr) && !allow.allowsAddr(addr, port)) {
+			return ErrBlockedAddress
+		}
+		return nil
 	}
-	addr, err := netip.ParseAddr(host)
-	if err != nil || Blocked(addr) {
-		return ErrBlockedAddress
-	}
-	return nil
 }
 
-// Transport returns a transport that dials only public addresses unless allowPrivate. It
-// ignores proxy settings when checking addresses, since a proxy would dial for it.
-func Transport(allowPrivate bool) *http.Transport {
+// Transport returns a transport that dials only public addresses, plus those allow lists,
+// unless allowPrivate. It ignores proxy settings when checking addresses, since a proxy
+// would dial for it.
+func Transport(allowPrivate bool, allow *Allowlist) *http.Transport {
 	d := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 	t := &http.Transport{
 		DialContext:           d.DialContext,
@@ -111,8 +118,15 @@ func Transport(allowPrivate bool) *http.Transport {
 	}
 	if allowPrivate {
 		t.Proxy = http.ProxyFromEnvironment
-	} else {
-		d.Control = control
+		return t
+	}
+	d.Control = control(allow)
+	open := &net.Dialer{Timeout: d.Timeout, KeepAlive: d.KeepAlive}
+	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if host, port, err := net.SplitHostPort(address); err == nil && allow.allowsHost(host, port) {
+			return open.DialContext(ctx, network, address) // a listed host name, whatever it resolves to
+		}
+		return d.DialContext(ctx, network, address)
 	}
 	return t
 }
@@ -125,7 +139,7 @@ func NewClient(o Options) *http.Client {
 		limit = DefaultMaxResponse
 	}
 	return &http.Client{
-		Transport:     capTransport{rt: Transport(o.AllowPrivate), max: limit},
+		Transport:     capTransport{rt: Transport(o.AllowPrivate, o.Allowlist), max: limit},
 		Timeout:       o.Timeout,
 		CheckRedirect: noRedirects,
 	}
@@ -133,8 +147,8 @@ func NewClient(o Options) *http.Client {
 
 // NewStreamClient returns a client for WebSocket handshakes: checked destinations and no
 // redirects, without a timeout or body limit (the connection outlives the request).
-func NewStreamClient(allowPrivate bool) *http.Client {
-	return &http.Client{Transport: Transport(allowPrivate), CheckRedirect: noRedirects}
+func NewStreamClient(allowPrivate bool, allow *Allowlist) *http.Client {
+	return &http.Client{Transport: Transport(allowPrivate, allow), CheckRedirect: noRedirects}
 }
 
 func noRedirects(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

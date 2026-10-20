@@ -125,11 +125,18 @@ type Identity struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// PairingRequest is the body of POST /identities/pairing: the connector the code is for.
+// The user must own the connector or hold use on it (IDN-01).
+type PairingRequest struct {
+	ConnectorID string `json:"connector_id"`
+}
+
 // PairingCode is returned by POST /identities/pairing; send "!link CODE" or "/link CODE" from
-// the chat account before ExpiresAt (IDN-01).
+// the chat account, through the connector ConnectorID, before ExpiresAt (IDN-01, IDN-02).
 type PairingCode struct {
-	Code      string    `json:"code"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Code        string    `json:"code"`
+	ConnectorID string    `json:"connector_id"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 // HookInboundRequest is the body of POST /hooks/{connector_id}, signed with HeaderSignature

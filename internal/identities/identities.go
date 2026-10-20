@@ -67,9 +67,10 @@ func newCode() (string, error) {
 	return string(b), nil
 }
 
-// CreatePairing returns a new code for the user, valid for CodeTTL (IDN-01). Only its hash
-// is stored.
-func (s *Service) CreatePairing(ctx context.Context, userID string) (string, time.Time, error) {
+// CreatePairing returns a new code for the user, valid for CodeTTL and only on the given
+// connector (IDN-01). The caller checks that the user may use the connector. Only the
+// code's hash is stored.
+func (s *Service) CreatePairing(ctx context.Context, userID, connectorID string) (string, time.Time, error) {
 	now := s.d.Now()
 	expires := now.Add(CodeTTL)
 	code, err := newCode()
@@ -80,7 +81,7 @@ func (s *Service) CreatePairing(ctx context.Context, userID string) (string, tim
 		if err := q.DeleteExpiredPairingCodes(ctx, now.UnixMilli()); err != nil {
 			return err
 		}
-		return q.CreatePairingCode(ctx, db.CreatePairingCodeParams{CodeHash: hashCode(code), UserID: userID, ExpiresAt: expires.UnixMilli()})
+		return q.CreatePairingCode(ctx, db.CreatePairingCodeParams{CodeHash: hashCode(code), UserID: userID, ConnectorID: connectorID, ExpiresAt: expires.UnixMilli()})
 	})
 	if err != nil {
 		return "", time.Time{}, err
@@ -102,9 +103,10 @@ type Account struct {
 // errWrongUser rolls back a Link whose code belongs to another user than the required one.
 var errWrongUser = errors.New("pairing code of another user")
 
-// Link consumes a valid code and links the account (sender id and alternate id) to the
-// code's user, on the account's connector only, replacing an earlier link of that account
-// there (IDN-02). ok is false for unknown or expired codes (IDN-03). When onlyUser is set
+// Link consumes a valid code of the account's connector and links the account (sender id
+// and alternate id) to the code's user, on that connector only, replacing an earlier link
+// of that account there (IDN-02). ok is false for unknown or expired codes (IDN-03) and for
+// codes of another connector, which are not consumed (IDN-02). When onlyUser is set
 // the code must belong to that user: a code of anyone else links nothing and is not
 // consumed (IDN-05, connectors whose callers choose sender ids freely).
 func (s *Service) Link(ctx context.Context, code string, acct Account, onlyUser string) (userID string, ok bool, err error) {
@@ -114,7 +116,7 @@ func (s *Service) Link(ctx context.Context, code string, acct Account, onlyUser 
 	now := s.d.Now().UnixMilli()
 	id := store.NewID()
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		row, err := q.TakePairingCode(ctx, hashCode(code))
+		row, err := q.TakePairingCode(ctx, db.TakePairingCodeParams{CodeHash: hashCode(code), ConnectorID: acct.ConnectorID})
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}

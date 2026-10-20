@@ -40,18 +40,36 @@ func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) 
 }
 
 const createPairingCode = `-- name: CreatePairingCode :exec
-INSERT INTO pairing_codes (code_hash, user_id, expires_at) VALUES (?, ?, ?)
+INSERT INTO pairing_codes (code_hash, user_id, connector_id, expires_at) VALUES (?, ?, ?, ?)
 `
 
 type CreatePairingCodeParams struct {
-	CodeHash  string
-	UserID    string
-	ExpiresAt int64
+	CodeHash    string
+	UserID      string
+	ConnectorID string
+	ExpiresAt   int64
 }
 
 func (q *Queries) CreatePairingCode(ctx context.Context, arg CreatePairingCodeParams) error {
-	_, err := q.db.ExecContext(ctx, createPairingCode, arg.CodeHash, arg.UserID, arg.ExpiresAt)
+	_, err := q.db.ExecContext(ctx, createPairingCode,
+		arg.CodeHash,
+		arg.UserID,
+		arg.ConnectorID,
+		arg.ExpiresAt,
+	)
 	return err
+}
+
+const deleteConnectorIdentities = `-- name: DeleteConnectorIdentities :execrows
+DELETE FROM identities WHERE connector_id = ?
+`
+
+func (q *Queries) DeleteConnectorIdentities(ctx context.Context, connectorID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteConnectorIdentities, connectorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteExpiredPairingCodes = `-- name: DeleteExpiredPairingCodes :exec
@@ -177,17 +195,22 @@ func (q *Queries) ResolveIdentityUser(ctx context.Context, arg ResolveIdentityUs
 }
 
 const takePairingCode = `-- name: TakePairingCode :one
-DELETE FROM pairing_codes WHERE code_hash = ?
+DELETE FROM pairing_codes WHERE code_hash = ?1 AND connector_id = ?2
 RETURNING user_id, expires_at
 `
+
+type TakePairingCodeParams struct {
+	CodeHash    string
+	ConnectorID string
+}
 
 type TakePairingCodeRow struct {
 	UserID    string
 	ExpiresAt int64
 }
 
-func (q *Queries) TakePairingCode(ctx context.Context, codeHash string) (TakePairingCodeRow, error) {
-	row := q.db.QueryRowContext(ctx, takePairingCode, codeHash)
+func (q *Queries) TakePairingCode(ctx context.Context, arg TakePairingCodeParams) (TakePairingCodeRow, error) {
+	row := q.db.QueryRowContext(ctx, takePairingCode, arg.CodeHash, arg.ConnectorID)
 	var i TakePairingCodeRow
 	err := row.Scan(&i.UserID, &i.ExpiresAt)
 	return i, err

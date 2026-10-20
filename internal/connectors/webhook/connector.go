@@ -62,7 +62,7 @@ func Kind() connectors.Kind {
 		Fields: []connectors.Field{
 			{Name: "secret", Label: "Signing secret", Type: dto.FieldTypeSecret, Required: true,
 				Help: "Leave empty to generate one; it is shown once"},
-			{Name: "outbound_url", Label: "Outbound URL", Type: dto.FieldTypeURL,
+			{Name: "outbound_url", Label: "Outbound URL", Type: dto.FieldTypeURL, Endpoint: true,
 				Help: "Room messages for this connector's chats are POSTed here"},
 		},
 		Prepare: prepare,
@@ -103,11 +103,12 @@ type Connector struct {
 	client      *http.Client
 	now         func() time.Time
 
+	replays connectors.Replays
+
 	mu      sync.Mutex
 	run     *running
-	window  window               // authenticated requests
-	invalid map[string]window    // invalid requests by client IP
-	seen    map[string]time.Time // accepted signature → forget after
+	window  window            // authenticated requests
+	invalid map[string]window // invalid requests by client IP
 }
 
 // window counts requests in a one-minute window.
@@ -141,10 +142,14 @@ func New(cfg connectors.Config, d connectors.Deps) *Connector {
 	if log == nil {
 		log = slog.Default()
 	}
+	replays := d.Replays
+	if replays == nil {
+		replays = connectors.NewMemoryReplays()
+	}
 	return &Connector{
 		id: d.ID, secret: cfg.String("secret"), outboundURL: cfg.String("outbound_url"), userAgent: d.UserAgent,
-		fileURL: d.FileURL, log: log, client: safehttp.NewClient(safehttp.Options{AllowPrivate: d.AllowPrivateNetworks, Timeout: requestTimeout}), now: time.Now,
-		invalid: map[string]window{}, seen: map[string]time.Time{},
+		fileURL: d.FileURL, log: log, client: d.JSONClient(requestTimeout), now: time.Now,
+		replays: replays, invalid: map[string]window{},
 	}
 }
 
@@ -171,21 +176,21 @@ type payload struct {
 	MessageID  string `json:"message_id"`
 }
 
-// ReceiveHook verifies the timestamp (±5 minutes) and the signature with a constant-time
-// compare (HOOK-02), refuses a signature it already accepted (HOOK-05), counts the request
+// ReceiveHook verifies the timestamp (±5 minutes) and the normalized signature with a
+// constant-time compare (HOOK-02), refuses a signature it already accepted (HOOK-05), counts the request
 // toward the connector's budget of authenticated requests (HOOK-04) and hands the message
 // to the running handler (HOOK-01). Invalid requests never touch that budget; they have
 // their own per-IP budget, beyond which they get ErrRateLimited instead of
 // ErrBadSignature. Nothing is handled when a check fails.
 func (c *Connector) ReceiveHook(ctx context.Context, r connectors.HookRequest) error {
 	want := Sign(c.secret, r.Timestamp, r.Body)
-	if !c.validTimestamp(r.Timestamp) || !hmac.Equal([]byte(want), []byte(strings.TrimSpace(r.Signature))) {
+	if !c.validTimestamp(r.Timestamp) || !hmac.Equal([]byte(want), []byte(normalizeSignature(r.Signature))) {
 		if !c.allowInvalid(r.RemoteIP) {
 			return connectors.ErrRateLimited
 		}
 		return connectors.ErrBadSignature
 	}
-	if err := c.admit(want); err != nil {
+	if err := c.admit(ctx, want); err != nil {
 		return err
 	}
 	var p payload
@@ -214,6 +219,13 @@ func (c *Connector) ReceiveHook(ctx context.Context, r connectors.HookRequest) e
 	return nil
 }
 
+// normalizeSignature trims the header and lower-cases it: hex digits are case-insensitive.
+// The replay check keys on the computed signature, so every spelling of one request is the
+// same request (HOOK-05).
+func normalizeSignature(sig string) string {
+	return strings.ToLower(strings.TrimSpace(sig))
+}
+
 func (c *Connector) validTimestamp(ts string) bool {
 	sec, err := strconv.ParseInt(strings.TrimSpace(ts), 10, 64)
 	if err != nil {
@@ -223,24 +235,31 @@ func (c *Connector) validTimestamp(ts string) bool {
 	return d <= MaxSkew && d >= -MaxSkew
 }
 
-// admit refuses a signature seen within ReplayTTL (ErrReplayed), then counts the request
-// in the connector's one-minute window (ErrRateLimited) and remembers the signature.
-func (c *Connector) admit(signature string) error {
+// admit refuses a signature accepted within ReplayTTL (ErrReplayed), then counts the
+// request in the connector's one-minute window (ErrRateLimited) and remembers the
+// signature. Accepted signatures live in Deps.Replays (the database in the app), so they
+// survive connector and server restarts (HOOK-05). Replays never consume the budget.
+func (c *Connector) admit(ctx context.Context, signature string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.now()
-	for sig, until := range c.seen { // at most RateLimit × ReplayTTL/minute entries
-		if now.After(until) {
-			delete(c.seen, sig)
-		}
+	seen, err := c.replays.Seen(ctx, c.id, signature, now)
+	if err != nil {
+		return err
 	}
-	if _, ok := c.seen[signature]; ok {
+	if seen {
 		return connectors.ErrReplayed
 	}
 	if !c.window.add(now, RateLimit) {
 		return connectors.ErrRateLimited
 	}
-	c.seen[signature] = now.Add(ReplayTTL)
+	added, err := c.replays.Remember(ctx, c.id, signature, now, now.Add(ReplayTTL))
+	if err != nil {
+		return err
+	}
+	if !added {
+		return connectors.ErrReplayed
+	}
 	return nil
 }
 

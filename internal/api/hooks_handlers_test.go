@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -20,6 +21,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/connectors/webhook"
+	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -255,6 +257,32 @@ func TestWebhookReplayIsRefused(t *testing.T) {
 	require.Equal(t, "deploy approved", msgs[0].Text)
 }
 
+// HOOK-05: accepted signatures outlive the connector instance: a replay after the connector
+// is disabled and enabled again, or after a server restart, still answers 409.
+func TestWebhookReplayIsRefusedAfterRestarts(t *testing.T) {
+	e := newHookEnv(t)
+	now := time.Now()
+	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "warming up"})).
+		RequireStatus(http.StatusAccepted)
+	room := e.roomWith(t, e.chats(t)[0].ID)
+	body := payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "deploy approved"})
+	e.post(t, e.secret, now, body).RequireStatus(http.StatusAccepted)
+
+	off, on := false, true
+	e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{Enabled: &off}).RequireStatus(http.StatusOK)
+	e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{Enabled: &on}).RequireStatus(http.StatusOK)
+	e.waitConnected(t)
+	e.post(t, e.secret, now, body).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+
+	e.env.Restart()
+	e.waitConnected(t)
+	e.post(t, e.secret, now, body).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+
+	msgs := e.messages(t, room.ID)
+	require.Len(t, msgs, 1)
+	require.Equal(t, "deploy approved", msgs[0].Text)
+}
+
 // Payload and transport errors: missing fields 422, over 64 KiB 413, unknown or stopped
 // connectors 404.
 func TestWebhookRequestErrors(t *testing.T) {
@@ -381,6 +409,40 @@ func TestWebhookOutboundToPrivateAddressIsRefusedByDefault(t *testing.T) {
 	}
 }
 
+// S6, CON-13: PARTYLINE_PRIVATE_NETWORK_ALLOWLIST lets a listed private destination through
+// while PARTYLINE_ALLOW_PRIVATE_NETWORKS stays false; an unlisted one is still refused.
+func TestWebhookOutboundToAllowlistedPrivateAddress(t *testing.T) {
+	listed := newReceiver(t)
+	unlisted := newReceiver(t)
+	e := newHookEnv(t, testkit.WithEnv(map[string]string{
+		"PARTYLINE_ALLOW_PRIVATE_NETWORKS":    "false",
+		"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": strings.TrimPrefix(listed.srv.URL, "http://"),
+	}))
+	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "deploys", "sender_id": "ci", "text": "hi"})).
+		RequireStatus(http.StatusAccepted)
+	room := e.roomWith(t, e.chats(t)[0].ID)
+
+	e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{Config: map[string]any{"outbound_url": listed.srv.URL}}).
+		RequireStatus(http.StatusOK)
+	e.waitConnected(t)
+	e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "to the listed receiver"}).RequireStatus(http.StatusCreated)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(listed.next(t).Body, &got))
+	require.Equal(t, "to the listed receiver", got["message"].(map[string]any)["text"])
+
+	e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{Config: map[string]any{"outbound_url": unlisted.srv.URL}}).
+		RequireStatus(http.StatusOK)
+	e.waitConnected(t)
+	msg := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "to the unlisted one"}).RequireStatus(http.StatusCreated))
+	item := e.firstAttempt(t, room.ID, msg.ID)
+	require.Equal(t, "outbound: destination address not allowed", item.LastError)
+	select {
+	case <-unlisted.calls:
+		t.Fatal("the unlisted private URL was called")
+	default:
+	}
+}
+
 func identitiesOf(c *testkit.Client) []dto.Identity {
 	c.T.Helper()
 	return testkit.Decode[dto.List[dto.Identity]](c.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items
@@ -403,7 +465,7 @@ func chatByExternalID(t *testing.T, c *testkit.Client, connectorID, external str
 func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 	e := newHookEnv(t)
 	now := time.Now()
-	code := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", nil).RequireStatus(http.StatusCreated))
+	code := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: e.conn.ID}).RequireStatus(http.StatusCreated))
 	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "alice-chat", "sender_id": "alice-id", "text": "!link " + code.Code})).
 		RequireStatus(http.StatusAccepted)
 	ids := identitiesOf(e.alice)
@@ -418,8 +480,12 @@ func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 	msecret := mconn.GeneratedSecrets["secret"]
 	waitHookConnected(t, mallory, mconn.ID)
 
-	// IDN-05: a webhook connector links only its owner's codes; the refused code stays usable.
-	code2 := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", nil).RequireStatus(http.StatusCreated))
+	// IDN-05: a webhook connector links only its owner's codes, even a code issued for it (mallory
+	// shared it with alice); the refused code stays usable.
+	mallory.Put("/api/v1/connectors/"+mconn.ID+"/sharing", dto.Sharing{
+		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: e.alice.User.ID, Level: dto.LevelUse}},
+	}).RequireStatus(http.StatusOK)
+	code2 := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: mconn.ID}).RequireStatus(http.StatusCreated))
 	signedHook(e.env, mconn.ID, msecret, now, payload(t, map[string]any{"chat_id": "m-chat", "sender_id": "alice-id", "text": "!link " + code2.Code})).
 		RequireStatus(http.StatusAccepted)
 	require.Len(t, identitiesOf(e.alice), 1, "mallory's connector linked nothing")
@@ -457,8 +523,12 @@ func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 	require.Equal(t, e.alice.User.ID, got.Message.AuthorUserID)
 	require.True(t, got.Trusted)
 
-	// The code mallory's connector refused was not consumed.
-	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "alice-chat", "sender_id": "alice-phone", "text": "/link " + code2.Code})).
-		RequireStatus(http.StatusAccepted)
+	// The code mallory's connector refused was not consumed: it still links on its connector
+	// when no owner check applies.
+	_, ok, err := e.env.App.Identities.Link(context.Background(), code2.Code, identities.Account{
+		ConnectorID: mconn.ID, ConnectorKind: webhook.KindName, SenderID: "alice-phone",
+	}, "")
+	require.NoError(t, err)
+	require.True(t, ok)
 	require.Len(t, identitiesOf(e.alice), 2)
 }

@@ -19,7 +19,6 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
-	"github.com/wnexous/partyline/internal/connectors/safehttp"
 )
 
 // KindName is the connector kind name.
@@ -30,8 +29,6 @@ const (
 	pingInterval     = 30 * time.Second
 	instanceCacheTTL = 5 * time.Minute
 	requestTimeout   = 60 * time.Second
-	// maxFrame bounds a WebSocket frame; media arrive inline as base64.
-	maxFrame = 256 << 20
 )
 
 // ErrUnauthorized means evolution-go rejected the API key or an instance token.
@@ -42,7 +39,8 @@ func Kind() connectors.Kind {
 	return connectors.Kind{
 		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true,
 		Fields: []connectors.Field{
-			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Help: "e.g. https://evolution.example.com"},
+			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Endpoint: true,
+				Help: "e.g. https://evolution.example.com"},
 			{Name: "api_key", Label: "Global API key", Type: dto.FieldTypeSecret, Required: true},
 			{Name: "instances", Label: "Instances", Type: dto.FieldTypeStringList,
 				Help: "Instance names to use; empty uses every instance with WebSocket events enabled"},
@@ -60,8 +58,10 @@ type Connector struct {
 	allowed   map[string]bool
 	userAgent string
 	log       *slog.Logger
-	client    *http.Client
+	client    *http.Client // REST calls (JSON)
+	downloads *http.Client // /message/downloadmedia: JSON carrying base64 media
 	stream    *http.Client // WebSocket handshakes
+	maxFrame  int64        // WebSocket frames carry inline base64 media
 	now       func() time.Time
 
 	mu        sync.Mutex
@@ -98,8 +98,8 @@ func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
 	}
 	return &Connector{
 		base: base, apiKey: cfg.String("api_key"), allowed: allowed, userAgent: d.UserAgent, log: log,
-		client: safehttp.NewClient(safehttp.Options{AllowPrivate: d.AllowPrivateNetworks, Timeout: requestTimeout}),
-		stream: safehttp.NewStreamClient(d.AllowPrivateNetworks), now: time.Now,
+		client: d.JSONClient(requestTimeout), downloads: d.HTTPClient(requestTimeout, mediaEnvelope(d.MediaLimit())),
+		stream: d.StreamClient(), maxFrame: mediaEnvelope(d.MediaLimit()), now: time.Now,
 	}, nil
 }
 
@@ -125,7 +125,7 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 		return fmt.Errorf("websocket: %w", plainError(err))
 	}
 	defer func() { _ = conn.CloseNow() }()
-	conn.SetReadLimit(maxFrame)
+	conn.SetReadLimit(c.maxFrame)
 	h.Status(connectors.StatusConnected, "")
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -219,7 +219,11 @@ func (c *Connector) download(ctx context.Context, inst string, message json.RawM
 	var resp struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if err := c.instanceCall(ctx, inst, http.MethodPost, "/message/downloadmedia", map[string]any{"message": message}, &resp); err != nil {
+	tok, err := c.token(ctx, inst)
+	if err != nil {
+		return "", err
+	}
+	if err := c.callWith(ctx, c.downloads, tok, http.MethodPost, "/message/downloadmedia", map[string]any{"message": message}, &resp); err != nil {
 		return "", err
 	}
 	if s := str(resp.Data); s != "" {
@@ -404,6 +408,17 @@ func (c *Connector) instanceCall(ctx context.Context, inst, method, path string,
 // call performs a REST call with key as apikey. Errors never carry the URL, the key or
 // the response body (which may echo message content).
 func (c *Connector) call(ctx context.Context, key, method, path string, body, out any) error {
+	return c.callWith(ctx, c.client, key, method, path, body, out)
+}
+
+// mediaEnvelope bounds a JSON answer or WebSocket frame carrying media of up to limit bytes
+// as base64, plus the JSON around it (S8).
+func mediaEnvelope(limit int64) int64 {
+	return (limit+2)/3*4 + connectors.MaxJSONResponse
+}
+
+// callWith is call through the given client.
+func (c *Connector) callWith(ctx context.Context, client *http.Client, key, method, path string, body, out any) error {
 	var rd io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -423,7 +438,7 @@ func (c *Connector) call(ctx context.Context, key, method, path string, body, ou
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := c.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", method, path, plainError(err))
 	}

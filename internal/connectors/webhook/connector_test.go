@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -138,6 +139,29 @@ func TestReplayIsRefused(t *testing.T) {
 	require.True(t, rec.NoInbound())
 
 	require.NoError(t, c.ReceiveHook(context.Background(), request(now, body)), "the same body with a new timestamp is a new request")
+}
+
+// HOOK-02, HOOK-05: the signature header is trimmed and its hex is case-insensitive, so a
+// padded or upper-cased copy of an accepted request is a replay, not a new request.
+func TestReplayDetectionNormalizesTheSignature(t *testing.T) {
+	now := time.Unix(1792497600, 0)
+	c, rec := startHook(t, &now)
+	req := request(now, body)
+	require.NoError(t, c.ReceiveHook(context.Background(), req))
+	require.Equal(t, "hi", rec.NextInbound(t).Text)
+
+	padded := req
+	padded.Signature = "  " + req.Signature + "\t\n"
+	require.ErrorIs(t, c.ReceiveHook(context.Background(), padded), connectors.ErrReplayed)
+	upper := req
+	upper.Signature = strings.ToUpper(req.Signature)
+	require.ErrorIs(t, c.ReceiveHook(context.Background(), upper), connectors.ErrReplayed)
+	require.True(t, rec.NoInbound())
+
+	fresh := request(now, `{"chat_id":"alerts","sender_id":"ci","text":"again"}`)
+	fresh.Signature = " " + strings.ToUpper(fresh.Signature)
+	require.NoError(t, c.ReceiveHook(context.Background(), fresh), "a new request with an upper-cased, padded signature is valid")
+	require.Equal(t, "again", rec.NextInbound(t).Text)
 }
 
 // The secret is generated when left empty, and kept when given.

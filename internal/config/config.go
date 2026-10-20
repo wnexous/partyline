@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 )
 
 // Config is the validated server configuration.
@@ -23,6 +25,9 @@ type Config struct {
 	// AllowPrivateNetworks lets connectors reach loopback, private and link-local
 	// addresses (PARTYLINE_ALLOW_PRIVATE_NETWORKS); off by default (CON-13).
 	AllowPrivateNetworks bool
+	// PrivateNetworkAllowlist lets connectors reach the listed private destinations while
+	// AllowPrivateNetworks is false (PARTYLINE_PRIVATE_NETWORK_ALLOWLIST); nil lists none.
+	PrivateNetworkAllowlist *safehttp.Allowlist
 }
 
 // SecureCookies reports whether cookies must carry the Secure attribute.
@@ -71,6 +76,9 @@ func Load(getenv func(string) string) (*Config, error) {
 		return nil, fmt.Errorf("PARTYLINE_ALLOW_PRIVATE_NETWORKS: must be true or false")
 	}
 	cfg.AllowPrivateNetworks = allow
+	if cfg.PrivateNetworkAllowlist, err = safehttp.ParseAllowlist(get("PARTYLINE_PRIVATE_NETWORK_ALLOWLIST", "")); err != nil {
+		return nil, fmt.Errorf("PARTYLINE_PRIVATE_NETWORK_ALLOWLIST: %w (use CIDRs or host[:port], comma-separated)", err)
+	}
 
 	for _, item := range strings.Split(get("PARTYLINE_TRUSTED_PROXIES", ""), ",") {
 		item = strings.TrimSpace(item)

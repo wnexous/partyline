@@ -56,7 +56,7 @@ func (f *Fake) Kind() connectors.Kind {
 
 func (f *Fake) newInstance(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {
 	inst := &Instance{
-		ID: d.ID, Config: cfg,
+		ID: d.ID, Config: cfg, Deps: d,
 		runs: make(chan struct{}, 64), stops: make(chan struct{}, 64), fail: make(chan error, 64),
 		sends: make(chan connectors.Outbound, 64),
 	}
@@ -100,6 +100,8 @@ func (f *Fake) Instance(t testing.TB, connectorID string) *Instance {
 type Instance struct {
 	ID     string
 	Config connectors.Config
+	// Deps are what the manager passed to Kind.New.
+	Deps connectors.Deps
 
 	mu      sync.Mutex
 	h       connectors.Handler

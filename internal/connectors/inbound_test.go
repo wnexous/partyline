@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/wnexous/partyline/internal/app"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -209,6 +211,29 @@ func TestInboundMedia(t *testing.T) {
 	require.Equal(t, 1, blobCount(t, e.env), "only the small file is in the blob store")
 }
 
+// CON-11, S8: a download the platform client cuts off at the upload limit is recorded as
+// too_large, not unavailable.
+func TestInboundMediaCutOffByTheClientCapIsTooLarge(t *testing.T) {
+	e := newInboundEnv(t)
+	e.emit(text(groupID, "M1", "first"))
+	room := e.routedRoom(t, "A", e.chatID(t, groupID))
+	m := text(groupID, "M2", "video")
+	m.Media = []connectors.Media{{Name: "clip.mp4", Mime: "video/mp4", Open: func(context.Context) (io.ReadCloser, error) {
+		return io.NopCloser(io.MultiReader(bytes.NewReader([]byte("partial")), errReader{fmt.Errorf("file download: %w", safehttp.ErrResponseTooLarge)})), nil
+	}}}
+	e.emit(m)
+
+	msgs := e.messages(t, room.ID)
+	require.Len(t, msgs, 1)
+	require.Len(t, msgs[0].Attachments, 1)
+	require.Equal(t, dto.AttachmentStatusTooLarge, msgs[0].Attachments[0].Status)
+	require.Zero(t, blobCount(t, e.env))
+}
+
+type errReader struct{ err error }
+
+func (r errReader) Read([]byte) (int, error) { return 0, r.err }
+
 // CON-10, CON-11: a repeated message is not stored again and its media is not downloaded
 // again.
 func TestInboundRepeatDownloadsNothing(t *testing.T) {
@@ -244,11 +269,15 @@ func TestInboundLongTextIsTruncated(t *testing.T) {
 	e.emit(text(groupID, "M2", long))
 	exact := strings.Repeat("a", dto.MaxTextLength)
 	e.emit(text(groupID, "M3", exact))
+	// 20,000 bytes but 10,000 code points: the limit counts code points, not bytes.
+	multiByte := strings.Repeat("é", 10000)
+	e.emit(text(groupID, "M4", multiByte))
 
 	msgs := e.messages(t, room.ID) // newest first
-	require.Len(t, msgs, 2)
-	require.Equal(t, exact, msgs[0].Text)
-	got := msgs[1].Text
+	require.Len(t, msgs, 3)
+	require.Equal(t, multiByte, msgs[0].Text, "CON-14: under 16,000 code points is stored unchanged")
+	require.Equal(t, exact, msgs[1].Text)
+	got := msgs[2].Text
 	require.Equal(t, 16000, utf8.RuneCountInString(got))
 	require.Equal(t, strings.Repeat("é", 16000-utf8.RuneCountInString("…[truncated]"))+"…[truncated]", got)
 }
@@ -282,7 +311,7 @@ func TestInboundPairingCommands(t *testing.T) {
 	e.emit(text(groupID, "M2", "!link ZZZZZZ"))
 	require.Empty(t, testkit.Decode[dto.List[dto.Identity]](e.alice.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items)
 
-	code := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", nil).RequireStatus(http.StatusCreated))
+	code := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: e.conn.ID}).RequireStatus(http.StatusCreated))
 	e.emit(text(groupID, "M3", "  /link "+strings.ToLower(code.Code)+" "))
 	require.Equal(t, before, e.messageCount(t), "pairing commands are not routed")
 
@@ -293,7 +322,7 @@ func TestInboundPairingCommands(t *testing.T) {
 	require.Equal(t, senderID, ids[0].ExternalID)
 	require.Equal(t, senderAlt, ids[0].AltExternalID)
 
-	code2 := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", nil).RequireStatus(http.StatusCreated))
+	code2 := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: e.conn.ID}).RequireStatus(http.StatusCreated))
 	e.emit(text(groupID, "M4", "!link "+code2.Code))
 	require.Equal(t, before, e.messageCount(t))
 
@@ -307,7 +336,7 @@ func TestInboundPairingCommands(t *testing.T) {
 // sender id arriving through another connector of the same kind resolves to no user.
 func TestInboundIdentityIsScopedToItsConnector(t *testing.T) {
 	e := newInboundEnv(t)
-	code := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", nil).RequireStatus(http.StatusCreated))
+	code := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: e.conn.ID}).RequireStatus(http.StatusCreated))
 	e.emit(text(groupID, "M1", "!link "+code.Code))
 	require.Len(t, testkit.Decode[dto.List[dto.Identity]](e.alice.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items, 1)
 
@@ -327,6 +356,39 @@ func TestInboundIdentityIsScopedToItsConnector(t *testing.T) {
 	msgs := e.messages(t, room.ID)
 	require.Len(t, msgs, 1)
 	require.Empty(t, msgs[0].AuthorUserID)
+}
+
+// IDN-02 (validation probe S5): alice's code typed through mallory's connector, which listens
+// in the same chat, links nothing there, is not routed, and still links through alice's own
+// connector.
+func TestInboundPairingCodeOnlyLinksOnItsConnector(t *testing.T) {
+	e := newInboundEnv(t)
+	mallory := e.env.NewUser("mallory")
+	on := true
+	mconn := testkit.Decode[dto.Connector](mallory.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+		Kind: connectortest.KindName, Name: "listener", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &on,
+	}).RequireStatus(http.StatusCreated))
+	minst := e.fake.Instance(t, mconn.ID)
+	minst.WaitRun(t)
+	minst.Emit(context.Background(), text(groupID, "M1", "first"))
+	var mchat string
+	for _, c := range testkit.Decode[dto.List[dto.Chat]](mallory.Get("/api/v1/connectors/" + mconn.ID + "/chats").RequireStatus(http.StatusOK)).Items {
+		mchat = c.ID
+	}
+	mroom := testkit.Decode[dto.Room](mallory.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "M"}).RequireStatus(http.StatusCreated))
+	mallory.Post("/api/v1/rooms/"+mroom.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: mchat}).RequireStatus(http.StatusCreated)
+
+	code := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: e.conn.ID}).RequireStatus(http.StatusCreated))
+	minst.Emit(context.Background(), text(groupID, "M2", "!link "+code.Code))
+	require.Empty(t, testkit.Decode[dto.List[dto.Identity]](e.alice.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items,
+		"mallory's connector linked nothing")
+	require.Empty(t, testkit.Decode[dto.Page[dto.Message]](mallory.Get("/api/v1/rooms/"+mroom.ID+"/messages").RequireStatus(http.StatusOK)).Items,
+		"the command is not routed")
+
+	e.emit(text(groupID, "M3", "!link "+code.Code))
+	ids := testkit.Decode[dto.List[dto.Identity]](e.alice.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items
+	require.Len(t, ids, 1)
+	require.Equal(t, e.conn.ID, ids[0].ConnectorID)
 }
 
 // A reply to an earlier chat message of the room points at it.

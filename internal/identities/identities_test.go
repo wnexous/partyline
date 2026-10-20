@@ -87,7 +87,7 @@ func TestCreatePairingReturnsShortLivedCode(t *testing.T) {
 	f := newFixture(t)
 	seen := map[string]bool{}
 	for range 50 {
-		code, expires, err := f.svc.CreatePairing(context.Background(), f.alice)
+		code, expires, err := f.svc.CreatePairing(context.Background(), f.alice, f.wa)
 		require.NoError(t, err)
 		require.Regexp(t, codePattern, code)
 		require.Equal(t, t0.Add(10*time.Minute), expires)
@@ -101,7 +101,7 @@ func TestLinkConsumesCodeAndLinksSender(t *testing.T) {
 	f := newFixture(t)
 	ch, cancel := f.bus.Subscribe(16)
 	defer cancel()
-	code, _, err := f.svc.CreatePairing(context.Background(), f.alice)
+	code, _, err := f.svc.CreatePairing(context.Background(), f.alice, f.wa)
 	require.NoError(t, err)
 
 	user, ok, err := f.svc.Link(context.Background(), code, acct(f.wa, "whatsapp", "5511999990000@s.whatsapp.net", "100000000000001@lid", "Alice"), "")
@@ -140,7 +140,7 @@ func eventsOf(ch <-chan events.Event) <-chan events.IdentityLinked {
 // IDN-02: codes are matched case-insensitively.
 func TestLinkAcceptsLowercaseCode(t *testing.T) {
 	f := newFixture(t)
-	code, _, err := f.svc.CreatePairing(context.Background(), f.alice)
+	code, _, err := f.svc.CreatePairing(context.Background(), f.alice, f.tg)
 	require.NoError(t, err)
 	_, ok, err := f.svc.Link(context.Background(), strings.ToLower(code), acct(f.tg, "telegram", "42", "", ""), "")
 	require.NoError(t, err)
@@ -154,7 +154,7 @@ func TestLinkIgnoresUnknownAndExpiredCodes(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, ok)
 
-	code, _, err := f.svc.CreatePairing(context.Background(), f.alice)
+	code, _, err := f.svc.CreatePairing(context.Background(), f.alice, f.tg)
 	require.NoError(t, err)
 	f.clock.Advance(10*time.Minute + time.Second)
 	_, ok, err = f.svc.Link(context.Background(), code, acct(f.tg, "telegram", "42", "", ""), "")
@@ -169,7 +169,7 @@ func TestLinkIgnoresUnknownAndExpiredCodes(t *testing.T) {
 // A code used within its 10 minutes still links.
 func TestLinkAcceptsCodeBeforeExpiry(t *testing.T) {
 	f := newFixture(t)
-	code, _, err := f.svc.CreatePairing(context.Background(), f.alice)
+	code, _, err := f.svc.CreatePairing(context.Background(), f.alice, f.tg)
 	require.NoError(t, err)
 	f.clock.Advance(9*time.Minute + 59*time.Second)
 	_, ok, err := f.svc.Link(context.Background(), code, acct(f.tg, "telegram", "42", "", ""), "")
@@ -182,7 +182,7 @@ func TestLinkAcceptsCodeBeforeExpiry(t *testing.T) {
 // IDN-04: after Delete the sender resolves to no user.
 func TestResolveSenderAndDelete(t *testing.T) {
 	f := newFixture(t)
-	code, _, err := f.svc.CreatePairing(context.Background(), f.alice)
+	code, _, err := f.svc.CreatePairing(context.Background(), f.alice, f.wa)
 	require.NoError(t, err)
 	_, ok, err := f.svc.Link(context.Background(), code, acct(f.wa, "whatsapp", "5511999990000@s.whatsapp.net", "100000000000001@lid", ""), "")
 	require.NoError(t, err)
@@ -218,7 +218,7 @@ func TestResolveSenderAndDelete(t *testing.T) {
 func TestLinkMovesAccountToNewUser(t *testing.T) {
 	f := newFixture(t)
 	for _, user := range []string{f.alice, f.bob} {
-		code, _, err := f.svc.CreatePairing(context.Background(), user)
+		code, _, err := f.svc.CreatePairing(context.Background(), user, f.tg)
 		require.NoError(t, err)
 		_, ok, err := f.svc.Link(context.Background(), code, acct(f.tg, "telegram", "42", "", ""), "")
 		require.NoError(t, err)
@@ -237,7 +237,7 @@ func TestLinkMovesAccountToNewUser(t *testing.T) {
 func TestLinkIsPerConnector(t *testing.T) {
 	f := newFixture(t)
 	for _, c := range []struct{ connector, user string }{{f.wa, f.alice}, {f.wa2, f.bob}} {
-		code, _, err := f.svc.CreatePairing(context.Background(), c.user)
+		code, _, err := f.svc.CreatePairing(context.Background(), c.user, c.connector)
 		require.NoError(t, err)
 		_, ok, err := f.svc.Link(context.Background(), code, acct(c.connector, "whatsapp", "5511999990000@s.whatsapp.net", "", ""), "")
 		require.NoError(t, err)
@@ -253,10 +253,11 @@ func TestLinkIsPerConnector(t *testing.T) {
 	require.Len(t, list, 1, "the link on bob's connector did not move alice's")
 }
 
-// IDN-05: with a required user, a code of anyone else links nothing and stays usable.
+// IDN-05: with a required user, a code of anyone else links nothing and stays usable. The
+// code is issued for that same connector, so only the owner check refuses it.
 func TestLinkOnlyForRequiredUser(t *testing.T) {
 	f := newFixture(t)
-	code, _, err := f.svc.CreatePairing(context.Background(), f.alice)
+	code, _, err := f.svc.CreatePairing(context.Background(), f.alice, f.wa2)
 	require.NoError(t, err)
 	_, ok, err := f.svc.Link(context.Background(), code, acct(f.wa2, "whatsapp", "alice-id", "", ""), f.bob)
 	require.NoError(t, err)
@@ -265,16 +266,40 @@ func TestLinkOnlyForRequiredUser(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, got)
 
-	user, ok, err := f.svc.Link(context.Background(), code, acct(f.wa, "whatsapp", "alice-id", "", ""), f.alice)
+	user, ok, err := f.svc.Link(context.Background(), code, acct(f.wa2, "whatsapp", "alice-id", "", ""), "")
 	require.NoError(t, err)
 	require.True(t, ok, "the refused attempt did not consume the code")
+	require.Equal(t, f.alice, user)
+}
+
+// IDN-02 (S5): a code links only through the connector it was issued for; through any
+// other connector, even of the same kind, it links nothing and is not consumed.
+func TestPairingCodeIsBoundToItsConnector(t *testing.T) {
+	f := newFixture(t)
+	code, _, err := f.svc.CreatePairing(context.Background(), f.alice, f.wa)
+	require.NoError(t, err)
+	for _, other := range []string{f.wa2, f.tg} {
+		_, ok, err := f.svc.Link(context.Background(), code, acct(other, "whatsapp", "alice-id", "", ""), "")
+		require.NoError(t, err)
+		require.False(t, ok, "code of another connector")
+		got, err := f.svc.ResolveSender(context.Background(), other, "alice-id", "")
+		require.NoError(t, err)
+		require.Empty(t, got)
+	}
+	list, err := f.svc.List(context.Background(), f.alice)
+	require.NoError(t, err)
+	require.Empty(t, list)
+
+	user, ok, err := f.svc.Link(context.Background(), code, acct(f.wa, "whatsapp", "alice-id", "", ""), "")
+	require.NoError(t, err)
+	require.True(t, ok, "still usable on its own connector")
 	require.Equal(t, f.alice, user)
 }
 
 // Deleting a connector removes the identities linked through it.
 func TestIdentitiesFollowTheirConnector(t *testing.T) {
 	f := newFixture(t)
-	code, _, err := f.svc.CreatePairing(context.Background(), f.alice)
+	code, _, err := f.svc.CreatePairing(context.Background(), f.alice, f.tg)
 	require.NoError(t, err)
 	_, ok, err := f.svc.Link(context.Background(), code, acct(f.tg, "telegram", "42", "", ""), "")
 	require.NoError(t, err)

@@ -51,7 +51,7 @@ func TestClientRefusesPrivateDestinations(t *testing.T) {
 	srv := newServer(t, func(http.ResponseWriter, *http.Request) { hits.Add(1) })
 	byName := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
 
-	for _, c := range []*http.Client{NewClient(Options{}), NewStreamClient(false)} {
+	for _, c := range []*http.Client{NewClient(Options{}), NewStreamClient(false, nil)} {
 		for _, u := range []string{srv.URL, byName} {
 			_, err := c.Get(u)
 			require.ErrorIs(t, err, ErrBlockedAddress, u)
@@ -63,7 +63,7 @@ func TestClientRefusesPrivateDestinations(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	resp, err = NewStreamClient(true).Get(byName)
+	resp, err = NewStreamClient(true, nil).Get(byName)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	require.Equal(t, int32(2), hits.Load())
@@ -79,7 +79,7 @@ func TestClientDoesNotFollowRedirects(t *testing.T) {
 		}
 		http.Redirect(w, r, "/target", http.StatusFound)
 	})
-	for _, c := range []*http.Client{NewClient(Options{AllowPrivate: true}), NewStreamClient(true)} {
+	for _, c := range []*http.Client{NewClient(Options{AllowPrivate: true}), NewStreamClient(true, nil)} {
 		resp, err := c.Get(srv.URL + "/start")
 		require.NoError(t, err)
 		require.NoError(t, resp.Body.Close())
@@ -118,4 +118,24 @@ func TestClientTimeoutAndDefaultLimit(t *testing.T) {
 	var ne net.Error
 	require.ErrorAs(t, err, &ne)
 	require.True(t, ne.Timeout())
+}
+
+// S8: without an explicit cap a client bounds answers at 4 MiB (JSON/API calls).
+func TestClientDefaultCapIsFourMiB(t *testing.T) {
+	srv := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 4<<20+len(r.URL.Query().Get("extra"))))
+	})
+	c := NewClient(Options{AllowPrivate: true})
+	resp, err := c.Get(srv.URL)
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Len(t, body, 4<<20)
+	require.NoError(t, resp.Body.Close())
+
+	resp, err = c.Get(srv.URL + "?extra=1")
+	require.NoError(t, err)
+	_, err = io.ReadAll(resp.Body)
+	require.ErrorIs(t, err, ErrResponseTooLarge)
+	require.NoError(t, resp.Body.Close())
 }

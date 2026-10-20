@@ -128,6 +128,7 @@ Tudo é configurado por variáveis de ambiente.
 | `PARTYLINE_LOG_FORMAT` | `json` | `json` ou `text`. |
 | `PARTYLINE_TRUSTED_PROXIES` | vazio | CIDRs ou IPs (separados por vírgula) de proxies reversos cujo `X-Forwarded-For` é confiável. |
 | `PARTYLINE_ALLOW_PRIVATE_NETWORKS` | `false` | `true` permite que os conectores chamem endereços de loopback, privados, link-local e CGNAT (um evolution-go ou Bot API na sua rede local, um receptor de webhook em localhost). Desligado, URLs de conector que resolvem para esses endereços são recusadas. |
+| `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` | vazio | Destinos privados, separados por vírgula, que os conectores podem chamar enquanto `PARTYLINE_ALLOW_PRIVATE_NETWORKS` continua `false`: CIDRs (`192.168.1.0/24`, qualquer porta), endereços ou nomes de host com porta opcional (`10.0.0.5`, `[fd00::5]:8088`, `localhost:8088`). Uma entrada de nome de host vale para o nome escrito na URL do conector; todo o resto privado continua bloqueado. |
 
 Para expor na internet, rode atrás de um proxy reverso com TLS, defina `PARTYLINE_PUBLIC_URL`
 com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
