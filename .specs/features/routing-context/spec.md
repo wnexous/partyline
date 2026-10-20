@@ -162,11 +162,11 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | CTX-06 | P1: Chat titles | Tasks | Pending |
 | CTX-07 | P1: Chat titles | Tasks | Pending |
 | CTX-08 | P1: Chat titles | Tasks | Pending |
-| ROUTE-01 | P1: Catch-all | Tasks | Pending |
-| ROUTE-02 | P1: Catch-all | Tasks | Pending |
-| ROUTE-03 | P1: Catch-all | Tasks | Pending |
+| ROUTE-01 | P1: Catch-all | Tasks | Implementing |
+| ROUTE-02 | P1: Catch-all | Tasks | Implementing |
+| ROUTE-03 | P1: Catch-all | Tasks | Implementing |
 | ROUTE-04 | P1: Catch-all | Tasks | Implementing |
-| ROUTE-05 | P1: Catch-all | Tasks | Pending |
+| ROUTE-05 | P1: Catch-all | Tasks | Implementing |
 | MEM-01 | P1: Membership settings | Tasks | Implementing |
 | MEM-02 | P1: Membership settings | Tasks | Implementing |
 | MEM-03 | P1: Membership settings | Tasks | Implementing |

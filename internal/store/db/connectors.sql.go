@@ -80,6 +80,40 @@ func (q *Queries) DeleteConnectorChatMemberships(ctx context.Context, connectorI
 	return items, nil
 }
 
+const getAutoRouteSkip = `-- name: GetAutoRouteSkip :one
+SELECT until FROM auto_route_skips WHERE connector_id = ? AND chat_id = ?
+`
+
+type GetAutoRouteSkipParams struct {
+	ConnectorID string
+	ChatID      string
+}
+
+func (q *Queries) GetAutoRouteSkip(ctx context.Context, arg GetAutoRouteSkipParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getAutoRouteSkip, arg.ConnectorID, arg.ChatID)
+	var until int64
+	err := row.Scan(&until)
+	return until, err
+}
+
+const getChatAutoRoute = `-- name: GetChatAutoRoute :one
+SELECT k.id AS connector_id, k.auto_route_room_id
+FROM chats c JOIN connectors k ON k.id = c.connector_id
+WHERE c.id = ?
+`
+
+type GetChatAutoRouteRow struct {
+	ConnectorID     string
+	AutoRouteRoomID sql.NullString
+}
+
+func (q *Queries) GetChatAutoRoute(ctx context.Context, id string) (GetChatAutoRouteRow, error) {
+	row := q.db.QueryRowContext(ctx, getChatAutoRoute, id)
+	var i GetChatAutoRouteRow
+	err := row.Scan(&i.ConnectorID, &i.AutoRouteRoomID)
+	return i, err
+}
+
 const getConnector = `-- name: GetConnector :one
 SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at, auto_route_scope, auto_route_room_id FROM connectors WHERE id = ?
 `
@@ -221,6 +255,20 @@ func (q *Queries) ListEnabledConnectorIDs(ctx context.Context) ([]string, error)
 	return items, nil
 }
 
+const setConnectorLastError = `-- name: SetConnectorLastError :exec
+UPDATE connectors SET last_error = ? WHERE id = ?
+`
+
+type SetConnectorLastErrorParams struct {
+	LastError string
+	ID        string
+}
+
+func (q *Queries) SetConnectorLastError(ctx context.Context, arg SetConnectorLastErrorParams) error {
+	_, err := q.db.ExecContext(ctx, setConnectorLastError, arg.LastError, arg.ID)
+	return err
+}
+
 const updateConnector = `-- name: UpdateConnector :exec
 UPDATE connectors SET name = ?, config_json = ?, secrets_enc = ?, enabled = ?, updated_at = ?
 WHERE id = ?
@@ -280,5 +328,21 @@ type UpdateConnectorStatusParams struct {
 
 func (q *Queries) UpdateConnectorStatus(ctx context.Context, arg UpdateConnectorStatusParams) error {
 	_, err := q.db.ExecContext(ctx, updateConnectorStatus, arg.Status, arg.LastError, arg.ID)
+	return err
+}
+
+const upsertAutoRouteSkip = `-- name: UpsertAutoRouteSkip :exec
+INSERT INTO auto_route_skips (connector_id, chat_id, until) VALUES (?, ?, ?)
+ON CONFLICT (connector_id, chat_id) DO UPDATE SET until = excluded.until
+`
+
+type UpsertAutoRouteSkipParams struct {
+	ConnectorID string
+	ChatID      string
+	Until       int64
+}
+
+func (q *Queries) UpsertAutoRouteSkip(ctx context.Context, arg UpsertAutoRouteSkipParams) error {
+	_, err := q.db.ExecContext(ctx, upsertAutoRouteSkip, arg.ConnectorID, arg.ChatID, arg.Until)
 	return err
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/attachments"
+	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/identities"
@@ -59,8 +60,9 @@ func NewPipeline(d PipelineDeps) *Pipeline {
 }
 
 // Handle processes one received message: own messages are dropped (CON-12), pairing
-// commands link the sender on this connector and stop (IDN-02, IDN-03, IDN-05), the chat is recorded (CON-07) and,
-// when the chat belongs to rooms, the message is stored once per room with its media
+// commands link the sender on this connector and stop (IDN-02, IDN-03, IDN-05), the chat is
+// recorded (CON-07), a chat in no room may join the connector's catch-all room (ROUTE-01)
+// and, when the chat belongs to rooms, the message is stored once per room with its media
 // (CON-08, CON-10, CON-11). Failures are logged without message content.
 func (p *Pipeline) Handle(ctx context.Context, src Source, m Inbound) {
 	if err := p.handle(ctx, src, m); err != nil && ctx.Err() == nil {
@@ -94,11 +96,18 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 		return err
 	}
 	roomIDs, err := p.d.Store.R().ListChatRoomIDs(ctx, chat.ID)
-	if err != nil || len(roomIDs) == 0 {
-		return err // CON-07: unrouted chats keep no message
+	if err != nil {
+		return err
 	}
 	if strings.TrimSpace(m.Text) == "" && len(m.Media) == 0 {
 		return nil
+	}
+	if len(roomIDs) == 0 {
+		roomID, err := p.autoRoute(ctx, src, chat)
+		if err != nil || roomID == "" {
+			return err // CON-07: unrouted chats keep no message
+		}
+		roomIDs = []string{roomID}
 	}
 	if roomIDs, err = p.pending(ctx, chat.ID, m.MessageID, roomIDs); err != nil || len(roomIDs) == 0 {
 		return err
@@ -135,6 +144,76 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// AutoRouteUnavailable is the connector status detail when its catch-all room is gone or its
+// owner lost manage on it (ROUTE-03).
+const AutoRouteUnavailable = "auto-route room unavailable"
+
+// autoRoute adds a chat that belongs to no room to the connector's catch-all room when its
+// kind matches the scope and no skip holds it out (ROUTE-01, ROUTE-02), with the connector
+// owner's rights, and returns the room id. It returns "" when the chat is not routed; a
+// missing room or an owner without manage sets the status detail AutoRouteUnavailable
+// (ROUTE-03). Concurrent first messages add the chat once.
+func (p *Pipeline) autoRoute(ctx context.Context, src Source, chat db.Chat) (string, error) {
+	c, err := p.d.Store.R().GetConnector(ctx, src.ConnectorID)
+	if err != nil {
+		return "", err
+	}
+	if !scopeMatches(dto.AutoRouteScope(c.AutoRouteScope), chat.Kind) {
+		return "", nil
+	}
+	until, err := p.d.Store.R().GetAutoRouteSkip(ctx, db.GetAutoRouteSkipParams{ConnectorID: c.ID, ChatID: chat.ID})
+	switch {
+	case err == nil && until > p.d.Now().UnixMilli():
+		return "", nil
+	case err != nil && !errors.Is(err, sql.ErrNoRows):
+		return "", err
+	}
+	if !c.AutoRouteRoomID.Valid {
+		return "", p.unavailable(ctx, c)
+	}
+	owner := authn.Principal{Kind: authn.KindUser, UserID: c.OwnerID}
+	on := true
+	_, err = p.d.Rooms.AddMember(ctx, owner, c.AutoRouteRoomID.String, rooms.MemberInput{Kind: dto.MemberKindChat, MemberID: chat.ID, Outbound: &on})
+	switch {
+	case err == nil, errors.Is(err, rooms.ErrAlreadyMember):
+		return c.AutoRouteRoomID.String, nil
+	case errors.Is(err, access.ErrNotFound), errors.Is(err, access.ErrForbidden):
+		return "", p.unavailable(ctx, c)
+	default:
+		return "", err
+	}
+}
+
+// scopeMatches tells whether a catch-all scope takes a chat kind.
+func scopeMatches(scope dto.AutoRouteScope, kind string) bool {
+	switch scope {
+	case dto.AutoRouteScopeAll:
+		return true
+	case dto.AutoRouteScopeDMs:
+		return kind == string(dto.ChatKindDM)
+	case dto.AutoRouteScopeGroups:
+		return kind == string(dto.ChatKindGroup) || kind == string(dto.ChatKindChannel)
+	default:
+		return false
+	}
+}
+
+// unavailable sets the connector's status detail to AutoRouteUnavailable (ROUTE-03).
+func (p *Pipeline) unavailable(ctx context.Context, c db.Connector) error {
+	if c.LastError == AutoRouteUnavailable {
+		return nil
+	}
+	err := p.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.SetConnectorLastError(ctx, db.SetConnectorLastErrorParams{LastError: AutoRouteUnavailable, ID: c.ID})
+	})
+	if err != nil {
+		return err
+	}
+	p.d.Logger.Warn("connectors: auto-route room unavailable", "connector_id", c.ID)
+	p.d.Bus.Publish(events.ConnectorStatus{ConnectorID: c.ID, Status: c.Status, Detail: AutoRouteUnavailable})
 	return nil
 }
 

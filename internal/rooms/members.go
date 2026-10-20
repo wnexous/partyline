@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/access"
@@ -253,6 +254,25 @@ func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, m
 	return s.member(ctx, roomID, memberRowID)
 }
 
+// AutoRouteSkip is how long a chat removed from its connector's catch-all room stays out of
+// it (ROUTE-02 edge case); a manager may add it back meanwhile.
+const AutoRouteSkip = 24 * time.Hour
+
+// skipAutoRoute keeps a chat removed from its connector's catch-all room out of it for
+// AutoRouteSkip.
+func (s *Service) skipAutoRoute(ctx context.Context, q *db.Queries, roomID, chatID string) error {
+	r, err := q.GetChatAutoRoute(ctx, chatID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil || r.AutoRouteRoomID.String != roomID {
+		return err
+	}
+	return q.UpsertAutoRouteSkip(ctx, db.UpsertAutoRouteSkipParams{
+		ConnectorID: r.ConnectorID, ChatID: chatID, Until: s.now().Add(AutoRouteSkip).UnixMilli(),
+	})
+}
+
 // RemoveMember removes a member; later messages are no longer delivered to it, and a chat's
 // pending (not yet sent) outbox entries in this room are deleted in the same tx (ROOM-01).
 // Requires manage.
@@ -271,6 +291,9 @@ func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, m
 		if m.Kind == string(dto.MemberKindChat) {
 			// Cancel what was queued for this chat in this room but not sent yet (ROOM-01).
 			if _, err := q.DeletePendingRoomChatOutbox(ctx, db.DeletePendingRoomChatOutboxParams{ChatID: m.MemberID, RoomID: roomID}); err != nil {
+				return err
+			}
+			if err := s.skipAutoRoute(ctx, q, roomID, m.MemberID); err != nil {
 				return err
 			}
 		}

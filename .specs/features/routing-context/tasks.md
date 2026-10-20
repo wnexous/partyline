@@ -164,9 +164,9 @@ T13 → T14 → T15 → T16
 **Requirement**: ROUTE-01, ROUTE-02, ROUTE-03, ROUTE-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] DM with scope `dms` reaches the agent; group does not; chat in another room not added
-- [ ] Two concurrent first messages → one membership; removal → not re-added for 24 h (fake clock)
-- [ ] Deleted room → status detail set, nothing stored; auto-routed sender `trusted=false`
+- [x] DM with scope `dms` reaches the agent; group does not; chat in another room not added
+- [x] Two concurrent first messages → one membership; removal → not re-added for 24 h (fake clock)
+- [x] Deleted room → status detail set, nothing stored; auto-routed sender `trusted=false`
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(connectors): route new chats to a catch-all room`
