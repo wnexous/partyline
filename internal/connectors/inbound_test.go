@@ -244,11 +244,15 @@ func TestInboundLongTextIsTruncated(t *testing.T) {
 	e.emit(text(groupID, "M2", long))
 	exact := strings.Repeat("a", dto.MaxTextLength)
 	e.emit(text(groupID, "M3", exact))
+	// 20,000 bytes but 10,000 code points: the limit counts code points, not bytes.
+	multiByte := strings.Repeat("é", 10000)
+	e.emit(text(groupID, "M4", multiByte))
 
 	msgs := e.messages(t, room.ID) // newest first
-	require.Len(t, msgs, 2)
-	require.Equal(t, exact, msgs[0].Text)
-	got := msgs[1].Text
+	require.Len(t, msgs, 3)
+	require.Equal(t, multiByte, msgs[0].Text, "CON-14: under 16,000 code points is stored unchanged")
+	require.Equal(t, exact, msgs[1].Text)
+	got := msgs[2].Text
 	require.Equal(t, 16000, utf8.RuneCountInString(got))
 	require.Equal(t, strings.Repeat("é", 16000-utf8.RuneCountInString("…[truncated]"))+"…[truncated]", got)
 }

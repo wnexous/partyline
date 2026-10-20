@@ -57,6 +57,15 @@ Gaps from `validation.md` (2026-10-20): S1 (blocker), S2-S4, M31, M04 and the mi
 T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20 → T21
 ```
 
+### Phase 4: Verifier fix iteration 2
+
+Gaps from `validation.md` (iteration 2): survivors N22, N29, N35, N36; HOOK-05 after a restart (S7); hardening S5,
+S6, S8.
+
+```
+T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → T30 → T31
+```
+
 ---
 
 ## Task Breakdown
@@ -386,3 +395,157 @@ get their own per-IP budget (over it: 429, no audit entry).
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record connectors fix iteration 1`
+
+### Phase 4: Verifier fix iteration 2
+
+#### T22: Code points, not bytes, decide truncation (N22)
+
+**What**: a multi-byte text over 16,000 bytes but under 16,000 code points is stored unchanged.
+**Where**: `internal/connectors/inbound_test.go`
+**Depends on**: T21
+**Requirement**: CON-14
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] 10,000 `é` (20,000 bytes) stored unchanged; 20,000 `é` cut to 16,000 code points ending `…[truncated]`;
+  the N22 mutant (`len(text)`) fails the test
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(connectors): count code points, not bytes, for truncation`
+
+#### T23: Each WhatsApp client refuses private destinations (N29, N36)
+
+**What**: separate tests for the REST client and the WebSocket client.
+**Where**: `internal/connectors/whatsapp/connector_test.go`
+**Depends on**: T22
+**Requirement**: CON-13
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] `ListChats` against a private `base_url` → `ErrBlockedAddress`, no request reaches the server (kills N36)
+- [ ] With REST allowed, `Run` fails at the WebSocket dial with `ErrBlockedAddress` and no socket opens (kills N29)
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(whatsapp): refuse private destinations in each client`
+
+#### T24: Normalize the webhook signature header (N35)
+
+**What**: the signature header is trimmed and its hex compared case-insensitively; the replay key is the computed
+signature, so padded or upper-cased copies are replays.
+**Where**: `internal/connectors/webhook/connector.go`
+**Depends on**: T23
+**Requirement**: HOOK-02, HOOK-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Padded and upper-cased copies of an accepted request → `ErrReplayed` (409); a first upper-cased request is accepted
+**Tests**: unit
+**Gate**: full
+**Commit**: `fix(webhook): normalize the signature header before replay checks`
+
+#### T25: Keep accepted webhook signatures across restarts (S7)
+
+**What**: migration `0004_webhook_replays.sql` (`webhook_replays(connector_id, sig_hash, expires_at)`, unique
+`(connector_id, sig_hash)`, cascade on connector delete); `connectors.Replays` store passed in `Deps`; expired rows are
+deleted on insert. The webhook checks and records signatures there.
+**Where**: `internal/store/migrations/0004_webhook_replays.sql`, `internal/store/queries/webhook_replays.sql`,
+`internal/connectors/{connector,manager,replays}.go`, `internal/connectors/webhook/connector.go`, `internal/app/app.go`
+**Depends on**: T24
+**Requirement**: HOOK-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Accept, disable → enable, replay → 409, one message stored
+- [ ] Accept, restart the app on the same data dir, replay → 409
+- [ ] Expired rows are removed when a new signature is recorded
+**Tests**: integration, e2e
+**Gate**: full
+**Commit**: `fix(webhook): persist accepted signatures across restarts`
+
+#### T26: Pairing codes are bound to one connector (S5)
+
+**What**: `POST /identities/pairing {connector_id}` (use on the connector, else 404); migration
+`0005_pairing_codes_per_connector.sql`; `Link` takes the code only on its connector (another connector links nothing,
+does not consume it, and the message is not routed). DTO `PairingRequest`, `PairingCode.connector_id`, tygo. Spec
+IDN-01/IDN-02 + edge case, AD-008 amendment.
+**Where**: `internal/store/migrations/0005_pairing_codes_per_connector.sql`, `internal/store/queries/identities.sql`,
+`internal/identities/identities.go`, `internal/api/identities_handlers.go`, `internal/api/dto/connectors.go`,
+`web/src/lib/api/types.gen.ts`, `.specs/features/connectors/spec.md`, `.specs/STATE.md`
+**Depends on**: T25
+**Requirement**: IDN-01, IDN-02, IDN-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Pairing for a connector the user cannot see → 404; missing `connector_id` → 422; use grantee → 201
+- [ ] Probe: Alice's code typed through Mallory's connector links nothing, is not routed, and still links on Alice's
+- [ ] Migration drops codes without a connector
+**Tests**: integration, e2e
+**Gate**: full
+**Commit**: `fix(identities): bind pairing codes to one connector`
+
+#### T27: Endpoint changes drop the connector's identities (S5)
+
+**What**: `Field.Endpoint` marks `base_url`, `api_base`, `outbound_url`; a PATCH that changes an endpoint field
+deletes the identities linked through the connector, audited (`identity.delete` detail `reason: endpoint_changed`).
+**Where**: `internal/connectors/{kind,service}.go`, adapters' `Kind()`, `internal/store/queries/identities.sql`,
+`internal/audit`
+**Depends on**: T26
+**Requirement**: IDN-04
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Changing `api_base` (or `base_url`, `outbound_url`) removes the identities; the sender then resolves to no user
+- [ ] Changing a non-endpoint field keeps them; the audit entry names the count, never values
+**Tests**: integration, e2e
+**Gate**: full
+**Commit**: `fix(connectors): drop linked identities when a connector endpoint changes`
+
+#### T28: Pairing dialog asks for the connector (S5)
+
+**What**: the `/identities` pairing dialog lists the connectors the user can use (preselects when only one), requests
+the code for the chosen one and shows the code with the command for that platform.
+**Where**: `web/src/routes/identities*`, `web/src/lib/api/*`
+**Depends on**: T27
+**Requirement**: IDN-01, IDN-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Dialog sends `{connector_id}`; one connector is preselected; no connectors → empty state; tests updated
+**Tests**: unit (web)
+**Gate**: full
+**Commit**: `feat(web): choose the connector when requesting a pairing code`
+
+#### T29: Private network allowlist (S6)
+
+**What**: `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` (comma-separated CIDRs and/or `host[:port]`) lets those destinations
+through while `PARTYLINE_ALLOW_PRIVATE_NETWORKS` stays false; README tables.
+**Where**: `internal/connectors/safehttp/`, `internal/config/config.go`, `internal/connectors/{connector,manager}.go`,
+adapters, `internal/app/app.go`, `README*.md`
+**Depends on**: T28
+**Requirement**: CON-13
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] An allowlisted CIDR / host[:port] connects; another private address (or another port) is still blocked
+- [ ] An invalid entry fails config loading; the adapters honour the allowlist end to end
+**Tests**: unit, e2e
+**Gate**: full
+**Commit**: `feat(connectors): allow listed private destinations`
+
+#### T30: Response caps per call kind (S8)
+
+**What**: JSON/API responses capped at 4 MiB; media downloads at the upload limit (`PARTYLINE_MAX_UPLOAD_MB`).
+**Where**: `internal/connectors/safehttp/`, `internal/connectors/{connector,manager}.go`, adapters, `internal/app/app.go`
+**Depends on**: T29
+**Requirement**: CON-13
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] A JSON answer of exactly 4 MiB passes, 4 MiB + 1 fails; a media download at the upload limit passes, +1 fails
+**Tests**: unit, integration
+**Gate**: full
+**Commit**: `fix(connectors): cap platform responses by call kind`
+
+#### T31: Spec, contract notes and traceability (iteration 2)
+
+**What**: contract notes for T22-T30; traceability; `make check`.
+**Where**: `.specs/features/connectors/{spec,contract-notes,tasks,design}.md`
+**Depends on**: T30
+**Requirement**: CON-13, CON-14, HOOK-05, IDN-01, IDN-02, IDN-04
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Spec, design and contract notes match the behaviour; `make check` passes
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record connectors fix iteration 2`
