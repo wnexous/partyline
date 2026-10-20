@@ -43,7 +43,8 @@ func (s *server) toMember(m rooms.Member) dto.RoomMember {
 	out := dto.RoomMember{
 		ID: m.ID, Kind: dto.MemberKind(m.Kind), MemberID: m.MemberID, Name: m.Name, Outbound: m.Outbound,
 		Owner: m.AgentOwner, ConnectorKind: m.ConnectorKind, ChatKind: dto.ChatKind(m.ChatKind),
-		CreatedAt: msTime(m.CreatedAt),
+		DisplayName: m.DisplayName, SignOutbound: m.SignOutbound, Delivery: dto.DeliveryMode(m.Delivery),
+		Keywords: rooms.Keywords(m.RoomMember), CreatedAt: msTime(m.CreatedAt),
 	}
 	if out.Kind == dto.MemberKindAgent && s.Agents != nil {
 		online := s.Agents.Online(m.MemberID)
@@ -185,7 +186,10 @@ func (s *server) updateMember(w http.ResponseWriter, r *http.Request, p authn.Pr
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	m, err := s.Rooms.UpdateMember(r.Context(), p, r.PathValue("id"), r.PathValue("mid"), req.Outbound)
+	m, err := s.Rooms.UpdateMember(r.Context(), p, r.PathValue("id"), r.PathValue("mid"), rooms.MemberUpdate{
+		Outbound: req.Outbound, DisplayName: req.DisplayName, SignOutbound: req.SignOutbound,
+		Delivery: req.Delivery, Keywords: req.Keywords,
+	})
 	if err != nil {
 		return err
 	}

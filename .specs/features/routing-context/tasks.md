@@ -91,7 +91,7 @@ T13 → T14 → T15 → T16
 **Requirement**: MEM-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Manager can set each field; viewer 403; stranger 404; 65-char name / 21 keywords → 422
+- [x] Manager can set each field; viewer 403; stranger 404; 65-char name / 21 keywords → 422
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(rooms): add per-room agent membership settings`

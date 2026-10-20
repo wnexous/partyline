@@ -56,9 +56,6 @@ ORDER BY m.created_at, m.id;
 -- name: GetRoomMember :one
 SELECT * FROM room_members WHERE id = ? AND room_id = ?;
 
--- name: UpdateRoomMemberOutbound :exec
-UPDATE room_members SET outbound = ? WHERE id = ?;
-
 -- name: UpdateRoomMemberSettings :exec
 UPDATE room_members SET outbound = ?, display_name = ?, sign_outbound = ?, delivery = ?, keywords_json = ?
 WHERE id = ?;

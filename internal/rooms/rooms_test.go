@@ -220,7 +220,7 @@ func TestGranteeWithoutManageIsForbidden(t *testing.T) {
 		require.ErrorIs(t, err, access.ErrForbidden)
 		_, err = f.svc.AddMember(ctx, g, r.ID, MemberInput{Kind: dto.MemberKindUser, MemberID: g.UserID})
 		require.ErrorIs(t, err, access.ErrForbidden)
-		_, err = f.svc.UpdateMember(ctx, g, r.ID, members[0].ID, ptr(false))
+		_, err = f.svc.UpdateMember(ctx, g, r.ID, members[0].ID, MemberUpdate{Outbound: ptr(false)})
 		require.ErrorIs(t, err, access.ErrForbidden)
 		require.ErrorIs(t, f.svc.RemoveMember(ctx, g, r.ID, members[0].ID), access.ErrForbidden)
 	}
@@ -399,10 +399,10 @@ func TestUpdateAndRemoveMember(t *testing.T) {
 	m, err := f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: chat})
 	require.NoError(t, err)
 
-	m, err = f.svc.UpdateMember(ctx, alice, r.ID, m.ID, ptr(false))
+	m, err = f.svc.UpdateMember(ctx, alice, r.ID, m.ID, MemberUpdate{Outbound: ptr(false)})
 	require.NoError(t, err)
 	require.False(t, m.Outbound)
-	_, err = f.svc.UpdateMember(ctx, alice, other.ID, m.ID, ptr(true))
+	_, err = f.svc.UpdateMember(ctx, alice, other.ID, m.ID, MemberUpdate{Outbound: ptr(true)})
 	require.ErrorIs(t, err, access.ErrNotFound, "member ids are scoped to their room")
 
 	require.ErrorIs(t, f.svc.RemoveMember(ctx, alice, other.ID, m.ID), access.ErrNotFound)

@@ -344,20 +344,6 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) error {
 	return err
 }
 
-const updateRoomMemberOutbound = `-- name: UpdateRoomMemberOutbound :exec
-UPDATE room_members SET outbound = ? WHERE id = ?
-`
-
-type UpdateRoomMemberOutboundParams struct {
-	Outbound bool
-	ID       string
-}
-
-func (q *Queries) UpdateRoomMemberOutbound(ctx context.Context, arg UpdateRoomMemberOutboundParams) error {
-	_, err := q.db.ExecContext(ctx, updateRoomMemberOutbound, arg.Outbound, arg.ID)
-	return err
-}
-
 const updateRoomMemberSettings = `-- name: UpdateRoomMemberSettings :exec
 UPDATE room_members SET outbound = ?, display_name = ?, sign_outbound = ?, delivery = ?, keywords_json = ?
 WHERE id = ?

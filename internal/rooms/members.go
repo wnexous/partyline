@@ -3,7 +3,10 @@ package rooms
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -139,8 +142,91 @@ func (s *Service) checkUse(ctx context.Context, userID string, in MemberInput) e
 	return nil
 }
 
-// UpdateMember changes a member's outbound flag; requires manage.
-func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, memberRowID string, outbound *bool) (Member, error) {
+// MemberUpdate changes a member; nil fields are unchanged. DisplayName, SignOutbound,
+// Delivery and Keywords apply to agent members only (MEM-01..05).
+type MemberUpdate struct {
+	Outbound     *bool
+	DisplayName  *string
+	SignOutbound *bool
+	Delivery     *dto.DeliveryMode
+	Keywords     *[]string
+}
+
+func (u MemberUpdate) agentSettings() map[string]bool {
+	return map[string]bool{
+		"display_name": u.DisplayName != nil, "sign_outbound": u.SignOutbound != nil,
+		"delivery": u.Delivery != nil, "keywords": u.Keywords != nil,
+	}
+}
+
+// Keywords decodes a member's mention keywords (never nil).
+func Keywords(m db.RoomMember) []string {
+	out := []string{}
+	_ = json.Unmarshal([]byte(m.KeywordsJson), &out)
+	if out == nil {
+		out = []string{}
+	}
+	return out
+}
+
+// apply validates u against the member and returns the updated row (MEM-05).
+func (u MemberUpdate) apply(m db.RoomMember) (db.RoomMember, error) {
+	check := validation.Check{}
+	if m.Kind != string(dto.MemberKindAgent) {
+		for field, set := range u.agentSettings() {
+			if set {
+				check.Add(field, "only for agent members")
+			}
+		}
+		if err := check.Err(); err != nil {
+			return m, err
+		}
+	}
+	if u.Outbound != nil {
+		m.Outbound = *u.Outbound
+	}
+	if u.DisplayName != nil {
+		name := strings.TrimSpace(*u.DisplayName)
+		if utf8.RuneCountInString(name) > dto.MaxMemberDisplayName {
+			check.Add("display_name", "must have at most 64 characters")
+		}
+		m.DisplayName = name
+	}
+	if u.SignOutbound != nil {
+		m.SignOutbound = *u.SignOutbound
+	}
+	if u.Delivery != nil {
+		switch *u.Delivery {
+		case dto.DeliveryModeAll, dto.DeliveryModeMentions, dto.DeliveryModeTrusted:
+			m.Delivery = string(*u.Delivery)
+		default:
+			check.Add("delivery", "must be all, mentions or trusted")
+		}
+	}
+	if u.Keywords != nil {
+		words := make([]string, 0, len(*u.Keywords))
+		for _, w := range *u.Keywords {
+			w = strings.TrimSpace(w)
+			if n := utf8.RuneCountInString(w); n == 0 || n > dto.MaxMemberKeyword {
+				check.Add("keywords", "each keyword must have 1 to 64 characters")
+			}
+			words = append(words, w)
+		}
+		if len(words) > dto.MaxMemberKeywords {
+			check.Add("keywords", "at most 20 keywords")
+		}
+		data, err := json.Marshal(words)
+		if err != nil {
+			return m, err
+		}
+		m.KeywordsJson = string(data)
+	}
+	return m, check.Err()
+}
+
+// UpdateMember changes a member's outbound flag and, for agents, its settings (MEM-01..05);
+// requires manage. Invalid settings change nothing.
+func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, memberRowID string, u MemberUpdate) (Member, error) {
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
 		return Member{}, err
 	}
@@ -149,10 +235,16 @@ func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, m
 		if errors.Is(err, sql.ErrNoRows) {
 			return access.ErrNotFound
 		}
-		if err != nil || outbound == nil {
+		if err != nil {
 			return err
 		}
-		return q.UpdateRoomMemberOutbound(ctx, db.UpdateRoomMemberOutboundParams{Outbound: *outbound, ID: m.ID})
+		if m, err = u.apply(m); err != nil {
+			return err
+		}
+		return q.UpdateRoomMemberSettings(ctx, db.UpdateRoomMemberSettingsParams{
+			Outbound: m.Outbound, DisplayName: m.DisplayName, SignOutbound: m.SignOutbound,
+			Delivery: m.Delivery, KeywordsJson: m.KeywordsJson, ID: m.ID,
+		})
 	})
 	if err != nil {
 		return Member{}, err
