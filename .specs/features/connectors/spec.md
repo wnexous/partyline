@@ -188,37 +188,37 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | CON-03 | P1: Manage connectors | Tasks | Verified |
 | CON-04 | P1: Manage connectors | Tasks | Verified |
 | CON-05 | P1: Manage connectors | Tasks | Verified |
-| CON-06 | P1: Manage connectors | Execute (T13) | Implemented, re-verify |
+| CON-06 | P1: Manage connectors | Execute (T13) | Verified |
 | CON-07 | P1: Chats and inbound | Tasks | Verified |
 | CON-08 | P1: Chats and inbound | Tasks | Verified |
-| CON-09 | P1: Chats and inbound | Execute (T20) | Implemented, re-verify |
-| CON-10 | P1: Chats and inbound | Execute (T17) | Implemented, re-verify |
-| CON-11 | P1: Chats and inbound | Execute (T17) | Implemented, re-verify |
+| CON-09 | P1: Chats and inbound | Execute (T20) | Verified |
+| CON-10 | P1: Chats and inbound | Execute (T17) | Verified |
+| CON-11 | P1: Chats and inbound | Execute (T17) | Verified |
 | CON-12 | P1: Chats and inbound | Tasks | Verified |
 | CON-13 | P1: Manage connectors | Execute (T13, T23, T29, T30) | Implemented, re-verify |
-| CON-14 | P1: Chats and inbound | Execute (T19) | Implemented, re-verify |
+| CON-14 | P1: Chats and inbound | Execute (T19, T22) | Implemented, re-verify |
 | WA-01 | P1: WhatsApp | Tasks | Verified |
 | WA-02 | P1: WhatsApp | Tasks | Verified |
-| WA-03 | P1: WhatsApp | Execute (T16) | Implemented, re-verify |
+| WA-03 | P1: WhatsApp | Execute (T16) | Verified |
 | WA-04 | P1: WhatsApp | Tasks | Verified |
 | WA-05 | P1: WhatsApp | Tasks | Verified |
 | TG-01 | P1: Telegram | Tasks | Verified |
-| TG-02 | P1: Telegram | Execute (T21) | Implemented, re-verify |
+| TG-02 | P1: Telegram | Execute (T21) | Verified |
 | TG-03 | P1: Telegram | Tasks | Verified |
 | TG-04 | P1: Telegram | Tasks | Verified |
-| DC-01 | P1: Discord | Execute (T18) | Implemented, re-verify |
-| DC-02 | P1: Discord | Execute (T21) | Implemented, re-verify |
-| DC-03 | P1: Discord | Execute (T18) | Implemented, re-verify |
-| HOOK-01 | P1: Webhook | Execute (T14) | Implemented, re-verify |
-| HOOK-02 | P1: Webhook | Execute (T14) | Implemented, re-verify |
+| DC-01 | P1: Discord | Execute (T18) | Verified |
+| DC-02 | P1: Discord | Execute (T21) | Verified |
+| DC-03 | P1: Discord | Execute (T18) | Verified |
+| HOOK-01 | P1: Webhook | Execute (T14) | Verified |
+| HOOK-02 | P1: Webhook | Execute (T14, T24) | Implemented, re-verify |
 | HOOK-03 | P1: Webhook | Tasks | Verified |
-| HOOK-04 | P1: Webhook | Execute (T14) | Implemented, re-verify |
-| HOOK-05 | P1: Webhook | Execute (T15) | Implemented, re-verify |
+| HOOK-04 | P1: Webhook | Execute (T14) | Verified |
+| HOOK-05 | P1: Webhook | Execute (T15, T24, T25) | Implemented, re-verify |
 | IDN-01 | P1: Identities | Execute (T26) | Implemented, re-verify |
 | IDN-02 | P1: Identities | Execute (T12, T26) | Implemented, re-verify |
 | IDN-03 | P1: Identities | Tasks | Verified |
 | IDN-04 | P1: Identities | Execute (T12, T27) | Implemented, re-verify |
-| IDN-05 | P1: Identities | Execute (T12) | Implemented, re-verify |
+| IDN-05 | P1: Identities | Execute (T12, T26 tests) | Implemented, re-verify |
 
 **Coverage:** 36 total, mapped in tasks.md
 

@@ -69,12 +69,12 @@
 
 ## Handoff
 
-- **Feature**: core-platform
-- **Phase / Task**: Execute, Verifier fix iteration 1 (T28-T44) complete
-- **Completed**: T28-T44 on branch `fix/core-verify-1` (see tasks.md Phase 5)
+- **Feature**: connectors
+- **Phase / Task**: Execute, Verifier fix iteration 2 (T22-T31) complete
+- **Completed**: T22-T31 on branch `fix/conn-2` (see tasks.md Phase 4)
 - **In-progress** (file:line): none
-- **Next step**: re-run the Verifier (iteration 2 of 3) over the fix range, then merge into main (agent-channel touches
-  `internal/app/app.go` and `internal/api/router.go`; this branch changes both minimally)
+- **Next step**: final re-verify (iteration 3 of 3) over `314a31f..HEAD`, then merge into main (new migrations
+  `0004`, `0005`; another branch adding a migration must renumber)
 - **Blockers**: none
 - **Uncommitted files**: none
-- **Branch**: fix/core-verify-1
+- **Branch**: fix/conn-2

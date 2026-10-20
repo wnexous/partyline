@@ -548,7 +548,7 @@ through while `PARTYLINE_ALLOW_PRIVATE_NETWORKS` stays false; README tables.
 **Requirement**: CON-13, CON-14, HOOK-05, IDN-01, IDN-02, IDN-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Spec, design and contract notes match the behaviour; `make check` passes
+- [x] Spec, design and contract notes match the behaviour; `make check` passes
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record connectors fix iteration 2`

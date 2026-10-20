@@ -83,12 +83,12 @@ graph LR
 
 ### internal/connectors/webhook
 - **Config**: `secret` (secret, required, generated when empty on create), `outbound_url` (url, optional).
-- **Inbound**: handler `POST /api/v1/hooks/{connector_id}`: verify `X-Partyline-Timestamp` within ±300 s and `X-Partyline-Signature = "sha256=" + hex(HMAC_SHA256(secret, timestamp + "." + body))` with constant-time compare (HOOK-01/02); 64 KiB body limit. Rate limits run after the check (HOOK-04): 60 authenticated req/min per connector; invalid requests 30/min per client IP (then 429, no audit). Accepted signatures are remembered 10 min per connector; a replay answers 409 (HOOK-05). Both are in memory: a restart or config change resets them (message_id dedupe still holds).
+- **Inbound**: handler `POST /api/v1/hooks/{connector_id}`: verify `X-Partyline-Timestamp` within ±300 s and `X-Partyline-Signature = "sha256=" + hex(HMAC_SHA256(secret, timestamp + "." + body))` with constant-time compare (HOOK-01/02); 64 KiB body limit. Rate limits run after the check (HOOK-04): 60 authenticated req/min per connector; invalid requests 30/min per client IP (then 429, no audit). Accepted signatures (normalized: trimmed, lower-case hex) are remembered 10 min per connector in `webhook_replays` (migration `0004`, SHA-256 of the signature), so a replay answers 409 also after a connector or server restart (HOOK-05; fix iteration 2). The rate-limit windows stay in memory.
 - **Identities**: `Kind.LinkOwnerOnly` - the caller picks `sender_id`, so `!link` links only the connector owner's codes (IDN-05).
 - **Outbound**: POST JSON `{event:"message", connector_id, chat_id, message:{id, room_id, text, reply_to_external_id, author_name, created_at}, attachments:[{name, mime, size, url}]}` signed the same way; attachment URLs are signed, expiring (10 min) download links; non-2xx = failure (HOOK-03).
 
 ### internal/identities
-- `CreatePairing(ctx, userID) (code string, expires time.Time)` - 6 chars from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, sha256 stored, 10 min (IDN-01).
+- `CreatePairing(ctx, userID, connectorID) (code string, expires time.Time)` - 6 chars from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, sha256 stored, 10 min, bound to the connector (IDN-01; the handler checks `use` on it).
 - `Link(ctx, code, Account{ConnectorID, ConnectorKind, SenderID, AltID, Display}, onlyUser) (userID string, ok bool)` (IDN-02/03/05).
 - `ResolveSender(ctx, connectorID, senderID, altID) (userID string)` - used by `rooms.PostFromChat` to fill `author_user_id` (IDN-04, DLV-06).
 - **Identities are scoped to the connector instance**, not the kind (fix iteration 1, S1). A sender id is only as
@@ -97,6 +97,10 @@ graph LR
   `identities.connector_id` (FK, cascade on connector delete; unique `(connector_id, external_id)`) is matched on
   resolve. Linking through a connector you don't own means trusting that connector's owner; webhook connectors
   (`Kind.LinkOwnerOnly`) can link only for their own owner. Migration `0003` drops identities linked before it.
+- **Codes are bound to a connector** (fix iteration 2, S5): `pairing_codes.connector_id` (migration `0005`); `Link`
+  takes a code only on its connector, so a code typed where someone else's connector listens links nothing there.
+  Changing an endpoint field (`Field.Endpoint`: `base_url`, `api_base`, `outbound_url`) deletes the connector's
+  identities (`connector.identities_reset` audit entry).
 - HTTP: `GET /identities`, `POST /identities/pairing`, `DELETE /identities/{id}`.
 
 ## Data Models
@@ -118,7 +122,7 @@ Uses `connectors`, `chats`, `identities`, `pairing_codes` from core migrations.
 | --- | --- | --- | --- |
 | evolution-go broadcast caveat (instance client write failure skips broadcast) | evolution-go 0.7.2 | Missed events while a per-instance client is broken | Document; recommend Partyline as the only consumer |
 | Secrets in error strings (Telegram token in URL) | telegram client | Token in logs/status | `redact(err, secrets...)` in supervisor; never log URLs |
-| SSRF through user-set URLs (`outbound_url`, `api_base`, `base_url`) and media URLs | every adapter | Server calls internal services | `internal/connectors/safehttp`: dial-time address check after DNS (loopback, private, link-local, CGNAT, multicast, unspecified, reserved), no redirects, timeouts, body cap 256 MiB; `PARTYLINE_ALLOW_PRIVATE_NETWORKS=true` lifts the address check (CON-13). Platform error bodies never reach status text |
+| SSRF through user-set URLs (`outbound_url`, `api_base`, `base_url`) and media URLs | every adapter | Server calls internal services | `internal/connectors/safehttp`: dial-time address check after DNS (loopback, private, link-local, CGNAT, multicast, unspecified, reserved), no redirects, timeouts, body caps (4 MiB JSON/API, upload limit for media); `PARTYLINE_ALLOW_PRIVATE_NETWORKS=true` lifts the address check, `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` lets listed CIDRs/hosts through (CON-13). Platform error bodies never reach status text |
 | Discord gateway hard to test | discord | Low coverage | Session seam with fake; handler logic in pure functions |
 
 ## Tech Decisions
