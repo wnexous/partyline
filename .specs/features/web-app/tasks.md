@@ -383,7 +383,7 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T21
 **Requirement**: UI-24
 **Done when**:
-- [ ] `scrollWidth <= innerWidth` on dashboard, rooms, room, agents, connectors and settings in `mobile-360`
+- [x] `scrollWidth <= innerWidth` on dashboard, rooms, room, agents, connectors and settings in `mobile-360`
 **Tests**: e2e
 **Gate**: full
 
