@@ -428,7 +428,7 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T26
 **Requirement**: UI-07
 **Done when**:
-- [ ] A message of max-length emoji is accepted; one more code point is rejected
+- [x] A message of max-length emoji is accepted; one more code point is rejected
 **Tests**: unit
 **Gate**: quick
 

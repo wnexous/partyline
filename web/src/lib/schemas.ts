@@ -97,8 +97,18 @@ export const changePasswordSchema = z
     ...msg("validation.passwordMatch"),
   });
 
+/**
+ * Message text length as the server counts it (MSG-02: Unicode code points, Go's rune count),
+ * not UTF-16 units: an emoji is one character.
+ */
+export function textLength(text: string): number {
+  return [...text].length;
+}
+
 /** Message text (MSG-02): non-empty unless files are attached, at most MaxTextLength. */
-export const messageTextSchema = z.string().max(MaxTextLength, msg("validation.tooLong"));
+export const messageTextSchema = z
+  .string()
+  .refine((text) => textLength(text) <= MaxTextLength, msg("validation.tooLong"));
 
 export type SetupForm = z.input<typeof setupSchema>;
 export type LoginForm = z.input<typeof loginSchema>;
