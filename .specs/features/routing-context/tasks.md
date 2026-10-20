@@ -654,11 +654,11 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 **What**: A successful route and a catch-all PATCH that clear the detail publish `connector.status` with an empty detail.
 **Where**: `internal/connectors/catch_all_test.go`
 **Depends on**: T39
-**Reuses**: `DialLive`, `newCatchAll`
+**Reuses**: bus subscription, `newCatchAll`
 **Requirement**: ROUTE-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Live `connector.status` event with empty detail after each clear; kills S4 and S5
+- [x] One `connector.status` event with empty detail after each clear; kills S4 and S5
 **Tests**: integration
 **Gate**: build
 **Commit**: `test(connectors): announce cleared auto-route details`

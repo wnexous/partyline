@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -421,4 +422,52 @@ func TestCatchAllRoomCapHoldsUnderBurst(t *testing.T) {
 	c.burst(c.ownPipeline(newBarrier(5, 500*time.Millisecond).hold), 0, 5)
 	require.Len(t, c.chatMembers(t, c.room.ID), 1000)
 	require.Equal(t, "auto-route limit reached", c.connector(t).LastError)
+}
+
+// statusEvents subscribes to the bus and returns a function that drains the connector.status
+// events of the connector published so far.
+func (c *catchAll) statusEvents(t *testing.T) func() []events.ConnectorStatus {
+	t.Helper()
+	ch, cancel := c.env.App.Bus.Subscribe(256)
+	t.Cleanup(cancel)
+	return func() []events.ConnectorStatus {
+		var out []events.ConnectorStatus
+		for {
+			select {
+			case e := <-ch:
+				if s, ok := e.(events.ConnectorStatus); ok && s.ConnectorID == c.conn.ID {
+					out = append(out, s)
+				}
+			default:
+				return out
+			}
+		}
+	}
+}
+
+// ROUTE-09: clearing an auto-route detail is announced once as a connector.status event with
+// the connector's status and no detail, after a successful route and after a catch-all
+// settings save.
+func TestCatchAllClearedDetailIsAnnounced(t *testing.T) {
+	c := newCatchAll(t)
+	c.setScope(t, dto.AutoRouteScopeAll, c.room.ID)
+	ctx := context.Background()
+	limited := func() {
+		require.NoError(t, c.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+			return q.SetConnectorLastError(ctx, db.SetConnectorLastErrorParams{LastError: connectors.AutoRouteLimited, ID: c.conn.ID})
+		}))
+	}
+	status := string(c.connector(t).Status)
+	cleared := []events.ConnectorStatus{{ConnectorID: c.conn.ID, Status: status}}
+	drain := c.statusEvents(t)
+
+	limited()
+	c.emit(dmText(dmA, "A1", "routed"))
+	require.Empty(t, c.connector(t).LastError)
+	require.Equal(t, cleared, drain(), "a successful route announces the cleared detail")
+
+	limited()
+	c.setScope(t, dto.AutoRouteScopeDMs, c.room.ID)
+	require.Empty(t, c.connector(t).LastError)
+	require.Equal(t, cleared, drain(), "a catch-all save announces the cleared detail")
 }
