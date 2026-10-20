@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { render } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { AppProviders } from "@/components/app-providers";
 import { createAppRouter } from "@/router";
 
@@ -20,4 +21,10 @@ export function renderRoute(path: string, queryClient = makeQueryClient()) {
     </AppProviders>,
   );
   return { ...utils, router, queryClient, history };
+}
+
+/** Renders a component with the app providers (query cache, i18n, tooltips), without a router. */
+export function renderWithProviders(ui: ReactNode, queryClient = makeQueryClient()) {
+  const utils = render(<AppProviders queryClient={queryClient}>{ui}</AppProviders>);
+  return { ...utils, queryClient };
 }

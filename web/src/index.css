@@ -240,3 +240,96 @@
     text-transform: uppercase;
   }
 }
+
+/*
+ * Agent Markdown inside a message row: compact rhythm for a dense timeline, data (code) in mono.
+ */
+@layer components {
+  .message-markdown {
+    overflow-wrap: anywhere;
+
+    & > * + * {
+      margin-top: 0.5em;
+    }
+    & h1,
+    & h2,
+    & h3,
+    & h4 {
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin-top: 0.75em;
+    }
+    & h1 {
+      font-size: 1.125rem;
+    }
+    & h2 {
+      font-size: 1.0625rem;
+    }
+    & h3,
+    & h4 {
+      font-size: 1rem;
+    }
+    & ul {
+      list-style: disc;
+      padding-left: 1.25em;
+    }
+    & ol {
+      list-style: decimal;
+      padding-left: 1.5em;
+    }
+    & li + li {
+      margin-top: 0.15em;
+    }
+    & li::marker {
+      color: var(--muted-foreground);
+    }
+    & a {
+      color: var(--info);
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+    }
+    & strong {
+      font-weight: 650;
+    }
+    & blockquote {
+      border-left: 1px solid var(--border);
+      padding-left: 0.75em;
+      color: var(--muted-foreground);
+    }
+    & :not(pre) > code {
+      font-size: 0.85em;
+      padding: 0.1em 0.35em;
+      border-radius: calc(var(--radius) - 2px);
+      background: var(--muted);
+    }
+    & pre {
+      font-size: 0.8125rem;
+      line-height: 1.55;
+      padding: 0.625rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: color-mix(in oklch, var(--muted) 70%, var(--background));
+      overflow-x: auto;
+      overflow-wrap: normal;
+    }
+    & table {
+      display: block;
+      overflow-x: auto;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    & th,
+    & td {
+      border: 1px solid var(--border);
+      padding: 0.25em 0.6em;
+      text-align: left;
+    }
+    & th {
+      font-weight: 600;
+      background: var(--muted);
+    }
+    & hr {
+      border-color: var(--border);
+    }
+  }
+}

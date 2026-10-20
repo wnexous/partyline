@@ -35,7 +35,8 @@ function AppLayout() {
   return (
     <SidebarProvider>
       <AppSidebar me={me} />
-      <SidebarInset className="min-w-0">
+      {/* Full-height pages (a room) mark themselves with data-fill and scroll inside. */}
+      <SidebarInset className="min-w-0 has-[[data-fill]]:h-svh has-[[data-fill]]:overflow-hidden">
         <div className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur md:hidden">
           <SidebarTrigger aria-label={t("nav.toggleSidebar")} />
           <Wordmark />

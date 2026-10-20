@@ -168,8 +168,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-04, UI-05, UI-09
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Chat message shows `untrusted` badge for `trusted=false`; `<script>` in text renders as text
-- [ ] New live message appended and visible
+- [x] Chat message shows `untrusted` badge for `trusted=false`; `<script>` in text renders as text
+- [x] New live message appended and visible
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add live message timeline`
