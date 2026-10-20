@@ -129,7 +129,7 @@ func Parse(ev Event) (Parsed, error) {
 	} else if !info.IsFromMe {
 		in.ChatTitle = strings.TrimSpace(info.PushName)
 		if in.ChatTitle == "" {
-			in.ChatTitle = phoneNumber(chat, info) // CTX-06
+			in.ChatTitle = maskNumber(phoneNumber(chat, info)) // CTX-06
 		}
 	}
 	if t, err := time.Parse(time.RFC3339Nano, info.Timestamp); err == nil {
@@ -331,6 +331,15 @@ func phoneNumber(chat string, info Info) string {
 	}
 	user, _, _ := strings.Cut(chat, "@")
 	return user
+}
+
+// maskNumber shows only the last 4 digits of a phone number, as "+•••• 0000", so a DM title
+// does not spread the full number to every room viewer and agent (CTX-06).
+func maskNumber(n string) string {
+	if len(n) > 4 {
+		n = n[len(n)-4:]
+	}
+	return "+•••• " + n
 }
 
 // ChatID is the Partyline chat id of a JID on an instance.

@@ -67,7 +67,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 **Acceptance Criteria**:
 
 1. WHEN the WhatsApp connector sees a group without a known title THEN it SHALL fetch the group subject and store it as the chat title. (CTX-05)
-2. WHEN a WhatsApp DM arrives THEN the chat title SHALL be the sender's push name, or the phone number when the push name is empty. (CTX-06)
+2. WHEN a WhatsApp DM arrives THEN the chat title SHALL be the sender's push name, or, when the push name is empty, the phone number masked to its last 4 digits as `+•••• 0000`; the chat id and sender id keep the full number. (CTX-06)
 3. WHEN a chat is routed to an agent THEN the new room SHALL be named after the chat title, falling back to `<platform> chat` only when no title is known. (CTX-07)
 4. WHEN a chat title changes on the platform THEN the next refresh or inbound message SHALL update the stored title. (CTX-08)
 
@@ -185,7 +185,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | CTX-03 | P1: Agents know where | Tasks | Implementing |
 | CTX-04 | P1: Agents know where | Tasks | Implementing |
 | CTX-05 | P1: Chat titles | Tasks | Implementing |
-| CTX-06 | P1: Chat titles | Tasks | Implementing |
+| CTX-06 | P1: Chat titles | Tasks | Amended (T30), re-verify |
 | CTX-07 | P1: Chat titles | Tasks | Implementing |
 | CTX-08 | P1: Chat titles | Tasks | Implementing |
 | ROUTE-01 | P1: Catch-all | Tasks | Implementing |

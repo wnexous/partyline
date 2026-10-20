@@ -508,7 +508,7 @@ T31 → T32 → T33 → T34
 **Requirement**: CTX-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Title `+•••• 0000`; chat id unchanged
+- [x] Title `+•••• 0000`; chat id unchanged
 **Tests**: integration
 **Gate**: build
 **Commit**: `fix(connectors): mask phone numbers in DM titles`
