@@ -131,6 +131,94 @@ T7 → T8 → T9 → T10 → T11
 **Gate**: full
 **Commit**: `feat(connectors): add inbound pipeline and chat endpoints`
 
+### Phase 2: Platforms
+
+```
+T7 → T8 → T9 → T10 → T11
+```
+
+---
+
+## Task Breakdown
+
+### Phase 1: Framework
+
+#### T1: Kind registry, schema and config handling
+
+**What**: `Kind`, `Field`, `Register/Kinds/Lookup`, `Validate(kind, cfg)`, secret split (`secrets_enc`) and masking (`"********"`, PATCH keeps stored secret).
+**Where**: `internal/connectors/kind.go`
+**Depends on**: None
+**Reuses**: secrets.Box (core T4)
+**Requirement**: CON-01, CON-02, CON-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Missing required → error map `{field: "required"}`; bad url → `{field: "invalid url"}`
+- [x] Masked read never contains secret; PATCH with mask keeps original secret
+**Tests**: unit
+**Gate**: quick
+**Commit**: `feat(connectors): add kind registry, config schema and secret masking`
+
+#### T2: Connectors service and endpoints
+
+**What**: service CRUD (owner, enable/disable), sharing via access grants, handlers `GET /connector-kinds`, `GET/POST /connectors`, `GET/PATCH/DELETE /connectors/{id}`, `GET/PUT /connectors/{id}/sharing`, audit entries.
+**Where**: `internal/api/connectors_handlers.go`
+**Depends on**: T1
+**Reuses**: access, audit
+**Requirement**: CON-01, CON-02, CON-03, CON-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Auth matrix owner/use-grantee/stranger/admin; 422 names field; secrets masked in every response
+**Tests**: e2e
+**Gate**: full
+**Commit**: `feat(connectors): add connector management endpoints`
+
+#### T3: Manager and supervisor
+
+**What**: `connectors.Manager` start enabled on boot, `Apply/Stop`, supervisor backoff 2→120 s, status persist + `ConnectorStatus` events, error redaction, `Send(connectorID, Outbound)`.
+**Where**: `internal/connectors/manager.go`
+**Depends on**: T2
+**Reuses**: events
+**Requirement**: CON-04, CON-05, CON-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Fake connector started within 2 s of create; stopped on disable; Send after stop → error
+- [x] Run error containing the secret → status text with `[redacted]`; retries with growing delay (fake clock)
+**Tests**: integration
+**Gate**: full
+**Commit**: `feat(connectors): add connector manager with supervision`
+
+#### T4: Identities and pairing
+
+**What**: `identities` service (CreatePairing, Link, ResolveSender, List, Delete) and endpoints `GET /identities`, `POST /identities/pairing`, `DELETE /identities/{id}`; `IdentityLinked` event.
+**Where**: `internal/identities/identities.go`
+**Depends on**: T3
+**Reuses**: store, events
+**Requirement**: IDN-01, IDN-02, IDN-03, IDN-04
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Code matches `^[A-HJ-NP-Z2-9]{6}$`, expires after 10 min (fake clock), single use
+- [x] ResolveSender by sender id or alt id; after Delete → empty
+**Tests**: integration
+**Gate**: full
+**Commit**: `feat(identities): add verified identities with pairing codes`
+
+#### T5: Inbound pipeline and chats
+
+**What**: `inbound.go` per design (self drop, `!link`/`/link`, chat upsert, rooms lookup, media save, PostFromChat with dedupe); chats endpoints `GET /connectors/{id}/chats`, `POST /connectors/{id}/chats/refresh`, `GET /chats`, `POST /chats/{id}/route`.
+**Where**: `internal/connectors/inbound.go`
+**Depends on**: T4
+**Reuses**: rooms.PostFromChat, attachments, identities
+**Requirement**: CON-07, CON-08, CON-09, CON-10, CON-11, CON-12, IDN-02, IDN-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Unrouted chat → chat row exists, messages table count unchanged
+- [x] Routed chat in 2 rooms → 2 messages; same external id again → still 2
+- [x] Oversized media → attachment status `too_large`, no blob
+- [x] `/chats/{id}/route` creates private room with chat + agent members
+**Tests**: integration
+**Gate**: full
+**Commit**: `feat(connectors): add inbound pipeline and chat endpoints`
+
 #### T6: Outbound sender wiring
 
 **What**: implement `delivery.Sender` with the Manager: load message, attachments (as OutFile), chat external id, reply quoting (`ReplyToID`/`ReplyToSenderID` when replied message came from the same chat); register in app.

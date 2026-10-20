@@ -45,9 +45,11 @@ type Options struct {
 	// LiveSessionCheck is how often live sockets re-check their session; defaults to
 	// live.DefaultSessionCheckInterval. Tests shorten it.
 	LiveSessionCheck time.Duration
-	// Sender delivers outbox entries to external chats. When nil the outbox worker does not
-	// run and entries stay pending.
+	// Sender delivers outbox entries to external chats; nil uses the connectors' sender.
 	Sender delivery.Sender
+	// DisableOutbox keeps the outbox worker from running, so entries stay pending (tests
+	// that inspect queued deliveries).
+	DisableOutbox bool
 	// ConnectorKinds are the supported connector kinds; nil means BuiltinKinds().
 	ConnectorKinds []connectors.Kind
 	// Version is the build version, sent by connectors as User-Agent "partyline/<version>".
@@ -136,7 +138,6 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Access: az,
 		Rooms:  rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
 		Blobs:  blobs,
-		sender: opts.Sender,
 		now:    opts.Now,
 	}
 	a.Presence = agents.NewPresence(st, bus, opts.Now)
@@ -162,6 +163,10 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Store: st, Bus: bus, Box: box, Kinds: registry, Logger: opts.Logger, UserAgent: "partyline/" + version,
 		Inbound: pipeline.Handle,
 	})
+	a.sender = opts.Sender
+	if a.sender == nil && !opts.DisableOutbox {
+		a.sender = connectors.NewSender(st, a.Rooms, blobs, a.ConnectorManager)
+	}
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
 		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Rooms: a.Rooms, Runner: a.ConnectorManager, Now: opts.Now,
 	})

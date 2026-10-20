@@ -37,10 +37,11 @@ type inboundEnv struct {
 }
 
 // newInboundEnv runs an app (1 MiB upload limit) with a running fake connector of alice.
-func newInboundEnv(t *testing.T) *inboundEnv {
+func newInboundEnv(t *testing.T, opts ...testkit.Option) *inboundEnv {
 	t.Helper()
 	fake := connectortest.New()
-	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()), testkit.WithEnv(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": "1"}))
+	opts = append(opts, testkit.WithConnectorKinds(fake.Kind()), testkit.WithEnv(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": "1"}))
+	env := testkit.New(t, opts...)
 	alice := env.NewUser("alice")
 	on := true
 	conn := testkit.Decode[dto.Connector](alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{

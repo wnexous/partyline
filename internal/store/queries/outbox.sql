@@ -32,3 +32,8 @@ SELECT * FROM outbox WHERE id = ?;
 DELETE FROM outbox
 WHERE chat_id = sqlc.arg(chat_id) AND status = 'pending'
   AND message_id IN (SELECT id FROM messages WHERE room_id = sqlc.arg(room_id));
+
+-- name: GetSentExternalID :one
+SELECT external_id FROM outbox
+WHERE message_id = ? AND chat_id = ? AND status = 'sent' AND external_id <> ''
+LIMIT 1;
