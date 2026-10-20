@@ -118,3 +118,28 @@ func TestInstructionsExplainChatIDsAndRoomInfo(t *testing.T) {
 
 // insNotice is the INS-03 notice text as the spec words it.
 const insNotice = "This room has instructions for its agents; call the room_info tool to read them."
+
+// ROUTE-06 (tool): in a room with broadcast off, send_message without chat_ids says the post
+// reached no chat; with chat_ids, or a reply to a chat message, the result is the plain one.
+func TestToolResultSaysNoChatInNoBroadcastRoom(t *testing.T) {
+	e := newChanEnv(t)
+	family := e.chatMember("Family")
+	off := false
+	e.alice.Patch("/api/v1/rooms/"+e.room.ID, dto.UpdateRoomRequest{Broadcast: &off}).RequireStatus(http.StatusOK)
+	s := e.connected(e.options())
+
+	text, isErr := s.call("send_message", toolArgs("room", "Support", "text", "hello all"))
+	require.False(t, isErr, text)
+	stored := e.messages(e.room.ID)[0]
+	require.Equal(t, "sent (message_id "+stored.ID+"); not sent to any chat: this room only answers explicit chats (use reply or chat_ids)", text)
+
+	text, isErr = s.call("send_message", toolArgs("room", "Support", "text", "only family", "chat_ids", []string{family}))
+	require.False(t, isErr, text)
+	stored = e.messages(e.room.ID)[0]
+	require.Equal(t, "sent (message_id "+stored.ID+")", text)
+}
+
+// ROUTE-06: the instructions say that a post without chat_ids may reach no chat.
+func TestInstructionsExplainNoBroadcastRooms(t *testing.T) {
+	require.Contains(t, Instructions, "a post without chat_ids reaches no chat")
+}

@@ -424,7 +424,7 @@ T31 → T32 → T33 → T34
 **Requirement**: ROUTE-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Tool result text exact for a broadcast=false room; unchanged otherwise
+- [x] Tool result text exact for a broadcast=false room; unchanged otherwise
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): tell agents when a post reached no chat`
