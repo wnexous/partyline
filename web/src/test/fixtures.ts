@@ -49,6 +49,8 @@ export function makeRoom(over: Partial<Room> = {}): Room {
     visibility: "private",
     my_level: "manage",
     bridge_chats: false,
+    broadcast: true,
+    catch_all: false,
     retention_days: 90,
     agents_paused: false,
     last_seq: 0,

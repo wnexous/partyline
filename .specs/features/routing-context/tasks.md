@@ -395,8 +395,8 @@ T31 → T32 → T33 → T34
 **Requirement**: ROUTE-06, INS-04 (shapes)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Migration test: defaults on existing rows
-- [ ] `make generate` drift-free
+- [x] Migration test: defaults on existing rows
+- [x] `make generate` drift-free
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): add room broadcast and instructions author`

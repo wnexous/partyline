@@ -477,7 +477,7 @@ func (q *Queries) ListOutboxByMessages(ctx context.Context, messageIds []string)
 
 const nextRoomSeq = `-- name: NextRoomSeq :one
 UPDATE rooms SET next_seq = next_seq + 1, updated_at = ? WHERE id = ?
-RETURNING id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions
+RETURNING id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, broadcast, instructions_by
 `
 
 type NextRoomSeqParams struct {
@@ -501,6 +501,8 @@ func (q *Queries) NextRoomSeq(ctx context.Context, arg NextRoomSeqParams) (Room,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Instructions,
+		&i.Broadcast,
+		&i.InstructionsBy,
 	)
 	return i, err
 }

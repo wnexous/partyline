@@ -317,3 +317,35 @@ func TestRoutingContextMigrationRoomAndChatReferences(t *testing.T) {
 	require.NoError(t, s.write.QueryRowContext(ctx, `SELECT COUNT(*) FROM auto_route_skips`).Scan(&skips))
 	require.Zero(t, skips)
 }
+
+// ROUTE-06, ROUTE-07, INS-04 (data): migration 0008 keeps existing rooms broadcasting with
+// an unknown instructions author, and turns broadcast and chat bridging off in rooms that are
+// already a connector's catch-all room.
+func TestRoomSafetyMigrationDefaultsAndCatchAllRooms(t *testing.T) {
+	ctx := context.Background()
+	s := openMigratedBefore(t, "0008")
+	exec := func(query string, args ...any) error {
+		_, err := s.write.ExecContext(ctx, query, args...)
+		return err
+	}
+	require.NoError(t, s.WithTx(ctx, func(q *db.Queries) error { return q.CreateUser(ctx, newUser("u1", "alice")) }))
+	require.NoError(t, exec(`INSERT INTO rooms (id, owner_id, name, instructions, bridge_chats, created_at, updated_at) VALUES ('r1', 'u1', 'ops', 'Be brief.', 1, 1, 1)`))
+	require.NoError(t, exec(`INSERT INTO rooms (id, owner_id, name, bridge_chats, created_at, updated_at) VALUES ('r2', 'u1', 'inbox', 1, 1, 1)`))
+	require.NoError(t, exec(`INSERT INTO connectors (id, owner_id, kind, name, auto_route_scope, auto_route_room_id, created_at, updated_at)
+		VALUES ('c1', 'u1', 'telegram', 'tg', 'dms', 'r2', 1, 1)`))
+
+	require.NoError(t, s.Migrate(ctx))
+
+	read := func(id string) (broadcast, bridge bool, by string) {
+		require.NoError(t, s.write.QueryRowContext(ctx, `SELECT broadcast, bridge_chats, instructions_by FROM rooms WHERE id = ?`, id).
+			Scan(&broadcast, &bridge, &by))
+		return
+	}
+	broadcast, bridge, by := read("r1")
+	require.True(t, broadcast, "existing rooms keep broadcasting")
+	require.True(t, bridge)
+	require.Equal(t, "", by, "the author of older instructions is unknown")
+	broadcast, bridge, _ = read("r2")
+	require.False(t, broadcast, "a catch-all room stops broadcasting")
+	require.False(t, bridge, "a catch-all room stops bridging chats")
+}

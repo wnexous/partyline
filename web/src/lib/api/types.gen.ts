@@ -47,6 +47,15 @@ export interface AgentMessage {
 export interface RoomInfo {
   room: RoomRef;
   instructions: string;
+  /**
+   * InstructionsBy is the username of the user who last saved the instructions; empty when
+   * unknown (INS-04).
+   */
+  instructions_by?: string;
+  /**
+   * InstructionsTrusted is true only when that user is the calling agent's owner (INS-04).
+   */
+  instructions_trusted: boolean;
   members: RoomMember[];
   me: RoomMember;
 }
@@ -678,6 +687,16 @@ export interface Room {
    */
   my_level: Level;
   bridge_chats: boolean;
+  /**
+   * Broadcast sends agent and user posts without explicit recipients to every chat with
+   * outbound on (DLV-03); when false they reach no chat (ROUTE-06).
+   */
+  broadcast: boolean;
+  /**
+   * CatchAll is set while the room is a connector's catch-all room: broadcast and
+   * bridge_chats then stay false (ROUTE-07).
+   */
+  catch_all: boolean;
   retention_days: number /* int */;
   /**
    * AgentsPaused is set by the loop guard (DLV-08) and cleared by POST /rooms/{id}/resume.
@@ -709,6 +728,7 @@ export interface UpdateRoomRequest {
   description?: string;
   instructions?: string;
   bridge_chats?: boolean;
+  broadcast?: boolean;
   retention_days?: number /* int */;
 }
 /**
@@ -877,7 +897,16 @@ export interface Message {
   attachments: Attachment[];
   outbox?: OutboxItem[];
   created_at: string /* RFC 3339 */;
+  /**
+   * Warning is set on post responses only, e.g. NoBroadcastWarning (ROUTE-06).
+   */
+  warning?: string;
 }
+/**
+ * NoBroadcastWarning answers a post without recipients in a room with broadcast off: it is
+ * stored and reaches the agents, but no chat (ROUTE-06).
+ */
+export const NoBroadcastWarning = "not sent to any chat: this room only answers explicit chats (use reply or chat_ids)";
 /**
  * PostMessageRequest is the body of POST /rooms/{id}/messages (JSON), or the JSON of the
  * "message" part of a multipart upload whose files are sent as "file" parts.

@@ -13,9 +13,15 @@ type Room struct {
 	Owner        User       `json:"owner"`
 	Visibility   Visibility `json:"visibility"`
 	// MyLevel is the caller's resolved level on this room (ACL-02).
-	MyLevel       Level `json:"my_level"`
-	BridgeChats   bool  `json:"bridge_chats"`
-	RetentionDays int   `json:"retention_days"`
+	MyLevel     Level `json:"my_level"`
+	BridgeChats bool  `json:"bridge_chats"`
+	// Broadcast sends agent and user posts without explicit recipients to every chat with
+	// outbound on (DLV-03); when false they reach no chat (ROUTE-06).
+	Broadcast bool `json:"broadcast"`
+	// CatchAll is set while the room is a connector's catch-all room: broadcast and
+	// bridge_chats then stay false (ROUTE-07).
+	CatchAll      bool `json:"catch_all"`
+	RetentionDays int  `json:"retention_days"`
 	// AgentsPaused is set by the loop guard (DLV-08) and cleared by POST /rooms/{id}/resume.
 	AgentsPaused bool  `json:"agents_paused"`
 	LastSeq      int64 `json:"last_seq"`
@@ -40,6 +46,7 @@ type UpdateRoomRequest struct {
 	Description   *string `json:"description,omitempty"`
 	Instructions  *string `json:"instructions,omitempty"`
 	BridgeChats   *bool   `json:"bridge_chats,omitempty"`
+	Broadcast     *bool   `json:"broadcast,omitempty"`
 	RetentionDays *int    `json:"retention_days,omitempty"`
 }
 
@@ -180,7 +187,13 @@ type Message struct {
 	Attachments []Attachment `json:"attachments"`
 	Outbox      []OutboxItem `json:"outbox,omitempty"`
 	CreatedAt   time.Time    `json:"created_at"`
+	// Warning is set on post responses only, e.g. NoBroadcastWarning (ROUTE-06).
+	Warning string `json:"warning,omitempty"`
 }
+
+// NoBroadcastWarning answers a post without recipients in a room with broadcast off: it is
+// stored and reaches the agents, but no chat (ROUTE-06).
+const NoBroadcastWarning = "not sent to any chat: this room only answers explicit chats (use reply or chat_ids)"
 
 // PostMessageRequest is the body of POST /rooms/{id}/messages (JSON), or the JSON of the
 // "message" part of a multipart upload whose files are sent as "file" parts.

@@ -19,8 +19,8 @@ func Room(r rooms.Room) dto.Room {
 	return dto.Room{
 		ID: r.ID, Name: r.Name, Description: r.Description, Instructions: r.Instructions,
 		Owner:      dto.User{ID: r.OwnerID, Username: r.OwnerUsername, DisplayName: r.OwnerDisplayName},
-		Visibility: r.Visibility, MyLevel: r.Level, BridgeChats: r.BridgeChats,
-		RetentionDays: int(r.RetentionDays), AgentsPaused: r.AgentsPaused, LastSeq: r.LastSeq(),
+		Visibility: r.Visibility, MyLevel: r.Level, BridgeChats: r.BridgeChats, Broadcast: r.Broadcast,
+		CatchAll: r.CatchAll, RetentionDays: int(r.RetentionDays), AgentsPaused: r.AgentsPaused, LastSeq: r.LastSeq(),
 		MemberCount: int(r.MemberCount),
 		CreatedAt:   Time(r.CreatedAt), UpdatedAt: Time(r.UpdatedAt),
 	}

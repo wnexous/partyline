@@ -179,18 +179,20 @@ type PairingCode struct {
 }
 
 type Room struct {
-	ID            string
-	OwnerID       string
-	Name          string
-	Description   string
-	BridgeChats   bool
-	RetentionDays int64
-	NextSeq       int64
-	AgentStreak   int64
-	AgentsPaused  bool
-	CreatedAt     int64
-	UpdatedAt     int64
-	Instructions  string
+	ID             string
+	OwnerID        string
+	Name           string
+	Description    string
+	BridgeChats    bool
+	RetentionDays  int64
+	NextSeq        int64
+	AgentStreak    int64
+	AgentsPaused   bool
+	CreatedAt      int64
+	UpdatedAt      int64
+	Instructions   string
+	Broadcast      bool
+	InstructionsBy string
 }
 
 type RoomMember struct {

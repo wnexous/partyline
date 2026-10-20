@@ -75,6 +75,8 @@ type Room struct {
 	Visibility dto.Visibility
 	// MemberCount counts the room's agents, chats and users.
 	MemberCount int64
+	// CatchAll is set while a connector routes new chats to the room (ROUTE-07).
+	CatchAll bool
 }
 
 // LastSeq is the sequence number of the room's latest message (0 when empty).
@@ -178,7 +180,14 @@ func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDispl
 	if err != nil {
 		return Room{}, err
 	}
-	return Room{Room: r, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Visibility: v.Mode, MemberCount: members}, nil
+	catchAll, err := s.store.R().CountCatchAllConnectors(ctx, sql.NullString{String: r.ID, Valid: true})
+	if err != nil {
+		return Room{}, err
+	}
+	return Room{
+		Room: r, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Visibility: v.Mode,
+		MemberCount: members, CatchAll: catchAll > 0,
+	}, nil
 }
 
 // List returns the rooms the calling user can view, by name.
@@ -250,8 +259,9 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 			return err
 		}
 		return q.UpdateRoom(ctx, db.UpdateRoomParams{
-			Name: r.Name, Description: r.Description, Instructions: r.Instructions, BridgeChats: r.BridgeChats,
-			RetentionDays: r.RetentionDays, UpdatedAt: s.now().UnixMilli(), ID: roomID,
+			Name: r.Name, Description: r.Description, Instructions: r.Instructions, InstructionsBy: r.InstructionsBy,
+			BridgeChats: r.BridgeChats, Broadcast: r.Broadcast, RetentionDays: r.RetentionDays,
+			UpdatedAt: s.now().UnixMilli(), ID: roomID,
 		})
 	})
 	if err != nil {

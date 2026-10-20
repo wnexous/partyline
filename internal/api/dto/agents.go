@@ -38,10 +38,15 @@ type AgentMessage struct {
 // RoomInfo is GET /agent/rooms/{room}/info (INS-02): the room, its instructions, its members
 // and the calling agent's own membership (settings included).
 type RoomInfo struct {
-	Room         RoomRef      `json:"room"`
-	Instructions string       `json:"instructions"`
-	Members      []RoomMember `json:"members"`
-	Me           RoomMember   `json:"me"`
+	Room         RoomRef `json:"room"`
+	Instructions string  `json:"instructions"`
+	// InstructionsBy is the username of the user who last saved the instructions; empty when
+	// unknown (INS-04).
+	InstructionsBy string `json:"instructions_by,omitempty"`
+	// InstructionsTrusted is true only when that user is the calling agent's owner (INS-04).
+	InstructionsTrusted bool         `json:"instructions_trusted"`
+	Members             []RoomMember `json:"members"`
+	Me                  RoomMember   `json:"me"`
 }
 
 // ReactRequest is the body of POST /agent/messages/{id}/react: one emoji (REACT-01).
