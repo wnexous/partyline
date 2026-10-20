@@ -64,8 +64,6 @@ const CHAT_KIND: Record<string, MessageKey> = {
   channel: "members.chatKind.channel",
 };
 
-const WEBHOOK = "webhook";
-
 function ConnectorPage() {
   const t = useT();
   const { connectorId } = Route.useParams();
@@ -190,13 +188,10 @@ function ConnectorView({ connector: c, kind }: { connector: Connector; kind?: Co
           </div>
         ) : null}
 
-        {c.kind === WEBHOOK ? (
+        {c.inbound_url ? (
           <Section title={t("connector.inboundTitle")}>
             <p className="text-sm text-muted-foreground">{t("connector.inboundBody")}</p>
-            <CodeBlock
-              label={t("connector.inboundUrl")}
-              value={`${window.location.origin}/api/v1/hooks/${c.id}`}
-            />
+            <CodeBlock label={t("connector.inboundUrl")} value={c.inbound_url} />
           </Section>
         ) : null}
 

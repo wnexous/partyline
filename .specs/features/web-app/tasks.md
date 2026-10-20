@@ -524,8 +524,8 @@ T33 → T34 → T35 → T36 → T37 → T38
 **Depends on**: T35
 **Requirement**: UI-16, UI-19
 **Done when**:
-- [ ] A create response with `generated_secrets` opens the secret-once dialog (value, copy button, warning, inbound URL); the connector page opens after it closes
-- [ ] The cached connector never holds `generated_secrets`; the detail page shows `inbound_url` from the DTO (no client-built URL)
+- [x] A create response with `generated_secrets` opens the secret-once dialog (value, copy button, warning, inbound URL); the connector page opens after it closes
+- [x] The cached connector never holds `generated_secrets`; the detail page shows `inbound_url` from the DTO (no client-built URL)
 **Tests**: unit
 **Gate**: quick
 

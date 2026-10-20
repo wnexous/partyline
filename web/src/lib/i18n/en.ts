@@ -366,6 +366,13 @@ export const en = {
   "connectors.addTitle": "Add connector",
   "connectors.addBody":
     "Pick the platform, then fill in the account details. Secrets are stored encrypted and never shown again.",
+  "connectors.secretTitle": "Copy the generated secret",
+  "connectors.secretBody":
+    "Partyline generated this for {name}. Give it to the service that signs requests to the inbound URL.",
+  "connectors.secretWarning":
+    "This secret won’t be shown again. If you lose it, set a new one in the connector settings.",
+  "connectors.secretDone": "I copied it",
+  "connectors.signing": "Signing each request",
   "connectors.platform": "Platform",
   "connectors.kindsError": "Couldn’t load the platforms. Close and try again.",
   "connectors.name": "Name",

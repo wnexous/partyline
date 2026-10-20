@@ -371,6 +371,13 @@ export const ptBR: Dictionary = {
   "connectors.addTitle": "Adicionar conector",
   "connectors.addBody":
     "Escolha a plataforma e preencha os dados da conta. Segredos ficam criptografados e nunca aparecem de novo.",
+  "connectors.secretTitle": "Copie o segredo gerado",
+  "connectors.secretBody":
+    "O Partyline gerou isto para {name}. Entregue ao serviço que assina as requisições para a URL de entrada.",
+  "connectors.secretWarning":
+    "Este segredo não será mostrado de novo. Se você perdê-lo, defina um novo nas configurações do conector.",
+  "connectors.secretDone": "Já copiei",
+  "connectors.signing": "Assinatura de cada requisição",
   "connectors.platform": "Plataforma",
   "connectors.kindsError": "Não foi possível carregar as plataformas. Feche e tente de novo.",
   "connectors.name": "Nome",

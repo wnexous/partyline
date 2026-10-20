@@ -1,6 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
+import { CodeBlock } from "@/components/copy-field";
 import { ConnectorForm } from "@/components/schema-form";
+import { SecretOnceDialog } from "@/components/secret-once-dialog";
 import {
   Dialog,
   DialogContent,
@@ -12,10 +14,32 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isApiError } from "@/lib/api/client";
 import { useConnectorKinds, useCreateConnector } from "@/lib/api/queries";
+import {
+  type Connector,
+  type ConnectorKind,
+  HeaderSignature,
+  HeaderTimestamp,
+} from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-/** Adds a connector (UI-16): pick a platform, fill the form its field schema describes. */
+/** Secrets the server generated for a new connector, with the labels of their fields. */
+interface Generated {
+  connector: Connector;
+  secrets: { label: string; value: string }[];
+}
+
+/** How a sender signs a webhook request (HOOK-04): Unix seconds, HMAC over "timestamp.body". */
+const SIGNING_RECIPE = [
+  `${HeaderTimestamp}: <unix_seconds>`,
+  `${HeaderSignature}: sha256=<hex(HMAC_SHA256(secret, timestamp + "." + body))>`,
+].join("\n");
+
+/**
+ * Adds a connector (UI-16): pick a platform, fill the form its field schema describes. Secrets
+ * the server generates (the webhook's signing secret) are shown once in the secret dialog
+ * (UI-19); the new connector's page opens after it closes.
+ */
 export function AddConnectorDialog({
   open,
   onOpenChange,
@@ -24,22 +48,73 @@ export function AddConnectorDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const t = useT();
+  const navigate = useNavigate();
+  const [generated, setGenerated] = useState<Generated | null>(null);
+  const first = generated?.secrets[0];
+  const openConnector = (id: string) =>
+    void navigate({ to: "/connectors/$connectorId", params: { connectorId: id } });
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg">
-        <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
-          <DialogTitle>{t("connectors.addTitle")}</DialogTitle>
-          <DialogDescription>{t("connectors.addBody")}</DialogDescription>
-        </DialogHeader>
-        {open ? <AddConnectorBody onDone={() => onOpenChange(false)} /> : null}
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg">
+          <DialogHeader className="border-b px-5 pt-5 pb-4 text-left">
+            <DialogTitle>{t("connectors.addTitle")}</DialogTitle>
+            <DialogDescription>{t("connectors.addBody")}</DialogDescription>
+          </DialogHeader>
+          {open ? (
+            <AddConnectorBody
+              onCancel={() => onOpenChange(false)}
+              onCreated={(connector, kind) => {
+                onOpenChange(false);
+                const secrets = Object.entries(connector.generated_secrets ?? {}).map(
+                  ([name, value]) => ({
+                    label: kind.fields.find((f) => f.name === name)?.label ?? name,
+                    value,
+                  }),
+                );
+                if (secrets.length > 0) setGenerated({ connector, secrets });
+                else openConnector(connector.id);
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
+      <SecretOnceDialog
+        secret={first?.value ?? null}
+        title={t("connectors.secretTitle")}
+        description={t("connectors.secretBody", { name: generated?.connector.name ?? "" })}
+        label={first?.label ?? ""}
+        warning={t("connectors.secretWarning")}
+        confirmLabel={t("connectors.secretDone")}
+        onClose={() => {
+          const id = generated?.connector.id;
+          setGenerated(null);
+          if (id) openConnector(id);
+        }}
+      >
+        {generated?.secrets.slice(1).map((s) => (
+          <CodeBlock key={s.label} label={s.label} value={s.value} />
+        ))}
+        {generated?.connector.inbound_url ? (
+          <>
+            <CodeBlock label={t("connector.inboundUrl")} value={generated.connector.inbound_url} />
+            <CodeBlock label={t("connectors.signing")} value={SIGNING_RECIPE} />
+          </>
+        ) : null}
+      </SecretOnceDialog>
+    </>
   );
 }
 
-function AddConnectorBody({ onDone }: { onDone: () => void }) {
+function AddConnectorBody({
+  onCancel,
+  onCreated,
+}: {
+  onCancel: () => void;
+  onCreated: (connector: Connector, kind: ConnectorKind) => void;
+}) {
   const t = useT();
-  const navigate = useNavigate();
   const kinds = useConnectorKinds();
   const create = useCreateConnector();
   const [chosen, setChosen] = useState<string | null>(null);
@@ -85,15 +160,12 @@ function AddConnectorBody({ onDone }: { onDone: () => void }) {
           kind={kind}
           submitLabel={t("connectors.add")}
           pending={create.isPending}
-          onCancel={onDone}
+          onCancel={onCancel}
           onSubmit={(values, form) =>
             create.mutate(
               { kind: kind.name, ...values },
               {
-                onSuccess: (c) => {
-                  onDone();
-                  void navigate({ to: "/connectors/$connectorId", params: { connectorId: c.id } });
-                },
+                onSuccess: (c) => onCreated(c, kind),
                 onError: (err) => {
                   if (isApiError(err) && err.status === 422 && form.applyServerErrors(err.fields)) {
                     return;

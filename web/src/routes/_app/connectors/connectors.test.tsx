@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SecretMask } from "@/lib/api/types.gen";
+import { type Connector, SecretMask } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
@@ -138,6 +138,56 @@ describe("add connector (UI-16)", () => {
     await user.click(within(dialog).getByRole("radio", { name: /Webhook/ }));
     expect(within(dialog).getByLabelText("Signing secret")).toHaveAttribute("type", "password");
     expect(within(dialog).queryByLabelText("Bot token")).toBeNull();
+  });
+
+  it("shows generated secrets once with the inbound URL, then keeps them masked", async () => {
+    // A kind whose secret the server generates when it is left empty (webhook).
+    const hook = makeConnectorKind({
+      name: "webhook",
+      label: "Webhook",
+      can_list_chats: false,
+      fields: [
+        { name: "secret", label: "Signing secret", type: "secret", required: false, secret: true },
+      ],
+    });
+    const stored = makeConnector({
+      id: "k9",
+      kind: "webhook",
+      name: "ci-hook",
+      config: { secret: SecretMask },
+      inbound_url: "https://pl.example.test/api/v1/hooks/k9",
+    });
+    const { user, dialog, router, queryClient } = await openAdd({
+      "GET /connector-kinds": json(200, { items: [hook] }),
+      "POST /connectors": json(201, {
+        ...stored,
+        generated_secrets: { secret: "s3cr3t-generated" },
+      }),
+      "GET /connectors/k9": json(200, stored),
+      "GET /connectors/k9/chats": json(200, { items: [] }),
+    });
+    await user.type(within(dialog).getByLabelText("Name"), "ci-hook");
+    await user.click(within(dialog).getByRole("button", { name: "Add connector" }));
+
+    const secret = await screen.findByRole("dialog", { name: "Copy the generated secret" });
+    const block = within(secret).getByRole("figure", { name: "Signing secret" });
+    expect(block.querySelector("pre")?.textContent).toBe("s3cr3t-generated");
+    expect(within(secret).getByRole("note")).toHaveTextContent("won’t be shown again");
+    expect(
+      within(secret).getByRole("figure", { name: "Inbound URL" }).querySelector("pre")?.textContent,
+    ).toBe("https://pl.example.test/api/v1/hooks/k9");
+    await user.click(within(block).getByRole("button", { name: "Copy Signing secret" }));
+    expect(await navigator.clipboard.readText()).toBe("s3cr3t-generated");
+    // The connector page waits until the secret was seen.
+    expect(router.state.location.pathname).toBe("/connectors");
+
+    await user.click(within(secret).getByRole("button", { name: "I copied it" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/connectors/k9"));
+    await screen.findByRole("heading", { name: "ci-hook" });
+    expect(screen.queryByText("s3cr3t-generated")).toBeNull();
+    expect(queryClient.getQueryData<Connector>(["connectors", "k9"])?.generated_secrets).toBe(
+      undefined,
+    );
   });
 
   it("shows 422 reasons under the fields", async () => {
@@ -295,14 +345,26 @@ describe("connector page (UI-13, UI-17)", () => {
     expect(screen.queryByRole("switch", { name: "Enabled" })).toBeNull();
   });
 
-  it("shows the inbound URL of a webhook connector", async () => {
+  it("shows the inbound URL the server reports for a webhook connector", async () => {
     mockApi({
       ...base,
-      "GET /connectors/k1": json(200, { ...connector, kind: "webhook", config: {} }),
+      "GET /connectors/k1": json(200, {
+        ...connector,
+        kind: "webhook",
+        config: {},
+        inbound_url: "https://pl.example.test/api/v1/hooks/k1",
+      }),
     });
     renderRoute("/connectors/k1");
     const url = await screen.findByRole("figure", { name: "Inbound URL" });
-    expect(url.querySelector("pre")?.textContent).toBe(`${window.location.origin}/api/v1/hooks/k1`);
+    expect(url.querySelector("pre")?.textContent).toBe("https://pl.example.test/api/v1/hooks/k1");
+  });
+
+  it("shows no inbound URL for a connector without one", async () => {
+    mockApi(base);
+    renderRoute("/connectors/k1");
+    await screen.findByRole("heading", { name: "ops-bot" });
+    expect(screen.queryByRole("figure", { name: "Inbound URL" })).toBeNull();
   });
 
   it("shows a not-found state for a connector the user cannot see", async () => {

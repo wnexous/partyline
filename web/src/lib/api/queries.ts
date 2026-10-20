@@ -511,7 +511,9 @@ export function useCreateConnector() {
   return useMutation({
     mutationFn: (req: CreateConnectorRequest) => api<Connector>("POST", "/connectors", req),
     onSuccess: (c) => {
-      qc.setQueryData(queryKeys.connector(c.id), c);
+      // Generated secrets are shown once by the caller and never cached (reads mask them).
+      const { generated_secrets: _secrets, ...stored } = c;
+      qc.setQueryData<Connector>(queryKeys.connector(c.id), stored);
       qc.invalidateQueries({ queryKey: queryKeys.connectors, exact: true });
     },
   });
