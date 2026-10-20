@@ -594,8 +594,8 @@ T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → 
 **Requirement**: ACL-07, ROOM-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A manager grantee changes sharing (test)
-- [ ] Deleting the owner account deletes its rooms (test)
+- [x] A manager grantee changes sharing (test)
+- [x] Deleting the owner account deletes its rooms (test)
 **Tests**: integration
 **Gate**: full
 **Commit**: `docs(specs): let managers change sharing and delete rooms with their owner`

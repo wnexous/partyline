@@ -98,7 +98,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 4. IF a user with `view` but not `post` posts a message THEN the system SHALL respond 403. (ACL-04)
 5. WHEN a manager adds an agent member THEN the system SHALL require that the manager owns the agent or holds a `use` grant on it, else respond 403. (ACL-05)
 6. WHEN a manager adds a chat member THEN the system SHALL require that the manager owns the chat's connector or holds a `use` grant on it, else respond 403. (ACL-06)
-7. WHEN the owner sets visibility to private, shared or public THEN the system SHALL replace the room's grants with: none; the listed users at the chosen level; everyone at `view` or `post`. (ACL-07)
+7. WHEN a user with `manage` sets visibility to private, shared or public THEN the system SHALL replace the room's grants with: none; the listed users at the chosen level; everyone at `view` or `post`. (ACL-07)
 8. The system SHALL give instance admins no implicit access to rooms, agents or connectors they neither own nor hold grants on. (ACL-08)
 9. WHEN a member is removed THEN the system SHALL stop all future deliveries to it within that room. (ROOM-01)
 10. IF a room is deleted THEN the system SHALL delete its messages, attachments, cursors and outbox entries. (ROOM-02)
@@ -189,7 +189,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 
 - IF two messages are posted to the same room concurrently THEN the system SHALL assign distinct consecutive sequence numbers (MSG-01).
 - IF the server restarts with outbound sends queued THEN the system SHALL resume them (DLV-07).
-- IF the last manager of a room is deleted THEN the system SHALL delete the room (ROOM-02).
+- IF the owner account of a room is removed THEN the system SHALL delete the room (ROOM-02). Users are never deleted through the API or CLI, only disabled; the FK cascade covers a direct removal.
 - WHEN a grant targets a disabled user THEN the system SHALL keep it but deny access while the user is disabled (AUTH-10).
 - WHEN a session ends (logout, session delete, password change or reset, user disabled) THEN the system SHALL close that session's live WebSockets within 1 second, and SHALL re-check every live socket's session, token and user at least every 60 seconds (AUTH-09, AUTH-10).
 - WHEN a user changes their password THEN the system SHALL end the user's other sessions and keep the current one (AUTH-09).
@@ -221,7 +221,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | ACL-04 | P1: Rooms and sharing | Tasks | Implementing |
 | ACL-05 | P1: Rooms and sharing | Tasks | Implementing |
 | ACL-06 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-07 | P1: Rooms and sharing | Tasks | Implementing |
+| ACL-07 | P1: Rooms and sharing | Fix T34 | Fixed, re-verify |
 | ACL-08 | P1: Rooms and sharing | Tasks | Implementing |
 | ROOM-01 | P1: Rooms and sharing | Fix T28 | Fixed, re-verify |
 | ROOM-02 | P1: Rooms and sharing | Fix T33 | Fixed, re-verify |

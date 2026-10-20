@@ -123,3 +123,46 @@ func TestMessageSequenceAndDedupeConstraints(t *testing.T) {
 	require.NoError(t, insert("m4", 2, nil))
 	require.NoError(t, insert("m5", 3, nil), "messages without external id are never deduplicated")
 }
+
+// Edge case (ROOM-02): users are never deleted by the app (only disabled); if an owner
+// account is removed anyway, its rooms go with it, with their members, messages,
+// attachments, cursors and outbox entries.
+func TestDeletingOwnerDeletesTheirRooms(t *testing.T) {
+	ctx := context.Background()
+	s := openMigrated(t)
+	require.NoError(t, s.WithTx(ctx, func(q *db.Queries) error {
+		if err := q.CreateUser(ctx, newUser("u1", "alice")); err != nil {
+			return err
+		}
+		return q.CreateUser(ctx, newUser("u2", "bob"))
+	}))
+	for _, stmt := range []string{
+		`INSERT INTO rooms (id, owner_id, name, created_at, updated_at) VALUES ('r1', 'u1', 'Doomed', 1, 1), ('r2', 'u2', 'Kept', 1, 1)`,
+		`INSERT INTO connectors (id, owner_id, kind, name, created_at, updated_at) VALUES ('k1', 'u2', 'telegram', 'tg', 1, 1)`,
+		`INSERT INTO chats (id, connector_id, external_id, title, kind, created_at) VALUES ('c1', 'k1', 'x', 'g', 'group', 1)`,
+		`INSERT INTO agents (id, owner_id, name, created_at) VALUES ('a1', 'u2', 'builder', 1)`,
+		`INSERT INTO room_members (id, room_id, kind, member_id, created_at) VALUES ('rm1', 'r1', 'chat', 'c1', 1), ('rm2', 'r2', 'chat', 'c1', 1)`,
+		`INSERT INTO messages (id, room_id, seq, author_kind, author_id, created_at) VALUES ('m1', 'r1', 1, 'user', 'u1', 1), ('m2', 'r2', 1, 'user', 'u2', 1)`,
+		`INSERT INTO attachments (id, message_id, sha256, mime, name, size, created_at) VALUES ('f1', 'm1', 'abc', 'text/plain', 'a', 1, 1)`,
+		`INSERT INTO outbox (id, message_id, chat_id, next_attempt_at, updated_at) VALUES ('o1', 'm1', 'c1', 1, 1), ('o2', 'm2', 'c1', 1, 1)`,
+		`INSERT INTO agent_cursors (agent_id, room_id, seq) VALUES ('a1', 'r1', 1)`,
+		`DELETE FROM users WHERE id = 'u1'`,
+	} {
+		_, err := s.write.ExecContext(ctx, stmt)
+		require.NoError(t, err, stmt)
+	}
+	count := func(query string) int {
+		var n int
+		require.NoError(t, s.write.QueryRowContext(ctx, query).Scan(&n))
+		return n
+	}
+	require.Equal(t, map[string]int{"rooms": 1, "members": 1, "messages": 1, "attachments": 0, "outbox": 1, "cursors": 0}, map[string]int{
+		"rooms":       count(`SELECT COUNT(*) FROM rooms`),
+		"members":     count(`SELECT COUNT(*) FROM room_members`),
+		"messages":    count(`SELECT COUNT(*) FROM messages`),
+		"attachments": count(`SELECT COUNT(*) FROM attachments`),
+		"outbox":      count(`SELECT COUNT(*) FROM outbox`),
+		"cursors":     count(`SELECT COUNT(*) FROM agent_cursors`),
+	})
+	require.Equal(t, 1, count(`SELECT COUNT(*) FROM rooms WHERE id = 'r2'`), "rooms of other owners stay")
+}
