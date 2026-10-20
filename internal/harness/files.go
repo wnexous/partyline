@@ -70,12 +70,22 @@ func extensionKind(rel string) string {
 	return "extension"
 }
 
-// extensionContent is the file setup installs: the version header and the embedded source.
+// binaryLine is the line of the pi and OpenCode adapters that names the partyline binary they
+// run (`partyline listen`); setup writes the absolute path into it.
+const binaryLine = `const PARTYLINE_BINARY = "partyline";`
+
+// extensionContent is the file setup installs: the version header and the embedded source,
+// with the absolute binary path in binaryLine.
 func (h *fileHarness) extensionContent() ([]byte, error) {
 	src, err := integrations.Files.ReadFile(h.source)
 	if err != nil {
 		return nil, err
 	}
+	quoted, err := json.Marshal(h.env.Binary) // a JSON string is a valid TypeScript string
+	if err != nil {
+		return nil, err
+	}
+	src = bytes.Replace(src, []byte(binaryLine), []byte("const PARTYLINE_BINARY = "+string(quoted)+";"), 1)
 	return append([]byte(extensionHeader(h.env.Version)), src...), nil
 }
 

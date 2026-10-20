@@ -234,7 +234,7 @@ T15 → T16 → T17
 **Requirement**: PUSH-04, PUSH-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake host + fake listen process: each line → one message; process exit → restart with backoff; stderr logged
+- [x] Fake host + fake listen process: each line → one message; process exit → restart with backoff; stderr logged
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(integrations): add the pi extension`

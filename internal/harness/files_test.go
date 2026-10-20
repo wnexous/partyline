@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -58,7 +59,31 @@ func extensionWant(t *testing.T, source string) string {
 	t.Helper()
 	src, err := integrations.Files.ReadFile(source)
 	require.NoError(t, err)
-	return "// partyline v1.2.3: written by `partyline setup`; `partyline setup --uninstall` removes it.\n" + string(src)
+	installed := strings.Replace(string(src), `const PARTYLINE_BINARY = "partyline";`, `const PARTYLINE_BINARY = "/opt/bin/partyline";`, 1)
+	return "// partyline v1.2.3: written by `partyline setup`; `partyline setup --uninstall` removes it.\n" + installed
+}
+
+// PUSH-04: the pi extension runs the binary setup registered (its absolute path, quoted as a
+// string literal); the omp extension runs no binary.
+func TestExtensionsNameTheAbsoluteBinary(t *testing.T) {
+	for _, c := range fileCases {
+		if c.id == "opencode" {
+			continue
+		}
+		t.Run(c.id, func(t *testing.T) {
+			env, _ := testEnv(t, nil)
+			env.Binary = `/opt/my "bin"\\partyline`
+			require.NoError(t, registrar(t, env, c.id).Apply(context.Background()))
+			got := readFile(t, filepath.Join(env.Home, c.ext))
+			want := `const PARTYLINE_BINARY = "/opt/my \"bin\"\\\\partyline";`
+			if c.id == "omp" {
+				require.NotContains(t, got, "PARTYLINE_BINARY")
+				return
+			}
+			require.Contains(t, got, "\n"+want+"\n")
+			require.NotContains(t, got, `const PARTYLINE_BINARY = "partyline";`)
+		})
+	}
 }
 
 // HAR-01, HAR-02, HAR-04 (OpenCode, pi, omp): setup adds one entry with the absolute binary
