@@ -72,16 +72,52 @@ func TestReceiveHookMapsPayload(t *testing.T) {
 	}, in)
 }
 
-// 60 requests per minute are accepted; more are refused until the next minute.
+// numbered is a distinct valid payload.
+func numbered(i int) string {
+	return `{"chat_id":"alerts","sender_id":"ci","text":"hi","message_id":"m-` + strconv.Itoa(i) + `"}`
+}
+
+// HOOK-04: 60 authenticated requests per minute are accepted; more are refused until the
+// next minute.
 func TestRateLimit(t *testing.T) {
 	now := time.Unix(1792497600, 0)
 	c, _ := startHook(t, &now)
 	for i := range RateLimit {
-		require.NoError(t, c.ReceiveHook(context.Background(), request(now, body)), "request %d", i+1)
+		require.NoError(t, c.ReceiveHook(context.Background(), request(now, numbered(i))), "request %d", i+1)
 	}
-	require.ErrorIs(t, c.ReceiveHook(context.Background(), request(now, body)), connectors.ErrRateLimited)
+	require.ErrorIs(t, c.ReceiveHook(context.Background(), request(now, numbered(RateLimit))), connectors.ErrRateLimited)
 	now = now.Add(time.Minute)
-	require.NoError(t, c.ReceiveHook(context.Background(), request(now, body)))
+	require.NoError(t, c.ReceiveHook(context.Background(), request(now, numbered(RateLimit+1))))
+}
+
+// HOOK-04: requests with a bad signature do not use the connector's budget; they have a
+// budget of their own per client IP, which resets every minute.
+func TestInvalidRequestsHaveTheirOwnBudget(t *testing.T) {
+	now := time.Unix(1792497600, 0)
+	c, rec := startHook(t, &now)
+	forged := request(now, body)
+	forged.Signature = Sign("wrong-secret", forged.Timestamp, forged.Body)
+	forged.RemoteIP = "203.0.113.7"
+	for i := range 100 {
+		want := connectors.ErrBadSignature
+		if i >= InvalidRateLimit {
+			want = connectors.ErrRateLimited
+		}
+		require.ErrorIs(t, c.ReceiveHook(context.Background(), forged), want, "invalid request %d", i+1)
+	}
+	other := forged
+	other.RemoteIP = "203.0.113.8"
+	require.ErrorIs(t, c.ReceiveHook(context.Background(), other), connectors.ErrBadSignature, "another IP has its own budget")
+
+	valid := request(now, body)
+	valid.RemoteIP = forged.RemoteIP
+	require.NoError(t, c.ReceiveHook(context.Background(), valid), "invalid requests left the budget untouched")
+	require.Equal(t, "hi", rec.NextInbound(t).Text)
+
+	now = now.Add(time.Minute)
+	forged = request(now, body)
+	forged.Signature, forged.RemoteIP = Sign("wrong-secret", forged.Timestamp, forged.Body), "203.0.113.7"
+	require.ErrorIs(t, c.ReceiveHook(context.Background(), forged), connectors.ErrBadSignature, "a new minute")
 }
 
 // The secret is generated when left empty, and kept when given.

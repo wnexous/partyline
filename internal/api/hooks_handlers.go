@@ -56,6 +56,7 @@ func (s *server) receiveHook(w http.ResponseWriter, r *http.Request) error {
 	}
 	err = hook.ReceiveHook(r.Context(), connectors.HookRequest{
 		Timestamp: r.Header.Get(hookTimestampHeader), Signature: r.Header.Get(hookSignatureHeader), Body: body,
+		RemoteIP: httpx.ClientIP(r.Context()).String(),
 	})
 	switch {
 	case errors.Is(err, connectors.ErrBadSignature):

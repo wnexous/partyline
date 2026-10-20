@@ -285,9 +285,9 @@ get their own per-IP budget (over it: 429, no audit entry).
 **Requirement**: HOOK-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 100 bad-signature requests do not stop a valid one
-- [ ] The 61st authenticated request in a minute gets 429
-- [ ] An IP over its invalid-attempt budget gets 429
+- [x] 100 bad-signature requests do not stop a valid one
+- [x] The 61st authenticated request in a minute gets 429
+- [x] An IP over its invalid-attempt budget gets 429
 **Tests**: unit, e2e
 **Gate**: full
 **Commit**: `fix(webhook): count only authenticated requests toward the rate limit`

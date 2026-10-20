@@ -40,8 +40,14 @@ const (
 	MaxSkew = 5 * time.Minute
 	// MaxBody is the largest accepted request body.
 	MaxBody = connectors.MaxHookBody
-	// RateLimit is the number of requests accepted per connector and minute.
+	// RateLimit is the number of authenticated requests accepted per connector and minute
+	// (HOOK-04).
 	RateLimit = 60
+	// InvalidRateLimit is the number of requests with a bad signature or timestamp accepted
+	// per client IP, connector and minute; beyond it they get ErrRateLimited (HOOK-04).
+	InvalidRateLimit = 30
+	// maxTrackedIPs bounds the per-IP windows kept in memory.
+	maxTrackedIPs = 10000
 
 	requestTimeout = 30 * time.Second
 )
@@ -94,10 +100,25 @@ type Connector struct {
 	client      *http.Client
 	now         func() time.Time
 
-	mu          sync.Mutex
-	run         *running
-	windowStart time.Time
-	windowCount int
+	mu      sync.Mutex
+	run     *running
+	window  window            // authenticated requests
+	invalid map[string]window // invalid requests by client IP
+}
+
+// window counts requests in a one-minute window.
+type window struct {
+	start time.Time
+	count int
+}
+
+// add counts one request at now and reports whether it is within limit.
+func (w *window) add(now time.Time, limit int) bool {
+	if now.Sub(w.start) >= time.Minute {
+		w.start, w.count = now, 0
+	}
+	w.count++
+	return w.count <= limit
 }
 
 type running struct {
@@ -119,6 +140,7 @@ func New(cfg connectors.Config, d connectors.Deps) *Connector {
 	return &Connector{
 		id: d.ID, secret: cfg.String("secret"), outboundURL: cfg.String("outbound_url"), userAgent: d.UserAgent,
 		fileURL: d.FileURL, log: log, client: safehttp.NewClient(safehttp.Options{AllowPrivate: d.AllowPrivateNetworks, Timeout: requestTimeout}), now: time.Now,
+		invalid: map[string]window{},
 	}
 }
 
@@ -145,16 +167,21 @@ type payload struct {
 	MessageID  string `json:"message_id"`
 }
 
-// ReceiveHook rate-limits, verifies the timestamp (±5 minutes) and the signature with a
-// constant-time compare (HOOK-02), then hands the message to the running handler
-// (HOOK-01). Nothing is handled when a check fails.
+// ReceiveHook verifies the timestamp (±5 minutes) and the signature with a constant-time
+// compare (HOOK-02), then counts the request toward the connector's budget of authenticated
+// requests (HOOK-04) and hands the message to the running handler (HOOK-01). Invalid
+// requests never touch that budget; they have their own per-IP budget, beyond which they
+// get ErrRateLimited instead of ErrBadSignature. Nothing is handled when a check fails.
 func (c *Connector) ReceiveHook(ctx context.Context, r connectors.HookRequest) error {
-	if !c.allow() {
-		return connectors.ErrRateLimited
-	}
 	if !c.validTimestamp(r.Timestamp) ||
 		!hmac.Equal([]byte(Sign(c.secret, r.Timestamp, r.Body)), []byte(strings.TrimSpace(r.Signature))) {
+		if !c.allowInvalid(r.RemoteIP) {
+			return connectors.ErrRateLimited
+		}
 		return connectors.ErrBadSignature
+	}
+	if !c.allow() {
+		return connectors.ErrRateLimited
 	}
 	var p payload
 	if err := json.Unmarshal(r.Body, &p); err != nil {
@@ -191,16 +218,32 @@ func (c *Connector) validTimestamp(ts string) bool {
 	return d <= MaxSkew && d >= -MaxSkew
 }
 
-// allow counts a request in the current one-minute window.
+// allow counts an authenticated request in the connector's one-minute window.
 func (c *Connector) allow() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.window.add(c.now(), RateLimit)
+}
+
+// allowInvalid counts an invalid request of the client IP in its one-minute window.
+func (c *Connector) allowInvalid(ip string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	now := c.now()
-	if now.Sub(c.windowStart) >= time.Minute {
-		c.windowStart, c.windowCount = now, 0
+	if _, ok := c.invalid[ip]; !ok && len(c.invalid) >= maxTrackedIPs {
+		for k, w := range c.invalid {
+			if now.Sub(w.start) >= time.Minute {
+				delete(c.invalid, k)
+			}
+		}
+		if len(c.invalid) >= maxTrackedIPs {
+			return false
+		}
 	}
-	c.windowCount++
-	return c.windowCount <= RateLimit
+	w := c.invalid[ip]
+	ok := w.add(now, InvalidRateLimit)
+	c.invalid[ip] = w
+	return ok
 }
 
 // outMessage is the outbound payload (HOOK-03).

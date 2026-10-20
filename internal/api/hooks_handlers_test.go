@@ -209,6 +209,35 @@ func TestWebhookRejectsBadSignatureAndOldTimestamp(t *testing.T) {
 	require.Equal(t, 4, rejected)
 }
 
+// HOOK-04: a flood of bad-signature requests does not use the connector's budget, so a
+// valid request still gets 202; beyond 30 per minute an IP's invalid requests get 429 and
+// are no longer audited. (The 60/min budget of valid requests is checked with a fake clock
+// in the webhook package.)
+func TestWebhookInvalidRequestsDoNotBlockTheSender(t *testing.T) {
+	e := newHookEnv(t)
+	now := time.Now()
+	body := payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "x"})
+	for i := range 100 {
+		resp := e.post(t, "wrong-secret", now, body)
+		if i < webhook.InvalidRateLimit {
+			resp.RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+		} else {
+			resp.RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+		}
+	}
+	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "real", "message_id": "r-1"})).
+		RequireStatus(http.StatusAccepted)
+	require.Len(t, e.chats(t), 1, "the valid request was handled")
+
+	rejected := 0
+	for _, a := range testkit.Decode[dto.Page[dto.AuditEntry]](e.env.NewAdmin("auditor").Get("/api/v1/admin/audit").RequireStatus(http.StatusOK)).Items {
+		if a.Action == audit.ActionWebhookRejected {
+			rejected++
+		}
+	}
+	require.Equal(t, webhook.InvalidRateLimit, rejected)
+}
+
 // Payload and transport errors: missing fields 422, over 64 KiB 413, unknown or stopped
 // connectors 404.
 func TestWebhookRequestErrors(t *testing.T) {

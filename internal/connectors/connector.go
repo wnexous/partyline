@@ -144,6 +144,8 @@ type HookRequest struct {
 	Timestamp string
 	Signature string
 	Body      []byte
+	// RemoteIP is the client address, used to rate-limit invalid requests per IP.
+	RemoteIP string
 }
 
 // HookReceiver is implemented by connectors of kinds with InboundHook: they receive
