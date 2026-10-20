@@ -30,14 +30,21 @@ const (
 	ActionTokenCreate    = "token.create"
 	ActionTokenRevoke    = "token.revoke"
 	ActionGrantsSet      = "grants.set"
+	// Connector changes (AUD-01); sharing changes are grants.set.
+	ActionConnectorCreate  = "connector.create"
+	ActionConnectorUpdate  = "connector.update"
+	ActionConnectorDelete  = "connector.delete"
+	ActionConnectorEnable  = "connector.enable"
+	ActionConnectorDisable = "connector.disable"
 )
 
 // Target kinds.
 const (
-	TargetUser    = "user"
-	TargetSession = "session"
-	TargetInvite  = "invite"
-	TargetToken   = "token"
+	TargetUser      = "user"
+	TargetSession   = "session"
+	TargetInvite    = "invite"
+	TargetToken     = "token"
+	TargetConnector = "connector"
 )
 
 // PageSize is the number of entries per page (AUD-02).

@@ -33,9 +33,9 @@ type matrix struct {
 	clients map[matrixRole]*testkit.Client
 }
 
-func newMatrix(t *testing.T) *matrix {
+func newMatrix(t *testing.T, opts ...testkit.Option) *matrix {
 	t.Helper()
-	env := testkit.New(t)
+	env := testkit.New(t, opts...)
 	return &matrix{env: env, clients: map[matrixRole]*testkit.Client{
 		roleAdmin:    env.SetupAdmin(),
 		roleOwner:    env.NewUser("owner"),

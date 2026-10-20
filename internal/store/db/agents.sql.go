@@ -10,6 +10,41 @@ import (
 	"database/sql"
 )
 
+const advanceAgentCursor = `-- name: AdvanceAgentCursor :exec
+INSERT INTO agent_cursors (agent_id, room_id, seq) VALUES (?, ?, ?)
+ON CONFLICT (agent_id, room_id) DO UPDATE SET seq = MAX(agent_cursors.seq, excluded.seq)
+`
+
+type AdvanceAgentCursorParams struct {
+	AgentID string
+	RoomID  string
+	Seq     int64
+}
+
+func (q *Queries) AdvanceAgentCursor(ctx context.Context, arg AdvanceAgentCursorParams) error {
+	_, err := q.db.ExecContext(ctx, advanceAgentCursor, arg.AgentID, arg.RoomID, arg.Seq)
+	return err
+}
+
+const countAgentBacklog = `-- name: CountAgentBacklog :one
+SELECT COUNT(*) FROM messages
+WHERE room_id = ?1 AND seq > ?2
+  AND NOT (author_kind = 'agent' AND author_id = ?3)
+`
+
+type CountAgentBacklogParams struct {
+	RoomID   string
+	AfterSeq int64
+	AgentID  string
+}
+
+func (q *Queries) CountAgentBacklog(ctx context.Context, arg CountAgentBacklogParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAgentBacklog, arg.RoomID, arg.AfterSeq, arg.AgentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAgent = `-- name: CreateAgent :exec
 INSERT INTO agents (id, owner_id, name, description, created_at) VALUES (?, ?, ?, ?, ?)
 `
@@ -111,6 +146,22 @@ func (q *Queries) GetAgentByName(ctx context.Context, arg GetAgentByNameParams) 
 	return i, err
 }
 
+const getAgentCursor = `-- name: GetAgentCursor :one
+SELECT seq FROM agent_cursors WHERE agent_id = ? AND room_id = ?
+`
+
+type GetAgentCursorParams struct {
+	AgentID string
+	RoomID  string
+}
+
+func (q *Queries) GetAgentCursor(ctx context.Context, arg GetAgentCursorParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getAgentCursor, arg.AgentID, arg.RoomID)
+	var seq int64
+	err := row.Scan(&seq)
+	return seq, err
+}
+
 const getAgentWithOwner = `-- name: GetAgentWithOwner :one
 SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, u.username AS owner_username, u.display_name AS owner_display_name
 FROM agents a JOIN users u ON u.id = a.owner_id
@@ -139,6 +190,22 @@ func (q *Queries) GetAgentWithOwner(ctx context.Context, id string) (GetAgentWit
 	return i, err
 }
 
+const getMessageRoomSeq = `-- name: GetMessageRoomSeq :one
+SELECT room_id, seq FROM messages WHERE id = ?
+`
+
+type GetMessageRoomSeqRow struct {
+	RoomID string
+	Seq    int64
+}
+
+func (q *Queries) GetMessageRoomSeq(ctx context.Context, id string) (GetMessageRoomSeqRow, error) {
+	row := q.db.QueryRowContext(ctx, getMessageRoomSeq, id)
+	var i GetMessageRoomSeqRow
+	err := row.Scan(&i.RoomID, &i.Seq)
+	return i, err
+}
+
 const insertAgentIfMissing = `-- name: InsertAgentIfMissing :exec
 INSERT INTO agents (id, owner_id, name, description, created_at) VALUES (?, ?, ?, '', ?)
 ON CONFLICT (owner_id, name) DO NOTHING
@@ -159,6 +226,110 @@ func (q *Queries) InsertAgentIfMissing(ctx context.Context, arg InsertAgentIfMis
 		arg.CreatedAt,
 	)
 	return err
+}
+
+const listAgentBacklog = `-- name: ListAgentBacklog :many
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views
+WHERE room_id = ?1 AND seq > ?2
+  AND NOT (author_kind = 'agent' AND author_id = ?3)
+ORDER BY seq DESC
+LIMIT ?4
+`
+
+type ListAgentBacklogParams struct {
+	RoomID   string
+	AfterSeq int64
+	AgentID  string
+	Limit    int64
+}
+
+func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogParams) ([]MessageView, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentBacklog,
+		arg.RoomID,
+		arg.AfterSeq,
+		arg.AgentID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MessageView
+	for rows.Next() {
+		var i MessageView
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Seq,
+			&i.AuthorKind,
+			&i.AuthorID,
+			&i.AuthorUserID,
+			&i.SenderID,
+			&i.SenderAltID,
+			&i.SenderName,
+			&i.Kind,
+			&i.Text,
+			&i.ReplyTo,
+			&i.RecipientsJson,
+			&i.ExternalID,
+			&i.CreatedAt,
+			&i.AuthorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAgentRoomStates = `-- name: ListAgentRoomStates :many
+SELECT r.id, r.name, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor
+FROM room_members m
+JOIN rooms r ON r.id = m.room_id
+LEFT JOIN agent_cursors c ON c.agent_id = m.member_id AND c.room_id = m.room_id
+WHERE m.kind = 'agent' AND m.member_id = ?
+ORDER BY r.name, r.id
+`
+
+type ListAgentRoomStatesRow struct {
+	ID           string
+	Name         string
+	AgentsPaused bool
+	Cursor       int64
+}
+
+func (q *Queries) ListAgentRoomStates(ctx context.Context, memberID string) ([]ListAgentRoomStatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentRoomStates, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAgentRoomStatesRow
+	for rows.Next() {
+		var i ListAgentRoomStatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.AgentsPaused,
+			&i.Cursor,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAgentsForUser = `-- name: ListAgentsForUser :many

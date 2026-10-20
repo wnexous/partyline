@@ -99,6 +99,36 @@ describe("composer (UI-07)", () => {
     await waitFor(() => expect(posts(calls)).toHaveLength(1));
   });
 
+  it("counts Unicode characters like the server, not UTF-16 units", async () => {
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderComposer();
+    const box = screen.getByRole("textbox", { name: "Message deploys" });
+    await user.click(box);
+    // Each emoji is one character for the server (rune count) but two UTF-16 units.
+    await user.paste("😀".repeat(MaxTextLength));
+    expect(screen.getByTestId("composer-counter")).toHaveTextContent("16,000 / 16,000");
+    expect(box).not.toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    const sent = posts(calls)[0]?.body as { text: string } | undefined;
+    expect([...(sent?.text ?? "")]).toHaveLength(MaxTextLength);
+  });
+
+  it("rejects one Unicode character over MaxTextLength", async () => {
+    const { calls } = mockApi({});
+    const user = userEvent.setup();
+    renderComposer();
+    const box = screen.getByRole("textbox", { name: "Message deploys" });
+    await user.click(box);
+    await user.paste("😀".repeat(MaxTextLength + 1));
+    expect(screen.getByTestId("composer-counter")).toHaveTextContent("16,001 / 16,000");
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    await user.keyboard("{Enter}");
+    expect(posts(calls)).toHaveLength(0);
+  });
+
   it("shows a read-only notice instead of the composer for view-only users", () => {
     mockApi({});
     renderComposer("view");

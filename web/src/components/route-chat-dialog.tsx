@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAutoFocus } from "@/hooks/use-auto-focus";
 import { useAgents, useRouteChat } from "@/lib/api/queries";
 import { type Agent, type Chat, LevelManage, LevelUse } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
@@ -42,6 +43,7 @@ export function RouteChatDialog({ chat, onClose }: { chat: Chat | null; onClose:
 
 function AgentChoice({ chat, onClose }: { chat: Chat; onClose: () => void }) {
   const t = useT();
+  const autoFocus = useAutoFocus();
   const navigate = useNavigate();
   const agents = useAgents();
   const presence = useLiveStore((s) => s.presence);
@@ -79,7 +81,7 @@ function AgentChoice({ chat, onClose }: { chat: Chat; onClose: () => void }) {
           placeholder={t("route.filter")}
           aria-label={t("route.filter")}
           className="pl-9"
-          autoFocus
+          autoFocus={autoFocus}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto py-2">

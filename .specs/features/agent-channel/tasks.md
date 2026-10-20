@@ -78,9 +78,9 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: AGT-01, AGT-03, AGT-04, AGT-07, AGT-08, AGT-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Second connection closes the first with reason `replaced`
-- [ ] 3 offline messages delivered in seq order after connect; 60 pending → notice "10 older messages skipped…" then last 50
-- [ ] Ack advances cursor; presence online then offline after close
+- [x] Second connection closes the first with reason `replaced`
+- [x] 3 offline messages delivered in seq order after connect; 60 pending → notice "10 older messages skipped…" then last 50
+- [x] Ack advances cursor; presence online then offline after close
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(agents): add agent websocket gateway with backlog and acks`
@@ -94,8 +94,8 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: DLV-02, DLV-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Owner's message → owner agent frame `trusted:true`; other user's agent gets `trusted:false`
-- [ ] Paused room → no push; author agent never receives own message
+- [x] Owner's message → owner agent frame `trusted:true`; other user's agent gets `trusted:false`
+- [x] Paused room → no push; author agent never receives own message
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(delivery): push room messages to online agents`
@@ -109,9 +109,9 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: TOOL-02, TOOL-03, TOOL-04, TOOL-05, TOOL-07, TOOL-08, TOOL-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Non-member room → 403 `not a member of room <room>`
-- [ ] Reply to chat-authored message stores `reply_to` and recipients = that chat member
-- [ ] 31st post within a minute → 429; history limit 101 → clamped to 100
+- [x] Non-member room → 403 `not a member of room <room>`
+- [x] Reply to chat-authored message stores `reply_to` and recipients = that chat member
+- [x] 31st post within a minute → 429; history limit 101 → clamped to 100
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): add agent rooms, history, post and reply endpoints`
@@ -127,9 +127,9 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: MCP-01, MCP-02, MCP-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Golden: discover → -32601; initialize 2025-11-25 → same version, capabilities exactly `{"experimental":{"claude/channel":{}},"tools":{}}`
-- [ ] Client version `2026-07-28` → answered `2025-11-25`; no `claude/channel/permission` key anywhere
-- [ ] Notification before initialized is emitted after it
+- [x] Golden: discover → -32601; initialize 2025-11-25 → same version, capabilities exactly `{"experimental":{"claude/channel":{}},"tools":{}}`
+- [x] Client version `2026-07-28` → answered `2025-11-25`; no `claude/channel/permission` key anywhere
+- [x] Notification before initialized is emitted after it
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(channel): add minimal mcp stdio server`
@@ -143,8 +143,8 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: AGT-05, AGT-06, MCP-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Exact meta map asserted for chat, agent, user and system messages; `reply_to` only when set
-- [ ] Every key matches `^[A-Za-z0-9_]+$`; instructions mention data-not-instructions, `trusted` and all six tools
+- [x] Exact meta map asserted for chat, agent, user and system messages; `reply_to` only when set
+- [x] Every key matches `^[A-Za-z0-9_]+$`; instructions mention data-not-instructions, `trusted` and all six tools
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(channel): format room messages as channel notifications`
@@ -158,9 +158,9 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: AGT-02, AGT-03, AGT-07, AGT-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Against testkit: message pushed → notification line on stdout → cursor advanced
-- [ ] Duplicate frame → single notification, two acks
-- [ ] Server restart → reconnects; invalid token → stderr line once, tools report `not connected (invalid token)`
+- [x] Against testkit: message pushed → notification line on stdout → cursor advanced
+- [x] Duplicate frame → single notification, two acks
+- [x] Server restart → reconnects; invalid token → stderr line once, tools report `not connected (invalid token)`
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(channel): add resilient websocket link with acks and dedupe`
@@ -174,9 +174,9 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: TOOL-01, TOOL-02, TOOL-03, TOOL-04, TOOL-05, TOOL-06, TOOL-07, TOOL-08, TOOL-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `tools/list` returns exactly the six tools with JSON schemas
-- [ ] Each tool exercised against testkit; errors map to `isError:true` texts from spec
-- [ ] Downloaded file mode 0600 under `$TMPDIR/partyline/<agent>/`
+- [x] `tools/list` returns exactly the six tools with JSON schemas
+- [x] Each tool exercised against testkit; errors map to `isError:true` texts from spec
+- [x] Downloaded file mode 0600 under `$TMPDIR/partyline/<agent>/`
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(channel): add room tools for claude code`
@@ -190,8 +190,8 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: AGT-01, MCP-01, TOOL-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] E2E passes; agent name defaults to slug of working directory basename
-- [ ] Docs explain `--dangerously-load-development-channels server:partyline`, the startup confirmation and the trust model
+- [x] E2E passes; agent name defaults to slug of working directory basename
+- [x] Docs explain `--dangerously-load-development-channels server:partyline`, the startup confirmation and the trust model
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): add channel command with end-to-end test`

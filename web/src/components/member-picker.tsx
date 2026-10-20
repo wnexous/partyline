@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAutoFocus } from "@/hooks/use-auto-focus";
 import { useAddMember, useAgents, useChats } from "@/lib/api/queries";
 import {
   type Agent,
@@ -67,6 +68,7 @@ export function MemberPicker({
 
 function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[] }) {
   const { t } = useI18n();
+  const autoFocus = useAutoFocus();
   const agents = useAgents();
   const chats = useChats();
   const add = useAddMember(roomId);
@@ -115,7 +117,7 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
           placeholder={t("picker.filterPlaceholder")}
           aria-label={t("picker.filter")}
           className="pl-9"
-          autoFocus
+          autoFocus={autoFocus}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto py-2">

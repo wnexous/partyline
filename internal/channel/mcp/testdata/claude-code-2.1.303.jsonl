@@ -1,0 +1,8 @@
+{"dir":"in","msg":{"jsonrpc":"2.0","id":"server-discover-probe-1","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"claude-code","title":"Claude Code","version":"2.1.303"},"io.modelcontextprotocol/clientCapabilities":{"roots":{"listChanged":true},"elicitation":{"form":{},"url":{}}}}}}}
+{"dir":"out","msg":{"jsonrpc":"2.0","id":"server-discover-probe-1","error":{"code":-32601,"message":"Method not found"}}}
+{"dir":"in","msg":{"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{"roots":{"listChanged":true},"elicitation":{"form":{},"url":{}}},"clientInfo":{"name":"claude-code","title":"Claude Code","version":"2.1.303"}},"jsonrpc":"2.0","id":0}}
+{"dir":"out","msg":{"result":{"protocolVersion":"2025-11-25","capabilities":{"experimental":{"claude/channel":{}},"tools":{}},"serverInfo":{"name":"partyline","version":"<any>"},"instructions":"<any>"},"jsonrpc":"2.0","id":0}}
+{"dir":"in","msg":{"jsonrpc":"2.0","method":"notifications/initialized"}}
+{"dir":"in","msg":{"method":"tools/list","jsonrpc":"2.0","id":1}}
+{"dir":"in","msg":{"method":"tools/call","params":{"name":"reply","arguments":{"message_id":"0190c0de-0000-7000-8000-000000000001","text":"pong"},"_meta":{"claudecode/toolUseId":"toolu_01SyntheticFixture000001","progressToken":2}},"jsonrpc":"2.0","id":2}}
+{"dir":"out","msg":{"method":"notifications/claude/channel","params":{"content":"<any>","meta":{"chat_id":"<any>"}},"jsonrpc":"2.0"}}

@@ -13,6 +13,7 @@ import {
   type RoomMember,
 } from "@/lib/api/types.gen";
 import { type Translate, useI18n } from "@/lib/i18n";
+import { textLength } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
 
 /*
@@ -77,7 +78,7 @@ function ComposerForm({
   const counterId = useId();
 
   const chats = useMemo(() => (members ?? []).filter((m) => m.kind === "chat"), [members]);
-  const length = text.length;
+  const length = textLength(text);
   const tooLong = length > MaxTextLength;
   const trimmed = text.trim();
   const canSend = !tooLong && (trimmed.length > 0 || files.length > 0) && !post.isPending;

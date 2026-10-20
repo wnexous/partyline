@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/config"
+	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/validation"
@@ -24,10 +25,14 @@ type Deps struct {
 	Users  *users.Service
 	Rooms  *rooms.Service
 	Agents *agents.Registry
-	Blobs  *attachments.Store
-	Audit  *audit.Log
+	// Connectors manages connectors and their chats.
+	Connectors *connectors.Service
+	Blobs      *attachments.Store
+	Audit      *audit.Log
 	// Live serves the live WebSocket at GET /api/v1/live.
 	Live http.Handler
+	// AgentWS serves the agent WebSocket at GET /api/v1/agent/ws.
+	AgentWS http.Handler
 	// WebUI serves the web app for every other GET path (SPA fallback).
 	WebUI  http.Handler
 	Logger *slog.Logger
@@ -64,8 +69,13 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.adminRoutes(mux)
 	s.roomRoutes(mux)
 	s.agentRoutes(mux)
+	s.agentAPIRoutes(mux)
+	s.connectorRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
+	}
+	if s.AgentWS != nil {
+		mux.Handle("GET /api/v1/agent/ws", s.AgentWS)
 	}
 	// Unknown API paths get the JSON envelope, never the web app.
 	s.handle(mux, "/api/", func(http.ResponseWriter, *http.Request) error {
@@ -149,6 +159,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "username already taken")
 	case errors.Is(err, users.ErrSelfAdminChange), errors.Is(err, users.ErrLastAdmin):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, err.Error())
+	case errors.Is(err, agents.ErrNotRegistered):
+		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent not registered: connect the channel first")
 	case errors.Is(err, access.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
 	case errors.Is(err, rooms.ErrAlreadyMember):

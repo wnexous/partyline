@@ -150,3 +150,31 @@ Binding for every later web task.
 - Query-cache-driven UI updates after a live event render on the next tick: wrap the assertion in
   `waitFor` (zustand-driven updates are synchronous inside `act`).
 - Visual checks run against `/tmp/claude-1001/pl-visual/mock.ts` + `shot.mjs` (outside the repo).
+
+# Additions from web-app Phase 5 (validation fixes, iteration 1)
+
+## Behaviour
+- Message length counts Unicode code points like the server (`textLength()` in `lib/schemas.ts`,
+  Go's rune count). Never use `text.length` against `MaxTextLength`.
+- `detectLocale` walks `navigator.languages` in order and takes the first supported one (`pt*` →
+  pt-BR, `en*` → en); English when none matches.
+- Focus on mount only with a fine pointer: `useAutoFocus()` (`hooks/use-auto-focus.ts`) gates
+  `autoFocus` (TextField applies it, so pass `autoFocus` freely); `DialogContent` focuses the dialog
+  itself instead of its first field when `(pointer: coarse)` matches. New raw `<Input autoFocus>`
+  must use the hook.
+- Live regions stay mounted and change content (`LiveBanner` renders an empty `role="status"` while
+  connected). Do not mount a live region together with its text.
+- Inline attachment images sit in a fixed 320 px, 4:3 box (`object-contain`, `width`/`height`
+  attributes). DTO gap: `Attachment` has no pixel width/height; with them the box could follow the
+  image's own ratio.
+
+## Tests
+- `src/test/media.ts`: `stubMatchMedia(fn)` and `stubPointer("coarse" | "fine")`; theme tests use a
+  controllable `prefers-color-scheme` stub with change listeners (`app-providers.test.tsx`).
+- `find*` / `waitFor` default to 5 s (`configure({ asyncUtilTimeout })` in `src/test/setup.ts`) and
+  tests to 15 s (`vite.config.ts`): the host is often loaded. Do not add per-call 1 s timeouts.
+- E2E UI-24: the smoke suite asserts `document.documentElement.scrollWidth <= innerWidth` on the
+  main pages in both projects; the room page scrolls inside its timeline (the inset clips), so it
+  also checks a long unbroken message line ends inside the viewport. Add new top-level pages there.
+- Under heavy load the e2e login step can exceed the 10 s `expect` timeout (password hashing on the
+  server); a re-run passes. Not a product defect.

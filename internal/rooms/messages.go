@@ -315,6 +315,18 @@ func (s *Service) GetMessage(ctx context.Context, p authn.Principal, roomID, mes
 	return m, err
 }
 
+// MessageRef returns the room and sequence number of a message without authorizing;
+// sql.ErrNoRows when it does not exist.
+func (s *Service) MessageRef(ctx context.Context, messageID string) (db.GetMessageRoomSeqRow, error) {
+	return s.store.R().GetMessageRoomSeq(ctx, messageID)
+}
+
+// Details loads the attachments and outbox entries of stored messages. It does not
+// authorize: callers are trusted server components that selected the messages themselves.
+func (s *Service) Details(ctx context.Context, views []db.MessageView) ([]Message, error) {
+	return s.withDetails(ctx, views)
+}
+
 func (s *Service) withDetails(ctx context.Context, views []db.MessageView) ([]Message, error) {
 	out := make([]Message, len(views))
 	if len(views) == 0 {

@@ -38,12 +38,18 @@ func (s *server) roomRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/attachments/{id}", authed(s.downloadAttachment))
 }
 
-func toMember(m rooms.Member) dto.RoomMember {
-	return dto.RoomMember{
+// toMember renders a member; agent members carry their online state.
+func (s *server) toMember(m rooms.Member) dto.RoomMember {
+	out := dto.RoomMember{
 		ID: m.ID, Kind: dto.MemberKind(m.Kind), MemberID: m.MemberID, Name: m.Name, Outbound: m.Outbound,
 		Owner: m.AgentOwner, ConnectorKind: m.ConnectorKind, ChatKind: dto.ChatKind(m.ChatKind),
 		CreatedAt: msTime(m.CreatedAt),
 	}
+	if out.Kind == dto.MemberKindAgent && s.Agents != nil {
+		online := s.Agents.Online(m.MemberID)
+		out.Online = &online
+	}
+	return out
 }
 
 func toSharing(v access.Visibility) dto.Sharing {
@@ -154,7 +160,7 @@ func (s *server) listMembers(w http.ResponseWriter, r *http.Request, p authn.Pri
 	}
 	out := dto.List[dto.RoomMember]{Items: make([]dto.RoomMember, len(list))}
 	for i, m := range list {
-		out.Items[i] = toMember(m)
+		out.Items[i] = s.toMember(m)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
@@ -170,7 +176,7 @@ func (s *server) addMember(w http.ResponseWriter, r *http.Request, p authn.Princ
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, toMember(m))
+	httpx.WriteJSON(w, http.StatusCreated, s.toMember(m))
 	return nil
 }
 
@@ -183,7 +189,7 @@ func (s *server) updateMember(w http.ResponseWriter, r *http.Request, p authn.Pr
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, toMember(m))
+	httpx.WriteJSON(w, http.StatusOK, s.toMember(m))
 	return nil
 }
 
@@ -218,7 +224,11 @@ var errUploadTooLarge = httpx.NewError(http.StatusRequestEntityTooLarge, dto.Err
 // postMessage accepts a JSON PostMessageRequest, or multipart with a "message" part and
 // "file" parts (MSG-02, SEC-03). Posting needs the post level (ACL-04).
 func (s *server) postMessage(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	roomID := r.PathValue("id")
+	return s.postTo(w, r, p, r.PathValue("id"))
+}
+
+// postTo stores a JSON or multipart message from p in the room and answers 201 with it.
+func (s *server) postTo(w http.ResponseWriter, r *http.Request, p authn.Principal, roomID string) error {
 	if err := s.Rooms.Require(r.Context(), p, roomID, dto.LevelPost); err != nil {
 		return err
 	}

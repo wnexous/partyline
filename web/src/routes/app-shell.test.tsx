@@ -106,28 +106,37 @@ describe("live banner (UI-06)", () => {
   afterEach(() => vi.useRealTimers());
 
   it("appears only after the socket has not been open for more than 2 s", () => {
+    const reconnecting = "Connection lost. Reconnecting…";
     act(() => useLiveStore.getState().setStatus("open"));
     render(<LiveBanner />);
+    // The live region is mounted while connected (empty), so screen readers announce the
+    // reconnecting text when it appears inside it.
+    const region = screen.getByRole("status");
+    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(region).toBeEmptyDOMElement();
+
     act(() => useLiveStore.getState().setStatus("closed"));
     act(() => vi.advanceTimersByTime(1_999));
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
     act(() => vi.advanceTimersByTime(1));
-    expect(screen.getByRole("status")).toHaveTextContent("Connection lost. Reconnecting…");
+    expect(screen.getByRole("status")).toBe(region);
+    expect(region).toHaveTextContent(reconnecting);
 
     // Retrying (closed -> connecting -> closed) keeps the banner up: the outage continues.
     act(() => useLiveStore.getState().setStatus("connecting"));
-    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(region).toHaveTextContent(reconnecting);
     act(() => useLiveStore.getState().setStatus("closed"));
-    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(region).toHaveTextContent(reconnecting);
 
     act(() => useLiveStore.getState().setStatus("open"));
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("status")).toBe(region);
+    expect(region).toBeEmptyDOMElement();
 
     // A short blip under 2 s never shows the banner.
     act(() => useLiveStore.getState().setStatus("connecting"));
     act(() => vi.advanceTimersByTime(1_500));
     act(() => useLiveStore.getState().setStatus("open"));
     act(() => vi.advanceTimersByTime(1_000));
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(region).toBeEmptyDOMElement();
   });
 });

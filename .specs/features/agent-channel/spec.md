@@ -124,28 +124,28 @@ A Claude Code session can only receive pushed events through a channel: an MCP s
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| MCP-01 | P1: Connect | Tasks | Pending |
-| MCP-02 | P1: Connect | Tasks | Pending |
-| MCP-03 | P1: Connect | Tasks | Pending |
+| MCP-01 | P1: Connect | Tasks | Implementing |
+| MCP-02 | P1: Connect | Tasks | Implementing |
+| MCP-03 | P1: Connect | Tasks | Implementing |
 | AGT-01 | P1: Connect | Tasks | Implementing |
-| AGT-02 | P1: Connect | Tasks | Pending |
-| AGT-03 | P1: Connect | Tasks | Pending |
-| AGT-04 | P1: Connect | Tasks | Pending |
-| AGT-05 | P1: Receive | Tasks | Pending |
-| AGT-06 | P1: Receive | Tasks | Pending |
-| AGT-07 | P1: Receive | Tasks | Pending |
-| AGT-08 | P1: Receive | Tasks | Pending |
-| AGT-09 | P1: Receive | Tasks | Pending |
-| AGT-10 | P1: Receive | Tasks | Pending |
-| TOOL-01 | P1: Tools | Tasks | Pending |
-| TOOL-02 | P1: Tools | Tasks | Pending |
-| TOOL-03 | P1: Tools | Tasks | Pending |
-| TOOL-04 | P1: Tools | Tasks | Pending |
-| TOOL-05 | P1: Tools | Tasks | Pending |
-| TOOL-06 | P1: Tools | Tasks | Pending |
-| TOOL-07 | P1: Tools | Tasks | Pending |
-| TOOL-08 | P1: Tools | Tasks | Pending |
-| TOOL-09 | P2: Agent directory | Tasks | Pending |
+| AGT-02 | P1: Connect | Tasks | Implementing |
+| AGT-03 | P1: Connect | Tasks | Implementing |
+| AGT-04 | P1: Connect | Tasks | Implementing |
+| AGT-05 | P1: Receive | Tasks | Implementing |
+| AGT-06 | P1: Receive | Tasks | Implementing |
+| AGT-07 | P1: Receive | Tasks | Implementing |
+| AGT-08 | P1: Receive | Tasks | Implementing |
+| AGT-09 | P1: Receive | Tasks | Implementing |
+| AGT-10 | P1: Receive | Tasks | Implementing |
+| TOOL-01 | P1: Tools | Tasks | Implementing |
+| TOOL-02 | P1: Tools | Tasks | Implementing |
+| TOOL-03 | P1: Tools | Tasks | Implementing |
+| TOOL-04 | P1: Tools | Tasks | Implementing |
+| TOOL-05 | P1: Tools | Tasks | Implementing |
+| TOOL-06 | P1: Tools | Tasks | Implementing |
+| TOOL-07 | P1: Tools | Tasks | Implementing |
+| TOOL-08 | P1: Tools | Tasks | Implementing |
+| TOOL-09 | P2: Agent directory | Tasks | Implementing |
 
 **Coverage:** 22 total, mapped in tasks.md
 
@@ -153,5 +153,5 @@ A Claude Code session can only receive pushed events through a channel: an MCP s
 
 ## Success Criteria
 
-- [ ] A real Claude Code 2.1.303 session receives a room message and replies through `reply` (manual UAT, recorded in validation.md).
+- [x] A real Claude Code 2.1.303 session receives a room message and replies through `reply` (manual UAT, recorded in uat.md).
 - [ ] Offline/online cycle loses no message in the automated test.

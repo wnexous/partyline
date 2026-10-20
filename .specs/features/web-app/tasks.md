@@ -344,7 +344,135 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-01, UI-04, UI-14
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Suite passes locally and in CI at 1280 px and 360 px
+- [x] Suite passes locally and in CI at 1280 px and 360 px
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(web): add playwright smoke suite`
+
+---
+
+## Phase 5: Validation fixes (iteration 1)
+
+From `validation.md` (iteration 1): gaps M17, M18, UI-24, M19, the precision notes and the Verifier's
+UI notes. Each task is one commit; tests come from the spec ACs.
+
+```
+T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → T30 → T31 → T32
+```
+
+#### T20: System colour scheme test (UI-23, M17)
+**Where**: `web/src/components/app-providers.test.tsx`
+**Depends on**: T19
+**Requirement**: UI-23
+**Done when**:
+- [x] With preference `system`, `<html>` has `dark` iff `prefers-color-scheme: dark` matches, and a live media-query change re-applies it
+**Tests**: unit
+**Gate**: quick
+
+#### T21: Room page gates the composer by `my_level` (UI-07, M18)
+**Where**: `web/src/routes/_app/rooms/room.test.tsx`
+**Depends on**: T20
+**Requirement**: UI-07
+**Done when**:
+- [x] `my_level: "view"` → read-only notice and no message textbox; `post` → message textbox
+**Tests**: unit
+**Gate**: quick
+
+#### T22: No horizontal scroll at 360 px (UI-24)
+**Where**: `web/e2e/smoke.spec.ts`
+**Depends on**: T21
+**Requirement**: UI-24
+**Done when**:
+- [x] `scrollWidth <= innerWidth` on dashboard, rooms, room, agents, connectors and settings in `mobile-360`
+**Tests**: e2e
+**Gate**: full
+
+#### T23: Backoff resets after a successful open (M19)
+**Where**: `web/src/lib/live/socket.test.ts`
+**Depends on**: T22
+**Requirement**: UI-06
+**Done when**:
+- [x] After failed retries and a successful open, the next drop retries after 1 s
+**Tests**: unit
+**Gate**: quick
+
+#### T24: Agents show the last-seen time (UI-15)
+**Where**: `web/src/routes/_app/agents.test.tsx`
+**Depends on**: T23
+**Requirement**: UI-15
+**Done when**:
+- [x] The rendered last-seen value matches the agent's `last_seen_at` under a fixed clock
+**Tests**: unit
+**Gate**: quick
+
+#### T25: Token secret copy button (UI-19)
+**Where**: `web/src/routes/_app/tokens.test.tsx`
+**Depends on**: T24
+**Requirement**: UI-19
+**Done when**:
+- [x] Clicking Copy in the token secret dialog puts the secret on the clipboard
+**Tests**: unit
+**Gate**: quick
+
+#### T26: Reword UI-14 (snippet holds URL and token)
+**Where**: `.specs/features/web-app/spec.md`
+**Depends on**: T25
+**Requirement**: UI-14
+**Done when**:
+- [x] AC reads "…ready-to-copy `.mcp.json` snippet containing the instance URL and the token, and the launch command"; `agents.test.tsx` and the e2e assert exactly that
+**Tests**: none (existing tests match)
+**Gate**: quick
+
+#### T27: Composer counts Unicode code points like the server
+**Where**: `web/src/components/composer.tsx`
+**Depends on**: T26
+**Requirement**: UI-07
+**Done when**:
+- [x] A message of max-length emoji is accepted; one more code point is rejected
+**Tests**: unit
+**Gate**: quick
+
+#### T28: Locale detection follows browser preference order
+**Where**: `web/src/lib/i18n/`
+**Depends on**: T27
+**Requirement**: UI-25
+**Done when**:
+- [x] `["en-US","pt-BR"]` → `en`; `["fr","pt-BR"]` → `pt-BR`; `["fr"]` → `en`
+**Tests**: unit
+**Gate**: quick
+
+#### T29: Inline attachment images reserve space
+**Where**: `web/src/components/message-item.tsx`
+**Depends on**: T28
+**Requirement**: UI-05
+**Done when**:
+- [x] Inline images carry `width`/`height` when the metadata has them, otherwise sit in a fixed aspect box
+**Tests**: unit
+**Gate**: quick
+
+#### T30: Reconnecting live region is always mounted
+**Where**: `web/src/components/live-status.tsx`
+**Depends on**: T29
+**Requirement**: UI-06
+**Done when**:
+- [x] The `status` region exists while connected (empty) and gets the reconnecting text after 2 s
+**Tests**: unit
+**Gate**: quick
+
+#### T31: No autofocus on coarse pointers
+**Where**: `web/src/hooks/`, forms and dialogs using `autoFocus`
+**Depends on**: T30
+**Requirement**: UI-24
+**Done when**:
+- [x] With `(pointer: coarse)` matching, the first field is not focused on mount; on fine pointers it is
+**Tests**: unit
+**Gate**: quick
+
+#### T32: Load-robust waits in unit tests
+**Where**: `web/src/**/*.test.tsx`, vitest config
+**Depends on**: T31
+**Requirement**: none (test infrastructure)
+**Done when**:
+- [x] Async `find*`/`waitFor` tolerate a loaded host (longer default timeout), no assertion changed
+**Tests**: unit
+**Gate**: build

@@ -61,6 +61,12 @@ type upload struct {
 // postMultipart posts a message with files as multipart/form-data.
 func postMultipart(c *testkit.Client, roomID string, msg dto.PostMessageRequest, files ...upload) *testkit.Response {
 	c.T.Helper()
+	return postMultipartTo(c, "/api/v1/rooms/"+roomID+"/messages", msg, files...)
+}
+
+// postMultipartTo posts a message with files as multipart/form-data to path.
+func postMultipartTo(c *testkit.Client, path string, msg dto.PostMessageRequest, files ...upload) *testkit.Response {
+	c.T.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	part, err := mw.CreateFormField(dto.MultipartMessageField)
@@ -76,7 +82,7 @@ func postMultipart(c *testkit.Client, roomID string, msg dto.PostMessageRequest,
 		require.NoError(c.T, err)
 	}
 	require.NoError(c.T, mw.Close())
-	return c.DoRaw(http.MethodPost, "/api/v1/rooms/"+roomID+"/messages", mw.FormDataContentType(), &buf)
+	return c.DoRaw(http.MethodPost, path, mw.FormDataContentType(), &buf)
 }
 
 // roomSetup creates, as the owner, a room shared with the viewer (view) and the poster (post),
