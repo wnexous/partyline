@@ -11,6 +11,7 @@ import {
   useFormField,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { useAutoFocus } from "@/hooks/use-auto-focus";
 import { errorText } from "@/lib/forms";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -77,6 +78,8 @@ export function TextField<T extends FieldValues>({
   inputClassName?: string;
 }) {
   const t = useT();
+  // `autoFocus` asks for focus on desktop only: on phones it would open the keyboard (UI-24).
+  const focusOnMount = useAutoFocus() && autoFocus;
   return (
     <FormField
       control={control}
@@ -95,7 +98,7 @@ export function TextField<T extends FieldValues>({
                 {...field}
                 value={field.value ?? ""}
                 autoComplete={autoComplete}
-                autoFocus={autoFocus}
+                autoFocus={focusOnMount}
                 className={inputClassName}
               />
             ) : (
@@ -104,7 +107,7 @@ export function TextField<T extends FieldValues>({
                 value={field.value ?? ""}
                 type={type}
                 autoComplete={autoComplete}
-                autoFocus={autoFocus}
+                autoFocus={focusOnMount}
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}

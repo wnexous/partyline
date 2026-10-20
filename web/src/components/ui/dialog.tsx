@@ -4,6 +4,7 @@ import { XIcon } from "lucide-react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { Button } from "@/components/ui/button"
+import { isCoarsePointer } from "@/hooks/use-auto-focus"
 import { useT } from "@/lib/i18n"
 
 function Dialog({
@@ -50,11 +51,20 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
   const t = useT()
+  // Radix focuses the first field on open; on a coarse pointer that opens the on-screen keyboard
+  // over the dialog (UI-24), so focus the dialog itself there and let the user pick a field.
+  const handleOpenAutoFocus = (event: Event) => {
+    onOpenAutoFocus?.(event)
+    if (event.defaultPrevented || !isCoarsePointer()) return
+    event.preventDefault()
+    if (event.target instanceof HTMLElement) event.target.focus()
+  }
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -64,6 +74,7 @@ function DialogContent({
           "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overscroll-contain rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
           className
         )}
+        onOpenAutoFocus={handleOpenAutoFocus}
         {...props}
       >
         {children}

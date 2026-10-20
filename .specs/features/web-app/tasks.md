@@ -464,7 +464,7 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T30
 **Requirement**: UI-24
 **Done when**:
-- [ ] With `(pointer: coarse)` matching, the first field is not focused on mount; on fine pointers it is
+- [x] With `(pointer: coarse)` matching, the first field is not focused on mount; on fine pointers it is
 **Tests**: unit
 **Gate**: quick
 
