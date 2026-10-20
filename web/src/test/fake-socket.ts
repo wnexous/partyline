@@ -2,7 +2,7 @@
 export class FakeSocket {
   static instances: FakeSocket[] = [];
   onopen: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((e: CloseEvent) => void) | null = null;
   onmessage: ((e: MessageEvent) => void) | null = null;
   closed = false;
 
@@ -28,13 +28,13 @@ export class FakeSocket {
     } as MessageEvent);
   }
 
-  /** Server-side or network close. */
-  drop() {
-    this.onclose?.();
+  /** Server-side or network close; 1006 (abnormal closure) unless a close code is given. */
+  drop(code = 1006, reason = "") {
+    this.onclose?.({ code, reason, wasClean: code !== 1006 } as CloseEvent);
   }
 
   close() {
     this.closed = true;
-    this.onclose?.();
+    this.onclose?.({ code: 1000, reason: "", wasClean: true } as CloseEvent);
   }
 }

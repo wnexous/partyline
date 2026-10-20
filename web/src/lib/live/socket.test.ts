@@ -1,8 +1,9 @@
 import { InfiniteQueryObserver, QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setUnauthorizedHandler } from "@/lib/api/client";
 import { type MessagePages, queryKeys, roomMessagesQuery } from "@/lib/api/queries";
 import { FakeSocket } from "@/test/fake-socket";
-import { makeMessage } from "@/test/fixtures";
+import { makeMe, makeMessage, makeRoom } from "@/test/fixtures";
 import { startLive } from "./index";
 import { backoffDelay, createLiveSocket, liveUrl } from "./socket";
 import { useLiveStore } from "./store";
@@ -105,6 +106,51 @@ describe("live socket (UI-06)", () => {
     live.stop();
   });
 
+  it("treats close 1008 (session revoked) as logged out and does not reconnect", () => {
+    const statuses: string[] = [];
+    const onSessionEnded = vi.fn();
+    const live = createLiveSocket({
+      url: "ws://t",
+      createSocket: FakeSocket.create,
+      onEvent: () => {},
+      onStatus: (s) => statuses.push(s),
+      onSessionEnded,
+    });
+    live.start();
+    FakeSocket.latest().open();
+    FakeSocket.latest().drop(1008, "session revoked");
+    expect(onSessionEnded).toHaveBeenCalledTimes(1);
+    expect(statuses.at(-1)).toBe("closed");
+    vi.advanceTimersByTime(5 * 60_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+    live.stop();
+  });
+
+  it("reconnects with the normal backoff after close 1013 (session check failed)", () => {
+    const onSessionEnded = vi.fn();
+    const live = createLiveSocket({
+      url: "ws://t",
+      createSocket: FakeSocket.create,
+      onEvent: () => {},
+      onSessionEnded,
+    });
+    live.start();
+    FakeSocket.latest().open();
+    FakeSocket.latest().drop(1013, "session check failed");
+    vi.advanceTimersByTime(999);
+    expect(FakeSocket.instances).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(FakeSocket.instances).toHaveLength(2);
+    // A second failure doubles the delay, as for any other drop.
+    FakeSocket.latest().drop(1013, "session check failed");
+    vi.advanceTimersByTime(1999);
+    expect(FakeSocket.instances).toHaveLength(2);
+    vi.advanceTimersByTime(1);
+    expect(FakeSocket.instances).toHaveLength(3);
+    expect(onSessionEnded).not.toHaveBeenCalled();
+    live.stop();
+  });
+
   it("does not reconnect after stop", () => {
     const live = createLiveSocket({
       url: "ws://t",
@@ -149,6 +195,30 @@ describe("startLive", () => {
     expect(seqs).toEqual([1, 2]);
     stop();
     expect(useLiveStore.getState().status).toBe("closed");
+  });
+
+  it("on close 1008 clears the cache and runs the 401 handler with the current location", () => {
+    vi.useFakeTimers();
+    const qc = new QueryClient();
+    qc.setQueryData(queryKeys.rooms, [makeRoom()]);
+    qc.setQueryData(queryKeys.me, makeMe());
+    const onUnauthorized = vi.fn();
+    const unregister = setUnauthorizedHandler(onUnauthorized);
+    window.history.replaceState(null, "", "/agents?tab=mine");
+
+    const stop = startLive(qc, { url: "ws://t", createSocket: FakeSocket.create });
+    FakeSocket.latest().open();
+    FakeSocket.latest().drop(1008, "session revoked");
+
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(onUnauthorized).toHaveBeenCalledWith("/agents?tab=mine");
+    expect(qc.getQueryCache().getAll()).toEqual([]);
+    vi.advanceTimersByTime(5 * 60_000);
+    expect(FakeSocket.instances).toHaveLength(1);
+    stop();
+    unregister();
+    window.history.replaceState(null, "", "/");
+    vi.useRealTimers();
   });
 
   it("on reconnect fetches the open room after its last seen sequence and merges it", async () => {

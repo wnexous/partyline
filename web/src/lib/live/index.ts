@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+import { notifyUnauthorized } from "@/lib/api/client";
 import { catchUp, handleLiveEvent } from "./handlers";
 import { createLiveSocket, type LiveSocketOptions } from "./socket";
 import { useLiveStore } from "./store";
@@ -18,6 +19,12 @@ export function startLive(
     onStatus: (status) => store.setStatus(status),
     onReconnect: () => {
       void catchUp(qc);
+    },
+    // Session revoked (close 1008): logged out. Nothing cached belongs to a session any more;
+    // the 401 handler sends the user to login and back to this route afterwards (UI-02).
+    onSessionEnded: () => {
+      qc.clear();
+      notifyUnauthorized();
     },
   });
   socket.start();

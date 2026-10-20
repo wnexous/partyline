@@ -42,6 +42,11 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): () 
   };
 }
 
+/** Runs the 401 handler for the current location: the session ended (UI-02). */
+export function notifyUnauthorized(): void {
+  onUnauthorized?.(currentLocation());
+}
+
 export function currentLocation(): string {
   const { pathname, search, hash } = window.location;
   return `${pathname}${search}${hash}`;
@@ -133,7 +138,7 @@ export async function api<T>(
 
   if (!res.ok) {
     const error = await toApiError(res);
-    if (res.status === 401 && !options.skipAuthRedirect) onUnauthorized?.(currentLocation());
+    if (res.status === 401 && !options.skipAuthRedirect) notifyUnauthorized();
     throw error;
   }
 

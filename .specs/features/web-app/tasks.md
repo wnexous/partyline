@@ -514,8 +514,8 @@ T33 → T34 → T35 → T36 → T37 → T38
 **Depends on**: T34
 **Requirement**: UI-02, UI-06
 **Done when**:
-- [ ] Close 1008 (`session revoked`): no reconnect, the query cache is cleared and the 401 handler runs with the current location (→ `/login?redirect=<current>`)
-- [ ] Close 1013 (`session check failed`) and other codes: reconnect with the normal backoff
+- [x] Close 1008 (`session revoked`): no reconnect, the query cache is cleared and the 401 handler runs with the current location (→ `/login?redirect=<current>`)
+- [x] Close 1013 (`session check failed`) and other codes: reconnect with the normal backoff
 **Tests**: unit
 **Gate**: quick
 

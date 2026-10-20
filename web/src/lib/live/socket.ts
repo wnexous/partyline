@@ -3,8 +3,13 @@ import type { SocketStatus } from "./store";
 
 /*
  * The live WebSocket (GET /api/v1/live, cookie auth). Reconnects forever with exponential
- * backoff from 1 s to 30 s; the delay resets once a connection opens.
+ * backoff from 1 s to 30 s; the delay resets once a connection opens. The one exception is
+ * close code 1008 (`session revoked`): the session is over, so reconnecting would only fail.
+ * 1013 (`session check failed`, the server could not re-check the session) is a normal retry.
  */
+
+/** Close code the server sends when the socket's session or token was revoked. */
+export const CLOSE_SESSION_REVOKED = 1008;
 
 export const MIN_BACKOFF_MS = 1_000;
 export const MAX_BACKOFF_MS = 30_000;
@@ -23,6 +28,8 @@ export interface LiveSocketOptions {
   onStatus?: (status: SocketStatus) => void;
   /** Called when a connection opens after an earlier one was lost (not on the first open). */
   onReconnect?: () => void;
+  /** Called once when the server ends the session (close 1008); the socket stays closed. */
+  onSessionEnded?: () => void;
   createSocket?: (url: string) => WebSocket;
 }
 
@@ -75,11 +82,16 @@ export function createLiveSocket(options: LiveSocketOptions): LiveSocket {
       if (isLiveEvent(parsed)) options.onEvent(parsed);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event: CloseEvent) => {
       if (socket !== ws) return;
       socket = null;
       setStatus("closed");
       if (stopped) return;
+      if (event.code === CLOSE_SESSION_REVOKED) {
+        stopped = true;
+        options.onSessionEnded?.();
+        return;
+      }
       timer = setTimeout(connect, backoffDelay(attempt));
       attempt += 1;
     };
