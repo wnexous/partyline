@@ -175,8 +175,8 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | ONB-01 | P1: Install and setup | Tasks | Pending |
 | ONB-02 | P1: Install and setup | Tasks | Pending |
 | ONB-03 | P1: Install and setup | Tasks | Pending |
-| ONB-04 | P1: Install and setup | Tasks | Pending |
-| ONB-05 | P1: Install and setup | Tasks | Pending |
+| ONB-04 | P1: Install and setup | Tasks | Implementing |
+| ONB-05 | P1: Install and setup | Tasks | Implementing |
 | ONB-06 | P1: Install and setup | Tasks | Pending |
 | ONB-07 | P1: Install and setup | Tasks | Implementing |
 | DEV-01 | P1: Browser approval | Tasks | Pending |

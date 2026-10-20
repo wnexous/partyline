@@ -10,11 +10,13 @@ import (
 	"strings"
 
 	"github.com/wnexous/partyline/internal/channel"
+	"github.com/wnexous/partyline/internal/cliconfig"
 )
 
 // channelCmd runs `partyline channel`: the MCP stdio server Claude Code loads as a channel.
-// Flags win over PARTYLINE_URL, PARTYLINE_TOKEN and PARTYLINE_AGENT; the agent name defaults
-// to the working directory's name (the channel slugifies it like the server).
+// Flags win over PARTYLINE_URL, PARTYLINE_TOKEN and PARTYLINE_AGENT, which win over the config
+// file written by `partyline setup`; the agent name defaults to the working directory's name
+// (the channel slugifies it like the server).
 func channelCmd(ctx context.Context, args []string, io stdio) int {
 	fs := flag.NewFlagSet("channel", flag.ContinueOnError)
 	fs.SetOutput(io.stderr)
@@ -24,15 +26,18 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	pick := func(flagValue, env string) string {
-		if v := strings.TrimSpace(flagValue); v != "" {
-			return v
-		}
-		return strings.TrimSpace(io.getenv(env))
+	creds, err := cliconfig.Resolve(cliconfig.Config{URL: *urlFlag, Token: *tokenFlag}, io.getenv)
+	if err != nil {
+		fmt.Fprintln(io.stderr, "partyline channel:", err)
+		return 1
 	}
-	url, token, agent := pick(*urlFlag, "PARTYLINE_URL"), pick(*tokenFlag, "PARTYLINE_TOKEN"), pick(*agentFlag, "PARTYLINE_AGENT")
+	url, token := creds.URL, creds.Token
+	agent := strings.TrimSpace(*agentFlag)
+	if agent == "" {
+		agent = strings.TrimSpace(io.getenv("PARTYLINE_AGENT"))
+	}
 	if url == "" || token == "" {
-		fmt.Fprintln(io.stderr, "partyline channel: set PARTYLINE_URL and PARTYLINE_TOKEN (or --url and --token)")
+		fmt.Fprintln(io.stderr, "partyline channel: set PARTYLINE_URL and PARTYLINE_TOKEN (or --url and --token), or run partyline setup")
 		return 2
 	}
 	if agent == "" {
@@ -44,7 +49,7 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 			agent = filepath.Base(wd)
 		}
 	}
-	err := channel.Run(ctx, channel.Options{
+	err = channel.Run(ctx, channel.Options{
 		URL: url, Token: token, Agent: agent, Version: buildVersion(),
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})

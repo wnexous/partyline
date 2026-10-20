@@ -90,7 +90,7 @@ T15 → T16 → T17
 **Requirement**: ONB-04, ONB-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 0644 file refused with chmod hint; env overrides file; atomic write leaves 0600
+- [x] 0644 file refused with chmod hint; env overrides file; atomic write leaves 0600
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(cli): store instance credentials in a private config file`

@@ -20,7 +20,7 @@ Commands:
   serve                  run the server (configured with PARTYLINE_* environment variables)
   admin create-user      create an account; the password is read from stdin
   admin reset-password   set a new password and end the user's sessions; reads stdin
-  channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_AGENT)
+  channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_AGENT or the config file)
   healthcheck            exit 0 when the local server answers /healthz with 200
   version                print the build version
 `
