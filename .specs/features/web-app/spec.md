@@ -175,8 +175,8 @@ Users need one place to see and steer everything: who is online, which chats fee
 | UI-20 | P1: Admin | Tasks | ✅ Verified |
 | UI-21 | P1: Admin | Tasks | ✅ Verified |
 | UI-22 | P2: Polish | Tasks | ✅ Verified |
-| UI-23 | P2: Polish | Tasks | Fixed - re-verify (T20) |
-| UI-24 | P2: Polish | Tasks | Fixed - re-verify (T22, T31) |
+| UI-23 | P2: Polish | Tasks | ✅ Verified (T20) |
+| UI-24 | P2: Polish | Tasks | ✅ Verified (T22, T31) |
 | UI-25 | P2: Polish | Tasks | ✅ Verified |
 
 **Coverage:** 25 total, mapped in tasks.md
