@@ -46,6 +46,9 @@ const (
 	// InvalidRateLimit is the number of requests with a bad signature or timestamp accepted
 	// per client IP, connector and minute; beyond it they get ErrRateLimited (HOOK-04).
 	InvalidRateLimit = 30
+	// ReplayTTL is how long an accepted signature is remembered (HOOK-05). A timestamp
+	// passes the ±MaxSkew check during 2×MaxSkew, so this covers every possible replay.
+	ReplayTTL = 2 * MaxSkew
 	// maxTrackedIPs bounds the per-IP windows kept in memory.
 	maxTrackedIPs = 10000
 
@@ -102,8 +105,9 @@ type Connector struct {
 
 	mu      sync.Mutex
 	run     *running
-	window  window            // authenticated requests
-	invalid map[string]window // invalid requests by client IP
+	window  window               // authenticated requests
+	invalid map[string]window    // invalid requests by client IP
+	seen    map[string]time.Time // accepted signature → forget after
 }
 
 // window counts requests in a one-minute window.
@@ -140,7 +144,7 @@ func New(cfg connectors.Config, d connectors.Deps) *Connector {
 	return &Connector{
 		id: d.ID, secret: cfg.String("secret"), outboundURL: cfg.String("outbound_url"), userAgent: d.UserAgent,
 		fileURL: d.FileURL, log: log, client: safehttp.NewClient(safehttp.Options{AllowPrivate: d.AllowPrivateNetworks, Timeout: requestTimeout}), now: time.Now,
-		invalid: map[string]window{},
+		invalid: map[string]window{}, seen: map[string]time.Time{},
 	}
 }
 
@@ -168,20 +172,21 @@ type payload struct {
 }
 
 // ReceiveHook verifies the timestamp (±5 minutes) and the signature with a constant-time
-// compare (HOOK-02), then counts the request toward the connector's budget of authenticated
-// requests (HOOK-04) and hands the message to the running handler (HOOK-01). Invalid
-// requests never touch that budget; they have their own per-IP budget, beyond which they
-// get ErrRateLimited instead of ErrBadSignature. Nothing is handled when a check fails.
+// compare (HOOK-02), refuses a signature it already accepted (HOOK-05), counts the request
+// toward the connector's budget of authenticated requests (HOOK-04) and hands the message
+// to the running handler (HOOK-01). Invalid requests never touch that budget; they have
+// their own per-IP budget, beyond which they get ErrRateLimited instead of
+// ErrBadSignature. Nothing is handled when a check fails.
 func (c *Connector) ReceiveHook(ctx context.Context, r connectors.HookRequest) error {
-	if !c.validTimestamp(r.Timestamp) ||
-		!hmac.Equal([]byte(Sign(c.secret, r.Timestamp, r.Body)), []byte(strings.TrimSpace(r.Signature))) {
+	want := Sign(c.secret, r.Timestamp, r.Body)
+	if !c.validTimestamp(r.Timestamp) || !hmac.Equal([]byte(want), []byte(strings.TrimSpace(r.Signature))) {
 		if !c.allowInvalid(r.RemoteIP) {
 			return connectors.ErrRateLimited
 		}
 		return connectors.ErrBadSignature
 	}
-	if !c.allow() {
-		return connectors.ErrRateLimited
+	if err := c.admit(want); err != nil {
+		return err
 	}
 	var p payload
 	if err := json.Unmarshal(r.Body, &p); err != nil {
@@ -218,11 +223,25 @@ func (c *Connector) validTimestamp(ts string) bool {
 	return d <= MaxSkew && d >= -MaxSkew
 }
 
-// allow counts an authenticated request in the connector's one-minute window.
-func (c *Connector) allow() bool {
+// admit refuses a signature seen within ReplayTTL (ErrReplayed), then counts the request
+// in the connector's one-minute window (ErrRateLimited) and remembers the signature.
+func (c *Connector) admit(signature string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.window.add(c.now(), RateLimit)
+	now := c.now()
+	for sig, until := range c.seen { // at most RateLimit × ReplayTTL/minute entries
+		if now.After(until) {
+			delete(c.seen, sig)
+		}
+	}
+	if _, ok := c.seen[signature]; ok {
+		return connectors.ErrReplayed
+	}
+	if !c.window.add(now, RateLimit) {
+		return connectors.ErrRateLimited
+	}
+	c.seen[signature] = now.Add(ReplayTTL)
+	return nil
 }
 
 // allowInvalid counts an invalid request of the client IP in its one-minute window.

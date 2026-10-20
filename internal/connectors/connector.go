@@ -152,7 +152,7 @@ type HookRequest struct {
 // messages over HTTP instead of a platform connection.
 type HookReceiver interface {
 	// ReceiveHook checks and handles one request. It returns ErrBadSignature,
-	// ErrRateLimited, ErrNotRunning, a *validation.Error for a bad payload, or nil when the
+	// ErrRateLimited, ErrReplayed, ErrNotRunning, a *validation.Error for a bad payload, or nil when the
 	// message was accepted.
 	ReceiveHook(ctx context.Context, r HookRequest) error
 }
@@ -163,4 +163,6 @@ var (
 	ErrBadSignature = errors.New("invalid signature or timestamp")
 	// ErrRateLimited means a hook received too many requests.
 	ErrRateLimited = errors.New("too many requests")
+	// ErrReplayed means a hook request with the same signature was already accepted.
+	ErrReplayed = errors.New("request already received")
 )

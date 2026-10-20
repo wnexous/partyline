@@ -302,8 +302,8 @@ get their own per-IP budget (over it: 429, no audit entry).
 **Requirement**: HOOK-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] The same signed request twice → 202 then 409, one message stored
-- [ ] Entries expire after 10 minutes (fake clock)
+- [x] The same signed request twice → 202 then 409, one message stored
+- [x] Entries expire after 10 minutes (fake clock)
 **Tests**: unit, e2e
 **Gate**: full
 **Commit**: `fix(webhook): reject replayed signed requests`

@@ -238,6 +238,23 @@ func TestWebhookInvalidRequestsDoNotBlockTheSender(t *testing.T) {
 	require.Equal(t, webhook.InvalidRateLimit, rejected)
 }
 
+// HOOK-05: replaying a signed request answers 409 and stores nothing more, even without a
+// message_id to dedupe on.
+func TestWebhookReplayIsRefused(t *testing.T) {
+	e := newHookEnv(t)
+	now := time.Now()
+	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "warming up"})).
+		RequireStatus(http.StatusAccepted)
+	room := e.roomWith(t, e.chats(t)[0].ID)
+
+	body := payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "deploy approved"})
+	e.post(t, e.secret, now, body).RequireStatus(http.StatusAccepted)
+	e.post(t, e.secret, now, body).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+	msgs := e.messages(t, room.ID)
+	require.Len(t, msgs, 1)
+	require.Equal(t, "deploy approved", msgs[0].Text)
+}
+
 // Payload and transport errors: missing fields 422, over 64 KiB 413, unknown or stopped
 // connectors 404.
 func TestWebhookRequestErrors(t *testing.T) {

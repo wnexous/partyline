@@ -120,6 +120,26 @@ func TestInvalidRequestsHaveTheirOwnBudget(t *testing.T) {
 	require.ErrorIs(t, c.ReceiveHook(context.Background(), forged), connectors.ErrBadSignature, "a new minute")
 }
 
+// HOOK-05: a signed request is accepted once; the same request again is refused for as
+// long as its timestamp would pass (here accepted at the earliest moment, replayed at the
+// latest), and is never handed to the pipeline twice.
+func TestReplayIsRefused(t *testing.T) {
+	now := time.Unix(1792497600, 0)
+	c, rec := startHook(t, &now)
+	req := request(now.Add(MaxSkew), body)
+	require.NoError(t, c.ReceiveHook(context.Background(), req))
+	require.Equal(t, "hi", rec.NextInbound(t).Text)
+	require.ErrorIs(t, c.ReceiveHook(context.Background(), req), connectors.ErrReplayed)
+
+	now = now.Add(2 * MaxSkew)
+	require.ErrorIs(t, c.ReceiveHook(context.Background(), req), connectors.ErrReplayed, "still within the timestamp window")
+	now = now.Add(time.Second)
+	require.ErrorIs(t, c.ReceiveHook(context.Background(), req), connectors.ErrBadSignature, "the timestamp itself expired")
+	require.True(t, rec.NoInbound())
+
+	require.NoError(t, c.ReceiveHook(context.Background(), request(now, body)), "the same body with a new timestamp is a new request")
+}
+
 // The secret is generated when left empty, and kept when given.
 func TestPrepareGeneratesSecret(t *testing.T) {
 	cfg, gen := prepare(connectors.Config{})

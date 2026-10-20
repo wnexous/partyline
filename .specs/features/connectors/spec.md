@@ -142,6 +142,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 2. IF the signature is invalid or the timestamp is older than 5 minutes THEN the system SHALL respond 401 and store nothing. (HOOK-02)
 3. WHEN a room message is queued for a webhook chat THEN the connector SHALL POST it as JSON to the configured outbound URL with the same signature headers, and treat any non-2xx as a failure. (HOOK-03)
 4. WHEN a webhook request arrives THEN the system SHALL check its timestamp and signature before any rate limit: only authenticated requests SHALL count toward the connector's 60 per minute (429 beyond), and requests that fail the check SHALL count toward a separate budget of 30 per minute per client IP, beyond which they get 429 without an audit entry. (HOOK-04)
+5. IF an authenticated webhook request repeats the signature of a request accepted within the last 10 minutes THEN the system SHALL respond 409 and store nothing; messages with a `message_id` stay deduplicated by it (CON-10). (HOOK-05)
 
 **Independent Test**: Sign a payload in the test, post it, receive the outbound call on an httptest server.
 
@@ -208,13 +209,14 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | HOOK-02 | P1: Webhook | Tasks | Implementing |
 | HOOK-03 | P1: Webhook | Tasks | Verified |
 | HOOK-04 | P1: Webhook | Execute (T14) | Implemented, re-verify |
+| HOOK-05 | P1: Webhook | Execute (T15) | Implemented, re-verify |
 | IDN-01 | P1: Identities | Tasks | Verified |
 | IDN-02 | P1: Identities | Execute (T12) | Implemented, re-verify |
 | IDN-03 | P1: Identities | Tasks | Verified |
 | IDN-04 | P1: Identities | Execute (T12) | Implemented, re-verify |
 | IDN-05 | P1: Identities | Execute (T12) | Implemented, re-verify |
 
-**Coverage:** 34 total, mapped in tasks.md
+**Coverage:** 35 total, mapped in tasks.md
 
 ---
 

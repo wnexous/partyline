@@ -36,7 +36,8 @@ func (s *server) hookRoutes(mux *http.ServeMux) {
 var errHookNotFound = httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
 
 // receiveHook accepts a signed message for a running webhook connector (HOOK-01): 202 when
-// accepted, 401 for a bad signature or timestamp with nothing stored (HOOK-02).
+// accepted, 401 for a bad signature or timestamp with nothing stored (HOOK-02), 429 over a
+// rate limit (HOOK-04), 409 for a replayed request (HOOK-05).
 func (s *server) receiveHook(w http.ResponseWriter, r *http.Request) error {
 	id := r.PathValue("id")
 	if s.Hooks == nil {
@@ -68,6 +69,8 @@ func (s *server) receiveHook(w http.ResponseWriter, r *http.Request) error {
 		return httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "invalid signature or timestamp")
 	case errors.Is(err, connectors.ErrRateLimited):
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many requests")
+	case errors.Is(err, connectors.ErrReplayed):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "request already received")
 	case errors.Is(err, connectors.ErrNotRunning):
 		return errHookNotFound
 	case err != nil:
