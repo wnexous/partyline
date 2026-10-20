@@ -513,14 +513,14 @@ the code for the chosen one and shows the code with the command for that platfor
 
 **What**: `PARTYLINE_PRIVATE_NETWORK_ALLOWLIST` (comma-separated CIDRs and/or `host[:port]`) lets those destinations
 through while `PARTYLINE_ALLOW_PRIVATE_NETWORKS` stays false; README tables.
-**Where**: `internal/connectors/safehttp/`, `internal/config/config.go`, `internal/connectors/{connector,manager}.go`,
-adapters, `internal/app/app.go`, `README*.md`
+**Where**: `internal/connectors/safehttp/{allowlist,safehttp}.go`, `internal/config/config.go`,
+`internal/connectors/{connector,manager}.go` (`Deps.HTTPClient`/`StreamClient`), adapters, `internal/app/app.go`, `README*.md`
 **Depends on**: T28
 **Requirement**: CON-13
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] An allowlisted CIDR / host[:port] connects; another private address (or another port) is still blocked
-- [ ] An invalid entry fails config loading; the adapters honour the allowlist end to end
+- [x] An allowlisted CIDR / host[:port] connects; another private address (or another port) is still blocked
+- [x] An invalid entry fails config loading; the adapters honour the allowlist end to end
 **Tests**: unit, e2e
 **Gate**: full
 **Commit**: `feat(connectors): allow listed private destinations`

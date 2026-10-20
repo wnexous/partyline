@@ -51,7 +51,7 @@ func TestClientRefusesPrivateDestinations(t *testing.T) {
 	srv := newServer(t, func(http.ResponseWriter, *http.Request) { hits.Add(1) })
 	byName := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
 
-	for _, c := range []*http.Client{NewClient(Options{}), NewStreamClient(false)} {
+	for _, c := range []*http.Client{NewClient(Options{}), NewStreamClient(false, nil)} {
 		for _, u := range []string{srv.URL, byName} {
 			_, err := c.Get(u)
 			require.ErrorIs(t, err, ErrBlockedAddress, u)
@@ -63,7 +63,7 @@ func TestClientRefusesPrivateDestinations(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	resp, err = NewStreamClient(true).Get(byName)
+	resp, err = NewStreamClient(true, nil).Get(byName)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	require.Equal(t, int32(2), hits.Load())
@@ -79,7 +79,7 @@ func TestClientDoesNotFollowRedirects(t *testing.T) {
 		}
 		http.Redirect(w, r, "/target", http.StatusFound)
 	})
-	for _, c := range []*http.Client{NewClient(Options{AllowPrivate: true}), NewStreamClient(true)} {
+	for _, c := range []*http.Client{NewClient(Options{AllowPrivate: true}), NewStreamClient(true, nil)} {
 		resp, err := c.Get(srv.URL + "/start")
 		require.NoError(t, err)
 		require.NoError(t, resp.Body.Close())

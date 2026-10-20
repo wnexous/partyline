@@ -19,7 +19,6 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
-	"github.com/wnexous/partyline/internal/connectors/safehttp"
 )
 
 // KindName is the connector kind name.
@@ -99,8 +98,8 @@ func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
 	}
 	return &Connector{
 		base: base, apiKey: cfg.String("api_key"), allowed: allowed, userAgent: d.UserAgent, log: log,
-		client: safehttp.NewClient(safehttp.Options{AllowPrivate: d.AllowPrivateNetworks, Timeout: requestTimeout}),
-		stream: safehttp.NewStreamClient(d.AllowPrivateNetworks), now: time.Now,
+		client: d.HTTPClient(requestTimeout, 0),
+		stream: d.StreamClient(), now: time.Now,
 	}, nil
 }
 

@@ -409,6 +409,40 @@ func TestWebhookOutboundToPrivateAddressIsRefusedByDefault(t *testing.T) {
 	}
 }
 
+// S6, CON-13: PARTYLINE_PRIVATE_NETWORK_ALLOWLIST lets a listed private destination through
+// while PARTYLINE_ALLOW_PRIVATE_NETWORKS stays false; an unlisted one is still refused.
+func TestWebhookOutboundToAllowlistedPrivateAddress(t *testing.T) {
+	listed := newReceiver(t)
+	unlisted := newReceiver(t)
+	e := newHookEnv(t, testkit.WithEnv(map[string]string{
+		"PARTYLINE_ALLOW_PRIVATE_NETWORKS":    "false",
+		"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": strings.TrimPrefix(listed.srv.URL, "http://"),
+	}))
+	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "deploys", "sender_id": "ci", "text": "hi"})).
+		RequireStatus(http.StatusAccepted)
+	room := e.roomWith(t, e.chats(t)[0].ID)
+
+	e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{Config: map[string]any{"outbound_url": listed.srv.URL}}).
+		RequireStatus(http.StatusOK)
+	e.waitConnected(t)
+	e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "to the listed receiver"}).RequireStatus(http.StatusCreated)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(listed.next(t).Body, &got))
+	require.Equal(t, "to the listed receiver", got["message"].(map[string]any)["text"])
+
+	e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{Config: map[string]any{"outbound_url": unlisted.srv.URL}}).
+		RequireStatus(http.StatusOK)
+	e.waitConnected(t)
+	msg := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "to the unlisted one"}).RequireStatus(http.StatusCreated))
+	item := e.firstAttempt(t, room.ID, msg.ID)
+	require.Equal(t, "outbound: destination address not allowed", item.LastError)
+	select {
+	case <-unlisted.calls:
+		t.Fatal("the unlisted private URL was called")
+	default:
+	}
+}
+
 func identitiesOf(c *testkit.Client) []dto.Identity {
 	c.T.Helper()
 	return testkit.Decode[dto.List[dto.Identity]](c.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 )
 
 func env(kv map[string]string) func(string) string {
@@ -25,19 +27,21 @@ func TestLoadDefaults(t *testing.T) {
 	require.Empty(t, cfg.TrustedProxies)
 	require.False(t, cfg.SecureCookies())
 	require.False(t, cfg.AllowPrivateNetworks, "CON-13: connectors reach only public addresses by default")
+	require.Nil(t, cfg.PrivateNetworkAllowlist, "S6: no private destination is listed by default")
 }
 
 func TestLoadOverrides(t *testing.T) {
 	cfg, err := Load(env(map[string]string{
-		"PARTYLINE_ADDR":                   "127.0.0.1:9000",
-		"PARTYLINE_DATA_DIR":               "/var/lib/partyline",
-		"PARTYLINE_PUBLIC_URL":             "https://chat.example.com",
-		"PARTYLINE_SECRET_KEY":             "c2VjcmV0",
-		"PARTYLINE_MAX_UPLOAD_MB":          "10",
-		"PARTYLINE_LOG_LEVEL":              "debug",
-		"PARTYLINE_LOG_FORMAT":             "text",
-		"PARTYLINE_TRUSTED_PROXIES":        "10.0.0.0/8, 192.168.1.1",
-		"PARTYLINE_ALLOW_PRIVATE_NETWORKS": "true",
+		"PARTYLINE_ADDR":                      "127.0.0.1:9000",
+		"PARTYLINE_DATA_DIR":                  "/var/lib/partyline",
+		"PARTYLINE_PUBLIC_URL":                "https://chat.example.com",
+		"PARTYLINE_SECRET_KEY":                "c2VjcmV0",
+		"PARTYLINE_MAX_UPLOAD_MB":             "10",
+		"PARTYLINE_LOG_LEVEL":                 "debug",
+		"PARTYLINE_LOG_FORMAT":                "text",
+		"PARTYLINE_TRUSTED_PROXIES":           "10.0.0.0/8, 192.168.1.1",
+		"PARTYLINE_ALLOW_PRIVATE_NETWORKS":    "true",
+		"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": "192.168.1.0/24, localhost:8088",
 	}))
 	require.NoError(t, err)
 	require.Equal(t, "127.0.0.1:9000", cfg.Addr)
@@ -52,16 +56,20 @@ func TestLoadOverrides(t *testing.T) {
 		netip.MustParsePrefix("192.168.1.1/32"),
 	}, cfg.TrustedProxies)
 	require.True(t, cfg.AllowPrivateNetworks)
+	want, err := safehttp.ParseAllowlist("192.168.1.0/24,localhost:8088")
+	require.NoError(t, err)
+	require.Equal(t, want, cfg.PrivateNetworkAllowlist)
 }
 
 func TestLoadInvalidValuesNameTheVariable(t *testing.T) {
 	cases := map[string]string{
-		"PARTYLINE_PUBLIC_URL":             "not a url",
-		"PARTYLINE_MAX_UPLOAD_MB":          "lots",
-		"PARTYLINE_TRUSTED_PROXIES":        "10.0.0.0/99",
-		"PARTYLINE_LOG_LEVEL":              "loud",
-		"PARTYLINE_LOG_FORMAT":             "xml",
-		"PARTYLINE_ALLOW_PRIVATE_NETWORKS": "maybe",
+		"PARTYLINE_PUBLIC_URL":                "not a url",
+		"PARTYLINE_MAX_UPLOAD_MB":             "lots",
+		"PARTYLINE_TRUSTED_PROXIES":           "10.0.0.0/99",
+		"PARTYLINE_LOG_LEVEL":                 "loud",
+		"PARTYLINE_LOG_FORMAT":                "xml",
+		"PARTYLINE_ALLOW_PRIVATE_NETWORKS":    "maybe",
+		"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": "10.0.0.0/8,not a host",
 	}
 	for name, value := range cases {
 		t.Run(name, func(t *testing.T) {

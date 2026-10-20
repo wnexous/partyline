@@ -172,7 +172,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	fileLinks := connectors.NewFileLinks(box, st, cfg.PublicURL, opts.Now)
 	a.ConnectorManager = connectors.NewManager(connectors.ManagerDeps{
 		Store: st, Bus: bus, Box: box, Kinds: registry, Logger: opts.Logger, UserAgent: "partyline/" + version,
-		FileURL: fileLinks.URL, AllowPrivateNetworks: cfg.AllowPrivateNetworks, Replays: connectors.NewReplays(st),
+		FileURL: fileLinks.URL, AllowPrivateNetworks: cfg.AllowPrivateNetworks,
+		PrivateAllowlist: cfg.PrivateNetworkAllowlist, Replays: connectors.NewReplays(st),
 		Inbound: pipeline.Handle, MigrateChat: pipeline.MigrateChat,
 	})
 	a.sender = opts.Sender

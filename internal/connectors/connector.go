@@ -9,7 +9,10 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 	"time"
+
+	"github.com/wnexous/partyline/internal/connectors/safehttp"
 )
 
 // Connector is one running platform account. Implementations live in their own package
@@ -130,12 +133,27 @@ type Deps struct {
 	// FileURL returns a signed download link of a stored attachment, valid 10 minutes, for
 	// platforms that fetch files by URL (the webhook payload); nil when unavailable.
 	FileURL func(attachmentID string) string
-	// AllowPrivateNetworks lets the connector reach non-public addresses; pass it to
-	// safehttp for every platform call (CON-13).
+	// AllowPrivateNetworks lets the connector reach non-public addresses, and
+	// PrivateAllowlist the listed ones only; HTTPClient and StreamClient apply both
+	// (CON-13).
 	AllowPrivateNetworks bool
+	PrivateAllowlist     *safehttp.Allowlist
 	// Replays remembers accepted hook signatures across restarts (HOOK-05); nil for kinds
 	// without InboundHook or in tests.
 	Replays Replays
+}
+
+// HTTPClient returns the client for request/response platform calls: the network policy
+// of the deps, no redirects, the timeout (0: none) and a response cap (CON-13).
+func (d Deps) HTTPClient(timeout time.Duration, maxResponse int64) *http.Client {
+	return safehttp.NewClient(safehttp.Options{
+		AllowPrivate: d.AllowPrivateNetworks, Allowlist: d.PrivateAllowlist, Timeout: timeout, MaxResponseBytes: maxResponse,
+	})
+}
+
+// StreamClient returns the client for WebSocket handshakes under the same network policy.
+func (d Deps) StreamClient() *http.Client {
+	return safehttp.NewStreamClient(d.AllowPrivateNetworks, d.PrivateAllowlist)
 }
 
 // MaxHookBody is the largest accepted body of POST /api/v1/hooks/{connector_id}.
