@@ -278,7 +278,7 @@ T15 → T16 → T17
 **Requirement**: WIZ-01
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Commands contain the instance origin; each harness shows its start command; no token in the advanced JSON
+- [x] Commands contain the instance origin; each harness shows its start command; no token in the advanced JSON
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): guide each harness with install and setup commands`

@@ -1,29 +1,15 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CreatedToken } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
-import { apiError, json, mockApi } from "@/test/fetch";
+import { json, mockApi } from "@/test/fetch";
 import { makeAgent, makeMe } from "@/test/fixtures";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 const me = makeMe();
-const SECRET = "pl_agent_synthetic0123456789";
-
-const created: CreatedToken = {
-  token: {
-    id: "t1",
-    kind: "agent",
-    name: "build-bot",
-    prefix: "pl_agent_syn",
-    created_at: "2026-10-19T12:00:00Z",
-  },
-  secret: SECRET,
-};
-
 beforeEach(() => useLiveStore.setState({ locale: "en", presence: {} }));
 afterEach(() => vi.unstubAllGlobals());
 
@@ -171,12 +157,23 @@ describe("agents page (UI-15)", () => {
   });
 });
 
-describe("connect an agent (UI-14)", () => {
+describe("connect an agent (WIZ-01)", () => {
+  const harnesses = [
+    { tab: "Claude Code", start: "partyline claude" },
+    { tab: "OpenCode", start: "opencode" },
+    { tab: "pi", start: "pi" },
+    { tab: "omp", start: "omp" },
+    { tab: "Codex", start: "codex" },
+    { tab: "Gemini", start: "gemini" },
+  ];
+  const PUSH = "Room messages arrive in the running session as they come in.";
+  const TURN_END =
+    "Messages arrive when it finishes its current turn, or when it calls wait_for_messages.";
+
   async function openWizard(routes: Parameters<typeof mockApi>[0] = {}) {
     const api = mockApi({
       "GET /me": json(200, me),
       "GET /agents": json(200, { items: [] }),
-      "POST /tokens": json(201, created),
       ...routes,
     });
     const user = userEvent.setup();
@@ -186,87 +183,120 @@ describe("connect an agent (UI-14)", () => {
     return { ...api, ...utils, user, dialog };
   }
 
-  it("creates an agent token and shows the .mcp.json and launch command", async () => {
-    const { user, dialog, calls } = await openWizard();
-    await user.type(within(dialog).getByLabelText("Agent name"), "build-bot");
-    await user.click(within(dialog).getByRole("button", { name: "Create token" }));
-
-    await within(dialog).findByRole("figure", { name: ".mcp.json" });
-    expect(calls.find((c) => c.method === "POST" && c.path === "/tokens")?.body).toEqual({
-      kind: "agent",
-      name: "build-bot",
-    });
-    const server = JSON.parse(code(dialog, ".mcp.json")).mcpServers.partyline;
-    expect(server.command).toBe("partyline");
-    expect(server.args).toEqual(["channel"]);
-    expect(server.env).toEqual({
-      PARTYLINE_URL: window.location.origin,
-      PARTYLINE_TOKEN: SECRET,
-      PARTYLINE_AGENT: "build-bot",
-    });
-    expect(code(dialog, "Launch command")).toBe(
-      "claude --dangerously-load-development-channels server:partyline",
-    );
-    expect(within(dialog).getByText(/shown only now/i)).toBeInTheDocument();
-    expect(within(dialog).getByText(/confirmation screen/i)).toBeInTheDocument();
-    expect(within(dialog).getByRole("link", { name: /Claude Code guide/ })).toHaveAttribute(
-      "href",
-      "https://github.com/wnexous/partyline/blob/main/docs/claude-code.md",
-    );
+  it("shows the install command for this instance and the browser setup command", async () => {
+    const { dialog, calls } = await openWizard();
     expect(code(dialog, "Install command")).toBe(
-      "go install github.com/wnexous/partyline/cmd/partyline@latest",
+      `curl -fsSL ${window.location.origin}/install.sh | sh`,
     );
+    expect(code(dialog, "Setup command")).toBe("partyline setup --browser");
     expect(within(dialog).getByRole("link", { name: /GitHub Releases/ })).toHaveAttribute(
       "href",
       "https://github.com/wnexous/partyline/releases",
     );
-  });
-
-  it("copies the config with the token to the clipboard", async () => {
-    const { user, dialog } = await openWizard();
-    await user.type(within(dialog).getByLabelText("Agent name"), "build-bot");
-    await user.click(within(dialog).getByRole("button", { name: "Create token" }));
-    await within(dialog).findByRole("figure", { name: ".mcp.json" });
-    await user.click(within(dialog).getByRole("button", { name: "Copy .mcp.json" }));
-    const copied = await navigator.clipboard.readText();
-    expect(JSON.parse(copied).mcpServers.partyline.env.PARTYLINE_TOKEN).toBe(SECRET);
-  });
-
-  it("rejects agent names the channel would not keep", async () => {
-    const { user, dialog, calls } = await openWizard();
-    await user.type(within(dialog).getByLabelText("Agent name"), "Build Bot");
-    await user.click(within(dialog).getByRole("button", { name: "Create token" }));
-    expect(await within(dialog).findByText(/Use a-z, 0-9, dot, _ or -/)).toBeInTheDocument();
+    // setup handles the credentials: the wizard creates no token and warns about none.
     expect(calls.some((c) => c.method === "POST")).toBe(false);
+    expect(within(dialog).queryByText(/shown only now/i)).toBeNull();
+    expect(within(dialog).queryByLabelText("Agent name")).toBeNull();
   });
 
-  it("shows a 422 reason under the name", async () => {
-    const { user, dialog } = await openWizard({
-      "POST /tokens": apiError(422, "invalid", "validation failed", {
-        name: "must have 1 to 64 characters",
-      }),
+  it("shows each harness's start command and how messages reach it", async () => {
+    const { user, dialog } = await openWizard();
+    const tabs = within(dialog).getByRole("tablist", { name: "Harness" });
+    expect(
+      within(tabs)
+        .getAllByRole("tab")
+        .map((tab) => tab.textContent),
+    ).toEqual(harnesses.map((h) => h.tab));
+    expect(within(tabs).getByRole("tab", { name: "Claude Code" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    for (const h of harnesses) {
+      await user.click(within(tabs).getByRole("tab", { name: h.tab }));
+      const panel = within(dialog).getByRole("tabpanel");
+      expect(code(panel, "Start command")).toBe(h.start);
+      const turnEnd = h.tab === "Codex" || h.tab === "Gemini";
+      expect(within(panel).getByText(turnEnd ? TURN_END : PUSH)).toBeInTheDocument();
+      expect(within(panel).queryByText(turnEnd ? PUSH : TURN_END)).toBeNull();
+    }
+  });
+
+  it("explains Claude Code's channel confirmation with a link to its guide", async () => {
+    const { dialog } = await openWizard();
+    const panel = within(dialog).getByRole("tabpanel");
+    expect(within(panel).getByText(/confirmation screen/i)).toBeInTheDocument();
+    expect(within(panel).getByRole("link", { name: /Claude Code guide/ })).toHaveAttribute(
+      "href",
+      "https://github.com/wnexous/partyline/blob/main/docs/claude-code.md",
+    );
+  });
+
+  it("keeps a manual entry per harness under Advanced, reading the token from the config file", async () => {
+    const { user, dialog } = await openWizard();
+    await user.click(within(dialog).getByText("Advanced: register by hand"));
+    expect(within(dialog).getByText("~/.config/partyline/config.json")).toBeInTheDocument();
+
+    const claude = JSON.parse(code(dialog, ".mcp.json"));
+    expect(claude).toEqual({
+      mcpServers: { partyline: { command: "partyline", args: ["channel"] } },
     });
-    await user.type(within(dialog).getByLabelText("Agent name"), "build-bot");
-    await user.click(within(dialog).getByRole("button", { name: "Create token" }));
-    expect(await within(dialog).findByText("must have 1 to 64 characters")).toBeInTheDocument();
+
+    const tabs = within(dialog).getByRole("tablist", { name: "Harness" });
+    await user.click(within(tabs).getByRole("tab", { name: "OpenCode" }));
+    expect(JSON.parse(code(dialog, "~/.config/opencode/opencode.json"))).toEqual({
+      mcp: {
+        partyline: {
+          type: "local",
+          command: ["partyline", "channel", "--tools-only"],
+          enabled: true,
+        },
+      },
+    });
+    await user.click(within(tabs).getByRole("tab", { name: "pi" }));
+    expect(JSON.parse(code(dialog, "~/.pi/agent/mcp.json"))).toEqual({
+      mcpServers: { partyline: { command: "partyline", args: ["channel", "--tools-only"] } },
+    });
+    await user.click(within(tabs).getByRole("tab", { name: "omp" }));
+    expect(JSON.parse(code(dialog, "~/.omp/agent/mcp.json"))).toEqual({
+      mcpServers: { partyline: { command: "partyline", args: ["channel"] } },
+    });
+    await user.click(within(tabs).getByRole("tab", { name: "Codex" }));
+    expect(code(dialog, "~/.codex/config.toml")).toBe(
+      '[mcp_servers.partyline]\ncommand = "partyline"\nargs = ["channel", "--tools-only"]',
+    );
+    await user.click(within(tabs).getByRole("tab", { name: "Gemini" }));
+    const gemini = code(dialog, "~/.gemini/settings.json");
+    expect(JSON.parse(gemini)).toEqual({
+      mcpServers: { partyline: { command: "partyline", args: ["channel", "--tools-only"] } },
+    });
+    // No credential is ever inlined in a manual entry.
+    for (const text of [JSON.stringify(claude), gemini]) {
+      expect(text).not.toMatch(/token|PARTYLINE_|pl_agent|https?:/i);
+    }
+    expect(within(dialog).getByText("partyline setup --token").tagName).toBe("CODE");
+    expect(within(dialog).getByRole("link", { name: "API tokens" })).toHaveAttribute(
+      "href",
+      "/tokens",
+    );
   });
 
-  it("turns to connected when the new agent comes online", async () => {
-    let agents: ReturnType<typeof makeAgent>[] = [];
-    const { user, dialog, queryClient } = await openWizard({
+  it("names the first session that comes online while it is open", async () => {
+    let agents = [makeAgent({ id: "a1", name: "old-box", online: true })];
+    const { dialog, queryClient } = await openWizard({
       "GET /agents": () => json(200, { items: agents }),
     });
-    await user.type(within(dialog).getByLabelText("Agent name"), "build-bot");
-    await user.click(within(dialog).getByRole("button", { name: "Create token" }));
-    expect(await within(dialog).findByText(/Waiting for build-bot/)).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText("Waiting for a session to connect…"),
+    ).toBeInTheDocument();
 
-    agents = [makeAgent({ id: "a7", name: "build-bot", online: true })];
+    agents = [...agents, makeAgent({ id: "a7", name: "partyline-2", online: true })];
     act(() =>
       handleLiveEvent(queryClient, useLiveStore.getState(), {
         type: "agent.presence",
         data: { agent_id: "a7", online: true },
       }),
     );
-    expect(await within(dialog).findByText("build-bot is online")).toBeInTheDocument();
+    expect(await within(dialog).findByText("partyline-2 is online")).toBeInTheDocument();
+    expect(within(dialog).queryByText("old-box is online")).toBeNull();
   });
 });

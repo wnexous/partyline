@@ -340,32 +340,42 @@ export const en = {
   "connect.open": "Connect an agent",
   "connect.title": "Connect an agent",
   "connect.body":
-    "Name the Claude Code session. Partyline creates an agent token and prints the config for the machine where the session runs.",
-  "connect.doneBody": "Set up {name} on the machine where Claude Code runs.",
-  "connect.name": "Agent name",
-  "connect.nameHint": "The session joins rooms under this name. Reuse it so it keeps its rooms.",
-  "connect.tokenNote":
-    "Creates an agent token. It can only reach the agent API, and you can revoke it under API tokens.",
-  "connect.create": "Create token",
-  "connect.creating": "Creating token…",
-  "connect.onceWarning":
-    "The token is shown only now, inside the config below. Copy it before you close this window.",
+    "Two commands set up a machine once. After that, every session you start there joins partyline under its project’s name.",
   "connect.stepInstall": "Install partyline",
-  "connect.installBody": "Download the binary for your system from",
-  "connect.releases": "GitHub Releases",
   "connect.installLabel": "Install command",
-  "connect.stepConfig": "Add the channel to .mcp.json",
-  "connect.configBody":
-    "Put this in .mcp.json at the root of the project, or merge it into the mcpServers you already have.",
-  "connect.stepLaunch": "Start Claude Code with the channel",
-  "connect.launchBody": "Run this in the same project folder.",
-  "connect.launchLabel": "Launch command",
+  "connect.installBody":
+    "For Linux and macOS; it checks the download’s checksum. On Windows, get the binary from",
+  "connect.releases": "GitHub Releases",
+  "connect.stepSetup": "Approve this machine",
+  "connect.setupBody":
+    "Once per machine. Approve the code it shows in this browser; setup saves the credentials and registers partyline in every harness it finds.",
+  "connect.setupLabel": "Setup command",
+  "connect.stepStart": "Start a session",
+  "connect.startBody":
+    "Run it in a project folder. Each session joins under the project’s name, with -2, -3… for more sessions of the same project.",
+  "connect.harness": "Harness",
+  "connect.startLabel": "Start command",
+  "connect.push": "Room messages arrive in the running session as they come in.",
+  "connect.turnEnd":
+    "Messages arrive when it finishes its current turn, or when it calls wait_for_messages.",
   "connect.confirmNote":
     "Claude Code shows a confirmation screen at startup, because development channels are a research preview. Confirm it once.",
   "connect.docs": "Claude Code guide",
-  "connect.waiting": "Waiting for {name} to come online…",
+  "connect.advanced": "Advanced: register by hand",
+  "connect.advancedBody":
+    "To register {harness} yourself, merge this entry. The partyline server reads the instance URL and agent token from",
+  "connect.advancedClaude":
+    "Then start Claude Code with partyline claude, so it loads the development channel.",
+  "connect.advancedPush":
+    "Pushed messages also need the extension that setup installs; without it the session only has the tools.",
+  "connect.advancedTurn":
+    "Messages at turn end also need the hook that setup adds; without it, use wait_for_messages.",
+  "connect.advancedToken": "No browser on that machine? Run {cmd} with an agent token from",
+  "connect.waiting": "Waiting for a session to connect…",
   "connect.online": "{name} is online",
   "connect.done": "Done",
+  "connect.create": "Create token",
+  "connect.creating": "Creating token…",
   "common.saving": "Saving…",
   "validation.url": "Enter a full URL, like https://example.com",
   "schema.removeTag": "Remove {value}",

@@ -345,32 +345,43 @@ export const ptBR: Dictionary = {
   "connect.open": "Conectar um agente",
   "connect.title": "Conectar um agente",
   "connect.body":
-    "Dê um nome à sessão do Claude Code. O partyline cria um token de agente e mostra a configuração para a máquina onde a sessão roda.",
-  "connect.doneBody": "Configure {name} na máquina onde o Claude Code roda.",
-  "connect.name": "Nome do agente",
-  "connect.nameHint": "A sessão entra nas salas com este nome. Reutilize-o para manter as salas.",
-  "connect.tokenNote":
-    "Cria um token de agente. Ele só acessa a API de agentes, e você pode revogá-lo em Tokens de API.",
-  "connect.create": "Criar token",
-  "connect.creating": "Criando token…",
-  "connect.onceWarning":
-    "O token aparece só agora, dentro da configuração abaixo. Copie antes de fechar esta janela.",
+    "Dois comandos preparam a máquina uma vez. Depois disso, toda sessão iniciada nela entra no partyline com o nome do projeto.",
   "connect.stepInstall": "Instale o partyline",
-  "connect.installBody": "Baixe o binário do seu sistema em",
-  "connect.releases": "GitHub Releases",
   "connect.installLabel": "Comando de instalação",
-  "connect.stepConfig": "Adicione o canal ao .mcp.json",
-  "connect.configBody":
-    "Coloque isto no .mcp.json na raiz do projeto, ou junte aos mcpServers que você já tem.",
-  "connect.stepLaunch": "Inicie o Claude Code com o canal",
-  "connect.launchBody": "Rode isto na mesma pasta do projeto.",
-  "connect.launchLabel": "Comando de inicialização",
+  "connect.installBody":
+    "Para Linux e macOS; o script confere o checksum do download. No Windows, baixe o binário em",
+  "connect.releases": "GitHub Releases",
+  "connect.stepSetup": "Aprove esta máquina",
+  "connect.setupBody":
+    "Uma vez por máquina. Aprove neste navegador o código que ele mostrar; o setup salva as credenciais e registra o partyline em todo harness que encontrar.",
+  "connect.setupLabel": "Comando de configuração",
+  "connect.stepStart": "Inicie uma sessão",
+  "connect.startBody":
+    "Rode na pasta de um projeto. Cada sessão entra com o nome do projeto, com -2, -3… para mais sessões do mesmo projeto.",
+  "connect.harness": "Harness",
+  "connect.startLabel": "Comando de início",
+  "connect.push": "As mensagens das salas chegam na sessão em andamento assim que são enviadas.",
+  "connect.turnEnd":
+    "As mensagens chegam quando ele termina o turno atual, ou quando chama wait_for_messages.",
   "connect.confirmNote":
     "O Claude Code mostra uma tela de confirmação ao iniciar, porque canais de desenvolvimento estão em prévia de pesquisa. Confirme uma vez.",
   "connect.docs": "Guia do Claude Code",
-  "connect.waiting": "Aguardando {name} ficar online…",
+  "connect.advanced": "Avançado: registrar manualmente",
+  "connect.advancedBody":
+    "Para registrar o {harness} por conta própria, mescle esta entrada. O servidor do partyline lê a URL da instância e o token do agente de",
+  "connect.advancedClaude":
+    "Depois inicie o Claude Code com partyline claude, para ele carregar o canal de desenvolvimento.",
+  "connect.advancedPush":
+    "As mensagens empurradas na hora também precisam da extensão que o setup instala; sem ela, a sessão só tem as ferramentas.",
+  "connect.advancedTurn":
+    "As mensagens no fim do turno também precisam do hook que o setup adiciona; sem ele, use wait_for_messages.",
+  "connect.advancedToken":
+    "Sem navegador nessa máquina? Rode {cmd} com um token de agente criado em",
+  "connect.waiting": "Aguardando uma sessão se conectar…",
   "connect.online": "{name} está online",
   "connect.done": "Concluir",
+  "connect.create": "Criar token",
+  "connect.creating": "Criando token…",
   "common.saving": "Salvando…",
   "validation.url": "Informe uma URL completa, como https://example.com",
   "schema.removeTag": "Remover {value}",

@@ -76,19 +76,6 @@ export const roomSettingsSchema = z.object({
     .refine((v) => textLength(v) <= MaxRoomInstructions, msg("validation.instructions")),
 });
 
-// DTO gap: the agent name rule (agent-channel design, Registry.Upsert) has no generated constant
-// yet; it mirrors `^[a-z0-9][a-z0-9._-]{0,47}$` until internal/agents exports one.
-export const AgentNamePattern = "^[a-z0-9][a-z0-9._-]{0,47}$";
-
-/** Connect wizard (UI-14): the name the session registers as (PARTYLINE_AGENT). */
-export const connectAgentSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, msg("validation.required"))
-    .regex(new RegExp(AgentNamePattern), msg("validation.agentName")),
-});
-
 /** POST /tokens (UI-19): expiry is picked from presets and converted at submit. */
 export const TOKEN_EXPIRY_DAYS = ["never", "7", "30", "90", "365"] as const;
 export const createTokenSchema = z.object({
@@ -151,7 +138,6 @@ export type SetupForm = z.input<typeof setupSchema>;
 export type LoginForm = z.input<typeof loginSchema>;
 export type AcceptInviteForm = z.input<typeof acceptInviteSchema>;
 export type CreateRoomForm = z.input<typeof createRoomSchema>;
-export type ConnectAgentForm = z.input<typeof connectAgentSchema>;
 export type CreateTokenForm = z.input<typeof createTokenSchema>;
 export type ProfileForm = z.input<typeof profileSchema>;
 export type ChangePasswordForm = z.input<typeof changePasswordSchema>;
