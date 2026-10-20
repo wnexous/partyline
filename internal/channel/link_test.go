@@ -445,3 +445,41 @@ func TestLinkBacksOffWhileUnreachable(t *testing.T) {
 		16 * time.Second, 30 * time.Second, 30 * time.Second, 30 * time.Second}, waits)
 	require.ErrorContains(t, l.Err(), "server unreachable")
 }
+
+// Agent cap (S2/W2): when the server refuses the agent because its owner is at the limit,
+// tools report it plainly (not "server unreachable") and stderr says so once.
+func TestLinkReportsAgentLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":{"code":"conflict","message":"agent limit reached"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	stderr := &syncBuffer{}
+	tm := fastTiming
+	tm.replacedPause = 50 * time.Millisecond
+	l := newLink(mustURL(t, srv.URL), "pl_agent_x", "builder", http.DefaultClient, discard{}, stderr, tm)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = l.run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	require.Eventually(t, func() bool { return l.Err() != nil }, wait, 10*time.Millisecond)
+	require.EqualError(t, l.Err(), "partyline: agent limit reached for this account; delete unused agents in the web app")
+	time.Sleep(4 * tm.replacedPause) // several retries
+	require.Equal(t, 1, strings.Count(stderr.String(), "agent limit reached"), "stderr: %q", stderr.String())
+}
+
+// W1: the delivery queue is bounded; a full queue refuses new frames so the link drops the
+// connection instead of growing without limit.
+func TestFrameQueueIsBounded(t *testing.T) {
+	q := newFrameQueue()
+	for i := range maxQueuedFrames {
+		require.True(t, q.push([]byte{byte(i)}), "frame %d", i)
+	}
+	require.False(t, q.push([]byte("one too many")))
+	data, ok := q.pop(context.Background())
+	require.True(t, ok)
+	require.Equal(t, []byte{0}, data, "oldest first")
+	require.True(t, q.push([]byte("room again")))
+}

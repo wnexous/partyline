@@ -89,6 +89,7 @@ const (
 	stateInvalidToken
 	stateReplaced
 	stateDeleted
+	stateAgentLimit
 )
 
 // link holds the agent WebSocket: it reconnects with backoff, turns pushed messages into
@@ -141,12 +142,16 @@ func (l *link) Err() error {
 		return fmt.Errorf("partyline: replaced by another session using agent name %s", l.agent)
 	case stateDeleted:
 		return fmt.Errorf("partyline: agent %s was deleted; restart Claude Code to register it again", l.agent)
+	case stateAgentLimit:
+		return errAgentLimit
 	default:
 		return nil
 	}
 }
 
 var errInvalidToken = errors.New("partyline: not connected (invalid token)")
+
+var errAgentLimit = errors.New("partyline: agent limit reached for this account; delete unused agents in the web app")
 
 // setState records s and reports whether it changed.
 func (l *link) setState(s linkState) bool {
@@ -167,6 +172,7 @@ const (
 	outLagged
 	outReplaced
 	outDeleted
+	outAgentLimit
 )
 
 // run connects and reconnects until ctx ends (nil) or writing a notification fails.
@@ -200,6 +206,11 @@ func (l *link) run(ctx context.Context) error {
 			l.setState(stateReplaced)
 			fmt.Fprintf(l.stderr, "partyline: another session connected as agent %s; pausing for %s\n", l.agent, l.t.replacedPause)
 			wait, backoff = l.t.replacedPause, l.t.minBackoff
+		case outAgentLimit:
+			if l.setState(stateAgentLimit) {
+				fmt.Fprintf(l.stderr, "partyline: the server refused agent %s: agent limit reached; retrying every %s\n", l.agent, l.t.replacedPause)
+			}
+			wait, backoff = l.t.replacedPause, l.t.minBackoff
 		case outDeleted:
 			l.setState(stateDeleted)
 			fmt.Fprintf(l.stderr, "partyline: agent %s was deleted; not reconnecting until restart\n", l.agent)
@@ -231,9 +242,12 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 		if resp != nil && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
 			return outInvalidToken, nil // a bad, revoked or non-agent token
 		}
+		if resp != nil && resp.StatusCode == http.StatusConflict {
+			return outAgentLimit, nil // the owner already has the maximum number of agents
+		}
 		return outDialFailed, nil
 	}
-	ws.SetReadLimit(-1) // messages carry up to 16k characters plus metadata; the server is trusted
+	ws.SetReadLimit(maxFrameBytes)
 	l.setState(stateConnected)
 
 	// Closing on ctx end (stdin EOF, signal) sends a normal close so the server marks the
@@ -279,7 +293,14 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 			}
 			return outDropped, nil // dropped, shutting down (ctx ends next) or a failed ack
 		}
-		q.push(data)
+		if !q.push(data) {
+			// Claude Code stopped reading: drop the connection instead of growing without
+			// bound; unacknowledged messages come back with the backlog after reconnecting.
+			_ = ws.Close(websocket.StatusPolicyViolation, "channel queue full")
+			stopRead()
+			<-delivered
+			return outDropped, nil
+		}
 	}
 }
 
@@ -303,25 +324,39 @@ func (l *link) deliver(ctx context.Context, ws *websocket.Conn, q *frameQueue) e
 	}
 }
 
-// frameQueue holds the frames read from the socket until they are delivered. It is not
-// bounded: before initialization it holds the backlog (at most 50 per room) and the live
-// messages of the first moments.
+// maxFrameBytes bounds one server frame: a message carries at most 16,000 characters plus
+// metadata and attachment references (files are downloaded separately).
+const maxFrameBytes = 1 << 20
+
+// maxQueuedFrames bounds the frames waiting for delivery (the backlog is at most 50 per room).
+const maxQueuedFrames = 2000
+
+// frameQueue holds the frames read from the socket until they are delivered.
 type frameQueue struct {
 	mu    sync.Mutex
 	items [][]byte
+	max   int
 	ready chan struct{}
 }
 
-func newFrameQueue() *frameQueue { return &frameQueue{ready: make(chan struct{}, 1)} }
+func newFrameQueue() *frameQueue {
+	return &frameQueue{max: maxQueuedFrames, ready: make(chan struct{}, 1)}
+}
 
-func (q *frameQueue) push(data []byte) {
+// push queues data; false when the queue is full.
+func (q *frameQueue) push(data []byte) bool {
 	q.mu.Lock()
+	if len(q.items) >= q.max {
+		q.mu.Unlock()
+		return false
+	}
 	q.items = append(q.items, data)
 	q.mu.Unlock()
 	select {
 	case q.ready <- struct{}{}:
 	default:
 	}
+	return true
 }
 
 // pop returns the oldest frame, waiting for one; false when ctx ends first.
