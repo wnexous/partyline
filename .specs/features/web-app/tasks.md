@@ -392,7 +392,7 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T22
 **Requirement**: UI-06
 **Done when**:
-- [ ] After failed retries and a successful open, the next drop retries after 1 s
+- [x] After failed retries and a successful open, the next drop retries after 1 s
 **Tests**: unit
 **Gate**: quick
 
