@@ -216,5 +216,18 @@ describe("agent membership settings (MEM-01..05)", () => {
     await user.click(screen.getByRole("button", { name: "Configurações de release-bot" }));
     const dialog = await screen.findByRole("dialog", { name: "Configurações do agente" });
     expect(within(dialog).getByRole("switch", { name: "Assinar mensagens" })).toBeChecked();
+    expect(within(dialog).getByRole("radiogroup", { name: "Recebe" })).toHaveAccessibleDescription(
+      "Só menções reduz o ruído; não é um filtro de segurança. Use Só confiáveis para limitar quem chega ao agente.",
+    );
+  });
+
+  it("says that only mentions is not a security filter (MEM-06)", async () => {
+    const { user } = setup();
+    const dialog = await open(user);
+    expect(
+      within(dialog).getByRole("radiogroup", { name: "Receives" }),
+    ).toHaveAccessibleDescription(
+      "Only mentions reduces noise; it is not a security filter. Use Only trusted to limit who can reach the agent.",
+    );
   });
 });

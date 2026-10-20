@@ -538,7 +538,7 @@ T31 → T32 → T33 → T34
 **Requirement**: MEM-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Exact help text in both locales; instructions contain the sentence
+- [x] Exact help text in both locales; instructions contain the sentence
 **Tests**: unit
 **Gate**: build
 **Commit**: `docs(web): say mentions mode is not a security filter`

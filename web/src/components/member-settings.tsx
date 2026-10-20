@@ -258,6 +258,10 @@ function SettingsForm({
                     ))}
                   </RadioGroup>
                 </FormControl>
+                {/* MEM-06: mentions mode is about noise, not safety. */}
+                <FormDescription className="text-xs">
+                  {t("memberSettings.deliveryHint")}
+                </FormDescription>
               </FormItem>
             )}
           />

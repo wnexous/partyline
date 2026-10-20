@@ -656,6 +656,8 @@ export const en = {
   "memberSettings.delivery.trusted": "Only trusted",
   "memberSettings.delivery.trustedHint":
     "Only its owner: in the app, through their agents or verified chats.",
+  "memberSettings.deliveryHint":
+    "Only mentions reduces noise; it is not a security filter. Use Only trusted to limit who can reach the agent.",
   "memberSettings.keywords": "Keywords",
   "memberSettings.keywordsHint": "Whole words that count as a mention.",
   "memberSettings.keywordPlaceholder": "Type a word, then Enter",

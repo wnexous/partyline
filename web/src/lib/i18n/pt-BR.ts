@@ -662,6 +662,8 @@ export const ptBR: Dictionary = {
   "memberSettings.delivery.trusted": "Só confiáveis",
   "memberSettings.delivery.trustedHint":
     "Só o dono: no app, pelos agentes dele ou pelos chats verificados.",
+  "memberSettings.deliveryHint":
+    "Só menções reduz o ruído; não é um filtro de segurança. Use Só confiáveis para limitar quem chega ao agente.",
   "memberSettings.keywords": "Palavras-chave",
   "memberSettings.keywordsHint": "Palavras inteiras que contam como menção.",
   "memberSettings.keywordPlaceholder": "Digite uma palavra e tecle Enter",

@@ -110,6 +110,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 3. WHILE an agent member's `delivery` is `mentions` the system SHALL deliver only messages that mention it as defined in Assumptions, and SHALL still store every message in the room. (MEM-03)
 4. WHILE an agent member's `delivery` is `trusted` the system SHALL deliver only messages with `trusted=true` for that agent. (MEM-04)
 5. IF `display_name` exceeds 64 characters or a keyword list exceeds 20 entries of 64 characters THEN the system SHALL respond 422. (MEM-05)
+6. WHERE the delivery mode is chosen THEN the web app SHALL say `Only mentions reduces noise; it is not a security filter. Use Only trusted to limit who can reach the agent.` (pt-BR: `Só menções reduz o ruído; não é um filtro de segurança. Use Só confiáveis para limitar quem chega ao agente.`), and the channel instructions SHALL say that mentions mode is not a security filter. (MEM-06)
 
 **Independent Test**: Agent with signature off and delivery `mentions` in a busy group: outbound has no header; only `@name` messages arrive.
 
@@ -203,6 +204,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | MEM-03 | P1: Membership settings | Tasks | Fixed (T18), re-verify |
 | MEM-04 | P1: Membership settings | Tasks | Implementing |
 | MEM-05 | P1: Membership settings | Tasks | Implementing |
+| MEM-06 | P1: Membership settings | Fix iteration 1 | Implemented (T32) |
 | INS-01 | P2: Room instructions | Tasks | Implementing |
 | INS-02 | P2: Room instructions | Tasks | Implementing |
 | INS-03 | P2: Room instructions | Tasks | Fixed (T19), amended (T29), re-verify |
@@ -216,7 +218,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROOMDEL-01 | P1: Delete a room | Tasks | Implementing |
 | ROOMDEL-02 | P1: Delete a room | Tasks | Implementing |
 
-**Coverage:** 34 total, mapped in tasks.md
+**Coverage:** 35 total, mapped in tasks.md
 
 ---
 
