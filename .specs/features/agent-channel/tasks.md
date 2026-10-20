@@ -227,7 +227,7 @@ T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
 **Requirement**: AGT-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] An ack for a non-member room's message leaves no cursor for that room; an ack in a member room advances the cursor
+- [x] An ack for a non-member room's message leaves no cursor for that room; an ack in a member room advances the cursor
 **Tests**: e2e
 **Gate**: full
 **Commit**: `test(api): ignore agent acks for rooms the agent is not in`

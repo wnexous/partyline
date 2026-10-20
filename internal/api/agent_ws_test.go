@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -229,4 +230,28 @@ func TestAgentWSIdentityScopedToTokenOwner(t *testing.T) {
 	require.Equal(t, "bobby", w.Agent.Owner)
 	conn.ExpectNone(300 * time.Millisecond)
 	require.False(t, f.env.App.Presence.Online(f.agentID))
+}
+
+// AGT-07: acks only move the agent's cursor in rooms it is a member of; an ack for a message
+// of another room is ignored and leaves no cursor there.
+func TestAgentAckIgnoresForeignRooms(t *testing.T) {
+	f := newAgentRoom(t)
+	other := createRoom(f.alice, "Elsewhere")
+	foreign := testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+other.ID+"/messages",
+		dto.PostMessageRequest{Text: "not for the agent"}).RequireStatus(http.StatusCreated))
+
+	conn := f.dial(t)
+	conn.Welcome(wsWait)
+	own := f.post(f.alice, "for the agent")
+	require.Equal(t, own.ID, conn.Message(wsWait).Message.ID)
+
+	// Acks are handled in order: once the second one moved the cursor, the first was handled.
+	conn.Ack(foreign.ID)
+	conn.Ack(own.ID)
+	require.Eventually(t, func() bool {
+		seq, err := f.env.App.Store.R().GetAgentCursor(context.Background(), dbCursorParams(f.agentID, f.room.ID))
+		return err == nil && seq == own.Seq
+	}, wsWait, 20*time.Millisecond)
+	_, err := f.env.App.Store.R().GetAgentCursor(context.Background(), dbCursorParams(f.agentID, other.ID))
+	require.ErrorIs(t, err, sql.ErrNoRows, "no cursor in a room the agent is not in")
 }
