@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -459,6 +460,14 @@ func TestLinkReportsAgentLimit(t *testing.T) {
 	tm := fastTiming
 	tm.replacedPause = 50 * time.Millisecond
 	l := newLink(mustURL(t, srv.URL), "pl_agent_x", "builder", http.DefaultClient, discard{}, stderr, tm)
+	var waitsMu sync.Mutex
+	var waits []time.Duration
+	l.sleep = func(ctx context.Context, d time.Duration) bool {
+		waitsMu.Lock()
+		waits = append(waits, d)
+		waitsMu.Unlock()
+		return sleepCtx(ctx, d)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { _ = l.run(ctx); close(done) }()
@@ -468,12 +477,18 @@ func TestLinkReportsAgentLimit(t *testing.T) {
 	require.EqualError(t, l.Err(), "partyline: agent limit reached for this account; delete unused agents in the web app")
 	time.Sleep(4 * tm.replacedPause) // several retries
 	require.Equal(t, 1, strings.Count(stderr.String(), "agent limit reached"), "stderr: %q", stderr.String())
+	waitsMu.Lock()
+	defer waitsMu.Unlock()
+	require.NotEmpty(t, waits)
+	for _, d := range waits {
+		require.Equal(t, tm.replacedPause, d, "retries after a refusal wait the long pause, not the backoff")
+	}
 }
 
 // W1: the delivery queue is bounded; a full queue refuses new frames so the link drops the
 // connection instead of growing without limit.
 func TestFrameQueueIsBounded(t *testing.T) {
-	q := newFrameQueue()
+	q := newFrameQueue(maxQueuedFrames)
 	for i := range maxQueuedFrames {
 		require.True(t, q.push([]byte{byte(i)}), "frame %d", i)
 	}
@@ -482,4 +497,87 @@ func TestFrameQueueIsBounded(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, []byte{0}, data, "oldest first")
 	require.True(t, q.push([]byte("room again")))
+}
+
+// fakeAgentServer accepts the agent WebSocket, runs send on it and reports how the client
+// closed the connection.
+func fakeAgentServer(t *testing.T, send func(ctx context.Context, c *websocket.Conn)) (*url.URL, <-chan websocket.StatusCode) {
+	t.Helper()
+	closed := make(chan websocket.StatusCode, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		send(r.Context(), c)
+		for {
+			if _, _, err := c.Read(r.Context()); err != nil {
+				select {
+				case closed <- websocket.CloseStatus(err):
+				default:
+				}
+				return
+			}
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return mustURL(t, srv.URL), closed
+}
+
+// neverReady is a notifier Claude Code never initializes, so frames stay queued.
+type neverReady struct{}
+
+func (neverReady) Notify(string, any) error { return nil }
+
+func (neverReady) Initialized() <-chan struct{} { return nil }
+
+// W1: when the delivery queue is full the link drops the connection (policy violation)
+// instead of discarding frames while staying connected, so nothing is acked past the cap.
+func TestLinkDropsConnectionWhenQueueIsFull(t *testing.T) {
+	base, closed := fakeAgentServer(t, func(ctx context.Context, c *websocket.Conn) {
+		for i := range 5 {
+			_ = c.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"type":"notice","text":"n%d"}`, i)))
+		}
+	})
+	l := newLink(base, "pl_agent_x", "builder", http.DefaultClient, neverReady{}, &syncBuffer{}, fastTiming)
+	l.queueCap = 3
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = l.run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	select {
+	case code := <-closed:
+		require.Equal(t, websocket.StatusPolicyViolation, code)
+	case <-time.After(wait):
+		t.Fatal("the link kept the connection open with a full queue")
+	}
+}
+
+// W1: a frame above the read limit closes the connection (1009) instead of being buffered.
+func TestLinkRefusesOversizedFrame(t *testing.T) {
+	base, closed := fakeAgentServer(t, func(ctx context.Context, c *websocket.Conn) {
+		_ = c.Write(ctx, websocket.MessageText, []byte(`{"type":"notice","text":"`+strings.Repeat("x", 4096)+`"}`))
+	})
+	l := newLink(base, "pl_agent_x", "builder", http.DefaultClient, discard{}, &syncBuffer{}, fastTiming)
+	l.readLimit = 1024
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = l.run(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+
+	select {
+	case code := <-closed:
+		require.Equal(t, websocket.StatusMessageTooBig, code)
+	case <-time.After(wait):
+		t.Fatal("an oversized frame did not close the connection")
+	}
+}
+
+// The production limits stay at their documented values.
+func TestLinkDefaultLimits(t *testing.T) {
+	l := newLink(mustURL(t, "http://127.0.0.1:1"), "t", "a", http.DefaultClient, discard{}, &syncBuffer{}, fastTiming)
+	require.Equal(t, 2000, l.queueCap)
+	require.Equal(t, int64(1<<20), l.readLimit)
 }

@@ -107,13 +107,19 @@ type link struct {
 	// Tests replace it to record the backoff without waiting.
 	sleep func(ctx context.Context, d time.Duration) bool
 
+	// queueCap and readLimit bound memory per connection (maxQueuedFrames, maxFrameBytes);
+	// tests lower them.
+	queueCap  int
+	readLimit int64
+
 	mu    sync.Mutex
 	state linkState
 	seen  *idRing
 }
 
 func newLink(base *url.URL, token, agent string, hc *http.Client, n notifier, stderr io.Writer, t timing) *link {
-	return &link{base: base, token: token, agent: agent, http: hc, notify: n, stderr: stderr, t: t.withDefaults(), sleep: sleepCtx, seen: newIDRing(dedupeSize)}
+	return &link{base: base, token: token, agent: agent, http: hc, notify: n, stderr: stderr, t: t.withDefaults(), sleep: sleepCtx, seen: newIDRing(dedupeSize),
+		queueCap: maxQueuedFrames, readLimit: maxFrameBytes}
 }
 
 // sleepCtx waits d or until ctx ends; it reports whether the full wait passed.
@@ -247,7 +253,7 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 		}
 		return outDialFailed, nil
 	}
-	ws.SetReadLimit(maxFrameBytes)
+	ws.SetReadLimit(l.readLimit)
 	l.setState(stateConnected)
 
 	// Closing on ctx end (stdin EOF, signal) sends a normal close so the server marks the
@@ -263,7 +269,7 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 	// The reader only queues frames; a delivery goroutine turns them into notifications once
 	// Claude Code is initialized. So the socket is read, pings are answered and closes are
 	// seen even before notifications/initialized.
-	q := newFrameQueue()
+	q := newFrameQueue(l.queueCap)
 	var deliverErr error
 	delivered := make(chan struct{})
 	go func() {
@@ -339,8 +345,8 @@ type frameQueue struct {
 	ready chan struct{}
 }
 
-func newFrameQueue() *frameQueue {
-	return &frameQueue{max: maxQueuedFrames, ready: make(chan struct{}, 1)}
+func newFrameQueue(max int) *frameQueue {
+	return &frameQueue{max: max, ready: make(chan struct{}, 1)}
 }
 
 // push queues data; false when the queue is full.
