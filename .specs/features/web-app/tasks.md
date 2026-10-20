@@ -365,7 +365,7 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T19
 **Requirement**: UI-23
 **Done when**:
-- [ ] With preference `system`, `<html>` has `dark` iff `prefers-color-scheme: dark` matches, and a live media-query change re-applies it
+- [x] With preference `system`, `<html>` has `dark` iff `prefers-color-scheme: dark` matches, and a live media-query change re-applies it
 **Tests**: unit
 **Gate**: quick
 
