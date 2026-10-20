@@ -455,7 +455,7 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T29
 **Requirement**: UI-06
 **Done when**:
-- [ ] The `status` region exists while connected (empty) and gets the reconnecting text after 2 s
+- [x] The `status` region exists while connected (empty) and gets the reconnecting text after 2 s
 **Tests**: unit
 **Gate**: quick
 

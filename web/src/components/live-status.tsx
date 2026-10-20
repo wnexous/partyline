@@ -30,22 +30,25 @@ export function LiveIndicator({ className }: { className?: string }) {
   );
 }
 
-/** Shown above the page while the live socket has been down for more than 2 s (UI-06). */
+/**
+ * Shown above the page while the live socket has been down for more than 2 s (UI-06). The live
+ * region stays mounted and only its content changes: screen readers skip regions that are
+ * inserted together with their text.
+ */
 export function LiveBanner() {
   const t = useT();
   const disconnected = useDisconnected();
-  if (!disconnected) return null;
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="flex items-start gap-3 border-b border-tape-strong/50 bg-tape px-4 py-2.5 text-sm text-tape-foreground md:px-8"
-    >
-      <RadioTowerIcon className="mt-0.5 size-4 shrink-0 animate-pulse" aria-hidden="true" />
-      <p className="min-w-0">
-        <span className="font-semibold">{t("live.reconnectingTitle")}</span>{" "}
-        <span className="text-tape-foreground/80">{t("live.reconnectingBody")}</span>
-      </p>
+    <div role="status" aria-live="polite">
+      {disconnected ? (
+        <div className="flex items-start gap-3 border-b border-tape-strong/50 bg-tape px-4 py-2.5 text-sm text-tape-foreground md:px-8">
+          <RadioTowerIcon className="mt-0.5 size-4 shrink-0 animate-pulse" aria-hidden="true" />
+          <p className="min-w-0">
+            <span className="font-semibold">{t("live.reconnectingTitle")}</span>{" "}
+            <span className="text-tape-foreground/80">{t("live.reconnectingBody")}</span>
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
