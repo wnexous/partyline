@@ -168,9 +168,10 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24)", async
   const room = await apiCall<Room>(context.request, instance, "POST", "/rooms", {
     name: "e2e-narrow",
   });
-  // A long unbroken token is the usual way a timeline row pushes a page sideways.
+  // A long token with no break opportunity (no spaces or hyphens) is the usual way a
+  // timeline row pushes a page sideways; only `break-words` can wrap it.
   await apiCall(context.request, instance, "POST", `/rooms/${room.id}/messages`, {
-    text: `See https://example.com/${"a-very-long-path-segment".repeat(8)} for details`,
+    text: `See ${"averylongunbrokentoken".repeat(12)} for details`,
   });
 
   const pages: [string, string][] = [
@@ -186,7 +187,7 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24)", async
     await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
     if (path === `/rooms/${room.id}`) {
       // The room page scrolls inside its timeline, so also check the long line wraps on screen.
-      const line = page.getByText(/a-very-long-path-segment/);
+      const line = page.getByText(/averylongunbrokentoken/);
       await expect(line).toBeVisible();
       const right = await line.evaluate((el) => {
         const range = document.createRange();
