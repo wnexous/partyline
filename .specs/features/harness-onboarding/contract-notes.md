@@ -114,3 +114,128 @@ migration is `0010`.
 - `TestLinkPausesAfterReplaced` (agent-channel, 3 s pause, 1 s no-fight window) failed once
   under load during the T4 gate and passed on the rerun; it is timing-sensitive and not
   affected by this batch.
+
+# Contract Notes (from harness-onboarding Phase 2: T6-T9)
+
+Binding for Phase 3 (listen, adapters, hooks: T10-T14), Phase 4 (web, UAT: T15-T17) and the
+Verifier.
+
+## partyline setup (ONB-04, DEV-01..03)
+- `setup [--url U] [--token T | --browser] [--harness a,b|none] [--yes] [--uninstall]`
+  (`internal/cli/setup.go`, `setup_harness.go`). Plain line prompts on stdout, answers from
+  stdin; `--yes` asks nothing.
+- URL default: `--url` > `PARTYLINE_URL` > the config file's `url` (the served installer's
+  `{"url": …, "token": ""}` makes the instance URL the default answer). A config file that
+  cannot be read (not private, invalid) is ignored for defaults with a note on stderr.
+  `normalizeURL` accepts http(s) only and drops a trailing `/`. No URL at all → exit 2
+  "no instance URL".
+- Token: `--token`, else the saved token when the saved URL equals the chosen URL ("Using the
+  saved agent token"), else the prompt; an empty answer (or `--yes` with nothing) starts the
+  browser approval. `PARTYLINE_TOKEN` is not read by setup.
+- Checks: `GET /healthz` 200 ("cannot reach <url>" → exit 1), then the token with
+  `GET /api/v1/agent/rooms` (`Authorization: Bearer`, `X-Partyline-Agent: partyline-setup`):
+  200 or 403 "agent not registered…" = valid agent token; 401 → "the server rejected the
+  token (mistyped, revoked or expired); nothing was saved"; other 403 → "this is not an
+  agent token…". Nothing is written on any failure; success saves with `cliconfig.Save`.
+- Browser flow: `POST /devices {machine: hostname}` (control characters dropped, cut to 64
+  runes, empty → `partyline`), prints the `approve_url` and code, then waits
+  `devicePollInterval` (2 s) before each poll; 429 → keep waiting; `denied` → "approval
+  denied", `expired` or 404 → "approval expired" (exit 1); `approved` with a token → saves
+  the poll's `url` (normalized) and the token after the token check. Tests replace the wait
+  with `stdio.sleep` and run the server on a `testkit.Clock`.
+- After saving, the harness step runs (below); a failed registration exits 1 but the
+  credentials stay saved.
+- `stdio` gained `hostname`, `sleep`, `executable`, `runHarness`, `lookPath`, `exec` (nil =
+  real). CLI tests must set `lookPath`/`runHarness` (see `runSetup`) so no real harness CLI
+  ever runs; `harness.Env.run` additionally sets `HOME=<Env.Home>` for real CLI calls.
+
+## Harness registrars (HAR-01, HAR-02, HAR-04) — `internal/harness`
+- `harness.All(env)`: claude, codex, gemini, opencode, pi, omp (`Registrar`: `ID`, `Title`,
+  `Detected`, `Plan`, `Apply`, `RemovePlan`, `Remove`, `Entries`). `Env{Home, Getenv,
+  Binary (os.Executable, absolute), Version, Run, LookPath}`. Setup picks `--harness` ids
+  (unknown → exit 2 before anything else) or every `Detected()` one; for each it prints the
+  `Plan()` lines and asks "Register Partyline in <Title>? [Y/n]" (Enter = yes, "n" = no, end
+  of input = no).
+- Verified CLI syntax (2026-10-20, temp HOME; versions claude 2.1.303, codex-cli 0.159.3,
+  gemini 0.62.0, opencode 1.18.32, pi 1.0.4, omp 18.6.1):
+  - Claude Code: `claude mcp add --scope user partyline -- <abs> channel` writes
+    `~/.claude.json` `mcpServers.partyline = {"type":"stdio","command":<abs>,"args":["channel"],"env":{}}`;
+    it exits 1 "already exists" for an existing name, so update = `claude mcp remove --scope
+    user partyline` then add (remove of a missing name exits 1, so it runs only when the file
+    has the entry). `$CLAUDE_CONFIG_DIR/.claude.json` is read when set. `claude mcp get`
+    health-checks the server, so Entries reads the file instead.
+  - Codex: `codex mcp add partyline -- <abs> channel --tools-only` upserts
+    `[mcp_servers.partyline]` in `~/.codex/config.toml` (it refuses an invalid config.toml
+    with the TOML error, which setup reports); `codex mcp remove partyline` (exit 0 even when
+    missing); `codex mcp get partyline --json` → `transport.command` (exit 1 "No MCP server
+    named …" when missing; Codex prints WARNING lines before the JSON). Stop hook in
+    `$CODEX_HOME/hooks.json` (default `~/.codex/hooks.json`), format confirmed from a real
+    hooks.json and the binary: `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"<abs> hook codex-stop","timeout":30}]}]}}`
+    (timeout in seconds; Codex's hooks feature is stable/on). Its output contract is
+    Claude-compatible: `{"decision":"block","reason":…}` and block requires a non-empty
+    reason (string in the binary).
+  - Gemini: `gemini mcp add -s user partyline <abs> channel --tools-only` upserts
+    `~/.gemini/settings.json` `mcpServers.partyline = {"command":<abs>,"args":["channel","--tools-only"]}`
+    (the trailing `--tools-only` reaches args without `--`); `gemini mcp remove -s user
+    partyline` exits 0 even when missing and leaves `"mcpServers": {}` behind. AfterAgent hook
+    (docs bundled with 0.62.0, `docs/hooks/`): `hooks.AfterAgent += {"matcher":"*","hooks":[{"name":"partyline","type":"command","command":"<abs> hook gemini-after-agent","timeout":30000}]}`
+    (timeout in ms; hooks on by default, `hooksConfig.enabled`). Output: `{"decision":"deny","reason":…}`
+    makes Gemini retry with `reason` as the new prompt; stdout must be only that JSON (exit 0).
+  - pi: `~/.pi/agent/mcp.json` `{"mcpServers":{"partyline":{"command":<abs>,"args":["channel","--tools-only"]}}}`
+    — the same format `pi mcp add partyline -- <cmd> args…` writes; setup edits the file.
+  - omp: no `omp mcp` subcommand; the binary reads `~/.omp/agent/mcp.json`
+    `{"mcpServers":{name:{command,args}}}` (type defaults to stdio). Setup writes
+    `args: ["channel"]` (full channel; omp forwards the notifications to the extension).
+  - OpenCode: `$XDG_CONFIG_HOME/opencode` (default `~/.config/opencode`, confirmed with
+    `opencode debug paths`) `opencode.json` `mcp.partyline = {"type":"local","command":[<abs>,"channel","--tools-only"],"enabled":true}`;
+    plugin `plugins/partyline.ts`. A `opencode.jsonc` is not handled (JSON with comments
+    fails as a parse error).
+- Hook commands are `<shell-quoted abs> hook <name>` (`codex-stop`, `gemini-after-agent`,
+  constants `harness.CodexStopHook`, `harness.GeminiAfterAgentHook`); a group is "ours" when
+  one of its commands ends in ` hook <name>` and runs a binary named `partyline*`. Apply
+  replaces our group in place or appends it; Remove deletes only our groups.
+- JSON edits (`jsonedit.go`): span-based, every other byte kept; a missing member is added
+  after the last member with that member's indentation (compact files stay compact),
+  missing parents are created; removal is the exact inverse and prunes objects/arrays left
+  empty; a file left `{}` is deleted. Invalid JSON (or a non-object top level) →
+  `*harness.ParseError` naming the file, nothing written and no CLI run. Before changing an
+  existing file setup copies it to `<file>.partyline.bak`; uninstall deletes that copy.
+- Extension files: `integrations/{omp,pi,opencode}/partyline.ts` embedded by package
+  `integrations` (`integrations.Files`), written as `// partyline <version>: written by
+  \`partyline setup\`; \`partyline setup --uninstall\` removes it.\n` + source. The current
+  sources are placeholders — Phase 3 (T11-T13) replaces them (and adds `make
+  integrations-test`). An existing file without that marker is never overwritten (Apply
+  error) nor deleted.
+- Detection: CLI on PATH (claude, codex, gemini, opencode, pi, omp) or, for the file-based
+  ones, the config directory exists.
+- `setup --uninstall [--harness …] [--yes]`: per registrar `RemovePlan` + confirm + `Remove`;
+  without `--harness` it also offers to delete the config file and reminds that the token
+  stays valid until revoked. "Nothing to remove" when nothing is registered.
+- HAR-02 for CLI-managed files (`~/.claude.json`, `config.toml`, the `mcpServers` part of
+  Gemini's settings) is the harness CLI's own rewrite; byte-for-byte is guaranteed only for
+  the files setup edits itself.
+
+## doctor (ONB-06) and the claude launcher (HAR-03)
+- `partyline doctor` prints `ok   <name>: <detail>` or `FAIL <name>: <detail>` +
+  `     fix: <hint>`, then "All checks passed." (exit 0) or "<n> check(s) failed." (exit 1).
+  Checks: `binary` (partyline on PATH; fix `export PATH="<dir>:$PATH"`), `config` (file
+  present, private, URL and token; fix `run partyline setup` / `chmod 600|700 …`), `server`
+  (`/healthz`), `token` (same check as setup), one line per registered entry of each
+  detected harness (`<Title>: <What> runs <bin>`, binary must be an existing absolute
+  executable file; fix `run partyline setup --harness <id>`; none registered → `harnesses`
+  FAIL), `versions` (local `buildVersion()` vs server; two non-`dev` versions that differ, or
+  a server that reports none, FAIL).
+- `/healthz` now answers `{"status":"ok","version":"<server version>"}` (`api.Deps.Version`,
+  set by the app from `app.Options.Version`; `dev` by default). testkit: `WithVersion(v)`.
+- `partyline claude [args…]` looks up `claude` on PATH and execs (`syscall.Exec`; on Windows
+  a child process with the exit code passed through) `claude
+  --dangerously-load-development-channels server:partyline [args…]`; no claude → exit 1.
+
+## Notes for Phase 3/4
+- `--tools-only` is not implemented yet (T10); every registration except Claude Code and omp
+  already passes it, so those harnesses fail to start the MCP server until T10 lands. T10
+  must not use derived-name unique mode on its own (see Phase 1 notes).
+- `codex queue --thread <id> --message <text>` (codex-cli 0.159.3) queues a message for an
+  existing session — a possible push path for Codex worth checking in T14/T17.
+- Re-run `make check` flake: `TestLinkPausesAfterReplaced` failed once more under load in the
+  T6 gate (passed alone and in the following full gates).
