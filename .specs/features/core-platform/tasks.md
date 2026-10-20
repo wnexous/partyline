@@ -891,7 +891,7 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 **Requirement**: AUTH-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] The PATCH returns 409 `conflict` and the last admin keeps its role
+- [x] The PATCH (demote and disable) returns 409 `conflict` and the last admin keeps its role and stays active
 **Tests**: e2e
 **Gate**: full
 **Commit**: `test(api): observe the last admin conflict over http`
