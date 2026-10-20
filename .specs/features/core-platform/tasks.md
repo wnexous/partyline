@@ -624,8 +624,8 @@ T35 → T43 → T44
 **Requirement**: AUTH-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Self demote/disable → 409 conflict
-- [ ] Last active admin demote/disable → 409 conflict; with a second admin it works
+- [x] Self demote/disable → 409 conflict
+- [x] Last active admin demote/disable → 409 conflict; with a second admin it works
 **Tests**: e2e
 **Gate**: full
 **Commit**: `fix(users): keep at least one active admin`

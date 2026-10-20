@@ -161,6 +161,24 @@ func TestAdminChangesRole(t *testing.T) {
 	admin.Patch("/api/v1/admin/users/missing", dto.UpdateUserRequest{Role: &role}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
 
+// AUTH-10 guard: an admin cannot demote or disable themselves (409 conflict); another admin
+// can, and the account keeps working until then.
+func TestAdminCannotDemoteOrDisableSelf(t *testing.T) {
+	env := testkit.New(t)
+	admin := env.SetupAdmin()
+	self := "/api/v1/admin/users/" + admin.User.ID
+	member, disabled := dto.RoleMember, true
+
+	admin.Patch(self, dto.UpdateUserRequest{Role: &member}).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+	admin.Patch(self, dto.UpdateUserRequest{Disabled: &disabled}).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+	admin.Get("/api/v1/admin/audit").RequireStatus(http.StatusOK) // still an active admin
+
+	// A second admin may demote the first.
+	carol := env.NewAdmin("carol")
+	got := testkit.Decode[dto.AdminUser](carol.Patch(self, dto.UpdateUserRequest{Role: &member}).RequireStatus(http.StatusOK))
+	require.Equal(t, dto.RoleMember, got.Role)
+}
+
 func TestUserDirectory(t *testing.T) {
 	env := testkit.New(t)
 	admin := env.SetupAdmin()

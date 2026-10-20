@@ -25,3 +25,6 @@ UPDATE users SET display_name = ?, locale = ? WHERE id = ?;
 
 -- name: UpdateUserPassword :exec
 UPDATE users SET password_hash = ? WHERE id = ?;
+
+-- name: CountActiveAdmins :one
+SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled_at IS NULL;

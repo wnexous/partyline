@@ -29,6 +29,12 @@ var (
 	ErrUsernameTaken      = errors.New("username already taken")          // 409
 )
 
+// Admin guard errors (409): the instance always keeps one active admin.
+var (
+	ErrSelfAdminChange = errors.New("admins cannot demote or disable themselves")
+	ErrLastAdmin       = errors.New("the last active admin cannot be demoted or disabled")
+)
+
 // ValidationError names each rejected input field and the reason.
 type ValidationError = validation.Error
 
