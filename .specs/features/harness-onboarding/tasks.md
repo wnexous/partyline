@@ -360,8 +360,8 @@ From `uat.md` (T17) follow-ups 1 and 2, the omp instructions mismatch and a flak
 **Requirement**: PUSH-03, PUSH-06, HAR-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `--harness omp` instructions describe `<partyline …>` framing, push delivery and the connect notice, no `<channel` and no `wait_for_messages`; unknown harness or `--tools-only` with it → exit 2
-- [ ] omp registrar writes `args: ["channel", "--harness", "omp"]`; the wizard's manual omp entry matches
+- [x] `--harness omp` instructions describe `<partyline …>` framing, push delivery and the connect notice, no `<channel` and no `wait_for_messages`; unknown harness or `--tools-only` with it → exit 2
+- [x] omp registrar writes `args: ["channel", "--harness", "omp"]`; the wizard's manual omp entry matches
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(cli): describe the partyline framing to omp sessions`

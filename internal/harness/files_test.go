@@ -48,10 +48,10 @@ var fileCases = []fileCase{
 		id: "omp", title: "oh-my-pi (omp)", detect: ".omp/agent",
 		config: ".omp/agent/mcp.json", ext: ".omp/agent/extensions/partyline.ts", source: "omp/partyline.ts",
 		keys: "mcpServers.partyline", extKind: "extension",
-		entry: `{"command":"/opt/bin/partyline","args":["channel"]}`,
+		entry: `{"command":"/opt/bin/partyline","args":["channel","--harness","omp"]}`,
 		orig:  "{\n\t\"disabledServers\": [\"x\"]\n}\n",
 		withEntry: "{\n\t\"disabledServers\": [\"x\"],\n\t\"mcpServers\": {\n\t  \"partyline\": {\n\t    \"command\": \"/opt/bin/partyline\",\n" +
-			"\t    \"args\": [\n\t      \"channel\"\n\t    ]\n\t  }\n\t}\n}\n",
+			"\t    \"args\": [\n\t      \"channel\",\n\t      \"--harness\",\n\t      \"omp\"\n\t    ]\n\t  }\n\t}\n}\n",
 	},
 }
 
@@ -132,13 +132,23 @@ func TestFileHarnessUpdatesEntryInPlace(t *testing.T) {
 	require.Equal(t, `{"mcpServers": {"a": {"command": "a"}, "partyline": {"command":"/opt/bin/partyline","args":["channel","--tools-only"]}, "z": {"command": "z"}}}`, readFile(t, cfg))
 }
 
+// HAR-02, PUSH-03: an omp entry from an earlier setup (plain "channel") is updated in place to
+// the --harness omp channel.
+func TestOmpEntryGainsHarnessFlag(t *testing.T) {
+	env, _ := testEnv(t, nil)
+	cfg := filepath.Join(env.Home, ".omp/agent/mcp.json")
+	writeFile(t, cfg, `{"mcpServers": {"partyline": {"command": "/opt/bin/partyline", "args": ["channel"]}, "z": {"command": "z"}}}`)
+	require.NoError(t, registrar(t, env, "omp").Apply(context.Background()))
+	require.Equal(t, `{"mcpServers": {"partyline": {"command":"/opt/bin/partyline","args":["channel","--harness","omp"]}, "z": {"command": "z"}}}`, readFile(t, cfg))
+}
+
 // HAR-04: a config file setup created is deleted by uninstall.
 func TestFileHarnessCreatesAndDeletesConfig(t *testing.T) {
 	env, _ := testEnv(t, nil)
 	r := registrar(t, env, "omp")
 	require.NoError(t, r.Apply(context.Background()))
 	cfg := filepath.Join(env.Home, ".omp/agent/mcp.json")
-	require.Equal(t, decode(t, `{"mcpServers":{"partyline":{"command":"/opt/bin/partyline","args":["channel"]}}}`), jsonAt(t, cfg))
+	require.Equal(t, decode(t, `{"mcpServers":{"partyline":{"command":"/opt/bin/partyline","args":["channel","--harness","omp"]}}}`), jsonAt(t, cfg))
 	requireMissing(t, cfg+".partyline.bak")
 	require.NoError(t, r.Remove(context.Background()))
 	requireMissing(t, cfg)

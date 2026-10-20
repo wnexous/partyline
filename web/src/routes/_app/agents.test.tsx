@@ -258,7 +258,7 @@ describe("connect an agent (WIZ-01)", () => {
     });
     await user.click(within(tabs).getByRole("tab", { name: "omp" }));
     expect(JSON.parse(code(dialog, "~/.omp/agent/mcp.json"))).toEqual({
-      mcpServers: { partyline: { command: "partyline", args: ["channel"] } },
+      mcpServers: { partyline: { command: "partyline", args: ["channel", "--harness", "omp"] } },
     });
     await user.click(within(tabs).getByRole("tab", { name: "Codex" }));
     expect(code(dialog, "~/.codex/config.toml")).toBe(

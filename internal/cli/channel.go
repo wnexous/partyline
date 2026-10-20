@@ -73,13 +73,23 @@ func resolveAgent(cmd string, f agentFlags, io stdio) (agentConn, int) {
 // channelCmd runs `partyline channel`: the MCP stdio server Claude Code loads as a channel.
 // Without a name it asks the server for a free "<name>-N" when another session holds the
 // derived one (NAME-02). With --tools-only it serves the tools without the push socket
-// (PUSH-02), acting as the agent `partyline listen` of the same harness recorded.
+// (PUSH-02), acting as the agent `partyline listen` of the same harness recorded. With
+// --harness omp the MCP instructions describe the omp extension's <partyline …> framing.
 func channelCmd(ctx context.Context, args []string, io stdio) int {
 	fs := flag.NewFlagSet("channel", flag.ContinueOnError)
 	fs.SetOutput(io.stderr)
 	f := addAgentFlags(fs)
 	toolsOnly := fs.Bool("tools-only", false, "serve the tools without receiving messages (pair with partyline listen, or for harnesses without push)")
+	harness := fs.String("harness", "", "the harness running the full channel when it is not Claude Code (omp)")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	switch {
+	case *harness != "" && *harness != channel.HarnessOmp:
+		fmt.Fprintf(io.stderr, "partyline channel: unknown --harness %q (known: %s)\n", *harness, channel.HarnessOmp)
+		return 2
+	case *harness != "" && *toolsOnly:
+		fmt.Fprintf(io.stderr, "partyline channel: --harness %s runs the full channel; drop --tools-only\n", *harness)
 		return 2
 	}
 	c, code := resolveAgent("channel", f, io)
@@ -88,7 +98,7 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	}
 	err := channel.Run(ctx, channel.Options{
 		URL: c.url, Token: c.token, Agent: c.agent, UniqueName: c.derived && !*toolsOnly, Version: buildVersion(),
-		ToolsOnly: *toolsOnly, SessionKey: c.sessionKey,
+		ToolsOnly: *toolsOnly, SessionKey: c.sessionKey, Harness: *harness,
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {

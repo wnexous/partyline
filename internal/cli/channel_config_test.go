@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/channel"
 	"github.com/wnexous/partyline/internal/cliconfig"
 )
 
@@ -81,4 +82,29 @@ func TestChannelRefusesConfigFileNot0600(t *testing.T) {
 	require.Equal(t, 1, code)
 	require.Contains(t, out.String(), "chmod 600 "+path)
 	require.NotContains(t, out.String(), "pl_agent_x")
+}
+
+// PUSH-03, PUSH-06: `channel --harness omp` runs the full channel (the agent comes online)
+// with the instructions that describe the omp extension's <partyline …> framing.
+func TestChannelHarnessOmp(t *testing.T) {
+	e := newChannelEnv(t)
+	c := startChannel(t, []string{"--harness", "omp"}, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_AGENT": "omp-proj"}, "/tmp/wd")
+	c.send(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": map[string]any{"protocolVersion": "2025-11-25"}})
+	res, _ := c.next()["result"].(map[string]any)
+	text, _ := res["instructions"].(string)
+	require.Equal(t, channel.OmpInstructions, text)
+	require.Contains(t, text, "<partyline room=")
+	c.send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
+	e.agent(t, "omp-proj")
+}
+
+// An unknown harness, or omp together with --tools-only, exits 2 before anything connects.
+func TestChannelHarnessFlagErrors(t *testing.T) {
+	code, _, errOut := run("channel", "--harness", "codex")
+	require.Equal(t, 2, code)
+	require.Contains(t, errOut, `partyline channel: unknown --harness "codex" (known: omp)`)
+
+	code, _, errOut = run("channel", "--harness", "omp", "--tools-only")
+	require.Equal(t, 2, code)
+	require.Contains(t, errOut, "partyline channel: --harness omp runs the full channel; drop --tools-only")
 }

@@ -234,13 +234,14 @@ func newPi(env Env) Registrar {
 }
 
 // newOmp: ~/.omp/agent/mcp.json (the full channel: omp hands its notifications to the
-// extension) and extensions/partyline.ts.
+// extension, which frames them as <partyline …>; --harness omp makes the MCP instructions
+// describe that framing) and extensions/partyline.ts.
 func newOmp(env Env) Registrar {
 	return &fileHarness{
 		env: env, id: "omp", title: "oh-my-pi (omp)", cli: "omp",
 		dir:    func() string { return filepath.Join(env.Home, ".omp", "agent") },
 		config: "mcp.json", keys: []string{"mcpServers", ServerName},
-		value:   func(bin string) any { return mcpServer{Command: bin, Args: []string{"channel"}} },
+		value:   func(bin string) any { return mcpServer{Command: bin, Args: []string{"channel", "--harness", "omp"}} },
 		command: commandField,
 		ext:     filepath.Join("extensions", "partyline.ts"), source: "omp/partyline.ts",
 	}

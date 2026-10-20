@@ -42,6 +42,9 @@ type Options struct {
 	ToolsOnly bool
 	// SessionKey names the session file listen writes (see ListenOptions.SessionKey).
 	SessionKey string
+	// Harness names the harness that runs the full channel when it is not Claude Code;
+	// HarnessOmp switches the MCP instructions to OmpInstructions. Empty means Claude Code.
+	Harness string
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -74,8 +77,11 @@ func Run(ctx context.Context, o Options) error {
 	agent := agents.Slug(o.Agent)
 
 	instructions := Instructions
-	if o.ToolsOnly {
+	switch {
+	case o.ToolsOnly:
 		instructions = ToolsOnlyInstructions
+	case o.Harness == HarnessOmp:
+		instructions = OmpInstructions
 	}
 	srv := mcp.NewServer(o.Stdin, o.Stdout, mcp.ServerInfo{Name: ServerName, Version: o.Version, Instructions: instructions})
 	if o.TempDir == "" {

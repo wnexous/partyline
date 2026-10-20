@@ -1,9 +1,9 @@
 // Partyline extension for oh-my-pi (omp).
 //
-// omp runs `partyline channel` from ~/.omp/agent/mcp.json and forwards every MCP notification
-// to extensions as the `mcp_notification` event. This extension turns the partyline server's
-// notifications/claude/channel into a user message: a new turn when the session is idle, a
-// follow-up while it is busy (PUSH-03), framed with the trust line (PUSH-06).
+// omp runs `partyline channel --harness omp` from ~/.omp/agent/mcp.json and forwards every MCP
+// notification to extensions as the `mcp_notification` event. This extension turns the
+// partyline server's notifications/claude/channel into a user message: a new turn when the
+// session is idle, a follow-up while it is busy (PUSH-03), framed with the trust line (PUSH-06).
 //
 // The channel acks a message once it has sent the notification, so a message this extension
 // cannot hand to the session would be lost. It keeps such messages in memory, in order, and

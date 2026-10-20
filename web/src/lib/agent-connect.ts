@@ -42,6 +42,8 @@ const json = (value: unknown) =>
 
 const channel = ["channel"];
 const toolsOnly = ["channel", "--tools-only"];
+/** omp runs the full channel; its extension frames the messages as <partyline …>. */
+const ompChannel = ["channel", "--harness", "omp"];
 
 export const HARNESSES: readonly Harness[] = [
   {
@@ -85,7 +87,7 @@ export const HARNESSES: readonly Harness[] = [
     delivery: "push",
     manual: {
       file: "~/.omp/agent/mcp.json",
-      entry: json({ mcpServers: { partyline: { command: "partyline", args: channel } } }),
+      entry: json({ mcpServers: { partyline: { command: "partyline", args: ompChannel } } }),
     },
   },
   {
