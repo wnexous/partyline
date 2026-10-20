@@ -255,3 +255,22 @@ func TestAgentAckIgnoresForeignRooms(t *testing.T) {
 	_, err := f.env.App.Store.R().GetAgentCursor(context.Background(), dbCursorParams(f.agentID, other.ID))
 	require.ErrorIs(t, err, sql.ErrNoRows, "no cursor in a room the agent is not in")
 }
+
+// AGT-08: a live push of a message the backlog already delivered is not sent again (the
+// push can race the backlog on connect); newer messages still arrive live.
+func TestAgentLivePushSkipsBacklogOverlap(t *testing.T) {
+	f := newAgentRoom(t)
+	m1, m2 := f.post(f.alice, "one"), f.post(f.alice, "two")
+	conn := f.dial(t)
+	conn.Welcome(wsWait)
+	require.Equal(t, m1.ID, conn.Message(wsWait).Message.ID)
+	require.Equal(t, m2.ID, conn.Message(wsWait).Message.ID)
+
+	ref := dto.RoomRef{ID: f.room.ID, Name: f.room.Name}
+	for _, m := range []dto.Message{m1, m2} {
+		require.True(t, f.env.App.Gateway.Push(f.agentID, dto.AgentMessage{Room: ref, Trusted: true, Message: m}))
+	}
+	m3 := f.post(f.alice, "three") // pushed live after the two duplicates
+	require.Equal(t, m3.ID, conn.Message(wsWait).Message.ID, "the duplicates are skipped")
+	conn.ExpectNone(500 * time.Millisecond)
+}

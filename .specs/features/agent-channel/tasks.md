@@ -235,13 +235,13 @@ T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
 #### T12: Live push overlapping the backlog (F5, M17)
 
 **What**: A gateway test queues a live push of a message the backlog already sent and asserts the agent receives it once.
-**Where**: `internal/agents/gateway_test.go`
+**Where**: `internal/api/agent_ws_test.go`
 **Depends on**: T11
 **Reuses**: Gateway.Push
 **Requirement**: AGT-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A message delivered by the backlog and pushed live again arrives as exactly one frame; a newer pushed message still arrives
+- [x] A message delivered by the backlog and pushed live again arrives as exactly one frame; a newer pushed message still arrives
 **Tests**: e2e
 **Gate**: full
 **Commit**: `test(agents): send a message once when a live push overlaps the backlog`
