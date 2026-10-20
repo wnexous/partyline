@@ -62,7 +62,7 @@ func Kind() connectors.Kind {
 		Fields: []connectors.Field{
 			{Name: "secret", Label: "Signing secret", Type: dto.FieldTypeSecret, Required: true,
 				Help: "Leave empty to generate one; it is shown once"},
-			{Name: "outbound_url", Label: "Outbound URL", Type: dto.FieldTypeURL,
+			{Name: "outbound_url", Label: "Outbound URL", Type: dto.FieldTypeURL, Endpoint: true,
 				Help: "Room messages for this connector's chats are POSTed here"},
 		},
 		Prepare: prepare,
@@ -103,7 +103,7 @@ type Connector struct {
 	client      *http.Client
 	now         func() time.Time
 
-	replays     connectors.Replays
+	replays connectors.Replays
 
 	mu      sync.Mutex
 	run     *running

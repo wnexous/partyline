@@ -42,7 +42,8 @@ func Kind() connectors.Kind {
 	return connectors.Kind{
 		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true,
 		Fields: []connectors.Field{
-			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Help: "e.g. https://evolution.example.com"},
+			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Endpoint: true,
+				Help: "e.g. https://evolution.example.com"},
 			{Name: "api_key", Label: "Global API key", Type: dto.FieldTypeSecret, Required: true},
 			{Name: "instances", Label: "Instances", Type: dto.FieldTypeStringList,
 				Help: "Instance names to use; empty uses every instance with WebSocket events enabled"},

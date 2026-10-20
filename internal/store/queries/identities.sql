@@ -34,3 +34,6 @@ SELECT * FROM identities WHERE user_id = ? ORDER BY connector_kind, created_at, 
 
 -- name: DeleteIdentity :execrows
 DELETE FROM identities WHERE id = ? AND user_id = ?;
+
+-- name: DeleteConnectorIdentities :execrows
+DELETE FROM identities WHERE connector_id = ?;

@@ -47,7 +47,7 @@ func Kind() connectors.Kind {
 		Name: KindName, Label: "Telegram bot",
 		Fields: []connectors.Field{
 			{Name: "bot_token", Label: "Bot token", Type: dto.FieldTypeSecret, Required: true, Help: "From @BotFather"},
-			{Name: "api_base", Label: "Bot API URL", Type: dto.FieldTypeURL, Default: DefaultAPIBase,
+			{Name: "api_base", Label: "Bot API URL", Type: dto.FieldTypeURL, Default: DefaultAPIBase, Endpoint: true,
 				Help: "Change only for a self-hosted Bot API server"},
 		},
 		New: func(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {

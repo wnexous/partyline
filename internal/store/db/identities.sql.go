@@ -60,6 +60,18 @@ func (q *Queries) CreatePairingCode(ctx context.Context, arg CreatePairingCodePa
 	return err
 }
 
+const deleteConnectorIdentities = `-- name: DeleteConnectorIdentities :execrows
+DELETE FROM identities WHERE connector_id = ?
+`
+
+func (q *Queries) DeleteConnectorIdentities(ctx context.Context, connectorID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteConnectorIdentities, connectorID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteExpiredPairingCodes = `-- name: DeleteExpiredPairingCodes :exec
 DELETE FROM pairing_codes WHERE expires_at <= ?
 `

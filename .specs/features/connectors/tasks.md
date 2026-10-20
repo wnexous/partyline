@@ -481,15 +481,16 @@ IDN-01/IDN-02 + edge case, AD-008 amendment.
 #### T27: Endpoint changes drop the connector's identities (S5)
 
 **What**: `Field.Endpoint` marks `base_url`, `api_base`, `outbound_url`; a PATCH that changes an endpoint field
-deletes the identities linked through the connector, audited (`identity.delete` detail `reason: endpoint_changed`).
+deletes the identities linked through the connector, audited (`connector.identities_reset`, detail `reason:
+endpoint_changed`, `removed`).
 **Where**: `internal/connectors/{kind,service}.go`, adapters' `Kind()`, `internal/store/queries/identities.sql`,
 `internal/audit`
 **Depends on**: T26
 **Requirement**: IDN-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Changing `api_base` (or `base_url`, `outbound_url`) removes the identities; the sender then resolves to no user
-- [ ] Changing a non-endpoint field keeps them; the audit entry names the count, never values
+- [x] Changing `api_base` (or `base_url`, `outbound_url`) removes the identities; the sender then resolves to no user
+- [x] Changing a non-endpoint field keeps them; the audit entry names the count, never values
 **Tests**: integration, e2e
 **Gate**: full
 **Commit**: `fix(connectors): drop linked identities when a connector endpoint changes`

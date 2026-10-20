@@ -160,7 +160,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 1. WHEN a user requests a pairing code for a connector they own or hold `use` on (`POST /api/v1/identities/pairing {connector_id}`) THEN the system SHALL return a 6-character code (A-Z, 2-9) valid for 10 minutes on that connector only; a connector the user cannot use SHALL answer 404 and a missing `connector_id` 422. (IDN-01)
 2. WHEN a connector receives `!link CODE` or `/link CODE` with a valid code issued for that connector THEN the system SHALL link (connector id, sender id and alternate sender id) to that user, consume the code and not route the message; the identity SHALL resolve only messages received through that same connector. A code issued for another connector SHALL link nothing, stay unused, and the message SHALL not be routed. (IDN-02)
 3. IF the code is unknown or expired THEN the system SHALL ignore the command and not route the message. (IDN-03)
-4. WHEN a user deletes an identity, or deletes the connector it was linked through, THEN the system SHALL resolve messages received afterwards from that sender on that connector to no user, so they are delivered with `trusted=false`. (IDN-04)
+4. WHEN a user deletes an identity, deletes the connector it was linked through, or changes an endpoint field of that connector (`base_url`, `api_base`, `outbound_url`) THEN the system SHALL delete the identity (the endpoint change audited as `connector.identities_reset`) and resolve messages received afterwards from that sender on that connector to no user, so they are delivered with `trusted=false`. (IDN-04)
 5. WHERE a connector kind lets the caller choose sender ids (webhook) the system SHALL link only pairing codes of the connector's owner; a code of another user SHALL link nothing and stay unused. (IDN-05)
 
 **Independent Test**: Request code, inject a `!link` message through the fake connector, list identities. Post the same sender id through another user's webhook connector: it stays untrusted.
@@ -217,7 +217,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | IDN-01 | P1: Identities | Execute (T26) | Implemented, re-verify |
 | IDN-02 | P1: Identities | Execute (T12, T26) | Implemented, re-verify |
 | IDN-03 | P1: Identities | Tasks | Verified |
-| IDN-04 | P1: Identities | Execute (T12) | Implemented, re-verify |
+| IDN-04 | P1: Identities | Execute (T12, T27) | Implemented, re-verify |
 | IDN-05 | P1: Identities | Execute (T12) | Implemented, re-verify |
 
 **Coverage:** 36 total, mapped in tasks.md
