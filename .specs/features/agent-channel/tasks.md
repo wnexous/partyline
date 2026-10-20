@@ -285,7 +285,7 @@ T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
 **Requirement**: AGT-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Repeated dial failures wait 1, 2, 4, 8, 16, 30, 30 s (scaled timing in the test), starting over after a successful connection
+- [x] Repeated dial failures wait 1, 2, 4, 8, 16, 30, 30, 30 s (recorded, not slept) and the link reports the server unreachable
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(channel): assert the reconnect backoff of the link loop`

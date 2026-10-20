@@ -100,13 +100,29 @@ type link struct {
 	stderr io.Writer
 	t      timing
 
+	// sleep waits d between connection attempts; it reports false when ctx ended first.
+	// Tests replace it to record the backoff without waiting.
+	sleep func(ctx context.Context, d time.Duration) bool
+
 	mu    sync.Mutex
 	state linkState
 	seen  *idRing
 }
 
 func newLink(base *url.URL, token, agent string, hc *http.Client, n notifier, stderr io.Writer, t timing) *link {
-	return &link{base: base, token: token, agent: agent, http: hc, notify: n, stderr: stderr, t: t.withDefaults(), seen: newIDRing(dedupeSize)}
+	return &link{base: base, token: token, agent: agent, http: hc, notify: n, stderr: stderr, t: t.withDefaults(), sleep: sleepCtx, seen: newIDRing(dedupeSize)}
+}
+
+// sleepCtx waits d or until ctx ends; it reports whether the full wait passed.
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 // Err returns the error tools report instead of calling the server, or nil when tools may
@@ -188,12 +204,8 @@ func (l *link) run(ctx context.Context) error {
 			<-ctx.Done()
 			return nil
 		}
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
+		if !l.sleep(ctx, wait) {
 			return nil
-		case <-timer.C:
 		}
 	}
 }
