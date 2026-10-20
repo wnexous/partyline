@@ -77,6 +77,8 @@ type Room struct {
 	MemberCount int64
 	// CatchAll is set while a connector routes new chats to the room (ROUTE-07).
 	CatchAll bool
+	// InstructionsByName is the username of InstructionsBy; empty when unknown (INS-04).
+	InstructionsByName string
 }
 
 // LastSeq is the sequence number of the room's latest message (0 when empty).
@@ -131,6 +133,15 @@ func validateRoom(name, description, instructions string, retention int) error {
 	return check.Err()
 }
 
+// instructionsBy is the user recorded as the author of saved instructions (INS-04): the
+// caller, or nobody when the instructions are empty.
+func instructionsBy(p authn.Principal, instructions string) string {
+	if instructions == "" {
+		return ""
+	}
+	return p.UserID
+}
+
 // Create makes a room owned by the caller, who gets manage (ACL-01).
 func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput) (Room, error) {
 	if p.Kind != authn.KindUser {
@@ -149,7 +160,8 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		return q.CreateRoom(ctx, db.CreateRoomParams{
 			ID: id, OwnerID: p.UserID, Name: name, Description: in.Description, Instructions: in.Instructions,
-			BridgeChats: in.BridgeChats, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
+			InstructionsBy: instructionsBy(p, in.Instructions),
+			BridgeChats:    in.BridgeChats, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
 		})
 	})
 	if err != nil {
@@ -184,9 +196,17 @@ func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDispl
 	if err != nil {
 		return Room{}, err
 	}
+	by := ""
+	if r.InstructionsBy != "" {
+		u, err := s.store.R().GetUser(ctx, r.InstructionsBy)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return Room{}, err
+		}
+		by = u.Username
+	}
 	return Room{
 		Room: r, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Visibility: v.Mode,
-		MemberCount: members, CatchAll: catchAll > 0,
+		MemberCount: members, CatchAll: catchAll > 0, InstructionsByName: by,
 	}, nil
 }
 
@@ -254,6 +274,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 		}
 		if in.Instructions != nil {
 			r.Instructions = *in.Instructions
+			r.InstructionsBy = instructionsBy(p, r.Instructions)
 		}
 		if in.BridgeChats != nil {
 			r.BridgeChats = *in.BridgeChats

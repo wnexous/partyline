@@ -494,7 +494,7 @@ T31 → T32 → T33 → T34
 **Requirement**: INS-03, INS-04, INS-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A second owner's edit is untrusted for alice's agent; the owner's edit is trusted; literal notice texts
+- [x] A second owner's edit is untrusted for alice's agent; the owner's edit is trusted; literal notice texts
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(rooms): mark who wrote room instructions`

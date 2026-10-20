@@ -109,7 +109,13 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 	if err != nil {
 		return err
 	}
-	out := dto.RoomInfo{Room: dto.RoomRef{ID: room.ID, Name: room.Name}, Instructions: room.Instructions, Members: make([]dto.RoomMember, len(members))}
+	out := dto.RoomInfo{
+		Room: dto.RoomRef{ID: room.ID, Name: room.Name}, Instructions: room.Instructions,
+		InstructionsBy: room.InstructionsByName,
+		// INS-04: trusted only when the calling agent's owner saved them.
+		InstructionsTrusted: room.Instructions != "" && room.InstructionsBy == p.UserID,
+		Members:             make([]dto.RoomMember, len(members)),
+	}
 	for i, m := range members {
 		out.Members[i] = s.toMember(m)
 		if out.Members[i].Kind == dto.MemberKindAgent && m.MemberID == p.AgentID {
