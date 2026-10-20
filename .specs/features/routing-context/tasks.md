@@ -438,7 +438,7 @@ T31 → T32 → T33 → T34
 **Requirement**: ROUTE-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake clock: 61st chat in the hour refused, accepted after the hour; room at 1,000 chats refused; detail set
+- [x] Fake clock: 61st chat in the hour refused, accepted after the hour; room at 1,000 chats refused; detail set
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): cap catch-all routing`

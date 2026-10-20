@@ -75,3 +75,6 @@ SELECT COUNT(*) FROM connectors WHERE auto_route_room_id = ?;
 -- name: SetRoomCatchAllSafety :exec
 -- A room chosen as a catch-all room stops broadcasting and bridging (ROUTE-07).
 UPDATE rooms SET broadcast = 0, bridge_chats = 0, updated_at = ? WHERE id = ?;
+
+-- name: CountRoomChatMembers :one
+SELECT COUNT(*) FROM room_members WHERE room_id = ? AND kind = 'chat';

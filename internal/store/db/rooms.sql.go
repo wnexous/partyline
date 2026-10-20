@@ -22,6 +22,17 @@ func (q *Queries) CountCatchAllConnectors(ctx context.Context, autoRouteRoomID s
 	return count, err
 }
 
+const countRoomChatMembers = `-- name: CountRoomChatMembers :one
+SELECT COUNT(*) FROM room_members WHERE room_id = ? AND kind = 'chat'
+`
+
+func (q *Queries) CountRoomChatMembers(ctx context.Context, roomID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countRoomChatMembers, roomID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countRoomMember = `-- name: CountRoomMember :one
 SELECT COUNT(*) FROM room_members WHERE room_id = ? AND kind = ? AND member_id = ?
 `

@@ -2,6 +2,7 @@ package connectors_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -12,6 +13,8 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/store"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -232,4 +235,65 @@ func TestCatchAllLostManageIsUnavailable(t *testing.T) {
 	require.Len(t, page, 1, "nothing new stored")
 	members := testkit.Decode[dto.List[dto.RoomMember]](bob.Get("/api/v1/rooms/" + bobs.ID + "/members").RequireStatus(http.StatusOK)).Items
 	require.Len(t, members, 1, "only the first chat joined")
+}
+
+// dmPeer is a synthetic WhatsApp-style DM id.
+func dmPeer(n int) string { return fmt.Sprintf("55119%08d@s.whatsapp.net", n) }
+
+// ROUTE-08: a connector auto-adds at most 60 chats per hour. The 61st new chat in the hour is
+// not added and nothing is stored, the connector reports "auto-route limit reached", and
+// chats already routed keep flowing. An hour later the chat is added and the detail clears.
+func TestCatchAllHourlyCap(t *testing.T) {
+	clock := testkit.NewClock(time.Now())
+	c := newCatchAll(t, testkit.WithClock(clock.Now))
+	c.setScope(t, dto.AutoRouteScopeDMs, c.room.ID)
+	for i := range 60 {
+		c.emit(dmText(dmPeer(i), fmt.Sprintf("M%d", i), "hello"))
+	}
+	require.Len(t, c.chatMembers(t, c.room.ID), 60)
+	require.Empty(t, c.connector(t).LastError)
+
+	before := c.messageCount(t)
+	c.emit(dmText(dmPeer(60), "M60", "one too many"))
+	require.NotContains(t, c.chatMembers(t, c.room.ID), c.chatID(t, dmPeer(60)))
+	require.Equal(t, before, c.messageCount(t), "nothing stored")
+	require.Equal(t, "auto-route limit reached", c.connector(t).LastError)
+	c.emit(dmText(dmPeer(0), "M0b", "already routed"))
+	require.Equal(t, before+1, c.messageCount(t), "routed chats keep flowing")
+
+	clock.Advance(time.Hour + time.Second)
+	c.emit(dmText(dmPeer(60), "M60b", "an hour later"))
+	require.Contains(t, c.chatMembers(t, c.room.ID), c.chatID(t, dmPeer(60)))
+	require.Empty(t, c.connector(t).LastError, "the next successful route clears the detail")
+}
+
+// ROUTE-08: a catch-all room holds at most 1,000 chats: with 999 chats it takes one more,
+// then a new chat is not added, nothing is stored and the connector reports the limit.
+func TestCatchAllRoomCap(t *testing.T) {
+	c := newCatchAll(t)
+	c.setScope(t, dto.AutoRouteScopeAll, c.room.ID)
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	require.NoError(t, c.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		for i := range 999 {
+			chat := store.NewID()
+			if err := q.CreateChat(ctx, db.CreateChatParams{ID: chat, ConnectorID: c.conn.ID, ExternalID: fmt.Sprintf("seed-%d", i), Kind: "group", CreatedAt: now}); err != nil {
+				return err
+			}
+			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{ID: store.NewID(), RoomID: c.room.ID, Kind: "chat", MemberID: chat, Outbound: true, AddedBy: c.alice.User.ID, CreatedAt: now}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+
+	c.emit(dmText(dmA, "A1", "the thousandth"))
+	require.Contains(t, c.chatMembers(t, c.room.ID), c.chatID(t, dmA))
+	require.Empty(t, c.connector(t).LastError)
+
+	before := c.messageCount(t)
+	c.emit(dmText(dmB, "B1", "room is full"))
+	require.Len(t, c.chatMembers(t, c.room.ID), 1000)
+	require.Equal(t, before, c.messageCount(t), "nothing stored")
+	require.Equal(t, "auto-route limit reached", c.connector(t).LastError)
 }
