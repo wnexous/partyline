@@ -36,8 +36,8 @@ func newCatchAllEnv(t *testing.T) *catchAllEnv {
 
 func connectorPath(c dto.Connector) string { return "/api/v1/connectors/" + c.ID }
 
-// ROUTE-04: a connector manager sets the catch-all scope and room; the room must exist (422)
-// and the caller needs manage on it (403); scopes outside off|dms|groups|all get 422. A
+// ROUTE-04: a connector manager sets the catch-all scope and room; the caller needs manage on
+// it, and an unknown or hidden room answers the same 403; scopes outside off|dms|groups|all get 422. A
 // refused request changes nothing. New connectors start with the catch-all off.
 func TestCatchAllSettings(t *testing.T) {
 	e := newCatchAllEnv(t)
@@ -78,11 +78,14 @@ func TestCatchAllSettings(t *testing.T) {
 		unchanged()
 	}
 
+	// ROUTE-04: an unknown room answers exactly like a hidden one, so the answer does not
+	// tell whether a room id exists.
 	unknown := "0190a000-0000-7000-8000-000000000000"
-	fields := e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteRoomID: &unknown}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid).Fields
-	require.Contains(t, fields, "auto_route_room_id")
+	unknownErr := e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteRoomID: &unknown}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	hiddenErr := e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteRoomID: &hidden.ID}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	require.Equal(t, hiddenErr, unknownErr)
 	unchanged()
-	fields = e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteScope: ptr(dto.AutoRouteScope("everyone"))}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid).Fields
+	fields := e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteScope: ptr(dto.AutoRouteScope("everyone"))}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid).Fields
 	require.Contains(t, fields, "auto_route_scope")
 	unchanged()
 	// A scope other than off needs a room.

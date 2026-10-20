@@ -402,8 +402,8 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 }
 
 // autoRoute returns the catch-all settings after in (ROUTE-04): the scope must be one of
-// off, dms, groups, all; a room must exist (422) and the caller must hold manage on it (403);
-// a scope other than off needs a room.
+// off, dms, groups, all; the caller must hold manage on the room, and an unknown room answers
+// the same 403; a scope other than off needs a room.
 func (s *Service) autoRoute(ctx context.Context, p authn.Principal, c db.Connector, in UpdateInput) (dto.AutoRouteScope, sql.NullString, error) {
 	scope, room := dto.AutoRouteScope(c.AutoRouteScope), c.AutoRouteRoomID
 	if in.AutoRouteScope != nil {
@@ -417,8 +417,10 @@ func (s *Service) autoRoute(ctx context.Context, p authn.Principal, c db.Connect
 	if in.AutoRouteRoomID != nil {
 		room = sql.NullString{String: strings.TrimSpace(*in.AutoRouteRoomID), Valid: strings.TrimSpace(*in.AutoRouteRoomID) != ""}
 		if room.Valid {
+			// An unknown room answers like a hidden one (403), so the answer does not tell
+			// whether a room id exists.
 			if _, err := s.d.Store.R().GetRoom(ctx, room.String); errors.Is(err, sql.ErrNoRows) {
-				return "", room, &validation.Error{Fields: map[string]string{"auto_route_room_id": "unknown room"}}
+				return "", room, access.ErrForbidden
 			} else if err != nil {
 				return "", room, err
 			}

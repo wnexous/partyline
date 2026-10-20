@@ -466,7 +466,7 @@ T31 → T32 → T33 → T34
 **Requirement**: ROUTE-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Unknown and hidden ids answer identical status, code and message
+- [x] Unknown and hidden ids answer identical status, code and message
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(connectors): answer unknown and hidden catch-all rooms alike`
