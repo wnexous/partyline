@@ -401,7 +401,7 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T23
 **Requirement**: UI-15
 **Done when**:
-- [ ] The rendered last-seen value matches the agent's `last_seen_at` under a fixed clock
+- [x] The rendered last-seen value matches the agent's `last_seen_at` under a fixed clock
 **Tests**: unit
 **Gate**: quick
 

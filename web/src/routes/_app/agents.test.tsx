@@ -65,6 +65,39 @@ describe("agents page (UI-15)", () => {
     expect(within(row("reviewer")).getByText("Never connected")).toBeInTheDocument();
   });
 
+  it("shows the last seen time relative to now and follows presence events", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
+    try {
+      mockApi({
+        "GET /me": json(200, me),
+        "GET /agents": json(200, {
+          items: [
+            makeAgent({
+              id: "a3",
+              name: "docs-writer",
+              online: false,
+              last_seen_at: "2026-10-19T09:00:00Z",
+            }),
+          ],
+        }),
+      });
+      const { queryClient } = renderRoute("/agents");
+      await screen.findByRole("listitem", { name: "docs-writer" });
+      expect(within(row("docs-writer")).getByText("Last seen 3 hr. ago")).toBeInTheDocument();
+
+      act(() =>
+        handleLiveEvent(queryClient, useLiveStore.getState(), {
+          type: "agent.presence",
+          data: { agent_id: "a3", online: false, last_seen_at: "2026-10-19T11:55:00Z" },
+        }),
+      );
+      expect(within(row("docs-writer")).getByText("Last seen 5 min. ago")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("flips the row's status dot when a presence event arrives", async () => {
     mockApi({
       "GET /me": json(200, me),
