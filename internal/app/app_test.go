@@ -97,6 +97,9 @@ func TestStartRunsOutboxWorker(t *testing.T) {
 		if err := q.CreateChat(ctx, db.CreateChatParams{ID: ids["chat"], ConnectorID: ids["conn"], ExternalID: "x", Title: "g", Kind: "group"}); err != nil {
 			return err
 		}
+		if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{ID: store.NewID(), RoomID: ids["room"], Kind: "chat", MemberID: ids["chat"], Outbound: true, CreatedAt: now}); err != nil {
+			return err
+		}
 		if err := q.CreateMessage(ctx, db.CreateMessageParams{ID: ids["msg"], RoomID: ids["room"], Seq: 1, AuthorKind: "user", AuthorID: ids["user"], Kind: "text", Text: "hi", CreatedAt: now}); err != nil {
 			return err
 		}

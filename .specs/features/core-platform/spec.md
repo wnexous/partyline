@@ -220,7 +220,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | ACL-06 | P1: Rooms and sharing | Tasks | Implementing |
 | ACL-07 | P1: Rooms and sharing | Tasks | Implementing |
 | ACL-08 | P1: Rooms and sharing | Tasks | Implementing |
-| ROOM-01 | P1: Rooms and sharing | Tasks | Implementing |
+| ROOM-01 | P1: Rooms and sharing | Fix T28 | Fixed, re-verify |
 | ROOM-02 | P1: Rooms and sharing | Tasks | Implementing |
 | MSG-01 | P1: Messages and delivery | Tasks | Implementing |
 | MSG-02 | P1: Messages and delivery | Tasks | Implementing |

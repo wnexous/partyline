@@ -87,6 +87,7 @@ func newFixture(t *testing.T) *fixture {
 	f.exec(t, "INSERT INTO rooms (id, owner_id, name, created_at, updated_at) VALUES (?, ?, 'ops', ?, ?)", f.room, user, ms, ms)
 	f.exec(t, "INSERT INTO connectors (id, owner_id, kind, name, created_at, updated_at) VALUES (?, ?, 'telegram', 'tg', ?, ?)", conn, user, ms, ms)
 	f.exec(t, "INSERT INTO chats (id, connector_id, external_id, title, kind, created_at) VALUES (?, ?, 'ext-chat', 'group', 'group', ?)", f.chat, conn, ms)
+	f.exec(t, "INSERT INTO room_members (id, room_id, kind, member_id, created_at) VALUES (?, ?, 'chat', ?, ?)", store.NewID(), f.room, f.chat, ms)
 	return f
 }
 
@@ -278,4 +279,19 @@ func TestBackoff(t *testing.T) {
 	require.Equal(t, 8*time.Second, delivery.Backoff(3))
 	require.Equal(t, 16*time.Second, delivery.Backoff(4))
 	require.Equal(t, 5, delivery.MaxAttempts)
+}
+
+// ROOM-01 (defense in depth): the worker never sends to a chat that is no longer a member
+// of the message's room, even if a pending entry survived the removal.
+func TestOutboxSkipsChatsNoLongerMembers(t *testing.T) {
+	f := newFixture(t)
+	c := &clock{now: t0}
+	sender := &fakeSender{}
+	_, id := f.queue(t, 1, dto.OutboxStatusPending, t0)
+	f.exec(t, "DELETE FROM room_members WHERE room_id = ? AND member_id = ?", f.room, f.chat)
+
+	require.NoError(t, f.worker(f.st, sender, c.Now, 0).Flush(context.Background()))
+
+	require.Zero(t, sender.count(), "a removed chat must not be sent to")
+	require.NotEqual(t, "sent", f.row(t, id).Status)
 }

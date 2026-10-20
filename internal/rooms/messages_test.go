@@ -6,12 +6,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/validation"
@@ -409,4 +411,57 @@ func TestReplyTo(t *testing.T) {
 	var verr *validation.Error
 	require.ErrorAs(t, err, &verr)
 	require.Contains(t, verr.Fields, "reply_to")
+}
+
+// recordingSender records every delivery the outbox worker attempts.
+type recordingSender struct {
+	mu    sync.Mutex
+	calls []delivery.Delivery
+}
+
+func (s *recordingSender) Send(_ context.Context, d delivery.Delivery) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, d)
+	return "ext-" + d.OutboxID, nil
+}
+
+// ROOM-01: removing a chat member cancels its not-yet-sent deliveries in that room, so a
+// message queued before the removal is never sent; sent history and other rooms stay.
+func TestRemoveMemberCancelsQueuedDeliveries(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	_, chat := f.chat(t, alice, "c1")
+	_, kept := f.chat(t, alice, "c2")
+	r := f.room(t, alice, "ops")
+	other := f.room(t, alice, "other")
+	m := f.addMember(t, alice, r.ID, dto.MemberKindChat, chat, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, kept, true)
+	f.addMember(t, alice, other.ID, dto.MemberKindChat, chat, true)
+
+	sent := f.post(t, alice, r.ID, "already sent")
+	f.exec(t, "UPDATE outbox SET status = 'sent' WHERE message_id = ?", sent.ID)
+	f.post(t, alice, r.ID, "queued before removal")
+	backoff := f.post(t, alice, r.ID, "waiting for retry")
+	f.exec(t, "UPDATE outbox SET attempts = 2, next_attempt_at = ? WHERE message_id = ?", t0.Add(time.Minute).UnixMilli(), backoff.ID)
+	f.post(t, alice, other.ID, "other room")
+
+	require.NoError(t, f.svc.RemoveMember(ctx, alice, r.ID, m.ID))
+
+	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM outbox o JOIN messages m ON m.id = o.message_id WHERE m.room_id = ? AND o.chat_id = ? AND o.status = 'pending'", r.ID, chat))
+	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM outbox WHERE message_id = ? AND chat_id = ? AND status = 'sent'", sent.ID, chat), "sent history stays")
+	require.Equal(t, 2, f.count(t, "SELECT COUNT(*) FROM outbox o JOIN messages m ON m.id = o.message_id WHERE m.room_id = ? AND o.chat_id = ? AND o.status = 'pending'", r.ID, kept))
+	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM outbox o JOIN messages m ON m.id = o.message_id WHERE m.room_id = ? AND o.chat_id = ? AND o.status = 'pending'", other.ID, chat))
+
+	f.clock.mu.Lock()
+	f.clock.now = t0.Add(time.Hour)
+	f.clock.mu.Unlock()
+	s := &recordingSender{}
+	w := delivery.NewOutboxWorker(delivery.OutboxOptions{Store: f.st, Bus: f.bus, Sender: s, Now: f.clock.Now})
+	require.NoError(t, w.Flush(ctx))
+	for _, d := range s.calls {
+		require.False(t, d.RoomID == r.ID && d.ChatID == chat, "ROOM-01: removed chat received a delivery queued before its removal")
+	}
+	require.Len(t, s.calls, 3, "the other chat (2) and the other room (1) still get theirs")
 }
