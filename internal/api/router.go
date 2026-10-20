@@ -22,6 +22,8 @@ type Deps struct {
 	Users  *users.Service
 	Rooms  *rooms.Service
 	Blobs  *attachments.Store
+	// Live serves the live WebSocket at GET /api/v1/live.
+	Live   http.Handler
 	Logger *slog.Logger
 	// Ready reports whether the app finished starting (migrations applied).
 	Ready func() bool
@@ -55,6 +57,9 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.authRoutes(mux)
 	s.adminRoutes(mux)
 	s.roomRoutes(mux)
+	if s.Live != nil {
+		mux.Handle("GET /api/v1/live", s.Live)
+	}
 }
 
 // apiFunc is a handler that returns its error; handle renders it as the error envelope.

@@ -9,6 +9,27 @@ import (
 	"context"
 )
 
+const getOutbox = `-- name: GetOutbox :one
+SELECT id, message_id, chat_id, status, attempts, next_attempt_at, last_error, external_id, updated_at FROM outbox WHERE id = ?
+`
+
+func (q *Queries) GetOutbox(ctx context.Context, id string) (Outbox, error) {
+	row := q.db.QueryRowContext(ctx, getOutbox, id)
+	var i Outbox
+	err := row.Scan(
+		&i.ID,
+		&i.MessageID,
+		&i.ChatID,
+		&i.Status,
+		&i.Attempts,
+		&i.NextAttemptAt,
+		&i.LastError,
+		&i.ExternalID,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listDueOutbox = `-- name: ListDueOutbox :many
 SELECT o.id, o.message_id, o.chat_id, o.attempts, m.room_id
 FROM outbox o JOIN messages m ON m.id = o.message_id

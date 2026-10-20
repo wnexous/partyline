@@ -409,9 +409,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: LIVE-01, LIVE-02, LIVE-03, LIVE-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] User with view receives `room.message`; stranger receives nothing within 500 ms
-- [ ] Foreign Origin upgrade → 403
-- [ ] presence/connector/outbox events reach only users with access
+- [x] User with view receives `room.message`; stranger receives nothing within 500 ms
+- [x] Foreign Origin upgrade → 403
+- [x] presence/connector/outbox events reach only users with access
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(live): add live websocket hub with access filtering`

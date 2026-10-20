@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
@@ -28,13 +29,7 @@ func (s *server) adminRoutes(mux *http.ServeMux) {
 }
 
 // optTime converts an optional unix-ms column to an optional time.
-func optTime(v sql.NullInt64) *time.Time {
-	if !v.Valid {
-		return nil
-	}
-	t := msTime(v.Int64)
-	return &t
-}
+func optTime(v sql.NullInt64) *time.Time { return convert.OptTime(v) }
 
 func toUser(u db.User) dto.User {
 	return dto.User{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName}

@@ -18,6 +18,7 @@ import (
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/live"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
@@ -52,6 +53,7 @@ type App struct {
 	Access *access.Authorizer
 	Rooms  *rooms.Service
 	Blobs  *attachments.Store
+	Live   *live.Hub
 
 	handler http.Handler
 	ready   atomic.Bool
@@ -109,11 +111,15 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		sender: opts.Sender,
 		now:    opts.Now,
 	}
+	a.Live = live.New(live.Deps{
+		Bus: bus, Access: az, Rooms: a.Rooms, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
+	})
 	a.handler = api.New(api.Deps{
 		Config: cfg,
 		Users:  usersSvc,
 		Rooms:  a.Rooms,
 		Blobs:  blobs,
+		Live:   a.Live,
 		Logger: opts.Logger,
 		Ready:  a.ready.Load,
 	})
@@ -161,6 +167,7 @@ func (a *App) Shutdown(_ context.Context) error {
 	if a.stop != nil {
 		a.stop()
 	}
+	a.Live.Close()
 	a.bg.Wait()
 	return a.Store.Close()
 }

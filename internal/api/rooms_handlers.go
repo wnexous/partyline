@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/wnexous/partyline/internal/access"
+	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/attachments"
@@ -36,16 +37,6 @@ func (s *server) roomRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/attachments/{id}", authed(s.downloadAttachment))
 }
 
-func toRoom(r rooms.Room) dto.Room {
-	return dto.Room{
-		ID: r.ID, Name: r.Name, Description: r.Description,
-		Owner:      dto.User{ID: r.OwnerID, Username: r.OwnerUsername, DisplayName: r.OwnerDisplayName},
-		Visibility: r.Visibility, MyLevel: r.Level, BridgeChats: r.BridgeChats,
-		RetentionDays: int(r.RetentionDays), AgentsPaused: r.AgentsPaused, LastSeq: r.LastSeq(),
-		CreatedAt: msTime(r.CreatedAt), UpdatedAt: msTime(r.UpdatedAt),
-	}
-}
-
 func toMember(m rooms.Member) dto.RoomMember {
 	return dto.RoomMember{
 		ID: m.ID, Kind: dto.MemberKind(m.Kind), MemberID: m.MemberID, Name: m.Name, Outbound: m.Outbound,
@@ -62,26 +53,6 @@ func toSharing(v access.Visibility) dto.Sharing {
 	return out
 }
 
-func toMessage(m rooms.Message) dto.Message {
-	out := dto.Message{
-		ID: m.ID, RoomID: m.RoomID, Seq: m.Seq, AuthorKind: dto.AuthorKind(m.AuthorKind), AuthorID: m.AuthorID,
-		AuthorName: m.AuthorName, AuthorUserID: m.AuthorUserID, SenderID: m.SenderID, SenderAltID: m.SenderAltID,
-		SenderName: m.SenderName, Kind: dto.MessageKind(m.Kind), Text: m.Text, ReplyTo: m.ReplyTo,
-		Recipients: m.Recipients(), ExternalID: m.ExternalID.String,
-		Attachments: make([]dto.Attachment, len(m.Attachments)), CreatedAt: msTime(m.CreatedAt),
-	}
-	for i, a := range m.Attachments {
-		out.Attachments[i] = dto.Attachment{ID: a.ID, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: dto.AttachmentStatus(a.Status)}
-	}
-	for _, o := range m.Outbox {
-		out.Outbox = append(out.Outbox, dto.OutboxItem{
-			ID: o.ID, ChatID: o.ChatID, Status: dto.OutboxStatus(o.Status), Attempts: int(o.Attempts),
-			LastError: o.LastError, UpdatedAt: msTime(o.UpdatedAt),
-		})
-	}
-	return out
-}
-
 func (s *server) listRooms(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	list, err := s.Rooms.List(r.Context(), p)
 	if err != nil {
@@ -89,7 +60,7 @@ func (s *server) listRooms(w http.ResponseWriter, r *http.Request, p authn.Princ
 	}
 	out := dto.List[dto.Room]{Items: make([]dto.Room, len(list))}
 	for i, room := range list {
-		out.Items[i] = toRoom(room)
+		out.Items[i] = convert.Room(room)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
@@ -107,7 +78,7 @@ func (s *server) createRoom(w http.ResponseWriter, r *http.Request, p authn.Prin
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, toRoom(room))
+	httpx.WriteJSON(w, http.StatusCreated, convert.Room(room))
 	return nil
 }
 
@@ -116,7 +87,7 @@ func (s *server) getRoom(w http.ResponseWriter, r *http.Request, p authn.Princip
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, toRoom(room))
+	httpx.WriteJSON(w, http.StatusOK, convert.Room(room))
 	return nil
 }
 
@@ -131,7 +102,7 @@ func (s *server) updateRoom(w http.ResponseWriter, r *http.Request, p authn.Prin
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, toRoom(room))
+	httpx.WriteJSON(w, http.StatusOK, convert.Room(room))
 	return nil
 }
 
@@ -230,7 +201,7 @@ func (s *server) listMessages(w http.ResponseWriter, r *http.Request, p authn.Pr
 	}
 	out := dto.Page[dto.Message]{Items: make([]dto.Message, len(list)), HasMore: more}
 	for i, m := range list {
-		out.Items[i] = toMessage(m)
+		out.Items[i] = convert.Message(m)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
@@ -259,7 +230,7 @@ func (s *server) postMessage(w http.ResponseWriter, r *http.Request, p authn.Pri
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, toMessage(m))
+	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
 	return nil
 }
 
@@ -322,7 +293,7 @@ func (s *server) resumeRoom(w http.ResponseWriter, r *http.Request, p authn.Prin
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, toRoom(room))
+	httpx.WriteJSON(w, http.StatusOK, convert.Room(room))
 	return nil
 }
 

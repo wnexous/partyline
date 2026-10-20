@@ -3,6 +3,7 @@ module github.com/wnexous/partyline
 go 1.27
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/crypto v0.58.0

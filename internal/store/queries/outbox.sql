@@ -19,3 +19,6 @@ WHERE id = ?;
 -- name: RequeueSendingOutbox :many
 UPDATE outbox SET status = 'pending', updated_at = ? WHERE status = 'sending'
 RETURNING id;
+
+-- name: GetOutbox :one
+SELECT * FROM outbox WHERE id = ?;
