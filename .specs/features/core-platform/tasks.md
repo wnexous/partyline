@@ -639,7 +639,7 @@ T35 → T43 → T44
 **Requirement**: ACL-03 (read model)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] List and get return the member count
+- [x] List and get return the member count
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(rooms): expose member count`

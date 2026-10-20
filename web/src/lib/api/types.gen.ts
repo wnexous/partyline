@@ -601,6 +601,10 @@ export interface Room {
    */
   agents_paused: boolean;
   last_seq: number /* int64 */;
+  /**
+   * MemberCount counts the room's agents, chats and users.
+   */
+  member_count: number /* int */;
   created_at: string /* RFC 3339 */;
   updated_at: string /* RFC 3339 */;
 }

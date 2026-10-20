@@ -73,6 +73,8 @@ type Room struct {
 	Level access.Level
 	// Visibility is the sharing preset the room's grants form.
 	Visibility dto.Visibility
+	// MemberCount counts the room's agents, chats and users.
+	MemberCount int64
 }
 
 // LastSeq is the sequence number of the room's latest message (0 when empty).
@@ -164,15 +166,15 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, roomID string) (Ro
 	if err != nil {
 		return Room{}, err
 	}
-	return s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, l)
+	return s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, row.MemberCount, l)
 }
 
-func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDisplay string, l access.Level) (Room, error) {
+func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDisplay string, members int64, l access.Level) (Room, error) {
 	v, err := s.az.Sharing(ctx, access.KindRoom, r.ID)
 	if err != nil {
 		return Room{}, err
 	}
-	return Room{Room: r, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Visibility: v.Mode}, nil
+	return Room{Room: r, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Visibility: v.Mode, MemberCount: members}, nil
 }
 
 // List returns the rooms the calling user can view, by name.
@@ -197,7 +199,7 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 		if l == access.None {
 			continue
 		}
-		r, err := s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, l)
+		r, err := s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, row.MemberCount, l)
 		if err != nil {
 			return nil, err
 		}

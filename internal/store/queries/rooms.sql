@@ -13,12 +13,14 @@ INSERT INTO room_members (id, room_id, kind, member_id, outbound, added_by, crea
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetRoomWithOwner :one
-SELECT sqlc.embed(r), u.username AS owner_username, u.display_name AS owner_display_name
+SELECT sqlc.embed(r), u.username AS owner_username, u.display_name AS owner_display_name,
+       (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count
 FROM rooms r JOIN users u ON u.id = r.owner_id
 WHERE r.id = ?;
 
 -- name: ListRoomsForUser :many
-SELECT sqlc.embed(r), u.username AS owner_username, u.display_name AS owner_display_name
+SELECT sqlc.embed(r), u.username AS owner_username, u.display_name AS owner_display_name,
+       (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count
 FROM rooms r JOIN users u ON u.id = r.owner_id
 WHERE r.owner_id = sqlc.arg(user_id)
    OR r.id IN (SELECT g.resource_id FROM grants g

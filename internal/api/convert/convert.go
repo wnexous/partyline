@@ -21,7 +21,8 @@ func Room(r rooms.Room) dto.Room {
 		Owner:      dto.User{ID: r.OwnerID, Username: r.OwnerUsername, DisplayName: r.OwnerDisplayName},
 		Visibility: r.Visibility, MyLevel: r.Level, BridgeChats: r.BridgeChats,
 		RetentionDays: int(r.RetentionDays), AgentsPaused: r.AgentsPaused, LastSeq: r.LastSeq(),
-		CreatedAt: Time(r.CreatedAt), UpdatedAt: Time(r.UpdatedAt),
+		MemberCount: int(r.MemberCount),
+		CreatedAt:   Time(r.CreatedAt), UpdatedAt: Time(r.UpdatedAt),
 	}
 }
 

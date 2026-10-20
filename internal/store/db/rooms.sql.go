@@ -150,7 +150,8 @@ func (q *Queries) GetRoomMember(ctx context.Context, arg GetRoomMemberParams) (R
 }
 
 const getRoomWithOwner = `-- name: GetRoomWithOwner :one
-SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, u.username AS owner_username, u.display_name AS owner_display_name
+SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, u.username AS owner_username, u.display_name AS owner_display_name,
+       (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count
 FROM rooms r JOIN users u ON u.id = r.owner_id
 WHERE r.id = ?
 `
@@ -159,6 +160,7 @@ type GetRoomWithOwnerRow struct {
 	Room             Room
 	OwnerUsername    string
 	OwnerDisplayName string
+	MemberCount      int64
 }
 
 func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithOwnerRow, error) {
@@ -178,6 +180,7 @@ func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithO
 		&i.Room.UpdatedAt,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
+		&i.MemberCount,
 	)
 	return i, err
 }
@@ -246,7 +249,8 @@ func (q *Queries) ListRoomMembers(ctx context.Context, roomID string) ([]ListRoo
 }
 
 const listRoomsForUser = `-- name: ListRoomsForUser :many
-SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, u.username AS owner_username, u.display_name AS owner_display_name
+SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, u.username AS owner_username, u.display_name AS owner_display_name,
+       (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count
 FROM rooms r JOIN users u ON u.id = r.owner_id
 WHERE r.owner_id = ?1
    OR r.id IN (SELECT g.resource_id FROM grants g
@@ -258,6 +262,7 @@ type ListRoomsForUserRow struct {
 	Room             Room
 	OwnerUsername    string
 	OwnerDisplayName string
+	MemberCount      int64
 }
 
 func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRoomsForUserRow, error) {
@@ -283,6 +288,7 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRo
 			&i.Room.UpdatedAt,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
+			&i.MemberCount,
 		); err != nil {
 			return nil, err
 		}
