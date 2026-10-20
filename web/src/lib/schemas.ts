@@ -48,6 +48,17 @@ export const createRoomSchema = z.object({
   description: optionalText,
 });
 
+/** PATCH /rooms/{id}: retention in whole days, 0 keeps messages forever (OPS-02). */
+export const roomSettingsSchema = z.object({
+  name: z.string().trim().min(1, msg("validation.required")),
+  description: z.string().trim(),
+  bridge_chats: z.boolean(),
+  retention_days: z
+    .number(msg("validation.retention"))
+    .int(msg("validation.retention"))
+    .min(0, msg("validation.retention")),
+});
+
 /** Message text (MSG-02): non-empty unless files are attached, at most MaxTextLength. */
 export const messageTextSchema = z.string().max(MaxTextLength, msg("validation.tooLong"));
 
@@ -55,6 +66,7 @@ export type SetupForm = z.input<typeof setupSchema>;
 export type LoginForm = z.input<typeof loginSchema>;
 export type AcceptInviteForm = z.input<typeof acceptInviteSchema>;
 export type CreateRoomForm = z.input<typeof createRoomSchema>;
+export type RoomSettingsForm = z.input<typeof roomSettingsSchema>;
 
 /** Placeholder values of the schema message keys, for rendering zod issues with useT(). */
 export const validationVars = {

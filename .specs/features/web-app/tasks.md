@@ -198,7 +198,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-08, UI-10, UI-12
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Picker lists only usable agents/chats; outbound toggle calls PATCH; resume button only for managers
+- [x] Picker lists only usable agents/chats; outbound toggle calls PATCH; resume button only for managers
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add room page with members and settings`
