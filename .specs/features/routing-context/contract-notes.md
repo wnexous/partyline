@@ -297,3 +297,43 @@ by name, so the gap on this branch is harmless). The next migration is `0011`.
 - api: `forgetInstructionsAuthor(t, env, roomID)`; connectors: `(*catchAll).ownPipeline(hook)`,
   `source()`, `burst(p, from, n)`, `seedRoomChats(t, n)`, `hasChat(t, external)`,
   `statusEvents(t)`, `newBarrier(n, wait)`.
+
+# Contract Notes (from routing-context escalation fixes: T48-T53)
+
+Binding for the closure check after verification iteration 3. No migration; the next is still
+`0011`.
+
+## Room text normalization (INS-04, INS-06; finding 9)
+- `rooms.roomText`: a room's name, description and instructions lose leading and trailing white
+  space on create and on PATCH before they are validated, stored and compared. White space is
+  `unicode.IsSpace` plus U+FEFF, the union of Go's rule and JavaScript's `String.prototype.trim`,
+  so whatever the web form trims, the server trims too. Nothing inside the text is collapsed.
+- A PATCH field whose trimmed value equals the trimmed stored value is unchanged: it keeps the
+  stored copy (rows saved before this rule may still hold surrounding white space) and its
+  author. This now holds for instructions as well (supersedes "the user who last saved
+  non-empty instructions": re-saving the same instructions keeps `instructions_by`, so an owner
+  adopts legacy or another manager's instructions only by changing them). Instructions that trim
+  to empty are cleared and name nobody.
+- An instructions-only PATCH never moves `updated_by` (tested), and a name or description save
+  never moves `instructions_by`.
+
+## Catch-all routing (ROUTE-08, ROUTE-11)
+- The per-connector hourly window is tested: one connector at 60 routes in the hour refuses its
+  next new chat while another connector routing into the same room still adds chats with an
+  empty detail.
+- The skip step's "record" is tested: a message from a chat inside its 24 h skip updates the
+  stored title and `last_seen_at`, does not add the chat back and stores nothing.
+
+## Web (A11Y-05, ROUTE-10)
+- Send (button or form submit) without a picked chat moves focus to the chat picker; Enter keeps
+  focus in the message box so typing is not cut off. The `role="alert"` text is unchanged and its
+  pt-BR literal is asserted.
+- Supersedes "The web composer does not limit picks": the recipients picker stops at
+  `MaxMessageRecipients` (generated, 10). With 10 picked, the other outbound chats are disabled
+  and described (`aria-describedby`) by `composer.recipientsLimit` ("At most 10 chats per
+  message" / "No máximo 10 chats por mensagem"), shown inline under the list; unpicking one
+  enables them again. The server's 422 stays the backstop.
+
+## Test helpers
+- api: `webSave(name, description, retention)` (the web form's PATCH), `setRoomText(t, env,
+  roomID, name, description, by)` (writes room text and its author straight to the store).

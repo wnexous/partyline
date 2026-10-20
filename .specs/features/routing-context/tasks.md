@@ -864,7 +864,7 @@ T48 → T49 → T50 → T51 → T52 → T53 → T54
 **Requirement**: all
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Notes cover every new behavior
+- [x] Notes cover every new behavior
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record routing-context escalation fixes`
