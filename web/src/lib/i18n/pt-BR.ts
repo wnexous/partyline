@@ -662,4 +662,9 @@ export const ptBR: Dictionary = {
   "memberSettings.unsigned": "sem assinatura",
   "memberSettings.mentionsOnly": "só menções",
   "memberSettings.trustedOnly": "só confiáveis",
+  "validation.instructions": "No máximo {max} caracteres",
+  "settings.instructions": "Instruções para os agentes",
+  "settings.instructionsHint":
+    "Contexto que todo agente desta sala lê: quem é o chat, tom, idioma. Os agentes buscam com room_info.",
+  "settings.instructionsCount": "{count} / {max}",
 };

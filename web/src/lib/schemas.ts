@@ -6,6 +6,7 @@ import {
   MaxMemberDisplayName,
   MaxMemberKeyword,
   MaxMemberKeywords,
+  MaxRoomInstructions,
   MaxTextLength,
   PasswordMinLength,
   UsernamePattern,
@@ -67,6 +68,10 @@ export const roomSettingsSchema = z.object({
     .number(msg("validation.retention"))
     .int(msg("validation.retention"))
     .min(0, msg("validation.retention")),
+  // INS-01: free text for the room's agents, counted in code points like the server.
+  instructions: z
+    .string()
+    .refine((v) => textLength(v) <= MaxRoomInstructions, msg("validation.instructions")),
 });
 
 // DTO gap: the agent name rule (agent-channel design, Registry.Upsert) has no generated constant
@@ -157,4 +162,5 @@ export const validationVars = {
   "validation.tooLong": { max: MaxTextLength },
   "validation.keywords": { max: MaxMemberKeywords },
   "validation.keyword": { max: MaxMemberKeyword },
+  "validation.instructions": { max: MaxRoomInstructions },
 } as const;

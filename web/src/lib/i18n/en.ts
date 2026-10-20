@@ -656,6 +656,11 @@ export const en = {
   "memberSettings.unsigned": "unsigned",
   "memberSettings.mentionsOnly": "mentions only",
   "memberSettings.trustedOnly": "trusted only",
+  "validation.instructions": "At most {max} characters",
+  "settings.instructions": "Instructions for agents",
+  "settings.instructionsHint":
+    "Context every agent in this room reads: who the chat is, tone, language. Agents fetch it with room_info.",
+  "settings.instructionsCount": "{count} / {max}",
 } as const;
 
 export type MessageKey = keyof typeof en;

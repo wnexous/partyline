@@ -269,7 +269,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: INS-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Saves; 4,001 chars blocked client-side and 422 mapped
+- [x] Saves; 4,001 chars blocked client-side and 422 mapped
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): edit room instructions`

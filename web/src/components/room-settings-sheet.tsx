@@ -23,14 +23,19 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { isApiError } from "@/lib/api/client";
 import { useUpdateRoom } from "@/lib/api/queries";
-import type { Room } from "@/lib/api/types.gen";
+import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/lib/forms";
 import { useI18n } from "@/lib/i18n";
-import { type RoomSettingsForm, roomSettingsSchema } from "@/lib/schemas";
+import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/schemas";
+import { cn } from "@/lib/utils";
 
-/** Room settings for managers: name, description, chat bridging (DLV-05) and retention. */
+/**
+ * Room settings for managers: name, description, instructions for agents (INS-01), chat bridging
+ * (DLV-05) and retention.
+ */
 export function RoomSettingsSheet({ room, trigger }: { room: Room; trigger: ReactNode }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -59,12 +64,17 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
       description: room.description,
       bridge_chats: room.bridge_chats,
       retention_days: room.retention_days,
+      instructions: room.instructions,
     },
   });
 
   const onSubmit = form.handleSubmit((values) => {
     setFormError(null);
-    update.mutate(roomSettingsSchema.parse(values), {
+    const { instructions, ...rest } = roomSettingsSchema.parse(values);
+    // Instructions go only when edited, so a save elsewhere never rewrites them.
+    const req: UpdateRoomRequest =
+      instructions === room.instructions ? rest : { ...rest, instructions };
+    update.mutate(req, {
       onSuccess: () => {
         toast.success(t("settings.saved"));
         onDone();
@@ -76,6 +86,7 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
             "description",
             "bridge_chats",
             "retention_days",
+            "instructions",
           ])
         ) {
           return;
@@ -104,6 +115,45 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
             label={t("rooms.description")}
             optional
             autoComplete="off"
+          />
+          <FormField
+            control={form.control}
+            name="instructions"
+            render={({ field }) => {
+              const count = textLength(field.value);
+              const over = count > MaxRoomInstructions;
+              return (
+                <FormItem>
+                  <FormLabel>
+                    {t("settings.instructions")}
+                    <span className="font-normal text-muted-foreground">
+                      ({t("auth.optional")})
+                    </span>
+                  </FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      rows={6}
+                      className="max-h-80 min-h-32 resize-y leading-relaxed"
+                    />
+                  </FormControl>
+                  <div className="flex items-start justify-between gap-4">
+                    <FormDescription className="text-xs">
+                      {t("settings.instructionsHint")}
+                    </FormDescription>
+                    <span
+                      className={cn(
+                        "shrink-0 font-mono text-xs text-muted-foreground tabular",
+                        over && "font-semibold text-destructive",
+                      )}
+                    >
+                      {t("settings.instructionsCount", { count, max: MaxRoomInstructions })}
+                    </span>
+                  </div>
+                  <FieldError />
+                </FormItem>
+              );
+            }}
           />
           <FormField
             control={form.control}

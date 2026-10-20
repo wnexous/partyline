@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Level, Room, RoomMember } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
-import { json, mockApi } from "@/test/fetch";
+import { apiError, json, mockApi } from "@/test/fetch";
 import { makeAgent, makeChat, makeMe, makeMember, makeRoom } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { renderRoute } from "@/test/render";
@@ -303,6 +303,73 @@ describe("room settings", () => {
     await screen.findByTestId("member-mb-bot");
     expect(screen.queryByRole("button", { name: "Room settings" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+  });
+});
+
+describe("room instructions (INS-01)", () => {
+  async function openSettings(room: Partial<Room>, patch: Response) {
+    const api = roomApi(room, { "PATCH /rooms/r1": patch });
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    await user.click(await screen.findByRole("button", { name: "Room settings" }));
+    const sheet = await screen.findByRole("dialog", { name: "Room settings" });
+    const box = within(sheet).getByRole("textbox", { name: /Instructions for agents/ });
+    const patches = () => api.calls.filter((c) => c.method === "PATCH");
+    return { user, sheet, box, patches };
+  }
+
+  it("shows the current instructions and saves the edited text", async () => {
+    const { user, sheet, box, patches } = await openSettings(
+      { instructions: "Answer in Portuguese." },
+      json(200, makeRoom({ id: "r1", instructions: "Answer in Portuguese. Be brief." })),
+    );
+    expect(box).toHaveValue("Answer in Portuguese.");
+    expect(within(sheet).getByText("21 / 4000")).toBeInTheDocument();
+    await user.type(box, " Be brief.");
+    await user.click(within(sheet).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect(patches()[0]?.body).toEqual({
+      name: "deploys",
+      description: "",
+      bridge_chats: false,
+      retention_days: 90,
+      instructions: "Answer in Portuguese. Be brief.",
+    });
+  });
+
+  it("allows 4000 characters counted as the server counts them", async () => {
+    const { user, sheet, box, patches } = await openSettings({}, json(200, makeRoom({ id: "r1" })));
+    // 4000 emoji are 8000 UTF-16 units but 4000 characters.
+    await user.click(box);
+    await user.paste("🙂".repeat(4000));
+    expect(within(sheet).getByText("4000 / 4000")).toBeInTheDocument();
+    await user.click(within(sheet).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect(patches()[0]?.body).toMatchObject({ instructions: "🙂".repeat(4000) });
+  });
+
+  it("blocks 4001 characters before sending", async () => {
+    const { user, sheet, box, patches } = await openSettings({}, json(200, makeRoom({ id: "r1" })));
+    await user.click(box);
+    await user.paste("a".repeat(4001));
+    expect(within(sheet).getByText("4001 / 4000")).toBeInTheDocument();
+    await user.click(within(sheet).getByRole("button", { name: "Save" }));
+    expect(await within(sheet).findByText("At most 4000 characters")).toBeInTheDocument();
+    expect(box).toHaveAttribute("aria-invalid", "true");
+    expect(patches()).toHaveLength(0);
+  });
+
+  it("shows a 422 instructions reason under the field", async () => {
+    const { user, sheet, box } = await openSettings(
+      {},
+      apiError(422, "validation", "invalid", {
+        instructions: "must have at most 4000 characters",
+      }),
+    );
+    await user.type(box, "Be brief.");
+    await user.click(within(sheet).getByRole("button", { name: "Save" }));
+    expect(await within(sheet).findByText("must have at most 4000 characters")).toBeInTheDocument();
+    expect(box).toHaveAttribute("aria-invalid", "true");
   });
 });
 
