@@ -17,13 +17,19 @@ func TestToolDownloadRefusesSharedDirectory(t *testing.T) {
 	t.Run("symlinked partyline dir", func(t *testing.T) {
 		e := newChanEnv(t)
 		o := e.options()
+		// The target is private (0700, the user's own), so only the symlink check can
+		// refuse it: following the link would pass every other check.
 		elsewhere := t.TempDir()
+		require.NoError(t, os.Chmod(elsewhere, 0o700))
+		info, err := os.Stat(elsewhere)
+		require.NoError(t, err)
+		require.NoError(t, checkPrivate(elsewhere, info), "the symlink target itself is private")
 		require.NoError(t, os.Symlink(elsewhere, filepath.Join(o.TempDir, "partyline")))
 		s := e.connected(o)
 		m := e.postFile("report.txt", "secret report")
 		text, isErr := s.call("download_attachment", toolArgs("attachment_id", m.Attachments[0].ID))
 		require.True(t, isErr, text)
-		require.Contains(t, text, "download directory")
+		require.Contains(t, text, "download directory "+filepath.Join(o.TempDir, "partyline")+" is not a plain directory")
 		entries, err := os.ReadDir(elsewhere)
 		require.NoError(t, err)
 		require.Empty(t, entries, "nothing is written through the symlink")

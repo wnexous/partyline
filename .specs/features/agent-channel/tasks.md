@@ -350,8 +350,8 @@ T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: TOOL-06 (S1 hardening)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A symlink to a private (0700, own) directory → isError naming the download directory; the target stays empty
-- [ ] The test fails with `os.Lstat` replaced by `os.Stat` (N1)
+- [x] A symlink to a private (0700, own) directory → isError naming the download directory; the target stays empty
+- [x] The test fails with `os.Lstat` replaced by `os.Stat` (N1)
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(channel): refuse a symlinked download dir even when its target is private`
