@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
@@ -32,7 +33,8 @@ const DefaultCSP = "default-src 'none'; frame-ancestors 'none'"
 // Authenticator resolves request credentials to a principal. Unknown, expired or revoked
 // credentials yield users.ErrUnauthenticated; any other error is an internal failure.
 type Authenticator interface {
-	ValidateSession(ctx context.Context, secret string) (authn.Principal, error)
+	// CheckSession also reports whether the session's expiry slid, so the cookie is re-issued.
+	CheckSession(ctx context.Context, secret string) (p authn.Principal, renewed bool, err error)
 	AuthenticateToken(ctx context.Context, secret string) (authn.Principal, error)
 }
 
@@ -154,9 +156,26 @@ func bodyLimit(maxUpload int64, next http.Handler) http.Handler {
 
 var errUnauthorized = httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "invalid or expired credentials")
 
+// sessionCookie returns the pl_session cookie for secret with a full SessionTTL Max-Age (AUTH-03).
+// Secure follows the public URL scheme (plain HTTP is allowed for localhost).
+func sessionCookie(secret string, secure bool) *http.Cookie {
+	// #nosec G124 -- Secure is set whenever the public URL is https.
+	return &http.Cookie{
+		Name:     SessionCookie,
+		Value:    secret,
+		Path:     "/",
+		MaxAge:   int(users.SessionTTL / time.Second),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
+	}
+}
+
 // principal resolves "Authorization: Bearer <token>" or the session cookie. Bad bearer
-// credentials are rejected with 401; a bad cookie leaves the request anonymous.
+// credentials are rejected with 401; a bad cookie leaves the request anonymous. When the
+// session's expiry slides, the cookie is re-issued so the browser keeps it as long.
 func principal(cfg MiddlewareConfig, next http.Handler) http.Handler {
+	secure := cfg.PublicURL.Scheme == "https"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		if authz := r.Header.Get("Authorization"); authz != "" {
@@ -182,9 +201,12 @@ func principal(cfg MiddlewareConfig, next http.Handler) http.Handler {
 			return
 		}
 		if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" {
-			p, err := cfg.Auth.ValidateSession(ctx, c.Value)
+			p, renewed, err := cfg.Auth.CheckSession(ctx, c.Value)
 			switch {
 			case err == nil:
+				if renewed {
+					http.SetCookie(w, sessionCookie(c.Value, secure))
+				}
 				r = r.WithContext(authn.WithPrincipal(ctx, p))
 			case !errors.Is(err, users.ErrUnauthenticated):
 				cfg.Logger.ErrorContext(ctx, "validate session", "err", err, "request_id", httpx.RequestID(ctx))

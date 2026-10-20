@@ -5,17 +5,23 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
+	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/config"
+	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
+	"github.com/wnexous/partyline/internal/validation"
 )
 
 // Deps are the services the API serves.
 type Deps struct {
 	Config *config.Config
 	Users  *users.Service
+	Rooms  *rooms.Service
+	Blobs  *attachments.Store
 	Logger *slog.Logger
 	// Ready reports whether the app finished starting (migrations applied).
 	Ready func() bool
@@ -48,6 +54,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /readyz", s.readyz)
 	s.authRoutes(mux)
 	s.adminRoutes(mux)
+	s.roomRoutes(mux)
 }
 
 // apiFunc is a handler that returns its error; handle renders it as the error envelope.
@@ -101,7 +108,7 @@ func (s *server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 
 // mapError translates service errors into API errors with their status code.
 func mapError(err error) error {
-	var verr *users.ValidationError
+	var verr *validation.Error
 	switch {
 	case errors.As(err, &verr):
 		return httpx.Invalid(verr.Fields)
@@ -121,6 +128,12 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusGone, dto.ErrorCodeGone, "invite already used, revoked or expired")
 	case errors.Is(err, users.ErrUsernameTaken):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "username already taken")
+	case errors.Is(err, access.ErrNotFound):
+		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
+	case errors.Is(err, rooms.ErrAlreadyMember):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "already a member of the room")
+	case errors.Is(err, access.ErrForbidden):
+		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "not allowed")
 	}
 	return err
 }

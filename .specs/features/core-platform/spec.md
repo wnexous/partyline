@@ -121,7 +121,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 4. WHEN a message is accepted THEN the system SHALL deliver it to every agent member other than the author. (DLV-02)
 5. WHEN an agent or user posts without explicit recipients THEN the system SHALL queue it for every chat member whose `outbound` flag is on. (DLV-03)
 6. WHEN an agent or user posts with explicit recipients THEN the system SHALL queue it only for the listed chat members. (DLV-04)
-7. WHERE the room setting `bridge_chats` is on the system SHALL also queue chat-authored messages for the other chat members; otherwise it SHALL NOT. (DLV-05)
+7. WHERE the room setting `bridge_chats` is on the system SHALL also queue chat-authored messages for the other chat members whose `outbound` flag is on; otherwise it SHALL NOT. (DLV-05)
 8. WHEN a message is delivered to an agent THEN the system SHALL set `trusted=true` only if the author resolves to the recipient agent's owner (as user, as one of the owner's agents, or as one of the owner's verified identities). (DLV-06)
 9. IF a queued outbound send fails THEN the system SHALL retry with exponential backoff starting at 2 seconds for at most 5 attempts and then mark it `failed`. (DLV-07)
 10. WHEN the room's consecutive agent-authored messages reach 25 THEN the system SHALL pause delivery to agents in that room and post a system message. (DLV-08)
@@ -212,28 +212,28 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | TOK-02 | P1: Tokens | Tasks | Implementing |
 | TOK-03 | P1: Tokens | Tasks | Implementing |
 | TOK-04 | P1: Tokens | Tasks | Implementing |
-| ACL-01 | P1: Rooms and sharing | Tasks | Pending |
-| ACL-02 | P1: Rooms and sharing | Tasks | Pending |
-| ACL-03 | P1: Rooms and sharing | Tasks | Pending |
-| ACL-04 | P1: Rooms and sharing | Tasks | Pending |
-| ACL-05 | P1: Rooms and sharing | Tasks | Pending |
-| ACL-06 | P1: Rooms and sharing | Tasks | Pending |
-| ACL-07 | P1: Rooms and sharing | Tasks | Pending |
-| ACL-08 | P1: Rooms and sharing | Tasks | Pending |
-| ROOM-01 | P1: Rooms and sharing | Tasks | Pending |
-| ROOM-02 | P1: Rooms and sharing | Tasks | Pending |
+| ACL-01 | P1: Rooms and sharing | Tasks | Implementing |
+| ACL-02 | P1: Rooms and sharing | Tasks | Implementing |
+| ACL-03 | P1: Rooms and sharing | Tasks | Implementing |
+| ACL-04 | P1: Rooms and sharing | Tasks | Implementing |
+| ACL-05 | P1: Rooms and sharing | Tasks | Implementing |
+| ACL-06 | P1: Rooms and sharing | Tasks | Implementing |
+| ACL-07 | P1: Rooms and sharing | Tasks | Implementing |
+| ACL-08 | P1: Rooms and sharing | Tasks | Implementing |
+| ROOM-01 | P1: Rooms and sharing | Tasks | Implementing |
+| ROOM-02 | P1: Rooms and sharing | Tasks | Implementing |
 | MSG-01 | P1: Messages and delivery | Tasks | Implementing |
 | MSG-02 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-01 | P1: Messages and delivery | Tasks | Pending |
-| DLV-02 | P1: Messages and delivery | Tasks | Pending |
-| DLV-03 | P1: Messages and delivery | Tasks | Pending |
-| DLV-04 | P1: Messages and delivery | Tasks | Pending |
-| DLV-05 | P1: Messages and delivery | Tasks | Pending |
-| DLV-06 | P1: Messages and delivery | Tasks | Pending |
+| DLV-01 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-02 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-03 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-04 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-05 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-06 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-07 | P1: Messages and delivery | Tasks | Pending |
-| DLV-08 | P1: Messages and delivery | Tasks | Pending |
-| DLV-09 | P1: Messages and delivery | Tasks | Pending |
-| DLV-10 | P1: Messages and delivery | Tasks | Pending |
+| DLV-08 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-09 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-10 | P1: Messages and delivery | Tasks | Implementing |
 | LIVE-01 | P1: Live updates | Tasks | Implementing |
 | LIVE-02 | P1: Live updates | Tasks | Pending |
 | LIVE-03 | P1: Live updates | Tasks | Pending |
@@ -244,7 +244,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | SEC-04 | P1: Secure deployment | Tasks | Implementing |
 | SEC-05 | P1: Secure deployment | Tasks | Pending |
 | OPS-01 | P1: Secure deployment | Tasks | Implementing |
-| OPS-02 | P1: Secure deployment | Tasks | Pending |
+| OPS-02 | P1: Secure deployment | Tasks | Implementing |
 | OPS-03 | P1: Secure deployment | Tasks | Implementing |
 | AUD-01 | P2: Audit trail | Tasks | Pending |
 | AUD-02 | P2: Audit trail | Tasks | Pending |

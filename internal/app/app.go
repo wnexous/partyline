@@ -11,9 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api"
+	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/users"
@@ -21,6 +24,9 @@ import (
 
 // DatabaseFile is the SQLite file name inside the data directory.
 const DatabaseFile = "partyline.db"
+
+// BlobsDir is the attachment blob directory inside the data directory.
+const BlobsDir = "blobs"
 
 // Options tune an App; zero values use the defaults.
 type Options struct {
@@ -38,6 +44,9 @@ type App struct {
 	Box    *secrets.Box
 	Bus    *events.Bus
 	Users  *users.Service
+	Access *access.Authorizer
+	Rooms  *rooms.Service
+	Blobs  *attachments.Store
 
 	handler http.Handler
 	ready   atomic.Bool
@@ -70,17 +79,29 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		return nil, err
 	}
 
+	blobs, err := attachments.Open(filepath.Join(cfg.DataDir, BlobsDir))
+	if err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+	bus := events.NewBus()
+	az := access.New(st, bus, access.Options{Now: opts.Now})
 	a := &App{
 		Config: cfg,
 		Logger: opts.Logger,
 		Store:  st,
 		Box:    box,
-		Bus:    events.NewBus(),
+		Bus:    bus,
 		Users:  usersSvc,
+		Access: az,
+		Rooms:  rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now}),
+		Blobs:  blobs,
 	}
 	a.handler = api.New(api.Deps{
 		Config: cfg,
 		Users:  usersSvc,
+		Rooms:  a.Rooms,
+		Blobs:  blobs,
 		Logger: opts.Logger,
 		Ready:  a.ready.Load,
 	})

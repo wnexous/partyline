@@ -131,6 +131,35 @@ func TestLogoutRevokesCookie(t *testing.T) {
 	env.SessionClient(admin.Session).Get("/api/v1/me").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }
 
+// AUTH-03 (30 days, sliding): when a used session's expiry slides, the response re-issues the
+// cookie with a fresh 30-day Max-Age, at most once per hour, and the session outlives the
+// 30 days counted from login.
+func TestSessionCookieRefreshedWhenSessionSlides(t *testing.T) {
+	clock := testkit.NewClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC))
+	env := testkit.New(t, testkit.WithClock(clock.Now))
+	admin := env.SetupAdmin()
+
+	clock.Advance(59 * time.Minute)
+	require.Nil(t, admin.Get("/api/v1/me").RequireStatus(http.StatusOK).Cookie(api.SessionCookie),
+		"no refresh within the first hour")
+
+	clock.Advance(2 * time.Minute)
+	c := requireSessionCookie(t, admin.Get("/api/v1/me").RequireStatus(http.StatusOK), false)
+	require.Equal(t, admin.Session, c.Value, "the refresh keeps the same session")
+
+	clock.Advance(58 * time.Minute)
+	require.Nil(t, admin.Get("/api/v1/me").RequireStatus(http.StatusOK).Cookie(api.SessionCookie),
+		"at most one refresh per hour")
+
+	// 30 days and 1 hour after login the session is still valid, and slides again.
+	clock.Advance(30*24*time.Hour - 59*time.Minute)
+	c = requireSessionCookie(t, env.SessionClient(admin.Session).Get("/api/v1/me").RequireStatus(http.StatusOK), false)
+	require.Equal(t, admin.Session, c.Value)
+
+	// Bearer and anonymous requests never get a session cookie.
+	require.Nil(t, env.Anon().Get("/api/v1/setup/status").RequireStatus(http.StatusOK).Cookie(api.SessionCookie))
+}
+
 func TestUpdateMe(t *testing.T) {
 	env := testkit.New(t)
 	bob := env.NewUser("bob")

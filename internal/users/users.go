@@ -5,8 +5,6 @@ package users
 import (
 	"errors"
 	"regexp"
-	"sort"
-	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -14,6 +12,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/store"
+	"github.com/wnexous/partyline/internal/validation"
 )
 
 // Errors returned by the service. The API maps each to one status code.
@@ -29,18 +28,7 @@ var (
 )
 
 // ValidationError names each rejected input field and the reason.
-type ValidationError struct {
-	Fields map[string]string
-}
-
-func (e *ValidationError) Error() string {
-	names := make([]string, 0, len(e.Fields))
-	for name := range e.Fields {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return "invalid " + strings.Join(names, ", ")
-}
+type ValidationError = validation.Error
 
 // SessionTTL is the sliding lifetime of a login session (AUTH-03).
 const SessionTTL = 30 * 24 * time.Hour
@@ -51,7 +39,11 @@ const (
 	loginWindow      = time.Minute
 )
 
-// touchInterval bounds how often a session's sliding expiry is written.
+// SessionSlideInterval bounds how often a session's sliding expiry moves, and so how often
+// its cookie is re-issued.
+const SessionSlideInterval = time.Hour
+
+// touchInterval bounds how often a session's last_seen_at is written.
 const touchInterval = time.Minute
 
 // Options tune the service; zero values use the defaults.

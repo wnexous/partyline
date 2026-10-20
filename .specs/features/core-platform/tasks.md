@@ -297,9 +297,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: ACL-02, ACL-07, ACL-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Level = max(ownership, user grant, `*` grant); admin without grant → none
-- [ ] Visibility private/shared/public replaces grants exactly as ACL-07
-- [ ] Disabled grantee resolves to none
+- [x] Level = max(ownership, user grant, `*` grant); admin without grant → none
+- [x] Visibility private/shared/public replaces grants exactly as ACL-07
+- [x] Disabled grantee resolves to none
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(access): add authorizer, grants and visibility presets`
@@ -313,9 +313,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: DLV-01, DLV-02, DLV-03, DLV-04, DLV-05, DLV-06, DLV-08, DLV-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Table tests per author kind × outbound flags × recipients × bridge_chats
-- [ ] Trusted true only for equal user ids, false for empty author user
-- [ ] 25th consecutive agent message pauses; user/chat message resets to 0
+- [x] Table tests per author kind × outbound flags × recipients × bridge_chats
+- [x] Trusted true only for equal user ids, false for empty author user
+- [x] 25th consecutive agent message pauses; user/chat message resets to 0
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(delivery): add delivery plan, trust and loop guard rules`
@@ -329,9 +329,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: ACL-01, ACL-03, ACL-05, ACL-06, ROOM-01, ROOM-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Creator is owner/manage; stranger gets ErrNotFound
-- [ ] Adding agent/chat without use permission → ErrForbidden
-- [ ] Delete removes messages, attachments rows, cursors, outbox (count 0 after)
+- [x] Creator is owner/manage; stranger gets ErrNotFound
+- [x] Adding agent/chat without use permission → ErrForbidden
+- [x] Delete removes messages, attachments rows, cursors, outbox (count 0 after)
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(rooms): add rooms and members service`
@@ -345,8 +345,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: SEC-03, OPS-02 (blob cleanup)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Same content stored once; limit+1 bytes → ErrTooLarge and no file left
-- [ ] Files 0600, dirs 0700
+- [x] Same content stored once; limit+1 bytes → ErrTooLarge and no file left
+- [x] Files 0600, dirs 0700
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(attachments): add content-addressed blob store`
@@ -360,10 +360,10 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: MSG-01, MSG-02, DLV-03, DLV-04, DLV-05, DLV-08, DLV-09, DLV-10, CON-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 50 concurrent posts → seqs 1..50 without gaps
-- [ ] Empty text without files and 16,001 chars → validation error
-- [ ] Outbox rows match Plan; duplicate external id returns existing message, no event
-- [ ] Pause after 25 agent messages posts a system message; Resume resets
+- [x] 50 concurrent posts → seqs 1..50 without gaps
+- [x] Empty text without files and 16,001 chars → validation error
+- [x] Outbox rows match Plan; duplicate external id returns existing message, no event
+- [x] Pause after 25 agent messages posts a system message; Resume resets
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(rooms): add message posting, listing and loop guard`
@@ -377,8 +377,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: ACL-01, ACL-03, ACL-04, ACL-07, ROOM-01, MSG-02, SEC-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Auth matrix owner/grantee(view)/grantee(post)/stranger/admin for each route with expected 200/201/403/404
-- [ ] Multipart over limit → 413; attachment of invisible room → 404; safe images inline, others `attachment`
+- [x] Auth matrix owner/grantee(view)/grantee(post)/stranger/admin for each route with expected 200/201/403/404
+- [x] Multipart over limit → 413; attachment of invisible room → 404; safe images inline, others `attachment`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): add room, member, sharing and message endpoints`

@@ -156,34 +156,48 @@ func (s *Service) createSession(ctx context.Context, userID, ip, userAgent strin
 	return sess, nil
 }
 
-// ValidateSession resolves a session cookie value to its user principal. Unknown, expired
-// or revoked sessions and sessions of disabled users return ErrUnauthenticated. A valid
-// session's expiry slides to now + SessionTTL (written at most once per minute).
+// ValidateSession resolves a session cookie value to its user principal; see CheckSession.
 func (s *Service) ValidateSession(ctx context.Context, secret string) (authn.Principal, error) {
+	p, _, err := s.CheckSession(ctx, secret)
+	return p, err
+}
+
+// CheckSession resolves a session cookie value to its user principal. Unknown, expired or
+// revoked sessions and sessions of disabled users return ErrUnauthenticated.
+//
+// Use slides the session: when now + SessionTTL is at least SessionSlideInterval past the
+// stored expiry, the expiry moves to now + SessionTTL and renewed is true, telling the caller
+// to re-issue the cookie with a fresh SessionTTL Max-Age (AUTH-03). Otherwise only
+// last_seen_at is written, at most once per minute.
+func (s *Service) CheckSession(ctx context.Context, secret string) (p authn.Principal, renewed bool, err error) {
 	sess, err := s.store.R().GetSessionByTokenHash(ctx, authn.HashToken(secret))
 	if errors.Is(err, sql.ErrNoRows) {
-		return authn.Principal{}, ErrUnauthenticated
+		return authn.Principal{}, false, ErrUnauthenticated
 	}
 	if err != nil {
-		return authn.Principal{}, err
+		return authn.Principal{}, false, err
 	}
 	now := s.now()
 	if ms(now) >= sess.ExpiresAt {
-		return authn.Principal{}, ErrUnauthenticated
+		return authn.Principal{}, false, ErrUnauthenticated
 	}
 	u, err := s.activeUser(ctx, sess.UserID)
 	if err != nil {
-		return authn.Principal{}, err
+		return authn.Principal{}, false, err
 	}
-	if ms(now)-sess.LastSeenAt >= touchInterval.Milliseconds() {
+	expires := sess.ExpiresAt
+	if next := ms(now.Add(SessionTTL)); next-expires >= SessionSlideInterval.Milliseconds() {
+		expires, renewed = next, true
+	}
+	if renewed || ms(now)-sess.LastSeenAt >= touchInterval.Milliseconds() {
 		err := s.store.WithTx(ctx, func(q *db.Queries) error {
-			return q.TouchSession(ctx, db.TouchSessionParams{LastSeenAt: ms(now), ExpiresAt: ms(now.Add(SessionTTL)), ID: sess.ID})
+			return q.TouchSession(ctx, db.TouchSessionParams{LastSeenAt: ms(now), ExpiresAt: expires, ID: sess.ID})
 		})
 		if err != nil {
-			return authn.Principal{}, err
+			return authn.Principal{}, false, err
 		}
 	}
-	return authn.Principal{Kind: authn.KindUser, UserID: u.ID, Role: u.Role, SessionID: sess.ID}, nil
+	return authn.Principal{Kind: authn.KindUser, UserID: u.ID, Role: u.Role, SessionID: sess.ID}, renewed, nil
 }
 
 // activeUser returns the user or ErrUnauthenticated when it is missing or disabled.
