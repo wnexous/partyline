@@ -375,7 +375,7 @@ From `uat.md` (T17) follow-ups 1 and 2, the omp instructions mismatch and a flak
 **Requirement**: INS-03 (routing-context), DLV-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Passes with `-count=20`, and with an injected dispatcher delay that fails the old ordering
+- [x] Passes with `-count=20`, and with an injected dispatcher delay that fails the old ordering
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(api): pause the room before posting in the paused notice test`

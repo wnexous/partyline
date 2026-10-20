@@ -92,14 +92,16 @@ func TestAgentWSInstructionsNotice(t *testing.T) {
 const insNotice = "This room has instructions for its agents; call the room_info tool to read them."
 
 // INS-03: a room paused by the loop guard still sends its instructions notice on connect, and
-// no messages.
+// no messages. The room is paused before the post: a user post keeps the pause, so the live
+// dispatcher never sees the room unpaused (pausing after the post raced with it).
 func TestAgentWSInstructionsNoticeInPausedRoom(t *testing.T) {
 	f := newAgentRoom(t)
 	setInstructions(f.alice, f.room.ID, "Be brief.")
-	f.post(f.alice, "held while paused")
 	require.NoError(t, f.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
 		return q.SetRoomLoopState(context.Background(), db.SetRoomLoopStateParams{AgentStreak: 25, AgentsPaused: true, ID: f.room.ID})
 	}))
+	f.post(f.alice, "held while paused")
+	require.True(t, testkit.Decode[dto.Room](f.alice.Get("/api/v1/rooms/"+f.room.ID).RequireStatus(http.StatusOK)).AgentsPaused, "the post keeps the pause")
 
 	conn := f.dial(t)
 	conn.Welcome(wsWait)
