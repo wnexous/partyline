@@ -14,6 +14,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
@@ -34,8 +35,10 @@ type Deps struct {
 	FileLinks *connectors.FileLinks
 	// Identities manages pairing codes and verified chat identities.
 	Identities *identities.Service
-	Blobs      *attachments.Store
-	Audit      *audit.Log
+	// Devices approves new machines (partyline setup --browser).
+	Devices *devices.Service
+	Blobs   *attachments.Store
+	Audit   *audit.Log
 	// Live serves the live WebSocket at GET /api/v1/live.
 	Live http.Handler
 	// AgentWS serves the agent WebSocket at GET /api/v1/agent/ws.
@@ -81,6 +84,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.identityRoutes(mux)
 	s.chatRoutes(mux)
 	s.hookRoutes(mux)
+	s.deviceRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}

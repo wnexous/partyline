@@ -118,7 +118,7 @@ T15 → T16 → T17
 **Requirement**: DEV-01, DEV-02, DEV-03, DEV-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Approve → poll returns token once, then never again; deny/expiry statuses; 11th create/hour → 429; poll faster than 2 s → 429; auth matrix
+- [x] Approve → poll returns token once, then never again; deny/expiry statuses; 11th create/hour → 429; poll faster than 2 s → 429; auth matrix
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): approve new machines from the web app`

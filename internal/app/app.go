@@ -24,6 +24,7 @@ import (
 	"github.com/wnexous/partyline/internal/connectors/webhook"
 	"github.com/wnexous/partyline/internal/connectors/whatsapp"
 	"github.com/wnexous/partyline/internal/delivery"
+	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/live"
@@ -90,6 +91,8 @@ type App struct {
 	ConnectorManager *connectors.Manager
 	// Identities links chat accounts to users (pairing codes).
 	Identities *identities.Service
+	// Devices approves new machines (partyline setup --browser).
+	Devices *devices.Service
 	// Gateway serves the agent WebSocket and pushes messages to connected agents.
 	Gateway *agents.Gateway
 	Live    *live.Hub
@@ -187,6 +190,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Bus: bus, Access: az, Rooms: a.Rooms, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
 		Sessions: usersSvc, SessionCheckInterval: opts.LiveSessionCheck,
 	})
+	auditLog := audit.New(st, opts.Now)
+	a.Devices = devices.New(devices.Deps{Store: st, Users: usersSvc, Box: box, Audit: auditLog, Now: opts.Now})
 	a.handler = api.New(api.Deps{
 		Config:     cfg,
 		Users:      usersSvc,
@@ -194,10 +199,11 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Agents:     a.Agents,
 		Connectors: a.Connectors,
 		Identities: a.Identities,
+		Devices:    a.Devices,
 		Hooks:      a.ConnectorManager,
 		FileLinks:  fileLinks,
 		Blobs:      blobs,
-		Audit:      audit.New(st, opts.Now),
+		Audit:      auditLog,
 		Live:       a.Live,
 		AgentWS:    a.Gateway,
 		WebUI:      webui.Handler(cfg.PublicURL),
