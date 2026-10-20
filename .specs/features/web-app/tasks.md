@@ -258,7 +258,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-18
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Countdown reaches 0 → expired state; live event → success and list refetch
+- [x] Countdown reaches 0 → expired state; live event → success and list refetch
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add identities page with pairing flow`

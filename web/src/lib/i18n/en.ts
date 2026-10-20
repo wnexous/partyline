@@ -408,6 +408,32 @@ export const en = {
   "route.noAgents": "No agents you can use yet.",
   "route.done": "{chat} now reaches {agent}",
   "route.failed": "Couldn't create the room. Try again.",
+  "identities.link": "Link a chat account",
+  "identities.listLabel": "Your verified chat accounts",
+  "identities.loadError": "Couldn't load your identities.",
+  "identities.emptyTitle": "No verified accounts yet",
+  "identities.emptyBody":
+    "Link the WhatsApp, Telegram or Discord accounts you use. Your agents then receive your messages from them as trusted.",
+  "identities.linkedOn": "linked {date}",
+  "identities.remove": "Remove {name}",
+  "identities.removeTitle": "Remove {name}?",
+  "identities.removeBody":
+    "Messages from this account reach your agents as untrusted again. You can link it again with a new code.",
+  "identities.removeConfirm": "Remove identity",
+  "identities.removeFailed": "Couldn't remove the identity.",
+  "pairing.body":
+    "Send the code from the account you want to link, in any chat a partyline connector reads. A direct message to the bot works.",
+  "pairing.codeLabel": "Pairing code",
+  "pairing.send": "Send this message from that account:",
+  "pairing.command": "Command",
+  "pairing.alt": "{command} works too. The message is not delivered to any room.",
+  "pairing.expiresIn": "Code expires in",
+  "pairing.expired": "This code expired",
+  "pairing.expiredBody": "Codes last 10 minutes. Get a new one and send it right away.",
+  "pairing.newCode": "Get a new code",
+  "pairing.failed": "Couldn't create a pairing code.",
+  "pairing.linked": "{name} is linked",
+  "pairing.linkedBody": "Your agents now trust your messages from this {platform} account.",
 } as const;
 
 export type MessageKey = keyof typeof en;
