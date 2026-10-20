@@ -55,6 +55,9 @@ func TestSPAFallbackServesIndexWithCSP(t *testing.T) {
 	require.Contains(t, csp, "frame-ancestors 'none'")
 	scriptSrc := strings.SplitN(strings.SplitN(csp, "script-src", 2)[1], ";", 2)[0]
 	require.Equal(t, " 'self'", scriptSrc, "scripts only from the instance: no inline scripts")
+	// The build inlines a font as a data: URI; fonts load from the instance or data: only.
+	fontSrc := strings.SplitN(strings.SplitN(csp, "font-src", 2)[1], ";", 2)[0]
+	require.Equal(t, " 'self' data:", fontSrc)
 	require.Contains(t, CSP("http://localhost:8080"), "connect-src 'self' ws://localhost:8080")
 }
 

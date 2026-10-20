@@ -681,7 +681,7 @@ T35 → T43 → T44
 **Requirement**: SEC-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] The HTML response CSP contains `font-src 'self' data:` and keeps `default-src 'self'`, `script-src 'self'` and `frame-ancestors 'none'`
+- [x] The HTML response CSP contains `font-src 'self' data:` and keeps `default-src 'self'`, `script-src 'self'` and `frame-ancestors 'none'`
 **Tests**: e2e
 **Gate**: full
 **Commit**: `fix(webui): allow data uri fonts in the html content security policy`
