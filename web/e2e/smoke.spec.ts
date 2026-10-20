@@ -111,11 +111,17 @@ test("a message posted in a room reaches another user's open room live (UI-04)",
     });
 
     const text = "Deploy finished on the e2e line";
-    await admin.getByRole("textbox", { name: "Message e2e-wire" }).fill(text);
+    const composer = admin.getByRole("textbox", { name: "Message e2e-wire" });
+    await composer.fill(text);
     await admin.getByRole("button", { name: "Send" }).click();
-    await expect(admin.getByText(text)).toBeVisible();
+    // The live event can render the message before the composer clears, so look in the
+    // timeline only, then check the composer was cleared.
+    const inTimeline = (page: typeof admin) =>
+      page.locator('[data-testid^="message-"]').getByText(text, { exact: true });
+    await expect(inTimeline(admin)).toBeVisible();
+    await expect(composer).toHaveValue("");
 
-    await expect(viewer.getByText(text)).toBeVisible();
+    await expect(inTimeline(viewer)).toBeVisible();
     expect(await viewer.evaluate(() => "e2eSameDocument" in window)).toBe(true);
     expect(timelineFetches).toEqual([]);
   } finally {
