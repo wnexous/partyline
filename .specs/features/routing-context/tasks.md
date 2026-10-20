@@ -452,7 +452,7 @@ T31 → T32 → T33 → T34
 **Requirement**: ROUTE-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Detail cleared after success and after PATCH; other details untouched
+- [x] Detail cleared after success and after PATCH; other details untouched
 **Tests**: integration
 **Gate**: build
 **Commit**: `fix(connectors): clear auto-route status once routing works again`

@@ -324,6 +324,8 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 		changed = append(changed, "auto_route")
 	}
 	toggled := enabled != c.Enabled
+	// ROUTE-09: saved catch-all settings clear a detail that catch-all routing set.
+	clearDetail := (in.AutoRouteScope != nil || in.AutoRouteRoomID != nil) && IsAutoRouteDetail(c.LastError)
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		if err := q.UpdateConnector(ctx, db.UpdateConnectorParams{
 			Name: name, ConfigJson: public, SecretsEnc: sealed, Enabled: enabled, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
@@ -334,6 +336,11 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 			AutoRouteScope: string(scope), AutoRouteRoomID: routeRoom, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
 		}); err != nil {
 			return err
+		}
+		if clearDetail {
+			if err := q.SetConnectorLastError(ctx, db.SetConnectorLastErrorParams{LastError: "", ID: id}); err != nil {
+				return err
+			}
 		}
 		if routeRoom.Valid { // ROUTE-07: a catch-all room neither broadcasts nor bridges chats
 			if err := q.SetRoomCatchAllSafety(ctx, db.SetRoomCatchAllSafetyParams{UpdatedAt: s.d.Now().UnixMilli(), ID: routeRoom.String}); err != nil {
@@ -379,6 +386,9 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	}
 	if routeRoom.Valid {
 		s.d.Bus.Publish(events.RoomChanged{RoomID: routeRoom.String})
+	}
+	if clearDetail {
+		s.d.Bus.Publish(events.ConnectorStatus{ConnectorID: id, Status: c.Status})
 	}
 	if s.d.Runner != nil {
 		switch {

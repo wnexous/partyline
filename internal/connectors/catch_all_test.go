@@ -297,3 +297,38 @@ func TestCatchAllRoomCap(t *testing.T) {
 	require.Equal(t, before, c.messageCount(t), "nothing stored")
 	require.Equal(t, "auto-route limit reached", c.connector(t).LastError)
 }
+
+// ROUTE-09: "auto-route room unavailable" clears once a chat is routed again (bob restores
+// alice's manage grant) and when the catch-all settings are saved again; a status detail that
+// catch-all routing did not set is left alone.
+func TestCatchAllStatusDetailClears(t *testing.T) {
+	c := newCatchAll(t)
+	bob := c.env.NewUser("bob")
+	bobs := testkit.Decode[dto.Room](bob.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "bob's catch-all"}).RequireStatus(http.StatusCreated))
+	share := func(level dto.Level) {
+		bob.Put("/api/v1/rooms/"+bobs.ID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: c.alice.User.ID, Level: level}}}).RequireStatus(http.StatusOK)
+	}
+	share(dto.LevelManage)
+	c.setScope(t, dto.AutoRouteScopeAll, bobs.ID)
+	share(dto.LevelPost)
+	c.emit(dmText(dmA, "A1", "lost"))
+	require.Equal(t, "auto-route room unavailable", c.connector(t).LastError)
+
+	share(dto.LevelManage)
+	c.emit(dmText(dmB, "B1", "routed again"))
+	require.Empty(t, c.connector(t).LastError, "a successful route clears the detail")
+
+	bob.Delete("/api/v1/rooms/" + bobs.ID).RequireStatus(http.StatusNoContent)
+	c.emit(dmText(dmC, "C1", "room gone"))
+	require.Equal(t, "auto-route room unavailable", c.connector(t).LastError)
+	fresh := testkit.Decode[dto.Room](c.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "new catch-all"}).RequireStatus(http.StatusCreated))
+	c.setScope(t, dto.AutoRouteScopeAll, fresh.ID)
+	require.Empty(t, c.connector(t).LastError, "saving the catch-all settings clears the detail")
+
+	ctx := context.Background()
+	require.NoError(t, c.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.SetConnectorLastError(ctx, db.SetConnectorLastErrorParams{LastError: "connection lost", ID: c.conn.ID})
+	}))
+	c.setScope(t, dto.AutoRouteScopeDMs, fresh.ID)
+	require.Equal(t, "connection lost", c.connector(t).LastError, "other details stay")
+}

@@ -91,6 +91,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 6. WHILE a room's `broadcast` setting is off (default on) the system SHALL store a user or agent post without recipients, deliver it to the room's agents and queue it to no chat, and the post response (and channel tool result) SHALL say `not sent to any chat: this room only answers explicit chats (use reply or chat_ids)`; a reply to a message of a chat with outbound on SHALL go to that chat only. (ROUTE-06)
 7. WHEN a room becomes a connector's `auto_route_room_id` THEN the system SHALL turn its `broadcast` and `bridge_chats` off, and WHILE it is any connector's catch-all room a PATCH turning either on SHALL get 422 on that field (`must stay off while the room is a catch-all room`) and apply nothing. (ROUTE-07)
 8. IF a connector already auto-added 60 chats in the last hour, or its catch-all room already has 1,000 chats, THEN the system SHALL NOT add a new chat nor store its message and SHALL set the connector status detail to `auto-route limit reached`; the next successful route SHALL clear it. (ROUTE-08)
+9. WHEN a chat is routed to the catch-all room again, or a manager saves the connector's catch-all settings, THEN the system SHALL clear an `auto-route room unavailable` or `auto-route limit reached` status detail and leave other details unchanged. (ROUTE-09)
 
 **Independent Test**: Connector with scope `dms` and a room with an agent; a new DM reaches the agent, a new group does not.
 
@@ -192,6 +193,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROUTE-06 | P1: Catch-all | Fix iteration 1 | Implemented (T23, T24, T31) |
 | ROUTE-07 | P1: Catch-all | Fix iteration 1 | Implemented (T23, T31) |
 | ROUTE-08 | P1: Catch-all | Fix iteration 1 | Implemented (T25) |
+| ROUTE-09 | P1: Catch-all | Fix iteration 1 | Implemented (T26) |
 | MEM-01 | P1: Membership settings | Tasks | Implementing |
 | MEM-02 | P1: Membership settings | Tasks | Implementing |
 | MEM-03 | P1: Membership settings | Tasks | Fixed (T18), re-verify |
@@ -207,7 +209,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROOMDEL-01 | P1: Delete a room | Tasks | Implementing |
 | ROOMDEL-02 | P1: Delete a room | Tasks | Implementing |
 
-**Coverage:** 30 total, mapped in tasks.md
+**Coverage:** 31 total, mapped in tasks.md
 
 ---
 
