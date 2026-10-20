@@ -193,6 +193,10 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 - WHEN a grant targets a disabled user THEN the system SHALL keep it but deny access while the user is disabled (AUTH-10).
 - IF an admin demotes or disables their own account, or a change would demote or disable the last active admin, THEN the system SHALL respond 409 `conflict` and change nothing (AUTH-10).
 - WHEN a session ends (logout, session delete, password change or reset, user disabled) THEN the system SHALL close that session's live WebSockets within 1 second, and SHALL re-check every live socket's session, token and user at least every 60 seconds (AUTH-09, AUTH-10).
+- WHEN a user token is revoked or its user is disabled THEN the system SHALL close the live WebSockets authenticated by that token within 1 second (AUTH-10, TOK-02).
+- IF a live socket's re-check cannot run (store error) THEN the system SHALL close the socket so the client reconnects and authenticates again (AUTH-09, AUTH-10).
+- WHEN a login succeeds THEN the system SHALL keep the IP's failures of the current minute counted (AUTH-05).
+- WHEN counting login failures THEN the system SHALL treat one IPv4 address, or one IPv6 /64, as one IP; IF it already tracks its maximum number of active windows THEN it SHALL respond 429 to logins from untracked addresses until windows expire, and SHALL never drop an active window (AUTH-05).
 - WHEN a user changes their password THEN the system SHALL end the user's other sessions and keep the current one (AUTH-09).
 - WHEN a room is deleted THEN the system SHALL remove, right after the delete, its attachment files that no other attachment references; files written in the last minute are left to the daily orphan sweep, since an upload of the same content may still be committing (ROOM-02).
 
@@ -206,12 +210,12 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | AUTH-02 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
 | AUTH-03 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
 | AUTH-04 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
-| AUTH-05 | P1: Setup and accounts | Fix T29 | Fixed, re-verify |
+| AUTH-05 | P1: Setup and accounts | Fix T46-T48 | Fixed, re-verify |
 | AUTH-06 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
 | AUTH-07 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
 | AUTH-08 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
-| AUTH-09 | P1: Setup and accounts | Fix T31 | Fixed, re-verify |
-| AUTH-10 | P1: Setup and accounts | Fix T31 | Fixed, re-verify |
+| AUTH-09 | P1: Setup and accounts | Fix T49-T51 | Fixed, re-verify |
+| AUTH-10 | P1: Setup and accounts | Fix T50-T52, T54 | Fixed, re-verify |
 | TOK-01 | P1: Tokens | Tasks | Verified (iteration 1) |
 | TOK-02 | P1: Tokens | Tasks | Verified (iteration 1) |
 | TOK-03 | P1: Tokens | Tasks | Verified (iteration 1) |
@@ -222,38 +226,38 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | ACL-04 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
 | ACL-05 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
 | ACL-06 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
-| ACL-07 | P1: Rooms and sharing | Fix T34 | Fixed, re-verify |
+| ACL-07 | P1: Rooms and sharing | Fix T34 | Verified (iteration 2) |
 | ACL-08 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
-| ROOM-01 | P1: Rooms and sharing | Fix T28 | Fixed, re-verify |
-| ROOM-02 | P1: Rooms and sharing | Fix T33 | Fixed, re-verify |
+| ROOM-01 | P1: Rooms and sharing | Fix T55 | Fixed, re-verify |
+| ROOM-02 | P1: Rooms and sharing | Fix T53 | Fixed, re-verify |
 | MSG-01 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
 | MSG-02 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
 | DLV-01 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
-| DLV-02 | P1: Messages and delivery | Tasks | Verified with scope gap (later feature) |
+| DLV-02 | P1: Messages and delivery | Tasks | Verified (iteration 2, agent-channel/connectors evidence) |
 | DLV-03 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
-| DLV-04 | P1: Messages and delivery | Fix T35 | Fixed, re-verify |
+| DLV-04 | P1: Messages and delivery | Fix T56 | Fixed, re-verify |
 | DLV-05 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
-| DLV-06 | P1: Messages and delivery | Tasks | Verified with scope gap (later feature) |
-| DLV-07 | P1: Messages and delivery | Fix T44 | Fixed, re-verify |
-| DLV-08 | P1: Messages and delivery | Tasks | Verified with scope gap (later feature) |
+| DLV-06 | P1: Messages and delivery | Tasks | Verified (iteration 2, agent-channel/connectors evidence) |
+| DLV-07 | P1: Messages and delivery | Fix T44 | Verified (iteration 2) |
+| DLV-08 | P1: Messages and delivery | Tasks | Verified (iteration 2, agent-channel/connectors evidence) |
 | DLV-09 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
 | DLV-10 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
 | LIVE-01 | P1: Live updates | Tasks | Verified (iteration 1) |
 | LIVE-02 | P1: Live updates | Tasks | Verified (iteration 1) |
-| LIVE-03 | P1: Live updates | Fix T30 | Fixed, re-verify |
+| LIVE-03 | P1: Live updates | Fix T30 | Verified (iteration 2) |
 | LIVE-04 | P1: Live updates | Tasks | Verified (iteration 1) |
-| SEC-01 | P1: Secure deployment | Fix T40 | Fixed, re-verify |
+| SEC-01 | P1: Secure deployment | Fix T40 | Verified (iteration 2) |
 | SEC-02 | P1: Secure deployment | Tasks | Verified (iteration 1) |
 | SEC-03 | P1: Secure deployment | Tasks | Verified (iteration 1) |
-| SEC-04 | P1: Secure deployment | Tasks | Verified with scope gap (later feature) |
+| SEC-04 | P1: Secure deployment | Tasks | Verified (iteration 2, agent-channel/connectors evidence) |
 | SEC-05 | P1: Secure deployment | Tasks | Verified (iteration 1) |
 | OPS-01 | P1: Secure deployment | Tasks | Verified (iteration 1) |
-| OPS-02 | P1: Secure deployment | Fix T32 | Fixed, re-verify |
-| OPS-03 | P1: Secure deployment | Fix T39 | Fixed, re-verify |
-| AUD-01 | P2: Audit trail | Tasks | Verified with scope gap (later feature) |
+| OPS-02 | P1: Secure deployment | Fix T32 | Verified (iteration 2) |
+| OPS-03 | P1: Secure deployment | Fix T39 | Verified by inspection (iteration 2) |
+| AUD-01 | P2: Audit trail | Tasks | Verified (iteration 2, agent-channel/connectors evidence) |
 | AUD-02 | P2: Audit trail | Tasks | Verified (iteration 1) |
 
-**Coverage:** 50 total, all mapped in tasks.md (T1-T27); fix iteration 1 (T28-T44) re-opens the rows marked "Fixed, re-verify".
+**Coverage:** 50 total, all mapped in tasks.md (T1-T27); fix iterations 1 (T28-T44) and 2 (T45-T58) re-open the rows marked "Fixed, re-verify".
 
 ---
 

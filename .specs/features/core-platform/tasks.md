@@ -941,14 +941,14 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 
 #### T58: Contract notes and traceability for fix iteration 2
 
-**What**: Record the limiter, revocation and live-check behavior and update traceability.
+**What**: Record the limiter, revocation and live-check behavior, add the matching edge cases to spec.md and update traceability.
 **Where**: `contract-notes.md`
 **Depends on**: T57
 **Reuses**: none
 **Requirement**: all
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] contract-notes.md describes the limiter keying and eviction, the revocation event and the fail-closed re-check
+- [x] contract-notes.md describes the limiter keying and eviction, the revocation event and the fail-closed re-check
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record contract notes for fix iteration 2`
