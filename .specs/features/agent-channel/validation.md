@@ -2,10 +2,15 @@
 
 **Date**: 2026-10-20
 **Spec**: `.specs/features/agent-channel/spec.md`
-**Diff range**: `14ceffc~1..c497608` (feature commits 14ceffc, 234bb7f, 34bb9b9, 50b7edf, abc5d08, c42240e, 4753a23, 4ca76fe, b1bbf9a; docs 4ed1daa, c497608; web-app merges interleaved and out of scope)
-**Verifier**: independent sub-agent (author ≠ verifier), detached worktree at c497608
+**Diff range**: feature `14ceffc~1..c497608`, plus fix iteration 1 (T10–T18) `178d7f6..68e43da` (178d7f6, be99c36, 3bb31d3, 410add5, 91cb510, 694295b, 9f1706b, a1d32a3, 68e43da). Commits for other features (core-platform, connectors) in the same range are out of scope.
+**Verifier**: independent sub-agent (author ≠ verifier), iteration 2 of the fix→re-verify loop, detached worktree at 68e43da
 
-**Verdict**: FAIL ❌. All 22 ACs and the 3 edge cases have spec-anchored test evidence, but 5 of 23 sensor mutants survived, and the build gate (`make check`) failed twice on this loaded host (load-induced timeouts in `internal/api`).
+**Verdict**: FAIL ❌. The gate is green, all 22 ACs have spec-anchored evidence, and all five iteration-1 survivors (M15, M16, M17, M20b, M21) are now killed. But 3 of 14 fresh mutants on the new S1 hardening survived (N1, N3, N4). The worst is N1: the symlink-refusal test passes for the wrong reason, so the `Lstat` symlink check can regress unnoticed. These gaps need test-only fixes.
+
+## History
+
+- **Iteration 1** (c497608): FAIL. `make check` failed twice under load (fixed 5 s waits). 16/21 mutants killed; M15, M16, M17, M20b and M21 survived. Security notes S1–S6. Fix tasks T10–T18 followed.
+- **Iteration 2** (68e43da, this report): FAIL. The gate is green, and all iteration-1 survivors are killed. 3 fresh mutants survived in the download-dir hardening, plus 2 minor ones.
 
 ---
 
@@ -13,15 +18,16 @@
 
 | Task | Status | Notes |
 | ---- | ------ | ----- |
-| T1 Agent registry and presence | ✅ Done | 14ceffc |
-| T2 Agent gateway WebSocket | ✅ Done | 234bb7f. Live-vs-backlog dedupe and ack membership check are untested (M16, M17) |
-| T3 Agent dispatcher | ✅ Done | 34bb9b9 |
-| T4 Agent REST endpoints | ✅ Done | 50b7edf |
-| T5 MCP stdio server | ✅ Done | abc5d08 |
-| T6 Notification formatting | ✅ Done | c42240e. Instructions are not checked in the real initialize answer (M21) |
-| T7 Server link | ✅ Done | 4753a23. Reconnect loop backoff is untested (M15) |
-| T8 Channel tools | ✅ Done | 4ca76fe |
-| T9 Channel command + e2e | ✅ Done | b1bbf9a. The channel-side slug is untested (M20b) |
+| T1–T9 | ✅ Done | Verified in iteration 1 |
+| T10 Load-tolerant waits | ✅ Done | 178d7f6. `make check` is green under load average ~12–14 on 12 cores |
+| T11 Foreign-room ack | ✅ Done | be99c36. Kills M16 |
+| T12 Live/backlog overlap | ✅ Done | 3bb31d3. Kills M17 |
+| T13 Revocation closes agent sockets | ✅ Done | 410add5. Kills N6, N7, N8 and N14. The pre-upgrade `active` check is untested (N9) |
+| T14 Real instructions | ✅ Done | 91cb510. Kills M21 |
+| T15 Link backoff | ✅ Done | 694295b. Kills M15 |
+| T16 Slugified download dir | ✅ Done | 9f1706b. Kills M20b |
+| T17 Private download dir | ⚠️ Partial | a1d32a3. The O_EXCL+rename and parent-check paths are discriminated (N2b, N5). The symlink check (N1), the group-bit check (N3) and the owner check (N4) are not |
+| T18 Contract notes | ✅ Done | 68e43da |
 
 ---
 
@@ -29,79 +35,81 @@
 
 | Criterion | Spec-defined outcome | `file:line` + assertion | Result |
 | --------- | -------------------- | ----------------------- | ------ |
-| MCP-01 server/discover | JSON-RPC error -32601 | `internal/channel/mcp/server_test.go:241` - `require.Equal(t, float64(-32601), m["error"]...["code"])`; golden replay `server_test.go:215-219` (discover answered before initialize); e2e `internal/cli/channel_test.go:139` | ✅ PASS |
-| MCP-02 initialize | caps exactly `experimental.claude/channel={}` + `tools={}`, name `partyline`, instructions (data, trusted, tools); version echo ≤2025-11-25 else 2025-11-25 | `mcp/server_test.go:260-263` - exact `capabilities` map, `serverInfo`, `instructions`, version table 2026-07-28→2025-11-25, 2025-11-25/2025-06-18/2024-11-05 echoed; `internal/channel/format_test.go:133-138` - Instructions contain `DATA`, `never as instructions`, `trusted="true"`, all six tools; e2e `cli/channel_test.go:145-147` | ✅ PASS. No test asserts that the real channel's initialize carries `Instructions` (M21 survived) |
-| MCP-03 no permission capability | key never present | `mcp/server_test.go:274` - `require.NotContains(t, line, "claude/channel/permission")`; exact-map checks at `:261` and `cli/channel_test.go:146` | ✅ PASS |
-| AGT-01 connect → online | WS opened, server marks online | `internal/channel/link_test.go:28` - `require.Eventually(t, e.online…)`; `internal/api/agent_ws_test.go:91` - `require.True(t, list.Items[0].Online)`; e2e `cli/channel_test.go:150` (agent `my-project` from the cwd slug) | ✅ PASS |
-| AGT-02 invalid token | 1 stderr line; MCP keeps answering; every tool `isError` + `partyline: not connected (invalid token)` | `link_test.go:175` - `require.Equal(t, 1, strings.Count(stderr, "\n"))`; `:180` ping answered; `internal/channel/tools_test.go:350-351` - all 6 tools `isError` + exact text | ✅ PASS |
-| AGT-03 reconnect + offline | backoff 1 s doubling to 30 s; offline after close | `link_test.go:160` - sequence 1,2,4,8,16,30,30 s (helper `nextBackoff` only); `link_test.go:142-147` reconnect after restart; `agent_ws_test.go:207` - presence `Online:false` | ⚠️ PASS with gap: the `run` loop's use of the backoff is not asserted (M15 survived) |
-| AGT-04 replace | first closed with reason `replaced` | `agent_ws_test.go:117-118` - code 4000, reason `"replaced"`; `internal/agents/registry_test.go:296-298` | ✅ PASS |
-| AGT-05 notification shape | content = text + `[attachment id: name, mime]` lines; meta keys room, room_name, message_id, author, author_kind, sender_name, trusted, kind, reply_to when set | `format_test.go:82` - exact meta map for chat/agent/user/system; `:97,:103` exact content with attachments; `link_test.go:32-35` live path | ✅ PASS |
-| AGT-06 identifier keys | `^[A-Za-z0-9_]+$` | `format_test.go:126` - `require.Regexp(t, key, k)` over message and notice meta | ✅ PASS |
-| AGT-07 ack after write | ack only after the stdout write; cursor advances | `link_test.go:115-127` - no ack before handshake, ack after notification; `agent_ws_test.go:179,184` - cursor = acked seq, never backwards | ✅ PASS |
-| AGT-08 backlog | oldest first, ≤50/room after cursor | `agent_ws_test.go:134-142` - IDs in seq order, own message excluded, nothing extra; `link_test.go:45-48` | ✅ PASS |
-| AGT-09 >50 pending | one notice with skipped count first; cursor past skipped | `agent_ws_test.go:158` - `"10 older messages skipped; use the history tool"`; `:159-161` last 50; `:163` - cursor = `posted[9].Seq` | ✅ PASS. ⚠️ Spec-precision: the spec says "system message"; it ships as an unstored `notice` frame (`format.go:54-63`, meta `author_kind=system`). The contract notes accept this |
-| AGT-10 dedupe | re-ack, no re-emit | `link_test.go:94-103` - one notification, two acks for `m1` | ✅ PASS. ⚠️ The 1,000-id ring eviction (`link.go:329-339`) has no test |
-| TOOL-01 six tools | exact set | `tools_test.go:90-93` - `Len(list, 6)` + each name, required args | ✅ PASS |
-| TOOL-02 reply | reply_to set; recipients = chat author, else none | `tools_test.go:113,116,122-123`; `internal/api/agent_handlers_test.go:191,194,199-200` | ✅ PASS |
-| TOOL-03 send_message | posts as agent by id/slug; optional chat recipients | `tools_test.go:141,147`; `agent_handlers_test.go:110,115-118` (`Support`/`support`) | ✅ PASS |
-| TOOL-04 not a member | `isError` + `not a member of room <room>` | `tools_test.go:164-166` (send_message by name, history by id); `agent_handlers_test.go:129,131` (id, name, unknown) | ✅ PASS. `reply`/`download_attachment` for a foreign room answer `message not found` / 404 (they target a message, not a room) |
-| TOOL-05 history | ≤100, default 20, before id, push-meta fields | `agent_handlers_test.go:157,166,174` - 20 / clamp 101→100 / before; `tools_test.go:187,192-195` - 20 + exact meta map per entry | ✅ PASS |
-| TOOL-06 download | under agent temp dir, 0600, absolute path | `tools_test.go:237-238,244` - `IsAbs`, dir = `<TempDir>/partyline/builder`, `FileMode(0o600)` | ✅ PASS (see security gap S1) |
-| TOOL-07 send_file | upload with caption and reply_to | `tools_test.go:263-269` - text, reply_to, author, attachment bytes | ✅ PASS |
-| TOOL-08 rate limit | 429 beyond 30/min; tool says `rate limited` | `agent_handlers_test.go:235,237` - 31st post and the reply → 429 `rate_limited`; `tools_test.go:285-286` | ✅ PASS |
-| TOOL-09 list_rooms | rooms with members (kind, name, online for agents) | `tools_test.go:312-318,328`; `agent_handlers_test.go:99` - `{"builder@alice": true, "helper@bobby": false}` | ✅ PASS |
+| MCP-01 server/discover | -32601 | `internal/channel/mcp/server_test.go:241`, golden `server_test.go:166-232`, e2e `internal/cli/channel_test.go:141` - `require.Equal(t, float64(-32601), …["code"])` | ✅ PASS |
+| MCP-02 initialize | exact caps, name `partyline`, instructions (data, trusted, tools), version negotiation | `mcp/server_test.go:260-263`; `internal/channel/format_test.go:132-138`; e2e `cli/channel_test.go:148-150` - exact capabilities map, `"partyline"`, `require.Equal(t, channel.Instructions, res["instructions"])` | ✅ PASS (M21 killed) |
+| MCP-03 no permission capability | key absent | `mcp/server_test.go:274` `NotContains "claude/channel/permission"`; exact maps `:261`, `cli/channel_test.go:148` | ✅ PASS |
+| AGT-01 connect → online | online | `internal/channel/link_test.go:29`; `internal/api/agent_ws_test.go:96` `require.True(t, list.Items[0].Online)`; e2e `cli/channel_test.go:150-163` | ✅ PASS |
+| AGT-02 invalid token | 1 stderr line; MCP alive; tools `isError` + exact text | `link_test.go:176` `Count(stderr,"\n")==1`; `:181` ping answered; `tools_test.go:356-357` exact text for all six tools. Revocation while connected: `agent_ws_test.go:302,311,337` - close 1008 within 1 s, other token's socket stays open, lagged re-check closes it | ✅ PASS |
+| AGT-03 reconnect backoff + offline | 1 s doubling to 30 s; offline after close | `link_test.go:333-335` - the `run` loop records waits `[1,2,4,8,16,30,30,30]s` and the state is `server unreachable`; `link_test.go:161` helper; `:140-149` reconnect; `agent_ws_test.go:212` `Online:false` | ✅ PASS (M15 killed) |
+| AGT-04 replace | close reason `replaced` | `agent_ws_test.go:122-123` - 4000 / `"replaced"`; `:124` newer stays open | ✅ PASS |
+| AGT-05 notification shape | content + attachment lines; exact meta keys | `format_test.go:82,97,103`; `link_test.go:33-36` | ✅ PASS |
+| AGT-06 identifier keys | `^[A-Za-z0-9_]+$` | `format_test.go:126` `require.Regexp` | ✅ PASS |
+| AGT-07 ack after write; cursor | ack only after the stdout write; cursor advances; foreign rooms ignored (contract) | `link_test.go:116-128`; `agent_ws_test.go:182-189` (never backwards); `agent_ws_test.go:251-258` - own room's cursor = `own.Seq`, foreign room `ErrorIs(sql.ErrNoRows)` | ✅ PASS (M16 killed) |
+| AGT-08 backlog ≤50, oldest first | ordered, at most 50; no duplicate from the live overlap | `agent_ws_test.go:138-145`; `:268-277` - duplicates skipped, `m3` next, `ExpectNone` | ✅ PASS (M17 killed) |
+| AGT-09 >50 pending | one notice with the skipped count; cursor jump | `agent_ws_test.go:163` `"10 older messages skipped; use the history tool"`; `:165` last 50; `:168` cursor = `posted[9].Seq` | ✅ PASS (N10 killed). ⚠️ The spec says "system message"; it ships as an unstored `notice` frame (accepted in the contract notes) |
+| AGT-10 dedupe | re-ack without re-emit | `link_test.go:95-104` - one notification, two acks | ✅ PASS. ⚠️ The 1,000-id window (design) is untested (N11 survived) |
+| TOOL-01..TOOL-05, TOOL-07..TOOL-09 | as in iteration 1 | Unchanged files and lines: `tools_test.go:90-93,113-123,141-147,164-166,187-195,263-269,285-286,312-328`; `agent_handlers_test.go:99,110-118,129-131,157-174,191-200,235-237` | ✅ PASS (re-checked; these test files did not change before line 209) |
+| TOOL-06 download | under the agent temp dir, 0600, absolute; private dir | `tools_test.go:243-250` - `IsAbs`, dir `<TempDir>/partyline/builder`, `0o600`; `:408` slug dir `night-shift`; `tools_unix_test.go:25-29,41-45,66-76` - refusal + nothing written; planted symlink replaced, victim `"untouched"`, regular 0600 | ✅ PASS on the AC. ⚠️ Hardening gaps: N1, N3 and N4 survived |
 
-**Focus checks requested by the orchestrator**
+**Focus re-checks**
 
-- Golden handshake: `mcp/server_test.go:166-232` replays `testdata/claude-code-2.1.303.jsonl`. Its `matches` helper compares map length (`:120`), so the capabilities must match exactly. M1, M2 and M3 were killed.
-- Server-derived agent identity: `agentOnly` resolves the agent from the token owner plus a slug (`internal/api/agent_handlers.go:58-62`), and the WS registers under `p.UserID` (`internal/agents/gateway.go:169`). The principal's `AgentID` is set only there (`internal/api/middleware.go:198` copies just the name). Evidence: `agent_ws_test.go:226-229` (bob's token with name `builder` gets a different agent and none of alice's messages). M10 (owner-agnostic lookup) was killed.
-- Recipient-relative trust: `api/agent_dispatch_test.go:53,56,61,64` covers all four owner/author pairs. M9c was killed.
+- **Golden handshake**: unchanged (`mcp/server_test.go:166-232`; exact-length `matches`). N12 (ping unanswered) was killed by `TestPingAndUnknownMethods` and `TestLinkInvalidToken`.
+- **Trust**: `agent_dispatch_test.go:53-64`, unchanged.
+- **Identity scoping**: `agent_ws_test.go:229-234`.
+- **Revocation scoping**: `agent_ws_test.go:311`. Another token's socket stays open, and N14 (any token revocation closes every socket) was killed.
+- **Backlog cap and notice**: `:163-168`.
+- **Replace**: `:122-125`.
+- **Rate limit**: `agent_handlers_test.go:235-237`, `tools_test.go:285-286`.
+- **Private download dir**:
+  - Mode 0700 on create: N13 was killed. A 0750 mkdir makes the code refuse its own directory.
+  - Owner check: not discriminated (N4).
+  - O_EXCL plus rename: N5 was killed.
+  - Symlinked parent: N2b was killed. The check is the parent's `Lstat`/mode, not the `Lstat` alone. See N1.
 
-**Status**: ✅ All 22 ACs covered with spec-anchored assertions. ⚠️ 2 spec-precision notes (AGT-09 "system message" vs notice frame, AGT-10 bounded ring).
+**Status**: ✅ 22/22 ACs covered with spec-anchored assertions. ⚠️ 2 spec-precision notes (AGT-09 notice frame, AGT-10 bounded window).
 
 ---
 
 ## Edge Cases
 
-- [x] Stdin closes → WS closed, exit 0 within 2 s: `link_test.go:262-265` (`took < 2s`, agent offline); `cli/channel_test.go:184` (exit code 0)
-- [x] Notification before `notifications/initialized` is held: `mcp/server_test.go:285-298`; `link_test.go:115-121`
-- [x] Empty slug → `agent`: `internal/agents/registry_test.go:133-134` (`""`, `"!!!"` → `agent`), `registry_test.go:170`. The channel-side `agents.Slug` call (`run.go:393`) is not covered (M20b survived)
+- [x] Stdin closes → exit 0 within 2 s: `link_test.go:263-266` (`require.Less(t, took, 2*time.Second)`); `cli/channel_test.go:187`
+- [x] Notification held until `notifications/initialized`: `mcp/server_test.go:279-298`; `link_test.go:116-122`
+- [x] Empty slug → `agent`: `internal/agents/registry_test.go:133-134`. The channel-side slug is now covered by `tools_test.go:408` (M20b killed)
 
 ---
 
 ## Discrimination Sensor
 
-Expanded tier. Scratch at `git worktree add --detach /tmp/claude-1001/pl-agent-mutants c497608`. Each mutant was applied, the covering packages were run with `-race`, and the file was restored with `git checkout`. The scratch was then removed. Real-tree porcelain matched the baseline (empty) before and after.
+- **Scratch**: `git worktree add --detach /tmp/claude-1001/pl-agent-mutants2 68e43da`, plus `…/pl-agent-mutants2b` for re-runs.
+- **Procedure**: each mutant was applied by an exact-match replacement (count == 1), run with `-race` on its covering packages, then reverted with `git checkout`.
+- **Cleanup**: both scratches were removed (`git worktree remove --force`). The real tree's porcelain was empty before and after.
 
 | # | File:line | Mutation | Killed? |
 | - | --------- | -------- | ------- |
-| M1 | `internal/channel/mcp/server.go:282` | Echo any client protocol version | ✅ Killed (TestInitializeNegotiatesVersion) |
-| M2 | `mcp/server.go:289` | Add `claude/channel/permission` capability | ✅ Killed (golden, NoPermissionCapability, ChannelEndToEnd) |
-| M3 | `mcp/server.go:108-112` | Notify does not wait for `initialized` | ✅ Killed (NotificationHeldUntilInitialized, golden, LinkAcksOnly…) |
-| M4 | `internal/channel/link.go:281-293` | Ack before writing the notification | ✅ Killed (TestLinkAcksOnlyAfterNotificationWritten) |
-| M5 | `link.go:285` | Drop `remember` (no dedupe) | ✅ Killed (TestLinkDedupesRepeatedMessage) |
-| M6 | `internal/channel/format.go:38` | Meta key `room_name` → `room-name` | ✅ Killed (FormatMeta, KeysAreIdentifiers, ToolHistory) |
-| M7 | `internal/agents/gateway.go:29` | BacklogLimit 50 → 51 | ✅ Killed (TestAgentWSBacklogCapSkipsOlderMessages) |
-| M8 | `gateway.go:294-296` | No cursor jump past skipped messages | ✅ Killed (same) |
-| M9c | `internal/delivery/dispatcher.go:133` | Trust any user-authored message (not recipient-relative) | ✅ Killed (DispatchPushesWithRecipientRelativeTrust, SkipsAuthorAgent) |
-| M10 | `internal/store/db/agents.sql.go` GetAgentByName | Lookup ignores the token owner | ✅ Killed (UpsertIdempotentPerOwnerAndName, AgentWSIdentityScopedToTokenOwner) |
-| M11 | `internal/agents/limit.go:406` | `>=` → `>` (31 posts allowed) | ✅ Killed (AgentPostRateLimit, ToolRateLimited) |
-| M12 | `internal/channel/tools.go:245,258` | Download mode 0644, no chmod | ✅ Killed (TestToolDownloadAttachment) |
-| M13 | `internal/api/agent_handlers.go:34` | Drop `<room>` from the not-a-member text | ✅ Killed (AgentRoomRefErrors, ToolNotAMember) |
-| M14 | `agent_handlers.go:194-196` | Reply to a chat goes to every chat | ✅ Killed (AgentReply, ToolReply) |
-| M18 | `link.go:217` | 401/403 treated as unreachable | ✅ Killed (LinkInvalidToken, LinkErrInvalidToken, ToolsWithInvalidToken) |
-| M19b | `internal/agents/presence.go:67` | Do not close the replaced session | ✅ Killed (PresenceReplaceAndOffline, AgentWSSecondConnectionReplacesFirst) |
-| M15 | `link.go:169` | Dial failures retry at 1 s forever (no doubling) | ❌ Survived |
-| M16 | `gateway.go:344-346` | Ack advances the cursor in rooms the agent is not a member of | ❌ Survived |
-| M17 | `gateway.go:253` | Live dedupe `<=` → `<` (backlog/live overlap re-sent) | ❌ Survived |
-| M20b | `internal/channel/run.go:393` | Channel stops slugifying the agent name | ❌ Survived |
-| M21 | `run.go:395` | Real channel sends no `instructions` | ❌ Survived |
+| M15 | `internal/channel/link.go:185` | Dial failure always waits `minBackoff` (no doubling) | ✅ Killed (TestLinkBacksOffWhileUnreachable). The first variant did not compile and was replaced |
+| M16 | `internal/agents/gateway.go:413` | Ack ignores membership | ✅ Killed (TestAgentAckIgnoresForeignRooms) |
+| M17 | `gateway.go:322` | Live dedupe `<=` → `<` | ✅ Killed (TestAgentLivePushSkipsBacklogOverlap) |
+| M20b | `internal/channel/run.go:54` | No slug for the agent name | ✅ Killed (TestToolDownloadDirUsesAgentSlug) |
+| M21 | `run.go:56` | Empty `Instructions` | ✅ Killed (TestChannelEndToEnd) |
+| N1 | `internal/channel/tools.go:280` | `os.Lstat` → `os.Stat` (follow a symlinked `<tmp>/partyline`) | ❌ **Survived** |
+| N2b | `tools.go:276-290` | Create the parent but skip its checks | ✅ Killed (RefusesSharedDirectory/symlinked). Plain N2 (drop the parent) was killed trivially by an mkdir error, so it was replaced |
+| N3 | `internal/channel/private_unix.go:17` | Permission mask `0o077` → `0o007` (group-accessible dir accepted) | ❌ **Survived** |
+| N4 | `private_unix.go:14` | Owner check disabled | ❌ **Survived** |
+| N5 | `tools.go:248` | O_EXCL temp + rename → `OpenFile(path, O_TRUNC)` (follows a planted symlink) | ✅ Killed (TestToolDownloadReplacesPlantedSymlink) |
+| N6 | `gateway.go:216` | Revocation ignores `TokenIDs` | ✅ Killed (TestAgentSocketClosesOnTokenRevocation) |
+| N7 | `gateway.go:220` | No re-check after `Lagged` | ✅ Killed (TestAgentSocketRechecksTokenAfterLaggedBus) |
+| N8 | `gateway.go:217` | Revocation close 1008 → 1000 | ✅ Killed |
+| N9 | `gateway.go:147` | Pre-upgrade `active` check disabled | ❌ Survived (minor: a race guard behind the auth middleware) |
+| N10 | `gateway.go:360` | Skipped count `+1` (S6 exact count) | ✅ Killed (TestAgentWSBacklogCapSkipsOlderMessages) |
+| N11 | `link.go:30` | Dedupe window 1,000 → 1 | ❌ Survived (minor, AGT-10 window) |
+| N12 | `internal/channel/mcp/server.go:227` | `ping` left unanswered | ✅ Killed (TestPingAndUnknownMethods, TestLinkInvalidToken) |
+| N13 | `tools.go:277` | Mkdir 0700 → 0750 | ✅ Killed (TestToolDownloadAttachment, DirUsesAgentSlug) |
+| N14 | `gateway.go:216` | Any token revocation closes every agent socket | ✅ Killed (helper must stay open) |
 
-Invalid mutants that did not compile and were replaced: M9 → M9c, M19 → M19b, M20 → M20b.
+**Why N1 survives**: `TestToolDownloadRefusesSharedDirectory/symlinked partyline dir` (`tools_unix_test.go:17-30`) points the symlink at `t.TempDir()`. Go creates that directory with `os.Mkdir(dir, 0777)`, so under umask 022 it is 0755. With `Stat`, the code follows the link, and the **mode** check then refuses it, not the symlink check. Re-running the mutant under `umask 077` makes the test fail: the file is written through the symlink to `…/002/partyline/builder/<id>-report.txt`. On a real host, a symlink to one of the victim's own 0700 directories would be followed.
 
-**Sensor depth**: expanded (P0: identity, trust, delivery)
-**Result**: 16/21 valid mutants killed (5 survived). FAIL ❌
+**Sensor depth**: expanded (P0: identity, revocation, trust, filesystem safety)
+**Result**: 14/19 valid mutants killed. All 5 iteration-1 survivors are killed; 5 of 14 fresh mutants survived (3 of them in the S1 hardening). FAIL ❌
 
 ---
 
@@ -109,55 +117,61 @@ Invalid mutants that did not compile and were replaced: M9 → M9c, M19 → M19b
 
 | Principle | Status |
 | --------- | ------ |
-| Minimum code | ✅ Hand-written MCP is small (`mcp/server.go` 306 lines), with no SDK (AD-004) |
-| Surgical changes | ✅ Shared touches are small helpers (rooms `Details`/`MessageRef`, testkit, dto) |
-| No scope creep | ✅ The replaced/deleted/unreachable states come from the contract notes |
-| Matches patterns | ✅ httpx errors, sqlc queries, testkit |
-| Spec-anchored outcome check | ✅ Exact texts and values asserted (see table) |
-| Per-layer coverage | ⚠️ Gateway error paths (non-member ack, live/backlog overlap) and the link reconnect loop lack assertions |
-| Every test maps to a requirement | ✅ Every test names an AC, contract item or design row in its comment |
-| Documented guidelines | `AGENTS.md` and the tasks.md coverage matrix were followed |
+| Minimum code | ✅ The fixes are small (`gateway.go` +69, `tools.go` +52, `private_unix.go` 21 lines) |
+| Surgical changes | ✅ `link.sleep` hook only; the wait constants only in test helpers |
+| No scope creep | ✅ Revocation handling follows the core AUTH-10 contract |
+| Matches patterns | ✅ Bus subscription mirrors `live.Hub` |
+| Spec-anchored outcome check | ✅ Exact codes, texts and sequences |
+| Per-layer coverage | ⚠️ The S1 symlink, group-bit and owner branches are not discriminated |
+| Every test maps to a requirement | ✅ The test comments name AGT/TOOL/AUTH IDs |
+| Documented guidelines | `AGENTS.md`, `tasks.md` coverage matrix, contract notes |
 
 ---
 
 ## Gate Check
 
-- **Gate command**: `make check` (check-generate, golangci-lint, go vet, web-check, `go test -race ./...`, web-test, web-build, go build)
-- **Run 1**: EXIT 2. Generate, lint (0 issues), vet and web-check passed. `internal/api` failed `TestDispatchPushesWithRecipientRelativeTrust` (the WS dial hit the testkit's fixed 5 s deadline at `internal/testkit/live.go:55`), then the package hit Go's 10 m test timeout. Load average about 16 on 12 cores
-- **Run 2 (re-run)**: EXIT 2. Only `internal/api` failed, this time `TestAgentRoomsListsMembersWithPresence`: "no agent frame within 5s" in the `newTwoAgents` fixture (`internal/api/agent_dispatch_test.go:36`, `internal/testkit/agent.go:61`). All other packages passed
-- **Follow-up runs**:
-  - `go test -race ./internal/api/` alone: ok (125 s)
-  - `go test -race -json ./...`: 408 passed, 0 failed, 0 skipped
-  - The suspect tests at `-count=5`: ok
-  - `make web-test`: 27 files, 216 tests passed
-  - `make web-build` and `go build ./...`: ok
-- **Flaky (load-induced, listed separately)**: `TestDispatchPushesWithRecipientRelativeTrust`, `TestAgentRoomsListsMembersWithPresence`, `TestDispatchSkipsPausedRoom` (one failure in a `-count=3` run, then 5/5 and 6/6 clean). All three use the `newTwoAgents` or agent-dial fixtures with fixed 5 s budgets. No assertion failed on a value
-- **Test count**: Go `func Test` 172 → 241 (+69 in this range, none removed)
+- **Gate command**: `make check` (check-generate, golangci-lint, vet, web-check, `go test -race -count=1 -timeout 20m ./...`, web-test, web-build, go build)
+- **Run 1**: EXIT 0 at a load average of ~12.6–13.7 on 12 cores, with other verifiers running concurrently.
+  - golangci-lint: 0 issues
+  - Go: all 21 packages ok (`internal/api` 415 s, `internal/channel` 180 s)
+  - Web: 27 files and 216 tests passed
+  - Build: ok
+- **Run 2** (`go test -race -count=1 -json ./...`, a confirmation run): EXIT 0. 490 tests and subtests passed, 0 failed, 0 skipped
+- **Flaky**: none observed. Run 1 was green, so no re-run was needed to rule out a flake
+- **Test count**: Go `func Test` 241 (c497608) → 288 (68e43da), including other features' fixes. Agent-channel adds +8:
+  - `TestAgentAckIgnoresForeignRooms`
+  - `TestAgentLivePushSkipsBacklogOverlap`
+  - `TestAgentSocketClosesOnTokenRevocation`
+  - `TestAgentSocketRechecksTokenAfterLaggedBus`
+  - `TestLinkBacksOffWhileUnreachable`
+  - `TestToolDownloadDirUsesAgentSlug`
+  - `TestToolDownloadRefusesSharedDirectory`
+  - `TestToolDownloadReplacesPlantedSymlink`
+
+  No test was removed: `TestToolDownloadAttachment` was moved, not deleted.
 - **Skipped**: none
 
 ---
 
 ## Ranked Gaps
 
-1. **Gate not green under load**: `make check` failed twice on this host. The testkit agent and live waits are fixed at 5 s (`internal/testkit/agent.go:61`, `internal/testkit/live.go:55`), and under load `internal/api` approaches Go's 10 m package timeout. Fix: load-tolerant budgets in the testkit agent and live helpers, or an explicit `-timeout` in `make test`.
-2. **M16 survived (contract: "acks for rooms without the agent are ignored")**: no test sends an ack for a message in a non-member room (`internal/agents/gateway.go:343-347`). Fix: a test acks a foreign-room message and asserts no cursor row appears.
-3. **M21 survived (MCP-02)**: no test asserts that `partyline channel`'s initialize answer carries the real `Instructions` text (`internal/channel/run.go:395`). Fix: assert `res["instructions"] == channel.Instructions` in `cli/channel_test.go` or a `Run`-level test.
-4. **M15 survived (AGT-03)**: only the `nextBackoff` helper is tested. The reconnect loop (`internal/channel/link.go:166-178`) could stop doubling unnoticed. Fix: an injectable sleeper or clock that records the waits across repeated dial failures (1→2→4… capped).
-5. **M17 survived (AGT-08, at-least-once)**: the live/backlog overlap filter (`gateway.go:253`) is untested; the channel LRU hides duplicates. Fix: a gateway test that pushes the same message during the backlog and asserts a single frame.
-6. **M20b survived (AGT-01 edge)**: the channel's own `agents.Slug` (`run.go:393`) is untested. Without it, the download dir would use the raw name, e.g. `../x` in `filepath.Join` at `run.go:407`. Fix: a test where `--agent "../Night Shift"` asserts the dir `<TempDir>/partyline/night-shift`.
+1. **N1 survived (TOOL-06 / S1, Major-security)**: the symlink refusal (`tools.go:280-285`) is not discriminated, because the test's symlink target is 0755 by umask. Fix: make the symlink target private (`os.Chmod(elsewhere, 0o700)`) so only the `Lstat` symlink check can refuse it. Assert that `elsewhere` stays empty.
+2. **N3 survived (T17 Done-when "group/other-accessible", Minor-security)**: only a 0777 directory is tested. Fix: add a 0750 (group-only) case in `tools_unix_test.go`.
+3. **N4 survived (S1 owner check, Minor-security)**: `checkPrivate`'s UID branch (`private_unix.go:14`) has no test. Fix: a unit test that calls `checkPrivate` with a `fs.FileInfo` whose `Sys()` is a `*syscall.Stat_t` with another UID, and asserts the "belongs to another user" error.
+4. **N11 survived (AGT-10 window, Minor)**: the 1,000-id dedupe window (design) is untested. Fix: a unit test on `idRing` that remembers 1,000 ids and evicts the oldest at 1,001, or a link test that re-sends the first id after 1,000 others.
+5. **N9 survived (Minor)**: the pre-upgrade `PrincipalActive` check (`gateway.go:147`; contract: "inactive → 401") has no test. Fix: a gateway test with a `PrincipalChecker` stub that returns false and asserts 401 with no registration.
 
-### Security weaknesses (not fixed; noted for the orchestrator)
+### Security weaknesses (state at 68e43da)
 
-- **S1 (medium, multi-user hosts)**: downloads go to `$TMPDIR/partyline/<agent>/`, which defaults to shared `/tmp`.
-  - `os.MkdirAll(dir, 0o700)` (`internal/channel/tools.go:241`) neither checks ownership or mode of an existing `partyline` or `<agent>` dir nor rejects symlinks.
-  - `os.OpenFile(..., O_CREATE|O_TRUNC)` (`tools.go:245`) follows symlinks.
-  - Another local user could pre-create the directory, then swap or read files there, or redirect writes.
-  - Fix: a per-user dir (`os.UserCacheDir` or `$XDG_RUNTIME_DIR`), an `Lstat` ownership and mode check, and `O_EXCL` or `O_NOFOLLOW`.
-- **S2 (low)**: any valid agent token registers an unlimited number of agents just by varying `X-Partyline-Agent` (`gateway.go:169`, `Registry.Upsert`). There is no cap per owner or per token.
-- **S3 (low, by design per AD-006)**: messages from the owner's own agents are `trusted=true` even when they quote untrusted chat content. Trust can be laundered through a relaying agent. Instructions and docs tell the session to confirm destructive actions.
-- **S4 (low)**: `send_file` reads any local path the session names (`tools.go:293`). An injected room message could ask for `~/.ssh/...`. This is mitigated only by Claude Code's tool-permission prompts. The docs warn against `--dangerously-skip-permissions` (`docs/claude-code.md:126`).
-- **S5 (low, robustness)**: before `notifications/initialized`, `Notify` blocks the link's only WS reader (`link.go:282`, `mcp/server.go:108`). Server pings (every 25 s) then go unanswered, and the gateway may drop the connection if Claude Code delays initialization.
-- **S6 (low)**: the backlog count and list are two separate reads (`gateway.go:278,285`). A message arriving between them makes the "N older messages skipped" count low by one. The cursor jump itself stays correct.
+| Id | Status | Evidence / note |
+| -- | ------ | --------------- |
+| S1 shared `/tmp` download dir | **Fixed**, with test gaps | Directories are 0700, owner-checked, and refused when they are symlinks or have group/other bits (`tools.go:271-292`, `private_unix.go:13-20`). Files go to an O_EXCL temp file renamed into place (`tools.go:246-264`). Residuals: N1, N3 and N4 above. Another user can pre-create `/tmp/partyline` to deny downloads (refusal with a hint to set `TMPDIR`); this is documented in `docs/claude-code.md:109` |
+| S2 unlimited agents per token | **Open** | There is still no cap in `Registry.Upsert` or `gateway.register` |
+| S3 trust laundering via own agents | **Open, by design** (AD-006) | - |
+| S4 `send_file` reads any local path | **Open** | Mitigated by Claude Code permission prompts |
+| S5 pings blocked before `initialized` | **Open** | `link.handle` → `Notify` still blocks the only WS reader (`link.go:294`, `mcp/server.go:107-112`). The MCP `ping` itself is answered (N12 killed) |
+| S6 skipped count off by one under a race | **Open** | Count and list are still separate reads (`gateway.go:347,354`). The exact count is asserted in the quiet case (N10 killed) |
+| New: revoked token keeps the agent socket | **Fixed** | `gateway.go:191-234`. Tests at `agent_ws_test.go:282-338` |
 
 ---
 
@@ -165,13 +179,11 @@ Invalid mutants that did not compile and were replaced: M9 → M9c, M19 → M19b
 
 | Fix | Task | Priority |
 | --- | ---- | -------- |
-| F1 | Load-tolerant testkit budgets for agent and live waits and dials (env-scalable), plus `-timeout 20m` in `make test` | Major |
-| F2 | Gateway test: ack for a non-member room's message leaves no cursor (kills M16) | Major |
-| F3 | Assert real instructions in the channel initialize answer (kills M21) | Major |
-| F4 | Injectable wait in `link.run`; assert the 1→2→4…30 s sequence on dial failures (kills M15) | Minor |
-| F5 | Gateway test for a live push overlapping the backlog → one frame (kills M17) | Minor |
-| F6 | Channel test for the slugified agent dir with a hostile `--agent` (kills M20b) | Minor |
-| F7 | S1 hardening: per-user download dir with ownership check and `O_NOFOLLOW`/`O_EXCL` | Major (security) |
+| F8 | Make the symlinked-dir test's target 0700 so only the symlink check refuses it (kills N1) | Major (security) |
+| F9 | Add a group-only (0750) agent dir case (kills N3) | Minor |
+| F10 | Unit test for `checkPrivate` with a foreign UID (kills N4) | Minor |
+| F11 | Unit test for the 1,000-id `idRing` eviction (kills N11) | Minor |
+| F12 | Gateway test for an inactive principal at upgrade → 401 (kills N9) | Minor |
 
 ---
 
@@ -179,35 +191,21 @@ Invalid mutants that did not compile and were replaced: M9 → M9c, M19 → M19b
 
 | Requirement | Previous | New |
 | ----------- | -------- | --- |
-| MCP-01, MCP-03, AGT-01, AGT-02, AGT-04..AGT-07, AGT-09, AGT-10, TOOL-01..TOOL-09 | Implementing | ✅ Verified (evidence above) |
-| MCP-02 | Implementing | ⚠️ Needs test fix (M21) |
-| AGT-03 | Implementing | ⚠️ Needs test fix (M15) |
-| AGT-08 | Implementing | ⚠️ Needs test fix (M17) |
+| MCP-02, AGT-02, AGT-03, AGT-07, AGT-08 | Fixed, re-verify | ✅ Verified |
+| TOOL-06 | Fixed, re-verify | ⚠️ AC verified; hardening tests need F8–F10 |
+| AGT-10 | Verified | ✅ Verified (window note, F11) |
+| All others | Verified | ✅ Verified |
 
-spec.md was not edited by the Verifier.
+The Verifier did not edit spec.md.
 
 ---
 
 ## Summary
 
-**Overall**: ❌ Not Ready
+**Overall**: ❌ Not Ready. Only small, test-only fixes remain.
 
-**Spec-anchored check**: 22/22 ACs and 3/3 edge cases have spec-anchored evidence; 2 spec-precision notes
-**Sensor**: 16/21 killed (M15, M16, M17, M20b, M21 survived)
-**Gate**: `make check` failed twice under load (timeouts only). Isolated and repeat runs are green: Go 408/0, web 216/0, lint 0 issues, build ok
+**Spec-anchored check**: 22/22 ACs and 3/3 edge cases have evidence; 2 spec-precision notes
+**Sensor**: 14/19 killed (iteration-1 survivors 5/5 killed; fresh mutants N1, N3, N4, N9 and N11 survived)
+**Gate**: `make check` EXIT 0 (Go 21/21 packages ok, lint 0 issues, web 216/216, build ok). Go `-json` re-run: 490 passed, 0 failed
 
-**What works**:
-- Golden handshake and version negotiation
-- No permission capability
-- Identifier-only meta
-- Ack after write
-- Backlog cap, notice and cursor jump
-- Replace (4000)
-- Server-derived identity
-- Recipient-relative trust
-- 30/min limit
-- 0600 downloads
-- Exact not-a-member text
-- Real Claude Code 2.1.303 smoke test (uat.md)
-
-**Next steps**: run F1–F6 (test strength and gate stability) and F7 (security hardening), then re-verify (iteration 1 of 3).
+**Next steps**: F8 (required), then F9–F12. Re-verify in iteration 3 of 3.
