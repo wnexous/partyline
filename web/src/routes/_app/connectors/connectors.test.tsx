@@ -256,6 +256,20 @@ describe("connector page (UI-13, UI-17)", () => {
     ).toEqual(["Ops on call", "Release notes"]);
   });
 
+  it("names untitled chats after their platform (CTX-07)", async () => {
+    mockApi({
+      ...base,
+      "GET /connectors/k1/chats": json(200, {
+        items: [makeChat({ id: "c3", title: "", connector_kind: "whatsapp" })],
+      }),
+    });
+    renderRoute("/connectors/k1");
+    const list = await screen.findByRole("list", { name: "Chats" });
+    const row = within(list).getByRole("listitem", { name: "WhatsApp chat" });
+    expect(within(row).getByText("WhatsApp chat")).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: /WhatsApp chat/ })).toBeInTheDocument();
+  });
+
   it("refreshes the chat list on demand", async () => {
     const { calls } = mockApi({
       ...base,
