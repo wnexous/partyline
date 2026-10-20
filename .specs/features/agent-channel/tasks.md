@@ -94,8 +94,8 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: DLV-02, DLV-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Owner's message → owner agent frame `trusted:true`; other user's agent gets `trusted:false`
-- [ ] Paused room → no push; author agent never receives own message
+- [x] Owner's message → owner agent frame `trusted:true`; other user's agent gets `trusted:false`
+- [x] Paused room → no push; author agent never receives own message
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(delivery): push room messages to online agents`

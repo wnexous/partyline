@@ -163,6 +163,10 @@ func (a *App) Start(ctx context.Context) error {
 		})
 		a.background(bg, "outbox", w.Run)
 	}
+	dispatcher := delivery.NewAgentDispatcher(delivery.DispatcherOptions{
+		Store: a.Store, Bus: a.Bus, Agents: a.Gateway, Load: a.Gateway.Message, Logger: a.Logger,
+	})
+	a.background(bg, "agent-dispatcher", dispatcher.Run)
 	a.background(bg, "retention", func(ctx context.Context) error {
 		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger)
 	})

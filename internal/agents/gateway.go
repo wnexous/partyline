@@ -352,3 +352,16 @@ func (g *Gateway) advance(ctx context.Context, agentID, roomID string, seq int64
 		return q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: roomID, Seq: seq})
 	})
 }
+
+// Message renders one stored message as agents receive it (the dispatcher's loader).
+func (g *Gateway) Message(ctx context.Context, messageID string) (dto.Message, error) {
+	v, err := g.d.Store.R().GetMessageView(ctx, messageID)
+	if err != nil {
+		return dto.Message{}, err
+	}
+	list, err := g.d.Rooms.Details(ctx, []db.MessageView{v})
+	if err != nil {
+		return dto.Message{}, err
+	}
+	return convert.Message(list[0]), nil
+}
