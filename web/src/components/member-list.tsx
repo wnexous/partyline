@@ -1,6 +1,7 @@
 import { BotIcon, MessageCircleIcon, UserIcon, XIcon } from "lucide-react";
 import { type ReactNode, useId } from "react";
 import { toast } from "sonner";
+import { MemberSettings, memberSettingsSummary } from "@/components/member-settings";
 import { platformLabel } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
@@ -82,6 +83,7 @@ export function MemberList({
               {list.map((m) => (
                 <MemberRow
                   key={m.id}
+                  roomId={roomId}
                   member={m}
                   online={presence[m.member_id]?.online ?? m.online ?? false}
                   canManage={canManage}
@@ -98,12 +100,14 @@ export function MemberList({
 }
 
 function MemberRow({
+  roomId,
   member: m,
   online,
   canManage,
   onRemove,
   onOutbound,
 }: {
+  roomId: string;
   member: RoomMember;
   online: boolean;
   canManage: boolean;
@@ -120,6 +124,12 @@ function MemberRow({
       <>
         <StatusDot online={online} withLabel />
         {m.owner ? <span>@{m.owner}</span> : null}
+        {m.display_name ? (
+          <span className="truncate">{t("memberSettings.as", { name: m.display_name })}</span>
+        ) : null}
+        {memberSettingsSummary(m).map((key) => (
+          <span key={key}>{t(key)}</span>
+        ))}
       </>
     );
   } else if (m.kind === "chat") {
@@ -169,6 +179,7 @@ function MemberRow({
           )
         ) : null}
       </div>
+      {canManage && m.kind === "agent" ? <MemberSettings roomId={roomId} member={m} /> : null}
       {canManage ? (
         <Button
           variant="ghost"

@@ -1,5 +1,15 @@
 import { z } from "zod";
-import { MaxTextLength, PasswordMinLength, UsernamePattern } from "./api/types.gen";
+import {
+  DeliveryModeAll,
+  DeliveryModeMentions,
+  DeliveryModeTrusted,
+  MaxMemberDisplayName,
+  MaxMemberKeyword,
+  MaxMemberKeywords,
+  MaxTextLength,
+  PasswordMinLength,
+  UsernamePattern,
+} from "./api/types.gen";
 import type { MessageKey } from "./i18n";
 
 /*
@@ -110,6 +120,26 @@ export const messageTextSchema = z
   .string()
   .refine((text) => textLength(text) <= MaxTextLength, msg("validation.tooLong"));
 
+/**
+ * PATCH /rooms/{id}/members/{mid} agent settings (MEM-01..05). Limits count code points like the
+ * server; a keyword is checked when it is added (`keywordError`), the list here.
+ */
+export const memberSettingsSchema = z.object({
+  display_name: z
+    .string()
+    .trim()
+    .refine((v) => textLength(v) <= MaxMemberDisplayName, msg("validation.displayName")),
+  sign_outbound: z.boolean(),
+  delivery: z.enum([DeliveryModeAll, DeliveryModeMentions, DeliveryModeTrusted]),
+  keywords: z.array(z.string()).max(MaxMemberKeywords, msg("validation.keywords")),
+});
+
+/** The i18n key of what is wrong with a keyword about to be added, or null when it is valid. */
+export function keywordError(keyword: string): MessageKey | null {
+  const n = textLength(keyword.trim());
+  return n < 1 || n > MaxMemberKeyword ? "validation.keyword" : null;
+}
+
 export type SetupForm = z.input<typeof setupSchema>;
 export type LoginForm = z.input<typeof loginSchema>;
 export type AcceptInviteForm = z.input<typeof acceptInviteSchema>;
@@ -119,9 +149,12 @@ export type CreateTokenForm = z.input<typeof createTokenSchema>;
 export type ProfileForm = z.input<typeof profileSchema>;
 export type ChangePasswordForm = z.input<typeof changePasswordSchema>;
 export type RoomSettingsForm = z.input<typeof roomSettingsSchema>;
+export type MemberSettingsForm = z.input<typeof memberSettingsSchema>;
 
 /** Placeholder values of the schema message keys, for rendering zod issues with useT(). */
 export const validationVars = {
   "validation.passwordMin": { min: PasswordMinLength },
   "validation.tooLong": { max: MaxTextLength },
+  "validation.keywords": { max: MaxMemberKeywords },
+  "validation.keyword": { max: MaxMemberKeyword },
 } as const;

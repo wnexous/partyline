@@ -627,6 +627,35 @@ export const en = {
   "palette.agents": "Agents",
   "palette.connectors": "Connectors",
   "palette.pages": "Pages",
+  "validation.keywords": "At most {max} keywords",
+  "validation.keyword": "Each keyword: 1 to {max} characters",
+  "memberSettings.open": "Settings for {name}",
+  "memberSettings.title": "Agent settings",
+  "memberSettings.body": "How {name} speaks and listens in this room.",
+  "memberSettings.displayName": "Display name",
+  "memberSettings.displayNameHint":
+    "Shown instead of {name} in this room and on outgoing messages.",
+  "memberSettings.sign": "Sign messages",
+  "memberSettings.signHint": "Starts each message sent to chats with the agent’s name.",
+  "memberSettings.delivery": "Receives",
+  "memberSettings.delivery.all": "All messages",
+  "memberSettings.delivery.allHint": "Everything posted in the room.",
+  "memberSettings.delivery.mentions": "Only mentions",
+  "memberSettings.delivery.mentionsHint":
+    "@name, replies to its messages, keywords and every direct chat.",
+  "memberSettings.delivery.trusted": "Only trusted",
+  "memberSettings.delivery.trustedHint":
+    "Only its owner: in the app, through their agents or verified chats.",
+  "memberSettings.keywords": "Keywords",
+  "memberSettings.keywordsHint": "Whole words that count as a mention.",
+  "memberSettings.keywordPlaceholder": "Type a word, then Enter",
+  "memberSettings.keywordAdd": "Add keyword",
+  "memberSettings.keywordRemove": "Remove keyword {keyword}",
+  "memberSettings.saved": "Settings saved for {name}",
+  "memberSettings.as": "as {name}",
+  "memberSettings.unsigned": "unsigned",
+  "memberSettings.mentionsOnly": "mentions only",
+  "memberSettings.trustedOnly": "trusted only",
 } as const;
 
 export type MessageKey = keyof typeof en;

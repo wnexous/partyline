@@ -255,7 +255,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: MEM-01, MEM-02, MEM-03, MEM-04, MEM-05
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] PATCH payload per field; 422 reasons shown; only managers see the control
+- [x] PATCH payload per field; 422 reasons shown; only managers see the control
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add agent membership settings`

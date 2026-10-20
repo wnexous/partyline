@@ -128,6 +128,51 @@ describe("members panel (UI-10, UI-12)", () => {
   });
 });
 
+describe("agent membership settings (MEM-01..05)", () => {
+  it("offers settings for agent members only, to managers, and shows the saved settings", async () => {
+    const { calls } = roomApi(
+      {},
+      {
+        "PATCH /rooms/r1/members/mb-bot": json(200, {
+          ...members[0],
+          display_name: "Bia",
+          sign_outbound: false,
+          delivery: "mentions",
+        }),
+      },
+    );
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    const bot = await screen.findByTestId("member-mb-bot");
+    expect(screen.queryByRole("button", { name: "Settings for Ops on call" })).toBeNull();
+
+    await user.click(within(bot).getByRole("button", { name: "Settings for release-bot" }));
+    const dialog = await screen.findByRole("dialog", { name: "Agent settings" });
+    await user.type(within(dialog).getByRole("textbox", { name: /Display name/ }), "Bia");
+    await user.click(within(dialog).getByRole("switch", { name: "Sign messages" }));
+    await user.click(within(dialog).getByRole("radio", { name: /Only mentions/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+        display_name: "Bia",
+        sign_outbound: false,
+        delivery: "mentions",
+      }),
+    );
+    await waitFor(() => expect(bot).toHaveTextContent("as Bia"));
+    expect(bot).toHaveTextContent("unsigned");
+    expect(bot).toHaveTextContent("mentions only");
+  });
+
+  it("hides the settings from people without manage", async () => {
+    roomApi({ my_level: "post" });
+    renderRoute("/rooms/r1");
+    await screen.findByTestId("member-mb-bot");
+    expect(screen.queryByRole("button", { name: /^Settings for/ })).toBeNull();
+  });
+});
+
 describe("member picker (UI-10)", () => {
   it("offers only usable agents and chats that are not members yet, filterable by text", async () => {
     roomApi();
