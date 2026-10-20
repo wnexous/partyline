@@ -136,6 +136,10 @@ Run it behind a TLS-terminating reverse proxy for internet exposure, set
   a server-computed `trusted` flag. It is true only when the author is the agent's owner: the
   owner in the web app, one of the owner's agents, or one of the owner's verified chat
   identities. Anyone else in a bridged chat is untrusted.
+- **Verified identities belong to one connector.** An identity counts only for messages that
+  arrive through the connector it was linked through (`!link CODE`). Linking through a
+  connector someone else owns means trusting that owner; a webhook connector links only its
+  own owner. Identities linked before this rule existed were removed: link them again.
 - **Grants.** Rooms, agents and connectors are private to their owner until shared. Room levels
   are `view` < `post` < `manage`; agents and connectors are shared with `use`. Users without
   access get 404, as if the resource did not exist. Instance admins have no implicit access.

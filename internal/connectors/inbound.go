@@ -54,7 +54,7 @@ func NewPipeline(d PipelineDeps) *Pipeline {
 }
 
 // Handle processes one received message: own messages are dropped (CON-12), pairing
-// commands link the sender and stop (IDN-02, IDN-03), the chat is recorded (CON-07) and,
+// commands link the sender on this connector and stop (IDN-02, IDN-03, IDN-05), the chat is recorded (CON-07) and,
 // when the chat belongs to rooms, the message is stored once per room with its media
 // (CON-08, CON-10, CON-11). Failures are logged without message content.
 func (p *Pipeline) Handle(ctx context.Context, src Source, m Inbound) {
@@ -68,7 +68,16 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 		return nil
 	}
 	if match := pairingCommand.FindStringSubmatch(m.Text); match != nil {
-		_, _, err := p.d.Identities.Link(ctx, match[1], src.Kind, m.SenderID, m.SenderAltID, m.SenderName)
+		onlyUser := ""
+		if src.LinkOwnerOnly {
+			if src.OwnerID == "" {
+				return nil
+			}
+			onlyUser = src.OwnerID
+		}
+		_, _, err := p.d.Identities.Link(ctx, match[1], identities.Account{
+			ConnectorID: src.ConnectorID, ConnectorKind: src.Kind, SenderID: m.SenderID, AltID: m.SenderAltID, Display: m.SenderName,
+		}, onlyUser)
 		return err
 	}
 	at := m.At
@@ -89,7 +98,7 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 	if roomIDs, err = p.pending(ctx, chat.ID, m.MessageID, roomIDs); err != nil || len(roomIDs) == 0 {
 		return err
 	}
-	senderUser, err := p.d.Identities.ResolveSender(ctx, src.Kind, m.SenderID, m.SenderAltID)
+	senderUser, err := p.d.Identities.ResolveSender(ctx, src.ConnectorID, m.SenderID, m.SenderAltID)
 	if err != nil {
 		return err
 	}

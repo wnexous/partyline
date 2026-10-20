@@ -10,13 +10,14 @@ import (
 )
 
 const createIdentity = `-- name: CreateIdentity :exec
-INSERT INTO identities (id, user_id, connector_kind, external_id, alt_external_id, display, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO identities (id, user_id, connector_id, connector_kind, external_id, alt_external_id, display, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateIdentityParams struct {
 	ID            string
 	UserID        string
+	ConnectorID   string
 	ConnectorKind string
 	ExternalID    string
 	AltExternalID string
@@ -28,6 +29,7 @@ func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) 
 	_, err := q.db.ExecContext(ctx, createIdentity,
 		arg.ID,
 		arg.UserID,
+		arg.ConnectorID,
 		arg.ConnectorKind,
 		arg.ExternalID,
 		arg.AltExternalID,
@@ -63,19 +65,19 @@ func (q *Queries) DeleteExpiredPairingCodes(ctx context.Context, expiresAt int64
 
 const deleteIdentitiesForSender = `-- name: DeleteIdentitiesForSender :exec
 DELETE FROM identities
-WHERE connector_kind = ?1
+WHERE connector_id = ?1
   AND (external_id IN (?2, ?3)
        OR (alt_external_id <> '' AND alt_external_id IN (?2, ?3)))
 `
 
 type DeleteIdentitiesForSenderParams struct {
-	ConnectorKind string
-	SenderID      string
-	AltID         string
+	ConnectorID string
+	SenderID    string
+	AltID       string
 }
 
 func (q *Queries) DeleteIdentitiesForSender(ctx context.Context, arg DeleteIdentitiesForSenderParams) error {
-	_, err := q.db.ExecContext(ctx, deleteIdentitiesForSender, arg.ConnectorKind, arg.SenderID, arg.AltID)
+	_, err := q.db.ExecContext(ctx, deleteIdentitiesForSender, arg.ConnectorID, arg.SenderID, arg.AltID)
 	return err
 }
 
@@ -97,7 +99,7 @@ func (q *Queries) DeleteIdentity(ctx context.Context, arg DeleteIdentityParams) 
 }
 
 const getIdentity = `-- name: GetIdentity :one
-SELECT id, user_id, connector_kind, external_id, alt_external_id, display, created_at FROM identities WHERE id = ?
+SELECT id, user_id, connector_id, connector_kind, external_id, alt_external_id, display, created_at FROM identities WHERE id = ?
 `
 
 func (q *Queries) GetIdentity(ctx context.Context, id string) (Identity, error) {
@@ -106,6 +108,7 @@ func (q *Queries) GetIdentity(ctx context.Context, id string) (Identity, error) 
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
+		&i.ConnectorID,
 		&i.ConnectorKind,
 		&i.ExternalID,
 		&i.AltExternalID,
@@ -116,7 +119,7 @@ func (q *Queries) GetIdentity(ctx context.Context, id string) (Identity, error) 
 }
 
 const listIdentities = `-- name: ListIdentities :many
-SELECT id, user_id, connector_kind, external_id, alt_external_id, display, created_at FROM identities WHERE user_id = ? ORDER BY connector_kind, created_at, id
+SELECT id, user_id, connector_id, connector_kind, external_id, alt_external_id, display, created_at FROM identities WHERE user_id = ? ORDER BY connector_kind, created_at, id
 `
 
 func (q *Queries) ListIdentities(ctx context.Context, userID string) ([]Identity, error) {
@@ -131,6 +134,7 @@ func (q *Queries) ListIdentities(ctx context.Context, userID string) ([]Identity
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
+			&i.ConnectorID,
 			&i.ConnectorKind,
 			&i.ExternalID,
 			&i.AltExternalID,
@@ -152,7 +156,7 @@ func (q *Queries) ListIdentities(ctx context.Context, userID string) ([]Identity
 
 const resolveIdentityUser = `-- name: ResolveIdentityUser :one
 SELECT i.user_id FROM identities i JOIN users u ON u.id = i.user_id
-WHERE i.connector_kind = ?1 AND u.disabled_at IS NULL
+WHERE i.connector_id = ?1 AND u.disabled_at IS NULL
   AND (i.external_id IN (?2, ?3)
        OR (i.alt_external_id <> '' AND i.alt_external_id IN (?2, ?3)))
 ORDER BY i.created_at DESC
@@ -160,13 +164,13 @@ LIMIT 1
 `
 
 type ResolveIdentityUserParams struct {
-	ConnectorKind string
-	SenderID      string
-	AltID         string
+	ConnectorID string
+	SenderID    string
+	AltID       string
 }
 
 func (q *Queries) ResolveIdentityUser(ctx context.Context, arg ResolveIdentityUserParams) (string, error) {
-	row := q.db.QueryRowContext(ctx, resolveIdentityUser, arg.ConnectorKind, arg.SenderID, arg.AltID)
+	row := q.db.QueryRowContext(ctx, resolveIdentityUser, arg.ConnectorID, arg.SenderID, arg.AltID)
 	var user_id string
 	err := row.Scan(&user_id)
 	return user_id, err

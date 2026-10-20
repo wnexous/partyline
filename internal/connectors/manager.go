@@ -70,6 +70,10 @@ func (k Kind) SecretValues(cfg Config) []string {
 type Source struct {
 	ConnectorID string
 	Kind        string
+	// OwnerID is the connector's owner.
+	OwnerID string
+	// LinkOwnerOnly is the kind's Kind.LinkOwnerOnly.
+	LinkOwnerOnly bool
 }
 
 // ManagerDeps are the collaborators of the Manager.
@@ -105,6 +109,7 @@ type Manager struct {
 
 type supervisor struct {
 	id        string
+	owner     string
 	kind      Kind
 	conn      Connector
 	secrets   []string
@@ -202,7 +207,7 @@ func (m *Manager) Apply(id string) {
 		return
 	}
 	ctx, cancel := context.WithCancel(base)
-	s := &supervisor{id: id, kind: k, conn: conn, secrets: sec, cancel: cancel, done: make(chan struct{})}
+	s := &supervisor{id: id, owner: c.OwnerID, kind: k, conn: conn, secrets: sec, cancel: cancel, done: make(chan struct{})}
 	m.mu.Lock()
 	m.running[id] = s
 	m.mu.Unlock()
@@ -331,14 +336,18 @@ func (h handler) Inbound(ctx context.Context, msg Inbound) {
 	if h.m.d.Inbound == nil || h.m.current(h.s.id) != h.s {
 		return
 	}
-	h.m.d.Inbound(ctx, Source{ConnectorID: h.s.id, Kind: h.s.kind.Name}, msg)
+	h.m.d.Inbound(ctx, h.source(), msg)
 }
 
 func (h handler) MigrateChat(ctx context.Context, oldID, newID string) {
 	if h.m.d.MigrateChat == nil || h.m.current(h.s.id) != h.s {
 		return
 	}
-	h.m.d.MigrateChat(ctx, Source{ConnectorID: h.s.id, Kind: h.s.kind.Name}, oldID, newID)
+	h.m.d.MigrateChat(ctx, h.source(), oldID, newID)
+}
+
+func (h handler) source() Source {
+	return Source{ConnectorID: h.s.id, Kind: h.s.kind.Name, OwnerID: h.s.owner, LinkOwnerOnly: h.s.kind.LinkOwnerOnly}
 }
 
 func (h handler) Status(st Status, detail string) {

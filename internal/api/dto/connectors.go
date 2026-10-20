@@ -113,8 +113,11 @@ type RouteChatRequest struct {
 }
 
 // Identity is a chat account verified as belonging to the current user (GET /identities).
+// It is trusted only for messages received through ConnectorID, the connector it was
+// linked through.
 type Identity struct {
 	ID            string    `json:"id"`
+	ConnectorID   string    `json:"connector_id"`
 	ConnectorKind string    `json:"connector_kind"`
 	ExternalID    string    `json:"external_id"`
 	AltExternalID string    `json:"alt_external_id,omitempty"`

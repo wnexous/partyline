@@ -30,6 +30,7 @@ const (
 )
 
 type inboundEnv struct {
+	fake  *connectortest.Fake
 	env   *testkit.Env
 	alice *testkit.Client
 	conn  dto.Connector
@@ -49,7 +50,7 @@ func newInboundEnv(t *testing.T, opts ...testkit.Option) *inboundEnv {
 	}).RequireStatus(http.StatusCreated))
 	inst := fake.Instance(t, conn.ID)
 	inst.WaitRun(t)
-	return &inboundEnv{env: env, alice: alice, conn: conn, inst: inst}
+	return &inboundEnv{fake: fake, env: env, alice: alice, conn: conn, inst: inst}
 }
 
 func (e *inboundEnv) emit(m connectors.Inbound) { e.inst.Emit(context.Background(), m) }
@@ -241,6 +242,7 @@ func TestInboundPairingCommands(t *testing.T) {
 
 	ids := testkit.Decode[dto.List[dto.Identity]](e.alice.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items
 	require.Len(t, ids, 1)
+	require.Equal(t, e.conn.ID, ids[0].ConnectorID)
 	require.Equal(t, connectortest.KindName, ids[0].ConnectorKind)
 	require.Equal(t, senderID, ids[0].ExternalID)
 	require.Equal(t, senderAlt, ids[0].AltExternalID)
@@ -253,6 +255,32 @@ func TestInboundPairingCommands(t *testing.T) {
 	msgs := e.messages(t, room.ID)
 	require.Len(t, msgs, 1)
 	require.Equal(t, e.alice.User.ID, msgs[0].AuthorUserID, "a verified sender resolves to the user")
+}
+
+// IDN-02: a linked sender is trusted only on the connector it was linked through; the same
+// sender id arriving through another connector of the same kind resolves to no user.
+func TestInboundIdentityIsScopedToItsConnector(t *testing.T) {
+	e := newInboundEnv(t)
+	code := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", nil).RequireStatus(http.StatusCreated))
+	e.emit(text(groupID, "M1", "!link "+code.Code))
+	require.Len(t, testkit.Decode[dto.List[dto.Identity]](e.alice.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items, 1)
+
+	on := true
+	other := testkit.Decode[dto.Connector](e.alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+		Kind: connectortest.KindName, Name: "second", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &on,
+	}).RequireStatus(http.StatusCreated))
+	inst := e.fake.Instance(t, other.ID)
+	inst.WaitRun(t)
+	inst.Emit(context.Background(), text(otherID, "M2", "first"))
+	var chat string
+	for _, c := range testkit.Decode[dto.List[dto.Chat]](e.alice.Get("/api/v1/connectors/" + other.ID + "/chats").RequireStatus(http.StatusOK)).Items {
+		chat = c.ID
+	}
+	room := e.routedRoom(t, "B", chat)
+	inst.Emit(context.Background(), text(otherID, "M3", "same sender, other connector"))
+	msgs := e.messages(t, room.ID)
+	require.Len(t, msgs, 1)
+	require.Empty(t, msgs[0].AuthorUserID)
 }
 
 // A reply to an earlier chat message of the room points at it.

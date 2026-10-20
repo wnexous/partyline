@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -24,9 +26,14 @@ func TestIdentityRoutesNeedAUser(t *testing.T) {
 // performs it), the live identity.linked event to that user only, listing and deleting.
 func TestIdentityEndpoints(t *testing.T) {
 	clock := testkit.NewClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC))
-	env := testkit.New(t, testkit.WithClock(clock.Now))
+	fake := connectortest.New()
+	env := testkit.New(t, testkit.WithClock(clock.Now), testkit.WithConnectorKinds(fake.Kind()))
 	alice := env.NewUser("alice")
 	bob := env.NewUser("bob")
+	off := false
+	conn := testkit.Decode[dto.Connector](alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+		Kind: connectortest.KindName, Name: "tg", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &off,
+	}).RequireStatus(http.StatusCreated))
 	aliceLive, _ := alice.DialLive("")
 	bobLive, _ := bob.DialLive("")
 
@@ -34,12 +41,15 @@ func TestIdentityEndpoints(t *testing.T) {
 	require.Regexp(t, `^[A-HJ-NP-Z2-9]{6}$`, code.Code)
 	require.Equal(t, clock.Now().Add(10*time.Minute), code.ExpiresAt)
 
-	_, ok, err := env.App.Identities.Link(context.Background(), code.Code, "telegram", "4242", "", "Alice T")
+	_, ok, err := env.App.Identities.Link(context.Background(), code.Code, identities.Account{
+		ConnectorID: conn.ID, ConnectorKind: "telegram", SenderID: "4242", Display: "Alice T",
+	}, "")
 	require.NoError(t, err)
 	require.True(t, ok)
 
 	var linked dto.Identity
 	aliceLive.Expect(dto.LiveEventTypeIdentityLinked, &linked, 10*time.Second)
+	require.Equal(t, conn.ID, linked.ConnectorID)
 	require.Equal(t, "telegram", linked.ConnectorKind)
 	require.Equal(t, "4242", linked.ExternalID)
 	require.Equal(t, "Alice T", linked.Display)
@@ -52,7 +62,7 @@ func TestIdentityEndpoints(t *testing.T) {
 	bob.Delete("/api/v1/identities/"+linked.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	alice.Delete("/api/v1/identities/" + linked.ID).RequireStatus(http.StatusNoContent)
 	require.Empty(t, testkit.Decode[dto.List[dto.Identity]](alice.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items)
-	user, err := env.App.Identities.ResolveSender(context.Background(), "telegram", "4242", "")
+	user, err := env.App.Identities.ResolveSender(context.Background(), conn.ID, "4242", "")
 	require.NoError(t, err)
 	require.Empty(t, user, "IDN-04: a deleted identity resolves to no user")
 }

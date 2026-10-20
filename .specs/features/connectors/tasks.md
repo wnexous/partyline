@@ -247,11 +247,11 @@ sender ids are chosen by the caller (`Kind.LinkOwnerOnly`, the webhook) link onl
 **Requirement**: IDN-02, IDN-04, DLV-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Verifier probe end to end: Alice links webhook sender `alice-id` through her connector; Mallory's webhook posts
+- [x] Verifier probe end to end: Alice links webhook sender `alice-id` through her connector; Mallory's webhook posts
   `sender_id: "alice-id"` → stored `author_user_id` empty and Alice's agent receives it with `trusted=false`
-- [ ] The same sender on another connector of the same kind resolves to no user; on the linking connector it resolves
-- [ ] A webhook `!link` with another user's code links nothing and does not consume the code; the owner's code links
-- [ ] Migration drops pre-existing identities
+- [x] The same sender on another connector of the same kind resolves to no user; on the linking connector it resolves
+- [x] A webhook `!link` with another user's code links nothing and does not consume the code; the owner's code links
+- [x] Migration drops pre-existing identities
 **Tests**: integration, e2e
 **Gate**: full
 **Commit**: `fix(identities): scope verified identities to the connector instance`

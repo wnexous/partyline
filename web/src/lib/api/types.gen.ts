@@ -366,9 +366,12 @@ export interface RouteChatRequest {
 }
 /**
  * Identity is a chat account verified as belonging to the current user (GET /identities).
+ * It is trusted only for messages received through ConnectorID, the connector it was
+ * linked through.
  */
 export interface Identity {
   id: string;
+  connector_id: string;
   connector_kind: string;
   external_id: string;
   alt_external_id?: string;

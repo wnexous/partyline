@@ -137,6 +137,10 @@ com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
   flag `trusted` calculada pelo servidor. Ela só é verdadeira quando o autor é o dono do agente:
   o dono no app web, um dos agentes do dono ou uma das identidades de chat verificadas do dono.
   Qualquer outra pessoa num chat em ponte é não confiável.
+- **Identidades verificadas pertencem a um conector.** Uma identidade só vale para mensagens que
+  chegam pelo conector em que foi vinculada (`!link CÓDIGO`). Vincular por um conector de outra
+  pessoa significa confiar nessa pessoa; um conector webhook só vincula o próprio dono.
+  Identidades vinculadas antes desta regra foram removidas: vincule de novo.
 - **Permissões.** Salas, agentes e conectores são privados do dono até serem compartilhados. Os
   níveis de sala são `view` < `post` < `manage`; agentes e conectores são compartilhados com
   `use`. Quem não tem acesso recebe 404, como se o recurso não existisse. Admins da instância não

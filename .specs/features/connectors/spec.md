@@ -154,11 +154,12 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 **Acceptance Criteria**:
 
 1. WHEN a user requests a pairing code THEN the system SHALL return a 6-character code (A-Z, 2-9) valid for 10 minutes. (IDN-01)
-2. WHEN a connector receives `!link CODE` or `/link CODE` with a valid code THEN the system SHALL link (connector kind, sender id and alternate sender id) to that user, consume the code and not route the message. (IDN-02)
+2. WHEN a connector receives `!link CODE` or `/link CODE` with a valid code THEN the system SHALL link (connector id, sender id and alternate sender id) to that user, consume the code and not route the message; the identity SHALL resolve only messages received through that same connector. (IDN-02)
 3. IF the code is unknown or expired THEN the system SHALL ignore the command and not route the message. (IDN-03)
-4. WHEN a user deletes an identity THEN the system SHALL resolve messages received afterwards from that sender to no user, so they are delivered with `trusted=false`. (IDN-04)
+4. WHEN a user deletes an identity, or deletes the connector it was linked through, THEN the system SHALL resolve messages received afterwards from that sender on that connector to no user, so they are delivered with `trusted=false`. (IDN-04)
+5. WHERE a connector kind lets the caller choose sender ids (webhook) the system SHALL link only pairing codes of the connector's owner; a code of another user SHALL link nothing and stay unused. (IDN-05)
 
-**Independent Test**: Request code, inject a `!link` message through the fake connector, list identities.
+**Independent Test**: Request code, inject a `!link` message through the fake connector, list identities. Post the same sender id through another user's webhook connector: it stays untrusted.
 
 ---
 
@@ -167,6 +168,8 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 - IF evolution-go returns 401 for the global key THEN the connector SHALL set status `error: unauthorized` and keep retrying with backoff (CON-06).
 - IF a Telegram chat migrates to a supergroup (`migrate_to_chat_id`) THEN the connector SHALL update the chat's external id (TG-01).
 - IF an outbound target chat no longer exists on the platform THEN the send SHALL fail and follow the retry rules (CON-06).
+- IF a linked sender id arrives through another connector, even of the same kind, THEN the system SHALL resolve it to no user (IDN-02).
+- WHEN the identities migration (`0003`) runs THEN identities linked before it are dropped, because they do not record a connector; users link again (IDN-02).
 
 ---
 
@@ -201,12 +204,13 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | HOOK-01 | P1: Webhook | Tasks | Implementing |
 | HOOK-02 | P1: Webhook | Tasks | Implementing |
 | HOOK-03 | P1: Webhook | Tasks | Implementing |
-| IDN-01 | P1: Identities | Tasks | Implementing |
-| IDN-02 | P1: Identities | Tasks | Implementing |
-| IDN-03 | P1: Identities | Tasks | Implementing |
-| IDN-04 | P1: Identities | Tasks | Implementing |
+| IDN-01 | P1: Identities | Tasks | Verified |
+| IDN-02 | P1: Identities | Execute (T12) | Implemented, re-verify |
+| IDN-03 | P1: Identities | Tasks | Verified |
+| IDN-04 | P1: Identities | Execute (T12) | Implemented, re-verify |
+| IDN-05 | P1: Identities | Execute (T12) | Implemented, re-verify |
 
-**Coverage:** 31 total, mapped in tasks.md
+**Coverage:** 32 total, mapped in tasks.md
 
 ---
 

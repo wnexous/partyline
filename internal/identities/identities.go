@@ -1,6 +1,7 @@
 // Package identities links chat accounts (a WhatsApp number, a Telegram or Discord user) to
-// Partyline users after they prove control with a pairing code (IDN-01..04). Messages from a
-// linked account resolve to its user, which makes them trusted for that user's agents (AD-006).
+// Partyline users after they prove control with a pairing code (IDN-01..05). Messages from a
+// linked account, received through the connector it was linked through, resolve to its user,
+// which makes them trusted for that user's agents (AD-006).
 package identities
 
 import (
@@ -87,11 +88,27 @@ func (s *Service) CreatePairing(ctx context.Context, userID string) (string, tim
 	return code, expires, nil
 }
 
-// Link consumes a valid code and links the sender (sender id and alternate id) of the
-// connector kind to the code's user, replacing an earlier link of that account (IDN-02).
-// ok is false for unknown or expired codes (IDN-03).
-func (s *Service) Link(ctx context.Context, code, connectorKind, senderID, altID, display string) (userID string, ok bool, err error) {
-	if senderID == "" {
+// Account is a chat account as one connector reports it.
+type Account struct {
+	// ConnectorID is the connector the message came through; the identity belongs to it.
+	ConnectorID string
+	// ConnectorKind is the connector's kind, kept for display.
+	ConnectorKind string
+	SenderID      string
+	AltID         string
+	Display       string
+}
+
+// errWrongUser rolls back a Link whose code belongs to another user than the required one.
+var errWrongUser = errors.New("pairing code of another user")
+
+// Link consumes a valid code and links the account (sender id and alternate id) to the
+// code's user, on the account's connector only, replacing an earlier link of that account
+// there (IDN-02). ok is false for unknown or expired codes (IDN-03). When onlyUser is set
+// the code must belong to that user: a code of anyone else links nothing and is not
+// consumed (IDN-05, connectors whose callers choose sender ids freely).
+func (s *Service) Link(ctx context.Context, code string, acct Account, onlyUser string) (userID string, ok bool, err error) {
+	if acct.SenderID == "" || acct.ConnectorID == "" {
 		return "", false, nil
 	}
 	now := s.d.Now().UnixMilli()
@@ -107,18 +124,24 @@ func (s *Service) Link(ctx context.Context, code, connectorKind, senderID, altID
 		if row.ExpiresAt <= now {
 			return nil
 		}
-		if err := q.DeleteIdentitiesForSender(ctx, db.DeleteIdentitiesForSenderParams{ConnectorKind: connectorKind, SenderID: senderID, AltID: altID}); err != nil {
+		if onlyUser != "" && row.UserID != onlyUser {
+			return errWrongUser
+		}
+		if err := q.DeleteIdentitiesForSender(ctx, db.DeleteIdentitiesForSenderParams{ConnectorID: acct.ConnectorID, SenderID: acct.SenderID, AltID: acct.AltID}); err != nil {
 			return err
 		}
 		if err := q.CreateIdentity(ctx, db.CreateIdentityParams{
-			ID: id, UserID: row.UserID, ConnectorKind: connectorKind, ExternalID: senderID,
-			AltExternalID: altID, Display: display, CreatedAt: now,
+			ID: id, UserID: row.UserID, ConnectorID: acct.ConnectorID, ConnectorKind: acct.ConnectorKind,
+			ExternalID: acct.SenderID, AltExternalID: acct.AltID, Display: acct.Display, CreatedAt: now,
 		}); err != nil {
 			return err
 		}
 		userID, ok = row.UserID, true
 		return nil
 	})
+	if errors.Is(err, errWrongUser) {
+		return "", false, nil
+	}
 	if err != nil || !ok {
 		return "", false, err
 	}
@@ -126,10 +149,11 @@ func (s *Service) Link(ctx context.Context, code, connectorKind, senderID, altID
 	return userID, true, nil
 }
 
-// ResolveSender returns the active user linked to the sender (by sender id or alternate id,
-// within the connector kind), or "" (IDN-04, DLV-06).
-func (s *Service) ResolveSender(ctx context.Context, connectorKind, senderID, altID string) (string, error) {
-	if senderID == "" && altID == "" {
+// ResolveSender returns the active user linked to the sender (by sender id or alternate id)
+// through this connector, or "" (IDN-04, DLV-06). Links made through other connectors, even
+// of the same kind, never match.
+func (s *Service) ResolveSender(ctx context.Context, connectorID, senderID, altID string) (string, error) {
+	if connectorID == "" || (senderID == "" && altID == "") {
 		return "", nil
 	}
 	if senderID == "" {
@@ -138,7 +162,7 @@ func (s *Service) ResolveSender(ctx context.Context, connectorKind, senderID, al
 	if altID == "" {
 		altID = senderID
 	}
-	u, err := s.d.Store.R().ResolveIdentityUser(ctx, db.ResolveIdentityUserParams{ConnectorKind: connectorKind, SenderID: senderID, AltID: altID})
+	u, err := s.d.Store.R().ResolveIdentityUser(ctx, db.ResolveIdentityUserParams{ConnectorID: connectorID, SenderID: senderID, AltID: altID})
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}

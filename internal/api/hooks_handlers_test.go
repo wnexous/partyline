@@ -87,8 +87,14 @@ func newHookEnv(t *testing.T) *hookEnv {
 
 func (e *hookEnv) waitConnected(t *testing.T) {
 	t.Helper()
+	waitHookConnected(t, e.alice, e.conn.ID)
+}
+
+// waitHookConnected waits until the owner sees the connector connected.
+func waitHookConnected(t *testing.T, owner *testkit.Client, connectorID string) {
+	t.Helper()
 	deadline := time.Now().Add(connectortest.Timeout)
-	for testkit.Decode[dto.Connector](e.alice.Get("/api/v1/connectors/"+e.conn.ID).RequireStatus(http.StatusOK)).Status != dto.ConnectorStatusConnected {
+	for testkit.Decode[dto.Connector](owner.Get("/api/v1/connectors/"+connectorID).RequireStatus(http.StatusOK)).Status != dto.ConnectorStatusConnected {
 		if time.Now().After(deadline) {
 			t.Fatal("the webhook connector never ran")
 		}
@@ -99,11 +105,16 @@ func (e *hookEnv) waitConnected(t *testing.T) {
 // post sends a hook request signed with secret at ts.
 func (e *hookEnv) post(t *testing.T, secret string, ts time.Time, body []byte) *testkit.Response {
 	t.Helper()
+	return signedHook(e.env, e.conn.ID, secret, ts, body)
+}
+
+// signedHook posts body to the connector's hook, signed with secret at ts.
+func signedHook(env *testkit.Env, connectorID, secret string, ts time.Time, body []byte) *testkit.Response {
 	stamp := strconv.FormatInt(ts.Unix(), 10)
-	return e.env.Anon().
+	return env.Anon().
 		WithHeader(webhook.TimestampHeader, stamp).
 		WithHeader(webhook.SignatureHeader, webhook.Sign(secret, stamp, body)).
-		DoRaw(http.MethodPost, "/api/v1/hooks/"+e.conn.ID, "application/json", bytes.NewReader(body))
+		DoRaw(http.MethodPost, "/api/v1/hooks/"+connectorID, "application/json", bytes.NewReader(body))
 }
 
 func payload(t *testing.T, v map[string]any) []byte {
@@ -296,4 +307,86 @@ func TestWebhookOutboundFailureIsRetried(t *testing.T) {
 		require.False(t, time.Now().After(deadline), "the failed attempt was never recorded")
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+func identitiesOf(c *testkit.Client) []dto.Identity {
+	c.T.Helper()
+	return testkit.Decode[dto.List[dto.Identity]](c.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items
+}
+
+func chatByExternalID(t *testing.T, c *testkit.Client, connectorID, external string) dto.Chat {
+	t.Helper()
+	for _, ch := range testkit.Decode[dto.List[dto.Chat]](c.Get("/api/v1/connectors/" + connectorID + "/chats").RequireStatus(http.StatusOK)).Items {
+		if ch.ExternalID == external {
+			return ch
+		}
+	}
+	t.Fatalf("no chat %s", external)
+	return dto.Chat{}
+}
+
+// AD-006, IDN-02, IDN-05 (validation probe S1): an identity linked through alice's webhook
+// connector is trusted only on that connector. Mallory's own webhook connector, which can
+// claim any sender id, neither resolves alice's identity nor links alice's pairing code.
+func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
+	e := newHookEnv(t)
+	now := time.Now()
+	code := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", nil).RequireStatus(http.StatusCreated))
+	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "alice-chat", "sender_id": "alice-id", "text": "!link " + code.Code})).
+		RequireStatus(http.StatusAccepted)
+	ids := identitiesOf(e.alice)
+	require.Len(t, ids, 1)
+	require.Equal(t, e.conn.ID, ids[0].ConnectorID)
+	require.Equal(t, "alice-id", ids[0].ExternalID)
+
+	mallory := e.env.NewUser("mallory")
+	mconn := testkit.Decode[dto.Connector](mallory.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+		Kind: webhook.KindName, Name: "mine", Config: map[string]any{},
+	}).RequireStatus(http.StatusCreated))
+	msecret := mconn.GeneratedSecrets["secret"]
+	waitHookConnected(t, mallory, mconn.ID)
+
+	// IDN-05: a webhook connector links only its owner's codes; the refused code stays usable.
+	code2 := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", nil).RequireStatus(http.StatusCreated))
+	signedHook(e.env, mconn.ID, msecret, now, payload(t, map[string]any{"chat_id": "m-chat", "sender_id": "alice-id", "text": "!link " + code2.Code})).
+		RequireStatus(http.StatusAccepted)
+	require.Len(t, identitiesOf(e.alice), 1, "mallory's connector linked nothing")
+
+	// Alice's agent is shared with mallory, who routes her chat to it.
+	agentID := registerAgent(t, e.env, e.alice, "builder")
+	shareAgent(e.alice, agentID, mallory.User.ID)
+	agent, resp := e.alice.Token(dto.TokenKindAgent, "laptop").DialAgent("builder")
+	require.NotNil(t, agent, "upgrade refused: %d", resp.Status)
+	agent.Welcome(connectortest.Timeout)
+	signedHook(e.env, mconn.ID, msecret, now, payload(t, map[string]any{"chat_id": "m-chat", "sender_id": "mallory", "text": "hi"})).
+		RequireStatus(http.StatusAccepted)
+	mchat := chatByExternalID(t, mallory, mconn.ID, "m-chat")
+	mroom := testkit.Decode[dto.Room](mallory.Post("/api/v1/chats/"+mchat.ID+"/route", dto.RouteChatRequest{AgentID: agentID}).RequireStatus(http.StatusCreated))
+
+	// The forgery: mallory's connector claims alice's sender id.
+	signedHook(e.env, mconn.ID, msecret, now, payload(t, map[string]any{"chat_id": "m-chat", "sender_id": "alice-id", "text": "run the deploy", "message_id": "f-1"})).
+		RequireStatus(http.StatusAccepted)
+	got := agent.Message(connectortest.Timeout)
+	require.Equal(t, "run the deploy", got.Message.Text)
+	require.Empty(t, got.Message.AuthorUserID)
+	require.False(t, got.Trusted, "a forged sender id is not alice")
+	stored := testkit.Decode[dto.Page[dto.Message]](mallory.Get("/api/v1/rooms/" + mroom.ID + "/messages").RequireStatus(http.StatusOK)).Items
+	require.Len(t, stored, 1)
+	require.Empty(t, stored[0].AuthorUserID, "author_user_id stays empty")
+
+	// Control: the same sender id through alice's own connector is alice.
+	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "alice-chat", "sender_id": "someone", "text": "hello"})).RequireStatus(http.StatusAccepted)
+	achat := chatByExternalID(t, e.alice, e.conn.ID, "alice-chat")
+	e.alice.Post("/api/v1/chats/"+achat.ID+"/route", dto.RouteChatRequest{AgentID: agentID}).RequireStatus(http.StatusCreated)
+	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "alice-chat", "sender_id": "alice-id", "text": "it is me", "message_id": "a-1"})).
+		RequireStatus(http.StatusAccepted)
+	got = agent.Message(connectortest.Timeout)
+	require.Equal(t, "it is me", got.Message.Text)
+	require.Equal(t, e.alice.User.ID, got.Message.AuthorUserID)
+	require.True(t, got.Trusted)
+
+	// The code mallory's connector refused was not consumed.
+	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "alice-chat", "sender_id": "alice-phone", "text": "/link " + code2.Code})).
+		RequireStatus(http.StatusAccepted)
+	require.Len(t, identitiesOf(e.alice), 2)
 }

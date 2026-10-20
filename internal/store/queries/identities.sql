@@ -13,17 +13,17 @@ RETURNING user_id, expires_at;
 
 -- name: DeleteIdentitiesForSender :exec
 DELETE FROM identities
-WHERE connector_kind = sqlc.arg(connector_kind)
+WHERE connector_id = sqlc.arg(connector_id)
   AND (external_id IN (sqlc.arg(sender_id), sqlc.arg(alt_id))
        OR (alt_external_id <> '' AND alt_external_id IN (sqlc.arg(sender_id), sqlc.arg(alt_id))));
 
 -- name: CreateIdentity :exec
-INSERT INTO identities (id, user_id, connector_kind, external_id, alt_external_id, display, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO identities (id, user_id, connector_id, connector_kind, external_id, alt_external_id, display, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ResolveIdentityUser :one
 SELECT i.user_id FROM identities i JOIN users u ON u.id = i.user_id
-WHERE i.connector_kind = sqlc.arg(connector_kind) AND u.disabled_at IS NULL
+WHERE i.connector_id = sqlc.arg(connector_id) AND u.disabled_at IS NULL
   AND (i.external_id IN (sqlc.arg(sender_id), sqlc.arg(alt_id))
        OR (i.alt_external_id <> '' AND i.alt_external_id IN (sqlc.arg(sender_id), sqlc.arg(alt_id))))
 ORDER BY i.created_at DESC

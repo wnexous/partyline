@@ -88,8 +88,14 @@ graph LR
 
 ### internal/identities
 - `CreatePairing(ctx, userID) (code string, expires time.Time)` - 6 chars from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, sha256 stored, 10 min (IDN-01).
-- `Link(ctx, code, connectorKind, senderID, altID, display) (userID string, ok bool)` (IDN-02/03).
-- `ResolveSender(ctx, connectorKind, senderID, altID) (userID string)` - used by `rooms.PostFromChat` to fill `author_user_id` (IDN-04, DLV-06).
+- `Link(ctx, code, Account{ConnectorID, ConnectorKind, SenderID, AltID, Display}, onlyUser) (userID string, ok bool)` (IDN-02/03/05).
+- `ResolveSender(ctx, connectorID, senderID, altID) (userID string)` - used by `rooms.PostFromChat` to fill `author_user_id` (IDN-04, DLV-06).
+- **Identities are scoped to the connector instance**, not the kind (fix iteration 1, S1). A sender id is only as
+  trustworthy as the connector that reports it: a webhook caller picks `sender_id` freely, and the owner of a Telegram
+  connector with a custom `api_base` or a WhatsApp connector with its own `base_url` controls the payload too. So
+  `identities.connector_id` (FK, cascade on connector delete; unique `(connector_id, external_id)`) is matched on
+  resolve. Linking through a connector you don't own means trusting that connector's owner; webhook connectors
+  (`Kind.LinkOwnerOnly`) can link only for their own owner. Migration `0003` drops identities linked before it.
 - HTTP: `GET /identities`, `POST /identities/pairing`, `DELETE /identities/{id}`.
 
 ## Data Models
