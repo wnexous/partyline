@@ -458,7 +458,7 @@ func TestLinkReportsAgentLimit(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stderr := &syncBuffer{}
 	tm := fastTiming
-	tm.replacedPause = 50 * time.Millisecond
+	tm.replacedPause = 120 * time.Millisecond // distinct from minBackoff (50 ms)
 	l := newLink(mustURL(t, srv.URL), "pl_agent_x", "builder", http.DefaultClient, discard{}, stderr, tm)
 	var waitsMu sync.Mutex
 	var waits []time.Duration
