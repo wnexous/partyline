@@ -236,3 +236,20 @@ func TestChatIDRoundTrip(t *testing.T) {
 	_, _, ok = SplitChatID("no-separator")
 	require.False(t, ok)
 }
+
+// CTX-06: a DM without a push name is titled with the peer's phone number; when the chat is
+// addressed by LID, the phone number comes from the alternate JID.
+func TestParseDirectMessageTitleFallsBackToNumber(t *testing.T) {
+	info := dmInfo("MSG4")
+	info["PushName"] = ""
+	p := parse(t, frame(t, testInstance, info, `{"conversation":"hi"}`))
+	require.Equal(t, "5511999990000", p.Inbound.ChatTitle)
+
+	info = dmInfo("MSG5")
+	info["PushName"] = "  "
+	info["Chat"], info["ChatAlt"] = peerLID, peerDevice
+	info["Sender"], info["SenderAlt"] = peerLID, peerDevice
+	p = parse(t, frame(t, testInstance, info, `{"conversation":"hi"}`))
+	require.Equal(t, "acme|"+peerLID, p.Inbound.ChatID)
+	require.Equal(t, "5511999990000", p.Inbound.ChatTitle)
+}

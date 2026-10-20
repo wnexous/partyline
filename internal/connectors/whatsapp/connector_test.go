@@ -46,6 +46,9 @@ type fakeEvolution struct {
 	wsUA     string
 	wsToken  string
 	sendErr  int // status for /send/* when not zero
+	// groupName is the group subject /group/info answers; groupInfoErr fails it when set.
+	groupName    string
+	groupInfoErr int
 
 	conns    chan *websocket.Conn
 	received chan request
@@ -64,6 +67,16 @@ func newFakeEvolution(t *testing.T) *fakeEvolution {
 	mux.HandleFunc("GET /group/list", f.rest("", func(r request) any {
 		name := map[string]string{acmeToken: "Acme Team", otherToken: "Other Team"}[r.APIKey]
 		return map[string]any{"data": []map[string]any{{"JID": groupJID, "Name": name, "ParticipantCount": 3}}}
+	}))
+	// POST /group/info answers the shape captured from evolution-go 0.7.2 (synthetic values).
+	mux.HandleFunc("POST /group/info", f.rest("", func(request) any {
+		f.mu.Lock()
+		name := f.groupName
+		f.mu.Unlock()
+		return json.RawMessage(`{"data":{"JID":"` + groupJID + `","OwnerJID":"` + peerJID + `","Name":` + quote(name) +
+			`,"Topic":"Synthetic topic","IsLocked":false,"IsAnnounce":false,"Participants":[` +
+			`{"JID":"` + peerJID + `","PhoneNumber":"` + peerJID + `","LID":"` + peerLID + `","IsAdmin":true,"DisplayName":"Test Person"}],` +
+			`"ParticipantCount":1},"message":"success"}`)
 	}))
 	mux.HandleFunc("POST /send/text", f.rest("", func(request) any {
 		return map[string]any{"data": map[string]any{"Info": map[string]any{"ID": "SENT-TEXT"}}}
@@ -108,12 +121,16 @@ func (f *fakeEvolution) rest(key string, answer func(request) any) http.HandlerF
 		}
 		f.mu.Lock()
 		f.requests = append(f.requests, req)
-		sendErr := f.sendErr
+		sendErr, infoErr := f.sendErr, f.groupInfoErr
 		f.mu.Unlock()
 		f.received <- req
 		valid := req.APIKey == key || (key == "" && (req.APIKey == acmeToken || req.APIKey == otherToken))
 		if !valid {
 			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path == "/group/info" && infoErr != 0 {
+			http.Error(w, "group info failed", infoErr)
 			return
 		}
 		if sendErr != 0 && strings.HasPrefix(r.URL.Path, "/send/") {
@@ -559,4 +576,87 @@ func TestInvalidResponseNamesTheField(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid response (field data.0.JID: got number, want string)")
 	require.NotContains(t, err.Error(), "secret-group-name")
+}
+
+func quote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+func (f *fakeEvolution) setGroup(name string, failWith int) {
+	f.mu.Lock()
+	f.groupName, f.groupInfoErr = name, failWith
+	f.mu.Unlock()
+}
+
+// count returns how many REST calls reached path.
+func (f *fakeEvolution) count(path string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, r := range f.requests {
+		if r.Path == path {
+			n++
+		}
+	}
+	return n
+}
+
+// CTX-05, CTX-08: a group message arrives titled with the group subject from /group/info
+// (instance token, body {"groupJid": jid}); the subject is cached for 10 minutes per
+// instance, so a renamed group shows its new name once the cache expired.
+func TestGroupMessagesCarryTheGroupSubject(t *testing.T) {
+	f := newFakeEvolution(t)
+	f.setGroup("Lojinha Sintética", 0)
+	c := newConnector(t, f, "acme")
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	c.now = func() time.Time { return now }
+	rec := connectortest.NewRecorder()
+	sock := start(t, c, f, rec)
+
+	push(t, sock, frame(t, testInstance, groupInfo("G1"), `{"conversation":"hello"}`))
+	in := rec.NextInbound(t)
+	require.Equal(t, "G1", in.MessageID)
+	require.Equal(t, "Lojinha Sintética", in.ChatTitle)
+	req := f.next("/group/info")
+	require.Equal(t, acmeToken, req.APIKey)
+	require.Equal(t, map[string]any{"groupJid": groupJID}, req.Body)
+
+	f.setGroup("Renamed Group", 0)
+	now = now.Add(9 * time.Minute)
+	push(t, sock, frame(t, testInstance, groupInfo("G2"), `{"conversation":"again"}`))
+	require.Equal(t, "Lojinha Sintética", rec.NextInbound(t).ChatTitle, "cached for 10 minutes")
+	require.Equal(t, 1, f.count("/group/info"))
+
+	now = now.Add(2 * time.Minute)
+	push(t, sock, frame(t, testInstance, groupInfo("G3"), `{"conversation":"later"}`))
+	require.Equal(t, "Renamed Group", rec.NextInbound(t).ChatTitle)
+	require.Equal(t, 2, f.count("/group/info"))
+
+	// DMs never ask for group info.
+	push(t, sock, frame(t, testInstance, dmInfo("D1"), `{"conversation":"dm"}`))
+	require.Equal(t, "Test Person", rec.NextInbound(t).ChatTitle)
+	require.Equal(t, 2, f.count("/group/info"))
+}
+
+// CTX-05: the group list refresh also fills the subject cache; a failing /group/info leaves
+// the title empty (the stored one is kept) and the message still arrives.
+func TestGroupSubjectFromListAndFailure(t *testing.T) {
+	f := newFakeEvolution(t)
+	f.setGroup("", http.StatusInternalServerError)
+	c := newConnector(t, f, "acme")
+	rec := connectortest.NewRecorder()
+	sock := start(t, c, f, rec)
+
+	push(t, sock, frame(t, testInstance, groupInfo("G1"), `{"conversation":"hello"}`))
+	in := rec.NextInbound(t)
+	require.Equal(t, "G1", in.MessageID)
+	require.Empty(t, in.ChatTitle)
+	require.Equal(t, 1, f.count("/group/info"))
+
+	_, err := c.ListChats(context.Background())
+	require.NoError(t, err)
+	push(t, sock, frame(t, testInstance, groupInfo("G2"), `{"conversation":"after the refresh"}`))
+	require.Equal(t, "Acme Team", rec.NextInbound(t).ChatTitle)
+	require.Equal(t, 1, f.count("/group/info"), "the list filled the cache")
 }

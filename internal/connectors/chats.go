@@ -116,7 +116,11 @@ func (s *Service) RouteChat(ctx context.Context, p authn.Principal, chatID, agen
 	} else if !ok {
 		return rooms.Room{}, access.ErrForbidden
 	}
-	room, err := s.d.Rooms.Create(ctx, p, rooms.CreateInput{Name: roomName(chat)})
+	conn, err := s.d.Store.R().GetConnector(ctx, chat.ConnectorID)
+	if err != nil {
+		return rooms.Room{}, err
+	}
+	room, err := s.d.Rooms.Create(ctx, p, rooms.CreateInput{Name: roomName(chat, conn.Kind)})
 	if err != nil {
 		return rooms.Room{}, err
 	}
@@ -131,14 +135,34 @@ func (s *Service) RouteChat(ctx context.Context, p authn.Principal, chatID, agen
 	return s.d.Rooms.Get(ctx, p, room.ID)
 }
 
-// roomName is the chat title (or its id) cut to the room name limit.
-func roomName(c db.Chat) string {
+// roomName is the chat title cut to the room name limit, or "<Platform> chat" when the
+// chat has no title (CTX-07).
+func roomName(c db.Chat, kind string) string {
 	name := strings.TrimSpace(c.Title)
 	if name == "" {
-		name = c.ExternalID
+		name = PlatformLabel(kind) + " chat"
 	}
 	if r := []rune(name); len(r) > rooms.MaxNameLength {
 		name = string(r[:rooms.MaxNameLength])
 	}
 	return name
+}
+
+// PlatformLabel is the display name of a connector kind (WhatsApp, Telegram, Discord,
+// Webhook); other kinds get their name capitalized.
+func PlatformLabel(kind string) string {
+	switch kind {
+	case "whatsapp":
+		return "WhatsApp"
+	case "telegram":
+		return "Telegram"
+	case "discord":
+		return "Discord"
+	case "webhook":
+		return "Webhook"
+	}
+	if kind == "" {
+		return "Chat"
+	}
+	return strings.ToUpper(kind[:1]) + kind[1:]
 }

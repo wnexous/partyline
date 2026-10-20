@@ -28,6 +28,7 @@ const KindName = "whatsapp"
 const (
 	pingInterval     = 30 * time.Second
 	instanceCacheTTL = 5 * time.Minute
+	groupTitleTTL    = 10 * time.Minute
 	requestTimeout   = 60 * time.Second
 )
 
@@ -67,6 +68,13 @@ type Connector struct {
 	mu        sync.Mutex
 	instances map[string]instance
 	fetchedAt time.Time
+	titles    map[string]groupTitle // by chat id (instance|jid)
+}
+
+// groupTitle is a cached group subject.
+type groupTitle struct {
+	name string
+	at   time.Time
 }
 
 // instance is an evolution-go instance; its token stays in memory only.
@@ -200,7 +208,45 @@ func (c *Connector) handle(ctx context.Context, h connectors.Handler, data []byt
 	if p.Media != nil {
 		p.Inbound.Media = []connectors.Media{c.media(p.Instance, *p.Media)}
 	}
+	if p.Inbound.ChatKind == "group" && p.Inbound.ChatTitle == "" && !p.Inbound.FromSelf {
+		p.Inbound.ChatTitle = c.groupSubject(ctx, p.Instance, p.Inbound.ChatID)
+	}
 	h.Inbound(ctx, p.Inbound)
+}
+
+// groupSubject returns the group's subject (CTX-05): cached for 10 minutes per chat, else
+// fetched with POST /group/info. A failure is logged and yields "" (the stored title stays).
+func (c *Connector) groupSubject(ctx context.Context, inst, chatID string) string {
+	c.mu.Lock()
+	cached, ok := c.titles[chatID]
+	c.mu.Unlock()
+	if ok && c.now().Sub(cached.at) < groupTitleTTL {
+		return cached.name
+	}
+	_, jid, _ := SplitChatID(chatID)
+	var resp struct {
+		Data struct {
+			Name string `json:"Name"`
+		} `json:"data"`
+	}
+	if err := c.instanceCall(ctx, inst, http.MethodPost, "/group/info", map[string]any{"groupJid": jid}, &resp); err != nil {
+		c.log.Warn("whatsapp: group info failed", "instance", inst, "err", err)
+		return ""
+	}
+	c.cacheTitle(chatID, resp.Data.Name)
+	return resp.Data.Name
+}
+
+func (c *Connector) cacheTitle(chatID, name string) {
+	if name == "" {
+		return
+	}
+	c.mu.Lock()
+	if c.titles == nil {
+		c.titles = map[string]groupTitle{}
+	}
+	c.titles[chatID] = groupTitle{name: name, at: c.now()}
+	c.mu.Unlock()
 }
 
 func (c *Connector) instanceAllowed(name string) bool {
@@ -332,7 +378,8 @@ func (c *Connector) send(ctx context.Context, inst, path string, body map[string
 	return resp.Data.Info.ID, nil
 }
 
-// ListChats lists the groups of every allowed instance (WA-05).
+// ListChats lists the groups of every allowed instance (WA-05) and refreshes the cached
+// group subjects.
 func (c *Connector) ListChats(ctx context.Context) ([]connectors.ChatInfo, error) {
 	insts, err := c.refreshInstances(ctx)
 	if err != nil {
@@ -353,7 +400,9 @@ func (c *Connector) ListChats(ctx context.Context) ([]connectors.ChatInfo, error
 			return nil, fmt.Errorf("instance %s: %w", inst.Name, err)
 		}
 		for _, g := range resp.Data {
-			out = append(out, connectors.ChatInfo{ID: ChatID(inst.Name, BareJID(g.JID)), Title: g.Name, Kind: "group"})
+			id := ChatID(inst.Name, BareJID(g.JID))
+			c.cacheTitle(id, g.Name)
+			out = append(out, connectors.ChatInfo{ID: id, Title: g.Name, Kind: "group"})
 		}
 	}
 	return out, nil

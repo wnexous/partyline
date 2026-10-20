@@ -127,7 +127,10 @@ func Parse(ev Event) (Parsed, error) {
 	if group {
 		in.ChatKind = "group"
 	} else if !info.IsFromMe {
-		in.ChatTitle = info.PushName
+		in.ChatTitle = strings.TrimSpace(info.PushName)
+		if in.ChatTitle == "" {
+			in.ChatTitle = phoneNumber(chat, info) // CTX-06
+		}
 	}
 	if t, err := time.Parse(time.RFC3339Nano, info.Timestamp); err == nil {
 		in.At = t
@@ -316,6 +319,18 @@ func BareJID(jid string) string {
 		user = user[:i]
 	}
 	return user + server
+}
+
+// phoneNumber is the DM peer's phone number: the user part of the first phone-number JID
+// among the chat and its alternates, else of the chat JID.
+func phoneNumber(chat string, info Info) string {
+	for _, jid := range []string{chat, BareJID(info.ChatAlt), BareJID(info.Sender), BareJID(info.SenderAlt)} {
+		if user, ok := strings.CutSuffix(jid, "@s.whatsapp.net"); ok && user != "" {
+			return user
+		}
+	}
+	user, _, _ := strings.Cut(chat, "@")
+	return user
 }
 
 // ChatID is the Partyline chat id of a JID on an instance.

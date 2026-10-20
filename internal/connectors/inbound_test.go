@@ -427,3 +427,23 @@ func TestMigrateChatKeepsRooms(t *testing.T) {
 	e.inst.MigrateChat(context.Background(), "-1001000000001", otherID)
 	require.Equal(t, chat, e.chatID(t, "-1001000000001"), "the new id was already a chat: nothing moves")
 }
+
+// CTX-08: a changed title on a later inbound message updates the stored chat (and its member
+// name in rooms); an empty title keeps the stored one.
+func TestInboundTitleChangeUpdatesTheChat(t *testing.T) {
+	e := newInboundEnv(t)
+	e.emit(text(groupID, "M1", "hello"))
+	room := e.routedRoom(t, "A", e.chatID(t, groupID))
+
+	renamed := text(groupID, "M2", "again")
+	renamed.ChatTitle = "Support group (renamed)"
+	e.emit(renamed)
+	require.Equal(t, "Support group (renamed)", e.chats(t)[0].Title)
+	members := testkit.Decode[dto.List[dto.RoomMember]](e.alice.Get("/api/v1/rooms/" + room.ID + "/members").RequireStatus(http.StatusOK)).Items
+	require.Equal(t, "Support group (renamed)", members[0].Name)
+
+	untitled := text(groupID, "M3", "no title this time")
+	untitled.ChatTitle = ""
+	e.emit(untitled)
+	require.Equal(t, "Support group (renamed)", e.chats(t)[0].Title)
+}

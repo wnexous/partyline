@@ -480,3 +480,13 @@ func TestResponseCaps(t *testing.T) {
 		}
 	}
 }
+
+// CTX-05/CTX-06 (Telegram): a chat is titled with its title, else the first and last name,
+// else @username.
+func TestChatTitleFallbacks(t *testing.T) {
+	require.Equal(t, "Ops Group", chatTitle(chat{Title: "Ops Group", FirstName: "Ana", Username: "ana"}))
+	require.Equal(t, "Ana Souza", chatTitle(chat{FirstName: "Ana", LastName: "Souza", Username: "ana"}))
+	require.Equal(t, "Ana", chatTitle(chat{FirstName: "Ana"}))
+	require.Equal(t, "@ana_bot", chatTitle(chat{Username: "ana_bot"}))
+	require.Equal(t, "", chatTitle(chat{}))
+}

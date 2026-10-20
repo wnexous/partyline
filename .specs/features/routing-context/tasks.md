@@ -180,8 +180,8 @@ T13 → T14 → T15 → T16
 **Requirement**: CTX-05, CTX-06, CTX-07, CTX-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake evolution-go built from the real response shape: group chat gets its Name; DM without push name gets the number
-- [ ] Title change updates the chat; `/chats/{id}/route` names the room after the title
+- [x] Fake evolution-go built from the real response shape: group chat gets its Name; DM without push name gets the number
+- [x] Title change updates the chat; `/chats/{id}/route` names the room after the title
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): name chats and routed rooms after their titles`

@@ -158,10 +158,10 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | CTX-02 | P1: Agents know where | Tasks | Pending |
 | CTX-03 | P1: Agents know where | Tasks | Pending |
 | CTX-04 | P1: Agents know where | Tasks | Pending |
-| CTX-05 | P1: Chat titles | Tasks | Pending |
-| CTX-06 | P1: Chat titles | Tasks | Pending |
-| CTX-07 | P1: Chat titles | Tasks | Pending |
-| CTX-08 | P1: Chat titles | Tasks | Pending |
+| CTX-05 | P1: Chat titles | Tasks | Implementing |
+| CTX-06 | P1: Chat titles | Tasks | Implementing |
+| CTX-07 | P1: Chat titles | Tasks | Implementing |
+| CTX-08 | P1: Chat titles | Tasks | Implementing |
 | ROUTE-01 | P1: Catch-all | Tasks | Implementing |
 | ROUTE-02 | P1: Catch-all | Tasks | Implementing |
 | ROUTE-03 | P1: Catch-all | Tasks | Implementing |
