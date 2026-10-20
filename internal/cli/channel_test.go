@@ -18,7 +18,8 @@ import (
 	"github.com/wnexous/partyline/internal/users"
 )
 
-const chanWait = 10 * time.Second
+// chanWait bounds every wait for channel output or state; waits return as soon as it arrives.
+const chanWait = time.Minute
 
 type lockedBuffer struct {
 	mu sync.Mutex

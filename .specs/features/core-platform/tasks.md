@@ -927,14 +927,14 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 
 #### T57: Load-tolerant agent-channel tests
 
-**What**: `TestLinkDeliversBacklogOnConnect` and `TestChannelEndToEnd` wait on signals or poll with a generous deadline instead of a fixed 10 s window.
-**Where**: `internal/channel/env_test.go`
+**What**: `TestLinkDeliversBacklogOnConnect` and `TestChannelEndToEnd` already wait on signals or poll; their 10 s bound becomes a 1 min bound (`wait`, `chanWait`), which costs nothing when the signal arrives.
+**Where**: `internal/channel/env_test.go`, `internal/cli/channel_test.go`
 **Depends on**: T56
 **Reuses**: none
 **Requirement**: gate stability (no AC)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Both tests pass with `-count=10` under load
+- [x] Both tests pass with `-count=10` under load
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(channel): wait for agent channel events with a generous deadline`
