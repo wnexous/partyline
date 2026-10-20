@@ -146,6 +146,13 @@ func (d draft) validate() error {
 	if strings.TrimSpace(d.text) == "" && len(d.files) == 0 {
 		check.Add("text", "must not be empty without attachments")
 	}
+	distinct := map[string]bool{}
+	for _, id := range d.recipients {
+		distinct[id] = true
+	}
+	if len(distinct) > dto.MaxMessageRecipients { // ROUTE-10: no mass messaging through recipients
+		check.Add("recipients", "at most 10 chats per message")
+	}
 	return check.Err()
 }
 

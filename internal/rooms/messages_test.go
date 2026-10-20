@@ -2,6 +2,7 @@ package rooms
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -125,6 +126,38 @@ func TestPostValidation(t *testing.T) {
 	require.Len(t, withFile.Attachments, 1)
 	require.Equal(t, "a.png", withFile.Attachments[0].Name)
 	require.Equal(t, string(dto.AttachmentStatusStored), withFile.Attachments[0].Status)
+}
+
+// ROUTE-10: a post names at most 10 distinct chats: 10 are queued, 11 are refused with 422
+// recipients "at most 10 chats per message" and nothing is stored; a repeated id counts once.
+func TestPostRecipientsCap(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	a1 := f.agent(t, alice, "a1")
+	r := f.room(t, alice, "inbox")
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
+	var chats []string
+	for i := range 11 {
+		_, c := f.chat(t, alice, fmt.Sprintf("c%d", i))
+		f.addMember(t, alice, r.ID, dto.MemberKindChat, c, true)
+		chats = append(chats, c)
+	}
+
+	for _, p := range []authn.Principal{alice, agentPrincipal(alice, a1)} {
+		_, err := f.svc.Post(ctx, p, r.ID, PostInput{Text: "to everyone I can name", Recipients: chats})
+		var verr *validation.Error
+		require.ErrorAs(t, err, &verr)
+		require.Equal(t, map[string]string{"recipients": "at most 10 chats per message"}, verr.Fields)
+	}
+	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM messages"), "nothing stored")
+
+	ten, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "ten", Recipients: chats[:10]})
+	require.NoError(t, err)
+	require.Len(t, outboxChats(ten), 10)
+	repeated, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "ten again", Recipients: append(chats[:10:10], chats[0])})
+	require.NoError(t, err)
+	require.Len(t, outboxChats(repeated), 10)
 }
 
 // ACL-03/ACL-04 for posting: view-only is forbidden, strangers and non-member agents see nothing.

@@ -52,7 +52,7 @@ func (t *tools) register(srv *mcp.Server) {
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_message",
 		Description: "Post a message to a room you belong to, optionally only to some of its chats.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id or room name"},"text":{"type":"string","description":"message text"},"chat_ids":{"type":"array","items":{"type":"string"},"description":"optional chat ids (the chat_id of a chat message, or member_id of chat members from list_rooms) to answer only those chats; empty sends to every chat of the room"},"recipients":{"type":"array","items":{"type":"string"},"description":"older name of chat_ids; still accepted"}},"required":["room","text"]}`),
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id or room name"},"text":{"type":"string","description":"message text"},"chat_ids":{"type":"array","items":{"type":"string"},"description":"optional chat ids (the chat_id of a chat message, or member_id of chat members from list_rooms) to answer only those chats, at most 10 chats per message; empty sends to every chat of the room"},"recipients":{"type":"array","items":{"type":"string"},"description":"older name of chat_ids; still accepted"}},"required":["room","text"]}`),
 	}, t.guard(t.sendMessage))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "room_info",

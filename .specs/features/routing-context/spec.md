@@ -92,6 +92,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 7. WHEN a room becomes a connector's `auto_route_room_id` THEN the system SHALL turn its `broadcast` and `bridge_chats` off, and WHILE it is any connector's catch-all room a PATCH turning either on SHALL get 422 on that field (`must stay off while the room is a catch-all room`) and apply nothing. (ROUTE-07)
 8. IF a connector already auto-added 60 chats in the last hour, or its catch-all room already has 1,000 chats, THEN the system SHALL NOT add a new chat nor store its message and SHALL set the connector status detail to `auto-route limit reached`; the next successful route SHALL clear it. (ROUTE-08)
 9. WHEN a chat is routed to the catch-all room again, or a manager saves the connector's catch-all settings, THEN the system SHALL clear an `auto-route room unavailable` or `auto-route limit reached` status detail and leave other details unchanged. (ROUTE-09)
+10. IF a user or agent post names more than 10 distinct chats in `recipients` (the channel's `chat_ids`) THEN the system SHALL respond 422 with field `recipients` = `at most 10 chats per message` and store nothing, and the `send_message` tool and the channel instructions SHALL state the limit. (ROUTE-10, fix iteration 2)
 
 **Independent Test**: Connector with scope `dms` and a room with an agent; a new DM reaches the agent, a new group does not.
 
@@ -213,6 +214,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROUTE-07 | P1: Catch-all | Fix iteration 1 | Implemented (T23, T31), stays-off edge tested (T41), re-verify |
 | ROUTE-08 | P1: Catch-all | Fix iteration 1 | Implemented (T25), concurrent burst tested (T37), re-verify |
 | ROUTE-09 | P1: Catch-all | Fix iteration 1 | Implemented (T26), status event tested (T40), re-verify |
+| ROUTE-10 | P1: Catch-all | Fix iteration 2 | Implemented (T43) |
 | MEM-01 | P1: Membership settings | Tasks | Implementing |
 | MEM-02 | P1: Membership settings | Tasks | Implementing |
 | MEM-03 | P1: Membership settings | Tasks | Fixed (T18), re-verify |
@@ -237,7 +239,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | A11Y-04 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
 | A11Y-05 | P2: Accessible forms | Fix iteration 2 | Implemented (T42) |
 
-**Coverage:** 40 total, mapped in tasks.md
+**Coverage:** 41 total, mapped in tasks.md
 
 ---
 

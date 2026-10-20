@@ -700,7 +700,7 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 **Requirement**: ROUTE-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 10 accepted; 11 refused with the exact reason and nothing stored; tool description mentions the limit
+- [x] 10 accepted; 11 refused with the exact reason and nothing stored; tool description mentions the limit
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(rooms): cap explicit recipients at 10 chats per message`
