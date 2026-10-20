@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
@@ -70,6 +71,7 @@ type Authorizer struct {
 	store *store.Store
 	bus   *events.Bus
 	now   func() time.Time
+	audit *audit.Log
 }
 
 // New returns an Authorizer. GrantsChanged events are published on bus.
@@ -77,7 +79,7 @@ func New(st *store.Store, bus *events.Bus, opts Options) *Authorizer {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &Authorizer{store: st, bus: bus, now: opts.Now}
+	return &Authorizer{store: st, bus: bus, now: opts.Now, audit: audit.New(st, opts.Now)}
 }
 
 // RoomLevel resolves the caller's level on a room (ACL-02). A user gets the highest of
@@ -281,6 +283,7 @@ func (a *Authorizer) SetVisibility(ctx context.Context, actorID string, kind Kin
 		if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(kind), ResourceID: id}); err != nil {
 			return err
 		}
+		users := []map[string]any{}
 		for _, g := range grants {
 			if err := q.CreateGrant(ctx, db.CreateGrantParams{
 				ResourceKind: string(kind), ResourceID: id, Subject: g.UserID, Level: string(g.Level),
@@ -288,8 +291,12 @@ func (a *Authorizer) SetVisibility(ctx context.Context, actorID string, kind Kin
 			}); err != nil {
 				return err
 			}
+			users = append(users, map[string]any{"subject": g.UserID, "level": string(g.Level)})
 		}
-		return nil
+		return a.audit.Record(ctx, q, audit.Entry{
+			ActorID: actorID, Action: audit.ActionGrantsSet, TargetKind: string(kind), TargetID: id,
+			Detail: map[string]any{"mode": string(v.Mode), "grants": users},
+		})
 	})
 	if err != nil {
 		return err

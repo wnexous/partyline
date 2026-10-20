@@ -425,8 +425,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUD-01, AUD-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Login, logout, invite, token, grant, user-state actions create entries without secrets
-- [ ] Pagination newest first, 50 per page; non-admin 403
+- [x] Login, logout, invite, token, grant, user-state actions create entries without secrets
+- [x] Pagination newest first, 50 per page; non-admin 403
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(audit): add audit log and admin listing`

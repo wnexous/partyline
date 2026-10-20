@@ -9,6 +9,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/attachments"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/rooms"
@@ -22,6 +23,7 @@ type Deps struct {
 	Users  *users.Service
 	Rooms  *rooms.Service
 	Blobs  *attachments.Store
+	Audit  *audit.Log
 	// Live serves the live WebSocket at GET /api/v1/live.
 	Live   http.Handler
 	Logger *slog.Logger

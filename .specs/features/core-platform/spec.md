@@ -246,8 +246,8 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | OPS-01 | P1: Secure deployment | Tasks | Implementing |
 | OPS-02 | P1: Secure deployment | Tasks | Implementing |
 | OPS-03 | P1: Secure deployment | Tasks | Implementing |
-| AUD-01 | P2: Audit trail | Tasks | Pending |
-| AUD-02 | P2: Audit trail | Tasks | Pending |
+| AUD-01 | P2: Audit trail | Tasks | Implementing |
+| AUD-02 | P2: Audit trail | Tasks | Implementing |
 
 **Coverage:** 50 total, 0 mapped to tasks, 50 unmapped ⚠️ (mapped in tasks.md)
 

@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -55,9 +56,15 @@ func (s *Service) CreateToken(ctx context.Context, userID string, in TokenInput)
 		tok.ExpiresAt = sql.NullInt64{Int64: ms(*in.ExpiresAt), Valid: true}
 	}
 	err = s.store.WithTx(ctx, func(q *db.Queries) error {
-		return q.CreateToken(ctx, db.CreateTokenParams{
+		if err := q.CreateToken(ctx, db.CreateTokenParams{
 			ID: tok.ID, UserID: tok.UserID, Kind: tok.Kind, Name: tok.Name, Prefix: tok.Prefix,
 			TokenHash: tok.TokenHash, CreatedAt: tok.CreatedAt, ExpiresAt: tok.ExpiresAt,
+		}); err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, q, audit.Entry{
+			Action: audit.ActionTokenCreate, TargetKind: audit.TargetToken, TargetID: tok.ID,
+			Detail: map[string]any{"kind": tok.Kind, "name": tok.Name, "prefix": tok.Prefix},
 		})
 	})
 	if err != nil {
@@ -83,7 +90,7 @@ func (s *Service) RevokeToken(ctx context.Context, userID, id string) error {
 		if n == 0 {
 			return ErrNotFound
 		}
-		return nil
+		return s.audit.Record(ctx, q, audit.Entry{Action: audit.ActionTokenRevoke, TargetKind: audit.TargetToken, TargetID: id})
 	})
 }
 

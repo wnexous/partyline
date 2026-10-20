@@ -15,6 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api"
 	"github.com/wnexous/partyline/internal/attachments"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
@@ -119,6 +120,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Users:  usersSvc,
 		Rooms:  a.Rooms,
 		Blobs:  blobs,
+		Audit:  audit.New(st, opts.Now),
 		Live:   a.Live,
 		Logger: opts.Logger,
 		Ready:  a.ready.Load,

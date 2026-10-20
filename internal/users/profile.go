@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"unicode/utf8"
 
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -93,7 +94,10 @@ func (s *Service) ChangePassword(ctx context.Context, userID, current, next stri
 		return err
 	}
 	return s.store.WithTx(ctx, func(q *db.Queries) error {
-		return q.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{PasswordHash: hash, ID: userID})
+		if err := q.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{PasswordHash: hash, ID: userID}); err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, q, audit.Entry{Action: audit.ActionPasswordChange, TargetKind: audit.TargetUser, TargetID: userID})
 	})
 }
 
