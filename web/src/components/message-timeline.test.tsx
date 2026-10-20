@@ -145,6 +145,26 @@ describe("message item (UI-05)", () => {
     expect(screen.queryByRole("link", { name: /huge\.mov/ })).toBeNull();
     expect(screen.getByText(/huge\.mov/)).toBeInTheDocument();
   });
+
+  it("reserves the inline image box before the image loads", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({
+          seq: 1,
+          attachments: [
+            { id: "f2", name: "shot.png", mime: "image/png", size: 5000, status: "stored" },
+          ],
+        }),
+      ]),
+    });
+    renderTimeline();
+    const img = await screen.findByRole("img", { name: "shot.png" });
+    // Attachment has no pixel size: a fixed 4:3 box (320 × 240 at most) keeps the row height
+    // stable while the image loads; the image is contained inside it.
+    expect(img).toHaveAttribute("width", "320");
+    expect(img).toHaveAttribute("height", "240");
+    expect(img.closest("a")).toHaveStyle({ aspectRatio: "4 / 3" });
+  });
 });
 
 describe("safe rendering (UI-09)", () => {

@@ -65,6 +65,9 @@ export const platformLabel = (kind?: string) => (kind ? (PLATFORMS[kind] ?? kind
 
 /** Images the server serves inline (others download); SVG is excluded on purpose. */
 const INLINE_IMAGES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+/** Reserved box for inline images (Attachment has no width/height). */
+const IMAGE_BOX = { width: 320, height: 240 } as const;
+const IMAGE_BOX_RATIO = "4 / 3";
 
 export type Trust = "trusted" | "verified" | "untrusted";
 
@@ -388,14 +391,19 @@ function AttachmentView({ attachment: a }: { attachment: Attachment }) {
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-block max-w-[min(20rem,100%)] overflow-hidden rounded-md border bg-muted align-top shadow-xs"
+        // Attachment carries no pixel size: a fixed 4:3 box keeps the row height stable while the
+        // image loads (no layout shift, steady virtualizer measurements).
+        className="inline-block w-80 max-w-full overflow-hidden rounded-md border bg-muted align-top shadow-xs"
+        style={{ aspectRatio: IMAGE_BOX_RATIO }}
       >
         <img
           src={url}
           alt={a.name}
+          width={IMAGE_BOX.width}
+          height={IMAGE_BOX.height}
           loading="lazy"
           decoding="async"
-          className="block h-auto max-h-60 w-auto max-w-full object-contain"
+          className="block size-full object-contain"
         />
       </a>
     );

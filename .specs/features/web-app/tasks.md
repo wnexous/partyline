@@ -446,7 +446,7 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T28
 **Requirement**: UI-05
 **Done when**:
-- [ ] Inline images carry `width`/`height` when the metadata has them, otherwise sit in a fixed aspect box
+- [x] Inline images carry `width`/`height` when the metadata has them, otherwise sit in a fixed aspect box
 **Tests**: unit
 **Gate**: quick
 
