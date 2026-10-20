@@ -35,6 +35,26 @@ type Fake struct {
 	mu        sync.Mutex
 	instances map[string]*Instance
 	created   chan struct{}
+	noReact   bool
+}
+
+// WithoutReactions makes instances created from now on lack connectors.Reactor, like a
+// platform without reactions.
+func (f *Fake) WithoutReactions() {
+	f.mu.Lock()
+	f.noReact = true
+	f.mu.Unlock()
+}
+
+// plain is an Instance seen without its Reactor method.
+type plain struct{ inst *Instance }
+
+func (p plain) Run(ctx context.Context, h connectors.Handler) error { return p.inst.Run(ctx, h) }
+func (p plain) Send(ctx context.Context, m connectors.Outbound) (string, error) {
+	return p.inst.Send(ctx, m)
+}
+func (p plain) ListChats(ctx context.Context) ([]connectors.ChatInfo, error) {
+	return p.inst.ListChats(ctx)
 }
 
 // New returns an empty Fake.
@@ -58,14 +78,18 @@ func (f *Fake) newInstance(cfg connectors.Config, d connectors.Deps) (connectors
 	inst := &Instance{
 		ID: d.ID, Config: cfg, Deps: d,
 		runs: make(chan struct{}, 64), stops: make(chan struct{}, 64), fail: make(chan error, 64),
-		sends: make(chan connectors.Outbound, 64),
+		sends: make(chan connectors.Outbound, 64), reacts: make(chan connectors.Reaction, 64),
 	}
 	f.mu.Lock()
 	f.instances[d.ID] = inst
+	noReact := f.noReact
 	f.mu.Unlock()
 	select {
 	case f.created <- struct{}{}:
 	default:
+	}
+	if noReact {
+		return plain{inst}, nil
 	}
 	return inst, nil
 }
@@ -111,10 +135,11 @@ type Instance struct {
 	sent    []connectors.Outbound
 	nextID  int
 
-	runs  chan struct{}
-	stops chan struct{}
-	fail  chan error
-	sends chan connectors.Outbound
+	runs   chan struct{}
+	stops  chan struct{}
+	fail   chan error
+	sends  chan connectors.Outbound
+	reacts chan connectors.Reaction
 }
 
 // Run implements connectors.Connector.
@@ -147,6 +172,24 @@ func (i *Instance) Send(_ context.Context, m connectors.Outbound) (string, error
 	}
 	i.sends <- m
 	return id, nil
+}
+
+// React implements connectors.Reactor; it records r (see WaitReact).
+func (i *Instance) React(_ context.Context, r connectors.Reaction) error {
+	i.reacts <- r
+	return nil
+}
+
+// WaitReact waits for the next reaction and returns it.
+func (i *Instance) WaitReact(t testing.TB) connectors.Reaction {
+	t.Helper()
+	select {
+	case r := <-i.reacts:
+		return r
+	case <-time.After(Timeout):
+		t.Fatalf("connector %s: no reaction was sent", i.ID)
+		return connectors.Reaction{}
+	}
 }
 
 // ListChats implements connectors.ChatLister with the chats given to SetChats, or fails

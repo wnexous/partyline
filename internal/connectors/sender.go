@@ -34,7 +34,9 @@ var _ delivery.Sender = (*Sender)(nil)
 
 // Send loads the message, its stored attachments and the chat, adds the quote when the
 // replied message came from or was sent to the same chat, sets the author from the agent
-// member's settings (MEM-01, MEM-02), and sends it through the chat's connector. A stopped connector fails with ErrNotRunning, so the outbox retries (CON-05).
+// member's settings (MEM-01, MEM-02), and sends it through the chat's connector. A stopped
+// connector fails with ErrNotRunning, so the outbox retries (CON-05). Reaction messages go to
+// the connector's Reactor instead (REACT-01).
 func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) {
 	chat, err := s.store.R().GetChat(ctx, d.ChatID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -73,6 +75,17 @@ func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) 
 		if out.ReplyToID, out.ReplyToSenderID, err = s.quote(ctx, msg.ReplyTo, chat.ID); err != nil {
 			return "", err
 		}
+	}
+	if msg.Kind == string(dto.MessageKindReaction) {
+		// REACT-01: a reaction (text = emoji, reply_to = target) goes to the connector's
+		// Reactor with the target's platform id; it has no platform id of its own.
+		if out.ReplyToID == "" {
+			return "", ErrReactionTarget
+		}
+		return "", s.manager.React(ctx, chat.ConnectorID, Reaction{
+			ChatID: out.ChatID, TargetID: out.ReplyToID, TargetSenderID: out.ReplyToSenderID, Emoji: msg.Text,
+			MessageID: out.MessageID, RoomID: out.RoomID, AuthorName: out.AuthorName, CreatedAt: out.CreatedAt,
+		})
 	}
 	for _, a := range msg.Attachments {
 		if a.Status != string(dto.AttachmentStatusStored) {

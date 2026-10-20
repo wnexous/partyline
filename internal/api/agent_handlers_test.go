@@ -66,6 +66,7 @@ func TestAgentAndUserRoutesAreSeparated(t *testing.T) {
 		{"GET", agentRoomPath(f.room.ID, "/messages"), nil},
 		{"POST", agentRoomPath(f.room.ID, "/messages"), dto.PostMessageRequest{Text: "x"}},
 		{"POST", "/api/v1/agent/messages/" + msg.ID + "/reply", dto.ReplyRequest{Text: "x"}},
+		{"POST", "/api/v1/agent/messages/" + msg.ID + "/react", dto.ReactRequest{Emoji: "👍"}},
 		{"GET", "/api/v1/agent/attachments/" + msg.ID, nil},
 	}
 	for name, c := range map[string]*testkit.Client{"session": f.alice, "user token": f.alice.Token(dto.TokenKindUser, "script")} {

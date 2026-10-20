@@ -75,6 +75,7 @@ func TestToolsList(t *testing.T) {
 		"download_attachment": {"attachment_id"},
 		"send_file":           {"room", "path"},
 		"room_info":           {"room"},
+		"react":               {"message_id", "emoji"},
 	}
 	got := map[string]bool{}
 	for _, item := range list {

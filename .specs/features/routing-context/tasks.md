@@ -225,7 +225,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: REACT-01, REACT-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Reaction to a chat message reaches the fake Reactor with target external id; non-chat target → `can only react to chat messages`
+- [x] Reaction to a chat message reaches the fake Reactor with target external id; non-chat target → `can only react to chat messages`
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(api): let agents react to chat messages`

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"unicode"
 
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/convert"
@@ -27,7 +28,12 @@ var (
 	errAgentRateLimited = httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "rate limited: at most 30 messages per minute")
 	errAmbiguousRoom    = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "ambiguous room name")
 	errMessageNotFound  = httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "message not found")
+	errReactNotChat     = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid, "can only react to chat messages")
 )
+
+// maxEmojiLength bounds one reaction emoji in code points: enough for flags, keycaps, skin
+// tones and ZWJ sequences.
+const maxEmojiLength = 16
 
 // errNotMember answers a room reference the agent is not a member of (TOOL-04).
 func errNotMember(room string) error {
@@ -41,6 +47,7 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentHistory))
 	s.handle(mux, "POST /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentPost))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/reply", s.agentOnly(s.agentReply))
+	s.handle(mux, "POST /api/v1/agent/messages/{id}/react", s.agentOnly(s.agentReact))
 	s.handle(mux, "GET /api/v1/agent/attachments/{id}", s.agentOnly(s.downloadAttachment))
 }
 
@@ -195,6 +202,23 @@ func (s *server) agentPost(w http.ResponseWriter, r *http.Request, p authn.Princ
 	return s.postTo(w, r, p, room.ID)
 }
 
+// agentTarget loads a message of one of the agent's rooms; 404 "message not found" for
+// unknown messages and messages of other rooms.
+func (s *server) agentTarget(ctx context.Context, p authn.Principal, id string) (rooms.Message, error) {
+	ref, err := s.Rooms.MessageRef(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return rooms.Message{}, errMessageNotFound
+	}
+	if err != nil {
+		return rooms.Message{}, err
+	}
+	orig, err := s.Rooms.GetMessage(ctx, p, ref.RoomID, id)
+	if err != nil {
+		return rooms.Message{}, errMessageNotFound // the agent is not in the message's room
+	}
+	return orig, nil
+}
+
 // agentReply answers a message in its room with reply_to set; a reply to a chat message
 // goes to that chat only (TOOL-02).
 func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
@@ -202,17 +226,9 @@ func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Prin
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	id := r.PathValue("id")
-	ref, err := s.Rooms.MessageRef(r.Context(), id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return errMessageNotFound
-	}
+	orig, err := s.agentTarget(r.Context(), p, r.PathValue("id"))
 	if err != nil {
 		return err
-	}
-	orig, err := s.Rooms.GetMessage(r.Context(), p, ref.RoomID, id)
-	if err != nil {
-		return errMessageNotFound // the agent is not in the message's room
 	}
 	if !s.Agents.AllowPost(p.AgentID) {
 		return errAgentRateLimited
@@ -227,4 +243,50 @@ func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Prin
 	}
 	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
 	return nil
+}
+
+// agentReact reacts to a chat message with one emoji (REACT-01): the reaction is stored as a
+// message of kind reaction (text = emoji, reply_to = target) whose only recipient is the
+// target's chat; the connectors' sender turns it into a platform reaction. Non-chat targets
+// answer 422 "can only react to chat messages" (REACT-02).
+func (s *server) agentReact(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.ReactRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	orig, err := s.agentTarget(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	if orig.AuthorKind != string(dto.AuthorKindChat) {
+		return errReactNotChat
+	}
+	emoji := strings.TrimSpace(req.Emoji)
+	if !oneEmoji(emoji) {
+		return httpx.Invalid(map[string]string{"emoji": "must be one emoji"})
+	}
+	if !s.Agents.AllowPost(p.AgentID) {
+		return errAgentRateLimited
+	}
+	m, err := s.Rooms.Post(r.Context(), p, orig.RoomID, rooms.PostInput{
+		Kind: dto.MessageKindReaction, Text: emoji, ReplyTo: orig.ID, Recipients: []string{orig.AuthorID},
+	})
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
+	return nil
+}
+
+// oneEmoji accepts a short symbol sequence: not empty, at most maxEmojiLength code points,
+// without letters or whitespace (so plain words are refused).
+func oneEmoji(s string) bool {
+	n := 0
+	for _, r := range s {
+		n++
+		if unicode.IsLetter(r) || unicode.IsSpace(r) {
+			return false
+		}
+	}
+	return n > 0 && n <= maxEmojiLength
 }

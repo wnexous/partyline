@@ -27,6 +27,29 @@ type Connector interface {
 	Send(ctx context.Context, m Outbound) (externalID string, err error)
 }
 
+// Reactor is implemented by connectors that can react to a chat message with an emoji
+// (REACT-01). Connectors without it fail reaction deliveries with ErrReactionsUnsupported.
+type Reactor interface {
+	React(ctx context.Context, r Reaction) error
+}
+
+// Reaction is an emoji reaction to a message of a chat.
+type Reaction struct {
+	// ChatID is the platform chat id.
+	ChatID string
+	// TargetID is the platform id of the message reacted to; TargetSenderID is its sender's
+	// platform id (empty when Partyline sent that message).
+	TargetID       string
+	TargetSenderID string
+	Emoji          string
+	// MessageID, RoomID, AuthorName and CreatedAt describe the room's reaction message, for
+	// platforms that show them (the webhook payload).
+	MessageID  string
+	RoomID     string
+	AuthorName string
+	CreatedAt  time.Time
+}
+
 // ChatLister is implemented by connectors whose platform can list chats (CON-09).
 type ChatLister interface {
 	ListChats(ctx context.Context) ([]ChatInfo, error)

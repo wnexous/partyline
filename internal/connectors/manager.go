@@ -22,6 +22,10 @@ import (
 var (
 	// ErrNotRunning means the connector is disabled, deleted or failed to start (CON-05).
 	ErrNotRunning = errors.New("connector is not running")
+	// ErrReactionsUnsupported means the connector's platform cannot send reactions (REACT-01).
+	ErrReactionsUnsupported = errors.New("reactions not supported")
+	// ErrReactionTarget means the reacted message is not known in the chat by a platform id.
+	ErrReactionTarget = errors.New("reaction target is not a message of this chat")
 	// ErrCannotListChats means the connector's platform cannot list chats (CON-09).
 	ErrCannotListChats = errors.New("connector cannot list chats")
 	// ErrPlatform wraps a failure reported by the platform itself (CON-09: 502); its
@@ -265,6 +269,24 @@ func (m *Manager) Send(ctx context.Context, connectorID string, msg Outbound) (s
 		return "", errors.New(Redact(err.Error(), s.secrets))
 	}
 	return ext, nil
+}
+
+// React sends a reaction through the running connector (REACT-01): ErrNotRunning when it is
+// not running, ErrReactionsUnsupported when its platform has no reactions. Errors are
+// redacted like Send's.
+func (m *Manager) React(ctx context.Context, connectorID string, r Reaction) error {
+	s := m.current(connectorID)
+	if s == nil {
+		return ErrNotRunning
+	}
+	reactor, ok := s.conn.(Reactor)
+	if !ok {
+		return ErrReactionsUnsupported
+	}
+	if err := reactor.React(ctx, r); err != nil {
+		return errors.New(Redact(err.Error(), s.secrets))
+	}
+	return nil
 }
 
 // Hook returns the running connector when it receives messages over HTTP.

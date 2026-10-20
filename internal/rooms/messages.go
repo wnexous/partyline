@@ -57,6 +57,8 @@ type PostInput struct {
 	// Recipients are chat ids of chat members; empty reaches every chat with outbound on (DLV-03/04).
 	Recipients []string
 	Files      []File
+	// Kind defaults to text; agent reactions are MessageKindReaction (REACT-01).
+	Kind dto.MessageKind
 }
 
 // ChatMessage is a message received from an external chat (connectors' inbound pipeline).
@@ -97,9 +99,13 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelPost); err != nil {
 		return Message{}, err
 	}
+	kind := in.Kind
+	if kind == "" {
+		kind = dto.MessageKindText
+	}
 	d := draft{
 		authorKind: dto.AuthorKindUser, authorID: p.UserID, authorUserID: p.UserID,
-		kind: dto.MessageKindText, text: in.Text, replyTo: in.ReplyTo, recipients: in.Recipients, files: in.Files,
+		kind: kind, text: in.Text, replyTo: in.ReplyTo, recipients: in.Recipients, files: in.Files,
 	}
 	if p.Kind == authn.KindAgent {
 		// An agent's messages resolve to its owner (DLV-06).

@@ -190,8 +190,8 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | INS-01 | P2: Room instructions | Tasks | Implementing |
 | INS-02 | P2: Room instructions | Tasks | Implementing |
 | INS-03 | P2: Room instructions | Tasks | Implementing |
-| REACT-01 | P2: Reactions | Tasks | Pending |
-| REACT-02 | P2: Reactions | Tasks | Pending |
+| REACT-01 | P2: Reactions | Tasks | Implementing |
+| REACT-02 | P2: Reactions | Tasks | Implementing |
 | ROOMDEL-01 | P1: Delete a room | Tasks | Pending |
 | ROOMDEL-02 | P1: Delete a room | Tasks | Pending |
 

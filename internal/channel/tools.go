@@ -45,6 +45,11 @@ func (t *tools) register(srv *mcp.Server) {
 		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the message to answer"},"text":{"type":"string","description":"reply text"}},"required":["message_id","text"]}`),
 	}, t.guard(t.reply))
 	srv.HandleTool(mcp.ToolDef{
+		Name:        "react",
+		Description: "React to a chat message with one emoji; the reaction appears on the message in its chat. Only messages from chats can get reactions.",
+		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the chat message"},"emoji":{"type":"string","description":"one emoji, e.g. 👍"}},"required":["message_id","emoji"]}`),
+	}, t.guard(t.react))
+	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_message",
 		Description: "Post a message to a room you belong to, optionally only to some of its chats.",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id or room name"},"text":{"type":"string","description":"message text"},"chat_ids":{"type":"array","items":{"type":"string"},"description":"optional chat ids (the chat_id of a chat message, or member_id of chat members from list_rooms) to answer only those chats; empty sends to every chat of the room"},"recipients":{"type":"array","items":{"type":"string"},"description":"older name of chat_ids; still accepted"}},"required":["room","text"]}`),
@@ -133,6 +138,24 @@ func (t *tools) reply(ctx context.Context, args json.RawMessage) (string, error)
 		return "", err
 	}
 	return sent(m), nil
+}
+
+func (t *tools) react(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		MessageID string `json:"message_id"`
+		Emoji     string `json:"emoji"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if err := required("message_id", a.MessageID, "emoji", a.Emoji); err != nil {
+		return "", err
+	}
+	var m dto.Message
+	if err := t.api.json(ctx, http.MethodPost, "agent/messages/"+url.PathEscape(a.MessageID)+"/react", nil, dto.ReactRequest{Emoji: a.Emoji}, &m); err != nil {
+		return "", err
+	}
+	return "reacted (message_id " + m.ID + ")", nil
 }
 
 func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, error) {
