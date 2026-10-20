@@ -47,9 +47,19 @@ function AppLayout() {
 
   return (
     <SidebarProvider>
+      <a
+        href="#main"
+        className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      >
+        {t("nav.skip")}
+      </a>
       <AppSidebar me={me} />
       {/* Full-height pages (a room) mark themselves with data-fill and scroll inside. */}
-      <SidebarInset className="min-w-0 has-[[data-fill]]:h-svh has-[[data-fill]]:overflow-hidden">
+      <SidebarInset
+        id="main"
+        tabIndex={-1}
+        className="min-w-0 outline-none has-[[data-fill]]:h-svh has-[[data-fill]]:overflow-hidden"
+      >
         <div className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur md:hidden">
           <SidebarTrigger aria-label={t("nav.toggleSidebar")} />
           <Wordmark />

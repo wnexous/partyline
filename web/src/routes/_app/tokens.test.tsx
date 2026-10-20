@@ -90,7 +90,7 @@ describe("tokens page (UI-19)", () => {
     expect(
       within(secret).getByRole("figure", { name: "ci" }).querySelector("pre")?.textContent,
     ).toBe(SECRET);
-    expect(within(secret).getByText(/won't be shown again/)).toBeInTheDocument();
+    expect(within(secret).getByText(/won’t be shown again/)).toBeInTheDocument();
 
     await user.click(within(secret).getByRole("button", { name: "I copied it" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

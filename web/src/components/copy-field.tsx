@@ -78,7 +78,10 @@ export function CodeBlock({
         </figcaption>
         <CopyButton value={value} label={label} />
       </div>
-      <pre className="overflow-x-auto px-3 py-2.5 font-mono text-[0.78rem] leading-relaxed whitespace-pre text-foreground selection:bg-tape selection:text-tape-foreground">
+      <pre
+        translate="no"
+        className="overflow-x-auto px-3 py-2.5 font-mono text-[0.78rem] leading-relaxed whitespace-pre text-foreground selection:bg-tape selection:text-tape-foreground"
+      >
         <code>{value}</code>
       </pre>
     </figure>

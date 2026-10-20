@@ -115,7 +115,7 @@ describe("invite page (UI-03)", () => {
     mockApi({ "GET /invites/old-token": apiError(410, "gone", "invite expired") });
     renderRoute("/invite/old-token");
     expect(
-      await screen.findByRole("heading", { level: 1, name: "This invite can't be used" }),
+      await screen.findByRole("heading", { level: 1, name: "This invite can’t be used" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Go to login" })).toHaveAttribute("href", "/login");
     expect(screen.queryByLabelText("Username")).not.toBeInTheDocument();
