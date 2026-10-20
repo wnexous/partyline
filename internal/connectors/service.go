@@ -58,9 +58,6 @@ func NewService(d ServiceDeps) *Service {
 	return &Service{d: d, audit: audit.New(d.Store, d.Now)}
 }
 
-// SetRunner sets the runner once the Manager exists (the Manager needs the Service).
-func (s *Service) SetRunner(r Runner) { s.d.Runner = r }
-
 // Kinds returns the supported kinds.
 func (s *Service) Kinds() []Kind { return s.d.Kinds.Kinds() }
 

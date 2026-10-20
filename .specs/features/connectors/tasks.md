@@ -93,8 +93,8 @@ T7 → T8 → T9 → T10 → T11
 **Requirement**: CON-04, CON-05, CON-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake connector started within 2 s of create; stopped on disable; Send after stop → error
-- [ ] Run error containing the secret → status text with `[redacted]`; retries with growing delay (fake clock)
+- [x] Fake connector started within 2 s of create; stopped on disable; Send after stop → error
+- [x] Run error containing the secret → status text with `[redacted]`; retries with growing delay (fake clock)
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(connectors): add connector manager with supervision`

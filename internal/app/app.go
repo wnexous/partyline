@@ -46,6 +46,8 @@ type Options struct {
 	Sender delivery.Sender
 	// ConnectorKinds are the supported connector kinds; nil means BuiltinKinds().
 	ConnectorKinds []connectors.Kind
+	// Version is the build version, sent by connectors as User-Agent "partyline/<version>".
+	Version string
 }
 
 // BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
@@ -68,8 +70,9 @@ type App struct {
 	// Presence tracks connected agents; Agents is the agent registry.
 	Presence *agents.Presence
 	Agents   *agents.Registry
-	// Connectors manages connectors (CRUD, sharing).
-	Connectors *connectors.Service
+	// Connectors manages connectors (CRUD, sharing); ConnectorManager runs them.
+	Connectors       *connectors.Service
+	ConnectorManager *connectors.Manager
 	// Gateway serves the agent WebSocket and pushes messages to connected agents.
 	Gateway *agents.Gateway
 	Live    *live.Hub
@@ -139,8 +142,16 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	if kinds == nil {
 		kinds = BuiltinKinds()
 	}
+	registry := connectors.NewRegistry(kinds...)
+	version := opts.Version
+	if version == "" {
+		version = "dev"
+	}
+	a.ConnectorManager = connectors.NewManager(connectors.ManagerDeps{
+		Store: st, Bus: bus, Box: box, Kinds: registry, Logger: opts.Logger, UserAgent: "partyline/" + version,
+	})
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
-		Store: st, Access: az, Bus: bus, Box: box, Kinds: connectors.NewRegistry(kinds...), Now: opts.Now,
+		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Runner: a.ConnectorManager, Now: opts.Now,
 	})
 	a.Live = live.New(live.Deps{
 		Bus: bus, Access: az, Rooms: a.Rooms, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
@@ -186,6 +197,7 @@ func (a *App) Start(ctx context.Context) error {
 		Store: a.Store, Bus: a.Bus, Agents: a.Gateway, Load: a.Gateway.Message, Logger: a.Logger,
 	})
 	a.background(bg, "agent-dispatcher", dispatcher.Run)
+	a.ConnectorManager.Start(bg)
 	a.background(bg, "retention", func(ctx context.Context) error {
 		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger)
 	})
@@ -210,6 +222,7 @@ func (a *App) Shutdown(_ context.Context) error {
 	if a.stop != nil {
 		a.stop()
 	}
+	a.ConnectorManager.Close()
 	a.Gateway.Close()
 	a.Live.Close()
 	a.bg.Wait()

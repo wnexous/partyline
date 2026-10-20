@@ -31,7 +31,7 @@ func serve(ctx context.Context, io stdio) int {
 		return 1
 	}
 	log := newLogger(cfg, io.stderr)
-	a, err := app.New(cfg, app.Options{Logger: log})
+	a, err := app.New(cfg, app.Options{Logger: log, Version: Version})
 	if err != nil {
 		log.Error("start failed", "err", err)
 		return 1
