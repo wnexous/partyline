@@ -130,39 +130,47 @@ test("a message posted in a room reaches another user's open room live (UI-04)",
   }
 });
 
-test("connect an agent shows the .mcp.json snippet with the instance URL and a new agent token (UI-14)", async ({
+test("connect an agent shows the install and setup commands and each harness's start command, with no token (UI-14, WIZ-01)", async ({
   context,
   page,
   instance,
 }) => {
   await loginAs(context, instance, ADMIN);
+  const before = await apiCall<List<Token>>(context.request, instance, "GET", "/tokens");
   await page.goto("/agents");
   await page.getByRole("button", { name: "Connect an agent" }).click();
   const dialog = page.getByRole("dialog", { name: "Connect an agent" });
-  await dialog.getByLabel("Agent name", { exact: true }).fill("e2e-agent");
-  await dialog.getByRole("button", { name: "Create token" }).click();
+  const code = (label: string) => dialog.getByRole("figure", { name: label }).locator("pre");
 
-  const config = dialog.getByRole("figure", { name: ".mcp.json" }).locator("pre");
-  await expect(config).toBeVisible();
-  const snippet = JSON.parse((await config.textContent()) ?? "");
-  const server = snippet.mcpServers.partyline;
-  // `partyline channel` with the browser's origin, an agent token and the chosen name.
-  expect(server.command).toBe("partyline");
-  expect(server.args).toEqual(["channel"]);
-  expect(server.env.PARTYLINE_URL).toBe(instance.url);
-  expect(server.env.PARTYLINE_TOKEN).toMatch(/^pl_agent_[A-Za-z0-9]+$/);
-  expect(server.env.PARTYLINE_AGENT).toBe("e2e-agent");
+  // Install from this instance (the script pre-fills its URL), then approve the machine once.
+  await expect(code("Install command")).toHaveText(`curl -fsSL ${instance.url}/install.sh | sh`);
+  await expect(code("Setup command")).toHaveText("partyline setup --browser");
 
-  const launch = dialog.getByRole("figure", { name: "Launch command" }).locator("pre");
-  await expect(launch).toHaveText(
-    "claude --dangerously-load-development-channels server:partyline",
-  );
+  const harnesses: [tab: string, start: string, manual: string][] = [
+    ["Claude Code", "partyline claude", ".mcp.json"],
+    ["OpenCode", "opencode", "~/.config/opencode/opencode.json"],
+    ["pi", "pi", "~/.pi/agent/mcp.json"],
+    ["omp", "omp", "~/.omp/agent/mcp.json"],
+    ["Codex", "codex", "~/.codex/config.toml"],
+    ["Gemini", "gemini", "~/.gemini/settings.json"],
+  ];
+  const tabs = dialog.getByRole("tablist", { name: "Harness" });
+  await expect(tabs.getByRole("tab")).toHaveText(harnesses.map(([tab]) => tab));
+  await dialog.getByText("Advanced: register by hand").click();
+  for (const [tab, start, manual] of harnesses) {
+    await tabs.getByRole("tab", { name: tab, exact: true }).click();
+    await expect(
+      dialog.getByRole("tabpanel").getByRole("figure", { name: "Start command" }).locator("pre"),
+    ).toHaveText(start);
+    // The manual entry runs partyline, which reads the URL and token from its config file.
+    const entry = (await code(manual).textContent()) ?? "";
+    expect(entry, tab).toContain("partyline");
+    expect(entry, tab).not.toMatch(/token|PARTYLINE_|pl_agent|https?:/i);
+  }
 
-  // The token in the snippet is the agent token the dialog created.
-  const tokens = await apiCall<List<Token>>(context.request, instance, "GET", "/tokens");
-  const created = tokens.items.filter((t) => t.kind === "agent" && t.name === "e2e-agent");
-  expect(created).toHaveLength(1);
-  expect(server.env.PARTYLINE_TOKEN.startsWith(created[0]?.prefix ?? "-")).toBe(true);
+  // Nothing in the wizard creates a token: setup gets one through the browser approval.
+  const after = await apiCall<List<Token>>(context.request, instance, "GET", "/tokens");
+  expect(after.items).toEqual(before.items);
 });
 
 test("main pages fit the viewport with no horizontal page scroll (UI-24)", async ({

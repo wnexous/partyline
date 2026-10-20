@@ -67,6 +67,12 @@ T15 → T16 → T17
 T18 → T19 → T20 → T21 → T22
 ```
 
+### Phase 6: Verifier fix iteration 1
+
+```
+T23 → T24 → T25 → T26 → T27 → T28 → T29 → T30 → T31
+```
+
 ---
 
 ## Task Breakdown
@@ -393,3 +399,147 @@ From `uat.md` (T17) follow-ups 1 and 2, the omp instructions mismatch and a flak
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record the harness uat follow-up fixes`
+
+### Phase 6: Verifier fix iteration 1
+
+From `validation.md` (iteration 1): ranked gaps 1-5, the two spec-precision gaps and the security
+weaknesses the maintainer chose to fix. Every task: a discriminating test first (checked against a
+mutant in a scratch worktree), then the fix; `make check` before each commit, `make e2e` too when
+the web changes.
+
+#### T23: UI-14 drives the harness wizard
+
+**What**: rewrite the e2e UI-14 for the wizard of T15: install command with the instance origin, `partyline setup --browser`, harness tabs with their start commands, and Advanced entries with no token.
+**Where**: `web/e2e/smoke.spec.ts`
+**Depends on**: T22
+**Reuses**: `CodeBlock` figures (`role=figure`, caption = label)
+**Requirement**: WIZ-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] UI-14 asserts the exact install and setup commands, the six tabs and start commands, and that no Advanced entry contains `pl_agent`, `PARTYLINE_` or `token`; it creates no token
+- [x] `make e2e` passes 8/8
+**Tests**: e2e
+**Gate**: build + e2e
+**Commit**: `test(web): drive the harness wizard in the UI-14 smoke test`
+
+#### T24: Typed-code device approval
+
+**What**: the CLI prints `<instance>/devices` and the code; the page asks the user to type the code, then shows machine, address and age with Approve/Deny; `/devices/<code>` redirects to `/devices`. The server takes the code in the body (`POST /devices/lookup|approve|deny`) and refuses a user's 6th unknown code within a minute (429). The poll that delivers the token names the approver; the CLI prints `Approved by @<username> on <instance>` and asks before saving (declined → nothing saved, exit 1; `--yes` accepts).
+**Where**: `internal/devices/devices.go`, `internal/api/devices_handlers.go`, `internal/api/dto/devices.go`, `internal/cli/setup.go`, `web/src/routes/_app/devices*.tsx`, `web/src/lib/api/queries.ts`, i18n
+**Depends on**: T23
+**Reuses**: device service, `useSecondsLeft`
+**Requirement**: DEV-01, DEV-02, DEV-05, DEV-06, WIZ-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] `approve_url` is `<instance>/devices`; the CLI output has no URL with the code
+- [ ] lookup/approve/deny read the code from the body; old `{code}` routes are gone
+- [ ] 5 unknown codes per user and minute, the 6th → 429 even with a valid code; another user unaffected; a minute later accepted
+- [ ] delivering poll has `approved_by`; CLI prints `Approved by @<user> on <instance>`, declined confirmation saves nothing and exits 1
+- [ ] page: code field first, details after lookup, Approve sends the typed code; `/devices/<code>` lands on `/devices` with an empty field
+**Tests**: e2e (API), unit (CLI, web), e2e (web)
+**Gate**: build + e2e
+**Commit**: `feat(devices): approve machines by typing the code from the terminal`
+
+#### T25: Saved tokens stay with their URL
+
+**What**: `cliconfig.Resolve` drops the saved token when the URL comes from a flag or env and differs from the saved URL; setup saves the URL it started with (the poll's URL is ignored); `--token` warns that it shows in `ps`, `--token-stdin` reads it from stdin; `setup --uninstall` revokes the saved token on the server (`DELETE /api/v1/agent/token`, best effort) and reports the result.
+**Where**: `internal/cliconfig/config.go`, `internal/cli/setup.go`, `internal/cli/setup_harness.go`, `internal/api/agent_handlers.go`
+**Depends on**: T24
+**Reuses**: `users.RevokeToken`
+**Requirement**: ONB-04, ONB-05, ONB-08, ONB-09
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] env/flag URL ≠ saved URL → saved token ignored (missing token error); same URL (normalized) → saved token used
+- [ ] browser setup saves the start URL even when the poll reports another
+- [ ] `--token` prints the `ps` warning on stderr; `--token-stdin` works and conflicts with `--token`/`--browser`
+- [ ] uninstall revokes the token (later calls 401) and prints the result; a failed revoke is reported, not fatal
+**Tests**: unit, e2e (API)
+**Gate**: build
+**Commit**: `fix(cli): keep the saved token with the instance it was issued for`
+
+#### T26: Installer runs whole or not at all
+
+**What**: `install.sh` body moves into `main`, called on the last line; `http://` URLs are refused except for localhost, 127.0.0.1 and ::1.
+**Where**: `scripts/install.sh`, `scripts/install_test.go`
+**Depends on**: T25
+**Reuses**: install test harness
+**Requirement**: ONB-10
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] a script cut before its last line does nothing (no download, no file)
+- [ ] `PARTYLINE_URL=http://example.test` exits 1 with a message; `http://127.0.0.1:…`, `http://localhost:…`, `http://[::1]:…` accepted
+**Tests**: integration
+**Gate**: build
+**Commit**: `fix(scripts): run the installer only when it downloaded completely`
+
+#### T27: Safer harness config edits
+
+**What**: keep the first `.partyline.bak`; write through symlinks (atomic write next to the target, link kept); write the extension/plugin before the config entry and roll back on failure.
+**Where**: `internal/harness/harness.go`, `internal/harness/files.go`, `internal/harness/clis.go`
+**Depends on**: T26
+**Reuses**: `writeFileAtomic`
+**Requirement**: HAR-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] second Apply keeps the original backup bytes
+- [ ] symlinked config: link stays a link, target gets the entry
+- [ ] config write failure leaves no extension behind; extension write failure leaves the config untouched
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(harness): keep backups, symlinks and a consistent state when editing configs`
+
+#### T28: omp delivers one message at a time
+
+**What**: the omp queue awaits each send; a rejection keeps the message at the head and stops the flush until the next retry.
+**Where**: `integrations/omp/partyline.ts`
+**Depends on**: T27
+**Reuses**: `FakeTime`
+**Requirement**: PUSH-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] two async rejections: messages delivered A then B; nothing sent while a send is in flight
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(integrations): keep omp messages in order when sends reject later`
+
+#### T29: Missing evidence
+
+**What**: tests for `listen` refusing a non-0600 config, CSRF on the device approve/deny routes, and a real invalid `config.toml` for the Codex registrar.
+**Where**: `internal/cli/listen_test.go`, `internal/api/devices_handlers_test.go`, `internal/harness/clis_test.go`
+**Depends on**: T28
+**Reuses**: existing fixtures
+**Requirement**: ONB-05, DEV-05, HAR-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] each test fails against a mutant that removes the check
+**Tests**: unit, e2e
+**Gate**: build
+**Commit**: `test: cover config permissions in listen, device csrf and invalid codex toml`
+
+#### T30: Spec precision for HAR-02 and PUSH-05
+
+**What**: HAR-02 separates files setup edits (byte-for-byte) from CLI-managed files (the harness CLI rewrites them; only the partyline entry may change); PUSH-05 names `promptAsync` with the `prompt` fallback.
+**Where**: `.specs/features/harness-onboarding/spec.md`
+**Depends on**: T29
+**Reuses**: contract notes
+**Requirement**: HAR-02, PUSH-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] spec wording matches the shipped behavior and the tests that cover it
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): reword HAR-02 and PUSH-05 to match the harness behavior`
+
+#### T31: Record fix iteration 1
+
+**What**: contract notes for T23-T29, design risk table, traceability.
+**Where**: `.specs/features/harness-onboarding/contract-notes.md`, `design.md`, `spec.md`
+**Depends on**: T30
+**Reuses**: none
+**Requirement**: all touched
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] contract notes and traceability describe the shipped behavior
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record the harness-onboarding fix iteration 1`
