@@ -200,16 +200,22 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 	return s.message(ctx, id)
 }
 
-// checkRefs validates recipients (chat members of the room) and the replied message.
+// checkRefs validates recipients (chat members of the room with outbound on: a listen-only
+// chat receives nothing, DLV-04) and the replied message.
 func (s *Service) checkRefs(ctx context.Context, q *db.Queries, roomID string, members []db.ListRoomMembersRow, d draft) error {
 	check := validation.Check{}
 	for _, id := range d.recipients {
-		found := false
-		for _, m := range members {
-			found = found || (m.RoomMember.Kind == string(dto.MemberKindChat) && m.RoomMember.MemberID == id)
+		var member *db.RoomMember
+		for i := range members {
+			if m := &members[i].RoomMember; m.Kind == string(dto.MemberKindChat) && m.MemberID == id {
+				member = m
+			}
 		}
-		if !found {
+		switch {
+		case member == nil:
 			check.Add("recipients", "must be chats of the room")
+		case !member.Outbound:
+			check.Add("recipients", "listen-only")
 		}
 	}
 	if d.replyTo != "" {

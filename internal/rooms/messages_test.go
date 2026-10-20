@@ -188,13 +188,17 @@ func TestOutboxFollowsDeliveryPlan(t *testing.T) {
 	}
 	require.Equal(t, sorted(c1, c3), outboxChats(f.post(t, agentPrincipal(alice, a1), r.ID, "agent to all")))
 
-	// DLV-04: explicit recipients reach only those chats, outbound or not.
-	m, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "to c2", Recipients: []string{c2}})
+	// DLV-04: explicit recipients reach only those chats; a listen-only chat (outbound off)
+	// receives nothing, so naming it is rejected with 422 recipients=listen-only.
+	m, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "to c3", Recipients: []string{c3}})
 	require.NoError(t, err)
-	require.Equal(t, []string{c2}, outboxChats(m))
-	require.Equal(t, []string{c2}, m.Recipients())
-	_, err = f.svc.Post(ctx, alice, r.ID, PostInput{Text: "bad", Recipients: []string{store.NewID()}})
+	require.Equal(t, []string{c3}, outboxChats(m))
+	require.Equal(t, []string{c3}, m.Recipients())
+	_, err = f.svc.Post(ctx, alice, r.ID, PostInput{Text: "to c2", Recipients: []string{c3, c2}})
 	var verr *validation.Error
+	require.ErrorAs(t, err, &verr)
+	require.Equal(t, "listen-only", verr.Fields["recipients"])
+	_, err = f.svc.Post(ctx, alice, r.ID, PostInput{Text: "bad", Recipients: []string{store.NewID()}})
 	require.ErrorAs(t, err, &verr)
 	require.Contains(t, verr.Fields, "recipients")
 

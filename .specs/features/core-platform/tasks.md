@@ -609,7 +609,7 @@ T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → 
 **Requirement**: DLV-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Posting to an outbound-off chat as recipient returns 422 with field `recipients` reason `listen-only`
+- [x] Posting to an outbound-off chat as recipient returns 422 with field `recipients` reason `listen-only`
 **Tests**: integration
 **Gate**: full
 **Commit**: `fix(rooms): reject explicit recipients that are listen-only`
