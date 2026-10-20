@@ -812,14 +812,14 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 
 #### T49: Session owner check isolated
 
-**What**: `TestPrincipalActive` pairs bob's session with another existing active user's id, so only the session-owner check can reject it.
+**What**: `TestPrincipalActive` pairs bob's session and token with another existing active user's id, so only the owner check can reject them.
 **Where**: `internal/users/tokens_test.go`
 **Depends on**: T48
 **Reuses**: users fixture
 **Requirement**: AUTH-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A principal with an existing active user's id and another user's session id is inactive
+- [x] A principal with an existing active user's id and another user's session id (or token id) is inactive
 **Tests**: integration
 **Gate**: quick
 **Commit**: `test(users): isolate the session owner check in the principal check`

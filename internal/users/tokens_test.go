@@ -232,7 +232,12 @@ func TestPrincipalActive(t *testing.T) {
 	}
 	require.True(t, active(sessP))
 	require.True(t, active(tokP))
-	require.False(t, active(authn.Principal{Kind: authn.KindUser, UserID: "someone-else", SessionID: sess.ID}), "session of another user")
+	// Another existing, active user: only the owner check can reject these.
+	admin, err := f.store.R().GetUserByUsername(ctx, "admin")
+	require.NoError(t, err)
+	require.True(t, active(authn.Principal{Kind: authn.KindUser, UserID: admin.ID}), "admin is active")
+	require.False(t, active(authn.Principal{Kind: authn.KindUser, UserID: admin.ID, SessionID: sess.ID}), "session of another user")
+	require.False(t, active(authn.Principal{Kind: authn.KindUser, UserID: admin.ID, TokenID: tokID}), "token of another user")
 
 	disabled := true
 	_, err = f.svc.UpdateUser(ctx, bob.ID, UserUpdate{Disabled: &disabled})
