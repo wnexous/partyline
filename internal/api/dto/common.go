@@ -9,6 +9,9 @@ package dto
 const (
 	// UsernamePattern is the regular expression every username must match.
 	UsernamePattern = "^[a-z0-9_-]{3,32}$"
+	// AgentNamePattern is the regular expression every agent name matches after slugifying
+	// (lowercase letters, digits, dot, underscore and hyphen; at most 48 characters).
+	AgentNamePattern = "^[a-z0-9][a-z0-9._-]{0,47}$"
 	// PasswordMinLength is the minimum password length in characters.
 	PasswordMinLength = 10
 	// MaxTextLength is the maximum message text length in characters (MSG-02).

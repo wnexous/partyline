@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/wnexous/partyline/internal/access"
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/attachments"
@@ -22,6 +23,7 @@ type Deps struct {
 	Config *config.Config
 	Users  *users.Service
 	Rooms  *rooms.Service
+	Agents *agents.Registry
 	Blobs  *attachments.Store
 	Audit  *audit.Log
 	// Live serves the live WebSocket at GET /api/v1/live.
@@ -61,6 +63,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.authRoutes(mux)
 	s.adminRoutes(mux)
 	s.roomRoutes(mux)
+	s.agentRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}

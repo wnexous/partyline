@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createAgent = `-- name: CreateAgent :exec
@@ -32,6 +33,43 @@ func (q *Queries) CreateAgent(ctx context.Context, arg CreateAgentParams) error 
 	return err
 }
 
+const deleteAgent = `-- name: DeleteAgent :exec
+DELETE FROM agents WHERE id = ?
+`
+
+func (q *Queries) DeleteAgent(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteAgent, id)
+	return err
+}
+
+const deleteAgentMemberships = `-- name: DeleteAgentMemberships :many
+DELETE FROM room_members WHERE kind = 'agent' AND member_id = ?
+RETURNING room_id
+`
+
+func (q *Queries) DeleteAgentMemberships(ctx context.Context, memberID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, deleteAgentMemberships, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAgent = `-- name: GetAgent :one
 SELECT id, owner_id, name, description, created_at, last_seen_at FROM agents WHERE id = ?
 `
@@ -48,4 +86,152 @@ func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
 		&i.LastSeenAt,
 	)
 	return i, err
+}
+
+const getAgentByName = `-- name: GetAgentByName :one
+SELECT id, owner_id, name, description, created_at, last_seen_at FROM agents WHERE owner_id = ? AND name = ?
+`
+
+type GetAgentByNameParams struct {
+	OwnerID string
+	Name    string
+}
+
+func (q *Queries) GetAgentByName(ctx context.Context, arg GetAgentByNameParams) (Agent, error) {
+	row := q.db.QueryRowContext(ctx, getAgentByName, arg.OwnerID, arg.Name)
+	var i Agent
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+	)
+	return i, err
+}
+
+const getAgentWithOwner = `-- name: GetAgentWithOwner :one
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, u.username AS owner_username, u.display_name AS owner_display_name
+FROM agents a JOIN users u ON u.id = a.owner_id
+WHERE a.id = ?
+`
+
+type GetAgentWithOwnerRow struct {
+	Agent            Agent
+	OwnerUsername    string
+	OwnerDisplayName string
+}
+
+func (q *Queries) GetAgentWithOwner(ctx context.Context, id string) (GetAgentWithOwnerRow, error) {
+	row := q.db.QueryRowContext(ctx, getAgentWithOwner, id)
+	var i GetAgentWithOwnerRow
+	err := row.Scan(
+		&i.Agent.ID,
+		&i.Agent.OwnerID,
+		&i.Agent.Name,
+		&i.Agent.Description,
+		&i.Agent.CreatedAt,
+		&i.Agent.LastSeenAt,
+		&i.OwnerUsername,
+		&i.OwnerDisplayName,
+	)
+	return i, err
+}
+
+const insertAgentIfMissing = `-- name: InsertAgentIfMissing :exec
+INSERT INTO agents (id, owner_id, name, description, created_at) VALUES (?, ?, ?, '', ?)
+ON CONFLICT (owner_id, name) DO NOTHING
+`
+
+type InsertAgentIfMissingParams struct {
+	ID        string
+	OwnerID   string
+	Name      string
+	CreatedAt int64
+}
+
+func (q *Queries) InsertAgentIfMissing(ctx context.Context, arg InsertAgentIfMissingParams) error {
+	_, err := q.db.ExecContext(ctx, insertAgentIfMissing,
+		arg.ID,
+		arg.OwnerID,
+		arg.Name,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const listAgentsForUser = `-- name: ListAgentsForUser :many
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, u.username AS owner_username, u.display_name AS owner_display_name
+FROM agents a JOIN users u ON u.id = a.owner_id
+WHERE a.owner_id = ?1
+   OR a.id IN (SELECT g.resource_id FROM grants g
+               WHERE g.resource_kind = 'agent' AND g.subject IN (?1, '*'))
+ORDER BY a.name, u.username, a.id
+`
+
+type ListAgentsForUserRow struct {
+	Agent            Agent
+	OwnerUsername    string
+	OwnerDisplayName string
+}
+
+func (q *Queries) ListAgentsForUser(ctx context.Context, userID string) ([]ListAgentsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAgentsForUserRow
+	for rows.Next() {
+		var i ListAgentsForUserRow
+		if err := rows.Scan(
+			&i.Agent.ID,
+			&i.Agent.OwnerID,
+			&i.Agent.Name,
+			&i.Agent.Description,
+			&i.Agent.CreatedAt,
+			&i.Agent.LastSeenAt,
+			&i.OwnerUsername,
+			&i.OwnerDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const touchAgent = `-- name: TouchAgent :exec
+UPDATE agents SET last_seen_at = ? WHERE id = ?
+`
+
+type TouchAgentParams struct {
+	LastSeenAt sql.NullInt64
+	ID         string
+}
+
+func (q *Queries) TouchAgent(ctx context.Context, arg TouchAgentParams) error {
+	_, err := q.db.ExecContext(ctx, touchAgent, arg.LastSeenAt, arg.ID)
+	return err
+}
+
+const updateAgentDescription = `-- name: UpdateAgentDescription :exec
+UPDATE agents SET description = ? WHERE id = ?
+`
+
+type UpdateAgentDescriptionParams struct {
+	Description string
+	ID          string
+}
+
+func (q *Queries) UpdateAgentDescription(ctx context.Context, arg UpdateAgentDescriptionParams) error {
+	_, err := q.db.ExecContext(ctx, updateAgentDescription, arg.Description, arg.ID)
+	return err
 }

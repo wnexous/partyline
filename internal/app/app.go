@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wnexous/partyline/internal/access"
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api"
 	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/audit"
@@ -55,7 +56,10 @@ type App struct {
 	Access *access.Authorizer
 	Rooms  *rooms.Service
 	Blobs  *attachments.Store
-	Live   *live.Hub
+	// Presence tracks connected agents; Agents is the agent registry.
+	Presence *agents.Presence
+	Agents   *agents.Registry
+	Live     *live.Hub
 
 	handler http.Handler
 	ready   atomic.Bool
@@ -113,6 +117,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		sender: opts.Sender,
 		now:    opts.Now,
 	}
+	a.Presence = agents.NewPresence(st, bus, opts.Now)
+	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Now: opts.Now})
 	a.Live = live.New(live.Deps{
 		Bus: bus, Access: az, Rooms: a.Rooms, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
 	})
@@ -120,6 +126,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Config: cfg,
 		Users:  usersSvc,
 		Rooms:  a.Rooms,
+		Agents: a.Agents,
 		Blobs:  blobs,
 		Audit:  audit.New(st, opts.Now),
 		Live:   a.Live,

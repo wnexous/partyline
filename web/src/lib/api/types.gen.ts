@@ -109,6 +109,11 @@ optional fields are pointers or carry omitempty. Every path is under /api/v1.
  */
 export const UsernamePattern = "^[a-z0-9_-]{3,32}$";
 /**
+ * AgentNamePattern is the regular expression every agent name matches after slugifying
+ * (lowercase letters, digits, dot, underscore and hyphen; at most 48 characters).
+ */
+export const AgentNamePattern = "^[a-z0-9][a-z0-9._-]{0,47}$";
+/**
  * PasswordMinLength is the minimum password length in characters.
  */
 export const PasswordMinLength = 10;

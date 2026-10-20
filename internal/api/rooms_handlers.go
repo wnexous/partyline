@@ -53,6 +53,15 @@ func toSharing(v access.Visibility) dto.Sharing {
 	return out
 }
 
+// visibilityFrom reads a sharing request (rooms, agents, connectors).
+func visibilityFrom(req dto.Sharing) access.Visibility {
+	v := access.Visibility{Mode: req.Mode, PublicLevel: req.PublicLevel, Users: make([]access.UserLevel, len(req.Users))}
+	for i, u := range req.Users {
+		v.Users[i] = access.UserLevel{UserID: u.UserID, Level: u.Level}
+	}
+	return v
+}
+
 func (s *server) listRooms(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	list, err := s.Rooms.List(r.Context(), p)
 	if err != nil {
@@ -129,11 +138,7 @@ func (s *server) putRoomSharing(w http.ResponseWriter, r *http.Request, p authn.
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	in := access.Visibility{Mode: req.Mode, PublicLevel: req.PublicLevel, Users: make([]access.UserLevel, len(req.Users))}
-	for i, u := range req.Users {
-		in.Users[i] = access.UserLevel{UserID: u.UserID, Level: u.Level}
-	}
-	v, err := s.Rooms.SetSharing(r.Context(), p, r.PathValue("id"), in)
+	v, err := s.Rooms.SetSharing(r.Context(), p, r.PathValue("id"), visibilityFrom(req))
 	if err != nil {
 		return err
 	}
