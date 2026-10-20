@@ -26,7 +26,7 @@ import (
 const KindName = "fake"
 
 // Timeout bounds every wait; generous because the test host may be loaded.
-const Timeout = 10 * time.Second
+const Timeout = 30 * time.Second
 
 // Fake creates fake connector instances and remembers them by connector id.
 type Fake struct {

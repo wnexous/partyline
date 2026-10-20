@@ -60,7 +60,7 @@ func (w *waits) waitFor(t *testing.T, n int) []time.Duration {
 		w.mu.Unlock()
 		select {
 		case <-w.ch:
-		case <-time.After(6 * connectortest.Timeout): // per step; the host may be loaded
+		case <-time.After(2 * connectortest.Timeout): // per step; the host may be loaded
 			t.Fatalf("only %d of %d backoff waits happened", len(w.ds), n)
 		}
 	}
