@@ -142,7 +142,8 @@ Binding conventions every later task and feature follows. Source of truth for ty
 
 ## Delivery
 - DLV-05 decision: a chat member with `outbound=false` receives nothing broadcast from the room, bridged chat posts
-  included. Explicit `recipients` (DLV-04) still reach a listed chat whatever its outbound flag.
+  included. Explicit `recipients` (DLV-04) naming such a chat are rejected: 422, field `recipients`, reason
+  `listen-only` (fix iteration 1).
 - `delivery.OutboxWorker` (`NewOutboxWorker(OutboxOptions{Store, Bus, Sender, Now, Logger, PollInterval, SendTimeout})`,
   `Run(ctx)`, `Flush(ctx)`, `Running()`). `delivery.Sender.Send(ctx, Delivery{OutboxID, MessageID, RoomID, ChatID, Attempt})
   (externalID, error)`: the sender loads the message, attachments and chat itself (connectors T6 implements it).
@@ -209,3 +210,54 @@ Binding conventions every later task and feature follows. Source of truth for ty
   `PARTYLINE_ADDR=:8080 PARTYLINE_DATA_DIR=/data`, entrypoint `/partyline`, cmd `serve`. Build stages run on
   `$BUILDPLATFORM` and cross-compile, so multi-arch builds need no QEMU. Releases: GoReleaser on `v*` tags (`{{ .Tag }}` as
   version), image tags semver + `latest` (not for pre-releases).
+
+# Contract Notes (from core-platform fix iteration 1: T28-T44)
+
+## HTTP / DTO
+- `GET /api/v1/activity?limit=` (users only; agent tokens 403): `List[ActivityItem]`, `ActivityItem{room: RoomRef{id,
+  name}, message: Message}`, newest first (`created_at`, then id) across every room the caller can view (same rules
+  as `GET /rooms`, so admins get nothing implicit). `limit` default `dto.DefaultActivityLimit` (20), capped at
+  `dto.MaxActivityLimit` (50); non-positive or non-numeric → 422 `limit`. Service: `rooms.Service.Activity(ctx, p, limit)`.
+- `dto.Room.member_count` (int): agents + chats + users of the room, counted by `GetRoomWithOwner` and
+  `ListRoomsForUser` (`rooms.Room.MemberCount`). Present in every Room payload, including live `room.changed`.
+- `PATCH /api/v1/admin/users/{id}` → 409 `conflict` when an admin demotes or disables themselves
+  (`users.ErrSelfAdminChange`, principal from ctx) or the change would leave no active admin (`users.ErrLastAdmin`,
+  counted inside the write tx, so concurrent demotions cannot both win).
+- `POST /api/v1/me/password` now ends the user's other sessions; the caller's session stays.
+- Explicit recipients with outbound off → 422 `recipients` = `listen-only` (see DLV-05 note above).
+- HTML CSP: `font-src 'self' data:` (the web build inlines a font); everything else unchanged.
+
+## Sessions and live sockets
+- `events.SessionsRevoked{UserID, SessionIDs}` is published after commit by `users.Service` on logout and session
+  delete (`RevokeSession`), password change (other sessions), operator `ResetPassword` and disabling a user.
+  `users.Options.Bus` wires it (the app creates the bus before the users service).
+- `users.Service.PrincipalActive(ctx, p)`: session exists, belongs to the user and is unexpired (or the token is not
+  revoked/expired), and the user is active.
+- `live.Deps.Sessions` (`PrincipalChecker`) + `SessionCheckInterval` (default `live.DefaultSessionCheckInterval`, 60 s;
+  `app.Options.LiveSessionCheck`, `testkit.WithLiveSessionCheck`). A connection closes with status 1008
+  `session revoked` when an event names its session, when a re-check after a `lagged` bus fails, or on the periodic
+  re-check. Clients should treat 1008 as "logged out" and not reconnect blindly.
+- `sessions.sql`: `DeleteSessionsByUser` returns the deleted ids; new `DeleteOtherUserSessions`, `GetSession`;
+  `tokens.sql`: `GetToken`.
+
+## Delivery and rooms
+- `RemoveMember` deletes the removed chat's `pending` outbox rows of that room in the same tx (`sending` rows in flight
+  finish); `ListDueOutbox` only returns rows whose chat is still a `room_members` chat of the message's room. Tests that
+  insert outbox rows directly must also insert the chat membership.
+- `rooms.Service.Delete` removes, after commit, blob files of the room that no attachment references any more and that
+  were written more than a minute ago (`attachments.Store.DeleteIfOlder`); the retention sweep stays the backstop.
+- Users are never deleted by the app; the `rooms.owner_id` FK cascade deletes an owner's rooms if a user row is removed.
+
+## Auth
+- Login rate limit: `failureLimiter.Begin(ip)` reserves an attempt before the argon2 check (at most 5 checks per IP per
+  window, also under a parallel burst), `Succeed` clears the IP, `Release` returns the slot on an internal error. The map
+  drops expired windows once per window and is capped at 10,000 keys (oldest window evicted).
+
+## Build and tests
+- Docker: `ARG VERSION=dev` and optional `ARG SOURCE_COMMIT` (→ `dev-<12 chars>` when VERSION stays dev). CI passes
+  `git describe --tags --always --dirty`, releases the tag; on Dokploy set `VERSION` under Build Args (no automatic
+  commit arg is documented for Dokploy).
+- Background-job and worker tests poll with a 1-2 minute deadline (healthy runs end in milliseconds); web tests use a
+  10 s Testing Library async timeout and a 30 s vitest test timeout. Do not shorten them: the shared machine runs the
+  Go suite at load averages of 12-20.
+- sqlc: after `sqlc.slice(...)`, use a positional `LIMIT ?`; a named arg is numbered (`?2`) and breaks the expansion.

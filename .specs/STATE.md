@@ -60,11 +60,12 @@
 
 ## Handoff
 
-- **Feature**: none started
-- **Phase / Task**: Specify
-- **Completed**: none
+- **Feature**: core-platform
+- **Phase / Task**: Execute, Verifier fix iteration 1 (T28-T44) complete
+- **Completed**: T28-T44 on branch `fix/core-verify-1` (see tasks.md Phase 5)
 - **In-progress** (file:line): none
-- **Next step**: write specs for core-platform, agent-channel, connectors, web-app
+- **Next step**: re-run the Verifier (iteration 2 of 3) over the fix range, then merge into main (agent-channel touches
+  `internal/app/app.go` and `internal/api/router.go`; this branch changes both minimally)
 - **Blockers**: none
-- **Uncommitted files**: .specs/
-- **Branch**: main
+- **Uncommitted files**: none
+- **Branch**: fix/core-verify-1

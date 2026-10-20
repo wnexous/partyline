@@ -709,7 +709,7 @@ T35 → T43 → T44
 **Requirement**: all
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] contract-notes.md lists activity, member_count and the session revocation event
+- [x] contract-notes.md lists activity, member_count and the session revocation event
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record contract notes for fix iteration 1`

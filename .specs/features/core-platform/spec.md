@@ -202,58 +202,58 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AUTH-01 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-02 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-03 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-04 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-01 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-02 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-03 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-04 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
 | AUTH-05 | P1: Setup and accounts | Fix T29 | Fixed, re-verify |
-| AUTH-06 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-07 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-08 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-06 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-07 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-08 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
 | AUTH-09 | P1: Setup and accounts | Fix T31 | Fixed, re-verify |
 | AUTH-10 | P1: Setup and accounts | Fix T31 | Fixed, re-verify |
-| TOK-01 | P1: Tokens | Tasks | Implementing |
-| TOK-02 | P1: Tokens | Tasks | Implementing |
-| TOK-03 | P1: Tokens | Tasks | Implementing |
-| TOK-04 | P1: Tokens | Tasks | Implementing |
-| ACL-01 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-02 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-03 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-04 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-05 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-06 | P1: Rooms and sharing | Tasks | Implementing |
+| TOK-01 | P1: Tokens | Tasks | Verified (iteration 1) |
+| TOK-02 | P1: Tokens | Tasks | Verified (iteration 1) |
+| TOK-03 | P1: Tokens | Tasks | Verified (iteration 1) |
+| TOK-04 | P1: Tokens | Tasks | Verified (iteration 1) |
+| ACL-01 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ACL-02 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ACL-03 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ACL-04 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ACL-05 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ACL-06 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
 | ACL-07 | P1: Rooms and sharing | Fix T34 | Fixed, re-verify |
-| ACL-08 | P1: Rooms and sharing | Tasks | Implementing |
+| ACL-08 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
 | ROOM-01 | P1: Rooms and sharing | Fix T28 | Fixed, re-verify |
 | ROOM-02 | P1: Rooms and sharing | Fix T33 | Fixed, re-verify |
-| MSG-01 | P1: Messages and delivery | Tasks | Implementing |
-| MSG-02 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-01 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-02 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-03 | P1: Messages and delivery | Tasks | Implementing |
+| MSG-01 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| MSG-02 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| DLV-01 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| DLV-02 | P1: Messages and delivery | Tasks | Verified with scope gap (later feature) |
+| DLV-03 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
 | DLV-04 | P1: Messages and delivery | Fix T35 | Fixed, re-verify |
-| DLV-05 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-06 | P1: Messages and delivery | Tasks | Implementing |
+| DLV-05 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| DLV-06 | P1: Messages and delivery | Tasks | Verified with scope gap (later feature) |
 | DLV-07 | P1: Messages and delivery | Fix T44 | Fixed, re-verify |
-| DLV-08 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-09 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-10 | P1: Messages and delivery | Tasks | Implementing |
-| LIVE-01 | P1: Live updates | Tasks | Implementing |
-| LIVE-02 | P1: Live updates | Tasks | Implementing |
+| DLV-08 | P1: Messages and delivery | Tasks | Verified with scope gap (later feature) |
+| DLV-09 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| DLV-10 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| LIVE-01 | P1: Live updates | Tasks | Verified (iteration 1) |
+| LIVE-02 | P1: Live updates | Tasks | Verified (iteration 1) |
 | LIVE-03 | P1: Live updates | Fix T30 | Fixed, re-verify |
-| LIVE-04 | P1: Live updates | Tasks | Implementing |
+| LIVE-04 | P1: Live updates | Tasks | Verified (iteration 1) |
 | SEC-01 | P1: Secure deployment | Fix T40 | Fixed, re-verify |
-| SEC-02 | P1: Secure deployment | Tasks | Implementing |
-| SEC-03 | P1: Secure deployment | Tasks | Implementing |
-| SEC-04 | P1: Secure deployment | Tasks | Implementing |
-| SEC-05 | P1: Secure deployment | Tasks | Implementing |
-| OPS-01 | P1: Secure deployment | Tasks | Implementing |
+| SEC-02 | P1: Secure deployment | Tasks | Verified (iteration 1) |
+| SEC-03 | P1: Secure deployment | Tasks | Verified (iteration 1) |
+| SEC-04 | P1: Secure deployment | Tasks | Verified with scope gap (later feature) |
+| SEC-05 | P1: Secure deployment | Tasks | Verified (iteration 1) |
+| OPS-01 | P1: Secure deployment | Tasks | Verified (iteration 1) |
 | OPS-02 | P1: Secure deployment | Fix T32 | Fixed, re-verify |
 | OPS-03 | P1: Secure deployment | Fix T39 | Fixed, re-verify |
-| AUD-01 | P2: Audit trail | Tasks | Implementing |
-| AUD-02 | P2: Audit trail | Tasks | Implementing |
+| AUD-01 | P2: Audit trail | Tasks | Verified with scope gap (later feature) |
+| AUD-02 | P2: Audit trail | Tasks | Verified (iteration 1) |
 
-**Coverage:** 50 total, 0 mapped to tasks, 50 unmapped ⚠️ (mapped in tasks.md)
+**Coverage:** 50 total, all mapped in tasks.md (T1-T27); fix iteration 1 (T28-T44) re-opens the rows marked "Fixed, re-verify".
 
 ---
 
