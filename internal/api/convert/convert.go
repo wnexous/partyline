@@ -17,7 +17,7 @@ func Time(ms int64) time.Time { return time.UnixMilli(ms).UTC() }
 // Room renders a room as seen by the caller (MyLevel).
 func Room(r rooms.Room) dto.Room {
 	return dto.Room{
-		ID: r.ID, Name: r.Name, Description: r.Description,
+		ID: r.ID, Name: r.Name, Description: r.Description, Instructions: r.Instructions,
 		Owner:      dto.User{ID: r.OwnerID, Username: r.OwnerUsername, DisplayName: r.OwnerDisplayName},
 		Visibility: r.Visibility, MyLevel: r.Level, BridgeChats: r.BridgeChats,
 		RetentionDays: int(r.RetentionDays), AgentsPaused: r.AgentsPaused, LastSeq: r.LastSeq(),

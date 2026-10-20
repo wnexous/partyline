@@ -107,17 +107,21 @@ func (s *Service) authorize(ctx context.Context, p authn.Principal, roomID strin
 type CreateInput struct {
 	Name          string
 	Description   string
+	Instructions  string // INS-01, at most dto.MaxRoomInstructions characters
 	BridgeChats   bool
 	RetentionDays *int // nil = DefaultRetentionDays; 0 keeps messages forever
 }
 
-func validateRoom(name, description string, retention int) error {
+func validateRoom(name, description, instructions string, retention int) error {
 	check := validation.Check{}
 	if n := utf8.RuneCountInString(name); n == 0 || n > MaxNameLength {
 		check.Add("name", "must have 1 to 100 characters")
 	}
 	if utf8.RuneCountInString(description) > MaxDescriptionLength {
 		check.Add("description", "must have at most 1000 characters")
+	}
+	if utf8.RuneCountInString(instructions) > dto.MaxRoomInstructions {
+		check.Add("instructions", "must have at most 4000 characters")
 	}
 	if retention < 0 {
 		check.Add("retention_days", "must be 0 (keep forever) or more")
@@ -135,14 +139,14 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 		retention = *in.RetentionDays
 	}
 	name := strings.TrimSpace(in.Name)
-	if err := validateRoom(name, in.Description, retention); err != nil {
+	if err := validateRoom(name, in.Description, in.Instructions, retention); err != nil {
 		return Room{}, err
 	}
 	now := s.now().UnixMilli()
 	id := store.NewID()
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		return q.CreateRoom(ctx, db.CreateRoomParams{
-			ID: id, OwnerID: p.UserID, Name: name, Description: in.Description,
+			ID: id, OwnerID: p.UserID, Name: name, Description: in.Description, Instructions: in.Instructions,
 			BridgeChats: in.BridgeChats, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
 		})
 	})
@@ -212,6 +216,7 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 type UpdateInput struct {
 	Name          *string
 	Description   *string
+	Instructions  *string
 	BridgeChats   *bool
 	RetentionDays *int
 }
@@ -232,13 +237,16 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 		if in.Description != nil {
 			r.Description = *in.Description
 		}
+		if in.Instructions != nil {
+			r.Instructions = *in.Instructions
+		}
 		if in.BridgeChats != nil {
 			r.BridgeChats = *in.BridgeChats
 		}
 		if in.RetentionDays != nil {
 			r.RetentionDays = int64(*in.RetentionDays)
 		}
-		if err := validateRoom(r.Name, r.Description, int(r.RetentionDays)); err != nil {
+		if err := validateRoom(r.Name, r.Description, r.Instructions, int(r.RetentionDays)); err != nil {
 			return err
 		}
 		return q.UpdateRoom(ctx, db.UpdateRoomParams{

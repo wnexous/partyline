@@ -105,7 +105,7 @@ T13 → T14 → T15 → T16
 **Requirement**: INS-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 4,000 chars saved; 4,001 → 422; only `manage` can change
+- [x] 4,000 chars saved; 4,001 → 422; only `manage` can change
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(rooms): add room instructions`

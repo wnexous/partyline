@@ -90,7 +90,8 @@ func (s *server) createRoom(w http.ResponseWriter, r *http.Request, p authn.Prin
 		return err
 	}
 	room, err := s.Rooms.Create(r.Context(), p, rooms.CreateInput{
-		Name: req.Name, Description: req.Description, BridgeChats: req.BridgeChats, RetentionDays: req.RetentionDays,
+		Name: req.Name, Description: req.Description, Instructions: req.Instructions, BridgeChats: req.BridgeChats,
+		RetentionDays: req.RetentionDays,
 	})
 	if err != nil {
 		return err
@@ -114,7 +115,8 @@ func (s *server) updateRoom(w http.ResponseWriter, r *http.Request, p authn.Prin
 		return err
 	}
 	room, err := s.Rooms.Update(r.Context(), p, r.PathValue("id"), rooms.UpdateInput{
-		Name: req.Name, Description: req.Description, BridgeChats: req.BridgeChats, RetentionDays: req.RetentionDays,
+		Name: req.Name, Description: req.Description, Instructions: req.Instructions, BridgeChats: req.BridgeChats,
+		RetentionDays: req.RetentionDays,
 	})
 	if err != nil {
 		return err
