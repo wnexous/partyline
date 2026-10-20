@@ -201,10 +201,10 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | HOOK-01 | P1: Webhook | Tasks | Pending |
 | HOOK-02 | P1: Webhook | Tasks | Pending |
 | HOOK-03 | P1: Webhook | Tasks | Pending |
-| IDN-01 | P1: Identities | Tasks | Pending |
-| IDN-02 | P1: Identities | Tasks | Pending |
-| IDN-03 | P1: Identities | Tasks | Pending |
-| IDN-04 | P1: Identities | Tasks | Pending |
+| IDN-01 | P1: Identities | Tasks | Implementing |
+| IDN-02 | P1: Identities | Tasks | Implementing |
+| IDN-03 | P1: Identities | Tasks | Implementing |
+| IDN-04 | P1: Identities | Tasks | Implementing |
 
 **Coverage:** 31 total, mapped in tasks.md
 

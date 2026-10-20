@@ -21,6 +21,7 @@ import (
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/live"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
@@ -73,6 +74,8 @@ type App struct {
 	// Connectors manages connectors (CRUD, sharing); ConnectorManager runs them.
 	Connectors       *connectors.Service
 	ConnectorManager *connectors.Manager
+	// Identities links chat accounts to users (pairing codes).
+	Identities *identities.Service
 	// Gateway serves the agent WebSocket and pushes messages to connected agents.
 	Gateway *agents.Gateway
 	Live    *live.Hub
@@ -142,6 +145,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	if kinds == nil {
 		kinds = BuiltinKinds()
 	}
+	a.Identities = identities.New(identities.Deps{Store: st, Bus: bus, Now: opts.Now})
 	registry := connectors.NewRegistry(kinds...)
 	version := opts.Version
 	if version == "" {
@@ -162,6 +166,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Rooms:      a.Rooms,
 		Agents:     a.Agents,
 		Connectors: a.Connectors,
+		Identities: a.Identities,
 		Blobs:      blobs,
 		Audit:      audit.New(st, opts.Now),
 		Live:       a.Live,

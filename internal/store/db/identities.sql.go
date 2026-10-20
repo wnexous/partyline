@@ -9,6 +9,93 @@ import (
 	"context"
 )
 
+const createIdentity = `-- name: CreateIdentity :exec
+INSERT INTO identities (id, user_id, connector_kind, external_id, alt_external_id, display, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+`
+
+type CreateIdentityParams struct {
+	ID            string
+	UserID        string
+	ConnectorKind string
+	ExternalID    string
+	AltExternalID string
+	Display       string
+	CreatedAt     int64
+}
+
+func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) error {
+	_, err := q.db.ExecContext(ctx, createIdentity,
+		arg.ID,
+		arg.UserID,
+		arg.ConnectorKind,
+		arg.ExternalID,
+		arg.AltExternalID,
+		arg.Display,
+		arg.CreatedAt,
+	)
+	return err
+}
+
+const createPairingCode = `-- name: CreatePairingCode :exec
+INSERT INTO pairing_codes (code_hash, user_id, expires_at) VALUES (?, ?, ?)
+`
+
+type CreatePairingCodeParams struct {
+	CodeHash  string
+	UserID    string
+	ExpiresAt int64
+}
+
+func (q *Queries) CreatePairingCode(ctx context.Context, arg CreatePairingCodeParams) error {
+	_, err := q.db.ExecContext(ctx, createPairingCode, arg.CodeHash, arg.UserID, arg.ExpiresAt)
+	return err
+}
+
+const deleteExpiredPairingCodes = `-- name: DeleteExpiredPairingCodes :exec
+DELETE FROM pairing_codes WHERE expires_at <= ?
+`
+
+func (q *Queries) DeleteExpiredPairingCodes(ctx context.Context, expiresAt int64) error {
+	_, err := q.db.ExecContext(ctx, deleteExpiredPairingCodes, expiresAt)
+	return err
+}
+
+const deleteIdentitiesForSender = `-- name: DeleteIdentitiesForSender :exec
+DELETE FROM identities
+WHERE connector_kind = ?1
+  AND (external_id IN (?2, ?3)
+       OR (alt_external_id <> '' AND alt_external_id IN (?2, ?3)))
+`
+
+type DeleteIdentitiesForSenderParams struct {
+	ConnectorKind string
+	SenderID      string
+	AltID         string
+}
+
+func (q *Queries) DeleteIdentitiesForSender(ctx context.Context, arg DeleteIdentitiesForSenderParams) error {
+	_, err := q.db.ExecContext(ctx, deleteIdentitiesForSender, arg.ConnectorKind, arg.SenderID, arg.AltID)
+	return err
+}
+
+const deleteIdentity = `-- name: DeleteIdentity :execrows
+DELETE FROM identities WHERE id = ? AND user_id = ?
+`
+
+type DeleteIdentityParams struct {
+	ID     string
+	UserID string
+}
+
+func (q *Queries) DeleteIdentity(ctx context.Context, arg DeleteIdentityParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteIdentity, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getIdentity = `-- name: GetIdentity :one
 SELECT id, user_id, connector_kind, external_id, alt_external_id, display, created_at FROM identities WHERE id = ?
 `
@@ -25,5 +112,79 @@ func (q *Queries) GetIdentity(ctx context.Context, id string) (Identity, error) 
 		&i.Display,
 		&i.CreatedAt,
 	)
+	return i, err
+}
+
+const listIdentities = `-- name: ListIdentities :many
+SELECT id, user_id, connector_kind, external_id, alt_external_id, display, created_at FROM identities WHERE user_id = ? ORDER BY connector_kind, created_at, id
+`
+
+func (q *Queries) ListIdentities(ctx context.Context, userID string) ([]Identity, error) {
+	rows, err := q.db.QueryContext(ctx, listIdentities, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Identity
+	for rows.Next() {
+		var i Identity
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.ConnectorKind,
+			&i.ExternalID,
+			&i.AltExternalID,
+			&i.Display,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const resolveIdentityUser = `-- name: ResolveIdentityUser :one
+SELECT i.user_id FROM identities i JOIN users u ON u.id = i.user_id
+WHERE i.connector_kind = ?1 AND u.disabled_at IS NULL
+  AND (i.external_id IN (?2, ?3)
+       OR (i.alt_external_id <> '' AND i.alt_external_id IN (?2, ?3)))
+ORDER BY i.created_at DESC
+LIMIT 1
+`
+
+type ResolveIdentityUserParams struct {
+	ConnectorKind string
+	SenderID      string
+	AltID         string
+}
+
+func (q *Queries) ResolveIdentityUser(ctx context.Context, arg ResolveIdentityUserParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, resolveIdentityUser, arg.ConnectorKind, arg.SenderID, arg.AltID)
+	var user_id string
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
+const takePairingCode = `-- name: TakePairingCode :one
+DELETE FROM pairing_codes WHERE code_hash = ?
+RETURNING user_id, expires_at
+`
+
+type TakePairingCodeRow struct {
+	UserID    string
+	ExpiresAt int64
+}
+
+func (q *Queries) TakePairingCode(ctx context.Context, codeHash string) (TakePairingCodeRow, error) {
+	row := q.db.QueryRowContext(ctx, takePairingCode, codeHash)
+	var i TakePairingCodeRow
+	err := row.Scan(&i.UserID, &i.ExpiresAt)
 	return i, err
 }

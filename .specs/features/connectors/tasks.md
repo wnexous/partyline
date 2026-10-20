@@ -108,8 +108,8 @@ T7 → T8 → T9 → T10 → T11
 **Requirement**: IDN-01, IDN-02, IDN-03, IDN-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Code matches `^[A-HJ-NP-Z2-9]{6}$`, expires after 10 min (fake clock), single use
-- [ ] ResolveSender by sender id or alt id; after Delete → empty
+- [x] Code matches `^[A-HJ-NP-Z2-9]{6}$`, expires after 10 min (fake clock), single use
+- [x] ResolveSender by sender id or alt id; after Delete → empty
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(identities): add verified identities with pairing codes`
