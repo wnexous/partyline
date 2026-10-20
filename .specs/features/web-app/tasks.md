@@ -476,3 +476,74 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 - [x] Async `find*`/`waitFor` tolerate a loaded host (longer default timeout), no assertion changed
 **Tests**: unit
 **Gate**: build
+
+---
+
+## Phase 6: Backend follow-ups (after core-platform fix iterations 1-2 and connectors fix iterations 1-2)
+
+Adopts contract changes that landed after the web app was verified: `Room.member_count`,
+`GET /activity`, live close codes 1008/1013, `Connector.generated_secrets` / `inbound_url`,
+and the 422 `recipients: listen-only` rule (DLV-05). Each task is one commit; tests come from the
+spec ACs and the contract notes (`core-platform/contract-notes.md`, `connectors/contract-notes.md`).
+
+```
+T33 → T34 → T35 → T36 → T37 → T38
+```
+
+#### T33: Rooms list shows the member count
+**Where**: `web/src/routes/_app/rooms/index.tsx`
+**Depends on**: T32
+**Requirement**: UI-10
+**Done when**:
+- [x] Each room row shows `member_count` ("No members", "1 member", "N members"; pt-BR too); the SPEC_DEVIATION note about the missing count is gone
+**Tests**: unit
+**Gate**: quick
+
+#### T34: Dashboard activity comes from `GET /activity`
+**Where**: `web/src/lib/api/queries.ts`, `web/src/routes/_app/index.tsx`
+**Depends on**: T33
+**Requirement**: UI-04
+**Done when**:
+- [ ] The dashboard makes one `GET /activity?limit=…` request (no per-room message requests) and shows each item's room name from `ActivityItem.room`
+- [ ] A live `room.message` still prepends to the feed; the SPEC_DEVIATION note is gone
+**Tests**: unit
+**Gate**: quick
+
+#### T35: Live socket honours close codes 1008 and 1013
+**Where**: `web/src/lib/live/socket.ts`, `web/src/lib/live/index.ts`, `web/src/lib/api/client.ts`
+**Depends on**: T34
+**Requirement**: UI-02, UI-06
+**Done when**:
+- [ ] Close 1008 (`session revoked`): no reconnect, the query cache is cleared and the 401 handler runs with the current location (→ `/login?redirect=<current>`)
+- [ ] Close 1013 (`session check failed`) and other codes: reconnect with the normal backoff
+**Tests**: unit
+**Gate**: quick
+
+#### T36: Generated connector secrets shown once; inbound URL from the DTO
+**Where**: `web/src/components/add-connector-dialog.tsx`, `web/src/lib/api/queries.ts`, `web/src/routes/_app/connectors/$connectorId.tsx`
+**Depends on**: T35
+**Requirement**: UI-16, UI-19
+**Done when**:
+- [ ] A create response with `generated_secrets` opens the secret-once dialog (value, copy button, warning, inbound URL); the connector page opens after it closes
+- [ ] The cached connector never holds `generated_secrets`; the detail page shows `inbound_url` from the DTO (no client-built URL)
+**Tests**: unit
+**Gate**: quick
+
+#### T37: Listen-only chats cannot be explicit recipients
+**Where**: `web/src/components/composer.tsx`
+**Depends on**: T36
+**Requirement**: UI-07, UI-12
+**Done when**:
+- [ ] Chat members with `outbound=false` are disabled in the recipients picker and labelled "listen-only"
+- [ ] A 422 `recipients: listen-only` shows a recipients error, keeps the text
+**Tests**: unit
+**Gate**: quick
+
+#### T38: Record the follow-ups in conventions and traceability
+**Where**: `.specs/features/web-app/conventions.md`, `.specs/features/web-app/spec.md`
+**Depends on**: T37
+**Requirement**: UI-25 (pt-BR parity confirmed for the pairing dialog and the new strings)
+**Done when**:
+- [ ] conventions.md has a Phase 6 section; resolved DTO gaps are marked; traceability names T33-T37; `make check` passes
+**Tests**: none (docs; i18n parity test covers new strings)
+**Gate**: build

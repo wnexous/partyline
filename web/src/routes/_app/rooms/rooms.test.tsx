@@ -37,6 +37,37 @@ describe("rooms list (UI-10 entry)", () => {
     expect(within(links[1] as HTMLElement).queryByText("Agents paused")).toBeNull();
   });
 
+  it("shows each room's member count from the room payload", async () => {
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /rooms": json(200, {
+        items: [
+          makeRoom({ id: "r1", name: "deploys", member_count: 3 }),
+          makeRoom({ id: "r2", name: "solo", member_count: 1 }),
+          makeRoom({ id: "r3", name: "fresh", member_count: 0 }),
+        ],
+      }),
+    });
+    renderRoute("/rooms");
+
+    const link = async (name: string) =>
+      within(await screen.findByRole("link", { name: new RegExp(name) }));
+    expect((await link("deploys")).getByText("3 members")).toBeInTheDocument();
+    expect((await link("solo")).getByText("1 member")).toBeInTheDocument();
+    expect((await link("fresh")).getByText("No members")).toBeInTheDocument();
+  });
+
+  it("shows the member count in Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mockApi({
+      "GET /me": json(200, makeMe({ locale: "pt-BR" })),
+      "GET /rooms": json(200, { items: [makeRoom({ name: "deploys", member_count: 2 })] }),
+    });
+    renderRoute("/rooms");
+    const link = await screen.findByRole("link", { name: /deploys/ });
+    expect(within(link).getByText("2 membros")).toBeInTheDocument();
+  });
+
   it("shows an empty state that offers to create the first room (UI-05)", async () => {
     mockApi({ "GET /me": json(200, me), "GET /rooms": json(200, { items: [] }) });
     renderRoute("/rooms");

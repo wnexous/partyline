@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { MessagesSquareIcon, PauseIcon, PlusIcon } from "lucide-react";
+import { MessagesSquareIcon, PauseIcon, PlusIcon, UsersRoundIcon } from "lucide-react";
 import { useMemo } from "react";
 import { CreateRoomDialog } from "@/components/create-room-dialog";
 import { EmptyState } from "@/components/empty-state";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMe, useRooms } from "@/lib/api/queries";
 import type { Room } from "@/lib/api/types.gen";
-import { useI18n } from "@/lib/i18n";
+import { type Translate, useI18n } from "@/lib/i18n";
 import { formatAbsolute, formatRelative } from "@/lib/time";
 
 export const Route = createFileRoute("/_app/rooms/")({
@@ -69,9 +69,12 @@ function RoomsPage() {
   );
 }
 
-// SPEC_DEVIATION: rows show visibility, owner and last activity but no member count.
-// Reason: dto.Room has no member count and fetching every room's members would be N requests;
-// add the count to the row when the DTO carries it.
+function memberCount(t: Translate, count: number) {
+  if (count === 0) return t("rooms.membersNone");
+  if (count === 1) return t("rooms.membersOne");
+  return t("rooms.membersMany", { count });
+}
+
 function RoomRow({ room }: { room: Room }) {
   const { t, locale } = useI18n();
   const me = useMe().data;
@@ -99,6 +102,10 @@ function RoomRow({ room }: { room: Room }) {
       </span>
       <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
         <VisibilityLabel visibility={room.visibility} />
+        <span className="inline-flex items-center gap-1 text-xs">
+          <UsersRoundIcon className="size-3.5" aria-hidden="true" />
+          <span className="tabular">{memberCount(t, room.member_count)}</span>
+        </span>
         {foreign ? (
           <span className="text-xs">{t("rooms.ownedBy", { username: room.owner.username })}</span>
         ) : null}
