@@ -74,6 +74,13 @@ type Room struct {
 // LastSeq is the sequence number of the room's latest message (0 when empty).
 func (r Room) LastSeq() int64 { return r.NextSeq - 1 }
 
+// Require checks that the caller holds want on the room, with the errors of authorize. Use it
+// before expensive work such as storing uploads.
+func (s *Service) Require(ctx context.Context, p authn.Principal, roomID string, want access.Level) error {
+	_, err := s.authorize(ctx, p, roomID, want)
+	return err
+}
+
 // authorize resolves the caller's level on a room and requires want: no view is
 // ErrNotFound (ACL-03), view without want is ErrForbidden (ACL-04).
 func (s *Service) authorize(ctx context.Context, p authn.Principal, roomID string, want access.Level) (access.Level, error) {

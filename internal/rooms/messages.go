@@ -395,3 +395,19 @@ func (s *Service) Resume(ctx context.Context, p authn.Principal, roomID string) 
 	s.bus.Publish(events.RoomChanged{RoomID: roomID})
 	return s.Get(ctx, p, roomID)
 }
+
+// Attachment returns an attachment of a message in a room the caller can view; otherwise
+// access.ErrNotFound.
+func (s *Service) Attachment(ctx context.Context, p authn.Principal, attachmentID string) (db.Attachment, error) {
+	row, err := s.store.R().GetAttachmentRoom(ctx, attachmentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return db.Attachment{}, access.ErrNotFound
+	}
+	if err != nil {
+		return db.Attachment{}, err
+	}
+	if _, err := s.authorize(ctx, p, row.RoomID, dto.LevelView); err != nil {
+		return db.Attachment{}, access.ErrNotFound
+	}
+	return row.Attachment, nil
+}

@@ -215,7 +215,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | ACL-01 | P1: Rooms and sharing | Tasks | Implementing |
 | ACL-02 | P1: Rooms and sharing | Tasks | Implementing |
 | ACL-03 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-04 | P1: Rooms and sharing | Tasks | Pending |
+| ACL-04 | P1: Rooms and sharing | Tasks | Implementing |
 | ACL-05 | P1: Rooms and sharing | Tasks | Implementing |
 | ACL-06 | P1: Rooms and sharing | Tasks | Implementing |
 | ACL-07 | P1: Rooms and sharing | Tasks | Implementing |

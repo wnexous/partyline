@@ -48,3 +48,8 @@ SELECT * FROM outbox WHERE message_id IN (sqlc.slice(message_ids)) ORDER BY id;
 
 -- name: ResumeRoom :exec
 UPDATE rooms SET agent_streak = 0, agents_paused = 0, updated_at = ? WHERE id = ?;
+
+-- name: GetAttachmentRoom :one
+SELECT sqlc.embed(a), m.room_id
+FROM attachments a JOIN messages m ON m.id = a.message_id
+WHERE a.id = ?;

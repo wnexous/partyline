@@ -377,8 +377,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: ACL-01, ACL-03, ACL-04, ACL-07, ROOM-01, MSG-02, SEC-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Auth matrix owner/grantee(view)/grantee(post)/stranger/admin for each route with expected 200/201/403/404
-- [ ] Multipart over limit → 413; attachment of invisible room → 404; safe images inline, others `attachment`
+- [x] Auth matrix owner/grantee(view)/grantee(post)/stranger/admin for each route with expected 200/201/403/404
+- [x] Multipart over limit → 413; attachment of invisible room → 404; safe images inline, others `attachment`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): add room, member, sharing and message endpoints`

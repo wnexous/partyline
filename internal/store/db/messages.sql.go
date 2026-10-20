@@ -126,6 +126,34 @@ func (q *Queries) CreateOutbox(ctx context.Context, arg CreateOutboxParams) erro
 	return err
 }
 
+const getAttachmentRoom = `-- name: GetAttachmentRoom :one
+SELECT a.id, a.message_id, a.sha256, a.mime, a.name, a.size, a.status, a.created_at, m.room_id
+FROM attachments a JOIN messages m ON m.id = a.message_id
+WHERE a.id = ?
+`
+
+type GetAttachmentRoomRow struct {
+	Attachment Attachment
+	RoomID     string
+}
+
+func (q *Queries) GetAttachmentRoom(ctx context.Context, id string) (GetAttachmentRoomRow, error) {
+	row := q.db.QueryRowContext(ctx, getAttachmentRoom, id)
+	var i GetAttachmentRoomRow
+	err := row.Scan(
+		&i.Attachment.ID,
+		&i.Attachment.MessageID,
+		&i.Attachment.Sha256,
+		&i.Attachment.Mime,
+		&i.Attachment.Name,
+		&i.Attachment.Size,
+		&i.Attachment.Status,
+		&i.Attachment.CreatedAt,
+		&i.RoomID,
+	)
+	return i, err
+}
+
 const getMessageIDByExternalID = `-- name: GetMessageIDByExternalID :one
 SELECT id FROM messages
 WHERE room_id = ? AND author_kind = ? AND author_id = ? AND external_id = ?
