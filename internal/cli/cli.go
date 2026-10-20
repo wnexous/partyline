@@ -25,7 +25,9 @@ Commands:
   admin reset-password   set a new password and end the user's sessions; reads stdin
   setup                  save the instance URL and an agent token (or approve this machine in the
                          browser) and register Partyline in the installed harnesses; --uninstall undoes it
-  channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_AGENT or the config file)
+  channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_AGENT or the config file);
+                         --tools-only serves the tools without receiving messages
+  listen                 print incoming messages as JSON lines (used by the pi and OpenCode adapters)
   doctor                 check this machine: binary, config file, server, token, harnesses, versions
   claude [args...]       start Claude Code with the Partyline channel loaded
   healthcheck            exit 0 when the local server answers /healthz with 200
@@ -76,6 +78,8 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return setupCmd(ctx, args[2:], io)
 	case "channel":
 		return channelCmd(ctx, args[2:], io)
+	case "listen":
+		return listenCmd(ctx, args[2:], io)
 	case "doctor":
 		return doctor(ctx, io)
 	case "claude":

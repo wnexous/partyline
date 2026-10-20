@@ -102,3 +102,12 @@ func (c *client) json(ctx context.Context, method, path string, q url.Values, v,
 	}
 	return nil
 }
+
+// register registers the agent without a WebSocket (tools-only channel, PUSH-02); a failure
+// is reported on stderr and the tools answer with the server's error later.
+func (c *client) register(ctx context.Context, stderr io.Writer) {
+	var info dto.AgentInfo
+	if err := c.json(ctx, http.MethodPost, "agent/register", nil, nil, &info); err != nil && ctx.Err() == nil {
+		fmt.Fprintf(stderr, "partyline: cannot register agent %s: %v\n", c.agent(), err)
+	}
+}

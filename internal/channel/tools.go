@@ -29,7 +29,8 @@ const toolTimeout = 2 * time.Minute
 
 // tools implements the room tools (TOOL-01..09) over the agent REST API.
 type tools struct {
-	api  *client
+	api *client
+	// link is the agent WebSocket; nil for a tools-only channel.
 	link *link
 	// dir is where downloads are saved: <TempDir>/partyline/<agent> (TOOL-06).
 	dir string
@@ -87,8 +88,10 @@ type toolFunc func(ctx context.Context, args json.RawMessage) (string, error)
 // calling the server, bounds the call and turns errors into isError results.
 func (t *tools) guard(fn toolFunc) mcp.ToolFunc {
 	return func(ctx context.Context, args json.RawMessage) (mcp.ToolResult, error) {
-		if err := t.link.Err(); err != nil {
-			return mcp.ErrorResult(err.Error()), nil
+		if t.link != nil {
+			if err := t.link.Err(); err != nil {
+				return mcp.ErrorResult(err.Error()), nil
+			}
 		}
 		ctx, cancel := context.WithTimeout(ctx, toolTimeout)
 		defer cancel()

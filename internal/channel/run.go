@@ -35,6 +35,13 @@ type Options struct {
 	TempDir string
 	// Version is reported in the initialize answer.
 	Version string
+	// ToolsOnly serves the tools without the agent WebSocket, for harnesses that get the
+	// messages from `partyline listen` (PUSH-02). The agent is registered over REST and the
+	// tools act as the agent named in the session file of SessionKey when listen recorded
+	// one, else as Agent (never in unique mode: without a socket there is no welcome).
+	ToolsOnly bool
+	// SessionKey names the session file listen writes (see ListenOptions.SessionKey).
+	SessionKey string
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -45,12 +52,21 @@ type Options struct {
 	timing timing
 }
 
+// parseBase checks the instance URL.
+func parseBase(raw string) (*url.URL, error) {
+	base, err := url.Parse(raw)
+	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
+		return nil, fmt.Errorf("invalid Partyline URL %q: want http(s)://host", raw)
+	}
+	return base, nil
+}
+
 // Run serves MCP on Stdin/Stdout and keeps the agent connected until Stdin ends or ctx is
 // done. It returns nil on a normal end, and an error when the notification output fails.
 func Run(ctx context.Context, o Options) error {
-	base, err := url.Parse(o.URL)
-	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
-		return fmt.Errorf("invalid Partyline URL %q: want http(s)://host", o.URL)
+	base, err := parseBase(o.URL)
+	if err != nil {
+		return err
 	}
 	if o.HTTPClient == nil {
 		o.HTTPClient = &http.Client{}
@@ -58,8 +74,6 @@ func Run(ctx context.Context, o Options) error {
 	agent := agents.Slug(o.Agent)
 
 	srv := mcp.NewServer(o.Stdin, o.Stdout, mcp.ServerInfo{Name: ServerName, Version: o.Version, Instructions: Instructions})
-	l := newLink(base, o.Token, agent, o.HTTPClient, srv, o.Stderr, o.timing)
-	l.unique = o.UniqueName
 	if o.TempDir == "" {
 		o.TempDir = os.TempDir()
 	}
@@ -67,15 +81,32 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return fmt.Errorf("temp dir: %w", err)
 	}
-	t := &tools{
-		api:  &client{base: base, token: o.Token, agent: l.name, http: o.HTTPClient},
-		link: l,
-		dir:  filepath.Join(tmp, "partyline", agent),
-	}
-	t.register(srv)
-
+	t := &tools{dir: filepath.Join(tmp, "partyline", agent)}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if o.ToolsOnly {
+		path := sessionFile(tmp, o.SessionKey)
+		name := func() string {
+			if n := readSessionName(path); n != "" {
+				return n
+			}
+			return agent
+		}
+		t.api = &client{base: base, token: o.Token, agent: name, http: o.HTTPClient}
+		t.register(srv)
+		go t.api.register(ctx, o.Stderr)
+		err := srv.Serve(ctx)
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return err
+	}
+	l := newLink(base, o.Token, agent, o.HTTPClient, srv, o.Stderr, o.timing)
+	l.unique = o.UniqueName
+	t.api = &client{base: base, token: o.Token, agent: l.name, http: o.HTTPClient}
+	t.link = l
+	t.register(srv)
+
 	linkErr := make(chan error, 1)
 	go func() {
 		err := l.run(ctx)

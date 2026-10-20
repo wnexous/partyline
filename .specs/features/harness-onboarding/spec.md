@@ -190,8 +190,8 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | HAR-02 | P1: Harness registration | Tasks | Implementing |
 | HAR-03 | P1: Harness registration | Tasks | Implementing |
 | HAR-04 | P1: Harness registration | Tasks | Implementing |
-| PUSH-01 | P1: Push adapters | Tasks | Pending |
-| PUSH-02 | P1: Push adapters | Tasks | Pending |
+| PUSH-01 | P1: Push adapters | Tasks | Implementing |
+| PUSH-02 | P1: Push adapters | Tasks | Implementing |
 | PUSH-03 | P1: Push adapters | Tasks | Pending |
 | PUSH-04 | P1: Push adapters | Tasks | Pending |
 | PUSH-05 | P1: Push adapters | Tasks | Pending |

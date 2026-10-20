@@ -206,7 +206,7 @@ T15 → T16 → T17
 **Requirement**: PUSH-01, PUSH-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] listen prints the exact line format and acks after writing; tools-only opens no push socket
+- [x] listen prints the exact line format and acks after writing; tools-only opens no push socket
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): add listen and a tools-only channel`

@@ -115,6 +115,9 @@ type link struct {
 	// unique marks a derived agent name: the first connection asks the server for a free
 	// name (NAME-02); assigned is the name the welcome frame gave, used from then on.
 	unique bool
+	// onName, when set, receives the agent name in use after each welcome frame (listen
+	// records it for the tools-only channel, PUSH-02).
+	onName func(name string)
 
 	mu       sync.Mutex
 	state    linkState
@@ -152,18 +155,21 @@ func (l *link) dialName() (string, bool) {
 	return l.nameLocked(), false
 }
 
-// welcome records the name of a welcome frame for a derived name.
+// welcome records the name of a welcome frame for a derived name and reports the name in use
+// to onName.
 func (l *link) welcome(data []byte) {
-	if !l.unique {
-		return
-	}
 	var f dto.AgentWelcomeFrame
 	if json.Unmarshal(data, &f) != nil || f.Type != dto.AgentFrameTypeWelcome || f.Agent.Name == "" {
 		return
 	}
-	l.mu.Lock()
-	l.assigned = f.Agent.Name
-	l.mu.Unlock()
+	if l.unique {
+		l.mu.Lock()
+		l.assigned = f.Agent.Name
+		l.mu.Unlock()
+	}
+	if l.onName != nil {
+		l.onName(l.name())
+	}
 }
 
 // sleepCtx waits d or until ctx ends; it reports whether the full wait passed.

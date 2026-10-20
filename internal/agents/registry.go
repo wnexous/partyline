@@ -140,6 +140,17 @@ func (r *Registry) Upsert(ctx context.Context, ownerID, name string) (db.Agent, 
 	return out, err
 }
 
+// Register creates the owner's agent named Slug(name) like a first WebSocket connection would
+// (the agent cap applies) without bringing it online, and returns it with its owner. A
+// tools-only channel uses it, since it never opens the WebSocket (PUSH-02).
+func (r *Registry) Register(ctx context.Context, ownerID, name string) (db.GetAgentWithOwnerRow, error) {
+	a, err := r.Upsert(ctx, ownerID, name)
+	if err != nil {
+		return db.GetAgentWithOwnerRow{}, err
+	}
+	return r.store.R().GetAgentWithOwner(ctx, a.ID)
+}
+
 // Lookup returns the owner's agent named Slug(name) without creating it; ErrNotRegistered
 // when it does not exist.
 func (r *Registry) Lookup(ctx context.Context, ownerID, name string) (db.Agent, error) {
