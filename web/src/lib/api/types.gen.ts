@@ -163,6 +163,17 @@ export const SecretMask = "********";
  */
 export const HeaderAgent = "X-Partyline-Agent";
 /**
+ * HeaderAgentMode set to AgentModeUnique on the agent WebSocket asks for a free name: when
+ * the named agent is online in another session, the server registers the next free
+ * "<name>-N" (N ≥ 2) and the welcome frame carries it (NAME-02). Without it the newest
+ * connection replaces the older one (NAME-03).
+ */
+export const HeaderAgentMode = "X-Partyline-Agent-Mode";
+/**
+ * AgentModeUnique is the HeaderAgentMode value for derived agent names.
+ */
+export const AgentModeUnique = "unique";
+/**
  * HeaderSignature carries "sha256=<hex HMAC>" on webhook requests in both directions.
  */
 export const HeaderSignature = "X-Partyline-Signature";

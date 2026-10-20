@@ -183,9 +183,9 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | DEV-02 | P1: Browser approval | Tasks | Pending |
 | DEV-03 | P1: Browser approval | Tasks | Pending |
 | DEV-04 | P1: Browser approval | Tasks | Pending |
-| NAME-01 | P1: Agent names | Tasks | Pending |
-| NAME-02 | P1: Agent names | Tasks | Pending |
-| NAME-03 | P1: Agent names | Tasks | Pending |
+| NAME-01 | P1: Agent names | Tasks | Implementing |
+| NAME-02 | P1: Agent names | Tasks | Implementing |
+| NAME-03 | P1: Agent names | Tasks | Implementing |
 | HAR-01 | P1: Harness registration | Tasks | Pending |
 | HAR-02 | P1: Harness registration | Tasks | Pending |
 | HAR-03 | P1: Harness registration | Tasks | Pending |

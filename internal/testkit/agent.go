@@ -120,3 +120,17 @@ func (a *AgentConn) Closed(timeout time.Duration) error { return a.s.closed(time
 
 // Close closes the connection normally from the agent side.
 func (a *AgentConn) Close() { _ = a.Conn.Close(websocket.StatusNormalClosure, "bye") }
+
+// DialAgentUnique opens the agent WebSocket in unique mode (X-Partyline-Agent-Mode: unique),
+// the way the channel connects under a derived name.
+func (c *Client) DialAgentUnique(name string) (*AgentConn, *Response) {
+	c.T.Helper()
+	h := http.Header{}
+	h.Set(dto.HeaderAgent, name)
+	h.Set(dto.HeaderAgentMode, dto.AgentModeUnique)
+	conn, resp := c.dialWS("/api/v1/agent/ws", h)
+	if conn == nil {
+		return nil, resp
+	}
+	return &AgentConn{T: c.T, Conn: conn, s: newFrameStream[AgentFrame](conn)}, resp
+}

@@ -26,6 +26,10 @@ type Options struct {
 	Token string
 	// Agent is the agent name; it is slugified like the server does (empty → "agent").
 	Agent string
+	// UniqueName marks a derived name (not set by the user): when that agent is online in
+	// another session, the server assigns the next free "<name>-N" and the channel uses it
+	// (NAME-02). An explicit name replaces the older session instead (NAME-03).
+	UniqueName bool
 	// TempDir is where download_attachment saves files (<TempDir>/partyline/<agent>/);
 	// empty means os.TempDir().
 	TempDir string
@@ -55,6 +59,7 @@ func Run(ctx context.Context, o Options) error {
 
 	srv := mcp.NewServer(o.Stdin, o.Stdout, mcp.ServerInfo{Name: ServerName, Version: o.Version, Instructions: Instructions})
 	l := newLink(base, o.Token, agent, o.HTTPClient, srv, o.Stderr, o.timing)
+	l.unique = o.UniqueName
 	if o.TempDir == "" {
 		o.TempDir = os.TempDir()
 	}
@@ -63,7 +68,7 @@ func Run(ctx context.Context, o Options) error {
 		return fmt.Errorf("temp dir: %w", err)
 	}
 	t := &tools{
-		api:  &client{base: base, token: o.Token, agent: agent, http: o.HTTPClient},
+		api:  &client{base: base, token: o.Token, agent: l.name, http: o.HTTPClient},
 		link: l,
 		dir:  filepath.Join(tmp, "partyline", agent),
 	}

@@ -28,6 +28,13 @@ const (
 const (
 	// HeaderAgent names the agent (within the token owner's agents) on agent-token requests.
 	HeaderAgent = "X-Partyline-Agent"
+	// HeaderAgentMode set to AgentModeUnique on the agent WebSocket asks for a free name: when
+	// the named agent is online in another session, the server registers the next free
+	// "<name>-N" (N ≥ 2) and the welcome frame carries it (NAME-02). Without it the newest
+	// connection replaces the older one (NAME-03).
+	HeaderAgentMode = "X-Partyline-Agent-Mode"
+	// AgentModeUnique is the HeaderAgentMode value for derived agent names.
+	AgentModeUnique = "unique"
 	// HeaderSignature carries "sha256=<hex HMAC>" on webhook requests in both directions.
 	HeaderSignature = "X-Partyline-Signature"
 	// HeaderTimestamp carries the unix seconds used in the webhook signature.

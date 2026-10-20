@@ -104,7 +104,7 @@ T15 → T16 → T17
 **Requirement**: NAME-01, NAME-02, NAME-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Two derived sessions → `proj`, `proj-2`; explicit name still replaces; cap still enforced; git root beats subdir
+- [x] Two derived sessions → `proj`, `proj-2`; explicit name still replaces; cap still enforced; git root beats subdir
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): give derived agent names a free suffix per session`

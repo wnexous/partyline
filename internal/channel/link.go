@@ -112,14 +112,58 @@ type link struct {
 	queueCap  int
 	readLimit int64
 
-	mu    sync.Mutex
-	state linkState
-	seen  *idRing
+	// unique marks a derived agent name: the first connection asks the server for a free
+	// name (NAME-02); assigned is the name the welcome frame gave, used from then on.
+	unique bool
+
+	mu       sync.Mutex
+	state    linkState
+	seen     *idRing
+	assigned string
 }
 
 func newLink(base *url.URL, token, agent string, hc *http.Client, n notifier, stderr io.Writer, t timing) *link {
 	return &link{base: base, token: token, agent: agent, http: hc, notify: n, stderr: stderr, t: t.withDefaults(), sleep: sleepCtx, seen: newIDRing(dedupeSize),
 		queueCap: maxQueuedFrames, readLimit: maxFrameBytes}
+}
+
+// name is the agent name in use: the one the server assigned, else the configured one.
+func (l *link) name() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.nameLocked()
+}
+
+func (l *link) nameLocked() string {
+	if l.assigned != "" {
+		return l.assigned
+	}
+	return l.agent
+}
+
+// dialName is the name the next connection sends and whether it asks for a free name: a
+// derived name asks until the server assigned one, then reconnects keep that name.
+func (l *link) dialName() (string, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.unique && l.assigned == "" {
+		return l.agent, true
+	}
+	return l.nameLocked(), false
+}
+
+// welcome records the name of a welcome frame for a derived name.
+func (l *link) welcome(data []byte) {
+	if !l.unique {
+		return
+	}
+	var f dto.AgentWelcomeFrame
+	if json.Unmarshal(data, &f) != nil || f.Type != dto.AgentFrameTypeWelcome || f.Agent.Name == "" {
+		return
+	}
+	l.mu.Lock()
+	l.assigned = f.Agent.Name
+	l.mu.Unlock()
 }
 
 // sleepCtx waits d or until ctx ends; it reports whether the full wait passed.
@@ -145,9 +189,9 @@ func (l *link) Err() error {
 	case stateInvalidToken:
 		return errInvalidToken
 	case stateReplaced:
-		return fmt.Errorf("partyline: replaced by another session using agent name %s", l.agent)
+		return fmt.Errorf("partyline: replaced by another session using agent name %s", l.nameLocked())
 	case stateDeleted:
-		return fmt.Errorf("partyline: agent %s was deleted; restart Claude Code to register it again", l.agent)
+		return fmt.Errorf("partyline: agent %s was deleted; restart Claude Code to register it again", l.nameLocked())
 	case stateAgentLimit:
 		return errAgentLimit
 	default:
@@ -210,16 +254,19 @@ func (l *link) run(ctx context.Context) error {
 			wait, backoff = 0, l.t.minBackoff
 		case outReplaced:
 			l.setState(stateReplaced)
-			fmt.Fprintf(l.stderr, "partyline: another session connected as agent %s; pausing for %s\n", l.agent, l.t.replacedPause)
+			fmt.Fprintf(l.stderr, "partyline: another session connected as agent %s; pausing for %s\n", l.name(), l.t.replacedPause)
+			l.mu.Lock()
+			l.assigned = "" // a derived name asks for a free name again instead of fighting
+			l.mu.Unlock()
 			wait, backoff = l.t.replacedPause, l.t.minBackoff
 		case outAgentLimit:
 			if l.setState(stateAgentLimit) {
-				fmt.Fprintf(l.stderr, "partyline: the server refused agent %s: agent limit reached; retrying every %s\n", l.agent, l.t.replacedPause)
+				fmt.Fprintf(l.stderr, "partyline: the server refused agent %s: agent limit reached; retrying every %s\n", l.name(), l.t.replacedPause)
 			}
 			wait, backoff = l.t.replacedPause, l.t.minBackoff
 		case outDeleted:
 			l.setState(stateDeleted)
-			fmt.Fprintf(l.stderr, "partyline: agent %s was deleted; not reconnecting until restart\n", l.agent)
+			fmt.Fprintf(l.stderr, "partyline: agent %s was deleted; not reconnecting until restart\n", l.name())
 			<-ctx.Done()
 			return nil
 		}
@@ -239,7 +286,11 @@ func (l *link) wsURL() string {
 func (l *link) session(ctx context.Context) (outcome, error) {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+l.token)
-	h.Set(dto.HeaderAgent, l.agent)
+	name, unique := l.dialName()
+	h.Set(dto.HeaderAgent, name)
+	if unique {
+		h.Set(dto.HeaderAgentMode, dto.AgentModeUnique)
+	}
 	ws, resp, err := websocket.Dial(ctx, l.wsURL(), &websocket.DialOptions{HTTPClient: l.http, HTTPHeader: h})
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
@@ -280,6 +331,7 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 		}
 	}()
 
+	first := true
 	for {
 		_, data, err := ws.Read(readCtx)
 		if err != nil {
@@ -298,6 +350,10 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 				return outLagged, nil
 			}
 			return outDropped, nil // dropped, shutting down (ctx ends next) or a failed ack
+		}
+		if first {
+			l.welcome(data) // the first frame is the welcome; tools use its name at once
+			first = false
 		}
 		if !q.push(data) {
 			// Claude Code stopped reading: drop the connection instead of growing without
