@@ -137,6 +137,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 
 1. WHEN an agent calls `react` with a message id and one emoji THEN the system SHALL send the reaction to the message's origin chat through its connector. (REACT-01)
 2. IF the target message did not come from a chat THEN `react` SHALL return `isError: true` with `can only react to chat messages`. (REACT-02)
+3. IF the target message's chat is listen-only in the room (`outbound` off) THEN `react` SHALL respond 422 with field `recipients` = `listen-only`, as for messages, and store nothing. (REACT-03)
 
 **Independent Test**: Fake connectors receive the reaction with the original external id.
 
@@ -192,10 +193,11 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | INS-03 | P2: Room instructions | Tasks | Fixed (T19), re-verify |
 | REACT-01 | P2: Reactions | Tasks | Implementing |
 | REACT-02 | P2: Reactions | Tasks | Implementing |
+| REACT-03 | P2: Reactions | Fix iteration 1 | Implemented (T20) |
 | ROOMDEL-01 | P1: Delete a room | Tasks | Implementing |
 | ROOMDEL-02 | P1: Delete a room | Tasks | Implementing |
 
-**Coverage:** 25 total, mapped in tasks.md
+**Coverage:** 26 total, mapped in tasks.md
 
 ---
 

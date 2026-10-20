@@ -367,7 +367,7 @@ T31 → T32 → T33 → T34
 **Requirement**: REACT-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 422 field recipients "listen-only"; no message stored; no outbox row
+- [x] 422 field recipients "listen-only"; no message stored; no outbox row
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(api): refuse reactions to listen-only chats`

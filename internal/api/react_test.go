@@ -93,3 +93,23 @@ func postFromChatIn(t *testing.T, f *agentRoom, roomID, chatID, text string) str
 	require.NoError(t, err)
 	return m.ID
 }
+
+// REACT-03: a reaction to a message of a listen-only chat (outbound off) answers 422
+// recipients "listen-only", like a message to that chat, and stores nothing.
+func TestAgentReactRefusesListenOnlyChat(t *testing.T) {
+	f := newAgentRoom(t)
+	quiet := f.chatMember(t, "Quiet")
+	target := f.postFromChat(t, quiet, "just listening")
+	off := false
+	for _, m := range testkit.Decode[dto.List[dto.RoomMember]](f.alice.Get("/api/v1/rooms/" + f.room.ID + "/members").RequireStatus(http.StatusOK)).Items {
+		if m.MemberID == quiet {
+			f.alice.Patch("/api/v1/rooms/"+f.room.ID+"/members/"+m.ID, dto.UpdateMemberRequest{Outbound: &off}).RequireStatus(http.StatusOK)
+		}
+	}
+
+	e := f.rest().Post(reactPath(target.ID), dto.ReactRequest{Emoji: "👍"}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+	require.Equal(t, map[string]string{"recipients": "listen-only"}, e.Fields)
+	page := testkit.Decode[dto.Page[dto.Message]](f.alice.Get("/api/v1/rooms/" + f.room.ID + "/messages").RequireStatus(http.StatusOK))
+	require.Len(t, page.Items, 1, "only the chat message is stored")
+	require.Equal(t, target.ID, page.Items[0].ID)
+}
