@@ -171,15 +171,15 @@ type payload struct {
 	MessageID  string `json:"message_id"`
 }
 
-// ReceiveHook verifies the timestamp (±5 minutes) and the signature with a constant-time
-// compare (HOOK-02), refuses a signature it already accepted (HOOK-05), counts the request
+// ReceiveHook verifies the timestamp (±5 minutes) and the normalized signature with a
+// constant-time compare (HOOK-02), refuses a signature it already accepted (HOOK-05), counts the request
 // toward the connector's budget of authenticated requests (HOOK-04) and hands the message
 // to the running handler (HOOK-01). Invalid requests never touch that budget; they have
 // their own per-IP budget, beyond which they get ErrRateLimited instead of
 // ErrBadSignature. Nothing is handled when a check fails.
 func (c *Connector) ReceiveHook(ctx context.Context, r connectors.HookRequest) error {
 	want := Sign(c.secret, r.Timestamp, r.Body)
-	if !c.validTimestamp(r.Timestamp) || !hmac.Equal([]byte(want), []byte(strings.TrimSpace(r.Signature))) {
+	if !c.validTimestamp(r.Timestamp) || !hmac.Equal([]byte(want), []byte(normalizeSignature(r.Signature))) {
 		if !c.allowInvalid(r.RemoteIP) {
 			return connectors.ErrRateLimited
 		}
@@ -212,6 +212,13 @@ func (c *Connector) ReceiveHook(ctx context.Context, r connectors.HookRequest) e
 		SenderID: p.SenderID, SenderName: p.SenderName, Kind: string(dto.MessageKindText), Text: p.Text, At: c.now(),
 	})
 	return nil
+}
+
+// normalizeSignature trims the header and lower-cases it: hex digits are case-insensitive.
+// The replay check keys on the computed signature, so every spelling of one request is the
+// same request (HOOK-05).
+func normalizeSignature(sig string) string {
+	return strings.ToLower(strings.TrimSpace(sig))
 }
 
 func (c *Connector) validTimestamp(ts string) bool {

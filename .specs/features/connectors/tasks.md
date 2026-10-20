@@ -435,7 +435,7 @@ signature, so padded or upper-cased copies are replays.
 **Requirement**: HOOK-02, HOOK-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Padded and upper-cased copies of an accepted request → `ErrReplayed` (409); a first upper-cased request is accepted
+- [x] Padded and upper-cased copies of an accepted request → `ErrReplayed` (409); a first upper-cased request is accepted
 **Tests**: unit
 **Gate**: full
 **Commit**: `fix(webhook): normalize the signature header before replay checks`
