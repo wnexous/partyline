@@ -269,3 +269,26 @@ func TestLiveRechecksSessionPeriodically(t *testing.T) {
 	}))
 	requireRevoked(t, conn)
 }
+
+// A lagged bus may have dropped a revocation event, so every socket re-checks its principal
+// at once: a socket whose session was deleted without an event closes long before the 60 s
+// periodic re-check; a socket whose session is still valid gets the lagged frame and stays.
+func TestLiveRechecksSessionAfterLaggedBus(t *testing.T) {
+	env := testkit.New(t) // default 60 s periodic re-check
+	alice := env.NewUser("alice")
+	bob := env.NewUser("bob")
+	aliceConn := dialHello(t, alice)
+	bobConn := dialHello(t, bob)
+	id := sessionID(t, env, alice)
+	require.NoError(t, env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
+		return q.DeleteSession(context.Background(), id)
+	}))
+
+	env.App.Bus.Publish(events.Lagged{})
+	err := aliceConn.Closed(10 * time.Second)
+	require.Error(t, err, "live socket still open 10 s after a lagged bus; the periodic re-check is 60 s")
+	require.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(err), "close: %v", err)
+
+	bobConn.Expect(dto.LiveEventTypeLagged, nil, liveWait)
+	require.NoError(t, bobConn.Closed(300*time.Millisecond), "a valid session stays live")
+}

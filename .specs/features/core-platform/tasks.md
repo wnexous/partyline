@@ -827,14 +827,14 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 #### T50: Live re-check default and lagged re-check
 
 **What**: Assert the production re-check interval is 60 s and that a lagged bus re-checks the principal at once.
-**Where**: `internal/live/hub_test.go`
+**Where**: `internal/live/hub_test.go`, `internal/api/live_test.go`
 **Depends on**: T49
 **Reuses**: live hub
 **Requirement**: AUTH-09, AUTH-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] The default session re-check interval is 60 s
-- [ ] After a lagged bus, a socket whose session was deleted closes with 1008 well before the periodic re-check
+- [x] The default session re-check interval is 60 s
+- [x] After a lagged bus, a socket whose session was deleted closes with 1008 well before the periodic re-check
 **Tests**: e2e
 **Gate**: full
 **Commit**: `test(live): assert the 60 s re-check default and the lagged re-check`
