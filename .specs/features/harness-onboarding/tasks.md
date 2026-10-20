@@ -383,13 +383,13 @@ From `uat.md` (T17) follow-ups 1 and 2, the omp instructions mismatch and a flak
 #### T22: Record the follow-up fixes
 
 **What**: contract notes for T18-T21, `uat.md` notes on the fixes, traceability.
-**Where**: `.specs/features/harness-onboarding/contract-notes.md`, `uat.md`, `spec.md`
+**Where**: `.specs/features/harness-onboarding/contract-notes.md`, `uat.md`, `spec.md`, `design.md`
 **Depends on**: T21
 **Reuses**: none
 **Requirement**: PUSH-03, PUSH-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Contract notes, uat.md and traceability describe the shipped behavior
+- [x] Contract notes, uat.md and traceability describe the shipped behavior
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record the harness uat follow-up fixes`
