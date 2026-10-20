@@ -96,3 +96,56 @@ live in `internal/api/dto` (AD-003); `web/src/lib/api/types.gen.ts` is regenerat
   the captured 0.7.2 shape with synthetic values.
 - Web fixtures: `makeRoom` has `instructions: ""`, `makeMember` the four settings,
   `makeConnector` `auto_route_scope: "off"`.
+
+# Contract Notes (from routing-context Phase 3: T9-T12)
+
+Binding for Phase 4 (web) and the Verifier.
+
+## Chat context (CTX-01..04)
+- `Message.chat` (`ChatRef{id, title, kind, platform}`) is now filled for every chat-authored
+  message wherever a message is rendered (timeline, live, agent pushes and backlog, history, post
+  responses). `platform` is the connector kind (`whatsapp`, `telegram`, `discord`, `webhook`). It is
+  absent for agent, user and system authors and for chat messages whose chat was deleted since.
+  Loaded by `rooms.withDetails` through query `ListChatRefs` (one batch per page).
+- Channel meta for chat messages adds `chat_id` (the chat member id, usable in `chat_ids`),
+  `chat_title`, `chat_kind`, `platform` and `sender_id`; agent/user/system messages carry none of
+  them. `history` items have the same keys plus `content`.
+- `send_message` takes `chat_ids`; `recipients` still works and both together send to the union.
+
+## Room info and instructions notice (INS-02, INS-03)
+- `GET /api/v1/agent/rooms/{room}/info` (agent token; `{room}` = id, name or slug) → `RoomInfo`
+  with `me` = the calling agent's member row (settings included). Non-member/unknown room → 403
+  "not a member of room <room>".
+- Tool `room_info(room)` answers `{room:{id,name}, instructions, members:[{kind, member_id, name,
+  owner?, online?, platform?, chat_kind?}], me:{display_name, sign_outbound, delivery, keywords}}`.
+- On every agent WebSocket connection, each member room with non-empty instructions sends one
+  `notice` (`agents.InstructionsNotice`: "This room has instructions for its agents; call the
+  room_info tool to read them.") before that room's backlog. Paused rooms get it too.
+  `ListAgentRoomStates` now returns `instructions`.
+
+## Reactions (REACT-01, REACT-02)
+- `POST /api/v1/agent/messages/{id}/react` `ReactRequest{emoji}` → 201 `Message` of kind
+  `reaction` (text = trimmed emoji, `reply_to` = target, `recipients` = [target chat]); one outbox
+  row for that chat. Errors: unknown message or a room without the agent → 404 "message not
+  found"; target not chat-authored → 422 `invalid` "can only react to chat messages" (no fields);
+  emoji empty, with letters or whitespace, or over 16 code points → 422 field `emoji` "must be one
+  emoji"; shares the 30/min post budget (429). Tool `react(message_id, emoji)` answers
+  "reacted (message_id <id>)".
+- `rooms.PostInput.Kind` (default text). `connectors.Reactor{React(ctx, Reaction)}` with
+  `Reaction{ChatID, TargetID, TargetSenderID, Emoji, MessageID, RoomID, AuthorName, CreatedAt}`;
+  `Manager.React` (ErrNotRunning / `ErrReactionsUnsupported` "reactions not supported", redacted
+  errors). The sender routes kind `reaction` to it with the target's platform id from the same quote
+  rule as replies; a target without a platform id in that chat fails with `ErrReactionTarget`
+  ("reaction target is not a message of this chat"). A sent reaction stores an empty
+  `outbox.external_id`.
+- Failures (unsupported platform, Telegram emoji outside its set) follow the normal outbox retry
+  until `MaxAttempts`; there is no permanent-failure path.
+- Platforms: WhatsApp `POST /message/react {number, id, reaction, fromMe:false, participant
+  (groups only)}`; Telegram `setMessageReaction {chat_id (int), message_id (int),
+  reaction:[{type:"emoji", emoji}]}`, U+FE0F dropped, emoji outside the Bot API reaction list →
+  `telegram.ErrReactionNotAllowed` before any call; Discord `MessageReactionAdd(channel, message,
+  emoji)` (session seam); webhook signed POST `{event:"reaction", connector_id, chat_id,
+  target_message_id, emoji, message:{id, room_id, author_name, created_at}}`.
+- Test helpers: `connectortest.Instance.WaitReact`, `Fake.WithoutReactions()` (later instances
+  lack `Reactor`); channel tests `chatIn(platform, title, kind)`, `fromChat`; whatsapp fake
+  `/message/react`; discord fake `reactions`/`reactErr`.
