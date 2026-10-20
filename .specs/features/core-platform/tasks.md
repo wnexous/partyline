@@ -224,7 +224,7 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 #### T10: API tokens service
 
 **What**: create (kind agent|user, name, optional expiry), list (prefix only), revoke, authenticate (updates `last_used_at` at most once per minute).
-**Where**: `internal/users/tokens.go`
+**Where**: `internal/users/tokens.go`, `internal/events/bus.go`, `internal/live/hub.go`
 **Depends on**: T9
 **Reuses**: authn
 **Requirement**: TOK-01, TOK-02, TOK-04
@@ -862,8 +862,8 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 **Requirement**: AUTH-10, TOK-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Revoking a user token closes a live socket opened with it within 1 s; other sockets stay open
-- [ ] Disabling a user closes its token-authenticated live socket within 1 s
+- [x] Revoking a user token closes a live socket opened with it within 1 s; other sockets stay open
+- [x] Disabling a user closes its token-authenticated live socket within 1 s
 **Tests**: e2e
 **Gate**: full
 **Commit**: `fix(users): close token live sockets on revocation and user disable`

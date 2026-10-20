@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
 	"sync"
 	"time"
 
@@ -246,7 +245,7 @@ func (c *conn) run(ctx context.Context) error {
 func (c *conn) checkRevoked(ctx context.Context, e events.Event) error {
 	switch e := e.(type) {
 	case events.SessionsRevoked:
-		if c.p.SessionID != "" && slices.Contains(e.SessionIDs, c.p.SessionID) {
+		if e.Revokes(c.p.UserID, c.p.SessionID, c.p.TokenID) {
 			return errSessionRevoked
 		}
 	case events.Lagged:

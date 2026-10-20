@@ -9,6 +9,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -225,6 +226,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.
 	}
 	var u db.User
 	var ended []string
+	var disabledNow bool
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		detail := map[string]any{}
 		if up.Role != nil {
@@ -274,6 +276,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.
 				if ended, err = q.DeleteSessionsByUser(ctx, id); err != nil {
 					return err
 				}
+				disabledNow = true
 			}
 			return q.SetUserDisabledAt(ctx, db.SetUserDisabledAtParams{DisabledAt: u.DisabledAt, ID: id})
 		}
@@ -282,6 +285,9 @@ func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.
 	if err != nil {
 		return db.User{}, err
 	}
-	s.sessionsRevoked(id, ended)
+	if disabledNow {
+		// Ends the user's token sockets too, not only its sessions'.
+		s.revoked(events.SessionsRevoked{UserID: id, SessionIDs: ended, UserDisabled: true})
+	}
 	return u, nil
 }

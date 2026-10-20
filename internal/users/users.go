@@ -102,8 +102,15 @@ func NewService(st *store.Store, opts Options) (*Service, error) {
 
 // sessionsRevoked announces ended sessions so live sockets bound to them close.
 func (s *Service) sessionsRevoked(userID string, ids []string) {
-	if s.bus != nil && len(ids) > 0 {
-		s.bus.Publish(events.SessionsRevoked{UserID: userID, SessionIDs: ids})
+	if len(ids) > 0 {
+		s.revoked(events.SessionsRevoked{UserID: userID, SessionIDs: ids})
+	}
+}
+
+// revoked announces ended credentials so live sockets authenticated by them close.
+func (s *Service) revoked(e events.SessionsRevoked) {
+	if s.bus != nil {
+		s.bus.Publish(e)
 	}
 }
 
