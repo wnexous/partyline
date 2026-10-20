@@ -63,7 +63,7 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: AGT-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Upsert is idempotent per (owner, name); `Roofly Infra!` → `roofly-infra`
+- [ ] Upsert is idempotent per (owner, name); `Billing API!` → `billing-api`
 - [ ] Visible list = owned + `use` grants; delete removes memberships and cursors
 **Tests**: integration
 **Gate**: full

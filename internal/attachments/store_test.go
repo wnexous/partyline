@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -119,4 +120,36 @@ func TestDeleteAndNotFound(t *testing.T) {
 		_, err := s.Open(bad)
 		require.ErrorIs(t, err, ErrNotFound, bad)
 	}
+}
+
+// OPS-02 blob cleanup: Sweep removes unreferenced blobs and abandoned uploads older than the
+// cutoff, and keeps referenced or newer ones.
+func TestSweep(t *testing.T) {
+	s, dir := newStore(t)
+	old := time.Now().Add(-2 * time.Hour)
+	put := func(content string, mtime time.Time) string {
+		sha, _, err := s.Put(strings.NewReader(content), 100)
+		require.NoError(t, err)
+		require.NoError(t, os.Chtimes(filepath.Join(dir, sha[:2], sha), mtime, mtime))
+		return sha
+	}
+	orphan, used, fresh := put("orphan", old), put("used", old), put("fresh", time.Now())
+	tmp := filepath.Join(dir, ".upload-123")
+	require.NoError(t, os.WriteFile(tmp, []byte("partial"), 0o600))
+	require.NoError(t, os.Chtimes(tmp, old, old))
+
+	n, err := s.Sweep(time.Now().Add(-time.Hour), func(sha string) (bool, error) { return sha == used, nil })
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.ElementsMatch(t, []string{filepath.Join(used[:2], used), filepath.Join(fresh[:2], fresh)}, files(t, dir))
+	require.NotContains(t, files(t, dir), filepath.Join(orphan[:2], orphan))
+
+	// Storing content again refreshes the blob, so a new reference gets the full grace period.
+	require.NoError(t, os.Chtimes(filepath.Join(dir, used[:2], used), old, old))
+	put2, _, err := s.Put(strings.NewReader("used"), 100)
+	require.NoError(t, err)
+	n, err = s.Sweep(time.Now().Add(-time.Hour), func(string) (bool, error) { return false, nil })
+	require.NoError(t, err)
+	require.Zero(t, n)
+	require.Contains(t, files(t, dir), filepath.Join(put2[:2], put2))
 }

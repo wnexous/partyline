@@ -394,8 +394,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: DLV-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake sender failing 5 times → status failed, attempts 5, next_attempt spacing 2/4/8/16 s (fake clock)
-- [ ] Pending rows from a previous process are sent after start
+- [x] Fake sender failing 5 times → status failed, attempts 5, next_attempt spacing 2/4/8/16 s (fake clock)
+- [x] Pending rows from a previous process are sent after start
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(delivery): add outbox worker with retry and backoff`
@@ -409,9 +409,9 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: LIVE-01, LIVE-02, LIVE-03, LIVE-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] User with view receives `room.message`; stranger receives nothing within 500 ms
-- [ ] Foreign Origin upgrade → 403
-- [ ] presence/connector/outbox events reach only users with access
+- [x] User with view receives `room.message`; stranger receives nothing within 500 ms
+- [x] Foreign Origin upgrade → 403
+- [x] presence/connector/outbox events reach only users with access
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(live): add live websocket hub with access filtering`
@@ -425,8 +425,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUD-01, AUD-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Login, logout, invite, token, grant, user-state actions create entries without secrets
-- [ ] Pagination newest first, 50 per page; non-admin 403
+- [x] Login, logout, invite, token, grant, user-state actions create entries without secrets
+- [x] Pagination newest first, 50 per page; non-admin 403
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(audit): add audit log and admin listing`
@@ -440,7 +440,7 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: OPS-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Messages older than N days deleted; retention 0 keeps all; orphan blobs removed, shared blobs kept
+- [x] Messages older than N days deleted; retention 0 keeps all; orphan blobs removed, shared blobs kept
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(rooms): add retention cleanup job`
@@ -454,7 +454,7 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: SEC-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `/rooms/x` returns index.html with CSP and other SEC-01 headers; `/api/v1/nope` returns JSON 404
+- [x] `/rooms/x` returns index.html with CSP and other SEC-01 headers; `/api/v1/nope` returns JSON 404
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(webui): serve embedded single page app with strict headers`
@@ -468,8 +468,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUTH-01, SEC-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Log captured during a test that posts a message and logs in contains neither message text nor password nor token
-- [ ] `admin create-user` creates an admin usable for login
+- [x] Log captured during a test that posts a message and logs in contains neither message text nor password nor token
+- [x] `admin create-user` creates an admin usable for login
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(cli): add serve and admin commands`
@@ -483,8 +483,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: OPS-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Dockerfile builds in CI (no local Docker available); image runs as nonroot with `/data`
-- [ ] `partyline healthcheck` exits 0 when `/healthz` is 200 and 1 otherwise (unit test with httptest)
+- [x] Dockerfile builds in CI (no local Docker available); image runs as nonroot with `/data`
+- [x] `partyline healthcheck` exits 0 when `/healthz` is 200 and 1 otherwise (unit test with httptest)
 **Tests**: unit
 **Gate**: build
 **Commit**: `ci: add container image, compose file and ci workflows`

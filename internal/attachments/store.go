@@ -11,6 +11,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // ErrTooLarge is returned by Put when the content exceeds the limit (SEC-03).
@@ -72,6 +74,11 @@ func (s *Store) Put(r io.Reader, limit int64) (sha string, size int64, err error
 	sha = hex.EncodeToString(h.Sum(nil))
 	final := s.path(sha)
 	if _, err := os.Stat(final); err == nil {
+		// Refresh the time so the orphan sweep's grace period covers this new reference.
+		now := time.Now()
+		if err := os.Chtimes(final, now, now); err != nil {
+			return "", 0, err
+		}
 		return sha, size, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(final), 0o700); err != nil {
@@ -106,4 +113,45 @@ func (s *Store) Delete(sha string) error {
 		return nil
 	}
 	return err
+}
+
+// Sweep deletes every blob last written before cutoff that referenced reports as unused, and
+// abandoned upload temp files older than cutoff. Blobs newer than cutoff are kept, since a
+// message referencing them may still be committing. It returns the number of blobs removed.
+func (s *Store) Sweep(cutoff time.Time, referenced func(sha string) (bool, error)) (int, error) {
+	root, err := os.OpenRoot(s.dir)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = root.Close() }()
+	removed := 0
+	err = fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if !info.ModTime().Before(cutoff) {
+			return nil
+		}
+		name := d.Name()
+		if strings.HasPrefix(name, ".upload-") {
+			return root.Remove(p)
+		}
+		if !validHash(name) {
+			return nil
+		}
+		used, err := referenced(name)
+		if err != nil || used {
+			return err
+		}
+		if err := s.Delete(name); err != nil {
+			return err
+		}
+		removed++
+		return nil
+	})
+	return removed, err
 }

@@ -74,8 +74,8 @@ sequenceDiagram
 
 ```jsonc
 // server → channel
-{"type":"welcome","agent":{"id":"…","name":"roofly","owner":"andre"}}
-{"type":"message","room":{"id":"…","name":"Roofly"},"trusted":false,"message":{ /* dto.Message */ }}
+{"type":"welcome","agent":{"id":"…","name":"billing-api","owner":"alice"}}
+{"type":"message","room":{"id":"…","name":"Support"},"trusted":false,"message":{ /* dto.Message */ }}
 {"type":"notice","room":{"id":"…","name":"…"},"text":"57 older messages skipped; use the history tool"}
 // channel → server
 {"type":"ack","message_id":"…"}

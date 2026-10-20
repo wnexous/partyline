@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -55,9 +56,15 @@ func (s *Service) Setup(ctx context.Context, token string, in AccountInput) (db.
 		if n > 0 {
 			return ErrSetupDone
 		}
-		return q.CreateUser(ctx, db.CreateUserParams{
+		if err := q.CreateUser(ctx, db.CreateUserParams{
 			ID: u.ID, Username: u.Username, DisplayName: u.DisplayName,
 			PasswordHash: u.PasswordHash, Role: u.Role, CreatedAt: u.CreatedAt,
+		}); err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, q, audit.Entry{
+			ActorID: u.ID, Action: audit.ActionSetup, TargetKind: audit.TargetUser, TargetID: u.ID,
+			Detail: map[string]any{"username": u.Username},
 		})
 	})
 	if err != nil {
@@ -91,11 +98,21 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (db.User, NewSession
 	u, err := s.checkPassword(ctx, in.Username, in.Password)
 	if errors.Is(err, ErrInvalidCredentials) {
 		s.limiter.Fail(in.IP, now)
+		// The attempted username is not recorded: people sometimes type a password there.
+		if aerr := s.audit.Append(ctx, audit.Entry{Action: audit.ActionLoginFailed, IP: in.IP}); aerr != nil {
+			return db.User{}, NewSession{}, aerr
+		}
 	}
 	if err != nil {
 		return db.User{}, NewSession{}, err
 	}
 	sess, err := s.createSession(ctx, u.ID, in.IP, in.UserAgent)
+	if err != nil {
+		return db.User{}, NewSession{}, err
+	}
+	err = s.audit.Append(ctx, audit.Entry{
+		ActorID: u.ID, Action: audit.ActionLogin, TargetKind: audit.TargetSession, TargetID: sess.ID, IP: in.IP,
+	})
 	if err != nil {
 		return db.User{}, NewSession{}, err
 	}
@@ -226,6 +243,10 @@ func (s *Service) RevokeSession(ctx context.Context, userID, sessionID string) e
 		if n == 0 {
 			return ErrNotFound
 		}
-		return nil
+		action := audit.ActionSessionRevoke
+		if p, ok := authn.PrincipalFrom(ctx); ok && p.SessionID == sessionID {
+			action = audit.ActionLogout
+		}
+		return s.audit.Record(ctx, q, audit.Entry{Action: action, TargetKind: audit.TargetSession, TargetID: sessionID})
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
@@ -23,7 +24,7 @@ func (s *server) authRoutes(mux *http.ServeMux) {
 	s.handle(mux, "DELETE /api/v1/me/sessions/{id}", authed(s.deleteSession))
 }
 
-func msTime(v int64) time.Time { return time.UnixMilli(v).UTC() }
+func msTime(v int64) time.Time { return convert.Time(v) }
 
 func toMe(u db.User) dto.Me {
 	return dto.Me{

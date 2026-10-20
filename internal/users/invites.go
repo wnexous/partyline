@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -53,9 +54,15 @@ func (s *Service) CreateInvite(ctx context.Context, createdBy string, role dto.R
 		CreatedBy: createdBy, CreatedAt: ms(now), ExpiresAt: ms(now.Add(InviteTTL)),
 	}
 	err = s.store.WithTx(ctx, func(q *db.Queries) error {
-		return q.CreateInvite(ctx, db.CreateInviteParams{
+		if err := q.CreateInvite(ctx, db.CreateInviteParams{
 			ID: inv.ID, TokenHash: inv.TokenHash, Role: inv.Role,
 			CreatedBy: inv.CreatedBy, CreatedAt: inv.CreatedAt, ExpiresAt: inv.ExpiresAt,
+		}); err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, q, audit.Entry{
+			ActorID: createdBy, Action: audit.ActionInviteCreate, TargetKind: audit.TargetInvite, TargetID: inv.ID,
+			Detail: map[string]any{"role": inv.Role},
 		})
 	})
 	if err != nil {
@@ -111,7 +118,10 @@ func (s *Service) AcceptInvite(ctx context.Context, token string, in AccountInpu
 		if n == 0 {
 			return ErrInviteGone
 		}
-		return nil
+		return s.audit.Record(ctx, q, audit.Entry{
+			ActorID: u.ID, Action: audit.ActionInviteAccept, TargetKind: audit.TargetInvite, TargetID: inv.ID,
+			Detail: map[string]any{"user_id": u.ID, "username": u.Username, "role": u.Role},
+		})
 	})
 	if err != nil {
 		return db.User{}, err
@@ -129,7 +139,7 @@ func (s *Service) RevokeInvite(ctx context.Context, id string) error {
 		if n == 0 {
 			return ErrNotFound
 		}
-		return nil
+		return s.audit.Record(ctx, q, audit.Entry{Action: audit.ActionInviteRevoke, TargetKind: audit.TargetInvite, TargetID: id})
 	})
 }
 
@@ -163,7 +173,13 @@ func (s *Service) CreateUser(ctx context.Context, in AccountInput, role dto.Role
 	err = s.store.WithTx(ctx, func(q *db.Queries) error {
 		var err error
 		u, err = insertUser(ctx, q, in, hash, string(role), s.now())
-		return err
+		if err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, q, audit.Entry{
+			Action: audit.ActionUserCreate, TargetKind: audit.TargetUser, TargetID: u.ID,
+			Detail: map[string]any{"username": u.Username, "role": u.Role},
+		})
 	})
 	return u, err
 }
@@ -207,6 +223,18 @@ func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.
 	}
 	var u db.User
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+		detail := map[string]any{}
+		if up.Role != nil {
+			detail["role"] = string(*up.Role)
+		}
+		if up.Disabled != nil {
+			detail["disabled"] = *up.Disabled
+		}
+		if err := s.audit.Record(ctx, q, audit.Entry{
+			Action: audit.ActionUserUpdate, TargetKind: audit.TargetUser, TargetID: id, Detail: detail,
+		}); err != nil {
+			return err
+		}
 		var err error
 		u, err = q.GetUser(ctx, id)
 		if errors.Is(err, sql.ErrNoRows) {

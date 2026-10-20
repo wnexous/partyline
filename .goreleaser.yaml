@@ -1,0 +1,44 @@
+# GoReleaser v2: binaries for linux, darwin and windows (amd64, arm64) on v* tags.
+version: 2
+project_name: partyline
+
+before:
+  hooks:
+    - make web-build
+
+builds:
+  - main: ./cmd/partyline
+    binary: partyline
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/wnexous/partyline/internal/cli.Version={{ .Tag }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - README.pt-BR.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs"
+      - "^test"
+
+release:
+  github:
+    owner: wnexous
+    name: partyline

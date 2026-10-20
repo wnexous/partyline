@@ -13,6 +13,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
@@ -41,6 +42,8 @@ type Deps struct {
 	Now func() time.Time
 	// LoopGuard pauses agent delivery after consecutive agent messages (DLV-08).
 	LoopGuard delivery.LoopGuard
+	// Blobs is swept by the retention job; nil skips the blob sweep.
+	Blobs *attachments.Store
 }
 
 // Service implements rooms, members and messages.
@@ -50,6 +53,7 @@ type Service struct {
 	bus   *events.Bus
 	now   func() time.Time
 	guard delivery.LoopGuard
+	blobs *attachments.Store
 }
 
 // New returns a Service.
@@ -57,7 +61,7 @@ func New(d Deps) *Service {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Service{store: d.Store, az: d.Access, bus: d.Bus, now: d.Now, guard: d.LoopGuard}
+	return &Service{store: d.Store, az: d.Access, bus: d.Bus, now: d.Now, guard: d.LoopGuard, blobs: d.Blobs}
 }
 
 // Room is a room as seen by one caller.

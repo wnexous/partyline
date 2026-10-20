@@ -74,8 +74,8 @@ internal/testkit/                apptest: boots App on temp dir + httptest serve
 
 | Component | Location | How to Use |
 | --- | --- | --- |
-| evolution-go parsing and routing logic | `orca-sv1/zap-router/zaprouter.py` (private, not copied verbatim) | Re-implement `unwrap`, `parse_message`, `bare`, route candidates in Go for the WhatsApp connector |
-| Broadcast WS findings | `orca-sv1/docs/zap-router/README.md` | Connector transport choice |
+| evolution-go parsing and routing logic | earlier private prototype (not copied) | Re-implement `unwrap`, `parse_message`, `bare`, route candidates in Go for the WhatsApp connector |
+| Broadcast WS findings | earlier private prototype notes | Connector transport choice |
 | Channel handshake transcript | captured 2026-10-19 (AD-004) | Golden test fixture for `internal/channel/mcp` |
 
 ### Integration Points

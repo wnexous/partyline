@@ -230,24 +230,24 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | DLV-04 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-05 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-06 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-07 | P1: Messages and delivery | Tasks | Pending |
+| DLV-07 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-08 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-09 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-10 | P1: Messages and delivery | Tasks | Implementing |
 | LIVE-01 | P1: Live updates | Tasks | Implementing |
-| LIVE-02 | P1: Live updates | Tasks | Pending |
-| LIVE-03 | P1: Live updates | Tasks | Pending |
-| LIVE-04 | P1: Live updates | Tasks | Pending |
+| LIVE-02 | P1: Live updates | Tasks | Implementing |
+| LIVE-03 | P1: Live updates | Tasks | Implementing |
+| LIVE-04 | P1: Live updates | Tasks | Implementing |
 | SEC-01 | P1: Secure deployment | Tasks | Implementing |
 | SEC-02 | P1: Secure deployment | Tasks | Implementing |
 | SEC-03 | P1: Secure deployment | Tasks | Implementing |
 | SEC-04 | P1: Secure deployment | Tasks | Implementing |
-| SEC-05 | P1: Secure deployment | Tasks | Pending |
+| SEC-05 | P1: Secure deployment | Tasks | Implementing |
 | OPS-01 | P1: Secure deployment | Tasks | Implementing |
 | OPS-02 | P1: Secure deployment | Tasks | Implementing |
 | OPS-03 | P1: Secure deployment | Tasks | Implementing |
-| AUD-01 | P2: Audit trail | Tasks | Pending |
-| AUD-02 | P2: Audit trail | Tasks | Pending |
+| AUD-01 | P2: Audit trail | Tasks | Implementing |
+| AUD-02 | P2: Audit trail | Tasks | Implementing |
 
 **Coverage:** 50 total, 0 mapped to tasks, 50 unmapped ⚠️ (mapped in tasks.md)
 

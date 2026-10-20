@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/validation"
@@ -58,6 +59,7 @@ type Service struct {
 	now        func() time.Time
 	setupToken string
 	limiter    *failureLimiter
+	audit      *audit.Log
 
 	dummyOnce sync.Once
 	dummyHash string
@@ -77,6 +79,7 @@ func NewService(st *store.Store, opts Options) (*Service, error) {
 		now:        opts.Now,
 		setupToken: token,
 		limiter:    newFailureLimiter(loginMaxFailures, loginWindow),
+		audit:      audit.New(st, opts.Now),
 	}, nil
 }
 

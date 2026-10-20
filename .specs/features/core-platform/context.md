@@ -33,7 +33,7 @@ Self-hosted multi-user server where rooms connect Claude Code agents, external c
 
 ## Specific References
 
-- Previous private prototype: `orca-sv1/zap-router` (Python, single user, spool + terminal notices). Its evolution-go findings (broadcast WebSocket) carry over; its code and data do not.
+- Previous private prototype (Python, single user, spool + terminal notices). Its evolution-go findings (broadcast WebSocket) carry over; its code and data do not.
 - "front com ws pra ver tudo ao vivo", "separação por usuário", "compartilhar sessões com outros usuários, público ou privado total".
 
 ---
