@@ -369,7 +369,7 @@ get their own per-IP budget (over it: 429, no audit entry).
 **Requirement**: CON-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake ListChats error containing platform text → 502 `unavailable`, message without that text
+- [x] Fake ListChats error containing platform text → 502 `unavailable`, message without that text
 **Tests**: e2e
 **Gate**: full
 **Commit**: `fix(connectors): answer 502 when the platform fails a chat refresh`

@@ -181,6 +181,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "connector is not running")
 	case errors.Is(err, connectors.ErrCannotListChats):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "this connector kind cannot list chats")
+	case errors.Is(err, connectors.ErrPlatform):
+		return httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, "the platform did not answer the request")
 	}
 	return err
 }

@@ -3,6 +3,7 @@ package connectors
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -22,6 +23,9 @@ var (
 	ErrNotRunning = errors.New("connector is not running")
 	// ErrCannotListChats means the connector's platform cannot list chats (CON-09).
 	ErrCannotListChats = errors.New("connector cannot list chats")
+	// ErrPlatform wraps a failure reported by the platform itself (CON-09: 502); its
+	// detail is for logs only, never for API answers.
+	ErrPlatform = errors.New("the platform request failed")
 )
 
 // Backoff limits of the supervisor (CON-06).
@@ -266,8 +270,8 @@ func (m *Manager) Hook(connectorID string) (HookReceiver, bool) {
 	return r, ok
 }
 
-// ListChats lists the chats of the running connector (CON-09); secrets are redacted from
-// its error.
+// ListChats lists the chats of the running connector (CON-09). A platform failure is
+// logged (secrets redacted) and returned wrapping ErrPlatform.
 func (m *Manager) ListChats(ctx context.Context, connectorID string) ([]ChatInfo, error) {
 	s := m.current(connectorID)
 	if s == nil {
@@ -279,7 +283,9 @@ func (m *Manager) ListChats(ctx context.Context, connectorID string) ([]ChatInfo
 	}
 	chats, err := lister.ListChats(ctx)
 	if err != nil {
-		return nil, errors.New(Redact(err.Error(), s.secrets))
+		detail := Redact(err.Error(), s.secrets)
+		m.d.Logger.Warn("connectors: list chats failed", "connector_id", connectorID, "err", detail)
+		return nil, fmt.Errorf("%w: %s", ErrPlatform, detail)
 	}
 	return chats, nil
 }

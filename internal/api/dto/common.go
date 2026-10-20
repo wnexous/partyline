@@ -52,7 +52,7 @@ const (
 	ErrorCodeTooLarge     ErrorCode = "too_large"    // 413
 	ErrorCodeRateLimited  ErrorCode = "rate_limited" // 429
 	ErrorCodeInternal     ErrorCode = "internal"     // 500
-	ErrorCodeUnavailable  ErrorCode = "unavailable"  // 503
+	ErrorCodeUnavailable  ErrorCode = "unavailable"  // 503, or 502 when a connector's platform failed
 )
 
 // ErrorBody is the envelope of every error response.

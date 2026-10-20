@@ -165,7 +165,7 @@ export const ErrorCodeGone = "gone"; // 410, e.g. used or expired invite
 export const ErrorCodeTooLarge = "too_large"; // 413
 export const ErrorCodeRateLimited = "rate_limited"; // 429
 export const ErrorCodeInternal = "internal"; // 500
-export const ErrorCodeUnavailable = "unavailable"; // 503
+export const ErrorCodeUnavailable = "unavailable"; // 503, or 502 when a connector's platform failed
 /**
  * Error codes and the HTTP status they come with.
  */

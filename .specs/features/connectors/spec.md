@@ -70,7 +70,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 
 1. WHEN a connector receives a message from an unknown chat THEN the system SHALL create the chat record (connector, external id, title, kind) and SHALL NOT store the message. (CON-07)
 2. WHEN a connector receives a message from a chat that belongs to rooms THEN the system SHALL store it once per room with author kind `chat`, sender id, sender name and external message id. (CON-08)
-3. WHERE the connector kind supports listing chats the system SHALL refresh the chat list on demand via `POST /api/v1/connectors/{id}/chats/refresh`. (CON-09)
+3. WHERE the connector kind supports listing chats the system SHALL refresh the chat list on demand via `POST /api/v1/connectors/{id}/chats/refresh`, answering 409 when the connector is not running or its kind cannot list chats, and 502 `unavailable` with a fixed message (no platform text) when the platform fails. (CON-09)
 4. IF the same external message id arrives twice for a chat THEN the system SHALL store it only once. (CON-10)
 5. WHEN inbound media fits the upload limit THEN the system SHALL store it as an attachment of the message. (CON-11)
 6. The system SHALL drop messages sent by the connector's own account. (CON-12)

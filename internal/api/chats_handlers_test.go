@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 
@@ -89,6 +90,24 @@ func TestRefreshChats(t *testing.T) {
 		Kind: "hook", Name: "ci", Config: map[string]any{"secret": "hook-secret-not-real"}, Enabled: disabled(),
 	}).RequireStatus(http.StatusCreated))
 	alice.Post("/api/v1/connectors/"+hook.ID+"/chats/refresh", nil).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+}
+
+// CON-09: a platform failure during refresh answers 502 unavailable with a fixed message;
+// the platform's own text (which may be anything) is not echoed.
+func TestRefreshChatsPlatformFailure(t *testing.T) {
+	fake := connectortest.New()
+	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()))
+	alice := env.NewUser("alice")
+	c := createFake(alice, "wa", true)
+	inst := fake.Instance(t, c.ID)
+	inst.WaitRun(t)
+	inst.SetListError(errors.New("GET /group/list: <html>internal page 10.0.0.5</html>"))
+
+	resp := alice.Post("/api/v1/connectors/"+c.ID+"/chats/refresh", nil)
+	apiErr := resp.RequireError(http.StatusBadGateway, dto.ErrorCodeUnavailable)
+	require.Equal(t, "the platform did not answer the request", apiErr.Message)
+	require.NotContains(t, resp.String(), "internal page")
+	require.NotContains(t, resp.String(), "10.0.0.5")
 }
 
 // UI-13: routing a chat creates a private room of the caller with the chat and the agent.

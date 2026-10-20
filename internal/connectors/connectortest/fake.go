@@ -104,6 +104,7 @@ type Instance struct {
 	mu      sync.Mutex
 	h       connectors.Handler
 	sendErr error
+	listErr error
 	chats   []connectors.ChatInfo
 	sent    []connectors.Outbound
 	nextID  int
@@ -146,11 +147,22 @@ func (i *Instance) Send(_ context.Context, m connectors.Outbound) (string, error
 	return id, nil
 }
 
-// ListChats implements connectors.ChatLister with the chats given to SetChats.
+// ListChats implements connectors.ChatLister with the chats given to SetChats, or fails
+// with the error given to SetListError.
 func (i *Instance) ListChats(context.Context) ([]connectors.ChatInfo, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.listErr != nil {
+		return nil, i.listErr
+	}
 	return append([]connectors.ChatInfo(nil), i.chats...), nil
+}
+
+// SetListError makes ListChats fail with err (nil restores it).
+func (i *Instance) SetListError(err error) {
+	i.mu.Lock()
+	i.listErr = err
+	i.mu.Unlock()
 }
 
 // SetChats sets what ListChats returns.
