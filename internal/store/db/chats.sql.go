@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const createChat = `-- name: CreateChat :exec
@@ -99,6 +100,57 @@ func (q *Queries) GetChatByExternalID(ctx context.Context, arg GetChatByExternal
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listChatRefs = `-- name: ListChatRefs :many
+SELECT c.id, c.title, c.kind, k.kind AS platform
+FROM chats c JOIN connectors k ON k.id = c.connector_id
+WHERE c.id IN (/*SLICE:chat_ids*/?)
+`
+
+type ListChatRefsRow struct {
+	ID       string
+	Title    string
+	Kind     string
+	Platform string
+}
+
+func (q *Queries) ListChatRefs(ctx context.Context, chatIds []string) ([]ListChatRefsRow, error) {
+	query := listChatRefs
+	var queryParams []interface{}
+	if len(chatIds) > 0 {
+		for _, v := range chatIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:chat_ids*/?", strings.Repeat(",?", len(chatIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:chat_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListChatRefsRow
+	for rows.Next() {
+		var i ListChatRefsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Kind,
+			&i.Platform,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listChatRoomIDs = `-- name: ListChatRoomIDs :many

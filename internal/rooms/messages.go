@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -27,6 +28,9 @@ type Message struct {
 	db.MessageView
 	Attachments []db.Attachment
 	Outbox      []db.Outbox
+	// Chat is the chat a chat-authored message came from (CTX-01): its title, kind and
+	// connector kind (platform). Nil for other authors and for chats deleted since.
+	Chat *db.ListChatRefsRow
 }
 
 // Recipients decodes the explicit chat ids of the message.
@@ -334,10 +338,29 @@ func (s *Service) withDetails(ctx context.Context, views []db.MessageView) ([]Me
 	}
 	ids := make([]string, len(views))
 	index := make(map[string]int, len(views))
+	var chatIDs []string
 	for i, v := range views {
 		ids[i] = v.ID
 		index[v.ID] = i
 		out[i] = Message{MessageView: v, Attachments: []db.Attachment{}}
+		if v.AuthorKind == string(dto.AuthorKindChat) && !slices.Contains(chatIDs, v.AuthorID) {
+			chatIDs = append(chatIDs, v.AuthorID)
+		}
+	}
+	if len(chatIDs) > 0 {
+		refs, err := s.store.R().ListChatRefs(ctx, chatIDs)
+		if err != nil {
+			return nil, err
+		}
+		byID := make(map[string]*db.ListChatRefsRow, len(refs))
+		for i := range refs {
+			byID[refs[i].ID] = &refs[i]
+		}
+		for i := range out {
+			if out[i].AuthorKind == string(dto.AuthorKindChat) {
+				out[i].Chat = byID[out[i].AuthorID]
+			}
+		}
 	}
 	atts, err := s.store.R().ListAttachmentsByMessages(ctx, ids)
 	if err != nil {

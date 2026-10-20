@@ -44,3 +44,8 @@ UPDATE chats SET external_id = sqlc.arg(new_external_id)
 WHERE chats.connector_id = sqlc.arg(connector_id) AND chats.external_id = sqlc.arg(old_external_id)
   AND NOT EXISTS (SELECT 1 FROM chats o
                   WHERE o.connector_id = sqlc.arg(connector_id) AND o.external_id = sqlc.arg(new_external_id));
+
+-- name: ListChatRefs :many
+SELECT c.id, c.title, c.kind, k.kind AS platform
+FROM chats c JOIN connectors k ON k.id = c.connector_id
+WHERE c.id IN (sqlc.slice(chat_ids));

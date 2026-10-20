@@ -41,6 +41,9 @@ func Message(m rooms.Message) dto.Message {
 	for _, o := range m.Outbox {
 		out.Outbox = append(out.Outbox, OutboxItem(o))
 	}
+	if m.Chat != nil {
+		out.Chat = &dto.ChatRef{ID: m.Chat.ID, Title: m.Chat.Title, Kind: dto.ChatKind(m.Chat.Kind), Platform: m.Chat.Platform}
+	}
 	return out
 }
 

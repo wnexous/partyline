@@ -35,10 +35,13 @@ func TestFormatMeta(t *testing.T) {
 			name: "chat",
 			in: msg(dto.AuthorKindChat, func(m *dto.Message) {
 				m.AuthorID, m.AuthorName, m.SenderID, m.SenderName = "chat-1", "Family", "5511999990000", "Grandma"
+				m.Chat = &dto.ChatRef{ID: "chat-1", Title: "Family group", Kind: dto.ChatKindGroup, Platform: "whatsapp"}
 			}),
 			want: map[string]string{
 				"room": room.ID, "room_name": "Support", "message_id": "0190c0de-0000-7000-8000-000000000001",
 				"author": "Family", "author_kind": "chat", "sender_name": "Grandma", "trusted": "false", "kind": "text",
+				"chat_id": "chat-1", "chat_title": "Family group", "chat_kind": "group", "platform": "whatsapp",
+				"sender_id": "5511999990000",
 			},
 		},
 		{
@@ -135,5 +138,12 @@ func TestInstructions(t *testing.T) {
 	require.Contains(t, Instructions, `trusted="true"`)
 	for _, tool := range []string{"send_message", "reply", "list_rooms", "history", "download_attachment", "send_file"} {
 		require.Contains(t, Instructions, tool)
+	}
+}
+
+// CTX-04: the instructions explain the chat fields of chat messages.
+func TestInstructionsExplainChatFields(t *testing.T) {
+	for _, key := range []string{"chat_id", "chat_title", `chat_kind="group|dm|channel"`, `platform="whatsapp|telegram|discord|webhook"`, "sender_id"} {
+		require.Contains(t, Instructions, key)
 	}
 }

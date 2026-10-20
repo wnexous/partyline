@@ -197,7 +197,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: CTX-01, CTX-02, CTX-03, CTX-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Exact meta for chat, agent, user messages; history JSON has chat fields; instructions mention them
+- [x] Exact meta for chat, agent, user messages; history JSON has chat fields; instructions mention them
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(channel): tell agents which chat a message came from`

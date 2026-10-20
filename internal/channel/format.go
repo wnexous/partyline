@@ -23,7 +23,9 @@ type Notification struct {
 
 // Format renders a delivered message (AGT-05): content is the text plus one line per
 // attachment; meta carries the room, message and author fields and the recipient-relative
-// trusted flag ("true"/"false").
+// trusted flag ("true"/"false"). A chat-authored message also names its chat (CTX-01):
+// chat_id (usable as a send_message recipient), chat_title, chat_kind, platform and
+// sender_id; other authors carry none of them (CTX-02).
 func Format(m dto.AgentMessage) Notification {
 	msg := m.Message
 	lines := make([]string, 0, 1+len(msg.Attachments))
@@ -45,6 +47,13 @@ func Format(m dto.AgentMessage) Notification {
 	}
 	if msg.ReplyTo != "" {
 		meta["reply_to"] = msg.ReplyTo
+	}
+	if c := msg.Chat; c != nil && msg.AuthorKind == dto.AuthorKindChat {
+		meta["chat_id"] = c.ID
+		meta["chat_title"] = c.Title
+		meta["chat_kind"] = string(c.Kind)
+		meta["platform"] = c.Platform
+		meta["sender_id"] = msg.SenderID
 	}
 	return Notification{Content: strings.Join(lines, "\n"), Meta: meta}
 }
