@@ -103,3 +103,29 @@ func TestDispatchSkipsPausedRoom(t *testing.T) {
 	resumed.Welcome(wsWait)
 	require.Equal(t, held.ID, resumed.Message(wsWait).Message.ID)
 }
+
+// ROOM-01 (agent side): an agent removed from a room gets no further deliveries from it,
+// neither a live push while connected nor a backlog when it reconnects.
+func TestRemovedAgentGetsNoPushAndNoBacklog(t *testing.T) {
+	f := newTwoAgents(t)
+	members := testkit.Decode[dto.List[dto.RoomMember]](f.alice.Get("/api/v1/rooms/" + f.room.ID + "/members").RequireStatus(http.StatusOK))
+	var memberID string
+	for _, m := range members.Items {
+		if m.Kind == dto.MemberKindAgent && m.MemberID == f.helperID {
+			memberID = m.ID
+		}
+	}
+	require.NotEmpty(t, memberID, "helper is a member")
+	f.alice.Delete("/api/v1/rooms/" + f.room.ID + "/members/" + memberID).RequireStatus(http.StatusNoContent)
+
+	after := f.post(f.alice, "after the removal")
+	require.Equal(t, after.ID, f.builder.Message(wsWait).Message.ID, "the remaining agent gets the message")
+	f.helper.ExpectNone(500 * time.Millisecond)
+
+	f.helper.Close()
+	require.Eventually(t, func() bool { return !f.env.App.Presence.Online(f.helperID) }, wsWait, 20*time.Millisecond)
+	again, resp := f.bob.Token(dto.TokenKindAgent, "laptop-2").DialAgent("helper")
+	require.NotNil(t, again, "upgrade refused: %d", resp.Status)
+	again.Welcome(wsWait)
+	again.ExpectNone(500 * time.Millisecond)
+}

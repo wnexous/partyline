@@ -905,8 +905,8 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 **Requirement**: ROOM-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A connected agent removed from a room receives no frame for a later post
-- [ ] On reconnect its backlog does not contain that post
+- [x] A connected agent removed from a room receives no frame for a later post
+- [x] On reconnect its backlog does not contain that post
 **Tests**: e2e
 **Gate**: full
 **Commit**: `test(api): removed agents get no push and no backlog`
