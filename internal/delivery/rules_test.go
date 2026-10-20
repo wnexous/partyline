@@ -35,9 +35,12 @@ func TestPlanTable(t *testing.T) {
 		// DLV-02/03: an agent post reaches the other agent and the outbound chats.
 		{"agent, no recipients", false, Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "A1"}, []string{"A2"}, []string{"C1", "C3"}},
 		{"agent, no recipients, bridge", true, Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "A2"}, []string{"A1"}, []string{"C1", "C3"}},
-		// DLV-04: explicit recipients reach only the listed chats, even with outbound off.
-		{"agent to C2", false, Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "A1", Recipients: []string{"C2"}}, []string{"A2"}, []string{"C2"}},
-		{"agent to C1+C2", false, Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "A1", Recipients: []string{"C2", "C1"}}, []string{"A2"}, []string{"C1", "C2"}},
+		// DLV-04: explicit recipients reach only the listed chats. A listed listen-only chat
+		// (outbound off) is dropped: the API answers 422 for it, and Plan never sends to it
+		// even when a caller skips that check.
+		{"agent to C2 (listen-only)", false, Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "A1", Recipients: []string{"C2"}}, []string{"A2"}, nil},
+		{"agent to C1+C2", false, Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "A1", Recipients: []string{"C2", "C1"}}, []string{"A2"}, []string{"C1"}},
+		{"user to C2+C3", false, Draft{AuthorKind: dto.AuthorKindUser, AuthorID: "U1", Recipients: []string{"C3", "C2"}}, []string{"A1", "A2"}, []string{"C3"}},
 		{"agent to non-member", false, Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "A1", Recipients: []string{"C9"}}, []string{"A2"}, nil},
 		// DLV-02/03 for users: every agent, the outbound chats.
 		{"user, no recipients", false, Draft{AuthorKind: dto.AuthorKindUser, AuthorID: "U1"}, []string{"A1", "A2"}, []string{"C1", "C3"}},
@@ -116,8 +119,8 @@ func checkPlan(t *testing.T, name string, members []Member, msg Draft, bridge bo
 				want = bridge && m.Outbound
 			case msg.AuthorKind == dto.AuthorKindSystem:
 				want = false
-			case len(msg.Recipients) > 0: // DLV-04
-				want = listed[m.ID]
+			case len(msg.Recipients) > 0: // DLV-04; listen-only chats never receive
+				want = listed[m.ID] && m.Outbound
 			default: // DLV-03
 				want = m.Outbound
 			}

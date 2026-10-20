@@ -920,7 +920,7 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 **Requirement**: DLV-04, DLV-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Table test: an explicit recipient with outbound off is not targeted, one with outbound on is
+- [x] Table test: an explicit recipient with outbound off is not targeted, one with outbound on is
 **Tests**: unit
 **Gate**: quick
 **Commit**: `fix(delivery): drop listen-only chats from explicit recipients`

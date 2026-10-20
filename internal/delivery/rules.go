@@ -41,8 +41,8 @@ type Targets struct {
 // Plan returns the delivery targets of msg, in member order:
 //   - never the author itself (DLV-01);
 //   - every other agent member (DLV-02);
-//   - agent and user posts: the listed chats when Recipients is set (DLV-04), otherwise every
-//     chat with Outbound on (DLV-03);
+//   - agent and user posts: the listed chats with Outbound on when Recipients is set (DLV-04),
+//     otherwise every chat with Outbound on (DLV-03);
 //   - chat posts: every other chat with Outbound on when the room bridges chats, else none
 //     (DLV-05);
 //   - system posts: no chats.
@@ -75,7 +75,9 @@ func chatReceives(room RoomState, m Member, msg Draft, listed map[string]bool) b
 	switch msg.AuthorKind {
 	case dto.AuthorKindAgent, dto.AuthorKindUser:
 		if len(msg.Recipients) > 0 {
-			return listed[m.ID]
+			// A listen-only chat never receives, even when listed (the API rejects that with
+			// 422; this guards callers that skip the check).
+			return listed[m.ID] && m.Outbound
 		}
 		return m.Outbound
 	case dto.AuthorKindChat:
