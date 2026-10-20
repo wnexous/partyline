@@ -124,9 +124,9 @@ A Claude Code session can only receive pushed events through a channel: an MCP s
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| MCP-01 | P1: Connect | Tasks | Pending |
-| MCP-02 | P1: Connect | Tasks | Pending |
-| MCP-03 | P1: Connect | Tasks | Pending |
+| MCP-01 | P1: Connect | Tasks | Implementing |
+| MCP-02 | P1: Connect | Tasks | Implementing |
+| MCP-03 | P1: Connect | Tasks | Implementing |
 | AGT-01 | P1: Connect | Tasks | Implementing |
 | AGT-02 | P1: Connect | Tasks | Pending |
 | AGT-03 | P1: Connect | Tasks | Implementing |

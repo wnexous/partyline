@@ -127,9 +127,9 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: MCP-01, MCP-02, MCP-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Golden: discover → -32601; initialize 2025-11-25 → same version, capabilities exactly `{"experimental":{"claude/channel":{}},"tools":{}}`
-- [ ] Client version `2026-07-28` → answered `2025-11-25`; no `claude/channel/permission` key anywhere
-- [ ] Notification before initialized is emitted after it
+- [x] Golden: discover → -32601; initialize 2025-11-25 → same version, capabilities exactly `{"experimental":{"claude/channel":{}},"tools":{}}`
+- [x] Client version `2026-07-28` → answered `2025-11-25`; no `claude/channel/permission` key anywhere
+- [x] Notification before initialized is emitted after it
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(channel): add minimal mcp stdio server`
