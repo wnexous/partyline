@@ -75,6 +75,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.agentAPIRoutes(mux)
 	s.connectorRoutes(mux)
 	s.identityRoutes(mux)
+	s.chatRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}
@@ -171,6 +172,10 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "already a member of the room")
 	case errors.Is(err, access.ErrForbidden):
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "not allowed")
+	case errors.Is(err, connectors.ErrNotRunning):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "connector is not running")
+	case errors.Is(err, connectors.ErrCannotListChats):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "this connector kind cannot list chats")
 	}
 	return err
 }

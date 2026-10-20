@@ -16,8 +16,13 @@ import (
 	"github.com/wnexous/partyline/internal/store/db"
 )
 
-// ErrNotRunning means the connector is disabled, deleted or failed to start (CON-05).
-var ErrNotRunning = errors.New("connector is not running")
+// Errors of running connectors.
+var (
+	// ErrNotRunning means the connector is disabled, deleted or failed to start (CON-05).
+	ErrNotRunning = errors.New("connector is not running")
+	// ErrCannotListChats means the connector's platform cannot list chats (CON-09).
+	ErrCannotListChats = errors.New("connector cannot list chats")
+)
 
 // Backoff limits of the supervisor (CON-06).
 const (
@@ -235,6 +240,24 @@ func (m *Manager) Send(ctx context.Context, connectorID string, msg Outbound) (s
 		return "", errors.New(Redact(err.Error(), s.secrets))
 	}
 	return ext, nil
+}
+
+// ListChats lists the chats of the running connector (CON-09); secrets are redacted from
+// its error.
+func (m *Manager) ListChats(ctx context.Context, connectorID string) ([]ChatInfo, error) {
+	s := m.current(connectorID)
+	if s == nil {
+		return nil, ErrNotRunning
+	}
+	lister, ok := s.conn.(ChatLister)
+	if !ok {
+		return nil, ErrCannotListChats
+	}
+	chats, err := lister.ListChats(ctx)
+	if err != nil {
+		return nil, errors.New(Redact(err.Error(), s.secrets))
+	}
+	return chats, nil
 }
 
 // supervise calls Run until ctx ends, waiting Backoff(n) after the n-th consecutive failure;

@@ -154,11 +154,16 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	if version == "" {
 		version = "dev"
 	}
+	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
+		Store: st, Bus: bus, Rooms: a.Rooms, Blobs: blobs, Identities: a.Identities,
+		MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
+	})
 	a.ConnectorManager = connectors.NewManager(connectors.ManagerDeps{
 		Store: st, Bus: bus, Box: box, Kinds: registry, Logger: opts.Logger, UserAgent: "partyline/" + version,
+		Inbound: pipeline.Handle,
 	})
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
-		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Runner: a.ConnectorManager, Now: opts.Now,
+		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Rooms: a.Rooms, Runner: a.ConnectorManager, Now: opts.Now,
 	})
 	a.Live = live.New(live.Deps{
 		Bus: bus, Access: az, Rooms: a.Rooms, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,

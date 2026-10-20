@@ -123,10 +123,10 @@ T7 → T8 → T9 → T10 → T11
 **Requirement**: CON-07, CON-08, CON-09, CON-10, CON-11, CON-12, IDN-02, IDN-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Unrouted chat → chat row exists, messages table count unchanged
-- [ ] Routed chat in 2 rooms → 2 messages; same external id again → still 2
-- [ ] Oversized media → attachment status `too_large`, no blob
-- [ ] `/chats/{id}/route` creates private room with chat + agent members
+- [x] Unrouted chat → chat row exists, messages table count unchanged
+- [x] Routed chat in 2 rooms → 2 messages; same external id again → still 2
+- [x] Oversized media → attachment status `too_large`, no blob
+- [x] `/chats/{id}/route` creates private room with chat + agent members
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(connectors): add inbound pipeline and chat endpoints`

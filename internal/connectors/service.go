@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -28,6 +29,8 @@ type Runner interface {
 	Apply(id string)
 	// Stop stops the connector and its outbound sends (CON-05).
 	Stop(id string)
+	// ListChats lists the chats of the running connector (CON-09).
+	ListChats(ctx context.Context, id string) ([]ChatInfo, error)
 }
 
 // ServiceDeps are the collaborators of the Service.
@@ -37,6 +40,8 @@ type ServiceDeps struct {
 	Bus    *events.Bus
 	Box    *secrets.Box
 	Kinds  *Registry
+	// Rooms creates the room of RouteChat.
+	Rooms *rooms.Service
 	// Runner is told about created, changed and deleted connectors; nil runs nothing.
 	Runner Runner
 	// Now returns the current time; defaults to time.Now.
