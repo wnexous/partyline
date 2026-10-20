@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -34,15 +36,37 @@ type setupOpts struct {
 	hostname string
 	// waits records each wait between approval polls.
 	waits *[]time.Duration
+	// lookPath finds harness CLIs (nil: none installed); run answers harness CLI calls (nil:
+	// any call fails the test, so no test ever runs a real harness CLI).
+	lookPath func(string) (string, error)
+	run      func(line string) ([]byte, error)
 }
+
+// testBinary is the partyline binary path setup registers in tests.
+const testBinary = "/opt/partyline/bin/partyline"
 
 func runSetup(t *testing.T, o setupOpts, args ...string) setupRun {
 	t.Helper()
 	var out, errOut lockedBuffer
 	std := stdio{
 		stdin: strings.NewReader(o.stdin), stdout: &out, stderr: &errOut,
-		getenv:   func(k string) string { return o.env[k] },
-		hostname: func() (string, error) { return o.hostname, nil },
+		getenv:     func(k string) string { return o.env[k] },
+		hostname:   func() (string, error) { return o.hostname, nil },
+		executable: func() (string, error) { return testBinary, nil },
+		lookPath: func(name string) (string, error) {
+			if o.lookPath == nil {
+				return "", exec.ErrNotFound
+			}
+			return o.lookPath(name)
+		},
+		runHarness: func(_ context.Context, name string, args ...string) ([]byte, error) {
+			line := name + " " + strings.Join(args, " ")
+			if o.run == nil {
+				t.Errorf("unexpected harness CLI call: %s", line)
+				return nil, errors.New("unexpected call")
+			}
+			return o.run(line)
+		},
 		sleep: func(_ context.Context, d time.Duration) bool {
 			if o.waits != nil {
 				*o.waits = append(*o.waits, d)

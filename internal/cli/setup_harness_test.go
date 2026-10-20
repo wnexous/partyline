@@ -1,0 +1,179 @@
+package cli
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/wnexous/partyline/internal/cliconfig"
+)
+
+// harnessCalls records the harness CLI calls of a setup run.
+type harnessCalls struct {
+	mu    sync.Mutex
+	lines []string
+	// answer gives the output of a call (nil: success, no output).
+	answer func(line string) ([]byte, error)
+}
+
+func (h *harnessCalls) run(line string) ([]byte, error) {
+	h.mu.Lock()
+	h.lines = append(h.lines, line)
+	h.mu.Unlock()
+	if h.answer != nil {
+		return h.answer(line)
+	}
+	return nil, nil
+}
+
+func (h *harnessCalls) calls() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.lines...)
+}
+
+// installed finds only the named harness CLIs.
+func installed(names ...string) func(string) (string, error) {
+	return func(name string) (string, error) {
+		for _, n := range names {
+			if n == name {
+				return "/usr/bin/" + name, nil
+			}
+		}
+		return "", errors.New("not found")
+	}
+}
+
+const (
+	claudeAdd = "claude mcp add --scope user partyline -- " + testBinary + " channel"
+	codexAdd  = "codex mcp add partyline -- " + testBinary + " channel --tools-only"
+	geminiAdd = "gemini mcp add -s user partyline " + testBinary + " channel --tools-only"
+)
+
+// HAR-01: setup offers each detected harness, shows the exact change before asking, and
+// registers only what the user confirms (Enter = yes, "n" = no).
+func TestSetupRegistersConfirmedHarnesses(t *testing.T) {
+	e := newChannelEnv(t)
+	home := t.TempDir()
+	calls := &harnessCalls{}
+	r := runSetup(t, setupOpts{
+		env: map[string]string{"HOME": home}, stdin: "\nn\n",
+		lookPath: installed("claude", "codex"), run: calls.run,
+	}, "--url", e.env.URL, "--token", e.secret)
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+
+	require.Equal(t, []string{claudeAdd}, calls.calls(), "claude confirmed, codex declined, gemini not installed")
+	claudeAt := strings.Index(r.stdout, "Claude Code:\n  run: "+claudeAdd+"\nRegister Partyline in Claude Code? [Y/n]: ")
+	require.GreaterOrEqual(t, claudeAt, 0, r.stdout)
+	require.Contains(t, r.stdout, "Registered Partyline in Claude Code.")
+	require.Contains(t, r.stdout, "Codex CLI:\n  run: "+codexAdd+"\n")
+	require.Contains(t, r.stdout, "Skipped Codex CLI.")
+	require.NotContains(t, r.stdout, "Gemini CLI:")
+	_, err := os.Stat(filepath.Join(home, ".codex", "hooks.json"))
+	require.ErrorIs(t, err, os.ErrNotExist, "declined: no hook written")
+}
+
+// HAR-01: --harness picks the harnesses and --yes applies without asking.
+func TestSetupHarnessFlagAndYes(t *testing.T) {
+	e := newChannelEnv(t)
+	home := t.TempDir()
+	calls := &harnessCalls{}
+	r := runSetup(t, setupOpts{
+		env: map[string]string{"HOME": home}, lookPath: installed("claude", "gemini"), run: calls.run,
+	}, "--url", e.env.URL, "--token", e.secret, "--yes", "--harness", "gemini")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Equal(t, []string{geminiAdd}, calls.calls())
+	require.NotContains(t, r.stdout, "[Y/n]")
+	require.Contains(t, r.stdout, "Registered Partyline in Gemini CLI.")
+	require.FileExists(t, filepath.Join(home, ".gemini", "settings.json"))
+
+	// "none" skips the harness step.
+	calls2 := &harnessCalls{}
+	r = runSetup(t, setupOpts{env: map[string]string{"HOME": t.TempDir()}, lookPath: installed("claude"), run: calls2.run},
+		"--url", e.env.URL, "--token", e.secret, "--yes", "--harness", "none")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Empty(t, calls2.calls())
+}
+
+// An unknown harness name is a usage error, before anything is written.
+func TestSetupUnknownHarness(t *testing.T) {
+	home := t.TempDir()
+	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", "http://127.0.0.1:1", "--token", "x", "--harness", "claude,vim")
+	require.Equal(t, 2, r.code)
+	require.Contains(t, r.stderr, `unknown harness "vim"`)
+	_, err := os.Stat(configPath(home))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// Without any installed harness setup says how to register one later.
+func TestSetupNoHarnessFound(t *testing.T) {
+	e := newChannelEnv(t)
+	r := runSetup(t, setupOpts{env: map[string]string{"HOME": t.TempDir()}}, "--url", e.env.URL, "--token", e.secret)
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, r.stdout, "No supported harness found")
+	require.Contains(t, r.stdout, "partyline setup --harness <name>")
+}
+
+// A failing registration is reported and makes setup exit 1; the credentials stay saved.
+func TestSetupHarnessFailure(t *testing.T) {
+	e := newChannelEnv(t)
+	home := t.TempDir()
+	calls := &harnessCalls{answer: func(string) ([]byte, error) {
+		return []byte("permission denied"), errors.New("exit status 1")
+	}}
+	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}, lookPath: installed("claude"), run: calls.run},
+		"--url", e.env.URL, "--token", e.secret, "--yes")
+	require.Equal(t, 1, r.code)
+	require.Contains(t, r.stderr, "Claude Code: claude mcp add")
+	require.Contains(t, r.stderr, "permission denied")
+	requireSavedConfig(t, home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
+}
+
+// HAR-04: --uninstall removes the harness entries setup added and the config file; the hook
+// file setup created is gone again.
+func TestSetupUninstall(t *testing.T) {
+	e := newChannelEnv(t)
+	home := t.TempDir()
+	calls := &harnessCalls{}
+	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}, lookPath: installed("codex"), run: calls.run},
+		"--url", e.env.URL, "--token", e.secret, "--yes")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	hooks := filepath.Join(home, ".codex", "hooks.json")
+	require.FileExists(t, hooks)
+
+	// Declining (end of input) keeps everything.
+	codexKnows := &harnessCalls{answer: func(line string) ([]byte, error) {
+		if line == "codex mcp get partyline --json" {
+			return []byte(`{"name":"partyline","transport":{"type":"stdio","command":"` + testBinary + `"}}`), nil
+		}
+		return nil, nil
+	}}
+	r = runSetup(t, setupOpts{env: map[string]string{"HOME": home}, lookPath: installed("codex"), run: codexKnows.run}, "--uninstall")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, r.stdout, "Codex CLI:\n  run: codex mcp remove partyline\n  edit ~/.codex/hooks.json: remove the Partyline Stop hook\n")
+	require.Contains(t, r.stdout, "Kept Codex CLI.")
+	require.FileExists(t, hooks)
+	require.FileExists(t, configPath(home))
+
+	r = runSetup(t, setupOpts{env: map[string]string{"HOME": home}, lookPath: installed("codex"), run: codexKnows.run}, "--uninstall", "--yes")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, codexKnows.calls(), "codex mcp remove partyline")
+	_, err := os.Stat(hooks)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = os.Stat(configPath(home))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	require.Contains(t, r.stdout, "revoke it in the web app")
+
+	// Nothing left: uninstall says so.
+	nothing := &harnessCalls{answer: func(string) ([]byte, error) {
+		return []byte("Error: No MCP server named 'partyline' found."), errors.New("exit status 1")
+	}}
+	r = runSetup(t, setupOpts{env: map[string]string{"HOME": home}, run: nothing.run}, "--uninstall", "--yes")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, r.stdout, "Nothing to remove")
+}

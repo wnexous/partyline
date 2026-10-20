@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/wnexous/partyline/internal/harness"
 )
 
 // Version is the build version, set at link time with
@@ -21,7 +23,8 @@ Commands:
   serve                  run the server (configured with PARTYLINE_* environment variables)
   admin create-user      create an account; the password is read from stdin
   admin reset-password   set a new password and end the user's sessions; reads stdin
-  setup                  save the instance URL and an agent token (or approve this machine in the browser)
+  setup                  save the instance URL and an agent token (or approve this machine in the
+                         browser) and register Partyline in the installed harnesses; --uninstall undoes it
   channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_AGENT or the config file)
   healthcheck            exit 0 when the local server answers /healthz with 200
   version                print the build version
@@ -36,6 +39,11 @@ type stdio struct {
 	hostname       func() (string, error) // nil means os.Hostname
 	// sleep waits between device approval polls; nil means a real timer.
 	sleep func(ctx context.Context, d time.Duration) bool
+	// executable is the path of this binary (nil: os.Executable); runHarness and lookPath run
+	// and find harness CLIs for setup (nil: for real).
+	executable func() (string, error)
+	runHarness harness.Runner
+	lookPath   func(string) (string, error)
 }
 
 // Run executes the command named in args[1] and returns the process exit code. SIGINT and

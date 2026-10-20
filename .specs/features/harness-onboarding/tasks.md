@@ -162,7 +162,7 @@ T15 → T16 → T17
 **Requirement**: HAR-01, HAR-02, HAR-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake CLIs record exact args; hook files edited preserving other entries; uninstall removes only ours
+- [x] Fake CLIs record exact args; hook files edited preserving other entries; uninstall removes only ours
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(harness): register partyline in claude code, codex and gemini`

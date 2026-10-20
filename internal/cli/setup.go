@@ -60,7 +60,11 @@ type setupFlags struct {
 	url, token string
 	browser    bool
 	yes        bool
+	harness    string
+	uninstall  bool
 }
+
+func newPrompter(io stdio) *prompter { return &prompter{in: bufio.NewReader(io.stdin), out: io.stdout} }
 
 // setupCmd runs `partyline setup` (ONB-04): it asks for the instance URL (default: the
 // flag, PARTYLINE_URL, else the config file, which the served installer pre-fills) and an
@@ -73,12 +77,27 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 	flags.StringVar(&f.url, "url", "", "Partyline instance URL (default $PARTYLINE_URL, else the config file)")
 	flags.StringVar(&f.token, "token", "", "agent token (else the saved one, else asked; flags show up in ps)")
 	flags.BoolVar(&f.browser, "browser", false, "approve this machine in the web app instead of pasting a token")
-	flags.BoolVar(&f.yes, "yes", false, "do not ask; use the defaults")
+	flags.BoolVar(&f.yes, "yes", false, "do not ask; use the defaults and apply every change")
+	flags.StringVar(&f.harness, "harness", "", "harnesses to register, comma-separated: claude, codex, gemini, opencode, pi, omp, or none (default: the installed ones)")
+	flags.BoolVar(&f.uninstall, "uninstall", false, "remove what setup added: harness entries, extension files and the config file")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
 	if f.browser && f.token != "" {
 		fmt.Fprintln(io.stderr, "partyline setup: use either --token or --browser")
+		return 2
+	}
+	if f.uninstall {
+		return uninstall(ctx, f, io)
+	}
+	env, err := harnessEnv(io)
+	if err != nil {
+		fmt.Fprintln(io.stderr, "partyline setup:", err)
+		return 1
+	}
+	regs, err := selectHarnesses(env, f.harness)
+	if err != nil {
+		fmt.Fprintln(io.stderr, "partyline setup:", err)
 		return 2
 	}
 	path, err := cliconfig.Path(io.getenv)
@@ -93,7 +112,7 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 	if err != nil {
 		saved = cliconfig.Config{}
 	}
-	p := &prompter{in: bufio.NewReader(io.stdin), out: io.stdout}
+	p := newPrompter(io)
 
 	cfg, code := setupCredentials(ctx, f, saved, p, io)
 	if code != 0 {
@@ -104,6 +123,9 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 		return 1
 	}
 	fmt.Fprintf(io.stdout, "Saved the instance URL and agent token to %s\n", path)
+	if !registerHarnesses(ctx, regs, f.yes, p, io) {
+		return 1
+	}
 	return 0
 }
 
