@@ -154,24 +154,24 @@ Users need one place to see and steer everything: who is online, which chats fee
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
 | UI-01 | P1: Access flows | Tasks | ✅ Verified |
-| UI-02 | P1: Access flows | Tasks | ✅ Verified |
+| UI-02 | P1: Access flows | Tasks | ✅ Verified; T35 (live 1008 → login) to re-verify |
 | UI-03 | P1: Access flows | Tasks | ✅ Verified |
-| UI-04 | P1: Live rooms | Tasks | ✅ Verified |
+| UI-04 | P1: Live rooms | Tasks | ✅ Verified; T34 (activity feed) to re-verify |
 | UI-05 | P1: Live rooms | Tasks | ✅ Verified |
-| UI-06 | P1: Live rooms | Tasks | ✅ Verified |
-| UI-07 | P1: Live rooms | Tasks | ✅ Verified |
+| UI-06 | P1: Live rooms | Tasks | ✅ Verified; T35 (close codes) to re-verify |
+| UI-07 | P1: Live rooms | Tasks | ✅ Verified; T37 (listen-only recipients) to re-verify |
 | UI-08 | P1: Live rooms | Tasks | ✅ Verified |
 | UI-09 | P1: Live rooms | Tasks | ✅ Verified |
-| UI-10 | P1: Rooms management | Tasks | ✅ Verified |
+| UI-10 | P1: Rooms management | Tasks | ✅ Verified; T33 (member count) to re-verify |
 | UI-11 | P1: Rooms management | Tasks | ✅ Verified |
-| UI-12 | P1: Rooms management | Tasks | ✅ Verified |
+| UI-12 | P1: Rooms management | Tasks | ✅ Verified; T37 (listen-only recipients) to re-verify |
 | UI-13 | P1: Rooms management | Tasks | ✅ Verified |
 | UI-14 | P1: Agents etc. | Tasks | ✅ Verified |
 | UI-15 | P1: Agents etc. | Tasks | ✅ Verified |
-| UI-16 | P1: Agents etc. | Tasks | ✅ Verified |
+| UI-16 | P1: Agents etc. | Tasks | ✅ Verified; T36 (generated secrets, inbound URL) to re-verify |
 | UI-17 | P1: Agents etc. | Tasks | ✅ Verified |
 | UI-18 | P1: Agents etc. | Tasks | ✅ Verified |
-| UI-19 | P1: Agents etc. | Tasks | ✅ Verified |
+| UI-19 | P1: Agents etc. | Tasks | ✅ Verified; T36 (generated secrets) to re-verify |
 | UI-20 | P1: Admin | Tasks | ✅ Verified |
 | UI-21 | P1: Admin | Tasks | ✅ Verified |
 | UI-22 | P2: Polish | Tasks | ✅ Verified |
@@ -179,7 +179,7 @@ Users need one place to see and steer everything: who is online, which chats fee
 | UI-24 | P2: Polish | Tasks | ✅ Verified (T22, T31) |
 | UI-25 | P2: Polish | Tasks | ✅ Verified |
 
-**Coverage:** 25 total, mapped in tasks.md
+**Coverage:** 25 total, mapped in tasks.md (Phase 6 follow-ups T33-T37 touch UI-02, 04, 06, 07, 10, 12, 16, 19)
 
 ---
 

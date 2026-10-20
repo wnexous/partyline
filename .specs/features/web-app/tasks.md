@@ -544,6 +544,6 @@ T33 → T34 → T35 → T36 → T37 → T38
 **Depends on**: T37
 **Requirement**: UI-25 (pt-BR parity confirmed for the pairing dialog and the new strings)
 **Done when**:
-- [ ] conventions.md has a Phase 6 section; resolved DTO gaps are marked; traceability names T33-T37; `make check` passes
+- [x] conventions.md has a Phase 6 section; resolved DTO gaps are marked; traceability names T33-T37; `make check` passes
 **Tests**: none (docs; i18n parity test covers new strings)
 **Gate**: build

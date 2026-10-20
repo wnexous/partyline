@@ -54,7 +54,8 @@ Binding for every later web task.
 - Composer recipients are chat ids (`RoomMember.member_id` of chat members), never `RoomMember.id`; anything else is a 422 on `recipients`. None picked = omit `recipients` (server sends to chats with outbound on).
 - Attachments render inline only for png/jpeg/gif/webp (what the server serves inline); SVG and everything else is a download link.
 - Agent Markdown: react-markdown without rehype-raw (raw HTML shows as text), default URL transform, links open in a new tab with `noopener noreferrer nofollow`, images become links.
-- DTO gaps for the backend: `Room` has no member count (rooms list omits it); `Message` has no viewer-relative trust flag (derived as above).
+- DTO gaps for the backend: `Message` has no viewer-relative trust flag (derived as above). (`Room.member_count`
+  landed; the rooms list shows it since Phase 6.)
 - `make check` needs `sqlc` and `tygo` on PATH; without them run `make check SQLC="go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1" TYGO="go run github.com/gzuidhof/tygo@v0.2.21"`.
 
 # Additions from web-app Phase 3 (management)
@@ -105,9 +106,10 @@ Binding for every later web task.
 - `ConnectorField.label`/`help` arrive from the server in English only (forms are not localized there).
 - Connector 422 field keys: the form maps `name`, `config.<field>` and bare `<field>`; the backend should
   pick one (suggest `config.<field>`).
-- `Connector` has no inbound URL: the webhook detail builds `${origin}/api/v1/hooks/{id}`.
+- Resolved in Phase 6: `Connector.inbound_url` comes from the server (the page no longer builds it).
 - Pairing countdown compares `PairingCode.expires_at` with the browser clock (no server time offset).
-- Admins cannot demote or disable themselves in the UI; the server has no such guard yet.
+- Admins cannot demote or disable themselves in the UI; the server now also answers 409 `conflict`
+  (self change, last admin).
 
 # Additions from web-app Phase 4a (dashboard, palette, a11y pass)
 
@@ -128,12 +130,10 @@ Binding for every later web task.
 - The shell has a skip link to `<main id="main">` (`SidebarInset`).
 
 ## Data
-- Dashboard feed: `useActivity()` / `queryKeys.activity` caches `Message[]` newest first, shaped by
+- Dashboard feed: `useActivity()` / `queryKeys.activity` caches `ActivityItem[]` (Phase 6) newest first, shaped by
   `trimActivity` (≤ `ACTIVITY_PER_ROOM` per room, ≤ `ACTIVITY_SIZE` total). The live `room.message`
   handler prepends into it only when cached; `room.deleted` drops that room; `catchUp` invalidates it.
-- DTO gap: no cross-room message feed; the dashboard samples the newest page of the
-  `ACTIVITY_ROOMS` most recently active rooms (SPEC_DEVIATION in `queries.ts`). A server
-  `GET /activity` would replace the N requests.
+- Resolved in Phase 6: the feed is one `GET /activity?limit=` request (was N room samples).
 
 ## Accessibility and copy
 - `src/routes/a11y.test.tsx` runs vitest-axe (colour-contrast off: happy-dom has no layout) on the
@@ -178,3 +178,49 @@ Binding for every later web task.
   also checks a long unbroken message line ends inside the viewport. Add new top-level pages there.
 - Under heavy load the e2e login step can exceed the 10 s `expect` timeout (password hashing on the
   server); a re-run passes. Not a product defect.
+
+# Additions from web-app Phase 6 (backend follow-ups)
+
+## Data
+- Rooms list rows show `Room.member_count` ("No members" / "1 member" / "N members").
+- Dashboard feed: `activityQuery()` → `GET /activity?limit=ACTIVITY_FETCH` (`DefaultActivityLimit`),
+  then `trimActivity` (≤ `ACTIVITY_PER_ROOM` per room, ≤ `ACTIVITY_SIZE`). Rows name the room from
+  `ActivityItem.room`. Live `room.message` prepends `{room, message}` naming the room from the feed,
+  the room cache or the rooms list; a room none of them knows invalidates the feed instead.
+  `room.changed` renames, `room.deleted` drops.
+- `useCreateConnector` caches the connector without `generated_secrets`; only the create response
+  (handled by `AddConnectorDialog`) ever holds them.
+
+## Live socket and session end
+- Close 1008 (`CLOSE_SESSION_REVOKED`, "session revoked"): `createLiveSocket` stops (no reconnect) and
+  calls `onSessionEnded`; `startLive` clears the query cache and calls `notifyUnauthorized()`
+  (`lib/api/client.ts`), the same handler a 401 runs → `/login?redirect=<current>`.
+- Close 1013 ("session check failed") and every other code: normal reconnect with backoff.
+- `FakeSocket.drop(code = 1006, reason)` passes a close event; `close()` sends 1000.
+- `src/routes/live-session.test.tsx` drives the real socket in the shell by stubbing the global
+  `WebSocket` with `FakeSocket` (no `vi.mock("@/lib/live")` there).
+
+## Connectors
+- `AddConnectorDialog`: a create response with `generated_secrets` closes the add dialog and opens
+  `SecretOnceDialog` (first secret as the main block, any others plus `inbound_url` and the signing
+  recipe as extra `CodeBlock`s); the connector page opens when it closes. Without generated secrets it
+  navigates at once, as before.
+- The connector page shows the inbound section only when `Connector.inbound_url` is set.
+
+## Composer
+- Chat members with `outbound=false` are listen-only (DLV-05): disabled in the recipients picker,
+  labelled `composer.listenOnly` with a `title` hint, and filtered out of `recipients`. A 422
+  `recipients: listen-only` shows `composer.recipientsListenOnly`, sets `aria-invalid` on the picker
+  trigger and points its `aria-describedby` at the error.
+
+## i18n
+- The pairing dialog (connectors fix T28) and every Phase 6 string have pt-BR entries; the parity
+  test (`lib/i18n/i18n.test.tsx`) passes. Keys equal in both locales are cognates or names
+  (`Chats`, `Online`, `Admin`, `GitHub Releases`).
+
+## DTO gaps for the backend
+- The webhook kind marks `secret` as `required: true` even though `Kind.Prepare` generates it when
+  empty, and `ConnectorField` has no "generated" flag. The schema form therefore requires a value,
+  so the web never sends an empty secret and the generated-secret dialog is unreachable from the
+  form today. Fix on the server: `Required: false` for generated fields, or a `generated` flag on
+  `ConnectorField` (the form would then drop the required rule and show the help text).
