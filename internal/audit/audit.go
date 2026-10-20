@@ -36,6 +36,8 @@ const (
 	ActionConnectorDelete  = "connector.delete"
 	ActionConnectorEnable  = "connector.enable"
 	ActionConnectorDisable = "connector.disable"
+	// ActionWebhookRejected is a hook request refused for its signature or timestamp.
+	ActionWebhookRejected = "webhook.rejected"
 )
 
 // Target kinds.

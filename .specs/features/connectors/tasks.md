@@ -304,9 +304,9 @@ T7 → T8 → T9 → T10 → T11
 **Requirement**: HOOK-01, HOOK-02, HOOK-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Valid signed payload → 202 and stored message in routed room
-- [ ] Bad signature → 401; timestamp 301 s old → 401; nothing stored
-- [ ] Outbound received by httptest with valid signature; 500 response → retry path
+- [x] Valid signed payload → 202 and stored message in routed room
+- [x] Bad signature → 401; timestamp 301 s old → 401; nothing stored
+- [x] Outbound received by httptest with valid signature; 500 response → retry path
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(webhook): add signed webhook connector`

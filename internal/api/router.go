@@ -28,6 +28,10 @@ type Deps struct {
 	Agents *agents.Registry
 	// Connectors manages connectors and their chats.
 	Connectors *connectors.Service
+	// Hooks finds the running connector of POST /api/v1/hooks/{id}; FileLinks resolves the
+	// signed attachment links of GET /api/v1/hooks/files/{token}.
+	Hooks     HookSource
+	FileLinks *connectors.FileLinks
 	// Identities manages pairing codes and verified chat identities.
 	Identities *identities.Service
 	Blobs      *attachments.Store
@@ -76,6 +80,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.connectorRoutes(mux)
 	s.identityRoutes(mux)
 	s.chatRoutes(mux)
+	s.hookRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}

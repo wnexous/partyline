@@ -37,6 +37,10 @@ type Kind struct {
 	InboundHook bool
 	// New builds a connector from a validated config.
 	New func(cfg Config, d Deps) (Connector, error)
+	// Prepare, when set, completes the config of a new connector before validation (e.g.
+	// generates a secret left empty) and returns the names of the fields it generated.
+	// Generated secrets are shown once, in the create response.
+	Prepare func(cfg Config) (Config, []string)
 }
 
 // Registry holds the supported kinds by name.

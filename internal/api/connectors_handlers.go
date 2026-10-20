@@ -40,6 +40,9 @@ func (s *server) toConnector(v connectors.View) dto.Connector {
 		MyLevel: v.Level, Enabled: v.Enabled, Status: dto.ConnectorStatus(v.Status), LastError: v.LastError,
 		Config: v.Config, CreatedAt: convert.Time(v.CreatedAt), UpdatedAt: convert.Time(v.UpdatedAt),
 	}
+	if len(v.Generated) > 0 {
+		out.GeneratedSecrets = v.Generated
+	}
 	if v.InboundHook {
 		out.InboundURL = strings.TrimRight(s.Config.PublicURL.String(), "/") + "/api/v1/hooks/" + v.ID
 	}

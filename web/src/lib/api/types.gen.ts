@@ -306,6 +306,12 @@ export interface Connector {
    * (<public URL>/api/v1/hooks/<id>); empty for other kinds.
    */
   inbound_url?: string;
+  /**
+   * GeneratedSecrets holds the secrets Partyline generated for the connector (the
+   * webhook's secret), by field name. Only the create response carries them; afterwards
+   * they read as SecretMask like every secret.
+   */
+  generated_secrets?: { [key: string]: string};
   created_at: string /* RFC 3339 */;
   updated_at: string /* RFC 3339 */;
 }

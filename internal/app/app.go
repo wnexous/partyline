@@ -21,6 +21,7 @@ import (
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/discord"
 	"github.com/wnexous/partyline/internal/connectors/telegram"
+	"github.com/wnexous/partyline/internal/connectors/webhook"
 	"github.com/wnexous/partyline/internal/connectors/whatsapp"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
@@ -66,6 +67,7 @@ func BuiltinKinds() []connectors.Kind {
 		whatsapp.Kind(),
 		telegram.Kind(),
 		discord.Kind(),
+		webhook.Kind(),
 	}
 }
 
@@ -166,8 +168,10 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Store: st, Bus: bus, Rooms: a.Rooms, Blobs: blobs, Identities: a.Identities,
 		MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
 	})
+	fileLinks := connectors.NewFileLinks(box, st, cfg.PublicURL, opts.Now)
 	a.ConnectorManager = connectors.NewManager(connectors.ManagerDeps{
 		Store: st, Bus: bus, Box: box, Kinds: registry, Logger: opts.Logger, UserAgent: "partyline/" + version,
+		FileURL: fileLinks.URL,
 		Inbound: pipeline.Handle, MigrateChat: pipeline.MigrateChat,
 	})
 	a.sender = opts.Sender
@@ -188,6 +192,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Agents:     a.Agents,
 		Connectors: a.Connectors,
 		Identities: a.Identities,
+		Hooks:      a.ConnectorManager,
+		FileLinks:  fileLinks,
 		Blobs:      blobs,
 		Audit:      audit.New(st, opts.Now),
 		Live:       a.Live,

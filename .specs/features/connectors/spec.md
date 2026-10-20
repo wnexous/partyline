@@ -198,9 +198,9 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | DC-01 | P1: Discord | Tasks | Implementing |
 | DC-02 | P1: Discord | Tasks | Implementing |
 | DC-03 | P1: Discord | Tasks | Implementing |
-| HOOK-01 | P1: Webhook | Tasks | Pending |
-| HOOK-02 | P1: Webhook | Tasks | Pending |
-| HOOK-03 | P1: Webhook | Tasks | Pending |
+| HOOK-01 | P1: Webhook | Tasks | Implementing |
+| HOOK-02 | P1: Webhook | Tasks | Implementing |
+| HOOK-03 | P1: Webhook | Tasks | Implementing |
 | IDN-01 | P1: Identities | Tasks | Implementing |
 | IDN-02 | P1: Identities | Tasks | Implementing |
 | IDN-03 | P1: Identities | Tasks | Implementing |

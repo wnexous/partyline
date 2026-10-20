@@ -81,6 +81,8 @@ type ManagerDeps struct {
 	Logger *slog.Logger
 	// UserAgent is passed to connectors ("partyline/<version>").
 	UserAgent string
+	// FileURL is passed to connectors (signed attachment links); nil leaves it unset.
+	FileURL func(attachmentID string) string
 	// Inbound receives every message of a running connector (the inbound pipeline); nil
 	// drops them.
 	Inbound func(ctx context.Context, src Source, m Inbound)
@@ -192,7 +194,9 @@ func (m *Manager) Apply(id string) {
 		return
 	}
 	sec := k.SecretValues(cfg)
-	conn, err := k.New(cfg, Deps{ID: id, Logger: m.d.Logger.With("connector_id", id, "kind", k.Name), UserAgent: m.d.UserAgent})
+	conn, err := k.New(cfg, Deps{
+		ID: id, Logger: m.d.Logger.With("connector_id", id, "kind", k.Name), UserAgent: m.d.UserAgent, FileURL: m.d.FileURL,
+	})
 	if err != nil {
 		m.persist(id, StatusError, Redact(err.Error(), sec))
 		return
@@ -242,6 +246,16 @@ func (m *Manager) Send(ctx context.Context, connectorID string, msg Outbound) (s
 		return "", errors.New(Redact(err.Error(), s.secrets))
 	}
 	return ext, nil
+}
+
+// Hook returns the running connector when it receives messages over HTTP.
+func (m *Manager) Hook(connectorID string) (HookReceiver, bool) {
+	s := m.current(connectorID)
+	if s == nil {
+		return nil, false
+	}
+	r, ok := s.conn.(HookReceiver)
+	return r, ok
 }
 
 // ListChats lists the chats of the running connector (CON-09); secrets are redacted from

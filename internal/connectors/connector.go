@@ -6,6 +6,7 @@ package connectors
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"time"
@@ -126,4 +127,35 @@ type Deps struct {
 	Logger *slog.Logger
 	// UserAgent is "partyline/<version>" for platform HTTP calls.
 	UserAgent string
+	// FileURL returns a signed download link of a stored attachment, valid 10 minutes, for
+	// platforms that fetch files by URL (the webhook payload); nil when unavailable.
+	FileURL func(attachmentID string) string
 }
+
+// MaxHookBody is the largest accepted body of POST /api/v1/hooks/{connector_id}.
+const MaxHookBody = 64 << 10
+
+// HookRequest is a request to POST /api/v1/hooks/{connector_id}.
+type HookRequest struct {
+	// Timestamp and Signature are the X-Partyline-Timestamp and X-Partyline-Signature headers.
+	Timestamp string
+	Signature string
+	Body      []byte
+}
+
+// HookReceiver is implemented by connectors of kinds with InboundHook: they receive
+// messages over HTTP instead of a platform connection.
+type HookReceiver interface {
+	// ReceiveHook checks and handles one request. It returns ErrBadSignature,
+	// ErrRateLimited, ErrNotRunning, a *validation.Error for a bad payload, or nil when the
+	// message was accepted.
+	ReceiveHook(ctx context.Context, r HookRequest) error
+}
+
+// Errors of HookReceiver.
+var (
+	// ErrBadSignature means the signature or the timestamp of a hook request is invalid.
+	ErrBadSignature = errors.New("invalid signature or timestamp")
+	// ErrRateLimited means a hook received too many requests.
+	ErrRateLimited = errors.New("too many requests")
+)
