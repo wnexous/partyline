@@ -14,9 +14,11 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
+	"github.com/wnexous/partyline/internal/users"
 )
 
 // wsWait bounds waits for an agent frame or close; they return as soon as it arrives, so the
@@ -273,4 +275,64 @@ func TestAgentLivePushSkipsBacklogOverlap(t *testing.T) {
 	m3 := f.post(f.alice, "three") // pushed live after the two duplicates
 	require.Equal(t, m3.ID, conn.Message(wsWait).Message.ID, "the duplicates are skipped")
 	conn.ExpectNone(500 * time.Millisecond)
+}
+
+// AUTH-10, TOK-02 on the agent socket: revoking an agent token closes the agent sockets opened
+// with it within 1 s (1008); other tokens' sockets stay. Disabling the owner closes them all.
+func TestAgentSocketClosesOnTokenRevocation(t *testing.T) {
+	env := testkit.New(t)
+	admin := env.SetupAdmin()
+	alice := env.NewUser("alice")
+	token := func(name string) (string, *testkit.Client) {
+		tok, secret, err := env.App.Users.CreateToken(context.Background(), alice.User.ID,
+			users.TokenInput{Kind: dto.TokenKindAgent, Name: name})
+		require.NoError(t, err)
+		return tok.ID, alice.WithBearer(secret)
+	}
+	dial := func(c *testkit.Client, agent string) *testkit.AgentConn {
+		conn, resp := c.DialAgent(agent)
+		require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+		conn.Welcome(wsWait)
+		return conn
+	}
+	requireClosed := func(conn *testkit.AgentConn) {
+		t.Helper()
+		err := conn.Closed(time.Second)
+		require.Error(t, err, "agent socket still open 1 s after its token was revoked")
+		require.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(err), "close: %v", err)
+	}
+
+	revokedID, revoked := token("laptop")
+	_, kept := token("desk")
+	builder := dial(revoked, "builder")
+	helper := dial(kept, "helper")
+	alice.Delete("/api/v1/tokens/" + revokedID).RequireStatus(http.StatusNoContent)
+	requireClosed(builder)
+	require.NoError(t, helper.Closed(300*time.Millisecond), "another token's socket stays open")
+
+	admin.Patch("/api/v1/admin/users/"+alice.User.ID, dto.UpdateUserRequest{Disabled: new(true)}).RequireStatus(http.StatusOK)
+	requireClosed(helper)
+}
+
+// A lagged bus may have dropped a revocation event, so agent sockets re-check their token:
+// a token revoked without an event closes its socket at once (1008).
+func TestAgentSocketRechecksTokenAfterLaggedBus(t *testing.T) {
+	f := newAgentRoom(t)
+	tok, secret, err := f.env.App.Users.CreateToken(context.Background(), f.alice.User.ID,
+		users.TokenInput{Kind: dto.TokenKindAgent, Name: "desk"})
+	require.NoError(t, err)
+	conn, resp := f.alice.WithBearer(secret).DialAgent("builder")
+	require.NotNil(t, conn, "upgrade refused: %d", resp.Status)
+	conn.Welcome(wsWait)
+	require.NoError(t, f.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
+		_, err := q.RevokeToken(context.Background(), db.RevokeTokenParams{
+			RevokedAt: sql.NullInt64{Int64: time.Now().UnixMilli(), Valid: true}, ID: tok.ID, UserID: f.alice.User.ID,
+		})
+		return err
+	}))
+
+	f.env.App.Bus.Publish(events.Lagged{})
+	err = conn.Closed(10 * time.Second)
+	require.Error(t, err, "agent socket still open after a lagged bus")
+	require.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(err), "close: %v", err)
 }

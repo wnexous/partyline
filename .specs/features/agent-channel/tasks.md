@@ -255,8 +255,9 @@ T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
 **Requirement**: AGT-02, AUTH-10 (core)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Revoking the agent token closes the agent socket within 1 s with 1008; another agent token's socket stays open
-- [ ] Disabling the owner closes its agent sockets within 1 s
+- [x] Revoking the agent token closes the agent socket within 1 s with 1008; another agent token's socket stays open
+- [x] Disabling the owner closes its agent sockets within 1 s
+- [x] After a lagged bus, a socket whose token was revoked without an event closes (1008)
 **Tests**: e2e
 **Gate**: full
 **Commit**: `fix(agents): close agent sockets when their token is revoked`

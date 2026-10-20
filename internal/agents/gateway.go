@@ -19,6 +19,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/delivery"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -43,12 +44,21 @@ func SkippedNotice(n int64) string {
 	return fmt.Sprintf("%d older messages skipped; use the history tool", n)
 }
 
+// PrincipalChecker reports whether an agent connection's token still authenticates.
+type PrincipalChecker interface {
+	PrincipalActive(ctx context.Context, p authn.Principal) (bool, error)
+}
+
 // GatewayDeps are the collaborators of the Gateway.
 type GatewayDeps struct {
 	Store    *store.Store
 	Registry *Registry
 	Presence *Presence
 	Rooms    *rooms.Service
+	// Bus carries SessionsRevoked: a connection whose token is revoked, or whose owner is
+	// disabled, closes at once. Sessions re-checks the token after a lagged bus. Both optional.
+	Bus      *events.Bus
+	Sessions PrincipalChecker
 	Logger   *slog.Logger
 	// PingInterval defaults to DefaultPingInterval.
 	PingInterval time.Duration
@@ -127,6 +137,17 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer g.wg.Done()
+	// Subscribe before the upgrade, then confirm the token: a revocation from here on is seen.
+	var revocations <-chan events.Event
+	if g.d.Bus != nil {
+		sub, unsubscribe := g.d.Bus.Subscribe(revocationBuffer)
+		defer unsubscribe()
+		revocations = sub
+	}
+	if ok, err := g.active(r.Context(), p); err != nil || !ok {
+		httpx.WriteError(w, httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "invalid or expired credentials"))
+		return
+	}
 	row, err := g.register(r.Context(), p)
 	if err != nil {
 		g.d.Logger.ErrorContext(r.Context(), "agent: register failed", "err", err, "request_id", httpx.RequestID(r.Context()))
@@ -149,6 +170,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer g.d.Presence.Detach(ctx, row.Agent.ID, c)
 	go g.readAcks(ctx, c, row.Agent.ID)
+	if revocations != nil {
+		go g.watchRevocations(ctx, c, p, revocations)
+	}
 
 	err = g.run(ctx, c, row)
 	if err != nil && ctx.Err() == nil {
@@ -161,6 +185,51 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = ws.Close(websocket.StatusGoingAway, "server shutting down")
 	default:
 		_ = ws.CloseNow()
+	}
+}
+
+// revocationBuffer is the per-connection event backlog of the revocation watcher.
+const revocationBuffer = 64
+
+// active reports whether p's token still authenticates (true without a checker).
+func (g *Gateway) active(ctx context.Context, p authn.Principal) (bool, error) {
+	if g.d.Sessions == nil {
+		return true, nil
+	}
+	return g.d.Sessions.PrincipalActive(ctx, p)
+}
+
+// watchRevocations closes c (1008) when an event revokes its token or disables its owner, and
+// re-checks the token after a lagged bus, which may have dropped such an event (a failed
+// check closes with 1013 so the channel reconnects and authenticates again).
+func (g *Gateway) watchRevocations(ctx context.Context, c *conn, p authn.Principal, sub <-chan events.Event) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e, ok := <-sub:
+			if !ok {
+				return
+			}
+			switch e := e.(type) {
+			case events.SessionsRevoked:
+				if e.Revokes(p.UserID, "", p.TokenID) {
+					c.Close(websocket.StatusPolicyViolation, "token revoked")
+					return
+				}
+			case events.Lagged:
+				ok, err := g.active(ctx, p)
+				switch {
+				case err != nil && ctx.Err() == nil:
+					g.d.Logger.Error("agent: token check failed", "err", err)
+					c.Close(websocket.StatusTryAgainLater, "token check failed")
+					return
+				case err == nil && !ok:
+					c.Close(websocket.StatusPolicyViolation, "token revoked")
+					return
+				}
+			}
+		}
 	}
 }
 
