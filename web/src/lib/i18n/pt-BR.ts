@@ -219,7 +219,11 @@ export const ptBR: Dictionary = {
   "composer.recipientsBody":
     "Por padrão a mensagem chega a todos os chats com saída ligada. Escolha chats para enviar só a eles.",
   "composer.recipientsReset": "Voltar para os chats com saída ligada",
-  "composer.outboundOff": "saída desligada",
+  "composer.listenOnly": "só escuta",
+  "composer.listenOnlyHint":
+    "A saída está desligada: este chat só escuta. Ligue a saída no painel de membros para enviar a ele.",
+  "composer.recipientsListenOnly":
+    "Um chat escolhido agora só escuta (saída desligada). Escolha outros chats ou envie a todos os chats com saída ligada.",
 
   "validation.retention": "Dias inteiros, 0 ou mais",
   "presence.online": "Online",

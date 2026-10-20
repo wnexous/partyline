@@ -534,8 +534,8 @@ T33 → T34 → T35 → T36 → T37 → T38
 **Depends on**: T36
 **Requirement**: UI-07, UI-12
 **Done when**:
-- [ ] Chat members with `outbound=false` are disabled in the recipients picker and labelled "listen-only"
-- [ ] A 422 `recipients: listen-only` shows a recipients error, keeps the text
+- [x] Chat members with `outbound=false` are disabled in the recipients picker and labelled "listen-only"
+- [x] A 422 `recipients: listen-only` shows a recipients error, keeps the text
 **Tests**: unit
 **Gate**: quick
 

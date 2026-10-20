@@ -149,15 +149,54 @@ describe("composer (UI-07)", () => {
     const to = screen.getByRole("button", { name: /To: chats with outbound on/ });
     await user.click(to);
     const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("checkbox", { name: /#deploys/ }));
+    await user.click(within(dialog).getByRole("checkbox", { name: /Ops on call/ }));
     await user.keyboard("{Escape}");
     expect(screen.getByRole("button", { name: /To: 1 chat/ })).toBeInTheDocument();
     await user.type(
       screen.getByRole("textbox", { name: "Message deploys" }),
-      "only discord{Enter}",
+      "only telegram{Enter}",
     );
     await waitFor(() => expect(posts(calls)).toHaveLength(1));
-    expect(posts(calls)[0]?.body).toEqual({ text: "only discord", recipients: ["c2"] });
+    expect(posts(calls)[0]?.body).toEqual({ text: "only telegram", recipients: ["c1"] });
+  });
+
+  it("does not let a listen-only chat (outbound off) be picked as a recipient (DLV-05)", async () => {
+    mockApi({});
+    const user = userEvent.setup();
+    renderComposer();
+    await user.click(screen.getByRole("button", { name: /To: chats with outbound on/ }));
+    const dialog = await screen.findByRole("dialog");
+    const listenOnly = within(dialog).getByRole("checkbox", { name: /#deploys/ });
+    expect(listenOnly).toBeDisabled();
+    expect(listenOnly).toHaveAccessibleName(/listen-only/);
+    expect(within(dialog).getByRole("checkbox", { name: /Ops on call/ })).toBeEnabled();
+    await user.click(listenOnly);
+    expect(listenOnly).not.toBeChecked();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: /To: chats with outbound on/ })).toBeInTheDocument();
+  });
+
+  it("explains a 422 listen-only recipient on the recipients picker and keeps the text", async () => {
+    mockApi({
+      "POST /rooms/r1/messages": apiError(422, "invalid", "validation failed", {
+        recipients: "listen-only",
+      }),
+    });
+    const user = userEvent.setup();
+    renderComposer();
+    await user.click(screen.getByRole("button", { name: /To: chats with outbound on/ }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("checkbox", { name: /Ops on call/ }));
+    await user.keyboard("{Escape}");
+    const box = screen.getByRole("textbox", { name: "Message deploys" });
+    await user.type(box, "hello{Enter}");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/listen-only/);
+    expect(alert).not.toHaveTextContent("validation failed");
+    const to = screen.getByRole("button", { name: /To: 1 chat/ });
+    expect(to).toHaveAttribute("aria-invalid", "true");
+    expect(to).toHaveAccessibleDescription(alert.textContent ?? "");
+    expect(box).toHaveValue("hello");
   });
 
   it("uploads attached files as multipart with the message part", async () => {

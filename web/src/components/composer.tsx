@@ -21,7 +21,15 @@ import { cn } from "@/lib/utils";
  * MaxTextLength (MSG-02) cannot be sent; files alone can. Recipients default to every chat with
  * outbound on (DLV-03); picking chats sends to exactly those (DLV-04). Recipients are chat ids
  * (`RoomMember.member_id` of chat members), not room member ids; the server rejects others (422).
+ * Chats with outbound off are listen-only (DLV-05): they cannot be picked, and a 422
+ * `recipients: listen-only` (the flag changed meanwhile) lands on the recipients picker.
  */
+
+/** 422 reason for an explicit recipient whose chat member has outbound off. */
+const LISTEN_ONLY = "listen-only";
+
+const isListenOnlyError = (err: unknown) =>
+  isApiError(err) && err.status === 422 && err.fields.recipients === LISTEN_ONLY;
 
 /** The counter appears once the text gets this close to the limit. */
 const COUNTER_FROM = MaxTextLength - 1_000;
@@ -34,6 +42,7 @@ function postErrorText(t: Translate, err: unknown): string {
   if (err.status === 403) return t("composer.forbidden");
   if (err.status === 413) return t("composer.tooLarge");
   if (err.status === 429) return t("composer.rateLimited");
+  if (isListenOnlyError(err)) return t("composer.recipientsListenOnly");
   if (err.status === 422) return err.message || t("error.generic");
   return t("error.generic");
 }
@@ -73,11 +82,15 @@ function ComposerForm({
   const [files, setFiles] = useState<File[]>([]);
   const [recipients, setRecipients] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [recipientsInvalid, setRecipientsInvalid] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const counterId = useId();
+  const errorId = useId();
 
   const chats = useMemo(() => (members ?? []).filter((m) => m.kind === "chat"), [members]);
+  // Only chats with outbound on can be explicit recipients (DLV-05).
+  const pickable = useMemo(() => chats.filter((c) => c.outbound), [chats]);
   const length = textLength(text);
   const tooLong = length > MaxTextLength;
   const trimmed = text.trim();
@@ -87,7 +100,8 @@ function ComposerForm({
   const send = () => {
     if (!canSend) return;
     setError(null);
-    const chosen = recipients.filter((id) => chats.some((c) => c.member_id === id));
+    setRecipientsInvalid(false);
+    const chosen = recipients.filter((id) => pickable.some((c) => c.member_id === id));
     post.mutate(
       {
         text: trimmed,
@@ -100,7 +114,10 @@ function ComposerForm({
           setFiles([]);
           textRef.current?.focus();
         },
-        onError: (err) => setError(postErrorText(t, err)),
+        onError: (err) => {
+          setError(postErrorText(t, err));
+          setRecipientsInvalid(isListenOnlyError(err));
+        },
       },
     );
   };
@@ -127,7 +144,7 @@ function ComposerForm({
       }}
     >
       {error ? (
-        <p role="alert" className="mb-2 text-sm text-destructive">
+        <p id={errorId} role="alert" className="mb-2 text-sm text-destructive">
           {error}
         </p>
       ) : null}
@@ -188,7 +205,15 @@ function ComposerForm({
             <PaperclipIcon className="size-4" aria-hidden="true" />
           </label>
           {chats.length > 0 ? (
-            <RecipientsPicker chats={chats} value={recipients} onChange={setRecipients} />
+            <RecipientsPicker
+              chats={chats}
+              value={recipients}
+              onChange={(ids) => {
+                setRecipients(ids);
+                setRecipientsInvalid(false);
+              }}
+              errorId={recipientsInvalid && error ? errorId : undefined}
+            />
           ) : null}
           <span className="ml-auto hidden text-[0.7rem] text-muted-foreground lg:inline">
             {t("composer.hint")}
@@ -224,13 +249,16 @@ function RecipientsPicker({
   chats,
   value,
   onChange,
+  errorId,
 }: {
   chats: RoomMember[];
   value: string[];
   onChange: (ids: string[]) => void;
+  /** Id of the error describing the picked recipients, when the server rejected them. */
+  errorId?: string;
 }) {
   const { t } = useI18n();
-  const selected = value.filter((id) => chats.some((c) => c.member_id === id));
+  const selected = value.filter((id) => chats.some((c) => c.member_id === id && c.outbound));
   const label =
     selected.length === 0
       ? t("composer.toDefault")
@@ -247,9 +275,12 @@ function RecipientsPicker({
           type="button"
           variant="ghost"
           size="sm"
+          aria-invalid={errorId ? true : undefined}
+          aria-describedby={errorId}
           className={cn(
             "h-8 max-w-[60%] gap-1.5 px-2 text-xs font-normal text-muted-foreground",
             selected.length > 0 && "bg-tape/60 text-tape-foreground hover:bg-tape",
+            errorId && "text-destructive ring-1 ring-destructive/50 ring-inset",
           )}
         >
           <UsersRoundIcon aria-hidden="true" />
@@ -264,17 +295,24 @@ function RecipientsPicker({
         <ul className="max-h-64 overflow-y-auto py-1">
           {chats.map((c) => (
             <li key={c.id}>
-              <label className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-sm hover:bg-accent">
+              <label
+                title={c.outbound ? undefined : t("composer.listenOnlyHint")}
+                className={cn(
+                  "flex items-center gap-2.5 px-3 py-1.5 text-sm",
+                  c.outbound ? "cursor-pointer hover:bg-accent" : "cursor-not-allowed opacity-60",
+                )}
+              >
                 <input
                   type="checkbox"
                   className="size-4 accent-primary"
                   checked={selected.includes(c.member_id)}
+                  disabled={!c.outbound}
                   onChange={() => toggle(c.member_id)}
                 />
                 <span className="min-w-0 flex-1 truncate">{c.name}</span>
                 <span className="text-xs text-muted-foreground">
                   {platformLabel(c.connector_kind)}
-                  {c.outbound ? "" : ` · ${t("composer.outboundOff")}`}
+                  {c.outbound ? "" : ` · ${t("composer.listenOnly")}`}
                 </span>
               </label>
             </li>

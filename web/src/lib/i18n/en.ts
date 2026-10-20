@@ -216,7 +216,11 @@ export const en = {
   "composer.recipientsBody":
     "By default a message reaches every chat with outbound on. Pick chats to send only to them.",
   "composer.recipientsReset": "Back to chats with outbound on",
-  "composer.outboundOff": "outbound off",
+  "composer.listenOnly": "listen-only",
+  "composer.listenOnlyHint":
+    "Outbound is off: this chat only listens. Turn outbound on in the members panel to send to it.",
+  "composer.recipientsListenOnly":
+    "A chosen chat is listen-only now (outbound off). Pick other chats or send to every chat with outbound on.",
 
   "validation.retention": "Whole days, 0 or more",
   "presence.online": "Online",
