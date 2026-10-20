@@ -316,7 +316,7 @@ get their own per-IP budget (over it: 429, no audit entry).
 **Requirement**: WA-03 (sender side), DLV-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Two chats in one room; reply to chat B's message → chat A's send has empty `ReplyToID`/`ReplyToSenderID`,
+- [x] Two chats in one room; reply to chat B's message → chat A's send has empty `ReplyToID`/`ReplyToSenderID`,
   chat B's send quotes it
 **Tests**: integration
 **Gate**: full

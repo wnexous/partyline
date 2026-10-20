@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -86,6 +87,34 @@ func TestAgentReplyReachesConnectorWithQuote(t *testing.T) {
 	sent = e.inst.WaitSend(t)
 	require.Equal(t, "ext-1", sent.ReplyToID)
 	require.Empty(t, sent.ReplyToSenderID)
+}
+
+// WA-03, DLV-07: a reply quotes the replied message only in the chat it came from. With two
+// outbound chats in the room, a reply to chat B's message reaches chat B quoting it and chat
+// A without a quote.
+func TestReplyQuotesOnlyInTheOriginChat(t *testing.T) {
+	e := newOutboundEnv(t)
+	e.emit(text(otherID, "B0", "hello from B"))
+	chatB := e.chatID(t, otherID)
+	on := true
+	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chatB, Outbound: &on}).RequireStatus(http.StatusCreated)
+	e.emit(text(otherID, "B1", "question from B"))
+	msgs := e.messages(t, e.room.ID)
+	require.Len(t, msgs, 1)
+	require.Equal(t, "B1", msgs[0].ExternalID)
+
+	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: "answer", ReplyTo: msgs[0].ID}).RequireStatus(http.StatusCreated)
+	byChat := map[string]connectors.Outbound{}
+	for range 2 {
+		sent := e.inst.WaitSend(t)
+		byChat[sent.ChatID] = sent
+	}
+	require.Equal(t, "answer", byChat[otherID].Text)
+	require.Equal(t, "B1", byChat[otherID].ReplyToID, "the origin chat quotes its message")
+	require.Equal(t, senderID, byChat[otherID].ReplyToSenderID)
+	require.Equal(t, "answer", byChat[groupID].Text)
+	require.Empty(t, byChat[groupID].ReplyToID, "chat A never saw B1 under that id")
+	require.Empty(t, byChat[groupID].ReplyToSenderID)
 }
 
 // Attachments of a room message reach the connector as files with their content.
