@@ -6,12 +6,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
@@ -21,6 +23,13 @@ import (
 
 // ErrNotRegistered means an agent token named an agent that never connected (403).
 var ErrNotRegistered = errors.New("agent not registered")
+
+// MaxAgentsPerOwner is the most agents one user can register; a token cannot create agents
+// without bound by connecting under new names.
+const MaxAgentsPerOwner = 50
+
+// ErrAgentLimit answers the registration of a new agent beyond MaxAgentsPerOwner (409).
+var ErrAgentLimit = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "agent limit reached")
 
 // Limits of agent fields.
 const (
@@ -108,12 +117,23 @@ func (r *Registry) Upsert(ctx context.Context, ownerID, name string) (db.Agent, 
 	name = Slug(name)
 	var out db.Agent
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		out, err = q.GetAgentByName(ctx, db.GetAgentByNameParams{OwnerID: ownerID, Name: name})
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err // an existing agent, or a failure
+		}
+		n, err := q.CountAgentsByOwner(ctx, ownerID)
+		if err != nil {
+			return err
+		}
+		if n >= MaxAgentsPerOwner {
+			return ErrAgentLimit
+		}
 		if err := q.InsertAgentIfMissing(ctx, db.InsertAgentIfMissingParams{
 			ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: r.now().UnixMilli(),
 		}); err != nil {
 			return err
 		}
-		var err error
 		out, err = q.GetAgentByName(ctx, db.GetAgentByNameParams{OwnerID: ownerID, Name: name})
 		return err
 	})

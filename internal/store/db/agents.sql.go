@@ -45,6 +45,17 @@ func (q *Queries) CountAgentBacklog(ctx context.Context, arg CountAgentBacklogPa
 	return count, err
 }
 
+const countAgentsByOwner = `-- name: CountAgentsByOwner :one
+SELECT COUNT(*) FROM agents WHERE owner_id = ?
+`
+
+func (q *Queries) CountAgentsByOwner(ctx context.Context, ownerID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAgentsByOwner, ownerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAgent = `-- name: CreateAgent :exec
 INSERT INTO agents (id, owner_id, name, description, created_at) VALUES (?, ?, ?, ?, ?)
 `

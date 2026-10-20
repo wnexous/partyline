@@ -336,3 +336,32 @@ func TestAgentSocketRechecksTokenAfterLaggedBus(t *testing.T) {
 	require.Error(t, err, "agent socket still open after a lagged bus")
 	require.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(err), "close: %v", err)
 }
+
+// S2: an owner registers at most agents.MaxAgentsPerOwner (50) agents. Connecting under a
+// 51st name answers the upgrade with 409 conflict "agent limit reached" and registers
+// nothing; the existing agents still connect.
+func TestAgentWSCapsAgentsPerOwner(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	for i := range 49 {
+		registerAgent(t, env, alice, fmt.Sprintf("agent-%02d", i))
+	}
+	fiftieth, resp := tok.DialAgent("fiftieth")
+	require.NotNil(t, fiftieth, "the 50th agent registers: %d %s", resp.Status, resp.Body)
+	fiftieth.Welcome(wsWait)
+
+	conn, resp := tok.DialAgent("one-too-many")
+	require.Nil(t, conn)
+	e := resp.RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+	require.Equal(t, "agent limit reached", e.Message)
+	list := testkit.Decode[dto.List[dto.Agent]](alice.Get("/api/v1/agents").RequireStatus(http.StatusOK))
+	require.Len(t, list.Items, 50)
+	for _, a := range list.Items {
+		require.NotEqual(t, "one-too-many", a.Name)
+	}
+
+	existing, resp := tok.DialAgent("agent-07")
+	require.NotNil(t, existing, "an existing agent still connects: %d %s", resp.Status, resp.Body)
+	require.Equal(t, "agent-07", existing.Welcome(wsWait).Agent.Name)
+}

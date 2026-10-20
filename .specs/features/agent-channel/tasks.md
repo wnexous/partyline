@@ -425,8 +425,8 @@ T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: S2 (security, no AC)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] With 50 agents the 51st name → HTTP 409 `conflict` "agent limit reached" and no 51st row
-- [ ] One of the 50 existing agents still connects
+- [x] With 50 agents the 51st name → HTTP 409 `conflict` "agent limit reached" and no 51st row
+- [x] One of the 50 existing agents still connects
 **Tests**: e2e
 **Gate**: full
 **Commit**: `fix(agents): cap registered agents at 50 per owner`

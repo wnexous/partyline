@@ -11,6 +11,9 @@ ON CONFLICT (owner_id, name) DO NOTHING;
 -- name: GetAgentByName :one
 SELECT * FROM agents WHERE owner_id = ? AND name = ?;
 
+-- name: CountAgentsByOwner :one
+SELECT COUNT(*) FROM agents WHERE owner_id = ?;
+
 -- name: GetAgentWithOwner :one
 SELECT sqlc.embed(a), u.username AS owner_username, u.display_name AS owner_display_name
 FROM agents a JOIN users u ON u.id = a.owner_id
