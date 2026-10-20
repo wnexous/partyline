@@ -60,7 +60,7 @@ func Kind() connectors.Kind {
 	return connectors.Kind{
 		Name: KindName, Label: "Webhook", InboundHook: true, LinkOwnerOnly: true,
 		Fields: []connectors.Field{
-			{Name: "secret", Label: "Signing secret", Type: dto.FieldTypeSecret, Required: true,
+			{Name: "secret", Label: "Signing secret", Type: dto.FieldTypeSecret, Required: true, Generated: true,
 				Help: "Leave empty to generate one; it is shown once"},
 			{Name: "outbound_url", Label: "Outbound URL", Type: dto.FieldTypeURL, Endpoint: true,
 				Help: "Room messages for this connector's chats are POSTed here"},

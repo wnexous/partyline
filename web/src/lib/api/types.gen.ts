@@ -266,6 +266,12 @@ export interface ConnectorField {
   secret: boolean; // true when Type is secret: never returned in clear (CON-03)
   help?: string;
   default?: unknown;
+  /**
+   * Generated is true when the server fills the field if it is left empty on create (the
+   * webhook secret): forms may leave it empty even when Required. An empty value in a
+   * PATCH keeps the stored one.
+   */
+  generated?: boolean;
 }
 /**
  * ConnectorKind is a supported platform (GET /connector-kinds).

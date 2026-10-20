@@ -24,6 +24,10 @@ type Field struct {
 	// outbound_url). Whoever controls that server chooses the sender ids the connector
 	// reports, so changing it deletes the identities linked through the connector (S5).
 	Endpoint bool
+	// Generated marks a field Kind.Prepare fills when a new connector leaves it empty (the
+	// webhook secret). Forms may leave it empty; a PATCH sending it empty keeps the stored
+	// value instead of clearing it.
+	Generated bool
 }
 
 // EndpointChanged reports whether an endpoint field differs between two configs.
@@ -233,8 +237,8 @@ func validURL(s string) bool {
 }
 
 // Merge applies a PATCH to a stored config and returns the result (unvalidated): present
-// keys replace stored values, null removes a field and a secret sent as dto.SecretMask keeps
-// its stored value (CON-03). stored is not modified.
+// keys replace stored values, null removes a field, a secret sent as dto.SecretMask keeps
+// its stored value (CON-03) and so does a generated field sent empty. stored is not modified.
 func (k Kind) Merge(stored, patch Config) Config {
 	out := Config{}
 	for name, v := range stored {
@@ -247,11 +251,18 @@ func (k Kind) Merge(stored, patch Config) Config {
 			delete(out, name)
 		case f.Secret() && v == dto.SecretMask:
 			// keep the stored secret
+		case f.Generated && blank(v):
+			// keep the stored value: an empty input never clears a generated field
 		default:
 			out[name] = v
 		}
 	}
 	return out
+}
+
+func blank(v any) bool {
+	s, ok := v.(string)
+	return ok && strings.TrimSpace(s) == ""
 }
 
 // Masked returns the config as the API shows it: secrets that are set read as

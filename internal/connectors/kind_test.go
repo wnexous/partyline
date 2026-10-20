@@ -145,6 +145,28 @@ func TestMergeKeepsSecretSentAsMask(t *testing.T) {
 	require.Equal(t, syntheticKey, stored["api_key"], "the stored config is not modified")
 }
 
+// CON-03: a generated field (the webhook secret) sent empty in a PATCH keeps its stored
+// value, so an empty form input never clears it; a new value replaces it. Other fields sent
+// empty are validated as before: a required secret answers "required".
+func TestMergeKeepsGeneratedFieldSentEmpty(t *testing.T) {
+	k := testKind()
+	k.Fields = append(k.Fields, Field{Name: "signing", Label: "Signing secret", Type: dto.FieldTypeSecret, Required: true, Generated: true})
+	cfg := validConfig()
+	cfg["signing"] = "stored-signing-secret"
+	stored, errs := k.Validate(cfg)
+	require.Empty(t, errs)
+
+	for _, empty := range []string{"", "   "} {
+		got, errs := k.Validate(k.Merge(stored, Config{"signing": empty}))
+		require.Empty(t, errs)
+		require.Equal(t, "stored-signing-secret", got["signing"], "empty %q keeps the stored value", empty)
+	}
+	require.Equal(t, "new-signing-secret", k.Merge(stored, Config{"signing": "new-signing-secret"})["signing"])
+
+	_, errs = k.Validate(k.Merge(stored, Config{"api_key": ""}))
+	require.Equal(t, map[string]string{"api_key": "required"}, errs, "a field that is not generated is not kept")
+}
+
 // SEC-04: secrets leave the public JSON and are sealed with the instance key.
 func TestEncodeSealsSecretsAndDecodeRestoresThem(t *testing.T) {
 	k := testKind()

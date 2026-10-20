@@ -605,8 +605,8 @@ stored value. tygo regenerated.
 **Requirement**: CON-01, CON-03, HOOK-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `GET /connector-kinds` reports `generated: true` on the webhook `secret` and omits it elsewhere
-- [ ] PATCH with `secret: ""` keeps the stored secret (old signature still accepted); a non-generated required field
+- [x] `GET /connector-kinds` reports `generated: true` on the webhook `secret` and omits it elsewhere
+- [x] PATCH with `secret: ""` keeps the stored secret (old signature still accepted); a non-generated required field
   sent empty still answers 422 `required`
 **Tests**: unit, e2e
 **Gate**: full

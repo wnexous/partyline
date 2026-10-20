@@ -27,7 +27,7 @@ func toConnectorKind(k connectors.Kind) dto.ConnectorKind {
 	out := dto.ConnectorKind{Name: k.Name, Label: k.Label, CanListChats: k.CanListChats, Fields: make([]dto.ConnectorField, len(k.Fields))}
 	for i, f := range k.Fields {
 		out.Fields[i] = dto.ConnectorField{
-			Name: f.Name, Label: f.Label, Type: f.Type, Required: f.Required, Secret: f.Secret(), Help: f.Help, Default: f.Default,
+			Name: f.Name, Label: f.Label, Type: f.Type, Required: f.Required, Secret: f.Secret(), Help: f.Help, Default: f.Default, Generated: f.Generated,
 		}
 	}
 	return out

@@ -167,6 +167,43 @@ func TestWebhookSecretIsGeneratedAndShownOnce(t *testing.T) {
 	require.Empty(t, given.GeneratedSecrets, "a secret the user chose is not echoed")
 }
 
+// CON-01, CON-03: the webhook kind flags its secret as generated (the form may leave it
+// empty); a PATCH sending it empty keeps the stored secret, and null cannot clear it.
+func TestWebhookGeneratedSecretIsKeptWhenSentEmpty(t *testing.T) {
+	e := newHookEnv(t)
+	kinds := testkit.Decode[dto.List[dto.ConnectorKind]](e.alice.Get("/api/v1/connector-kinds").RequireStatus(http.StatusOK))
+	require.Len(t, kinds.Items, 1)
+	require.Equal(t, []dto.ConnectorField{
+		{Name: "secret", Label: "Signing secret", Type: dto.FieldTypeSecret, Required: true, Secret: true, Generated: true,
+			Help: "Leave empty to generate one; it is shown once"},
+		{Name: "outbound_url", Label: "Outbound URL", Type: dto.FieldTypeURL,
+			Help: "Room messages for this connector's chats are POSTed here"},
+	}, kinds.Items[0].Fields)
+	raw := string(e.alice.Get("/api/v1/connector-kinds").RequireStatus(http.StatusOK).Body)
+	require.Equal(t, 1, strings.Count(raw, `"generated"`), "omitted on fields that are not generated: %s", raw)
+
+	got := testkit.Decode[dto.Connector](e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{
+		Config: map[string]any{"secret": ""},
+	}).RequireStatus(http.StatusOK))
+	require.Equal(t, dto.SecretMask, got.Config["secret"])
+	require.Empty(t, got.GeneratedSecrets, "nothing is generated on update")
+	require.Equal(t, map[string]string{"config.secret": "required"}, e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{
+		Config: map[string]any{"secret": nil},
+	}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid).Fields)
+
+	// The PATCH restarted the connector; until the new instance runs the hook answers 404.
+	deadline := time.Now().Add(connectortest.Timeout)
+	for i := 0; ; i++ {
+		body := payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "still signed " + strconv.Itoa(i)})
+		r := e.post(t, e.secret, time.Now(), body)
+		if r.Status != http.StatusNotFound || time.Now().After(deadline) {
+			r.RequireStatus(http.StatusAccepted)
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // HOOK-01: a valid signed payload is accepted with 202 and stored in the chat's room.
 func TestWebhookValidPayloadIsStoredInRoutedRoom(t *testing.T) {
 	e := newHookEnv(t)

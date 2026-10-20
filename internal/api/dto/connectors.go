@@ -23,6 +23,10 @@ type ConnectorField struct {
 	Secret   bool      `json:"secret"` // true when Type is secret: never returned in clear (CON-03)
 	Help     string    `json:"help,omitempty"`
 	Default  any       `json:"default,omitempty" tstype:"unknown"`
+	// Generated is true when the server fills the field if it is left empty on create (the
+	// webhook secret): forms may leave it empty even when Required. An empty value in a
+	// PATCH keeps the stored one.
+	Generated bool `json:"generated,omitempty"`
 }
 
 // ConnectorKind is a supported platform (GET /connector-kinds).
