@@ -558,12 +558,12 @@ T39
 ```
 
 #### T39: Schema form lets generated fields stay empty
-**Where**: `web/src/components/schema-form.tsx`
+**Where**: `web/src/components/schema-form.tsx` (tests: `schema-form.test.tsx`, `connectors.test.tsx`; notes: `conventions.md`)
 **Depends on**: T38
 **Requirement**: UI-16, UI-19
 **Done when**:
-- [ ] A field is required in the form only when `required && !generated`; generated fields show their help and may be empty
-- [ ] Creating a webhook with an empty secret sends `secret: ""` and shows the generated secret once; editing keeps secrets masked
-- [ ] conventions.md marks the generated-flag gap resolved
+- [x] A field is required in the form only when `required && !generated`; generated fields show their help and may be empty
+- [x] Creating a webhook with an empty secret sends `secret: ""` and shows the generated secret once; editing keeps secrets masked
+- [x] conventions.md marks the generated-flag gap resolved
 **Tests**: unit
 **Gate**: full

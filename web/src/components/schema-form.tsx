@@ -29,7 +29,9 @@ import { cn } from "@/lib/utils";
  * Connector forms rendered from the kind's field schema (AD-007, UI-16): string → text,
  * url → url, secret → password with reveal, bool → switch, string_list → tag input. The zod
  * schema is built from the same fields at runtime, so required and URL errors show before the
- * request; 422 reasons from the server land under the same inputs.
+ * request; 422 reasons from the server land under the same inputs. A `generated` field (the
+ * webhook secret) may stay empty even when required: the server fills it on create and keeps
+ * the stored value when an edit sends it empty.
  */
 
 export type ConfigValue = string | boolean | string[];
@@ -56,17 +58,23 @@ function isUrl(value: string) {
   }
 }
 
+/** Whether the form must have a value: the server generates `generated` fields left empty. */
+function isRequired(field: ConnectorField) {
+  return field.required && !field.generated;
+}
+
 function fieldSchema(field: ConnectorField): z.ZodType<ConfigValue> {
+  const required = isRequired(field);
   switch (field.type) {
     case FieldTypeBool:
       return z.boolean();
     case FieldTypeStringList: {
       const list = z.array(z.string());
-      return field.required ? list.min(1, msg("validation.required")) : list;
+      return required ? list.min(1, msg("validation.required")) : list;
     }
     default: {
       let text = z.string().trim();
-      if (field.required) text = text.min(1, msg("validation.required"));
+      if (required) text = text.min(1, msg("validation.required"));
       if (field.type === FieldTypeURL) {
         return text.refine((v) => v === "" || isUrl(v), msg("validation.url"));
       }
@@ -198,6 +206,7 @@ function SchemaField({
   form: ReturnType<typeof useForm<ConnectorFormValues>>;
 }) {
   const name = `config.${field.name}` as Path<ConnectorFormValues>;
+  // A generated field keeps its plain label: its help says what leaving it empty does.
   const optional = !field.required && field.type !== FieldTypeBool;
 
   if (field.type === FieldTypeBool) {

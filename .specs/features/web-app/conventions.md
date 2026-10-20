@@ -219,8 +219,8 @@ Binding for every later web task.
   (`Chats`, `Online`, `Admin`, `GitHub Releases`).
 
 ## DTO gaps for the backend
-- The webhook kind marks `secret` as `required: true` even though `Kind.Prepare` generates it when
-  empty, and `ConnectorField` has no "generated" flag. The schema form therefore requires a value,
-  so the web never sends an empty secret and the generated-secret dialog is unreachable from the
-  form today. Fix on the server: `Required: false` for generated fields, or a `generated` flag on
-  `ConnectorField` (the form would then drop the required rule and show the help text).
+- Resolved (connectors T34, web-app T39): `ConnectorField.generated` marks fields the server fills
+  when left empty (the webhook `secret`, still `required: true`). The schema form requires a value
+  only when `required && !generated`; a generated field keeps its plain label and shows its help, the
+  create request sends it as `""` and the secret-once dialog shows the generated value. Editing keeps
+  secrets as `SecretMask`; an edit that sends a generated field empty keeps the stored value.

@@ -24,7 +24,15 @@ const webhook = makeConnectorKind({
   label: "Webhook",
   can_list_chats: false,
   fields: [
-    { name: "secret", label: "Signing secret", type: "secret", required: true, secret: true },
+    {
+      name: "secret",
+      label: "Signing secret",
+      type: "secret",
+      required: true,
+      secret: true,
+      generated: true,
+      help: "Leave empty to generate one; it is shown once",
+    },
   ],
 });
 const kinds = json(200, { items: [telegram, webhook] });
@@ -141,15 +149,8 @@ describe("add connector (UI-16)", () => {
   });
 
   it("shows generated secrets once with the inbound URL, then keeps them masked", async () => {
-    // A kind whose secret the server generates when it is left empty (webhook).
-    const hook = makeConnectorKind({
-      name: "webhook",
-      label: "Webhook",
-      can_list_chats: false,
-      fields: [
-        { name: "secret", label: "Signing secret", type: "secret", required: false, secret: true },
-      ],
-    });
+    // The webhook kind as the server describes it: a required secret it generates when empty.
+    const hook = webhook;
     const stored = makeConnector({
       id: "k9",
       kind: "webhook",
@@ -157,7 +158,7 @@ describe("add connector (UI-16)", () => {
       config: { secret: SecretMask },
       inbound_url: "https://pl.example.test/api/v1/hooks/k9",
     });
-    const { user, dialog, router, queryClient } = await openAdd({
+    const { user, dialog, router, queryClient, calls } = await openAdd({
       "GET /connector-kinds": json(200, { items: [hook] }),
       "POST /connectors": json(201, {
         ...stored,
@@ -167,9 +168,18 @@ describe("add connector (UI-16)", () => {
       "GET /connectors/k9/chats": json(200, { items: [] }),
     });
     await user.type(within(dialog).getByLabelText("Name"), "ci-hook");
+    expect(within(dialog).getByLabelText(/Signing secret/)).toHaveValue("");
+    expect(
+      within(dialog).getByText("Leave empty to generate one; it is shown once"),
+    ).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Add connector" }));
 
     const secret = await screen.findByRole("dialog", { name: "Copy the generated secret" });
+    expect(calls.find((c) => c.method === "POST" && c.path === "/connectors")?.body).toEqual({
+      kind: "webhook",
+      name: "ci-hook",
+      config: { secret: "" },
+    });
     const block = within(secret).getByRole("figure", { name: "Signing secret" });
     expect(block.querySelector("pre")?.textContent).toBe("s3cr3t-generated");
     expect(within(secret).getByRole("note")).toHaveTextContent("won’t be shown again");

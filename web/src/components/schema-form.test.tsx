@@ -105,6 +105,62 @@ describe("schema form (UI-16)", () => {
     });
   });
 
+  it("lets a generated field stay empty and shows its help", async () => {
+    const hook = makeConnectorKind({
+      name: "webhook",
+      label: "Webhook",
+      fields: [
+        {
+          name: "secret",
+          label: "Signing secret",
+          type: "secret",
+          required: true,
+          secret: true,
+          generated: true,
+          help: "Leave empty to generate one; it is shown once",
+        },
+        { name: "token", label: "Token", type: "secret", required: true, secret: true },
+      ],
+    });
+    const { onSubmit, user } = renderForm({ kind: hook });
+    expect(screen.getByText("Leave empty to generate one; it is shown once")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Name"), "ci-hook");
+    await user.click(screen.getByRole("button", { name: "Add connector" }));
+    expect(await screen.findAllByText("Required")).toHaveLength(1); // the token, not the secret
+    expect(screen.getByLabelText(/Signing secret/)).not.toHaveAttribute("aria-invalid", "true");
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText("Token"), "t0k3n");
+    await user.click(screen.getByRole("button", { name: "Add connector" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0]?.[0].config).toEqual({ secret: "", token: "t0k3n" });
+  });
+
+  it("keeps a generated secret as the mask when editing", async () => {
+    const hook = makeConnectorKind({
+      name: "webhook",
+      fields: [
+        {
+          name: "secret",
+          label: "Signing secret",
+          type: "secret",
+          required: true,
+          secret: true,
+          generated: true,
+        },
+      ],
+    });
+    const { onSubmit, user } = renderForm({
+      kind: hook,
+      submitLabel: "Save",
+      initial: { name: "ci-hook", config: { secret: SecretMask } },
+    });
+    expect(screen.getByLabelText(/Signing secret/)).toHaveValue(SecretMask);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0]?.[0].config).toEqual({ secret: SecretMask });
+  });
+
   it("shows 422 reasons from the server under the matching fields", async () => {
     const { user } = renderForm({
       onSubmit: (_values, form) =>
