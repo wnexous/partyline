@@ -148,7 +148,7 @@ T15 → T16 → T17
 **Requirement**: ONB-04, DEV-01, DEV-02, DEV-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Token path and browser path against testkit; invalid token → error, no file written
+- [x] Token path and browser path against testkit; invalid token → error, no file written
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(cli): add partyline setup`
