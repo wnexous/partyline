@@ -602,7 +602,7 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 **Requirement**: INS-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `instructions_by` = creator; trusted for the creator's agent, not for another owner's; kills T8
+- [x] `instructions_by` = creator; trusted for the creator's agent, not for another owner's; kills T8
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(rooms): record the author of instructions given at room creation`

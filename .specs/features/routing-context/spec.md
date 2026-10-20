@@ -221,7 +221,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | INS-01 | P2: Room instructions | Tasks | Implementing |
 | INS-02 | P2: Room instructions | Tasks | Implementing |
 | INS-03 | P2: Room instructions | Tasks | Fixed (T19), amended (T29), unknown author tested (T35), re-verify |
-| INS-04 | P2: Room instructions | Fix iteration 1 | Implemented (T29), unknown author tested (T35), re-verify |
+| INS-04 | P2: Room instructions | Fix iteration 1 | Implemented (T29), unknown author and create tested (T35, T36), re-verify |
 | INS-05 | P2: Room instructions | Fix iteration 1 | Implemented (T29) |
 | REACT-01 | P2: Reactions | Tasks | Implementing |
 | REACT-02 | P2: Reactions | Tasks | Implementing |

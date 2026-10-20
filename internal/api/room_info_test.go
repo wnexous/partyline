@@ -193,3 +193,22 @@ func TestRoomInfoUnknownAuthorIsUntrusted(t *testing.T) {
 	conn.Welcome(wsWait)
 	require.Equal(t, insNoticeUntrusted, conn.Notice(wsWait).Text)
 }
+
+// INS-04: instructions given when the room is created record its creator as their author:
+// trusted for the creator's agent, untrusted for another owner's agent in the same room.
+func TestRoomInfoInstructionsAuthorAtCreate(t *testing.T) {
+	f := newTwoAgents(t)
+	briefed := testkit.Decode[dto.Room](f.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Briefed", Instructions: "Be brief."}).RequireStatus(http.StatusCreated))
+	for _, id := range []string{f.agentID, f.helperID} {
+		f.alice.Post("/api/v1/rooms/"+briefed.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: id}).RequireStatus(http.StatusCreated)
+	}
+	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").WithHeader(dto.HeaderAgent, "helper")
+
+	got := testkit.Decode[dto.RoomInfo](f.rest().Get(agentRoomPath(briefed.ID, "/info")).RequireStatus(http.StatusOK))
+	require.Equal(t, "Be brief.", got.Instructions)
+	require.Equal(t, "alice", got.InstructionsBy)
+	require.True(t, got.InstructionsTrusted, "alice created the room for her agent")
+	got = testkit.Decode[dto.RoomInfo](helperRest.Get(agentRoomPath(briefed.ID, "/info")).RequireStatus(http.StatusOK))
+	require.Equal(t, "alice", got.InstructionsBy)
+	require.False(t, got.InstructionsTrusted, "alice is not the owner of bob's agent")
+}
