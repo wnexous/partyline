@@ -808,7 +808,7 @@ T48 → T49 → T50 → T51 → T52 → T53 → T54
 **Requirement**: ROUTE-08, ROUTE-11
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] N6 re-applied in a scratch worktree is killed
+- [x] N6 re-applied in a scratch worktree is killed
 **Tests**: integration
 **Gate**: build
 **Commit**: `test(connectors): keep the catch-all hourly window per connector`

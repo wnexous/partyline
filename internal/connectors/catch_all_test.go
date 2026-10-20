@@ -553,3 +553,30 @@ func TestCatchAllRoutesLockPerConnector(t *testing.T) {
 	<-doneFirst
 	require.Len(t, c.chatMembers(t, c.room.ID), 2)
 }
+
+// ROUTE-08, ROUTE-11: the hourly cap counts each connector's own routes. With alice's first
+// connector at 60 routes in the hour, its next new chat is refused with the limit detail, while
+// a new chat of her second connector, routed to the same room, still joins and that connector
+// reports nothing.
+func TestCatchAllHourlyCapIsPerConnector(t *testing.T) {
+	c := newCatchAll(t)
+	c.setScope(t, dto.AutoRouteScopeAll, c.room.ID)
+	all := dto.AutoRouteScopeAll
+	second := testkit.Decode[dto.Connector](c.alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+		Kind: connectortest.KindName, Name: "wa 2", Config: map[string]any{"token": "fake-token-not-real"},
+	}).RequireStatus(http.StatusCreated))
+	c.alice.Patch("/api/v1/connectors/"+second.ID, dto.UpdateConnectorRequest{AutoRouteScope: &all, AutoRouteRoomID: &c.room.ID}).RequireStatus(http.StatusOK)
+	p := c.ownPipeline(nil)
+	ctx := context.Background()
+	for i := range 60 {
+		p.Handle(ctx, c.source(), dmText(dmPeer(i), fmt.Sprintf("M%d", i), "hello"))
+	}
+	p.Handle(ctx, c.source(), dmText(dmPeer(60), "M60", "one too many"))
+	require.Len(t, c.chatMembers(t, c.room.ID), 60)
+	require.Equal(t, "auto-route limit reached", c.connector(t).LastError)
+
+	p.Handle(ctx, connectors.Source{ConnectorID: second.ID, Kind: connectortest.KindName, OwnerID: c.alice.User.ID}, dmText(dmA, "A1", "other connector"))
+	require.Len(t, c.chatMembers(t, c.room.ID), 61, "the second connector's chat joined")
+	got := testkit.Decode[dto.Connector](c.alice.Get("/api/v1/connectors/" + second.ID).RequireStatus(http.StatusOK))
+	require.Empty(t, got.LastError, "the second connector is under its own cap")
+}
