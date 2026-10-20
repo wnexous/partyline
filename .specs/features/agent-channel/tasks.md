@@ -54,6 +54,12 @@ T5 → T6 → T7 → T8 → T9
 T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
 ```
 
+### Phase 4: Verifier fix iteration 2
+
+```
+T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27
+```
+
 ---
 
 ## Task Breakdown
@@ -332,3 +338,138 @@ T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record agent channel contract notes for fix iteration 1`
+
+### Phase 4: Verifier fix iteration 2
+
+#### T19: Symlinked download dir refused by the symlink check alone (F8, N1)
+
+**What**: The symlinked `<TempDir>/partyline` case points at a 0700 directory owned by the user, so only the `Lstat` symlink check can refuse it; nothing is written into the target.
+**Where**: `internal/channel/tools_unix_test.go`
+**Depends on**: None
+**Reuses**: newChanEnv, postFile
+**Requirement**: TOOL-06 (S1 hardening)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] A symlink to a private (0700, own) directory → isError naming the download directory; the target stays empty
+- [ ] The test fails with `os.Lstat` replaced by `os.Stat` (N1)
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(channel): refuse a symlinked download dir even when its target is private`
+
+#### T20: Group- and other-readable agent dir (F9, N3)
+
+**What**: Download dir cases with mode 0750 (group only) and 0705 (others only) are refused.
+**Where**: `internal/channel/tools_unix_test.go`
+**Depends on**: T19
+**Reuses**: newChanEnv
+**Requirement**: TOOL-06 (S1 hardening)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] 0750 and 0705 agent dirs → isError, nothing written
+- [ ] The test fails with the mask `0o077` narrowed to `0o007` or `0o070` (N3)
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(channel): refuse download dirs open to the group or to others`
+
+#### T21: Download dir owned by another user (F10, N4)
+
+**What**: `checkPrivate` is called with file info whose `*syscall.Stat_t` carries another UID and a 0700 mode.
+**Where**: `internal/channel/private_unix_test.go`
+**Depends on**: T20
+**Reuses**: checkPrivate
+**Requirement**: TOOL-06 (S1 hardening)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Another user's 0700 dir → error "belongs to another user"; the user's own 0700 dir → nil
+- [ ] The test fails with the owner check disabled (N4)
+**Tests**: unit
+**Gate**: full
+**Commit**: `test(channel): refuse a download dir owned by another user`
+
+#### T22: Dedupe window boundary (F11, N11)
+
+**What**: The link's id ring remembers the last 1,000 delivered ids: after 1,000 ids the first is still known; the 1,001st evicts it.
+**Where**: `internal/channel/link_test.go`
+**Depends on**: T21
+**Reuses**: newIDRing, dedupeSize
+**Requirement**: AGT-10
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] With 1,000 ids remembered all are known; adding the 1,001st forgets only the oldest
+- [ ] The test fails with the window set to 1 or 999 (N11)
+**Tests**: unit
+**Gate**: full
+**Commit**: `test(channel): assert the 1000 message dedupe window`
+
+#### T23: Inactive principal at upgrade (F12, N9)
+
+**What**: A gateway whose token checker reports the principal inactive answers the upgrade with 401 and registers no agent.
+**Where**: `internal/agents/gateway_test.go`
+**Depends on**: T22
+**Reuses**: registry fixture
+**Requirement**: AGT-02 (contract: inactive → 401)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Checker false → 401 `unauthorized`, no agent row for (owner, name)
+- [ ] The test fails with the pre-upgrade check disabled (N9)
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(agents): refuse the agent upgrade for an inactive token`
+
+#### T24: At most 50 agents per owner (S2)
+
+**What**: `agents.MaxAgentsPerOwner` (50). Registering a new agent name beyond it answers the WebSocket upgrade with 409 `conflict` "agent limit reached"; existing agents still connect.
+**Where**: `internal/agents/registry.go`, `internal/store/queries/agents.sql`, `internal/api/agent_ws_test.go`
+**Depends on**: T23
+**Reuses**: Registry.Upsert
+**Requirement**: S2 (security, no AC)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] With 50 agents the 51st name → HTTP 409 `conflict` "agent limit reached" and no 51st row
+- [ ] One of the 50 existing agents still connects
+**Tests**: e2e
+**Gate**: full
+**Commit**: `fix(agents): cap registered agents at 50 per owner`
+
+#### T25: Link keeps reading before initialization (S5)
+
+**What**: Pushed frames are queued for a delivery goroutine that waits for `notifications/initialized`; the WebSocket reader keeps reading, so pings are answered and closes detected before initialization. Acks still follow the notification write.
+**Where**: `internal/channel/link.go`, `internal/channel/mcp/server.go`, `internal/channel/link_test.go`
+**Depends on**: T24
+**Reuses**: link.handle
+**Requirement**: AGT-07, AGT-03 (S5)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] A server ping after pushed frames and before initialize gets its pong
+- [ ] After initialize the buffered frames arrive in order, each acked after its notification
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(channel): keep reading the agent socket before initialization`
+
+#### T26: Skipped count and cursor jump from one read (S6)
+
+**What**: The backlog count and list run in one read transaction (one SQLite snapshot), so a message posted between them cannot make the notice off by one.
+**Where**: `internal/store/store.go`, `internal/agents/gateway.go`, `internal/agents/export_test.go`, `internal/agents/gateway_backlog_test.go`
+**Depends on**: T25
+**Reuses**: CountAgentBacklog, ListAgentBacklog
+**Requirement**: AGT-09 (S6)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] A post between the count and the list (test hook) leaves the notice count equal to the messages before the first delivered one; the new post arrives after the backlog
+**Tests**: e2e
+**Gate**: full
+**Commit**: `fix(agents): read the backlog count and messages from one snapshot`
+
+#### T27: Contract notes and traceability for fix iteration 2
+
+**What**: Record the agent cap, the link's delivery queue, the backlog snapshot and the new tests; update traceability.
+**Where**: `contract-notes.md`, `spec.md`
+**Depends on**: T26
+**Reuses**: none
+**Requirement**: all
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] contract-notes.md describes the agent cap, the delivery queue and the backlog snapshot
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record agent channel contract notes for fix iteration 2`
