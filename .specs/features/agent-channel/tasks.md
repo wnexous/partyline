@@ -395,8 +395,8 @@ T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AGT-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] With 1,000 ids remembered all are known; adding the 1,001st forgets only the oldest
-- [ ] The test fails with the window set to 1 or 999 (N11)
+- [x] With 1,000 ids remembered all are known; adding the 1,001st forgets only the oldest
+- [x] The test fails with the window set to 1 or 999 (N11)
 **Tests**: unit
 **Gate**: full
 **Commit**: `test(channel): assert the 1000 message dedupe window`

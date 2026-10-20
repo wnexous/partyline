@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -102,6 +103,24 @@ func TestLinkDedupesRepeatedMessage(t *testing.T) {
 		}
 	}
 	s.expectNoNotification(300 * time.Millisecond)
+}
+
+// AGT-10 (design: dedupe window of 1,000 ids): the link remembers the last 1,000 delivered
+// message ids; the 1,001st evicts only the oldest, which would then be notified again.
+func TestLinkDedupeWindowHoldsThousandIDs(t *testing.T) {
+	l := newLink(mustURL(t, "http://127.0.0.1"), "pl_agent_test", "builder", http.DefaultClient, discard{}, io.Discard, fastTiming)
+	id := func(i int) string { return fmt.Sprintf("m%d", i) }
+	for i := range 1000 {
+		l.remember(id(i))
+	}
+	for i := range 1000 {
+		require.True(t, l.seenBefore(id(i)), "id %d of 1000 is remembered", i)
+	}
+	l.remember(id(1000))
+	require.False(t, l.seenBefore(id(0)), "the 1,001st id evicts the oldest")
+	for i := 1; i <= 1000; i++ {
+		require.True(t, l.seenBefore(id(i)), "id %d stays remembered", i)
+	}
 }
 
 // AGT-07: no ack is sent before the notification is written: before initialization the
