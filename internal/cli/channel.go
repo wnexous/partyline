@@ -45,7 +45,7 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 		}
 	}
 	err := channel.Run(ctx, channel.Options{
-		URL: url, Token: token, Agent: agent, Version: Version,
+		URL: url, Token: token, Agent: agent, Version: buildVersion(),
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {

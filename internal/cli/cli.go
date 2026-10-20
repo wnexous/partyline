@@ -48,7 +48,7 @@ func execute(ctx context.Context, args []string, io stdio) int {
 	}
 	switch args[1] {
 	case "version":
-		fmt.Fprintln(io.stdout, Version)
+		fmt.Fprintln(io.stdout, buildVersion())
 		return 0
 	case "serve":
 		return serve(ctx, io)

@@ -76,7 +76,7 @@ T15 → T16 → T17
 **Requirement**: ONB-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] ldflags value wins; module version used otherwise; `(devel)` → `dev`
+- [x] ldflags value wins; module version used otherwise; `(devel)` → `dev`
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(cli): report the module version when installed with go install`

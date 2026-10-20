@@ -31,7 +31,7 @@ func serve(ctx context.Context, io stdio) int {
 		return 1
 	}
 	log := newLogger(cfg, io.stderr)
-	a, err := app.New(cfg, app.Options{Logger: log, Version: Version})
+	a, err := app.New(cfg, app.Options{Logger: log, Version: buildVersion()})
 	if err != nil {
 		log.Error("start failed", "err", err)
 		return 1
@@ -59,7 +59,7 @@ func serve(ctx context.Context, io stdio) int {
 	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
-	log.Info(msgListening, "addr", ln.Addr().String(), "public_url", cfg.PublicURL.String(), "version", Version)
+	log.Info(msgListening, "addr", ln.Addr().String(), "public_url", cfg.PublicURL.String(), "version", buildVersion())
 
 	code := 0
 	select {
