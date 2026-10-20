@@ -228,8 +228,8 @@ T7 → T8 → T9 → T10 → T11
 **Requirement**: CON-05, DLV-07 (integration)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Agent reply to a chat message reaches the fake connector with `ReplyToID` = original external id
-- [ ] Disabled connector → send failure → retry path
+- [x] Agent reply to a chat message reaches the fake connector with `ReplyToID` = original external id
+- [x] Disabled connector → send failure → retry path
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): deliver outbox messages through connectors`
