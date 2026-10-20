@@ -39,8 +39,11 @@ const (
 )
 
 // errSessionRevoked ends a connection whose session (or token, or user) no longer
-// authenticates.
-var errSessionRevoked = errors.New("session revoked")
+// authenticates; errSessionCheckFailed one whose re-check could not run (fail closed).
+var (
+	errSessionRevoked     = errors.New("session revoked")
+	errSessionCheckFailed = errors.New("session check failed")
+)
 
 // PrincipalChecker reports whether a connection's principal still authenticates.
 type PrincipalChecker interface {
@@ -150,6 +153,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = ws.Close(websocket.StatusPolicyViolation, "session revoked")
 		return
 	}
+	if errors.Is(err, errSessionCheckFailed) {
+		// The client reconnects, and the upgrade authenticates it again.
+		_ = ws.Close(websocket.StatusTryAgainLater, "session check failed")
+		return
+	}
 	if err != nil && ctx.Err() == nil {
 		h.d.Logger.Debug("live connection ended", "user_id", p.UserID, "err", err)
 	}
@@ -247,7 +255,8 @@ func (c *conn) checkRevoked(ctx context.Context, e events.Event) error {
 	return nil
 }
 
-// checkPrincipal ends the connection when its principal no longer authenticates.
+// checkPrincipal ends the connection when its principal no longer authenticates, or when
+// that cannot be checked (fail closed).
 func (c *conn) checkPrincipal(ctx context.Context) error {
 	if c.hub.d.Sessions == nil {
 		return nil
@@ -258,7 +267,7 @@ func (c *conn) checkPrincipal(ctx context.Context) error {
 			return nil
 		}
 		c.hub.d.Logger.Error("live: session check failed", "user_id", c.p.UserID, "err", err)
-		return nil
+		return errSessionCheckFailed
 	}
 	if !ok {
 		return errSessionRevoked

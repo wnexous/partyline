@@ -841,14 +841,14 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 
 #### T51: Live session check fails closed
 
-**What**: A store error during the principal re-check closes the socket (policy violation), so the client reconnects and authenticates again.
+**What**: A store error during the principal re-check closes the socket with 1013 (try again later), so the client reconnects and authenticates again.
 **Where**: `internal/live/hub.go`
 **Depends on**: T50
 **Reuses**: checkPrincipal
 **Requirement**: AUTH-09, AUTH-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A failing principal check closes the socket with 1008
+- [x] A failing principal check closes the socket with 1013
 **Tests**: e2e
 **Gate**: full
 **Commit**: `fix(live): close live sockets when the session check fails`
