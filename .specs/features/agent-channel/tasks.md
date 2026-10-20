@@ -410,8 +410,8 @@ T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AGT-02 (contract: inactive → 401)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Checker false → 401 `unauthorized`, no agent row for (owner, name)
-- [ ] The test fails with the pre-upgrade check disabled (N9)
+- [x] Checker false → 401 `unauthorized`, no agent row for (owner, name)
+- [x] The test fails with the pre-upgrade check disabled (N9)
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(agents): refuse the agent upgrade for an inactive token`
