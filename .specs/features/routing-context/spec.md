@@ -169,8 +169,8 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROUTE-05 | P1: Catch-all | Tasks | Pending |
 | MEM-01 | P1: Membership settings | Tasks | Pending |
 | MEM-02 | P1: Membership settings | Tasks | Pending |
-| MEM-03 | P1: Membership settings | Tasks | Pending |
-| MEM-04 | P1: Membership settings | Tasks | Pending |
+| MEM-03 | P1: Membership settings | Tasks | Implementing |
+| MEM-04 | P1: Membership settings | Tasks | Implementing |
 | MEM-05 | P1: Membership settings | Tasks | Implementing |
 | INS-01 | P2: Room instructions | Tasks | Implementing |
 | INS-02 | P2: Room instructions | Tasks | Pending |

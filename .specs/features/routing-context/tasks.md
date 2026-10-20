@@ -135,8 +135,8 @@ T13 → T14 → T15 → T16
 **Requirement**: MEM-03, MEM-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Table tests: all/trusted/mentions × DM, reply-to-me, @name (case, word boundary), keyword boundary, non-matching
-- [ ] e2e: agent with `mentions` receives only matching pushes; backlog skips non-matching and cursor advances
+- [x] Table tests: all/trusted/mentions × DM, reply-to-me, @name (case, word boundary), keyword boundary, non-matching
+- [x] e2e: agent with `mentions` receives only matching pushes; backlog skips non-matching and cursor advances
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(delivery): filter agent deliveries by membership mode`

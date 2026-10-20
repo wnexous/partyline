@@ -338,9 +338,10 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 }
 
 // backlog delivers, per room of the agent (paused rooms excepted), the messages after the
-// agent's cursor, oldest first and at most BacklogLimit (AGT-08). When more are pending it
-// first sends a notice with the skipped count and moves the cursor past them (AGT-09). It
-// returns the highest sequence number sent per room.
+// agent's cursor that its delivery mode wants (MEM-03, MEM-04), oldest first and at most
+// BacklogLimit (AGT-08). When more are pending it first sends a notice with the skipped count
+// and moves the cursor past them (AGT-09). It returns the highest sequence number seen per
+// room.
 func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]int64, error) {
 	sent := map[string]int64{}
 	states, err := g.d.Registry.Rooms(ctx, a.ID)
@@ -387,14 +388,39 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		if err != nil {
 			return nil, err
 		}
+		prefs := delivery.Prefs(a.Name, st.DisplayName, st.Delivery, st.KeywordsJson)
+		// MEM-03, MEM-04: unwanted messages are not delivered. Those before the first delivered
+		// one move the cursor (before that message is written); later ones wait for an ack.
+		written, skippedTo := false, int64(0)
 		for _, m := range msgs {
+			facts, err := delivery.LoadFacts(ctx, g.d.Store.R(), m.MessageView)
+			if err != nil {
+				return nil, err
+			}
+			sent[st.ID] = m.Seq
+			if !facts.WantedBy(a.ID, a.OwnerID, prefs) {
+				if !written {
+					skippedTo = m.Seq
+				}
+				continue
+			}
+			if !written && skippedTo > 0 {
+				if err := g.advance(ctx, a.ID, st.ID, skippedTo); err != nil {
+					return nil, err
+				}
+			}
+			written = true
 			frame := dto.AgentMessageFrame{Type: dto.AgentFrameTypeMessage, AgentMessage: dto.AgentMessage{
 				Room: ref, Trusted: delivery.Trusted(m.AuthorUserID, a.OwnerID), Message: convert.Message(m),
 			}}
 			if err := c.write(ctx, frame); err != nil {
 				return nil, err
 			}
-			sent[st.ID] = m.Seq
+		}
+		if !written && skippedTo > 0 {
+			if err := g.advance(ctx, a.ID, st.ID, skippedTo); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return sent, nil

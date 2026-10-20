@@ -10,6 +10,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
+	"github.com/wnexous/partyline/internal/store/db"
 )
 
 // AgentPusher hands messages to connected agents (implemented by agents.Gateway).
@@ -37,7 +38,8 @@ type DispatcherOptions struct {
 const dispatcherBuffer = 1024
 
 // AgentDispatcher pushes every new room message to the online agents the delivery plan
-// targets (DLV-02), with a trusted flag computed for each receiving agent (DLV-06). Rooms
+// targets (DLV-02) and whose delivery mode wants it (MEM-03, MEM-04), with a trusted flag
+// computed for each receiving agent (DLV-06). Rooms
 // whose agent delivery is paused by the loop guard get no pushes (DLV-08). Offline agents
 // receive the message from their backlog when they reconnect.
 type AgentDispatcher struct {
@@ -100,8 +102,12 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 		return err
 	}
 	members := make([]Member, len(rows))
+	agentRows := map[string]db.RoomMember{}
 	for i, r := range rows {
 		members[i] = Member{Kind: dto.MemberKind(r.RoomMember.Kind), ID: r.RoomMember.MemberID, Outbound: r.RoomMember.Outbound}
+		if r.RoomMember.Kind == string(dto.MemberKindAgent) {
+			agentRows[r.RoomMember.MemberID] = r.RoomMember
+		}
 	}
 	var recipients []string
 	_ = json.Unmarshal([]byte(view.RecipientsJson), &recipients)
@@ -117,6 +123,10 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 	if len(online) == 0 {
 		return nil
 	}
+	facts, err := LoadFacts(ctx, q, view)
+	if err != nil {
+		return err
+	}
 	msg, err := d.o.Load(ctx, e.MessageID)
 	if err != nil {
 		return err
@@ -129,6 +139,10 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 		}
 		if err != nil {
 			return err
+		}
+		m := agentRows[id]
+		if !facts.WantedBy(id, agent.OwnerID, Prefs(agent.Name, m.DisplayName, m.Delivery, m.KeywordsJson)) {
+			continue // MEM-03, MEM-04: stored, not pushed
 		}
 		d.o.Agents.Push(id, dto.AgentMessage{Room: ref, Trusted: Trusted(msg.AuthorUserID, agent.OwnerID), Message: msg})
 	}

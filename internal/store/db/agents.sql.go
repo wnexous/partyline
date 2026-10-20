@@ -300,7 +300,8 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 }
 
 const listAgentRoomStates = `-- name: ListAgentRoomStates :many
-SELECT r.id, r.name, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor
+SELECT r.id, r.name, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor,
+       m.display_name, m.delivery, m.keywords_json
 FROM room_members m
 JOIN rooms r ON r.id = m.room_id
 LEFT JOIN agent_cursors c ON c.agent_id = m.member_id AND c.room_id = m.room_id
@@ -313,6 +314,9 @@ type ListAgentRoomStatesRow struct {
 	Name         string
 	AgentsPaused bool
 	Cursor       int64
+	DisplayName  string
+	Delivery     string
+	KeywordsJson string
 }
 
 func (q *Queries) ListAgentRoomStates(ctx context.Context, memberID string) ([]ListAgentRoomStatesRow, error) {
@@ -329,6 +333,9 @@ func (q *Queries) ListAgentRoomStates(ctx context.Context, memberID string) ([]L
 			&i.Name,
 			&i.AgentsPaused,
 			&i.Cursor,
+			&i.DisplayName,
+			&i.Delivery,
+			&i.KeywordsJson,
 		); err != nil {
 			return nil, err
 		}
