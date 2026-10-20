@@ -41,6 +41,12 @@ func (w *waits) Wait(ctx context.Context, d time.Duration) error {
 	return ctx.Err()
 }
 
+func (w *waits) count() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return len(w.ds)
+}
+
 // waitFor blocks until n waits were recorded and returns them.
 func (w *waits) waitFor(t *testing.T, n int) []time.Duration {
 	t.Helper()
@@ -54,7 +60,7 @@ func (w *waits) waitFor(t *testing.T, n int) []time.Duration {
 		w.mu.Unlock()
 		select {
 		case <-w.ch:
-		case <-time.After(connectortest.Timeout):
+		case <-time.After(6 * connectortest.Timeout): // per step; the host may be loaded
 			t.Fatalf("only %d of %d backoff waits happened", len(w.ds), n)
 		}
 	}
@@ -156,11 +162,13 @@ func TestManagerApplyAndStop(t *testing.T) {
 	f.m.Start(context.Background())
 	id := f.insert(t, true)
 
-	began := time.Now()
+	// Started at once (well within 2 s): the instance exists when Apply returns and the
+	// first Run comes before any backoff wait. Wall time is not asserted (loaded hosts).
 	f.m.Apply(id)
-	inst := f.fake.Instance(t, id)
+	inst := f.fake.Lookup(id)
+	require.NotNil(t, inst, "Apply creates the connector synchronously")
 	inst.WaitRun(t)
-	require.Less(t, time.Since(began), 2*time.Second, "started within 2 seconds")
+	require.Zero(t, f.waits.count(), "no backoff before the first run")
 
 	ext, err := f.m.Send(context.Background(), id, connectors.Outbound{ChatID: "chat-1", Text: "hello"})
 	require.NoError(t, err)

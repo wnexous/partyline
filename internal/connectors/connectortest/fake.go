@@ -68,6 +68,13 @@ func (f *Fake) newInstance(cfg connectors.Config, d connectors.Deps) (connectors
 	return inst, nil
 }
 
+// Lookup returns the connector's newest instance without waiting, or nil.
+func (f *Fake) Lookup(connectorID string) *Instance {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.instances[connectorID]
+}
+
 // Instance waits until the manager created the connector's newest instance and returns it.
 func (f *Fake) Instance(t testing.TB, connectorID string) *Instance {
 	t.Helper()
