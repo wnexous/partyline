@@ -153,31 +153,31 @@ Users need one place to see and steer everything: who is online, which chats fee
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| UI-01 | P1: Access flows | Tasks | Implementing |
-| UI-02 | P1: Access flows | Tasks | Implementing |
-| UI-03 | P1: Access flows | Tasks | Implementing |
-| UI-04 | P1: Live rooms | Tasks | Implementing |
-| UI-05 | P1: Live rooms | Tasks | Implementing |
-| UI-06 | P1: Live rooms | Tasks | Implementing |
-| UI-07 | P1: Live rooms | Tasks | Implementing |
-| UI-08 | P1: Live rooms | Tasks | Implementing |
-| UI-09 | P1: Live rooms | Tasks | Implementing |
-| UI-10 | P1: Rooms management | Tasks | Implementing |
-| UI-11 | P1: Rooms management | Tasks | Implementing |
-| UI-12 | P1: Rooms management | Tasks | Implementing |
-| UI-13 | P1: Rooms management | Tasks | Implementing |
-| UI-14 | P1: Agents etc. | Tasks | Implementing |
-| UI-15 | P1: Agents etc. | Tasks | Implementing |
-| UI-16 | P1: Agents etc. | Tasks | Implementing |
-| UI-17 | P1: Agents etc. | Tasks | Implementing |
-| UI-18 | P1: Agents etc. | Tasks | Implementing |
-| UI-19 | P1: Agents etc. | Tasks | Implementing |
-| UI-20 | P1: Admin | Tasks | Implementing |
-| UI-21 | P1: Admin | Tasks | Implementing |
-| UI-22 | P2: Polish | Tasks | Implementing |
-| UI-23 | P2: Polish | Tasks | Implementing |
-| UI-24 | P2: Polish | Tasks | Implementing |
-| UI-25 | P2: Polish | Tasks | Implementing |
+| UI-01 | P1: Access flows | Tasks | ✅ Verified |
+| UI-02 | P1: Access flows | Tasks | ✅ Verified |
+| UI-03 | P1: Access flows | Tasks | ✅ Verified |
+| UI-04 | P1: Live rooms | Tasks | ✅ Verified |
+| UI-05 | P1: Live rooms | Tasks | ✅ Verified |
+| UI-06 | P1: Live rooms | Tasks | ✅ Verified |
+| UI-07 | P1: Live rooms | Tasks | ✅ Verified |
+| UI-08 | P1: Live rooms | Tasks | ✅ Verified |
+| UI-09 | P1: Live rooms | Tasks | ✅ Verified |
+| UI-10 | P1: Rooms management | Tasks | ✅ Verified |
+| UI-11 | P1: Rooms management | Tasks | ✅ Verified |
+| UI-12 | P1: Rooms management | Tasks | ✅ Verified |
+| UI-13 | P1: Rooms management | Tasks | ✅ Verified |
+| UI-14 | P1: Agents etc. | Tasks | ✅ Verified |
+| UI-15 | P1: Agents etc. | Tasks | ✅ Verified |
+| UI-16 | P1: Agents etc. | Tasks | ✅ Verified |
+| UI-17 | P1: Agents etc. | Tasks | ✅ Verified |
+| UI-18 | P1: Agents etc. | Tasks | ✅ Verified |
+| UI-19 | P1: Agents etc. | Tasks | ✅ Verified |
+| UI-20 | P1: Admin | Tasks | ✅ Verified |
+| UI-21 | P1: Admin | Tasks | ✅ Verified |
+| UI-22 | P2: Polish | Tasks | ✅ Verified |
+| UI-23 | P2: Polish | Tasks | Fixed - re-verify (T20) |
+| UI-24 | P2: Polish | Tasks | Fixed - re-verify (T22, T31) |
+| UI-25 | P2: Polish | Tasks | ✅ Verified |
 
 **Coverage:** 25 total, mapped in tasks.md
 
