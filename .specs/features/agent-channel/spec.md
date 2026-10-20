@@ -137,12 +137,12 @@ A Claude Code session can only receive pushed events through a channel: an MCP s
 | AGT-08 | P1: Receive | Tasks | Implementing |
 | AGT-09 | P1: Receive | Tasks | Implementing |
 | AGT-10 | P1: Receive | Tasks | Implementing |
-| TOOL-01 | P1: Tools | Tasks | Pending |
+| TOOL-01 | P1: Tools | Tasks | Implementing |
 | TOOL-02 | P1: Tools | Tasks | Implementing |
 | TOOL-03 | P1: Tools | Tasks | Implementing |
 | TOOL-04 | P1: Tools | Tasks | Implementing |
 | TOOL-05 | P1: Tools | Tasks | Implementing |
-| TOOL-06 | P1: Tools | Tasks | Pending |
+| TOOL-06 | P1: Tools | Tasks | Implementing |
 | TOOL-07 | P1: Tools | Tasks | Implementing |
 | TOOL-08 | P1: Tools | Tasks | Implementing |
 | TOOL-09 | P2: Agent directory | Tasks | Implementing |

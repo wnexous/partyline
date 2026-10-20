@@ -174,9 +174,9 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: TOOL-01, TOOL-02, TOOL-03, TOOL-04, TOOL-05, TOOL-06, TOOL-07, TOOL-08, TOOL-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `tools/list` returns exactly the six tools with JSON schemas
-- [ ] Each tool exercised against testkit; errors map to `isError:true` texts from spec
-- [ ] Downloaded file mode 0600 under `$TMPDIR/partyline/<agent>/`
+- [x] `tools/list` returns exactly the six tools with JSON schemas
+- [x] Each tool exercised against testkit; errors map to `isError:true` texts from spec
+- [x] Downloaded file mode 0600 under `$TMPDIR/partyline/<agent>/`
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(channel): add room tools for claude code`

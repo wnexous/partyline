@@ -189,6 +189,21 @@ func (s *session) expectNoNotification(d time.Duration) {
 	}
 }
 
+// call runs tools/call and returns the result text and isError.
+func (s *session) call(tool string, args any) (string, bool) {
+	s.t.Helper()
+	s.nextID++
+	id := s.nextID
+	s.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": args}})
+	m := s.response()
+	require.Equal(s.t, float64(id), m["id"], "response: %v", m)
+	res, ok := m["result"].(map[string]any)
+	require.True(s.t, ok, "not a result: %v", m)
+	content := res["content"].([]any)
+	require.Len(s.t, content, 1)
+	return content[0].(map[string]any)["text"].(string), res["isError"] == true
+}
+
 // closeStdin ends the session as Claude Code does on exit and returns Run's result.
 func (s *session) closeStdin() (time.Duration, error) {
 	s.t.Helper()

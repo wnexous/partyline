@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/wnexous/partyline/internal/agents"
@@ -53,6 +55,19 @@ func Run(ctx context.Context, o Options) error {
 
 	srv := mcp.NewServer(o.Stdin, o.Stdout, mcp.ServerInfo{Name: ServerName, Version: o.Version, Instructions: Instructions})
 	l := newLink(base, o.Token, agent, o.HTTPClient, srv, o.Stderr, o.timing)
+	if o.TempDir == "" {
+		o.TempDir = os.TempDir()
+	}
+	tmp, err := filepath.Abs(o.TempDir)
+	if err != nil {
+		return fmt.Errorf("temp dir: %w", err)
+	}
+	t := &tools{
+		api:  &client{base: base, token: o.Token, agent: agent, http: o.HTTPClient},
+		link: l,
+		dir:  filepath.Join(tmp, "partyline", agent),
+	}
+	t.register(srv)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
