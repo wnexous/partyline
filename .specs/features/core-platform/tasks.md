@@ -345,8 +345,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: SEC-03, OPS-02 (blob cleanup)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Same content stored once; limit+1 bytes → ErrTooLarge and no file left
-- [ ] Files 0600, dirs 0700
+- [x] Same content stored once; limit+1 bytes → ErrTooLarge and no file left
+- [x] Files 0600, dirs 0700
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(attachments): add content-addressed blob store`
