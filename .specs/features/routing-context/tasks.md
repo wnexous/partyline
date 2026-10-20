@@ -566,7 +566,7 @@ T31 → T32 → T33 → T34
 **Requirement**: all
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Notes cover every new behavior
+- [x] Notes cover every new behavior
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record routing-context fix iteration 1`

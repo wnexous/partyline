@@ -69,12 +69,11 @@
 
 ## Handoff
 
-- **Feature**: connectors
-- **Phase / Task**: Execute, Verifier fix iteration 2 (T22-T31) complete
-- **Completed**: T22-T31 on branch `fix/conn-2` (see tasks.md Phase 4)
+- **Feature**: routing-context
+- **Phase / Task**: Execute, Verifier fix iteration 1 (T18-T34) complete
+- **Completed**: T18-T34 on `main` (see tasks.md Phases 5-6; migration `0008`)
 - **In-progress** (file:line): none
-- **Next step**: final re-verify (iteration 3 of 3) over `314a31f..HEAD`, then merge into main (new migrations
-  `0004`, `0005`; another branch adding a migration must renumber)
+- **Next step**: re-verify (iteration 2 of 3) over `8094902..HEAD`
 - **Blockers**: none
 - **Uncommitted files**: none
-- **Branch**: fix/conn-2
+- **Branch**: main
