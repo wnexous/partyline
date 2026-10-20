@@ -153,5 +153,5 @@ A Claude Code session can only receive pushed events through a channel: an MCP s
 
 ## Success Criteria
 
-- [ ] A real Claude Code 2.1.303 session receives a room message and replies through `reply` (manual UAT, recorded in validation.md).
+- [x] A real Claude Code 2.1.303 session receives a room message and replies through `reply` (manual UAT, recorded in uat.md).
 - [ ] Offline/online cycle loses no message in the automated test.
