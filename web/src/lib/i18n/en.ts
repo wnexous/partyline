@@ -337,6 +337,36 @@ export const en = {
   "agents.deleted": "{name} deleted",
   "agents.deleteFailed": "Couldn’t delete {name}.",
 
+  "devices.title": "Approve a machine",
+  "devices.body":
+    "partyline setup on another machine asks to connect as your agent. Approve only if you just ran it and the code matches the one in your terminal.",
+  "devices.request": "Approval request",
+  "devices.machine": "Machine",
+  "devices.code": "Code",
+  "devices.ip": "Address",
+  "devices.requested": "Requested",
+  "devices.expires": "Expires in",
+  "devices.warning":
+    "Never approve a link someone sent you: the machine that asked gets an agent token in your name.",
+  "devices.tokenNote":
+    "Approving creates an agent token named after this machine, owned by you. Revoke it under API tokens to cut the machine off.",
+  "devices.approve": "Approve",
+  "devices.approving": "Approving…",
+  "devices.deny": "Deny",
+  "devices.alreadyDecided": "This request was already decided.",
+  "devices.approvedTitle": "{machine} is approved",
+  "devices.approvedBody":
+    "The terminal finishes setup in a few seconds and registers partyline in the harnesses it finds. You can close this page.",
+  "devices.toAgents": "Go to agents",
+  "devices.deniedTitle": "{machine} was denied",
+  "devices.deniedBody":
+    "partyline setup on that machine stops with “approval denied”. Nothing was created.",
+  "devices.expiredTitle": "This request expired",
+  "devices.expiredBody": "Codes last 10 minutes. Run {cmd} again for a new link.",
+  "devices.notFoundTitle": "No request with this code",
+  "devices.notFoundBody":
+    "Check the link in your terminal. Requests are removed an hour after they are made.",
+  "devices.loadFailed": "Couldn’t load this request.",
   "connect.open": "Connect an agent",
   "connect.title": "Connect an agent",
   "connect.body":

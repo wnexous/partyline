@@ -292,7 +292,7 @@ T15 → T16 → T17
 **Requirement**: WIZ-02, DEV-02
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Approve/deny call the API; expired shows expired state; login redirect returns to the page
+- [x] Approve/deny call the API; expired shows expired state; login redirect returns to the page
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): approve machines from the browser`

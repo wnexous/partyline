@@ -8,7 +8,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { api } from "./client";
+import { api, isApiError } from "./client";
 import {
   type AcceptInviteRequest,
   type ActivityItem,
@@ -28,6 +28,7 @@ import {
   type CreateTokenRequest,
   DefaultActivityLimit,
   DefaultPageSize,
+  type DeviceRequest,
   type Identity,
   type Invite,
   type InviteInfo,
@@ -88,6 +89,7 @@ export const queryKeys = {
   adminInvites: ["admin", "invites"] as const,
   adminAudit: ["admin", "audit"] as const,
   activity: ["activity"] as const,
+  device: (code: string) => ["devices", code] as const,
 };
 
 const items = <T>(list: List<T>) => list.items;
@@ -661,3 +663,30 @@ export const useAudit = () =>
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => (page.has_more ? page.items.at(-1)?.id : undefined),
   });
+
+// ---------------------------------------------------------------------------------------------
+// Machine approval (WIZ-02, DEV-02)
+
+export const deviceRequestQuery = (code: string) =>
+  queryOptions({
+    queryKey: queryKeys.device(code),
+    queryFn: () => api<DeviceRequest>("GET", `/devices/${encodeURIComponent(code)}`),
+    retry: false,
+  });
+
+export const useDeviceRequest = (code: string) => useQuery(deviceRequestQuery(code));
+
+/** Approve or deny; the answer replaces the cached request. A 409 (decided elsewhere) refetches. */
+export function useDecideDevice(code: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (decision: "approve" | "deny") =>
+      api<DeviceRequest>("POST", `/devices/${encodeURIComponent(code)}/${decision}`),
+    onSuccess: (request) => qc.setQueryData(queryKeys.device(code), request),
+    onError: (err) => {
+      if (isApiError(err) && err.status === 409) {
+        void qc.invalidateQueries({ queryKey: queryKeys.device(code), exact: true });
+      }
+    },
+  });
+}

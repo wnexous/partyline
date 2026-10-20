@@ -342,6 +342,36 @@ export const ptBR: Dictionary = {
   "agents.deleted": "{name} excluído",
   "agents.deleteFailed": "Não foi possível excluir {name}.",
 
+  "devices.title": "Aprovar uma máquina",
+  "devices.body":
+    "O partyline setup em outra máquina pede para se conectar como seu agente. Aprove só se foi você quem acabou de rodá-lo e o código é o mesmo do seu terminal.",
+  "devices.request": "Pedido de aprovação",
+  "devices.machine": "Máquina",
+  "devices.code": "Código",
+  "devices.ip": "Endereço",
+  "devices.requested": "Pedido",
+  "devices.expires": "Expira em",
+  "devices.warning":
+    "Nunca aprove um link que alguém mandou: a máquina que pediu recebe um token de agente em seu nome.",
+  "devices.tokenNote":
+    "Aprovar cria um token de agente com o nome desta máquina, em seu nome. Revogue-o em Tokens de API para desconectar a máquina.",
+  "devices.approve": "Aprovar",
+  "devices.approving": "Aprovando…",
+  "devices.deny": "Recusar",
+  "devices.alreadyDecided": "Este pedido já foi decidido.",
+  "devices.approvedTitle": "{machine} foi aprovada",
+  "devices.approvedBody":
+    "O terminal conclui o setup em alguns segundos e registra o partyline nos harnesses que encontrar. Pode fechar esta página.",
+  "devices.toAgents": "Ir para agentes",
+  "devices.deniedTitle": "{machine} foi recusada",
+  "devices.deniedBody":
+    "O partyline setup naquela máquina para com “approval denied”. Nada foi criado.",
+  "devices.expiredTitle": "Este pedido expirou",
+  "devices.expiredBody": "Os códigos valem 10 minutos. Rode {cmd} de novo para gerar outro link.",
+  "devices.notFoundTitle": "Nenhum pedido com este código",
+  "devices.notFoundBody":
+    "Confira o link no terminal. Os pedidos são apagados uma hora depois de criados.",
+  "devices.loadFailed": "Não foi possível carregar este pedido.",
   "connect.open": "Conectar um agente",
   "connect.title": "Conectar um agente",
   "connect.body":

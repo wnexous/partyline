@@ -199,7 +199,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | TURN-01 | P2: Codex and Gemini | Tasks | Implementing |
 | TURN-02 | P2: Codex and Gemini | Tasks | Implementing |
 | WIZ-01 | P2: Web wizard | Tasks | Implementing |
-| WIZ-02 | P2: Web wizard | Tasks | Pending |
+| WIZ-02 | P2: Web wizard | Tasks | Implementing |
 
 **Coverage:** 28 total, mapped in tasks.md
 

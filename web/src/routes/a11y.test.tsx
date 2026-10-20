@@ -110,6 +110,24 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
+  it("the machine approval page has no axe violations", async () => {
+    const now = Date.now();
+    mockApi({
+      "GET /me": json(200, makeMe({ locale })),
+      "GET /devices/K7P2QX9M": json(200, {
+        code: "K7P2QX9M",
+        machine: "ana-laptop",
+        ip: "203.0.113.24",
+        status: "pending",
+        created_at: new Date(now - 60_000).toISOString(),
+        expires_at: new Date(now + 9 * 60_000).toISOString(),
+      }),
+    });
+    const { container } = renderRoute("/devices/K7P2QX9M");
+    await screen.findByRole("button", { name: locale === "en" ? "Approve" : "Aprovar" });
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
   it("the login page has no axe violations", async () => {
     mockApi({ "GET /setup/status": json(200, { needs_setup: false }) });
     const { container } = renderRoute("/login");
