@@ -24,20 +24,33 @@ import (
 // fakeToken is a synthetic secret; status texts must never show it.
 const fakeToken = "777:TEST-token-not-real"
 
-// waits records backoff waits instead of sleeping (fake clock).
+// waits records backoff waits instead of sleeping (fake clock). With holdAt > 0 the
+// holdAt-th wait blocks until release is closed, so a test can inspect the state the
+// manager is in while it backs off.
 type waits struct {
-	mu sync.Mutex
-	ds []time.Duration
-	ch chan struct{}
+	mu      sync.Mutex
+	ds      []time.Duration
+	ch      chan struct{}
+	holdAt  int
+	release chan struct{}
 }
 
-func newWaits() *waits { return &waits{ch: make(chan struct{}, 256)} }
+func newWaits() *waits {
+	return &waits{ch: make(chan struct{}, 256), release: make(chan struct{})}
+}
 
 func (w *waits) Wait(ctx context.Context, d time.Duration) error {
 	w.mu.Lock()
 	w.ds = append(w.ds, d)
+	hold := w.holdAt > 0 && len(w.ds) == w.holdAt
 	w.mu.Unlock()
 	w.ch <- struct{}{}
+	if hold {
+		select {
+		case <-w.release:
+		case <-ctx.Done():
+		}
+	}
 	return ctx.Err()
 }
 
@@ -190,6 +203,12 @@ func TestManagerRedactsErrorsAndRetriesWithBackoff(t *testing.T) {
 	f.m.Apply(id)
 	inst := f.fake.Instance(t, id)
 	inst.WaitRun(t)
+	// Hold the 8th backoff so the persisted status is read while the manager backs off,
+	// not after it already restarted the connector ("connecting").
+	f.waits.mu.Lock()
+	f.waits.holdAt = 8
+	f.waits.mu.Unlock()
+	t.Cleanup(func() { close(f.waits.release) })
 
 	for range 8 {
 		inst.Fail(errors.New(`Get "https://api.example.test/bot` + fakeToken + `/getUpdates": unauthorized`))
