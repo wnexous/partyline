@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { CircleCheckIcon, FingerprintIcon, LinkIcon, TimerOffIcon, XIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { CodeBlock } from "@/components/copy-field";
 import { EmptyState } from "@/components/empty-state";
@@ -24,9 +24,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDeleteIdentity, useIdentities, useStartPairing } from "@/lib/api/queries";
-import type { Identity, PairingCode } from "@/lib/api/types.gen";
+import {
+  useConnectors,
+  useDeleteIdentity,
+  useIdentities,
+  useStartPairing,
+} from "@/lib/api/queries";
+import type { Connector, Identity, PairingCode } from "@/lib/api/types.gen";
 import { useI18n, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { formatAbsolute } from "@/lib/time";
@@ -38,8 +44,9 @@ export const Route = createFileRoute("/_app/identities")({
 
 /*
  * Verified chat identities (UI-18, IDN-01..04). Linking proves control of a chat account: the
- * user gets a 6-character code and sends `!link CODE` (or `/link CODE`) from that account within
- * 10 minutes. The identity.linked live event flips the dialog to success.
+ * user picks the connector that reads the chat (codes are bound to one connector), gets a
+ * 6-character code and sends `!link CODE` (or `/link CODE`) from that account within 10 minutes.
+ * The identity.linked live event flips the dialog to success.
  */
 
 function IdentitiesPage() {
@@ -208,18 +215,12 @@ function PairingDialog({
 
 function PairingBody({ onDone }: { onDone: () => void }) {
   const t = useT();
-  const start = useStartPairing();
-  const [code, setCode] = useState<PairingCode | null>(null);
+  const connectors = useConnectors();
+  const [picked, setPicked] = useState<Connector | null>(null);
   // Only an identity linked after the dialog opened counts as this pairing's result.
   const [baseline] = useState(() => useLiveStore.getState().lastLinkedIdentity);
   const latest = useLiveStore((s) => s.lastLinkedIdentity);
   const linked = latest && latest !== baseline ? latest : null;
-  const secondsLeft = useSecondsLeft(code?.expires_at);
-  const { mutate } = start;
-
-  const requestCode = () => mutate(undefined, { onSuccess: setCode });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: request one code when the dialog opens
-  useEffect(requestCode, []);
 
   if (linked) {
     return (
@@ -238,13 +239,152 @@ function PairingBody({ onDone }: { onDone: () => void }) {
     );
   }
 
-  if (start.isError) {
+  if (connectors.isPending) {
+    return (
+      <div className="space-y-3 py-2" aria-hidden="true">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+      </div>
+    );
+  }
+
+  if (connectors.isError) {
     return (
       <div role="alert" className="space-y-3 text-sm">
-        <p className="text-destructive">{t("pairing.failed")}</p>
-        <Button variant="outline" size="sm" onClick={requestCode}>
+        <p className="text-destructive">{t("pairing.connectorsError")}</p>
+        <Button variant="outline" size="sm" onClick={() => connectors.refetch()}>
           {t("common.retry")}
         </Button>
+      </div>
+    );
+  }
+
+  const list = connectors.data;
+  if (list.length === 0) {
+    return (
+      <div className="space-y-3 py-2 text-sm">
+        <p className="font-semibold">{t("pairing.noConnectors")}</p>
+        <p className="text-muted-foreground">{t("pairing.noConnectorsBody")}</p>
+        <Button asChild variant="outline" size="sm">
+          <Link to="/connectors" onClick={onDone}>
+            {t("pairing.goToConnectors")}
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  // One usable connector needs no question.
+  const target = picked ?? (list.length === 1 ? list[0] : null);
+  if (!target) return <ConnectorChoice connectors={list} onChoose={setPicked} />;
+  return (
+    <PairingCodeView
+      key={target.id}
+      connector={target}
+      onChangeConnector={list.length > 1 ? () => setPicked(null) : undefined}
+    />
+  );
+}
+
+/** Asks which connector reads the chat the code will be sent from (IDN-01, IDN-02). */
+function ConnectorChoice({
+  connectors,
+  onChoose,
+}: {
+  connectors: Connector[];
+  onChoose: (connector: Connector) => void;
+}) {
+  const t = useT();
+  const idBase = useId();
+  const [selected, setSelected] = useState<string>("");
+  const chosen = connectors.find((c) => c.id === selected);
+  return (
+    <div className="space-y-4">
+      <fieldset className="space-y-2">
+        <legend className="mb-2 text-sm font-medium">{t("pairing.chooseConnector")}</legend>
+        <RadioGroup value={selected} onValueChange={setSelected} className="grid gap-2">
+          {connectors.map((c) => (
+            <label
+              key={c.id}
+              htmlFor={`${idBase}-${c.id}`}
+              className={cn(
+                "flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 text-sm transition-colors hover:bg-accent/60",
+                c.id === selected && "border-tape-strong bg-tape/35 dark:bg-tape/12",
+              )}
+            >
+              <RadioGroupItem id={`${idBase}-${c.id}`} value={c.id} />
+              <span className="min-w-0 flex-1 truncate font-medium">{c.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {c.my_level === "manage"
+                  ? platformLabel(c.kind)
+                  : t("pairing.sharedBy", {
+                      platform: platformLabel(c.kind),
+                      owner: c.owner.display_name || c.owner.username,
+                    })}
+              </span>
+            </label>
+          ))}
+        </RadioGroup>
+      </fieldset>
+      <p className="text-xs text-muted-foreground">{t("pairing.chooseHint")}</p>
+      <div className="flex justify-end">
+        <Button disabled={!chosen} onClick={() => chosen && onChoose(chosen)}>
+          {t("pairing.getCode")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Telegram bots see slash commands; elsewhere "!link" is the plain-text form. */
+const pairingCommands = (kind: string, code: string) =>
+  kind === "telegram"
+    ? { command: `/link ${code}`, alt: `!link ${code}` }
+    : { command: `!link ${code}`, alt: `/link ${code}` };
+
+function PairingCodeView({
+  connector,
+  onChangeConnector,
+}: {
+  connector: Connector;
+  onChangeConnector?: () => void;
+}) {
+  const t = useT();
+  const start = useStartPairing();
+  const [code, setCode] = useState<PairingCode | null>(null);
+  const secondsLeft = useSecondsLeft(code?.expires_at);
+  const { mutate } = start;
+
+  const requestCode = () => mutate(connector.id, { onSuccess: setCode });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: request one code when the connector is chosen
+  useEffect(requestCode, []);
+
+  const through = (
+    <p className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+      <span>
+        {t("pairing.through", {
+          connector: connector.name,
+          platform: platformLabel(connector.kind),
+        })}
+      </span>
+      {onChangeConnector ? (
+        <Button variant="link" size="sm" className="h-auto p-0" onClick={onChangeConnector}>
+          {t("pairing.changeConnector")}
+        </Button>
+      ) : null}
+    </p>
+  );
+
+  if (start.isError) {
+    return (
+      <div className="space-y-4">
+        {through}
+        <div role="alert" className="space-y-3 text-sm">
+          <p className="text-destructive">{t("pairing.failed")}</p>
+          <Button variant="outline" size="sm" onClick={requestCode}>
+            {t("common.retry")}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -271,9 +411,10 @@ function PairingBody({ onDone }: { onDone: () => void }) {
     );
   }
 
-  const command = `!link ${code.code}`;
+  const { command, alt } = pairingCommands(connector.kind, code.code);
   return (
     <div className="space-y-5">
+      {through}
       <div className="relative flex justify-center py-2">
         <span
           aria-hidden="true"
@@ -287,7 +428,7 @@ function PairingBody({ onDone }: { onDone: () => void }) {
       <div className="space-y-2 text-sm text-muted-foreground">
         <p>{t("pairing.send")}</p>
         <CodeBlock label={t("pairing.command")} value={command} />
-        <p className="text-xs">{t("pairing.alt", { command: `/link ${code.code}` })}</p>
+        <p className="text-xs">{t("pairing.alt", { command: alt })}</p>
       </div>
       <p className="flex items-center justify-between border-t pt-3 text-sm text-muted-foreground">
         <span>{t("pairing.expiresIn")}</span>

@@ -424,7 +424,19 @@ export const en = {
   "identities.removeConfirm": "Remove identity",
   "identities.removeFailed": "Couldn’t remove the identity.",
   "pairing.body":
-    "Send the code from the account you want to link, in any chat a partyline connector reads. A direct message to the bot works.",
+    "Send the code from the account you want to link, in a chat the chosen connector reads. A direct message to the bot works.",
+  "pairing.chooseConnector": "Which connector reads the chat you’ll send the code from?",
+  "pairing.chooseHint":
+    "The code works only through this connector, and the account is trusted only there.",
+  "pairing.sharedBy": "{platform} · shared by {owner}",
+  "pairing.getCode": "Get a code",
+  "pairing.through": "Through {connector} ({platform})",
+  "pairing.changeConnector": "Use another connector",
+  "pairing.connectorsError": "Couldn’t load your connectors.",
+  "pairing.noConnectors": "No connector to link through",
+  "pairing.noConnectorsBody":
+    "Add a connector, or ask someone to share theirs with you, then come back.",
+  "pairing.goToConnectors": "Go to connectors",
   "pairing.codeLabel": "Pairing code",
   "pairing.send": "Send this message from that account:",
   "pairing.command": "Command",

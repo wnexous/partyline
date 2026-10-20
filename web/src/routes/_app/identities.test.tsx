@@ -5,7 +5,7 @@ import type { Identity } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
-import { makeMe } from "@/test/fixtures";
+import { makeConnector, makeMe } from "@/test/fixtures";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
@@ -41,8 +41,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const pairing = (code: string, seconds: number) =>
-  json(201, { code, expires_at: new Date(Date.now() + seconds * 1000).toISOString() });
+const whatsapp = makeConnector({ id: "k1", kind: "whatsapp", name: "family-wa" });
+const telegram = makeConnector({ id: "k2", kind: "telegram", name: "ops-bot" });
+const shared = makeConnector({
+  id: "k3",
+  kind: "discord",
+  name: "team-discord",
+  my_level: "use",
+  owner: { id: "u9", username: "bia", display_name: "Bia Lima" },
+});
+
+const pairing = (code: string, seconds: number, connectorId = "k1") =>
+  json(201, {
+    code,
+    connector_id: connectorId,
+    expires_at: new Date(Date.now() + seconds * 1000).toISOString(),
+  });
 
 describe("identities page (UI-18)", () => {
   it("lists verified chat accounts", async () => {
@@ -77,10 +91,11 @@ describe("identities page (UI-18)", () => {
     expect(calls.some((c) => c.method === "DELETE" && c.path === "/identities/i1")).toBe(true);
   });
 
-  it("shows the pairing code, the command to send and a countdown", async () => {
+  it("with one usable connector, requests the code for it and shows the code, the command and a countdown", async () => {
     const { calls } = mockApi({
       "GET /me": json(200, me),
       "GET /identities": json(200, { items: [] }),
+      "GET /connectors": json(200, { items: [whatsapp] }),
       "POST /identities/pairing": () => pairing("K7P2QX", 600),
     });
     const user = userEvent.setup();
@@ -88,7 +103,12 @@ describe("identities page (UI-18)", () => {
     await user.click(await screen.findByRole("button", { name: "Link a chat account" }));
     const dialog = await screen.findByRole("dialog", { name: "Link a chat account" });
     expect(await within(dialog).findByText("K7P2QX")).toBeInTheDocument();
-    expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+    const posts = calls.filter((c) => c.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.body).toEqual({ connector_id: "k1" });
+    expect(within(dialog).getByText("Through family-wa (WhatsApp)")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("radiogroup")).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Use another connector" })).toBeNull();
     const command = within(dialog).getByRole("figure", { name: "Command" });
     expect(command.querySelector("pre")?.textContent).toBe("!link K7P2QX");
     expect(within(dialog).getByText(/\/link K7P2QX/)).toBeInTheDocument();
@@ -102,6 +122,7 @@ describe("identities page (UI-18)", () => {
     const { calls } = mockApi({
       "GET /me": json(200, me),
       "GET /identities": json(200, { items: [] }),
+      "GET /connectors": json(200, { items: [whatsapp] }),
       "POST /identities/pairing": () => {
         n += 1;
         return pairing(n === 1 ? "AAAAAA" : "BBBBBB", 5);
@@ -127,6 +148,7 @@ describe("identities page (UI-18)", () => {
     const { calls } = mockApi({
       "GET /me": json(200, me),
       "GET /identities": () => json(200, { items }),
+      "GET /connectors": json(200, { items: [whatsapp] }),
       "POST /identities/pairing": () => pairing("K7P2QX", 600),
     });
     const user = userEvent.setup();
@@ -156,6 +178,7 @@ describe("identities page (UI-18)", () => {
     mockApi({
       "GET /me": json(200, me),
       "GET /identities": json(200, { items: [whatsappId] }),
+      "GET /connectors": json(200, { items: [whatsapp] }),
       "POST /identities/pairing": () => pairing("K7P2QX", 600),
     });
     const user = userEvent.setup();
@@ -164,5 +187,56 @@ describe("identities page (UI-18)", () => {
     const dialog = await screen.findByRole("dialog", { name: "Link a chat account" });
     expect(await within(dialog).findByText("K7P2QX")).toBeInTheDocument();
     expect(within(dialog).queryByText(/is linked/)).toBeNull();
+  });
+
+  it("asks which connector first when several can be used, then pairs through the chosen one", async () => {
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /identities": json(200, { items: [] }),
+      "GET /connectors": json(200, { items: [whatsapp, telegram, shared] }),
+      "POST /identities/pairing": () => pairing("T3LGRM", 600, "k2"),
+    });
+    const user = userEvent.setup();
+    renderRoute("/identities");
+    await user.click(await screen.findByRole("button", { name: "Link a chat account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Link a chat account" });
+    const group = await within(dialog).findByRole("radiogroup");
+    expect(within(group).getAllByRole("radio")).toHaveLength(3);
+    expect(within(dialog).getByText("Discord · shared by Bia Lima")).toBeInTheDocument();
+    const getCode = within(dialog).getByRole("button", { name: "Get a code" });
+    expect(getCode).toBeDisabled();
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+
+    await user.click(within(dialog).getByRole("radio", { name: /ops-bot/ }));
+    await user.click(getCode);
+    expect(await within(dialog).findByText("T3LGRM")).toBeInTheDocument();
+    const posts = calls.filter((c) => c.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.body).toEqual({ connector_id: "k2" });
+    expect(within(dialog).getByText("Through ops-bot (Telegram)")).toBeInTheDocument();
+    const command = within(dialog).getByRole("figure", { name: "Command" });
+    expect(command.querySelector("pre")?.textContent).toBe("/link T3LGRM");
+    expect(within(dialog).getByText(/!link T3LGRM works too/)).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Use another connector" }));
+    expect(await within(dialog).findByRole("radiogroup")).toBeInTheDocument();
+  });
+
+  it("explains that a connector is needed when the user can use none", async () => {
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /identities": json(200, { items: [] }),
+      "GET /connectors": json(200, { items: [] }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/identities");
+    await user.click(await screen.findByRole("button", { name: "Link a chat account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Link a chat account" });
+    expect(await within(dialog).findByText("No connector to link through")).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "Go to connectors" })).toHaveAttribute(
+      "href",
+      "/connectors",
+    );
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
   });
 });

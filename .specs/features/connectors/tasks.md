@@ -493,18 +493,18 @@ endpoint_changed`, `removed`).
 - [x] Changing a non-endpoint field keeps them; the audit entry names the count, never values
 **Tests**: integration, e2e
 **Gate**: full
-**Commit**: `fix(connectors): drop linked identities when a connector endpoint changes`
+**Commit**: `fix(connectors): drop linked identities when an endpoint changes`
 
 #### T28: Pairing dialog asks for the connector (S5)
 
 **What**: the `/identities` pairing dialog lists the connectors the user can use (preselects when only one), requests
 the code for the chosen one and shows the code with the command for that platform.
-**Where**: `web/src/routes/identities*`, `web/src/lib/api/*`
+**Where**: `web/src/routes/_app/identities{,.test}.tsx`, `web/src/lib/api/queries.ts`, `web/src/lib/i18n/{en,pt-BR}.ts`
 **Depends on**: T27
 **Requirement**: IDN-01, IDN-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Dialog sends `{connector_id}`; one connector is preselected; no connectors → empty state; tests updated
+- [x] Dialog sends `{connector_id}`; one connector is preselected; no connectors → empty state; tests updated
 **Tests**: unit (web)
 **Gate**: full
 **Commit**: `feat(web): choose the connector when requesting a pairing code`
