@@ -355,3 +355,25 @@ func TestInstructionsWhitespaceDoesNotMoveTheAuthor(t *testing.T) {
 	require.Empty(t, got.Instructions, "whitespace only clears them")
 	require.Empty(t, got.InstructionsBy)
 }
+
+// INS-06: only a changed name or description moves the room text author. alice saving the
+// description bob wrote, as it is, leaves bob the author (N14); bob saving only instructions
+// leaves the room text author alone for both agents (N13).
+func TestRoomTextAuthorKeptByOtherSaves(t *testing.T) {
+	f := newTwoAgents(t)
+	shareRoom(f.alice, f.room.ID, dto.SharingUser{UserID: f.bob.User.ID, Level: dto.LevelManage})
+	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").WithHeader(dto.HeaderAgent, "helper")
+	trusted := func(c *testkit.Client) bool {
+		return testkit.Decode[dto.RoomInfo](c.Get(agentRoomPath(f.room.ID, "/info")).RequireStatus(http.StatusOK)).RoomTextTrusted
+	}
+
+	setInstructions(f.bob, f.room.ID, "Reply within a day.")
+	require.True(t, trusted(f.rest()), "instructions are not room text: alice still wrote it")
+	require.False(t, trusted(helperRest))
+
+	f.bob.Patch("/api/v1/rooms/"+f.room.ID, dto.UpdateRoomRequest{Description: ptr("Bob's customers.")}).RequireStatus(http.StatusOK)
+	require.False(t, trusted(f.rest()))
+	f.alice.Patch("/api/v1/rooms/"+f.room.ID, dto.UpdateRoomRequest{Description: ptr("Bob's customers.")}).RequireStatus(http.StatusOK)
+	require.False(t, trusted(f.rest()), "the same description saved again keeps its author")
+	require.True(t, trusted(helperRest))
+}

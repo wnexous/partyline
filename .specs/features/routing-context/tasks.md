@@ -794,7 +794,7 @@ T48 → T49 → T50 → T51 → T52 → T53 → T54
 **Requirement**: INS-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] N13 and N14 re-applied in a scratch worktree are killed
+- [x] N13 and N14 re-applied in a scratch worktree are killed
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(api): keep the room text author on unchanged text and instruction edits`
