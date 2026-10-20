@@ -22,3 +22,6 @@ web/node_modules/
 .vscode/
 *.swp
 .DS_Store
+
+# Impeccable session state
+.impeccable/questions/

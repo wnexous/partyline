@@ -153,31 +153,31 @@ Users need one place to see and steer everything: who is online, which chats fee
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| UI-01 | P1: Access flows | Tasks | Pending |
-| UI-02 | P1: Access flows | Tasks | Pending |
-| UI-03 | P1: Access flows | Tasks | Pending |
-| UI-04 | P1: Live rooms | Tasks | Pending |
-| UI-05 | P1: Live rooms | Tasks | Pending |
-| UI-06 | P1: Live rooms | Tasks | Pending |
-| UI-07 | P1: Live rooms | Tasks | Pending |
-| UI-08 | P1: Live rooms | Tasks | Pending |
-| UI-09 | P1: Live rooms | Tasks | Pending |
-| UI-10 | P1: Rooms management | Tasks | Pending |
+| UI-01 | P1: Access flows | Tasks | Implementing |
+| UI-02 | P1: Access flows | Tasks | Implementing |
+| UI-03 | P1: Access flows | Tasks | Implementing |
+| UI-04 | P1: Live rooms | Tasks | Implementing |
+| UI-05 | P1: Live rooms | Tasks | Implementing |
+| UI-06 | P1: Live rooms | Tasks | Implementing |
+| UI-07 | P1: Live rooms | Tasks | Implementing |
+| UI-08 | P1: Live rooms | Tasks | Implementing |
+| UI-09 | P1: Live rooms | Tasks | Implementing |
+| UI-10 | P1: Rooms management | Tasks | Implementing |
 | UI-11 | P1: Rooms management | Tasks | Pending |
-| UI-12 | P1: Rooms management | Tasks | Pending |
+| UI-12 | P1: Rooms management | Tasks | Implementing |
 | UI-13 | P1: Rooms management | Tasks | Pending |
 | UI-14 | P1: Agents etc. | Tasks | Pending |
-| UI-15 | P1: Agents etc. | Tasks | Pending |
+| UI-15 | P1: Agents etc. | Tasks | Implementing |
 | UI-16 | P1: Agents etc. | Tasks | Pending |
-| UI-17 | P1: Agents etc. | Tasks | Pending |
+| UI-17 | P1: Agents etc. | Tasks | Implementing |
 | UI-18 | P1: Agents etc. | Tasks | Pending |
 | UI-19 | P1: Agents etc. | Tasks | Pending |
 | UI-20 | P1: Admin | Tasks | Pending |
-| UI-21 | P1: Admin | Tasks | Pending |
+| UI-21 | P1: Admin | Tasks | Implementing |
 | UI-22 | P2: Polish | Tasks | Pending |
-| UI-23 | P2: Polish | Tasks | Pending |
+| UI-23 | P2: Polish | Tasks | Implementing |
 | UI-24 | P2: Polish | Tasks | Pending |
-| UI-25 | P2: Polish | Tasks | Pending |
+| UI-25 | P2: Polish | Tasks | Implementing |
 
 **Coverage:** 25 total, mapped in tasks.md
 

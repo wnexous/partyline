@@ -76,8 +76,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-23 (theme tokens)
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] `bun run build` outputs `web/dist`; Go embed serves it
-- [ ] One smoke test renders the root route
+- [x] `bun run build` outputs `web/dist`; Go embed serves it (embedding itself is core-platform T25)
+- [x] One smoke test renders the root route
 **Tests**: unit
 **Gate**: build
 **Commit**: `build(web): scaffold vite react app with shadcn and tanstack router`
@@ -91,9 +91,9 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-02, UI-03, UI-25
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Error envelope parsed into ApiError fields; 401 triggers redirect callback with current path
-- [ ] Username/password zod rules reject `ab`, `UPPER`, 9-char password
-- [ ] Missing pt-BR key fails a parity test
+- [x] Error envelope parsed into ApiError fields; 401 triggers redirect callback with current path
+- [x] Username/password zod rules reject `ab`, `UPPER`, 9-char password
+- [x] Missing pt-BR key fails a parity test
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add typed api client, query hooks, schemas and i18n`
@@ -107,9 +107,9 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-04, UI-06, UI-15, UI-17
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `room.message` appends to the room's infinite query data without duplicates
-- [ ] `lagged` invalidates; reconnect requests `after_seq=lastSeq`
-- [ ] presence/connector events update the store
+- [x] `room.message` appends to the room's infinite query data without duplicates
+- [x] `lagged` invalidates; reconnect requests `after_seq=lastSeq`
+- [x] presence/connector events update the store
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add live socket with cache-patching handlers`
@@ -123,8 +123,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-02, UI-06, UI-21, UI-23
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Unauthenticated → `/login?redirect=/rooms`; admin link hidden for members
-- [ ] Banner visible when socket status is not open for > 2 s
+- [x] Unauthenticated → `/login?redirect=/rooms`; admin link hidden for members
+- [x] Banner visible when socket status is not open for > 2 s
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add authenticated app shell with sidebar and live banner`
@@ -138,7 +138,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-01, UI-02, UI-03
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Setup shown when `needs_setup`; login returns to `redirect`; invalid invite shows expired state
+- [x] Setup shown when `needs_setup`; login returns to `redirect`; invalid invite shows expired state
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add setup, login and invite pages`
@@ -154,7 +154,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-10 (entry), UI-05 (empty state)
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Create dialog posts and navigates to the new room; empty state when none
+- [x] Create dialog posts and navigates to the new room; empty state when none
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add rooms list and creation`
@@ -168,8 +168,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-04, UI-05, UI-09
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Chat message shows `untrusted` badge for `trusted=false`; `<script>` in text renders as text
-- [ ] New live message appended and visible
+- [x] Chat message shows `untrusted` badge for `trusted=false`; `<script>` in text renders as text
+- [x] New live message appended and visible
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add live message timeline`
@@ -183,8 +183,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Enter sends trimmed text; Shift+Enter adds newline; over `MaxTextLength` disabled with counter
-- [ ] View-only user sees notice instead of composer
+- [x] Enter sends trimmed text; Shift+Enter adds newline; over `MaxTextLength` disabled with counter
+- [x] View-only user sees notice instead of composer
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add message composer`
@@ -198,7 +198,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-08, UI-10, UI-12
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Picker lists only usable agents/chats; outbound toggle calls PATCH; resume button only for managers
+- [x] Picker lists only usable agents/chats; outbound toggle calls PATCH; resume button only for managers
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add room page with members and settings`

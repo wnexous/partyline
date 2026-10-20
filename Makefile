@@ -57,6 +57,9 @@ ifneq ($(HAS_WEB),)
 	$(MAKE) web-check
 endif
 	$(MAKE) test
+ifneq ($(HAS_WEB),)
+	$(MAKE) web-build
+endif
 	go build ./...
 
 web-install:
