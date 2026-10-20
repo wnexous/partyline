@@ -690,4 +690,5 @@ export const ptBR: Dictionary = {
   "catchAll.save": "Salvar encaminhamento",
   "catchAll.saved": "Encaminhamento salvo",
   "catchAll.forbidden": "Você precisa gerenciar essa sala para encaminhar chats para ela.",
+  "chat.untitled": "Chat do {platform}",
 };

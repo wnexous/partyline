@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { BotIcon, MessageCircleIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { platformLabel } from "@/components/message-item";
+import { chatTitle, platformLabel } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import {
@@ -85,7 +85,8 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   );
   const chatList = (chats.data ?? []).filter(
     (c) =>
-      !taken.has(`chat:${c.id}`) && matches(query, c.title, c.connector_name, c.connector_kind),
+      !taken.has(`chat:${c.id}`) &&
+      matches(query, chatTitle(t, c.title, c.connector_kind), c.connector_name, c.connector_kind),
   );
 
   const onAdd = (kind: MemberKind, id: string, name: string) => {
@@ -170,14 +171,14 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
                     key={c.id}
                     testId={`candidate-chat-${c.id}`}
                     icon={<MessageCircleIcon className="size-4 text-info" aria-hidden="true" />}
-                    name={c.title}
+                    name={chatTitle(t, c.title, c.connector_kind)}
                     meta={
                       <span>
                         {platformLabel(c.connector_kind)} · {c.connector_name}
                       </span>
                     }
                     busy={adding === `chat:${c.id}`}
-                    onAdd={() => onAdd("chat", c.id, c.title)}
+                    onAdd={() => onAdd("chat", c.id, chatTitle(t, c.title, c.connector_kind))}
                   />
                 ))}
               </CandidateGroup>

@@ -173,6 +173,56 @@ describe("agent membership settings (MEM-01..05)", () => {
   });
 });
 
+describe("chat titles (CTX-07)", () => {
+  const untitled = makeMember({
+    id: "mb-dm",
+    kind: "chat",
+    member_id: "c5",
+    name: "",
+    online: undefined,
+    owner: undefined,
+    connector_kind: "whatsapp",
+    chat_kind: "dm",
+  });
+
+  it("names an untitled chat member after its platform", async () => {
+    roomApi({}, { "GET /rooms/r1/members": json(200, { items: [...members, untitled] }) });
+    renderRoute("/rooms/r1");
+    const row = await screen.findByTestId("member-mb-dm");
+    expect(within(row).getByText("WhatsApp chat")).toBeInTheDocument();
+    expect(within(row).getByRole("switch", { name: /Outbound to WhatsApp chat/ })).toBeChecked();
+    expect(within(row).getByRole("button", { name: "Remove WhatsApp chat" })).toBeInTheDocument();
+    // Titled chats keep their title.
+    expect(screen.getByTestId("member-mb-ops")).toHaveTextContent("Ops on call");
+  });
+
+  it("names an untitled chat in the add-member picker and finds it by that name", async () => {
+    const { calls } = roomApi(
+      {},
+      {
+        "GET /chats": json(200, {
+          items: [makeChat({ id: "c6", title: "", kind: "dm", connector_kind: "telegram" })],
+        }),
+        "POST /rooms/r1/members": json(201, makeMember({ kind: "chat", member_id: "c6" })),
+      },
+    );
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    await user.click(await screen.findByRole("button", { name: "Add members" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add members" });
+    const candidate = await within(dialog).findByTestId("candidate-chat-c6");
+    expect(within(candidate).getByText("Telegram chat")).toBeInTheDocument();
+    await user.type(within(dialog).getByRole("searchbox", { name: "Filter" }), "telegram chat");
+    await user.click(within(dialog).getByRole("button", { name: "Add Telegram chat" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({
+        kind: "chat",
+        member_id: "c6",
+      }),
+    );
+  });
+});
+
 describe("member picker (UI-10)", () => {
   it("offers only usable agents and chats that are not members yet, filterable by text", async () => {
     roomApi();

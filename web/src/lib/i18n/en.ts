@@ -683,6 +683,7 @@ export const en = {
   "catchAll.save": "Save catch-all",
   "catchAll.saved": "Catch-all saved",
   "catchAll.forbidden": "You need manage access on that room to route chats to it.",
+  "chat.untitled": "{platform} chat",
 } as const;
 
 export type MessageKey = keyof typeof en;

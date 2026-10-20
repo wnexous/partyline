@@ -297,7 +297,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: CTX-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Title and badge rendered; untitled chat falls back to `<Platform> chat`
+- [x] Title and badge rendered; untitled chat falls back to `<Platform> chat`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show chat titles in rooms`

@@ -2,13 +2,13 @@ import { BotIcon, MessageCircleIcon, UserIcon, XIcon } from "lucide-react";
 import { type ReactNode, useId } from "react";
 import { toast } from "sonner";
 import { MemberSettings, memberSettingsSummary } from "@/components/member-settings";
-import { platformLabel } from "@/components/message-item";
+import { chatTitle, platformLabel } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useAddMember, useRemoveMember, useUpdateMember } from "@/lib/api/queries";
 import type { MemberKind, RoomMember } from "@/lib/api/types.gen";
-import { type MessageKey, useI18n } from "@/lib/i18n";
+import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 
 /*
@@ -28,6 +28,11 @@ const CHAT_KIND: Record<string, MessageKey> = {
   channel: "members.chatKind.channel",
 };
 
+/** What a member is called in the panel: untitled chats are named after their platform (CTX-07). */
+function memberName(t: Translate, m: RoomMember): string {
+  return m.kind === "chat" ? chatTitle(t, m.name, m.connector_kind) : m.name;
+}
+
 export function MemberList({
   roomId,
   members,
@@ -44,23 +49,24 @@ export function MemberList({
   const add = useAddMember(roomId);
 
   const onRemove = (m: RoomMember) => {
+    const name = memberName(t, m);
     remove.mutate(m.id, {
       onSuccess: () =>
-        toast(t("members.removed", { name: m.name }), {
+        toast(t("members.removed", { name }), {
           action: {
             label: t("members.undo"),
             onClick: () =>
               add.mutate({ kind: m.kind, member_id: m.member_id, outbound: m.outbound }),
           },
         }),
-      onError: () => toast.error(t("members.removeFailed", { name: m.name })),
+      onError: () => toast.error(t("members.removeFailed", { name })),
     });
   };
 
   const onOutbound = (m: RoomMember, outbound: boolean) => {
     update.mutate(
       { memberId: m.id, outbound },
-      { onError: () => toast.error(t("members.updateFailed", { name: m.name })) },
+      { onError: () => toast.error(t("members.updateFailed", { name: memberName(t, m) })) },
     );
   };
 
@@ -116,6 +122,7 @@ function MemberRow({
 }) {
   const { t } = useI18n();
   const switchId = useId();
+  const name = memberName(t, m);
   let icon: ReactNode;
   let meta: ReactNode = null;
   if (m.kind === "agent") {
@@ -152,7 +159,7 @@ function MemberRow({
     >
       <span className="mt-0.5 shrink-0">{icon}</span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{m.name}</p>
+        <p className="truncate text-sm font-medium">{name}</p>
         {meta ? (
           <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
             {meta}
@@ -166,7 +173,7 @@ function MemberRow({
                 size="sm"
                 checked={m.outbound}
                 onCheckedChange={onOutbound}
-                aria-label={t("members.outboundFor", { name: m.name })}
+                aria-label={t("members.outboundFor", { name })}
               />
               <label htmlFor={switchId} aria-hidden="true">
                 {t("members.outbound")}
@@ -185,7 +192,7 @@ function MemberRow({
           variant="ghost"
           size="icon-xs"
           className="shrink-0 text-muted-foreground opacity-60 group-hover/member:opacity-100 focus-visible:opacity-100"
-          aria-label={t("members.remove", { name: m.name })}
+          aria-label={t("members.remove", { name })}
           onClick={onRemove}
         >
           <XIcon aria-hidden="true" />
