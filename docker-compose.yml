@@ -1,0 +1,17 @@
+# Example deployment. Put a TLS-terminating reverse proxy in front for internet use and set
+# PARTYLINE_PUBLIC_URL to the address people open in their browser.
+services:
+  partyline:
+    image: ghcr.io/wnexous/partyline:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PARTYLINE_PUBLIC_URL: http://localhost:8080
+      # PARTYLINE_TRUSTED_PROXIES: 172.16.0.0/12   # when behind a reverse proxy
+      # PARTYLINE_SECRET_KEY: <base64 32 bytes>   # else generated into /data/secret.key
+    volumes:
+      - partyline-data:/data
+
+volumes:
+  partyline-data:

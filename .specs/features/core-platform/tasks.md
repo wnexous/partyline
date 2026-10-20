@@ -483,8 +483,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: OPS-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Dockerfile builds in CI (no local Docker available); image runs as nonroot with `/data`
-- [ ] `partyline healthcheck` exits 0 when `/healthz` is 200 and 1 otherwise (unit test with httptest)
+- [x] Dockerfile builds in CI (no local Docker available); image runs as nonroot with `/data`
+- [x] `partyline healthcheck` exits 0 when `/healthz` is 200 and 1 otherwise (unit test with httptest)
 **Tests**: unit
 **Gate**: build
 **Commit**: `ci: add container image, compose file and ci workflows`

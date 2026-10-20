@@ -20,6 +20,7 @@ Commands:
   serve                  run the server (configured with PARTYLINE_* environment variables)
   admin create-user      create an account; the password is read from stdin
   admin reset-password   set a new password and end the user's sessions; reads stdin
+  healthcheck            exit 0 when the local server answers /healthz with 200
   version                print the build version
 `
 
@@ -51,6 +52,8 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return serve(ctx, io)
 	case "admin":
 		return admin(ctx, args[2:], io)
+	case "healthcheck":
+		return healthcheck(ctx, io)
 	default:
 		fmt.Fprintf(io.stderr, "unknown command %q\n\n%s", args[1], usage)
 		return 2
