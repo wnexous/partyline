@@ -48,6 +48,8 @@ type Deps struct {
 	Logger *slog.Logger
 	// Ready reports whether the app finished starting (migrations applied).
 	Ready func() bool
+	// Version is the server build version, reported by /healthz (partyline doctor, ONB-06).
+	Version string
 }
 
 // server holds the handler dependencies.
@@ -192,8 +194,9 @@ func mapError(err error) error {
 	return err
 }
 
+// healthz answers 200 with the server version.
 func (s *server) healthz(w http.ResponseWriter, _ *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": s.Version})
 }
 
 func (s *server) readyz(w http.ResponseWriter, _ *http.Request) {
@@ -201,5 +204,5 @@ func (s *server) readyz(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteError(w, httpx.NewError(http.StatusServiceUnavailable, dto.ErrorCodeUnavailable, "starting"))
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": s.Version})
 }

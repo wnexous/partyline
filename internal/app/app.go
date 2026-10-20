@@ -209,6 +209,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		WebUI:      webui.Handler(cfg.PublicURL),
 		Logger:     opts.Logger,
 		Ready:      a.ready.Load,
+		Version:    version,
 	})
 	return a, nil
 }

@@ -26,6 +26,8 @@ Commands:
   setup                  save the instance URL and an agent token (or approve this machine in the
                          browser) and register Partyline in the installed harnesses; --uninstall undoes it
   channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_AGENT or the config file)
+  doctor                 check this machine: binary, config file, server, token, harnesses, versions
+  claude [args...]       start Claude Code with the Partyline channel loaded
   healthcheck            exit 0 when the local server answers /healthz with 200
   version                print the build version
 `
@@ -44,6 +46,9 @@ type stdio struct {
 	executable func() (string, error)
 	runHarness harness.Runner
 	lookPath   func(string) (string, error)
+	// exec replaces the process with a program (nil: execProgram) and returns its exit code
+	// where it cannot.
+	exec func(path string, argv, env []string) (int, error)
 }
 
 // Run executes the command named in args[1] and returns the process exit code. SIGINT and
@@ -71,6 +76,10 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return setupCmd(ctx, args[2:], io)
 	case "channel":
 		return channelCmd(ctx, args[2:], io)
+	case "doctor":
+		return doctor(ctx, io)
+	case "claude":
+		return launchClaude(args[2:], io)
 	case "healthcheck":
 		return healthcheck(ctx, io)
 	default:

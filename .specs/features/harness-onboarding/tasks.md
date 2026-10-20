@@ -190,7 +190,7 @@ T15 → T16 → T17
 **Requirement**: ONB-06, HAR-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Each check fails with its hint in a crafted bad environment; launcher builds the exact argv (exec seam)
+- [x] Each check fails with its hint in a crafted bad environment; launcher builds the exact argv (exec seam)
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(cli): add doctor and the claude launcher`
