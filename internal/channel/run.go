@@ -73,7 +73,11 @@ func Run(ctx context.Context, o Options) error {
 	}
 	agent := agents.Slug(o.Agent)
 
-	srv := mcp.NewServer(o.Stdin, o.Stdout, mcp.ServerInfo{Name: ServerName, Version: o.Version, Instructions: Instructions})
+	instructions := Instructions
+	if o.ToolsOnly {
+		instructions = ToolsOnlyInstructions
+	}
+	srv := mcp.NewServer(o.Stdin, o.Stdout, mcp.ServerInfo{Name: ServerName, Version: o.Version, Instructions: instructions})
 	if o.TempDir == "" {
 		o.TempDir = os.TempDir()
 	}
