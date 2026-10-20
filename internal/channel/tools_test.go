@@ -209,28 +209,34 @@ func TestToolHistory(t *testing.T) {
 	require.False(t, page.HasMore)
 }
 
+// postFile posts a message with one text attachment to the room as alice.
+func (e *chanEnv) postFile(name, content string) dto.Message {
+	e.t.Helper()
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormField(dto.MultipartMessageField)
+	require.NoError(e.t, err)
+	require.NoError(e.t, json.NewEncoder(part).Encode(dto.PostMessageRequest{Text: "the report"}))
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Disposition", `form-data; name="file"; filename="`+name+`"`)
+	h.Set("Content-Type", "text/plain")
+	fw, err := mw.CreatePart(h)
+	require.NoError(e.t, err)
+	_, err = fw.Write([]byte(content))
+	require.NoError(e.t, err)
+	require.NoError(e.t, mw.Close())
+	m := testkit.Decode[dto.Message](e.alice.DoRaw(http.MethodPost, "/api/v1/rooms/"+e.room.ID+"/messages", mw.FormDataContentType(), &body).RequireStatus(http.StatusCreated))
+	require.Len(e.t, m.Attachments, 1)
+	return m
+}
+
 // TOOL-06: download_attachment saves the file with mode 0600 under
 // <TempDir>/partyline/<agent>/ and returns its absolute path.
 func TestToolDownloadAttachment(t *testing.T) {
 	e := newChanEnv(t)
 	o := e.options()
 	s := e.connected(o)
-
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-	part, err := mw.CreateFormField(dto.MultipartMessageField)
-	require.NoError(t, err)
-	require.NoError(t, json.NewEncoder(part).Encode(dto.PostMessageRequest{Text: "the report"}))
-	h := textproto.MIMEHeader{}
-	h.Set("Content-Disposition", `form-data; name="file"; filename="report.txt"`)
-	h.Set("Content-Type", "text/plain")
-	fw, err := mw.CreatePart(h)
-	require.NoError(t, err)
-	_, err = fw.Write([]byte("all systems go"))
-	require.NoError(t, err)
-	require.NoError(t, mw.Close())
-	m := testkit.Decode[dto.Message](e.alice.DoRaw(http.MethodPost, "/api/v1/rooms/"+e.room.ID+"/messages", mw.FormDataContentType(), &body).RequireStatus(http.StatusCreated))
-	require.Len(t, m.Attachments, 1)
+	m := e.postFile("report.txt", "all systems go")
 
 	path, isErr := s.call("download_attachment", toolArgs("attachment_id", m.Attachments[0].ID))
 	require.False(t, isErr, path)
@@ -381,4 +387,23 @@ func TestToolsServerUnreachable(t *testing.T) {
 		text, isErr := s.call("list_rooms", map[string]any{})
 		return isErr && text == "partyline: server unreachable"
 	}, wait, 50*time.Millisecond)
+}
+
+// AGT-01, TOOL-06: the channel uses the agent name's slug everywhere, so a hostile --agent
+// cannot point the download directory outside <TempDir>/partyline/.
+func TestToolDownloadDirUsesAgentSlug(t *testing.T) {
+	e := newChanEnv(t)
+	a, err := e.env.App.Agents.Upsert(context.Background(), e.alice.User.ID, "night-shift")
+	require.NoError(t, err)
+	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: a.ID}).RequireStatus(http.StatusCreated)
+	o := e.options()
+	o.Agent = "../Night Shift"
+	s := startSession(t, o)
+	s.handshake()
+	require.Eventually(t, func() bool { return e.env.App.Gateway.Online(a.ID) }, wait, 10*time.Millisecond)
+
+	m := e.postFile("report.txt", "night report")
+	path, isErr := s.call("download_attachment", toolArgs("attachment_id", m.Attachments[0].ID))
+	require.False(t, isErr, path)
+	require.Equal(t, filepath.Join(o.TempDir, "partyline", "night-shift"), filepath.Dir(path))
 }

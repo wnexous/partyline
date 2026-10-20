@@ -299,7 +299,7 @@ T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
 **Requirement**: AGT-01, TOOL-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] With agent `../Night Shift` the download path is under `<TempDir>/partyline/night-shift/`
+- [x] With agent `../Night Shift` the download path is under `<TempDir>/partyline/night-shift/`
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(channel): slugify the agent name in the download directory`
