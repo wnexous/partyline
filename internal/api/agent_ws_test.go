@@ -364,4 +364,13 @@ func TestAgentWSCapsAgentsPerOwner(t *testing.T) {
 	existing, resp := tok.DialAgent("agent-07")
 	require.NotNil(t, existing, "an existing agent still connects: %d %s", resp.Status, resp.Body)
 	require.Equal(t, "agent-07", existing.Welcome(wsWait).Agent.Name)
+
+	// The cap is per owner: alice at 50 agents does not block another user.
+	bob := env.NewUser("bob")
+	bobConn, resp := bob.Token(dto.TokenKindAgent, "desktop").DialAgent("first")
+	require.NotNil(t, bobConn, "another owner still registers: %d %s", resp.Status, resp.Body)
+	require.Equal(t, "first", bobConn.Welcome(wsWait).Agent.Name)
+	conn, resp = tok.DialAgent("still-too-many")
+	require.Nil(t, conn)
+	resp.RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 }
