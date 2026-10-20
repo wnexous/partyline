@@ -9,6 +9,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/access"
@@ -133,6 +134,15 @@ func validateRoom(name, description, instructions string, retention int) error {
 	return check.Err()
 }
 
+// roomText is a room's name, description or instructions as the server stores and compares it:
+// without leading or trailing white space, where white space is the union of Go's
+// unicode.IsSpace and JavaScript's String.prototype.trim (which also removes U+FEFF). The web
+// form trims what it sends, so comparing trimmed text keeps a save that only trims from making
+// the saver the author of another manager's text (INS-04, INS-06).
+func roomText(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || r == '\uFEFF' })
+}
+
 // instructionsBy is the user recorded as the author of saved instructions (INS-04): the
 // caller, or nobody when the instructions are empty.
 func instructionsBy(p authn.Principal, instructions string) string {
@@ -151,16 +161,16 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	if in.RetentionDays != nil {
 		retention = *in.RetentionDays
 	}
-	name := strings.TrimSpace(in.Name)
-	if err := validateRoom(name, in.Description, in.Instructions, retention); err != nil {
+	name, description, instructions := roomText(in.Name), roomText(in.Description), roomText(in.Instructions)
+	if err := validateRoom(name, description, instructions, retention); err != nil {
 		return Room{}, err
 	}
 	now := s.now().UnixMilli()
 	id := store.NewID()
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		return q.CreateRoom(ctx, db.CreateRoomParams{
-			ID: id, OwnerID: p.UserID, Name: name, Description: in.Description, Instructions: in.Instructions,
-			InstructionsBy: instructionsBy(p, in.Instructions),
+			ID: id, OwnerID: p.UserID, Name: name, Description: description, Instructions: instructions,
+			InstructionsBy: instructionsBy(p, instructions),
 			BridgeChats:    in.BridgeChats, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
 			UpdatedBy: p.UserID, // INS-06: the creator wrote the name and description
 		})
@@ -267,16 +277,18 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 		if err != nil {
 			return err
 		}
-		if in.Name != nil && strings.TrimSpace(*in.Name) != r.Name {
-			r.Name = strings.TrimSpace(*in.Name)
+		// Text equal to the stored text once both are trimmed is no new text: it keeps its
+		// author and the stored copy (INS-04, INS-06).
+		if in.Name != nil && roomText(*in.Name) != roomText(r.Name) {
+			r.Name = roomText(*in.Name)
 			r.UpdatedBy = p.UserID // INS-06
 		}
-		if in.Description != nil && *in.Description != r.Description {
-			r.Description = *in.Description
+		if in.Description != nil && roomText(*in.Description) != roomText(r.Description) {
+			r.Description = roomText(*in.Description)
 			r.UpdatedBy = p.UserID
 		}
-		if in.Instructions != nil {
-			r.Instructions = *in.Instructions
+		if in.Instructions != nil && roomText(*in.Instructions) != roomText(r.Instructions) {
+			r.Instructions = roomText(*in.Instructions)
 			r.InstructionsBy = instructionsBy(p, r.Instructions)
 		}
 		if in.BridgeChats != nil {
