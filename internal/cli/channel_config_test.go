@@ -43,8 +43,8 @@ func TestChannelReadsConfigFile(t *testing.T) {
 func TestChannelEnvironmentOverridesConfigFile(t *testing.T) {
 	e := newChannelEnv(t)
 	home := t.TempDir()
-	writeConfig(t, home, cliconfig.Config{URL: "http://127.0.0.1:1", Token: e.secret})
-	c := startChannel(t, nil, map[string]string{"HOME": home, "PARTYLINE_URL": e.env.URL, "PARTYLINE_AGENT": "env-url"}, "/tmp/wd")
+	writeConfig(t, home, cliconfig.Config{URL: "http://127.0.0.1:1", Token: "pl_agent_saved"})
+	c := startChannel(t, nil, map[string]string{"HOME": home, "PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_AGENT": "env-url"}, "/tmp/wd")
 	initialize(c)
 	e.agent(t, "env-url")
 
@@ -53,6 +53,22 @@ func TestChannelEnvironmentOverridesConfigFile(t *testing.T) {
 	c2 := startChannel(t, nil, map[string]string{"HOME": home2, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_AGENT": "env-token"}, "/tmp/wd")
 	initialize(c2)
 	e.agent(t, "env-token")
+}
+
+// ONB-08: the saved token is never sent to another instance: PARTYLINE_URL naming another
+// server without a token makes channel exit 1 with both URLs, before it connects anywhere.
+func TestChannelRefusesSavedTokenForOtherURL(t *testing.T) {
+	home := t.TempDir()
+	writeConfig(t, home, cliconfig.Config{URL: "http://saved.example.test", Token: "pl_agent_saved"})
+	var out bytes.Buffer
+	env := map[string]string{"HOME": home, "PARTYLINE_URL": "http://127.0.0.1:1", "PARTYLINE_AGENT": "x"}
+	code := execute(context.Background(), []string{"partyline", "channel"}, stdio{
+		stdin: bytes.NewReader(nil), stdout: &out, stderr: &out,
+		getenv: func(k string) string { return env[k] },
+	})
+	require.Equal(t, 1, code)
+	require.Contains(t, out.String(), "the saved agent token is for http://saved.example.test, not http://127.0.0.1:1")
+	require.NotContains(t, out.String(), "pl_agent_saved")
 }
 
 // ONB-05: flags override the file too.

@@ -56,6 +56,8 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 5. WHEN `partyline channel` starts without `PARTYLINE_URL`/`PARTYLINE_TOKEN` THEN it SHALL read them from the config file; env vars and flags SHALL override the file. (ONB-05)
 6. WHEN `partyline doctor` runs THEN it SHALL report pass/fail with a fix hint for: binary on PATH, config file present and private, server reachable, token valid, each registered harness entry pointing to an existing binary, and the local and server versions. (ONB-06)
 7. `partyline version` SHALL print the module version from build info when built with `go install` (not `dev`). (ONB-07)
+8. The saved token SHALL only be sent to the saved URL: IF a flag or env var names an instance URL other than the saved one (scheme, host and port compared) and no token is given THEN the command SHALL exit with an error naming both URLs instead of using the saved token. `setup` SHALL save the URL it started with (never a URL from the device poll), SHALL warn on stderr that `--token` is visible in the process list, and SHALL accept `--token-stdin` (exclusive with `--token` and `--browser`). (ONB-08; fix iteration 1)
+9. WHEN `partyline setup --uninstall` deletes the config file THEN it SHALL first revoke its agent token on the server (`DELETE /api/v1/agent/token`, agent tokens only) and report the result; a failed revoke SHALL be reported without failing the uninstall. A token the user declined under DEV-06 SHALL be revoked the same way. (ONB-09; fix iteration 1)
 
 **Independent Test**: Fresh HOME: run install.sh against a local release fixture, run setup with a token, run doctor → all pass.
 
@@ -181,6 +183,8 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | ONB-05 | P1: Install and setup | Tasks | Implementing |
 | ONB-06 | P1: Install and setup | Tasks | Implementing |
 | ONB-07 | P1: Install and setup | Tasks | Implementing |
+| ONB-08 | P1: Install and setup | Tasks (T25) | Implemented |
+| ONB-09 | P1: Install and setup | Tasks (T25) | Implemented |
 | DEV-01 | P1: Browser approval | Tasks | Implementing |
 | DEV-02 | P1: Browser approval | Tasks | Implementing |
 | DEV-03 | P1: Browser approval | Tasks | Implementing |

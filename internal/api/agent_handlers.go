@@ -49,6 +49,25 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agent/attachments/{id}", s.agentOnly(s.downloadAttachment))
 	s.handle(mux, "POST /api/v1/agent/register", s.agentRegister)
 	s.handle(mux, "GET /api/v1/agent/pending", s.agentOnly(s.agentPending))
+	s.handle(mux, "DELETE /api/v1/agent/token", s.revokeOwnAgentToken)
+}
+
+// revokeOwnAgentToken revokes the agent token the request is made with, so `partyline setup
+// --uninstall` can cut the machine off without a browser (ONB-09). It needs no registered
+// agent. Agent tokens only: user tokens are revoked from the web app.
+func (s *server) revokeOwnAgentToken(w http.ResponseWriter, r *http.Request) error {
+	p, ok := authn.PrincipalFrom(r.Context())
+	if !ok {
+		return errNotLoggedIn
+	}
+	if p.Kind != authn.KindAgent || p.TokenID == "" {
+		return agents.ErrAgentTokenRequired
+	}
+	if err := s.Users.RevokeToken(r.Context(), p.UserID, p.TokenID); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 // AgentInbox reads an agent's undelivered messages for harnesses without the WebSocket

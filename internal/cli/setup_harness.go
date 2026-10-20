@@ -154,13 +154,14 @@ func uninstall(ctx context.Context, f setupFlags, io stdio) int {
 		if path, err := cliconfig.Path(io.getenv); err == nil {
 			if _, err := os.Stat(path); err == nil {
 				removed = true
-				fmt.Fprintf(io.stdout, "\nCredentials:\n  delete %s (instance URL and agent token)\n", path)
-				if f.yes || p.confirm("Delete the config file?") {
+				fmt.Fprintf(io.stdout, "\nCredentials:\n  revoke the agent token on the server\n  delete %s (instance URL and agent token)\n", path)
+				if f.yes || p.confirm("Delete the config file and revoke its agent token?") {
+					revokeSaved(ctx, path, io)
 					if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 						fmt.Fprintln(io.stderr, "partyline setup:", err)
 						code = 1
 					} else {
-						fmt.Fprintln(io.stdout, "Deleted the config file. The agent token stays valid until you revoke it in the web app (Tokens).")
+						fmt.Fprintln(io.stdout, "Deleted the config file.")
 					}
 				}
 			}
@@ -170,4 +171,22 @@ func uninstall(ctx context.Context, f setupFlags, io stdio) int {
 		fmt.Fprintln(io.stdout, "Nothing to remove: Partyline is not registered in any harness.")
 	}
 	return code
+}
+
+// revokeSaved revokes the agent token of the config file at path on its server (ONB-09). It is
+// best effort: the result is reported and the uninstall goes on either way.
+func revokeSaved(ctx context.Context, path string, io stdio) {
+	cfg, err := cliconfig.Load(path)
+	switch {
+	case err != nil:
+		fmt.Fprintf(io.stdout, "Could not read the agent token (%v); revoke it in the web app (Tokens).\n", err)
+	case cfg.Token == "" || cfg.URL == "":
+		fmt.Fprintln(io.stdout, "No agent token saved: nothing to revoke.")
+	default:
+		if err := revokeAgentToken(ctx, cfg.URL, cfg.Token); err != nil {
+			fmt.Fprintf(io.stdout, "Could not revoke the agent token on %s: %v. Revoke it in the web app (Tokens).\n", cfg.URL, err)
+			return
+		}
+		fmt.Fprintf(io.stdout, "Revoked the agent token on %s.\n", cfg.URL)
+	}
 }

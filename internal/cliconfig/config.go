@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -141,7 +142,9 @@ func Save(path string, c Config) error {
 // Resolve returns the credentials a command uses (ONB-05): each value from flags when set,
 // else from PARTYLINE_URL / PARTYLINE_TOKEN, else from the config file. The file is read only
 // when a value is still missing; a missing file is not an error (the values stay empty), a
-// file that is not private or not valid JSON is.
+// file that is not private or not valid JSON is. The saved token is only ever sent to the
+// saved URL (ONB-08): when flags or env name another instance and no token, Resolve fails
+// instead of pairing the saved token with that URL.
 func Resolve(flags Config, getenv func(string) string) (Config, error) {
 	pick := func(flag, env string) string {
 		if v := strings.TrimSpace(flag); v != "" {
@@ -164,6 +167,9 @@ func Resolve(flags Config, getenv func(string) string) (Config, error) {
 	if err != nil {
 		return c, err
 	}
+	if c.Token == "" && file.Token != "" && c.URL != "" && !SameURL(c.URL, file.URL) {
+		return c, &TokenURLMismatchError{URL: c.URL, SavedURL: file.URL}
+	}
 	if c.URL == "" {
 		c.URL = file.URL
 	}
@@ -171,4 +177,27 @@ func Resolve(flags Config, getenv func(string) string) (Config, error) {
 		c.Token = file.Token
 	}
 	return c, nil
+}
+
+// TokenURLMismatchError refuses to send the saved token to an instance other than the one it
+// was saved for (ONB-08).
+type TokenURLMismatchError struct {
+	URL, SavedURL string
+}
+
+func (e *TokenURLMismatchError) Error() string {
+	return fmt.Sprintf("the saved agent token is for %s, not %s: set PARTYLINE_TOKEN (or --token) for %s, or run partyline setup --url %s",
+		e.SavedURL, e.URL, e.URL, e.URL)
+}
+
+// SameURL reports whether a and b name the same instance: scheme and host compared without
+// case, the path without trailing slashes.
+func SameURL(a, b string) bool {
+	ua, errA := url.Parse(strings.TrimSpace(a))
+	ub, errB := url.Parse(strings.TrimSpace(b))
+	if errA != nil || errB != nil || ua.Host == "" || ub.Host == "" {
+		return false
+	}
+	return strings.EqualFold(ua.Scheme, ub.Scheme) && strings.EqualFold(ua.Host, ub.Host) &&
+		strings.TrimRight(ua.Path, "/") == strings.TrimRight(ub.Path, "/")
 }

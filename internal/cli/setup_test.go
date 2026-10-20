@@ -361,8 +361,11 @@ func TestSetupBrowserApproverConfirmation(t *testing.T) {
 			}
 			require.Equal(t, 1, r.code)
 			require.Contains(t, r.stdout, "Save this agent token of @bob on this machine? [Y/n]: ")
-			require.Contains(t, r.stderr, "not saved: the token belongs to @bob")
+			require.Contains(t, r.stderr, "not saved: the token belongs to @bob; revoked it.")
 			require.ErrorIs(t, err, os.ErrNotExist, "nothing saved")
+			toks := testkit.Decode[dto.List[dto.Token]](bob.Get("/api/v1/tokens").RequireStatus(http.StatusOK))
+			require.Len(t, toks.Items, 1)
+			require.NotNil(t, toks.Items[0].RevokedAt, "the declined token is revoked")
 		})
 	}
 }
@@ -386,4 +389,53 @@ func TestSetupBrowserExpired(t *testing.T) {
 	require.Equal(t, 5, polls, "pending until 10 minutes passed")
 	_, err := os.Stat(configPath(home))
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// ONB-08: --token warns that the token is visible in the process list; --token-stdin reads it
+// from standard input instead and saves it without the warning.
+func TestSetupTokenFromStdin(t *testing.T) {
+	e := newChannelEnv(t)
+	home := t.TempDir()
+	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL, "--token", e.secret, "--harness", "none")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, r.stderr, "warning: --token is visible to other users of this machine (ps, /proc); prefer --token-stdin")
+
+	home2 := t.TempDir()
+	r = runSetup(t, setupOpts{env: map[string]string{"HOME": home2}, stdin: e.secret + "\n"}, "--url", e.env.URL, "--token-stdin", "--harness", "none")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.NotContains(t, r.stderr, "warning")
+	require.NotContains(t, r.stdout+r.stderr, e.secret)
+	requireSavedConfig(t, home2, cliconfig.Config{URL: e.env.URL, Token: e.secret})
+
+	for _, args := range [][]string{{"--token-stdin", "--token", "x"}, {"--token-stdin", "--browser"}, {"--token", "x", "--browser"}} {
+		r = runSetup(t, setupOpts{env: map[string]string{"HOME": t.TempDir()}}, append([]string{"--url", e.env.URL}, args...)...)
+		require.Equal(t, 2, r.code, "%v", args)
+		require.Contains(t, r.stderr, "use only one of --token, --token-stdin and --browser")
+	}
+	r = runSetup(t, setupOpts{env: map[string]string{"HOME": t.TempDir()}, stdin: "\n"}, "--url", e.env.URL, "--token-stdin")
+	require.Equal(t, 2, r.code)
+	require.Contains(t, r.stderr, "--token-stdin: no token on standard input")
+}
+
+// ONB-08: browser setup saves the URL it started with, not the instance URL the poll reports
+// (here the server's public URL uses 127.0.0.1 and setup started with localhost).
+func TestSetupBrowserSavesStartURL(t *testing.T) {
+	env, clock, alice := deviceSetupEnv(t)
+	start := strings.Replace(env.URL, "127.0.0.1", "localhost", 1)
+	require.NotEqual(t, env.URL, start)
+	home := t.TempDir()
+	r := runSetup(t, setupOpts{
+		env: map[string]string{"HOME": home}, hostname: "devbox",
+		onSleep: func(stdout string) bool {
+			clock.Advance(2 * time.Second)
+			if code := approvalCode(stdout); code != "" {
+				typeCode(alice, "approve", code)
+			}
+			return true
+		},
+	}, "--url", start, "--browser", "--yes")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	got, err := cliconfig.Load(configPath(home))
+	require.NoError(t, err)
+	require.Equal(t, start, got.URL)
 }

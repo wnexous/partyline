@@ -53,3 +53,38 @@ func TestAgentRegisterLimit(t *testing.T) {
 	require.Equal(t, "agent limit reached", e.Message)
 	tok.WithHeader(dto.HeaderAgent, "a7").Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)
 }
+
+// ONB-09: an agent token revokes itself with DELETE /agent/token (setup --uninstall), without
+// a registered agent; it is refused from then on. Other tokens of the owner keep working.
+func TestAgentRevokesOwnToken(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	other := alice.Token(dto.TokenKindAgent, "desktop").WithHeader(dto.HeaderAgent, "desk")
+	other.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)
+
+	tok.Delete("/api/v1/agent/token").RequireStatus(http.StatusNoContent)
+	tok.WithHeader(dto.HeaderAgent, "x").Post("/api/v1/agent/register", nil).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	tok.Delete("/api/v1/agent/token").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	other.Get("/api/v1/agent/rooms").RequireStatus(http.StatusOK)
+
+	tokens := testkit.Decode[dto.List[dto.Token]](alice.Get("/api/v1/tokens").RequireStatus(http.StatusOK))
+	revoked := map[string]bool{}
+	for _, tk := range tokens.Items {
+		revoked[tk.Name] = tk.RevokedAt != nil
+	}
+	require.Equal(t, map[string]bool{"laptop": true, "desktop": false}, revoked)
+}
+
+// ONB-09: only agent tokens revoke themselves there: anonymous 401, user tokens 403 (and stay
+// valid).
+func TestAgentRevokeOwnTokenAuth(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	env.Anon().Delete("/api/v1/agent/token").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	user := alice.Token(dto.TokenKindUser, "cli")
+	user.Delete("/api/v1/agent/token").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	toks := testkit.Decode[dto.List[dto.Token]](user.Get("/api/v1/tokens").RequireStatus(http.StatusOK))
+	require.Len(t, toks.Items, 1)
+	require.Nil(t, toks.Items[0].RevokedAt, "the user token stays valid")
+}

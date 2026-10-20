@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/cliconfig"
 )
 
@@ -134,8 +136,8 @@ func TestSetupHarnessFailure(t *testing.T) {
 	requireSavedConfig(t, home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
 }
 
-// HAR-04: --uninstall removes the harness entries setup added and the config file; the hook
-// file setup created is gone again.
+// HAR-04, ONB-09: --uninstall removes the harness entries setup added and the config file
+// (after revoking its token on the server); the hook file setup created is gone again.
 func TestSetupUninstall(t *testing.T) {
 	e := newChannelEnv(t)
 	home := t.TempDir()
@@ -167,7 +169,8 @@ func TestSetupUninstall(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 	_, err = os.Stat(configPath(home))
 	require.ErrorIs(t, err, os.ErrNotExist)
-	require.Contains(t, r.stdout, "revoke it in the web app")
+	require.Contains(t, r.stdout, "Revoked the agent token on "+e.env.URL+".\n", "ONB-09")
+	e.env.Anon().WithBearer(e.secret).WithHeader(dto.HeaderAgent, "x").Get("/api/v1/agent/rooms").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 
 	// Nothing left: uninstall says so.
 	nothing := &harnessCalls{answer: func(string) ([]byte, error) {
@@ -176,4 +179,21 @@ func TestSetupUninstall(t *testing.T) {
 	r = runSetup(t, setupOpts{env: map[string]string{"HOME": home}, run: nothing.run}, "--uninstall", "--yes")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 	require.Contains(t, r.stdout, "Nothing to remove")
+}
+
+// ONB-09: a revoke that fails (server unreachable) is reported, and uninstall still deletes the
+// config file and succeeds.
+func TestSetupUninstallReportsFailedRevoke(t *testing.T) {
+	home := t.TempDir()
+	writeConfig(t, home, cliconfig.Config{URL: "http://127.0.0.1:1", Token: "pl_agent_gone"})
+	nothing := &harnessCalls{answer: func(string) ([]byte, error) {
+		return []byte("Error: No MCP server named 'partyline' found."), errors.New("exit status 1")
+	}}
+	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}, run: nothing.run}, "--uninstall", "--yes")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, r.stdout, "Could not revoke the agent token on http://127.0.0.1:1: cannot reach http://127.0.0.1:1")
+	require.Contains(t, r.stdout, "Revoke it in the web app (Tokens).")
+	require.NotContains(t, r.stdout+r.stderr, "pl_agent_gone")
+	_, err := os.Stat(configPath(home))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }

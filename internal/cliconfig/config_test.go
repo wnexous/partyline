@@ -137,9 +137,10 @@ func TestResolvePrecedence(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, cliconfig.Config{URL: "http://file.example.com", Token: "pl_agent_file"}, got)
 
-	got, err = cliconfig.Resolve(cliconfig.Config{}, env(map[string]string{"HOME": home, "PARTYLINE_URL": "http://env.example.com"}))
+	// The same instance written differently still gets the saved token.
+	got, err = cliconfig.Resolve(cliconfig.Config{}, env(map[string]string{"HOME": home, "PARTYLINE_URL": "HTTP://File.Example.com/"}))
 	require.NoError(t, err)
-	require.Equal(t, cliconfig.Config{URL: "http://env.example.com", Token: "pl_agent_file"}, got)
+	require.Equal(t, cliconfig.Config{URL: "HTTP://File.Example.com/", Token: "pl_agent_file"}, got)
 
 	got, err = cliconfig.Resolve(cliconfig.Config{}, env(map[string]string{"HOME": home, "PARTYLINE_TOKEN": "pl_agent_env"}))
 	require.NoError(t, err)
@@ -168,4 +169,41 @@ func TestResolveMissingAndOpenFile(t *testing.T) {
 	got, err = cliconfig.Resolve(cliconfig.Config{}, env(map[string]string{"HOME": home, "PARTYLINE_URL": "http://env.example.com", "PARTYLINE_TOKEN": "pl_agent_env"}))
 	require.NoError(t, err)
 	require.Equal(t, cliconfig.Config{URL: "http://env.example.com", Token: "pl_agent_env"}, got)
+}
+
+// ONB-08: the saved token is never paired with another instance: a URL from the environment
+// or a flag that differs from the saved URL, without a token, is an error naming both URLs;
+// with an explicit token it is used as given.
+func TestResolveKeepsSavedTokenWithItsURL(t *testing.T) {
+	skipOnWindows(t)
+	home := t.TempDir()
+	path := filepath.Join(home, ".config", "partyline", "config.json")
+	writeFile(t, path, `{"url":"http://file.example.com","token":"pl_agent_file"}`, 0o600, 0o700)
+
+	for _, tc := range []struct {
+		name  string
+		flags cliconfig.Config
+		env   map[string]string
+	}{
+		{name: "env URL", env: map[string]string{"PARTYLINE_URL": "http://evil.example.com"}},
+		{name: "flag URL", flags: cliconfig.Config{URL: "http://evil.example.com"}},
+		{name: "other port", env: map[string]string{"PARTYLINE_URL": "http://file.example.com:8080"}},
+		{name: "other scheme", env: map[string]string{"PARTYLINE_URL": "https://file.example.com"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := map[string]string{"HOME": home}
+			for k, v := range tc.env {
+				e[k] = v
+			}
+			got, err := cliconfig.Resolve(tc.flags, env(e))
+			var mismatch *cliconfig.TokenURLMismatchError
+			require.ErrorAs(t, err, &mismatch)
+			require.ErrorContains(t, err, "the saved agent token is for http://file.example.com")
+			require.Empty(t, got.Token, "the saved token is not returned")
+		})
+	}
+
+	got, err := cliconfig.Resolve(cliconfig.Config{Token: "pl_agent_flag"}, env(map[string]string{"HOME": home, "PARTYLINE_URL": "http://other.example.com"}))
+	require.NoError(t, err)
+	require.Equal(t, cliconfig.Config{URL: "http://other.example.com", Token: "pl_agent_flag"}, got)
 }

@@ -449,10 +449,10 @@ the web changes.
 **Requirement**: ONB-04, ONB-05, ONB-08, ONB-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] env/flag URL ≠ saved URL → saved token ignored (missing token error); same URL (normalized) → saved token used
-- [ ] browser setup saves the start URL even when the poll reports another
-- [ ] `--token` prints the `ps` warning on stderr; `--token-stdin` works and conflicts with `--token`/`--browser`
-- [ ] uninstall revokes the token (later calls 401) and prints the result; a failed revoke is reported, not fatal
+- [x] env/flag URL ≠ saved URL → saved token ignored (missing token error); same URL (normalized) → saved token used
+- [x] browser setup saves the start URL even when the poll reports another
+- [x] `--token` prints the `ps` warning on stderr; `--token-stdin` works and conflicts with `--token`/`--browser`
+- [x] uninstall revokes the token (later calls 401) and prints the result; a failed revoke is reported, not fatal
 **Tests**: unit, e2e (API)
 **Gate**: build
 **Commit**: `fix(cli): keep the saved token with the instance it was issued for`
