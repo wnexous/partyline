@@ -66,6 +66,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.adminRoutes(mux)
 	s.roomRoutes(mux)
 	s.agentRoutes(mux)
+	s.agentAPIRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}
@@ -152,6 +153,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusGone, dto.ErrorCodeGone, "invite already used, revoked or expired")
 	case errors.Is(err, users.ErrUsernameTaken):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "username already taken")
+	case errors.Is(err, agents.ErrNotRegistered):
+		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent not registered: connect the channel first")
 	case errors.Is(err, access.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
 	case errors.Is(err, rooms.ErrAlreadyMember):

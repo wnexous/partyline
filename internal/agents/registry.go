@@ -77,6 +77,7 @@ type Registry struct {
 	bus      *events.Bus
 	presence *Presence
 	now      func() time.Time
+	posts    *postLimiter
 }
 
 // NewRegistry returns a Registry.
@@ -84,7 +85,10 @@ func NewRegistry(d Deps) *Registry {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Registry{store: d.Store, az: d.Access, bus: d.Bus, presence: d.Presence, now: d.Now}
+	return &Registry{
+		store: d.Store, az: d.Access, bus: d.Bus, presence: d.Presence, now: d.Now,
+		posts: newPostLimiter(PostLimit, PostWindow, d.Now),
+	}
 }
 
 // Agent is an agent as seen by one user.
@@ -125,6 +129,18 @@ func (r *Registry) Lookup(ctx context.Context, ownerID, name string) (db.Agent, 
 	}
 	return a, err
 }
+
+// Rooms lists the rooms the agent is a member of, with its cursor and the pause flag.
+func (r *Registry) Rooms(ctx context.Context, agentID string) ([]db.ListAgentRoomStatesRow, error) {
+	return r.store.R().ListAgentRoomStates(ctx, agentID)
+}
+
+// Online reports whether the agent has a live connection.
+func (r *Registry) Online(agentID string) bool { return r.presence.Online(agentID) }
+
+// AllowPost records a post by the agent; false means the agent already posted PostLimit
+// messages within PostWindow (TOOL-08).
+func (r *Registry) AllowPost(agentID string) bool { return r.posts.allow(agentID) }
 
 // authorize requires the user to hold want on the agent: no access is access.ErrNotFound,
 // use without manage is access.ErrForbidden.

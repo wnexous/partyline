@@ -109,9 +109,9 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: TOOL-02, TOOL-03, TOOL-04, TOOL-05, TOOL-07, TOOL-08, TOOL-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Non-member room → 403 `not a member of room <room>`
-- [ ] Reply to chat-authored message stores `reply_to` and recipients = that chat member
-- [ ] 31st post within a minute → 429; history limit 101 → clamped to 100
+- [x] Non-member room → 403 `not a member of room <room>`
+- [x] Reply to chat-authored message stores `reply_to` and recipients = that chat member
+- [x] 31st post within a minute → 429; history limit 101 → clamped to 100
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): add agent rooms, history, post and reply endpoints`

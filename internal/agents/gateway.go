@@ -266,7 +266,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 // returns the highest sequence number sent per room.
 func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]int64, error) {
 	sent := map[string]int64{}
-	states, err := g.d.Store.R().ListAgentRoomStates(ctx, a.ID)
+	states, err := g.d.Registry.Rooms(ctx, a.ID)
 	if err != nil {
 		return nil, err
 	}
