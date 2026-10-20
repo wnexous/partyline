@@ -79,11 +79,12 @@ graph LR
 - **Intents**: Guilds | GuildMessages | DirectMessages | MessageContent.
 - **Inbound**: `MessageCreate` where `!Author.Bot` (DC-01); attachments by URL (download through `Media.Open`, size checked).
 - **Send**: split at 2,000 runes (DC-02); `Reference` for replies; files via `MessageSend.Files`.
-- **ListChats**: text channels of each guild (DC-03).
+- **ListChats**: text channels of each guild (DC-03). Guild channel titles are `<guild> #<channel>` inbound and listed alike (`Guild` on the session seam).
 
 ### internal/connectors/webhook
 - **Config**: `secret` (secret, required, generated when empty on create), `outbound_url` (url, optional).
-- **Inbound**: handler `POST /api/v1/hooks/{connector_id}`: verify `X-Partyline-Timestamp` within ±300 s and `X-Partyline-Signature = "sha256=" + hex(HMAC_SHA256(secret, timestamp + "." + body))` with constant-time compare (HOOK-01/02); 64 KiB body limit; 60 req/min.
+- **Inbound**: handler `POST /api/v1/hooks/{connector_id}`: verify `X-Partyline-Timestamp` within ±300 s and `X-Partyline-Signature = "sha256=" + hex(HMAC_SHA256(secret, timestamp + "." + body))` with constant-time compare (HOOK-01/02); 64 KiB body limit. Rate limits run after the check (HOOK-04): 60 authenticated req/min per connector; invalid requests 30/min per client IP (then 429, no audit). Accepted signatures are remembered 10 min per connector; a replay answers 409 (HOOK-05). Both are in memory: a restart or config change resets them (message_id dedupe still holds).
+- **Identities**: `Kind.LinkOwnerOnly` - the caller picks `sender_id`, so `!link` links only the connector owner's codes (IDN-05).
 - **Outbound**: POST JSON `{event:"message", connector_id, chat_id, message:{id, room_id, text, reply_to_external_id, author_name, created_at}, attachments:[{name, mime, size, url}]}` signed the same way; attachment URLs are signed, expiring (10 min) download links; non-2xx = failure (HOOK-03).
 
 ### internal/identities
@@ -117,6 +118,7 @@ Uses `connectors`, `chats`, `identities`, `pairing_codes` from core migrations.
 | --- | --- | --- | --- |
 | evolution-go broadcast caveat (instance client write failure skips broadcast) | evolution-go 0.7.2 | Missed events while a per-instance client is broken | Document; recommend Partyline as the only consumer |
 | Secrets in error strings (Telegram token in URL) | telegram client | Token in logs/status | `redact(err, secrets...)` in supervisor; never log URLs |
+| SSRF through user-set URLs (`outbound_url`, `api_base`, `base_url`) and media URLs | every adapter | Server calls internal services | `internal/connectors/safehttp`: dial-time address check after DNS (loopback, private, link-local, CGNAT, multicast, unspecified, reserved), no redirects, timeouts, body cap 256 MiB; `PARTYLINE_ALLOW_PRIVATE_NETWORKS=true` lifts the address check (CON-13). Platform error bodies never reach status text |
 | Discord gateway hard to test | discord | Low coverage | Session seam with fake; handler logic in pure functions |
 
 ## Tech Decisions

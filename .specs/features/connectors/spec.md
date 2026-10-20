@@ -107,7 +107,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 **Acceptance Criteria**:
 
 1. WHEN connected THEN the connector SHALL long-poll `getUpdates` with the last offset + 1 and handle `message` and `channel_post`. (TG-01)
-2. WHEN sending text THEN the connector SHALL call `sendMessage`, splitting text above 4,096 characters into ordered parts, with `reply_parameters` when replying. (TG-02)
+2. WHEN sending text THEN the connector SHALL call `sendMessage`, splitting text above 4,096 characters (Unicode code points, not bytes or UTF-16 units) into ordered parts, with `reply_parameters` when replying. (TG-02)
 3. WHEN sending a file THEN the connector SHALL use `sendPhoto` for images and `sendDocument` otherwise. (TG-03)
 4. WHEN inbound media is present THEN the connector SHALL fetch it via `getFile`. (TG-04)
 
@@ -124,7 +124,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 **Acceptance Criteria**:
 
 1. WHEN a guild or DM message is created by a non-bot user THEN the connector SHALL emit it with external id = channel id and, for a guild channel, the chat title `<guild> #<channel>` that chat listing (DC-03) gives it. (DC-01)
-2. WHEN sending text THEN the connector SHALL split above 2,000 characters and set the message reference when replying. (DC-02)
+2. WHEN sending text THEN the connector SHALL split above 2,000 characters (Unicode code points) and set the message reference when replying. (DC-02)
 3. WHEN chats are refreshed THEN the connector SHALL list text channels of every guild the bot is in, titled `<guild> #<channel>`. (DC-03)
 
 **Independent Test**: Adapter tested through an interface fake of the discordgo session.
@@ -181,34 +181,34 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| CON-01 | P1: Manage connectors | Tasks | Implementing |
-| CON-02 | P1: Manage connectors | Tasks | Implementing |
-| CON-03 | P1: Manage connectors | Tasks | Implementing |
-| CON-04 | P1: Manage connectors | Tasks | Implementing |
-| CON-05 | P1: Manage connectors | Tasks | Implementing |
-| CON-06 | P1: Manage connectors | Tasks | Implementing |
-| CON-07 | P1: Chats and inbound | Tasks | Implementing |
-| CON-08 | P1: Chats and inbound | Tasks | Implementing |
-| CON-09 | P1: Chats and inbound | Tasks | Implementing |
-| CON-10 | P1: Chats and inbound | Tasks | Implementing |
-| CON-11 | P1: Chats and inbound | Tasks | Implementing |
+| CON-01 | P1: Manage connectors | Tasks | Verified |
+| CON-02 | P1: Manage connectors | Tasks | Verified |
+| CON-03 | P1: Manage connectors | Tasks | Verified |
+| CON-04 | P1: Manage connectors | Tasks | Verified |
+| CON-05 | P1: Manage connectors | Tasks | Verified |
+| CON-06 | P1: Manage connectors | Execute (T13) | Implemented, re-verify |
+| CON-07 | P1: Chats and inbound | Tasks | Verified |
+| CON-08 | P1: Chats and inbound | Tasks | Verified |
+| CON-09 | P1: Chats and inbound | Execute (T20) | Implemented, re-verify |
+| CON-10 | P1: Chats and inbound | Execute (T17) | Implemented, re-verify |
+| CON-11 | P1: Chats and inbound | Execute (T17) | Implemented, re-verify |
 | CON-12 | P1: Chats and inbound | Tasks | Verified |
 | CON-13 | P1: Manage connectors | Execute (T13) | Implemented, re-verify |
 | CON-14 | P1: Chats and inbound | Execute (T19) | Implemented, re-verify |
-| WA-01 | P1: WhatsApp | Tasks | Implementing |
-| WA-02 | P1: WhatsApp | Tasks | Implementing |
-| WA-03 | P1: WhatsApp | Tasks | Implementing |
-| WA-04 | P1: WhatsApp | Tasks | Implementing |
-| WA-05 | P1: WhatsApp | Tasks | Implementing |
-| TG-01 | P1: Telegram | Tasks | Implementing |
-| TG-02 | P1: Telegram | Tasks | Implementing |
-| TG-03 | P1: Telegram | Tasks | Implementing |
-| TG-04 | P1: Telegram | Tasks | Implementing |
-| DC-01 | P1: Discord | Tasks | Implementing |
-| DC-02 | P1: Discord | Tasks | Implementing |
-| DC-03 | P1: Discord | Tasks | Implementing |
-| HOOK-01 | P1: Webhook | Tasks | Implementing |
-| HOOK-02 | P1: Webhook | Tasks | Implementing |
+| WA-01 | P1: WhatsApp | Tasks | Verified |
+| WA-02 | P1: WhatsApp | Tasks | Verified |
+| WA-03 | P1: WhatsApp | Execute (T16) | Implemented, re-verify |
+| WA-04 | P1: WhatsApp | Tasks | Verified |
+| WA-05 | P1: WhatsApp | Tasks | Verified |
+| TG-01 | P1: Telegram | Tasks | Verified |
+| TG-02 | P1: Telegram | Execute (T21) | Implemented, re-verify |
+| TG-03 | P1: Telegram | Tasks | Verified |
+| TG-04 | P1: Telegram | Tasks | Verified |
+| DC-01 | P1: Discord | Execute (T18) | Implemented, re-verify |
+| DC-02 | P1: Discord | Execute (T21) | Implemented, re-verify |
+| DC-03 | P1: Discord | Execute (T18) | Implemented, re-verify |
+| HOOK-01 | P1: Webhook | Execute (T14) | Implemented, re-verify |
+| HOOK-02 | P1: Webhook | Execute (T14) | Implemented, re-verify |
 | HOOK-03 | P1: Webhook | Tasks | Verified |
 | HOOK-04 | P1: Webhook | Execute (T14) | Implemented, re-verify |
 | HOOK-05 | P1: Webhook | Execute (T15) | Implemented, re-verify |

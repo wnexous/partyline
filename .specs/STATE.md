@@ -58,6 +58,14 @@
 - **Date**: 2026-10-19
 - **Status**: active
 
+### AD-008
+- **Decision**: A verified identity belongs to the connector instance it was linked through, not to the connector kind. Messages resolve to a user only when they arrive through that same connector. Kinds whose caller chooses sender ids (webhook) link only codes of the connector's owner.
+- **Reason**: The connectors validation probe (S1) showed that a webhook, a Telegram connector with a custom `api_base` or a WhatsApp connector with its own `base_url` lets its owner claim any sender id, so kind-wide identities made trust forgeable (breaks AD-006).
+- **Trade-off**: The same phone/account must be linked once per connector; identities linked before migration `0003` were dropped. Linking through someone else's connector still means trusting its owner.
+- **Scope**: connectors, identities, web-app (identities page).
+- **Date**: 2026-10-20
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: core-platform

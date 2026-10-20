@@ -46,7 +46,8 @@ Binding conventions for Phase 2 (platform adapters T7-T11) and the web app. Type
   Fill `ChatID` (platform chat id; WhatsApp `<instance>|<jid>`), `ChatTitle`, `ChatKind` (`group|dm|channel`), `MessageID`
   (platform id; dedupe key per room), `SenderID`, `SenderAltID`, `SenderName`, `FromSelf`, `Kind` (a `dto.MessageKind`; empty =
   text), `Text`, `ReplyToID` (platform id of the quoted message), `Media`, `At`.
-- The pipeline drops `FromSelf`, handles `!link CODE` / `/link CODE` (identity of `(kind name, SenderID, SenderAltID)`),
+- The pipeline drops `FromSelf`, handles `!link CODE` / `/link CODE` (identity of `(connector id, SenderID, SenderAltID)`;
+  superseded by the fix iteration notes below),
   upserts the chat (empty title/kind keep the stored ones; `chat.discovered` on new/changed), then stores only for chats in
   rooms. Messages with empty text and no media are not stored: give non-text kinds a short text (e.g. location, contact).
 - `Media{Name, Mime, Size, Open}`: set `Size` when the platform reports it (larger than the upload limit → `too_large`
@@ -128,7 +129,8 @@ Binding for the web app, the Verifier and later platforms. Kinds registered in `
   without caption; the returned id is the first sent message's. Run fails with `unauthorized` on 401/403.
 - **Telegram** (`bot_token` secret, `api_base` default `https://api.telegram.org`). Chat id = Telegram chat id; kinds
   private → dm, channel → channel, else group. Offset is kept in memory across Run restarts. No `ListChats`.
-- **Discord** (`bot_token` secret). Chat id = channel id; guild channels are `channel` (title `#name`), DMs `dm`.
+- **Discord** (`bot_token` secret). Chat id = channel id; guild channels are `channel` (title `Guild #name`, the same
+  in inbound messages and ListChats), DMs `dm`.
   Mentions are disabled on sends (`AllowedMentions{}`); files ride on the last text part. discordgo reconnects by
   itself; Run reports connected after `Open` and fails when `Open` fails.
 - **Webhook** (`secret` secret, generated when empty; `outbound_url` optional). Inbound chats are `channel` kind.
@@ -139,3 +141,43 @@ Binding for the web app, the Verifier and later platforms. Kinds registered in `
 ## Not done here (web app)
 - Show `generated_secrets.secret` once after creating a webhook connector, with `inbound_url` and the signing recipe
   (`X-Partyline-Timestamp`, `X-Partyline-Signature: sha256=hex(HMAC_SHA256(secret, timestamp + "." + body))`).
+
+# Contract Notes (from connectors fix iteration 1: T12-T20)
+
+Binding for the re-verify, the web app and later platforms.
+
+## Identities belong to a connector (IDN-02, IDN-04, IDN-05; S1)
+- `identities.connector_id` (FK to connectors, cascade) with unique `(connector_id, external_id)`; `connector_kind` stays
+  for display. Migration `0003_identities_per_connector.sql` drops older rows: users link again.
+- `identities.Link(ctx, code, Account{ConnectorID, ConnectorKind, SenderID, AltID, Display}, onlyUser)`;
+  `ResolveSender(ctx, connectorID, sender, alt)` matches only that connector. The pipeline passes `Source.ConnectorID`.
+- `Kind.LinkOwnerOnly` (webhook): `!link` links only codes of the connector's owner (`Source.OwnerID`); another
+  user's code links nothing and is not consumed. Set it on any kind whose caller chooses sender ids.
+- Trust note: linking through a connector you don't own means trusting that connector's owner.
+- `dto.Identity.connector_id` is new (web types regenerated).
+
+## Outbound network policy (CON-13; S2)
+- Every platform call goes through `internal/connectors/safehttp`: `NewClient(Options{AllowPrivate, Timeout,
+  MaxResponseBytes})` for requests, `NewStreamClient(allowPrivate)` for WebSocket handshakes. Pass
+  `Deps.AllowPrivateNetworks` (from `PARTYLINE_ALLOW_PRIVATE_NETWORKS`, default false). Never use `http.DefaultClient`
+  or a bare `http.Client` in an adapter. Adapter tests against httptest servers set `AllowPrivateNetworks: true`; api
+  tests set the env var through `testkit.WithEnv`.
+- Blocked: loopback, RFC 1918/ULA, link-local (incl. 169.254.169.254), CGNAT, multicast, unspecified, reserved,
+  IPv4-mapped/NAT64 forms of those. Errors wrap `safehttp.ErrBlockedAddress`; the webhook reports
+  `outbound: destination address not allowed`.
+- Redirects are not followed (a 3xx is a failed call); bodies over 256 MiB fail with `ErrResponseTooLarge`.
+- Platform error bodies stay out of errors: Telegram reports `<method>: error <code>`.
+
+## Webhook (HOOK-04, HOOK-05; S3, S4)
+- Order: timestamp + signature → replay check → 60/min budget → payload. `HookRequest.RemoteIP` is the client IP
+  (`httpx.ClientIP`); invalid requests count 30/min per IP and then get `ErrRateLimited` (429, not audited).
+- Accepted signatures are kept 10 minutes (`ReplayTTL`); a repeat returns `connectors.ErrReplayed` → 409 `conflict`.
+  The cache is per running connector, so a restart or config change clears it.
+
+## Other
+- Inbound text over `dto.MaxTextLength` (16,000 code points) is stored cut, ending with `connectors.TruncatedMarker`
+  (`…[truncated]`) (CON-14).
+- `Manager.ListChats` wraps platform failures in `connectors.ErrPlatform`; `POST /connectors/{id}/chats/refresh` then
+  answers 502 `unavailable` "the platform did not answer the request" (CON-09). The redacted detail is logged.
+- Testing: `connectortest.Instance.SetListError(err)`.
+- Split limits (TG-02, DC-02) count Unicode code points (`connectors.SplitText` is rune-based).

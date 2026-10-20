@@ -382,7 +382,7 @@ get their own per-IP budget (over it: 429, no audit entry).
 **Requirement**: TG-02, DC-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Spec, design and contract notes match the behaviour; `make check` passes
+- [x] Spec, design and contract notes match the behaviour; `make check` passes
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record connectors fix iteration 1`
