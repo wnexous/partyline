@@ -360,10 +360,10 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: MSG-01, MSG-02, DLV-03, DLV-04, DLV-05, DLV-08, DLV-09, DLV-10, CON-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 50 concurrent posts → seqs 1..50 without gaps
-- [ ] Empty text without files and 16,001 chars → validation error
-- [ ] Outbox rows match Plan; duplicate external id returns existing message, no event
-- [ ] Pause after 25 agent messages posts a system message; Resume resets
+- [x] 50 concurrent posts → seqs 1..50 without gaps
+- [x] Empty text without files and 16,001 chars → validation error
+- [x] Outbox rows match Plan; duplicate external id returns existing message, no event
+- [x] Pause after 25 agent messages posts a system message; Resume resets
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(rooms): add message posting, listing and loop guard`
