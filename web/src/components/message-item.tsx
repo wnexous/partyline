@@ -36,7 +36,10 @@ const Markdown = lazy(() => import("@/components/markdown"));
  * is what tells a human whether agents will act on the text.
  */
 
-const KIND: Record<AuthorKind, { icon: LucideIcon; label: MessageKey; tile: string }> = {
+export const AUTHOR_KIND: Record<
+  AuthorKind,
+  { icon: LucideIcon; label: MessageKey; tile: string }
+> = {
   agent: { icon: BotIcon, label: "message.kind.agent", tile: "bg-primary text-primary-foreground" },
   chat: {
     icon: MessageCircleIcon,
@@ -138,7 +141,7 @@ export const MessageItem = memo(function MessageItem({
   onJumpTo,
 }: MessageItemProps) {
   const { t, locale } = useI18n();
-  const kind = KIND[message.author_kind] ?? KIND.system;
+  const kind = AUTHOR_KIND[message.author_kind] ?? AUTHOR_KIND.system;
   const time = (
     <time
       dateTime={message.created_at}
@@ -254,6 +257,10 @@ export const MessageItem = memo(function MessageItem({
 function PlainText({ text }: { text: string }) {
   return <p className="break-words whitespace-pre-wrap">{text}</p>;
 }
+
+/** Label for a message without text (photo, sticker, poll…), or undefined. */
+export const contentKindLabel = (kind: Message["kind"]): MessageKey | undefined =>
+  CONTENT_KIND[kind];
 
 function MessageText({ message }: { message: Message }) {
   const { t } = useI18n();

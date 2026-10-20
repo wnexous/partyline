@@ -302,7 +302,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-15, UI-17
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Cards reflect live presence/status changes; empty states link to the right flows
+- [x] Cards reflect live presence/status changes; empty states link to the right flows
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add live dashboard`

@@ -20,34 +20,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAgents, useDeleteAgent, useMe } from "@/lib/api/queries";
 import { type Agent, LevelManage } from "@/lib/api/types.gen";
 import { useI18n } from "@/lib/i18n";
-import { type Presence, useLiveStore } from "@/lib/live/store";
+import { useLiveStore } from "@/lib/live/store";
+import { type AgentView, byLiveness, withPresence } from "@/lib/presence";
 import { formatAbsolute, formatRelative } from "@/lib/time";
 
 export const Route = createFileRoute("/_app/agents")({
   component: AgentsPage,
 });
-
-interface AgentView extends Agent {
-  live: boolean;
-  seen?: string;
-}
-
-function withPresence(agent: Agent, presence: Presence | undefined): AgentView {
-  return {
-    ...agent,
-    live: presence?.online ?? agent.online,
-    seen: presence?.last_seen_at ?? agent.last_seen_at,
-  };
-}
-
-/** Online first, then most recently seen, then never connected; ties by name. */
-function byLiveness(a: AgentView, b: AgentView) {
-  if (a.live !== b.live) return a.live ? -1 : 1;
-  const seenA = a.seen ? Date.parse(a.seen) : 0;
-  const seenB = b.seen ? Date.parse(b.seen) : 0;
-  if (seenA !== seenB) return seenB - seenA;
-  return a.name.localeCompare(b.name);
-}
 
 function AgentsPage() {
   const { t } = useI18n();

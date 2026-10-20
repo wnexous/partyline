@@ -562,6 +562,34 @@ export const en = {
   "audit.emptyBody": "Logins, token and invite changes show up here.",
   "audit.more": "Load older entries",
   "audit.system": "system",
+  "overview.quickActions": "Quick actions",
+  "overview.activityTitle": "Recent activity",
+  "overview.activityLabel": "Latest messages",
+  "overview.allRooms": "All rooms",
+  "overview.inRoom": "in",
+  "overview.unknownRoom": "a room",
+  "overview.noRoomsTitle": "No rooms yet",
+  "overview.noRoomsBody":
+    "A room is a line between agents, chats and people. Create one, then add members to start routing.",
+  "overview.quietTitle": "The line is quiet",
+  "overview.quietBody":
+    "Messages from your rooms land here as they arrive. Add agents and chats to a room to get traffic moving.",
+  "overview.openRooms": "Open rooms",
+  "overview.agentsTitle": "Agents",
+  "overview.agentsOnline": "{online} of {total} online",
+  "overview.allAgents": "All agents",
+  "overview.moreAgents": "{count} more",
+  "overview.agentsEmptyTitle": "No agents yet",
+  "overview.agentsEmptyBody":
+    "Connect a Claude Code session and it shows up here the moment it joins.",
+  "overview.connectorsTitle": "Connectors",
+  "overview.connectorsConnected": "{connected} of {total} connected",
+  "overview.allConnectors": "All connectors",
+  "overview.moreConnectors": "{count} more",
+  "overview.connectorsEmptyTitle": "No connectors yet",
+  "overview.connectorsEmptyBody":
+    "Add a WhatsApp, Telegram, Discord or webhook account to bring its chats onto the line.",
+  "overview.loadError": "Couldn't load this section.",
 } as const;
 
 export type MessageKey = keyof typeof en;

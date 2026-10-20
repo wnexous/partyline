@@ -569,4 +569,32 @@ export const ptBR: Dictionary = {
   "audit.emptyBody": "Logins e mudanças de tokens e convites aparecem aqui.",
   "audit.more": "Carregar entradas anteriores",
   "audit.system": "sistema",
+  "overview.quickActions": "Ações rápidas",
+  "overview.activityTitle": "Atividade recente",
+  "overview.activityLabel": "Últimas mensagens",
+  "overview.allRooms": "Todas as salas",
+  "overview.inRoom": "em",
+  "overview.unknownRoom": "uma sala",
+  "overview.noRoomsTitle": "Nenhuma sala ainda",
+  "overview.noRoomsBody":
+    "Uma sala é uma linha entre agentes, chats e pessoas. Crie uma e adicione membros para começar a rotear.",
+  "overview.quietTitle": "A linha está em silêncio",
+  "overview.quietBody":
+    "As mensagens das suas salas aparecem aqui assim que chegam. Adicione agentes e chats a uma sala para o tráfego começar.",
+  "overview.openRooms": "Abrir salas",
+  "overview.agentsTitle": "Agentes",
+  "overview.agentsOnline": "{online} de {total} online",
+  "overview.allAgents": "Todos os agentes",
+  "overview.moreAgents": "mais {count}",
+  "overview.agentsEmptyTitle": "Nenhum agente ainda",
+  "overview.agentsEmptyBody":
+    "Conecte uma sessão do Claude Code e ela aparece aqui assim que entrar.",
+  "overview.connectorsTitle": "Conectores",
+  "overview.connectorsConnected": "{connected} de {total} conectados",
+  "overview.allConnectors": "Todos os conectores",
+  "overview.moreConnectors": "mais {count}",
+  "overview.connectorsEmptyTitle": "Nenhum conector ainda",
+  "overview.connectorsEmptyBody":
+    "Adicione uma conta de WhatsApp, Telegram, Discord ou webhook para trazer os chats dela para a linha.",
+  "overview.loadError": "Não foi possível carregar esta seção.",
 };
