@@ -131,8 +131,8 @@ A Claude Code session can only receive pushed events through a channel: an MCP s
 | AGT-02 | P1: Connect | Tasks | Pending |
 | AGT-03 | P1: Connect | Tasks | Implementing |
 | AGT-04 | P1: Connect | Tasks | Implementing |
-| AGT-05 | P1: Receive | Tasks | Pending |
-| AGT-06 | P1: Receive | Tasks | Pending |
+| AGT-05 | P1: Receive | Tasks | Implementing |
+| AGT-06 | P1: Receive | Tasks | Implementing |
 | AGT-07 | P1: Receive | Tasks | Implementing |
 | AGT-08 | P1: Receive | Tasks | Implementing |
 | AGT-09 | P1: Receive | Tasks | Implementing |

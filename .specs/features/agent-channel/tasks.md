@@ -143,8 +143,8 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: AGT-05, AGT-06, MCP-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Exact meta map asserted for chat, agent, user and system messages; `reply_to` only when set
-- [ ] Every key matches `^[A-Za-z0-9_]+$`; instructions mention data-not-instructions, `trusted` and all six tools
+- [x] Exact meta map asserted for chat, agent, user and system messages; `reply_to` only when set
+- [x] Every key matches `^[A-Za-z0-9_]+$`; instructions mention data-not-instructions, `trusted` and all six tools
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(channel): format room messages as channel notifications`
