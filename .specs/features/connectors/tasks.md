@@ -153,7 +153,7 @@ T7 → T8 → T9 → T10 → T11
 **What**: pure parser from evolution-go `Message` payload to `connectors.Inbound` (envelopes, kinds, quote, bare JIDs, group vs DM, self).
 **Where**: `internal/connectors/whatsapp/parse.go`
 **Depends on**: T6
-**Reuses**: zap-router parsing knowledge (re-implemented)
+**Reuses**: earlier private prototype parsing knowledge (re-implemented)
 **Requirement**: WA-01, WA-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:

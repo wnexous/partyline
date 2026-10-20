@@ -25,14 +25,14 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --- | --- | --- | --- |
-| evolution-go transport | Broadcast WebSocket `/ws?token=<global key>` (no `instanceId`); REST with instance tokens fetched from `/instance/all` | Several broadcast clients coexist; proven in zap-router | y |
+| evolution-go transport | Broadcast WebSocket `/ws?token=<global key>` (no `instanceId`); REST with instance tokens fetched from `/instance/all` | Several broadcast clients coexist; proven in an earlier private prototype | y |
 | evolution-go instances | Config lists allowed instance names; empty list = every instance with websocket enabled | One evolution server can host several numbers | n |
 | Telegram transport | Bot API long polling (`getUpdates`, 30 s timeout) | Works behind NAT, no public URL needed | n |
 | Discord transport | Gateway via `github.com/bwmarrin/discordgo` with Message Content intent | Standard; raw gateway is large | n |
 | Webhook auth | HMAC-SHA256 of the raw body with the connector secret, header `X-Partyline-Signature: sha256=<hex>`, timestamp header `X-Partyline-Timestamp` within 5 minutes | Standard webhook signing, replay protection | n |
 | Identity verification | Pairing code: user gets a 6-character code in the web app, sends `!link CODE` or `/link CODE` from the account; valid 10 minutes | Proves control of the account; no manual claims | n |
 | Media size | Inbound media larger than the upload limit is stored as an attachment record with status `too_large` and no file | Bounded disk use | n |
-| Connector reconnect | Backoff 2 s doubling to 120 s; status `connecting`, `connected`, `error` with last error text | Same as zap-router | n |
+| Connector reconnect | Backoff 2 s doubling to 120 s; status `connecting`, `connected`, `error` with last error text | Proven in an earlier private prototype | n |
 
 **Open questions:** none - all resolved or logged above.
 
@@ -213,4 +213,4 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 ## Success Criteria
 
 - [ ] Each connector kind passes its fake-platform test suite.
-- [ ] Manual UAT on the real evolution-go `lollerie` instance: a routed group message reaches an agent (no reply sent without André's request).
+- [ ] Manual UAT on a real evolution-go instance: a routed group message reaches an agent (no reply sent without the owner's request).
