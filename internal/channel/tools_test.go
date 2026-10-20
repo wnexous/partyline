@@ -61,7 +61,7 @@ func toolArgs(kv ...any) map[string]any {
 	return m
 }
 
-// TOOL-01: tools/list returns exactly the six tools, each with an object input schema.
+// TOOL-01, INS-02: tools/list returns exactly the room tools, each with an object input schema.
 func TestToolsList(t *testing.T) {
 	e := newChanEnv(t)
 	s := e.connected(e.options())
@@ -74,6 +74,7 @@ func TestToolsList(t *testing.T) {
 		"history":             {"room"},
 		"download_attachment": {"attachment_id"},
 		"send_file":           {"room", "path"},
+		"room_info":           {"room"},
 	}
 	got := map[string]bool{}
 	for _, item := range list {
@@ -87,7 +88,7 @@ func TestToolsList(t *testing.T) {
 			require.Equal(t, want, schema["required"], name)
 		}
 	}
-	require.Len(t, list, 6)
+	require.Len(t, list, len(required))
 	for name := range required {
 		require.True(t, got[name], "missing tool %s", name)
 	}
@@ -159,6 +160,7 @@ func TestToolNotAMember(t *testing.T) {
 	}{
 		{"send_message", toolArgs("room", "Private", "text", "x")},
 		{"history", toolArgs("room", other.ID)},
+		{"room_info", toolArgs("room", "Private")},
 	} {
 		text, isErr := s.call(tc.tool, tc.args)
 		require.True(t, isErr, tc.tool)

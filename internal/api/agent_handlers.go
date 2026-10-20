@@ -37,6 +37,7 @@ func errNotMember(room string) error {
 // agentAPIRoutes are the endpoints of the Claude Code channel; agent tokens only (TOK-03).
 func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agent/rooms", s.agentOnly(s.agentRooms))
+	s.handle(mux, "GET /api/v1/agent/rooms/{room}/info", s.agentOnly(s.agentRoomInfo))
 	s.handle(mux, "GET /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentHistory))
 	s.handle(mux, "POST /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentPost))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/reply", s.agentOnly(s.agentReply))
@@ -85,6 +86,32 @@ func (s *server) agentRooms(w http.ResponseWriter, r *http.Request, p authn.Prin
 			ar.Members[i] = s.toMember(m)
 		}
 		out.Items = append(out.Items, ar)
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// agentRoomInfo returns the room's name, instructions, members and the agent's own
+// membership with its settings (INS-02).
+func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	st, err := s.resolveRoom(r.Context(), p, r.PathValue("room"))
+	if err != nil {
+		return err
+	}
+	room, err := s.Rooms.Get(r.Context(), p, st.ID)
+	if err != nil {
+		return err
+	}
+	members, err := s.Rooms.Members(r.Context(), p, st.ID)
+	if err != nil {
+		return err
+	}
+	out := dto.RoomInfo{Room: dto.RoomRef{ID: room.ID, Name: room.Name}, Instructions: room.Instructions, Members: make([]dto.RoomMember, len(members))}
+	for i, m := range members {
+		out.Members[i] = s.toMember(m)
+		if out.Members[i].Kind == dto.MemberKindAgent && m.MemberID == p.AgentID {
+			out.Me = out.Members[i]
+		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil

@@ -62,6 +62,7 @@ func TestAgentAndUserRoutesAreSeparated(t *testing.T) {
 		body         any
 	}{
 		{"GET", "/api/v1/agent/rooms", nil},
+		{"GET", agentRoomPath(f.room.ID, "/info"), nil},
 		{"GET", agentRoomPath(f.room.ID, "/messages"), nil},
 		{"POST", agentRoomPath(f.room.ID, "/messages"), dto.PostMessageRequest{Text: "x"}},
 		{"POST", "/api/v1/agent/messages/" + msg.ID + "/reply", dto.ReplyRequest{Text: "x"}},

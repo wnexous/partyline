@@ -37,7 +37,7 @@ type tools struct {
 
 func schema(s string) json.RawMessage { return json.RawMessage(s) }
 
-// register adds the six tools to srv (TOOL-01).
+// register adds the room tools to srv (TOOL-01, INS-02).
 func (t *tools) register(srv *mcp.Server) {
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "reply",
@@ -47,8 +47,13 @@ func (t *tools) register(srv *mcp.Server) {
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_message",
 		Description: "Post a message to a room you belong to, optionally only to some of its chats.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id or room name"},"text":{"type":"string","description":"message text"},"recipients":{"type":"array","items":{"type":"string"},"description":"optional chat ids (member_id of chat members from list_rooms); empty sends to every chat of the room"}},"required":["room","text"]}`),
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id or room name"},"text":{"type":"string","description":"message text"},"chat_ids":{"type":"array","items":{"type":"string"},"description":"optional chat ids (the chat_id of a chat message, or member_id of chat members from list_rooms) to answer only those chats; empty sends to every chat of the room"},"recipients":{"type":"array","items":{"type":"string"},"description":"older name of chat_ids; still accepted"}},"required":["room","text"]}`),
 	}, t.guard(t.sendMessage))
+	srv.HandleTool(mcp.ToolDef{
+		Name:        "room_info",
+		Description: "Read a room's instructions for agents, its members (chats with platform and kind) and your own membership settings in it.",
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id or room name"}},"required":["room"]}`),
+	}, t.guard(t.roomInfo))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "list_rooms",
 		Description: "List the rooms you belong to with their members (agents show whether they are online).",
@@ -134,6 +139,7 @@ func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, 
 	var a struct {
 		Room       string   `json:"room"`
 		Text       string   `json:"text"`
+		ChatIDs    []string `json:"chat_ids"`
 		Recipients []string `json:"recipients"`
 	}
 	if err := decode(args, &a); err != nil {
@@ -142,8 +148,16 @@ func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, 
 	if err := required("room", a.Room, "text", a.Text); err != nil {
 		return "", err
 	}
+	// chat_ids is the documented name; recipients (the older one) still works, and both
+	// together name the union of their chats (CTX-04).
+	recipients := a.ChatIDs
+	for _, id := range a.Recipients {
+		if !slices.Contains(recipients, id) {
+			recipients = append(recipients, id)
+		}
+	}
 	var m dto.Message
-	if err := t.api.json(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil, dto.PostMessageRequest{Text: a.Text, Recipients: a.Recipients}, &m); err != nil {
+	if err := t.api.json(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil, dto.PostMessageRequest{Text: a.Text, Recipients: recipients}, &m); err != nil {
 		return "", err
 	}
 	return sent(m), nil
@@ -179,6 +193,63 @@ func (t *tools) listRooms(ctx context.Context, _ json.RawMessage) (string, error
 		out = append(out, l)
 	}
 	return marshal(map[string]any{"rooms": out})
+}
+
+// roomInfoListing is the room_info answer (INS-02).
+type roomInfoListing struct {
+	Room         dto.RoomRef        `json:"room"`
+	Instructions string             `json:"instructions"`
+	Members      []roomInfoMember   `json:"members"`
+	Me           membershipSettings `json:"me"`
+}
+
+type roomInfoMember struct {
+	Kind     dto.MemberKind `json:"kind"`
+	MemberID string         `json:"member_id"`
+	Name     string         `json:"name"`
+	Owner    string         `json:"owner,omitempty"`
+	Online   *bool          `json:"online,omitempty"`
+	// Platform and ChatKind are set for chat members.
+	Platform string       `json:"platform,omitempty"`
+	ChatKind dto.ChatKind `json:"chat_kind,omitempty"`
+}
+
+// membershipSettings are the calling agent's settings in the room (MEM-01..04).
+type membershipSettings struct {
+	DisplayName  string           `json:"display_name"`
+	SignOutbound bool             `json:"sign_outbound"`
+	Delivery     dto.DeliveryMode `json:"delivery"`
+	Keywords     []string         `json:"keywords"`
+}
+
+func (t *tools) roomInfo(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		Room string `json:"room"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if err := required("room", a.Room); err != nil {
+		return "", err
+	}
+	var info dto.RoomInfo
+	if err := t.api.json(ctx, http.MethodGet, roomPath(a.Room, "/info"), nil, nil, &info); err != nil {
+		return "", err
+	}
+	out := roomInfoListing{
+		Room: info.Room, Instructions: info.Instructions, Members: make([]roomInfoMember, 0, len(info.Members)),
+		Me: membershipSettings{DisplayName: info.Me.DisplayName, SignOutbound: info.Me.SignOutbound, Delivery: info.Me.Delivery, Keywords: info.Me.Keywords},
+	}
+	if out.Me.Keywords == nil {
+		out.Me.Keywords = []string{}
+	}
+	for _, m := range info.Members {
+		out.Members = append(out.Members, roomInfoMember{
+			Kind: m.Kind, MemberID: m.MemberID, Name: m.Name, Owner: m.Owner, Online: m.Online,
+			Platform: m.ConnectorKind, ChatKind: m.ChatKind,
+		})
+	}
+	return marshal(out)
 }
 
 func (t *tools) history(ctx context.Context, args json.RawMessage) (string, error) {

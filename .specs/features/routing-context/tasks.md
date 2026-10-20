@@ -211,7 +211,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: INS-02, INS-03, CTX-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Tool returns name, instructions, members, own settings; non-member → error text; notice once per room on connect
+- [x] Tool returns name, instructions, members, own settings; non-member → error text; notice once per room on connect
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(channel): add room info tool and instructions notice`

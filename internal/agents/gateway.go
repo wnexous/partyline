@@ -44,6 +44,10 @@ func SkippedNotice(n int64) string {
 	return fmt.Sprintf("%d older messages skipped; use the history tool", n)
 }
 
+// InstructionsNotice is the welcome notice of a room that has instructions for its agents
+// (INS-03).
+const InstructionsNotice = "This room has instructions for its agents; call the room_info tool to read them."
+
 // PrincipalChecker reports whether an agent connection's token still authenticates.
 type PrincipalChecker interface {
 	PrincipalActive(ctx context.Context, p authn.Principal) (bool, error)
@@ -340,7 +344,8 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 // backlog delivers, per room of the agent (paused rooms excepted), the messages after the
 // agent's cursor that its delivery mode wants (MEM-03, MEM-04), oldest first and at most
 // BacklogLimit (AGT-08). When more are pending it first sends a notice with the skipped count
-// and moves the cursor past them (AGT-09). It returns the highest sequence number seen per
+// and moves the cursor past them (AGT-09). A room with instructions first gets one
+// InstructionsNotice, paused or not (INS-03). It returns the highest sequence number seen per
 // room.
 func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]int64, error) {
 	sent := map[string]int64{}
@@ -349,10 +354,15 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		return nil, err
 	}
 	for _, st := range states {
+		ref := dto.RoomRef{ID: st.ID, Name: st.Name}
+		if st.Instructions != "" { // INS-03: once per room and connection, before its messages
+			if err := c.write(ctx, dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Room: ref, Text: InstructionsNotice}); err != nil {
+				return nil, err
+			}
+		}
 		if st.AgentsPaused {
 			continue // DLV-08: no agent delivery while the loop guard holds the room
 		}
-		ref := dto.RoomRef{ID: st.ID, Name: st.Name}
 		// The count and the list read one snapshot, so a message posted in between cannot
 		// make the skipped count disagree with the cursor jump (S6).
 		var pending int64
