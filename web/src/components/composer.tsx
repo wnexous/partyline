@@ -18,7 +18,8 @@ import { cn } from "@/lib/utils";
 /*
  * Message composer (UI-07). Enter sends the trimmed text, Shift+Enter adds a line. Text over
  * MaxTextLength (MSG-02) cannot be sent; files alone can. Recipients default to every chat with
- * outbound on (DLV-03); picking chats sends to exactly those (DLV-04).
+ * outbound on (DLV-03); picking chats sends to exactly those (DLV-04). Recipients are chat ids
+ * (`RoomMember.member_id` of chat members), not room member ids; the server rejects others (422).
  */
 
 /** The counter appears once the text gets this close to the limit. */
@@ -85,7 +86,7 @@ function ComposerForm({
   const send = () => {
     if (!canSend) return;
     setError(null);
-    const chosen = recipients.filter((id) => chats.some((c) => c.id === id));
+    const chosen = recipients.filter((id) => chats.some((c) => c.member_id === id));
     post.mutate(
       {
         text: trimmed,
@@ -228,7 +229,7 @@ function RecipientsPicker({
   onChange: (ids: string[]) => void;
 }) {
   const { t } = useI18n();
-  const selected = value.filter((id) => chats.some((c) => c.id === id));
+  const selected = value.filter((id) => chats.some((c) => c.member_id === id));
   const label =
     selected.length === 0
       ? t("composer.toDefault")
@@ -266,8 +267,8 @@ function RecipientsPicker({
                 <input
                   type="checkbox"
                   className="size-4 accent-primary"
-                  checked={selected.includes(c.id)}
-                  onChange={() => toggle(c.id)}
+                  checked={selected.includes(c.member_id)}
+                  onChange={() => toggle(c.member_id)}
                 />
                 <span className="min-w-0 flex-1 truncate">{c.name}</span>
                 <span className="text-xs text-muted-foreground">

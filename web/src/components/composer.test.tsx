@@ -127,7 +127,7 @@ describe("composer (UI-07)", () => {
       "only discord{Enter}",
     );
     await waitFor(() => expect(posts(calls)).toHaveLength(1));
-    expect(posts(calls)[0]?.body).toEqual({ text: "only discord", recipients: ["mb-dev"] });
+    expect(posts(calls)[0]?.body).toEqual({ text: "only discord", recipients: ["c2"] });
   });
 
   it("uploads attached files as multipart with the message part", async () => {

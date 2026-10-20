@@ -51,7 +51,7 @@ Binding for every later web task.
 ## Data and contract notes
 - `useUpdateSharing` invalidates only `[kind]` and `[kind, id]` exactly (never timelines or members).
 - Message trust in the web app: dto.Message has no `trusted` flag. Chat messages show `untrusted` when `author_user_id` is empty, `trusted` when it is the viewer, `verified` when it is another user (only that user's agents trust it).
-- Composer recipients are room member ids (`RoomMember.id`) of chat members; none picked = omit `recipients` (server sends to chats with outbound on).
+- Composer recipients are chat ids (`RoomMember.member_id` of chat members), never `RoomMember.id`; anything else is a 422 on `recipients`. None picked = omit `recipients` (server sends to chats with outbound on).
 - Attachments render inline only for png/jpeg/gif/webp (what the server serves inline); SVG and everything else is a download link.
 - Agent Markdown: react-markdown without rehype-raw (raw HTML shows as text), default URL transform, links open in a new tab with `noopener noreferrer nofollow`, images become links.
 - DTO gaps for the backend: `Room` has no member count (rooms list omits it); `Message` has no viewer-relative trust flag (derived as above).
