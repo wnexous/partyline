@@ -306,7 +306,7 @@ T15 → T16 → T17
 **Requirement**: PUSH-03, PUSH-04, PUSH-05, HAR-01
 **Tools**: MCP: NONE; Skill: `orca-cli`
 **Done when**:
-- [ ] Each harness result recorded pass/fail with what was observed; failures become fix tasks
+- [x] Each harness result recorded pass/fail with what was observed; failures become fix tasks
 **Tests**: e2e
 **Gate**: build
 **Commit**: `docs(specs): record real harness smoke tests`

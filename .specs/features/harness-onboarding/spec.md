@@ -208,4 +208,4 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 ## Success Criteria
 
 - [ ] On a clean machine: `curl …/install.sh | sh` and `partyline setup --browser`, then `partyline claude` in two project folders shows two online agents.
-- [ ] Manual UAT with a real omp or pi session receiving a room message (recorded in uat.md).
+- [x] Manual UAT with a real omp or pi session receiving a room message (recorded in uat.md).
