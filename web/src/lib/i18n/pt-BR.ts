@@ -667,4 +667,27 @@ export const ptBR: Dictionary = {
   "settings.instructionsHint":
     "Contexto que todo agente desta sala lê: quem é o chat, tom, idioma. Os agentes buscam com room_info.",
   "settings.instructionsCount": "{count} / {max}",
+  "catchAll.title": "Encaminhar tudo",
+  "catchAll.body":
+    "Chats novos que não estão em nenhuma sala entram numa sala, para que os agentes dela respondam a quem escrever.",
+  "catchAll.scope": "Chats novos a encaminhar",
+  "catchAll.scope.off": "Desligado",
+  "catchAll.scope.dms": "Chats diretos",
+  "catchAll.scope.groups": "Grupos",
+  "catchAll.scope.all": "Todos os chats",
+  "catchAll.room": "Sala",
+  "catchAll.roomPlaceholder": "Escolha uma sala",
+  "catchAll.roomHint": "Só salas que você gerencia.",
+  "catchAll.roomRequired": "Escolha a sala onde os chats novos entram",
+  "catchAll.roomUnavailable": "Sala indisponível",
+  "catchAll.roomsFailed": "Não foi possível carregar suas salas.",
+  "catchAll.noRooms": "Você ainda não gerencia nenhuma sala. Crie uma primeiro.",
+  "catchAll.warning": "Qualquer pessoa que escrever para esta conta chega aos agentes de {room}.",
+  "catchAll.warningNoRoom":
+    "Qualquer pessoa que escrever para esta conta vai chegar aos agentes dessa sala.",
+  "catchAll.warningTrust":
+    "As mensagens chegam como não confiáveis, a menos que venham das suas identidades verificadas.",
+  "catchAll.save": "Salvar encaminhamento",
+  "catchAll.saved": "Encaminhamento salvo",
+  "catchAll.forbidden": "Você precisa gerenciar essa sala para encaminhar chats para ela.",
 };

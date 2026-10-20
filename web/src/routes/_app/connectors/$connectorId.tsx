@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { toast } from "sonner";
+import { ConnectorCatchAll } from "@/components/connector-catch-all";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { CodeBlock } from "@/components/copy-field";
 import { EmptyState } from "@/components/empty-state";
@@ -187,6 +188,8 @@ function ConnectorView({ connector: c, kind }: { connector: Connector; kind?: Co
             />
           </div>
         ) : null}
+
+        {canManage ? <ConnectorCatchAll connector={c} /> : null}
 
         {c.inbound_url ? (
           <Section title={t("connector.inboundTitle")}>

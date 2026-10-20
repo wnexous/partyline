@@ -661,6 +661,28 @@ export const en = {
   "settings.instructionsHint":
     "Context every agent in this room reads: who the chat is, tone, language. Agents fetch it with room_info.",
   "settings.instructionsCount": "{count} / {max}",
+  "catchAll.title": "Catch-all",
+  "catchAll.body":
+    "New chats that are in no room join one room, so its agents can answer whoever writes.",
+  "catchAll.scope": "New chats to route",
+  "catchAll.scope.off": "Off",
+  "catchAll.scope.dms": "Direct chats",
+  "catchAll.scope.groups": "Groups",
+  "catchAll.scope.all": "All chats",
+  "catchAll.room": "Room",
+  "catchAll.roomPlaceholder": "Pick a room",
+  "catchAll.roomHint": "Only rooms you manage.",
+  "catchAll.roomRequired": "Pick the room new chats join",
+  "catchAll.roomUnavailable": "Unavailable room",
+  "catchAll.roomsFailed": "Couldn’t load your rooms.",
+  "catchAll.noRooms": "You don’t manage any room yet. Create one first.",
+  "catchAll.warning": "Anyone who writes to this account reaches the agents in {room}.",
+  "catchAll.warningNoRoom": "Anyone who writes to this account will reach the agents of that room.",
+  "catchAll.warningTrust":
+    "Their messages arrive untrusted unless they come from your verified identities.",
+  "catchAll.save": "Save catch-all",
+  "catchAll.saved": "Catch-all saved",
+  "catchAll.forbidden": "You need manage access on that room to route chats to it.",
 } as const;
 
 export type MessageKey = keyof typeof en;

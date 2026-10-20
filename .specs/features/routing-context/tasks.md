@@ -283,7 +283,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: ROUTE-01, ROUTE-04
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Saving sends both fields; warning visible when scope ≠ off; 403 shown
+- [x] Saving sends both fields; warning visible when scope ≠ off; 403 shown
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): configure catch-all routing`
