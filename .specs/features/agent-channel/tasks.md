@@ -380,8 +380,8 @@ T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: TOOL-06 (S1 hardening)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Another user's 0700 dir → error "belongs to another user"; the user's own 0700 dir → nil
-- [ ] The test fails with the owner check disabled (N4)
+- [x] Another user's 0700 dir → error "belongs to another user"; the user's own 0700 dir → nil
+- [x] The test fails with the owner check disabled (N4)
 **Tests**: unit
 **Gate**: full
 **Commit**: `test(channel): refuse a download dir owned by another user`
