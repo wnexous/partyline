@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { MessageSquareOffIcon } from "lucide-react";
+import { Composer } from "@/components/composer";
 import { EmptyState } from "@/components/empty-state";
 import { MessageTimeline } from "@/components/message-timeline";
 import { VisibilityLabel } from "@/components/room-visibility";
@@ -35,6 +36,13 @@ function RoomPage() {
         <VisibilityLabel visibility={room.data.visibility} />
       </header>
       <MessageTimeline key={roomId} roomId={roomId} meId={me.id} members={members.data} />
+      <Composer
+        key={`composer-${roomId}`}
+        roomId={roomId}
+        roomName={room.data.name}
+        level={room.data.my_level}
+        members={members.data}
+      />
     </div>
   );
 }

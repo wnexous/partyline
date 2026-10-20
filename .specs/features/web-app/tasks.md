@@ -183,8 +183,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Enter sends trimmed text; Shift+Enter adds newline; over `MaxTextLength` disabled with counter
-- [ ] View-only user sees notice instead of composer
+- [x] Enter sends trimmed text; Shift+Enter adds newline; over `MaxTextLength` disabled with counter
+- [x] View-only user sees notice instead of composer
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add message composer`

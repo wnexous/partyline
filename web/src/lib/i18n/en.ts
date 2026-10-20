@@ -193,6 +193,25 @@ export const en = {
   "timeline.today": "Today",
   "timeline.yesterday": "Yesterday",
   "timeline.jumpLatest": "Jump to latest",
+
+  "composer.label": "Message {room}",
+  "composer.placeholder": "Message {room}",
+  "composer.send": "Send",
+  "composer.attach": "Attach files",
+  "composer.removeFile": "Remove {name}",
+  "composer.hint": "Enter to send · Shift+Enter for a new line",
+  "composer.readOnly": "You can read this room but not post. Ask a room manager for post access.",
+  "composer.forbidden": "You're not allowed to post in this room.",
+  "composer.tooLarge": "Those files are too large for this server.",
+  "composer.rateLimited": "Too many messages at once. Wait a moment and send again.",
+  "composer.toDefault": "To: chats with outbound on",
+  "composer.toOne": "To: 1 chat",
+  "composer.toMany": "To: {count} chats",
+  "composer.recipientsTitle": "Send to chats",
+  "composer.recipientsBody":
+    "By default a message reaches every chat with outbound on. Pick chats to send only to them.",
+  "composer.recipientsReset": "Back to chats with outbound on",
+  "composer.outboundOff": "outbound off",
 } as const;
 
 export type MessageKey = keyof typeof en;

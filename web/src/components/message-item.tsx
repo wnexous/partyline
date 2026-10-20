@@ -184,7 +184,7 @@ export const MessageItem = memo(function MessageItem({
     >
       <div className="flex justify-center">
         {grouped ? (
-          <span className="pt-1 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100">
+          <span className="absolute top-1 right-4 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 md:right-6">
             {time}
           </span>
         ) : (

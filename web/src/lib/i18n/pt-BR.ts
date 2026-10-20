@@ -195,4 +195,24 @@ export const ptBR: Dictionary = {
   "timeline.today": "Hoje",
   "timeline.yesterday": "Ontem",
   "timeline.jumpLatest": "Ir para a mais recente",
+
+  "composer.label": "Mensagem para {room}",
+  "composer.placeholder": "Mensagem para {room}",
+  "composer.send": "Enviar",
+  "composer.attach": "Anexar arquivos",
+  "composer.removeFile": "Remover {name}",
+  "composer.hint": "Enter envia · Shift+Enter quebra a linha",
+  "composer.readOnly":
+    "Você pode ler esta sala, mas não postar. Peça acesso de postagem a quem gerencia a sala.",
+  "composer.forbidden": "Você não tem permissão para postar nesta sala.",
+  "composer.tooLarge": "Esses arquivos são grandes demais para este servidor.",
+  "composer.rateLimited": "Mensagens demais de uma vez. Espere um pouco e envie de novo.",
+  "composer.toDefault": "Para: chats com saída ligada",
+  "composer.toOne": "Para: 1 chat",
+  "composer.toMany": "Para: {count} chats",
+  "composer.recipientsTitle": "Enviar para chats",
+  "composer.recipientsBody":
+    "Por padrão a mensagem chega a todos os chats com saída ligada. Escolha chats para enviar só a eles.",
+  "composer.recipientsReset": "Voltar para os chats com saída ligada",
+  "composer.outboundOff": "saída desligada",
 };
