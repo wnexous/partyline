@@ -219,6 +219,7 @@ export const ptBR: Dictionary = {
   "composer.recipientsBodyExplicit":
     "Esta sala só responde aos chats que você escolher; sem escolha, a mensagem não chega a nenhum chat.",
   "composer.recipientsClear": "Limpar chats escolhidos",
+  "composer.recipientsLimit": "No máximo {count} chats por mensagem",
   "composer.toOne": "Para: 1 chat",
   "composer.toMany": "Para: {count} chats",
   "composer.recipientsTitle": "Enviar para chats",

@@ -850,7 +850,7 @@ T48 → T49 → T50 → T51 → T52 → T53 → T54
 **Requirement**: A11Y-05, ROUTE-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] focus on the picker after Send; 11th chat disabled with the inline note; unpicking one enables the rest again
+- [x] focus on the picker after Send; 11th chat disabled with the inline note; unpicking one enables the rest again
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(web): focus the chat picker and stop it at 10 chats`

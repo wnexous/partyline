@@ -276,6 +276,69 @@ describe("composer in a room that answers chats explicitly (ROUTE-06)", () => {
     expect(posts(calls)[0]?.body).toEqual({ text: "hello", recipients: ["c1"] });
   });
 
+  it("moves focus to the chat picker after Send without a chat (A11Y-05)", async () => {
+    mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderExplicit();
+    const box = screen.getByRole("textbox", { name: "Message inbox" });
+    await user.type(box, "hello{Enter}");
+    expect(box).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(screen.getByRole("button", { name: /To: choose a chat/ })).toHaveFocus();
+  });
+
+  it("stops the picker at 10 chats per message (ROUTE-10)", async () => {
+    const many: RoomMember[] = Array.from({ length: 11 }, (_, i) => ({
+      ...(chats[0] as RoomMember),
+      id: `mb-${i}`,
+      member_id: `c${i}`,
+      name: `Customer ${i}`,
+    }));
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderExplicit(many);
+    await user.click(screen.getByRole("button", { name: /To: choose a chat/ }));
+    const dialog = await screen.findByRole("dialog");
+    const box = (i: number) =>
+      within(dialog).getByRole("checkbox", { name: new RegExp(`Customer ${i}\\b`) });
+    for (let i = 0; i < 10; i++) await user.click(box(i));
+    expect(within(dialog).getByText("At most 10 chats per message")).toBeInTheDocument();
+    expect(box(10)).toBeDisabled();
+    expect(box(10)).toHaveAccessibleDescription("At most 10 chats per message");
+    expect(box(9)).toBeEnabled();
+    await user.click(box(10));
+    expect(box(10)).not.toBeChecked();
+
+    await user.click(box(0));
+    expect(box(10)).toBeEnabled();
+    expect(within(dialog).queryByText("At most 10 chats per message")).toBeNull();
+    await user.click(box(10));
+    await user.keyboard("{Escape}");
+    await user.type(screen.getByRole("textbox", { name: "Message inbox" }), "hi{Enter}");
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(posts(calls)[0]?.body).toEqual({
+      text: "hi",
+      recipients: ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10"],
+    });
+  });
+
+  it("says the 10-chat limit in pt-BR", async () => {
+    const many: RoomMember[] = Array.from({ length: 10 }, (_, i) => ({
+      ...(chats[0] as RoomMember),
+      id: `mb-${i}`,
+      member_id: `c${i}`,
+      name: `Cliente ${i}`,
+    }));
+    mockApi({});
+    useLiveStore.setState({ locale: "pt-BR" });
+    const user = userEvent.setup();
+    renderExplicit(many);
+    await user.click(screen.getByRole("button", { name: /Para: escolha um chat/ }));
+    const dialog = await screen.findByRole("dialog");
+    for (const c of within(dialog).getAllByRole("checkbox")) await user.click(c);
+    expect(within(dialog).getByText("No máximo 10 chats por mensagem")).toBeInTheDocument();
+  });
+
   it("says to pick a chat in pt-BR (A11Y-05)", async () => {
     const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
     useLiveStore.setState({ locale: "pt-BR" });

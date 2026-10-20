@@ -216,6 +216,7 @@ export const en = {
   "composer.recipientsBodyExplicit":
     "This room only answers the chats you pick; without one, the post reaches no chat.",
   "composer.recipientsClear": "Clear chosen chats",
+  "composer.recipientsLimit": "At most {count} chats per message",
   "composer.toOne": "To: 1 chat",
   "composer.toMany": "To: {count} chats",
   "composer.recipientsTitle": "Send to chats",

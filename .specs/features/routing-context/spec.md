@@ -92,7 +92,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 7. WHEN a room becomes a connector's `auto_route_room_id` THEN the system SHALL turn its `broadcast` and `bridge_chats` off, and WHILE it is any connector's catch-all room a PATCH turning either on SHALL get 422 on that field (`must stay off while the room is a catch-all room`) and apply nothing. (ROUTE-07)
 8. IF a connector already auto-added 60 chats in the last hour, or its catch-all room already has 1,000 chats, THEN the system SHALL NOT add a new chat, record it as a chat (amended in fix iteration 2) nor store its message and SHALL set the connector status detail to `auto-route limit reached`; the next successful route SHALL clear it. (ROUTE-08)
 9. WHEN a chat is routed to the catch-all room again, or a manager saves the connector's catch-all settings, THEN the system SHALL clear an `auto-route room unavailable` or `auto-route limit reached` status detail and leave other details unchanged. (ROUTE-09)
-10. IF a user or agent post names more than 10 distinct chats in `recipients` (the channel's `chat_ids`) THEN the system SHALL respond 422 with field `recipients` = `at most 10 chats per message` and store nothing, and the `send_message` tool and the channel instructions SHALL state the limit. (ROUTE-10, fix iteration 2)
+10. IF a user or agent post names more than 10 distinct chats in `recipients` (the channel's `chat_ids`) THEN the system SHALL respond 422 with field `recipients` = `at most 10 chats per message` and store nothing, and the `send_message` tool and the channel instructions SHALL state the limit; the web chat picker SHALL stop at 10 picked chats, with the other chats disabled and described by `At most 10 chats per message` (pt-BR `No máximo 10 chats por mensagem`). (ROUTE-10, fix iteration 2; web picker added after verification iteration 3)
 11. The system SHALL serialize catch-all additions per connector, so that one connector's routes never wait for another connector's, and SHALL still record a chat that is not routed for any reason other than a cap (out of scope, skipped, room unavailable, message without content). (ROUTE-11, fix iteration 2)
 
 **Independent Test**: Connector with scope `dms` and a room with an agent; a new DM reaches the agent, a new group does not.
@@ -180,7 +180,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 2. WHEN a manager saves agent settings with a keyword typed but not yet added THEN the app SHALL add it (or show its error and send nothing). (A11Y-02)
 3. The room instructions counter SHALL describe the instructions textarea. (A11Y-03)
 4. WHILE the catch-all form has no change, Save SHALL stay disabled and be described by `No changes to save.` (A11Y-04)
-5. WHEN a user presses Enter or Send without a picked chat in a room that does not broadcast and has chats with outbound on THEN the composer SHALL post nothing and show `Pick a chat to answer` (pt-BR: `Escolha um chat para responder`) as an alert that describes the chat picker; in a catch-all room the bridge switch, like the broadcast switch, SHALL be described by the lock reason. (A11Y-05, fix iteration 2)
+5. WHEN a user presses Enter or Send without a picked chat in a room that does not broadcast and has chats with outbound on THEN the composer SHALL post nothing and show `Pick a chat to answer` (pt-BR: `Escolha um chat para responder`) as an alert that describes the chat picker, and Send SHALL move focus to the chat picker while Enter keeps it in the message box; in a catch-all room the bridge switch, like the broadcast switch, SHALL be described by the lock reason. (A11Y-05, fix iteration 2)
 
 ---
 
@@ -216,7 +216,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROUTE-07 | P1: Catch-all | Fix iteration 1 | Implemented (T23, T31), stays-off edge tested (T41), re-verify |
 | ROUTE-08 | P1: Catch-all | Fix iteration 1 | Implemented (T25), concurrent burst tested (T37), amended: capped chats not recorded (T44), per-connector window tested (T50), re-verify |
 | ROUTE-09 | P1: Catch-all | Fix iteration 1 | Implemented (T26), status event tested (T40), re-verify |
-| ROUTE-10 | P1: Catch-all | Fix iteration 2 | Implemented (T43) |
+| ROUTE-10 | P1: Catch-all | Fix iteration 2 | Implemented (T43), web picker stops at 10 (T53), re-verify |
 | ROUTE-11 | P1: Catch-all | Fix iteration 2 | Implemented (T44), per-connector window and skipped-chat recording tested (T50, T51), re-verify |
 | MEM-01 | P1: Membership settings | Tasks | Implementing |
 | MEM-02 | P1: Membership settings | Tasks | Implementing |
@@ -241,7 +241,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | A11Y-02 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
 | A11Y-03 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
 | A11Y-04 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
-| A11Y-05 | P2: Accessible forms | Fix iteration 2 | Implemented (T42), pt-BR text tested (T52), re-verify |
+| A11Y-05 | P2: Accessible forms | Fix iteration 2 | Implemented (T42), pt-BR text tested (T52), focus on the picker after Send (T53), re-verify |
 
 **Coverage:** 43 total, mapped in tasks.md
 
