@@ -150,7 +150,7 @@ T13 → T14 → T15 → T16
 **Requirement**: MEM-01, MEM-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake connector receives no header when unsigned, display name when set, agent name by default
+- [x] Fake connector receives no header when unsigned, display name when set, agent name by default
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(connectors): honor agent signature and display name outbound`

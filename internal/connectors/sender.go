@@ -33,8 +33,8 @@ func NewSender(st *store.Store, rs *rooms.Service, blobs *attachments.Store, m *
 var _ delivery.Sender = (*Sender)(nil)
 
 // Send loads the message, its stored attachments and the chat, adds the quote when the
-// replied message came from or was sent to the same chat, and sends it through the chat's
-// connector. A stopped connector fails with ErrNotRunning, so the outbox retries (CON-05).
+// replied message came from or was sent to the same chat, sets the author from the agent
+// member's settings (MEM-01, MEM-02), and sends it through the chat's connector. A stopped connector fails with ErrNotRunning, so the outbox retries (CON-05).
 func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) {
 	chat, err := s.store.R().GetChat(ctx, d.ChatID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -55,6 +55,19 @@ func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) 
 	out := Outbound{
 		ChatID: chat.ExternalID, Text: msg.Text, MessageID: msg.ID, RoomID: msg.RoomID,
 		AuthorName: msg.AuthorName, CreatedAt: time.UnixMilli(msg.CreatedAt).UTC(),
+	}
+	if msg.AuthorKind == string(dto.AuthorKindAgent) {
+		// MEM-01: an agent member with its signature off sends without the author header;
+		// AuthorName is already its display name in the room when it has one (MEM-02).
+		m, err := s.store.R().GetRoomMemberByMember(ctx, db.GetRoomMemberByMemberParams{
+			RoomID: msg.RoomID, Kind: string(dto.MemberKindAgent), MemberID: msg.AuthorID,
+		})
+		switch {
+		case err == nil && !m.SignOutbound:
+			out.AuthorName = ""
+		case err != nil && !errors.Is(err, sql.ErrNoRows):
+			return "", err
+		}
 	}
 	if msg.ReplyTo != "" {
 		if out.ReplyToID, out.ReplyToSenderID, err = s.quote(ctx, msg.ReplyTo, chat.ID); err != nil {

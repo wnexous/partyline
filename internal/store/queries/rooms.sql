@@ -62,3 +62,6 @@ WHERE id = ?;
 
 -- name: DeleteRoomMember :exec
 DELETE FROM room_members WHERE id = ?;
+
+-- name: GetRoomMemberByMember :one
+SELECT * FROM room_members WHERE room_id = ? AND kind = ? AND member_id = ?;

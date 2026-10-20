@@ -156,6 +156,35 @@ func (q *Queries) GetRoomMember(ctx context.Context, arg GetRoomMemberParams) (R
 	return i, err
 }
 
+const getRoomMemberByMember = `-- name: GetRoomMemberByMember :one
+SELECT id, room_id, kind, member_id, outbound, added_by, created_at, display_name, sign_outbound, delivery, keywords_json FROM room_members WHERE room_id = ? AND kind = ? AND member_id = ?
+`
+
+type GetRoomMemberByMemberParams struct {
+	RoomID   string
+	Kind     string
+	MemberID string
+}
+
+func (q *Queries) GetRoomMemberByMember(ctx context.Context, arg GetRoomMemberByMemberParams) (RoomMember, error) {
+	row := q.db.QueryRowContext(ctx, getRoomMemberByMember, arg.RoomID, arg.Kind, arg.MemberID)
+	var i RoomMember
+	err := row.Scan(
+		&i.ID,
+		&i.RoomID,
+		&i.Kind,
+		&i.MemberID,
+		&i.Outbound,
+		&i.AddedBy,
+		&i.CreatedAt,
+		&i.DisplayName,
+		&i.SignOutbound,
+		&i.Delivery,
+		&i.KeywordsJson,
+	)
+	return i, err
+}
+
 const getRoomWithOwner = `-- name: GetRoomWithOwner :one
 SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, u.username AS owner_username, u.display_name AS owner_display_name,
        (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count

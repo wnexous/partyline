@@ -160,3 +160,80 @@ func TestDisabledConnectorSendFailsIntoRetry(t *testing.T) {
 	require.Equal(t, "connector is not running", item.LastError)
 	require.Empty(t, e.inst.Sent())
 }
+
+// patchAgentMember changes the settings of the room's only agent member.
+func (e *outboundEnv) patchAgentMember(t *testing.T, roomID string, req dto.UpdateMemberRequest) {
+	t.Helper()
+	for _, m := range testkit.Decode[dto.List[dto.RoomMember]](e.alice.Get("/api/v1/rooms/" + roomID + "/members").RequireStatus(http.StatusOK)).Items {
+		if m.Kind == dto.MemberKindAgent {
+			e.alice.Patch("/api/v1/rooms/"+roomID+"/members/"+m.ID, req).RequireStatus(http.StatusOK)
+			return
+		}
+	}
+	t.Fatal("no agent member")
+}
+
+func (e *outboundEnv) agentPost(t *testing.T, roomID, text string) dto.Message {
+	t.Helper()
+	return testkit.Decode[dto.Message](e.agent.Post("/api/v1/agent/rooms/"+roomID+"/messages", dto.PostMessageRequest{Text: text}).RequireStatus(http.StatusCreated))
+}
+
+func (e *outboundEnv) authorName(t *testing.T, roomID, messageID string) string {
+	t.Helper()
+	for _, m := range e.messages(t, roomID) {
+		if m.ID == messageID {
+			return m.AuthorName
+		}
+	}
+	t.Fatalf("message %s not in room", messageID)
+	return ""
+}
+
+// MEM-01, MEM-02: the connector gets the agent name as author by default, the member's
+// display name when set (also shown in the room timeline), and no author when the member's
+// signature is off. Settings are per room: the same agent in another room keeps its name.
+// Users keep their own display name.
+func TestOutboundAuthorFollowsMemberSettings(t *testing.T) {
+	e := newOutboundEnv(t)
+
+	m := e.agentPost(t, e.room.ID, "default")
+	sent := e.inst.WaitSend(t)
+	require.Equal(t, m.ID, sent.MessageID)
+	require.Equal(t, "helper", sent.AuthorName)
+
+	e.patchAgentMember(t, e.room.ID, dto.UpdateMemberRequest{DisplayName: ptr("Lolo")})
+	m = e.agentPost(t, e.room.ID, "named")
+	require.Equal(t, "Lolo", m.AuthorName, "the post response shows the display name")
+	sent = e.inst.WaitSend(t)
+	require.Equal(t, m.ID, sent.MessageID)
+	require.Equal(t, "Lolo", sent.AuthorName)
+	require.Equal(t, "named", sent.Text)
+	require.Equal(t, "Lolo", e.authorName(t, e.room.ID, m.ID), "the timeline shows the display name")
+
+	e.patchAgentMember(t, e.room.ID, dto.UpdateMemberRequest{SignOutbound: ptr(false)})
+	m = e.agentPost(t, e.room.ID, "unsigned")
+	sent = e.inst.WaitSend(t)
+	require.Equal(t, m.ID, sent.MessageID)
+	require.Equal(t, "", sent.AuthorName)
+	require.Equal(t, "unsigned", sent.Text)
+	require.Equal(t, "Lolo", e.authorName(t, e.room.ID, m.ID), "the timeline still names the author")
+
+	// Another room with the same agent and chat: no display name, signature on.
+	other := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "other"}).RequireStatus(http.StatusCreated))
+	members := testkit.Decode[dto.List[dto.RoomMember]](e.alice.Get("/api/v1/rooms/" + e.room.ID + "/members").RequireStatus(http.StatusOK)).Items
+	for _, mb := range members {
+		e.alice.Post("/api/v1/rooms/"+other.ID+"/members", dto.AddMemberRequest{Kind: mb.Kind, MemberID: mb.MemberID}).RequireStatus(http.StatusCreated)
+	}
+	m = e.agentPost(t, other.ID, "elsewhere")
+	sent = e.inst.WaitSend(t)
+	require.Equal(t, m.ID, sent.MessageID)
+	require.Equal(t, "helper", sent.AuthorName)
+	require.Equal(t, "helper", e.authorName(t, other.ID, m.ID))
+
+	u := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: "from alice"}).RequireStatus(http.StatusCreated))
+	sent = e.inst.WaitSend(t)
+	require.Equal(t, u.ID, sent.MessageID)
+	require.Equal(t, "alice", sent.AuthorName)
+}
+
+func ptr[T any](v T) *T { return &v }
