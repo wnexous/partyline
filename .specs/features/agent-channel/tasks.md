@@ -440,8 +440,8 @@ T19 → T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AGT-07, AGT-03 (S5)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A server ping after pushed frames and before initialize gets its pong
-- [ ] After initialize the buffered frames arrive in order, each acked after its notification
+- [x] A server ping after pushed frames and before initialize gets its pong
+- [x] After initialize the buffered frames arrive in order, each acked after its notification
 **Tests**: integration
 **Gate**: full
 **Commit**: `fix(channel): keep reading the agent socket before initialization`

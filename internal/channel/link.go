@@ -75,6 +75,8 @@ func nextBackoff(d, maxDelay time.Duration) time.Duration {
 // notifier is where the link sends channel notifications (the MCP server).
 type notifier interface {
 	Notify(method string, params any) error
+	// Initialized is closed once the client may receive notifications.
+	Initialized() <-chan struct{}
 }
 
 // linkState is the connection state the tools report.
@@ -244,10 +246,29 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 	})
 	defer stop()
 
+	// The reader only queues frames; a delivery goroutine turns them into notifications once
+	// Claude Code is initialized. So the socket is read, pings are answered and closes are
+	// seen even before notifications/initialized.
+	q := newFrameQueue()
+	var deliverErr error
+	delivered := make(chan struct{})
+	go func() {
+		defer close(delivered)
+		if err := l.deliver(readCtx, ws, q); err != nil {
+			deliverErr = err
+			_ = ws.CloseNow() // ends the read below
+		}
+	}()
+
 	for {
 		_, data, err := ws.Read(readCtx)
 		if err != nil {
 			_ = ws.CloseNow()
+			stopRead()
+			<-delivered
+			if deliverErr != nil && !errors.Is(deliverErr, mcp.ErrClosed) && !errors.Is(deliverErr, errAck) {
+				return outDropped, deliverErr // the notification output failed
+			}
 			switch websocket.CloseStatus(err) {
 			case closeReplaced:
 				return outReplaced, nil
@@ -256,18 +277,72 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 			case closeLagged:
 				return outLagged, nil
 			}
-			return outDropped, nil
+			return outDropped, nil // dropped, shutting down (ctx ends next) or a failed ack
 		}
-		if err := l.handle(readCtx, ws, data); err != nil {
-			if errors.Is(err, mcp.ErrClosed) {
-				return outDropped, nil // shutting down: ctx ends next
-			}
-			if errors.Is(err, errAck) {
-				_ = ws.CloseNow()
-				return outDropped, nil
-			}
-			_ = ws.CloseNow()
-			return outDropped, err
+		q.push(data)
+	}
+}
+
+// deliver waits until Claude Code is initialized, then handles the queued frames in order
+// until ctx ends. Frames still queued then are not acknowledged, so the backlog sends them
+// again after a reconnect.
+func (l *link) deliver(ctx context.Context, ws *websocket.Conn, q *frameQueue) error {
+	select {
+	case <-l.notify.Initialized():
+	case <-ctx.Done():
+		return nil
+	}
+	for {
+		data, ok := q.pop(ctx)
+		if !ok {
+			return nil
+		}
+		if err := l.handle(ctx, ws, data); err != nil {
+			return err
+		}
+	}
+}
+
+// frameQueue holds the frames read from the socket until they are delivered. It is not
+// bounded: before initialization it holds the backlog (at most 50 per room) and the live
+// messages of the first moments.
+type frameQueue struct {
+	mu    sync.Mutex
+	items [][]byte
+	ready chan struct{}
+}
+
+func newFrameQueue() *frameQueue { return &frameQueue{ready: make(chan struct{}, 1)} }
+
+func (q *frameQueue) push(data []byte) {
+	q.mu.Lock()
+	q.items = append(q.items, data)
+	q.mu.Unlock()
+	select {
+	case q.ready <- struct{}{}:
+	default:
+	}
+}
+
+// pop returns the oldest frame, waiting for one; false when ctx ends first.
+func (q *frameQueue) pop(ctx context.Context) ([]byte, bool) {
+	for {
+		if ctx.Err() != nil {
+			return nil, false
+		}
+		q.mu.Lock()
+		if len(q.items) > 0 {
+			data := q.items[0]
+			q.items[0] = nil
+			q.items = q.items[1:]
+			q.mu.Unlock()
+			return data, true
+		}
+		q.mu.Unlock()
+		select {
+		case <-q.ready:
+		case <-ctx.Done():
+			return nil, false
 		}
 	}
 }

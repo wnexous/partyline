@@ -118,6 +118,9 @@ func (s *Server) Notify(method string, params any) error {
 	return s.write(notification{JSONRPC: "2.0", Method: method, Params: params})
 }
 
+// Initialized is closed once the client has sent notifications/initialized.
+func (s *Server) Initialized() <-chan struct{} { return s.initialized }
+
 type request struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`

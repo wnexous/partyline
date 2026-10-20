@@ -147,6 +147,91 @@ func TestLinkAcksOnlyAfterNotificationWritten(t *testing.T) {
 	}
 }
 
+// S5, AGT-07: before notifications/initialized the link keeps reading the socket: a server
+// ping is answered and a close is seen while pushed messages wait. After initialization the
+// held messages arrive in order, each acknowledged after its notification.
+func TestLinkReadsSocketBeforeInitialized(t *testing.T) {
+	frame := func(id string, seq int64) dto.AgentMessageFrame {
+		return dto.AgentMessageFrame{Type: dto.AgentFrameTypeMessage, AgentMessage: dto.AgentMessage{
+			Room:    dto.RoomRef{ID: "r1", Name: "Support"},
+			Message: dto.Message{ID: id, RoomID: "r1", Seq: seq, AuthorKind: dto.AuthorKindUser, Kind: dto.MessageKindText, Text: "hi " + id},
+		}}
+	}
+	// gateway sends welcome and two messages, then closes with closeWith when it is set, or
+	// else pings (pinged gets the result) and stays open.
+	gateway := func(t *testing.T, closeWith websocket.StatusCode) (url string, pinged chan error, acks chan string) {
+		pinged, acks = make(chan error, 1), make(chan string, 16)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ws, err := websocket.Accept(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer func() { _ = ws.CloseNow() }()
+			ctx := r.Context()
+			go func() { // the server reads acks (and the pong) concurrently
+				for {
+					_, data, err := ws.Read(ctx)
+					if err != nil {
+						return
+					}
+					var a dto.AgentAckFrame
+					if json.Unmarshal(data, &a) == nil && a.Type == dto.AgentFrameTypeAck {
+						acks <- a.MessageID
+					}
+				}
+			}()
+			welcome := dto.AgentWelcomeFrame{Type: dto.AgentFrameTypeWelcome, Agent: dto.AgentInfo{ID: "a1", Name: "builder", Owner: "alice"}}
+			for _, f := range []any{welcome, frame("m1", 1), frame("m2", 2)} {
+				data, _ := json.Marshal(f)
+				if ws.Write(ctx, websocket.MessageText, data) != nil {
+					return
+				}
+			}
+			if closeWith != 0 {
+				_ = ws.Close(closeWith, "deleted")
+				return
+			}
+			pctx, cancel := context.WithTimeout(ctx, wait)
+			pinged <- ws.Ping(pctx)
+			cancel()
+			<-ctx.Done()
+		}))
+		t.Cleanup(srv.Close)
+		return srv.URL, pinged, acks
+	}
+	options := func(url string) Options {
+		return Options{URL: url, Token: "pl_agent_test", Agent: "builder", TempDir: t.TempDir(), timing: fastTiming}
+	}
+
+	t.Run("ping answered, messages held until initialized", func(t *testing.T) {
+		url, pinged, acks := gateway(t, 0)
+		s := startSession(t, options(url))
+		select {
+		case err := <-pinged:
+			require.NoError(t, err, "the ping before initialization gets its pong")
+		case <-time.After(wait):
+			require.FailNow(t, "the ping before initialization was not answered")
+		}
+		require.Empty(t, acks, "nothing is acknowledged before initialization")
+		s.handshake()
+		for _, id := range []string{"m1", "m2"} {
+			require.Equal(t, id, s.notification().Meta["message_id"])
+			select {
+			case got := <-acks:
+				require.Equal(t, id, got)
+			case <-time.After(wait):
+				require.FailNow(t, "missing ack", id)
+			}
+		}
+	})
+
+	t.Run("close seen before initialized", func(t *testing.T) {
+		url, _, _ := gateway(t, closeDeleted)
+		s := startSession(t, options(url))
+		require.Eventually(t, func() bool { return strings.Contains(s.stderr.String(), "agent builder was deleted") }, wait, 10*time.Millisecond)
+	})
+}
+
 // AGT-03: after the connection drops (server restart) the channel reconnects; messages
 // posted meanwhile are delivered and the server shows the agent offline, then online.
 func TestLinkReconnectsAfterServerRestart(t *testing.T) {
@@ -220,6 +305,11 @@ func linkFor(t *testing.T, e *chanEnv, tm timing) *link {
 type discard struct{}
 
 func (discard) Notify(string, any) error { return nil }
+
+func (discard) Initialized() <-chan struct{} { return closedChan }
+
+// closedChan is an Initialized channel of a notifier that is ready at once.
+var closedChan = func() chan struct{} { c := make(chan struct{}); close(c); return c }()
 
 // AGT-02: link error text for an invalid token.
 func TestLinkErrInvalidToken(t *testing.T) {
@@ -327,6 +417,8 @@ func (w *failingWriter) Write(p []byte) (int, error) {
 type discardNotifier struct{}
 
 func (discardNotifier) Notify(string, any) error { return nil }
+
+func (discardNotifier) Initialized() <-chan struct{} { return closedChan }
 
 // AGT-03: while the server is unreachable the link retries after 1 s, doubling up to 30 s.
 // The waits are recorded instead of slept.
