@@ -114,6 +114,13 @@ func (f *fakeSession) Channel(id string, _ ...discordgo.RequestOption) (*discord
 	return nil, errors.New("unknown channel")
 }
 
+func (f *fakeSession) Guild(id string, _ ...discordgo.RequestOption) (*discordgo.Guild, error) {
+	if id == guildID {
+		return &discordgo.Guild{ID: id, Name: "Test Guild"}, nil
+	}
+	return nil, errors.New("unknown guild")
+}
+
 func (f *fakeSession) sent() []sent {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -169,7 +176,7 @@ func TestBotMessagesAreIgnored(t *testing.T) {
 	require.Equal(t, "M1", in.MessageID, "the bot's message was not emitted")
 	require.Equal(t, channelID, in.ChatID)
 	require.Equal(t, "channel", in.ChatKind)
-	require.Equal(t, "#general", in.ChatTitle)
+	require.Equal(t, "Test Guild #general", in.ChatTitle, "DC-01: the title ListChats gives the channel")
 	require.Equal(t, userID, in.SenderID)
 	require.Equal(t, "Test Person", in.SenderName)
 	require.Equal(t, "hello", in.Text)
@@ -268,11 +275,15 @@ func TestSendPrefixesAuthorAndSendsFilesAlone(t *testing.T) {
 	require.Equal(t, map[string]string{"a.png": "png"}, sends[1].Files)
 }
 
-// DC-03: the text channels of every guild are listed.
+// DC-03: the text channels of every guild are listed; DC-01: an inbound message of a
+// listed channel carries the same title.
 func TestListChats(t *testing.T) {
-	c := newWithSession(newFakeSession(), connectors.Deps{})
+	f := newFakeSession()
+	c, rec := start(t, f)
 	chats, err := c.ListChats(context.Background())
 	require.NoError(t, err)
+	f.emit(userMessage("M9", "hi"))
+	require.Equal(t, chats[0].Title, rec.NextInbound(t).ChatTitle)
 	require.Equal(t, []connectors.ChatInfo{
 		{ID: channelID, Title: "Test Guild #general", Kind: "channel"},
 		{ID: "200000000000000003", Title: "Test Guild #news", Kind: "channel"},

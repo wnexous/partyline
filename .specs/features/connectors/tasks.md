@@ -343,7 +343,7 @@ get their own per-IP budget (over it: 429, no audit entry).
 **Requirement**: DC-01, DC-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Inbound title equals the listed title for the same channel
+- [x] Inbound title equals the listed title for the same channel
 **Tests**: integration
 **Gate**: full
 **Commit**: `fix(discord): use the guild and channel name as chat title everywhere`

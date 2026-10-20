@@ -53,6 +53,7 @@ type session interface {
 	UserGuilds(limit int, beforeID, afterID string, withCounts bool, options ...discordgo.RequestOption) ([]*discordgo.UserGuild, error)
 	GuildChannels(guildID string, options ...discordgo.RequestOption) ([]*discordgo.Channel, error)
 	Channel(channelID string, options ...discordgo.RequestOption) (*discordgo.Channel, error)
+	Guild(guildID string, options ...discordgo.RequestOption) (*discordgo.Guild, error)
 }
 
 var _ session = (*discordgo.Session)(nil)
@@ -140,7 +141,7 @@ func (c *Connector) onMessage(_ *discordgo.Session, m *discordgo.MessageCreate) 
 	if m.GuildID == "" {
 		in.ChatKind, in.ChatTitle = "dm", in.SenderName
 	} else {
-		in.ChatTitle = c.title(m.ChannelID)
+		in.ChatTitle = c.title(m.GuildID, m.ChannelID)
 	}
 	if m.MessageReference != nil {
 		in.ReplyToID = m.MessageReference.MessageID
@@ -178,8 +179,9 @@ func kindOf(mimeType string) dto.MessageKind {
 	return dto.MessageKindDocument
 }
 
-// title returns "#channel" for a guild channel, cached; empty when unknown.
-func (c *Connector) title(channelID string) string {
+// title returns "Guild #channel" for a guild channel, the title ListChats gives it
+// (DC-01, DC-03), cached; empty when unknown, which keeps the stored title.
+func (c *Connector) title(guildID, channelID string) string {
 	c.mu.Lock()
 	t, ok := c.titles[channelID]
 	c.mu.Unlock()
@@ -190,7 +192,11 @@ func (c *Connector) title(channelID string) string {
 	if err != nil || ch == nil {
 		return ""
 	}
-	t = "#" + ch.Name
+	g, err := c.s.Guild(guildID)
+	if err != nil || g == nil {
+		return ""
+	}
+	t = channelTitle(g.Name, ch.Name)
 	c.mu.Lock()
 	c.titles[channelID] = t
 	c.mu.Unlock()
@@ -260,6 +266,9 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 	return first, nil
 }
 
+// channelTitle is the chat title of a guild channel.
+func channelTitle(guild, channel string) string { return guild + " #" + channel }
+
 func closeAll(cs []io.Closer) {
 	for _, c := range cs {
 		_ = c.Close()
@@ -282,7 +291,7 @@ func (c *Connector) ListChats(ctx context.Context) ([]connectors.ChatInfo, error
 			if ch.Type != discordgo.ChannelTypeGuildText && ch.Type != discordgo.ChannelTypeGuildNews {
 				continue
 			}
-			out = append(out, connectors.ChatInfo{ID: ch.ID, Title: g.Name + " #" + ch.Name, Kind: "channel"})
+			out = append(out, connectors.ChatInfo{ID: ch.ID, Title: channelTitle(g.Name, ch.Name), Kind: "channel"})
 		}
 	}
 	return out, nil

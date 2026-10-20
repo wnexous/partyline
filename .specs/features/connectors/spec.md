@@ -122,9 +122,9 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 
 **Acceptance Criteria**:
 
-1. WHEN a guild or DM message is created by a non-bot user THEN the connector SHALL emit it with external id = channel id. (DC-01)
+1. WHEN a guild or DM message is created by a non-bot user THEN the connector SHALL emit it with external id = channel id and, for a guild channel, the chat title `<guild> #<channel>` that chat listing (DC-03) gives it. (DC-01)
 2. WHEN sending text THEN the connector SHALL split above 2,000 characters and set the message reference when replying. (DC-02)
-3. WHEN chats are refreshed THEN the connector SHALL list text channels of every guild the bot is in. (DC-03)
+3. WHEN chats are refreshed THEN the connector SHALL list text channels of every guild the bot is in, titled `<guild> #<channel>`. (DC-03)
 
 **Independent Test**: Adapter tested through an interface fake of the discordgo session.
 
