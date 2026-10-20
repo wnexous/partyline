@@ -175,6 +175,10 @@ describe("add connector (UI-16)", () => {
     await user.click(within(dialog).getByRole("button", { name: "Add connector" }));
 
     const secret = await screen.findByRole("dialog", { name: "Copy the generated secret" });
+    // While the secret is on screen, the cached connector already exists without it.
+    const cached = queryClient.getQueryData<Connector>(["connectors", "k9"]);
+    expect(cached?.id).toBe("k9");
+    expect(cached).not.toHaveProperty("generated_secrets");
     expect(calls.find((c) => c.method === "POST" && c.path === "/connectors")?.body).toEqual({
       kind: "webhook",
       name: "ci-hook",

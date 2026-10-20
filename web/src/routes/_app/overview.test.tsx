@@ -223,3 +223,28 @@ describe("dashboard (UI-15, UI-17)", () => {
     );
   });
 });
+
+describe("dashboard activity errors (UI-17)", () => {
+  it("shows the panel error when the activity feed fails, and retries it", async () => {
+    let activityCalls = 0;
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /agents": json(200, { items: [] }),
+      "GET /connectors": json(200, { items: [] }),
+      "GET /rooms": json(200, { items: [makeRoom({ id: "r1", name: "general", last_seq: 2 })] }),
+      "GET /activity": () => {
+        activityCalls++;
+        return json(500, { error: { code: "internal", message: "boom" } });
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/");
+    const activity = await screen.findByRole("region", { name: "Recent activity" });
+    const alert = await within(activity).findByRole("alert");
+    expect(alert).toHaveTextContent("Couldn’t load this section.");
+    expect(within(activity).queryByText(/quiet|no activity/i)).toBeNull();
+    const before = activityCalls;
+    await user.click(within(alert).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(activityCalls).toBeGreaterThan(before));
+  });
+});
