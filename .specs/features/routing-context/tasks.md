@@ -672,7 +672,7 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 **Requirement**: ROUTE-07 (edge case)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `broadcast` false and `catch_all` false right after clearing
+- [x] `broadcast` false and `catch_all` false right after clearing or moving the catch-all
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(api): keep broadcast off after the catch-all is cleared`

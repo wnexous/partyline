@@ -55,6 +55,25 @@ func TestCatchAllRoomStopsBroadcastAndBridge(t *testing.T) {
 	require.False(t, got.CatchAll)
 }
 
+// ROUTE-07 edge case: when no connector targets a room any more, because the catch-all was
+// cleared or moved to another room, its broadcast stays off until a manager turns it on.
+func TestBroadcastStaysOffAfterCatchAllIsCleared(t *testing.T) {
+	e := newCatchAllEnv(t)
+	first, second := createRoom(e.alice, "inbox"), createRoom(e.alice, "inbox 2")
+	path := connectorPath(e.aliceConn)
+	e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteScope: ptr(dto.AutoRouteScopeAll), AutoRouteRoomID: &first.ID}).RequireStatus(http.StatusOK)
+	e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteRoomID: &second.ID}).RequireStatus(http.StatusOK)
+	moved := getRoom(e.alice, first.ID)
+	require.False(t, moved.CatchAll)
+	require.False(t, moved.Broadcast, "moving the catch-all away leaves broadcast off")
+
+	e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteScope: ptr(dto.AutoRouteScopeOff), AutoRouteRoomID: ptr("")}).RequireStatus(http.StatusOK)
+	cleared := getRoom(e.alice, second.ID)
+	require.False(t, cleared.CatchAll)
+	require.False(t, cleared.Broadcast, "clearing the catch-all leaves broadcast off")
+	require.False(t, cleared.BridgeChats)
+}
+
 // ROUTE-06 (HTTP): in a room with broadcast off, user and agent posts without recipients are
 // stored, pushed to the agent and queued to no chat, and the response carries the warning;
 // replies (agent reply tool or reply_to) go to the replied chat; explicit recipients work.
