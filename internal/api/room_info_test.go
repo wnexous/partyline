@@ -320,9 +320,27 @@ func TestRoomTextWhitespaceDoesNotMoveTheAuthor(t *testing.T) {
 	require.False(t, trusted(f.rest()), "an untrimmed stored description compares trimmed")
 	require.True(t, trusted(helperRest))
 
+	setRoomText(t, f.env, f.room.ID, "Support (bob)\uFEFF", "Legacy text from bob.", f.bob.User.ID)
+	f.alice.Patch("/api/v1/rooms/"+f.room.ID, webSave("Support (bob)", "Legacy text from bob.", 9)).RequireStatus(http.StatusOK)
+	require.False(t, trusted(f.rest()), "an untrimmed stored name compares trimmed")
+	require.True(t, trusted(helperRest))
+
 	f.alice.Patch("/api/v1/rooms/"+f.room.ID, webSave("Support (bob)", "Customer support.", 9)).RequireStatus(http.StatusOK)
 	require.True(t, trusted(f.rest()), "a real change still makes alice the author")
 	require.False(t, trusted(helperRest))
+}
+
+// INS-06: creating a room stores its name, description and instructions trimmed.
+func TestRoomCreateStoresTrimmedText(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	created := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{
+		Name: " Desk room ", Description: " Desk\uFEFF", Instructions: "\n Reply in a day. ",
+	}).RequireStatus(http.StatusCreated))
+	got := testkit.Decode[dto.Room](alice.Get("/api/v1/rooms/" + created.ID).RequireStatus(http.StatusOK))
+	require.Equal(t, "Desk room", got.Name)
+	require.Equal(t, "Desk", got.Description)
+	require.Equal(t, "Reply in a day.", got.Instructions)
 }
 
 // INS-04 with the INS-06 trim rule: instructions are stored trimmed, and saving them again
