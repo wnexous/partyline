@@ -95,3 +95,47 @@ Binding conventions for Phase 2 (platform adapters T7-T11) and the web app. Type
 - `connectors.ManagerDeps.Wait` replaces the backoff sleep (fake clock in unit tests).
 - Assert "starts within 2 s" structurally (instance exists when the request returns, no backoff before the first Run), not
   against wall time: the shared host is loaded.
+
+# Contract Notes (from connectors Phase 2: platforms)
+
+Binding for the web app, the Verifier and later platforms. Kinds registered in `app.BuiltinKinds()`:
+`whatsapp`, `telegram`, `discord`, `webhook`.
+
+## Framework additions
+- `Handler.MigrateChat(ctx, oldID, newID)`: moves a chat to a new platform id keeping its record and rooms (Telegram
+  group → supergroup). No-op when the old id is unknown or the new id is already a chat of the connector
+  (`MigrateChatExternalID` query, `ChatDiscovered` on success). Every `Handler` implementation must have it.
+- `connectors.SplitText(text, limit)` (rune-based; breaks after the last newline, else last space, else at the limit;
+  parts join back to the text) and `connectors.AuthorLine(author, prefix, suffix, text)` for the author prefix.
+- `connectortest.NewRecorder()`: a `Handler` for adapter tests (`NextInbound`, `NextStatus`, `NextMigration`, `NoInbound`).
+- `Kind.Prepare func(Config) (Config, []string)`: completes a new connector's config before validation and names the
+  generated fields; `Service.Create` returns their values once in `View.Generated` → `dto.Connector.generated_secrets`
+  (create response only; every read masks them).
+- `connectors.HookReceiver` (`ReceiveHook(ctx, HookRequest{Timestamp, Signature, Body})`) for `InboundHook` kinds;
+  `Manager.Hook(id)` finds the running one. Errors: `ErrBadSignature` (401), `ErrRateLimited` (429), `ErrNotRunning`
+  (404), `*validation.Error` (422). `connectors.MaxHookBody` = 64 KiB (413 above).
+- `Deps.FileURL(attachmentID)`: signed, expiring (10 min) download link `<public URL>/api/v1/hooks/files/<token>`;
+  the token is the attachment id + expiry sealed with the instance key (`connectors.FileLinks`); forged, expired or
+  non-stored attachments answer 404. The link needs no login.
+
+## Adapters
+- Author prefix on outbound text: WhatsApp `*Name*\n`, Telegram `Name: ` (plain text, no parse mode), Discord
+  `**Name**: `; webhook sends `author_name` as a field.
+- **WhatsApp** (`base_url`, `api_key` secret, `instances` list). Chat id `<instance>|<bare jid>`; group kind for
+  `@g.us`, DM kind otherwise (DM title = push name); status broadcasts and protocol messages other than edit/revoke are
+  dropped. Reaction/edit/revoke set `ReplyToID` to the target message and carry a short text. `ChatTitle` is empty for
+  groups (names come from `ListChats`). Text goes to `/send/text` (quoted on replies), files to `/send/media` one by one
+  without caption; the returned id is the first sent message's. Run fails with `unauthorized` on 401/403.
+- **Telegram** (`bot_token` secret, `api_base` default `https://api.telegram.org`). Chat id = Telegram chat id; kinds
+  private → dm, channel → channel, else group. Offset is kept in memory across Run restarts. No `ListChats`.
+- **Discord** (`bot_token` secret). Chat id = channel id; guild channels are `channel` (title `#name`), DMs `dm`.
+  Mentions are disabled on sends (`AllowedMentions{}`); files ride on the last text part. discordgo reconnects by
+  itself; Run reports connected after `Open` and fails when `Open` fails.
+- **Webhook** (`secret` secret, generated when empty; `outbound_url` optional). Inbound chats are `channel` kind.
+  Outbound payload per design; `message.reply_to_external_id` omitted when empty; `attachments` always an array.
+  The returned id is the receiver's `{"message_id"}` when it answers one, else the room message id. Without
+  `outbound_url` every send fails (and is retried by the outbox).
+
+## Not done here (web app)
+- Show `generated_secrets.secret` once after creating a webhook connector, with `inbound_url` and the signing recipe
+  (`X-Partyline-Timestamp`, `X-Partyline-Signature: sha256=hex(HMAC_SHA256(secret, timestamp + "." + body))`).
