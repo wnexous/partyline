@@ -836,7 +836,7 @@ T48 → T49 → T50 → T51 → T52 → T53 → T54
 **Requirement**: A11Y-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] N30 re-applied in a scratch worktree is killed
+- [x] N30 re-applied in a scratch worktree is killed
 **Tests**: unit
 **Gate**: build
 **Commit**: `test(web): assert the pt-BR pick-a-chat alert`

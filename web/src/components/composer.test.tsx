@@ -276,6 +276,16 @@ describe("composer in a room that answers chats explicitly (ROUTE-06)", () => {
     expect(posts(calls)[0]?.body).toEqual({ text: "hello", recipients: ["c1"] });
   });
 
+  it("says to pick a chat in pt-BR (A11Y-05)", async () => {
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    useLiveStore.setState({ locale: "pt-BR" });
+    const user = userEvent.setup();
+    renderExplicit();
+    await user.type(screen.getByRole("textbox"), "olá{Enter}");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Escolha um chat para responder");
+    expect(posts(calls)).toHaveLength(0);
+  });
+
   it("posts to the agents when the room has no chat to answer", async () => {
     const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
     const user = userEvent.setup();

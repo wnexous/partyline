@@ -241,7 +241,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | A11Y-02 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
 | A11Y-03 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
 | A11Y-04 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
-| A11Y-05 | P2: Accessible forms | Fix iteration 2 | Implemented (T42) |
+| A11Y-05 | P2: Accessible forms | Fix iteration 2 | Implemented (T42), pt-BR text tested (T52), re-verify |
 
 **Coverage:** 43 total, mapped in tasks.md
 
