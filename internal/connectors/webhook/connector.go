@@ -353,10 +353,12 @@ type outReaction struct {
 	Message         outReactionBody `json:"message"`
 }
 
+// outReactionBody is the room's reaction message; author_name is left out when the agent
+// member does not sign its messages (REACT-04).
 type outReactionBody struct {
 	ID         string    `json:"id"`
 	RoomID     string    `json:"room_id"`
-	AuthorName string    `json:"author_name"`
+	AuthorName string    `json:"author_name,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 

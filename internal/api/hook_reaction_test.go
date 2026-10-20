@@ -44,3 +44,29 @@ func TestWebhookOutboundReaction(t *testing.T) {
 	item := e.firstAttempt(t, room.ID, r.ID)
 	require.Equal(t, dto.OutboxStatusSent, item.Status)
 }
+
+// REACT-04 (webhook): the reaction of an agent member with sign_outbound off carries no
+// author: message.author_name is left out of the signed payload.
+func TestWebhookOutboundReactionUnsigned(t *testing.T) {
+	e := newHookEnv(t)
+	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "deploys", "sender_id": "ci", "text": "hi"})).
+		RequireStatus(http.StatusAccepted)
+	room := e.roomWith(t, e.chats(t)[0].ID)
+	agentID := registerAgent(t, e.env, e.alice, "builder")
+	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agentID}).RequireStatus(http.StatusCreated)
+	setMember(t, e.alice, room.ID, agentID, dto.UpdateMemberRequest{SignOutbound: ptr(false)})
+	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "deploys", "sender_id": "ci", "text": "deployed", "message_id": "in-8"})).
+		RequireStatus(http.StatusAccepted)
+	target := e.messages(t, room.ID)[0]
+
+	agent := e.alice.Token(dto.TokenKindAgent, "laptop").WithHeader(dto.HeaderAgent, "builder")
+	r := testkit.Decode[dto.Message](agent.Post("/api/v1/agent/messages/"+target.ID+"/react", dto.ReactRequest{Emoji: "👍"}).RequireStatus(http.StatusCreated))
+
+	call := e.out.next(t)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(call.Body, &got))
+	require.Equal(t, map[string]any{
+		"event": "reaction", "connector_id": e.conn.ID, "chat_id": "deploys", "target_message_id": "in-8", "emoji": "👍",
+		"message": map[string]any{"id": r.ID, "room_id": room.ID, "created_at": r.CreatedAt.Format(time.RFC3339Nano)},
+	}, got)
+}

@@ -381,7 +381,7 @@ T31 → T32 → T33 → T34
 **Requirement**: REACT-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Payload has no author_name key when unsigned; signed payload unchanged
+- [x] Payload has no author_name key when unsigned; signed payload unchanged
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(connectors): omit the author of unsigned webhook reactions`
