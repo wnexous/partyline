@@ -31,7 +31,9 @@ func TestOneEmoji(t *testing.T) {
 		"emoji in arrows":          "↩️",
 		"emoji in supplemental":    "🥳",
 		"emoji presentation clock": "⌚",
+		"exactly 16 code points":   "❤️" + strings.Repeat("\u200d👩", 7),
 	}
+	require.Len(t, []rune(accept["exactly 16 code points"]), 16)
 	for name, s := range accept {
 		require.True(t, OneEmoji(s), "%s %q", name, s)
 	}
@@ -62,7 +64,9 @@ func TestOneEmoji(t *testing.T) {
 		"keycap on a letter":       "a⃣",
 		"text presentation":        "❤\ufe0e",
 		"too long":                 strings.Repeat("👩‍", 8) + "👩",
+		"17 code points":           "❤️" + strings.Repeat("\u200d👩", 7) + "\ufe0f",
 	}
+	require.Len(t, []rune(reject["17 code points"]), 17)
 	for name, s := range reject {
 		require.False(t, OneEmoji(s), "%s %q", name, s)
 	}

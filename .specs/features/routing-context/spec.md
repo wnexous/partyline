@@ -227,7 +227,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | REACT-02 | P2: Reactions | Tasks | Implementing |
 | REACT-03 | P2: Reactions | Fix iteration 1 | Implemented (T20) |
 | REACT-04 | P2: Reactions | Fix iteration 1 | Implemented (T21) |
-| REACT-05 | P2: Reactions | Fix iteration 1 | Implemented (T28) |
+| REACT-05 | P2: Reactions | Fix iteration 1 | Implemented (T28), bound tested (T39), re-verify |
 | ROOMDEL-01 | P1: Delete a room | Tasks | Implementing |
 | ROOMDEL-02 | P1: Delete a room | Tasks | Implementing |
 | A11Y-01 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |

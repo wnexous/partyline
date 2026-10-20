@@ -644,7 +644,7 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 **Requirement**: REACT-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 16 accepted, 17 rejected; kills E5
+- [x] 16 accepted, 17 rejected; kills E5
 **Tests**: unit
 **Gate**: build
 **Commit**: `test(validation): pin the emoji code-point bound`
