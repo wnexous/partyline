@@ -48,7 +48,7 @@ func newServer(t *testing.T, h http.HandlerFunc) *httptest.Server {
 // hatch allows them.
 func TestClientRefusesPrivateDestinations(t *testing.T) {
 	var hits atomic.Int32
-	srv := newServer(t, func(w http.ResponseWriter, _ *http.Request) { hits.Add(1) })
+	srv := newServer(t, func(http.ResponseWriter, *http.Request) { hits.Add(1) })
 	byName := strings.Replace(srv.URL, "127.0.0.1", "localhost", 1)
 
 	for _, c := range []*http.Client{NewClient(Options{}), NewStreamClient(false)} {

@@ -120,12 +120,12 @@ func Transport(allowPrivate bool) *http.Transport {
 // NewClient returns a client for request/response calls: checked destinations, no
 // redirects (the 3xx answer is returned as is), the timeout and a bounded response body.
 func NewClient(o Options) *http.Client {
-	max := o.MaxResponseBytes
-	if max <= 0 {
-		max = DefaultMaxResponse
+	limit := o.MaxResponseBytes
+	if limit <= 0 {
+		limit = DefaultMaxResponse
 	}
 	return &http.Client{
-		Transport:     capTransport{rt: Transport(o.AllowPrivate), max: max},
+		Transport:     capTransport{rt: Transport(o.AllowPrivate), max: limit},
 		Timeout:       o.Timeout,
 		CheckRedirect: noRedirects,
 	}
