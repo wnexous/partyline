@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -238,27 +239,56 @@ func (t *tools) downloadAttachment(ctx context.Context, args json.RawMessage) (s
 	if _, params, err := mime.ParseMediaType(resp.Header.Get("Content-Disposition")); err == nil && params["filename"] != "" {
 		name = params["filename"]
 	}
-	if err := os.MkdirAll(t.dir, 0o700); err != nil {
-		return "", fmt.Errorf("create download directory: %w", err)
+	if err := privateDir(t.dir); err != nil {
+		return "", err
 	}
 	path := filepath.Join(t.dir, safeName(a.AttachmentID)+"-"+safeName(name))
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) // #nosec G304 -- path is built from sanitized names under the agent's temp dir
+	// A fresh file (O_EXCL, 0600) renamed into place: whatever sits at path, a planted
+	// symlink included, is replaced and never written through.
+	f, err := os.CreateTemp(t.dir, ".download-*")
 	if err != nil {
 		return "", fmt.Errorf("save attachment: %w", err)
 	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return "", fmt.Errorf("save attachment: %w", err)
+	tmp := f.Name()
+	_, err = io.Copy(f, resp.Body)
+	if cerr := f.Close(); err == nil {
+		err = cerr
 	}
-	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("save attachment: %w", err)
+	if err == nil {
+		err = os.Rename(tmp, path)
 	}
-	// OpenFile only applies the mode to new files; an earlier download may have a wider mode.
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err != nil {
+		_ = os.Remove(tmp)
 		return "", fmt.Errorf("save attachment: %w", err)
 	}
 	return path, nil
+}
+
+// privateDir makes dir (<tmp>/partyline/<agent>) and its parent with mode 0700 when missing
+// and refuses either one when it is a symlink, not a directory, or open to other users
+// (unix: owned by another user or with group/other permission bits). On a shared /tmp another
+// user could otherwise pre-create the directory to read or redirect downloads (TOOL-06).
+func privateDir(dir string) error {
+	parent := filepath.Dir(dir)
+	if err := os.MkdirAll(filepath.Dir(parent), 0o700); err != nil {
+		return fmt.Errorf("create download directory: %w", err)
+	}
+	for _, d := range []string{parent, dir} {
+		if err := os.Mkdir(d, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("create download directory: %w", err)
+		}
+		info, err := os.Lstat(d)
+		if err != nil {
+			return fmt.Errorf("check download directory: %w", err)
+		}
+		if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("download directory %s is not a plain directory; remove it or set TMPDIR", d)
+		}
+		if err := checkPrivate(d, info); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // safeName keeps a file name component: its base name with path separators and control

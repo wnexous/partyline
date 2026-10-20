@@ -307,14 +307,14 @@ T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
 #### T17: Private download directory (F7, S1)
 
 **What**: `download_attachment` creates `<tmp>/partyline/<agent>` with 0700 and refuses a directory that is a symlink, not owned by the user or open to group/others; files are written to a fresh temp file (O_EXCL, 0600) and renamed into place, so a planted symlink is never followed.
-**Where**: `internal/channel/tools.go`
+**Where**: `internal/channel/tools.go`, `internal/channel/private_unix.go`
 **Depends on**: T16
 **Reuses**: safeName
 **Requirement**: TOOL-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A symlinked or group/other-accessible download dir → isError, nothing written through it
-- [ ] A symlink planted at the target file name is replaced, its target untouched; the file is 0600
+- [x] A symlinked or group/other-accessible download dir → isError, nothing written through it
+- [x] A symlink planted at the target file name is replaced, its target untouched; the file is 0600
 **Tests**: integration
 **Gate**: full
 **Commit**: `fix(channel): keep attachment downloads in a private directory`
