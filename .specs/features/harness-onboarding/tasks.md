@@ -248,7 +248,7 @@ T15 → T16 → T17
 **Requirement**: PUSH-05, PUSH-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake client: lines → `session.prompt` on the active session id; no session yet → queued until one exists
+- [x] Fake client: lines → `session.prompt` on the active session id; no session yet → queued until one exists
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(integrations): add the opencode plugin`

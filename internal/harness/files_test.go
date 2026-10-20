@@ -63,13 +63,10 @@ func extensionWant(t *testing.T, source string) string {
 	return "// partyline v1.2.3: written by `partyline setup`; `partyline setup --uninstall` removes it.\n" + installed
 }
 
-// PUSH-04: the pi extension runs the binary setup registered (its absolute path, quoted as a
-// string literal); the omp extension runs no binary.
+// PUSH-04, PUSH-05: the pi extension and the OpenCode plugin run the binary setup registered
+// (its absolute path, quoted as a string literal); the omp extension runs no binary.
 func TestExtensionsNameTheAbsoluteBinary(t *testing.T) {
 	for _, c := range fileCases {
-		if c.id == "opencode" {
-			continue
-		}
 		t.Run(c.id, func(t *testing.T) {
 			env, _ := testEnv(t, nil)
 			env.Binary = `/opt/my "bin"\\partyline`

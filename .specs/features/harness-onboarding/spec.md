@@ -194,7 +194,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | PUSH-02 | P1: Push adapters | Tasks | Implementing |
 | PUSH-03 | P1: Push adapters | Tasks | Implementing |
 | PUSH-04 | P1: Push adapters | Tasks | Implementing |
-| PUSH-05 | P1: Push adapters | Tasks | Pending |
+| PUSH-05 | P1: Push adapters | Tasks | Implementing |
 | PUSH-06 | P1: Push adapters | Tasks | Implementing |
 | TURN-01 | P2: Codex and Gemini | Tasks | Pending |
 | TURN-02 | P2: Codex and Gemini | Tasks | Pending |
