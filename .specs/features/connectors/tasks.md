@@ -589,7 +589,7 @@ replays never consume that budget.
 **Requirement**: IDN-01 (edge case "pairing-code migration")
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `TestPairingCodesPerConnectorMigrationDropsOldCodes` passes; a migration that only adds a nullable column fails it
+- [x] `TestPairingCodesPerConnectorMigrationDropsOldCodes` passes; a migration that only adds a nullable column fails it
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(store): cover the pairing-code migration dropping old codes`

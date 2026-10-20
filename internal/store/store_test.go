@@ -191,3 +191,35 @@ func TestIdentitiesPerConnectorMigrationDropsOldLinks(t *testing.T) {
 	require.NoError(t, s.write.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('identities') WHERE name = 'connector_id'").Scan(&hasConnector))
 	require.Equal(t, 1, hasConnector)
 }
+
+// IDN-01 (edge case): pairing codes issued before migration 0005 name no connector, so the
+// migration drops them (users request a new code), and every code from then on must name
+// one (connector_id NOT NULL).
+func TestPairingCodesPerConnectorMigrationDropsOldCodes(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "partyline.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	_, err = s.write.ExecContext(ctx, `CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`)
+	require.NoError(t, err)
+	files, err := migrationFiles()
+	require.NoError(t, err)
+	for _, name := range files {
+		if name >= "0005" {
+			break
+		}
+		require.NoError(t, s.applyMigration(ctx, name))
+	}
+	require.NoError(t, s.WithTx(ctx, func(q *db.Queries) error { return q.CreateUser(ctx, newUser("u1", "alice")) }))
+	_, err = s.write.ExecContext(ctx, `INSERT INTO pairing_codes (code_hash, user_id, expires_at) VALUES ('h1', 'u1', 32503680000000)`)
+	require.NoError(t, err, "the 0004 schema has codes without a connector")
+
+	require.NoError(t, s.Migrate(ctx))
+	var n int
+	require.NoError(t, s.write.QueryRowContext(ctx, "SELECT COUNT(*) FROM pairing_codes").Scan(&n))
+	require.Zero(t, n, "codes without a connector are dropped")
+	var notNull int
+	require.NoError(t, s.write.QueryRowContext(ctx,
+		`SELECT "notnull" FROM pragma_table_info('pairing_codes') WHERE name = 'connector_id'`).Scan(&notNull))
+	require.Equal(t, 1, notNull, "connector_id is NOT NULL")
+}
