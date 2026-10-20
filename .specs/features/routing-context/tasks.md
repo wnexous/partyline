@@ -58,7 +58,7 @@ T9 → T10 → T11 → T12
 ### Phase 4: Web
 
 ```
-T13 → T14 → T15 → T16
+T13 → T14 → T15 → T16 → T17
 ```
 
 ---
@@ -301,3 +301,18 @@ T13 → T14 → T15 → T16
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show chat titles in rooms`
+
+#### T17: Delete a room
+
+**What**: "Delete room" action in the room settings sheet for managers, alert-dialog confirmation, navigate to `/rooms`, toast, cache updated.
+**Where**: `web/src/components/room-settings-sheet.tsx`
+**Depends on**: T16
+**Reuses**: `useDeleteRoom`, `ui/alert-dialog.tsx`
+**Requirement**: ROOMDEL-01, ROOMDEL-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Manager sees the action; viewer does not; confirm calls DELETE, navigates to /rooms and the room is gone from the list
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(web): delete rooms from the room settings`
+

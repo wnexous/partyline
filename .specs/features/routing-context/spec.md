@@ -142,6 +142,21 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 
 ---
 
+### P1: Delete a room from the web app ⭐ MVP
+
+**User Story**: As a room manager, I want a delete action in the room settings so that I can remove rooms I no longer need.
+
+**Why P1**: Reported missing in first use; the API already supports it.
+
+**Acceptance Criteria**:
+
+1. WHERE the user has `manage` on the room the app SHALL show a "Delete room" action in the room settings, confirmed in an alert dialog that states messages, attachments and pending deliveries are removed. (ROOMDEL-01)
+2. WHEN the deletion succeeds THEN the app SHALL navigate to `/rooms`, show a confirmation toast and drop the room from the list without reload. (ROOMDEL-02)
+
+**Independent Test**: Manager deletes a room; it disappears from the list; a viewer sees no delete action.
+
+---
+
 ## Edge Cases
 
 - IF two first messages from the same new chat arrive at once THEN the system SHALL add the chat to the catch-all room only once (ROUTE-01).
@@ -177,8 +192,10 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | INS-03 | P2: Room instructions | Tasks | Pending |
 | REACT-01 | P2: Reactions | Tasks | Pending |
 | REACT-02 | P2: Reactions | Tasks | Pending |
+| ROOMDEL-01 | P1: Delete a room | Tasks | Pending |
+| ROOMDEL-02 | P1: Delete a room | Tasks | Pending |
 
-**Coverage:** 23 total, mapped in tasks.md
+**Coverage:** 25 total, mapped in tasks.md
 
 ---
 
