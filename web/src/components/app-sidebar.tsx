@@ -8,9 +8,11 @@ import {
   LayoutDashboardIcon,
   LogOutIcon,
   type LucideIcon,
+  MailPlusIcon,
   MessagesSquareIcon,
   PaletteIcon,
   PlugZapIcon,
+  ScrollTextIcon,
   SettingsIcon,
   UsersIcon,
 } from "lucide-react";
@@ -56,7 +58,9 @@ interface NavItem {
     | "/identities"
     | "/tokens"
     | "/settings"
-    | "/admin/users";
+    | "/admin/users"
+    | "/admin/invites"
+    | "/admin/audit";
   label: MessageKey;
   icon: LucideIcon;
   exact?: boolean;
@@ -94,7 +98,11 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "nav.admin",
     adminOnly: true,
-    items: [{ to: "/admin/users", label: "nav.adminUsers", icon: UsersIcon }],
+    items: [
+      { to: "/admin/users", label: "nav.adminUsers", icon: UsersIcon },
+      { to: "/admin/invites", label: "nav.adminInvites", icon: MailPlusIcon },
+      { to: "/admin/audit", label: "nav.adminAudit", icon: ScrollTextIcon },
+    ],
   },
 ];
 

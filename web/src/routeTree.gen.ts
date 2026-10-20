@@ -19,6 +19,8 @@ import { Route as AppIdentitiesRouteImport } from './routes/_app/identities'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppTokensRouteImport } from './routes/_app/tokens'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
+import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
+import { Route as AppAdminInvitesRouteImport } from './routes/_app/admin/invites'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppConnectorsIndexRouteImport } from './routes/_app/connectors/index'
 import { Route as AppConnectorsConnectorIdRouteImport } from './routes/_app/connectors/$connectorId'
@@ -74,6 +76,16 @@ const InviteTokenRoute = InviteTokenRouteImport.update({
   path: '/invite/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppAdminAuditRoute = AppAdminAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => AppAdminRouteRoute,
+} as any)
+const AppAdminInvitesRoute = AppAdminInvitesRouteImport.update({
+  id: '/invites',
+  path: '/invites',
+  getParentRoute: () => AppAdminRouteRoute,
+} as any)
 const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -111,6 +123,8 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/tokens': typeof AppTokensRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/admin/audit': typeof AppAdminAuditRoute
+  '/admin/invites': typeof AppAdminInvitesRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/connectors/$connectorId': typeof AppConnectorsConnectorIdRoute
   '/rooms/$roomId': typeof AppRoomsRoomIdRoute
@@ -127,6 +141,8 @@ export interface FileRoutesByTo {
   '/tokens': typeof AppTokensRoute
   '/invite/$token': typeof InviteTokenRoute
   '/': typeof AppIndexRoute
+  '/admin/audit': typeof AppAdminAuditRoute
+  '/admin/invites': typeof AppAdminInvitesRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/connectors/$connectorId': typeof AppConnectorsConnectorIdRoute
   '/rooms/$roomId': typeof AppRoomsRoomIdRoute
@@ -145,6 +161,8 @@ export interface FileRoutesById {
   '/_app/tokens': typeof AppTokensRoute
   '/invite/$token': typeof InviteTokenRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/admin/audit': typeof AppAdminAuditRoute
+  '/_app/admin/invites': typeof AppAdminInvitesRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/connectors/$connectorId': typeof AppConnectorsConnectorIdRoute
   '/_app/rooms/$roomId': typeof AppRoomsRoomIdRoute
@@ -163,6 +181,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tokens'
     | '/invite/$token'
+    | '/admin/audit'
+    | '/admin/invites'
     | '/admin/users'
     | '/connectors/$connectorId'
     | '/rooms/$roomId'
@@ -179,6 +199,8 @@ export interface FileRouteTypes {
     | '/tokens'
     | '/invite/$token'
     | '/'
+    | '/admin/audit'
+    | '/admin/invites'
     | '/admin/users'
     | '/connectors/$connectorId'
     | '/rooms/$roomId'
@@ -196,6 +218,8 @@ export interface FileRouteTypes {
     | '/_app/tokens'
     | '/invite/$token'
     | '/_app/'
+    | '/_app/admin/audit'
+    | '/_app/admin/invites'
     | '/_app/admin/users'
     | '/_app/connectors/$connectorId'
     | '/_app/rooms/$roomId'
@@ -282,6 +306,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InviteTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/admin/audit': {
+      id: '/_app/admin/audit'
+      path: '/audit'
+      fullPath: '/admin/audit'
+      preLoaderRoute: typeof AppAdminAuditRouteImport
+      parentRoute: typeof AppAdminRouteRoute
+    }
+    '/_app/admin/invites': {
+      id: '/_app/admin/invites'
+      path: '/invites'
+      fullPath: '/admin/invites'
+      preLoaderRoute: typeof AppAdminInvitesRouteImport
+      parentRoute: typeof AppAdminRouteRoute
+    }
     '/_app/admin/users': {
       id: '/_app/admin/users'
       path: '/users'
@@ -321,10 +359,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppAdminRouteRouteChildren {
+  AppAdminAuditRoute: typeof AppAdminAuditRoute
+  AppAdminInvitesRoute: typeof AppAdminInvitesRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
 }
 
 const AppAdminRouteRouteChildren: AppAdminRouteRouteChildren = {
+  AppAdminAuditRoute: AppAdminAuditRoute,
+  AppAdminInvitesRoute: AppAdminInvitesRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
 }
 

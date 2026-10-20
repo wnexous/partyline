@@ -286,7 +286,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-20, UI-21
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Member opening `/admin/users` sees 403 page; invite link copied contains `/invite/<token>`
+- [x] Member opening `/admin/users` sees 403 page; invite link copied contains `/invite/<token>`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add admin users, invites and audit pages`
