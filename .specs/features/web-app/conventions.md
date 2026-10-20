@@ -31,3 +31,28 @@ Binding for every later web task.
 ## Contract notes
 - Wrong setup token → 401 (`ErrBadSetupToken`). 422 field reasons map onto inputs.
 - `Me.locale` sync lands in T14 (until then localStorage only).
+
+# Additions from web-app Phase 2 (rooms)
+
+## Structure and shared components
+- Full-height pages put `data-fill` on their root; `_app.tsx` then bounds the inset (`h-svh`, no page scroll) so the page scrolls inside. The room page uses it.
+- Reuse: `StatusDot` (agent presence, `withLabel`), `VisibilityLabel` / `VISIBILITY` (room-visibility.tsx), `platformLabel(kind)`, `TrustBadge` / `chatTrust`, `formatBytes` (message-item.tsx), `formatRelative` / `formatAbsolute` / `formatClock` (`lib/time.ts`).
+- `SharingDialog kind={"rooms"|"agents"|"connectors"} id name owner trigger`: rooms grant view/post/manage (public view|post); agents and connectors grant `use` only. T11/T12 wire it with `kind="agents"` / `"connectors"`; gate the trigger on `my_level === "manage"`.
+- Dialog/sheet bodies mount only while open (`{open ? <Body/> : null}`) so queries (users, agents, chats, sharing) run on demand and forms start fresh.
+- Destructive member actions use a sonner toast with Undo instead of a confirm dialog.
+
+## Tests
+- `renderWithProviders(ui)` (src/test/render.tsx) mounts a component with query cache, i18n and tooltips, no router.
+- `stubLayout()` (src/test/layout.ts) gives happy-dom boxes a viewport and row height; call it at the top of any suite that renders the virtualized timeline (room pages included).
+- Live behavior in component tests: call the real `handleLiveEvent(queryClient, useLiveStore.getState(), event)` inside `act`.
+- Fixtures: `makeRoom`, `makeMember`, `makeAgent`, `makeChat` (synthetic).
+- Lint runs on the whole `web/` (`bun run lint`); check it before committing, not only `biome check src`.
+
+## Data and contract notes
+- `useUpdateSharing` invalidates only `[kind]` and `[kind, id]` exactly (never timelines or members).
+- Message trust in the web app: dto.Message has no `trusted` flag. Chat messages show `untrusted` when `author_user_id` is empty, `trusted` when it is the viewer, `verified` when it is another user (only that user's agents trust it).
+- Composer recipients are room member ids (`RoomMember.id`) of chat members; none picked = omit `recipients` (server sends to chats with outbound on).
+- Attachments render inline only for png/jpeg/gif/webp (what the server serves inline); SVG and everything else is a download link.
+- Agent Markdown: react-markdown without rehype-raw (raw HTML shows as text), default URL transform, links open in a new tab with `noopener noreferrer nofollow`, images become links.
+- DTO gaps for the backend: `Room` has no member count (rooms list omits it); `Message` has no viewer-relative trust flag (derived as above).
+- `make check` needs `sqlc` and `tygo` on PATH; without them run `make check SQLC="go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1" TYGO="go run github.com/gzuidhof/tygo@v0.2.21"`.
