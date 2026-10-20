@@ -226,3 +226,29 @@ Binding for the final re-verify, the web app and later platforms.
 - `0004_webhook_replays.sql`, `0005_pairing_codes_per_connector.sql`. Another branch adding a migration must
   renumber after these.
 
+# Contract Notes (from connectors closure: T32-T35, web-app T39)
+
+Binding for the final re-verify, the web app and later platforms.
+
+## Generated config fields (CON-01, CON-03)
+- `connectors.Field.Generated` marks a field `Kind.Prepare` fills when a new connector leaves it empty; the API
+  reports it as `dto.ConnectorField.generated` (omitted when false). The webhook `secret` is `Required` and
+  `Generated`. New kinds with a `Prepare` must flag the fields it generates.
+- Create is unchanged: `Prepare` runs before validation, so an empty generated field is filled and returned once in
+  `generated_secrets`.
+- Update: `Kind.Merge` keeps the stored value when a generated field is sent empty (`""` or blank), as it does for
+  `"********"`; `null` still removes the field, so validation answers 422 `config.secret: required` and nothing is
+  cleared. Fields that are not generated are validated as before.
+- Web: the schema form requires a value only when `required && !generated`; a generated field keeps its plain label,
+  shows its help, and is sent as `""` on create (web-app T39).
+
+## Tests that pin earlier behaviour
+- HOOK-04/HOOK-05 (N17): `TestReplayIsRefusedBeforeTheBudget` — replays answer `ErrReplayed` with the budget spent and
+  never consume it.
+- Migration `0005` (IDN-01 edge case): `TestPairingCodesPerConnectorMigrationDropsOldCodes` migrates a 0004 database
+  holding a code without a connector; the code is dropped and `connector_id` is `NOT NULL`.
+
+## Private network allowlist (CON-13, S6 residual)
+- README guidance: prefer `host:port` or CIDR entries (a bare name opens every port), list only names whose DNS you
+  control, and remember the list applies to every user's connectors.
+

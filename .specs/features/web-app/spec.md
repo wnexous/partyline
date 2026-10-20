@@ -168,10 +168,10 @@ Users need one place to see and steer everything: who is online, which chats fee
 | UI-13 | P1: Rooms management | Tasks | ✅ Verified |
 | UI-14 | P1: Agents etc. | Tasks | ✅ Verified |
 | UI-15 | P1: Agents etc. | Tasks | ✅ Verified |
-| UI-16 | P1: Agents etc. | Tasks | ✅ Verified; T36 (generated secrets, inbound URL) to re-verify |
+| UI-16 | P1: Agents etc. | Tasks | ✅ Verified; T36 (generated secrets, inbound URL), T39 (generated fields may stay empty) to re-verify |
 | UI-17 | P1: Agents etc. | Tasks | ✅ Verified |
 | UI-18 | P1: Agents etc. | Tasks | ✅ Verified |
-| UI-19 | P1: Agents etc. | Tasks | ✅ Verified; T36 (generated secrets) to re-verify |
+| UI-19 | P1: Agents etc. | Tasks | ✅ Verified; T36, T39 (generated secrets) to re-verify |
 | UI-20 | P1: Admin | Tasks | ✅ Verified |
 | UI-21 | P1: Admin | Tasks | ✅ Verified |
 | UI-22 | P2: Polish | Tasks | ✅ Verified |

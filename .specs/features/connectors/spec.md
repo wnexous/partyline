@@ -48,9 +48,9 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 
 **Acceptance Criteria**:
 
-1. WHEN `GET /api/v1/connector-kinds` is called THEN the system SHALL return each kind with its config field schema (name, label, type, required, secret, help). (CON-01)
+1. WHEN `GET /api/v1/connector-kinds` is called THEN the system SHALL return each kind with its config field schema (name, label, type, required, secret, help, and `generated` on fields the server fills when a new connector leaves them empty, such as the webhook secret). (CON-01)
 2. IF a connector config misses a required field or a field fails its type THEN the system SHALL respond 422 naming the field. (CON-02)
-3. The system SHALL never return a secret field's value through the API; reads SHALL return `"********"` when set. (CON-03)
+3. The system SHALL never return a secret field's value through the API; reads SHALL return `"********"` when set, and an update sending `"********"`, or an empty value for a generated field, SHALL keep the stored secret. (CON-03)
 4. WHEN a connector is created or enabled THEN the system SHALL start it within 2 seconds and report status changes as `connector.status` events. (CON-04)
 5. WHEN a connector is disabled or deleted THEN the system SHALL stop it and stop all its outbound sends. (CON-05)
 6. IF a connector's transport fails THEN the system SHALL set status `error` with the error text (secrets redacted) and retry with backoff. (CON-06)
@@ -183,9 +183,9 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| CON-01 | P1: Manage connectors | Tasks | Verified |
+| CON-01 | P1: Manage connectors | Execute (T34) | Implemented, re-verify |
 | CON-02 | P1: Manage connectors | Tasks | Verified |
-| CON-03 | P1: Manage connectors | Tasks | Verified |
+| CON-03 | P1: Manage connectors | Execute (T34) | Implemented, re-verify |
 | CON-04 | P1: Manage connectors | Tasks | Verified |
 | CON-05 | P1: Manage connectors | Tasks | Verified |
 | CON-06 | P1: Manage connectors | Execute (T13) | Verified |
@@ -195,7 +195,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | CON-10 | P1: Chats and inbound | Execute (T17) | Verified |
 | CON-11 | P1: Chats and inbound | Execute (T17) | Verified |
 | CON-12 | P1: Chats and inbound | Tasks | Verified |
-| CON-13 | P1: Manage connectors | Execute (T13, T23, T29, T30) | Implemented, re-verify |
+| CON-13 | P1: Manage connectors | Execute (T13, T23, T29, T30, T35 docs) | Implemented, re-verify |
 | CON-14 | P1: Chats and inbound | Execute (T19, T22) | Implemented, re-verify |
 | WA-01 | P1: WhatsApp | Tasks | Verified |
 | WA-02 | P1: WhatsApp | Tasks | Verified |
@@ -212,9 +212,9 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | HOOK-01 | P1: Webhook | Execute (T14) | Verified |
 | HOOK-02 | P1: Webhook | Execute (T14, T24) | Implemented, re-verify |
 | HOOK-03 | P1: Webhook | Tasks | Verified |
-| HOOK-04 | P1: Webhook | Execute (T14) | Verified |
-| HOOK-05 | P1: Webhook | Execute (T15, T24, T25) | Implemented, re-verify |
-| IDN-01 | P1: Identities | Execute (T26) | Implemented, re-verify |
+| HOOK-04 | P1: Webhook | Execute (T14, T32) | Verified |
+| HOOK-05 | P1: Webhook | Execute (T15, T24, T25, T32) | Implemented, re-verify |
+| IDN-01 | P1: Identities | Execute (T26, T33) | Implemented, re-verify |
 | IDN-02 | P1: Identities | Execute (T12, T26) | Implemented, re-verify |
 | IDN-03 | P1: Identities | Tasks | Verified |
 | IDN-04 | P1: Identities | Execute (T12, T27) | Implemented, re-verify |

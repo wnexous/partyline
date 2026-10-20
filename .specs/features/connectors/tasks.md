@@ -635,7 +635,7 @@ connectors.
 **Requirement**: CON-01, HOOK-05, IDN-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Contract notes describe `Field.Generated` and the update rule; traceability names T32-T34; `make check` passes
+- [x] Contract notes describe `Field.Generated` and the update rule; traceability names T32-T35; `make check` passes
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record connectors closure items`
