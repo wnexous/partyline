@@ -73,8 +73,22 @@ type Connector struct {
 type instance struct {
 	Name            string `json:"name"`
 	Token           string `json:"token"`
-	WebsocketEnable bool   `json:"websocketEnable"`
-	Connected       bool   `json:"connected"`
+	WebsocketEnable flag   `json:"websocketEnable"`
+	Connected       flag   `json:"connected"`
+}
+
+// flag reads an evolution-go switch. evolution-go 0.7.2 sends websocketEnable as a string
+// ("enabled" or ""), other versions as a boolean; both are accepted.
+type flag bool
+
+func (f *flag) UnmarshalJSON(b []byte) error {
+	switch strings.ToLower(strings.Trim(strings.TrimSpace(string(b)), `"`)) {
+	case "true", "enabled", "1", "yes", "on":
+		*f = true
+	default:
+		*f = false
+	}
+	return nil
 }
 
 var (
@@ -351,7 +365,7 @@ func (c *Connector) listed(inst instance) bool {
 	if len(c.allowed) > 0 {
 		return c.allowed[inst.Name]
 	}
-	return inst.WebsocketEnable
+	return bool(inst.WebsocketEnable)
 }
 
 // refreshInstances reloads the instance list with the global key.
@@ -453,9 +467,19 @@ func (c *Connector) callWith(ctx context.Context, client *http.Client, key, meth
 		return nil
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("%s %s: invalid response", method, path)
+		return fmt.Errorf("%s %s: invalid response (%s)", method, path, decodeReason(err))
 	}
 	return nil
+}
+
+// decodeReason describes a JSON decode failure without echoing response content: the field
+// and the types for a type mismatch, otherwise only that the body is not the expected JSON.
+func decodeReason(err error) string {
+	var te *json.UnmarshalTypeError
+	if errors.As(err, &te) {
+		return fmt.Sprintf("field %s: got %s, want %s", te.Field, te.Value, te.Type)
+	}
+	return "not the expected JSON"
 }
 
 // wsURL is the broadcast WebSocket URL: no instanceId, the global key as token.

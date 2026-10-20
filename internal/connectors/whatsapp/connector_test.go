@@ -498,3 +498,65 @@ func TestWebSocketFrameCap(t *testing.T) {
 		t.Fatal("a frame over the cap did not end Run")
 	}
 }
+
+// WA-05 / WA-01 against the real evolution-go 0.7.2 shape: /instance/all returns
+// websocketEnable as a string ("enabled" or "") plus many other fields; the connector must
+// read it, list groups of the enabled instance and skip the disabled one.
+func TestInstanceListRealShape(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /instance/all", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[` +
+			`{"id":"i1","name":"acme","token":"` + acmeToken + `","webhook":"","rabbitmqEnable":"","websocketEnable":"enabled","natsEnable":"","jid":"5511999990000:7@s.whatsapp.net","qrcode":"","connected":true,"expiration":0,"disconnect_reason":"","events":"MESSAGE","os_name":"","proxy":"","client_name":"","createdAt":"2026-10-01T00:00:00Z","alwaysOnline":false,"rejectCall":false,"msgRejectCall":"","readMessages":false,"ignoreGroups":false,"ignoreStatus":true},` +
+			`{"id":"i2","name":"quiet","token":"quiet-token","webhook":"","rabbitmqEnable":"","websocketEnable":"","natsEnable":"","jid":"","qrcode":"","connected":true,"expiration":0,"disconnect_reason":"","events":"","os_name":"","proxy":"","client_name":"","createdAt":"2026-10-01T00:00:00Z","alwaysOnline":false,"rejectCall":false,"msgRejectCall":"","readMessages":false,"ignoreGroups":false,"ignoreStatus":false}` +
+			`],"message":"success"}`))
+	})
+	listed := make(chan string, 4)
+	mux.HandleFunc("GET /group/list", func(w http.ResponseWriter, r *http.Request) {
+		listed <- r.Header.Get("apikey")
+		_, _ = w.Write([]byte(`{"data":[{"JID":"120363000000000001@g.us","Name":"Acme Support","ParticipantCount":3}],"message":"success"}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c, err := New(connectors.Config{"base_url": srv.URL, "api_key": globalKey},
+		connectors.Deps{AllowPrivateNetworks: true, UserAgent: userAgent})
+	require.NoError(t, err)
+
+	chats, err := c.ListChats(context.Background())
+	require.NoError(t, err)
+	require.Len(t, chats, 1)
+	require.Equal(t, "acme|120363000000000001@g.us", chats[0].ID)
+	require.Equal(t, acmeToken, <-listed, "only the websocket-enabled instance is listed")
+	require.Empty(t, listed)
+}
+
+// The flag parser accepts the string forms evolution-go uses and plain booleans.
+func TestFlagParsing(t *testing.T) {
+	for raw, want := range map[string]bool{
+		`"enabled"`: true, `"true"`: true, `"1"`: true, `true`: true,
+		`""`: false, `"disabled"`: false, `"false"`: false, `false`: false, `null`: false,
+	} {
+		var f flag
+		require.NoError(t, json.Unmarshal([]byte(raw), &f), raw)
+		require.Equal(t, want, bool(f), raw)
+	}
+}
+
+// A response of the wrong shape names the field and types, never the content.
+func TestInvalidResponseNamesTheField(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /instance/all", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"name":"acme","token":"` + acmeToken + `","websocketEnable":"enabled","connected":true}]}`))
+	})
+	mux.HandleFunc("GET /group/list", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"JID":42,"Name":"secret-group-name"}]}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c, err := New(connectors.Config{"base_url": srv.URL, "api_key": globalKey},
+		connectors.Deps{AllowPrivateNetworks: true, UserAgent: userAgent})
+	require.NoError(t, err)
+	_, err = c.ListChats(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid response (field data.0.JID: got number, want string)")
+	require.NotContains(t, err.Error(), "secret-group-name")
+}
