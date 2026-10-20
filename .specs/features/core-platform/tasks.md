@@ -454,7 +454,7 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: SEC-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `/rooms/x` returns index.html with CSP and other SEC-01 headers; `/api/v1/nope` returns JSON 404
+- [x] `/rooms/x` returns index.html with CSP and other SEC-01 headers; `/api/v1/nope` returns JSON 404
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(webui): serve embedded single page app with strict headers`

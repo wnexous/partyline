@@ -71,5 +71,8 @@ web-test: web-install
 web-check: web-install
 	cd web && $(BUN) run lint && $(BUN) run typecheck
 
+## web-build: build web/ and copy web/dist into the embed directory (internal/webui/dist)
 web-build: web-install
 	cd web && $(BUN) run build
+	find internal/webui/dist -mindepth 1 ! -name .gitkeep -delete
+	cp -R web/dist/. internal/webui/dist/

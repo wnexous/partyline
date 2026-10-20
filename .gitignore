@@ -16,6 +16,9 @@ coverage.out
 
 # Web
 web/node_modules/
+# web/dist copied in by `make web-build`; only the placeholder is committed
+/internal/webui/dist/*
+!/internal/webui/dist/.gitkeep
 
 # Editors
 .idea/

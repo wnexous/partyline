@@ -24,6 +24,7 @@ import (
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/users"
+	"github.com/wnexous/partyline/internal/webui"
 )
 
 // DatabaseFile is the SQLite file name inside the data directory.
@@ -122,6 +123,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Blobs:  blobs,
 		Audit:  audit.New(st, opts.Now),
 		Live:   a.Live,
+		WebUI:  webui.Handler(cfg.PublicURL),
 		Logger: opts.Logger,
 		Ready:  a.ready.Load,
 	})

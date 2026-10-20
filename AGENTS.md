@@ -10,6 +10,11 @@ decisions and `.specs/features/*/` for specs, designs and task plans.
 - `internal/<pkg>` - one small package per concern (see `.specs/features/core-platform/design.md`).
 - `internal/store/db` - sqlc output, `web/src/lib/api/types.gen.ts` - tygo output. Both are
   generated, committed and never edited by hand.
+- `internal/webui` - embeds the web app with `go:embed`. `make web-build` (also run by
+  `make build`, `make check` and the Dockerfile) builds `web/` and copies `web/dist` into
+  `internal/webui/dist`, which is gitignored except `.gitkeep`. A plain `go build` without that
+  copy still compiles and serves the placeholder page `internal/webui/fallback/index.html`.
+  The web app must not use inline scripts: HTML is served with a CSP of `script-src 'self'`.
 
 ## Tooling
 

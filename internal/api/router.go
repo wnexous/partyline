@@ -25,7 +25,9 @@ type Deps struct {
 	Blobs  *attachments.Store
 	Audit  *audit.Log
 	// Live serves the live WebSocket at GET /api/v1/live.
-	Live   http.Handler
+	Live http.Handler
+	// WebUI serves the web app for every other GET path (SPA fallback).
+	WebUI  http.Handler
 	Logger *slog.Logger
 	// Ready reports whether the app finished starting (migrations applied).
 	Ready func() bool
@@ -61,6 +63,13 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.roomRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
+	}
+	// Unknown API paths get the JSON envelope, never the web app.
+	s.handle(mux, "/api/", func(http.ResponseWriter, *http.Request) error {
+		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
+	})
+	if s.WebUI != nil {
+		mux.Handle("/", s.WebUI) // answers 405 to methods other than GET and HEAD
 	}
 }
 
