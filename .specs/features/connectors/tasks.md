@@ -330,7 +330,7 @@ get their own per-IP budget (over it: 429, no audit entry).
 **Requirement**: CON-10, CON-11
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Same message id with media emitted twice → `Open` called once, one attachment, one blob
+- [x] Same message id with media emitted twice → `Open` called once, one attachment, one blob
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(connectors): repeated inbound messages download nothing`

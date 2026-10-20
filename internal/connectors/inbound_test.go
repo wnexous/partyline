@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -205,6 +206,30 @@ func TestInboundMedia(t *testing.T) {
 	require.Equal(t, dto.AttachmentStatusTooLarge, atts[2].Status)
 	require.Equal(t, int64(1<<20+1), atts[2].Size)
 	require.Equal(t, 1, blobCount(t, e.env), "only the small file is in the blob store")
+}
+
+// CON-10, CON-11: a repeated message is not stored again and its media is not downloaded
+// again.
+func TestInboundRepeatDownloadsNothing(t *testing.T) {
+	e := newInboundEnv(t)
+	e.emit(text(groupID, "M1", "first"))
+	room := e.routedRoom(t, "A", e.chatID(t, groupID))
+
+	var opens atomic.Int32
+	m := text(groupID, "M2", "photo")
+	m.Kind = "image"
+	m.Media = []connectors.Media{{Name: "p.png", Mime: "image/png", Open: func(ctx context.Context) (io.ReadCloser, error) {
+		opens.Add(1)
+		return opener([]byte("synthetic image bytes"))(ctx)
+	}}}
+	e.emit(m)
+	e.emit(m)
+
+	require.Equal(t, int32(1), opens.Load(), "the repeat opened no media")
+	msgs := e.messages(t, room.ID)
+	require.Len(t, msgs, 1)
+	require.Len(t, msgs[0].Attachments, 1)
+	require.Equal(t, 1, blobCount(t, e.env))
 }
 
 func opener(data []byte) func(context.Context) (io.ReadCloser, error) {
