@@ -230,7 +230,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | DLV-04 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-05 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-06 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-07 | P1: Messages and delivery | Tasks | Pending |
+| DLV-07 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-08 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-09 | P1: Messages and delivery | Tasks | Implementing |
 | DLV-10 | P1: Messages and delivery | Tasks | Implementing |

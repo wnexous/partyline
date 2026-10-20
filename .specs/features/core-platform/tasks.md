@@ -394,8 +394,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: DLV-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake sender failing 5 times → status failed, attempts 5, next_attempt spacing 2/4/8/16 s (fake clock)
-- [ ] Pending rows from a previous process are sent after start
+- [x] Fake sender failing 5 times → status failed, attempts 5, next_attempt spacing 2/4/8/16 s (fake clock)
+- [x] Pending rows from a previous process are sent after start
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(delivery): add outbox worker with retry and backoff`
