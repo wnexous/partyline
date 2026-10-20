@@ -176,7 +176,7 @@ T15 → T16 → T17
 **Requirement**: HAR-01, HAR-02, HAR-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Other keys byte-for-byte; invalid JSON untouched with error; uninstall restores
+- [x] Other keys byte-for-byte; invalid JSON untouched with error; uninstall restores
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(harness): register partyline in opencode, pi and omp`

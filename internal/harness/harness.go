@@ -109,6 +109,9 @@ func All(env Env) []Registrar {
 		&claude{env: env},
 		&codex{env: env},
 		&gemini{env: env},
+		newOpenCode(env),
+		newPi(env),
+		newOmp(env),
 	}
 }
 
