@@ -12,7 +12,7 @@ GENERATED := internal/store/db web/src/lib/api/types.gen.ts
 
 HAS_WEB := $(wildcard web/package.json)
 
-.PHONY: all generate check-generate lint vet test build check web-install web-test web-check web-build
+.PHONY: all generate check-generate lint vet test build check e2e web-install web-test web-check web-build
 
 all: check
 
@@ -61,6 +61,11 @@ ifneq ($(HAS_WEB),)
 	$(MAKE) web-build
 endif
 	go build ./...
+
+## e2e: Playwright smoke suite against the built binary (not part of check; CI runs it as its own job).
+## Set PLAYWRIGHT_CHROMIUM_EXECUTABLE to reuse an installed Chromium instead of `playwright install`.
+e2e: build
+	cd web && PARTYLINE_BIN=$(CURDIR)/bin/partyline $(BUN) x playwright test
 
 web-install:
 	cd web && $(BUN) install --frozen-lockfile
