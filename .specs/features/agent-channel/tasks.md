@@ -271,7 +271,7 @@ T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
 **Requirement**: MCP-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `partyline channel`'s initialize result has `instructions` equal to `channel.Instructions`
+- [x] `partyline channel`'s initialize result has `instructions` equal to `channel.Instructions`
 **Tests**: e2e
 **Gate**: full
 **Commit**: `test(cli): assert the channel instructions in the initialize answer`
