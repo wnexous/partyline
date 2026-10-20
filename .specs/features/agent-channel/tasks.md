@@ -158,9 +158,9 @@ T5 → T6 → T7 → T8 → T9
 **Requirement**: AGT-02, AGT-03, AGT-07, AGT-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Against testkit: message pushed → notification line on stdout → cursor advanced
-- [ ] Duplicate frame → single notification, two acks
-- [ ] Server restart → reconnects; invalid token → stderr line once, tools report `not connected (invalid token)`
+- [x] Against testkit: message pushed → notification line on stdout → cursor advanced
+- [x] Duplicate frame → single notification, two acks
+- [x] Server restart → reconnects; invalid token → stderr line once, tools report `not connected (invalid token)`
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(channel): add resilient websocket link with acks and dedupe`
