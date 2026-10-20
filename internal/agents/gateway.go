@@ -154,7 +154,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	row, err := g.register(r.Context(), p)
 	if err != nil {
-		g.d.Logger.ErrorContext(r.Context(), "agent: register failed", "err", err, "request_id", httpx.RequestID(r.Context()))
+		if errors.Is(err, ErrAgentLimit) {
+			g.d.Logger.WarnContext(r.Context(), "agent: limit reached", "owner_id", p.UserID, "request_id", httpx.RequestID(r.Context()))
+		} else {
+			g.d.Logger.ErrorContext(r.Context(), "agent: register failed", "err", err, "request_id", httpx.RequestID(r.Context()))
+		}
 		httpx.WriteError(w, err)
 		return
 	}
