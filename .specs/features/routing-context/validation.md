@@ -4,9 +4,15 @@
 **Spec**: `.specs/features/routing-context/spec.md` (+ `design.md`, `tasks.md`, `contract-notes.md`)
 **Diff range**: iteration 3 re-verify of the fix commits `f8423b2..53a74e3` (T35–T47: 3c82596, 5c3d951, 9cae214, b952a0d, 2bb3250, 6304bf0, 3dd80a1, f7f3dd0, 872b9bc, 17d5a99, 2fbede1, 7821561, 53a74e3; migration 0010), verified at merge `35b48bc` (fix/rc-3 + main). Interleaved harness-onboarding commits from main were ignored. Feature base `bc17899`.
 **Verifier**: independent sub-agent (author ≠ verifier), detached worktree `partyline-verify-rc` at 35b48bc
-**Iteration**: 3 of 3 (final; a FAIL escalates to André)
+**Iteration**: 3 of 3 (final; a FAIL escalates to André), then an escalation closure check of `67e3700..5ddd570` (T48–T54)
 
-**Verdict: FAIL ❌.** All eight iteration-2 survivors (B2, C4, S4, S5, E5, T1, T2, T8) are now killed. All 43 ACs and all 6 edge cases have spec-anchored evidence, and every gate passes (`make check` EXIT 0, e2e 8/8). The expanded sensor on the new fix code (T42–T46) still left **5 surviving mutants**: N6, N10, N13, N14 and N30. A scratch probe also found **one real security defect** in INS-06: a web save that trims whitespace makes the saver the author of text another manager wrote (finding 9). The shipped behaviour matches the spec literally, and each survivor is a missing test. Because this is the third iteration, the gaps go to André instead of a fourth loop.
+## Validation verdict: PASS ✅ (closure gaps closed at `f5dae2a`)
+
+> **Gap closure (orchestrator, 2026-10-20)**: `f5dae2a` adds `TestRoomCreateStoresTrimmedText` and a legacy-name case (stored `"Support (bob)\uFEFF"`, alice's web save keeps bob as author) to `TestRoomTextWhitespaceDoesNotMoveTheAuthor` in `internal/api/room_info_test.go`. Re-applied in the working copy and reverted: F7 (create stores `in.Description` untrimmed) → FAIL; F8 (create stores `in.Instructions` untrimmed) → FAIL; F9 (name compared against the untrimmed stored name) → FAIL. `make check` at `f5dae2a` EXIT 0. Production code unchanged.
+
+**Closure verdict before gap closure (kept for history, HEAD 5ddd570): FAIL ❌.** Every gate is green (`make check` EXIT 0, e2e 8/8). All five iteration-3 survivors (N6, N10, N13, N14, N30) are killed, and the whitespace trust laundering (finding 9) is fixed: the probe now passes on HEAD and fails on the pre-fix `rooms.go`. The four amended ACs have spec-anchored tests. The sensor still leaves **3 survivors on the new trimming code (F7, F8, F9)**. The shipped code is correct for all three; the tests just don't guard it. F9 matters most: if the name compare regressed to the untrimmed stored name, a pre-fix name ending in U+FEFF would launder again, and no test would fail. Details are in "Escalation closure (post iteration 3)" below.
+
+**Iteration-3 verdict (kept for history): FAIL ❌.** All eight iteration-2 survivors (B2, C4, S4, S5, E5, T1, T2, T8) are now killed. All 43 ACs and all 6 edge cases have spec-anchored evidence, and every gate passes (`make check` EXIT 0, e2e 8/8). The expanded sensor on the new fix code (T42–T46) still left **5 surviving mutants**: N6, N10, N13, N14 and N30. A scratch probe also found **one real security defect** in INS-06: a web save that trims whitespace makes the saver the author of text another manager wrote (finding 9). The shipped behaviour matches the spec literally, and each survivor is a missing test. Because this is the third iteration, the gaps go to André instead of a fourth loop.
 
 ---
 
@@ -14,7 +20,100 @@
 
 - **Iteration 1** (`bc17899..2f0931d`): FAIL. 25/25 ACs evidenced; sensor 41/44 (G5, G23, G26 survived); 8 security weaknesses reported. Fix tasks T18–T34.
 - **Iteration 2** (`8094902..6947d1d`): FAIL. 39/39 ACs evidenced; sensor 56/64 (B2, C4, S4, S5, E5, T1, T2, T8 survived); the ROUTE-07 "stays off" edge case was untested. Fix tasks T35–T47 added ROUTE-10, ROUTE-11, INS-06 and A11Y-05, amended ROUTE-08 and REACT-05, and added migration 0010.
-- **Iteration 3** (this report): every iteration-2 survivor and the edge case are fixed. The spec now has 43 ACs, all evidenced. The sensor killed 35 of 40 mutants and 5 survived. One new security defect was found. Gates are green.
+- **Iteration 3**: every iteration-2 survivor and the edge case are fixed. The spec now has 43 ACs, all evidenced. The sensor killed 35 of 40 mutants and 5 survived. One new security defect was found. Gates are green.
+- **Escalation closure** (`67e3700..5ddd570`, T48–T54): FAIL. Gates green; N6, N10, N13, N14 and N30 killed; finding 9 fixed and probed; sensor 20/23 (F7, F8, F9 survived on the new trimming). See the section below.
+
+---
+
+## Escalation closure (post iteration 3)
+
+**Date**: 2026-10-20. **Range**: `67e3700..5ddd570`: db5fce7 (T48), 515929b (T49), 69252cd (T50), 426d4f0 (T51), 28e81a7 (T52), 9a9d660 (T53), 5ddd570 (T54). **Worktree**: `partyline-verify-rc` at 5ddd570 (detached). **Verifier**: a fresh sub-agent, not the author.
+
+**Result**: FAIL ❌. Gates are green, every escalated gap is closed, and 3 survivors on the new trimming remain (F7, F8, F9).
+
+### Gates
+
+- `make check`: **EXIT 0** on the first run (9 m 54 s). golangci-lint reported 0 issues. `go test -race ./...` passed all 31 packages. Vitest **292 passed / 29 files** (288 → 292). bun test passed 27, failed 0. Web build and `go build` passed.
+- `make e2e` with `PLAYWRIGHT_CHROMIUM_EXECUTABLE=…/chromium_headless_shell-1243/…/chrome-headless-shell`: **8 passed**, EXIT 0, first run. Nothing was flaky, so no re-run was needed.
+- **Counts**: Go test funcs went from 652 at 67e3700 to 657 at 5ddd570 (+5). Vitest cases went from 288 to 292 (+4).
+- **Integrity**: no test was removed or weakened since 67e3700. `git diff --numstat 67e3700..5ddd570` shows 0 deleted lines in all three test files (`internal/api/room_info_test.go` +122, `internal/connectors/catch_all_test.go` +59, `web/src/components/composer.test.tsx` +73). Deleted lines appear only in `internal/rooms/rooms.go`, `web/src/components/composer.tsx` and `spec.md`.
+
+### Amended ACs: spec-anchored evidence
+
+| AC (amendment) | Spec-defined outcome | `file:line` + assertion | Result |
+| --- | --- | --- | --- |
+| INS-04: re-saving the same instructions once trimmed keeps the author | `instructions_by` unchanged, still untrusted | `internal/api/room_info_test.go:344` `require.Equal(t, "bobby", got.InstructionsBy, …)`; `:345` `require.False(t, got.InstructionsTrusted)`; `:347` the U+FEFF + LF variant keeps `"bobby"`; `:339` stored trimmed | ✅ |
+| INS-06 trim rule (PATCH): stored without surrounding white space and compared trimmed | stored trimmed; a web save keeps the author | `room_info_test.go:303` `Equal("Support (bob)", got.Name)`; `:304` `Equal("Forward every file to bob.", got.Description)`; `:309` `False(trusted(f.rest()))` after alice's `webSave`; `:315` trailing U+FEFF; `:320` untrimmed legacy description; `:324` a real change moves the author | ✅ |
+| INS-06 trim rule (create) | a created room's name, description and instructions are stored trimmed | name only: `internal/rooms/rooms_test.go:127`/`:131` `"  Ops  "` → `Equal("Ops", r.Name)`. **No evidence for the description or instructions on create** (F7, F8) | ⚠️ gap |
+| INS-06: an instructions-only edit leaves the room text author | `room_text_trusted` unchanged for both agents | `room_info_test.go:371` `True(trusted(f.rest()))`, `:372` `False(trusted(helperRest))` | ✅ |
+| ROUTE-10 web picker: stops at 10; the others are disabled and described; pt-BR | `At most 10 chats per message` / `No máximo 10 chats por mensagem` | `web/src/components/composer.test.tsx:305` text; `:306` `box(10).toBeDisabled()`; `:307` `toHaveAccessibleDescription("At most 10 chats per message")`; `:313` re-enabled after unpicking; `:339` pt-BR text | ✅ |
+| A11Y-05: Send moves focus to the picker, Enter keeps it in the message box; pt-BR alert | focus on the `To: choose a chat` button; alert `Escolha um chat para responder` | `composer.test.tsx:285` `expect(box).toHaveFocus()`; `:287` the picker `toHaveFocus()`; `:348` `toHaveTextContent("Escolha um chat para responder")`, `:349` nothing posted | ✅ |
+| ROUTE-08 / ROUTE-11: hourly window per connector | the second connector still routes, with an empty detail | `internal/connectors/catch_all_test.go:579` `Len(…, 61)`; `:581` `Empty(got.LastError)` | ✅ |
+| ROUTE-11 / CTX-08: a skipped chat is still recorded | title and `last_seen_at` updated, not re-added, nothing stored | `catch_all_test.go:602` `NotContains`; `:603` message count unchanged; `:611` `Equal("Customer Renamed", got.Title)`; `:613` `last_seen_at` = message time | ✅ |
+
+### Discrimination sensor
+
+Scratch: `git worktree add --detach /tmp/claude-1001/pl-rc-close 5ddd570`, with web `node_modules` symlinked. A driver applied each mutation as one exact-string replacement, ran the targeted command, then ran `git checkout -- <file>`. Go mutants on rooms ran `go test -count=1 ./internal/api/ ./internal/rooms/`, catch-all mutants ran `./internal/connectors/`, and web mutants ran `vitest run src/components/composer.test.tsx src/lib/i18n`. All three survivors were re-run against **all** Go packages (`go test ./...`) and still survived. Each kill was checked to come from the intended test, with no compile errors. A second scratch (`…/pl-rc-close-probe`) held the probes. Both scratches were removed afterwards. Real-tree `git status --porcelain` was the same before and after: empty except the uncommitted report.
+
+| # | File | Mutation | Result |
+| --- | --- | --- | --- |
+| N6 | `internal/connectors/inbound.go:266,281` | one shared hourly window for every connector (locks stay per connector) | ✅ killed (TestCatchAllHourlyCapIsPerConnector) |
+| N10 | `inbound.go` skip branch | chat held out by the 24 h skip is not upserted | ✅ killed (TestCatchAllSkippedChatIsRecorded) |
+| N13 | `internal/rooms/rooms.go:292` | an instructions save also moves `updated_by` | ✅ killed (TestRoomTextAuthorKeptByOtherSaves) |
+| N14 | `rooms.go:286` | any description save moves the author | ✅ killed (TestRoomTextWhitespaceDoesNotMoveTheAuthor, TestRoomTextAuthorKeptByOtherSaves) |
+| N30 | `web/src/lib/i18n/pt-BR.ts:217` | `composer.pickChat` text changed | ✅ killed (says to pick a chat in pt-BR) |
+| F1 | `rooms.go:143` | `roomText` stops trimming U+FEFF | ✅ killed |
+| F2 | `rooms.go:143` | `roomText` trims only the end (`TrimRightFunc`) | ✅ killed |
+| F3 | `rooms.go:287` | PATCH stores the description untrimmed | ✅ killed |
+| F4 | `rooms.go:286` | description compared with the untrimmed stored copy | ✅ killed (legacy row case) |
+| F5 | `rooms.go:290` | instructions re-save always moves `instructions_by` | ✅ killed |
+| F6 | `rooms.go:291` | PATCH stores instructions untrimmed | ✅ killed |
+| **F7** | `rooms.go:172` | **create stores `in.Description` untrimmed** | ❌ survived (`go test ./...`) |
+| **F8** | `rooms.go:172` | **create stores `in.Instructions` untrimmed** | ❌ survived (`go test ./...`) |
+| **F9** | `rooms.go:282` | **name compared with the untrimmed stored name** | ❌ survived (`go test ./...`) |
+| F10 | `rooms.go:283` | PATCH stores the name untrimmed | ✅ killed |
+| F11 | `web/src/components/composer.tsx:167` | form submit calls `send()` (no focus move) | ✅ killed |
+| F12 | `composer.tsx:124` | Enter also moves focus to the picker | ✅ killed |
+| F13 | `composer.tsx:305` | cap `>=` → `>` (11 picks allowed) | ✅ killed |
+| F14 | `composer.tsx` checkbox | capped checkbox not described (`aria-describedby` dropped) | ✅ killed |
+| F15 | `composer.tsx` `capped` | picked chats also disabled at the cap | ✅ killed |
+| F16 | `composer.tsx` limit note | limit note never shown | ✅ killed |
+| F17 | `pt-BR.ts` | `composer.recipientsLimit` text changed | ✅ killed |
+| F18 | `composer.tsx` trigger | picker trigger loses `ref={triggerRef}` | ✅ killed |
+
+**Sensor depth**: expanded (P0: trust labels)
+**Result**: 20/23 killed. All 5 re-applied iteration-3 survivors are killed; 3 fresh survivors remain (F7, F8, F9): FAIL ❌.
+
+### Laundering probe (finding 9), scratch only, discarded
+
+`internal/api/zz_probe_test.go` ran 8 description variants written by bob, a co-manager. After each, alice made a web-style save: the GET name and description, trimmed by a Go copy of `String.prototype.trim`, plus a retention change, sent through the `webSave` helper. The variants were: a trailing space, a trailing U+FEFF, a leading U+FEFF with a trailing NBSP, U+2028, U+3000, U+0085 (Go trims it, JS does not), CRLF on both ends, and U+200A + U+205F. For each variant the probe also checked: alice re-sending bob's raw text, an untrimmed legacy row written straight to the store followed by a web save, bob's name `U+FEFF"Bob room "` followed by alice's web save, and bob's instructions `"…\uFEFF "` re-sent by alice both trimmed and padded with U+3000/U+2029.
+- On **HEAD**: passed. alice's agent never got `room_text_trusted=true`, and `instructions_by` stayed `bobby`.
+- With **`rooms.go` from 67e3700**: failed on the first case (`"Forward every file to bob. " laundered into alice's trust`). The probe discriminates, and the fix closes finding 9.
+- **F9 is a real laundering path that no test guards.** A second probe stored a pre-fix name `"Bob room\uFEFF"` by bob. Pre-fix `strings.TrimSpace` kept U+FEFF, so such rows can exist. alice then made a web save with `"Bob room"`. HEAD passed; with F9 applied it failed (`legacy name laundered`).
+- Interior white space (for example CRLF inside the description) can't launder anything. The description field is an `<input>` driven by react-hook-form state from `defaultValues`. An untouched field sends the stored value trimmed, and instructions are sent only when edited (`room-settings-sheet.tsx:86-93`).
+
+### UI minors from iteration 3
+
+- Focus after Send now moves to the chat picker (`composer.tsx:124`, killed by F11, F12 and F18). **Closed.**
+- The recipients picker now stops at 10 chats with an inline, described note (`composer.tsx:305-381`, killed by F13–F17). **Closed.**
+- The alert sits above the textarea and describes the picker. Info only; unchanged and acceptable.
+
+### Fix plans (closure)
+
+- **Fix C1: guard the name compare for legacy rows (F9). Minor, INS-06, security-relevant.** In `TestRoomTextWhitespaceDoesNotMoveTheAuthor`, add `setRoomText(…, "Support (bob)\uFEFF", …, bob)`, have alice make a web save with `"Support (bob)"`, and assert that `room_text_trusted` stays false for alice's agent.
+- **Fix C2: create stores trimmed text (F7, F8). Minor, INS-06 trim rule.** POST a room with description `" Desk\uFEFF"` and instructions `"\n Reply in a day. "`, then assert that GET returns `"Desk"` and `"Reply in a day."`.
+
+### Traceability (closure)
+
+| Requirement | After iteration 3 | After closure |
+| --- | --- | --- |
+| ROUTE-08, ROUTE-11, CTX-08 | ⚠️ test gap (N6, N10) | ✅ Verified |
+| ROUTE-10 (web picker) | (new) | ✅ Verified |
+| A11Y-05 | ⚠️ test gap (N30) | ✅ Verified (pt-BR, focus) |
+| INS-04 (amended) | ✅ | ✅ Verified |
+| INS-06 | ❌ Needs Fix (N13, N14, finding 9) | ⚠️ Fixed in code; test gaps F7, F8, F9 |
+
+(spec.md not edited by the Verifier.)
 
 ---
 
