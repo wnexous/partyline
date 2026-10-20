@@ -653,7 +653,7 @@ T35 → T43 → T44
 **Requirement**: ACL-03, LIVE-02 (read model)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Only rooms the caller can view; newest first; default 20; limit capped at 50; invalid limit 422
+- [x] Only rooms the caller can view; newest first; default 20; limit capped at 50; invalid limit 422
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(api): add activity feed endpoint`

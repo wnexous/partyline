@@ -798,6 +798,21 @@ export interface RoomRef {
   id: string;
   name: string;
 }
+/**
+ * ActivityItem is one entry of GET /activity: a message with the room it was posted in.
+ */
+export interface ActivityItem {
+  room: RoomRef;
+  message: Message;
+}
+/**
+ * Activity feed page sizes (GET /activity?limit=).
+ */
+export const DefaultActivityLimit = 20;
+/**
+ * Activity feed page sizes (GET /activity?limit=).
+ */
+export const MaxActivityLimit = 50;
 
 //////////
 // source: users.go

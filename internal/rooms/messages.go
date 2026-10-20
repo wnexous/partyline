@@ -417,3 +417,36 @@ func (s *Service) Attachment(ctx context.Context, p authn.Principal, attachmentI
 	}
 	return row.Attachment, nil
 }
+
+// ActivityItem is a message with the room it belongs to.
+type ActivityItem struct {
+	Room    Room
+	Message Message
+}
+
+// Activity returns the latest messages, newest first, across every room the calling user
+// can view (at most limit).
+func (s *Service) Activity(ctx context.Context, p authn.Principal, limit int) ([]ActivityItem, error) {
+	visible, err := s.List(ctx, p)
+	if err != nil || len(visible) == 0 || limit <= 0 {
+		return nil, err
+	}
+	byID := make(map[string]Room, len(visible))
+	ids := make([]string, len(visible))
+	for i, r := range visible {
+		byID[r.ID], ids[i] = r, r.ID
+	}
+	views, err := s.store.R().ListLatestMessagesInRooms(ctx, db.ListLatestMessagesInRoomsParams{RoomIds: ids, Limit: int64(limit)})
+	if err != nil {
+		return nil, err
+	}
+	msgs, err := s.withDetails(ctx, views)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ActivityItem, len(msgs))
+	for i, m := range msgs {
+		out[i] = ActivityItem{Room: byID[m.RoomID], Message: m}
+	}
+	return out, nil
+}

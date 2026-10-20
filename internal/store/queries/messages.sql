@@ -53,3 +53,10 @@ UPDATE rooms SET agent_streak = 0, agents_paused = 0, updated_at = ? WHERE id = 
 SELECT sqlc.embed(a), m.room_id
 FROM attachments a JOIN messages m ON m.id = a.message_id
 WHERE a.id = ?;
+
+-- name: ListLatestMessagesInRooms :many
+SELECT * FROM message_views
+WHERE room_id IN (sqlc.slice(room_ids))
+ORDER BY created_at DESC, id DESC
+-- A positional LIMIT: sqlc numbers a named arg (?2) after a slice, which breaks the expansion.
+LIMIT ?;

@@ -189,3 +189,15 @@ type RoomRef struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
+
+// ActivityItem is one entry of GET /activity: a message with the room it was posted in.
+type ActivityItem struct {
+	Room    RoomRef `json:"room"`
+	Message Message `json:"message"`
+}
+
+// Activity feed page sizes (GET /activity?limit=).
+const (
+	DefaultActivityLimit = 20
+	MaxActivityLimit     = 50
+)
