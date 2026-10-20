@@ -510,14 +510,55 @@ describe("catch-all routing (ROUTE-01, ROUTE-04)", () => {
   it("shows a 422 room reason under the picker", async () => {
     api(
       { auto_route_scope: "dms", auto_route_room_id: "r1" },
-      apiError(422, "validation", "invalid", { auto_route_room_id: "unknown room" }),
+      apiError(422, "validation", "invalid", {
+        auto_route_room_id: "required when the scope is not off",
+      }),
     );
     const user = userEvent.setup();
     renderRoute("/connectors/k1");
     const region = await card();
-    await user.selectOptions(await within(region).findByRole("combobox", { name: "Room" }), "r3");
+    const picker = await within(region).findByRole("combobox", { name: "Room" });
+    await user.selectOptions(picker, "r3");
     await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
-    expect(await within(region).findByText("unknown room")).toBeInTheDocument();
+    // A11Y-01: the reason is announced and describes the picker.
+    expect(await within(region).findByRole("alert")).toHaveTextContent(
+      "required when the scope is not off",
+    );
+    expect(picker).toHaveAccessibleDescription("required when the scope is not off");
+  });
+
+  it("announces a 422 scope reason and ties it to the scope choice (A11Y-01)", async () => {
+    api(
+      { auto_route_scope: "dms", auto_route_room_id: "r1" },
+      apiError(422, "validation", "invalid", {
+        auto_route_scope: "must be off, dms, groups or all",
+      }),
+    );
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const region = await card();
+    await user.click(within(region).getByRole("radio", { name: "All chats" }));
+    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
+    expect(await within(region).findByRole("alert")).toHaveTextContent(
+      "must be off, dms, groups or all",
+    );
+    expect(
+      within(region).getByRole("radiogroup", { name: "New chats to route" }),
+    ).toHaveAccessibleDescription("must be off, dms, groups or all");
+  });
+
+  it("says why Save is disabled before anything changes (A11Y-04)", async () => {
+    api({ auto_route_scope: "dms", auto_route_room_id: "r1" });
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const region = await card();
+    const save = within(region).getByRole("button", { name: "Save catch-all" });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAccessibleDescription("No changes to save.");
+    expect(within(region).getByText("No changes to save.")).toBeInTheDocument();
+    await user.click(within(region).getByRole("radio", { name: "All chats" }));
+    expect(save).toBeEnabled();
+    expect(within(region).queryByText("No changes to save.")).toBeNull();
   });
 
   it("names a catch-all room the user cannot pick any more", async () => {

@@ -47,6 +47,8 @@ export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
   const [formError, setFormError] = useState<string | null>(null);
   const titleId = useId();
   const roomFieldId = useId();
+  const scopeErrorId = useId();
+  const saveHintId = useId();
   const on = scope !== AutoRouteScopeOff;
 
   const managed = (rooms.data ?? []).filter((r) => r.my_level === LevelManage);
@@ -105,6 +107,7 @@ export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
             }}
             aria-labelledby={`${titleId}-scope`}
             aria-invalid={scopeError ? true : undefined}
+            aria-describedby={scopeError ? scopeErrorId : undefined}
             className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1 sm:grid-cols-4"
           >
             {SCOPES.map((s) => (
@@ -122,7 +125,11 @@ export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
               </RadioGroupPrimitive.Item>
             ))}
           </RadioGroupPrimitive.Root>
-          {scopeError ? <p className="text-sm text-destructive">{scopeError}</p> : null}
+          {scopeError ? (
+            <p id={scopeErrorId} role="alert" className="text-sm text-destructive">
+              {scopeError}
+            </p>
+          ) : null}
         </div>
 
         {on ? (
@@ -168,7 +175,7 @@ export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
                   ))}
                 </select>
                 {roomError ? (
-                  <p id={`${roomFieldId}-error`} className="text-sm text-destructive">
+                  <p id={`${roomFieldId}-error`} role="alert" className="text-sm text-destructive">
                     {roomError}
                   </p>
                 ) : (
@@ -196,11 +203,18 @@ export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
           </div>
         ) : null}
 
-        <div className="flex justify-end">
+        <div className="flex items-center justify-end gap-3">
+          {/* A11Y-04: Save waits for a change, and says so. */}
+          {dirty ? null : (
+            <p id={saveHintId} className="text-xs text-muted-foreground">
+              {t("catchAll.noChanges")}
+            </p>
+          )}
           <Button
             size="sm"
             disabled={!dirty || update.isPending}
             aria-label={t("catchAll.save")}
+            aria-describedby={dirty ? undefined : saveHintId}
             onClick={save}
           >
             {t("common.save")}

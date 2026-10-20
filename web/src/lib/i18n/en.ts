@@ -693,6 +693,7 @@ export const en = {
   "catchAll.warningTrust":
     "Their messages arrive untrusted unless they come from your verified identities.",
   "catchAll.save": "Save catch-all",
+  "catchAll.noChanges": "No changes to save.",
   "catchAll.saved": "Catch-all saved",
   "catchAll.forbidden": "You need manage access on that room to route chats to it.",
   "chat.untitled": "{platform} chat",

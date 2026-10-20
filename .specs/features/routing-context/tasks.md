@@ -552,7 +552,7 @@ T31 → T32 → T33 → T34
 **Requirement**: A11Y-01, A11Y-02, A11Y-03, A11Y-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Vitest assertions per item
+- [x] Vitest assertions per item
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(web): announce form errors and keep typed keywords`

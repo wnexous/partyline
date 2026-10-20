@@ -376,6 +376,8 @@ describe("room instructions (INS-01)", () => {
     );
     expect(box).toHaveValue("Answer in Portuguese.");
     expect(within(sheet).getByText("21 / 4000")).toBeInTheDocument();
+    // A11Y-03: the counter describes the textarea.
+    expect(box).toHaveAccessibleDescription(/21 \/ 4000/);
     await user.type(box, " Be brief.");
     await user.click(within(sheet).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(patches()).toHaveLength(1));

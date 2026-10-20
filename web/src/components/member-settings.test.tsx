@@ -206,6 +206,38 @@ describe("agent membership settings (MEM-01..05)", () => {
     );
   });
 
+  it("adds a keyword typed but not committed when saving (A11Y-02)", async () => {
+    const { user, patches } = setup({ delivery: "mentions", keywords: ["deploy"] });
+    const dialog = await open(user);
+    await user.type(within(dialog).getByRole("textbox", { name: /Keywords/ }), " pedido ");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect(patches()[0]?.body).toEqual({ keywords: ["deploy", "pedido"] });
+  });
+
+  it("keeps the popover open when the typed keyword is invalid on save (A11Y-02)", async () => {
+    const { user, patches } = setup({ delivery: "mentions" });
+    const dialog = await open(user);
+    const input = within(dialog).getByRole("textbox", { name: /Keywords/ });
+    await user.click(input);
+    await user.paste("k".repeat(65));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByText("Each keyword: 1 to 64 characters")).toBeInTheDocument();
+    expect(patches()).toHaveLength(0);
+  });
+
+  it("announces the keyword message and ties it to the input (A11Y-01)", async () => {
+    const { user } = setup({ delivery: "mentions" });
+    const dialog = await open(user);
+    const input = within(dialog).getByRole("textbox", { name: /Keywords/ });
+    await user.click(input);
+    await user.paste("k".repeat(65));
+    await user.keyboard("{Enter}");
+    const message = await within(dialog).findByText("Each keyword: 1 to 64 characters");
+    expect(message.closest("[aria-live]")).toHaveAttribute("aria-live", "polite");
+    expect(input).toHaveAccessibleDescription(/Each keyword: 1 to 64 characters/);
+  });
+
   it("speaks Portuguese", async () => {
     useLiveStore.setState({ locale: "pt-BR" });
     mockApi({});

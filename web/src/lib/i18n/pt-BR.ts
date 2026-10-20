@@ -700,6 +700,7 @@ export const ptBR: Dictionary = {
   "catchAll.warningTrust":
     "As mensagens chegam como não confiáveis, a menos que venham das suas identidades verificadas.",
   "catchAll.save": "Salvar encaminhamento",
+  "catchAll.noChanges": "Nada mudou para salvar.",
   "catchAll.saved": "Encaminhamento salvo",
   "catchAll.forbidden": "Você precisa gerenciar essa sala para encaminhar chats para ela.",
   "chat.untitled": "Chat do {platform}",

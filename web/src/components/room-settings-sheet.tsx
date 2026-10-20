@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
-import { useForm } from "react-hook-form";
+import { type ReactNode, useId, useState } from "react";
+import { type ControllerRenderProps, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FieldError, FormAlert, TextField } from "@/components/form-fields";
 import {
@@ -23,6 +23,7 @@ import {
   FormItem,
   FormLabel,
   Form as FormProvider,
+  useFormField,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import {
@@ -142,33 +143,7 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
               const over = count > MaxRoomInstructions;
               return (
                 <FormItem>
-                  <FormLabel>
-                    {t("settings.instructions")}
-                    <span className="font-normal text-muted-foreground">
-                      ({t("auth.optional")})
-                    </span>
-                  </FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      rows={6}
-                      className="max-h-80 min-h-32 resize-y leading-relaxed"
-                    />
-                  </FormControl>
-                  <div className="flex items-start justify-between gap-4">
-                    <FormDescription className="text-xs">
-                      {t("settings.instructionsHint")}
-                    </FormDescription>
-                    <span
-                      className={cn(
-                        "shrink-0 font-mono text-xs text-muted-foreground tabular",
-                        over && "font-semibold text-destructive",
-                      )}
-                    >
-                      {t("settings.instructionsCount", { count, max: MaxRoomInstructions })}
-                    </span>
-                  </div>
-                  <FieldError />
+                  <InstructionsBody field={field} count={count} over={over} />
                 </FormItem>
               );
             }}
@@ -305,5 +280,51 @@ function DeleteRoom({ room }: { room: Room }) {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/** The instructions textarea; its hint, counter (A11Y-03) and error describe it. */
+function InstructionsBody({
+  field,
+  count,
+  over,
+}: {
+  field: ControllerRenderProps<RoomSettingsForm, "instructions">;
+  count: number;
+  over: boolean;
+}) {
+  const { t } = useI18n();
+  const { error, formDescriptionId, formMessageId } = useFormField();
+  const counterId = useId();
+  return (
+    <>
+      <FormLabel>
+        {t("settings.instructions")}
+        <span className="font-normal text-muted-foreground">({t("auth.optional")})</span>
+      </FormLabel>
+      <FormControl>
+        <Textarea
+          {...field}
+          rows={6}
+          aria-describedby={[formDescriptionId, counterId, error ? formMessageId : ""]
+            .filter(Boolean)
+            .join(" ")}
+          className="max-h-80 min-h-32 resize-y leading-relaxed"
+        />
+      </FormControl>
+      <div className="flex items-start justify-between gap-4">
+        <FormDescription className="text-xs">{t("settings.instructionsHint")}</FormDescription>
+        <span
+          id={counterId}
+          className={cn(
+            "shrink-0 font-mono text-xs text-muted-foreground tabular",
+            over && "font-semibold text-destructive",
+          )}
+        >
+          {t("settings.instructionsCount", { count, max: MaxRoomInstructions })}
+        </span>
+      </div>
+      <FieldError />
+    </>
   );
 }

@@ -167,6 +167,19 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 
 ---
 
+### P2: Settings forms are accessible (fix iteration 1)
+
+**User Story**: As a screen-reader or keyboard user, I want the routing settings forms to announce their errors and state so that I can use them without sight.
+
+**Acceptance Criteria**:
+
+1. WHEN a keyword, catch-all scope or catch-all room error appears THEN it SHALL be announced (live region or `role="alert"`) and describe its control through `aria-describedby`. (A11Y-01)
+2. WHEN a manager saves agent settings with a keyword typed but not yet added THEN the app SHALL add it (or show its error and send nothing). (A11Y-02)
+3. The room instructions counter SHALL describe the instructions textarea. (A11Y-03)
+4. WHILE the catch-all form has no change, Save SHALL stay disabled and be described by `No changes to save.` (A11Y-04)
+
+---
+
 ## Edge Cases
 
 - IF two first messages from the same new chat arrive at once THEN the system SHALL add the chat to the catch-all room only once (ROUTE-01).
@@ -217,8 +230,12 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | REACT-05 | P2: Reactions | Fix iteration 1 | Implemented (T28) |
 | ROOMDEL-01 | P1: Delete a room | Tasks | Implementing |
 | ROOMDEL-02 | P1: Delete a room | Tasks | Implementing |
+| A11Y-01 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
+| A11Y-02 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
+| A11Y-03 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
+| A11Y-04 | P2: Accessible forms | Fix iteration 1 | Implemented (T33) |
 
-**Coverage:** 35 total, mapped in tasks.md
+**Coverage:** 39 total, mapped in tasks.md
 
 ---
 

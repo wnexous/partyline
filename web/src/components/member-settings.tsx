@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { PlusIcon, SlidersHorizontalIcon, XIcon } from "lucide-react";
-import { type KeyboardEvent, useId, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FieldError, FormAlert } from "@/components/form-fields";
@@ -12,6 +12,7 @@ import {
   FormItem,
   FormLabel,
   Form as FormProvider,
+  useFormField,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -139,6 +140,24 @@ function SettingsForm({
     },
   });
   const delivery = form.watch("delivery");
+  // The keyword being typed; Save adds it like Enter does (A11Y-02).
+  const [draft, setDraft] = useState("");
+  const [draftError, setDraftError] = useState<MessageKey | null>(null);
+  const commitDraft = (): boolean => {
+    const word = draft.trim();
+    const err = keywordError(word);
+    if (err) {
+      setDraftError(err);
+      return false;
+    }
+    setDraftError(null);
+    setDraft("");
+    const list = form.getValues("keywords");
+    if (!list.some((k) => k.toLowerCase() === word.toLowerCase())) {
+      form.setValue("keywords", [...list, word], { shouldDirty: true });
+    }
+    return true;
+  };
 
   const onSubmit = form.handleSubmit((values) => {
     setFormError(null);
@@ -176,10 +195,18 @@ function SettingsForm({
     );
   });
 
+  const save = (e: FormEvent<HTMLFormElement>) => {
+    if (delivery === DeliveryModeMentions && draft.trim() !== "" && !commitDraft()) {
+      e.preventDefault();
+      return;
+    }
+    return onSubmit(e);
+  };
+
   const titleId = `${member.id}-settings-title`;
   return (
     <FormProvider {...form}>
-      <form onSubmit={onSubmit} noValidate className="flex min-h-0 flex-1 flex-col">
+      <form onSubmit={save} noValidate className="flex min-h-0 flex-1 flex-col">
         <div className="border-b px-4 pt-3.5 pb-3">
           <h2 id={titleId} className="text-sm font-semibold">
             {t("memberSettings.title")}
@@ -265,7 +292,17 @@ function SettingsForm({
               </FormItem>
             )}
           />
-          {delivery === DeliveryModeMentions ? <KeywordsField /> : null}
+          {delivery === DeliveryModeMentions ? (
+            <KeywordsField
+              draft={draft}
+              draftError={draftError}
+              onDraft={(v) => {
+                setDraft(v);
+                setDraftError(null);
+              }}
+              onCommit={commitDraft}
+            />
+          ) : null}
         </div>
         <div className="flex justify-end gap-2 border-t px-4 py-3">
           <Button type="button" variant="outline" size="sm" onClick={onDone}>
@@ -311,101 +348,117 @@ function DeliveryOption({
   );
 }
 
-/** Keywords as removable chips plus one input; Enter or the add button commits the draft. */
-function KeywordsField() {
-  const { t } = useI18n();
-  const [draft, setDraft] = useState("");
-  const [draftError, setDraftError] = useState<MessageKey | null>(null);
+/**
+ * Keywords as removable chips plus one input; Enter, the add button or Save commits the draft.
+ * The draft message is a live region that also describes the input (A11Y-01).
+ */
+function KeywordsField(props: {
+  draft: string;
+  draftError: MessageKey | null;
+  onDraft: (value: string) => void;
+  onCommit: () => boolean;
+}) {
   return (
     <FormField
       name="keywords"
-      render={({ field, fieldState }) => {
-        const list = field.value as string[];
-        const full = list.length >= MaxMemberKeywords;
-        const commit = () => {
-          const word = draft.trim();
-          const err = keywordError(word);
-          if (err) {
-            setDraftError(err);
-            return;
-          }
-          setDraftError(null);
-          setDraft("");
-          if (list.some((k) => k.toLowerCase() === word.toLowerCase())) return;
-          field.onChange([...list, word]);
-        };
-        const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-          if (e.key === "Enter" || e.key === ",") {
-            e.preventDefault();
-            commit();
-          }
-        };
-        const message = draftError
-          ? errorText(t, draftError)
-          : full
-            ? t("validation.keywords", validationVars["validation.keywords"])
-            : null;
-        return (
-          <FormItem>
-            <FormLabel>{t("memberSettings.keywords")}</FormLabel>
-            {list.length > 0 ? (
-              <ul className="flex flex-wrap gap-1.5">
-                {list.map((k) => (
-                  <li
-                    key={k}
-                    className="inline-flex max-w-full items-center gap-0.5 rounded-sm border border-tape-strong/70 bg-tape/30 py-0.5 pr-0.5 pl-2 font-mono text-xs dark:bg-tape/10"
-                  >
-                    <span className="truncate">{k}</span>
-                    <button
-                      type="button"
-                      className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-                      aria-label={t("memberSettings.keywordRemove", { keyword: k })}
-                      onClick={() => field.onChange(list.filter((x) => x !== k))}
-                    >
-                      <XIcon className="size-3" aria-hidden="true" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <div className="flex gap-2">
-              <FormControl>
-                <Input
-                  value={draft}
-                  onChange={(e) => {
-                    setDraft(e.target.value);
-                    setDraftError(null);
-                  }}
-                  onKeyDown={onKeyDown}
-                  disabled={full}
-                  placeholder={t("memberSettings.keywordPlaceholder")}
-                  aria-invalid={draftError || fieldState.error ? true : undefined}
-                  autoComplete="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  className="font-mono text-sm"
-                />
-              </FormControl>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="shrink-0"
-                disabled={full}
-                aria-label={t("memberSettings.keywordAdd")}
-                onClick={commit}
-              >
-                <PlusIcon aria-hidden="true" />
-              </Button>
-            </div>
-            <FormDescription className="text-xs">
-              {t("memberSettings.keywordsHint")}
-            </FormDescription>
-            {message ? <p className="text-sm text-destructive">{message}</p> : null}
-            <FieldError />
-          </FormItem>
-        );
-      }}
+      render={({ field }) => (
+        <FormItem>
+          <KeywordsBody {...props} list={field.value as string[]} onChange={field.onChange} />
+        </FormItem>
+      )}
     />
+  );
+}
+
+function KeywordsBody({
+  draft,
+  draftError,
+  onDraft,
+  onCommit,
+  list,
+  onChange,
+}: {
+  draft: string;
+  draftError: MessageKey | null;
+  onDraft: (value: string) => void;
+  onCommit: () => boolean;
+  list: string[];
+  onChange: (list: string[]) => void;
+}) {
+  const { t } = useI18n();
+  const { error, formDescriptionId, formMessageId } = useFormField();
+  const messageId = useId();
+  const full = list.length >= MaxMemberKeywords;
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      onCommit();
+    }
+  };
+  const message = draftError
+    ? errorText(t, draftError)
+    : full
+      ? t("validation.keywords", validationVars["validation.keywords"])
+      : null;
+  const describedBy = [formDescriptionId, message ? messageId : "", error ? formMessageId : ""]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <>
+      <FormLabel>{t("memberSettings.keywords")}</FormLabel>
+      {list.length > 0 ? (
+        <ul className="flex flex-wrap gap-1.5">
+          {list.map((k) => (
+            <li
+              key={k}
+              className="inline-flex max-w-full items-center gap-0.5 rounded-sm border border-tape-strong/70 bg-tape/30 py-0.5 pr-0.5 pl-2 font-mono text-xs dark:bg-tape/10"
+            >
+              <span className="truncate">{k}</span>
+              <button
+                type="button"
+                className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                aria-label={t("memberSettings.keywordRemove", { keyword: k })}
+                onClick={() => onChange(list.filter((x) => x !== k))}
+              >
+                <XIcon className="size-3" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="flex gap-2">
+        <FormControl>
+          <Input
+            value={draft}
+            onChange={(e) => onDraft(e.target.value)}
+            onKeyDown={onKeyDown}
+            disabled={full}
+            placeholder={t("memberSettings.keywordPlaceholder")}
+            aria-invalid={draftError || error ? true : undefined}
+            aria-describedby={describedBy}
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            className="font-mono text-sm"
+          />
+        </FormControl>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="shrink-0"
+          disabled={full}
+          aria-label={t("memberSettings.keywordAdd")}
+          onClick={onCommit}
+        >
+          <PlusIcon aria-hidden="true" />
+        </Button>
+      </div>
+      <FormDescription className="text-xs">{t("memberSettings.keywordsHint")}</FormDescription>
+      <p id={messageId} aria-live="polite" className="text-sm text-destructive empty:hidden">
+        {message}
+      </p>
+      <FieldError />
+    </>
   );
 }
