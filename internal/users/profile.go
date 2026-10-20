@@ -105,3 +105,31 @@ func (s *Service) ChangePassword(ctx context.Context, userID, current, next stri
 func (s *Service) ListSessions(ctx context.Context, userID string) ([]db.Session, error) {
 	return s.store.R().ListSessionsByUser(ctx, db.ListSessionsByUserParams{UserID: userID, ExpiresAt: ms(s.now())})
 }
+
+// ResetPassword sets a new password for username without the current one (operator CLI) and
+// ends all of the user's sessions.
+func (s *Service) ResetPassword(ctx context.Context, username, password string) error {
+	if f := validatePassword(password); f != "" {
+		return &ValidationError{Fields: map[string]string{"password": f}}
+	}
+	hash, err := authn.HashPassword(password)
+	if err != nil {
+		return err
+	}
+	return s.store.WithTx(ctx, func(q *db.Queries) error {
+		u, err := q.GetUserByUsername(ctx, username)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if err := q.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{PasswordHash: hash, ID: u.ID}); err != nil {
+			return err
+		}
+		if err := q.DeleteSessionsByUser(ctx, u.ID); err != nil {
+			return err
+		}
+		return s.audit.Record(ctx, q, audit.Entry{Action: audit.ActionPasswordReset, TargetKind: audit.TargetUser, TargetID: u.ID})
+	})
+}

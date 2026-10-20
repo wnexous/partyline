@@ -468,8 +468,8 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Requirement**: AUTH-01, SEC-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Log captured during a test that posts a message and logs in contains neither message text nor password nor token
-- [ ] `admin create-user` creates an admin usable for login
+- [x] Log captured during a test that posts a message and logs in contains neither message text nor password nor token
+- [x] `admin create-user` creates an admin usable for login
 **Tests**: e2e
 **Gate**: full
 **Commit**: `feat(cli): add serve and admin commands`
