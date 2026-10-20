@@ -437,7 +437,7 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T27
 **Requirement**: UI-25
 **Done when**:
-- [ ] `["en-US","pt-BR"]` → `en`; `["fr","pt-BR"]` → `pt-BR`; `["fr"]` → `en`
+- [x] `["en-US","pt-BR"]` → `en`; `["fr","pt-BR"]` → `pt-BR`; `["fr"]` → `en`
 **Tests**: unit
 **Gate**: quick
 

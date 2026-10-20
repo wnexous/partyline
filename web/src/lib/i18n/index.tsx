@@ -16,9 +16,17 @@ export function isLocale(value: unknown): value is Locale {
   return typeof value === "string" && (LOCALES as readonly string[]).includes(value);
 }
 
-/** Picks pt-BR for any Portuguese browser language, English otherwise. */
+/**
+ * Picks the first browser language the app supports, in the browser's order of preference:
+ * any Portuguese → pt-BR, any English → en. English when none is supported.
+ */
 export function detectLocale(languages: readonly string[]): Locale {
-  return languages.some((l) => l.toLowerCase().startsWith("pt")) ? "pt-BR" : "en";
+  for (const language of languages) {
+    const base = language.toLowerCase().split("-")[0];
+    if (base === "pt") return "pt-BR";
+    if (base === "en") return "en";
+  }
+  return "en";
 }
 
 export function translate(locale: Locale, key: MessageKey, vars?: TranslateVars): string {
