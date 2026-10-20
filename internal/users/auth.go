@@ -92,7 +92,8 @@ type NewSession struct {
 // ErrInvalidCredentials (AUTH-04); an IP over the failure limit gets ErrRateLimited (AUTH-05).
 func (s *Service) Login(ctx context.Context, in LoginInput) (db.User, NewSession, error) {
 	// Reserve the attempt before the slow hash, so concurrent attempts cannot all pass.
-	if !s.limiter.Begin(in.IP, s.now()) {
+	key := clientKey(in.IP)
+	if !s.limiter.Begin(key, s.now()) {
 		return db.User{}, NewSession{}, ErrRateLimited
 	}
 	u, err := s.checkPassword(ctx, in.Username, in.Password)
@@ -105,11 +106,11 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (db.User, NewSession
 		}
 		return db.User{}, NewSession{}, err
 	case err != nil:
-		s.limiter.Release(in.IP)
+		s.limiter.Release(key)
 		return db.User{}, NewSession{}, err
 	}
 	// A success returns only its own reservation; earlier failures stay counted (AUTH-05).
-	s.limiter.Release(in.IP)
+	s.limiter.Release(key)
 	sess, err := s.createSession(ctx, u.ID, in.IP, in.UserAgent)
 	if err != nil {
 		return db.User{}, NewSession{}, err

@@ -796,16 +796,16 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 
 #### T48: Login limiter keyed per client network, no active eviction
 
-**What**: Keys are the client IPv4 /32 or IPv6 /64. When the map is full, expired windows go first (oldest first); with no expired window left a new key is rejected (429) and active windows are never evicted. The default cap is asserted.
+**What**: Keys are the client IPv4 /32 or IPv6 /64. When the map is full, expired windows are dropped; with no expired window left a new key is rejected (429) and active windows are never evicted. The default cap is asserted.
 **Where**: `internal/users/users.go`
 **Depends on**: T47
 **Reuses**: failureLimiter
 **Requirement**: AUTH-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Two addresses in one IPv6 /64 share a window; another /64 and IPv4 addresses do not
-- [ ] A full limiter evicts only expired windows, oldest first; with none it rejects new keys and keeps every active window and its count
-- [ ] The default cap is 10,000 keys
+- [x] Two addresses in one IPv6 /64 share a window; another /64 and IPv4 addresses do not
+- [x] A full limiter evicts only expired windows; with none it rejects new keys and keeps every active window and its count
+- [x] The default cap is 10,000 keys
 **Tests**: unit
 **Gate**: quick
 **Commit**: `fix(users): key the login limiter per client network and keep active windows`

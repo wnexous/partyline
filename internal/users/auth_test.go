@@ -272,24 +272,68 @@ func TestLoginSuccessKeepsFailures(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// AUTH-05 (DoS bound): the limiter drops expired windows and never holds more keys than its
-// cap; when full, the oldest window is evicted and the newest key is still limited.
+// AUTH-05 (DoS bound): the limiter never holds more keys than its cap. When full it drops
+// expired windows; with none expired it refuses the new key and never evicts an active
+// window, so flooding new addresses cannot flush an attacker's own failures.
 func TestFailureLimiterIsBounded(t *testing.T) {
 	l := newFailureLimiter(2, time.Minute)
 	l.maxKeys = 3
 	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
-	for i := range 10 {
-		require.True(t, l.Begin(fmt.Sprintf("ip-%d", i), now.Add(time.Duration(i)*time.Second)))
+	at := func(d time.Duration) time.Time { return now.Add(d) }
+
+	require.True(t, l.Begin("a", at(0)))
+	require.True(t, l.Begin("a", at(1*time.Second)), "a: 2 failures, at its limit")
+	require.True(t, l.Begin("b", at(10*time.Second)))
+	require.True(t, l.Begin("c", at(20*time.Second)))
+
+	// Full with active windows only: new keys are refused, every active window stays.
+	for i := range 20 {
+		require.False(t, l.Begin(fmt.Sprintf("flood-%d", i), at(30*time.Second)), "new key %d while full", i)
 	}
 	require.Len(t, l.byKey, 3)
-	require.Contains(t, l.byKey, "ip-9")
-	require.NotContains(t, l.byKey, "ip-0", "the oldest window is evicted first")
-	require.True(t, l.Begin("ip-9", now.Add(10*time.Second)))
-	require.False(t, l.Begin("ip-9", now.Add(11*time.Second)), "the newest key keeps its count")
+	require.False(t, l.Begin("a", at(31*time.Second)), "a keeps its count")
+	require.True(t, l.Begin("b", at(31*time.Second)), "b keeps its window")
 
-	// Expired windows are dropped when a new key arrives after a window has passed.
-	require.True(t, l.Begin("late", now.Add(2*time.Minute)))
-	require.Len(t, l.byKey, 1)
+	// a's and b's windows have expired (they opened at 0 s and 10 s); c's is active.
+	require.True(t, l.Begin("new", at(70*time.Second)))
+	require.Len(t, l.byKey, 2)
+	require.NotContains(t, l.byKey, "a")
+	require.NotContains(t, l.byKey, "b")
+	require.Contains(t, l.byKey, "c", "an active window is never evicted")
+	require.Contains(t, l.byKey, "new")
+}
+
+// AUTH-05 (DoS bound): the service's limiter allows 5 failures per minute and tracks at most
+// 10,000 client networks.
+func TestLoginLimiterDefaults(t *testing.T) {
+	f := newFixture(t)
+	require.Equal(t, 5, f.svc.limiter.max)
+	require.Equal(t, time.Minute, f.svc.limiter.window)
+	require.Equal(t, 10000, f.svc.limiter.maxKeys)
+}
+
+// AUTH-05: IPv6 clients are limited per /64 (one subscriber's prefix), IPv4 clients per address;
+// an IPv4-mapped IPv6 address counts as its IPv4 address.
+func TestLoginRateLimitPerNetwork(t *testing.T) {
+	f := newFixture(t)
+	f.setupAdmin(t)
+	for i := range 5 {
+		_, err := login(f, fmt.Sprintf("2001:db8:1:2::%x", i+1), "admin", "wrong-password-123")
+		require.ErrorIs(t, err, ErrInvalidCredentials, "attempt %d", i+1)
+	}
+	_, err := login(f, "2001:db8:1:2:ffff:ffff:ffff:ffff", "admin", adminPassword)
+	require.ErrorIs(t, err, ErrRateLimited, "same /64")
+	_, err = login(f, "2001:db8:1:3::1", "admin", adminPassword)
+	require.NoError(t, err, "another /64")
+
+	for range 5 {
+		_, err := login(f, "192.0.2.20", "admin", "wrong-password-123")
+		require.ErrorIs(t, err, ErrInvalidCredentials)
+	}
+	_, err = login(f, "::ffff:192.0.2.20", "admin", adminPassword)
+	require.ErrorIs(t, err, ErrRateLimited, "IPv4-mapped form of the same address")
+	_, err = login(f, "192.0.2.21", "admin", adminPassword)
+	require.NoError(t, err, "IPv4 addresses are limited one by one")
 }
 
 // AUTH-09: a revoked session no longer validates.
