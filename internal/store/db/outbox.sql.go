@@ -49,6 +49,24 @@ func (q *Queries) GetOutbox(ctx context.Context, id string) (Outbox, error) {
 	return i, err
 }
 
+const getSentExternalID = `-- name: GetSentExternalID :one
+SELECT external_id FROM outbox
+WHERE message_id = ? AND chat_id = ? AND status = 'sent' AND external_id <> ''
+LIMIT 1
+`
+
+type GetSentExternalIDParams struct {
+	MessageID string
+	ChatID    string
+}
+
+func (q *Queries) GetSentExternalID(ctx context.Context, arg GetSentExternalIDParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getSentExternalID, arg.MessageID, arg.ChatID)
+	var external_id string
+	err := row.Scan(&external_id)
+	return external_id, err
+}
+
 const listDueOutbox = `-- name: ListDueOutbox :many
 SELECT o.id, o.message_id, o.chat_id, o.attempts, m.room_id
 FROM outbox o JOIN messages m ON m.id = o.message_id

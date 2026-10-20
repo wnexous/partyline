@@ -61,6 +61,7 @@ type options struct {
 	now              func() time.Time
 	liveSessionCheck time.Duration
 	kinds            []connectors.Kind
+	outbox           bool
 }
 
 // Option customizes New.
@@ -85,6 +86,10 @@ func WithLiveSessionCheck(d time.Duration) Option { return func(o *options) { o.
 // WithClock makes the app use now as its clock.
 func WithClock(now func() time.Time) Option { return func(o *options) { o.now = now } }
 
+// WithOutbox runs the outbox worker with the connectors' sender. Without it, outbound
+// deliveries stay pending so tests can inspect them.
+func WithOutbox() Option { return func(o *options) { o.outbox = true } }
+
 // WithConnectorKinds makes the app support exactly kinds (e.g. a fake kind from
 // connectors/connectortest) instead of the built-in ones.
 func WithConnectorKinds(kinds ...connectors.Kind) Option {
@@ -107,7 +112,7 @@ func New(t testing.TB, opts ...Option) *Env {
 	cfg, err := config.Load(func(k string) string { return o.env[k] })
 	require.NoError(t, err)
 
-	a, err := app.New(cfg, app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds})
+	a, err := app.New(cfg, app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox})
 	require.NoError(t, err)
 	require.NoError(t, a.Start(context.Background()))
 	srv.Config.Handler = a.Handler()

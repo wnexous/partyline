@@ -54,6 +54,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 4. WHEN a connector is created or enabled THEN the system SHALL start it within 2 seconds and report status changes as `connector.status` events. (CON-04)
 5. WHEN a connector is disabled or deleted THEN the system SHALL stop it and stop all its outbound sends. (CON-05)
 6. IF a connector's transport fails THEN the system SHALL set status `error` with the error text (secrets redacted) and retry with backoff. (CON-06)
+7. WHILE `PARTYLINE_ALLOW_PRIVATE_NETWORKS` is not `true` the system SHALL refuse connector HTTP and WebSocket connections whose resolved address is loopback, private, link-local, CGNAT, multicast or unspecified, SHALL NOT follow redirects, SHALL bound response sizes and SHALL NOT copy platform error bodies into status or error text. (CON-13)
 
 **Independent Test**: Create a webhook connector, read it back with the secret masked, disable it, observe status events.
 
@@ -140,6 +141,8 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 1. WHEN `POST /api/v1/hooks/{connector_id}` has a valid signature and timestamp THEN the system SHALL accept `{chat_id, chat_title?, sender_id, sender_name?, text, message_id?}` and respond 202. (HOOK-01)
 2. IF the signature is invalid or the timestamp is older than 5 minutes THEN the system SHALL respond 401 and store nothing. (HOOK-02)
 3. WHEN a room message is queued for a webhook chat THEN the connector SHALL POST it as JSON to the configured outbound URL with the same signature headers, and treat any non-2xx as a failure. (HOOK-03)
+4. WHEN a webhook request arrives THEN the system SHALL check its timestamp and signature before any rate limit: only authenticated requests SHALL count toward the connector's 60 per minute (429 beyond), and requests that fail the check SHALL count toward a separate budget of 30 per minute per client IP, beyond which they get 429 without an audit entry. (HOOK-04)
+5. IF an authenticated webhook request repeats the signature of a request accepted within the last 10 minutes THEN the system SHALL respond 409 and store nothing; messages with a `message_id` stay deduplicated by it (CON-10). (HOOK-05)
 
 **Independent Test**: Sign a payload in the test, post it, receive the outbound call on an httptest server.
 
@@ -154,11 +157,12 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 **Acceptance Criteria**:
 
 1. WHEN a user requests a pairing code THEN the system SHALL return a 6-character code (A-Z, 2-9) valid for 10 minutes. (IDN-01)
-2. WHEN a connector receives `!link CODE` or `/link CODE` with a valid code THEN the system SHALL link (connector kind, sender id and alternate sender id) to that user, consume the code and not route the message. (IDN-02)
+2. WHEN a connector receives `!link CODE` or `/link CODE` with a valid code THEN the system SHALL link (connector id, sender id and alternate sender id) to that user, consume the code and not route the message; the identity SHALL resolve only messages received through that same connector. (IDN-02)
 3. IF the code is unknown or expired THEN the system SHALL ignore the command and not route the message. (IDN-03)
-4. WHEN a user deletes an identity THEN the system SHALL resolve messages received afterwards from that sender to no user, so they are delivered with `trusted=false`. (IDN-04)
+4. WHEN a user deletes an identity, or deletes the connector it was linked through, THEN the system SHALL resolve messages received afterwards from that sender on that connector to no user, so they are delivered with `trusted=false`. (IDN-04)
+5. WHERE a connector kind lets the caller choose sender ids (webhook) the system SHALL link only pairing codes of the connector's owner; a code of another user SHALL link nothing and stay unused. (IDN-05)
 
-**Independent Test**: Request code, inject a `!link` message through the fake connector, list identities.
+**Independent Test**: Request code, inject a `!link` message through the fake connector, list identities. Post the same sender id through another user's webhook connector: it stays untrusted.
 
 ---
 
@@ -167,6 +171,8 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 - IF evolution-go returns 401 for the global key THEN the connector SHALL set status `error: unauthorized` and keep retrying with backoff (CON-06).
 - IF a Telegram chat migrates to a supergroup (`migrate_to_chat_id`) THEN the connector SHALL update the chat's external id (TG-01).
 - IF an outbound target chat no longer exists on the platform THEN the send SHALL fail and follow the retry rules (CON-06).
+- IF a linked sender id arrives through another connector, even of the same kind, THEN the system SHALL resolve it to no user (IDN-02).
+- WHEN the identities migration (`0003`) runs THEN identities linked before it are dropped, because they do not record a connector; users link again (IDN-02).
 
 ---
 
@@ -177,36 +183,40 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | CON-01 | P1: Manage connectors | Tasks | Implementing |
 | CON-02 | P1: Manage connectors | Tasks | Implementing |
 | CON-03 | P1: Manage connectors | Tasks | Implementing |
-| CON-04 | P1: Manage connectors | Tasks | Pending |
+| CON-04 | P1: Manage connectors | Tasks | Implementing |
 | CON-05 | P1: Manage connectors | Tasks | Implementing |
-| CON-06 | P1: Manage connectors | Tasks | Pending |
-| CON-07 | P1: Chats and inbound | Tasks | Pending |
-| CON-08 | P1: Chats and inbound | Tasks | Pending |
-| CON-09 | P1: Chats and inbound | Tasks | Pending |
-| CON-10 | P1: Chats and inbound | Tasks | Pending |
-| CON-11 | P1: Chats and inbound | Tasks | Pending |
-| CON-12 | P1: Chats and inbound | Tasks | Pending |
-| WA-01 | P1: WhatsApp | Tasks | Pending |
-| WA-02 | P1: WhatsApp | Tasks | Pending |
-| WA-03 | P1: WhatsApp | Tasks | Pending |
-| WA-04 | P1: WhatsApp | Tasks | Pending |
-| WA-05 | P1: WhatsApp | Tasks | Pending |
-| TG-01 | P1: Telegram | Tasks | Pending |
-| TG-02 | P1: Telegram | Tasks | Pending |
-| TG-03 | P1: Telegram | Tasks | Pending |
-| TG-04 | P1: Telegram | Tasks | Pending |
-| DC-01 | P1: Discord | Tasks | Pending |
-| DC-02 | P1: Discord | Tasks | Pending |
-| DC-03 | P1: Discord | Tasks | Pending |
-| HOOK-01 | P1: Webhook | Tasks | Pending |
-| HOOK-02 | P1: Webhook | Tasks | Pending |
-| HOOK-03 | P1: Webhook | Tasks | Pending |
-| IDN-01 | P1: Identities | Tasks | Pending |
-| IDN-02 | P1: Identities | Tasks | Pending |
-| IDN-03 | P1: Identities | Tasks | Pending |
-| IDN-04 | P1: Identities | Tasks | Pending |
+| CON-06 | P1: Manage connectors | Tasks | Implementing |
+| CON-07 | P1: Chats and inbound | Tasks | Implementing |
+| CON-08 | P1: Chats and inbound | Tasks | Implementing |
+| CON-09 | P1: Chats and inbound | Tasks | Implementing |
+| CON-10 | P1: Chats and inbound | Tasks | Implementing |
+| CON-11 | P1: Chats and inbound | Tasks | Implementing |
+| CON-12 | P1: Chats and inbound | Tasks | Verified |
+| CON-13 | P1: Manage connectors | Execute (T13) | Implemented, re-verify |
+| WA-01 | P1: WhatsApp | Tasks | Implementing |
+| WA-02 | P1: WhatsApp | Tasks | Implementing |
+| WA-03 | P1: WhatsApp | Tasks | Implementing |
+| WA-04 | P1: WhatsApp | Tasks | Implementing |
+| WA-05 | P1: WhatsApp | Tasks | Implementing |
+| TG-01 | P1: Telegram | Tasks | Implementing |
+| TG-02 | P1: Telegram | Tasks | Implementing |
+| TG-03 | P1: Telegram | Tasks | Implementing |
+| TG-04 | P1: Telegram | Tasks | Implementing |
+| DC-01 | P1: Discord | Tasks | Implementing |
+| DC-02 | P1: Discord | Tasks | Implementing |
+| DC-03 | P1: Discord | Tasks | Implementing |
+| HOOK-01 | P1: Webhook | Tasks | Implementing |
+| HOOK-02 | P1: Webhook | Tasks | Implementing |
+| HOOK-03 | P1: Webhook | Tasks | Verified |
+| HOOK-04 | P1: Webhook | Execute (T14) | Implemented, re-verify |
+| HOOK-05 | P1: Webhook | Execute (T15) | Implemented, re-verify |
+| IDN-01 | P1: Identities | Tasks | Verified |
+| IDN-02 | P1: Identities | Execute (T12) | Implemented, re-verify |
+| IDN-03 | P1: Identities | Tasks | Verified |
+| IDN-04 | P1: Identities | Execute (T12) | Implemented, re-verify |
+| IDN-05 | P1: Identities | Execute (T12) | Implemented, re-verify |
 
-**Coverage:** 31 total, mapped in tasks.md
+**Coverage:** 35 total, mapped in tasks.md
 
 ---
 

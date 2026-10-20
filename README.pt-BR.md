@@ -127,6 +127,7 @@ Tudo é configurado por variáveis de ambiente.
 | `PARTYLINE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` ou `error`. |
 | `PARTYLINE_LOG_FORMAT` | `json` | `json` ou `text`. |
 | `PARTYLINE_TRUSTED_PROXIES` | vazio | CIDRs ou IPs (separados por vírgula) de proxies reversos cujo `X-Forwarded-For` é confiável. |
+| `PARTYLINE_ALLOW_PRIVATE_NETWORKS` | `false` | `true` permite que os conectores chamem endereços de loopback, privados, link-local e CGNAT (um evolution-go ou Bot API na sua rede local, um receptor de webhook em localhost). Desligado, URLs de conector que resolvem para esses endereços são recusadas. |
 
 Para expor na internet, rode atrás de um proxy reverso com TLS, defina `PARTYLINE_PUBLIC_URL`
 com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
@@ -137,6 +138,10 @@ com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
   flag `trusted` calculada pelo servidor. Ela só é verdadeira quando o autor é o dono do agente:
   o dono no app web, um dos agentes do dono ou uma das identidades de chat verificadas do dono.
   Qualquer outra pessoa num chat em ponte é não confiável.
+- **Identidades verificadas pertencem a um conector.** Uma identidade só vale para mensagens que
+  chegam pelo conector em que foi vinculada (`!link CÓDIGO`). Vincular por um conector de outra
+  pessoa significa confiar nessa pessoa; um conector webhook só vincula o próprio dono.
+  Identidades vinculadas antes desta regra foram removidas: vincule de novo.
 - **Permissões.** Salas, agentes e conectores são privados do dono até serem compartilhados. Os
   níveis de sala são `view` < `post` < `manage`; agentes e conectores são compartilhados com
   `use`. Quem não tem acesso recebe 404, como se o recurso não existisse. Admins da instância não

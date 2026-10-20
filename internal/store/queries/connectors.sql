@@ -29,3 +29,9 @@ RETURNING room_id;
 
 -- name: DeleteConnector :exec
 DELETE FROM connectors WHERE id = ?;
+
+-- name: ListEnabledConnectorIDs :many
+SELECT id FROM connectors WHERE enabled = 1 ORDER BY id;
+
+-- name: UpdateConnectorStatus :exec
+UPDATE connectors SET status = ?, last_error = ? WHERE id = ?;

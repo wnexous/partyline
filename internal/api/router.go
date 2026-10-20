@@ -14,6 +14,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/validation"
@@ -27,6 +28,12 @@ type Deps struct {
 	Agents *agents.Registry
 	// Connectors manages connectors and their chats.
 	Connectors *connectors.Service
+	// Hooks finds the running connector of POST /api/v1/hooks/{id}; FileLinks resolves the
+	// signed attachment links of GET /api/v1/hooks/files/{token}.
+	Hooks     HookSource
+	FileLinks *connectors.FileLinks
+	// Identities manages pairing codes and verified chat identities.
+	Identities *identities.Service
 	Blobs      *attachments.Store
 	Audit      *audit.Log
 	// Live serves the live WebSocket at GET /api/v1/live.
@@ -71,6 +78,9 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.agentRoutes(mux)
 	s.agentAPIRoutes(mux)
 	s.connectorRoutes(mux)
+	s.identityRoutes(mux)
+	s.chatRoutes(mux)
+	s.hookRoutes(mux)
 	if s.Live != nil {
 		mux.Handle("GET /api/v1/live", s.Live)
 	}
@@ -167,6 +177,10 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "already a member of the room")
 	case errors.Is(err, access.ErrForbidden):
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "not allowed")
+	case errors.Is(err, connectors.ErrNotRunning):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "connector is not running")
+	case errors.Is(err, connectors.ErrCannotListChats):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "this connector kind cannot list chats")
 	}
 	return err
 }

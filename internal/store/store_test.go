@@ -166,3 +166,28 @@ func TestDeletingOwnerDeletesTheirRooms(t *testing.T) {
 	})
 	require.Equal(t, 1, count(`SELECT COUNT(*) FROM rooms WHERE id = 'r2'`), "rooms of other owners stay")
 }
+
+// IDN-02: identities linked before they were scoped to a connector are dropped by the
+// migration (they cannot say which connector vouched for them); users link again.
+func TestIdentitiesPerConnectorMigrationDropsOldLinks(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "partyline.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	_, err = s.write.ExecContext(ctx, `CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`)
+	require.NoError(t, err)
+	for _, name := range []string{"0001_init.sql", "0002_message_views.sql"} {
+		require.NoError(t, s.applyMigration(ctx, name))
+	}
+	require.NoError(t, s.WithTx(ctx, func(q *db.Queries) error { return q.CreateUser(ctx, newUser("u1", "alice")) }))
+	_, err = s.write.ExecContext(ctx, `INSERT INTO identities (id, user_id, connector_kind, external_id, created_at) VALUES ('i1', 'u1', 'webhook', 'alice-id', 1)`)
+	require.NoError(t, err)
+
+	require.NoError(t, s.Migrate(ctx))
+	var n int
+	require.NoError(t, s.write.QueryRowContext(ctx, "SELECT COUNT(*) FROM identities").Scan(&n))
+	require.Zero(t, n)
+	var hasConnector int
+	require.NoError(t, s.write.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info('identities') WHERE name = 'connector_id'").Scan(&hasConnector))
+	require.Equal(t, 1, hasConnector)
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -28,6 +29,8 @@ type Runner interface {
 	Apply(id string)
 	// Stop stops the connector and its outbound sends (CON-05).
 	Stop(id string)
+	// ListChats lists the chats of the running connector (CON-09).
+	ListChats(ctx context.Context, id string) ([]ChatInfo, error)
 }
 
 // ServiceDeps are the collaborators of the Service.
@@ -37,6 +40,8 @@ type ServiceDeps struct {
 	Bus    *events.Bus
 	Box    *secrets.Box
 	Kinds  *Registry
+	// Rooms creates the room of RouteChat.
+	Rooms *rooms.Service
 	// Runner is told about created, changed and deleted connectors; nil runs nothing.
 	Runner Runner
 	// Now returns the current time; defaults to time.Now.
@@ -57,9 +62,6 @@ func NewService(d ServiceDeps) *Service {
 	}
 	return &Service{d: d, audit: audit.New(d.Store, d.Now)}
 }
-
-// SetRunner sets the runner once the Manager exists (the Manager needs the Service).
-func (s *Service) SetRunner(r Runner) { s.d.Runner = r }
 
 // Kinds returns the supported kinds.
 func (s *Service) Kinds() []Kind { return s.d.Kinds.Kinds() }
@@ -84,6 +86,8 @@ type View struct {
 	Config map[string]any
 	// InboundHook is copied from the kind.
 	InboundHook bool
+	// Generated holds the values Kind.Prepare generated, set only by Create (shown once).
+	Generated map[string]string
 }
 
 // CreateInput is a new connector.
@@ -158,7 +162,15 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	}
 	k, known := s.d.Kinds.Lookup(in.Kind)
 	name := strings.TrimSpace(in.Name)
-	cfg, err := s.validate(known, name, in.Config, k)
+	input, generated := in.Config, []string(nil)
+	if known && k.Prepare != nil {
+		input = Config{}
+		for f, v := range in.Config {
+			input[f] = v
+		}
+		input, generated = k.Prepare(input)
+	}
+	cfg, err := s.validate(known, name, input, k)
 	if err != nil {
 		return View{}, err
 	}
@@ -187,7 +199,15 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	if enabled && s.d.Runner != nil {
 		s.d.Runner.Apply(id)
 	}
-	return s.Get(ctx, p, id)
+	v, err := s.Get(ctx, p, id)
+	if err != nil || len(generated) == 0 {
+		return v, err
+	}
+	v.Generated = map[string]string{}
+	for _, f := range generated {
+		v.Generated[f] = cfg.String(f)
+	}
+	return v, nil
 }
 
 // Get returns a connector the user owns or may use.

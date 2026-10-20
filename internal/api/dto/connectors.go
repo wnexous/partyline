@@ -58,9 +58,13 @@ type Connector struct {
 	Config    map[string]any  `json:"config" tstype:"{ [key: string]: unknown }"`
 	// InboundURL is where a webhook connector receives messages
 	// (<public URL>/api/v1/hooks/<id>); empty for other kinds.
-	InboundURL string    `json:"inbound_url,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	InboundURL string `json:"inbound_url,omitempty"`
+	// GeneratedSecrets holds the secrets Partyline generated for the connector (the
+	// webhook's secret), by field name. Only the create response carries them; afterwards
+	// they read as SecretMask like every secret.
+	GeneratedSecrets map[string]string `json:"generated_secrets,omitempty"`
+	CreatedAt        time.Time         `json:"created_at"`
+	UpdatedAt        time.Time         `json:"updated_at"`
 }
 
 // CreateConnectorRequest is the body of POST /connectors. Enabled defaults to true.
@@ -109,8 +113,11 @@ type RouteChatRequest struct {
 }
 
 // Identity is a chat account verified as belonging to the current user (GET /identities).
+// It is trusted only for messages received through ConnectorID, the connector it was
+// linked through.
 type Identity struct {
 	ID            string    `json:"id"`
+	ConnectorID   string    `json:"connector_id"`
 	ConnectorKind string    `json:"connector_kind"`
 	ExternalID    string    `json:"external_id"`
 	AltExternalID string    `json:"alt_external_id,omitempty"`

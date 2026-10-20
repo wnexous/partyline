@@ -19,8 +19,13 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/connectors/discord"
+	"github.com/wnexous/partyline/internal/connectors/telegram"
+	"github.com/wnexous/partyline/internal/connectors/webhook"
+	"github.com/wnexous/partyline/internal/connectors/whatsapp"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/live"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
@@ -44,17 +49,26 @@ type Options struct {
 	// LiveSessionCheck is how often live sockets re-check their session; defaults to
 	// live.DefaultSessionCheckInterval. Tests shorten it.
 	LiveSessionCheck time.Duration
-	// Sender delivers outbox entries to external chats. When nil the outbox worker does not
-	// run and entries stay pending.
+	// Sender delivers outbox entries to external chats; nil uses the connectors' sender.
 	Sender delivery.Sender
+	// DisableOutbox keeps the outbox worker from running, so entries stay pending (tests
+	// that inspect queued deliveries).
+	DisableOutbox bool
 	// ConnectorKinds are the supported connector kinds; nil means BuiltinKinds().
 	ConnectorKinds []connectors.Kind
+	// Version is the build version, sent by connectors as User-Agent "partyline/<version>".
+	Version string
 }
 
 // BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
 // registration line here (AD-007).
 func BuiltinKinds() []connectors.Kind {
-	return nil
+	return []connectors.Kind{
+		whatsapp.Kind(),
+		telegram.Kind(),
+		discord.Kind(),
+		webhook.Kind(),
+	}
 }
 
 // App is one running Partyline instance.
@@ -71,8 +85,11 @@ type App struct {
 	// Presence tracks connected agents; Agents is the agent registry.
 	Presence *agents.Presence
 	Agents   *agents.Registry
-	// Connectors manages connectors (CRUD, sharing).
-	Connectors *connectors.Service
+	// Connectors manages connectors (CRUD, sharing); ConnectorManager runs them.
+	Connectors       *connectors.Service
+	ConnectorManager *connectors.Manager
+	// Identities links chat accounts to users (pairing codes).
+	Identities *identities.Service
 	// Gateway serves the agent WebSocket and pushes messages to connected agents.
 	Gateway *agents.Gateway
 	Live    *live.Hub
@@ -130,7 +147,6 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Access: az,
 		Rooms:  rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
 		Blobs:  blobs,
-		sender: opts.Sender,
 		now:    opts.Now,
 	}
 	a.Presence = agents.NewPresence(st, bus, opts.Now)
@@ -143,8 +159,28 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	if kinds == nil {
 		kinds = BuiltinKinds()
 	}
+	a.Identities = identities.New(identities.Deps{Store: st, Bus: bus, Now: opts.Now})
+	registry := connectors.NewRegistry(kinds...)
+	version := opts.Version
+	if version == "" {
+		version = "dev"
+	}
+	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
+		Store: st, Bus: bus, Rooms: a.Rooms, Blobs: blobs, Identities: a.Identities,
+		MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
+	})
+	fileLinks := connectors.NewFileLinks(box, st, cfg.PublicURL, opts.Now)
+	a.ConnectorManager = connectors.NewManager(connectors.ManagerDeps{
+		Store: st, Bus: bus, Box: box, Kinds: registry, Logger: opts.Logger, UserAgent: "partyline/" + version,
+		FileURL: fileLinks.URL, AllowPrivateNetworks: cfg.AllowPrivateNetworks,
+		Inbound: pipeline.Handle, MigrateChat: pipeline.MigrateChat,
+	})
+	a.sender = opts.Sender
+	if a.sender == nil && !opts.DisableOutbox {
+		a.sender = connectors.NewSender(st, a.Rooms, blobs, a.ConnectorManager)
+	}
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
-		Store: st, Access: az, Bus: bus, Box: box, Kinds: connectors.NewRegistry(kinds...), Now: opts.Now,
+		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Rooms: a.Rooms, Runner: a.ConnectorManager, Now: opts.Now,
 	})
 	a.Live = live.New(live.Deps{
 		Bus: bus, Access: az, Rooms: a.Rooms, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
@@ -156,6 +192,9 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Rooms:      a.Rooms,
 		Agents:     a.Agents,
 		Connectors: a.Connectors,
+		Identities: a.Identities,
+		Hooks:      a.ConnectorManager,
+		FileLinks:  fileLinks,
 		Blobs:      blobs,
 		Audit:      audit.New(st, opts.Now),
 		Live:       a.Live,
@@ -191,6 +230,7 @@ func (a *App) Start(ctx context.Context) error {
 		Store: a.Store, Bus: a.Bus, Agents: a.Gateway, Load: a.Gateway.Message, Logger: a.Logger,
 	})
 	a.background(bg, "agent-dispatcher", dispatcher.Run)
+	a.ConnectorManager.Start(bg)
 	a.background(bg, "retention", func(ctx context.Context) error {
 		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger)
 	})
@@ -215,6 +255,7 @@ func (a *App) Shutdown(_ context.Context) error {
 	if a.stop != nil {
 		a.stop()
 	}
+	a.ConnectorManager.Close()
 	a.Gateway.Close()
 	a.Live.Close()
 	a.bg.Wait()

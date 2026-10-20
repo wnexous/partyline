@@ -73,7 +73,7 @@ func Chat(c db.Chat, conn db.Connector) dto.Chat {
 // Identity renders a verified chat identity.
 func Identity(i db.Identity) dto.Identity {
 	return dto.Identity{
-		ID: i.ID, ConnectorKind: i.ConnectorKind, ExternalID: i.ExternalID, AltExternalID: i.AltExternalID,
+		ID: i.ID, ConnectorID: i.ConnectorID, ConnectorKind: i.ConnectorKind, ExternalID: i.ExternalID, AltExternalID: i.AltExternalID,
 		Display: i.Display, CreatedAt: Time(i.CreatedAt),
 	}
 }

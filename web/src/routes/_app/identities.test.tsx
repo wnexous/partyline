@@ -15,6 +15,7 @@ const BASE = Date.parse("2026-10-19T12:00:00Z");
 
 const telegramId: Identity = {
   id: "i1",
+  connector_id: "c1",
   connector_kind: "telegram",
   external_id: "tg:5550001",
   display: "Ana (phone)",
@@ -22,6 +23,7 @@ const telegramId: Identity = {
 };
 const whatsappId: Identity = {
   id: "i2",
+  connector_id: "c2",
   connector_kind: "whatsapp",
   external_id: "wa:5550002",
   alt_external_id: "lid:77",

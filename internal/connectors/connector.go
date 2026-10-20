@@ -6,6 +6,7 @@ package connectors
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"time"
@@ -34,6 +35,10 @@ type Handler interface {
 	Inbound(ctx context.Context, m Inbound)
 	// Status reports a status change with a detail text (an error message for StatusError).
 	Status(s Status, detail string)
+	// MigrateChat moves a chat to a new platform id (a Telegram group upgraded to a
+	// supergroup), keeping its rooms. It does nothing when the old id is unknown or the new
+	// id is already a chat.
+	MigrateChat(ctx context.Context, oldID, newID string)
 }
 
 // Status is the runtime state of a connector; the values match dto.ConnectorStatus.
@@ -122,4 +127,42 @@ type Deps struct {
 	Logger *slog.Logger
 	// UserAgent is "partyline/<version>" for platform HTTP calls.
 	UserAgent string
+	// FileURL returns a signed download link of a stored attachment, valid 10 minutes, for
+	// platforms that fetch files by URL (the webhook payload); nil when unavailable.
+	FileURL func(attachmentID string) string
+	// AllowPrivateNetworks lets the connector reach non-public addresses; pass it to
+	// safehttp for every platform call (CON-13).
+	AllowPrivateNetworks bool
 }
+
+// MaxHookBody is the largest accepted body of POST /api/v1/hooks/{connector_id}.
+const MaxHookBody = 64 << 10
+
+// HookRequest is a request to POST /api/v1/hooks/{connector_id}.
+type HookRequest struct {
+	// Timestamp and Signature are the X-Partyline-Timestamp and X-Partyline-Signature headers.
+	Timestamp string
+	Signature string
+	Body      []byte
+	// RemoteIP is the client address, used to rate-limit invalid requests per IP.
+	RemoteIP string
+}
+
+// HookReceiver is implemented by connectors of kinds with InboundHook: they receive
+// messages over HTTP instead of a platform connection.
+type HookReceiver interface {
+	// ReceiveHook checks and handles one request. It returns ErrBadSignature,
+	// ErrRateLimited, ErrReplayed, ErrNotRunning, a *validation.Error for a bad payload, or nil when the
+	// message was accepted.
+	ReceiveHook(ctx context.Context, r HookRequest) error
+}
+
+// Errors of HookReceiver.
+var (
+	// ErrBadSignature means the signature or the timestamp of a hook request is invalid.
+	ErrBadSignature = errors.New("invalid signature or timestamp")
+	// ErrRateLimited means a hook received too many requests.
+	ErrRateLimited = errors.New("too many requests")
+	// ErrReplayed means a hook request with the same signature was already accepted.
+	ErrReplayed = errors.New("request already received")
+)

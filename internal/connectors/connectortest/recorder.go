@@ -1,0 +1,73 @@
+package connectortest
+
+import (
+	"context"
+	"testing"
+
+	"github.com/wnexous/partyline/internal/connectors"
+)
+
+// Migration is a chat migration reported to a Recorder.
+type Migration struct{ OldID, NewID string }
+
+// Recorder is a connectors.Handler for platform adapter tests: it records what a running
+// connector reports, without a manager or a database.
+type Recorder struct {
+	inbound    chan connectors.Inbound
+	statuses   chan connectors.Status
+	migrations chan Migration
+}
+
+// NewRecorder returns an empty Recorder.
+func NewRecorder() *Recorder {
+	return &Recorder{
+		inbound: make(chan connectors.Inbound, 64), statuses: make(chan connectors.Status, 64),
+		migrations: make(chan Migration, 64),
+	}
+}
+
+var _ connectors.Handler = (*Recorder)(nil)
+
+// Inbound implements connectors.Handler.
+func (r *Recorder) Inbound(_ context.Context, m connectors.Inbound) { r.inbound <- m }
+
+// Status implements connectors.Handler.
+func (r *Recorder) Status(s connectors.Status, _ string) { r.statuses <- s }
+
+// MigrateChat implements connectors.Handler.
+func (r *Recorder) MigrateChat(_ context.Context, oldID, newID string) {
+	r.migrations <- Migration{OldID: oldID, NewID: newID}
+}
+
+// NextInbound waits for the next inbound message.
+func (r *Recorder) NextInbound(t testing.TB) connectors.Inbound {
+	t.Helper()
+	return next(t, r.inbound, "inbound message")
+}
+
+// NextStatus waits for the next reported status.
+func (r *Recorder) NextStatus(t testing.TB) connectors.Status {
+	t.Helper()
+	return next(t, r.statuses, "status")
+}
+
+// NextMigration waits for the next chat migration.
+func (r *Recorder) NextMigration(t testing.TB) Migration {
+	t.Helper()
+	return next(t, r.migrations, "chat migration")
+}
+
+// NoInbound reports whether no inbound message is waiting.
+func (r *Recorder) NoInbound() bool { return len(r.inbound) == 0 }
+
+func next[T any](t testing.TB, ch chan T, what string) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-afterTimeout():
+		t.Fatalf("no %s", what)
+		var zero T
+		return zero
+	}
+}

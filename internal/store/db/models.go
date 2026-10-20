@@ -94,6 +94,7 @@ type Grant struct {
 type Identity struct {
 	ID            string
 	UserID        string
+	ConnectorID   string
 	ConnectorKind string
 	ExternalID    string
 	AltExternalID string

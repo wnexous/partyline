@@ -187,6 +187,33 @@ func (q *Queries) ListConnectorsForUser(ctx context.Context, userID string) ([]L
 	return items, nil
 }
 
+const listEnabledConnectorIDs = `-- name: ListEnabledConnectorIDs :many
+SELECT id FROM connectors WHERE enabled = 1 ORDER BY id
+`
+
+func (q *Queries) ListEnabledConnectorIDs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listEnabledConnectorIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateConnector = `-- name: UpdateConnector :exec
 UPDATE connectors SET name = ?, config_json = ?, secrets_enc = ?, enabled = ?, updated_at = ?
 WHERE id = ?
@@ -210,5 +237,20 @@ func (q *Queries) UpdateConnector(ctx context.Context, arg UpdateConnectorParams
 		arg.UpdatedAt,
 		arg.ID,
 	)
+	return err
+}
+
+const updateConnectorStatus = `-- name: UpdateConnectorStatus :exec
+UPDATE connectors SET status = ?, last_error = ? WHERE id = ?
+`
+
+type UpdateConnectorStatusParams struct {
+	Status    string
+	LastError string
+	ID        string
+}
+
+func (q *Queries) UpdateConnectorStatus(ctx context.Context, arg UpdateConnectorStatusParams) error {
+	_, err := q.db.ExecContext(ctx, updateConnectorStatus, arg.Status, arg.LastError, arg.ID)
 	return err
 }

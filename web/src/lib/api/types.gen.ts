@@ -306,6 +306,12 @@ export interface Connector {
    * (<public URL>/api/v1/hooks/<id>); empty for other kinds.
    */
   inbound_url?: string;
+  /**
+   * GeneratedSecrets holds the secrets Partyline generated for the connector (the
+   * webhook's secret), by field name. Only the create response carries them; afterwards
+   * they read as SecretMask like every secret.
+   */
+  generated_secrets?: { [key: string]: string};
   created_at: string /* RFC 3339 */;
   updated_at: string /* RFC 3339 */;
 }
@@ -360,9 +366,12 @@ export interface RouteChatRequest {
 }
 /**
  * Identity is a chat account verified as belonging to the current user (GET /identities).
+ * It is trusted only for messages received through ConnectorID, the connector it was
+ * linked through.
  */
 export interface Identity {
   id: string;
+  connector_id: string;
   connector_kind: string;
   external_id: string;
   alt_external_id?: string;

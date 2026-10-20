@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createChat = `-- name: CreateChat :exec
@@ -34,12 +35,241 @@ func (q *Queries) CreateChat(ctx context.Context, arg CreateChatParams) error {
 	return err
 }
 
+const findChatMessageRef = `-- name: FindChatMessageRef :one
+SELECT m.id FROM messages m
+WHERE m.room_id = ?1
+  AND ((m.author_kind = 'chat' AND m.author_id = ?2 AND m.external_id = ?3)
+       OR m.id IN (SELECT o.message_id FROM outbox o
+                   WHERE o.chat_id = ?2 AND o.external_id = ?3))
+ORDER BY m.seq
+LIMIT 1
+`
+
+type FindChatMessageRefParams struct {
+	RoomID     string
+	ChatID     string
+	ExternalID sql.NullString
+}
+
+func (q *Queries) FindChatMessageRef(ctx context.Context, arg FindChatMessageRefParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, findChatMessageRef, arg.RoomID, arg.ChatID, arg.ExternalID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getChat = `-- name: GetChat :one
 SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at FROM chats WHERE id = ?
 `
 
 func (q *Queries) GetChat(ctx context.Context, id string) (Chat, error) {
 	row := q.db.QueryRowContext(ctx, getChat, id)
+	var i Chat
+	err := row.Scan(
+		&i.ID,
+		&i.ConnectorID,
+		&i.ExternalID,
+		&i.Title,
+		&i.Kind,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getChatByExternalID = `-- name: GetChatByExternalID :one
+SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at FROM chats WHERE connector_id = ? AND external_id = ?
+`
+
+type GetChatByExternalIDParams struct {
+	ConnectorID string
+	ExternalID  string
+}
+
+func (q *Queries) GetChatByExternalID(ctx context.Context, arg GetChatByExternalIDParams) (Chat, error) {
+	row := q.db.QueryRowContext(ctx, getChatByExternalID, arg.ConnectorID, arg.ExternalID)
+	var i Chat
+	err := row.Scan(
+		&i.ID,
+		&i.ConnectorID,
+		&i.ExternalID,
+		&i.Title,
+		&i.Kind,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const listChatRoomIDs = `-- name: ListChatRoomIDs :many
+SELECT room_id FROM room_members WHERE kind = 'chat' AND member_id = ? ORDER BY room_id
+`
+
+func (q *Queries) ListChatRoomIDs(ctx context.Context, memberID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listChatRoomIDs, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listConnectorChats = `-- name: ListConnectorChats :many
+SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at FROM chats WHERE connector_id = ? ORDER BY title, external_id, id
+`
+
+func (q *Queries) ListConnectorChats(ctx context.Context, connectorID string) ([]Chat, error) {
+	rows, err := q.db.QueryContext(ctx, listConnectorChats, connectorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Chat
+	for rows.Next() {
+		var i Chat
+		if err := rows.Scan(
+			&i.ID,
+			&i.ConnectorID,
+			&i.ExternalID,
+			&i.Title,
+			&i.Kind,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsableChats = `-- name: ListUsableChats :many
+SELECT c.id, c.connector_id, c.external_id, c.title, c.kind, c.last_seen_at, c.created_at, k.id, k.owner_id, k.kind, k.name, k.config_json, k.secrets_enc, k.enabled, k.status, k.last_error, k.created_at, k.updated_at
+FROM chats c JOIN connectors k ON k.id = c.connector_id
+WHERE k.owner_id = ?1
+   OR k.id IN (SELECT g.resource_id FROM grants g
+               WHERE g.resource_kind = 'connector' AND g.subject IN (?1, '*'))
+ORDER BY k.name, c.title, c.id
+`
+
+type ListUsableChatsRow struct {
+	Chat      Chat
+	Connector Connector
+}
+
+func (q *Queries) ListUsableChats(ctx context.Context, userID string) ([]ListUsableChatsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUsableChats, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUsableChatsRow
+	for rows.Next() {
+		var i ListUsableChatsRow
+		if err := rows.Scan(
+			&i.Chat.ID,
+			&i.Chat.ConnectorID,
+			&i.Chat.ExternalID,
+			&i.Chat.Title,
+			&i.Chat.Kind,
+			&i.Chat.LastSeenAt,
+			&i.Chat.CreatedAt,
+			&i.Connector.ID,
+			&i.Connector.OwnerID,
+			&i.Connector.Kind,
+			&i.Connector.Name,
+			&i.Connector.ConfigJson,
+			&i.Connector.SecretsEnc,
+			&i.Connector.Enabled,
+			&i.Connector.Status,
+			&i.Connector.LastError,
+			&i.Connector.CreatedAt,
+			&i.Connector.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const migrateChatExternalID = `-- name: MigrateChatExternalID :execrows
+UPDATE chats SET external_id = ?1
+WHERE chats.connector_id = ?2 AND chats.external_id = ?3
+  AND NOT EXISTS (SELECT 1 FROM chats o
+                  WHERE o.connector_id = ?2 AND o.external_id = ?1)
+`
+
+type MigrateChatExternalIDParams struct {
+	NewExternalID string
+	ConnectorID   string
+	OldExternalID string
+}
+
+func (q *Queries) MigrateChatExternalID(ctx context.Context, arg MigrateChatExternalIDParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, migrateChatExternalID, arg.NewExternalID, arg.ConnectorID, arg.OldExternalID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const upsertChat = `-- name: UpsertChat :one
+INSERT INTO chats (id, connector_id, external_id, title, kind, last_seen_at, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (connector_id, external_id) DO UPDATE SET
+    title = CASE WHEN excluded.title <> '' THEN excluded.title ELSE chats.title END,
+    kind = CASE WHEN excluded.kind <> '' THEN excluded.kind ELSE chats.kind END,
+    last_seen_at = COALESCE(excluded.last_seen_at, chats.last_seen_at)
+RETURNING id, connector_id, external_id, title, kind, last_seen_at, created_at
+`
+
+type UpsertChatParams struct {
+	ID          string
+	ConnectorID string
+	ExternalID  string
+	Title       string
+	Kind        string
+	LastSeenAt  sql.NullInt64
+	CreatedAt   int64
+}
+
+func (q *Queries) UpsertChat(ctx context.Context, arg UpsertChatParams) (Chat, error) {
+	row := q.db.QueryRowContext(ctx, upsertChat,
+		arg.ID,
+		arg.ConnectorID,
+		arg.ExternalID,
+		arg.Title,
+		arg.Kind,
+		arg.LastSeenAt,
+		arg.CreatedAt,
+	)
 	var i Chat
 	err := row.Scan(
 		&i.ID,
