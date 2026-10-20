@@ -121,7 +121,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 
 1. WHEN a manager saves room instructions up to 4,000 characters THEN the system SHALL store them; longer text SHALL get 422. (INS-01)
 2. WHEN an agent calls `room_info` THEN the tool SHALL return the room name, instructions, members (kind, name, chat platform and kind) and the agent's own membership settings. (INS-02)
-3. WHEN an agent connects and the room has instructions THEN the welcome backlog SHALL include one notice per room stating that instructions exist and to call `room_info`. (INS-03)
+3. WHEN an agent connects and the room has instructions THEN the welcome backlog SHALL include one notice per room, before that room's messages and also when the room is paused, with the text `This room has instructions for its agents; call the room_info tool to read them.` (INS-03)
 
 **Independent Test**: Set instructions, call `room_info` through the channel, see them.
 
@@ -189,7 +189,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | MEM-05 | P1: Membership settings | Tasks | Implementing |
 | INS-01 | P2: Room instructions | Tasks | Implementing |
 | INS-02 | P2: Room instructions | Tasks | Implementing |
-| INS-03 | P2: Room instructions | Tasks | Implementing |
+| INS-03 | P2: Room instructions | Tasks | Fixed (T19), re-verify |
 | REACT-01 | P2: Reactions | Tasks | Implementing |
 | REACT-02 | P2: Reactions | Tasks | Implementing |
 | ROOMDEL-01 | P1: Delete a room | Tasks | Implementing |

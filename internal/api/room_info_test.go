@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -8,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -78,11 +79,32 @@ func TestAgentWSInstructionsNotice(t *testing.T) {
 		// Rooms come in name order: Ops (notice, then its message), then Support.
 		n := conn.Notice(wsWait)
 		require.Equal(t, dto.RoomRef{ID: ops.ID, Name: "Ops"}, n.Room)
-		require.Equal(t, agents.InstructionsNotice, n.Text)
+		require.Equal(t, insNotice, n.Text)
 		require.Equal(t, inOps.ID, conn.Message(wsWait).Message.ID)
 		require.Equal(t, inSupport.ID, conn.Message(wsWait).Message.ID)
 		conn.ExpectNone(300 * time.Millisecond)
 		conn.Close()
 		require.Eventually(t, func() bool { return !f.env.App.Gateway.Online(f.agentID) }, wsWait, 10*time.Millisecond)
 	}
+}
+
+// insNotice is the INS-03 notice text as the spec words it.
+const insNotice = "This room has instructions for its agents; call the room_info tool to read them."
+
+// INS-03: a room paused by the loop guard still sends its instructions notice on connect, and
+// no messages.
+func TestAgentWSInstructionsNoticeInPausedRoom(t *testing.T) {
+	f := newAgentRoom(t)
+	setInstructions(f.alice, f.room.ID, "Be brief.")
+	f.post(f.alice, "held while paused")
+	require.NoError(t, f.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
+		return q.SetRoomLoopState(context.Background(), db.SetRoomLoopStateParams{AgentStreak: 25, AgentsPaused: true, ID: f.room.ID})
+	}))
+
+	conn := f.dial(t)
+	conn.Welcome(wsWait)
+	n := conn.Notice(wsWait)
+	require.Equal(t, dto.RoomRef{ID: f.room.ID, Name: "Support"}, n.Room)
+	require.Equal(t, insNotice, n.Text)
+	conn.ExpectNone(500 * time.Millisecond)
 }

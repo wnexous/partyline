@@ -353,7 +353,7 @@ T31 → T32 → T33 → T34
 **Requirement**: INS-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Tests kill G23 (notice text replaced) and G26 (no notice for paused rooms)
+- [x] Tests kill G23 (notice text replaced) and G26 (no notice for paused rooms)
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(agents): pin the instructions notice wording and paused rooms`

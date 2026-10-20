@@ -7,7 +7,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -40,7 +39,7 @@ func TestToolRoomInfo(t *testing.T) {
 		DisplayName: &name, Delivery: &mode, Keywords: &keywords,
 	}).RequireStatus(http.StatusOK)
 	s := e.connected(e.options())
-	require.Equal(t, agents.InstructionsNotice, s.notification().Content)
+	require.Equal(t, insNotice, s.notification().Content)
 
 	text, isErr := s.call("room_info", toolArgs("room", "Support"))
 	require.False(t, isErr, text)
@@ -74,7 +73,7 @@ func TestInstructionsNoticeOnConnect(t *testing.T) {
 	m := e.post("first")
 	s := e.connected(e.options())
 	n := s.notification()
-	require.Equal(t, agents.InstructionsNotice, n.Content)
+	require.Equal(t, insNotice, n.Content)
 	require.Equal(t, map[string]string{
 		"room": e.room.ID, "room_name": "Support", "author": "Partyline", "author_kind": "system",
 		"sender_name": "", "trusted": "false", "kind": "system",
@@ -116,3 +115,6 @@ func TestInstructionsExplainChatIDsAndRoomInfo(t *testing.T) {
 	require.Contains(t, Instructions, "chat_ids")
 	require.Contains(t, Instructions, "room_info")
 }
+
+// insNotice is the INS-03 notice text as the spec words it.
+const insNotice = "This room has instructions for its agents; call the room_info tool to read them."
