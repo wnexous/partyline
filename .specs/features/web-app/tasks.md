@@ -473,6 +473,6 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T31
 **Requirement**: none (test infrastructure)
 **Done when**:
-- [ ] Async `find*`/`waitFor` tolerate a loaded host (longer default timeout), no assertion changed
+- [x] Async `find*`/`waitFor` tolerate a loaded host (longer default timeout), no assertion changed
 **Tests**: unit
 **Gate**: build
