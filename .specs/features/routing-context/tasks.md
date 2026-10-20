@@ -76,8 +76,8 @@ T13 → T14 → T15 → T16
 **Requirement**: MEM-05, INS-01, ROUTE-04 (shapes)
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Migration test: defaults applied to existing rows; CHECK constraints reject bad values
-- [ ] `make generate` drift-free; web typecheck still passes
+- [x] Migration test: defaults applied to existing rows; CHECK constraints reject bad values
+- [x] `make generate` drift-free; web typecheck still passes
 **Tests**: integration
 **Gate**: full
 **Commit**: `feat(store): add routing and context columns`

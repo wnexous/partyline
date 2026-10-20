@@ -223,3 +223,97 @@ func TestPairingCodesPerConnectorMigrationDropsOldCodes(t *testing.T) {
 		`SELECT "notnull" FROM pragma_table_info('pairing_codes') WHERE name = 'connector_id'`).Scan(&notNull))
 	require.Equal(t, 1, notNull, "connector_id is NOT NULL")
 }
+
+// openMigratedBefore applies the migrations older than version (e.g. "0006").
+func openMigratedBefore(t *testing.T, version string) *Store {
+	t.Helper()
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "partyline.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	_, err = s.write.ExecContext(ctx, `CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`)
+	require.NoError(t, err)
+	files, err := migrationFiles()
+	require.NoError(t, err)
+	for _, name := range files {
+		if name >= version {
+			break
+		}
+		require.NoError(t, s.applyMigration(ctx, name))
+	}
+	return s
+}
+
+// MEM-01..05, INS-01, ROUTE-01..04 (data): migration 0006 gives existing members, rooms and
+// connectors the defaults the spec names (signature on, delivery all, no display name, no
+// keywords, no instructions, catch-all off) and its CHECKs refuse values outside the enums.
+func TestRoutingContextMigrationDefaultsAndChecks(t *testing.T) {
+	ctx := context.Background()
+	s := openMigratedBefore(t, "0006")
+	exec := func(query string, args ...any) error {
+		_, err := s.write.ExecContext(ctx, query, args...)
+		return err
+	}
+	require.NoError(t, s.WithTx(ctx, func(q *db.Queries) error { return q.CreateUser(ctx, newUser("u1", "alice")) }))
+	require.NoError(t, exec(`INSERT INTO rooms (id, owner_id, name, created_at, updated_at) VALUES ('r1', 'u1', 'ops', 1, 1)`))
+	require.NoError(t, exec(`INSERT INTO agents (id, owner_id, name, created_at) VALUES ('a1', 'u1', 'builder', 1)`))
+	require.NoError(t, exec(`INSERT INTO room_members (id, room_id, kind, member_id, created_at) VALUES ('m1', 'r1', 'agent', 'a1', 1)`))
+	require.NoError(t, exec(`INSERT INTO connectors (id, owner_id, kind, name, created_at, updated_at) VALUES ('c1', 'u1', 'telegram', 'tg', 1, 1)`))
+
+	require.NoError(t, s.Migrate(ctx))
+
+	var displayName, delivery, keywords string
+	var signOutbound bool
+	require.NoError(t, s.write.QueryRowContext(ctx,
+		`SELECT display_name, sign_outbound, delivery, keywords_json FROM room_members WHERE id = 'm1'`).
+		Scan(&displayName, &signOutbound, &delivery, &keywords))
+	require.Equal(t, "", displayName)
+	require.True(t, signOutbound, "signature stays on for existing members")
+	require.Equal(t, "all", delivery)
+	require.Equal(t, "[]", keywords)
+	var instructions string
+	require.NoError(t, s.write.QueryRowContext(ctx, `SELECT instructions FROM rooms WHERE id = 'r1'`).Scan(&instructions))
+	require.Equal(t, "", instructions)
+	var scope string
+	var routeRoom *string
+	require.NoError(t, s.write.QueryRowContext(ctx, `SELECT auto_route_scope, auto_route_room_id FROM connectors WHERE id = 'c1'`).Scan(&scope, &routeRoom))
+	require.Equal(t, "off", scope)
+	require.Nil(t, routeRoom)
+
+	for _, d := range []string{"mentions", "trusted", "all"} {
+		require.NoError(t, exec(`UPDATE room_members SET delivery = ? WHERE id = 'm1'`, d), d)
+	}
+	require.Error(t, exec(`UPDATE room_members SET delivery = 'loud' WHERE id = 'm1'`))
+	for _, sc := range []string{"dms", "groups", "all", "off"} {
+		require.NoError(t, exec(`UPDATE connectors SET auto_route_scope = ? WHERE id = 'c1'`, sc), sc)
+	}
+	require.Error(t, exec(`UPDATE connectors SET auto_route_scope = 'everyone' WHERE id = 'c1'`))
+}
+
+// ROUTE-03 (data): deleting the catch-all room clears the connector's auto_route_room_id;
+// skip rows go with their chat.
+func TestRoutingContextMigrationRoomAndChatReferences(t *testing.T) {
+	ctx := context.Background()
+	s := openMigrated(t)
+	exec := func(query string, args ...any) error {
+		_, err := s.write.ExecContext(ctx, query, args...)
+		return err
+	}
+	require.NoError(t, s.WithTx(ctx, func(q *db.Queries) error { return q.CreateUser(ctx, newUser("u1", "alice")) }))
+	require.NoError(t, exec(`INSERT INTO rooms (id, owner_id, name, created_at, updated_at) VALUES ('r1', 'u1', 'ops', 1, 1)`))
+	require.NoError(t, exec(`INSERT INTO connectors (id, owner_id, kind, name, auto_route_scope, auto_route_room_id, created_at, updated_at)
+		VALUES ('c1', 'u1', 'telegram', 'tg', 'dms', 'r1', 1, 1)`))
+	require.Error(t, exec(`UPDATE connectors SET auto_route_room_id = 'missing' WHERE id = 'c1'`), "the room must exist")
+	require.NoError(t, exec(`INSERT INTO chats (id, connector_id, external_id, created_at) VALUES ('h1', 'c1', '42', 1)`))
+	require.NoError(t, exec(`INSERT INTO auto_route_skips (connector_id, chat_id, until) VALUES ('c1', 'h1', 99)`))
+
+	require.NoError(t, exec(`DELETE FROM rooms WHERE id = 'r1'`))
+	var routeRoom *string
+	require.NoError(t, s.write.QueryRowContext(ctx, `SELECT auto_route_room_id FROM connectors WHERE id = 'c1'`).Scan(&routeRoom))
+	require.Nil(t, routeRoom)
+
+	require.NoError(t, exec(`DELETE FROM chats WHERE id = 'h1'`))
+	var skips int
+	require.NoError(t, s.write.QueryRowContext(ctx, `SELECT COUNT(*) FROM auto_route_skips`).Scan(&skips))
+	require.Zero(t, skips)
+}

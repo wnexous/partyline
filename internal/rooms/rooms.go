@@ -242,7 +242,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 			return err
 		}
 		return q.UpdateRoom(ctx, db.UpdateRoomParams{
-			Name: r.Name, Description: r.Description, BridgeChats: r.BridgeChats,
+			Name: r.Name, Description: r.Description, Instructions: r.Instructions, BridgeChats: r.BridgeChats,
 			RetentionDays: r.RetentionDays, UpdatedAt: s.now().UnixMilli(), ID: roomID,
 		})
 	})

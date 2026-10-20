@@ -41,6 +41,22 @@ export interface AgentMessage {
   message: Message;
 }
 /**
+ * RoomInfo is GET /agent/rooms/{room}/info (INS-02): the room, its instructions, its members
+ * and the calling agent's own membership (settings included).
+ */
+export interface RoomInfo {
+  room: RoomRef;
+  instructions: string;
+  members: RoomMember[];
+  me: RoomMember;
+}
+/**
+ * ReactRequest is the body of POST /agent/messages/{id}/react: one emoji (REACT-01).
+ */
+export interface ReactRequest {
+  emoji: string;
+}
+/**
  * ReplyRequest is the body of POST /agent/messages/{id}/reply (TOOL-02).
  */
 export interface ReplyRequest {
@@ -308,6 +324,12 @@ export interface Connector {
   last_error?: string;
   config: { [key: string]: unknown };
   /**
+   * AutoRouteScope and AutoRouteRoomID are the catch-all settings (ROUTE-01): new chats of
+   * the matching kind that belong to no room join AutoRouteRoomID.
+   */
+  auto_route_scope: AutoRouteScope;
+  auto_route_room_id?: string;
+  /**
    * InboundURL is where a webhook connector receives messages
    * (<public URL>/api/v1/hooks/<id>); empty for other kinds.
    */
@@ -338,7 +360,25 @@ export interface UpdateConnectorRequest {
   name?: string;
   config?: { [key: string]: unknown };
   enabled?: boolean;
+  /**
+   * AutoRouteScope and AutoRouteRoomID change the catch-all settings; the caller needs
+   * manage on the room (ROUTE-04). An empty AutoRouteRoomID clears it.
+   */
+  auto_route_scope?: AutoRouteScope;
+  auto_route_room_id?: string;
 }
+/**
+ * AutoRouteScope selects which new chats a connector routes to its catch-all room: none
+ * (off), DMs, groups (group and channel chats) or all.
+ */
+export const AutoRouteScopeOff = "off";
+export const AutoRouteScopeDMs = "dms";
+export const AutoRouteScopeGroups = "groups";
+export const AutoRouteScopeAll = "all";
+/**
+ * Catch-all scopes.
+ */
+export type AutoRouteScope = typeof AutoRouteScopeOff | typeof AutoRouteScopeDMs | typeof AutoRouteScopeGroups | typeof AutoRouteScopeAll;
 /**
  * ChatKind is the kind of an external chat.
  */
@@ -362,6 +402,16 @@ export interface Chat {
   kind: ChatKind;
   last_seen_at?: string /* RFC 3339 */;
   created_at: string /* RFC 3339 */;
+}
+/**
+ * ChatRef names the chat a message came from (CTX-01): Platform is the connector kind
+ * (whatsapp, telegram, discord, webhook).
+ */
+export interface ChatRef {
+  id: string;
+  title: string;
+  kind: ChatKind;
+  platform: string;
 }
 /**
  * RouteChatRequest is the body of POST /chats/{id}/route; the response is the new private Room
@@ -616,6 +666,11 @@ export interface Room {
   id: string;
   name: string;
   description: string;
+  /**
+   * Instructions is free text for the room's agents (INS-01), up to MaxRoomInstructions
+   * characters; agents read it with the room_info tool.
+   */
+  instructions: string;
   owner: User;
   visibility: Visibility;
   /**
@@ -642,6 +697,7 @@ export interface Room {
 export interface CreateRoomRequest {
   name: string;
   description?: string;
+  instructions?: string;
   bridge_chats?: boolean;
   retention_days?: number /* int */;
 }
@@ -651,6 +707,7 @@ export interface CreateRoomRequest {
 export interface UpdateRoomRequest {
   name?: string;
   description?: string;
+  instructions?: string;
   bridge_chats?: boolean;
   retention_days?: number /* int */;
 }
@@ -664,6 +721,35 @@ export const MemberKindUser = "user";
  * Room member kinds.
  */
 export type MemberKind = typeof MemberKindAgent | typeof MemberKindChat | typeof MemberKindUser;
+/**
+ * MaxRoomInstructions is the longest room instructions text in characters (INS-01).
+ */
+export const MaxRoomInstructions = 4000;
+/**
+ * DeliveryMode selects which room messages an agent member receives (MEM-03, MEM-04): all
+ * (the default), mentions ("@<display name>" or "@<agent name>", a reply to one of its
+ * messages, a keyword on word boundaries, or any message of a DM chat) or trusted (only
+ * messages trusted for the agent, DLV-06).
+ */
+export const DeliveryModeAll = "all";
+export const DeliveryModeMentions = "mentions";
+export const DeliveryModeTrusted = "trusted";
+/**
+ * Agent delivery modes.
+ */
+export type DeliveryMode = typeof DeliveryModeAll | typeof DeliveryModeMentions | typeof DeliveryModeTrusted;
+/**
+ * MaxMemberDisplayName is the longest agent display name in characters (MEM-05).
+ */
+export const MaxMemberDisplayName = 64;
+/**
+ * MaxMemberKeywords is the most keywords of an agent member (MEM-05).
+ */
+export const MaxMemberKeywords = 20;
+/**
+ * MaxMemberKeyword is the longest keyword in characters (MEM-05).
+ */
+export const MaxMemberKeyword = 64;
 /**
  * RoomMember is one member of a room (GET /rooms/{id}/members).
  */
@@ -689,6 +775,21 @@ export interface RoomMember {
    */
   connector_kind?: string;
   chat_kind?: ChatKind;
+  /**
+   * DisplayName, SignOutbound, Delivery and Keywords are per-room settings of agent members
+   * (MEM-01..05); other kinds carry the defaults ("", true, all, []).
+   * DisplayName replaces the agent name in outbound headers and the timeline when set.
+   */
+  display_name: string;
+  /**
+   * SignOutbound adds the author header to the agent's messages sent to chats.
+   */
+  sign_outbound: boolean;
+  delivery: DeliveryMode;
+  /**
+   * Keywords count as mentions (on word boundaries) when Delivery is mentions.
+   */
+  keywords: string[];
   created_at: string /* RFC 3339 */;
 }
 /**
@@ -700,10 +801,16 @@ export interface AddMemberRequest {
   outbound?: boolean;
 }
 /**
- * UpdateMemberRequest is the body of PATCH /rooms/{id}/members/{mid}.
+ * UpdateMemberRequest is the body of PATCH /rooms/{id}/members/{mid}; absent fields are
+ * unchanged. DisplayName, SignOutbound, Delivery and Keywords apply to agent members only
+ * (422 for other kinds); limits MaxMemberDisplayName, MaxMemberKeywords, MaxMemberKeyword.
  */
 export interface UpdateMemberRequest {
   outbound?: boolean;
+  display_name?: string;
+  sign_outbound?: boolean;
+  delivery?: DeliveryMode;
+  keywords?: string[];
 }
 /**
  * AuthorKind is who wrote a message.
@@ -763,6 +870,10 @@ export interface Message {
   reply_to?: string; // message id
   recipients?: string[]; // explicit chat member ids (DLV-04)
   external_id?: string;
+  /**
+   * Chat is the chat a chat-authored message came from; absent for other authors (CTX-01).
+   */
+  chat?: ChatRef;
   attachments: Attachment[];
   outbox?: OutboxItem[];
   created_at: string /* RFC 3339 */;

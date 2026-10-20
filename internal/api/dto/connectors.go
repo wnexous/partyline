@@ -60,6 +60,10 @@ type Connector struct {
 	Status    ConnectorStatus `json:"status"`
 	LastError string          `json:"last_error,omitempty"`
 	Config    map[string]any  `json:"config" tstype:"{ [key: string]: unknown }"`
+	// AutoRouteScope and AutoRouteRoomID are the catch-all settings (ROUTE-01): new chats of
+	// the matching kind that belong to no room join AutoRouteRoomID.
+	AutoRouteScope  AutoRouteScope `json:"auto_route_scope"`
+	AutoRouteRoomID string         `json:"auto_route_room_id,omitempty"`
 	// InboundURL is where a webhook connector receives messages
 	// (<public URL>/api/v1/hooks/<id>); empty for other kinds.
 	InboundURL string `json:"inbound_url,omitempty"`
@@ -85,7 +89,23 @@ type UpdateConnectorRequest struct {
 	Name    *string        `json:"name,omitempty"`
 	Config  map[string]any `json:"config,omitempty" tstype:"{ [key: string]: unknown }"`
 	Enabled *bool          `json:"enabled,omitempty"`
+	// AutoRouteScope and AutoRouteRoomID change the catch-all settings; the caller needs
+	// manage on the room (ROUTE-04). An empty AutoRouteRoomID clears it.
+	AutoRouteScope  *AutoRouteScope `json:"auto_route_scope,omitempty"`
+	AutoRouteRoomID *string         `json:"auto_route_room_id,omitempty"`
 }
+
+// AutoRouteScope selects which new chats a connector routes to its catch-all room: none
+// (off), DMs, groups (group and channel chats) or all.
+type AutoRouteScope string
+
+// Catch-all scopes.
+const (
+	AutoRouteScopeOff    AutoRouteScope = "off"
+	AutoRouteScopeDMs    AutoRouteScope = "dms"
+	AutoRouteScopeGroups AutoRouteScope = "groups"
+	AutoRouteScopeAll    AutoRouteScope = "all"
+)
 
 // ChatKind is the kind of an external chat.
 type ChatKind string
@@ -108,6 +128,15 @@ type Chat struct {
 	Kind          ChatKind   `json:"kind"`
 	LastSeenAt    *time.Time `json:"last_seen_at,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
+}
+
+// ChatRef names the chat a message came from (CTX-01): Platform is the connector kind
+// (whatsapp, telegram, discord, webhook).
+type ChatRef struct {
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Kind     ChatKind `json:"kind"`
+	Platform string   `json:"platform"`
 }
 
 // RouteChatRequest is the body of POST /chats/{id}/route; the response is the new private Room

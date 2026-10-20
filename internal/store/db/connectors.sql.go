@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createConnector = `-- name: CreateConnector :exec
@@ -80,7 +81,7 @@ func (q *Queries) DeleteConnectorChatMemberships(ctx context.Context, connectorI
 }
 
 const getConnector = `-- name: GetConnector :one
-SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at FROM connectors WHERE id = ?
+SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at, auto_route_scope, auto_route_room_id FROM connectors WHERE id = ?
 `
 
 func (q *Queries) GetConnector(ctx context.Context, id string) (Connector, error) {
@@ -98,12 +99,14 @@ func (q *Queries) GetConnector(ctx context.Context, id string) (Connector, error
 		&i.LastError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.AutoRouteScope,
+		&i.AutoRouteRoomID,
 	)
 	return i, err
 }
 
 const getConnectorWithOwner = `-- name: GetConnectorWithOwner :one
-SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, u.username AS owner_username, u.display_name AS owner_display_name
+SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_scope, c.auto_route_room_id, u.username AS owner_username, u.display_name AS owner_display_name
 FROM connectors c JOIN users u ON u.id = c.owner_id
 WHERE c.id = ?
 `
@@ -129,6 +132,8 @@ func (q *Queries) GetConnectorWithOwner(ctx context.Context, id string) (GetConn
 		&i.Connector.LastError,
 		&i.Connector.CreatedAt,
 		&i.Connector.UpdatedAt,
+		&i.Connector.AutoRouteScope,
+		&i.Connector.AutoRouteRoomID,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
 	)
@@ -136,7 +141,7 @@ func (q *Queries) GetConnectorWithOwner(ctx context.Context, id string) (GetConn
 }
 
 const listConnectorsForUser = `-- name: ListConnectorsForUser :many
-SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, u.username AS owner_username, u.display_name AS owner_display_name
+SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_scope, c.auto_route_room_id, u.username AS owner_username, u.display_name AS owner_display_name
 FROM connectors c JOIN users u ON u.id = c.owner_id
 WHERE c.owner_id = ?1
    OR c.id IN (SELECT g.resource_id FROM grants g
@@ -171,6 +176,8 @@ func (q *Queries) ListConnectorsForUser(ctx context.Context, userID string) ([]L
 			&i.Connector.LastError,
 			&i.Connector.CreatedAt,
 			&i.Connector.UpdatedAt,
+			&i.Connector.AutoRouteScope,
+			&i.Connector.AutoRouteRoomID,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
 		); err != nil {
@@ -234,6 +241,27 @@ func (q *Queries) UpdateConnector(ctx context.Context, arg UpdateConnectorParams
 		arg.ConfigJson,
 		arg.SecretsEnc,
 		arg.Enabled,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
+}
+
+const updateConnectorAutoRoute = `-- name: UpdateConnectorAutoRoute :exec
+UPDATE connectors SET auto_route_scope = ?, auto_route_room_id = ?, updated_at = ? WHERE id = ?
+`
+
+type UpdateConnectorAutoRouteParams struct {
+	AutoRouteScope  string
+	AutoRouteRoomID sql.NullString
+	UpdatedAt       int64
+	ID              string
+}
+
+func (q *Queries) UpdateConnectorAutoRoute(ctx context.Context, arg UpdateConnectorAutoRouteParams) error {
+	_, err := q.db.ExecContext(ctx, updateConnectorAutoRoute,
+		arg.AutoRouteScope,
+		arg.AutoRouteRoomID,
 		arg.UpdatedAt,
 		arg.ID,
 	)

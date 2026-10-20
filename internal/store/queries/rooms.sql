@@ -1,6 +1,6 @@
 -- name: CreateRoom :exec
-INSERT INTO rooms (id, owner_id, name, description, bridge_chats, retention_days, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO rooms (id, owner_id, name, description, instructions, bridge_chats, retention_days, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetRoom :one
 SELECT * FROM rooms WHERE id = ?;
@@ -28,7 +28,7 @@ WHERE r.owner_id = sqlc.arg(user_id)
 ORDER BY r.name COLLATE NOCASE, r.id;
 
 -- name: UpdateRoom :exec
-UPDATE rooms SET name = ?, description = ?, bridge_chats = ?, retention_days = ?, updated_at = ?
+UPDATE rooms SET name = ?, description = ?, instructions = ?, bridge_chats = ?, retention_days = ?, updated_at = ?
 WHERE id = ?;
 
 -- name: DeleteRoom :exec
@@ -58,6 +58,10 @@ SELECT * FROM room_members WHERE id = ? AND room_id = ?;
 
 -- name: UpdateRoomMemberOutbound :exec
 UPDATE room_members SET outbound = ? WHERE id = ?;
+
+-- name: UpdateRoomMemberSettings :exec
+UPDATE room_members SET outbound = ?, display_name = ?, sign_outbound = ?, delivery = ?, keywords_json = ?
+WHERE id = ?;
 
 -- name: DeleteRoomMember :exec
 DELETE FROM room_members WHERE id = ?;

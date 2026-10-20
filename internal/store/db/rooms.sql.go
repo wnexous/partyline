@@ -27,8 +27,8 @@ func (q *Queries) CountRoomMember(ctx context.Context, arg CountRoomMemberParams
 }
 
 const createRoom = `-- name: CreateRoom :exec
-INSERT INTO rooms (id, owner_id, name, description, bridge_chats, retention_days, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO rooms (id, owner_id, name, description, instructions, bridge_chats, retention_days, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateRoomParams struct {
@@ -36,6 +36,7 @@ type CreateRoomParams struct {
 	OwnerID       string
 	Name          string
 	Description   string
+	Instructions  string
 	BridgeChats   bool
 	RetentionDays int64
 	CreatedAt     int64
@@ -48,6 +49,7 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) error {
 		arg.OwnerID,
 		arg.Name,
 		arg.Description,
+		arg.Instructions,
 		arg.BridgeChats,
 		arg.RetentionDays,
 		arg.CreatedAt,
@@ -103,7 +105,7 @@ func (q *Queries) DeleteRoomMember(ctx context.Context, id string) error {
 }
 
 const getRoom = `-- name: GetRoom :one
-SELECT id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at FROM rooms WHERE id = ?
+SELECT id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions FROM rooms WHERE id = ?
 `
 
 func (q *Queries) GetRoom(ctx context.Context, id string) (Room, error) {
@@ -121,12 +123,13 @@ func (q *Queries) GetRoom(ctx context.Context, id string) (Room, error) {
 		&i.AgentsPaused,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Instructions,
 	)
 	return i, err
 }
 
 const getRoomMember = `-- name: GetRoomMember :one
-SELECT id, room_id, kind, member_id, outbound, added_by, created_at FROM room_members WHERE id = ? AND room_id = ?
+SELECT id, room_id, kind, member_id, outbound, added_by, created_at, display_name, sign_outbound, delivery, keywords_json FROM room_members WHERE id = ? AND room_id = ?
 `
 
 type GetRoomMemberParams struct {
@@ -145,12 +148,16 @@ func (q *Queries) GetRoomMember(ctx context.Context, arg GetRoomMemberParams) (R
 		&i.Outbound,
 		&i.AddedBy,
 		&i.CreatedAt,
+		&i.DisplayName,
+		&i.SignOutbound,
+		&i.Delivery,
+		&i.KeywordsJson,
 	)
 	return i, err
 }
 
 const getRoomWithOwner = `-- name: GetRoomWithOwner :one
-SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, u.username AS owner_username, u.display_name AS owner_display_name,
        (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count
 FROM rooms r JOIN users u ON u.id = r.owner_id
 WHERE r.id = ?
@@ -178,6 +185,7 @@ func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithO
 		&i.Room.AgentsPaused,
 		&i.Room.CreatedAt,
 		&i.Room.UpdatedAt,
+		&i.Room.Instructions,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
 		&i.MemberCount,
@@ -186,7 +194,7 @@ func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithO
 }
 
 const listRoomMembers = `-- name: ListRoomMembers :many
-SELECT m.id, m.room_id, m.kind, m.member_id, m.outbound, m.added_by, m.created_at,
+SELECT m.id, m.room_id, m.kind, m.member_id, m.outbound, m.added_by, m.created_at, m.display_name, m.sign_outbound, m.delivery, m.keywords_json,
        CAST(CASE m.kind
             WHEN 'agent' THEN COALESCE(a.name, '')
             WHEN 'chat' THEN COALESCE(c.title, '')
@@ -230,6 +238,10 @@ func (q *Queries) ListRoomMembers(ctx context.Context, roomID string) ([]ListRoo
 			&i.RoomMember.Outbound,
 			&i.RoomMember.AddedBy,
 			&i.RoomMember.CreatedAt,
+			&i.RoomMember.DisplayName,
+			&i.RoomMember.SignOutbound,
+			&i.RoomMember.Delivery,
+			&i.RoomMember.KeywordsJson,
 			&i.Name,
 			&i.AgentOwner,
 			&i.ConnectorKind,
@@ -249,7 +261,7 @@ func (q *Queries) ListRoomMembers(ctx context.Context, roomID string) ([]ListRoo
 }
 
 const listRoomsForUser = `-- name: ListRoomsForUser :many
-SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, u.username AS owner_username, u.display_name AS owner_display_name,
        (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count
 FROM rooms r JOIN users u ON u.id = r.owner_id
 WHERE r.owner_id = ?1
@@ -286,6 +298,7 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRo
 			&i.Room.AgentsPaused,
 			&i.Room.CreatedAt,
 			&i.Room.UpdatedAt,
+			&i.Room.Instructions,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
 			&i.MemberCount,
@@ -304,13 +317,14 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRo
 }
 
 const updateRoom = `-- name: UpdateRoom :exec
-UPDATE rooms SET name = ?, description = ?, bridge_chats = ?, retention_days = ?, updated_at = ?
+UPDATE rooms SET name = ?, description = ?, instructions = ?, bridge_chats = ?, retention_days = ?, updated_at = ?
 WHERE id = ?
 `
 
 type UpdateRoomParams struct {
 	Name          string
 	Description   string
+	Instructions  string
 	BridgeChats   bool
 	RetentionDays int64
 	UpdatedAt     int64
@@ -321,6 +335,7 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) error {
 	_, err := q.db.ExecContext(ctx, updateRoom,
 		arg.Name,
 		arg.Description,
+		arg.Instructions,
 		arg.BridgeChats,
 		arg.RetentionDays,
 		arg.UpdatedAt,
@@ -340,5 +355,31 @@ type UpdateRoomMemberOutboundParams struct {
 
 func (q *Queries) UpdateRoomMemberOutbound(ctx context.Context, arg UpdateRoomMemberOutboundParams) error {
 	_, err := q.db.ExecContext(ctx, updateRoomMemberOutbound, arg.Outbound, arg.ID)
+	return err
+}
+
+const updateRoomMemberSettings = `-- name: UpdateRoomMemberSettings :exec
+UPDATE room_members SET outbound = ?, display_name = ?, sign_outbound = ?, delivery = ?, keywords_json = ?
+WHERE id = ?
+`
+
+type UpdateRoomMemberSettingsParams struct {
+	Outbound     bool
+	DisplayName  string
+	SignOutbound bool
+	Delivery     string
+	KeywordsJson string
+	ID           string
+}
+
+func (q *Queries) UpdateRoomMemberSettings(ctx context.Context, arg UpdateRoomMemberSettingsParams) error {
+	_, err := q.db.ExecContext(ctx, updateRoomMemberSettings,
+		arg.Outbound,
+		arg.DisplayName,
+		arg.SignOutbound,
+		arg.Delivery,
+		arg.KeywordsJson,
+		arg.ID,
+	)
 	return err
 }

@@ -58,6 +58,12 @@ type AuditLog struct {
 	CreatedAt  int64
 }
 
+type AutoRouteSkip struct {
+	ConnectorID string
+	ChatID      string
+	Until       int64
+}
+
 type Chat struct {
 	ID          string
 	ConnectorID string
@@ -69,17 +75,19 @@ type Chat struct {
 }
 
 type Connector struct {
-	ID         string
-	OwnerID    string
-	Kind       string
-	Name       string
-	ConfigJson string
-	SecretsEnc []byte
-	Enabled    bool
-	Status     string
-	LastError  string
-	CreatedAt  int64
-	UpdatedAt  int64
+	ID              string
+	OwnerID         string
+	Kind            string
+	Name            string
+	ConfigJson      string
+	SecretsEnc      []byte
+	Enabled         bool
+	Status          string
+	LastError       string
+	CreatedAt       int64
+	UpdatedAt       int64
+	AutoRouteScope  string
+	AutoRouteRoomID sql.NullString
 }
 
 type Grant struct {
@@ -182,16 +190,21 @@ type Room struct {
 	AgentsPaused  bool
 	CreatedAt     int64
 	UpdatedAt     int64
+	Instructions  string
 }
 
 type RoomMember struct {
-	ID        string
-	RoomID    string
-	Kind      string
-	MemberID  string
-	Outbound  bool
-	AddedBy   string
-	CreatedAt int64
+	ID           string
+	RoomID       string
+	Kind         string
+	MemberID     string
+	Outbound     bool
+	AddedBy      string
+	CreatedAt    int64
+	DisplayName  string
+	SignOutbound bool
+	Delivery     string
+	KeywordsJson string
 }
 
 type Session struct {

@@ -35,3 +35,6 @@ SELECT id FROM connectors WHERE enabled = 1 ORDER BY id;
 
 -- name: UpdateConnectorStatus :exec
 UPDATE connectors SET status = ?, last_error = ? WHERE id = ?;
+
+-- name: UpdateConnectorAutoRoute :exec
+UPDATE connectors SET auto_route_scope = ?, auto_route_room_id = ?, updated_at = ? WHERE id = ?;

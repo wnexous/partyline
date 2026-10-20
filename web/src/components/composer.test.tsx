@@ -17,6 +17,10 @@ const chats: RoomMember[] = [
     outbound: true,
     connector_kind: "telegram",
     chat_kind: "group",
+    display_name: "",
+    sign_outbound: true,
+    delivery: "all",
+    keywords: [],
     created_at: "2026-10-01T12:00:00Z",
   },
   {
@@ -27,6 +31,10 @@ const chats: RoomMember[] = [
     outbound: false,
     connector_kind: "discord",
     chat_kind: "channel",
+    display_name: "",
+    sign_outbound: true,
+    delivery: "all",
+    keywords: [],
     created_at: "2026-10-01T12:00:00Z",
   },
 ];

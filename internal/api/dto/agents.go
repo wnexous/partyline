@@ -35,6 +35,20 @@ type AgentMessage struct {
 	Message Message `json:"message"`
 }
 
+// RoomInfo is GET /agent/rooms/{room}/info (INS-02): the room, its instructions, its members
+// and the calling agent's own membership (settings included).
+type RoomInfo struct {
+	Room         RoomRef      `json:"room"`
+	Instructions string       `json:"instructions"`
+	Members      []RoomMember `json:"members"`
+	Me           RoomMember   `json:"me"`
+}
+
+// ReactRequest is the body of POST /agent/messages/{id}/react: one emoji (REACT-01).
+type ReactRequest struct {
+	Emoji string `json:"emoji"`
+}
+
 // ReplyRequest is the body of POST /agent/messages/{id}/reply (TOOL-02).
 type ReplyRequest struct {
 	Text string `json:"text"`

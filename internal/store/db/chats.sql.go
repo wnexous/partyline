@@ -164,7 +164,7 @@ func (q *Queries) ListConnectorChats(ctx context.Context, connectorID string) ([
 }
 
 const listUsableChats = `-- name: ListUsableChats :many
-SELECT c.id, c.connector_id, c.external_id, c.title, c.kind, c.last_seen_at, c.created_at, k.id, k.owner_id, k.kind, k.name, k.config_json, k.secrets_enc, k.enabled, k.status, k.last_error, k.created_at, k.updated_at
+SELECT c.id, c.connector_id, c.external_id, c.title, c.kind, c.last_seen_at, c.created_at, k.id, k.owner_id, k.kind, k.name, k.config_json, k.secrets_enc, k.enabled, k.status, k.last_error, k.created_at, k.updated_at, k.auto_route_scope, k.auto_route_room_id
 FROM chats c JOIN connectors k ON k.id = c.connector_id
 WHERE k.owner_id = ?1
    OR k.id IN (SELECT g.resource_id FROM grants g
@@ -205,6 +205,8 @@ func (q *Queries) ListUsableChats(ctx context.Context, userID string) ([]ListUsa
 			&i.Connector.LastError,
 			&i.Connector.CreatedAt,
 			&i.Connector.UpdatedAt,
+			&i.Connector.AutoRouteScope,
+			&i.Connector.AutoRouteRoomID,
 		); err != nil {
 			return nil, err
 		}
