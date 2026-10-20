@@ -551,8 +551,8 @@ T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → 
 **Requirement**: AUTH-09, AUTH-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Logout closes the session's live socket within 1 s
-- [ ] Revoking another session, disabling the user and a password reset close the affected sockets; other sessions stay open
+- [x] Logout closes the session's live socket within 1 s
+- [x] Revoking another session, disabling the user and a password reset close the affected sockets; other sessions stay open
 **Tests**: e2e
 **Gate**: full
 **Commit**: `fix(live): close live sockets when their session is revoked`

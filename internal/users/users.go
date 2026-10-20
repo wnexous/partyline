@@ -12,6 +12,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/validation"
 )
@@ -51,6 +52,8 @@ const touchInterval = time.Minute
 type Options struct {
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
+	// Bus receives SessionsRevoked events; optional.
+	Bus *events.Bus
 }
 
 // Service implements account use cases over the store.
@@ -60,6 +63,7 @@ type Service struct {
 	setupToken string
 	limiter    *failureLimiter
 	audit      *audit.Log
+	bus        *events.Bus
 
 	dummyOnce sync.Once
 	dummyHash string
@@ -80,7 +84,15 @@ func NewService(st *store.Store, opts Options) (*Service, error) {
 		setupToken: token,
 		limiter:    newFailureLimiter(loginMaxFailures, loginWindow),
 		audit:      audit.New(st, opts.Now),
+		bus:        opts.Bus,
 	}, nil
+}
+
+// sessionsRevoked announces ended sessions so live sockets bound to them close.
+func (s *Service) sessionsRevoked(userID string, ids []string) {
+	if s.bus != nil && len(ids) > 0 {
+		s.bus.Publish(events.SessionsRevoked{UserID: userID, SessionIDs: ids})
+	}
 }
 
 // SetupToken returns the one-time token that authorizes POST /setup while there are no users.

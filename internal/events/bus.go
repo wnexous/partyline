@@ -55,6 +55,13 @@ type OutboxChanged struct {
 // IdentityLinked reports that a chat identity was linked to a user.
 type IdentityLinked struct{ UserID, IdentityID string }
 
+// SessionsRevoked reports that sessions of a user ended (logout, session delete, password
+// change or reset, user disabled); live sockets of those sessions must close.
+type SessionsRevoked struct {
+	UserID     string
+	SessionIDs []string
+}
+
 // Lagged tells a subscriber it missed events because its buffer was full.
 type Lagged struct{}
 
@@ -67,6 +74,7 @@ func (ConnectorStatus) isEvent() {}
 func (ChatDiscovered) isEvent()  {}
 func (OutboxChanged) isEvent()   {}
 func (IdentityLinked) isEvent()  {}
+func (SessionsRevoked) isEvent() {}
 func (Lagged) isEvent()          {}
 
 // Bus fans out events to subscribers in publish order.

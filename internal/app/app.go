@@ -40,6 +40,9 @@ type Options struct {
 	Logger *slog.Logger
 	// Now returns the current time; defaults to time.Now. Tests inject a fake clock.
 	Now func() time.Time
+	// LiveSessionCheck is how often live sockets re-check their session; defaults to
+	// live.DefaultSessionCheckInterval. Tests shorten it.
+	LiveSessionCheck time.Duration
 	// Sender delivers outbox entries to external chats. When nil the outbox worker does not
 	// run and entries stay pending.
 	Sender delivery.Sender
@@ -91,7 +94,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	usersSvc, err := users.NewService(st, users.Options{Now: opts.Now})
+	bus := events.NewBus()
+	usersSvc, err := users.NewService(st, users.Options{Now: opts.Now, Bus: bus})
 	if err != nil {
 		_ = st.Close()
 		return nil, err
@@ -102,7 +106,6 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		_ = st.Close()
 		return nil, err
 	}
-	bus := events.NewBus()
 	az := access.New(st, bus, access.Options{Now: opts.Now})
 	a := &App{
 		Config: cfg,
@@ -121,6 +124,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Now: opts.Now})
 	a.Live = live.New(live.Deps{
 		Bus: bus, Access: az, Rooms: a.Rooms, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
+		Sessions: usersSvc, SessionCheckInterval: opts.LiveSessionCheck,
 	})
 	a.handler = api.New(api.Deps{
 		Config: cfg,

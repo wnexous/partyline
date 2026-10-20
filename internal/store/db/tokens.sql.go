@@ -40,6 +40,28 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) error 
 	return err
 }
 
+const getToken = `-- name: GetToken :one
+SELECT id, user_id, kind, name, prefix, token_hash, created_at, last_used_at, expires_at, revoked_at FROM api_tokens WHERE id = ?
+`
+
+func (q *Queries) GetToken(ctx context.Context, id string) (ApiToken, error) {
+	row := q.db.QueryRowContext(ctx, getToken, id)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Kind,
+		&i.Name,
+		&i.Prefix,
+		&i.TokenHash,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const getTokenByHash = `-- name: GetTokenByHash :one
 SELECT id, user_id, kind, name, prefix, token_hash, created_at, last_used_at, expires_at, revoked_at FROM api_tokens WHERE token_hash = ?
 `

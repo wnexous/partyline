@@ -55,9 +55,10 @@ type Env struct {
 }
 
 type options struct {
-	env    map[string]string
-	logger *slog.Logger
-	now    func() time.Time
+	env              map[string]string
+	logger           *slog.Logger
+	now              func() time.Time
+	liveSessionCheck time.Duration
 }
 
 // Option customizes New.
@@ -75,6 +76,9 @@ func WithEnv(vars map[string]string) Option {
 
 // WithLogger sends the app logs to logger instead of discarding them.
 func WithLogger(logger *slog.Logger) Option { return func(o *options) { o.logger = logger } }
+
+// WithLiveSessionCheck sets how often live sockets re-check their session.
+func WithLiveSessionCheck(d time.Duration) Option { return func(o *options) { o.liveSessionCheck = d } }
 
 // WithClock makes the app use now as its clock.
 func WithClock(now func() time.Time) Option { return func(o *options) { o.now = now } }
@@ -95,7 +99,7 @@ func New(t testing.TB, opts ...Option) *Env {
 	cfg, err := config.Load(func(k string) string { return o.env[k] })
 	require.NoError(t, err)
 
-	a, err := app.New(cfg, app.Options{Logger: o.logger, Now: o.now})
+	a, err := app.New(cfg, app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck})
 	require.NoError(t, err)
 	require.NoError(t, a.Start(context.Background()))
 	srv.Config.Handler = a.Handler()

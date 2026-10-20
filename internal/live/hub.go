@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"sync"
 	"time"
 
@@ -32,7 +33,19 @@ const (
 	writeTimeout        = 10 * time.Second
 	// subscriberBuffer is the per-connection event backlog before a lagged frame.
 	subscriberBuffer = 256
+	// DefaultSessionCheckInterval bounds how long a socket outlives a session whose
+	// revocation event it missed.
+	DefaultSessionCheckInterval = time.Minute
 )
+
+// errSessionRevoked ends a connection whose session (or token, or user) no longer
+// authenticates.
+var errSessionRevoked = errors.New("session revoked")
+
+// PrincipalChecker reports whether a connection's principal still authenticates.
+type PrincipalChecker interface {
+	PrincipalActive(ctx context.Context, p authn.Principal) (bool, error)
+}
 
 // Deps are the services the hub reads from.
 type Deps struct {
@@ -43,9 +56,14 @@ type Deps struct {
 	// PublicURL is the instance URL; upgrades must come from its origin (LIVE-03).
 	PublicURL *url.URL
 	Logger    *slog.Logger
-	// Now defaults to time.Now; PingInterval to DefaultPingInterval.
-	Now          func() time.Time
-	PingInterval time.Duration
+	// Sessions re-checks each connection's principal: on a SessionsRevoked event naming its
+	// session, after a lagged bus and every SessionCheckInterval. Optional.
+	Sessions PrincipalChecker
+	// Now defaults to time.Now; PingInterval to DefaultPingInterval; SessionCheckInterval to
+	// DefaultSessionCheckInterval.
+	Now                  func() time.Time
+	PingInterval         time.Duration
+	SessionCheckInterval time.Duration
 }
 
 // Hub accepts live connections. Close ends all of them.
@@ -70,6 +88,9 @@ func New(d Deps) *Hub {
 	}
 	if d.PingInterval <= 0 {
 		d.PingInterval = DefaultPingInterval
+	}
+	if d.SessionCheckInterval <= 0 {
+		d.SessionCheckInterval = DefaultSessionCheckInterval
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	return &Hub{d: d, origin: d.PublicURL.Scheme + "://" + d.PublicURL.Host, ctx: ctx, stop: stop}
@@ -125,6 +146,10 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	c := &conn{hub: h, ws: ws, p: p, visible: map[string]bool{}}
 	err = c.run(ctx)
+	if errors.Is(err, errSessionRevoked) {
+		_ = ws.Close(websocket.StatusPolicyViolation, "session revoked")
+		return
+	}
 	if err != nil && ctx.Err() == nil {
 		h.d.Logger.Debug("live connection ended", "user_id", p.UserID, "err", err)
 	}
@@ -167,10 +192,16 @@ func (c *conn) run(ctx context.Context) error {
 
 	ping := time.NewTicker(c.hub.d.PingInterval)
 	defer ping.Stop()
+	recheck := time.NewTicker(c.hub.d.SessionCheckInterval)
+	defer recheck.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-recheck.C:
+			if err := c.checkPrincipal(ctx); err != nil {
+				return err
+			}
 		case <-ping.C:
 			pctx, pcancel := context.WithTimeout(ctx, writeTimeout)
 			err := c.ws.Ping(pctx)
@@ -181,6 +212,9 @@ func (c *conn) run(ctx context.Context) error {
 		case e, ok := <-sub:
 			if !ok {
 				return nil
+			}
+			if err := c.checkRevoked(ctx, e); err != nil {
+				return err
 			}
 			frames, err := c.render(ctx, e)
 			if err != nil {
@@ -197,6 +231,39 @@ func (c *conn) run(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// checkRevoked ends the connection when e revokes its session; a lagged bus may have dropped
+// such an event, so it re-checks the principal then.
+func (c *conn) checkRevoked(ctx context.Context, e events.Event) error {
+	switch e := e.(type) {
+	case events.SessionsRevoked:
+		if c.p.SessionID != "" && slices.Contains(e.SessionIDs, c.p.SessionID) {
+			return errSessionRevoked
+		}
+	case events.Lagged:
+		return c.checkPrincipal(ctx)
+	}
+	return nil
+}
+
+// checkPrincipal ends the connection when its principal no longer authenticates.
+func (c *conn) checkPrincipal(ctx context.Context) error {
+	if c.hub.d.Sessions == nil {
+		return nil
+	}
+	ok, err := c.hub.d.Sessions.PrincipalActive(ctx, c.p)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
+		c.hub.d.Logger.Error("live: session check failed", "user_id", c.p.UserID, "err", err)
+		return nil
+	}
+	if !ok {
+		return errSessionRevoked
+	}
+	return nil
 }
 
 func (c *conn) write(ctx context.Context, f frame) error {

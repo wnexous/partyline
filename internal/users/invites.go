@@ -222,6 +222,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.
 		return db.User{}, &ValidationError{Fields: map[string]string{"role": "must be admin or member"}}
 	}
 	var u db.User
+	var ended []string
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		detail := map[string]any{}
 		if up.Role != nil {
@@ -253,7 +254,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.
 			u.DisabledAt = sql.NullInt64{}
 			if *up.Disabled {
 				u.DisabledAt = sql.NullInt64{Int64: ms(s.now()), Valid: true}
-				if err := q.DeleteSessionsByUser(ctx, id); err != nil {
+				if ended, err = q.DeleteSessionsByUser(ctx, id); err != nil {
 					return err
 				}
 			}
@@ -264,5 +265,6 @@ func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.
 	if err != nil {
 		return db.User{}, err
 	}
+	s.sessionsRevoked(id, ended)
 	return u, nil
 }

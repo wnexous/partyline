@@ -14,3 +14,6 @@ UPDATE api_tokens SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ? AND user
 -- name: TouchToken :exec
 UPDATE api_tokens SET last_used_at = sqlc.arg(now)
 WHERE id = sqlc.arg(id) AND (last_used_at IS NULL OR last_used_at <= sqlc.arg(stale_before));
+
+-- name: GetToken :one
+SELECT * FROM api_tokens WHERE id = ?;

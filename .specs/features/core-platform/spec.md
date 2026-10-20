@@ -191,6 +191,8 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 - IF the server restarts with outbound sends queued THEN the system SHALL resume them (DLV-07).
 - IF the last manager of a room is deleted THEN the system SHALL delete the room (ROOM-02).
 - WHEN a grant targets a disabled user THEN the system SHALL keep it but deny access while the user is disabled (AUTH-10).
+- WHEN a session ends (logout, session delete, password change or reset, user disabled) THEN the system SHALL close that session's live WebSockets within 1 second, and SHALL re-check every live socket's session, token and user at least every 60 seconds (AUTH-09, AUTH-10).
+- WHEN a user changes their password THEN the system SHALL end the user's other sessions and keep the current one (AUTH-09).
 
 ---
 
@@ -206,8 +208,8 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 | AUTH-06 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-07 | P1: Setup and accounts | Tasks | Implementing |
 | AUTH-08 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-09 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-10 | P1: Setup and accounts | Tasks | Implementing |
+| AUTH-09 | P1: Setup and accounts | Fix T31 | Fixed, re-verify |
+| AUTH-10 | P1: Setup and accounts | Fix T31 | Fixed, re-verify |
 | TOK-01 | P1: Tokens | Tasks | Implementing |
 | TOK-02 | P1: Tokens | Tasks | Implementing |
 | TOK-03 | P1: Tokens | Tasks | Implementing |

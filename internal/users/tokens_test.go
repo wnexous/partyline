@@ -208,3 +208,47 @@ func TestAuthenticateTokenUpdatesLastUsedOncePerMinute(t *testing.T) {
 	at, _ = f.lastUsedAt(t, uid, id)
 	require.Equal(t, first.Add(time.Minute).UnixMilli(), at)
 }
+
+// AUTH-09/AUTH-10, TOK-02 for live sockets: PrincipalActive follows the session or token
+// and the user's state, so the live re-check closes what the next request would reject.
+func TestPrincipalActive(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.setupAdmin(t)
+	bob, err := f.svc.CreateUser(ctx, AccountInput{Username: "bob", Password: memberPassword}, dto.RoleMember)
+	require.NoError(t, err)
+	sess, err := f.svc.CreateSession(ctx, bob.ID, "192.0.2.1", "test")
+	require.NoError(t, err)
+	tokID, secret := f.token(t, bob.ID, dto.TokenKindUser, nil)
+	tokP, err := f.svc.AuthenticateToken(ctx, secret)
+	require.NoError(t, err)
+	sessP := authn.Principal{Kind: authn.KindUser, UserID: bob.ID, SessionID: sess.ID}
+
+	active := func(p authn.Principal) bool {
+		t.Helper()
+		ok, err := f.svc.PrincipalActive(ctx, p)
+		require.NoError(t, err)
+		return ok
+	}
+	require.True(t, active(sessP))
+	require.True(t, active(tokP))
+	require.False(t, active(authn.Principal{Kind: authn.KindUser, UserID: "someone-else", SessionID: sess.ID}), "session of another user")
+
+	disabled := true
+	_, err = f.svc.UpdateUser(ctx, bob.ID, UserUpdate{Disabled: &disabled})
+	require.NoError(t, err)
+	require.False(t, active(tokP), "disabled user")
+	require.False(t, active(sessP), "disabling ends the session")
+	disabled = false
+	_, err = f.svc.UpdateUser(ctx, bob.ID, UserUpdate{Disabled: &disabled})
+	require.NoError(t, err)
+	require.True(t, active(tokP))
+
+	require.NoError(t, f.svc.RevokeToken(ctx, bob.ID, tokID))
+	require.False(t, active(tokP), "revoked token")
+
+	sess, err = f.svc.CreateSession(ctx, bob.ID, "192.0.2.1", "test")
+	require.NoError(t, err)
+	f.clock.Advance(SessionTTL)
+	require.False(t, active(authn.Principal{Kind: authn.KindUser, UserID: bob.ID, SessionID: sess.ID}), "expired session")
+}
