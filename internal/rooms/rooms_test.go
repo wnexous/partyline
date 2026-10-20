@@ -269,7 +269,8 @@ func TestListVisibleRooms(t *testing.T) {
 	require.Equal(t, []entry{{"c-public", dto.LevelView, dto.VisibilityPublic}}, listOf(carol))
 }
 
-// A manage grantee may change settings and sharing; the owner stays the owner.
+// ACL-07: a manage grantee (not only the owner) may change settings and sharing; the owner
+// stays the owner.
 func TestManagerUpdatesRoom(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)

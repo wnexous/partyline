@@ -9,6 +9,25 @@ import (
 	"context"
 )
 
+const deletePendingRoomChatOutbox = `-- name: DeletePendingRoomChatOutbox :execrows
+DELETE FROM outbox
+WHERE chat_id = ?1 AND status = 'pending'
+  AND message_id IN (SELECT id FROM messages WHERE room_id = ?2)
+`
+
+type DeletePendingRoomChatOutboxParams struct {
+	ChatID string
+	RoomID string
+}
+
+func (q *Queries) DeletePendingRoomChatOutbox(ctx context.Context, arg DeletePendingRoomChatOutboxParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deletePendingRoomChatOutbox, arg.ChatID, arg.RoomID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getOutbox = `-- name: GetOutbox :one
 SELECT id, message_id, chat_id, status, attempts, next_attempt_at, last_error, external_id, updated_at FROM outbox WHERE id = ?
 `
@@ -34,6 +53,11 @@ const listDueOutbox = `-- name: ListDueOutbox :many
 SELECT o.id, o.message_id, o.chat_id, o.attempts, m.room_id
 FROM outbox o JOIN messages m ON m.id = o.message_id
 WHERE o.status = 'pending' AND o.next_attempt_at <= ?1
+  -- ROOM-01 defense in depth: never send to a chat that left the room.
+  AND EXISTS (
+    SELECT 1 FROM room_members rm
+    WHERE rm.room_id = m.room_id AND rm.kind = 'chat' AND rm.member_id = o.chat_id
+  )
 ORDER BY o.next_attempt_at, o.id
 LIMIT ?2
 `

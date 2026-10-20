@@ -91,21 +91,24 @@ type NewSession struct {
 // Login checks credentials and opens a session. Every failure cause returns
 // ErrInvalidCredentials (AUTH-04); an IP over the failure limit gets ErrRateLimited (AUTH-05).
 func (s *Service) Login(ctx context.Context, in LoginInput) (db.User, NewSession, error) {
-	now := s.now()
-	if s.limiter.Blocked(in.IP, now) {
+	// Reserve the attempt before the slow hash, so concurrent attempts cannot all pass.
+	if !s.limiter.Begin(in.IP, s.now()) {
 		return db.User{}, NewSession{}, ErrRateLimited
 	}
 	u, err := s.checkPassword(ctx, in.Username, in.Password)
-	if errors.Is(err, ErrInvalidCredentials) {
-		s.limiter.Fail(in.IP, now)
-		// The attempted username is not recorded: people sometimes type a password there.
+	switch {
+	case errors.Is(err, ErrInvalidCredentials):
+		// The reservation stays as the failure. The attempted username is not recorded:
+		// people sometimes type a password there.
 		if aerr := s.audit.Append(ctx, audit.Entry{Action: audit.ActionLoginFailed, IP: in.IP}); aerr != nil {
 			return db.User{}, NewSession{}, aerr
 		}
-	}
-	if err != nil {
+		return db.User{}, NewSession{}, err
+	case err != nil:
+		s.limiter.Release(in.IP)
 		return db.User{}, NewSession{}, err
 	}
+	s.limiter.Succeed(in.IP)
 	sess, err := s.createSession(ctx, u.ID, in.IP, in.UserAgent)
 	if err != nil {
 		return db.User{}, NewSession{}, err
@@ -235,7 +238,7 @@ func (s *Service) activeUser(ctx context.Context, id string) (db.User, error) {
 // RevokeSession deletes one of the user's sessions (logout, AUTH-09). It returns
 // ErrNotFound when the session does not belong to the user.
 func (s *Service) RevokeSession(ctx context.Context, userID, sessionID string) error {
-	return s.store.WithTx(ctx, func(q *db.Queries) error {
+	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		n, err := q.DeleteUserSession(ctx, db.DeleteUserSessionParams{ID: sessionID, UserID: userID})
 		if err != nil {
 			return err
@@ -249,4 +252,44 @@ func (s *Service) RevokeSession(ctx context.Context, userID, sessionID string) e
 		}
 		return s.audit.Record(ctx, q, audit.Entry{Action: action, TargetKind: audit.TargetSession, TargetID: sessionID})
 	})
+	if err != nil {
+		return err
+	}
+	s.sessionsRevoked(userID, []string{sessionID})
+	return nil
+}
+
+// PrincipalActive reports whether p still authenticates: its session (or token) exists and
+// has not expired or been revoked, and its user is active. Live sockets re-check it.
+func (s *Service) PrincipalActive(ctx context.Context, p authn.Principal) (bool, error) {
+	now := ms(s.now())
+	switch {
+	case p.SessionID != "":
+		sess, err := s.store.R().GetSession(ctx, p.SessionID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if sess.UserID != p.UserID || now >= sess.ExpiresAt {
+			return false, nil
+		}
+	case p.TokenID != "":
+		tok, err := s.store.R().GetToken(ctx, p.TokenID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if tok.UserID != p.UserID || tok.RevokedAt.Valid || (tok.ExpiresAt.Valid && now >= tok.ExpiresAt.Int64) {
+			return false, nil
+		}
+	}
+	_, err := s.activeUser(ctx, p.UserID)
+	if errors.Is(err, ErrUnauthenticated) {
+		return false, nil
+	}
+	return err == nil, err
 }

@@ -14,10 +14,12 @@ type Room struct {
 	BridgeChats   bool  `json:"bridge_chats"`
 	RetentionDays int   `json:"retention_days"`
 	// AgentsPaused is set by the loop guard (DLV-08) and cleared by POST /rooms/{id}/resume.
-	AgentsPaused bool      `json:"agents_paused"`
-	LastSeq      int64     `json:"last_seq"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	AgentsPaused bool  `json:"agents_paused"`
+	LastSeq      int64 `json:"last_seq"`
+	// MemberCount counts the room's agents, chats and users.
+	MemberCount int       `json:"member_count"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // CreateRoomRequest is the body of POST /rooms. RetentionDays defaults to 90; 0 keeps forever.
@@ -187,3 +189,15 @@ type RoomRef struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
+
+// ActivityItem is one entry of GET /activity: a message with the room it was posted in.
+type ActivityItem struct {
+	Room    RoomRef `json:"room"`
+	Message Message `json:"message"`
+}
+
+// Activity feed page sizes (GET /activity?limit=).
+const (
+	DefaultActivityLimit = 20
+	MaxActivityLimit     = 50
+)

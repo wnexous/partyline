@@ -2,6 +2,7 @@ package users
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -255,4 +256,69 @@ func TestUpdateUserRole(t *testing.T) {
 	require.Equal(t, "admin", list[0].Username)
 	require.Equal(t, "bob", list[1].Username)
 	require.Equal(t, "admin", list[1].Role)
+}
+
+// AUTH-10 guard: the last active admin cannot be demoted or disabled (ErrLastAdmin), even
+// when two admins demote each other at the same time; a member is never blocked by it.
+func TestLastActiveAdminIsKept(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.setupAdmin(t)
+	admin := f.adminID(t)
+	member, disabled := dto.RoleMember, true
+
+	_, err := f.svc.UpdateUser(ctx, admin, UserUpdate{Role: &member})
+	require.ErrorIs(t, err, ErrLastAdmin)
+	_, err = f.svc.UpdateUser(ctx, admin, UserUpdate{Disabled: &disabled})
+	require.ErrorIs(t, err, ErrLastAdmin)
+
+	bob, err := f.svc.CreateUser(ctx, AccountInput{Username: "bob", Password: memberPassword}, dto.RoleMember)
+	require.NoError(t, err)
+	_, err = f.svc.UpdateUser(ctx, bob.ID, UserUpdate{Disabled: &disabled})
+	require.NoError(t, err, "disabling a member is not guarded")
+
+	// A disabled admin does not count as active.
+	carol, err := f.svc.CreateUser(ctx, AccountInput{Username: "carol", Password: memberPassword}, dto.RoleAdmin)
+	require.NoError(t, err)
+	_, err = f.svc.UpdateUser(ctx, carol.ID, UserUpdate{Disabled: &disabled})
+	require.NoError(t, err)
+	_, err = f.svc.UpdateUser(ctx, admin, UserUpdate{Role: &member})
+	require.ErrorIs(t, err, ErrLastAdmin)
+
+	// Two active admins demoting each other concurrently: exactly one succeeds.
+	dave, err := f.svc.CreateUser(ctx, AccountInput{Username: "dave", Password: memberPassword}, dto.RoleAdmin)
+	require.NoError(t, err)
+	errs := make(chan error, 2)
+	for _, id := range []string{admin, dave.ID} {
+		go func() {
+			_, err := f.svc.UpdateUser(ctx, id, UserUpdate{Role: &member})
+			errs <- err
+		}()
+	}
+	e1, e2 := <-errs, <-errs
+	require.True(t, (e1 == nil) != (e2 == nil), "exactly one demotion succeeds: %v, %v", e1, e2)
+	require.ErrorIs(t, errors.Join(e1, e2), ErrLastAdmin)
+	n, err := f.store.R().CountActiveAdmins(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), n)
+}
+
+// AUTH-10 guard: an admin acting through the API cannot demote or disable themselves.
+func TestAdminCannotChangeSelf(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.setupAdmin(t)
+	admin := f.adminID(t)
+	_, err := f.svc.CreateUser(ctx, AccountInput{Username: "carol", Password: memberPassword}, dto.RoleAdmin)
+	require.NoError(t, err)
+	member, disabled := dto.RoleMember, true
+	actx := authn.WithPrincipal(ctx, authn.Principal{Kind: authn.KindUser, UserID: admin, Role: string(dto.RoleAdmin)})
+
+	_, err = f.svc.UpdateUser(actx, admin, UserUpdate{Role: &member})
+	require.ErrorIs(t, err, ErrSelfAdminChange)
+	_, err = f.svc.UpdateUser(actx, admin, UserUpdate{Disabled: &disabled})
+	require.ErrorIs(t, err, ErrSelfAdminChange)
+	admin2 := dto.RoleAdmin
+	_, err = f.svc.UpdateUser(actx, admin, UserUpdate{Role: &admin2})
+	require.NoError(t, err, "keeping one's own admin role is not a change")
 }

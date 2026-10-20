@@ -12,6 +12,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/validation"
 )
@@ -26,6 +27,12 @@ var (
 	ErrNotFound           = errors.New("not found")                       // 404
 	ErrInviteGone         = errors.New("invite used, revoked or expired") // 410
 	ErrUsernameTaken      = errors.New("username already taken")          // 409
+)
+
+// Admin guard errors (409): the instance always keeps one active admin.
+var (
+	ErrSelfAdminChange = errors.New("admins cannot demote or disable themselves")
+	ErrLastAdmin       = errors.New("the last active admin cannot be demoted or disabled")
 )
 
 // ValidationError names each rejected input field and the reason.
@@ -51,6 +58,8 @@ const touchInterval = time.Minute
 type Options struct {
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
+	// Bus receives SessionsRevoked events; optional.
+	Bus *events.Bus
 }
 
 // Service implements account use cases over the store.
@@ -60,6 +69,7 @@ type Service struct {
 	setupToken string
 	limiter    *failureLimiter
 	audit      *audit.Log
+	bus        *events.Bus
 
 	dummyOnce sync.Once
 	dummyHash string
@@ -80,7 +90,15 @@ func NewService(st *store.Store, opts Options) (*Service, error) {
 		setupToken: token,
 		limiter:    newFailureLimiter(loginMaxFailures, loginWindow),
 		audit:      audit.New(st, opts.Now),
+		bus:        opts.Bus,
 	}, nil
+}
+
+// sessionsRevoked announces ended sessions so live sockets bound to them close.
+func (s *Service) sessionsRevoked(userID string, ids []string) {
+	if s.bus != nil && len(ids) > 0 {
+		s.bus.Publish(events.SessionsRevoked{UserID: userID, SessionIDs: ids})
+	}
 }
 
 // SetupToken returns the one-time token that authorizes POST /setup while there are no users.
@@ -118,12 +136,16 @@ func validatePassword(p string) string {
 
 func ms(t time.Time) int64 { return t.UnixMilli() }
 
-// failureLimiter counts failures per key in fixed windows that open at the first failure.
+// failureLimiter counts login attempts per key in fixed windows that open at the first
+// attempt. Begin reserves an attempt before the slow password check, so a parallel burst
+// cannot run more than max checks (AUTH-05); a success clears the key.
 type failureLimiter struct {
-	mu     sync.Mutex
-	max    int
-	window time.Duration
-	byKey  map[string]*failureWindow
+	mu        sync.Mutex
+	max       int
+	window    time.Duration
+	maxKeys   int // hard cap on tracked keys; the oldest window is evicted beyond it
+	lastPrune time.Time
+	byKey     map[string]*failureWindow
 }
 
 type failureWindow struct {
@@ -131,37 +153,68 @@ type failureWindow struct {
 	count int
 }
 
+// defaultLimiterKeys bounds the limiter's memory under a many-IP flood.
+const defaultLimiterKeys = 10000
+
 func newFailureLimiter(maxFailures int, window time.Duration) *failureLimiter {
-	return &failureLimiter{max: maxFailures, window: window, byKey: map[string]*failureWindow{}}
+	return &failureLimiter{max: maxFailures, window: window, maxKeys: defaultLimiterKeys, byKey: map[string]*failureWindow{}}
 }
 
-// Blocked reports whether key reached the failure limit in its current window.
-func (l *failureLimiter) Blocked(key string, now time.Time) bool {
+// Begin reserves one attempt for key. It returns false, reserving nothing, when the key
+// already used its max attempts in the current window.
+func (l *failureLimiter) Begin(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	w := l.byKey[key]
-	return w != nil && now.Sub(w.start) < l.window && w.count >= l.max
-}
-
-// Fail records one failure for key.
-func (l *failureLimiter) Fail(key string, now time.Time) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	w := l.byKey[key]
-	if w == nil || now.Sub(w.start) >= l.window {
-		if len(l.byKey) >= 10000 {
-			l.pruneLocked(now)
+	if w != nil && now.Sub(w.start) < l.window {
+		if w.count >= l.max {
+			return false
 		}
-		l.byKey[key] = &failureWindow{start: now, count: 1}
-		return
+		w.count++
+		return true
 	}
-	w.count++
+	if w == nil {
+		l.makeRoomLocked(now)
+	}
+	l.byKey[key] = &failureWindow{start: now, count: 1}
+	return true
 }
 
-func (l *failureLimiter) pruneLocked(now time.Time) {
-	for k, w := range l.byKey {
-		if now.Sub(w.start) >= l.window {
-			delete(l.byKey, k)
+// Succeed clears key's attempts after a successful login.
+func (l *failureLimiter) Succeed(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.byKey, key)
+}
+
+// Release returns a reserved attempt that ended without a verdict (an internal error).
+func (l *failureLimiter) Release(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if w := l.byKey[key]; w != nil && w.count > 0 {
+		w.count--
+	}
+}
+
+// makeRoomLocked drops expired windows (at most once per window, or when full) and, when
+// the map is still at its cap, evicts the oldest window.
+func (l *failureLimiter) makeRoomLocked(now time.Time) {
+	if now.Sub(l.lastPrune) >= l.window || len(l.byKey) >= l.maxKeys {
+		l.lastPrune = now
+		for k, w := range l.byKey {
+			if now.Sub(w.start) >= l.window {
+				delete(l.byKey, k)
+			}
 		}
+	}
+	for len(l.byKey) >= l.maxKeys {
+		var oldest string
+		var oldestStart time.Time
+		for k, w := range l.byKey {
+			if oldest == "" || w.start.Before(oldestStart) {
+				oldest, oldestStart = k, w.start
+			}
+		}
+		delete(l.byKey, oldest)
 	}
 }

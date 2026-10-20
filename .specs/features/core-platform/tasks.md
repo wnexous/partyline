@@ -60,6 +60,13 @@ T15 → T16 → T17 → T18 → T19 → T20
 T21 → T22 → T23 → T24 → T25 → T26 → T27
 ```
 
+### Phase 5: Verifier fix iteration 1
+
+```
+T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42
+T35 → T43 → T44
+```
+
 ---
 
 ## Task Breakdown
@@ -488,3 +495,249 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 **Tests**: unit
 **Gate**: build
 **Commit**: `ci: add container image, compose file and ci workflows`
+
+### Phase 5: Verifier fix iteration 1
+
+#### T28: Cancel queued deliveries of a removed chat
+
+**What**: `RemoveMember` deletes the chat's pending outbox rows of that room in the same tx; `ListDueOutbox` only returns rows whose chat is still a member of the message's room.
+**Where**: `internal/rooms/members.go`
+**Depends on**: None
+**Reuses**: outbox queries
+**Requirement**: ROOM-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A message queued before the chat was removed is never sent; sent rows, other chats and other rooms keep theirs
+- [x] The worker skips a pending row whose chat is no longer a member
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(rooms): cancel queued deliveries when a chat member is removed`
+
+#### T29: Atomic login attempt reservation and bounded limiter
+
+**What**: Reserve the attempt before the argon2 check; success clears the IP's failures; the limiter map evicts expired windows and has a hard cap with oldest eviction.
+**Where**: `internal/users/auth.go`
+**Depends on**: T28
+**Reuses**: failureLimiter
+**Requirement**: AUTH-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A parallel burst of 30 wrong logins from one IP runs at most 5 password checks, the rest get 429
+- [x] Sequential behavior unchanged; success clears the failures
+- [x] The limiter never holds more keys than its cap
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(users): reserve login attempts before verifying the password`
+
+#### T30: Live origin scheme mismatch test
+
+**What**: Same host, different scheme Origin is rejected.
+**Where**: `internal/api/live_test.go`
+**Depends on**: T29
+**Reuses**: testkit DialLive
+**Requirement**: LIVE-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Dial with the public host and the other scheme returns 403
+**Tests**: e2e
+**Gate**: full
+**Commit**: `test(live): reject same host origin with another scheme`
+
+#### T31: Close live sockets of revoked sessions
+
+**What**: Publish `SessionsRevoked` when sessions end (logout, session delete, password change/reset, user disabled); the hub closes that session's sockets and re-validates every connection's session at least every 60 s.
+**Where**: `internal/live/hub.go`
+**Depends on**: T30
+**Reuses**: events bus
+**Requirement**: AUTH-09, AUTH-10
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Logout closes the session's live socket within 1 s
+- [x] Revoking another session, disabling the user and a password reset close the affected sockets; other sessions stay open
+**Tests**: e2e
+**Gate**: full
+**Commit**: `fix(live): close live sockets when their session is revoked`
+
+#### T32: Deterministic background job tests
+
+**What**: Replace fixed short waits in app start tests with eventually-style polls with a generous deadline.
+**Where**: `internal/app/app_test.go`
+**Depends on**: T31
+**Reuses**: none
+**Requirement**: OPS-02, DLV-07
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] `TestStartRunsRetention` passes with `-count=20`
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(app): wait for background jobs with a generous deadline`
+
+#### T33: Remove blobs of a deleted room
+
+**What**: After the delete commits, remove the room's blobs that no other attachment references (best effort; the sweep stays as backstop).
+**Where**: `internal/rooms/rooms.go`
+**Depends on**: T32
+**Reuses**: attachments.Store.Delete
+**Requirement**: ROOM-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Deleting a room removes its unshared blob files at once and keeps blobs another room references
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(rooms): remove unshared blobs right after deleting a room`
+
+#### T34: ACL-07 managers and owner cascade edge case
+
+**What**: Reword ACL-07 to managers; replace the last-manager edge case with the owner cascade and cover it with a test.
+**Where**: `internal/store/store_test.go`
+**Depends on**: T33
+**Reuses**: FK cascade
+**Requirement**: ACL-07, ROOM-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A manager grantee changes sharing (test)
+- [x] Deleting the owner account deletes its rooms (test)
+**Tests**: integration
+**Gate**: full
+**Commit**: `docs(specs): let managers change sharing and delete rooms with their owner`
+
+#### T35: Listen-only explicit recipient
+
+**What**: An explicit recipient whose chat member has outbound off is rejected with 422 `recipients` = `listen-only`.
+**Where**: `internal/rooms/messages.go`
+**Depends on**: T34
+**Reuses**: validation.Check
+**Requirement**: DLV-04
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Posting to an outbound-off chat as recipient returns 422 with field `recipients` reason `listen-only`
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(rooms): reject explicit recipients that are listen-only`
+
+#### T36: Admin self and last-admin guard
+
+**What**: An admin cannot demote or disable themselves; the last active admin cannot be demoted or disabled (409 `conflict`).
+**Where**: `internal/users/admin.go`
+**Depends on**: T35
+**Reuses**: users service
+**Requirement**: AUTH-10
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Self demote/disable → 409 conflict
+- [x] Last active admin demote/disable → 409 conflict; with a second admin it works
+**Tests**: e2e
+**Gate**: full
+**Commit**: `fix(users): keep at least one active admin`
+
+#### T37: Room member count
+
+**What**: `dto.Room.member_count` counted in the list/get queries; tygo regenerated.
+**Where**: `internal/store/queries/rooms.sql`
+**Depends on**: T36
+**Reuses**: convert.Room
+**Requirement**: ACL-03 (read model)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] List and get return the member count
+**Tests**: e2e
+**Gate**: full
+**Commit**: `feat(rooms): expose member count`
+
+#### T38: Activity feed
+
+**What**: `GET /api/v1/activity?limit=` (default 20, max 50): latest messages across rooms the user can view, newest first, `List[ActivityItem{room{id,name}, message}]`; tygo regenerated.
+**Where**: `internal/api/activity.go`
+**Depends on**: T37
+**Reuses**: rooms.Messages, convert.Message
+**Requirement**: ACL-03, LIVE-02 (read model)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Only rooms the caller can view; newest first; default 20; limit capped at 50; invalid limit 422
+**Tests**: e2e
+**Gate**: full
+**Commit**: `feat(api): add activity feed endpoint`
+
+#### T39: Image version build argument
+
+**What**: `ARG VERSION=dev` passed into ldflags; CI and release pass git describe/sha; Dokploy build arg honored.
+**Where**: `Dockerfile`
+**Depends on**: T38
+**Reuses**: Makefile LDFLAGS
+**Requirement**: OPS-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] hadolint clean; `partyline version` in the image prints the build arg
+**Tests**: none
+**Gate**: build
+**Commit**: `build(docker): stamp the image version from a build argument`
+
+#### T40: Allow inlined fonts in the HTML CSP
+
+**What**: The HTML policy adds `font-src 'self' data:` so the data: URI font Vite inlines loads; everything else stays strict.
+**Where**: `internal/webui/webui.go`
+**Depends on**: T39
+**Reuses**: webui.CSP
+**Requirement**: SEC-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] The HTML response CSP contains `font-src 'self' data:` and keeps `default-src 'self'`, `script-src 'self'` and `frame-ancestors 'none'`
+**Tests**: e2e
+**Gate**: full
+**Commit**: `fix(webui): allow data uri fonts in the html content security policy`
+
+#### T41: Robust serve start wait
+
+**What**: `TestServeSetupTokenAndRedactedLogs` waits for the server with a generous deadline instead of a 10 s window that times out under load.
+**Where**: `internal/cli/serve_test.go`
+**Depends on**: T40
+**Reuses**: none
+**Requirement**: AUTH-01, SEC-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] The test passes with `-count=10` under load
+**Tests**: e2e
+**Gate**: full
+**Commit**: `test(cli): wait for the server start with a generous deadline`
+
+#### T42: Contract notes for fix iteration 1
+
+**What**: Record the new APIs and traceability statuses.
+**Where**: `contract-notes.md`
+**Depends on**: T41
+**Reuses**: none
+**Requirement**: all
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] contract-notes.md lists activity, member_count and the session revocation event
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record contract notes for fix iteration 1`
+
+#### T43: Load-tolerant web async queries
+
+**What**: The web test setup gives Testing Library async queries a 10 s timeout (and vitest a 30 s test timeout); `findBy*` failed at its 1 s default on a loaded machine.
+**Where**: `web/src/test/setup.ts`
+**Depends on**: T35
+**Reuses**: none
+**Requirement**: gate stability (no AC)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Web tests pass during a parallel Go test run on a loaded machine
+**Tests**: unit
+**Gate**: full
+**Commit**: `test(web): give async queries a load-tolerant timeout`
+
+#### T44: Generous deadlines in outbox worker tests
+
+**What**: Outbox worker tests poll for up to a minute instead of 15 s.
+**Where**: `internal/delivery/outbox_test.go`
+**Depends on**: T43
+**Reuses**: none
+**Requirement**: DLV-07
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] `TestOutboxResumesAfterRestart` and `TestOutboxWakesOnMessageCreated` pass under load with `-count=10`
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(delivery): wait for the outbox worker with a generous deadline`

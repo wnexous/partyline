@@ -20,6 +20,7 @@ import (
 )
 
 func (s *server) roomRoutes(mux *http.ServeMux) {
+	s.handle(mux, "GET /api/v1/activity", authed(s.listActivity))
 	s.handle(mux, "GET /api/v1/rooms", authed(s.listRooms))
 	s.handle(mux, "POST /api/v1/rooms", authed(s.createRoom))
 	s.handle(mux, "GET /api/v1/rooms/{id}", authed(s.getRoom))

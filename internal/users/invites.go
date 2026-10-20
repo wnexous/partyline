@@ -216,12 +216,15 @@ type UserUpdate struct {
 }
 
 // UpdateUser changes an account's role or disabled state. Disabling revokes every session
-// of the user; its tokens stop authenticating while it stays disabled (AUTH-10).
+// of the user; its tokens stop authenticating while it stays disabled (AUTH-10). The calling
+// admin (principal in ctx) cannot demote or disable themselves (ErrSelfAdminChange), and the
+// last active admin cannot be demoted or disabled (ErrLastAdmin).
 func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.User, error) {
 	if up.Role != nil && !validRole(*up.Role) {
 		return db.User{}, &ValidationError{Fields: map[string]string{"role": "must be admin or member"}}
 	}
 	var u db.User
+	var ended []string
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		detail := map[string]any{}
 		if up.Role != nil {
@@ -243,6 +246,21 @@ func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.
 		if err != nil {
 			return err
 		}
+		demote := up.Role != nil && *up.Role != dto.RoleAdmin
+		disable := up.Disabled != nil && *up.Disabled && !u.DisabledAt.Valid
+		if u.Role == string(dto.RoleAdmin) && !u.DisabledAt.Valid && (demote || disable) {
+			if p, ok := authn.PrincipalFrom(ctx); ok && p.UserID == id {
+				return ErrSelfAdminChange
+			}
+			// The single-writer tx makes this count race-free.
+			n, err := q.CountActiveAdmins(ctx)
+			if err != nil {
+				return err
+			}
+			if n <= 1 {
+				return ErrLastAdmin
+			}
+		}
 		if up.Role != nil {
 			u.Role = string(*up.Role)
 			if err := q.UpdateUserRole(ctx, db.UpdateUserRoleParams{Role: u.Role, ID: id}); err != nil {
@@ -253,7 +271,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.
 			u.DisabledAt = sql.NullInt64{}
 			if *up.Disabled {
 				u.DisabledAt = sql.NullInt64{Int64: ms(s.now()), Valid: true}
-				if err := q.DeleteSessionsByUser(ctx, id); err != nil {
+				if ended, err = q.DeleteSessionsByUser(ctx, id); err != nil {
 					return err
 				}
 			}
@@ -264,5 +282,6 @@ func (s *Service) UpdateUser(ctx context.Context, id string, up UserUpdate) (db.
 	if err != nil {
 		return db.User{}, err
 	}
+	s.sessionsRevoked(id, ended)
 	return u, nil
 }

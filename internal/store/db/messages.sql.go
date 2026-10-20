@@ -252,6 +252,70 @@ func (q *Queries) ListAttachmentsByMessages(ctx context.Context, messageIds []st
 	return items, nil
 }
 
+const listLatestMessagesInRooms = `-- name: ListLatestMessagesInRooms :many
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views
+WHERE room_id IN (/*SLICE:room_ids*/?)
+ORDER BY created_at DESC, id DESC
+LIMIT ?
+`
+
+type ListLatestMessagesInRoomsParams struct {
+	RoomIds []string
+	Limit   int64
+}
+
+// A positional LIMIT: sqlc numbers a named arg (?2) after a slice, which breaks the expansion.
+func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestMessagesInRoomsParams) ([]MessageView, error) {
+	query := listLatestMessagesInRooms
+	var queryParams []interface{}
+	if len(arg.RoomIds) > 0 {
+		for _, v := range arg.RoomIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:room_ids*/?", strings.Repeat(",?", len(arg.RoomIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:room_ids*/?", "NULL", 1)
+	}
+	queryParams = append(queryParams, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MessageView
+	for rows.Next() {
+		var i MessageView
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Seq,
+			&i.AuthorKind,
+			&i.AuthorID,
+			&i.AuthorUserID,
+			&i.SenderID,
+			&i.SenderAltID,
+			&i.SenderName,
+			&i.Kind,
+			&i.Text,
+			&i.ReplyTo,
+			&i.RecipientsJson,
+			&i.ExternalID,
+			&i.CreatedAt,
+			&i.AuthorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMessagesAfter = `-- name: ListMessagesAfter :many
 SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views
 WHERE room_id = ?1 AND seq > ?2 AND seq < ?3

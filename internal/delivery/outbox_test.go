@@ -38,6 +38,10 @@ func (c *clock) Set(t time.Time) {
 	c.mu.Unlock()
 }
 
+// workerDeadline bounds waits for the background worker; generous because a loaded machine
+// can delay it by many seconds, while a healthy run ends in milliseconds.
+const workerDeadline = time.Minute
+
 // fakeSender records deliveries and fails the first `fail` calls.
 type fakeSender struct {
 	mu    sync.Mutex
@@ -87,6 +91,7 @@ func newFixture(t *testing.T) *fixture {
 	f.exec(t, "INSERT INTO rooms (id, owner_id, name, created_at, updated_at) VALUES (?, ?, 'ops', ?, ?)", f.room, user, ms, ms)
 	f.exec(t, "INSERT INTO connectors (id, owner_id, kind, name, created_at, updated_at) VALUES (?, ?, 'telegram', 'tg', ?, ?)", conn, user, ms, ms)
 	f.exec(t, "INSERT INTO chats (id, connector_id, external_id, title, kind, created_at) VALUES (?, ?, 'ext-chat', 'group', 'group', ?)", f.chat, conn, ms)
+	f.exec(t, "INSERT INTO room_members (id, room_id, kind, member_id, created_at) VALUES (?, ?, 'chat', ?, ?)", store.NewID(), f.room, f.chat, ms)
 	return f
 }
 
@@ -249,7 +254,7 @@ func TestOutboxResumesAfterRestart(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return f.row(t, pending).Status == "sent" && f.row(t, interrupted).Status == "sent"
-	}, 15*time.Second, 10*time.Millisecond)
+	}, workerDeadline, 10*time.Millisecond)
 	require.Equal(t, "pending", f.row(t, future).Status, "not due yet")
 	stop()
 	require.NoError(t, <-done)
@@ -263,11 +268,11 @@ func TestOutboxWakesOnMessageCreated(t *testing.T) {
 	done := make(chan error, 1)
 	w := f.worker(f.st, sender, func() time.Time { return t0 }, time.Hour)
 	go func() { done <- w.Run(ctx) }()
-	require.Eventually(t, w.Running, 15*time.Second, 5*time.Millisecond)
+	require.Eventually(t, w.Running, workerDeadline, 5*time.Millisecond)
 
 	msgID, id := f.queue(t, 1, dto.OutboxStatusPending, t0)
 	f.bus.Publish(events.MessageCreated{RoomID: f.room, MessageID: msgID, Seq: 1})
-	require.Eventually(t, func() bool { return f.row(t, id).Status == "sent" }, 15*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return f.row(t, id).Status == "sent" }, workerDeadline, 10*time.Millisecond)
 	stop()
 	require.NoError(t, <-done)
 }
@@ -278,4 +283,19 @@ func TestBackoff(t *testing.T) {
 	require.Equal(t, 8*time.Second, delivery.Backoff(3))
 	require.Equal(t, 16*time.Second, delivery.Backoff(4))
 	require.Equal(t, 5, delivery.MaxAttempts)
+}
+
+// ROOM-01 (defense in depth): the worker never sends to a chat that is no longer a member
+// of the message's room, even if a pending entry survived the removal.
+func TestOutboxSkipsChatsNoLongerMembers(t *testing.T) {
+	f := newFixture(t)
+	c := &clock{now: t0}
+	sender := &fakeSender{}
+	_, id := f.queue(t, 1, dto.OutboxStatusPending, t0)
+	f.exec(t, "DELETE FROM room_members WHERE room_id = ? AND member_id = ?", f.room, f.chat)
+
+	require.NoError(t, f.worker(f.st, sender, c.Now, 0).Flush(context.Background()))
+
+	require.Zero(t, sender.count(), "a removed chat must not be sent to")
+	require.NotEqual(t, "sent", f.row(t, id).Status)
 }

@@ -69,7 +69,8 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, up ProfileUp
 	return u, nil
 }
 
-// ChangePassword replaces the user's password after checking the current one.
+// ChangePassword replaces the user's password after checking the current one and ends the
+// user's other sessions (the caller's own session, if any, stays).
 func (s *Service) ChangePassword(ctx context.Context, userID, current, next string) error {
 	u, err := s.GetUser(ctx, userID)
 	if err != nil {
@@ -93,12 +94,27 @@ func (s *Service) ChangePassword(ctx context.Context, userID, current, next stri
 	if err != nil {
 		return err
 	}
-	return s.store.WithTx(ctx, func(q *db.Queries) error {
+	var ended []string
+	err = s.store.WithTx(ctx, func(q *db.Queries) error {
 		if err := q.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{PasswordHash: hash, ID: userID}); err != nil {
+			return err
+		}
+		var err error
+		if p, ok := authn.PrincipalFrom(ctx); ok && p.UserID == userID && p.SessionID != "" {
+			ended, err = q.DeleteOtherUserSessions(ctx, db.DeleteOtherUserSessionsParams{UserID: userID, KeepID: p.SessionID})
+		} else {
+			ended, err = q.DeleteSessionsByUser(ctx, userID)
+		}
+		if err != nil {
 			return err
 		}
 		return s.audit.Record(ctx, q, audit.Entry{Action: audit.ActionPasswordChange, TargetKind: audit.TargetUser, TargetID: userID})
 	})
+	if err != nil {
+		return err
+	}
+	s.sessionsRevoked(userID, ended)
+	return nil
 }
 
 // ListSessions returns the user's unexpired sessions, most recently used first.
@@ -116,7 +132,9 @@ func (s *Service) ResetPassword(ctx context.Context, username, password string) 
 	if err != nil {
 		return err
 	}
-	return s.store.WithTx(ctx, func(q *db.Queries) error {
+	var userID string
+	var ended []string
+	err = s.store.WithTx(ctx, func(q *db.Queries) error {
 		u, err := q.GetUserByUsername(ctx, username)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
@@ -127,9 +145,15 @@ func (s *Service) ResetPassword(ctx context.Context, username, password string) 
 		if err := q.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{PasswordHash: hash, ID: u.ID}); err != nil {
 			return err
 		}
-		if err := q.DeleteSessionsByUser(ctx, u.ID); err != nil {
+		userID = u.ID
+		if ended, err = q.DeleteSessionsByUser(ctx, u.ID); err != nil {
 			return err
 		}
 		return s.audit.Record(ctx, q, audit.Entry{Action: audit.ActionPasswordReset, TargetKind: audit.TargetUser, TargetID: u.ID})
 	})
+	if err != nil {
+		return err
+	}
+	s.sessionsRevoked(userID, ended)
+	return nil
 }

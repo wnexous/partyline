@@ -1,0 +1,117 @@
+{
+  "schema": 1,
+  "promote_threshold": 2,
+  "window_days": 45,
+  "quarantine_threshold": 2,
+  "next_id": 7,
+  "lessons": [
+    {
+      "id": "L-001",
+      "key": "ac_gap::when a membership or grant is removed also cancel the queued work it authorized not only future planning",
+      "text": "When a membership or grant is removed, also cancel the queued work it authorized, not only future planning",
+      "signal": "ac_gap",
+      "scope": "delivery",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "ROOM-01 internal/rooms/members.go:166 (delivery)"
+      ],
+      "created": "2026-10-20T02:32:09Z",
+      "last_seen": "2026-10-20T02:32:09Z"
+    },
+    {
+      "id": "L-002",
+      "key": "ac_gap::rate limiters must reserve an attempt atomically before slow work and be tested with a concurrent burst",
+      "text": "Rate limiters must reserve an attempt atomically before slow work and be tested with a concurrent burst",
+      "signal": "ac_gap",
+      "scope": "auth",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "AUTH-05 internal/users/auth.go:95 (auth)"
+      ],
+      "created": "2026-10-20T02:32:09Z",
+      "last_seen": "2026-10-20T02:32:09Z"
+    },
+    {
+      "id": "L-003",
+      "key": "surviving_mutant::test origin checks with a same host different scheme origin not only a foreign host",
+      "text": "Test origin checks with a same-host different-scheme origin, not only a foreign host",
+      "signal": "surviving_mutant",
+      "scope": "live",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M17 internal/live/hub.go:105 (live)"
+      ],
+      "created": "2026-10-20T02:32:09Z",
+      "last_seen": "2026-10-20T02:32:09Z"
+    },
+    {
+      "id": "L-004",
+      "key": "spec_precision_gap::every spec edge case must name an operation that exists in scope or move to out of scope",
+      "text": "Every spec edge case must name an operation that exists in scope or move to Out of Scope",
+      "signal": "spec_precision_gap",
+      "scope": "specs",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "edge case last-manager ROOM-02 (specs)"
+      ],
+      "created": "2026-10-20T02:32:09Z",
+      "last_seen": "2026-10-20T02:32:09Z"
+    },
+    {
+      "id": "L-005",
+      "key": "gate_fail::do not assert background job effects with a fixed short wait trigger the job deterministically in tests",
+      "text": "Do not assert background-job effects with a fixed short wait; trigger the job deterministically in tests",
+      "signal": "gate_fail",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/app/app_test.go:134 (tests)"
+      ],
+      "created": "2026-10-20T02:32:09Z",
+      "last_seen": "2026-10-20T02:32:09Z"
+    },
+    {
+      "id": "L-006",
+      "key": "spec_precision_gap::split acs whose enforcement lives in a later feature so each feature s acs are verifiable end to end",
+      "text": "Split ACs whose enforcement lives in a later feature so each feature's ACs are verifiable end to end",
+      "signal": "spec_precision_gap",
+      "scope": "specs",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "DLV-02 DLV-06 DLV-08 SEC-04 AUD-01 (specs)"
+      ],
+      "created": "2026-10-20T02:32:09Z",
+      "last_seen": "2026-10-20T02:32:09Z"
+    }
+  ]
+}

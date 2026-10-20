@@ -14,8 +14,14 @@ DELETE FROM sessions WHERE id = ?;
 -- name: DeleteUserSession :execrows
 DELETE FROM sessions WHERE id = ? AND user_id = ?;
 
--- name: DeleteSessionsByUser :exec
-DELETE FROM sessions WHERE user_id = ?;
+-- name: DeleteSessionsByUser :many
+DELETE FROM sessions WHERE user_id = ? RETURNING id;
+
+-- name: DeleteOtherUserSessions :many
+DELETE FROM sessions WHERE user_id = sqlc.arg(user_id) AND id <> sqlc.arg(keep_id) RETURNING id;
+
+-- name: GetSession :one
+SELECT * FROM sessions WHERE id = ?;
 
 -- name: ListSessionsByUser :many
 SELECT * FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY last_seen_at DESC, id DESC;

@@ -67,6 +67,9 @@ type server struct {
 	stop func() int
 }
 
+// serveDeadline bounds the start and the shutdown of `partyline serve` in tests.
+const serveDeadline = 2 * time.Minute
+
 // startServe runs `partyline serve` on a random local port until stop is called.
 func startServe(t *testing.T, dataDir string) *server {
 	t.Helper()
@@ -82,20 +85,33 @@ func startServe(t *testing.T, dataDir string) *server {
 	go func() {
 		done <- execute(ctx, []string{"partyline", "serve"}, stdio{stdin: strings.NewReader(""), stdout: logs, stderr: logs, getenv: func(k string) string { return env[k] }})
 	}()
+	// Wait for the listening line, failing at once when serve exits early. The deadline is
+	// generous: on a loaded machine opening and migrating the database can take many seconds.
 	var addr string
-	require.Eventually(t, func() bool {
-		if l := findLog(logLines(t, logs), msgListening); l != nil {
-			addr, _ = l["addr"].(string)
+	deadline := time.After(serveDeadline)
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for addr == "" {
+		select {
+		case code := <-done:
+			cancel()
+			t.Fatalf("serve exited with %d before listening: %s", code, logs.String())
+		case <-deadline:
+			cancel()
+			t.Fatalf("server did not start within %s: %s", serveDeadline, logs.String())
+		case <-tick.C:
+			if l := findLog(logLines(t, logs), msgListening); l != nil {
+				addr, _ = l["addr"].(string)
+			}
 		}
-		return addr != ""
-	}, 10*time.Second, 10*time.Millisecond, "server did not start: %s", logs.String())
+	}
 	s := &server{logs: logs, base: "http://" + addr}
 	s.stop = func() int {
 		cancel()
 		select {
 		case code := <-done:
 			return code
-		case <-time.After(15 * time.Second):
+		case <-time.After(serveDeadline):
 			t.Fatal("serve did not shut down")
 			return -1
 		}

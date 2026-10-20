@@ -51,6 +51,7 @@ export function makeRoom(over: Partial<Room> = {}): Room {
     retention_days: 90,
     agents_paused: false,
     last_seq: 0,
+    member_count: 0,
     created_at: "2026-10-01T12:00:00Z",
     updated_at: "2026-10-19T12:00:00Z",
     ...over,

@@ -606,6 +606,10 @@ export interface Room {
    */
   agents_paused: boolean;
   last_seq: number /* int64 */;
+  /**
+   * MemberCount counts the room's agents, chats and users.
+   */
+  member_count: number /* int */;
   created_at: string /* RFC 3339 */;
   updated_at: string /* RFC 3339 */;
 }
@@ -799,6 +803,21 @@ export interface RoomRef {
   id: string;
   name: string;
 }
+/**
+ * ActivityItem is one entry of GET /activity: a message with the room it was posted in.
+ */
+export interface ActivityItem {
+  room: RoomRef;
+  message: Message;
+}
+/**
+ * Activity feed page sizes (GET /activity?limit=).
+ */
+export const DefaultActivityLimit = 20;
+/**
+ * Activity feed page sizes (GET /activity?limit=).
+ */
+export const MaxActivityLimit = 50;
 
 //////////
 // source: users.go

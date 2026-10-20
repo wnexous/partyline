@@ -3,14 +3,17 @@ package api_test
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -158,6 +161,11 @@ func TestLiveUpgradeChecks(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, resp.Status)
 	_, resp = alice.DialLive("null")
 	require.Equal(t, http.StatusForbidden, resp.Status)
+	// Same host, other scheme is another origin.
+	otherScheme := strings.Replace(env.Origin, "http://", "https://", 1)
+	require.NotEqual(t, env.Origin, otherScheme)
+	_, resp = alice.DialLive(otherScheme)
+	require.Equal(t, http.StatusForbidden, resp.Status)
 
 	_, resp = env.Anon().DialLive("")
 	require.Equal(t, http.StatusUnauthorized, resp.Status)
@@ -176,4 +184,88 @@ func TestLiveForwardsLagged(t *testing.T) {
 	live := dialLive(t, alice)
 	env.App.Bus.Publish(events.Lagged{})
 	live.Expect(dto.LiveEventTypeLagged, nil, liveWait)
+}
+
+// sessionID returns the id of the session behind a logged-in client.
+func sessionID(t *testing.T, env *testkit.Env, c *testkit.Client) string {
+	t.Helper()
+	p, err := env.App.Users.ValidateSession(context.Background(), c.Session)
+	require.NoError(t, err)
+	return p.SessionID
+}
+
+// dialHello opens a live connection and waits for its hello frame.
+func dialHello(t *testing.T, c *testkit.Client) *testkit.LiveConn {
+	t.Helper()
+	conn, resp := c.DialLive("")
+	require.Equal(t, http.StatusSwitchingProtocols, resp.Status)
+	conn.Expect(dto.LiveEventTypeHello, nil, liveWait)
+	return conn
+}
+
+// requireRevoked asserts the server closed conn for a revoked session within 1 s.
+func requireRevoked(t *testing.T, conn *testkit.LiveConn) {
+	t.Helper()
+	err := conn.Closed(time.Second)
+	require.Error(t, err, "live socket still open 1 s after its session was revoked")
+	require.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(err), "close: %v", err)
+}
+
+// AUTH-09/AUTH-10 on the live socket: revoking a session (logout, session delete, password
+// change or reset, user disabled) closes that session's live sockets within 1 s; sockets of
+// other sessions stay open.
+func TestLiveClosesRevokedSessions(t *testing.T) {
+	env := testkit.New(t)
+	admin := env.SetupAdmin()
+	alice := env.NewUser("alice")
+	keep := env.LoginAs("alice", testkit.Password)
+	keepConn := dialHello(t, keep)
+
+	// Logout.
+	conn := dialHello(t, alice)
+	alice.Post("/api/v1/auth/logout", nil).RequireStatus(http.StatusNoContent)
+	requireRevoked(t, conn)
+
+	// Session delete from another session.
+	other := env.LoginAs("alice", testkit.Password)
+	conn = dialHello(t, other)
+	keep.Delete("/api/v1/me/sessions/" + sessionID(t, env, other)).RequireStatus(http.StatusNoContent)
+	requireRevoked(t, conn)
+
+	// Password change ends the user's other sessions, not the caller's.
+	other = env.LoginAs("alice", testkit.Password)
+	conn = dialHello(t, other)
+	newPassword := testkit.Password + "-2"
+	keep.Post("/api/v1/me/password", dto.ChangePasswordRequest{CurrentPassword: testkit.Password, NewPassword: newPassword}).
+		RequireStatus(http.StatusNoContent)
+	requireRevoked(t, conn)
+	require.NoError(t, keepConn.Closed(300*time.Millisecond), "the caller's own session stays live")
+
+	// Operator password reset ends every session of the user.
+	other = env.LoginAs("alice", newPassword)
+	conn = dialHello(t, other)
+	require.NoError(t, env.App.Users.ResetPassword(context.Background(), "alice", testkit.Password))
+	requireRevoked(t, conn)
+	requireRevoked(t, keepConn)
+
+	// User disabled.
+	other = env.LoginAs("alice", testkit.Password)
+	conn = dialHello(t, other)
+	adminConn := dialHello(t, admin)
+	admin.Patch("/api/v1/admin/users/"+other.User.ID, dto.UpdateUserRequest{Disabled: new(true)}).RequireStatus(http.StatusOK)
+	requireRevoked(t, conn)
+	require.NoError(t, adminConn.Closed(300*time.Millisecond), "other users stay live")
+}
+
+// Backstop: a live socket whose session disappears without an event (for example deleted
+// directly in the database) is closed by the periodic session re-check.
+func TestLiveRechecksSessionPeriodically(t *testing.T) {
+	env := testkit.New(t, testkit.WithLiveSessionCheck(100*time.Millisecond))
+	alice := env.NewUser("alice")
+	conn := dialHello(t, alice)
+	id := sessionID(t, env, alice)
+	require.NoError(t, env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
+		return q.DeleteSession(context.Background(), id)
+	}))
+	requireRevoked(t, conn)
 }

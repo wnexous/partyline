@@ -98,7 +98,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 4. IF a user with `view` but not `post` posts a message THEN the system SHALL respond 403. (ACL-04)
 5. WHEN a manager adds an agent member THEN the system SHALL require that the manager owns the agent or holds a `use` grant on it, else respond 403. (ACL-05)
 6. WHEN a manager adds a chat member THEN the system SHALL require that the manager owns the chat's connector or holds a `use` grant on it, else respond 403. (ACL-06)
-7. WHEN the owner sets visibility to private, shared or public THEN the system SHALL replace the room's grants with: none; the listed users at the chosen level; everyone at `view` or `post`. (ACL-07)
+7. WHEN a user with `manage` sets visibility to private, shared or public THEN the system SHALL replace the room's grants with: none; the listed users at the chosen level; everyone at `view` or `post`. (ACL-07)
 8. The system SHALL give instance admins no implicit access to rooms, agents or connectors they neither own nor hold grants on. (ACL-08)
 9. WHEN a member is removed THEN the system SHALL stop all future deliveries to it within that room. (ROOM-01)
 10. IF a room is deleted THEN the system SHALL delete its messages, attachments, cursors and outbox entries. (ROOM-02)
@@ -120,7 +120,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 3. The system SHALL never deliver a message back to the member that authored it. (DLV-01)
 4. WHEN a message is accepted THEN the system SHALL deliver it to every agent member other than the author. (DLV-02)
 5. WHEN an agent or user posts without explicit recipients THEN the system SHALL queue it for every chat member whose `outbound` flag is on. (DLV-03)
-6. WHEN an agent or user posts with explicit recipients THEN the system SHALL queue it only for the listed chat members. (DLV-04)
+6. WHEN an agent or user posts with explicit recipients THEN the system SHALL queue it only for the listed chat members; IF a listed chat member has `outbound` off THEN the system SHALL respond 422 with field `recipients` reason `listen-only` (a chat with outbound off receives nothing). (DLV-04)
 7. WHERE the room setting `bridge_chats` is on the system SHALL also queue chat-authored messages for the other chat members whose `outbound` flag is on; otherwise it SHALL NOT. (DLV-05)
 8. WHEN a message is delivered to an agent THEN the system SHALL set `trusted=true` only if the author resolves to the recipient agent's owner (as user, as one of the owner's agents, or as one of the owner's verified identities). (DLV-06)
 9. IF a queued outbound send fails THEN the system SHALL retry with exponential backoff starting at 2 seconds for at most 5 attempts and then mark it `failed`. (DLV-07)
@@ -189,8 +189,12 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 
 - IF two messages are posted to the same room concurrently THEN the system SHALL assign distinct consecutive sequence numbers (MSG-01).
 - IF the server restarts with outbound sends queued THEN the system SHALL resume them (DLV-07).
-- IF the last manager of a room is deleted THEN the system SHALL delete the room (ROOM-02).
+- IF the owner account of a room is removed THEN the system SHALL delete the room (ROOM-02). Users are never deleted through the API or CLI, only disabled; the FK cascade covers a direct removal.
 - WHEN a grant targets a disabled user THEN the system SHALL keep it but deny access while the user is disabled (AUTH-10).
+- IF an admin demotes or disables their own account, or a change would demote or disable the last active admin, THEN the system SHALL respond 409 `conflict` and change nothing (AUTH-10).
+- WHEN a session ends (logout, session delete, password change or reset, user disabled) THEN the system SHALL close that session's live WebSockets within 1 second, and SHALL re-check every live socket's session, token and user at least every 60 seconds (AUTH-09, AUTH-10).
+- WHEN a user changes their password THEN the system SHALL end the user's other sessions and keep the current one (AUTH-09).
+- WHEN a room is deleted THEN the system SHALL remove, right after the delete, its attachment files that no other attachment references; files written in the last minute are left to the daily orphan sweep, since an upload of the same content may still be committing (ROOM-02).
 
 ---
 
@@ -198,58 +202,58 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AUTH-01 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-02 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-03 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-04 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-05 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-06 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-07 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-08 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-09 | P1: Setup and accounts | Tasks | Implementing |
-| AUTH-10 | P1: Setup and accounts | Tasks | Implementing |
-| TOK-01 | P1: Tokens | Tasks | Implementing |
-| TOK-02 | P1: Tokens | Tasks | Implementing |
-| TOK-03 | P1: Tokens | Tasks | Implementing |
-| TOK-04 | P1: Tokens | Tasks | Implementing |
-| ACL-01 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-02 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-03 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-04 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-05 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-06 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-07 | P1: Rooms and sharing | Tasks | Implementing |
-| ACL-08 | P1: Rooms and sharing | Tasks | Implementing |
-| ROOM-01 | P1: Rooms and sharing | Tasks | Implementing |
-| ROOM-02 | P1: Rooms and sharing | Tasks | Implementing |
-| MSG-01 | P1: Messages and delivery | Tasks | Implementing |
-| MSG-02 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-01 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-02 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-03 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-04 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-05 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-06 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-07 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-08 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-09 | P1: Messages and delivery | Tasks | Implementing |
-| DLV-10 | P1: Messages and delivery | Tasks | Implementing |
-| LIVE-01 | P1: Live updates | Tasks | Implementing |
-| LIVE-02 | P1: Live updates | Tasks | Implementing |
-| LIVE-03 | P1: Live updates | Tasks | Implementing |
-| LIVE-04 | P1: Live updates | Tasks | Implementing |
-| SEC-01 | P1: Secure deployment | Tasks | Implementing |
-| SEC-02 | P1: Secure deployment | Tasks | Implementing |
-| SEC-03 | P1: Secure deployment | Tasks | Implementing |
-| SEC-04 | P1: Secure deployment | Tasks | Implementing |
-| SEC-05 | P1: Secure deployment | Tasks | Implementing |
-| OPS-01 | P1: Secure deployment | Tasks | Implementing |
-| OPS-02 | P1: Secure deployment | Tasks | Implementing |
-| OPS-03 | P1: Secure deployment | Tasks | Implementing |
-| AUD-01 | P2: Audit trail | Tasks | Implementing |
-| AUD-02 | P2: Audit trail | Tasks | Implementing |
+| AUTH-01 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-02 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-03 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-04 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-05 | P1: Setup and accounts | Fix T29 | Fixed, re-verify |
+| AUTH-06 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-07 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-08 | P1: Setup and accounts | Tasks | Verified (iteration 1) |
+| AUTH-09 | P1: Setup and accounts | Fix T31 | Fixed, re-verify |
+| AUTH-10 | P1: Setup and accounts | Fix T31 | Fixed, re-verify |
+| TOK-01 | P1: Tokens | Tasks | Verified (iteration 1) |
+| TOK-02 | P1: Tokens | Tasks | Verified (iteration 1) |
+| TOK-03 | P1: Tokens | Tasks | Verified (iteration 1) |
+| TOK-04 | P1: Tokens | Tasks | Verified (iteration 1) |
+| ACL-01 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ACL-02 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ACL-03 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ACL-04 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ACL-05 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ACL-06 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ACL-07 | P1: Rooms and sharing | Fix T34 | Fixed, re-verify |
+| ACL-08 | P1: Rooms and sharing | Tasks | Verified (iteration 1) |
+| ROOM-01 | P1: Rooms and sharing | Fix T28 | Fixed, re-verify |
+| ROOM-02 | P1: Rooms and sharing | Fix T33 | Fixed, re-verify |
+| MSG-01 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| MSG-02 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| DLV-01 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| DLV-02 | P1: Messages and delivery | Tasks | Verified with scope gap (later feature) |
+| DLV-03 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| DLV-04 | P1: Messages and delivery | Fix T35 | Fixed, re-verify |
+| DLV-05 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| DLV-06 | P1: Messages and delivery | Tasks | Verified with scope gap (later feature) |
+| DLV-07 | P1: Messages and delivery | Fix T44 | Fixed, re-verify |
+| DLV-08 | P1: Messages and delivery | Tasks | Verified with scope gap (later feature) |
+| DLV-09 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| DLV-10 | P1: Messages and delivery | Tasks | Verified (iteration 1) |
+| LIVE-01 | P1: Live updates | Tasks | Verified (iteration 1) |
+| LIVE-02 | P1: Live updates | Tasks | Verified (iteration 1) |
+| LIVE-03 | P1: Live updates | Fix T30 | Fixed, re-verify |
+| LIVE-04 | P1: Live updates | Tasks | Verified (iteration 1) |
+| SEC-01 | P1: Secure deployment | Fix T40 | Fixed, re-verify |
+| SEC-02 | P1: Secure deployment | Tasks | Verified (iteration 1) |
+| SEC-03 | P1: Secure deployment | Tasks | Verified (iteration 1) |
+| SEC-04 | P1: Secure deployment | Tasks | Verified with scope gap (later feature) |
+| SEC-05 | P1: Secure deployment | Tasks | Verified (iteration 1) |
+| OPS-01 | P1: Secure deployment | Tasks | Verified (iteration 1) |
+| OPS-02 | P1: Secure deployment | Fix T32 | Fixed, re-verify |
+| OPS-03 | P1: Secure deployment | Fix T39 | Fixed, re-verify |
+| AUD-01 | P2: Audit trail | Tasks | Verified with scope gap (later feature) |
+| AUD-02 | P2: Audit trail | Tasks | Verified (iteration 1) |
 
-**Coverage:** 50 total, 0 mapped to tasks, 50 unmapped ⚠️ (mapped in tasks.md)
+**Coverage:** 50 total, all mapped in tasks.md (T1-T27); fix iteration 1 (T28-T44) re-opens the rows marked "Fixed, re-verify".
 
 ---
 

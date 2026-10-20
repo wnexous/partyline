@@ -42,7 +42,7 @@ type Deps struct {
 	Now func() time.Time
 	// LoopGuard pauses agent delivery after consecutive agent messages (DLV-08).
 	LoopGuard delivery.LoopGuard
-	// Blobs is swept by the retention job; nil skips the blob sweep.
+	// Blobs is swept by the retention job and cleaned when a room is deleted; nil skips both.
 	Blobs *attachments.Store
 }
 
@@ -73,6 +73,8 @@ type Room struct {
 	Level access.Level
 	// Visibility is the sharing preset the room's grants form.
 	Visibility dto.Visibility
+	// MemberCount counts the room's agents, chats and users.
+	MemberCount int64
 }
 
 // LastSeq is the sequence number of the room's latest message (0 when empty).
@@ -164,15 +166,15 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, roomID string) (Ro
 	if err != nil {
 		return Room{}, err
 	}
-	return s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, l)
+	return s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, row.MemberCount, l)
 }
 
-func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDisplay string, l access.Level) (Room, error) {
+func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDisplay string, members int64, l access.Level) (Room, error) {
 	v, err := s.az.Sharing(ctx, access.KindRoom, r.ID)
 	if err != nil {
 		return Room{}, err
 	}
-	return Room{Room: r, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Visibility: v.Mode}, nil
+	return Room{Room: r, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Visibility: v.Mode, MemberCount: members}, nil
 }
 
 // List returns the rooms the calling user can view, by name.
@@ -197,7 +199,7 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 		if l == access.None {
 			continue
 		}
-		r, err := s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, l)
+		r, err := s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, row.MemberCount, l)
 		if err != nil {
 			return nil, err
 		}
@@ -252,12 +254,16 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 }
 
 // Delete removes a room with its members, grants, messages, attachments, cursors and outbox
-// entries (ROOM-02); requires manage.
+// entries, then its blob files no other attachment references (ROOM-02); requires manage.
 func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) error {
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
 		return err
 	}
-	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+	var shas []string
+	err := s.store.WithTx(ctx, func(q *db.Queries) (err error) {
+		if shas, err = q.ListRoomAttachmentSHAs(ctx, roomID); err != nil {
+			return err
+		}
 		if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(access.KindRoom), ResourceID: roomID}); err != nil {
 			return err
 		}
@@ -267,6 +273,7 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) 
 	if err != nil {
 		return err
 	}
+	s.removeRoomBlobs(ctx, shas)
 	s.bus.Publish(events.RoomChanged{RoomID: roomID, Deleted: true})
 	return nil
 }

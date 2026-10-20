@@ -39,6 +39,38 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 	return err
 }
 
+const deleteOtherUserSessions = `-- name: DeleteOtherUserSessions :many
+DELETE FROM sessions WHERE user_id = ?1 AND id <> ?2 RETURNING id
+`
+
+type DeleteOtherUserSessionsParams struct {
+	UserID string
+	KeepID string
+}
+
+func (q *Queries) DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, deleteOtherUserSessions, arg.UserID, arg.KeepID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = ?
 `
@@ -48,13 +80,31 @@ func (q *Queries) DeleteSession(ctx context.Context, id string) error {
 	return err
 }
 
-const deleteSessionsByUser = `-- name: DeleteSessionsByUser :exec
-DELETE FROM sessions WHERE user_id = ?
+const deleteSessionsByUser = `-- name: DeleteSessionsByUser :many
+DELETE FROM sessions WHERE user_id = ? RETURNING id
 `
 
-func (q *Queries) DeleteSessionsByUser(ctx context.Context, userID string) error {
-	_, err := q.db.ExecContext(ctx, deleteSessionsByUser, userID)
-	return err
+func (q *Queries) DeleteSessionsByUser(ctx context.Context, userID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, deleteSessionsByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteUserSession = `-- name: DeleteUserSession :execrows
@@ -72,6 +122,26 @@ func (q *Queries) DeleteUserSession(ctx context.Context, arg DeleteUserSessionPa
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const getSession = `-- name: GetSession :one
+SELECT id, token_hash, user_id, created_at, expires_at, last_seen_at, user_agent, ip FROM sessions WHERE id = ?
+`
+
+func (q *Queries) GetSession(ctx context.Context, id string) (Session, error) {
+	row := q.db.QueryRowContext(ctx, getSession, id)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.TokenHash,
+		&i.UserID,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.LastSeenAt,
+		&i.UserAgent,
+		&i.Ip,
+	)
+	return i, err
 }
 
 const getSessionByTokenHash = `-- name: GetSessionByTokenHash :one

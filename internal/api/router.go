@@ -161,6 +161,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusGone, dto.ErrorCodeGone, "invite already used, revoked or expired")
 	case errors.Is(err, users.ErrUsernameTaken):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "username already taken")
+	case errors.Is(err, users.ErrSelfAdminChange), errors.Is(err, users.ErrLastAdmin):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, err.Error())
 	case errors.Is(err, agents.ErrNotRegistered):
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent not registered: connect the channel first")
 	case errors.Is(err, access.ErrNotFound):

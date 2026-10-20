@@ -115,6 +115,23 @@ func (s *Store) Delete(sha string) error {
 	return err
 }
 
+// DeleteIfOlder removes a blob when it was last written before cutoff and reports whether it
+// did. Put refreshes the time of existing content, so a recent upload of the same bytes keeps
+// the blob. Callers delete only hashes no attachment row references any more.
+func (s *Store) DeleteIfOlder(sha string, cutoff time.Time) (bool, error) {
+	if !validHash(sha) {
+		return false, nil
+	}
+	info, err := os.Stat(s.path(sha))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil || !info.ModTime().Before(cutoff) {
+		return false, err
+	}
+	return true, s.Delete(sha)
+}
+
 // Sweep deletes every blob last written before cutoff that referenced reports as unused, and
 // abandoned upload temp files older than cutoff. Blobs newer than cutoff are kept, since a
 // message referencing them may still be committing. It returns the number of blobs removed.

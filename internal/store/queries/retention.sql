@@ -7,3 +7,7 @@ DELETE FROM messages WHERE id IN (
 
 -- name: CountAttachmentsBySHA :one
 SELECT COUNT(*) FROM attachments WHERE sha256 = ?;
+
+-- name: ListRoomAttachmentSHAs :many
+SELECT DISTINCT a.sha256 FROM attachments a JOIN messages m ON m.id = a.message_id
+WHERE m.room_id = ?;

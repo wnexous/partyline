@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -27,11 +26,17 @@ func newApp(t *testing.T) *App {
 	env := map[string]string{"PARTYLINE_DATA_DIR": t.TempDir()}
 	cfg, err := config.Load(func(k string) string { return env[k] })
 	require.NoError(t, err)
-	a, err := New(cfg, Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	// Background job errors land in the test log, so a failure shows its cause.
+	a, err := New(cfg, Options{Logger: slog.New(slog.NewTextHandler(t.Output(), nil))})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = a.Shutdown(context.Background()) })
 	return a
 }
+
+// jobDeadline bounds how long a test waits for a background job. It is generous because a
+// loaded machine (parallel packages, slow fsync) can delay the first run by many seconds;
+// the waits poll, so a healthy run still finishes in milliseconds.
+const jobDeadline = time.Minute
 
 func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -77,7 +82,7 @@ func TestStartRunsOutboxWorker(t *testing.T) {
 	cfg, err := config.Load(func(k string) string { return env[k] })
 	require.NoError(t, err)
 	sender := recordingSender{sent: make(chan delivery.Delivery, 1)}
-	a, err := New(cfg, Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Sender: sender})
+	a, err := New(cfg, Options{Logger: slog.New(slog.NewTextHandler(t.Output(), nil)), Sender: sender})
 	require.NoError(t, err)
 	ctx := context.Background()
 	require.NoError(t, a.Start(ctx))
@@ -97,6 +102,9 @@ func TestStartRunsOutboxWorker(t *testing.T) {
 		if err := q.CreateChat(ctx, db.CreateChatParams{ID: ids["chat"], ConnectorID: ids["conn"], ExternalID: "x", Title: "g", Kind: "group"}); err != nil {
 			return err
 		}
+		if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{ID: store.NewID(), RoomID: ids["room"], Kind: "chat", MemberID: ids["chat"], Outbound: true, CreatedAt: now}); err != nil {
+			return err
+		}
 		if err := q.CreateMessage(ctx, db.CreateMessageParams{ID: ids["msg"], RoomID: ids["room"], Seq: 1, AuthorKind: "user", AuthorID: ids["user"], Kind: "text", Text: "hi", CreatedAt: now}); err != nil {
 			return err
 		}
@@ -108,7 +116,7 @@ func TestStartRunsOutboxWorker(t *testing.T) {
 	case d := <-sender.sent:
 		require.Equal(t, ids["out"], d.OutboxID)
 		require.Equal(t, ids["chat"], d.ChatID)
-	case <-time.After(5 * time.Second):
+	case <-time.After(jobDeadline):
 		t.Fatal("outbox entry was not sent")
 	}
 	require.NoError(t, a.Shutdown(ctx))
@@ -134,5 +142,5 @@ func TestStartRunsRetention(t *testing.T) {
 	require.Eventually(t, func() bool {
 		_, err := a.Store.R().GetMessageView(ctx, ids["msg"])
 		return errors.Is(err, sql.ErrNoRows)
-	}, 5*time.Second, 10*time.Millisecond)
+	}, jobDeadline, 10*time.Millisecond, "retention did not delete the expired message")
 }

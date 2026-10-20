@@ -161,18 +161,26 @@ func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, m
 	return s.member(ctx, roomID, memberRowID)
 }
 
-// RemoveMember removes a member; later messages are no longer delivered to it (ROOM-01).
+// RemoveMember removes a member; later messages are no longer delivered to it, and a chat's
+// pending (not yet sent) outbox entries in this room are deleted in the same tx (ROOM-01).
 // Requires manage.
 func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, memberRowID string) error {
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
 		return err
 	}
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		if _, err := q.GetRoomMember(ctx, db.GetRoomMemberParams{ID: memberRowID, RoomID: roomID}); err != nil {
+		m, err := q.GetRoomMember(ctx, db.GetRoomMemberParams{ID: memberRowID, RoomID: roomID})
+		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return access.ErrNotFound
 			}
 			return err
+		}
+		if m.Kind == string(dto.MemberKindChat) {
+			// Cancel what was queued for this chat in this room but not sent yet (ROOM-01).
+			if _, err := q.DeletePendingRoomChatOutbox(ctx, db.DeletePendingRoomChatOutboxParams{ChatID: m.MemberID, RoomID: roomID}); err != nil {
+				return err
+			}
 		}
 		return q.DeleteRoomMember(ctx, memberRowID)
 	})

@@ -262,7 +262,21 @@ func TestRoomMembersEndpoint(t *testing.T) {
 	list := testkit.Decode[dto.List[dto.RoomMember]](alice.Get(path).RequireStatus(http.StatusOK))
 	require.Len(t, list.Items, 2)
 
+	// member_count on the room, in get and list.
+	memberCount := func() (int, int) {
+		got := testkit.Decode[dto.Room](alice.Get("/api/v1/rooms/" + r.ID).RequireStatus(http.StatusOK))
+		rooms := testkit.Decode[dto.List[dto.Room]](alice.Get("/api/v1/rooms").RequireStatus(http.StatusOK))
+		require.Len(t, rooms.Items, 1)
+		return got.MemberCount, rooms.Items[0].MemberCount
+	}
+	get, listed := memberCount()
+	require.Equal(t, 2, get)
+	require.Equal(t, 2, listed)
+
 	alice.Delete(path + "/" + member.ID).RequireStatus(http.StatusNoContent)
+	get, listed = memberCount()
+	require.Equal(t, 1, get)
+	require.Equal(t, 1, listed)
 	alice.Delete(path+"/"+member.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	msg = testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+r.ID+"/messages", dto.PostMessageRequest{Text: "after", Recipients: nil}).RequireStatus(http.StatusCreated))
 	require.Empty(t, msg.Outbox, "a removed chat gets no delivery")
