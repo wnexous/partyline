@@ -35,5 +35,7 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
     css: false,
+    // Above the 10 s async query timeout in src/test/setup.ts.
+    testTimeout: 30_000,
   },
 });

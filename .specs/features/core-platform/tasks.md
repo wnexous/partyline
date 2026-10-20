@@ -64,6 +64,7 @@ T21 → T22 → T23 → T24 → T25 → T26 → T27
 
 ```
 T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42
+T35 → T43 → T44
 ```
 
 ---
@@ -712,3 +713,31 @@ T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → 
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record contract notes for fix iteration 1`
+
+#### T43: Load-tolerant web async queries
+
+**What**: The web test setup gives Testing Library async queries a 10 s timeout (and vitest a 30 s test timeout); `findBy*` failed at its 1 s default on a loaded machine.
+**Where**: `web/src/test/setup.ts`
+**Depends on**: T35
+**Reuses**: none
+**Requirement**: gate stability (no AC)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Web tests pass during a parallel Go test run on a loaded machine
+**Tests**: unit
+**Gate**: full
+**Commit**: `test(web): give async queries a load-tolerant timeout`
+
+#### T44: Generous deadlines in outbox worker tests
+
+**What**: Outbox worker tests poll for up to a minute instead of 15 s.
+**Where**: `internal/delivery/outbox_test.go`
+**Depends on**: T43
+**Reuses**: none
+**Requirement**: DLV-07
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] `TestOutboxResumesAfterRestart` and `TestOutboxWakesOnMessageCreated` pass under load with `-count=10`
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(delivery): wait for the outbox worker with a generous deadline`
