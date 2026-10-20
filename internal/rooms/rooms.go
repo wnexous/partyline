@@ -227,10 +227,16 @@ type UpdateInput struct {
 	Description   *string
 	Instructions  *string
 	BridgeChats   *bool
+	Broadcast     *bool // ROUTE-06
 	RetentionDays *int
 }
 
-// Update changes a room's settings; requires manage.
+// catchAllOff is the 422 reason for turning broadcast or bridge_chats on in a room that is a
+// connector's catch-all room (ROUTE-07).
+const catchAllOff = "must stay off while the room is a catch-all room"
+
+// Update changes a room's settings; requires manage. While the room is a connector's
+// catch-all room, broadcast and bridge_chats cannot be turned on (ROUTE-07).
 func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, in UpdateInput) (Room, error) {
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
 		return Room{}, err
@@ -251,6 +257,25 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 		}
 		if in.BridgeChats != nil {
 			r.BridgeChats = *in.BridgeChats
+		}
+		if in.Broadcast != nil {
+			r.Broadcast = *in.Broadcast
+		}
+		if (in.Broadcast != nil && *in.Broadcast) || (in.BridgeChats != nil && *in.BridgeChats) {
+			n, err := q.CountCatchAllConnectors(ctx, sql.NullString{String: roomID, Valid: true})
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				check := validation.Check{}
+				if in.Broadcast != nil && *in.Broadcast {
+					check.Add("broadcast", catchAllOff)
+				}
+				if in.BridgeChats != nil && *in.BridgeChats {
+					check.Add("bridge_chats", catchAllOff)
+				}
+				return check.Err()
+			}
 		}
 		if in.RetentionDays != nil {
 			r.RetentionDays = int64(*in.RetentionDays)

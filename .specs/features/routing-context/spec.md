@@ -88,6 +88,8 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 3. IF the catch-all room no longer exists or the connector owner lost `manage` on it THEN the system SHALL stop auto-routing and set the connector status detail to `auto-route room unavailable`. (ROUTE-03)
 4. WHEN a user sets `auto_route_room_id` THEN the system SHALL require `manage` on that room, else respond 403. (ROUTE-04)
 5. The system SHALL deliver auto-routed messages with `trusted=false` unless the sender is a verified identity of the agent's owner. (ROUTE-05)
+6. WHILE a room's `broadcast` setting is off (default on) the system SHALL store a user or agent post without recipients, deliver it to the room's agents and queue it to no chat, and the post response (and channel tool result) SHALL say `not sent to any chat: this room only answers explicit chats (use reply or chat_ids)`; a reply to a message of a chat with outbound on SHALL go to that chat only. (ROUTE-06)
+7. WHEN a room becomes a connector's `auto_route_room_id` THEN the system SHALL turn its `broadcast` and `bridge_chats` off, and WHILE it is any connector's catch-all room a PATCH turning either on SHALL get 422 on that field (`must stay off while the room is a catch-all room`) and apply nothing. (ROUTE-07)
 
 **Independent Test**: Connector with scope `dms` and a room with an agent; a new DM reaches the agent, a new group does not.
 
@@ -163,6 +165,8 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 
 - IF two first messages from the same new chat arrive at once THEN the system SHALL add the chat to the catch-all room only once (ROUTE-01).
 - WHEN a catch-all chat is later removed from the room THEN it SHALL NOT be re-added automatically for 24 hours unless a manager adds it (ROUTE-02).
+- WHEN a room with `bridge_chats` on is chosen as a catch-all room THEN bridging SHALL be turned off with broadcast (ROUTE-07).
+- WHEN no connector targets a room any more THEN its `broadcast` SHALL stay off until a manager turns it on (ROUTE-07).
 - WHEN a mention keyword matches inside a longer word THEN it SHALL still count only on word boundaries (MEM-03).
 
 ---
@@ -184,6 +188,8 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROUTE-03 | P1: Catch-all | Tasks | Implementing |
 | ROUTE-04 | P1: Catch-all | Tasks | Implementing |
 | ROUTE-05 | P1: Catch-all | Tasks | Implementing |
+| ROUTE-06 | P1: Catch-all | Fix iteration 1 | Implemented (T23, T24, T31) |
+| ROUTE-07 | P1: Catch-all | Fix iteration 1 | Implemented (T23, T31) |
 | MEM-01 | P1: Membership settings | Tasks | Implementing |
 | MEM-02 | P1: Membership settings | Tasks | Implementing |
 | MEM-03 | P1: Membership settings | Tasks | Fixed (T18), re-verify |
@@ -199,7 +205,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROOMDEL-01 | P1: Delete a room | Tasks | Implementing |
 | ROOMDEL-02 | P1: Delete a room | Tasks | Implementing |
 
-**Coverage:** 27 total, mapped in tasks.md
+**Coverage:** 29 total, mapped in tasks.md
 
 ---
 

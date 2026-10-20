@@ -19,6 +19,9 @@ type Member struct {
 type RoomState struct {
 	// BridgeChats relays chat-authored messages to the other chats (DLV-05).
 	BridgeChats bool
+	// NoBroadcast keeps agent and user posts without recipients away from every chat
+	// (ROUTE-06); the zero value broadcasts (DLV-03).
+	NoBroadcast bool
 }
 
 // Draft is the message being delivered.
@@ -42,7 +45,8 @@ type Targets struct {
 //   - never the author itself (DLV-01);
 //   - every other agent member (DLV-02);
 //   - agent and user posts: the listed chats with Outbound on when Recipients is set (DLV-04),
-//     otherwise every chat with Outbound on (DLV-03);
+//     otherwise every chat with Outbound on (DLV-03), or none when the room does not
+//     broadcast (ROUTE-06);
 //   - chat posts: every other chat with Outbound on when the room bridges chats, else none
 //     (DLV-05);
 //   - system posts: no chats.
@@ -79,7 +83,7 @@ func chatReceives(room RoomState, m Member, msg Draft, listed map[string]bool) b
 			// 422; this guards callers that skip the check).
 			return listed[m.ID] && m.Outbound
 		}
-		return m.Outbound
+		return m.Outbound && !room.NoBroadcast
 	case dto.AuthorKindChat:
 		return room.BridgeChats && m.Outbound
 	default:

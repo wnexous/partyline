@@ -30,7 +30,9 @@ type Message struct {
 	Outbox      []db.Outbox
 	// Chat is the chat a chat-authored message came from (CTX-01): its title, kind and
 	// connector kind (platform). Nil for other authors and for chats deleted since.
-	Chat *db.ListChatRefsRow
+	Chat *db.ListChatRefsRow // Warning is set by Post when the message reached no chat because the room does not
+	// broadcast (dto.NoBroadcastWarning, ROUTE-06).
+	Warning string
 }
 
 // Recipients decodes the explicit chat ids of the message.
@@ -156,8 +158,9 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 	}
 	var created []events.MessageCreated
 	var id string
+	var noChat bool
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		created = nil
+		created, noChat = nil, false
 		if d.externalID != "" {
 			existing, err := q.GetMessageIDByExternalID(ctx, db.GetMessageIDByExternalIDParams{
 				RoomID: roomID, AuthorKind: string(d.authorKind), AuthorID: d.authorID,
@@ -176,6 +179,9 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 			return err
 		}
 		if err := s.checkRefs(ctx, q, roomID, members, d); err != nil {
+			return err
+		}
+		if noChat, err = s.applyNoBroadcast(ctx, q, roomID, members, &d); err != nil {
 			return err
 		}
 		room, msg, err := s.insert(ctx, q, roomID, members, d)
@@ -207,7 +213,42 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 	if len(created) > 1 {
 		s.bus.Publish(events.RoomChanged{RoomID: roomID})
 	}
-	return s.message(ctx, id)
+	m, err := s.message(ctx, id)
+	if err == nil && noChat {
+		m.Warning = dto.NoBroadcastWarning
+	}
+	return m, err
+}
+
+// applyNoBroadcast handles a user or agent post without recipients in a room that does not
+// broadcast (ROUTE-06): a reply to a message of a chat with outbound on goes to that chat
+// only; anything else reaches no chat, which it reports.
+func (s *Service) applyNoBroadcast(ctx context.Context, q *db.Queries, roomID string, members []db.ListRoomMembersRow, d *draft) (bool, error) {
+	if (d.authorKind != dto.AuthorKindUser && d.authorKind != dto.AuthorKindAgent) || len(d.recipients) > 0 {
+		return false, nil
+	}
+	room, err := q.GetRoom(ctx, roomID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, access.ErrNotFound
+	}
+	if err != nil || room.Broadcast {
+		return false, err
+	}
+	if d.replyTo != "" {
+		target, err := q.GetMessageView(ctx, d.replyTo)
+		if err != nil {
+			return false, err
+		}
+		if target.AuthorKind == string(dto.AuthorKindChat) {
+			for _, m := range members {
+				if m.RoomMember.Kind == string(dto.MemberKindChat) && m.RoomMember.MemberID == target.AuthorID && m.RoomMember.Outbound {
+					d.recipients = []string{target.AuthorID}
+					return false, nil
+				}
+			}
+		}
+	}
+	return true, nil
 }
 
 // checkRefs validates recipients (chat members of the room with outbound on: a listen-only
@@ -282,7 +323,7 @@ func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, memb
 			return db.Room{}, events.MessageCreated{}, err
 		}
 	}
-	targets := delivery.Plan(delivery.RoomState{BridgeChats: room.BridgeChats}, planMembers(members),
+	targets := delivery.Plan(delivery.RoomState{BridgeChats: room.BridgeChats, NoBroadcast: !room.Broadcast}, planMembers(members),
 		delivery.Draft{AuthorKind: d.authorKind, AuthorID: d.authorID, Recipients: d.recipients})
 	for _, chatID := range targets.ChatIDs {
 		if err := q.CreateOutbox(ctx, db.CreateOutboxParams{ID: store.NewID(), MessageID: id, ChatID: chatID, NextAttemptAt: now, UpdatedAt: now}); err != nil {

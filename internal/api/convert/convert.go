@@ -33,7 +33,7 @@ func Message(m rooms.Message) dto.Message {
 		AuthorName: m.AuthorName, AuthorUserID: m.AuthorUserID, SenderID: m.SenderID, SenderAltID: m.SenderAltID,
 		SenderName: m.SenderName, Kind: dto.MessageKind(m.Kind), Text: m.Text, ReplyTo: m.ReplyTo,
 		Recipients: m.Recipients(), ExternalID: m.ExternalID.String,
-		Attachments: make([]dto.Attachment, len(m.Attachments)), CreatedAt: Time(m.CreatedAt),
+		Attachments: make([]dto.Attachment, len(m.Attachments)), CreatedAt: Time(m.CreatedAt), Warning: m.Warning,
 	}
 	for i, a := range m.Attachments {
 		out.Attachments[i] = dto.Attachment{ID: a.ID, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: dto.AttachmentStatus(a.Status)}

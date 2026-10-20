@@ -335,6 +335,11 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 		}); err != nil {
 			return err
 		}
+		if routeRoom.Valid { // ROUTE-07: a catch-all room neither broadcasts nor bridges chats
+			if err := q.SetRoomCatchAllSafety(ctx, db.SetRoomCatchAllSafetyParams{UpdatedAt: s.d.Now().UnixMilli(), ID: routeRoom.String}); err != nil {
+				return err
+			}
+		}
 		if len(changed) > 0 {
 			if err := s.audit.Record(ctx, q, audit.Entry{
 				ActorID: p.UserID, Action: audit.ActionConnectorUpdate, TargetKind: audit.TargetConnector, TargetID: id,
@@ -371,6 +376,9 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	})
 	if err != nil {
 		return View{}, err
+	}
+	if routeRoom.Valid {
+		s.d.Bus.Publish(events.RoomChanged{RoomID: routeRoom.String})
 	}
 	if s.d.Runner != nil {
 		switch {

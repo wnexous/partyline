@@ -228,3 +228,20 @@ func TestLoopGuardLimit(t *testing.T) {
 	_, paused = g.Next(s, dto.AuthorKindAgent)
 	require.True(t, paused)
 }
+
+// ROUTE-06: with broadcast off, agent and user posts without recipients reach the agents but
+// no chat; explicit recipients and chat posts are planned as with broadcast on.
+func TestPlanNoBroadcast(t *testing.T) {
+	members := room(true, false, true)
+	off := RoomState{NoBroadcast: true}
+	got := Plan(off, members, Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "A1"})
+	require.Equal(t, []string{"A2"}, got.AgentIDs)
+	require.Nil(t, got.ChatIDs)
+	got = Plan(off, members, Draft{AuthorKind: dto.AuthorKindUser, AuthorID: "U1"})
+	require.Equal(t, []string{"A1", "A2"}, got.AgentIDs)
+	require.Nil(t, got.ChatIDs)
+	got = Plan(off, members, Draft{AuthorKind: dto.AuthorKindUser, AuthorID: "U1", Recipients: []string{"C3"}})
+	require.Equal(t, []string{"C3"}, got.ChatIDs)
+	got = Plan(RoomState{NoBroadcast: true, BridgeChats: true}, members, Draft{AuthorKind: dto.AuthorKindChat, AuthorID: "C1"})
+	require.Equal(t, []string{"C3"}, got.ChatIDs)
+}

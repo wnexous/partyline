@@ -410,7 +410,7 @@ T31 → T32 → T33 → T34
 **Requirement**: ROUTE-06, ROUTE-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Service + HTTP tests: no outbox rows, stored, pushed to agents, exact warning text; reply goes to the replied chat; forcing; 422s; second owner
+- [x] Service + HTTP tests: no outbox rows, stored, pushed to agents, exact warning text; reply goes to the replied chat; forcing; 422s; second owner
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(rooms): stop broadcasts in catch-all rooms`

@@ -116,7 +116,7 @@ func (s *server) updateRoom(w http.ResponseWriter, r *http.Request, p authn.Prin
 	}
 	room, err := s.Rooms.Update(r.Context(), p, r.PathValue("id"), rooms.UpdateInput{
 		Name: req.Name, Description: req.Description, Instructions: req.Instructions, BridgeChats: req.BridgeChats,
-		RetentionDays: req.RetentionDays,
+		Broadcast: req.Broadcast, RetentionDays: req.RetentionDays,
 	})
 	if err != nil {
 		return err

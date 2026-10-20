@@ -469,3 +469,98 @@ func TestRemoveMemberCancelsQueuedDeliveries(t *testing.T) {
 	}
 	require.Len(t, s.calls, 3, "the other chat (2) and the other room (1) still get theirs")
 }
+
+// ROUTE-06: in a room with broadcast off, user and agent posts without recipients are stored
+// and planned for the agents but queued to no chat, and the post answers NoBroadcastWarning; a
+// reply to a chat message goes to that chat only; explicit recipients work as before; chat
+// messages are unchanged. With broadcast on, nothing changes and there is no warning.
+func TestNoBroadcastRoomQueuesNoChatWithoutRecipients(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	a1 := f.agent(t, alice, "a1")
+	_, c1 := f.chat(t, alice, "c1")
+	_, c2 := f.chat(t, alice, "c2")
+	r := f.room(t, alice, "inbox")
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, c1, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, c2, true)
+
+	on := f.post(t, alice, r.ID, "broadcast on")
+	require.Equal(t, sorted(c1, c2), outboxChats(on))
+	require.Empty(t, on.Warning)
+
+	updated, err := f.svc.Update(ctx, alice, r.ID, UpdateInput{Broadcast: ptr(false)})
+	require.NoError(t, err)
+	require.False(t, updated.Broadcast)
+
+	for _, p := range []authn.Principal{alice, agentPrincipal(alice, a1)} {
+		m := f.post(t, p, r.ID, "no recipients")
+		require.Empty(t, outboxChats(m), "queued to no chat")
+		require.Empty(t, m.Recipients())
+		require.Equal(t, "not sent to any chat: this room only answers explicit chats (use reply or chat_ids)", m.Warning)
+		stored, err := f.svc.GetMessage(ctx, alice, r.ID, m.ID)
+		require.NoError(t, err)
+		require.Equal(t, "no recipients", stored.Text, "still stored in the room")
+	}
+
+	explicit, err := f.svc.Post(ctx, agentPrincipal(alice, a1), r.ID, PostInput{Text: "to c2", Recipients: []string{c2}})
+	require.NoError(t, err)
+	require.Equal(t, []string{c2}, outboxChats(explicit))
+	require.Empty(t, explicit.Warning)
+
+	fromC1, err := f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: c1, SenderID: "1", Text: "hello"})
+	require.NoError(t, err)
+	for _, p := range []authn.Principal{alice, agentPrincipal(alice, a1)} {
+		reply, err := f.svc.Post(ctx, p, r.ID, PostInput{Text: "answer", ReplyTo: fromC1.ID})
+		require.NoError(t, err)
+		require.Equal(t, []string{c1}, outboxChats(reply), "a reply goes to the replied chat")
+		require.Equal(t, []string{c1}, reply.Recipients())
+		require.Empty(t, reply.Warning)
+	}
+	toOwn, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "re: own", ReplyTo: explicit.ID})
+	require.NoError(t, err)
+	require.Empty(t, outboxChats(toOwn), "a reply to a non-chat message reaches no chat")
+	require.Equal(t, dto.NoBroadcastWarning, toOwn.Warning)
+}
+
+// ROUTE-07: while a connector routes new chats to a room, broadcast and bridge_chats cannot
+// be turned on (422 on the field, nothing applied), for the owner and for another manager;
+// turning them off, and other settings, still work.
+func TestCatchAllRoomRefusesBroadcastAndBridge(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	bob := f.user(t, "bob", dto.RoleMember)
+	r := f.room(t, alice, "inbox")
+	f.grant(t, access.KindRoom, r.ID, bob.UserID, dto.LevelManage)
+	conn, _ := f.chat(t, alice, "c1")
+	f.exec(t, "UPDATE connectors SET auto_route_scope = 'dms', auto_route_room_id = ? WHERE id = ?", r.ID, conn)
+	f.exec(t, "UPDATE rooms SET broadcast = 0, bridge_chats = 0 WHERE id = ?", r.ID)
+
+	got, err := f.svc.Get(ctx, alice, r.ID)
+	require.NoError(t, err)
+	require.True(t, got.CatchAll)
+	for _, p := range []authn.Principal{alice, bob} {
+		var verr *validation.Error
+		_, err = f.svc.Update(ctx, p, r.ID, UpdateInput{Broadcast: ptr(true), Name: ptr("renamed")})
+		require.ErrorAs(t, err, &verr)
+		require.Equal(t, map[string]string{"broadcast": "must stay off while the room is a catch-all room"}, verr.Fields)
+		_, err = f.svc.Update(ctx, p, r.ID, UpdateInput{BridgeChats: ptr(true)})
+		require.ErrorAs(t, err, &verr)
+		require.Equal(t, map[string]string{"bridge_chats": "must stay off while the room is a catch-all room"}, verr.Fields)
+	}
+	got, err = f.svc.Get(ctx, alice, r.ID)
+	require.NoError(t, err)
+	require.Equal(t, "inbox", got.Name, "a refused update applies nothing")
+	require.False(t, got.Broadcast)
+	require.False(t, got.BridgeChats)
+	_, err = f.svc.Update(ctx, bob, r.ID, UpdateInput{Broadcast: ptr(false), BridgeChats: ptr(false), Name: ptr("support inbox")})
+	require.NoError(t, err)
+
+	f.exec(t, "UPDATE connectors SET auto_route_scope = 'off', auto_route_room_id = NULL WHERE id = ?", conn)
+	got, err = f.svc.Update(ctx, alice, r.ID, UpdateInput{Broadcast: ptr(true)})
+	require.NoError(t, err, "no longer a catch-all room")
+	require.True(t, got.Broadcast)
+	require.False(t, got.CatchAll)
+}
