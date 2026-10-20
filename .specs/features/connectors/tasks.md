@@ -622,7 +622,7 @@ connectors.
 **Requirement**: CON-13
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Both READMEs carry the four points next to the variable
+- [x] Both READMEs carry the four points next to the variable
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(readme): explain how to scope the private network allowlist`
