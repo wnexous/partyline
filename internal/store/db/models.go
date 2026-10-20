@@ -209,6 +209,7 @@ type Room struct {
 	Instructions   string
 	Broadcast      bool
 	InstructionsBy string
+	UpdatedBy      string
 }
 
 type RoomMember struct {

@@ -52,8 +52,8 @@ func (q *Queries) CountRoomMember(ctx context.Context, arg CountRoomMemberParams
 
 const createRoom = `-- name: CreateRoom :exec
 INSERT INTO rooms (id, owner_id, name, description, instructions, instructions_by, bridge_chats, retention_days,
-                   created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   created_at, updated_at, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateRoomParams struct {
@@ -67,6 +67,7 @@ type CreateRoomParams struct {
 	RetentionDays  int64
 	CreatedAt      int64
 	UpdatedAt      int64
+	UpdatedBy      string
 }
 
 func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) error {
@@ -81,6 +82,7 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) error {
 		arg.RetentionDays,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.UpdatedBy,
 	)
 	return err
 }
@@ -132,7 +134,7 @@ func (q *Queries) DeleteRoomMember(ctx context.Context, id string) error {
 }
 
 const getRoom = `-- name: GetRoom :one
-SELECT id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, broadcast, instructions_by FROM rooms WHERE id = ?
+SELECT id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, broadcast, instructions_by, updated_by FROM rooms WHERE id = ?
 `
 
 func (q *Queries) GetRoom(ctx context.Context, id string) (Room, error) {
@@ -153,6 +155,7 @@ func (q *Queries) GetRoom(ctx context.Context, id string) (Room, error) {
 		&i.Instructions,
 		&i.Broadcast,
 		&i.InstructionsBy,
+		&i.UpdatedBy,
 	)
 	return i, err
 }
@@ -215,7 +218,7 @@ func (q *Queries) GetRoomMemberByMember(ctx context.Context, arg GetRoomMemberBy
 }
 
 const getRoomWithOwner = `-- name: GetRoomWithOwner :one
-SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.broadcast, r.instructions_by, u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.broadcast, r.instructions_by, r.updated_by, u.username AS owner_username, u.display_name AS owner_display_name,
        (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count
 FROM rooms r JOIN users u ON u.id = r.owner_id
 WHERE r.id = ?
@@ -246,6 +249,7 @@ func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithO
 		&i.Room.Instructions,
 		&i.Room.Broadcast,
 		&i.Room.InstructionsBy,
+		&i.Room.UpdatedBy,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
 		&i.MemberCount,
@@ -321,7 +325,7 @@ func (q *Queries) ListRoomMembers(ctx context.Context, roomID string) ([]ListRoo
 }
 
 const listRoomsForUser = `-- name: ListRoomsForUser :many
-SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.broadcast, r.instructions_by, u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.broadcast, r.instructions_by, r.updated_by, u.username AS owner_username, u.display_name AS owner_display_name,
        (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count
 FROM rooms r JOIN users u ON u.id = r.owner_id
 WHERE r.owner_id = ?1
@@ -361,6 +365,7 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRo
 			&i.Room.Instructions,
 			&i.Room.Broadcast,
 			&i.Room.InstructionsBy,
+			&i.Room.UpdatedBy,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
 			&i.MemberCount,
@@ -395,7 +400,7 @@ func (q *Queries) SetRoomCatchAllSafety(ctx context.Context, arg SetRoomCatchAll
 
 const updateRoom = `-- name: UpdateRoom :exec
 UPDATE rooms SET name = ?, description = ?, instructions = ?, instructions_by = ?, bridge_chats = ?, broadcast = ?,
-                 retention_days = ?, updated_at = ?
+                 retention_days = ?, updated_at = ?, updated_by = ?
 WHERE id = ?
 `
 
@@ -408,6 +413,7 @@ type UpdateRoomParams struct {
 	Broadcast      bool
 	RetentionDays  int64
 	UpdatedAt      int64
+	UpdatedBy      string
 	ID             string
 }
 
@@ -421,6 +427,7 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) error {
 		arg.Broadcast,
 		arg.RetentionDays,
 		arg.UpdatedAt,
+		arg.UpdatedBy,
 		arg.ID,
 	)
 	return err

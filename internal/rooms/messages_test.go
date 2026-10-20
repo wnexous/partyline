@@ -2,6 +2,7 @@ package rooms
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -125,6 +126,38 @@ func TestPostValidation(t *testing.T) {
 	require.Len(t, withFile.Attachments, 1)
 	require.Equal(t, "a.png", withFile.Attachments[0].Name)
 	require.Equal(t, string(dto.AttachmentStatusStored), withFile.Attachments[0].Status)
+}
+
+// ROUTE-10: a post names at most 10 distinct chats: 10 are queued, 11 are refused with 422
+// recipients "at most 10 chats per message" and nothing is stored; a repeated id counts once.
+func TestPostRecipientsCap(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	a1 := f.agent(t, alice, "a1")
+	r := f.room(t, alice, "inbox")
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
+	var chats []string
+	for i := range 11 {
+		_, c := f.chat(t, alice, fmt.Sprintf("c%d", i))
+		f.addMember(t, alice, r.ID, dto.MemberKindChat, c, true)
+		chats = append(chats, c)
+	}
+
+	for _, p := range []authn.Principal{alice, agentPrincipal(alice, a1)} {
+		_, err := f.svc.Post(ctx, p, r.ID, PostInput{Text: "to everyone I can name", Recipients: chats})
+		var verr *validation.Error
+		require.ErrorAs(t, err, &verr)
+		require.Equal(t, map[string]string{"recipients": "at most 10 chats per message"}, verr.Fields)
+	}
+	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM messages"), "nothing stored")
+
+	ten, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "ten", Recipients: chats[:10]})
+	require.NoError(t, err)
+	require.Len(t, outboxChats(ten), 10)
+	repeated, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "ten again", Recipients: append(chats[:10:10], chats[0])})
+	require.NoError(t, err)
+	require.Len(t, outboxChats(repeated), 10)
 }
 
 // ACL-03/ACL-04 for posting: view-only is forbidden, strangers and non-member agents see nothing.
@@ -522,6 +555,34 @@ func TestNoBroadcastRoomQueuesNoChatWithoutRecipients(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, outboxChats(toOwn), "a reply to a non-chat message reaches no chat")
 	require.Equal(t, dto.NoBroadcastWarning, toOwn.Warning)
+}
+
+// ROUTE-06: in a room with broadcast off, a reply to a message of a listen-only chat reaches no
+// chat: nothing is queued, no recipient is stored and the post answers the warning, for users
+// and agents alike.
+func TestNoBroadcastReplyToListenOnlyChat(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.user(t, "alice", dto.RoleMember)
+	a1 := f.agent(t, alice, "a1")
+	_, quiet := f.chat(t, alice, "quiet")
+	_, open := f.chat(t, alice, "open")
+	r := f.room(t, alice, "inbox")
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, quiet, false)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, open, true)
+	_, err := f.svc.Update(ctx, alice, r.ID, UpdateInput{Broadcast: ptr(false)})
+	require.NoError(t, err)
+	fromQuiet, err := f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: quiet, SenderID: "1", Text: "just listening"})
+	require.NoError(t, err)
+
+	for _, p := range []authn.Principal{alice, agentPrincipal(alice, a1)} {
+		reply, err := f.svc.Post(ctx, p, r.ID, PostInput{Text: "answer", ReplyTo: fromQuiet.ID})
+		require.NoError(t, err)
+		require.Empty(t, reply.Recipients())
+		require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM outbox WHERE message_id = ?", reply.ID), "queued to no chat")
+		require.Equal(t, "not sent to any chat: this room only answers explicit chats (use reply or chat_ids)", reply.Warning)
+	}
 }
 
 // ROUTE-07: while a connector routes new chats to a room, broadcast and bridge_chats cannot

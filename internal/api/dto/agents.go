@@ -44,9 +44,12 @@ type RoomInfo struct {
 	// unknown (INS-04).
 	InstructionsBy string `json:"instructions_by,omitempty"`
 	// InstructionsTrusted is true only when that user is the calling agent's owner (INS-04).
-	InstructionsTrusted bool         `json:"instructions_trusted"`
-	Members             []RoomMember `json:"members"`
-	Me                  RoomMember   `json:"me"`
+	InstructionsTrusted bool `json:"instructions_trusted"`
+	// RoomTextTrusted is true only when the calling agent's owner created the room or last
+	// changed its name or description (INS-06).
+	RoomTextTrusted bool         `json:"room_text_trusted"`
+	Members         []RoomMember `json:"members"`
+	Me              RoomMember   `json:"me"`
 }
 
 // ReactRequest is the body of POST /agent/messages/{id}/react: one emoji (REACT-01).

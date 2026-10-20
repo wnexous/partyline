@@ -95,6 +95,26 @@ func TestToolsList(t *testing.T) {
 	}
 }
 
+// ROUTE-10: send_message documents the limit of 10 chats per message, and so do the
+// instructions.
+func TestToolsDocumentRecipientsCap(t *testing.T) {
+	e := newChanEnv(t)
+	s := e.connected(e.options())
+	s.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	found := false
+	for _, item := range s.response()["result"].(map[string]any)["tools"].([]any) {
+		tool := item.(map[string]any)
+		if tool["name"] != "send_message" {
+			continue
+		}
+		found = true
+		chatIDs := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["chat_ids"].(map[string]any)
+		require.Contains(t, chatIDs["description"], "at most 10 chats per message")
+	}
+	require.True(t, found, "send_message is listed")
+	require.Contains(t, Instructions, "at most 10 chats per message")
+}
+
 // TOOL-02: reply posts in the message's room with reply_to; a chat-authored original is the
 // only recipient, otherwise there are no explicit recipients.
 func TestToolReply(t *testing.T) {

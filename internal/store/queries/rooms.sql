@@ -1,7 +1,7 @@
 -- name: CreateRoom :exec
 INSERT INTO rooms (id, owner_id, name, description, instructions, instructions_by, bridge_chats, retention_days,
-                   created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                   created_at, updated_at, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetRoom :one
 SELECT * FROM rooms WHERE id = ?;
@@ -30,7 +30,7 @@ ORDER BY r.name COLLATE NOCASE, r.id;
 
 -- name: UpdateRoom :exec
 UPDATE rooms SET name = ?, description = ?, instructions = ?, instructions_by = ?, bridge_chats = ?, broadcast = ?,
-                 retention_days = ?, updated_at = ?
+                 retention_days = ?, updated_at = ?, updated_by = ?
 WHERE id = ?;
 
 -- name: DeleteRoom :exec

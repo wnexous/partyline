@@ -214,10 +214,12 @@ export const ptBR: Dictionary = {
   "composer.rateLimited": "Mensagens demais de uma vez. Espere um pouco e envie de novo.",
   "composer.toDefault": "Para: chats com saída ligada",
   "composer.toPick": "Para: escolha um chat",
+  "composer.pickChat": "Escolha um chat para responder",
   "composer.explicitHint": "Responda a um chat explicitamente",
   "composer.recipientsBodyExplicit":
     "Esta sala só responde aos chats que você escolher; sem escolha, a mensagem não chega a nenhum chat.",
   "composer.recipientsClear": "Limpar chats escolhidos",
+  "composer.recipientsLimit": "No máximo {count} chats por mensagem",
   "composer.toOne": "Para: 1 chat",
   "composer.toMany": "Para: {count} chats",
   "composer.recipientsTitle": "Enviar para chats",

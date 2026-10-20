@@ -52,12 +52,13 @@ func TestAgentReactRefusesNonChatMessages(t *testing.T) {
 }
 
 // REACT-01, REACT-05: the emoji must be one emoji grapheme: empty, words, digits or
-// punctuation alone, other symbols and several emoji answer 422 on emoji.
+// punctuation alone, other symbols, text-style symbols without VS16, ZWJ chains of more than
+// four emoji and several emoji answer 422 on emoji.
 func TestAgentReactValidatesEmoji(t *testing.T) {
 	f := newAgentRoom(t)
 	family := f.chatMember(t, "Family")
 	target := f.postFromChat(t, family, "thanks!")
-	for _, emoji := range []string{"", "  ", "ok", "👍 👍", "👍👍👍👍👍👍👍👍👍👍👍👍👍👍👍👍👍", "1", "!", "<>", "∑", "👍👍"} {
+	for _, emoji := range []string{"", "  ", "ok", "👍 👍", "👍👍👍👍👍👍👍👍👍👍👍👍👍👍👍👍👍", "1", "!", "<>", "∑", "👍👍", "©", "❤", "👨‍👩‍👧‍👦‍👦"} {
 		e := f.rest().Post(reactPath(target.ID), dto.ReactRequest{Emoji: emoji}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 		require.Equal(t, map[string]string{"emoji": "must be one emoji"}, e.Fields, "%q", emoji)
 	}

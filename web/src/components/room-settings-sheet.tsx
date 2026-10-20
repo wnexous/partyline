@@ -155,7 +155,9 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
               <FormItem className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
                   <FormLabel>{t("settings.bridge")}</FormLabel>
-                  <FormDescription className="text-xs">{t("settings.bridgeHint")}</FormDescription>
+                  <FormDescription className="text-xs">
+                    {room.catch_all ? t("settings.catchAllLocked") : t("settings.bridgeHint")}
+                  </FormDescription>
                 </div>
                 <FormControl>
                   <Switch
