@@ -98,10 +98,10 @@ func New(d Deps) *Hub {
 	return &Hub{d: d, origin: d.PublicURL.Scheme + "://" + d.PublicURL.Host, ctx: ctx, stop: stop}
 }
 
-// Close closes every open connection and waits for them to finish.
 // SessionCheckInterval reports how often live sockets re-check their session.
 func (h *Hub) SessionCheckInterval() time.Duration { return h.d.SessionCheckInterval }
 
+// Close closes every open connection and waits for them to finish.
 func (h *Hub) Close() {
 	h.mu.Lock()
 	h.closed = true
