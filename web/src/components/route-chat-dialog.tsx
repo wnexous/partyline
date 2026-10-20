@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { BotIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { chatTitle } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
 import {
   Dialog,
@@ -59,7 +60,12 @@ function AgentChoice({ chat, onClose }: { chat: Chat; onClose: () => void }) {
       { chatId: chat.id, agentId: agent.id },
       {
         onSuccess: (room) => {
-          toast.success(t("route.done", { chat: chat.title, agent: agent.name }));
+          toast.success(
+            t("route.done", {
+              chat: chatTitle(t, chat.title, chat.connector_kind),
+              agent: agent.name,
+            }),
+          );
           onClose();
           void navigate({ to: "/rooms/$roomId", params: { roomId: room.id } });
         },

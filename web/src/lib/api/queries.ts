@@ -292,8 +292,12 @@ export function useDeleteRoom() {
   return useMutation({
     mutationFn: (id: string) => api<void>("DELETE", `/rooms/${id}`),
     onSuccess: (_, id) => {
+      // Same cache effect as the live room.deleted event (ROOMDEL-02): gone from every list now.
       qc.removeQueries({ queryKey: queryKeys.room(id) });
-      qc.invalidateQueries({ queryKey: queryKeys.rooms, exact: true });
+      qc.setQueryData<Room[]>(queryKeys.rooms, (old) => old?.filter((r) => r.id !== id));
+      qc.setQueryData<ActivityItem[]>(queryKeys.activity, (old) =>
+        old?.filter((a) => a.room.id !== id),
+      );
     },
   });
 }

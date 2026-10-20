@@ -24,7 +24,7 @@ import type {
   OutboxStatus,
   RoomMember,
 } from "@/lib/api/types.gen";
-import { type MessageKey, useI18n } from "@/lib/i18n";
+import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
 import { formatAbsolute, formatClock } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +62,23 @@ const PLATFORMS: Record<string, string> = {
 };
 
 export const platformLabel = (kind?: string) => (kind ? (PLATFORMS[kind] ?? kind) : "");
+
+/** A platform's display name; kinds without a known label are capitalized, like the server's. */
+export function platformName(kind?: string): string {
+  const label = platformLabel(kind);
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/**
+ * A chat's name (CTX-07): its title, else "<Platform> chat", matching the names the server gives
+ * rooms routed from untitled chats (connectors.PlatformLabel).
+ */
+export function chatTitle(t: Translate, title: string | undefined, platform?: string): string {
+  const trimmed = title?.trim();
+  if (trimmed) return trimmed;
+  const name = platformName(platform);
+  return name ? t("chat.untitled", { platform: name }) : t("message.kind.chat");
+}
 
 /** Images the server serves inline (others download); SVG is excluded on purpose. */
 const INLINE_IMAGES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
@@ -214,7 +231,22 @@ export const MessageItem = memo(function MessageItem({
             <span className="truncate font-semibold tracking-[-0.01em]">
               {authorDisplayName(message)}
             </span>
-            {message.author_kind === "chat" ? (
+            {message.author_kind === "chat" && message.chat ? (
+              <>
+                <span className="text-xs text-muted-foreground">
+                  {t("message.via", {
+                    chat: chatTitle(t, message.chat.title, message.chat.platform),
+                  })}
+                </span>
+                <span
+                  data-testid="chat-platform"
+                  className="rounded-sm border px-1.5 py-0.5 text-[0.68rem] leading-none font-medium text-muted-foreground"
+                >
+                  {platformName(message.chat.platform)}
+                </span>
+                <TrustBadge trust={chatTrust(message, meId)} />
+              </>
+            ) : message.author_kind === "chat" ? (
               <>
                 <span className="text-xs text-muted-foreground">
                   {t("message.via", { chat: message.author_name })}
@@ -431,7 +463,9 @@ function OutboxList({
   const { t } = useI18n();
   const chatName = (chatId: string) => {
     for (const m of members?.values() ?? []) {
-      if (m.kind === "chat" && m.member_id === chatId) return m.name;
+      if (m.kind === "chat" && m.member_id === chatId) {
+        return chatTitle(t, m.name, m.connector_kind);
+      }
     }
     return chatId.slice(0, 8);
   };

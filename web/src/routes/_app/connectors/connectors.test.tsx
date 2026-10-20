@@ -256,6 +256,20 @@ describe("connector page (UI-13, UI-17)", () => {
     ).toEqual(["Ops on call", "Release notes"]);
   });
 
+  it("names untitled chats after their platform (CTX-07)", async () => {
+    mockApi({
+      ...base,
+      "GET /connectors/k1/chats": json(200, {
+        items: [makeChat({ id: "c3", title: "", connector_kind: "whatsapp" })],
+      }),
+    });
+    renderRoute("/connectors/k1");
+    const list = await screen.findByRole("list", { name: "Chats" });
+    const row = within(list).getByRole("listitem", { name: "WhatsApp chat" });
+    expect(within(row).getByText("WhatsApp chat")).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: /WhatsApp chat/ })).toBeInTheDocument();
+  });
+
   it("refreshes the chat list on demand", async () => {
     const { calls } = mockApi({
       ...base,
@@ -387,5 +401,165 @@ describe("connector page (UI-13, UI-17)", () => {
     expect(
       await screen.findByRole("heading", { name: "This connector is not on your line" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("catch-all routing (ROUTE-01, ROUTE-04)", () => {
+  const connector = makeConnector({ id: "k1", name: "support-line" });
+  const rooms = [
+    makeRoom({ id: "r1", name: "deploys", my_level: "manage" }),
+    makeRoom({ id: "r2", name: "watch-only", my_level: "view" }),
+    makeRoom({ id: "r3", name: "front desk", my_level: "manage" }),
+  ];
+  const api = (over: Partial<Connector> = {}, patch?: Response, viewer = me) =>
+    mockApi({
+      "GET /me": json(200, viewer),
+      "GET /connector-kinds": kinds,
+      "GET /connectors/k1": json(200, { ...connector, ...over }),
+      "GET /connectors/k1/chats": json(200, { items: [] }),
+      "GET /rooms": json(200, { items: rooms }),
+      "PATCH /connectors/k1":
+        patch ??
+        ((_url, init) => json(200, { ...connector, ...over, ...JSON.parse(String(init?.body)) })),
+    });
+  const card = () => screen.findByRole("region", { name: "Catch-all" });
+  const patches = (calls: ReturnType<typeof mockApi>["calls"]) =>
+    calls.filter((c) => c.method === "PATCH");
+
+  it("shows the current scope and room with the exposure warning", async () => {
+    api({ auto_route_scope: "dms", auto_route_room_id: "r1" });
+    renderRoute("/connectors/k1");
+    const region = await card();
+    expect(within(region).getByRole("radio", { name: "Direct chats" })).toBeChecked();
+    expect(await within(region).findByRole("combobox", { name: "Room" })).toHaveValue("r1");
+    expect(within(region).getByRole("note")).toHaveTextContent(
+      "Anyone who writes to this account reaches the agents in deploys.",
+    );
+  });
+
+  it("shows no warning and no room picker while off", async () => {
+    api();
+    renderRoute("/connectors/k1");
+    const region = await card();
+    expect(within(region).getByRole("radio", { name: "Off" })).toBeChecked();
+    expect(within(region).queryByRole("note")).toBeNull();
+    expect(within(region).queryByRole("combobox", { name: "Room" })).toBeNull();
+  });
+
+  it("offers only rooms the user manages and saves scope and room together", async () => {
+    const { calls } = api();
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const region = await card();
+    await user.click(within(region).getByRole("radio", { name: "Groups" }));
+    expect(within(region).getByRole("note")).toBeInTheDocument();
+    const picker = await within(region).findByRole("combobox", { name: "Room" });
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Pick a room", "deploys", "front desk"]);
+    await user.selectOptions(picker, "r3");
+    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({
+      auto_route_scope: "groups",
+      auto_route_room_id: "r3",
+    });
+    expect(within(region).getByRole("note")).toHaveTextContent("front desk");
+  });
+
+  it("turning it off clears the room", async () => {
+    const { calls } = api({ auto_route_scope: "all", auto_route_room_id: "r1" });
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const region = await card();
+    await user.click(within(region).getByRole("radio", { name: "Off" }));
+    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({ auto_route_scope: "off", auto_route_room_id: "" });
+  });
+
+  it("asks for a room before sending a scope other than off", async () => {
+    const { calls } = api();
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const region = await card();
+    await user.click(within(region).getByRole("radio", { name: "All chats" }));
+    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
+    expect(await within(region).findByText("Pick the room new chats join")).toBeInTheDocument();
+    expect(within(region).getByRole("combobox", { name: "Room" })).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(patches(calls)).toHaveLength(0);
+  });
+
+  it("explains a 403 when the user lost manage on the room", async () => {
+    api({ auto_route_scope: "dms", auto_route_room_id: "r1" }, apiError(403, "forbidden"));
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const region = await card();
+    await user.selectOptions(await within(region).findByRole("combobox", { name: "Room" }), "r3");
+    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
+    expect(await within(region).findByRole("alert")).toHaveTextContent(
+      "You need manage access on that room to route chats to it.",
+    );
+  });
+
+  it("shows a 422 room reason under the picker", async () => {
+    api(
+      { auto_route_scope: "dms", auto_route_room_id: "r1" },
+      apiError(422, "validation", "invalid", { auto_route_room_id: "unknown room" }),
+    );
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const region = await card();
+    await user.selectOptions(await within(region).findByRole("combobox", { name: "Room" }), "r3");
+    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
+    expect(await within(region).findByText("unknown room")).toBeInTheDocument();
+  });
+
+  it("names a catch-all room the user cannot pick any more", async () => {
+    api({ auto_route_scope: "dms", auto_route_room_id: "r-gone" });
+    renderRoute("/connectors/k1");
+    const region = await card();
+    const picker = await within(region).findByRole("combobox", { name: "Room" });
+    expect(picker).toHaveValue("r-gone");
+    expect(within(picker).getByRole("option", { selected: true })).toHaveTextContent(
+      "Unavailable room",
+    );
+  });
+
+  it("says when the rooms could not be loaded", async () => {
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /connector-kinds": kinds,
+      "GET /connectors/k1": json(200, { ...connector, auto_route_scope: "dms" }),
+      "GET /connectors/k1/chats": json(200, { items: [] }),
+      "GET /rooms": apiError(500, "internal"),
+    });
+    renderRoute("/connectors/k1");
+    const region = await card();
+    expect(await within(region).findByText("Couldn’t load your rooms.")).toBeInTheDocument();
+  });
+
+  it("is not shown for a connector shared for use", async () => {
+    api({ my_level: "use" });
+    renderRoute("/connectors/k1");
+    await screen.findByRole("heading", { name: "support-line" });
+    expect(screen.queryByRole("region", { name: "Catch-all" })).toBeNull();
+  });
+
+  it("speaks Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    api(
+      { auto_route_scope: "dms", auto_route_room_id: "r1" },
+      undefined,
+      makeMe({ locale: "pt-BR" }),
+    );
+    renderRoute("/connectors/k1");
+    const region = await screen.findByRole("region", { name: "Encaminhar tudo" });
+    expect(within(region).getByRole("radio", { name: "Chats diretos" })).toBeChecked();
   });
 });

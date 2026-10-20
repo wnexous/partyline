@@ -103,6 +103,63 @@ describe("message item (UI-05)", () => {
     expect(within(row(4)).getByText("System")).toBeInTheDocument();
   });
 
+  it("names the chat from message.chat with a platform badge (CTX-07)", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        // The room member list knows nothing about these chats: the message carries them.
+        chat(1, {
+          author_id: "c7",
+          author_name: "stale name",
+          chat: { id: "c7", title: "Front desk", kind: "group", platform: "whatsapp" },
+        }),
+        chat(2, {
+          author_id: "c8",
+          author_name: "",
+          sender_name: "Lia",
+          chat: { id: "c8", title: "  ", kind: "dm", platform: "telegram" },
+        }),
+        chat(3, {
+          author_id: "c9",
+          author_name: "",
+          chat: { id: "c9", title: "", kind: "group", platform: "matrix" },
+        }),
+      ]),
+    });
+    renderTimeline([]);
+    await screen.findByTestId("message-1");
+
+    expect(within(row(1)).getByText("via Front desk")).toBeInTheDocument();
+    expect(within(row(1)).getByTestId("chat-platform")).toHaveTextContent(/^WhatsApp$/);
+    expect(within(row(1)).queryByText(/stale name/)).toBeNull();
+    // Untitled chats fall back to "<Platform> chat", like the server's room names.
+    expect(within(row(2)).getByText("via Telegram chat")).toBeInTheDocument();
+    expect(within(row(2)).getByTestId("chat-platform")).toHaveTextContent(/^Telegram$/);
+    expect(within(row(3)).getByText("via Matrix chat")).toBeInTheDocument();
+  });
+
+  it("falls back to the author name and member platform without message.chat", async () => {
+    mockApi({ "GET /rooms/r1/messages": page([chat(1)]) });
+    renderTimeline();
+    await screen.findByTestId("message-1");
+    expect(within(row(1)).getByText("via Ops on call · Telegram")).toBeInTheDocument();
+    expect(within(row(1)).queryByTestId("chat-platform")).toBeNull();
+  });
+
+  it("names untitled chats in Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        chat(1, {
+          author_name: "",
+          chat: { id: "c1", title: "", kind: "dm", platform: "whatsapp" },
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByTestId("message-1");
+    expect(within(row(1)).getByText("via Chat do WhatsApp")).toBeInTheDocument();
+  });
+
   it("shows the message it replies to", async () => {
     mockApi({
       "GET /rooms/r1/messages": page([

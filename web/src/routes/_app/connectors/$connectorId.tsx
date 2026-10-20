@@ -11,10 +11,11 @@ import {
 } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { toast } from "sonner";
+import { ConnectorCatchAll } from "@/components/connector-catch-all";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { CodeBlock } from "@/components/copy-field";
 import { EmptyState } from "@/components/empty-state";
-import { platformLabel } from "@/components/message-item";
+import { chatTitle, platformLabel } from "@/components/message-item";
 import { RouteChatDialog } from "@/components/route-chat-dialog";
 import { ConnectorForm } from "@/components/schema-form";
 import { SharingDialog } from "@/components/sharing-dialog";
@@ -188,6 +189,8 @@ function ConnectorView({ connector: c, kind }: { connector: Connector; kind?: Co
           </div>
         ) : null}
 
+        {canManage ? <ConnectorCatchAll connector={c} /> : null}
+
         {c.inbound_url ? (
           <Section title={t("connector.inboundTitle")}>
             <p className="text-sm text-muted-foreground">{t("connector.inboundBody")}</p>
@@ -265,41 +268,44 @@ function ChatsSection({ connector: c, canList }: { connector: Connector; canList
         </p>
       ) : (
         <ul aria-label={t("connector.chats")} className="divide-y rounded-md border">
-          {list.map((chat) => (
-            <li
-              key={chat.id}
-              aria-label={chat.title}
-              className="flex items-center gap-3 px-3 py-2.5 sm:px-4"
-            >
-              <MessageCircleIcon className="size-4 shrink-0 text-info" aria-hidden="true" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{chat.title}</p>
-                <p className="flex min-w-0 flex-wrap gap-x-2 text-xs text-muted-foreground">
-                  <span>
-                    {CHAT_KIND[chat.kind] ? t(CHAT_KIND[chat.kind] as MessageKey) : chat.kind}
-                  </span>
-                  <span className="truncate font-mono">{chat.external_id}</span>
-                  {chat.last_seen_at ? (
-                    <span
-                      className="font-mono tabular"
-                      title={formatAbsolute(chat.last_seen_at, locale)}
-                    >
-                      {formatRelative(chat.last_seen_at, locale)}
-                    </span>
-                  ) : null}
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                aria-label={t("route.open", { chat: chat.title })}
-                onClick={() => setRouting(chat)}
+          {list.map((chat) => {
+            const name = chatTitle(t, chat.title, chat.connector_kind);
+            return (
+              <li
+                key={chat.id}
+                aria-label={name}
+                className="flex items-center gap-3 px-3 py-2.5 sm:px-4"
               >
-                <RouteIcon aria-hidden="true" />
-                <span className="hidden sm:inline">{t("route.short")}</span>
-              </Button>
-            </li>
-          ))}
+                <MessageCircleIcon className="size-4 shrink-0 text-info" aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{name}</p>
+                  <p className="flex min-w-0 flex-wrap gap-x-2 text-xs text-muted-foreground">
+                    <span>
+                      {CHAT_KIND[chat.kind] ? t(CHAT_KIND[chat.kind] as MessageKey) : chat.kind}
+                    </span>
+                    <span className="truncate font-mono">{chat.external_id}</span>
+                    {chat.last_seen_at ? (
+                      <span
+                        className="font-mono tabular"
+                        title={formatAbsolute(chat.last_seen_at, locale)}
+                      >
+                        {formatRelative(chat.last_seen_at, locale)}
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={t("route.open", { chat: name })}
+                  onClick={() => setRouting(chat)}
+                >
+                  <RouteIcon aria-hidden="true" />
+                  <span className="hidden sm:inline">{t("route.short")}</span>
+                </Button>
+              </li>
+            );
+          })}
         </ul>
       )}
       <RouteChatDialog chat={routing} onClose={() => setRouting(null)} />

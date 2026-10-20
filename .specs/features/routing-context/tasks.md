@@ -255,7 +255,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: MEM-01, MEM-02, MEM-03, MEM-04, MEM-05
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] PATCH payload per field; 422 reasons shown; only managers see the control
+- [x] PATCH payload per field; 422 reasons shown; only managers see the control
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add agent membership settings`
@@ -269,7 +269,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: INS-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Saves; 4,001 chars blocked client-side and 422 mapped
+- [x] Saves; 4,001 chars blocked client-side and 422 mapped
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): edit room instructions`
@@ -283,7 +283,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: ROUTE-01, ROUTE-04
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Saving sends both fields; warning visible when scope ≠ off; 403 shown
+- [x] Saving sends both fields; warning visible when scope ≠ off; 403 shown
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): configure catch-all routing`
@@ -297,7 +297,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: CTX-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Title and badge rendered; untitled chat falls back to `<Platform> chat`
+- [x] Title and badge rendered; untitled chat falls back to `<Platform> chat`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show chat titles in rooms`
@@ -311,7 +311,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: ROOMDEL-01, ROOMDEL-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Manager sees the action; viewer does not; confirm calls DELETE, navigates to /rooms and the room is gone from the list
+- [x] Manager sees the action; viewer does not; confirm calls DELETE, navigates to /rooms and the room is gone from the list
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): delete rooms from the room settings`
