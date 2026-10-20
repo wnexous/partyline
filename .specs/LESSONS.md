@@ -186,6 +186,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: F3 web/src/routes/_app/index.tsx:237 (web-tests)
 - last seen: 2026-10-20T10:09:33Z
 
+### L-030 - Build platform fixtures from a captured real response (types included), not from a field list
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `connectors` · harmful: 0
+- features: connectors
+- evidence: internal/connectors/whatsapp/connector.go:76 (websocketEnable string in evolution-go 0.7.2) (connectors)
+- last seen: 2026-10-20T12:21:13Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 30,
+  "next_id": 31,
   "lessons": [
     {
       "id": "L-001",
@@ -533,6 +533,24 @@
       ],
       "created": "2026-10-20T10:11:20Z",
       "last_seen": "2026-10-20T10:11:20Z"
+    },
+    {
+      "id": "L-030",
+      "key": "ac_gap::build platform fixtures from a captured real response types included not from a field list",
+      "text": "Build platform fixtures from a captured real response (types included), not from a field list",
+      "signal": "ac_gap",
+      "scope": "connectors",
+      "status": "candidate",
+      "features": [
+        "connectors"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/connectors/whatsapp/connector.go:76 (websocketEnable string in evolution-go 0.7.2) (connectors)"
+      ],
+      "created": "2026-10-20T12:21:13Z",
+      "last_seen": "2026-10-20T12:21:13Z"
     }
   ]
 }
