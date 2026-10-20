@@ -356,7 +356,7 @@ get their own per-IP budget (over it: 429, no audit entry).
 **Requirement**: CON-14
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 20,000-character text → stored text of 16,000 characters ending in `…[truncated]`; 16,000 exactly is unchanged
+- [x] 20,000-character text → stored text of 16,000 characters ending in `…[truncated]`; 16,000 exactly is unchanged
 **Tests**: integration
 **Gate**: full
 **Commit**: `fix(connectors): truncate inbound text over the message limit`

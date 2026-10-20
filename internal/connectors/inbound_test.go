@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 
@@ -230,6 +231,26 @@ func TestInboundRepeatDownloadsNothing(t *testing.T) {
 	require.Len(t, msgs, 1)
 	require.Len(t, msgs[0].Attachments, 1)
 	require.Equal(t, 1, blobCount(t, e.env))
+}
+
+// CON-14: inbound text over 16,000 characters (code points) is stored cut to 16,000,
+// ending with the truncation marker; text at the limit is stored as is.
+func TestInboundLongTextIsTruncated(t *testing.T) {
+	e := newInboundEnv(t)
+	e.emit(text(groupID, "M1", "first"))
+	room := e.routedRoom(t, "A", e.chatID(t, groupID))
+
+	long := strings.Repeat("é", 20000)
+	e.emit(text(groupID, "M2", long))
+	exact := strings.Repeat("a", dto.MaxTextLength)
+	e.emit(text(groupID, "M3", exact))
+
+	msgs := e.messages(t, room.ID) // newest first
+	require.Len(t, msgs, 2)
+	require.Equal(t, exact, msgs[0].Text)
+	got := msgs[1].Text
+	require.Equal(t, 16000, utf8.RuneCountInString(got))
+	require.Equal(t, strings.Repeat("é", 16000-utf8.RuneCountInString("…[truncated]"))+"…[truncated]", got)
 }
 
 func opener(data []byte) func(context.Context) (io.ReadCloser, error) {

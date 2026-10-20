@@ -74,6 +74,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 4. IF the same external message id arrives twice for a chat THEN the system SHALL store it only once. (CON-10)
 5. WHEN inbound media fits the upload limit THEN the system SHALL store it as an attachment of the message. (CON-11)
 6. The system SHALL drop messages sent by the connector's own account. (CON-12)
+7. IF an inbound message's text exceeds 16,000 characters (Unicode code points) THEN the system SHALL store it cut to 16,000 characters ending with `…[truncated]` instead of dropping it. (CON-14)
 
 **Independent Test**: Fake platform server emits messages for a routed and an unrouted chat; only the routed one is stored.
 
@@ -193,6 +194,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | CON-11 | P1: Chats and inbound | Tasks | Implementing |
 | CON-12 | P1: Chats and inbound | Tasks | Verified |
 | CON-13 | P1: Manage connectors | Execute (T13) | Implemented, re-verify |
+| CON-14 | P1: Chats and inbound | Execute (T19) | Implemented, re-verify |
 | WA-01 | P1: WhatsApp | Tasks | Implementing |
 | WA-02 | P1: WhatsApp | Tasks | Implementing |
 | WA-03 | P1: WhatsApp | Tasks | Implementing |
@@ -216,7 +218,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | IDN-04 | P1: Identities | Execute (T12) | Implemented, re-verify |
 | IDN-05 | P1: Identities | Execute (T12) | Implemented, re-verify |
 
-**Coverage:** 35 total, mapped in tasks.md
+**Coverage:** 36 total, mapped in tasks.md
 
 ---
 

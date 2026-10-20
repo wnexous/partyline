@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -19,6 +20,9 @@ import (
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
 )
+
+// TruncatedMarker ends inbound text that was cut to the message limit (CON-14).
+const TruncatedMarker = "…[truncated]"
 
 // pairingCommand matches "!link CODE" and "/link CODE" (IDN-02), case-insensitively.
 var pairingCommand = regexp.MustCompile(`(?i)^\s*[!/]link\s+([A-Z2-9]{6})\s*$`)
@@ -119,7 +123,7 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 		}
 		_, err := p.d.Rooms.PostFromChat(ctx, roomID, rooms.ChatMessage{
 			ChatID: chat.ID, SenderID: m.SenderID, SenderAltID: m.SenderAltID, SenderName: m.SenderName,
-			SenderUserID: senderUser, ExternalID: m.MessageID, Kind: kind, Text: m.Text, ReplyTo: replyTo, Files: files,
+			SenderUserID: senderUser, ExternalID: m.MessageID, Kind: kind, Text: truncate(m.Text), ReplyTo: replyTo, Files: files,
 		})
 		var verr *validation.Error
 		switch {
@@ -131,6 +135,16 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 		}
 	}
 	return nil
+}
+
+// truncate cuts text longer than the message limit (dto.MaxTextLength code points) to that
+// limit, ending it with TruncatedMarker (CON-14).
+func truncate(text string) string {
+	if utf8.RuneCountInString(text) <= dto.MaxTextLength {
+		return text
+	}
+	keep := dto.MaxTextLength - utf8.RuneCountInString(TruncatedMarker)
+	return string([]rune(text)[:keep]) + TruncatedMarker
 }
 
 // pending drops the rooms that already hold the message, so repeats download nothing (CON-10).
