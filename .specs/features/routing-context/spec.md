@@ -210,7 +210,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | ROUTE-05 | P1: Catch-all | Tasks | Implementing |
 | ROUTE-06 | P1: Catch-all | Fix iteration 1 | Implemented (T23, T24, T31) |
 | ROUTE-07 | P1: Catch-all | Fix iteration 1 | Implemented (T23, T31) |
-| ROUTE-08 | P1: Catch-all | Fix iteration 1 | Implemented (T25) |
+| ROUTE-08 | P1: Catch-all | Fix iteration 1 | Implemented (T25), concurrent burst tested (T37), re-verify |
 | ROUTE-09 | P1: Catch-all | Fix iteration 1 | Implemented (T26) |
 | MEM-01 | P1: Membership settings | Tasks | Implementing |
 | MEM-02 | P1: Membership settings | Tasks | Implementing |

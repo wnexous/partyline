@@ -51,6 +51,9 @@ type Pipeline struct {
 	routeMu sync.Mutex
 	// routed holds, per connector, when chats were auto-added within the last hour (ROUTE-08).
 	routed map[string][]time.Time
+	// routeHook, when set, runs once a catch-all route passed the caps and before the chat
+	// is added (tests hold routes with it).
+	routeHook func(connectorID string)
 }
 
 // NewPipeline returns a Pipeline.
@@ -202,6 +205,9 @@ func (p *Pipeline) autoRoute(ctx context.Context, src Source, chat db.Chat) (str
 	}
 	if full >= AutoRouteRoomMax || p.recentRoutes(c.ID, now) >= AutoRoutePerHour {
 		return "", p.setDetail(ctx, c, AutoRouteLimited)
+	}
+	if p.routeHook != nil {
+		p.routeHook(c.ID)
 	}
 	owner := authn.Principal{Kind: authn.KindUser, UserID: c.OwnerID}
 	on := true

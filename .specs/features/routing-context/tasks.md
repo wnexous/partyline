@@ -616,7 +616,7 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 **Requirement**: ROUTE-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Exactly 60 (and 1,000) chats, detail `auto-route limit reached`; kills C4 deterministically
+- [x] Exactly 60 (and 1,000) chats, detail `auto-route limit reached`; kills C4 deterministically
 **Tests**: integration
 **Gate**: build
 **Commit**: `test(connectors): hold the catch-all caps under a concurrent burst`

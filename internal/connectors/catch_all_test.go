@@ -272,20 +272,7 @@ func TestCatchAllHourlyCap(t *testing.T) {
 func TestCatchAllRoomCap(t *testing.T) {
 	c := newCatchAll(t)
 	c.setScope(t, dto.AutoRouteScopeAll, c.room.ID)
-	ctx := context.Background()
-	now := time.Now().UnixMilli()
-	require.NoError(t, c.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
-		for i := range 999 {
-			chat := store.NewID()
-			if err := q.CreateChat(ctx, db.CreateChatParams{ID: chat, ConnectorID: c.conn.ID, ExternalID: fmt.Sprintf("seed-%d", i), Kind: "group", CreatedAt: now}); err != nil {
-				return err
-			}
-			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{ID: store.NewID(), RoomID: c.room.ID, Kind: "chat", MemberID: chat, Outbound: true, AddedBy: c.alice.User.ID, CreatedAt: now}); err != nil {
-				return err
-			}
-		}
-		return nil
-	}))
+	c.seedRoomChats(t, 999)
 
 	c.emit(dmText(dmA, "A1", "the thousandth"))
 	require.Contains(t, c.chatMembers(t, c.room.ID), c.chatID(t, dmA))
@@ -331,4 +318,107 @@ func TestCatchAllStatusDetailClears(t *testing.T) {
 	}))
 	c.setScope(t, dto.AutoRouteScopeDMs, fresh.ID)
 	require.Equal(t, "connection lost", c.connector(t).LastError, "other details stay")
+}
+
+// seedRoomChats adds n synthetic group chats of the connector to the catch-all room.
+func (c *catchAll) seedRoomChats(t *testing.T, n int) {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	require.NoError(t, c.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		for i := range n {
+			chat := store.NewID()
+			if err := q.CreateChat(ctx, db.CreateChatParams{ID: chat, ConnectorID: c.conn.ID, ExternalID: fmt.Sprintf("seed-%d", i), Kind: "group", CreatedAt: now}); err != nil {
+				return err
+			}
+			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{ID: store.NewID(), RoomID: c.room.ID, Kind: "chat", MemberID: chat, Outbound: true, AddedBy: c.alice.User.ID, CreatedAt: now}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+}
+
+// ownPipeline is a second inbound pipeline on the env's app whose catch-all routes call hook
+// once they passed the caps and before the chat is added.
+func (c *catchAll) ownPipeline(hook func(connectorID string)) *connectors.Pipeline {
+	a := c.env.App
+	p := connectors.NewPipeline(connectors.PipelineDeps{
+		Store: a.Store, Bus: a.Bus, Rooms: a.Rooms, Blobs: a.Blobs, Identities: a.Identities, MaxUploadBytes: 1 << 20,
+	})
+	p.SetRouteHook(hook)
+	return p
+}
+
+func (c *catchAll) source() connectors.Source {
+	return connectors.Source{ConnectorID: c.conn.ID, Kind: connectortest.KindName, OwnerID: c.alice.User.ID}
+}
+
+// barrier holds each caller until n callers arrived or wait passed, so routes that are not
+// serialized all pass the caps before any of them adds its chat.
+type barrier struct {
+	mu      sync.Mutex
+	n       int
+	arrived int
+	all     chan struct{}
+	wait    time.Duration
+}
+
+func newBarrier(n int, wait time.Duration) *barrier {
+	return &barrier{n: n, all: make(chan struct{}), wait: wait}
+}
+
+func (b *barrier) hold(string) {
+	b.mu.Lock()
+	b.arrived++
+	if b.arrived == b.n {
+		close(b.all)
+	}
+	b.mu.Unlock()
+	select {
+	case <-b.all:
+	case <-time.After(b.wait):
+	}
+}
+
+// burst handles first messages of the DM peers from..from+n-1 at once.
+func (c *catchAll) burst(p *connectors.Pipeline, from, n int) {
+	var wg sync.WaitGroup
+	for i := from; i < from+n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p.Handle(context.Background(), c.source(), dmText(dmPeer(i), fmt.Sprintf("M%d", i), "burst"))
+		}()
+	}
+	wg.Wait()
+}
+
+// ROUTE-08 under concurrency: with 59 chats auto-added in the hour, five new chats writing at
+// once add exactly one more and the connector reports the limit; routes that passed the cap
+// together would add all five.
+func TestCatchAllHourlyCapHoldsUnderBurst(t *testing.T) {
+	c := newCatchAll(t)
+	c.setScope(t, dto.AutoRouteScopeDMs, c.room.ID)
+	p := c.ownPipeline(nil)
+	for i := range 59 {
+		p.Handle(context.Background(), c.source(), dmText(dmPeer(i), fmt.Sprintf("M%d", i), "hello"))
+	}
+	require.Len(t, c.chatMembers(t, c.room.ID), 59)
+
+	p.SetRouteHook(newBarrier(5, 500*time.Millisecond).hold)
+	c.burst(p, 59, 5)
+	require.Len(t, c.chatMembers(t, c.room.ID), 60)
+	require.Equal(t, "auto-route limit reached", c.connector(t).LastError)
+}
+
+// ROUTE-08 under concurrency: a catch-all room with 999 chats takes exactly one of five new
+// chats writing at once.
+func TestCatchAllRoomCapHoldsUnderBurst(t *testing.T) {
+	c := newCatchAll(t)
+	c.setScope(t, dto.AutoRouteScopeAll, c.room.ID)
+	c.seedRoomChats(t, 999)
+	c.burst(c.ownPipeline(newBarrier(5, 500*time.Millisecond).hold), 0, 5)
+	require.Len(t, c.chatMembers(t, c.room.ID), 1000)
+	require.Equal(t, "auto-route limit reached", c.connector(t).LastError)
 }
