@@ -420,8 +420,8 @@ get their own per-IP budget (over it: 429, no audit entry).
 **Requirement**: CON-13
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `ListChats` against a private `base_url` → `ErrBlockedAddress`, no request reaches the server (kills N36)
-- [ ] With REST allowed, `Run` fails at the WebSocket dial with `ErrBlockedAddress` and no socket opens (kills N29)
+- [x] `ListChats` against a private `base_url` → `ErrBlockedAddress`, no request reaches the server (kills N36)
+- [x] With REST allowed, `Run` fails at the WebSocket dial with `ErrBlockedAddress` and no socket opens (kills N29)
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(whatsapp): refuse private destinations in each client`

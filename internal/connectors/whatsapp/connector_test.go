@@ -388,3 +388,40 @@ func TestPrivateBaseURLIsRefusedByDefault(t *testing.T) {
 	require.ErrorIs(t, err, safehttp.ErrBlockedAddress)
 	require.NotContains(t, err.Error(), globalKey)
 }
+
+// CON-13: the REST client refuses a private base_url on its own, before any request
+// reaches the server.
+func TestRESTClientRefusesPrivateBaseURL(t *testing.T) {
+	f := newFakeEvolution(t)
+	c, err := New(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey}, connectors.Deps{UserAgent: userAgent})
+	require.NoError(t, err)
+
+	_, err = c.ListChats(context.Background())
+	require.ErrorIs(t, err, safehttp.ErrBlockedAddress)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	require.Empty(t, f.requests, "no REST call reached the private server")
+}
+
+// CON-13: the WebSocket client refuses a private base_url on its own: with REST calls
+// allowed, Run still fails at the WebSocket dial and the socket is never opened.
+func TestWebSocketClientRefusesPrivateBaseURL(t *testing.T) {
+	f := newFakeEvolution(t)
+	c, err := New(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey}, connectors.Deps{UserAgent: userAgent})
+	require.NoError(t, err)
+	c.client = safehttp.NewClient(safehttp.Options{AllowPrivate: true, Timeout: requestTimeout}) // REST only
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx, connectortest.NewRecorder()) }()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, safehttp.ErrBlockedAddress)
+	case <-f.conns:
+		t.Fatal("the WebSocket reached the private server")
+	case <-time.After(wait):
+		t.Fatal("Run neither failed nor connected")
+	}
+	require.Equal(t, "/instance/all", f.next("/instance/all").Path, "the REST call was allowed")
+}
