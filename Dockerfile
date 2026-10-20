@@ -20,10 +20,16 @@ COPY . .
 COPY --from=web /src/web/dist/ internal/webui/dist/
 ARG TARGETOS
 ARG TARGETARCH
+# VERSION is stamped into the binary (`partyline version`). CI passes `git describe`, releases
+# the tag; on a PaaS (Dokploy and similar) set it as a build argument. When it stays "dev", a
+# commit id from SOURCE_COMMIT (set by some platforms) is appended as dev-<12 chars>.
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+ARG SOURCE_COMMIT=""
+RUN version="$VERSION"; \
+    if [ "$version" = "dev" ] && [ -n "$SOURCE_COMMIT" ]; then version="dev-$(printf '%.12s' "$SOURCE_COMMIT")"; fi; \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath \
-    -ldflags "-s -w -X github.com/wnexous/partyline/internal/cli.Version=${VERSION}" \
+    -ldflags "-s -w -X github.com/wnexous/partyline/internal/cli.Version=${version}" \
     -o /out/partyline ./cmd/partyline \
  && mkdir -p /out/data
 

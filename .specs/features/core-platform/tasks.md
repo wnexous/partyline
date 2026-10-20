@@ -667,7 +667,7 @@ T35 → T43 → T44
 **Requirement**: OPS-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] hadolint clean; `partyline version` in the image prints the build arg
+- [x] hadolint clean; `partyline version` in the image prints the build arg
 **Tests**: none
 **Gate**: build
 **Commit**: `build(docker): stamp the image version from a build argument`
