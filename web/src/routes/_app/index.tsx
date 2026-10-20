@@ -27,7 +27,7 @@ import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActivity, useAgents, useConnectors, useMe, useRooms } from "@/lib/api/queries";
-import type { Connector, ConnectorStatus, Message, Room } from "@/lib/api/types.gen";
+import type { Connector, ConnectorStatus, Message } from "@/lib/api/types.gen";
 import { useI18n, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { type AgentView, byLiveness, withPresence } from "@/lib/presence";
@@ -214,29 +214,17 @@ function ActivityPanel() {
   const { t } = useI18n();
   const rooms = useRooms();
   const activity = useActivity();
-  const roomNames = useMemo(
-    () => new Map((rooms.data ?? []).map((r: Room) => [r.id, r.name])),
-    [rooms.data],
-  );
   // Messages that arrive after the first load land on fresh tape.
   const known = useRef<Set<string> | null>(null);
   if (activity.data && known.current === null) {
-    known.current = new Set(activity.data.map((m) => m.id));
+    known.current = new Set(activity.data.map((a) => a.message.id));
   }
 
   let body: ReactNode;
   if (rooms.isPending || (activity.isPending && (rooms.data?.length ?? 0) > 0)) {
     body = <RowsSkeleton rows={4} />;
-  } else if (rooms.isError || activity.isError) {
-    body = (
-      <PanelError
-        onRetry={() => {
-          void rooms.refetch();
-          void activity.refetch();
-        }}
-      />
-    );
-  } else if ((rooms.data?.length ?? 0) === 0) {
+  } else if (rooms.isSuccess && rooms.data.length === 0) {
+    // No rooms: nothing can be on the wire, whatever the feed request did.
     body = (
       <PanelEmpty
         icon={MessagesSquareIcon}
@@ -245,6 +233,15 @@ function ActivityPanel() {
       >
         <p>{t("overview.noRoomsBody")}</p>
       </PanelEmpty>
+    );
+  } else if (rooms.isError || activity.isError) {
+    body = (
+      <PanelError
+        onRetry={() => {
+          void rooms.refetch();
+          void activity.refetch();
+        }}
+      />
     );
   } else if (!activity.data?.length) {
     body = (
@@ -263,12 +260,12 @@ function ActivityPanel() {
   } else {
     body = (
       <ol aria-label={t("overview.activityLabel")} className="pb-2">
-        {activity.data.map((m) => (
+        {activity.data.map(({ room, message }) => (
           <ActivityRow
-            key={m.id}
-            message={m}
-            room={roomNames.get(m.room_id) ?? t("overview.unknownRoom")}
-            fresh={known.current !== null && !known.current.has(m.id)}
+            key={message.id}
+            message={message}
+            room={room.name || t("overview.unknownRoom")}
+            fresh={known.current !== null && !known.current.has(message.id)}
           />
         ))}
       </ol>

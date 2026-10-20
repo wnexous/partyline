@@ -11,6 +11,7 @@ import {
 import { api } from "./client";
 import {
   type AcceptInviteRequest,
+  type ActivityItem,
   type AddMemberRequest,
   type AdminUser,
   type Agent,
@@ -25,6 +26,7 @@ import {
   type CreateInviteRequest,
   type CreateRoomRequest,
   type CreateTokenRequest,
+  DefaultActivityLimit,
   DefaultPageSize,
   type Identity,
   type Invite,
@@ -400,66 +402,53 @@ export const attachmentUrl = (id: string) => `/api/v1/attachments/${id}`;
 // ---------------------------------------------------------------------------------------------
 // Dashboard activity
 
-/** Messages kept in the dashboard feed, at most per room, and rooms sampled to fill it. */
+/** Feed entries requested, then kept in the dashboard feed in total and at most per room. */
+export const ACTIVITY_FETCH = DefaultActivityLimit;
 export const ACTIVITY_SIZE = 8;
 export const ACTIVITY_PER_ROOM = 3;
-export const ACTIVITY_ROOMS = 6;
 
 /** Newest message first; seq breaks ties inside a room. */
-export function newestFirst(a: Message, b: Message): number {
-  const diff = Date.parse(b.created_at) - Date.parse(a.created_at);
-  return diff !== 0 ? diff : b.seq - a.seq;
+export function newestFirst(a: ActivityItem, b: ActivityItem): number {
+  const diff = Date.parse(b.message.created_at) - Date.parse(a.message.created_at);
+  return diff !== 0 ? diff : b.message.seq - a.message.seq;
 }
 
 /**
  * Shapes the dashboard feed: newest first, no duplicate ids, at most ACTIVITY_PER_ROOM messages
  * per room (one busy room must not hide the others), at most ACTIVITY_SIZE in total.
  */
-export function trimActivity(messages: Message[]): Message[] {
+export function trimActivity(entries: ActivityItem[]): ActivityItem[] {
   const seen = new Set<string>();
   const perRoom = new Map<string, number>();
-  const out: Message[] = [];
-  for (const m of [...messages].sort(newestFirst)) {
+  const out: ActivityItem[] = [];
+  for (const entry of [...entries].sort(newestFirst)) {
+    const m = entry.message;
     if (seen.has(m.id)) continue;
     const n = perRoom.get(m.room_id) ?? 0;
     if (n >= ACTIVITY_PER_ROOM) continue;
     seen.add(m.id);
     perRoom.set(m.room_id, n + 1);
-    out.push(m);
+    out.push(entry);
     if (out.length === ACTIVITY_SIZE) break;
   }
   return out;
 }
 
-// SPEC_DEVIATION: recent activity samples the latest page of the most recently active rooms.
-// Reason: the API has no cross-room message feed; ACTIVITY_ROOMS requests of ACTIVITY_PER_ROOM
-// messages each fill the feed, and live room.message events keep it current afterwards.
-/** The dashboard feed: latest messages across the rooms the user can see, newest first. */
-export const activityQuery = (qc: QueryClient) =>
+/**
+ * The dashboard feed: latest messages across the rooms the user can see, newest first, from
+ * one `GET /activity` request. Live room.message events keep it current (lib/live/handlers.ts).
+ */
+export const activityQuery = () =>
   queryOptions({
     queryKey: queryKeys.activity,
-    queryFn: async ({ signal }) => {
-      const rooms = await qc.ensureQueryData(roomsQuery());
-      const active = rooms
-        .filter((r) => r.last_seq > 0)
-        .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
-        .slice(0, ACTIVITY_ROOMS);
-      const pages = await Promise.all(
-        active.map((r) =>
-          api<Page<Message>>("GET", `/rooms/${r.id}/messages`, undefined, {
-            query: { limit: ACTIVITY_PER_ROOM },
-            signal,
-          }),
-        ),
-      );
-      return trimActivity(pages.flatMap((p) => p.items));
-    },
+    queryFn: ({ signal }) =>
+      api<List<ActivityItem>>("GET", "/activity", undefined, {
+        query: { limit: ACTIVITY_FETCH },
+        signal,
+      }).then((list) => trimActivity(list.items)),
   });
 
-export function useActivity() {
-  const qc = useQueryClient();
-  return useQuery(activityQuery(qc));
-}
+export const useActivity = () => useQuery(activityQuery());
 
 // ---------------------------------------------------------------------------------------------
 // Agents

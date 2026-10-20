@@ -44,43 +44,43 @@ function busyInstance() {
         }),
       ],
     }),
-    "GET /rooms": json(200, {
+    // The rooms list only decides between the "no rooms" and the feed states; row room names
+    // come from the feed itself (ActivityItem.room).
+    "GET /rooms": json(200, { items: [makeRoom({ id: "r1", name: "general", last_seq: 2 })] }),
+    "GET /activity": json(200, {
       items: [
-        makeRoom({ id: "r1", name: "general", last_seq: 2 }),
-        makeRoom({ id: "r2", name: "deploys", last_seq: 1, updated_at: "2026-10-19T11:00:00Z" }),
+        {
+          room: { id: "r1", name: "general" },
+          message: makeMessage({ room_id: "r1", seq: 2, text: "tests are green" }),
+        },
+        {
+          room: { id: "r1", name: "general" },
+          message: makeMessage({
+            room_id: "r1",
+            seq: 1,
+            text: "running tests",
+            created_at: "2026-10-19T11:59:00Z",
+          }),
+        },
+        {
+          room: { id: "r2", name: "deploys" },
+          message: makeMessage({
+            room_id: "r2",
+            seq: 1,
+            author_kind: "agent",
+            author_name: "release-bot",
+            text: "v1.2 shipped",
+            created_at: "2026-10-19T11:00:00Z",
+          }),
+        },
       ],
-    }),
-    "GET /rooms/r1/messages": json(200, {
-      items: [
-        makeMessage({ room_id: "r1", seq: 2, text: "tests are green" }),
-        makeMessage({
-          room_id: "r1",
-          seq: 1,
-          text: "running tests",
-          created_at: "2026-10-19T11:59:00Z",
-        }),
-      ],
-      has_more: false,
-    }),
-    "GET /rooms/r2/messages": json(200, {
-      items: [
-        makeMessage({
-          room_id: "r2",
-          seq: 1,
-          author_kind: "agent",
-          author_name: "release-bot",
-          text: "v1.2 shipped",
-          created_at: "2026-10-19T11:00:00Z",
-        }),
-      ],
-      has_more: false,
     }),
   });
 }
 
 describe("dashboard (UI-15, UI-17)", () => {
   it("shows online agents, connector health, recent activity and quick actions", async () => {
-    busyInstance();
+    const { calls } = busyInstance();
     renderRoute("/");
 
     const agents = await screen.findByRole("region", { name: "Agents" });
@@ -116,6 +116,11 @@ describe("dashboard (UI-15, UI-17)", () => {
     expect(within(items[2] as HTMLElement).getByText("deploys")).toBeInTheDocument();
     expect(within(items[0] as HTMLElement).getByRole("link")).toHaveAttribute("href", "/rooms/r1");
     expect(within(items[2] as HTMLElement).getByRole("link")).toHaveAttribute("href", "/rooms/r2");
+    // One feed request, no per-room sampling.
+    const feedCalls = calls.filter((c) => c.path === "/activity");
+    expect(feedCalls).toHaveLength(1);
+    expect(Number(feedCalls[0]?.url.searchParams.get("limit"))).toBeGreaterThan(0);
+    expect(calls.filter((c) => /^\/rooms\/[^/]+\/messages$/.test(c.path))).toEqual([]);
 
     const actions = screen.getByRole("group", { name: "Quick actions" });
     for (const name of ["Connect an agent", "Add connector", "New room"]) {
@@ -207,6 +212,7 @@ describe("dashboard (UI-15, UI-17)", () => {
       "GET /agents": json(200, { items: [makeAgent()] }),
       "GET /connectors": json(200, { items: [makeConnector()] }),
       "GET /rooms": json(200, { items: [makeRoom({ last_seq: 0 })] }),
+      "GET /activity": json(200, { items: [] }),
     });
     renderRoute("/");
     const activity = await screen.findByRole("region", { name: "Recent activity" });

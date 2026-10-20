@@ -65,6 +65,14 @@ function appApi(locale: "en" | "pt-BR") {
       ],
       has_more: false,
     }),
+    "GET /activity": json(200, {
+      items: [
+        {
+          room: { id: "r1", name: "deploys" },
+          message: makeMessage({ seq: 3, author_kind: "agent", author_name: "release-bot" }),
+        },
+      ],
+    }),
     "GET /agents": json(200, { items: [makeAgent({ online: true })] }),
     "GET /connectors": json(200, {
       items: [makeConnector({ status: "error", last_error: "invalid token" })],

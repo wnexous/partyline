@@ -2,6 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ACTIVITY_PER_ROOM, ACTIVITY_SIZE, type MessagePages, queryKeys } from "@/lib/api/queries";
 import type {
+  ActivityItem,
   Agent,
   Connector,
   Identity,
@@ -9,7 +10,7 @@ import type {
   Message,
   RoomMember,
 } from "@/lib/api/types.gen";
-import { makeMessage } from "@/test/fixtures";
+import { makeMessage, makeRoom } from "@/test/fixtures";
 import { handleLiveEvent, type LiveActions } from "./handlers";
 import { useLiveStore } from "./store";
 
@@ -186,16 +187,44 @@ describe("live handlers", () => {
     expect(qc.getQueryData(queryKeys.roomMessages("r1"))).toBeUndefined();
   });
   describe("dashboard activity (UI-04 on the overview)", () => {
-    const activityIds = () => qc.getQueryData<Message[]>(queryKeys.activity)?.map((m) => m.id);
+    const item = (over: Partial<Message> = {}, name = `room ${over.room_id ?? "r1"}`) => ({
+      room: { id: over.room_id ?? "r1", name },
+      message: makeMessage(over),
+    });
+    const feed = () => qc.getQueryData<ActivityItem[]>(queryKeys.activity);
+    const activityIds = () => feed()?.map((a) => a.message.id);
 
     it("puts a live message first in the cached activity feed, once", () => {
       qc.setQueryData(queryKeys.activity, [
-        makeMessage({ room_id: "r1", seq: 1, created_at: "2026-10-19T12:00:00Z" }),
+        item({ room_id: "r1", seq: 1, created_at: "2026-10-19T12:00:00Z" }),
+        item({ room_id: "r2", seq: 3, created_at: "2026-10-19T11:00:00Z" }, "deploys"),
       ]);
       const m = makeMessage({ room_id: "r2", seq: 7, created_at: "2026-10-19T12:01:00Z" });
       handleLiveEvent(qc, actions(), { type: "room.message", data: m });
       handleLiveEvent(qc, actions(), { type: "room.message", data: m });
-      expect(activityIds()).toEqual(["m-r2-7", "m-r1-1"]);
+      expect(activityIds()).toEqual(["m-r2-7", "m-r1-1", "m-r2-3"]);
+      // The room name comes from what the feed already knows about that room.
+      expect(feed()?.[0]?.room).toEqual({ id: "r2", name: "deploys" });
+    });
+
+    it("names a live message's room from the cached rooms list", () => {
+      qc.setQueryData(queryKeys.activity, [item({ room_id: "r1", seq: 1 })]);
+      qc.setQueryData(queryKeys.rooms, [makeRoom({ id: "r5", name: "night-shift" })]);
+      handleLiveEvent(qc, actions(), {
+        type: "room.message",
+        data: makeMessage({ room_id: "r5", seq: 1, created_at: "2026-10-19T12:30:00Z" }),
+      });
+      expect(feed()?.[0]?.room).toEqual({ id: "r5", name: "night-shift" });
+    });
+
+    it("refetches the feed when a live message names a room it cannot name", () => {
+      qc.setQueryData(queryKeys.activity, [item({ room_id: "r1", seq: 1 })]);
+      handleLiveEvent(qc, actions(), {
+        type: "room.message",
+        data: makeMessage({ room_id: "r9", seq: 1, created_at: "2026-10-19T12:30:00Z" }),
+      });
+      expect(qc.getQueryState(queryKeys.activity)?.isInvalidated).toBe(true);
+      expect(activityIds()).toEqual(["m-r1-1"]);
     });
 
     it("keeps at most ACTIVITY_SIZE messages, dropping the oldest", () => {
@@ -203,9 +232,10 @@ describe("live handlers", () => {
       qc.setQueryData(
         queryKeys.activity,
         Array.from({ length: ACTIVITY_SIZE }, (_, i) =>
-          makeMessage({ room_id: `r${i}`, seq: 1, created_at: `2026-10-19T11:${10 + i}:00Z` }),
+          item({ room_id: `r${i}`, seq: 1, created_at: `2026-10-19T11:${10 + i}:00Z` }),
         ).reverse(),
       );
+      qc.setQueryData(queryKeys.rooms, [makeRoom({ id: "rx" })]);
       handleLiveEvent(qc, actions(), {
         type: "room.message",
         data: makeMessage({ room_id: "rx", seq: 1, created_at: "2026-10-19T12:30:00Z" }),
@@ -219,9 +249,9 @@ describe("live handlers", () => {
     it("keeps at most ACTIVITY_PER_ROOM messages of one room, so busy rooms do not hide others", () => {
       qc.setQueryData(queryKeys.activity, [
         ...Array.from({ length: ACTIVITY_PER_ROOM }, (_, i) =>
-          makeMessage({ room_id: "busy", seq: 10 - i, created_at: `2026-10-19T11:5${9 - i}:00Z` }),
+          item({ room_id: "busy", seq: 10 - i, created_at: `2026-10-19T11:5${9 - i}:00Z` }),
         ),
-        makeMessage({ room_id: "calm", seq: 1, created_at: "2026-10-19T09:00:00Z" }),
+        item({ room_id: "calm", seq: 1, created_at: "2026-10-19T09:00:00Z" }),
       ]);
       handleLiveEvent(qc, actions(), {
         type: "room.message",
@@ -239,10 +269,19 @@ describe("live handlers", () => {
       expect(qc.getQueryData(queryKeys.activity)).toBeUndefined();
     });
 
+    it("room.changed renames that room in the feed", () => {
+      qc.setQueryData(queryKeys.activity, [item({ room_id: "r1", seq: 1 }, "old name")]);
+      handleLiveEvent(qc, actions(), {
+        type: "room.changed",
+        data: makeRoom({ id: "r1", name: "new name" }),
+      });
+      expect(feed()?.[0]?.room).toEqual({ id: "r1", name: "new name" });
+    });
+
     it("room.deleted removes that room's messages from the feed", () => {
       qc.setQueryData(queryKeys.activity, [
-        makeMessage({ room_id: "r1", seq: 1 }),
-        makeMessage({ room_id: "r2", seq: 1 }),
+        item({ room_id: "r1", seq: 1 }),
+        item({ room_id: "r2", seq: 1 }),
       ]);
       handleLiveEvent(qc, actions(), { type: "room.deleted", data: { room_id: "r1" } });
       expect(activityIds()).toEqual(["m-r2-1"]);

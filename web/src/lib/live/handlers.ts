@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { fetchMessages, type MessagePages, queryKeys, trimActivity } from "@/lib/api/queries";
 import type {
+  ActivityItem,
   Agent,
   Connector,
   LiveEvent,
@@ -8,6 +9,7 @@ import type {
   OutboxUpdate,
   Room,
   RoomMember,
+  RoomRef,
 } from "@/lib/api/types.gen";
 import type { LiveState } from "./store";
 
@@ -71,6 +73,32 @@ function patchOutbox(message: Message, update: OutboxUpdate): Message {
   };
 }
 
+/** The room's name as the cache knows it: the feed itself, the room, or the rooms list. */
+function roomRef(qc: QueryClient, feed: ActivityItem[], roomId: string): RoomRef | undefined {
+  const known = feed.find((a) => a.room.id === roomId)?.room;
+  if (known) return known;
+  const room =
+    qc.getQueryData<Room>(queryKeys.room(roomId)) ??
+    qc.getQueryData<Room[]>(queryKeys.rooms)?.find((r) => r.id === roomId);
+  return room ? { id: room.id, name: room.name } : undefined;
+}
+
+/** Puts a live message on the dashboard feed, when the feed is cached. */
+function prependActivity(qc: QueryClient, m: Message) {
+  const feed = qc.getQueryData<ActivityItem[]>(queryKeys.activity);
+  if (!feed || feed.some((a) => a.message.id === m.id)) return;
+  const room = roomRef(qc, feed, m.room_id);
+  if (!room) {
+    // A room the cache cannot name (new or newly shared): the server's feed has it.
+    qc.invalidateQueries({ queryKey: queryKeys.activity });
+    return;
+  }
+  qc.setQueryData<ActivityItem[]>(
+    queryKeys.activity,
+    trimActivity([{ room, message: m }, ...feed]),
+  );
+}
+
 const RESOURCE_KEYS: Record<string, "rooms" | "agents" | "connectors"> = {
   room: "rooms",
   agent: "agents",
@@ -91,9 +119,7 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
         m.seq > room.last_seq ? { ...room, last_seq: m.seq, updated_at: m.created_at } : room;
       qc.setQueryData<Room>(queryKeys.room(m.room_id), (old) => (old ? bump(old) : old));
       patchList<Room>(qc, queryKeys.rooms, m.room_id, bump);
-      qc.setQueryData<Message[]>(queryKeys.activity, (old) =>
-        old && !old.some((x) => x.id === m.id) ? trimActivity([m, ...old]) : old,
-      );
+      prependActivity(qc, m);
       return;
     }
 
@@ -106,6 +132,11 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
           ? old.map((r) => (r.id === room.id ? room : r))
           : [...old, room];
       });
+      qc.setQueryData<ActivityItem[]>(queryKeys.activity, (old) =>
+        old?.map((a) =>
+          a.room.id === room.id ? { ...a, room: { id: room.id, name: room.name } } : a,
+        ),
+      );
       return;
     }
 
@@ -113,7 +144,9 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       const id = event.data.room_id;
       qc.removeQueries({ queryKey: queryKeys.room(id) });
       qc.setQueryData<Room[]>(queryKeys.rooms, (old) => old?.filter((r) => r.id !== id));
-      qc.setQueryData<Message[]>(queryKeys.activity, (old) => old?.filter((m) => m.room_id !== id));
+      qc.setQueryData<ActivityItem[]>(queryKeys.activity, (old) =>
+        old?.filter((a) => a.room.id !== id),
+      );
       return;
     }
 

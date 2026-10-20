@@ -504,8 +504,8 @@ T33 → T34 → T35 → T36 → T37 → T38
 **Depends on**: T33
 **Requirement**: UI-04
 **Done when**:
-- [ ] The dashboard makes one `GET /activity?limit=…` request (no per-room message requests) and shows each item's room name from `ActivityItem.room`
-- [ ] A live `room.message` still prepends to the feed; the SPEC_DEVIATION note is gone
+- [x] The dashboard makes one `GET /activity?limit=…` request (no per-room message requests) and shows each item's room name from `ActivityItem.room`
+- [x] A live `room.message` still prepends to the feed; the SPEC_DEVIATION note is gone
 **Tests**: unit
 **Gate**: quick
 
