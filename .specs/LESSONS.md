@@ -20,6 +20,12 @@ Corroborated across multiple features. Safe to apply as guidance.
 - evidence: N17 internal/users/tokens_test.go:235 (tests) (+1 more)
 - last seen: 2026-10-20T07:38:14Z
 
+### L-019 - Every behavior written into contract notes needs a test or it is unverified
+- signal: `surviving_mutant` · recurrence: 2 feature(s) · scope: `tests` · harmful: 0
+- features: core-platform, routing-context
+- evidence: N18 internal/live/hub.go:244-245 (tests) (+1 more)
+- last seen: 2026-10-20T15:04:35Z
+
 ### L-029 - Run the full make check (lint included) before committing even a test-only or orchestrator edit
 - signal: `gate_fail` · recurrence: 2 feature(s) · scope: `process` · harmful: 0
 - features: agent-channel, connectors
@@ -126,12 +132,6 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: N9 internal/rooms/retention_test.go:115 (tests)
 - last seen: 2026-10-20T04:47:07Z
 
-### L-019 - Every behavior written into contract notes needs a test or it is unverified
-- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
-- features: core-platform
-- evidence: N18 internal/live/hub.go:244-245 (tests)
-- last seen: 2026-10-20T04:47:07Z
-
 ### L-020 - Test permission-bit checks with group-only and other-only modes, not only a fully open mode
 - signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `security` · harmful: 0
 - features: agent-channel
@@ -191,6 +191,24 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - features: connectors
 - evidence: internal/connectors/whatsapp/connector.go:76 (websocketEnable string in evolution-go 0.7.2) (connectors)
 - last seen: 2026-10-20T12:21:13Z
+
+### L-031 - Test identity-scoped rules such as reply-to-me with two actors of the same kind so a check on kind alone fails
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
+- features: routing-context
+- evidence: validation.md G5 internal/delivery/wants.go:129 (tests)
+- last seen: 2026-10-20T15:04:35Z
+
+### L-032 - Assert spec-mandated text against literal spec wording, never against the production constant that emits it
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
+- features: routing-context
+- evidence: validation.md G23 internal/agents/gateway.go:49 (tests)
+- last seen: 2026-10-20T15:04:35Z
+
+### L-033 - Turn measurable success criteria such as latency into an AC with a test, or mark them as manual UAT in the spec
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `specs` · harmful: 0
+- features: routing-context
+- evidence: spec.md Success Criteria (2 s DM latency); validation.md Spec-Anchored ACs (specs)
+- last seen: 2026-10-20T15:04:35Z
 
 ## Quarantined (failed when applied - ignore)
 

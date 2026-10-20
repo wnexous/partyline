@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 31,
+  "next_id": 34,
   "lessons": [
     {
       "id": "L-001",
@@ -340,17 +340,19 @@
       "text": "Every behavior written into contract notes needs a test or it is unverified",
       "signal": "surviving_mutant",
       "scope": "tests",
-      "status": "candidate",
+      "status": "confirmed",
       "features": [
-        "core-platform"
+        "core-platform",
+        "routing-context"
       ],
-      "recurrence": 1,
+      "recurrence": 2,
       "harmful": 0,
       "evidence": [
-        "N18 internal/live/hub.go:244-245 (tests)"
+        "N18 internal/live/hub.go:244-245 (tests)",
+        "validation.md G26 internal/agents/gateway.go:358 (tests)"
       ],
       "created": "2026-10-20T04:47:07Z",
-      "last_seen": "2026-10-20T04:47:07Z"
+      "last_seen": "2026-10-20T15:04:35Z"
     },
     {
       "id": "L-020",
@@ -551,6 +553,60 @@
       ],
       "created": "2026-10-20T12:21:13Z",
       "last_seen": "2026-10-20T12:21:13Z"
+    },
+    {
+      "id": "L-031",
+      "key": "surviving_mutant::test identity scoped rules such as reply to me with two actors of the same kind so a check on kind alone fails",
+      "text": "Test identity-scoped rules such as reply-to-me with two actors of the same kind so a check on kind alone fails",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "routing-context"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md G5 internal/delivery/wants.go:129 (tests)"
+      ],
+      "created": "2026-10-20T15:04:35Z",
+      "last_seen": "2026-10-20T15:04:35Z"
+    },
+    {
+      "id": "L-032",
+      "key": "surviving_mutant::assert spec mandated text against literal spec wording never against the production constant that emits it",
+      "text": "Assert spec-mandated text against literal spec wording, never against the production constant that emits it",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "routing-context"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md G23 internal/agents/gateway.go:49 (tests)"
+      ],
+      "created": "2026-10-20T15:04:35Z",
+      "last_seen": "2026-10-20T15:04:35Z"
+    },
+    {
+      "id": "L-033",
+      "key": "spec_precision_gap::turn measurable success criteria such as latency into an ac with a test or mark them as manual uat in the spec",
+      "text": "Turn measurable success criteria such as latency into an AC with a test, or mark them as manual UAT in the spec",
+      "signal": "spec_precision_gap",
+      "scope": "specs",
+      "status": "candidate",
+      "features": [
+        "routing-context"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "spec.md Success Criteria (2 s DM latency); validation.md Spec-Anchored ACs (specs)"
+      ],
+      "created": "2026-10-20T15:04:35Z",
+      "last_seen": "2026-10-20T15:04:35Z"
     }
   ]
 }
