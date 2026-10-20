@@ -56,6 +56,11 @@ export interface RoomInfo {
    * InstructionsTrusted is true only when that user is the calling agent's owner (INS-04).
    */
   instructions_trusted: boolean;
+  /**
+   * RoomTextTrusted is true only when the calling agent's owner created the room or last
+   * changed its name or description (INS-06).
+   */
+  room_text_trusted: boolean;
   members: RoomMember[];
   me: RoomMember;
 }

@@ -162,6 +162,7 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 			ID: id, OwnerID: p.UserID, Name: name, Description: in.Description, Instructions: in.Instructions,
 			InstructionsBy: instructionsBy(p, in.Instructions),
 			BridgeChats:    in.BridgeChats, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
+			UpdatedBy: p.UserID, // INS-06: the creator wrote the name and description
 		})
 	})
 	if err != nil {
@@ -266,11 +267,13 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 		if err != nil {
 			return err
 		}
-		if in.Name != nil {
+		if in.Name != nil && strings.TrimSpace(*in.Name) != r.Name {
 			r.Name = strings.TrimSpace(*in.Name)
+			r.UpdatedBy = p.UserID // INS-06
 		}
-		if in.Description != nil {
+		if in.Description != nil && *in.Description != r.Description {
 			r.Description = *in.Description
+			r.UpdatedBy = p.UserID
 		}
 		if in.Instructions != nil {
 			r.Instructions = *in.Instructions
@@ -307,7 +310,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 		return q.UpdateRoom(ctx, db.UpdateRoomParams{
 			Name: r.Name, Description: r.Description, Instructions: r.Instructions, InstructionsBy: r.InstructionsBy,
 			BridgeChats: r.BridgeChats, Broadcast: r.Broadcast, RetentionDays: r.RetentionDays,
-			UpdatedAt: s.now().UnixMilli(), ID: roomID,
+			UpdatedAt: s.now().UnixMilli(), UpdatedBy: r.UpdatedBy, ID: roomID,
 		})
 	})
 	if err != nil {

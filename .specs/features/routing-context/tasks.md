@@ -728,7 +728,7 @@ T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43 → T44 → 
 **Requirement**: INS-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Creator's agent trusted, another owner's edit untrusted, legacy '' untrusted; note text exact; migration default tested
+- [x] Creator's agent trusted, another owner's edit untrusted, legacy '' untrusted; note text exact; migration default tested
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(rooms): label who wrote a room's name and description`

@@ -349,3 +349,19 @@ func TestRoomSafetyMigrationDefaultsAndCatchAllRooms(t *testing.T) {
 	require.False(t, broadcast, "a catch-all room stops broadcasting")
 	require.False(t, bridge, "a catch-all room stops bridging chats")
 }
+
+// INS-06 (data): migration 0010 leaves the author of existing rooms' names and descriptions
+// unknown.
+func TestRoomTextAuthorMigrationDefault(t *testing.T) {
+	ctx := context.Background()
+	s := openMigratedBefore(t, "0010")
+	require.NoError(t, s.WithTx(ctx, func(q *db.Queries) error { return q.CreateUser(ctx, newUser("u1", "alice")) }))
+	_, err := s.write.ExecContext(ctx, `INSERT INTO rooms (id, owner_id, name, created_at, updated_at) VALUES ('r1', 'u1', 'ops', 1, 1)`)
+	require.NoError(t, err)
+
+	require.NoError(t, s.Migrate(ctx))
+
+	var by string
+	require.NoError(t, s.write.QueryRowContext(ctx, `SELECT updated_by FROM rooms WHERE id = 'r1'`).Scan(&by))
+	require.Equal(t, "", by, "the author of older room names is unknown")
+}

@@ -114,7 +114,9 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 		InstructionsBy: room.InstructionsByName,
 		// INS-04: trusted only when the calling agent's owner saved them.
 		InstructionsTrusted: room.Instructions != "" && room.InstructionsBy == p.UserID,
-		Members:             make([]dto.RoomMember, len(members)),
+		// INS-06: the name and description are trusted only when the owner last wrote them.
+		RoomTextTrusted: room.UpdatedBy == p.UserID,
+		Members:         make([]dto.RoomMember, len(members)),
 	}
 	for i, m := range members {
 		out.Members[i] = s.toMember(m)
