@@ -16,6 +16,10 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 )
 
+// IOTimeout bounds a WebSocket dial or write in the kit. It returns as soon as the server
+// answers, so the generous bound only matters on a loaded machine.
+const IOTimeout = time.Minute
+
 // Frame is one live WebSocket frame with its data left raw.
 type Frame struct {
 	Type dto.LiveEventType `json:"type"`
@@ -52,7 +56,7 @@ func (c *Client) dialWS(path string, h http.Header) (*websocket.Conn, *Response)
 	if c.bearer != "" {
 		h.Set("Authorization", "Bearer "+c.bearer)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), IOTimeout)
 	defer cancel()
 	url := "ws" + strings.TrimPrefix(c.env.URL, "http") + path
 	conn, resp, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPClient: c.http, HTTPHeader: h})

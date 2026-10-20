@@ -112,8 +112,10 @@ func TestDeleteRoomRemovesUnsharedBlobs(t *testing.T) {
 	only := putBlob(t, blobs, blobDir, "only-in-doomed", old)
 	twice := putBlob(t, blobs, blobDir, "twice-in-doomed", old)
 	shared := putBlob(t, blobs, blobDir, "shared", old)
-	fresh := putBlob(t, blobs, blobDir, "fresh", t0)
-	_, err = f.svc.Post(ctx, alice, doomed.ID, PostInput{Text: "files", Files: []File{only, twice, shared, fresh}})
+	// The one-minute grace boundary, on each side.
+	fresh := putBlob(t, blobs, blobDir, "fresh", t0.Add(-59*time.Second))
+	justOld := putBlob(t, blobs, blobDir, "just-old", t0.Add(-61*time.Second))
+	_, err = f.svc.Post(ctx, alice, doomed.ID, PostInput{Text: "files", Files: []File{only, twice, shared, fresh, justOld}})
 	require.NoError(t, err)
 	_, err = f.svc.Post(ctx, alice, doomed.ID, PostInput{Text: "again", Files: []File{twice}})
 	require.NoError(t, err)
@@ -125,5 +127,6 @@ func TestDeleteRoomRemovesUnsharedBlobs(t *testing.T) {
 	require.False(t, blobExists(blobDir, only.SHA256), "a blob only the deleted room used is removed at once")
 	require.False(t, blobExists(blobDir, twice.SHA256), "a blob used twice in the deleted room is removed")
 	require.True(t, blobExists(blobDir, shared.SHA256), "a blob another room references stays")
-	require.True(t, blobExists(blobDir, fresh.SHA256), "a blob written in the last minute is left to the sweep")
+	require.True(t, blobExists(blobDir, fresh.SHA256), "a blob written 59 s ago is left to the sweep")
+	require.False(t, blobExists(blobDir, justOld.SHA256), "a blob written 61 s ago is removed")
 }

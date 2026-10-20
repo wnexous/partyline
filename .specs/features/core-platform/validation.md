@@ -1,20 +1,36 @@
-# Core Platform Validation
+# Core Platform Validation (iteration 2)
 
-**Date**: 2026-10-19
-**Spec**: `.specs/features/core-platform/spec.md` (50 requirements)
-**Diff range**: `bba5e2d..534bf61` (60 commits; core-platform surface = `internal/`, `cmd/`, `Dockerfile`, `docker-compose.yml`, `.github/workflows/`)
-**Verifier**: independent sub-agent (author ≠ verifier), evidence-or-zero
+**Date**: 2026-10-20
+**Spec**: `.specs/features/core-platform/spec.md` (50 requirements + 8 edge cases, current wording: ACL-07 "a user with `manage`", DLV-04 listen-only 422, owner-cascade and session edge cases)
+**Diff range**: fix iteration 1 = `534bf61..9efe452` (T28-T44; the tree also holds the agent-channel and first connectors tasks, which are verified only where they now provide evidence for a core AC)
+**Verifier**: independent sub-agent (author ≠ verifier), evidence-or-zero, iteration 2 of 3
 
 ## Validation verdict: FAIL ❌
 
-Most of the platform is solid: 40 of 50 ACs are covered by tests whose assertions target the outcome the spec defines, and 23 of 24 injected mutants were killed. The verdict is FAIL for four reasons:
+The fix iteration closed almost all of the iteration-1 findings. ROOM-01 now holds for chats and agents. The concurrent login burst runs only 5 password checks. M17 is killed. The last-manager edge case was replaced by an owner-cascade edge case that a test covers. Live sockets now close when their session ends. Blobs are removed when a room is deleted. 37 of 44 mutants were killed.
 
-1. **ROOM-01 is violated.** A probe showed that an outbox entry queued before a chat member was removed is still sent after the removal.
-2. **AUTH-05 can be bypassed with concurrent requests.** A probe sent 30 parallel wrong-password attempts from one IP. All 30 had their password checked and none got 429.
-3. **One mutant survived (M17).** No test covers the hub's own Origin check against an Origin with the same host but a different scheme.
-4. **One spec edge case has no evidence.** "Last manager of a room is deleted → delete the room" cannot be tested, because there is no way to delete a user.
+The verdict is FAIL for two reasons:
 
-The first gate run failed on a timing-sensitive test. The re-run passed.
+1. **AUTH-05 is violated in a new way.** T29 added a rule that a successful login clears the IP's failure count. The spec has no such rule. A probe ran 4 wrong logins and then 1 correct login, four times in a row, from one IP. That produced **16 failed logins within the same minute and 0 × 429** (the spec requires 429 after more than 5 failures). Anyone with a valid account on the instance can therefore guess another account's password without limit from the same IP. `TestLoginSuccessClearsFailures` (`internal/users/auth_test.go:226-242`) asserts this behavior.
+2. **7 mutants survived.** The most important one is N3: `TestLoginRateLimitConcurrentBurst` counts the 401 and 429 answers, not the password checks. Moving the reservation to after the argon2 check (the iteration-1 bug pattern) passes every test, even though the burst then runs 30 hashes. The other survivors are test-precision gaps in edge cases and contract notes: the 60-s re-check default, the one-minute blob grace, the 409 for the last admin over HTTP, the limiter's default cap, the session-owner check, and the re-check after a lagged bus.
+
+---
+
+## Iteration 1 summary (2026-10-19, `bba5e2d..534bf61`)
+
+FAIL: 40/50 ACs matched, 23/24 mutants killed. Gaps were: ROOM-01 (a removed chat still got its queued sends), AUTH-05 (a concurrent burst bypassed the limiter), M17 (no test for an Origin with the same host and another scheme), the "last manager deleted" edge case (no such operation), and a load-flaky `TestStartRunsRetention`. Security notes were: live sockets outliving logout, `AgentRoomLevel` trusting `p.AgentID`, an unbounded limiter map, manage grantees changing sharing, and blobs kept about 25 h after a room delete. Fix tasks T28-T44 were created.
+
+| Iteration-1 finding | Fix | Iteration-2 result |
+| --- | --- | --- |
+| ROOM-01 queued sends after removal | T28 | ✅ Fixed. Pending rows are deleted in the same tx (`internal/rooms/members.go:181`) and `ListDueOutbox` filters on membership (`internal/store/queries/outbox.sql:6`). Tests and N1/N2/N20 kill. A probe confirms removed **agents** get no push and no backlog. |
+| AUTH-05 concurrent burst | T29 | ✅ Concurrency fixed: a probe shows 5 password checks in a 30-request burst. ❌ **New gap**: success clears failures (see verdict). ⚠️ N3 survives. |
+| M17 scheme mismatch | T30 | ✅ Killed (`internal/api/live_test.go:164-168`) |
+| Last-manager edge case | T34 | ✅ Edge case reworded to the owner cascade. Covered by `internal/store/store_test.go:127-168`. |
+| Flaky retention test | T32 | ✅ Passed in both gate runs. |
+| Live sockets after logout | T31 | ✅ They close within 1 s (`internal/api/live_test.go:217-260`). |
+| Blob files kept after room delete | T33 | ✅ Removed at once (`internal/rooms/retention_test.go:100-129`). ⚠️ N9 survives. |
+| `AgentRoomLevel` trusts `p.AgentID` | (agent-channel) | ✅ Mitigated. The only setter is `agentOnly` (`internal/api/agent_handlers.go:57-62`), which looks the agent up by the token owner and the agent name. |
+| Unbounded limiter map | T29 | ✅ Capped at 10,000 keys. ⚠️ N16 survives (the default cap is not asserted). |
 
 ---
 
@@ -22,155 +38,187 @@ The first gate run failed on a timing-sensitive test. The re-run passed.
 
 | Task | Status | Notes |
 | ---- | ------ | ----- |
-| T1-T27 | ✅ Done (all `[x]` in tasks.md) | T27's Docker build runs only in CI (no local Docker). Nothing in this check exercised it. |
+| T1-T27 | ✅ Done | Unchanged from iteration 1 |
+| T28-T44 | ✅ Done (all `[x]`) | T29 brings the new AUTH-05 deviation (success clears failures). T39's hadolint and image run were not repeated here (no Docker or hadolint on this host). |
 
 ---
 
 ## Spec-Anchored Acceptance Criteria
 
-Legend: ✅ the assertion targets the spec-defined outcome · ⚠️ spec-precision or scope gap · ❌ gap (outcome violated or no evidence)
+Legend: ✅ the assertion targets the spec-defined outcome · ⚠️ spec-precision or scope note · ❌ gap
 
 ### P1: First-run setup and accounts
 
 | AC | Spec-defined outcome | `file:line` + assertion | Result |
 | -- | -------------------- | ----------------------- | ------ |
-| AUTH-01 | Setup token printed to the log while there are zero users; setup accepted only with that token | `internal/cli/serve_test.go:282-286` `findLog(..., msgSetupToken)` with `setup_token` non-empty at WARN; `:321` the line is absent once a user exists; `internal/users/auth_test.go:82-84` wrong or empty token → `ErrBadSetupToken`, user count 0; `internal/api/auth_handlers_test.go:39-40` → 401 | ✅ |
-| AUTH-02 | Setup after a user exists → 409, nothing created | `internal/users/auth_test.go:107-109` `ErrorIs(err, ErrSetupDone)`, `EqualValues(1, userCount)`; `internal/api/auth_handlers_test.go:59-60` `RequireError(409, conflict)` | ✅ |
-| AUTH-03 | Cookie is HttpOnly, SameSite=Lax, valid 30 days | `internal/api/auth_handlers_test.go:22-24` `True(c.HttpOnly)`, `Equal(SameSiteLaxMode)`, `Equal(thirtyDays, c.MaxAge)`; sliding at `:137-157`; `internal/users/auth_test.go:147,211-229` | ✅ |
-| AUTH-04 | 401 with the same body for an unknown user and a wrong password | `internal/api/auth_handlers_test.go:94-96` both `RequireError(401)` and `Equal(unknown.Body, wrong.Body)`; `internal/users/auth_test.go:134` | ✅ |
-| AUTH-05 | More than 5 failures per IP within 1 minute → 429 for the rest of that minute | `internal/users/auth_test.go:171-191` (5 failures, then `ErrRateLimited` until the window closes, other IP unaffected); `internal/api/auth_handlers_test.go:106-111` 6th attempt → `429 rate_limited`. **Concurrency probe** (scratch): 30 parallel wrong-password logins from one IP gave 30×401 and 0×429. `users/auth.go:95-100` checks `Blocked` before the argon2 verify and records `Fail` after it, so a whole burst passes the check. **Precision:** the spec says "more than 5"; the code blocks the 6th attempt (stricter, the safe direction). | ❌ GAP (concurrency) + ⚠️ precision |
-| AUTH-06 | Single-use link that expires after 7 days | `internal/users/invites_test.go:53,56-66` expiry = now+7d (valid at 7d−1ms, gone at 7d); `:96-99` reuse → `ErrInviteGone`; `internal/api/admin_handlers_test.go:312-314` → 410 | ✅ |
-| AUTH-07 | Valid username and password ≥10 → account created, invite marked used | `internal/users/invites_test.go:77-93` (account + `InviteStatusUsed`, `UsedBy`); `:152-171` (pattern/length rejections, boundary 3 chars / 10 chars accepted); `internal/api/admin_handlers_test.go:331-336` → 422 naming the field | ✅ |
-| AUTH-08 | Passwords stored only as argon2id, tokens only as SHA-256 | `internal/authn/authn_test.go:17-18` prefix `$argon2id$v=19$m=19456,t=2,p=1$`; `:85-86` hex sha256; `internal/users/tokens_test.go:307,316-317` stored `TokenHash == HashToken(secret)`, length 64; `internal/users/auth_test.go:149-151` session stored by hash | ✅ |
-| AUTH-09 | After logout or session revoke, the cookie → 401 | `internal/api/auth_handlers_test.go:131` `RequireError(401)` after logout; `:239-240` revoked session → 401; `internal/users/auth_test.go:206-207` | ✅ |
-| AUTH-10 | Disabled user's sessions and tokens → 401 | `internal/api/admin_handlers_test.go:375-376` cookie and token → 401; `internal/users/tokens_test.go:429-430`; `internal/users/invites_test.go:212-213` | ✅ |
+| AUTH-01 | Setup token logged while zero users; setup only with it | `internal/cli/serve_test.go:160` `findLog(..., msgSetupToken)`, `:199` absent once a user exists; `internal/users/auth_test.go:85-86,89-90` wrong/empty token → `ErrBadSetupToken`, `Zero(userCount)`; `internal/api/auth_handlers_test.go:40` → 401 | ✅ |
+| AUTH-02 | Setup after a user exists → 409, nothing created | `internal/users/auth_test.go:111-112` `ErrorIs(ErrSetupDone)`, `EqualValues(1, userCount)`; `internal/api/auth_handlers_test.go:60` `RequireError(409, conflict)` | ✅ |
+| AUTH-03 | HttpOnly, SameSite=Lax, 30 days | `internal/api/auth_handlers_test.go:22-24` `True(c.HttpOnly)`, `Equal(SameSiteLaxMode)`, `Equal(thirtyDays, c.MaxAge)`; `internal/users/auth_test.go:150` expiry = now+30 d | ✅ |
+| AUTH-04 | 401 with the same body for an unknown user and a wrong password | `internal/api/auth_handlers_test.go:94-96` both 401 and `Equal(unknown.Body, wrong.Body)` | ✅ |
+| AUTH-05 | More than 5 failed logins per IP within 1 min → 429 for the rest of the minute | Sequential: `internal/users/auth_test.go:176-190`; HTTP `internal/api/auth_handlers_test.go:108-111` → `429 rate_limited`. Burst: `internal/users/auth_test.go:220-221` (5×401, 25×429); probe with instrumented `checkPassword` = **5 checks**. **Violation:** `Succeed` deletes the IP's window (`internal/users/users.go:184-188`, called at `internal/users/auth.go:111`). Probe: four rounds of 4 wrong + 1 correct → **16 failures in one minute, 0×429**. `TestLoginSuccessClearsFailures` (`internal/users/auth_test.go:226-242`) asserts 9 failures in the minute before a 429. **Precision (carried over):** the 6th attempt is blocked after 5 failures (stricter than "more than 5"). | ❌ GAP |
+| AUTH-06 | Single-use link, expires after 7 days | `internal/users/invites_test.go:54` expiry = now+7 d, `:63-66` gone at 7 d; `:98-100` reuse → `ErrInviteGone` | ✅ |
+| AUTH-07 | Valid username + password ≥10 → account created, invite used | `internal/users/invites_test.go:80-94` (`InviteStatusUsed`, `UsedBy`); `:142-171` validation; `internal/api/admin_handlers_test.go:82-99` → 422 | ✅ |
+| AUTH-08 | Passwords as argon2id only; tokens as SHA-256 only | `internal/authn/authn_test.go:17-18` `$argon2id$v=19$m=19456,t=2,p=1$`; `internal/users/tokens_test.go:49,58-59` `Equal(HashToken(secret), TokenHash)`, len 64 | ✅ |
+| AUTH-09 | Logout / revoked session → 401 | `internal/api/auth_handlers_test.go:131` after logout; `:240` revoked session → 401; `internal/users/auth_test.go:277`. Live sockets: `internal/api/live_test.go:227,233` `requireRevoked` (close 1008 within 1 s) | ✅ |
+| AUTH-10 | Disabled user's sessions and tokens → 401 | `internal/api/admin_handlers_test.go:132-133` cookie and token → 401; `internal/users/tokens_test.go:172`; live `internal/api/live_test.go:255-257` | ✅ |
 
 ### P1: Tokens
 
 | AC | Spec-defined outcome | `file:line` + assertion | Result |
 | -- | -------------------- | ----------------------- | ------ |
-| TOK-01 | Secret shown once with prefix `pl_agent_`/`pl_user_`; afterwards only the 12-char prefix | `internal/users/tokens_test.go:303-305` `HasPrefix(secret,"pl_"+kind+"_")`, `Len(tok.Prefix,12)`; `internal/api/admin_handlers_test.go:432-448` list body `NotContains(secret)`, `Len(prefix,12)` | ✅ |
-| TOK-02 | Revoked, expired or unknown token → 401 | `internal/users/tokens_test.go:382-401` (`ErrUnauthenticated` for each, expiry boundary −1ms valid); `internal/api/admin_handlers_test.go:461-463`; `internal/api/middleware_test.go:202` | ✅ |
-| TOK-03 | Agent token → 403 everywhere except agent endpoints | `internal/api/middleware_test.go:188-196` `RequireError(403, forbidden)` on `/api/v1/rooms`, passes on `/api/v1/agent/rooms`; `internal/api/admin_handlers_test.go:452-453` | ✅ |
-| TOK-04 | `last_used_at` written at most once per minute | `internal/users/tokens_test.go:450-467` (unchanged at +59 s, updated at +60 s) | ✅ |
+| TOK-01 | Secret once, `pl_agent_`/`pl_user_`, then the 12-char prefix only | `internal/users/tokens_test.go:45-47`; `internal/api/admin_handlers_test.go:207,214,217-218,222` | ✅ |
+| TOK-02 | Revoked, expired or unknown → 401 | `internal/users/tokens_test.go:126,135,140,143`; `internal/api/admin_handlers_test.go:236,238` | ✅ |
+| TOK-03 | Agent token → 403 outside agent endpoints | `internal/api/middleware_test.go:188-189` `403 forbidden`; `internal/api/admin_handlers_test.go:227-228` | ✅ |
+| TOK-04 | `last_used_at` at most once per minute | `internal/users/tokens_test.go:197,203,209` (unchanged at +59 s, updated at +60 s) | ✅ |
 
 ### P1: Rooms, members and sharing
 
 | AC | Spec-defined outcome | `file:line` + assertion | Result |
 | -- | -------------------- | ----------------------- | ------ |
-| ACL-01 | Creator is owner with `manage` | `internal/rooms/rooms_test.go:129-130` `Equal(alice.UserID, r.OwnerID)`, `Equal(LevelManage, r.Level)`; `internal/api/rooms_handlers_test.go:274-276` | ✅ |
-| ACL-02 | view<post<manage; level = max(ownership, direct grant, `*` grant) | `internal/access/access_test.go:127-158` table, including `own view, everyone post → post`; `:170-178` order | ✅ |
-| ACL-03 | No `view` → 404 for the room, its messages and its members | `internal/api/rooms_handlers_test.go:198-239` matrix stranger/admin = 404 on get, members, messages, attachments (`RequireError(404, not_found)` via `authmatrix_test.go:86-87`); `internal/rooms/rooms_test.go:178-191` | ✅ |
-| ACL-04 | `view` without `post` posting → 403 | `internal/api/rooms_handlers_test.go:228-233` viewer=403; `:305`; `internal/rooms/messages_test.go:142-143` `ErrForbidden` | ✅ |
-| ACL-05 | Adding an agent needs ownership or a `use` grant, else 403 | `internal/rooms/rooms_test.go:324-331` `ErrorIs(ErrForbidden)` then OK after the grant; `internal/api/rooms_handlers_test.go:336` → 403 | ✅ |
-| ACL-06 | Adding a chat needs ownership of its connector or a `use` grant, else 403 | `internal/rooms/rooms_test.go:358-365`; `internal/api/rooms_handlers_test.go:337` → 403 | ✅ |
-| ACL-07 | When **the owner** sets visibility, grants are replaced: private = none; shared = listed users at their level; public = everyone at view/post | `internal/access/access_test.go:340-370` exact grant rows per preset (`[]string{"*=post"}`, empty for private); `internal/api/rooms_handlers_test.go:300-315`. **Deviation:** a `manage` grantee can also set sharing (`internal/rooms/rooms_test.go:297-300`, documented in contract-notes "rooms: manage, not owner-only"). The spec text says "owner". | ⚠️ spec deviation |
-| ACL-08 | Admins get no implicit access | `internal/access/access_test.go:189-206` `Equal(None, l)` on room, agent and connector; matrix admin column 404 `internal/api/rooms_handlers_test.go:198-239` | ✅ |
-| ROOM-01 | Removed member gets no future deliveries in that room | `internal/rooms/messages_test.go:211-212` new posts exclude the removed chat; `internal/api/rooms_handlers_test.go:356-357`. **Probe (scratch) failed:** an entry queued before the removal was sent by `OutboxWorker.Flush` after it. `RemoveMember` (`internal/rooms/members.go:166-178`) leaves the pending/retrying outbox rows, and `ListDueOutbox` (`internal/store/queries/outbox.sql:1-6`) does not check membership. | ❌ GAP |
-| ROOM-02 | Room delete removes messages, attachments, cursors and outbox entries | `internal/rooms/rooms_test.go:454-458` all row counts 0, other room untouched. **Precision:** blob files stay on disk until the retention orphan sweep (≤24 h + 1 h grace; contract-notes "blob files are left to the retention orphan sweep"). | ⚠️ precision (attachment files deleted later, not with the room) |
+| ACL-01 | Creator is owner with `manage` | `internal/rooms/rooms_test.go:129-130`; `internal/api/rooms_handlers_test.go:185,187` | ✅ |
+| ACL-02 | view<post<manage; max of ownership, grant, `*` | `internal/access/access_test.go:154,158` table; `:171-178` order | ✅ |
+| ACL-03 | No `view` → 404 on room, messages, members | `internal/api/rooms_handlers_test.go:105-151` matrix (stranger/admin 404 on get, members, messages, attachment); `internal/rooms/rooms_test.go:180-193` | ✅ |
+| ACL-04 | `view` without `post` posting → 403 | `internal/api/rooms_handlers_test.go:140-142` viewer 403; `:216`; `internal/rooms/messages_test.go:145` | ✅ |
+| ACL-05 | Agent member needs ownership or `use`, else 403 | `internal/rooms/rooms_test.go:326,328,333`; `internal/api/rooms_handlers_test.go:247` | ✅ |
+| ACL-06 | Chat member needs ownership of its connector or `use`, else 403 | `internal/rooms/rooms_test.go:360,362`; `internal/api/rooms_handlers_test.go:248` | ✅ |
+| ACL-07 | A user with `manage` sets private/shared/public → grants replaced: none / listed users / everyone at view or post | `internal/access/access_test.go:341,352,359,362,366` exact grant rows per preset; manager grantee: `internal/rooms/rooms_test.go:298-301` (bob with a `manage` grant sets public/post); HTTP `internal/api/rooms_handlers_test.go:219-226` | ✅ (spec reworded, deviation closed) |
+| ACL-08 | No implicit admin access | `internal/access/access_test.go:191,194,197` `Equal(None, l)` on room, agent, connector; matrix admin column 404; activity feed `internal/api/activity_test.go:57-60` | ✅ |
+| ROOM-01 | A removed member gets no future deliveries in that room | Chats: `internal/rooms/messages_test.go:456-467` (no pending rows left, worker sends only to the other chat and room, `Len(calls, 3)`); worker filter `internal/delivery/outbox_test.go:296-297`; `internal/api/rooms_handlers_test.go:282`. Agents: dispatcher reads current members (`internal/delivery/dispatcher.go:98`), backlog joins `room_members` (`internal/store/queries/agents.sql` `ListAgentRoomStates`). Scratch probe: removed agent got no push and no backlog. **No suite test covers agent removal.** | ✅ (⚠️ agent side probe-only) |
+| ROOM-02 | Delete removes messages, attachments, cursors, outbox | `internal/rooms/rooms_test.go:455-456` all counts 0 for the room, other room intact; blobs `internal/rooms/retention_test.go:125-128` | ✅ |
 
 ### P1: Messages and delivery rules
 
 | AC | Spec-defined outcome | `file:line` + assertion | Result |
 | -- | -------------------- | ----------------------- | ------ |
-| MSG-01 | Next per-room seq, starting at 1, no gaps | `internal/rooms/messages_test.go:92-96` 50 concurrent posts → `Equal(int64(i+1), s)`; `:119` rejected posts use no seq; `internal/api/rooms_handlers_test.go:371` | ✅ |
-| MSG-02 | Text >16,000 chars, or empty text without attachments → 422 | `internal/api/rooms_handlers_test.go:379-383` `RequireError(422, invalid)` for "", "   ", 16,001 chars, and 16,000 accepted; `:435-436` file only OK, nothing at all 422; `internal/rooms/messages_test.go:110-118` (multibyte runes) | ✅ |
-| DLV-01 | Never delivered back to the author | `internal/delivery/rules_test.go:240,244-245` exhaustive property `Equal(!isAuthor, agents[m.ID])` over 560 combinations | ✅ |
-| DLV-02 | Delivered to every agent member except the author | `internal/delivery/rules_test.go:167,174,240` (Plan.AgentIDs). **Scope:** core has only the Plan; nothing dispatches to agents yet (agent-channel feature). No end-to-end evidence. | ⚠️ scope (rule level only) |
-| DLV-03 | No recipients → queued for every chat with `outbound` on | `internal/delivery/rules_test.go:167,252-253`; `internal/rooms/messages_test.go:180-187` `Equal(sorted(c1,c3), outboxChats(m))`, status pending | ✅ |
-| DLV-04 | Explicit recipients → only the listed chats | `internal/delivery/rules_test.go:170-172,250-251`; `internal/rooms/messages_test.go:190-193` `Equal([]string{c2}, ...)` (outbound off but listed) | ✅ |
-| DLV-05 | `bridge_chats` on → chat posts reach other outbound chats, otherwise none | `internal/delivery/rules_test.go:179-182,246-247`; `internal/rooms/messages_test.go:201-208` (no bridge → empty; bridge → `[c3]`) | ✅ |
-| DLV-06 | `trusted=true` only when the author resolves to the recipient agent's owner (user, owner's agent, owner's verified identity) | `internal/delivery/rules_test.go:288-296` `Trusted` table; `internal/rooms/messages_test.go:230-243` `author_user_id` = user / agent's owner / verified sender's user / empty. **Scope:** no agent dispatcher sets the flag in core; identity verification belongs to the connectors feature. | ⚠️ scope (rule + input level) |
-| DLV-07 | Exponential backoff from 2 s, at most 5 attempts, then `failed` | `internal/delivery/outbox_test.go:199-218` `Equal(now.Add(wait), NextAttemptAt)` for 2/4/8/16 s, `Equal("failed")`, `Equal(5, Attempts)`, never retried after; restart `:237-255` | ✅ |
-| DLV-08 | 25 consecutive agent messages → pause agent delivery and post a system message | `internal/delivery/rules_test.go:303-311` pauses exactly at 25; `internal/rooms/messages_test.go:317-334` `True(AgentsPaused)`, system notice with seq+1, not sent to chats. **Scope:** the "pause delivery to agents" part is a flag; the agent dispatcher that must honour it is not in core. | ⚠️ scope |
-| DLV-09 | `manage` resume resets the counter and resumes | `internal/rooms/messages_test.go:341-353` (post-level 403, stranger 404, manager → `False(AgentsPaused)`, streak 0); `internal/api/rooms_handlers_test.go:467-468` | ✅ |
-| DLV-10 | User or chat message resets the counter to 0 | `internal/rooms/messages_test.go:299-306` `Equal(0, streak())` after a user post and after a chat post; `internal/delivery/rules_test.go:327-329` | ✅ |
+| MSG-01 | Next per-room seq from 1, no gaps | `internal/rooms/messages_test.go:96,98,101` (50 concurrent posts); `:121` rejected posts use no seq | ✅ |
+| MSG-02 | >16,000 chars, or empty without attachments → 422 | `internal/api/rooms_handlers_test.go:305-308` (422 `invalid`, field `text`; 16,000 accepted); `:360-361` | ✅ |
+| DLV-01 | Never back to the author | `internal/delivery/rules_test.go:109` exhaustive `Equal(!isAuthor, agents[m.ID])`; end to end `internal/api/agent_dispatch_test.go:77` `builder.ExpectNone` | ✅ |
+| DLV-02 | Every agent member except the author | `internal/delivery/rules_test.go:58,109`; end to end `internal/api/agent_dispatch_test.go:48-63,71-75` (both agents receive by id) | ✅ (scope gap closed by agent-channel) |
+| DLV-03 | No recipients → every chat with `outbound` on | `internal/rooms/messages_test.go:183,189` `Equal(sorted(c1,c3), outboxChats)` | ✅ |
+| DLV-04 | Explicit recipients → only those; a listed outbound-off chat → 422 `recipients` = `listen-only` | `internal/rooms/messages_test.go:195-196` only c3; `:199-200` `Equal("listen-only", verr.Fields["recipients"])`; unknown chat `:202-203`; HTTP 422 for a removed chat `internal/api/rooms_handlers_test.go:283-284`. **Precision:** the HTTP 422 for `listen-only` relies on the generic validation→422 mapping. No HTTP test posts to a listen-only chat. | ✅ |
+| DLV-05 | `bridge_chats` on → chat posts reach other outbound chats; else none | `internal/rooms/messages_test.go:209` no bridge → empty; `:214` bridge → `[c3]` (c2 outbound off excluded) | ✅ |
+| DLV-06 | `trusted=true` only when the author resolves to the recipient agent's owner | `internal/delivery/rules_test.go:164`; `internal/rooms/messages_test.go:237-250`; end to end `internal/api/agent_dispatch_test.go:53,56,61,64` (alice→alice's agent true, →bob's false, and the reverse) | ✅ (scope gap closed) |
+| DLV-07 | Backoff from 2 s, at most 5 attempts, then `failed` | `internal/delivery/outbox_test.go:209` `Equal(now.Add(wait))` 2/4/8/16 s; `:222-224` failed, 5 attempts, 5 sends; restart `:242-262` | ✅ |
+| DLV-08 | 25 consecutive agent messages → pause agent delivery + system message | `internal/delivery/rules_test.go:179-180`; `internal/rooms/messages_test.go:326-335`; agent delivery paused end to end `internal/api/agent_dispatch_test.go:90-104` | ✅ (scope gap closed) |
+| DLV-09 | `manage` resume resets and resumes | `internal/rooms/messages_test.go:348,350,358-359`; `internal/api/rooms_handlers_test.go:392-393` | ✅ |
+| DLV-10 | User or chat message resets the counter to 0 | `internal/rooms/messages_test.go:306,312`; `internal/delivery/rules_test.go:198` | ✅ |
 
 ### P1: Live updates
 
 | AC | Spec-defined outcome | `file:line` + assertion | Result |
 | -- | -------------------- | ----------------------- | ------ |
-| LIVE-01 | `room.message` pushed to every live connection of users with `view` | `internal/api/live_test.go:48-55` two alice connections + bob(view) get it, payload id/room/text/seq asserted | ✅ |
-| LIVE-02 | No event about a resource to a user without access | `internal/api/live_test.go:56` `carolLive.ExpectNone`; `:89-101` revoked → `room.deleted` then nothing; `:148-149` outbox events withheld from a connector grantee without room view | ✅ |
-| LIVE-03 | Upgrade with Origin ≠ public URL → 403 | `internal/api/live_test.go:157-160` `Equal(403, resp.Status)` for a foreign origin and `null`. M17 survived (see sensor): no test for same host with a different scheme. | ✅ (assertion matches; mutant gap below) |
-| LIVE-04 | `agent.presence`, `connector.status`, `outbox.status` pushed to users with access | `internal/api/live_test.go:124-149` payloads asserted by value for alice and the bob grantee; carol `ExpectNone` | ✅ |
+| LIVE-01 | `room.message` to every live connection of users with `view` | `internal/api/live_test.go:53-57` payload id/room/text/seq | ✅ |
+| LIVE-02 | No event to users without access | `internal/api/live_test.go:59,97,103-104,151-152` `ExpectNone` | ✅ |
+| LIVE-03 | Upgrade with Origin ≠ public URL → 403 | `internal/api/live_test.go:161,163,168` (foreign, `null`, same host other scheme) | ✅ |
+| LIVE-04 | `agent.presence`, `connector.status`, `outbox.status` to users with access | `internal/api/live_test.go:131,138,145-149` whole payloads | ✅ |
 
 ### P1: Secure, observable deployment
 
 | AC | Spec-defined outcome | `file:line` + assertion | Result |
 | -- | -------------------- | ----------------------- | ------ |
-| SEC-01 | CSP, `nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY` on every HTML response | `internal/api/webui_test.go:181-186` exact values on the SPA route; `internal/webui/webui_test.go:236,240-248`; API responses `internal/api/middleware_test.go:319-322` | ✅ |
-| SEC-02 | Cookie-authenticated state change with a foreign Origin or Sec-Fetch-Site → 403 | `internal/api/middleware_test.go:240-250` `RequireError(403, forbidden)` for a foreign Origin, `cross-site`, `same-site`, and a missing proof; same origin allowed `:252-256` | ✅ |
-| SEC-03 | Body >1 MiB JSON or > upload limit multipart → 413 | `internal/api/middleware_test.go:333-348` (MaxJSONBody+1 → 413 `too_large`, chunked too, multipart limit); `internal/api/rooms_handlers_test.go:438-442` file of 1 MiB+1 with a 1 MB limit → 413 and no message stored | ✅ |
-| SEC-04 | Connector secrets sealed with AES-256-GCM using `PARTYLINE_SECRET_KEY`; generated key persisted 0600 | `internal/secrets/box_test.go:31-71` round trip, tamper and wrong key fail; `:103-109` `Equal(FileMode(0o600))` and reuse; `internal/secrets/box.go:19` `KeySize = 32`. **Scope:** no connector stores secrets yet (connectors feature). | ⚠️ scope (primitive only) |
-| SEC-05 | Message text, passwords and token secrets never logged | `internal/cli/serve_test.go:315-317` `NotContains(logs, secret)` for the password, wrong password, message text, token, cookie and bad bearer during a real `serve`; `:398-402` redaction | ✅ |
-| OPS-01 | `/healthz` 200 unauthenticated; `/readyz` 503 until migrated | `internal/app/app_test.go:48-57` | ✅ |
-| OPS-02 | Daily job deletes messages and attachments past retention (default 90, 0 = forever) | `internal/rooms/retention_test.go:347-375` (7-day boundary, 0 keeps, orphan blob removed, shared kept); `internal/api/rooms_handlers_test.go:278` default 90; `internal/app/app_test.go:118-137` runs at start | ✅ |
-| OPS-03 | Image runs as non-root and stores all state under `/data` | `Dockerfile:31,37` distroless `nonroot`, `USER 65532:65532`; `Dockerfile:36,39` `PARTYLINE_DATA_DIR=/data`, `VOLUME /data`; `internal/cli/healthcheck_test.go:39-48`. Not built or run in this check (CI only). | ⚠️ inspection only |
+| SEC-01 | CSP, nosniff, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY` on HTML | `internal/api/webui_test.go:24-27` exact values on the SPA route; `internal/webui/webui_test.go:45,49-60` (CSP incl. `font-src 'self' data:`) | ✅ |
+| SEC-02 | Cookie write with foreign Origin / Sec-Fetch-Site → 403 | `internal/api/middleware_test.go:143,145,147,149` | ✅ |
+| SEC-03 | >1 MiB JSON / > upload multipart → 413 | `internal/api/middleware_test.go:237,241,250`; `internal/api/rooms_handlers_test.go:365-367` | ✅ |
+| SEC-04 | Connector secrets sealed with AES-256-GCM; generated key 0600 | `internal/secrets/box_test.go:96-110` mode 0600 + reuse; `internal/connectors/kind_test.go:149-170` sealed bytes hold no clear secret, wrong key fails; `internal/api/connectors_handlers_test.go:186` raw row holds no clear secret | ✅ (scope gap closed by connectors) |
+| SEC-05 | Never log message text, passwords, token secrets | `internal/cli/serve_test.go:194` `NotContains(logs, secret)` over a real `serve`; `:277` redaction | ✅ |
+| OPS-01 | `/healthz` 200 unauth; `/readyz` 503 until migrated | `internal/app/app_test.go:53,56,59,62` | ✅ |
+| OPS-02 | Daily job deletes past retention (default 90, 0 = forever) | `internal/rooms/retention_test.go:77-86,92-94`; default 90 `internal/api/rooms_handlers_test.go:189`; `internal/app/app_test.go:142` | ✅ |
+| OPS-03 | Non-root image, all state under `/data` | `Dockerfile:37` distroless `nonroot`, `:43` `USER 65532:65532`, `:42` `PARTYLINE_DATA_DIR=/data`, `:45` `VOLUME /data` | ⚠️ inspection only (no Docker on host) |
 
 ### P2: Audit trail
 
 | AC | Spec-defined outcome | `file:line` + assertion | Result |
 | -- | -------------------- | ----------------------- | ------ |
-| AUD-01 | Login, logout, invite, token, grant, user-state and connector changes logged with actor/action/target/time, no secrets | `internal/api/audit_test.go:66-119` actor/target per action by value; `:121-123` time set; `:126-129` `NotContains` for passwords, token, invite token and sessions. **Scope:** connector changes are not in core. | ⚠️ scope (connector actions untested) |
-| AUD-02 | Newest first, 50 per page | `internal/api/audit_test.go:140-154` `Len(50)`, `t57` first, `HasMore`, second page 10; non-admin 403 `:157` | ✅ |
+| AUD-01 | Login, logout, invite, token, grant, user-state, connector changes logged with actor/action/target/time, no secrets | `internal/api/audit_test.go:117-128`; connectors `internal/api/connectors_handlers_test.go:309-319` (actor, target, action per change, no config values) | ✅ (scope gap closed) |
+| AUD-02 | Newest first, 50 per page | `internal/api/audit_test.go:141-154` | ✅ |
 
-**Status**: ❌ 2 gaps (ROOM-01, AUTH-05 under concurrency) · ⚠️ 8 precision/scope gaps (ACL-07, ROOM-02, DLV-02, DLV-06, DLV-08, SEC-04, OPS-03, AUD-01) · ✅ 40/50 matched the spec outcome.
+**Status**: ❌ 1 gap (AUTH-05) · ⚠️ 1 inspection-only (OPS-03) and 2 precision notes (ROOM-01 agent side, DLV-04 HTTP) · ✅ 49/50 match the spec outcome.
 
-Payload/conjunction rule: the outbox, live-frame, audit and Delivery payloads are asserted by value (for example `internal/delivery/outbox_test.go:160` asserts the whole `Delivery{}` struct, and `internal/api/live_test.go:128,135` assert the whole frame). No call-only assertions were found on critical paths.
+Payload/conjunction rule: the new tests assert values (close status 1008, exact outbox counts per chat/room, whole blob existence per hash, `verr.Fields["recipients"] == "listen-only"`), not just calls.
 
 ---
 
 ## Edge Cases
 
-- [x] Concurrent posts get distinct consecutive seqs (MSG-01): `internal/rooms/messages_test.go:67-100`
-- [x] Restart resumes queued and interrupted sends (DLV-07): `internal/delivery/outbox_test.go:237-255`
-- [ ] Last manager of a room deleted → room deleted (ROOM-02): **no evidence.** There is no user deletion (no API, CLI or service). The only mechanism is the FK `rooms.owner_id ... ON DELETE CASCADE` (`internal/store/migrations/0001_init.sql:93`), which would delete the room when the *owner* is deleted, even if other managers remain. That does not match "last manager".
-- [x] Grant to a disabled user is kept but denies access (AUTH-10): `internal/access/access_test.go:227-250`
+- [x] Concurrent posts get distinct consecutive seqs (MSG-01): `internal/rooms/messages_test.go:69-101`
+- [x] Restart resumes queued sends (DLV-07): `internal/delivery/outbox_test.go:242-262`
+- [x] Removing an owner account deletes their rooms (ROOM-02): `internal/store/store_test.go:149-168` (rooms, members, messages, attachments, outbox, cursors; other owner's room kept). There is no user deletion in the API or CLI, consistent with the spec.
+- [x] A grant to a disabled user is kept but denies access (AUTH-10): `internal/access/access_test.go:229-250`
+- [x] Self or last-admin demote/disable → 409 `conflict`, nothing changes: self over HTTP `internal/api/admin_handlers_test.go:172-174`; last admin `internal/users/invites_test.go:271,273,286,299-303` (also under concurrency). ⚠️ The last-admin 409 over HTTP is untested (N12 survived). It is reachable only through two concurrent demotions.
+- [x] A session end closes its live sockets within 1 s, and live sockets are re-checked at least every 60 s: `internal/api/live_test.go:217-260` (logout, session delete, password change, reset, disable; others stay open), periodic `:262-271` with a 100 ms interval. ⚠️ The 60 s default is not asserted (N6 survived).
+- [x] A password change ends the other sessions and keeps the current one: `internal/api/live_test.go:239-242` (other socket closed, own socket open; N19 killed)
+- [x] Room delete removes unshared blobs, keeps shared ones and those under a minute old: `internal/rooms/retention_test.go:125-128`. ⚠️ The "fresh" blob is age 0, so a grace of 0 also passes (N9 survived).
 
 ---
 
 ## Discrimination Sensor
 
-Expanded tier (auth, security and delivery are critical paths). The scratch was a detached worktree `git worktree add --detach /tmp/claude-1001/pl-mutants 534bf61`. Each mutation was applied, the covering tests were run (`go test -count=1 -run …`), and the file was restored with `git checkout` inside the scratch. The scratch was then removed with `git worktree remove --force`. Verify-tree `git status --porcelain` was empty before and after the sensor (diff identical).
+Expanded tier. The scratch was a detached worktree: `git worktree add --detach /tmp/claude-1001/pl-mutants2 9efe452`. Each mutant was applied by an exact-string replacement (anchor count checked = 1), the covering tests were run without `-race` (`go test -count=1 [-run …]`), and the file was restored with `git checkout` inside the scratch. Two mutants (M15, N7) first failed to build. They were made valid and re-run, and their kills below come from the valid runs. Probes ran in a second scratch, `/tmp/claude-1001/pl-probes2`. Both worktrees were removed with `git worktree remove --force`. Verify-tree `git status --porcelain` was empty before and after.
 
-| # | File:line | Mutation | Killed? |
-| - | --------- | -------- | ------- |
-| M1 | `internal/api/middleware.go:247` | CSRF ignores a foreign `Origin` (only Sec-Fetch-Site checked) | ✅ Killed (TestCSRFCookieWrites, TestCSRFAnonymousForeignOrigin) |
-| M2 | `internal/api/middleware.go:224` | Agent-token restriction widened to all of `/api/v1/` | ✅ Killed (TestAgentTokenRestrictedToAgentRoutes, TestTokenEndpoints) |
-| M3 | `internal/access/access.go:188` | Admin role gets implicit `manage` | ✅ Killed (TestAdminWithoutGrantHasNoAccess, TestStrangerAndAdminGetNotFound, TestRoomRoutesAuthMatrix) |
-| M4 | `internal/access/access.go:57` | `maxLevel` keeps the lowest non-empty level | ✅ Killed (TestRoomLevelIsHighestOfOwnershipAndGrants) |
-| M5 | `internal/delivery/rules.go:55` | Plan no longer excludes the author | ✅ Killed (TestPlanTable) |
-| M6 | `internal/delivery/rules.go:80` | Agent/user posts ignore the `outbound` flag | ✅ Killed (TestPlanTable) |
-| M7 | `internal/delivery/rules.go:82` | Bridged chat posts ignore `outbound` | ✅ Killed (TestPlanTable, TestPlanExhaustive) |
-| M8 | `internal/delivery/rules.go:91` | `Trusted` accepts an empty author user id | ✅ Killed (TestTrusted) |
-| M9 | `internal/delivery/rules.go:123` | LoopGuard `>=` → `>` (pauses at 26) | ✅ Killed (TestLoopGuardPausesAtTwentyFifthAgentMessage, TestLoopGuardResets) |
-| M10 | `internal/delivery/rules.go:127` | Chat messages no longer reset the streak | ✅ Killed (TestLoopGuardResets, TestLoopGuardPauseAndResume) |
-| M11 | `internal/users/users.go:143` | Login limiter `>=` → `>` (allows a 6th failure) | ✅ Killed (TestLoginRateLimitPerIP, TestLoginRateLimited) |
-| M12 | `internal/users/users.go:143` | Limiter window `<` → `<=` | ✅ Killed (TestLoginRateLimitPerIP) |
-| M13 | `internal/api/middleware.go:144` | JSON body limit doubled to 2 MiB | ✅ Killed (TestBodyLimit) |
-| M14 | `internal/api/middleware.go:146` | Multipart allowance dropped | ✅ Killed (TestBodyLimit) |
-| M15 | `internal/live/hub.go:340` | `canViewRoom` always true (member/outbox events leak) | ✅ Killed (TestLiveRoomEventsFollowAccess, TestLiveStatusEventsReachUsersWithAccess) |
-| M16 | `internal/live/hub.go:222` | `room.message` frame sent to users without view | ✅ Killed (TestLiveRoomMessageReachesViewersOnly, TestLiveRoomEventsFollowAccess) |
-| M17 | `internal/live/hub.go:105` | Hub's own Origin check removed (the websocket library's host-only `OriginPatterns` remains) | ❌ **Survived.** A probe with the same host and an `https` scheme gets 101 under the mutant and 403 on the original, so the check matters but no test covers it. |
-| M18 | `internal/delivery/outbox.go:21` | Backoff exponent off by one (starts at 4 s) | ✅ Killed (TestOutboxRetryBackoffThenFailed, TestBackoff) |
-| M19 | `internal/delivery/outbox.go:186` | `failed` after 6 attempts instead of 5 | ✅ Killed (TestOutboxRetryBackoffThenFailed) |
-| M20 | `internal/delivery/outbox.go:96` | Interrupted `sending` rows not requeued at start | ✅ Killed (TestOutboxResumesAfterRestart) |
-| M21 | `internal/api/middleware.go:101` | `X-Frame-Options` dropped | ✅ Killed (TestSecurityHeaders, TestWebUIServedWithStrictHeaders) |
-| M22 | `internal/rooms/messages.go:131` | Text limit `>` → `>=` | ✅ Killed (TestPostValidation, TestRoomMessagesEndpoint) |
-| M23 | `internal/store/migrations/0001_init.sql:170` | Outbox FK cascade removed (room delete keeps outbox) | ✅ Killed (TestDeleteRoomRemovesEverything) |
-| M24 | `internal/users/tokens.go:116` | Disabled user's tokens still authenticate | ✅ Killed (TestDisabledUserTokensFail, TestDisabledUserIsLoggedOut) |
+### Iteration-1 mutants re-applied (M1-M24)
 
-Extra probes (behavior checks against the spec, not mutants; run in the same scratch, then discarded):
+| # | File | Mutation | Killed? |
+| - | ---- | -------- | ------- |
+| M1 | `internal/api/middleware.go:247` | CSRF ignores a foreign Origin | ✅ TestCSRFCookieWrites, TestCSRFAnonymousForeignOrigin |
+| M2 | `internal/api/middleware.go:224` | Agent restriction widened to `/api/v1/` | ✅ TestAgentTokenRestrictedToAgentRoutes, TestTokenEndpoints |
+| M3 | `internal/access/access.go:188` | Admin role gets implicit `manage` | ✅ TestAdminWithoutGrantHasNoAccess |
+| M4 | `internal/access/access.go:57` | `maxLevel` keeps the lowest level | ✅ TestRoomLevelIsHighestOfOwnershipAndGrants |
+| M5 | `internal/delivery/rules.go` Plan | Author not excluded | ✅ TestPlanTable |
+| M6 | `internal/delivery/rules.go` chatReceives | Ignore `outbound` for agent/user posts | ✅ TestPlanTable |
+| M7 | `internal/delivery/rules.go` chatReceives | Bridged chat posts ignore `outbound` | ✅ TestPlanTable, TestPlanExhaustive |
+| M8 | `internal/delivery/rules.go:91` | `Trusted` accepts an empty author | ✅ TestTrusted |
+| M9 | `internal/delivery/rules.go:123` | Loop guard `>=` → `>` | ✅ TestLoopGuardPausesAtTwentyFifthAgentMessage |
+| M10 | `internal/delivery/rules.go:127` | Chat posts no longer reset the streak | ✅ TestLoopGuardResets |
+| M11 | `internal/users/users.go:170` | Limiter `>=` → `>` | ✅ TestLoginRateLimitPerIP (+ burst) |
+| M12 | `internal/users/users.go:169` | Window `<` → `<=` | ✅ TestLoginRateLimitPerIP |
+| M13 | `internal/api/middleware.go` bodyLimit | JSON limit doubled | ✅ TestBodyLimit |
+| M14 | `internal/api/middleware.go` bodyLimit | Multipart allowance dropped | ✅ TestBodyLimit |
+| M15 | `internal/live/hub.go:402-407` | `canViewRoom` always true | ✅ TestLiveRoomEventsFollowAccess, TestLiveStatusEventsReachUsersWithAccess |
+| M16 | `internal/live/hub.go:413` | `ifLevel` ignores `None` (adapted from iteration 1) | ✅ TestLiveStatusEventsReachUsersWithAccess |
+| M17 | `internal/live/hub.go:126` | Hub Origin check removed | ✅ **now killed** (TestLiveUpgradeChecks) |
+| M18 | `internal/delivery/outbox.go:21` | Backoff exponent off by one | ✅ TestOutboxRetryBackoffThenFailed, TestBackoff |
+| M19 | `internal/delivery/outbox.go:186` | `failed` after 6 attempts | ✅ TestOutboxRetryBackoffThenFailed |
+| M20 | `internal/delivery/outbox.go:96` | No requeue of `sending` at start | ✅ TestOutboxResumesAfterRestart |
+| M21 | `internal/api/middleware.go:101` | `X-Frame-Options` dropped | ✅ TestSecurityHeaders, TestWebUIServedWithStrictHeaders |
+| M22 | `internal/rooms/messages.go:131` | Text limit `>` → `>=` | ✅ TestPostValidation |
+| M23 | `internal/store/migrations/0001_init.sql:170` | Outbox FK cascade removed | ✅ TestDeleteRoomRemovesEverything |
+| M24 | `internal/users/tokens.go:116` | Disabled user's tokens authenticate | ✅ TestDisabledUserTokensFail |
+
+### New mutants against the fixes (N1-N20)
+
+| # | File | Mutation | Killed? |
+| - | ---- | -------- | ------- |
+| N1 | `internal/store/db/outbox.sql.go` (ListDueOutbox) | Membership `EXISTS` filter removed | ✅ TestOutboxSkipsChatsNoLongerMembers |
+| N2 | `internal/rooms/members.go:180` | RemoveMember skips deleting pending rows | ✅ TestRemoveMemberCancelsQueuedDeliveries |
+| N20 | `internal/store/db/outbox.sql.go` (DeletePendingRoomChatOutbox) | Also deletes `sent` history | ✅ TestRemoveMemberCancelsQueuedDeliveries |
+| N3 | `internal/users/auth.go:95-98` | Reserve **after** the argon2 check (30 checks in a burst) | ❌ **Survived.** The burst test counts answers, not checks |
+| N15 | `internal/users/users.go:184-188` | Success no longer clears the IP | ✅ TestLoginSuccessClearsFailures (that test asserts the spec-violating behavior, see AUTH-05) |
+| N16 | `internal/users/users.go:160` | Default key cap 10,000 → 2^30 | ❌ **Survived.** The test overrides `maxKeys`, so the default is not asserted |
+| N4 | `internal/users/auth.go:258` | Logout publishes no `SessionsRevoked` | ✅ TestLiveClosesRevokedSessions |
+| N5 | `internal/live/hub.go:241` | Hub ignores `SessionsRevoked` | ✅ TestLiveClosesRevokedSessions |
+| N6 | `internal/live/hub.go:38` | Default re-check 60 s → 10 min | ❌ **Survived** (edge case "at least every 60 seconds" not asserted) |
+| N14 | `internal/users/auth.go:286` | `PrincipalActive` ignores token revocation | ✅ TestPrincipalActive |
+| N17 | `internal/users/auth.go:275` | `PrincipalActive` drops the session-owner check | ❌ **Survived.** The "session of another user" case uses a nonexistent user id, so `activeUser` rejects it anyway |
+| N18 | `internal/live/hub.go:244-245` | No principal re-check after a lagged bus | ❌ **Survived** (contract-notes behavior, untested) |
+| N19 | `internal/users/profile.go:104` | Password change ends **all** sessions | ✅ TestLiveClosesRevokedSessions |
+| N7 | `internal/rooms/retention.go:89` | Room delete removes shared blobs too | ✅ TestDeleteRoomRemovesUnsharedBlobs |
+| N8 | `internal/rooms/rooms.go:276` | No blob removal after delete | ✅ TestDeleteRoomRemovesUnsharedBlobs |
+| N9 | `internal/rooms/retention.go:18` | Delete grace 1 min → 0 | ❌ **Survived.** The test's fresh blob has age 0, so the one-minute boundary is not exercised |
+| N10 | `internal/rooms/messages.go:217-218` | Listen-only check removed | ✅ TestOutboxFollowsDeliveryPlan |
+| N11 | `internal/users/invites.go` | Last-admin `n <= 1` → `n < 1` | ✅ TestLastActiveAdminIsKept |
+| N12 | `internal/api/router.go:160` | `ErrLastAdmin` no longer mapped to 409 | ❌ **Survived** (no HTTP test reaches it) |
+| N13 | `internal/users/invites.go:252` | Self-change guard disabled | ✅ TestAdminCannotChangeSelf |
+
+### Probes (behavior against the spec; scratch only)
 
 | Probe | Expectation from spec | Outcome |
 | ----- | --------------------- | ------- |
-| P1 ROOM-01: queue a message to chat C, remove C, `OutboxWorker.Flush` | No delivery to C | ❌ C received the delivery |
-| P2 AUTH-05: 30 concurrent wrong-password logins from one IP | At most 5 evaluated, the rest 429 | ❌ 30 evaluated, 0 rate-limited |
-| P3 LIVE-03: same host, other scheme Origin | 403 | ✅ 403 on HEAD (mutant M17 → 101) |
+| P1 AUTH-05 burst, `checkPassword` instrumented | At most 5 evaluated | ✅ 5 checks, 5×401, 25×429 |
+| P2 AUTH-05, 4 rounds of (4 wrong + 1 correct) from one IP in one minute | 429 once more than 5 failures | ❌ 16 failures, 0×429 |
+| P3 ROOM-01 agent: connected agent removed, then post, then reconnect | No push, no backlog | ✅ nothing received in either case |
 
-**Sensor depth**: P0 expanded (24 mutants across every listed area)
-**Sensor outcome**: 23/24 killed, 1 survived (M17) - FAIL ❌
+**Sensor depth**: P0 expanded (44 mutants)
+**Sensor outcome**: 37/44 killed, 7 survived (N3, N6, N9, N12, N16, N17, N18) - FAIL ❌
 
 ---
 
@@ -179,59 +227,57 @@ Extra probes (behavior checks against the spec, not mutants; run in the same scr
 | Principle | Status |
 | --------- | ------ |
 | Minimum code | ✅ |
-| Surgical changes | ✅ |
-| No scope creep | ✅ |
-| Matches patterns | ✅ (one sentinel-error set mapped centrally in `api.mapError`, sqlc rows → DTO converters) |
-| Spec-anchored outcome check (asserted values match spec) | ✅ for 40 ACs; gaps listed above |
-| Per-layer Coverage Expectation met (domain 1:1 ACs; routes happy+edge+error) | ✅ room routes have the full owner/viewer/poster/stranger/admin matrix (`internal/api/rooms_handlers_test.go:194-254`) |
-| Every test maps to a spec requirement - no unclaimed tests | ✅ (test comments cite AC ids; helper tests map to Done-when items) |
-| Documented guidelines followed: `AGENTS.md`, `.specs/features/core-platform/contract-notes.md` | ✅ |
+| Surgical changes | ✅ fix commits stay in their files. T37/T38 (member count, activity feed) are feature additions requested alongside the fixes. |
+| No scope creep | ⚠️ T29's "success clears failures" adds behavior the spec does not allow (AUTH-05) |
+| Matches patterns | ✅ (sentinel errors mapped in `api.mapError`, post-commit bus events, sqlc queries) |
+| Spec-anchored outcome check | ✅ 49/50; AUTH-05 gap |
+| Per-layer coverage | ✅ services + e2e for every fix; live socket closes tested end to end |
+| Every test maps to a requirement | ✅ (test comments cite AC ids or edge cases) |
+| Documented guidelines: `AGENTS.md`, `contract-notes.md` | ✅ |
 
 ---
 
 ## Gate Check
 
 - **Gate command**: `make check` (sqlc+tygo drift, golangci-lint, go vet, web lint+typecheck, `go test -race ./...`, web tests, web build, `go build`)
-- **Run 1 (machine under heavy parallel load)**: exit 2. sqlc/tygo drift clean, golangci-lint `0 issues`, vet clean, web lint and typecheck clean. One test failed: `--- FAIL: TestStartRunsRetention` at `internal/app/app_test.go:134` (`Eventually` 5 s window, "Condition never satisfied"; the test took 12.25 s). Web tests did not run because of that failure.
-- **Run 2**: exit 0. All 15 Go packages `ok`; web `Test Files 24 passed (24)`, `Tests 193 passed (193)`; web build and `go build` OK.
-- **Flake check**: the failing test passed 8/8 alone and 24/24 under 6× parallel stress. The cause was not proven. The test waits on a background job with a fixed 5 s `Eventually`, and a failed first `Cleanup` would wait 24 h (`internal/rooms/retention.go:58-74`), so the test depends on load.
-- **Go tests**: 305 passed (172 top-level `Test*` functions plus subtests), 0 failed, 0 skipped (`go test -json ./internal/...`)
-- **Test count before feature**: 0 (base `bba5e2d` holds only specs)
-- **Test count after feature**: 172 Go test functions (305 including subtests) + 193 web tests
+- **Run 1** (host load ~11-13, mutant run in parallel): exit 2. Drift clean, golangci-lint `0 issues`, vet clean. Go: every core package `ok` (`internal/api` 356.7 s, under the 10 min default). Two **agent-channel** tests failed on their 10 s `Eventually` (`internal/channel/env_test.go:24`): `TestLinkDeliversBacklogOnConnect` (`internal/channel/link_test.go:48`) and `TestChannelEndToEnd` (`internal/cli/channel_test.go:116`). Web tests did not run. Re-run of both packages alone: `ok` (channel 110 s, cli 7.9 s). These are outside core-platform. Infra note: the same short-deadline pattern as iteration-1 L-005, now in the agent-channel tests.
+- **Run 2** (after the sensor; 3 m 31 s): **exit 0**. Drift, lint (`0 issues`), vet, web lint and typecheck clean; all 20 Go packages with tests `ok` (`internal/api` 186.5 s); web `Test Files 27 passed (27)`, `Tests 216 passed (216)`; web build and `go build` OK.
+- **Go test functions**: 272 (was 172 at `534bf61`); none removed (diff of `func Test` names is empty)
 - **Skipped tests**: none
 
 ---
 
 ## Fix Plans
 
-### Fix 1: ROOM-01 - removed chat still gets queued deliveries (Major)
-- **Root cause**: `RemoveMember` (`internal/rooms/members.go:166-178`) deletes only the `room_members` row. Pending or backoff outbox rows for that chat in that room remain, and `ListDueOutbox` (`internal/store/queries/outbox.sql:1-6`) sends them.
-- **Fix task**: in the same tx as the member delete, mark that chat's `pending` outbox rows for messages of the room as `failed` (or delete them), or join `room_members` in `ListDueOutbox`. Publish `OutboxChanged`. Add a test that queues a message, removes the chat, flushes the worker, and asserts no send happens.
+### Fix 1: AUTH-05 - success must not reset the failure count (Major, security)
+- **Root cause**: `failureLimiter.Succeed` deletes the IP's window (`internal/users/users.go:184-188`). An attacker with any valid account on the same IP resets the counter every 4 guesses.
+- **Fix task**: on success, return only the success's own reservation (like `Release`) instead of deleting the window. A window then counts failures and in-flight attempts only. Replace `TestLoginSuccessClearsFailures` with a test where 4 failures, 1 success and 2 more failures within the minute end in `ErrRateLimited` (more than 5 failures). Keep the burst test.
 
-### Fix 2: AUTH-05 - concurrent login burst bypasses the limiter (Major, security)
-- **Root cause**: `users/auth.go:95-100` checks the limit, runs the slow argon2 verify, and only then records the failure. Concurrent attempts all pass the check.
-- **Fix task**: reserve the attempt atomically before verifying, for example `limiter.Begin(ip)` that counts in-flight attempts plus failures, and release it on success. Add a test with N≫5 parallel wrong logins that asserts at most 5 password checks and the rest `ErrRateLimited`.
+### Fix 2: N3 - burst test must count password checks (Major, test)
+- **Fix task**: count `checkPassword`/`VerifyPassword` calls (for example a test hook or counter on the service) and assert `== 5` in `TestLoginRateLimitConcurrentBurst`. This kills the reserve-after-verify mutant.
 
-### Fix 3: M17 - LIVE-03 scheme mismatch untested (Minor)
-- **Fix task**: add `alice.DialLive(<same host, other scheme>)` → 403 in `internal/api/live_test.go` (the probe P3 body).
+### Fix 3: Edge-case precision tests (Minor)
+- N6: assert `live.DefaultSessionCheckInterval <= time.Minute` (or that the app wires 60 s when `LiveSessionCheck` is 0).
+- N9: in `TestDeleteRoomRemovesUnsharedBlobs`, write the fresh blob at `t0.Add(-30*time.Second)` (inside the minute) and keep one at `-61 s` that is removed.
+- N12: an HTTP test where two admins demote each other concurrently and the loser gets `409 conflict`, or a `mapError` unit test for `ErrLastAdmin`.
 
-### Fix 4: Edge case "last manager deleted" (Minor, spec)
-- **Fix task**: either add user deletion that deletes rooms with no remaining manager, or move the edge case to Out of Scope until user deletion exists. Also decide whether the owner-cascade FK should transfer the room when other managers remain.
-
-### Fix 5: Flaky `TestStartRunsRetention` (Minor)
-- **Fix task**: drive the retention job deterministically (run `Cleanup` synchronously in Start, or expose a hook) or widen the wait. Log `Cleanup` errors to the test logger so failures show their cause.
+### Fix 4: Contract-note behaviors without a test (Minor)
+- N16: assert the default limiter cap (`newFailureLimiter(...).maxKeys == 10000`).
+- N17: in `TestPrincipalActive`, use another **existing active** user's id with bob's session id.
+- N18: publish `events.Lagged` after deleting the session in the DB and expect a 1008 close well before the periodic interval.
+- ROOM-01 (agent side): add a suite test for the probe P3 (removed agent: no push, no backlog).
 
 ---
 
-## Security Notes (found in passing; gaps, not fixed)
+## Security Notes (remaining; not fixed)
 
-1. Login rate-limit concurrency bypass (Fix 2). Each attempt also costs an argon2id hash (19 MiB), so a burst is a cheap CPU and memory amplifier.
-2. Live WebSockets outlive logout and session revocation. `internal/live/hub.go:99-136` authenticates only at upgrade and re-checks the user's *level* per event, not the session. A disabled user stops receiving events (the level resolves to none), but a logged-out or revoked session keeps streaming until it disconnects.
-3. Removed chat members still get messages queued earlier (Fix 1).
-4. Manage grantees can change sharing (make a room public, grant `manage` to others). The spec says the owner. This was a deliberate design choice, but it widens who can expose a private room.
-5. Room deletion leaves attachment blob files on disk for up to about 25 h (until the orphan sweep).
-6. `AgentRoomLevel` (`internal/access/access.go:108-120`) trusts `p.AgentID` without checking that the agent belongs to `p.UserID`. Safe today because nothing sets `AgentID` yet. The agent registry must enforce ownership when it lands.
-7. `failureLimiter` prunes only when its map has ≥10k keys and only removes expired windows (`internal/users/users.go:146-166`). With more than 10k IPs active in one window the map grows without bound for that minute. Minor.
+1. **AUTH-05 success reset** (Fix 1): unlimited password guessing for anyone holding a valid account behind the same IP (shared NAT, the same container network, or a malicious member).
+2. The per-IP limiter (10,000 keys, oldest evicted) can be flushed by an attacker who controls more than 10,000 addresses (IPv6 /64). The attacker can then evict their own window. Per-IP limiting is weak against IPv6 in general; consider also limiting per username or per /64.
+3. The live session check fails open: a DB error in `PrincipalActive` is logged and the socket stays open (`internal/live/hub.go:251-266`). This is acceptable as best effort, but worth knowing.
+4. Live sockets authenticated by a **token** close only on the periodic re-check (≤60 s) when the token is revoked or the user is disabled. `SessionsRevoked` names sessions only. This is within the spec (token revocation is not a "session end"), but it leaves a window of up to one minute.
+5. Manage grantees can change sharing (now in the spec, ACL-07). This is a deliberate widening of who can make a private room public.
+6. `access.AgentRoomLevel` still trusts `p.AgentID`. It is safe because the only setter resolves the agent by the token owner (`internal/api/agent_handlers.go:57-62`). Keep that invariant.
+7. `delivery.Plan` still returns a listed chat whose outbound is off. Only `checkRefs` (`internal/rooms/messages.go:217`) stops it. Any future caller that builds a Plan without `checkRefs` would send to a listen-only chat.
 
 ---
 
@@ -239,20 +285,22 @@ Extra probes (behavior checks against the spec, not mutants; run in the same scr
 
 | Requirement | Previous Status | New Status |
 | ----------- | --------------- | ---------- |
-| AUTH-01..04, AUTH-06..10, TOK-01..04, ACL-01..06, ACL-08, MSG-01, MSG-02, DLV-01, DLV-03, DLV-04, DLV-05, DLV-07, DLV-09, DLV-10, LIVE-01..04, SEC-01, SEC-02, SEC-03, SEC-05, OPS-01, OPS-02, AUD-02 | Implementing | ✅ Verified |
-| AUTH-05, ROOM-01 | Implementing | ❌ Needs Fix |
-| ACL-07, ROOM-02, DLV-02, DLV-06, DLV-08, SEC-04, OPS-03, AUD-01 | Implementing | ⚠️ Verified with noted precision/scope gap |
+| ROOM-01, AUTH-09, AUTH-10, ACL-07, ROOM-02, DLV-04, DLV-07, LIVE-03, SEC-01, OPS-02 | Fixed, re-verify | ✅ Verified |
+| DLV-02, DLV-06, DLV-08, SEC-04, AUD-01 | Verified with scope gap | ✅ Verified (agent-channel / connectors evidence) |
+| OPS-03 | Fixed, re-verify | ⚠️ Verified by inspection (no Docker locally) |
+| AUTH-05 | Fixed, re-verify | ❌ Needs Fix (success reset; N3) |
+| all others | Verified (iteration 1) | ✅ Verified (re-cited above) |
 
 ---
 
 ## Summary
 
-**Overall**: ❌ Not Ready. Two AC gaps, one surviving mutant, one edge case without evidence, and a load-sensitive gate test.
+**Overall**: ❌ Not Ready. There is one AC gap (AUTH-05, introduced by the fix) and 7 surviving mutants, 1 of them major (N3).
 
-**Spec-anchored check**: 40/50 ACs matched the spec outcome; 2 gaps; 8 precision/scope gaps
-**Sensor**: 23/24 mutations killed (M17 survived); 2 of 3 probes found behavior gaps
-**Gate**: run 2 green (305 Go + 193 web tests); run 1 red on flaky `TestStartRunsRetention`
+**Spec-anchored check**: 49/50 ACs matched the spec outcome; 1 gap; OPS-03 inspection only
+**Sensor**: 37/44 killed; probes: burst ✅, success reset ❌, agent removal ✅
+**Gate**: run 2 green (all Go packages ok, 216 web tests); run 1 red only on two load-sensitive agent-channel tests, which passed when re-run
 
-**What works**: the authentication, CSRF, token-restriction and ACL resolution paths, the delivery Plan, trust rule and loop guard, the outbox backoff and restart, live access filtering, headers, body limits, retention and audit. All are discriminating under mutation.
+**What works**: ROOM-01 for chats and agents, the burst limiter (5 checks), session-bound live sockets, blob cleanup, listen-only recipients, the self and last-admin guards (including under concurrency), the owner cascade, the CSP font fix, and end-to-end agent dispatch with trust and pause.
 
-**Next steps**: run Fix 1 and Fix 2 as fix tasks (security and correctness), then Fix 3 to Fix 5, then re-verify (iteration 1 of 3).
+**Next steps**: Fix 1 and Fix 2 (auth), then Fixes 3-4, then re-verify (iteration 3 of 3; escalate to the user if gaps remain).

@@ -21,7 +21,9 @@ import (
 	"github.com/wnexous/partyline/internal/users"
 )
 
-const wait = 10 * time.Second
+// wait bounds every wait for a signal (a frame, a notification, a response). Waits return as
+// soon as the signal arrives, so the bound only matters on a loaded machine.
+const wait = time.Minute
 
 // fastTiming keeps reconnect tests short.
 var fastTiming = timing{minBackoff: 50 * time.Millisecond, maxBackoff: 400 * time.Millisecond, invalidRetry: 150 * time.Millisecond, replacedPause: 700 * time.Millisecond}

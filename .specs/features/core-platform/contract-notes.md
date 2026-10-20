@@ -236,7 +236,8 @@ Binding conventions every later task and feature follows. Source of truth for ty
 - `live.Deps.Sessions` (`PrincipalChecker`) + `SessionCheckInterval` (default `live.DefaultSessionCheckInterval`, 60 s;
   `app.Options.LiveSessionCheck`, `testkit.WithLiveSessionCheck`). A connection closes with status 1008
   `session revoked` when an event names its session, when a re-check after a `lagged` bus fails, or on the periodic
-  re-check. Clients should treat 1008 as "logged out" and not reconnect blindly.
+  re-check. Clients should treat 1008 as "logged out" and not reconnect blindly. (Fix iteration 2 adds token revocation, user
+  disable and a fail-closed 1013; see below.)
 - `sessions.sql`: `DeleteSessionsByUser` returns the deleted ids; new `DeleteOtherUserSessions`, `GetSession`;
   `tokens.sql`: `GetToken`.
 
@@ -250,8 +251,8 @@ Binding conventions every later task and feature follows. Source of truth for ty
 
 ## Auth
 - Login rate limit: `failureLimiter.Begin(ip)` reserves an attempt before the argon2 check (at most 5 checks per IP per
-  window, also under a parallel burst), `Succeed` clears the IP, `Release` returns the slot on an internal error. The map
-  drops expired windows once per window and is capped at 10,000 keys (oldest window evicted).
+  window, also under a parallel burst). Superseded by fix iteration 2 below: success no longer clears the IP, and the
+  cap no longer evicts active windows.
 
 ## Build and tests
 - Docker: `ARG VERSION=dev` and optional `ARG SOURCE_COMMIT` (→ `dev-<12 chars>` when VERSION stays dev). CI passes
@@ -261,3 +262,36 @@ Binding conventions every later task and feature follows. Source of truth for ty
   10 s Testing Library async timeout and a 30 s vitest test timeout. Do not shorten them: the shared machine runs the
   Go suite at load averages of 12-20.
 - sqlc: after `sqlc.slice(...)`, use a positional `LIMIT ?`; a named arg is numbered (`?2`) and breaks the expansion.
+
+# Contract Notes (from core-platform fix iteration 2: T45-T58)
+
+## Auth: login limiter (AUTH-05)
+- Keys: `users.clientKey(ip)` = the IPv4 address (IPv4-mapped IPv6 unmapped) or the IPv6 /64 (`2001:db8:1:2::/64`);
+  unparsable input is used as is. `LoginInput.IP` stays the raw address (sessions and audit record it).
+- A failure keeps its reservation; a success and an internal error call `Release` (returns only their own slot). There
+  is no `Succeed`: a success never resets the window. The 6th attempt after 5 failures in the window gets 429, and so
+  does every attempt (right password included) until the window, opened at the first attempt, ends.
+- Cap `defaultLimiterKeys` = 10,000. When full, expired windows are dropped; with none expired a new key is refused
+  (`Begin` false → 429) and no active window is evicted. Expired windows are also pruned once per window.
+- `Service.verifyPassword` (default `authn.VerifyPassword`) is the one password check; tests wrap it to count checks.
+
+## Sessions, tokens and live sockets
+- `events.SessionsRevoked{UserID, SessionIDs, TokenIDs, UserDisabled}`; `e.Revokes(userID, sessionID, tokenID)` tells a
+  socket whether it is ended. Publishers: `RevokeSession`, password change/reset (sessions), `RevokeToken`
+  (`TokenIDs`), `UpdateUser` disabling a user (`UserDisabled` plus the deleted session ids).
+- The live hub closes a socket with 1008 `session revoked` when the event ends its session or token or disables its
+  user, when the re-check after a `lagged` bus finds it inactive, or on the periodic 60 s re-check. If the re-check
+  itself fails (store error) the socket closes with 1013 `session check failed` (fail closed); clients reconnect and the
+  upgrade authenticates again.
+- The agent gateway consumes the same event (agent-channel T13): revoking an agent token or disabling its owner
+  closes the agent socket with 1008.
+
+## Delivery
+- `delivery.Plan` drops an explicit recipient whose chat member has `Outbound` off (defense in depth);
+  `rooms` still rejects such recipients with 422 `recipients` = `listen-only` before planning.
+
+## Tests and build
+- `make test` runs `go test -race -count=1 -timeout 20m ./...`.
+- Agent-channel tests (`internal/channel` `wait`, `internal/cli` `chanWait`) bound signal waits at one minute.
+- The last-admin 409 over HTTP is tested in-package (`internal/api/admin_guard_test.go`): the request carries an admin
+  principal while the database shows the actor demoted, the state the loser of two concurrent demotions reaches.

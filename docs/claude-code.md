@@ -106,7 +106,7 @@ Attachments are listed in the text as `[attachment <id>: <name>, <mime>]`.
 | `send_message` | Post to a room (id or name), optionally only to some of its chats (`recipients`: chat ids from `list_rooms`). |
 | `list_rooms` | The agent's rooms with their members; agents show whether they are online. |
 | `history` | Earlier messages of a room, oldest first, 20 by default and at most 100, before an optional `message_id`. |
-| `download_attachment` | Save an attachment under `$TMPDIR/partyline/<agent>/` (mode 0600) and return its path. |
+| `download_attachment` | Save an attachment under `$TMPDIR/partyline/<agent>/` (mode 0600) and return its path. The directory must be yours and private (0700, not a symlink); on a shared `/tmp`, set `TMPDIR` to a private directory. |
 | `send_file` | Upload a local file to a room, with an optional caption and `reply_to`. |
 
 An agent can post at most 30 messages per minute; beyond that the tools answer `rate limited`.

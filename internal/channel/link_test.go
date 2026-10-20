@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -301,4 +302,35 @@ func (w *failingWriter) Write(p []byte) (int, error) {
 		return 0, errBrokenPipe
 	}
 	return len(p), nil
+}
+
+// discardNotifier drops notifications (the link never connects in the backoff test).
+type discardNotifier struct{}
+
+func (discardNotifier) Notify(string, any) error { return nil }
+
+// AGT-03: while the server is unreachable the link retries after 1 s, doubling up to 30 s.
+// The waits are recorded instead of slept.
+func TestLinkBacksOffWhileUnreachable(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	base, err := url.Parse("http://" + ln.Addr().String())
+	require.NoError(t, err)
+	require.NoError(t, ln.Close()) // nothing listens there now: every dial fails at once
+
+	l := newLink(base, "pl_agent_x", "builder", &http.Client{}, discardNotifier{}, io.Discard, defaultTiming)
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	var waits []time.Duration
+	l.sleep = func(ctx context.Context, d time.Duration) bool {
+		waits = append(waits, d)
+		if len(waits) == 8 {
+			cancel()
+		}
+		return ctx.Err() == nil
+	}
+	require.NoError(t, l.run(ctx))
+	require.Equal(t, []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second,
+		16 * time.Second, 30 * time.Second, 30 * time.Second, 30 * time.Second}, waits)
+	require.ErrorContains(t, l.Err(), "server unreachable")
 }

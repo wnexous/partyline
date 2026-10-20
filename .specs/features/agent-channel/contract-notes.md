@@ -64,3 +64,27 @@ Binding conventions Phase 2 (channel side, T5-T9) and the web app follow. Types 
   (owner or use grantee), `PUT /agents/{id}/sharing` (owner). Room member DTOs now fill `online` for agent members.
 - testkit: `Client.DialAgent(name) (*AgentConn, *Response)` with `Welcome`, `Message`, `Notice`, `Next`, `ExpectNone`, `Ack`,
   `Closed`, `Close`; live and agent sockets share one background reader.
+
+# Contract Notes (from agent-channel fix iteration 1: T10-T18)
+
+## Gateway
+- `GatewayDeps.Bus` and `GatewayDeps.Sessions` (`PrincipalChecker`, the users service) are wired by the app. Each agent
+  connection subscribes to the bus before the upgrade and confirms its token (`PrincipalActive`; inactive → 401).
+- `events.SessionsRevoked` naming the connection's token (`TokenIDs`) or disabling its owner (`UserDisabled`) closes the
+  socket with 1008 `token revoked`. After a `lagged` bus the token is re-checked: inactive → 1008, check error → 1013
+  `token check failed`. The channel then reconnects; the upgrade answers 401 and the link enters invalid-token mode.
+- There is no periodic re-check on agent sockets; revocations reach them through the event (or the lagged re-check).
+
+## Channel
+- `link.sleep(ctx, d) bool` is the wait between connection attempts (default `sleepCtx`); tests replace it to record the
+  backoff (1 s doubling to 30 s on dial failures).
+- `download_attachment`: `<tmp>/partyline` and `<tmp>/partyline/<agent>` are created 0700 and refused when they are a
+  symlink or not a directory, and on unix when owned by another user or with group/other bits
+  (`checkPrivate`, `private_unix.go`; no check on Windows). Files go to an O_EXCL temp file (`.download-*`, 0600) renamed
+  over `<attachment id>-<name>`, so an existing file or planted symlink is replaced, never followed. A refused
+  directory is a tool error whose text names the directory and suggests setting `TMPDIR`.
+
+## Tests
+- testkit WebSocket dials and ack writes use `testkit.IOTimeout` (1 min); api tests wait up to 1 min (`wsWait`,
+  `liveWait`) for expected frames, and channel tests up to 1 min (`wait`, `chanWait`). All return as soon as the frame
+  arrives; keep negative waits (`ExpectNone`, `Closed` on a socket that must stay open) short and explicit.

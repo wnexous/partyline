@@ -153,6 +153,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Now: opts.Now})
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
 		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Logger: opts.Logger,
+		Bus: bus, Sessions: usersSvc,
 	})
 	kinds := opts.ConnectorKinds
 	if kinds == nil {

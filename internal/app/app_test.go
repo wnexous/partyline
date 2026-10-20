@@ -68,6 +68,13 @@ func TestHealthAndReadiness(t *testing.T) {
 	require.NotEmpty(t, a.SetupToken())
 }
 
+// LIVE-02 edge case: a default app re-checks live sessions every minute, so a revoked session
+// outlives its sockets by at most 60 s even if no revocation event arrives.
+func TestLiveSessionCheckDefaultsToOneMinute(t *testing.T) {
+	a := newApp(t)
+	require.Equal(t, time.Minute, a.Live.SessionCheckInterval())
+}
+
 type recordingSender struct{ sent chan delivery.Delivery }
 
 func (s recordingSender) Send(_ context.Context, d delivery.Delivery) (string, error) {

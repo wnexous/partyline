@@ -67,6 +67,12 @@ T28 → T29 → T30 → T31 → T32 → T33 → T34 → T35 → T36 → T37 → 
 T35 → T43 → T44
 ```
 
+### Phase 6: Verifier fix iteration 2
+
+```
+T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → T55 → T56 → T57 → T58
+```
+
 ---
 
 ## Task Breakdown
@@ -218,7 +224,7 @@ T35 → T43 → T44
 #### T10: API tokens service
 
 **What**: create (kind agent|user, name, optional expiry), list (prefix only), revoke, authenticate (updates `last_used_at` at most once per minute).
-**Where**: `internal/users/tokens.go`
+**Where**: `internal/users/tokens.go`, `internal/events/bus.go`, `internal/live/hub.go`
 **Depends on**: T9
 **Reuses**: authn
 **Requirement**: TOK-01, TOK-02, TOK-04
@@ -741,3 +747,208 @@ T35 → T43 → T44
 **Tests**: integration
 **Gate**: full
 **Commit**: `test(delivery): wait for the outbox worker with a generous deadline`
+
+### Phase 6: Verifier fix iteration 2
+
+#### T45: Twenty-minute Go test timeout
+
+**What**: `make test` runs `go test` with `-timeout 20m`; `internal/api` alone takes 3-6 min under load and the 10 min default left little margin.
+**Where**: `Makefile`
+**Depends on**: None
+**Reuses**: none
+**Requirement**: gate stability (no AC)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] `make test` passes; the Makefile test target passes `-timeout 20m`
+**Tests**: none
+**Gate**: build
+**Commit**: `build(make): give go tests a 20 minute timeout`
+
+#### T46: Successful logins keep the failure window
+
+**What**: A successful login returns only its own reservation; failures stay counted for the rest of the minute. `TestLoginSuccessClearsFailures` (it asserted the opposite of AUTH-05) is replaced.
+**Where**: `internal/users/users.go`
+**Depends on**: T45
+**Reuses**: failureLimiter.Release
+**Requirement**: AUTH-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Four rounds of (4 wrong + 1 correct) from one IP within a minute: the 6th failure gets 429 and every later attempt, correct or not, gets 429 until the minute ends
+- [x] Sequential and other-IP behavior unchanged
+**Tests**: integration
+**Gate**: full
+**Commit**: `fix(users): keep failed logins counted after a successful login`
+
+#### T47: Burst test counts password checks
+
+**What**: The service verifies passwords through an injectable function; the concurrent burst test counts the actual verifications and asserts exactly 5.
+**Where**: `internal/users/auth.go`
+**Depends on**: T46
+**Reuses**: authn.VerifyPassword
+**Requirement**: AUTH-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A 30-request parallel burst of wrong logins runs exactly 5 password verifications (5×401, 25×429)
+- [x] Reserving after the check (iteration-1 bug) fails the test
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(users): count password verifications in the concurrent login burst`
+
+#### T48: Login limiter keyed per client network, no active eviction
+
+**What**: Keys are the client IPv4 /32 or IPv6 /64. When the map is full, expired windows are dropped; with no expired window left a new key is rejected (429) and active windows are never evicted. The default cap is asserted.
+**Where**: `internal/users/users.go`
+**Depends on**: T47
+**Reuses**: failureLimiter
+**Requirement**: AUTH-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Two addresses in one IPv6 /64 share a window; another /64 and IPv4 addresses do not
+- [x] A full limiter evicts only expired windows; with none it rejects new keys and keeps every active window and its count
+- [x] The default cap is 10,000 keys
+**Tests**: unit
+**Gate**: quick
+**Commit**: `fix(users): key the login limiter per client network and keep active windows`
+
+#### T49: Session owner check isolated
+
+**What**: `TestPrincipalActive` pairs bob's session and token with another existing active user's id, so only the owner check can reject them.
+**Where**: `internal/users/tokens_test.go`
+**Depends on**: T48
+**Reuses**: users fixture
+**Requirement**: AUTH-09
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A principal with an existing active user's id and another user's session id (or token id) is inactive
+**Tests**: integration
+**Gate**: quick
+**Commit**: `test(users): isolate the session owner check in the principal check`
+
+#### T50: Live re-check default and lagged re-check
+
+**What**: Assert the production re-check interval is 60 s and that a lagged bus re-checks the principal at once.
+**Where**: `internal/live/hub_test.go`, `internal/api/live_test.go`
+**Depends on**: T49
+**Reuses**: live hub
+**Requirement**: AUTH-09, AUTH-10
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] The default session re-check interval is 60 s
+- [x] After a lagged bus, a socket whose session was deleted closes with 1008 well before the periodic re-check
+**Tests**: e2e
+**Gate**: full
+**Commit**: `test(live): assert the 60 s re-check default and the lagged re-check`
+
+#### T51: Live session check fails closed
+
+**What**: A store error during the principal re-check closes the socket with 1013 (try again later), so the client reconnects and authenticates again.
+**Where**: `internal/live/hub.go`
+**Depends on**: T50
+**Reuses**: checkPrincipal
+**Requirement**: AUTH-09, AUTH-10
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A failing principal check closes the socket with 1013
+**Tests**: e2e
+**Gate**: full
+**Commit**: `fix(live): close live sockets when the session check fails`
+
+#### T52: Revoked tokens and disabled users close live sockets at once
+
+**What**: Token revocation and user disable publish the revocation event (token ids, whole user); the hub closes token-authenticated sockets of that token or user immediately.
+**Where**: `internal/users/tokens.go`
+**Depends on**: T51
+**Reuses**: events.SessionsRevoked
+**Requirement**: AUTH-10, TOK-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Revoking a user token closes a live socket opened with it within 1 s; other sockets stay open
+- [x] Disabling a user closes its token-authenticated live socket within 1 s
+**Tests**: e2e
+**Gate**: full
+**Commit**: `fix(users): close token live sockets on revocation and user disable`
+
+#### T53: Blob delete grace boundary
+
+**What**: Room delete keeps unshared blobs younger than one minute and removes older ones; the test uses ages 59 s and 61 s with the injected clock.
+**Where**: `internal/rooms/retention_test.go`
+**Depends on**: T52
+**Reuses**: retention fixture
+**Requirement**: ROOM-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A 59 s old unshared blob is kept and a 61 s old one is removed
+**Tests**: integration
+**Gate**: quick
+**Commit**: `test(rooms): test the one minute blob grace on room delete`
+
+#### T54: Last-admin 409 over HTTP
+
+**What**: The admin PATCH route answers 409 `conflict` when the acting admin was demoted after authentication and the target is the last active admin (the concurrent interleaving, made deterministic).
+**Where**: `internal/api/admin_guard_test.go`
+**Depends on**: T53
+**Reuses**: api server, users service
+**Requirement**: AUTH-10
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] The PATCH (demote and disable) returns 409 `conflict` and the last admin keeps its role and stays active
+**Tests**: e2e
+**Gate**: full
+**Commit**: `test(api): observe the last admin conflict over http`
+
+#### T55: Removed agent gets nothing
+
+**What**: Suite test of probe P3: an agent removed from a room gets no live push and no backlog when it reconnects.
+**Where**: `internal/api/agent_dispatch_test.go`
+**Depends on**: T54
+**Reuses**: agent channel testkit
+**Requirement**: ROOM-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A connected agent removed from a room receives no frame for a later post
+- [x] On reconnect its backlog does not contain that post
+**Tests**: e2e
+**Gate**: full
+**Commit**: `test(api): removed agents get no push and no backlog`
+
+#### T56: Plan drops listen-only explicit recipients
+
+**What**: `delivery.Plan` drops explicit recipients whose chat member has outbound off (defense in depth; `checkRefs` still answers 422).
+**Where**: `internal/delivery/rules.go`
+**Depends on**: T55
+**Reuses**: delivery.Plan
+**Requirement**: DLV-04, DLV-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Table test: an explicit recipient with outbound off is not targeted, one with outbound on is
+**Tests**: unit
+**Gate**: quick
+**Commit**: `fix(delivery): drop listen-only chats from explicit recipients`
+
+#### T57: Load-tolerant agent-channel tests
+
+**What**: `TestLinkDeliversBacklogOnConnect` and `TestChannelEndToEnd` already wait on signals or poll; their 10 s bound becomes a 1 min bound (`wait`, `chanWait`), which costs nothing when the signal arrives.
+**Where**: `internal/channel/env_test.go`, `internal/cli/channel_test.go`
+**Depends on**: T56
+**Reuses**: none
+**Requirement**: gate stability (no AC)
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Both tests pass with `-count=10` under load
+**Tests**: integration
+**Gate**: full
+**Commit**: `test(channel): wait for agent channel events with a generous deadline`
+
+#### T58: Contract notes and traceability for fix iteration 2
+
+**What**: Record the limiter, revocation and live-check behavior, add the matching edge cases to spec.md and update traceability.
+**Where**: `contract-notes.md`
+**Depends on**: T57
+**Reuses**: none
+**Requirement**: all
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] contract-notes.md describes the limiter keying and eviction, the revocation event and the fail-closed re-check
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record contract notes for fix iteration 2`

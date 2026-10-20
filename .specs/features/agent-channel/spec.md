@@ -124,30 +124,30 @@ A Claude Code session can only receive pushed events through a channel: an MCP s
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| MCP-01 | P1: Connect | Tasks | Implementing |
-| MCP-02 | P1: Connect | Tasks | Implementing |
-| MCP-03 | P1: Connect | Tasks | Implementing |
-| AGT-01 | P1: Connect | Tasks | Implementing |
-| AGT-02 | P1: Connect | Tasks | Implementing |
-| AGT-03 | P1: Connect | Tasks | Implementing |
-| AGT-04 | P1: Connect | Tasks | Implementing |
-| AGT-05 | P1: Receive | Tasks | Implementing |
-| AGT-06 | P1: Receive | Tasks | Implementing |
-| AGT-07 | P1: Receive | Tasks | Implementing |
-| AGT-08 | P1: Receive | Tasks | Implementing |
-| AGT-09 | P1: Receive | Tasks | Implementing |
-| AGT-10 | P1: Receive | Tasks | Implementing |
-| TOOL-01 | P1: Tools | Tasks | Implementing |
-| TOOL-02 | P1: Tools | Tasks | Implementing |
-| TOOL-03 | P1: Tools | Tasks | Implementing |
-| TOOL-04 | P1: Tools | Tasks | Implementing |
-| TOOL-05 | P1: Tools | Tasks | Implementing |
-| TOOL-06 | P1: Tools | Tasks | Implementing |
-| TOOL-07 | P1: Tools | Tasks | Implementing |
-| TOOL-08 | P1: Tools | Tasks | Implementing |
-| TOOL-09 | P2: Agent directory | Tasks | Implementing |
+| MCP-01 | P1: Connect | Tasks | Verified |
+| MCP-02 | P1: Connect | Fix T14 | Fixed, re-verify |
+| MCP-03 | P1: Connect | Tasks | Verified |
+| AGT-01 | P1: Connect | Tasks | Verified |
+| AGT-02 | P1: Connect | Fix T13 | Fixed, re-verify |
+| AGT-03 | P1: Connect | Fix T15 | Fixed, re-verify |
+| AGT-04 | P1: Connect | Tasks | Verified |
+| AGT-05 | P1: Receive | Tasks | Verified |
+| AGT-06 | P1: Receive | Tasks | Verified |
+| AGT-07 | P1: Receive | Fix T11 | Fixed, re-verify |
+| AGT-08 | P1: Receive | Fix T12 | Fixed, re-verify |
+| AGT-09 | P1: Receive | Tasks | Verified |
+| AGT-10 | P1: Receive | Tasks | Verified |
+| TOOL-01 | P1: Tools | Tasks | Verified |
+| TOOL-02 | P1: Tools | Tasks | Verified |
+| TOOL-03 | P1: Tools | Tasks | Verified |
+| TOOL-04 | P1: Tools | Tasks | Verified |
+| TOOL-05 | P1: Tools | Tasks | Verified |
+| TOOL-06 | P1: Tools | Fix T16-T17 | Fixed, re-verify |
+| TOOL-07 | P1: Tools | Tasks | Verified |
+| TOOL-08 | P1: Tools | Tasks | Verified |
+| TOOL-09 | P2: Agent directory | Tasks | Verified |
 
-**Coverage:** 22 total, mapped in tasks.md
+**Coverage:** 22 total, mapped in tasks.md (T1-T9); fix iteration 1 (T10-T18) re-opens the rows marked "Fixed, re-verify". T13 (AGT-02) closes agent sockets when their token is revoked or the owner disabled.
 
 ---
 

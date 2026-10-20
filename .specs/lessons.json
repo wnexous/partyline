@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 7,
+  "next_id": 14,
   "lessons": [
     {
       "id": "L-001",
@@ -90,10 +90,11 @@
       "recurrence": 1,
       "harmful": 0,
       "evidence": [
-        "internal/app/app_test.go:134 (tests)"
+        "internal/app/app_test.go:134 (tests)",
+        "internal/channel/link_test.go:48; internal/cli/channel_test.go:116 (tests)"
       ],
       "created": "2026-10-20T02:32:09Z",
-      "last_seen": "2026-10-20T02:32:09Z"
+      "last_seen": "2026-10-20T04:47:07Z"
     },
     {
       "id": "L-006",
@@ -112,6 +113,132 @@
       ],
       "created": "2026-10-20T02:32:09Z",
       "last_seen": "2026-10-20T02:32:09Z"
+    },
+    {
+      "id": "L-007",
+      "key": "ac_gap::a fix must not add behavior the ac does not allow reconcile any extra rule with the spec before coding it",
+      "text": "A fix must not add behavior the AC does not allow; reconcile any extra rule with the spec before coding it",
+      "signal": "ac_gap",
+      "scope": "auth",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "AUTH-05 internal/users/users.go:184-188 (probe P2) (auth)"
+      ],
+      "created": "2026-10-20T04:47:07Z",
+      "last_seen": "2026-10-20T04:47:07Z"
+    },
+    {
+      "id": "L-008",
+      "key": "surviving_mutant::concurrency limit tests must count the guarded expensive operation not only the responses",
+      "text": "Concurrency limit tests must count the guarded expensive operation, not only the responses",
+      "signal": "surviving_mutant",
+      "scope": "auth",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "N3 internal/users/auth.go:95-98 (auth)"
+      ],
+      "created": "2026-10-20T04:47:07Z",
+      "last_seen": "2026-10-20T04:47:07Z"
+    },
+    {
+      "id": "L-009",
+      "key": "surviving_mutant::when tests override a configurable default also assert the production default the spec names",
+      "text": "When tests override a configurable default, also assert the production default the spec names",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "N6 internal/live/hub.go:38; N16 internal/users/users.go:160 (tests)"
+      ],
+      "created": "2026-10-20T04:47:07Z",
+      "last_seen": "2026-10-20T04:47:07Z"
+    },
+    {
+      "id": "L-010",
+      "key": "surviving_mutant::test time window boundaries with values strictly inside and outside the window never at age zero",
+      "text": "Test time-window boundaries with values strictly inside and outside the window, never at age zero",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "N9 internal/rooms/retention_test.go:115 (tests)"
+      ],
+      "created": "2026-10-20T04:47:07Z",
+      "last_seen": "2026-10-20T04:47:07Z"
+    },
+    {
+      "id": "L-011",
+      "key": "surviving_mutant::every new sentinel error mapped to an http status needs a test that observes that status",
+      "text": "Every new sentinel error mapped to an HTTP status needs a test that observes that status",
+      "signal": "surviving_mutant",
+      "scope": "api",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "N12 internal/api/router.go:160 (api)"
+      ],
+      "created": "2026-10-20T04:47:07Z",
+      "last_seen": "2026-10-20T04:47:07Z"
+    },
+    {
+      "id": "L-012",
+      "key": "surviving_mutant::negative tests must isolate the check under test so no other guard rejects the input first",
+      "text": "Negative tests must isolate the check under test so no other guard rejects the input first",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "N17 internal/users/tokens_test.go:235 (tests)"
+      ],
+      "created": "2026-10-20T04:47:07Z",
+      "last_seen": "2026-10-20T04:47:07Z"
+    },
+    {
+      "id": "L-013",
+      "key": "surviving_mutant::every behavior written into contract notes needs a test or it is unverified",
+      "text": "Every behavior written into contract notes needs a test or it is unverified",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "core-platform"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "N18 internal/live/hub.go:244-245 (tests)"
+      ],
+      "created": "2026-10-20T04:47:07Z",
+      "last_seen": "2026-10-20T04:47:07Z"
     }
   ]
 }

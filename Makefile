@@ -39,7 +39,7 @@ vet:
 
 ## test: all Go tests with the race detector (plus web tests when web/ exists)
 test:
-	go test -race -count=1 ./...
+	go test -race -count=1 -timeout 20m ./...
 ifneq ($(HAS_WEB),)
 	$(MAKE) web-test
 endif

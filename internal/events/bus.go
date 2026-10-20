@@ -2,7 +2,10 @@
 // whose buffer is full misses events and receives a Lagged marker instead, so it can refetch.
 package events
 
-import "sync"
+import (
+	"slices"
+	"sync"
+)
 
 // Event is any value published on the bus. The set is closed to this package.
 type Event interface{ isEvent() }
@@ -55,11 +58,28 @@ type OutboxChanged struct {
 // IdentityLinked reports that a chat identity was linked to a user.
 type IdentityLinked struct{ UserID, IdentityID string }
 
-// SessionsRevoked reports that sessions of a user ended (logout, session delete, password
-// change or reset, user disabled); live sockets of those sessions must close.
+// SessionsRevoked reports that credentials of a user ended: sessions (logout, session delete,
+// password change or reset), tokens (revocation) or all of them (user disabled). Live sockets
+// authenticated by those credentials must close.
 type SessionsRevoked struct {
 	UserID     string
 	SessionIDs []string
+	TokenIDs   []string
+	// UserDisabled ends every session and token of UserID.
+	UserDisabled bool
+}
+
+// Revokes reports whether e ends the credential (session or token) of userID.
+func (e SessionsRevoked) Revokes(userID, sessionID, tokenID string) bool {
+	switch {
+	case e.UserDisabled && e.UserID == userID:
+		return true
+	case sessionID != "":
+		return slices.Contains(e.SessionIDs, sessionID)
+	case tokenID != "":
+		return slices.Contains(e.TokenIDs, tokenID)
+	}
+	return false
 }
 
 // Lagged tells a subscriber it missed events because its buffer was full.

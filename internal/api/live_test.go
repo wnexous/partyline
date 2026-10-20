@@ -15,10 +15,12 @@ import (
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
+	"github.com/wnexous/partyline/internal/users"
 )
 
 const (
-	liveWait = 2 * time.Second
+	// liveWait bounds waits for an expected live frame; they return as soon as it arrives.
+	liveWait = time.Minute
 	// quiet is how long a user without access must receive nothing (T22: 500 ms).
 	quiet = 500 * time.Millisecond
 )
@@ -268,4 +270,60 @@ func TestLiveRechecksSessionPeriodically(t *testing.T) {
 		return q.DeleteSession(context.Background(), id)
 	}))
 	requireRevoked(t, conn)
+}
+
+// A lagged bus may have dropped a revocation event, so every socket re-checks its principal
+// at once: a socket whose session was deleted without an event closes long before the 60 s
+// periodic re-check; a socket whose session is still valid gets the lagged frame and stays.
+func TestLiveRechecksSessionAfterLaggedBus(t *testing.T) {
+	env := testkit.New(t) // default 60 s periodic re-check
+	alice := env.NewUser("alice")
+	bob := env.NewUser("bob")
+	aliceConn := dialHello(t, alice)
+	bobConn := dialHello(t, bob)
+	id := sessionID(t, env, alice)
+	require.NoError(t, env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
+		return q.DeleteSession(context.Background(), id)
+	}))
+
+	env.App.Bus.Publish(events.Lagged{})
+	err := aliceConn.Closed(10 * time.Second)
+	require.Error(t, err, "live socket still open 10 s after a lagged bus; the periodic re-check is 60 s")
+	require.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(err), "close: %v", err)
+
+	bobConn.Expect(dto.LiveEventTypeLagged, nil, liveWait)
+	require.NoError(t, bobConn.Closed(300*time.Millisecond), "a valid session stays live")
+}
+
+// AUTH-10, TOK-02 on the live socket: revoking a user token or disabling its user closes the
+// live sockets opened with that token within 1 s, not only at the periodic re-check; sockets
+// of other tokens and of sessions stay open.
+func TestLiveClosesRevokedTokens(t *testing.T) {
+	env := testkit.New(t) // default 60 s periodic re-check
+	admin := env.SetupAdmin()
+	alice := env.NewUser("alice")
+	token := func(name string) (string, *testkit.Client) {
+		tok, secret, err := env.App.Users.CreateToken(context.Background(), alice.User.ID,
+			users.TokenInput{Kind: dto.TokenKindUser, Name: name})
+		require.NoError(t, err)
+		return tok.ID, alice.WithBearer(secret)
+	}
+
+	// Token revocation closes that token's socket only.
+	revokedID, revoked := token("revoked")
+	_, kept := token("kept")
+	revokedConn := dialHello(t, revoked)
+	keptConn := dialHello(t, kept)
+	sessionConn := dialHello(t, alice)
+	alice.Delete("/api/v1/tokens/" + revokedID).RequireStatus(http.StatusNoContent)
+	requireRevoked(t, revokedConn)
+	require.NoError(t, keptConn.Closed(300*time.Millisecond), "another token stays live")
+	require.NoError(t, sessionConn.Closed(300*time.Millisecond), "the session stays live")
+
+	// Disabling the user closes its token sockets too; other users stay live.
+	adminConn := dialHello(t, admin)
+	admin.Patch("/api/v1/admin/users/"+alice.User.ID, dto.UpdateUserRequest{Disabled: new(true)}).RequireStatus(http.StatusOK)
+	requireRevoked(t, keptConn)
+	requireRevoked(t, sessionConn)
+	require.NoError(t, adminConn.Closed(300*time.Millisecond), "other users stay live")
 }

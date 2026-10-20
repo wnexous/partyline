@@ -4,6 +4,7 @@ package users
 
 import (
 	"errors"
+	"net/netip"
 	"regexp"
 	"sync"
 	"time"
@@ -70,6 +71,9 @@ type Service struct {
 	limiter    *failureLimiter
 	audit      *audit.Log
 	bus        *events.Bus
+	// verifyPassword checks a password against its argon2id hash (authn.VerifyPassword);
+	// tests wrap it to count the slow checks a login burst runs.
+	verifyPassword func(hash, password string) (bool, error)
 
 	dummyOnce sync.Once
 	dummyHash string
@@ -91,13 +95,22 @@ func NewService(st *store.Store, opts Options) (*Service, error) {
 		limiter:    newFailureLimiter(loginMaxFailures, loginWindow),
 		audit:      audit.New(st, opts.Now),
 		bus:        opts.Bus,
+
+		verifyPassword: authn.VerifyPassword,
 	}, nil
 }
 
 // sessionsRevoked announces ended sessions so live sockets bound to them close.
 func (s *Service) sessionsRevoked(userID string, ids []string) {
-	if s.bus != nil && len(ids) > 0 {
-		s.bus.Publish(events.SessionsRevoked{UserID: userID, SessionIDs: ids})
+	if len(ids) > 0 {
+		s.revoked(events.SessionsRevoked{UserID: userID, SessionIDs: ids})
+	}
+}
+
+// revoked announces ended credentials so live sockets authenticated by them close.
+func (s *Service) revoked(e events.SessionsRevoked) {
+	if s.bus != nil {
+		s.bus.Publish(e)
 	}
 }
 
@@ -138,12 +151,14 @@ func ms(t time.Time) int64 { return t.UnixMilli() }
 
 // failureLimiter counts login attempts per key in fixed windows that open at the first
 // attempt. Begin reserves an attempt before the slow password check, so a parallel burst
-// cannot run more than max checks (AUTH-05); a success clears the key.
+// cannot run more than max checks (AUTH-05). A failure keeps its reservation; a success or
+// an internal error returns it with Release, so a success never clears earlier failures.
+// Keys are client networks (see clientKey).
 type failureLimiter struct {
 	mu        sync.Mutex
 	max       int
 	window    time.Duration
-	maxKeys   int // hard cap on tracked keys; the oldest window is evicted beyond it
+	maxKeys   int // hard cap on tracked keys; beyond it only expired windows are dropped
 	lastPrune time.Time
 	byKey     map[string]*failureWindow
 }
@@ -161,7 +176,8 @@ func newFailureLimiter(maxFailures int, window time.Duration) *failureLimiter {
 }
 
 // Begin reserves one attempt for key. It returns false, reserving nothing, when the key
-// already used its max attempts in the current window.
+// already used its max attempts in the current window, or when key is new and the limiter
+// is full of active windows.
 func (l *failureLimiter) Begin(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -173,21 +189,15 @@ func (l *failureLimiter) Begin(key string, now time.Time) bool {
 		w.count++
 		return true
 	}
-	if w == nil {
-		l.makeRoomLocked(now)
+	if w == nil && !l.makeRoomLocked(now) {
+		return false
 	}
 	l.byKey[key] = &failureWindow{start: now, count: 1}
 	return true
 }
 
-// Succeed clears key's attempts after a successful login.
-func (l *failureLimiter) Succeed(key string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	delete(l.byKey, key)
-}
-
-// Release returns a reserved attempt that ended without a verdict (an internal error).
+// Release returns a reserved attempt that did not fail: a successful login or an internal
+// error. The window and the failures it already counts stay.
 func (l *failureLimiter) Release(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -196,9 +206,10 @@ func (l *failureLimiter) Release(key string) {
 	}
 }
 
-// makeRoomLocked drops expired windows (at most once per window, or when full) and, when
-// the map is still at its cap, evicts the oldest window.
-func (l *failureLimiter) makeRoomLocked(now time.Time) {
+// makeRoomLocked drops expired windows (at most once per window, or when full) and reports
+// whether a new key fits under the cap. Active windows are never evicted: evicting them
+// would let a flood of new addresses flush an attacker's own failures.
+func (l *failureLimiter) makeRoomLocked(now time.Time) bool {
 	if now.Sub(l.lastPrune) >= l.window || len(l.byKey) >= l.maxKeys {
 		l.lastPrune = now
 		for k, w := range l.byKey {
@@ -207,14 +218,20 @@ func (l *failureLimiter) makeRoomLocked(now time.Time) {
 			}
 		}
 	}
-	for len(l.byKey) >= l.maxKeys {
-		var oldest string
-		var oldestStart time.Time
-		for k, w := range l.byKey {
-			if oldest == "" || w.start.Before(oldestStart) {
-				oldest, oldestStart = k, w.start
-			}
-		}
-		delete(l.byKey, oldest)
+	return len(l.byKey) < l.maxKeys
+}
+
+// clientKey is the limiter key of a client address: the IPv4 address itself (/32, IPv4-mapped
+// IPv6 included) or the IPv6 /64, the smallest prefix one subscriber usually gets. Anything
+// that does not parse is used as is.
+func clientKey(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
 	}
+	addr = addr.WithZone("").Unmap()
+	if addr.Is4() {
+		return addr.String()
+	}
+	return netip.PrefixFrom(addr, 64).Masked().String()
 }

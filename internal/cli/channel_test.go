@@ -14,11 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/channel"
 	"github.com/wnexous/partyline/internal/testkit"
 	"github.com/wnexous/partyline/internal/users"
 )
 
-const chanWait = 10 * time.Second
+// chanWait bounds every wait for channel output or state; waits return as soon as it arrives.
+const chanWait = time.Minute
 
 type lockedBuffer struct {
 	mu sync.Mutex
@@ -145,6 +147,7 @@ func TestChannelEndToEnd(t *testing.T) {
 	require.Equal(t, "2025-11-25", res["protocolVersion"])
 	require.Equal(t, map[string]any{"experimental": map[string]any{"claude/channel": map[string]any{}}, "tools": map[string]any{}}, res["capabilities"])
 	require.Equal(t, "partyline", res["serverInfo"].(map[string]any)["name"])
+	require.Equal(t, channel.Instructions, res["instructions"], "MCP-02: the real channel instructions")
 	c.send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
 
 	agent := e.agent(t, "my-project")

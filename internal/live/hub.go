@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
 	"sync"
 	"time"
 
@@ -39,8 +38,11 @@ const (
 )
 
 // errSessionRevoked ends a connection whose session (or token, or user) no longer
-// authenticates.
-var errSessionRevoked = errors.New("session revoked")
+// authenticates; errSessionCheckFailed one whose re-check could not run (fail closed).
+var (
+	errSessionRevoked     = errors.New("session revoked")
+	errSessionCheckFailed = errors.New("session check failed")
+)
 
 // PrincipalChecker reports whether a connection's principal still authenticates.
 type PrincipalChecker interface {
@@ -97,6 +99,9 @@ func New(d Deps) *Hub {
 }
 
 // Close closes every open connection and waits for them to finish.
+// SessionCheckInterval reports how often live sockets re-check their session.
+func (h *Hub) SessionCheckInterval() time.Duration { return h.d.SessionCheckInterval }
+
 func (h *Hub) Close() {
 	h.mu.Lock()
 	h.closed = true
@@ -148,6 +153,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err = c.run(ctx)
 	if errors.Is(err, errSessionRevoked) {
 		_ = ws.Close(websocket.StatusPolicyViolation, "session revoked")
+		return
+	}
+	if errors.Is(err, errSessionCheckFailed) {
+		// The client reconnects, and the upgrade authenticates it again.
+		_ = ws.Close(websocket.StatusTryAgainLater, "session check failed")
 		return
 	}
 	if err != nil && ctx.Err() == nil {
@@ -238,7 +248,7 @@ func (c *conn) run(ctx context.Context) error {
 func (c *conn) checkRevoked(ctx context.Context, e events.Event) error {
 	switch e := e.(type) {
 	case events.SessionsRevoked:
-		if c.p.SessionID != "" && slices.Contains(e.SessionIDs, c.p.SessionID) {
+		if e.Revokes(c.p.UserID, c.p.SessionID, c.p.TokenID) {
 			return errSessionRevoked
 		}
 	case events.Lagged:
@@ -247,7 +257,8 @@ func (c *conn) checkRevoked(ctx context.Context, e events.Event) error {
 	return nil
 }
 
-// checkPrincipal ends the connection when its principal no longer authenticates.
+// checkPrincipal ends the connection when its principal no longer authenticates, or when
+// that cannot be checked (fail closed).
 func (c *conn) checkPrincipal(ctx context.Context) error {
 	if c.hub.d.Sessions == nil {
 		return nil
@@ -258,7 +269,7 @@ func (c *conn) checkPrincipal(ctx context.Context) error {
 			return nil
 		}
 		c.hub.d.Logger.Error("live: session check failed", "user_id", c.p.UserID, "err", err)
-		return nil
+		return errSessionCheckFailed
 	}
 	if !ok {
 		return errSessionRevoked

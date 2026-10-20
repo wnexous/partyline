@@ -11,6 +11,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -80,7 +81,7 @@ func (s *Service) ListTokens(ctx context.Context, userID string) ([]db.ApiToken,
 
 // RevokeToken revokes one of the user's tokens; ErrNotFound when the user does not own it.
 func (s *Service) RevokeToken(ctx context.Context, userID, id string) error {
-	return s.store.WithTx(ctx, func(q *db.Queries) error {
+	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		n, err := q.RevokeToken(ctx, db.RevokeTokenParams{
 			RevokedAt: sql.NullInt64{Int64: ms(s.now()), Valid: true}, ID: id, UserID: userID,
 		})
@@ -92,6 +93,11 @@ func (s *Service) RevokeToken(ctx context.Context, userID, id string) error {
 		}
 		return s.audit.Record(ctx, q, audit.Entry{Action: audit.ActionTokenRevoke, TargetKind: audit.TargetToken, TargetID: id})
 	})
+	if err != nil {
+		return err
+	}
+	s.revoked(events.SessionsRevoked{UserID: userID, TokenIDs: []string{id}})
+	return nil
 }
 
 // AuthenticateToken resolves a bearer secret to its principal: an agent principal for agent
