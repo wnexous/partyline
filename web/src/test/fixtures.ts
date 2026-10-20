@@ -1,4 +1,13 @@
-import type { Agent, Chat, Me, Message, Room, RoomMember } from "@/lib/api/types.gen";
+import type {
+  Agent,
+  Chat,
+  Connector,
+  ConnectorKind,
+  Me,
+  Message,
+  Room,
+  RoomMember,
+} from "@/lib/api/types.gen";
 
 /** Synthetic fixtures; never real names, numbers or chat ids. */
 export function makeMessage(over: Partial<Message> = {}): Message {
@@ -85,6 +94,53 @@ export function makeChat(over: Partial<Chat> = {}): Chat {
     title: "Ops on call",
     kind: "group",
     created_at: "2026-10-01T12:00:00Z",
+    ...over,
+  };
+}
+
+export function makeConnector(over: Partial<Connector> = {}): Connector {
+  return {
+    id: "k1",
+    kind: "telegram",
+    name: "ops-bot",
+    owner: { id: "u1", username: "ana", display_name: "Ana Souza" },
+    my_level: "manage",
+    enabled: true,
+    status: "connected",
+    config: {},
+    created_at: "2026-10-01T12:00:00Z",
+    updated_at: "2026-10-19T12:00:00Z",
+    ...over,
+  };
+}
+
+/** A synthetic connector kind with one field of every type. */
+export function makeConnectorKind(over: Partial<ConnectorKind> = {}): ConnectorKind {
+  return {
+    name: "telegram",
+    label: "Telegram",
+    can_list_chats: true,
+    fields: [
+      { name: "bot_token", label: "Bot token", type: "secret", required: true, secret: true },
+      { name: "api_url", label: "API URL", type: "url", required: false, secret: false },
+      {
+        name: "greeting",
+        label: "Greeting",
+        type: "string",
+        required: false,
+        secret: false,
+        help: "Sent when the bot joins a group.",
+        default: "hello",
+      },
+      { name: "groups_only", label: "Groups only", type: "bool", required: false, secret: false },
+      {
+        name: "allowed_chats",
+        label: "Allowed chats",
+        type: "string_list",
+        required: false,
+        secret: false,
+      },
+    ],
     ...over,
   };
 }

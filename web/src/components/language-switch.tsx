@@ -8,6 +8,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useUpdateMe } from "@/lib/api/queries";
 import { isLocale, LOCALES, type Locale, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 
@@ -17,11 +18,25 @@ export const LOCALE_NAMES: Record<Locale, string> = {
   en: "English",
 };
 
-export function LanguageRadioGroup() {
-  const locale = useLiveStore((s) => s.locale);
+/**
+ * Switches the UI language for this browser (localStorage) and, inside the app, also stores it on
+ * the account (PATCH /me) so other browsers start in it. The account write is best effort.
+ */
+export function useChooseLocale(syncAccount: boolean) {
   const setLocale = useLiveStore((s) => s.setLocale);
+  const updateMe = useUpdateMe();
+  return (value: string) => {
+    if (!isLocale(value)) return;
+    setLocale(value);
+    if (syncAccount) updateMe.mutate({ locale: value });
+  };
+}
+
+export function LanguageRadioGroup({ syncAccount = false }: { syncAccount?: boolean }) {
+  const locale = useLiveStore((s) => s.locale);
+  const choose = useChooseLocale(syncAccount);
   return (
-    <DropdownMenuRadioGroup value={locale} onValueChange={(v) => isLocale(v) && setLocale(v)}>
+    <DropdownMenuRadioGroup value={locale} onValueChange={choose}>
       {LOCALES.map((l) => (
         <DropdownMenuRadioItem key={l} value={l} lang={l}>
           {LOCALE_NAMES[l]}

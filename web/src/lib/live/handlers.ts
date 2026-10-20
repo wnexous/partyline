@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { fetchMessages, type MessagePages, queryKeys } from "@/lib/api/queries";
+import { fetchMessages, type MessagePages, queryKeys, trimActivity } from "@/lib/api/queries";
 import type {
   Agent,
   Connector,
@@ -91,6 +91,9 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
         m.seq > room.last_seq ? { ...room, last_seq: m.seq, updated_at: m.created_at } : room;
       qc.setQueryData<Room>(queryKeys.room(m.room_id), (old) => (old ? bump(old) : old));
       patchList<Room>(qc, queryKeys.rooms, m.room_id, bump);
+      qc.setQueryData<Message[]>(queryKeys.activity, (old) =>
+        old && !old.some((x) => x.id === m.id) ? trimActivity([m, ...old]) : old,
+      );
       return;
     }
 
@@ -110,6 +113,7 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       const id = event.data.room_id;
       qc.removeQueries({ queryKey: queryKeys.room(id) });
       qc.setQueryData<Room[]>(queryKeys.rooms, (old) => old?.filter((r) => r.id !== id));
+      qc.setQueryData<Message[]>(queryKeys.activity, (old) => old?.filter((m) => m.room_id !== id));
       return;
     }
 
@@ -134,6 +138,11 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
         online,
         last_seen_at: last_seen_at ?? a.last_seen_at,
       }));
+      // Agents are created on their first connection: an unknown id means the list is stale.
+      const cached = qc.getQueryData<Agent[]>(queryKeys.agents);
+      if (cached && !cached.some((a) => a.id === agent_id)) {
+        qc.invalidateQueries({ queryKey: queryKeys.agents, exact: true });
+      }
       for (const [key, members] of qc.getQueriesData<RoomMember[]>({ queryKey: ["rooms"] })) {
         if (key[2] !== "members" || !members) continue;
         if (!members.some((mb) => mb.kind === "agent" && mb.member_id === agent_id)) continue;
@@ -213,6 +222,7 @@ export async function catchUp(qc: QueryClient): Promise<void> {
   qc.invalidateQueries({ queryKey: queryKeys.rooms, exact: true });
   qc.invalidateQueries({ queryKey: queryKeys.agents });
   qc.invalidateQueries({ queryKey: queryKeys.connectors });
+  qc.invalidateQueries({ queryKey: queryKeys.activity });
   await Promise.all(
     cachedTimelines(qc).map(async ({ roomId, active }) => {
       const after = lastSeq(qc, roomId);

@@ -212,7 +212,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-11
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Each mode submits the exact `dto.Sharing` payload; summary lists who can access
+- [x] Each mode submits the exact `dto.Sharing` payload; summary lists who can access
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add reusable sharing dialog`
@@ -228,8 +228,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-14, UI-15
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Snippet contains `partyline channel`, the URL from `window.location.origin` and the new token
-- [ ] Presence event flips the row's status dot
+- [x] Snippet contains `partyline channel`, the URL from `window.location.origin` and the new token
+- [x] Presence event flips the row's status dot
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add agents page with connect wizard`
@@ -243,8 +243,8 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-13, UI-16, UI-17
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Field types map to inputs (secret → password); required errors shown from zod and 422
-- [ ] "Route to agent" calls `/chats/{id}/route` and navigates to the room
+- [x] Field types map to inputs (secret → password); required errors shown from zod and 422
+- [x] "Route to agent" calls `/chats/{id}/route` and navigates to the room
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add connector pages with schema-driven forms`
@@ -258,7 +258,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-18
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Countdown reaches 0 → expired state; live event → success and list refetch
+- [x] Countdown reaches 0 → expired state; live event → success and list refetch
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add identities page with pairing flow`
@@ -272,7 +272,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-19, UI-23, UI-25
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Secret shown once with warning; list shows prefix only; theme/language persist in localStorage
+- [x] Secret shown once with warning; list shows prefix only; theme/language persist in localStorage
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add tokens and settings pages`
@@ -286,7 +286,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-20, UI-21
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Member opening `/admin/users` sees 403 page; invite link copied contains `/invite/<token>`
+- [x] Member opening `/admin/users` sees 403 page; invite link copied contains `/invite/<token>`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add admin users, invites and audit pages`
@@ -302,7 +302,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-15, UI-17
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Cards reflect live presence/status changes; empty states link to the right flows
+- [x] Cards reflect live presence/status changes; empty states link to the right flows
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add live dashboard`
@@ -316,7 +316,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-22
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Ctrl+K opens; typing filters; Enter navigates
+- [x] Ctrl+K opens; typing filters; Enter navigates
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add command palette`

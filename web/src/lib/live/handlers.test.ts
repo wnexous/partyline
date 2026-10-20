@@ -1,7 +1,14 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type MessagePages, queryKeys } from "@/lib/api/queries";
-import type { Agent, Connector, Identity, LiveEvent, RoomMember } from "@/lib/api/types.gen";
+import { ACTIVITY_PER_ROOM, ACTIVITY_SIZE, type MessagePages, queryKeys } from "@/lib/api/queries";
+import type {
+  Agent,
+  Connector,
+  Identity,
+  LiveEvent,
+  Message,
+  RoomMember,
+} from "@/lib/api/types.gen";
 import { makeMessage } from "@/test/fixtures";
 import { handleLiveEvent, type LiveActions } from "./handlers";
 import { useLiveStore } from "./store";
@@ -97,6 +104,24 @@ describe("live handlers", () => {
     expect(qc.getQueryData<RoomMember[]>(queryKeys.roomMembers("r1"))?.[0]?.online).toBe(true);
   });
 
+  it("agent.presence for an agent missing from the cached list refetches the list (UI-14)", () => {
+    qc.setQueryData<Agent[]>(queryKeys.agents, [{ id: "a1", online: false } as Agent]);
+    handleLiveEvent(qc, actions(), {
+      type: "agent.presence",
+      data: { agent_id: "a9", online: true },
+    });
+    expect(qc.getQueryState(queryKeys.agents)?.isInvalidated).toBe(true);
+  });
+
+  it("agent.presence for a cached agent patches without refetching", () => {
+    qc.setQueryData<Agent[]>(queryKeys.agents, [{ id: "a1", online: false } as Agent]);
+    handleLiveEvent(qc, actions(), {
+      type: "agent.presence",
+      data: { agent_id: "a1", online: true },
+    });
+    expect(qc.getQueryState(queryKeys.agents)?.isInvalidated).toBe(false);
+  });
+
   it("connector.status updates the store and the cached connector (UI-17)", () => {
     qc.setQueryData<Connector>(queryKeys.connector("c1"), {
       id: "c1",
@@ -159,5 +184,68 @@ describe("live handlers", () => {
     handleLiveEvent(qc, actions(), { type: "room.deleted", data: { room_id: "r1" } });
     expect(qc.getQueryData<{ id: string }[]>(queryKeys.rooms)).toEqual([{ id: "r2" }]);
     expect(qc.getQueryData(queryKeys.roomMessages("r1"))).toBeUndefined();
+  });
+  describe("dashboard activity (UI-04 on the overview)", () => {
+    const activityIds = () => qc.getQueryData<Message[]>(queryKeys.activity)?.map((m) => m.id);
+
+    it("puts a live message first in the cached activity feed, once", () => {
+      qc.setQueryData(queryKeys.activity, [
+        makeMessage({ room_id: "r1", seq: 1, created_at: "2026-10-19T12:00:00Z" }),
+      ]);
+      const m = makeMessage({ room_id: "r2", seq: 7, created_at: "2026-10-19T12:01:00Z" });
+      handleLiveEvent(qc, actions(), { type: "room.message", data: m });
+      handleLiveEvent(qc, actions(), { type: "room.message", data: m });
+      expect(activityIds()).toEqual(["m-r2-7", "m-r1-1"]);
+    });
+
+    it("keeps at most ACTIVITY_SIZE messages, dropping the oldest", () => {
+      // One message per room, so only the total cap applies.
+      qc.setQueryData(
+        queryKeys.activity,
+        Array.from({ length: ACTIVITY_SIZE }, (_, i) =>
+          makeMessage({ room_id: `r${i}`, seq: 1, created_at: `2026-10-19T11:${10 + i}:00Z` }),
+        ).reverse(),
+      );
+      handleLiveEvent(qc, actions(), {
+        type: "room.message",
+        data: makeMessage({ room_id: "rx", seq: 1, created_at: "2026-10-19T12:30:00Z" }),
+      });
+      const ids = activityIds();
+      expect(ids).toHaveLength(ACTIVITY_SIZE);
+      expect(ids?.[0]).toBe("m-rx-1");
+      expect(ids).not.toContain("m-r0-1");
+    });
+
+    it("keeps at most ACTIVITY_PER_ROOM messages of one room, so busy rooms do not hide others", () => {
+      qc.setQueryData(queryKeys.activity, [
+        ...Array.from({ length: ACTIVITY_PER_ROOM }, (_, i) =>
+          makeMessage({ room_id: "busy", seq: 10 - i, created_at: `2026-10-19T11:5${9 - i}:00Z` }),
+        ),
+        makeMessage({ room_id: "calm", seq: 1, created_at: "2026-10-19T09:00:00Z" }),
+      ]);
+      handleLiveEvent(qc, actions(), {
+        type: "room.message",
+        data: makeMessage({ room_id: "busy", seq: 11, created_at: "2026-10-19T12:00:00Z" }),
+      });
+      const ids = activityIds() ?? [];
+      expect(ids[0]).toBe("m-busy-11");
+      expect(ids.filter((id) => id.startsWith("m-busy-"))).toHaveLength(ACTIVITY_PER_ROOM);
+      expect(ids).not.toContain(`m-busy-${10 - ACTIVITY_PER_ROOM + 1}`);
+      expect(ids).toContain("m-calm-1");
+    });
+
+    it("does not create the feed when the dashboard never loaded it", () => {
+      handleLiveEvent(qc, actions(), { type: "room.message", data: makeMessage() });
+      expect(qc.getQueryData(queryKeys.activity)).toBeUndefined();
+    });
+
+    it("room.deleted removes that room's messages from the feed", () => {
+      qc.setQueryData(queryKeys.activity, [
+        makeMessage({ room_id: "r1", seq: 1 }),
+        makeMessage({ room_id: "r2", seq: 1 }),
+      ]);
+      handleLiveEvent(qc, actions(), { type: "room.deleted", data: { room_id: "r1" } });
+      expect(activityIds()).toEqual(["m-r2-1"]);
+    });
   });
 });

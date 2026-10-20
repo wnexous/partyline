@@ -84,6 +84,7 @@ export const queryKeys = {
   adminUsers: ["admin", "users"] as const,
   adminInvites: ["admin", "invites"] as const,
   adminAudit: ["admin", "audit"] as const,
+  activity: ["activity"] as const,
 };
 
 const items = <T>(list: List<T>) => list.items;
@@ -236,7 +237,9 @@ export function useUpdateSharing(kind: SharingResource, id: string) {
     mutationFn: (req: Sharing) => api<Sharing>("PUT", `/${kind}/${id}/sharing`, req),
     onSuccess: (sharing) => {
       qc.setQueryData(queryKeys.sharing(kind, id), sharing);
-      qc.invalidateQueries({ queryKey: [kind] });
+      // Visibility shows on the list and the resource itself; timelines and members are unaffected.
+      qc.invalidateQueries({ queryKey: [kind], exact: true });
+      qc.invalidateQueries({ queryKey: [kind, id], exact: true });
     },
   });
 }
@@ -392,6 +395,70 @@ export function usePostMessage(roomId: string) {
 }
 
 export const attachmentUrl = (id: string) => `/api/v1/attachments/${id}`;
+
+// ---------------------------------------------------------------------------------------------
+// Dashboard activity
+
+/** Messages kept in the dashboard feed, at most per room, and rooms sampled to fill it. */
+export const ACTIVITY_SIZE = 8;
+export const ACTIVITY_PER_ROOM = 3;
+export const ACTIVITY_ROOMS = 6;
+
+/** Newest message first; seq breaks ties inside a room. */
+export function newestFirst(a: Message, b: Message): number {
+  const diff = Date.parse(b.created_at) - Date.parse(a.created_at);
+  return diff !== 0 ? diff : b.seq - a.seq;
+}
+
+/**
+ * Shapes the dashboard feed: newest first, no duplicate ids, at most ACTIVITY_PER_ROOM messages
+ * per room (one busy room must not hide the others), at most ACTIVITY_SIZE in total.
+ */
+export function trimActivity(messages: Message[]): Message[] {
+  const seen = new Set<string>();
+  const perRoom = new Map<string, number>();
+  const out: Message[] = [];
+  for (const m of [...messages].sort(newestFirst)) {
+    if (seen.has(m.id)) continue;
+    const n = perRoom.get(m.room_id) ?? 0;
+    if (n >= ACTIVITY_PER_ROOM) continue;
+    seen.add(m.id);
+    perRoom.set(m.room_id, n + 1);
+    out.push(m);
+    if (out.length === ACTIVITY_SIZE) break;
+  }
+  return out;
+}
+
+// SPEC_DEVIATION: recent activity samples the latest page of the most recently active rooms.
+// Reason: the API has no cross-room message feed; ACTIVITY_ROOMS requests of ACTIVITY_PER_ROOM
+// messages each fill the feed, and live room.message events keep it current afterwards.
+/** The dashboard feed: latest messages across the rooms the user can see, newest first. */
+export const activityQuery = (qc: QueryClient) =>
+  queryOptions({
+    queryKey: queryKeys.activity,
+    queryFn: async ({ signal }) => {
+      const rooms = await qc.ensureQueryData(roomsQuery());
+      const active = rooms
+        .filter((r) => r.last_seq > 0)
+        .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+        .slice(0, ACTIVITY_ROOMS);
+      const pages = await Promise.all(
+        active.map((r) =>
+          api<Page<Message>>("GET", `/rooms/${r.id}/messages`, undefined, {
+            query: { limit: ACTIVITY_PER_ROOM },
+            signal,
+          }),
+        ),
+      );
+      return trimActivity(pages.flatMap((p) => p.items));
+    },
+  });
+
+export function useActivity() {
+  const qc = useQueryClient();
+  return useQuery(activityQuery(qc));
+}
 
 // ---------------------------------------------------------------------------------------------
 // Agents

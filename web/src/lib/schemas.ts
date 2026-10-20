@@ -59,6 +59,44 @@ export const roomSettingsSchema = z.object({
     .min(0, msg("validation.retention")),
 });
 
+// DTO gap: the agent name rule (agent-channel design, Registry.Upsert) has no generated constant
+// yet; it mirrors `^[a-z0-9][a-z0-9._-]{0,47}$` until internal/agents exports one.
+export const AgentNamePattern = "^[a-z0-9][a-z0-9._-]{0,47}$";
+
+/** Connect wizard (UI-14): the name the session registers as (PARTYLINE_AGENT). */
+export const connectAgentSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, msg("validation.required"))
+    .regex(new RegExp(AgentNamePattern), msg("validation.agentName")),
+});
+
+/** POST /tokens (UI-19): expiry is picked from presets and converted at submit. */
+export const TOKEN_EXPIRY_DAYS = ["never", "7", "30", "90", "365"] as const;
+export const createTokenSchema = z.object({
+  kind: z.enum(["agent", "user"]),
+  name: z.string().trim().min(1, msg("validation.required")).max(64, msg("validation.tokenName")),
+  expiry: z.enum(TOKEN_EXPIRY_DAYS),
+});
+
+/** PATCH /me: the display name may be empty (the username shows instead). */
+export const profileSchema = z.object({
+  display_name: z.string().trim().max(64, msg("validation.displayName")),
+});
+
+/** POST /me/password; the repeat field never leaves the browser. */
+export const changePasswordSchema = z
+  .object({
+    current_password: z.string().min(1, msg("validation.required")),
+    new_password: passwordSchema,
+    repeat_password: z.string(),
+  })
+  .refine((v) => v.new_password === v.repeat_password, {
+    path: ["repeat_password"],
+    ...msg("validation.passwordMatch"),
+  });
+
 /** Message text (MSG-02): non-empty unless files are attached, at most MaxTextLength. */
 export const messageTextSchema = z.string().max(MaxTextLength, msg("validation.tooLong"));
 
@@ -66,6 +104,10 @@ export type SetupForm = z.input<typeof setupSchema>;
 export type LoginForm = z.input<typeof loginSchema>;
 export type AcceptInviteForm = z.input<typeof acceptInviteSchema>;
 export type CreateRoomForm = z.input<typeof createRoomSchema>;
+export type ConnectAgentForm = z.input<typeof connectAgentSchema>;
+export type CreateTokenForm = z.input<typeof createTokenSchema>;
+export type ProfileForm = z.input<typeof profileSchema>;
+export type ChangePasswordForm = z.input<typeof changePasswordSchema>;
 export type RoomSettingsForm = z.input<typeof roomSettingsSchema>;
 
 /** Placeholder values of the schema message keys, for rendering zod issues with useT(). */
