@@ -8,7 +8,23 @@
 
 Corroborated across multiple features. Safe to apply as guidance.
 
-_none_
+### L-017 - Every new sentinel error mapped to an HTTP status needs a test that observes that status
+- signal: `surviving_mutant` · recurrence: 2 feature(s) · scope: `api` · harmful: 0
+- features: agent-channel, core-platform
+- evidence: N12 internal/api/router.go:160 (api) (+1 more)
+- last seen: 2026-10-20T07:38:15Z
+
+### L-018 - Negative tests must isolate the check under test so no other guard rejects the input first
+- signal: `surviving_mutant` · recurrence: 2 feature(s) · scope: `tests` · harmful: 0
+- features: agent-channel, core-platform
+- evidence: N17 internal/users/tokens_test.go:235 (tests) (+1 more)
+- last seen: 2026-10-20T07:38:14Z
+
+### L-029 - Run the full make check (lint included) before committing even a test-only or orchestrator edit
+- signal: `gate_fail` · recurrence: 2 feature(s) · scope: `process` · harmful: 0
+- features: agent-channel, connectors
+- evidence: internal/live/hub.go:101 (f4147c9), internal/channel/link.go:348 (c9083be) (process) (+1 more)
+- last seen: 2026-10-20T10:11:20Z
 
 ## Candidates (under observation - do NOT load as guidance yet)
 
@@ -50,47 +66,125 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: DLV-02 DLV-06 DLV-08 SEC-04 AUD-01 (specs)
 - last seen: 2026-10-20T02:32:09Z
 
-### L-007 - A fix must not add behavior the AC does not allow; reconcile any extra rule with the spec before coding it
+### L-007 - Test permission-gated UI through the page that passes the permission, not only the leaf component
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web-pages` · harmful: 0
+- features: web-app
+- evidence: M18 web/src/routes/_app/rooms/$roomId.tsx:120 (web-pages)
+- last seen: 2026-10-20T02:50:50Z
+
+### L-008 - Stub matchMedia and assert the resolved result for every behavior that follows a system preference
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web-lib` · harmful: 0
+- features: web-app
+- evidence: M17 web/src/lib/theme.ts:36 (UI-23) (web-lib)
+- last seen: 2026-10-20T02:50:50Z
+
+### L-009 - Assert layout ACs such as no horizontal scroll with a measurable check in the e2e viewport project, not only by running flows at that width
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `e2e` · harmful: 0
+- features: web-app
+- evidence: UI-24 no horizontal-scroll assertion in web/e2e/smoke.spec.ts (e2e)
+- last seen: 2026-10-20T02:50:51Z
+
+### L-010 - Test that retry backoff resets after a successful connection, not only that it grows
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web-lib` · harmful: 0
+- features: web-app
+- evidence: M19 web/src/lib/live/socket.ts:61 (web-lib)
+- last seen: 2026-10-20T02:50:53Z
+
+### L-011 - Assert the rendered value of time and copy outcomes, not only a label prefix or the presence of a control
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `web-pages` · harmful: 0
+- features: web-app
+- evidence: UI-15 agents.test.tsx:64; UI-19 tokens.test.tsx:89-98 (web-pages)
+- last seen: 2026-10-20T02:50:54Z
+
+### L-012 - Name the exact artifact that must contain each value when an AC lists several outputs
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `spec` · harmful: 0
+- features: web-app
+- evidence: UI-14 launch command has no instance URL (spec)
+- last seen: 2026-10-20T02:50:56Z
+
+### L-013 - A fix must not add behavior the AC does not allow; reconcile any extra rule with the spec before coding it
 - signal: `ac_gap` · recurrence: 1 feature(s) · scope: `auth` · harmful: 0
 - features: core-platform
 - evidence: AUTH-05 internal/users/users.go:184-188 (probe P2) (auth)
 - last seen: 2026-10-20T04:47:07Z
 
-### L-008 - Concurrency limit tests must count the guarded expensive operation, not only the responses
+### L-014 - Concurrency limit tests must count the guarded expensive operation, not only the responses
 - signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `auth` · harmful: 0
 - features: core-platform
 - evidence: N3 internal/users/auth.go:95-98 (auth)
 - last seen: 2026-10-20T04:47:07Z
 
-### L-009 - When tests override a configurable default, also assert the production default the spec names
+### L-015 - When tests override a configurable default, also assert the production default the spec names
 - signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
 - features: core-platform
 - evidence: N6 internal/live/hub.go:38; N16 internal/users/users.go:160 (tests)
 - last seen: 2026-10-20T04:47:07Z
 
-### L-010 - Test time-window boundaries with values strictly inside and outside the window, never at age zero
+### L-016 - Test time-window boundaries with values strictly inside and outside the window, never at age zero
 - signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
 - features: core-platform
 - evidence: N9 internal/rooms/retention_test.go:115 (tests)
 - last seen: 2026-10-20T04:47:07Z
 
-### L-011 - Every new sentinel error mapped to an HTTP status needs a test that observes that status
-- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `api` · harmful: 0
-- features: core-platform
-- evidence: N12 internal/api/router.go:160 (api)
-- last seen: 2026-10-20T04:47:07Z
-
-### L-012 - Negative tests must isolate the check under test so no other guard rejects the input first
-- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
-- features: core-platform
-- evidence: N17 internal/users/tokens_test.go:235 (tests)
-- last seen: 2026-10-20T04:47:07Z
-
-### L-013 - Every behavior written into contract notes needs a test or it is unverified
+### L-019 - Every behavior written into contract notes needs a test or it is unverified
 - signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
 - features: core-platform
 - evidence: N18 internal/live/hub.go:244-245 (tests)
 - last seen: 2026-10-20T04:47:07Z
+
+### L-020 - Test permission-bit checks with group-only and other-only modes, not only a fully open mode
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `security` · harmful: 0
+- features: agent-channel
+- evidence: N3 internal/channel/private_unix.go:17 (security)
+- last seen: 2026-10-20T07:38:14Z
+
+### L-021 - Unit-test ownership checks with an injected file info carrying another uid when tests cannot create files as another user
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `security` · harmful: 0
+- features: agent-channel
+- evidence: N4 internal/channel/private_unix.go:14 (security)
+- last seen: 2026-10-20T07:38:15Z
+
+### L-022 - Bounded caches that implement a requirement need a test at the eviction boundary
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
+- features: agent-channel
+- evidence: N11 internal/channel/link.go:30 (tests)
+- last seen: 2026-10-20T07:38:15Z
+
+### L-023 - When a limit is specified in Unicode code points, test a multi-byte input whose byte length exceeds the limit but whose code-point count does not.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `text-limits` · harmful: 0
+- features: connectors
+- evidence: internal/connectors/inbound.go:143 (N22) (text-limits)
+- last seen: 2026-10-20T08:16:42Z
+
+### L-024 - When one component makes outbound calls through several clients (REST and WebSocket), test the network guard on each client separately, because the first refused call hides a bypass in the others.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `ssrf` · harmful: 0
+- features: connectors
+- evidence: internal/connectors/whatsapp/connector.go:101,113 (N29, N36) (ssrf)
+- last seen: 2026-10-20T08:16:42Z
+
+### L-025 - Replay and dedupe state that a spec bounds by time must survive restarts of the component that holds it, or the spec must scope it to one running instance.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `webhooks` · harmful: 0
+- features: connectors
+- evidence: HOOK-05; internal/connectors/webhook/connector.go:110 (replay accepted after restart) (webhooks)
+- last seen: 2026-10-20T08:16:42Z
+
+### L-026 - Key replay caches on the canonical value the server computes, and test that a non-canonical copy of the same credential (padding, case) is still caught as a replay.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `webhooks` · harmful: 0
+- features: connectors
+- evidence: internal/connectors/webhook/connector.go:188 (N35) (webhooks)
+- last seen: 2026-10-20T08:16:42Z
+
+### L-027 - Assert a cache-hygiene rule before any refetch can overwrite the cache; test query clients with staleTime 0 make post-navigation cache checks vacuous
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web-tests` · harmful: 0
+- features: web-app
+- evidence: F2 web/src/lib/api/queries.ts:516 (web-tests)
+- last seen: 2026-10-20T10:09:33Z
+
+### L-028 - When moving a data source behind a panel, test its failure state too, not only success and empty
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web-tests` · harmful: 0
+- features: web-app
+- evidence: F3 web/src/routes/_app/index.tsx:237 (web-tests)
+- last seen: 2026-10-20T10:09:33Z
 
 ## Quarantined (failed when applied - ignore)
 

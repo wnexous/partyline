@@ -1,11 +1,99 @@
 # Agent Channel Validation
 
-**Date**: 2026-10-20
+**Date**: 2026-10-20 (final closure check)
 **Spec**: `.specs/features/agent-channel/spec.md`
-**Diff range**: feature `14ceffc~1..c497608`, plus fix iteration 1 (T10–T18) `178d7f6..68e43da` (178d7f6, be99c36, 3bb31d3, 410add5, 91cb510, 694295b, 9f1706b, a1d32a3, 68e43da). Commits for other features (core-platform, connectors) in the same range are out of scope.
-**Verifier**: independent sub-agent (author ≠ verifier), iteration 2 of the fix→re-verify loop, detached worktree at 68e43da
+**Diff range**: feature `14ceffc~1..c497608`; fix iteration 1 `178d7f6..68e43da`; fix iteration 2 up to `95b5650`; closure fixes `5c8d856`, `53f83f3`, `ea6cfce`, `ad29119`, `d3fee22` and `c9083be` (lint only). Verified at `2908f1a` (main).
+**Verifier**: a fresh independent sub-agent (author ≠ verifier) ran the final escalation closure check in the detached worktree `partyline-verify-final` at `2908f1a`. Mutants ran only in the scratch worktree `/tmp/claude-1001/pl-final-mutants`, which was removed afterwards. The real tree's porcelain was empty before and after.
 
-**Verdict**: FAIL ❌. The gate is green, all 22 ACs have spec-anchored evidence, and all five iteration-1 survivors (M15, M16, M17, M20b, M21) are now killed. But 3 of 14 fresh mutants on the new S1 hardening survived (N1, N3, N4). The worst is N1: the symlink-refusal test passes for the wrong reason, so the `Lstat` symlink check can regress unnoticed. These gaps need test-only fixes.
+## Validation verdict: PASS ✅
+
+The gate is green and the sensor found no survivors. All four closure survivors are killed: W1b, W1c and G1 from the closure check, and F13 from iteration 3. The 6 fresh mutants on the new queue, frame-limit and agent-limit code are killed too. Iteration 3 had already matched 22/22 ACs. The closure fixes added only tests and the W1/W2 hardening, and no test was removed or weakened since `95b5650`.
+
+---
+
+## Final closure (2026-10-20, `2908f1a`)
+
+### Iteration history
+
+| Iteration | Verdict | Outcome |
+| --- | --- | --- |
+| 1 (`c497608`) | FAIL ❌ | The gate failed under load. 16/21 mutants killed. Security notes S1–S6 |
+| 2 (`68e43da`) | FAIL ❌ | The gate was green. N1, N3, N4, N9 and N11 survived. The full report is kept below |
+| 3 (`95b5650`+, not committed) | FAIL ❌ | 22/22 ACs. Survivors: F13 (the agent cap was not proven per owner) and W1/W2 (unbounded queue and frame, opaque agent-limit failure) |
+| Closure check (not committed) | FAIL ❌ | W1b (the link ignored a full queue), W1c (read limit back to -1) and G1 (agent-limit retry waited the backoff instead of the long pause) survived |
+| **Final closure (`2908f1a`)** | **PASS ✅** | All survivors killed, gate green |
+
+### Closure survivors: now killed
+
+| Survivor | Mutation (scratch) | Killing test (spec/contract outcome) | Result |
+| --- | --- | --- | --- |
+| F13 | `CountAgentsByOwner` counts every agent (`WHERE ? IS NOT NULL`) | `internal/api/agent_ws_test.go:371`: a second owner still registers while alice is at 50 (`require.NotNil(t, bobConn, …)`). `:373-375`: alice's 51st answers `409 conflict` | ✅ Killed |
+| W1b | `if !q.push(data) && false` (the link ignores a full queue) | `internal/channel/link_test.go:552`: `require.Equal(t, websocket.StatusPolicyViolation, code)`. The link closes with 1008 when the queue is full | ✅ Killed |
+| W1c | `ws.SetReadLimit(-1)` | `internal/channel/link_test.go:572`: `require.Equal(t, websocket.StatusMessageTooBig, code)`. A frame over the limit closes with 1009 | ✅ Killed |
+| G1 | agent-limit retry uses `backoff, nextBackoff(…)` | `internal/channel/link_test.go:484`: `require.Equal(t, tm.replacedPause, d, …)` with a pause of 120 ms, distinct from the 50 ms backoff (`d3fee22`) | ✅ Killed (`expected: 120ms, actual: 50ms`) |
+
+The contract outcomes check out. The agent-limit error text is asserted exactly (`link_test.go:477`, `EqualError(… "partyline: agent limit reached for this account; delete unused agents in the web app")`), and stderr prints it once per state change. The production limits stay at their documented values: `link_test.go:579-582` asserts 2,000 frames and 1 MiB.
+
+### Fresh mutations (final closure)
+
+| Id | Mutation | Killed by | Result |
+| --- | --- | --- | --- |
+| C1 | `frameQueue.push` cap `>=` → `>` (off by one) | `TestFrameQueueIsBounded` (`link_test.go:490`) | ✅ Killed |
+| C2 | `maxFrameBytes` 1 MiB → 64 KiB | `TestLinkDefaultLimits` (`link_test.go:579`) | ✅ Killed |
+| C3 | a 409 at upgrade is treated as a failed dial (shows "server unreachable") | `TestLinkReportsAgentLimit` (`link_test.go:452`) | ✅ Killed |
+| C4 | the agent-limit stderr line prints on every retry | `TestLinkReportsAgentLimit` (stderr count = 1) | ✅ Killed |
+| C5 | the frame queue pops LIFO | `TestLinkDeliversBacklogOnConnect`, `TestLinkReadsSocketBeforeInitialized`, `TestFrameQueueIsBounded` | ✅ Killed |
+| C6 | `Registry.Upsert` cap `>=` → `>` (51 agents allowed) | `TestAgentWSCapsAgentsPerOwner` (`agent_ws_test.go:343`) | ✅ Killed |
+
+**Final-closure sensor outcome**: 10/10 killed: 4 re-applied survivors and 6 fresh mutants. 0 survived and none were equivalent.
+
+### Gate (final closure)
+
+- `make check` at `2908f1a`: EXIT 0. `check-generate` ok, golangci-lint 0 issues, vet ok, web lint and typecheck ok. Go: 27/27 packages `ok` under `-race`. Web: 28 files, 233/233 tests.
+- `make e2e` (Playwright, installed headless shell): EXIT 0, 8/8 passed (desktop-1280 and mobile-360).
+- Nothing was flaky on the first run, so no re-run was needed.
+
+### Test integrity since `95b5650`
+
+- Go `func Test…` count went from 410 to 440. No test function was removed, and no `t.Skip` was added.
+- The only removed `require` lines are in `internal/connectors/inbound_test.go` (CON-14). There, `Len(msgs, 2)` became `Len(msgs, 3)` with an extra code-point case, which makes the test stronger.
+- The channel tests changed only by addition, plus `d3fee22`, which made the pause distinct from the backoff and so made the test stricter.
+
+### Security notes (state at `2908f1a`)
+
+| Id | Status |
+| --- | --- |
+| S1 download dir | Fixed. The iteration-2 survivors N1, N3 and N4 were killed in fix iteration 2 |
+| S2 agents per token | Fixed. 50 per owner (`registry.go:129`). Per-owner scope proven by `agent_ws_test.go:371` |
+| S3 trust laundering via own agents | Open by design (AD-006) |
+| S4 `send_file` reads local paths | Open. Mitigated by the Claude Code permission prompts |
+| S5 pings before `initialized` | Fixed. Reader and delivery are split (`link.go` `session`/`deliver`). Covered by `link_test.go:154` |
+| S6 skipped count race | Fixed. One snapshot, covered by `internal/agents/gateway_backlog_test.go:25` |
+| W1 unbounded queue and frame | Fixed. 2,000 frames and 1 MiB. Covered by `link_test.go:490,537,559,579` |
+| W2 opaque agent-limit failure | Fixed. 409 maps to a clear tool error and a long pause. Covered by `link_test.go:452` |
+
+### Requirement traceability (proposed; the Verifier does not edit spec.md)
+
+All agent-channel requirements: ✅ Verified (22/22 ACs, 3/3 edge cases).
+
+### Summary
+
+**Overall**: ✅ Ready.
+**Spec-anchored check**: 22/22 ACs (iteration 3), plus the W1/W2 contract outcomes asserted exactly.
+**Sensor**: 10/10 killed in the final closure.
+**Gate**: `make check` EXIT 0 (27 Go packages, 233 web tests). `make e2e` 8/8.
+**Gaps**: none.
+
+---
+
+# Earlier report: iteration 2 (`68e43da`, superseded)
+
+> **Date**: 2026-10-20
+> **Spec**: `.specs/features/agent-channel/spec.md`
+> **Diff range**: feature `14ceffc~1..c497608`, plus fix iteration 1 (T10–T18) `178d7f6..68e43da` (178d7f6, be99c36, 3bb31d3, 410add5, 91cb510, 694295b, 9f1706b, a1d32a3, 68e43da). Commits for other features (core-platform, connectors) in the same range are out of scope.
+> **Verifier**: independent sub-agent (author ≠ verifier), iteration 2 of the fix→re-verify loop, detached worktree at 68e43da
+
+**Iteration-2 verdict**: FAIL ❌. The gate is green, all 22 ACs have spec-anchored evidence, and all five iteration-1 survivors (M15, M16, M17, M20b, M21) are now killed. But 3 of 14 fresh mutants on the new S1 hardening survived (N1, N3, N4). The worst is N1: the symlink-refusal test passes for the wrong reason, so the `Lstat` symlink check can regress unnoticed. These gaps need test-only fixes.
 
 ## History
 
@@ -109,7 +197,7 @@
 **Why N1 survives**: `TestToolDownloadRefusesSharedDirectory/symlinked partyline dir` (`tools_unix_test.go:17-30`) points the symlink at `t.TempDir()`. Go creates that directory with `os.Mkdir(dir, 0777)`, so under umask 022 it is 0755. With `Stat`, the code follows the link, and the **mode** check then refuses it, not the symlink check. Re-running the mutant under `umask 077` makes the test fail: the file is written through the symlink to `…/002/partyline/builder/<id>-report.txt`. On a real host, a symlink to one of the victim's own 0700 directories would be followed.
 
 **Sensor depth**: expanded (P0: identity, revocation, trust, filesystem safety)
-**Result**: 14/19 valid mutants killed. All 5 iteration-1 survivors are killed; 5 of 14 fresh mutants survived (3 of them in the S1 hardening). FAIL ❌
+**Iteration-2 sensor outcome**: 14/19 valid mutants killed. All 5 iteration-1 survivors are killed; 5 of 14 fresh mutants survived (3 of them in the S1 hardening). FAIL ❌
 
 ---
 

@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 14,
+  "next_id": 30,
   "lessons": [
     {
       "id": "L-001",
@@ -116,6 +116,114 @@
     },
     {
       "id": "L-007",
+      "key": "surviving_mutant::test permission gated ui through the page that passes the permission not only the leaf component",
+      "text": "Test permission-gated UI through the page that passes the permission, not only the leaf component",
+      "signal": "surviving_mutant",
+      "scope": "web-pages",
+      "status": "candidate",
+      "features": [
+        "web-app"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M18 web/src/routes/_app/rooms/$roomId.tsx:120 (web-pages)"
+      ],
+      "created": "2026-10-20T02:50:50Z",
+      "last_seen": "2026-10-20T02:50:50Z"
+    },
+    {
+      "id": "L-008",
+      "key": "surviving_mutant::stub matchmedia and assert the resolved result for every behavior that follows a system preference",
+      "text": "Stub matchMedia and assert the resolved result for every behavior that follows a system preference",
+      "signal": "surviving_mutant",
+      "scope": "web-lib",
+      "status": "candidate",
+      "features": [
+        "web-app"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M17 web/src/lib/theme.ts:36 (UI-23) (web-lib)"
+      ],
+      "created": "2026-10-20T02:50:50Z",
+      "last_seen": "2026-10-20T02:50:50Z"
+    },
+    {
+      "id": "L-009",
+      "key": "ac_gap::assert layout acs such as no horizontal scroll with a measurable check in the e2e viewport project not only by running flows at that width",
+      "text": "Assert layout ACs such as no horizontal scroll with a measurable check in the e2e viewport project, not only by running flows at that width",
+      "signal": "ac_gap",
+      "scope": "e2e",
+      "status": "candidate",
+      "features": [
+        "web-app"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "UI-24 no horizontal-scroll assertion in web/e2e/smoke.spec.ts (e2e)"
+      ],
+      "created": "2026-10-20T02:50:51Z",
+      "last_seen": "2026-10-20T02:50:51Z"
+    },
+    {
+      "id": "L-010",
+      "key": "surviving_mutant::test that retry backoff resets after a successful connection not only that it grows",
+      "text": "Test that retry backoff resets after a successful connection, not only that it grows",
+      "signal": "surviving_mutant",
+      "scope": "web-lib",
+      "status": "candidate",
+      "features": [
+        "web-app"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M19 web/src/lib/live/socket.ts:61 (web-lib)"
+      ],
+      "created": "2026-10-20T02:50:53Z",
+      "last_seen": "2026-10-20T02:50:53Z"
+    },
+    {
+      "id": "L-011",
+      "key": "spec_precision_gap::assert the rendered value of time and copy outcomes not only a label prefix or the presence of a control",
+      "text": "Assert the rendered value of time and copy outcomes, not only a label prefix or the presence of a control",
+      "signal": "spec_precision_gap",
+      "scope": "web-pages",
+      "status": "candidate",
+      "features": [
+        "web-app"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "UI-15 agents.test.tsx:64; UI-19 tokens.test.tsx:89-98 (web-pages)"
+      ],
+      "created": "2026-10-20T02:50:54Z",
+      "last_seen": "2026-10-20T02:50:54Z"
+    },
+    {
+      "id": "L-012",
+      "key": "spec_precision_gap::name the exact artifact that must contain each value when an ac lists several outputs",
+      "text": "Name the exact artifact that must contain each value when an AC lists several outputs",
+      "signal": "spec_precision_gap",
+      "scope": "spec",
+      "status": "candidate",
+      "features": [
+        "web-app"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "UI-14 launch command has no instance URL (spec)"
+      ],
+      "created": "2026-10-20T02:50:56Z",
+      "last_seen": "2026-10-20T02:50:56Z"
+    },
+    {
+      "id": "L-013",
       "key": "ac_gap::a fix must not add behavior the ac does not allow reconcile any extra rule with the spec before coding it",
       "text": "A fix must not add behavior the AC does not allow; reconcile any extra rule with the spec before coding it",
       "signal": "ac_gap",
@@ -133,7 +241,7 @@
       "last_seen": "2026-10-20T04:47:07Z"
     },
     {
-      "id": "L-008",
+      "id": "L-014",
       "key": "surviving_mutant::concurrency limit tests must count the guarded expensive operation not only the responses",
       "text": "Concurrency limit tests must count the guarded expensive operation, not only the responses",
       "signal": "surviving_mutant",
@@ -151,7 +259,7 @@
       "last_seen": "2026-10-20T04:47:07Z"
     },
     {
-      "id": "L-009",
+      "id": "L-015",
       "key": "surviving_mutant::when tests override a configurable default also assert the production default the spec names",
       "text": "When tests override a configurable default, also assert the production default the spec names",
       "signal": "surviving_mutant",
@@ -169,7 +277,7 @@
       "last_seen": "2026-10-20T04:47:07Z"
     },
     {
-      "id": "L-010",
+      "id": "L-016",
       "key": "surviving_mutant::test time window boundaries with values strictly inside and outside the window never at age zero",
       "text": "Test time-window boundaries with values strictly inside and outside the window, never at age zero",
       "signal": "surviving_mutant",
@@ -187,43 +295,47 @@
       "last_seen": "2026-10-20T04:47:07Z"
     },
     {
-      "id": "L-011",
+      "id": "L-017",
       "key": "surviving_mutant::every new sentinel error mapped to an http status needs a test that observes that status",
       "text": "Every new sentinel error mapped to an HTTP status needs a test that observes that status",
       "signal": "surviving_mutant",
       "scope": "api",
-      "status": "candidate",
+      "status": "confirmed",
       "features": [
+        "agent-channel",
         "core-platform"
       ],
-      "recurrence": 1,
+      "recurrence": 2,
       "harmful": 0,
       "evidence": [
-        "N12 internal/api/router.go:160 (api)"
+        "N12 internal/api/router.go:160 (api)",
+        "N9 internal/agents/gateway.go:147 (api)"
       ],
       "created": "2026-10-20T04:47:07Z",
-      "last_seen": "2026-10-20T04:47:07Z"
+      "last_seen": "2026-10-20T07:38:15Z"
     },
     {
-      "id": "L-012",
+      "id": "L-018",
       "key": "surviving_mutant::negative tests must isolate the check under test so no other guard rejects the input first",
       "text": "Negative tests must isolate the check under test so no other guard rejects the input first",
       "signal": "surviving_mutant",
       "scope": "tests",
-      "status": "candidate",
+      "status": "confirmed",
       "features": [
+        "agent-channel",
         "core-platform"
       ],
-      "recurrence": 1,
+      "recurrence": 2,
       "harmful": 0,
       "evidence": [
-        "N17 internal/users/tokens_test.go:235 (tests)"
+        "N17 internal/users/tokens_test.go:235 (tests)",
+        "N1 internal/channel/tools.go:280; internal/channel/tools_unix_test.go:17-30 (tests)"
       ],
       "created": "2026-10-20T04:47:07Z",
-      "last_seen": "2026-10-20T04:47:07Z"
+      "last_seen": "2026-10-20T07:38:14Z"
     },
     {
-      "id": "L-013",
+      "id": "L-019",
       "key": "surviving_mutant::every behavior written into contract notes needs a test or it is unverified",
       "text": "Every behavior written into contract notes needs a test or it is unverified",
       "signal": "surviving_mutant",
@@ -239,6 +351,188 @@
       ],
       "created": "2026-10-20T04:47:07Z",
       "last_seen": "2026-10-20T04:47:07Z"
+    },
+    {
+      "id": "L-020",
+      "key": "surviving_mutant::test permission bit checks with group only and other only modes not only a fully open mode",
+      "text": "Test permission-bit checks with group-only and other-only modes, not only a fully open mode",
+      "signal": "surviving_mutant",
+      "scope": "security",
+      "status": "candidate",
+      "features": [
+        "agent-channel"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "N3 internal/channel/private_unix.go:17 (security)"
+      ],
+      "created": "2026-10-20T07:38:14Z",
+      "last_seen": "2026-10-20T07:38:14Z"
+    },
+    {
+      "id": "L-021",
+      "key": "surviving_mutant::unit test ownership checks with an injected file info carrying another uid when tests cannot create files as another user",
+      "text": "Unit-test ownership checks with an injected file info carrying another uid when tests cannot create files as another user",
+      "signal": "surviving_mutant",
+      "scope": "security",
+      "status": "candidate",
+      "features": [
+        "agent-channel"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "N4 internal/channel/private_unix.go:14 (security)"
+      ],
+      "created": "2026-10-20T07:38:15Z",
+      "last_seen": "2026-10-20T07:38:15Z"
+    },
+    {
+      "id": "L-022",
+      "key": "surviving_mutant::bounded caches that implement a requirement need a test at the eviction boundary",
+      "text": "Bounded caches that implement a requirement need a test at the eviction boundary",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "agent-channel"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "N11 internal/channel/link.go:30 (tests)"
+      ],
+      "created": "2026-10-20T07:38:15Z",
+      "last_seen": "2026-10-20T07:38:15Z"
+    },
+    {
+      "id": "L-023",
+      "key": "surviving_mutant::when a limit is specified in unicode code points test a multi byte input whose byte length exceeds the limit but whose code point count does not",
+      "text": "When a limit is specified in Unicode code points, test a multi-byte input whose byte length exceeds the limit but whose code-point count does not.",
+      "signal": "surviving_mutant",
+      "scope": "text-limits",
+      "status": "candidate",
+      "features": [
+        "connectors"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/connectors/inbound.go:143 (N22) (text-limits)"
+      ],
+      "created": "2026-10-20T08:16:42Z",
+      "last_seen": "2026-10-20T08:16:42Z"
+    },
+    {
+      "id": "L-024",
+      "key": "surviving_mutant::when one component makes outbound calls through several clients rest and websocket test the network guard on each client separately because the first refused call hides a bypass in the others",
+      "text": "When one component makes outbound calls through several clients (REST and WebSocket), test the network guard on each client separately, because the first refused call hides a bypass in the others.",
+      "signal": "surviving_mutant",
+      "scope": "ssrf",
+      "status": "candidate",
+      "features": [
+        "connectors"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/connectors/whatsapp/connector.go:101,113 (N29, N36) (ssrf)"
+      ],
+      "created": "2026-10-20T08:16:42Z",
+      "last_seen": "2026-10-20T08:16:42Z"
+    },
+    {
+      "id": "L-025",
+      "key": "ac_gap::replay and dedupe state that a spec bounds by time must survive restarts of the component that holds it or the spec must scope it to one running instance",
+      "text": "Replay and dedupe state that a spec bounds by time must survive restarts of the component that holds it, or the spec must scope it to one running instance.",
+      "signal": "ac_gap",
+      "scope": "webhooks",
+      "status": "candidate",
+      "features": [
+        "connectors"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "HOOK-05; internal/connectors/webhook/connector.go:110 (replay accepted after restart) (webhooks)"
+      ],
+      "created": "2026-10-20T08:16:42Z",
+      "last_seen": "2026-10-20T08:16:42Z"
+    },
+    {
+      "id": "L-026",
+      "key": "surviving_mutant::key replay caches on the canonical value the server computes and test that a non canonical copy of the same credential padding case is still caught as a replay",
+      "text": "Key replay caches on the canonical value the server computes, and test that a non-canonical copy of the same credential (padding, case) is still caught as a replay.",
+      "signal": "surviving_mutant",
+      "scope": "webhooks",
+      "status": "candidate",
+      "features": [
+        "connectors"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/connectors/webhook/connector.go:188 (N35) (webhooks)"
+      ],
+      "created": "2026-10-20T08:16:42Z",
+      "last_seen": "2026-10-20T08:16:42Z"
+    },
+    {
+      "id": "L-027",
+      "key": "surviving_mutant::assert a cache hygiene rule before any refetch can overwrite the cache test query clients with staletime 0 make post navigation cache checks vacuous",
+      "text": "Assert a cache-hygiene rule before any refetch can overwrite the cache; test query clients with staleTime 0 make post-navigation cache checks vacuous",
+      "signal": "surviving_mutant",
+      "scope": "web-tests",
+      "status": "candidate",
+      "features": [
+        "web-app"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "F2 web/src/lib/api/queries.ts:516 (web-tests)"
+      ],
+      "created": "2026-10-20T10:09:33Z",
+      "last_seen": "2026-10-20T10:09:33Z"
+    },
+    {
+      "id": "L-028",
+      "key": "surviving_mutant::when moving a data source behind a panel test its failure state too not only success and empty",
+      "text": "When moving a data source behind a panel, test its failure state too, not only success and empty",
+      "signal": "surviving_mutant",
+      "scope": "web-tests",
+      "status": "candidate",
+      "features": [
+        "web-app"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "F3 web/src/routes/_app/index.tsx:237 (web-tests)"
+      ],
+      "created": "2026-10-20T10:09:33Z",
+      "last_seen": "2026-10-20T10:09:33Z"
+    },
+    {
+      "id": "L-029",
+      "key": "gate_fail::run the full make check lint included before committing even a test only or orchestrator edit",
+      "text": "Run the full make check (lint included) before committing even a test-only or orchestrator edit",
+      "signal": "gate_fail",
+      "scope": "process",
+      "status": "confirmed",
+      "features": [
+        "agent-channel",
+        "connectors"
+      ],
+      "recurrence": 2,
+      "harmful": 0,
+      "evidence": [
+        "internal/live/hub.go:101 (f4147c9), internal/channel/link.go:348 (c9083be) (process)",
+        "internal/channel/link.go:348 (c9083be) (process)"
+      ],
+      "created": "2026-10-20T10:11:20Z",
+      "last_seen": "2026-10-20T10:11:20Z"
     }
   ]
 }

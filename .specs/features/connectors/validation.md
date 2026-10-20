@@ -1,11 +1,94 @@
 # Connectors Validation
 
-**Date**: 2026-10-20 (iteration 2)
-**Spec**: `.specs/features/connectors/spec.md` (36 requirements, 5 edge cases, after the T21 amendments)
-**Diff range**: `17b8c85..f4147c9` (fix tasks T12-T21; `f4147c9` also merges the core-platform and agent-channel fix iterations, which are out of scope here). Surface: `internal/connectors/**` (new `safehttp`), `internal/identities`, `internal/store/migrations/0003_identities_per_connector.sql`, `internal/store/queries/identities.sql`, `internal/api/{hooks,chats,identities}_handlers*`, `internal/api/router.go`, `internal/config`.
-**Verifier**: independent sub-agent (author ≠ verifier), evidence-or-zero. Worked in the detached worktree `partyline-verify-conn`. Probes and mutants ran in the scratch worktree `/tmp/claude-1001/pl-conn-mutants2` and never in the real tree.
+**Date**: 2026-10-20 (final closure check)
+**Spec**: `.specs/features/connectors/spec.md` (36 requirements, 5 edge cases; CON-01 and CON-03 amended in `2908f1a`)
+**Diff range**: iteration 1 `…17b8c85`; fix iteration 1 `17b8c85..f4147c9` (T12–T21); fix iteration 2 up to `d165d0f`; closure fixes T32–T35: `f899404` (N17 test), `59d8c3b` (migration 0005 test), `529c7d9` (`Field.Generated`, and an update keeps the stored secret when the value is empty), `a3df207` (README allowlist), `2908f1a` (spec amendments). Verified at `2908f1a` (main).
+**Verifier**: a fresh independent sub-agent (author ≠ verifier) ran the final escalation closure check in the detached worktree `partyline-verify-final` at `2908f1a`. Mutants ran only in the scratch worktree `/tmp/claude-1001/pl-final-mutants`, which was removed afterwards. The real tree's porcelain was empty before and after.
 
-## Validation verdict: FAIL ❌ (minor gaps only)
+## Validation verdict: PASS ✅
+
+The gate is green and the sensor found no survivors. The N17 survivor and the migration-0005 edge case are now killed. So is the new generated-field update rule (CON-03 as amended) and 4 fresh mutants on it. Iteration 3 had already matched 36/36 ACs and closed S1–S8. The amended CON-01 and CON-03 have spec-anchored evidence below, and no test was removed or weakened since `95b5650`.
+
+---
+
+## Final closure (2026-10-20, `2908f1a`)
+
+### Iteration history
+
+| Iteration | Verdict | Outcome |
+| --- | --- | --- |
+| 1 | FAIL ❌ | Security blockers S1–S4 |
+| 2 (`f4147c9`) | FAIL ❌ | 36/36 ACs. N22, N29, N35 and N36 survived. The full report is kept below |
+| 3 (not committed) | FAIL ❌ | 36/36 ACs and S1–S8 closed. Gaps: N17 (the replay check did not come before the rate budget) and the untested migration-0005 edge case |
+| **Final closure (`2908f1a`)** | **PASS ✅** | Both gaps killed. The new `Field.Generated` rule is discriminated. Gate green |
+
+### Closure gaps: now killed
+
+| Gap | Mutation (scratch) | Killing test (spec outcome) | Result |
+| --- | --- | --- | --- |
+| N17 | `admit`: `if seen && false` (no replay check before the budget) | `internal/connectors/webhook/connector_test.go:147-169` (`TestReplayIsRefusedBeforeTheBudget`). A replay with the budget spent is still `ErrReplayed` (409, HOOK-05) at `:162-163`, and replays never spend the budget (HOOK-04) | ✅ Killed |
+| Migration 0005, nullable column | `connector_id TEXT REFERENCES` (no NOT NULL) | `internal/store/store_test.go:198-224`: migrates a 0004 database with a connector-less code. `:220` `require.Zero(t, n, "codes without a connector are dropped")` and `:224` `require.Equal(t, 1, notNull, …)` | ✅ Killed (`connector_id is NOT NULL`) |
+| Generated field cleared on update | `Merge` without the `case f.Generated && blank(v)` branch | `internal/connectors/kind_test.go:151-167` (`:162`, the stored value is kept for `""` and `"   "`) and `internal/api/hooks_handlers_test.go:172-205` (PATCH `secret: ""` → 200 with `SecretMask` and the old secret still signs). Without the branch the PATCH answers `422 config.secret: required` | ✅ Killed |
+
+### Amended ACs (spec-anchored)
+
+| AC | Spec-defined outcome | `file:line` + assertion | Result |
+| --- | --- | --- | --- |
+| CON-01 (amended) | `GET /connector-kinds` returns the field schema, with `generated` on fields the server fills | `internal/api/hooks_handlers_test.go:176-181`: exact `[]dto.ConnectorField{… Generated: true …}`. `:183`: `"generated"` appears once (omitted when false) | ✅ |
+| CON-03 (amended) | `"********"` or an empty generated value keeps the stored secret, and reads never return the value | `internal/api/hooks_handlers_test.go:188-189`: `Equal(dto.SecretMask, got.Config["secret"])` and `Empty(got.GeneratedSecrets)`. `:190`: `null` still answers `422 config.secret: required`. `internal/connectors/kind_test.go:162,167`: a field that is not generated is not kept | ✅ |
+
+### Fresh mutations (final closure)
+
+| Id | Mutation | Killed by | Result |
+| --- | --- | --- | --- |
+| K1 | `dto.ConnectorField.Generated` loses `omitempty` | `hooks_handlers_test.go:183` | ✅ Killed |
+| K2 | `blank()` stops trimming (`"   "` clears the secret) | `kind_test.go:160-162` | ✅ Killed |
+| K3 | webhook kind drops `Generated: true` on `secret` | `hooks_handlers_test.go:176-181` | ✅ Killed |
+| K4 | `Merge` keeps a generated field even when a new value is sent | `kind_test.go:164` (`new-signing-secret`) | ✅ Killed |
+
+**Final-closure sensor outcome**: 7/7 killed: 3 re-applied gaps and 4 fresh mutants. 0 survived. The first N17 attempt removed the `if seen` block entirely, which does not compile (`seen` unused), so it does not count. The valid form (`seen && false`) is killed.
+
+### Gate (final closure)
+
+- `make check` at `2908f1a`: EXIT 0. `check-generate` ok (the regenerated `types.gen.ts` matches), lint 0 issues, vet ok. Go: 27/27 packages `ok` under `-race`. Web: 233/233.
+- `make e2e`: EXIT 0, 8/8.
+
+### Test integrity since `95b5650`
+
+- Go `func Test…` count went from 410 to 440. No test function was removed, and no skips were added.
+- The only removed assertions are in `internal/connectors/inbound_test.go:272-279` (CON-14), which grew from 2 to 3 messages with a multi-byte case, so the test is stronger.
+- The web tests renamed by the connector contract changes (inbound URL from the DTO; pairing bound to one connector, `5c4a3c7`) assert the new contract and are listed in the web-app report.
+
+### Remaining notes (not blocking)
+
+- S5/S6/S8 options (per-host allowlist, smaller per-call caps) are documented as guidance in `a3df207` (README). They are not spec requirements.
+
+### Requirement traceability (proposed; the Verifier does not edit spec.md)
+
+| Requirement | Status in spec.md | Proposed |
+| --- | --- | --- |
+| CON-01, CON-03 | Implemented, re-verify | ✅ Verified |
+| CON-13, CON-14, HOOK-02, HOOK-05, IDN-01, IDN-02, IDN-04 | Implemented, re-verify | ✅ Verified |
+| All others | Verified | ✅ Verified |
+
+### Summary
+
+**Overall**: ✅ Ready.
+**Spec-anchored check**: 36/36 ACs (iteration 3), with the amended CON-01 and CON-03 re-anchored above.
+**Sensor**: 7/7 killed in the final closure.
+**Gate**: `make check` EXIT 0. `make e2e` 8/8.
+**Gaps**: none.
+
+---
+
+# Earlier report: iteration 2 (`f4147c9`, superseded)
+
+> **Date**: 2026-10-20 (iteration 2)
+> **Spec**: `.specs/features/connectors/spec.md` (36 requirements, 5 edge cases, after the T21 amendments)
+> **Diff range**: `17b8c85..f4147c9` (fix tasks T12-T21; `f4147c9` also merges the core-platform and agent-channel fix iterations, which are out of scope here). Surface: `internal/connectors/**` (new `safehttp`), `internal/identities`, `internal/store/migrations/0003_identities_per_connector.sql`, `internal/store/queries/identities.sql`, `internal/api/{hooks,chats,identities}_handlers*`, `internal/api/router.go`, `internal/config`.
+> **Verifier**: independent sub-agent (author ≠ verifier), evidence-or-zero. Worked in the detached worktree `partyline-verify-conn`. Probes and mutants ran in the scratch worktree `/tmp/claude-1001/pl-conn-mutants2` and never in the real tree.
+
+## Iteration-2 verdict (superseded): FAIL ❌ (minor gaps only)
 
 All three iteration-1 blockers are fixed and pass my own checks:
 - **Identity forgery (S1) is closed.** Identities now belong to a connector instance. My independent Alice/Mallory probe found that Mallory's webhook cannot resolve Alice's sender id, and the forged message reaches Alice's shared agent with `trusted=false`.
@@ -168,7 +251,7 @@ P0 expanded depth: 37 mutants in the scratch worktree, running each affected pac
 | **N36** | `whatsapp/connector.go:101` | REST client ignores the setting | ❌ **Survived** (`Run` then fails at the WebSocket dial, so the test still sees `ErrBlockedAddress`) |
 
 **Isolation**: the real tree's `git status --porcelain` was empty before and after. The scratch tree's porcelain was empty after every mutant (`git checkout -- .` in scratch only). No stash was used.
-**Result**: 31 killed, 2 equivalent, **4 survived (N22, N29, N35, N36)**. **FAIL ❌**
+**Iteration-2 sensor outcome**: 31 killed, 2 equivalent, **4 survived (N22, N29, N35, N36)**. **FAIL ❌**
 
 ---
 

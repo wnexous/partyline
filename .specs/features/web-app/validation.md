@@ -1,11 +1,140 @@
 # Web App Validation
 
-**Date**: 2026-10-20
+**Date**: 2026-10-20 (final closure check of the post-verification follow-ups)
 **Spec**: `.specs/features/web-app/spec.md`
-**Diff range**: feature `web/` tree plus the `Makefile` `e2e` target and the CI `e2e` job, at `a6de457` (`test(web): use an unbreakable token in the overflow e2e fixture`). The fix surface since iteration 1 is `4127774..a6de457` (T20-T32 plus the iteration-2 fixture fix).
-**Verifier**: independent sub-agent (author ≠ verifier), iteration 3 of 3
+**Diff range**: verified feature up to `a6de457` (iteration 3, PASS). This check covers the follow-ups T33–T39: `01f4d01`, `ff06bd4`, `8f4f62c`, `c2ce907`, `a92f543`, `952e6f3` (Phase 6) and `c5e0c99` (Phase 7). It also covers the web changes from the connector fix iterations (`5c4a3c7` pairing per connector, `68608a3` test timeouts). Verified at `2908f1a` (main).
+**Verifier**: a fresh independent sub-agent (author ≠ verifier) ran the final escalation closure check in the detached worktree `partyline-verify-final` at `2908f1a`. Mutants ran only in the scratch worktree `/tmp/claude-1001/pl-final-mutants`, which was removed afterwards. The real tree's porcelain was empty before and after.
 
-**Verdict**: PASS ✅. All gates are green: lint, typecheck, 216/216 unit tests and 8/8 e2e tests. All 25 ACs and all 3 edge cases have spec-anchored `file:line` evidence. The iteration-2 survivor E1 is now killed. The sensor ran 7 fresh mutants: 5 were killed, and the other 2 (F4, F6) are equivalent. They are two redundant write paths for the same value, and the combined mutant is killed.
+## Validation verdict: PASS ✅ (follow-ups closed at `21d1e2f`)
+
+> **Gap closure (orchestrator, 2026-10-20)**: FW1 and FW2 added in `21d1e2f` (`connectors.test.tsx`: cache has no `generated_secrets` while the secret dialog is open; `overview.test.tsx`: `GET /activity` 500 → panel alert "Couldn’t load this section." and Retry re-requests the feed). Re-applied in the working copy and reverted: F2 (cache the raw create response) → 1 failed; F3 (drop `activity.isError` from the error branch) → 1 failed. Both survivors killed; production code unchanged (both behaviors were already correct).
+
+### Final-closure verdict before gap closure (kept for history): FAIL ❌ (follow-ups; two minor test gaps)
+
+The gate is green, and all four required closure mutants are killed: 1008 as a reconnect, the per-room dashboard fetch, a selectable listen-only chat, and a generated field required on create. Every follow-up Done-when has spec-anchored evidence. But 2 of 10 fresh mutants survived:
+
+- **F2**: the created connector is cached with its `generated_secrets`. This contradicts T36's Done-when, "the cached connector never holds `generated_secrets`". The test's cache assertion only runs after the detail page has refetched, so it passes for the wrong reason.
+- **F3**: a failed `GET /activity` shows "no activity yet" instead of the panel error.
+
+Both gaps need test-only fixes. The shipped code behaves correctly. The verified iteration-3 behavior (25 ACs) is unchanged, and no test was removed or weakened beyond documented contract changes.
+
+---
+
+## Final closure (2026-10-20, `2908f1a`)
+
+### Iteration history
+
+| Iteration | Verdict | Outcome |
+| --- | --- | --- |
+| 1 (`69e5ce0`) | FAIL ❌ | UI-23 and UI-24 had no evidence. M18 and M19 survived |
+| 2 (`830d152`) | FAIL ❌ | E1 survived (break-words) |
+| 3 (`a6de457`) | PASS ✅ | 25/25 ACs, 3/3 edge cases. The report is kept below |
+| **Final closure, follow-ups T33–T39 (`2908f1a`)** | **FAIL ❌** | Gate green. 4/4 required mutants killed. Fresh: 8/10 killed, F2 and F3 survived |
+
+### Task completion (follow-ups)
+
+| Task | Status | Notes |
+| --- | --- | --- |
+| T33 member count | ✅ Done | `01f4d01` |
+| T34 dashboard via `GET /activity` | ✅ Done | `ff06bd4`. The panel's error state is untested (F3) |
+| T35 live close 1008/1013 | ✅ Done | `8f4f62c` |
+| T36 generated secrets once, inbound URL from the DTO | ⚠️ Done, one Done-when not discriminated | `c2ce907`. "The cached connector never holds `generated_secrets`" is not discriminated (F2) |
+| T37 listen-only recipients | ✅ Done | `a92f543` |
+| T38 conventions and traceability | ✅ Done | `952e6f3` |
+| T39 generated fields optional | ✅ Done | `c5e0c99` |
+
+### Spec-anchored check (follow-up surface)
+
+| AC / Done-when | Spec-defined outcome | `file:line` + assertion | Result |
+| --- | --- | --- | --- |
+| UI-10 / T33 member count | "No members" / "1 member" / "N members", plus pt-BR | `web/src/routes/_app/rooms/rooms.test.tsx:55-57`: `getByText("3 members")`, `"1 member"`, `"No members"`. `:68`: `"2 membros"` | ✅ |
+| UI-04 / T34 one feed request | One `GET /activity?limit=…` and no per-room requests. Room name from `ActivityItem.room` | `web/src/routes/_app/overview.test.tsx:121`: `expect(feedCalls).toHaveLength(1)`. `:123`: no `/rooms/*/messages` calls. Live prepend: `web/src/lib/live/handlers.test.ts:197,210,220,272` | ✅ |
+| UI-04 / T34 error state | Not defined in the spec. The code shows the panel error when the feed fails | none | ⚠️ Untested (F3 survived) |
+| UI-02 / T35 close 1008 | No reconnect, cache cleared, `/login?redirect=<current>` | `web/src/lib/live/socket.test.ts:109-127` (`onSessionEnded` called once; still 1 socket after 5 min). `:200-218` (`onUnauthorized` called with `"/agents?tab=mine"`; cache empty). `web/src/routes/live-session.test.tsx:23-40` (route `/login`, `redirect: "/agents?tab=mine"`, cached `agents`/`me` gone) | ✅ |
+| UI-06 / T35 close 1013 | Reconnect with the normal backoff | `web/src/lib/live/socket.test.ts:129-145`: 1 socket at 999 ms and 2 at 1,000 ms, doubling after that | ✅ |
+| UI-19 / T36 secret once | Value, copy, warning and inbound URL. The page opens after the dialog closes | `web/src/routes/_app/connectors/connectors.test.tsx:177-195`: `pre` is `"s3cr3t-generated"`, clipboard holds it, note "won’t be shown again", inbound URL from the DTO, path stays `/connectors` until "I copied it" | ✅ |
+| T36 cache never holds `generated_secrets` | `generated_secrets` absent from the cached connector | `connectors.test.tsx:198`. It runs only after the detail page refetched `GET /connectors/k9`, because the test client uses `staleTime: 0` and production uses 30 s | ❌ Not discriminating (F2) |
+| UI-16 / T39 generated field optional | `required && !generated`; help shown; create sends `secret: ""` | `web/src/components/schema-form.test.tsx:126,129,136`: help text, one "Required" (the token only), `config` equals `{ secret: "", token: "t0k3n" }`. `connectors.test.tsx:178-182`: the POST body has `config: { secret: "" }` | ✅ |
+| UI-16 / T39 edit keeps mask | A generated secret reads as `SecretMask` when editing | `schema-form.test.tsx:158`: `toHaveValue(SecretMask)` | ✅ |
+| UI-07 / UI-12 / T37 listen-only | Disabled, labelled "listen-only". A 422 `recipients: listen-only` lands on the picker and keeps the text | `web/src/components/composer.test.tsx:170-171`: `toBeDisabled()`, name `/listen-only/`. `:194-199`: alert `/listen-only/`, picker `aria-invalid="true"` and described by the alert, `box` keeps `"hello"` | ✅ |
+| UI-25 / T38 | pt-BR parity | i18n parity test (gate) and `web/src/lib/i18n/pt-BR.ts:141-143,222` | ✅ |
+
+### Discrimination sensor (final closure)
+
+Required re-applications:
+
+| Id | Mutation | Killed by | Result |
+| --- | --- | --- | --- |
+| R1 | 1008 handled as a normal drop (reconnect) | `socket.test.ts:109`, `:200`; `live-session.test.tsx:23` | ✅ Killed |
+| R2 | dashboard goes back to per-room `GET /rooms/:id/messages` (mapped to `ActivityItem`) | `overview.test.tsx` "shows online agents…" and "updates live…" | ✅ Killed |
+| R3 | listen-only chat selectable (`disabled={false}`, selection filter without `outbound`) | `composer.test.tsx:163` (`toBeDisabled`) | ✅ Killed |
+| R4 | generated field required on create (`isRequired` = `field.required`) | `schema-form.test.tsx:108`; `connectors.test.tsx:151` | ✅ Killed |
+
+Fresh mutations:
+
+| Id | Mutation | Killed by | Result |
+| --- | --- | --- | --- |
+| F1 | `startLive` `onSessionEnded` no longer calls `qc.clear()` | `socket.test.ts:200`; `live-session.test.tsx:23` | ✅ Killed |
+| F2 | `useCreateConnector` caches the response with `generated_secrets` (`web/src/lib/api/queries.ts:516`) | none | ❌ **Survived** |
+| F3 | activity panel ignores `activity.isError` (`web/src/routes/_app/index.tsx:237`) | none | ❌ **Survived** |
+| F4 | "1 member" branch removed (shows "1 members") | `rooms.test.tsx:56` | ✅ Killed |
+| F5 | 1013 also ends the session | `socket.test.ts:129` | ✅ Killed |
+| F6 | live message's room name lost from the feed | `handlers.test.ts:197`; `overview.test.tsx` "updates live" | ✅ Killed |
+| F7 | 422 reason constant `listen-only` → `listen_only` | `composer.test.tsx:179` | ✅ Killed |
+| F8 | detail page builds the inbound URL client-side | `connectors.test.tsx` "shows the inbound URL the server reports…" | ✅ Killed |
+
+**F2 probe (scratch only, discarded)**: I added `expect(queryClient.getQueryData<Connector>(["connectors","k9"])?.generated_secrets).toBe(undefined)` right after the secret dialog opens. That assertion passes on `2908f1a` (17/17) and kills F2. So a discriminating test is feasible.
+
+**Final-closure sensor outcome**: 12 run (4 required, 8 fresh), 10 killed, 2 survived (F2, F3). FAIL ❌
+
+### Gate (final closure)
+
+- `make check` at `2908f1a`: EXIT 0. Web lint and typecheck ok, 28 files, 233/233 tests (iteration 3 had 216). Go 27/27 packages ok.
+- `make e2e`: EXIT 0, 8/8 (desktop-1280 and mobile-360).
+
+### Test integrity since `a6de457`
+
+- No web test was deleted. Two were renamed and rewritten for documented contract changes. "shows the inbound URL of a webhook connector" became "…the server reports…" because the URL now comes from `Connector.inbound_url` (connectors contract notes). "shows the pairing code, the command to send and a countdown" became the connector-bound pairing tests (`5c4a3c7`, IDN-01/IDN-02).
+- Four removed `expect` lines were replaced by contract-driven ones:
+  - The composer recipient moved from `#deploys` (now a listen-only fixture, DLV-05) to "Ops on call", with the same exact-body assertion.
+  - `activityIds()` now reads `ActivityItem`.
+  - The client-built inbound URL is replaced by the DTO URL.
+  - One POST-count check moved into the pairing flow tests.
+- None of these is weaker.
+
+### Fix plans
+
+| Fix | Task | Priority |
+| --- | --- | --- |
+| FW1 | In `connectors.test.tsx` ("shows generated secrets once…"), assert that `queryClient.getQueryData(["connectors","k9"])?.generated_secrets` is `undefined` while the secret dialog is still open (before "I copied it" and the detail refetch). Kills F2 | Minor (secret hygiene) |
+| FW2 | In `overview.test.tsx`, add a case with rooms present and `GET /activity` → 500. Assert that the activity panel shows the panel error with retry, not "no activity yet", and that retry calls `/activity` again. Kills F3 | Minor |
+
+### Requirement traceability (proposed; the Verifier does not edit spec.md)
+
+| Requirement | Proposed |
+| --- | --- |
+| UI-02, UI-06, UI-07, UI-10, UI-12, UI-25 | ✅ Verified (follow-ups) |
+| UI-04 | ✅ Verified (feed). Error state untested (FW2) |
+| UI-16, UI-19 | ✅ Verified (user-visible). T36 cache Done-when needs FW1 |
+
+### Summary
+
+**Overall**: ❌ Not Ready (test-only gaps; the shipped behavior is correct).
+**Spec-anchored check**: all follow-up ACs and Done-whens have evidence, except T36's cache clause (not discriminating). The dashboard error state is unspecified and untested.
+**Sensor**: 10/12 killed. F2 and F3 survived.
+**Gate**: `make check` EXIT 0 (233 web tests). `make e2e` 8/8.
+**Gaps**: FW1 (F2) and FW2 (F3). Both are test-only and Minor.
+
+---
+
+# Earlier report: iteration 3 (`a6de457`, PASS for the feature as verified then)
+
+> **Date**: 2026-10-20
+> **Spec**: `.specs/features/web-app/spec.md`
+> **Diff range**: feature `web/` tree plus the `Makefile` `e2e` target and the CI `e2e` job, at `a6de457` (`test(web): use an unbreakable token in the overflow e2e fixture`). The fix surface since iteration 1 is `4127774..a6de457` (T20-T32 plus the iteration-2 fixture fix).
+> **Verifier**: independent sub-agent (author ≠ verifier), iteration 3 of 3
+
+**Iteration-3 verdict**: PASS ✅. All gates are green: lint, typecheck, 216/216 unit tests and 8/8 e2e tests. All 25 ACs and all 3 edge cases have spec-anchored `file:line` evidence. The iteration-2 survivor E1 is now killed. The sensor ran 7 fresh mutants: 5 were killed, and the other 2 (F4, F6) are equivalent. They are two redundant write paths for the same value, and the combined mutant is killed.
 
 ---
 
@@ -113,7 +242,7 @@ Scratch: `git worktree add --detach /tmp/claude-1001/pl-web-mutants3 a6de457`, w
 | F6 | `web/src/lib/presence.ts:14` | `withPresence` ignores the live store's `last_seen_at` | ➖ Equivalent: the targeted suite passes, because the handler's cache patch (`handlers.ts:139`) carries the same value. **F4 + F6 together are killed** by `agents.test.tsx` "shows the last seen time … follows presence events" (`:95`), so the behaviour is guarded and only the redundancy goes untested |
 
 **Sensor depth**: lightweight-plus (1 re-applied survivor and 6 fresh behaviour-level mutations, 2 of them at e2e level against the real binary)
-**Result**: 5/7 killed, 2 equivalent (redundant dual write), 0 real survivors - PASS ✅
+**Iteration-3 sensor outcome**: 5/7 killed, 2 equivalent (redundant dual write), 0 real survivors - PASS ✅
 
 ---
 
