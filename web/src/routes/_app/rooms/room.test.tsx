@@ -1,13 +1,14 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { queryKeys } from "@/lib/api/queries";
 import type { Level, Room, RoomMember } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeAgent, makeChat, makeMe, makeMember, makeRoom } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
-import { renderRoute } from "@/test/render";
+import { makeQueryClient, renderRoute } from "@/test/render";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
@@ -420,6 +421,77 @@ describe("room instructions (INS-01)", () => {
     await user.click(within(sheet).getByRole("button", { name: "Save" }));
     expect(await within(sheet).findByText("must have at most 4000 characters")).toBeInTheDocument();
     expect(box).toHaveAttribute("aria-invalid", "true");
+  });
+});
+
+describe("delete room (ROOMDEL-01, ROOMDEL-02)", () => {
+  async function openDelete(extra: Parameters<typeof mockApi>[0]) {
+    const api = roomApi({}, extra);
+    const queryClient = makeQueryClient();
+    queryClient.setQueryData(queryKeys.rooms, [
+      makeRoom({ id: "r1", name: "deploys" }),
+      makeRoom({ id: "r2", name: "support" }),
+    ]);
+    const user = userEvent.setup();
+    const { router } = renderRoute("/rooms/r1", queryClient);
+    await user.click(await screen.findByRole("button", { name: "Room settings" }));
+    const sheet = await screen.findByRole("dialog", { name: "Room settings" });
+    await user.click(within(sheet).getByRole("button", { name: "Delete room" }));
+    const alert = await screen.findByRole("alertdialog", { name: "Delete deploys?" });
+    const deletes = () => api.calls.filter((c) => c.method === "DELETE" && c.path === "/rooms/r1");
+    return { user, router, queryClient, alert, deletes };
+  }
+
+  it("confirms, deletes, returns to /rooms and drops the room from the list", async () => {
+    const { user, router, queryClient, alert, deletes } = await openDelete({
+      "DELETE /rooms/r1": new Response(null, { status: 204 }),
+      // The list refetch never answers: only the cache update can drop the room.
+      "GET /rooms": () => new Promise<Response>(() => {}),
+    });
+    expect(alert).toHaveTextContent(
+      "Its messages, attachments and pending deliveries are removed. This can’t be undone.",
+    );
+    expect(deletes()).toHaveLength(0);
+    await user.click(within(alert).getByRole("button", { name: "Delete room" }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/rooms"));
+    expect(deletes()).toHaveLength(1);
+    expect(await screen.findByText("deploys deleted")).toBeInTheDocument();
+    expect(queryClient.getQueryData<Room[]>(queryKeys.rooms)?.map((r) => r.id)).toEqual(["r2"]);
+    expect(await screen.findByRole("link", { name: /support/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /deploys/ })).toBeNull();
+  });
+
+  it("keeps the room when the confirmation is cancelled", async () => {
+    const { user, router, alert, deletes } = await openDelete({
+      "DELETE /rooms/r1": new Response(null, { status: 204 }),
+    });
+    await user.click(within(alert).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(deletes()).toHaveLength(0);
+    expect(router.state.location.pathname).toBe("/rooms/r1");
+  });
+
+  it("stays on the room and says so when the deletion fails", async () => {
+    const { user, router, queryClient, alert, deletes } = await openDelete({
+      "DELETE /rooms/r1": apiError(500, "internal"),
+    });
+    await user.click(within(alert).getByRole("button", { name: "Delete room" }));
+    expect(await screen.findByText("Couldn’t delete the room.")).toBeInTheDocument();
+    expect(deletes()).toHaveLength(1);
+    expect(router.state.location.pathname).toBe("/rooms/r1");
+    expect(queryClient.getQueryData<Room[]>(queryKeys.rooms)?.map((r) => r.id)).toEqual([
+      "r1",
+      "r2",
+    ]);
+  });
+
+  it("is not offered to people without manage", async () => {
+    roomApi({ my_level: "post" });
+    renderRoute("/rooms/r1");
+    await screen.findByTestId("member-mb-bot");
+    expect(screen.queryByRole("button", { name: "Delete room" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Room settings" })).toBeNull();
   });
 });
 

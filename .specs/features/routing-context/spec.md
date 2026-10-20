@@ -192,8 +192,8 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 | INS-03 | P2: Room instructions | Tasks | Pending |
 | REACT-01 | P2: Reactions | Tasks | Pending |
 | REACT-02 | P2: Reactions | Tasks | Pending |
-| ROOMDEL-01 | P1: Delete a room | Tasks | Pending |
-| ROOMDEL-02 | P1: Delete a room | Tasks | Pending |
+| ROOMDEL-01 | P1: Delete a room | Tasks | Implementing |
+| ROOMDEL-02 | P1: Delete a room | Tasks | Implementing |
 
 **Coverage:** 25 total, mapped in tasks.md
 

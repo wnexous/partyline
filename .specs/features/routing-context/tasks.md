@@ -311,7 +311,7 @@ T13 → T14 → T15 → T16 → T17
 **Requirement**: ROOMDEL-01, ROOMDEL-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Manager sees the action; viewer does not; confirm calls DELETE, navigates to /rooms and the room is gone from the list
+- [x] Manager sees the action; viewer does not; confirm calls DELETE, navigates to /rooms and the room is gone from the list
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): delete rooms from the room settings`

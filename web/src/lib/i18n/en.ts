@@ -684,6 +684,13 @@ export const en = {
   "catchAll.saved": "Catch-all saved",
   "catchAll.forbidden": "You need manage access on that room to route chats to it.",
   "chat.untitled": "{platform} chat",
+  "room.deleteHint": "Deleting removes the room for everyone in it.",
+  "room.delete": "Delete room",
+  "room.deleteTitle": "Delete {name}?",
+  "room.deleteBody":
+    "Its messages, attachments and pending deliveries are removed. This can’t be undone.",
+  "room.deleted": "{name} deleted",
+  "room.deleteFailed": "Couldn’t delete the room.",
 } as const;
 
 export type MessageKey = keyof typeof en;

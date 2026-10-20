@@ -1,8 +1,20 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FieldError, FormAlert, TextField } from "@/components/form-fields";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   FormControl,
@@ -25,7 +37,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { isApiError } from "@/lib/api/client";
-import { useUpdateRoom } from "@/lib/api/queries";
+import { useDeleteRoom, useUpdateRoom } from "@/lib/api/queries";
 import { MaxRoomInstructions, type Room, type UpdateRoomRequest } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/lib/forms";
 import { useI18n } from "@/lib/i18n";
@@ -34,7 +46,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Room settings for managers: name, description, instructions for agents (INS-01), chat bridging
- * (DLV-05) and retention.
+ * (DLV-05), retention, and deleting the room (ROOMDEL-01).
  */
 export function RoomSettingsSheet({ room, trigger }: { room: Room; trigger: ReactNode }) {
   const { t } = useI18n();
@@ -201,6 +213,7 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
               </FormItem>
             )}
           />
+          <DeleteRoom room={room} />
         </div>
         <SheetFooter className="flex-row justify-end border-t">
           <Button type="button" variant="outline" onClick={onDone}>
@@ -212,5 +225,53 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
         </SheetFooter>
       </form>
     </FormProvider>
+  );
+}
+
+/** Deletes the room after an explicit confirmation, then returns to the rooms list (ROOMDEL-02). */
+function DeleteRoom({ room }: { room: Room }) {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const remove = useDeleteRoom();
+  return (
+    <div className="space-y-2 border-t pt-5">
+      <p className="text-sm text-muted-foreground">{t("room.deleteHint")}</p>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            className="text-destructive hover:text-destructive"
+          >
+            {t("room.delete")}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("room.deleteTitle", { name: room.name })}</AlertDialogTitle>
+            <AlertDialogDescription>{t("room.deleteBody")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={remove.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                remove.mutate(room.id, {
+                  onSuccess: () => {
+                    toast(t("room.deleted", { name: room.name }));
+                    void navigate({ to: "/rooms" });
+                  },
+                  onError: () => toast.error(t("room.deleteFailed")),
+                });
+              }}
+            >
+              {t("room.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

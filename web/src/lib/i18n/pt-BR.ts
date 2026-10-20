@@ -691,4 +691,11 @@ export const ptBR: Dictionary = {
   "catchAll.saved": "Encaminhamento salvo",
   "catchAll.forbidden": "Você precisa gerenciar essa sala para encaminhar chats para ela.",
   "chat.untitled": "Chat do {platform}",
+  "room.deleteHint": "Excluir remove a sala para todos que estão nela.",
+  "room.delete": "Excluir sala",
+  "room.deleteTitle": "Excluir {name}?",
+  "room.deleteBody":
+    "As mensagens, os anexos e as entregas pendentes dela são removidos. Não dá para desfazer.",
+  "room.deleted": "{name} excluída",
+  "room.deleteFailed": "Não foi possível excluir a sala.",
 };
