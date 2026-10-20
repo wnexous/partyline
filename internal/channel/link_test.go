@@ -509,7 +509,7 @@ func fakeAgentServer(t *testing.T, send func(ctx context.Context, c *websocket.C
 		if err != nil {
 			return
 		}
-		defer c.CloseNow()
+		defer func() { _ = c.CloseNow() }()
 		send(r.Context(), c)
 		for {
 			if _, _, err := c.Read(r.Context()); err != nil {

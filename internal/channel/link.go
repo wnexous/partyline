@@ -345,8 +345,8 @@ type frameQueue struct {
 	ready chan struct{}
 }
 
-func newFrameQueue(max int) *frameQueue {
-	return &frameQueue{max: max, ready: make(chan struct{}, 1)}
+func newFrameQueue(limit int) *frameQueue {
+	return &frameQueue{max: limit, ready: make(chan struct{}, 1)}
 }
 
 // push queues data; false when the queue is full.
