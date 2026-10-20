@@ -773,8 +773,8 @@ T45 → T46 → T47 → T48 → T49 → T50 → T51 → T52 → T53 → T54 → 
 **Requirement**: AUTH-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Four rounds of (4 wrong + 1 correct) from one IP within a minute: the 6th failure gets 429 and every later attempt, correct or not, gets 429 until the minute ends
-- [ ] Sequential and other-IP behavior unchanged
+- [x] Four rounds of (4 wrong + 1 correct) from one IP within a minute: the 6th failure gets 429 and every later attempt, correct or not, gets 429 until the minute ends
+- [x] Sequential and other-IP behavior unchanged
 **Tests**: integration
 **Gate**: full
 **Commit**: `fix(users): keep failed logins counted after a successful login`

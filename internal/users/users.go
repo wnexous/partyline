@@ -138,7 +138,8 @@ func ms(t time.Time) int64 { return t.UnixMilli() }
 
 // failureLimiter counts login attempts per key in fixed windows that open at the first
 // attempt. Begin reserves an attempt before the slow password check, so a parallel burst
-// cannot run more than max checks (AUTH-05); a success clears the key.
+// cannot run more than max checks (AUTH-05). A failure keeps its reservation; a success or
+// an internal error returns it with Release, so a success never clears earlier failures.
 type failureLimiter struct {
 	mu        sync.Mutex
 	max       int
@@ -180,14 +181,8 @@ func (l *failureLimiter) Begin(key string, now time.Time) bool {
 	return true
 }
 
-// Succeed clears key's attempts after a successful login.
-func (l *failureLimiter) Succeed(key string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	delete(l.byKey, key)
-}
-
-// Release returns a reserved attempt that ended without a verdict (an internal error).
+// Release returns a reserved attempt that did not fail: a successful login or an internal
+// error. The window and the failures it already counts stay.
 func (l *failureLimiter) Release(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

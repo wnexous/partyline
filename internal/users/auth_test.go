@@ -221,24 +221,48 @@ func TestLoginRateLimitConcurrentBurst(t *testing.T) {
 	require.Equal(t, int32(25), limited.Load())
 }
 
-// AUTH-05: a successful login clears the IP's failures, so the next 5 failures are counted
-// from zero.
-func TestLoginSuccessClearsFailures(t *testing.T) {
+// AUTH-05: a successful login does not reset the IP's failures. The verifier's probe: rounds
+// of 4 wrong + 1 correct login from one IP within a minute. The 6th failure is refused with
+// 429 and every later attempt, right password included, gets 429 until the minute ends.
+func TestLoginSuccessKeepsFailures(t *testing.T) {
 	f := newFixture(t)
 	f.setupAdmin(t)
 	const ip = "192.0.2.9"
-	for range 4 {
-		_, err := login(f, ip, "admin", "wrong-password-123")
-		require.ErrorIs(t, err, ErrInvalidCredentials)
+	start := f.clock.Now()
+	attempt := func(password string) error {
+		_, err := login(f, ip, "admin", password)
+		f.clock.Advance(2 * time.Second)
+		return err
 	}
+
+	// Round 1: failures 1-4, then a success that must not clear them.
+	for i := range 4 {
+		require.ErrorIs(t, attempt("wrong-password-123"), ErrInvalidCredentials, "failure %d", i+1)
+	}
+	require.NoError(t, attempt(adminPassword))
+
+	// Round 2: the 5th failure is still answered; the 6th is refused.
+	require.ErrorIs(t, attempt("wrong-password-123"), ErrInvalidCredentials, "failure 5")
+	require.ErrorIs(t, attempt("wrong-password-123"), ErrRateLimited, "failure 6")
+	require.ErrorIs(t, attempt("wrong-password-123"), ErrRateLimited)
+	require.ErrorIs(t, attempt("wrong-password-123"), ErrRateLimited)
+	require.ErrorIs(t, attempt(adminPassword), ErrRateLimited, "right password after the limit")
+
+	// Rounds 3 and 4: everything stays limited.
+	for round := 3; round <= 4; round++ {
+		for range 4 {
+			require.ErrorIs(t, attempt("wrong-password-123"), ErrRateLimited, "round %d", round)
+		}
+		require.ErrorIs(t, attempt(adminPassword), ErrRateLimited, "round %d", round)
+	}
+
+	// The minute opened at the first failure: limited up to its last instant, open after it.
+	f.clock.Advance(start.Add(time.Minute - time.Millisecond).Sub(f.clock.Now()))
 	_, err := login(f, ip, "admin", adminPassword)
-	require.NoError(t, err)
-	for i := range 5 {
-		_, err := login(f, ip, "admin", "wrong-password-123")
-		require.ErrorIs(t, err, ErrInvalidCredentials, "attempt %d after success", i+1)
-	}
-	_, err = login(f, ip, "admin", "wrong-password-123")
 	require.ErrorIs(t, err, ErrRateLimited)
+	f.clock.Advance(time.Millisecond)
+	_, err = login(f, ip, "admin", adminPassword)
+	require.NoError(t, err)
 }
 
 // AUTH-05 (DoS bound): the limiter drops expired windows and never holds more keys than its

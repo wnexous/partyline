@@ -108,7 +108,8 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (db.User, NewSession
 		s.limiter.Release(in.IP)
 		return db.User{}, NewSession{}, err
 	}
-	s.limiter.Succeed(in.IP)
+	// A success returns only its own reservation; earlier failures stay counted (AUTH-05).
+	s.limiter.Release(in.IP)
 	sess, err := s.createSession(ctx, u.ID, in.IP, in.UserAgent)
 	if err != nil {
 		return db.User{}, NewSession{}, err
