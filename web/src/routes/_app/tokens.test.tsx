@@ -91,6 +91,8 @@ describe("tokens page (UI-19)", () => {
       within(secret).getByRole("figure", { name: "ci" }).querySelector("pre")?.textContent,
     ).toBe(SECRET);
     expect(within(secret).getByText(/won’t be shown again/)).toBeInTheDocument();
+    await user.click(within(secret).getByRole("button", { name: "Copy ci" }));
+    expect(await navigator.clipboard.readText()).toBe(SECRET);
 
     await user.click(within(secret).getByRole("button", { name: "I copied it" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

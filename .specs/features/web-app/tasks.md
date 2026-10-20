@@ -410,7 +410,7 @@ T20 → T21 → T22 → T23 → T24 → T25 → T26 → T27 → T28 → T29 → 
 **Depends on**: T24
 **Requirement**: UI-19
 **Done when**:
-- [ ] Clicking Copy in the token secret dialog puts the secret on the clipboard
+- [x] Clicking Copy in the token secret dialog puts the secret on the clipboard
 **Tests**: unit
 **Gate**: quick
 
