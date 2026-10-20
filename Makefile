@@ -12,7 +12,7 @@ GENERATED := internal/store/db web/src/lib/api/types.gen.ts
 
 HAS_WEB := $(wildcard web/package.json)
 
-.PHONY: all generate check-generate lint vet test build check e2e web-install web-test web-check web-build
+.PHONY: all generate check-generate lint vet test build check e2e web-install web-test web-check web-build integrations-test
 
 all: check
 
@@ -57,6 +57,7 @@ ifneq ($(HAS_WEB),)
 	$(MAKE) web-check
 endif
 	$(MAKE) test
+	$(MAKE) integrations-test
 ifneq ($(HAS_WEB),)
 	$(MAKE) web-build
 endif
@@ -66,6 +67,10 @@ endif
 ## Set PLAYWRIGHT_CHROMIUM_EXECUTABLE to reuse an installed Chromium instead of `playwright install`.
 e2e: build
 	cd web && PARTYLINE_BIN=$(CURDIR)/bin/partyline $(BUN) x playwright test
+
+## integrations-test: unit tests of the omp, pi and OpenCode adapters (bun test, fake host APIs)
+integrations-test:
+	cd integrations && $(BUN) test
 
 web-install:
 	cd web && $(BUN) install --frozen-lockfile

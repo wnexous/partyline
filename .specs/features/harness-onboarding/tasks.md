@@ -220,7 +220,7 @@ T15 → T16 → T17
 **Requirement**: PUSH-03, PUSH-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fake host: notification → one user message with framing; other servers/methods ignored
+- [x] Fake host: notification → one user message with framing; other servers/methods ignored
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(integrations): add the oh-my-pi extension`
