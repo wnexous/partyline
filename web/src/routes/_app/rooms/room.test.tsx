@@ -505,3 +505,71 @@ describe("room sharing entry (UI-11)", () => {
     expect(await within(dialog).findByRole("radio", { name: /Private/ })).toBeChecked();
   });
 });
+
+describe("broadcast setting (ROUTE-06, ROUTE-07)", () => {
+  async function openSettings(
+    room: Partial<Room>,
+    patch: Response = json(200, makeRoom({ id: "r1" })),
+  ) {
+    const api = roomApi(room, { "PATCH /rooms/r1": patch });
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    await user.click(await screen.findByRole("button", { name: "Room settings" }));
+    const sheet = await screen.findByRole("dialog", { name: "Room settings" });
+    const patches = () => api.calls.filter((c) => c.method === "PATCH");
+    return { user, sheet, patches };
+  }
+
+  it("shows broadcast on and sends it only when turned off", async () => {
+    const { user, sheet, patches } = await openSettings({ broadcast: true });
+    const toggle = within(sheet).getByRole("switch", { name: /Send to every chat/ });
+    expect(toggle).toBeChecked();
+    await user.click(toggle);
+    await user.click(within(sheet).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    expect(patches()[0]?.body).toEqual({
+      name: "deploys",
+      description: "",
+      bridge_chats: false,
+      retention_days: 90,
+      broadcast: false,
+    });
+  });
+
+  it("locks broadcast and bridging off in a catch-all room and says why", async () => {
+    const { sheet } = await openSettings({
+      broadcast: false,
+      bridge_chats: false,
+      catch_all: true,
+    });
+    const toggle = within(sheet).getByRole("switch", { name: /Send to every chat/ });
+    expect(toggle).not.toBeChecked();
+    expect(toggle).toBeDisabled();
+    expect(within(sheet).getByRole("switch", { name: /Bridge chats/ })).toBeDisabled();
+    expect(
+      within(sheet).getByText(
+        "This is a catch-all room: posts only reach the chats you pick, and chats are not bridged.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a 422 broadcast reason", async () => {
+    const { user, sheet } = await openSettings(
+      { broadcast: false },
+      apiError(422, "validation", "invalid", {
+        broadcast: "must stay off while the room is a catch-all room",
+      }),
+    );
+    await user.click(within(sheet).getByRole("switch", { name: /Send to every chat/ }));
+    await user.click(within(sheet).getByRole("button", { name: "Save" }));
+    expect(
+      await within(sheet).findByText("must stay off while the room is a catch-all room"),
+    ).toBeInTheDocument();
+  });
+
+  it("asks the composer for an explicit chat when the room does not broadcast", async () => {
+    roomApi({ broadcast: false });
+    renderRoute("/rooms/r1");
+    expect(await screen.findByText("Answer a chat explicitly")).toBeInTheDocument();
+  });
+});

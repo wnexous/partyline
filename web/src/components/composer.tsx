@@ -23,6 +23,8 @@ import { cn } from "@/lib/utils";
  * (`RoomMember.member_id` of chat members), not room member ids; the server rejects others (422).
  * Chats with outbound off are listen-only (DLV-05): they cannot be picked, and a 422
  * `recipients: listen-only` (the flag changed meanwhile) lands on the recipients picker.
+ * In a room that does not broadcast (ROUTE-06) a post must name its chats: Send waits for a
+ * picked chat. With no chat to pick, the post goes to the room's agents only.
  */
 
 /** 422 reason for an explicit recipient whose chat member has outbound off. */
@@ -52,9 +54,11 @@ export interface ComposerProps {
   roomName: string;
   level: Level;
   members?: RoomMember[];
+  /** Room.broadcast; false asks for an explicit chat (ROUTE-06). */
+  broadcast?: boolean;
 }
 
-export function Composer({ roomId, roomName, level, members }: ComposerProps) {
+export function Composer({ roomId, roomName, level, members, broadcast = true }: ComposerProps) {
   const { t } = useI18n();
   if (!canPost(level)) {
     return (
@@ -64,17 +68,21 @@ export function Composer({ roomId, roomName, level, members }: ComposerProps) {
       </div>
     );
   }
-  return <ComposerForm roomId={roomId} roomName={roomName} members={members} />;
+  return (
+    <ComposerForm roomId={roomId} roomName={roomName} members={members} broadcast={broadcast} />
+  );
 }
 
 function ComposerForm({
   roomId,
   roomName,
   members,
+  broadcast,
 }: {
   roomId: string;
   roomName: string;
   members?: RoomMember[];
+  broadcast: boolean;
 }) {
   const { t, locale } = useI18n();
   const post = usePostMessage(roomId);
@@ -87,21 +95,28 @@ function ComposerForm({
   const textRef = useRef<HTMLTextAreaElement>(null);
   const counterId = useId();
   const errorId = useId();
+  const explicitId = useId();
 
   const chats = useMemo(() => (members ?? []).filter((m) => m.kind === "chat"), [members]);
   // Only chats with outbound on can be explicit recipients (DLV-05).
   const pickable = useMemo(() => chats.filter((c) => c.outbound), [chats]);
+  const chosen = recipients.filter((id) => pickable.some((c) => c.member_id === id));
+  // ROUTE-06: a room that does not broadcast answers chats only when they are named.
+  const needsChat = !broadcast && pickable.length > 0;
   const length = textLength(text);
   const tooLong = length > MaxTextLength;
   const trimmed = text.trim();
-  const canSend = !tooLong && (trimmed.length > 0 || files.length > 0) && !post.isPending;
+  const canSend =
+    !tooLong &&
+    (trimmed.length > 0 || files.length > 0) &&
+    (!needsChat || chosen.length > 0) &&
+    !post.isPending;
   const fmt = (n: number) => new Intl.NumberFormat(locale).format(n);
 
   const send = () => {
     if (!canSend) return;
     setError(null);
     setRecipientsInvalid(false);
-    const chosen = recipients.filter((id) => pickable.some((c) => c.member_id === id));
     post.mutate(
       {
         text: trimmed,
@@ -148,6 +163,11 @@ function ComposerForm({
           {error}
         </p>
       ) : null}
+      {needsChat ? (
+        <p id={explicitId} className="mb-2 text-xs text-muted-foreground">
+          {t("composer.explicitHint")}
+        </p>
+      ) : null}
       <div
         className={cn(
           "rounded-lg border border-input bg-card shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25",
@@ -184,7 +204,11 @@ function ComposerForm({
           rows={1}
           aria-label={t("composer.label", { room: roomName })}
           aria-invalid={tooLong || undefined}
-          aria-describedby={length >= COUNTER_FROM ? counterId : undefined}
+          aria-describedby={
+            [needsChat ? explicitId : "", length >= COUNTER_FROM ? counterId : ""]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
           placeholder={t("composer.placeholder", { room: roomName })}
           className="block max-h-56 min-h-11 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground"
         />
@@ -208,6 +232,7 @@ function ComposerForm({
             <RecipientsPicker
               chats={chats}
               value={recipients}
+              needsChat={needsChat}
               onChange={(ids) => {
                 setRecipients(ids);
                 setRecipientsInvalid(false);
@@ -248,11 +273,14 @@ function ComposerForm({
 function RecipientsPicker({
   chats,
   value,
+  needsChat,
   onChange,
   errorId,
 }: {
   chats: RoomMember[];
   value: string[];
+  /** The room does not broadcast: no pick means no chat (ROUTE-06). */
+  needsChat: boolean;
   onChange: (ids: string[]) => void;
   /** Id of the error describing the picked recipients, when the server rejected them. */
   errorId?: string;
@@ -261,7 +289,9 @@ function RecipientsPicker({
   const selected = value.filter((id) => chats.some((c) => c.member_id === id && c.outbound));
   const label =
     selected.length === 0
-      ? t("composer.toDefault")
+      ? needsChat
+        ? t("composer.toPick")
+        : t("composer.toDefault")
       : selected.length === 1
         ? t("composer.toOne")
         : t("composer.toMany", { count: selected.length });
@@ -290,7 +320,9 @@ function RecipientsPicker({
       <PopoverContent align="start" side="top" className="w-72 p-0">
         <div className="border-b px-3 py-2.5">
           <p className="text-sm font-medium">{t("composer.recipientsTitle")}</p>
-          <p className="text-xs text-muted-foreground">{t("composer.recipientsBody")}</p>
+          <p className="text-xs text-muted-foreground">
+            {needsChat ? t("composer.recipientsBodyExplicit") : t("composer.recipientsBody")}
+          </p>
         </div>
         <ul className="max-h-64 overflow-y-auto py-1">
           {chats.map((c) => (
@@ -327,7 +359,7 @@ function RecipientsPicker({
               className="w-full justify-start text-xs"
               onClick={() => onChange([])}
             >
-              {t("composer.recipientsReset")}
+              {needsChat ? t("composer.recipientsClear") : t("composer.recipientsReset")}
             </Button>
           </div>
         ) : null}

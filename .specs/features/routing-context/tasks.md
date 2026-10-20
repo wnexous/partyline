@@ -524,7 +524,7 @@ T31 → T32 → T33 → T34
 **Requirement**: ROUTE-06, ROUTE-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Send disabled until a chat is picked; hint visible; settings reflect state; 422 mapped
+- [x] Send disabled until a chat is picked; hint visible; settings reflect state; 422 mapped
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): require an explicit chat in catch-all rooms`

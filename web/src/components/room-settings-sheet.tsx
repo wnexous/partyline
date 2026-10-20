@@ -46,7 +46,8 @@ import { cn } from "@/lib/utils";
 
 /**
  * Room settings for managers: name, description, instructions for agents (INS-01), chat bridging
- * (DLV-05), retention, and deleting the room (ROOMDEL-01).
+ * (DLV-05), broadcast (ROUTE-06; both locked off in a catch-all room, ROUTE-07), retention, and
+ * deleting the room (ROOMDEL-01).
  */
 export function RoomSettingsSheet({ room, trigger }: { room: Room; trigger: ReactNode }) {
   const { t } = useI18n();
@@ -75,6 +76,7 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
       name: room.name,
       description: room.description,
       bridge_chats: room.bridge_chats,
+      broadcast: room.broadcast,
       retention_days: room.retention_days,
       instructions: room.instructions,
     },
@@ -82,10 +84,13 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
 
   const onSubmit = form.handleSubmit((values) => {
     setFormError(null);
-    const { instructions, ...rest } = roomSettingsSchema.parse(values);
-    // Instructions go only when edited, so a save elsewhere never rewrites them.
-    const req: UpdateRoomRequest =
-      instructions === room.instructions ? rest : { ...rest, instructions };
+    const { instructions, broadcast, ...rest } = roomSettingsSchema.parse(values);
+    // Instructions and broadcast go only when edited, so a save elsewhere never rewrites them.
+    const req: UpdateRoomRequest = {
+      ...rest,
+      ...(instructions === room.instructions ? {} : { instructions }),
+      ...(broadcast === room.broadcast ? {} : { broadcast }),
+    };
     update.mutate(req, {
       onSuccess: () => {
         toast.success(t("settings.saved"));
@@ -97,6 +102,7 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
             "name",
             "description",
             "bridge_chats",
+            "broadcast",
             "retention_days",
             "instructions",
           ])
@@ -180,9 +186,35 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
                   <Switch
                     checked={field.value}
                     onCheckedChange={field.onChange}
+                    disabled={room.catch_all}
                     aria-label={t("settings.bridge")}
                   />
                 </FormControl>
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="broadcast"
+            render={({ field }) => (
+              <FormItem>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <FormLabel>{t("settings.broadcast")}</FormLabel>
+                    <FormDescription className="text-xs">
+                      {room.catch_all ? t("settings.catchAllLocked") : t("settings.broadcastHint")}
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      disabled={room.catch_all}
+                      aria-label={t("settings.broadcast")}
+                    />
+                  </FormControl>
+                </div>
+                <FieldError />
               </FormItem>
             )}
           />

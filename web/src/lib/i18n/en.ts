@@ -210,6 +210,11 @@ export const en = {
   "composer.tooLarge": "Those files are too large for this server.",
   "composer.rateLimited": "Too many messages at once. Wait a moment and send again.",
   "composer.toDefault": "To: chats with outbound on",
+  "composer.toPick": "To: choose a chat",
+  "composer.explicitHint": "Answer a chat explicitly",
+  "composer.recipientsBodyExplicit":
+    "This room only answers the chats you pick; without one, the post reaches no chat.",
+  "composer.recipientsClear": "Clear chosen chats",
   "composer.toOne": "To: 1 chat",
   "composer.toMany": "To: {count} chats",
   "composer.recipientsTitle": "Send to chats",
@@ -259,6 +264,11 @@ export const en = {
   "settings.bridge": "Bridge chats",
   "settings.bridgeHint":
     "Messages from one chat are also sent to the other chats in this room, not only to agents and people.",
+  "settings.broadcast": "Send to every chat",
+  "settings.broadcastHint":
+    "Posts without chosen chats go to every chat in this room. Off: each post answers the chats you pick.",
+  "settings.catchAllLocked":
+    "This is a catch-all room: posts only reach the chats you pick, and chats are not bridged.",
   "settings.retention": "Keep messages for (days)",
   "settings.retentionHint": "Older messages and files are deleted every day. 0 keeps them forever.",
   "settings.saved": "Room settings saved",

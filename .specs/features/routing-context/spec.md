@@ -171,6 +171,7 @@ First real use (2026-10-20) showed three gaps. Agents cannot tell which chat, pl
 - IF two first messages from the same new chat arrive at once THEN the system SHALL add the chat to the catch-all room only once (ROUTE-01).
 - WHEN a catch-all chat is later removed from the room THEN it SHALL NOT be re-added automatically for 24 hours unless a manager adds it (ROUTE-02).
 - WHEN a room with `bridge_chats` on is chosen as a catch-all room THEN bridging SHALL be turned off with broadcast (ROUTE-07).
+- WHILE a room does not broadcast and has chats with outbound on, the web composer SHALL show `Answer a chat explicitly` and keep Send disabled until a chat is picked; with no chat to pick it SHALL post to the agents only (ROUTE-06). The room settings SHALL show the broadcast switch, disabled with an explanation in a catch-all room, as is the bridge switch (ROUTE-07).
 - WHEN no connector targets a room any more THEN its `broadcast` SHALL stay off until a manager turns it on (ROUTE-07).
 - WHEN a mention keyword matches inside a longer word THEN it SHALL still count only on word boundaries (MEM-03).
 

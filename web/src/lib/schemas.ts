@@ -64,6 +64,8 @@ export const roomSettingsSchema = z.object({
   name: z.string().trim().min(1, msg("validation.required")),
   description: z.string().trim(),
   bridge_chats: z.boolean(),
+  // ROUTE-06: posts without chosen chats reach every chat only while this is on.
+  broadcast: z.boolean(),
   retention_days: z
     .number(msg("validation.retention"))
     .int(msg("validation.retention"))

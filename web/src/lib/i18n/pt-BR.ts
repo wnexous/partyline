@@ -213,6 +213,11 @@ export const ptBR: Dictionary = {
   "composer.tooLarge": "Esses arquivos são grandes demais para este servidor.",
   "composer.rateLimited": "Mensagens demais de uma vez. Espere um pouco e envie de novo.",
   "composer.toDefault": "Para: chats com saída ligada",
+  "composer.toPick": "Para: escolha um chat",
+  "composer.explicitHint": "Responda a um chat explicitamente",
+  "composer.recipientsBodyExplicit":
+    "Esta sala só responde aos chats que você escolher; sem escolha, a mensagem não chega a nenhum chat.",
+  "composer.recipientsClear": "Limpar chats escolhidos",
   "composer.toOne": "Para: 1 chat",
   "composer.toMany": "Para: {count} chats",
   "composer.recipientsTitle": "Enviar para chats",
@@ -263,6 +268,11 @@ export const ptBR: Dictionary = {
   "settings.bridge": "Ligar chats entre si",
   "settings.bridgeHint":
     "Mensagens de um chat também vão para os outros chats desta sala, não só para agentes e pessoas.",
+  "settings.broadcast": "Enviar para todos os chats",
+  "settings.broadcastHint":
+    "Mensagens sem chats escolhidos vão para todos os chats desta sala. Desligado: cada mensagem responde só aos chats que você escolher.",
+  "settings.catchAllLocked":
+    "Esta sala recebe o encaminhamento de tudo: as mensagens só chegam aos chats que você escolher, e os chats não são ligados entre si.",
   "settings.retention": "Guardar mensagens por (dias)",
   "settings.retentionHint":
     "Mensagens e arquivos mais antigos são apagados todo dia. 0 guarda para sempre.",

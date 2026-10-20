@@ -235,3 +235,47 @@ describe("composer (UI-07)", () => {
     expect(box).toHaveValue("hello");
   });
 });
+
+describe("composer in a room that answers chats explicitly (ROUTE-06)", () => {
+  function renderExplicit(members: RoomMember[] = chats) {
+    return renderWithProviders(
+      <Composer roomId="r1" roomName="inbox" level="post" members={members} broadcast={false} />,
+    );
+  }
+
+  it("asks for a chat and sends only once one is picked", async () => {
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderExplicit();
+    const box = screen.getByRole("textbox", { name: "Message inbox" });
+    expect(screen.getByText("Answer a chat explicitly")).toBeInTheDocument();
+    expect(box).toHaveAccessibleDescription(/Answer a chat explicitly/);
+    await user.type(box, "hello{Enter}");
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(posts(calls)).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: /To: choose a chat/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(
+        "This room only answers the chats you pick; without one, the post reaches no chat.",
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("checkbox", { name: /Ops on call/ }));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(posts(calls)[0]?.body).toEqual({ text: "hello", recipients: ["c1"] });
+  });
+
+  it("posts to the agents when the room has no chat to answer", async () => {
+    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+    const user = userEvent.setup();
+    renderExplicit([]);
+    expect(screen.queryByText("Answer a chat explicitly")).toBeNull();
+    await user.type(screen.getByRole("textbox", { name: "Message inbox" }), "note{Enter}");
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(posts(calls)[0]?.body).toEqual({ text: "note" });
+  });
+});
