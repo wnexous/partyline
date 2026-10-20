@@ -19,6 +19,7 @@ import {
 import { Wordmark } from "@/components/brand";
 import { LanguageRadioGroup } from "@/components/language-switch";
 import { LiveIndicator } from "@/components/live-status";
+import { SearchButton } from "@/components/search-button";
 import { ThemeRadioGroup } from "@/components/theme-toggle";
 import {
   DropdownMenu,
@@ -134,6 +135,7 @@ export function AppSidebar({ me }: { me: Me }) {
         >
           <Wordmark />
         </Link>
+        <SearchButton className="mt-4" />
       </SidebarHeader>
 
       <SidebarContent className="gap-0 px-1">

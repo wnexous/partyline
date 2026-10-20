@@ -1,8 +1,11 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { SearchIcon } from "lucide-react";
 import { useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Wordmark } from "@/components/brand";
+import { CommandMenu } from "@/components/command-menu";
 import { LiveBanner } from "@/components/live-status";
+import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { isApiError } from "@/lib/api/client";
 import { meQuery, useMe } from "@/lib/api/queries";
@@ -50,10 +53,20 @@ function AppLayout() {
         <div className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur md:hidden">
           <SidebarTrigger aria-label={t("nav.toggleSidebar")} />
           <Wordmark />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto"
+            aria-label={t("palette.open")}
+            onClick={() => useLiveStore.getState().setPaletteOpen(true)}
+          >
+            <SearchIcon aria-hidden="true" />
+          </Button>
         </div>
         <LiveBanner />
         <Outlet />
       </SidebarInset>
+      <CommandMenu me={me} />
     </SidebarProvider>
   );
 }

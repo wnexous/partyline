@@ -316,7 +316,7 @@ T16 → T17 → T18 → T19
 **Requirement**: UI-22
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Ctrl+K opens; typing filters; Enter navigates
+- [x] Ctrl+K opens; typing filters; Enter navigates
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(web): add command palette`

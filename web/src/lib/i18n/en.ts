@@ -590,6 +590,15 @@ export const en = {
   "overview.connectorsEmptyBody":
     "Add a WhatsApp, Telegram, Discord or webhook account to bring its chats onto the line.",
   "overview.loadError": "Couldn't load this section.",
+  "palette.open": "Search",
+  "palette.title": "Go to",
+  "palette.description": "Jump to a room, an agent, a connector or a page.",
+  "palette.placeholder": "Search rooms, agents, pages",
+  "palette.empty": "Nothing matches.",
+  "palette.rooms": "Rooms",
+  "palette.agents": "Agents",
+  "palette.connectors": "Connectors",
+  "palette.pages": "Pages",
 } as const;
 
 export type MessageKey = keyof typeof en;

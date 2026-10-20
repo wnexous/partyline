@@ -597,4 +597,13 @@ export const ptBR: Dictionary = {
   "overview.connectorsEmptyBody":
     "Adicione uma conta de WhatsApp, Telegram, Discord ou webhook para trazer os chats dela para a linha.",
   "overview.loadError": "Não foi possível carregar esta seção.",
+  "palette.open": "Buscar",
+  "palette.title": "Ir para",
+  "palette.description": "Vá para uma sala, um agente, um conector ou uma página.",
+  "palette.placeholder": "Buscar salas, agentes, páginas",
+  "palette.empty": "Nada encontrado.",
+  "palette.rooms": "Salas",
+  "palette.agents": "Agentes",
+  "palette.connectors": "Conectores",
+  "palette.pages": "Páginas",
 };
