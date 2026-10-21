@@ -38,7 +38,20 @@ if [ "$RACE" = 1 ]; then
 fi
 
 tmp=$(mktemp -d 2>/dev/null || mktemp -d -t partyline-gotest) || exit 1
-trap 'rm -rf "$tmp"' EXIT INT TERM
+ramtmp=
+trap 'rm -rf "$tmp" ${ramtmp:+"$ramtmp"}' EXIT INT TERM
+
+# Every test opens its own SQLite database, which syncs to disk on each commit. With many test
+# processes at once a slow disk becomes the bottleneck (processes wait on the journal while the
+# CPU idles), so on Linux the tests' temporary files and build output go to the RAM disk.
+# GOTEST_TMPDIR=disk keeps the normal temporary directory.
+if [ "${GOTEST_TMPDIR:-}" != disk ] && [ -d /dev/shm ] && [ -w /dev/shm ]; then
+	if ramtmp=$(mktemp -d /dev/shm/partyline-test.XXXXXX 2>/dev/null); then
+		export TMPDIR="$ramtmp"
+	else
+		ramtmp=
+	fi
+fi
 
 if [ "$#" -gt 0 ]; then
 	if ! packages_out=$(go list "$@"); then
