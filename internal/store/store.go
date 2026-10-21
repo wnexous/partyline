@@ -115,6 +115,12 @@ func (s *Store) Migrate(ctx context.Context) error {
 	return s.migrate(ctx, migrations, hooks)
 }
 
+// MigrateBefore applies the embedded migrations older than version (e.g. "0015"), in one
+// transaction like Migrate. Upgrade tests use it to build databases of an older schema.
+func (s *Store) MigrateBefore(ctx context.Context, version string) error {
+	return s.migrate(ctx, olderThan{FS: migrations, version: version}, hooks)
+}
+
 // olderThan lists only the files of FS whose names sort before version.
 type olderThan struct {
 	fs.FS

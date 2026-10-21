@@ -19,6 +19,8 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -67,6 +69,7 @@ type options struct {
 	kinds            []connectors.Kind
 	outbox           bool
 	version          string
+	database         string
 }
 
 // Option customizes New.
@@ -101,6 +104,10 @@ func WithConnectorKinds(kinds ...connectors.Kind) Option {
 	return func(o *options) { o.kinds = append(o.kinds, kinds...) }
 }
 
+// WithDatabase starts the app on a copy of the SQLite database at path (for example a database
+// of an older schema, which the app migrates on start).
+func WithDatabase(path string) Option { return func(o *options) { o.database = path } }
+
 // WithVersion sets the server build version (default "dev").
 func WithVersion(v string) Option { return func(o *options) { o.version = v } }
 
@@ -117,6 +124,9 @@ func New(t testing.TB, opts ...Option) *Env {
 		opt(&o)
 	}
 	o.env["PARTYLINE_DATA_DIR"] = t.TempDir()
+	if o.database != "" {
+		copyDatabase(t, o.database, filepath.Join(o.env["PARTYLINE_DATA_DIR"], app.DatabaseFile))
+	}
 	cfg, err := config.Load(func(k string) string { return o.env[k] })
 	require.NoError(t, err)
 
@@ -132,6 +142,19 @@ func New(t testing.TB, opts ...Option) *Env {
 		_ = e.App.Shutdown(context.Background())
 	})
 	return e
+}
+
+// copyDatabase copies a closed SQLite database with its WAL file, when there is one.
+func copyDatabase(t testing.TB, from, to string) {
+	t.Helper()
+	for _, suffix := range []string{"", "-wal"} {
+		data, err := os.ReadFile(from + suffix) // #nosec G304 -- test fixture path chosen by the test
+		if suffix != "" && os.IsNotExist(err) {
+			continue
+		}
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(to+suffix, data, 0o600)) // #nosec G703 -- the kit's own temp data dir
+	}
 }
 
 func (e *Env) startApp() {

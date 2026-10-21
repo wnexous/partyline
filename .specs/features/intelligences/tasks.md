@@ -202,10 +202,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: MIG-01, MIG-05, GRP-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Row counts and every member/grant/cursor/outbox/attachment survive; rooms are groups with `read_baseline` = last seq (MIG-01)
-- [ ] Forced hook failure leaves the database unchanged (MIG-05)
-- [ ] Upgraded catch-all room: inbound telegram DM reaches the agent member and the agent's reply is queued to the chat (GRP-01)
-- [ ] Gate check passes: `make check`
+- [x] Row counts and every member/grant/cursor/outbox/attachment survive; rooms are groups with `read_baseline` = last seq (MIG-01)
+- [x] Forced hook failure leaves the database unchanged (MIG-05)
+- [x] Upgraded catch-all room: inbound telegram DM reaches the agent member and the agent's reply is queued to the chat (GRP-01)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `test(store): upgrade a v0.3 database to intelligences`
