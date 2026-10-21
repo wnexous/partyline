@@ -122,9 +122,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: MIG-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Two pending test migrations where the second (or its hook) fails leave `schema_migrations`, tables and rows exactly as before (MIG-05)
-- [ ] A hook runs after its file and sees the file's schema; a fresh database and an already-migrated one behave as before
-- [ ] Gate check passes: `make check`
+- [x] Two pending test migrations where the second (or its hook) fails leave `schema_migrations`, tables and rows exactly as before (MIG-05)
+- [x] A hook runs after its file and sees the file's schema; a fresh database and an already-migrated one behave as before
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): apply pending migrations in one transaction`

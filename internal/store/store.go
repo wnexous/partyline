@@ -90,61 +90,107 @@ func (s *Store) ReadTx(ctx context.Context, fn func(q *db.Queries) error) error 
 	return fn(db.New(tx))
 }
 
-// Migrate applies the embedded migrations that are not yet recorded in schema_migrations.
-func (s *Store) Migrate(ctx context.Context) error {
-	if _, err := s.write.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
-		version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
-		return fmt.Errorf("create schema_migrations: %w", err)
-	}
-	files, err := migrationFiles()
+// Hook is the Go step of a migration. It runs in the migration transaction right after the
+// SQL file of the same version and must use raw SQL only: sqlc queries follow the latest
+// schema, not the schema of its migration.
+type Hook func(ctx context.Context, tx *sql.Tx) error
+
+// hooks maps a migration version (the file name without ".sql") to its Go step.
+var hooks = map[string]Hook{}
+
+// migrations holds the embedded migration files at its root.
+var migrations = func() fs.FS {
+	sub, err := fs.Sub(migrationsFS, "migrations")
 	if err != nil {
-		return err
+		panic(err)
 	}
-	for _, name := range files {
-		if err := s.applyMigration(ctx, name); err != nil {
-			return fmt.Errorf("migration %s: %w", name, err)
-		}
-	}
-	return nil
+	return sub
+}()
+
+// Migrate applies every embedded migration not yet recorded in schema_migrations, with their
+// Go hooks, in one write transaction (MIG-05, AD-012): any error rolls all of them back.
+func (s *Store) Migrate(ctx context.Context) error {
+	return s.migrate(ctx, migrations, hooks)
 }
 
-func (s *Store) applyMigration(ctx context.Context, name string) error {
-	version := strings.TrimSuffix(name, ".sql")
-	body, err := migrationsFS.ReadFile("migrations/" + name)
+// migrate applies the pending *.sql files of fsys in name order, each followed by its hook,
+// records each version and commits once.
+func (s *Store) migrate(ctx context.Context, fsys fs.FS, hooks map[string]Hook) error {
+	names, err := migrationFiles(fsys)
 	if err != nil {
 		return err
 	}
 	tx, err := s.write.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin migrations: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var applied int
-	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations WHERE version = ?", version).Scan(&applied); err != nil {
+	if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+		version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
+		return fmt.Errorf("create schema_migrations: %w", err)
+	}
+	applied, err := appliedVersions(ctx, tx)
+	if err != nil {
 		return err
 	}
-	if applied > 0 {
-		return nil
+	now := time.Now().UnixMilli()
+	for _, name := range names {
+		version := strings.TrimSuffix(name, ".sql")
+		if applied[version] {
+			continue
+		}
+		body, err := fs.ReadFile(fsys, name)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
+			return fmt.Errorf("migration %s: %w", name, err)
+		}
+		if hook := hooks[version]; hook != nil {
+			if err := hook(ctx, tx); err != nil {
+				return fmt.Errorf("migration %s hook: %w", name, err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+			version, now); err != nil {
+			return fmt.Errorf("record migration %s: %w", name, err)
+		}
 	}
-	if _, err := tx.ExecContext(ctx, string(body)); err != nil {
-		return err
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migrations: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
-		version, time.Now().UnixMilli()); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return nil
 }
 
-func migrationFiles() ([]string, error) {
-	entries, err := fs.ReadDir(migrationsFS, "migrations")
+func appliedVersions(ctx context.Context, tx *sql.Tx) (map[string]bool, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT version FROM schema_migrations")
+	if err != nil {
+		return nil, fmt.Errorf("read schema_migrations: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	applied := map[string]bool{}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		applied[v] = true
+	}
+	return applied, rows.Err()
+}
+
+// migrationFiles lists the *.sql files at the root of fsys in name order.
+func migrationFiles(fsys fs.FS) ([]string, error) {
+	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
 		return nil, err
 	}
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
-		names = append(names, e.Name())
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
+			names = append(names, e.Name())
+		}
 	}
 	sort.Strings(names)
 	return names, nil

@@ -32,7 +32,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 
 	var applied int
 	require.NoError(t, s.write.QueryRowContext(ctx, "SELECT COUNT(*) FROM schema_migrations").Scan(&applied))
-	files, err := migrationFiles()
+	files, err := migrationFiles(migrations)
 	require.NoError(t, err)
 	require.Equal(t, len(files), applied)
 
@@ -202,7 +202,7 @@ func TestPairingCodesPerConnectorMigrationDropsOldCodes(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 	_, err = s.write.ExecContext(ctx, `CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`)
 	require.NoError(t, err)
-	files, err := migrationFiles()
+	files, err := migrationFiles(migrations)
 	require.NoError(t, err)
 	for _, name := range files {
 		if name >= "0005" {
@@ -233,7 +233,7 @@ func openMigratedBefore(t *testing.T, version string) *Store {
 	t.Cleanup(func() { _ = s.Close() })
 	_, err = s.write.ExecContext(ctx, `CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`)
 	require.NoError(t, err)
-	files, err := migrationFiles()
+	files, err := migrationFiles(migrations)
 	require.NoError(t, err)
 	for _, name := range files {
 		if name >= version {
