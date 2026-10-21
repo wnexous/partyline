@@ -28,6 +28,7 @@ func (s *server) adminRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/tokens", authed(s.listTokens))
 	s.handle(mux, "POST /api/v1/tokens", authed(s.createToken))
 	s.handle(mux, "DELETE /api/v1/tokens/{id}", authed(s.revokeToken))
+	s.handle(mux, "DELETE /api/v1/tokens/{id}/purge", authed(s.purgeToken))
 }
 
 // optTime converts an optional unix-ms column to an optional time.
@@ -204,14 +205,19 @@ func (s *server) listDirectory(w http.ResponseWriter, r *http.Request, _ authn.P
 	return nil
 }
 
+// listTokens leaves revoked tokens out unless include_revoked=true (TOKH-01).
 func (s *server) listTokens(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	list, err := s.Users.ListTokens(r.Context(), p.UserID)
 	if err != nil {
 		return err
 	}
-	out := dto.List[dto.Token]{Items: make([]dto.Token, len(list))}
-	for i, t := range list {
-		out.Items[i] = toToken(t)
+	withRevoked := r.URL.Query().Get("include_revoked") == "true"
+	out := dto.List[dto.Token]{Items: make([]dto.Token, 0, len(list))}
+	for _, t := range list {
+		if t.RevokedAt.Valid && !withRevoked {
+			continue
+		}
+		out.Items = append(out.Items, toToken(t))
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
@@ -228,6 +234,15 @@ func (s *server) createToken(w http.ResponseWriter, r *http.Request, p authn.Pri
 		return err
 	}
 	httpx.WriteJSON(w, http.StatusCreated, dto.CreatedToken{Token: toToken(tok), Secret: secret})
+	return nil
+}
+
+// purgeToken deletes one of the caller's revoked tokens (TOKH-02); an active one is 409.
+func (s *server) purgeToken(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	if err := s.Users.PurgeToken(r.Context(), p.UserID, r.PathValue("id")); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
 	return nil
 }
 

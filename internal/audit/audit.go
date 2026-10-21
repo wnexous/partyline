@@ -29,6 +29,7 @@ const (
 	ActionInviteAccept   = "invite.accept"
 	ActionTokenCreate    = "token.create"
 	ActionTokenRevoke    = "token.revoke"
+	ActionTokenPurge     = "token.purge"
 	ActionGrantsSet      = "grants.set"
 	// Connector changes (AUD-01); sharing changes are grants.set.
 	ActionConnectorCreate  = "connector.create"

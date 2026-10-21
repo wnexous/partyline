@@ -1265,7 +1265,9 @@ export const TokenKindUser = "user";
  */
 export type TokenKind = typeof TokenKindAgent | typeof TokenKindUser;
 /**
- * Token is an API token without its secret (GET /tokens).
+ * Token is an API token without its secret (GET /tokens; revoked tokens only with
+ * ?include_revoked=true). DELETE /tokens/{id} revokes it, DELETE /tokens/{id}/purge deletes a
+ * revoked one (409 while active); revoked tokens are deleted 30 days after revocation.
  */
 export interface Token {
   id: string;

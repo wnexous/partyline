@@ -68,7 +68,7 @@ func TestAgentRevokesOwnToken(t *testing.T) {
 	tok.Delete("/api/v1/agent/token").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	other.Get("/api/v1/agent/rooms").RequireStatus(http.StatusOK)
 
-	tokens := testkit.Decode[dto.List[dto.Token]](alice.Get("/api/v1/tokens").RequireStatus(http.StatusOK))
+	tokens := testkit.Decode[dto.List[dto.Token]](alice.Get("/api/v1/tokens?include_revoked=true").RequireStatus(http.StatusOK))
 	revoked := map[string]bool{}
 	for _, tk := range tokens.Items {
 		revoked[tk.Name] = tk.RevokedAt != nil

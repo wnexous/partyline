@@ -19,6 +19,13 @@ import (
 // maxTokenName is the longest accepted token name in characters.
 const maxTokenName = 64
 
+// RevokedTokenRetention is how long a revoked token stays listed before the retention job
+// deletes it (TOKH-03); the audit log keeps its record.
+const RevokedTokenRetention = 30 * 24 * time.Hour
+
+// ErrTokenActive refuses to delete a token that is not revoked (TOKH-02): revoke it first. 409.
+var ErrTokenActive = errors.New("token is not revoked")
+
 // TokenInput describes a new API token; a nil ExpiresAt never expires.
 type TokenInput struct {
 	Kind      dto.TokenKind
@@ -113,6 +120,39 @@ func (s *Service) RevokeToken(ctx context.Context, userID, id string) error {
 	}
 	s.revoked(events.SessionsRevoked{UserID: userID, TokenIDs: []string{id}})
 	return nil
+}
+
+// PurgeToken deletes one of the user's revoked tokens and audits it (TOKH-02). ErrTokenActive
+// when it is not revoked, ErrNotFound when the user does not own it.
+func (s *Service) PurgeToken(ctx context.Context, userID, id string) error {
+	return s.store.WithTx(ctx, func(q *db.Queries) error {
+		n, err := q.DeleteRevokedToken(ctx, db.DeleteRevokedTokenParams{ID: id, UserID: userID})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			tok, err := q.GetToken(ctx, id)
+			if errors.Is(err, sql.ErrNoRows) || (err == nil && tok.UserID != userID) {
+				return ErrNotFound
+			}
+			if err != nil {
+				return err
+			}
+			return ErrTokenActive
+		}
+		return s.audit.Record(ctx, q, audit.Entry{Action: audit.ActionTokenPurge, TargetKind: audit.TargetToken, TargetID: id})
+	})
+}
+
+// PurgeRevokedTokens deletes every token revoked more than RevokedTokenRetention ago and
+// returns how many it removed (TOKH-03). The daily retention job runs it.
+func (s *Service) PurgeRevokedTokens(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.store.WithTx(ctx, func(q *db.Queries) (err error) {
+		n, err = q.DeleteTokensRevokedBefore(ctx, sql.NullInt64{Int64: ms(s.now().Add(-RevokedTokenRetention)), Valid: true})
+		return err
+	})
+	return n, err
 }
 
 // AuthenticateToken resolves a bearer secret to its principal: an agent principal for agent

@@ -76,7 +76,7 @@ T3 → T4
 **Requirement**: TOKH-01, TOKH-02, TOKH-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Default list omits revoked; purge rules; 29-day kept / 31-day purged (fake clock); purged secret → 401
+- [x] Default list omits revoked; purge rules; 29-day kept / 31-day purged (fake clock); purged secret → 401
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): hide, purge and expire revoked tokens`

@@ -363,7 +363,7 @@ func TestSetupBrowserApproverConfirmation(t *testing.T) {
 			require.Contains(t, r.stdout, "Save this agent token of @bob on this machine? [Y/n]: ")
 			require.Contains(t, r.stderr, "not saved: the token belongs to @bob; revoked it.")
 			require.ErrorIs(t, err, os.ErrNotExist, "nothing saved")
-			toks := testkit.Decode[dto.List[dto.Token]](bob.Get("/api/v1/tokens").RequireStatus(http.StatusOK))
+			toks := testkit.Decode[dto.List[dto.Token]](bob.Get("/api/v1/tokens?include_revoked=true").RequireStatus(http.StatusOK))
 			require.Len(t, toks.Items, 1)
 			require.NotNil(t, toks.Items[0].RevokedAt, "the declined token is revoked")
 		})
