@@ -215,7 +215,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | WIZ-01 | P2: Web wizard | Tasks (T15, T23, T30, T32) | Implemented |
 | WIZ-02 | P2: Web wizard | Tasks (T16, T24) | Implemented |
 
-**Coverage:** 35 total, all mapped in tasks.md (UAT follow-ups: PUSH-06 → T18, PUSH-03 → T19, T20; HAR-01 → T20; fix iteration 1: T23-T33, with HAR-03 and WIZ-01 extended to every harness and ONB-11 added)
+**Coverage:** 35 total, all mapped in tasks.md (UAT follow-ups: PUSH-06 → T18, PUSH-03 → T19, T20; HAR-01 → T20; fix iteration 1: T23-T33, with HAR-03 and WIZ-01 extended to every harness and ONB-11 added; fix iteration 2: T35-T42 for ONB-06, ONB-08, ONB-10, ONB-11, DEV-05, DEV-06, HAR-02, HAR-04, HAR-05)
 
 ---
 

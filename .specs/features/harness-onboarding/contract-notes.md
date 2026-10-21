@@ -513,3 +513,73 @@ chose to fix, and the user's request for one launcher per harness.
   drops `.git`; `go build -buildvcs=false` keeps Go from stamping VCS data. CI and releases
   still pass `VERSION`. Not run in a real Docker build here (no Docker on the devbox): the
   script is tested directly and a static test pins the Dockerfile and `.dockerignore` lines.
+
+---
+
+# Contract Notes (fix iteration 2: T35-T42)
+
+From `validation.md` iteration 2 (gaps 1-3) and the remaining security weaknesses the
+maintainer chose to harden. Each item has a discriminating test checked against a mutant in a
+scratch worktree.
+
+## Saved token and another URL (ONB-08, T35)
+- No code change. `TestSetupDoesNotReuseTokenSavedForAnotherURL` saves `{A, tokenA}` and runs
+  `setup --url B` (`--yes` and interactive): no "Using the saved agent token", browser approval
+  on B, config ends `{B, <new token>}`. It kills K03 (the `sameURL` check in
+  `setupCredentials` removed).
+
+## Installer URL check (ONB-10, T36)
+- `require_https` (`scripts/install.sh`): no `://` → `refusing URL <u>: use https`; the
+  authority (up to the first `/`, `?` or `#`) holding `@` → `refusing URL <u>: user info (@) is
+  not allowed`, for https too; scheme lowercased: `https` passes, `http` only when the host
+  (lowercased; `[…]` for IPv6) is exactly `localhost`, `127.0.0.1` or `::1` and the rest is
+  empty or `:<digits>`, else `refusing plain http URL <u>: use https`; any other scheme →
+  `refusing URL <u>: use https`. Checked in dash, bash and busybox sh.
+
+## Image version wording (ONB-11, T37)
+- Spec only: an empty `VERSION` and `VERSION=dev` count as unset; the test pins both.
+
+## Symlinks only into HOME (HAR-05, T38)
+- `Env.writeTarget(path)`: a symlink at `path` is followed only when
+  `EvalSymlinks(path)` is inside `EvalSymlinks(Env.Home)`; otherwise the error is
+  `refusing to write through the symlink <link>: its target <target> is outside your home
+  directory <home>`. Only links are checked: a `CODEX_HOME` or `XDG_CONFIG_HOME` outside HOME
+  still works. File harnesses check the config and extension paths before writing anything;
+  Codex and Gemini check the hooks file before running their CLI. The write helpers
+  (`writeDoc`, `writeFileAtomic`, `keepBackup`, `saveRemoval`, `upsertHookGroup`,
+  `removeHookGroups`) are now `Env` methods.
+
+## Hook ownership (HAR-02, HAR-04, T39)
+- A hook group is Partyline's only when one of its hooks has `command` exactly
+  `hookCommand(Env.Binary, <hook>)` (trimmed): `<shell-quoted absolute path> hook codex-stop` or
+  `… hook gemini-after-agent`. Wrappers named `partyline*`, a partyline at another path, or the
+  right command with extra arguments are never replaced, removed or listed by `Entries`/doctor.
+- Trade-off: after the binary moves, setup appends a new group and leaves the old one, and
+  uninstall from the new path does not remove it; the user removes the old group by hand.
+
+## Backups (HAR-05, ONB-06, T40)
+- `<file>.partyline.bak` is written 0600 (the first backup is still never overwritten).
+  `Registrar.Backups()` names the backup of each file setup edits itself (none for Claude
+  Code). `registerHarnesses` notes which backups exist before the run; when every selected
+  harness registered, it deletes the backups created in this run, or with `--keep-backups`
+  prints `Kept the backup <path>` for each. A failed run keeps them; a backup that existed
+  before the run is left alone.
+- doctor: one `WARN backups: <path> is a copy of a harness config that setup kept` line per
+  existing backup of any registrar, with `fix: delete it once you no longer need it: rm
+  <path>`; warnings do not count as failures.
+
+## `--yes` and the approver (DEV-06, T41)
+- With `--yes`, after `Approved by @<user> on <instance>` on stdout, stderr gets `partyline
+  setup: warning: --yes accepted the agent token of @<user> without asking; if @<user> is not
+  you, run partyline setup --uninstall to revoke it`.
+
+## Wrong-code limit in the database (DEV-05, T42)
+- Migration `0090_device_code_attempts.sql`: `device_code_attempts(id INTEGER PRIMARY KEY,
+  user_id → users ON DELETE CASCADE, attempted_at ms)`, index `(user_id, attempted_at)`.
+  **Orchestrator: 0090 was chosen to avoid clashing with the migrations being added on `main`
+  and in `partyline-files`; renumber it at merge so it sorts after them** (it creates a new
+  table only and does not depend on their order).
+- `Service.attempt` runs in one write transaction: delete rows older than a minute, count the
+  user's rows, 5 or more → 429 `rate_limited`, else insert one row; a code that exists deletes
+  its row again (best effort, `context.WithoutCancel`). The in-memory map is gone. A restart
+  keeps the count (`TestDeviceWrongCodeLimitSurvivesRestart`).

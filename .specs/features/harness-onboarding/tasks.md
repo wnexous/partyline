@@ -734,7 +734,7 @@ before each commit.
 **Requirement**: all touched
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] contract notes and traceability describe the shipped behavior
+- [x] contract notes and traceability describe the shipped behavior
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record the harness-onboarding fix iteration 2`
