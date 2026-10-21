@@ -71,6 +71,8 @@ type stdio struct {
 	launcherEnv func() map[string]string
 	// getpid is this process id (nil: os.Getpid); a launcher passes it on as the session key.
 	getpid func() int
+	// rawTerm offers raw terminal mode for the checklist menu; tests inject a fake.
+	rawTerm rawTerminal
 }
 
 // Run executes the command named in args[1] and returns the process exit code. SIGINT and
@@ -78,7 +80,7 @@ type stdio struct {
 func Run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return execute(ctx, args, stdio{stdin: os.Stdin, stdout: stdout, stderr: stderr, getenv: os.Getenv, getwd: os.Getwd, launcherEnv: procLauncherEnv})
+	return execute(ctx, args, stdio{stdin: os.Stdin, stdout: stdout, stderr: stderr, getenv: os.Getenv, getwd: os.Getwd, launcherEnv: procLauncherEnv, rawTerm: osRawTerm{}})
 }
 
 func execute(ctx context.Context, args []string, io stdio) int {

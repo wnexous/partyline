@@ -754,9 +754,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: CLI-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Arrows and j/k move, space toggles, `a` selects all, enter applies, `q` and a lone ESC cancel without changes, unknown keys ignored (CLI-03 + edge case)
-- [ ] Width 30 renders one harness per line with truncated titles (edge case); rows show installed/registered state and pre-selection
-- [ ] Gate check passes: `make check`
+- [x] Arrows and j/k move, space toggles, `a` selects all, enter applies, `q` and a lone ESC cancel without changes, unknown keys ignored (CLI-03 + edge case)
+- [x] Width 30 renders one harness per line with truncated titles (edge case); rows show installed/registered state and pre-selection
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(cli): add a checklist menu for the terminal`
