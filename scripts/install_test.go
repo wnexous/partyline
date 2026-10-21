@@ -345,19 +345,34 @@ func TestInstallTruncatedRunsNothing(t *testing.T) {
 }
 
 // ONB-10: plain http is refused for the instance and the release URLs, before anything is
-// downloaded, except for loopback hosts (localhost, 127.0.0.1, ::1).
+// downloaded, except for loopback hosts (localhost, 127.0.0.1, ::1). The scheme is compared
+// without case, a URL without a scheme (curl would use http) is refused, and so is any URL
+// with user info, which would let http://localhost:80@evil.com reach evil.com.
 func TestInstallRefusesPlainHTTP(t *testing.T) {
 	r := newRelease(t, "v1.4.0", hostPlatform(t))
+	httpMsg := func(u string) string { return "partyline install: refusing plain http URL " + u + ": use https" }
+	userMsg := func(u string) string {
+		return "partyline install: refusing URL " + u + ": user info (@) is not allowed"
+	}
 	for _, tc := range []struct {
 		name, script string
 		env          map[string]string
-		bad          string
+		msg          string
 	}{
-		{name: "served from http", script: scripts.Install("http://partyline.example.com"), bad: "http://partyline.example.com"},
-		{name: "PARTYLINE_URL", script: raw(t), env: map[string]string{"PARTYLINE_URL": "http://10.0.0.5:8080"}, bad: "http://10.0.0.5:8080"},
-		{name: "release base", script: raw(t), env: map[string]string{"PARTYLINE_RELEASE_BASE": "http://mirror.example.com/download"}, bad: "http://mirror.example.com/download"},
-		{name: "releases API", script: raw(t), env: map[string]string{"PARTYLINE_RELEASES_API": "http://api.example.com/latest"}, bad: "http://api.example.com/latest"},
-		{name: "localhost lookalike", script: scripts.Install("http://localhost.example.com"), bad: "http://localhost.example.com"},
+		{name: "served from http", script: scripts.Install("http://partyline.example.com"), msg: httpMsg("http://partyline.example.com")},
+		{name: "PARTYLINE_URL", script: raw(t), env: map[string]string{"PARTYLINE_URL": "http://10.0.0.5:8080"}, msg: httpMsg("http://10.0.0.5:8080")},
+		{name: "release base", script: raw(t), env: map[string]string{"PARTYLINE_RELEASE_BASE": "http://mirror.example.com/download"}, msg: httpMsg("http://mirror.example.com/download")},
+		{name: "releases API", script: raw(t), env: map[string]string{"PARTYLINE_RELEASES_API": "http://api.example.com/latest"}, msg: httpMsg("http://api.example.com/latest")},
+		{name: "localhost lookalike", script: scripts.Install("http://localhost.example.com"), msg: httpMsg("http://localhost.example.com")},
+		{name: "loopback lookalike", script: raw(t), env: map[string]string{"PARTYLINE_URL": "http://127.0.0.1.nip.io:8080"}, msg: httpMsg("http://127.0.0.1.nip.io:8080")},
+		{name: "mixed-case scheme", script: scripts.Install("Http://partyline.example.com"), msg: httpMsg("Http://partyline.example.com")},
+		{name: "mixed-case scheme in env", script: raw(t), env: map[string]string{"PARTYLINE_URL": "hTTp://10.0.0.5"}, msg: httpMsg("hTTp://10.0.0.5")},
+		{name: "upper-case release base", script: raw(t), env: map[string]string{"PARTYLINE_RELEASE_BASE": "HTTP://mirror.example.com/download"}, msg: httpMsg("HTTP://mirror.example.com/download")},
+		{name: "localhost user info", script: scripts.Install("http://localhost:80@evil.com/"), msg: userMsg("http://localhost:80@evil.com/")},
+		{name: "127.0.0.1 user info", script: raw(t), env: map[string]string{"PARTYLINE_URL": "http://127.0.0.1:1@evil.com"}, msg: userMsg("http://127.0.0.1:1@evil.com")},
+		{name: "::1 user info", script: raw(t), env: map[string]string{"PARTYLINE_RELEASE_BASE": "http://[::1]:8080@evil.com/download"}, msg: userMsg("http://[::1]:8080@evil.com/download")},
+		{name: "https user info", script: raw(t), env: map[string]string{"PARTYLINE_URL": "https://me:pw@partyline.example.com"}, msg: userMsg("https://me:pw@partyline.example.com")},
+		{name: "no scheme", script: raw(t), env: map[string]string{"PARTYLINE_URL": "partyline.example.com"}, msg: "partyline install: refusing URL partyline.example.com: use https"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
@@ -368,13 +383,13 @@ func TestInstallRefusesPlainHTTP(t *testing.T) {
 			before := r.count()
 			res := runInstall(t, tc.script, r, env)
 			require.Equal(t, 1, res.code, "stdout: %s", res.stdout)
-			require.Contains(t, res.stderr, "partyline install: refusing plain http URL "+tc.bad+": use https")
+			require.Contains(t, res.stderr, tc.msg)
 			require.Empty(t, homeFiles(t, home))
 			require.Equal(t, before, r.count(), "nothing downloaded")
 		})
 	}
 
-	for _, u := range []string{"http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080"} {
+	for _, u := range []string{"http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080", "HTTP://LocalHost:8080/", "http://localhost", "https://partyline.example.com"} {
 		home := t.TempDir()
 		res := runInstall(t, scripts.Install(u), r, map[string]string{"HOME": home})
 		require.Equal(t, 0, res.code, "%s: %s", u, res.stderr)

@@ -44,10 +44,33 @@ sha256() { # sha256 <file>
 	fi
 }
 
-require_https() { # require_https <url>: plain http only for localhost, 127.0.0.1 and ::1
-	case "$1" in
-	http://localhost | http://localhost[:/]* | http://127.0.0.1 | http://127.0.0.1[:/]* | "http://[::1]" | "http://[::1]"[:/]*) ;;
-	http://* | HTTP://*) fail "refusing plain http URL $1: use https" ;;
+require_https() { # require_https <url>: https, or plain http for localhost, 127.0.0.1 and ::1
+	rest=${1#*://}
+	[ "$rest" != "$1" ] || fail "refusing URL $1: use https"
+	scheme=$(printf '%s' "${1%%://*}" | tr '[:upper:]' '[:lower:]')
+	authority=${rest%%[/?#]*}
+	case "$authority" in
+	*@*) fail "refusing URL $1: user info (@) is not allowed" ;;
+	esac
+	case "$scheme" in
+	https) return 0 ;;
+	http) ;;
+	*) fail "refusing URL $1: use https" ;;
+	esac
+	case "$authority" in
+	\[*) host=${authority#\[} && host=${host%%]*} && port=${authority#*]} ;;
+	*) host=${authority%%:*} && port=${authority#"$host"} ;;
+	esac
+	host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
+	case "$port" in
+	'' | :) ;;
+	:*[!0-9]*) fail "refusing plain http URL $1: use https" ;;
+	:*) ;;
+	*) fail "refusing plain http URL $1: use https" ;;
+	esac
+	case "$host" in
+	localhost | 127.0.0.1 | ::1) ;;
+	*) fail "refusing plain http URL $1: use https" ;;
 	esac
 }
 

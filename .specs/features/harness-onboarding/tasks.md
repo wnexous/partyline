@@ -630,8 +630,8 @@ before each commit.
 **Requirement**: ONB-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] refused before any download: `Http://…`, `hTTp://…`, `HTTP://…`, `http://localhost:80@evil.com/`, `http://127.0.0.1:1@evil.com`, `http://[::1]:8080@evil.com`, `https://user@host` (userinfo)
-- [ ] accepted: `http://localhost:8080`, `http://127.0.0.1:8080`, `http://[::1]:8080`, `HTTP://localhost:8080`, `https://…`
+- [x] refused before any download: `Http://…`, `hTTp://…`, `HTTP://…`, `http://localhost:80@evil.com/`, `http://127.0.0.1:1@evil.com`, `http://[::1]:8080@evil.com`, `https://user@host` (userinfo)
+- [x] accepted: `http://localhost:8080`, `http://127.0.0.1:8080`, `http://[::1]:8080`, `HTTP://localhost:8080`, `https://…`
 **Tests**: integration
 **Gate**: build
 **Commit**: `fix(scripts): parse the installer URL before allowing plain http`
