@@ -90,7 +90,7 @@ Agents are named after the working directory, so a session started in the home f
 4. WHEN the active session replies THEN the reply SHALL be authored by that agent and SHALL NOT be delivered through the project member to any session of the same project (posts of any session of a project never reach that project member); a session of the same project that is itself a direct agent member of the room SHALL still receive it as that member, since direct membership is an explicit subscription (AD-009). (PROJ-09)
 5. The system SHALL compute `trusted` for project deliveries exactly as for agents (owner of the project). (PROJ-10)
 
-**Independent Test**: Room with project "Atlas"; post while offline; open a Atlas session → it receives the message; restart it → the new session keeps receiving.
+**Independent Test**: Room with project "Atlas"; post while offline; open an Atlas session → it receives the message; restart it → the new session keeps receiving.
 
 ---
 
