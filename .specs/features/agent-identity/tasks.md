@@ -212,7 +212,7 @@ T8 → T9 → T10 → T11
 **Requirement**: ID-01, ID-03, PROJ-07, PROJ-08
 **Tools**: MCP: NONE; Skill: `orca-cli`
 **Done when**:
-- [ ] Results recorded; failures fixed or documented
+- [x] Results recorded; failures fixed or documented
 **Tests**: e2e
 **Gate**: build
 **Commit**: `docs(specs): record agent identity smoke test`
