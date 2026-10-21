@@ -41,7 +41,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | Second live session in the same folder | The launcher asks "<name> is open in another session (<harness>, since <time>). Take over? [y/N]"; yes → the new session becomes the identity's live session and the old one is disconnected with a notice | André chose "ask and take over" | y |
 | Second session without a terminal (no TTY) or without the launcher | The live connection is refused with `identity_busy` unless `--take-over` / `PARTYLINE_TAKEOVER=1` is given; the session works without push and its tool results say why | Never take over silently | n |
 | Tools-only processes (Codex, Gemini, the tools half of pi/OpenCode) | Act as the identity of their folder on their machine; they are not exclusive (no live connection to own) | The folder is the identity; removes the fragile session-key allocation of v0.3 | n |
-| Default name | Display name = folder base name with the first letter upper-cased (`discord` → "Discord"); handle = slug of the base name, unique per owner (`-2`, `-3` on collision) | Readable and editable | n |
+| Default name | Display name = folder base name with the first letter upper-cased (`discord` → "Discord"); handle = slug of the base name, unique across the instance (`-2`, `-3` on collision) | Readable and editable | n |
 | Home folder or `/` | Allowed like any folder (identity of `~`), display name = the folder base name; no warning | Consistent with "folder = identity" | n |
 | Renamed or moved folder | Becomes a new identity; the owner can merge the old identity into the new one (history, groups and settings move, the old one is deleted) | Paths are the identity; merge covers moves | n |
 | Legacy agents (created before this feature, no folder) | Kept as unlinked identities. The first session from a folder adopts the owner's unlinked identity whose handle equals the folder's handle, or the one named by `PARTYLINE_AGENT`/`--as`; the rest stay listed under "Unlinked" for merge or delete | Existing rooms (e.g. production routes) keep working without manual steps | n |
@@ -85,7 +85,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 3. WHEN two different folders have the same base name THEN the system SHALL give them distinct handles (`name`, `name-2`) and the same default display name. (AID-03)
 4. WHEN a tools-only process (Codex, Gemini, tools half of pi/OpenCode) calls a tool with machine M and folder F THEN the system SHALL act as identity (O, M, F). (AID-04)
 5. IF the CLI cannot determine a folder THEN the system SHALL reject the connection with 422 `folder_required`. (AID-05)
-6. WHEN the owner renames an identity (display name 1–64 characters, handle 1–40 of `a-z0-9-` unique per owner) THEN the new names SHALL appear in timelines, member lists, mentions and outbound signatures. (AID-06)
+6. WHEN the owner renames an identity (display name 1–64 characters, handle 1–40 of `a-z0-9-` unique across the instance) THEN the new names SHALL appear in timelines, member lists, mentions and outbound signatures. (AID-06)
 7. The CLI SHALL send the canonical folder (absolute, symlinks resolved, no trailing slash) and the hostname with every connection and tool call. (AID-07)
 
 **Independent Test**: Start `partyline opencode` in `~/x`, exit, run `partyline opencode -s <id>` and then `partyline claude` in `~/x`: one identity, app changes, groups and history kept.
@@ -200,7 +200,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 **Acceptance Criteria**:
 
 1. Each connector SHALL have an operator: its owner (default) or one AI identity the owner owns; WHEN the owner changes it THEN the system SHALL record an audit entry. (ACC-01)
-2. WHEN a person writes to the connector account in a platform DM THEN the system SHALL deliver it in the DM between that person and the operator, creating the DM. (ACC-02)
+2. WHERE the connector's auto-route includes DMs, WHEN a person writes to the connector account in a platform DM THEN the system SHALL deliver it in the DM between that person and the operator, creating the DM. (ACC-02)
 3. WHEN the operator is an AI and it replies in that DM THEN the message SHALL go out through the account without signature. (ACC-03)
 4. WHEN the operator is a user and an AI participant writes in a bridged conversation THEN the outbound text SHALL carry the AI's signature per its member setting. (ACC-04)
 5. WHEN the operator writes from the platform itself (own account, e.g. phone) THEN the message SHALL be authored by the operator. (ACC-05)

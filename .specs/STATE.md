@@ -73,8 +73,33 @@
 - **Trade-off**: A session that is both the project's active session and a direct member still gets one delivery (the direct one), and a direct-member session of the project sees its sibling's replies; owners who want no echo at all keep same-project sessions out of the room as direct members.
 - **Scope**: agent-identity (PROJ-09), delivery.
 - **Date**: 2026-10-21
-- **Status**: active
+- **Status**: superseded by AD-010 (projects are removed by the intelligences feature)
 - **Context**: Verifier iteration 1 flagged the narrower implementation as an unratified SPEC_DEVIATION. The orchestrator decided under André's standing authorization to choose what is most adequate; the spec was amended to match the implemented rule.
+
+### AD-010
+- **Decision**: Every participant is an intelligence: one `intelligences` row (kind `human` or `ai`, display name, instance-unique case-insensitive `@handle`, avatar, bio) that shares its id with its subtype row (`users.id`, `agents.id`, `people.id`). An AI is identified by (owner, machine, canonical folder), never by a session or harness; the harness is its current app. An AI has at most one live session: a second live connection is refused with `identity_busy` unless it explicitly takes over (`taken_over` closes the old one); tools-only processes act as the folder's AI without owning a live session.
+- **Reason**: Resuming or switching harness must keep one identity (the v0.3 session-named agents split and multiplied); humans and AIs are the same kind of participant in a messenger.
+- **Trade-off**: Moving or renaming a folder creates a new identity (merge covers it). Old CLIs without folder headers are refused. A tools-only half of a taken-over session can still act until it exits.
+- **Scope**: intelligences, agent-channel, agents, connectors (people), web-app.
+- **Date**: 2026-10-21
+- **Status**: active
+- **Supersedes**: AD-009 (projects removed); agent-channel AGT-04 "newest wins".
+
+### AD-011
+- **Decision**: A conversation is a room (AD-002 holds) of kind `group` or `dm`. A DM has exactly two intelligences, keyed by their sorted ids on the room row; its access comes from its participants (post) and, for an AI participant, its owner and `use` grantees (view); grants on DMs are refused. A `user` member of a group gets `post` on it. Membership is therefore an access source next to grants (amends AD-005); admins still get no implicit access.
+- **Reason**: Messenger semantics: members and DM participants see the conversation without separate sharing.
+- **Trade-off**: Two access sources to reason about; DMs cannot be shared or moderated by anyone else.
+- **Scope**: intelligences, access, rooms, web-app.
+- **Date**: 2026-10-21
+- **Status**: active
+
+### AD-012
+- **Decision**: `Store.Migrate` applies every pending migration file in one transaction, each optionally followed by a Go hook (raw SQL, never sqlc) in the same transaction. Migrations never rebuild a table that other tables reference: with `foreign_keys=ON` (it cannot be turned off inside a transaction) `DROP TABLE` performs an implicit `DELETE` that cascades. Columns are added with `ADD COLUMN` (references only with a NULL default) and removed with `DROP COLUMN` when SQLite allows it; columns it cannot drop (in a UNIQUE or foreign key) stay as documented dead columns.
+- **Reason**: MIG-05 (an upgrade that spans several files is atomic) and the data-loss risk of table rebuilds found while designing the intelligences migration.
+- **Trade-off**: Dead columns and tables remain in the schema (`agents.name`, `agents.project_id`, `projects`); a long upgrade holds the write lock for its whole duration.
+- **Scope**: store, all features with migrations.
+- **Date**: 2026-10-21
+- **Status**: active
 
 ## Handoff
 
