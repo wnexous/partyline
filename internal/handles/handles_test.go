@@ -21,7 +21,7 @@ func TestDefaultsFromABaseName(t *testing.T) {
 		{AI, "2024-notes", "ai-2024-notes", "2024-notes", "must start with a letter"},
 		{AI, "/", "ai", "/", "root folder"},
 		{AI, "~", "ai", "~", "home shown as ~"},
-		{AI, "Estagiário Ção", "estagiario-cao", "Estagiário Ção", "accents fold, spaces become -"},
+		{AI, "Ágata Ção", "agata-cao", "Ágata Ção", "accents fold, spaces become -"},
 		{AI, "über_ñandú", "uber-nandu", "Über_ñandú", "lower-case accents and _"},
 		{AI, "My.Project", "my-project", "My.Project", "upper-case input is lower-cased"},
 		{AI, "--notes--", "notes", "--notes--", "trimmed of -"},

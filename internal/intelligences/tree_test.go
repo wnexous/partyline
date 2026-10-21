@@ -34,9 +34,9 @@ func TestBuildTreeFolders(t *testing.T) {
 		{
 			name: "chains without identities collapse to one path label",
 			home: home,
-			ais:  []AIContact{ai("/home/u/projects/slimpass/agents/discord", false)},
+			ais:  []AIContact{ai("/home/u/projects/acme/agents/discord", false)},
 			want: []TreeNode{
-				{AI: ai("/home/u/projects/slimpass/agents/discord", false), Path: "projects/slimpass/agents", Name: "discord"},
+				{AI: ai("/home/u/projects/acme/agents/discord", false), Path: "projects/acme/agents", Name: "discord"},
 			},
 		},
 		{

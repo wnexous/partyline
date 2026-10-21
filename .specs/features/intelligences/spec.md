@@ -48,7 +48,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | v0.3 projects | Removed. A project room member becomes a direct member of the project's most recently connected agent | Projects are superseded by folders | n |
 | v0.3 temporary/fixed and archiving | Removed: every identity is permanent until deleted; legacy temporaries become unlinked identities | Identity is the folder, not the session | n |
 | Identity model | One `intelligences` table for every participant: kind `human` (a user account or an external person) or `ai`; same profile fields for all (display name, @handle, avatar, bio); users, AIs and people point to their intelligence | "Everything in the same table" (André) | y |
-| Handles | Unique across the instance and case-insensitive (`@andre`, `@estagiario`); defaults from username, folder base name or platform name, with `-2`, `-3` on collision; external people get handles too | One mention namespace for humans and AIs | n |
+| Handles | Unique across the instance and case-insensitive (`@andre`, `@atlas`); defaults from username, folder base name or platform name, with `-2`, `-3` on collision; external people get handles too | One mention namespace for humans and AIs | n |
 | Avatars | PNG, JPEG or WebP up to 2 MB, center-cropped and resized to 256×256 PNG on the server; initials on a colored background when none | Simple and consistent | n |
 | Who edits a profile | A user edits their own; an AI's owner edits it; an AI edits its own profile with the `update_profile` tool; an external person's profile is edited by users who own or may `use` its connector (local to the instance) | "They personalise their identity like I do mine" | y |
 | Impersonation by display name | Display names are not unique; the UI always shows the kind badge (AI / person + platform) and the @handle next to names; trust never depends on names (AD-006) | An AI could name itself like its owner | n |
@@ -56,7 +56,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | Web layout | Messenger layout: a left sidebar with the conversation list (search, unread badges, "New conversation" and "New group"), the open conversation on the right; the current navigation moves to a compact menu | André asked for a left sidebar of conversations | y |
 | Rooms | Rooms become **groups** in the UI; a DM is a room of kind `dm` with exactly two intelligences; API keeps `/rooms` with a `kind` field | AD-002 (room is the only routing primitive) stays | n |
 | External person identity | Each external account seen by a connector (sender) is a person intelligence keyed per connector (AD-008); linking it to a user (existing pairing) makes that user the person | Keeps AD-008 trust boundaries | n |
-| Platform account ownership | Each connector has an operator intelligence: the owner (default) or one of the owner's AIs | The Estagiário's Discord bot is the Estagiário's app | n |
+| Platform account ownership | Each connector has an operator intelligence: the owner (default) or one of the owner's AIs | Atlas's Discord bot is Atlas's app | n |
 | Platform DM chats | A DM chat on a connector is the DM between the person and the connector's operator; group chats are bridged into groups whose participants include each person seen | Messenger semantics | n |
 | Messages from the operator's own account on the platform | Shown as written by the operator (e.g. André typing on his phone in WhatsApp) | The account is the operator's app | n |
 | AI writing through a human operator's account | Allowed in groups/DMs where the AI is a participant; the outbound text is signed with the AI's name (existing signature setting) | Recipients must know an AI wrote it | n |
@@ -122,7 +122,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 **Acceptance Criteria**:
 
 1. The contacts page SHALL show AIs grouped by machine, and within a machine as a folder tree where an identity whose folder is inside another identity's folder is shown as its child. (TREE-01)
-2. The tree SHALL collapse folder chains that contain no identity into one path label (e.g. `projects/slimpass/agents › discord`) and SHALL show `~` for the home folder. (TREE-02)
+2. The tree SHALL collapse folder chains that contain no identity into one path label (e.g. `projects/acme/agents › discord`) and SHALL show `~` for the home folder. (TREE-02)
 3. Each identity row SHALL show display name, online state, current app (harness) and last-seen time; machines with an online identity SHALL sort first, then by name. (TREE-03)
 4. WHEN the owner renames a machine (display label, 1–64 characters) THEN the label SHALL replace the hostname in the tree and filters, keyed by hostname. (TREE-04)
 5. The page SHALL offer a text filter that matches display name, handle, folder or machine and keeps the matching rows' ancestors visible. (TREE-05)
@@ -193,9 +193,9 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 
 ### P1: Platform accounts belong to an intelligence ⭐ MVP
 
-**User Story**: As a user, I want a connector account to be the app of one intelligence, so that DMing the Estagiário's Discord bot is DMing the Estagiário.
+**User Story**: As a user, I want a connector account to be the app of one intelligence, so that DMing Atlas's Discord bot is DMing Atlas.
 
-**Why P1**: The motivating use case (Estagiário on Discord).
+**Why P1**: The motivating use case (Atlas on Discord).
 
 **Acceptance Criteria**:
 
@@ -207,7 +207,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 6. WHERE the connector's auto-route includes groups THEN each new group chat SHALL become a group with the operator as member and the chat bridged; WHERE it includes DMs THEN rule ACC-02 SHALL apply. (ACC-06)
 7. The connector's apps SHALL appear on the operator's contact page ("Discord: @bot"). (ACC-07)
 
-**Independent Test**: Set the Discord connector's operator to the Estagiário; a Discord DM to the bot reaches the Estagiário's session as a DM and its reply goes back unsigned.
+**Independent Test**: Set the Discord connector's operator to Atlas; a Discord DM to the bot reaches Atlas's session as a DM and its reply goes back unsigned.
 
 ---
 
@@ -463,10 +463,10 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 ## Success Criteria
 
 - [ ] André resumes an OpenCode session with `-s` and stays the same intelligence.
-- [ ] André opens a second Claude Code in the Estagiário's folder and gets the takeover prompt.
+- [ ] André opens a second Claude Code in Atlas's folder and gets the takeover prompt.
 - [ ] André sees devbox and notebook as two machines with his folders nested.
 - [ ] André DMs an AI from the web and it answers in the DM.
-- [ ] A Discord DM to the Estagiário's bot reaches the Estagiário as a DM.
+- [ ] A Discord DM to Atlas's bot reaches Atlas as a DM.
 - [ ] Existing WhatsApp routes keep delivering after the upgrade.
 - [ ] André uploads his profile photo; an AI renames itself and sets its own photo.
 - [ ] An AI André never talked to opens a DM with him, and it shows at the top of his sidebar.
