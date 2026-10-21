@@ -12,13 +12,14 @@ import (
 
 func TestHashPasswordUsesArgon2idPHC(t *testing.T) {
 	const pw = "correct horse battery"
-	hash, err := HashPassword(pw)
+	// The test binary hashes with testParams, so the production cost is asserted explicitly.
+	hash, err := hashPassword(pw, productionParams)
 	require.NoError(t, err)
 	require.NotContains(t, hash, pw)
 	require.True(t, strings.HasPrefix(hash, "$argon2id$v=19$m=19456,t=2,p=1$"), hash)
 	require.Len(t, strings.Split(hash, "$"), 6)
 
-	other, err := HashPassword(pw)
+	other, err := hashPassword(pw, productionParams)
 	require.NoError(t, err)
 	require.NotEqual(t, hash, other, "each hash uses a fresh salt")
 }
@@ -26,6 +27,7 @@ func TestHashPasswordUsesArgon2idPHC(t *testing.T) {
 func TestVerifyPassword(t *testing.T) {
 	hash, err := HashPassword("correct horse battery")
 	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(hash, "$argon2id$v=19$m=64,t=1,p=1$"), hash, "test binaries hash with the minimal cost")
 
 	ok, err := VerifyPassword(hash, "correct horse battery")
 	require.NoError(t, err)

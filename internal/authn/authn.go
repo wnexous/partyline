@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"testing"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -37,26 +38,52 @@ type Principal struct {
 	SessionID string // set when authenticated by a session cookie
 }
 
-// argon2id parameters (OWASP baseline): 19 MiB, 2 passes, 1 lane.
+// argon2id parameters: production uses the OWASP baseline (19 MiB, 2 passes, 1 lane); test
+// binaries use a minimal cost so suites that create many accounts do not spend most of their
+// time hashing. VerifyPassword reads the cost from each hash, so both stay compatible.
 const (
-	argonMemory  = 19 * 1024
-	argonTime    = 2
-	argonThreads = 1
 	argonKeyLen  = 32
 	argonSaltLen = 16
 )
+
+// kdfParams is the argon2id cost of a new password hash.
+type kdfParams struct {
+	memory  uint32
+	time    uint32
+	threads uint8
+}
+
+var (
+	productionParams = kdfParams{memory: 19 * 1024, time: 2, threads: 1}
+	testParams       = kdfParams{memory: 64, time: 1, threads: 1}
+)
+
+// hashingParams picks the cost of a new password hash: minimal under `go test`, the production
+// baseline everywhere else. This is the only test-only switch; production code cannot reach it.
+func hashingParams() kdfParams {
+	if testing.Testing() {
+		return testParams
+	}
+	return productionParams
+}
 
 var b64 = base64.RawStdEncoding
 
 // HashPassword returns an argon2id PHC string for password.
 func HashPassword(password string) (string, error) {
+	return hashPassword(password, hashingParams())
+}
+
+// hashPassword returns an argon2id PHC string using p. Tests call it with productionParams to
+// assert the baseline even though they run in a test binary.
+func hashPassword(password string, p kdfParams) (string, error) {
 	salt := make([]byte, argonSaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
 	}
-	key := argon2.IDKey([]byte(password), salt, argonTime, argonMemory, argonThreads, argonKeyLen)
+	key := argon2.IDKey([]byte(password), salt, p.time, p.memory, p.threads, argonKeyLen)
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
-		argon2.Version, argonMemory, argonTime, argonThreads, b64.EncodeToString(salt), b64.EncodeToString(key)), nil
+		argon2.Version, p.memory, p.time, p.threads, b64.EncodeToString(salt), b64.EncodeToString(key)), nil
 }
 
 // VerifyPassword reports whether password matches the PHC hash, using the hash's own parameters.
