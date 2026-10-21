@@ -520,9 +520,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: TREE-01, TREE-02, TREE-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `~/a`, `~/a/b`, `~/c/d/e` → `a` with child `b`, and `c/d › e` (TREE-01, TREE-02); home folder → `~`; outside home → `/srv › api`; `/` → `/`
-- [ ] Machines with an online AI first, then by label; siblings by label, case-insensitive (TREE-03)
-- [ ] Gate check passes: `make check`
+- [x] `~/a`, `~/a/b`, `~/c/d/e` → `a` with child `b`, and `c/d › e` (TREE-01, TREE-02); home folder → `~`; outside home → `/srv › api`; `/` → `/`
+- [x] Machines with an online AI first, then by label; siblings by label, case-insensitive (TREE-03)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(intelligences): build the machine and folder tree`
