@@ -11,7 +11,7 @@ import (
 // execProgram runs path as a child with this process's terminal (Windows has no exec) and
 // returns its exit code.
 func execProgram(path string, argv, env []string) (int, error) {
-	cmd := exec.Command(path, argv[1:]...) // #nosec G204 -- the user's own claude binary
+	cmd := exec.Command(path, argv[1:]...) // #nosec G204 -- the harness binary the user asked for
 	cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = env, os.Stdin, os.Stdout, os.Stderr
 	err := cmd.Run()
 	var exit *exec.ExitError

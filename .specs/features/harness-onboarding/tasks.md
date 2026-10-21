@@ -540,10 +540,10 @@ the web changes.
 **Requirement**: HAR-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] exact argv and env per harness (exec seam), aliases, arguments passed through unchanged
-- [ ] `PARTYLINE_SESSION` is a fresh safe id per launch and replaces an inherited one; listen and tools-only share the name through it
-- [ ] binary missing → exit 127 with the spec message, nothing executed; not registered → one warning naming `partyline setup --harness <id>`, still executed
-- [ ] `partyline --help` lists every launcher; doctor's harness lines name `partyline <id>`
+- [x] exact argv and env per harness (exec seam), aliases, arguments passed through unchanged
+- [x] `PARTYLINE_SESSION` is a fresh safe id per launch and replaces an inherited one; listen and tools-only share the name through it
+- [x] binary missing → exit 127 with the spec message, nothing executed; not registered → one warning naming `partyline setup --harness <id>`, still executed
+- [x] `partyline --help` lists every launcher; doctor's harness lines name `partyline <id>`
 **Tests**: unit, integration
 **Gate**: build
 **Commit**: `feat(cli): start every harness with partyline <harness>`

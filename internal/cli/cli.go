@@ -32,9 +32,16 @@ Commands:
   hook codex-stop|gemini-after-agent
                          turn-end hook: continue the session with undelivered room messages
   doctor                 check this machine: binary, config file, server, token, harnesses, versions
-  claude [args...]       start Claude Code with the Partyline channel loaded
   healthcheck            exit 0 when the local server answers /healthz with 200
   version                print the build version
+
+Start a session with Partyline (the arguments go to the harness unchanged):
+  claude [args...]       Claude Code with the Partyline channel loaded (also: claudecode, claude-code)
+  opencode [args...]     OpenCode
+  pi [args...]           pi
+  omp [args...]          oh-my-pi
+  codex [args...]        Codex CLI
+  gemini [args...]       Gemini CLI
 `
 
 // stdio holds what a command reads and writes; tests replace each part.
@@ -52,8 +59,9 @@ type stdio struct {
 	runHarness harness.Runner
 	lookPath   func(string) (string, error)
 	// exec replaces the process with a program (nil: execProgram) and returns its exit code
-	// where it cannot.
-	exec func(path string, argv, env []string) (int, error)
+	// where it cannot; environ is the environment a launcher passes on (nil: os.Environ).
+	exec    func(path string, argv, env []string) (int, error)
+	environ func() []string
 }
 
 // Run executes the command named in args[1] and returns the process exit code. SIGINT and
@@ -69,7 +77,13 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		fmt.Fprint(io.stderr, usage)
 		return 2
 	}
+	if l, ok := findLauncher(args[1]); ok {
+		return launch(ctx, l, args[2:], io)
+	}
 	switch args[1] {
+	case "-h", "--help", "help":
+		fmt.Fprint(io.stdout, usage)
+		return 0
 	case "version":
 		fmt.Fprintln(io.stdout, buildVersion())
 		return 0
@@ -87,8 +101,6 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return hookCmd(ctx, args[2:], io)
 	case "doctor":
 		return doctor(ctx, io)
-	case "claude":
-		return launchClaude(args[2:], io)
 	case "healthcheck":
 		return healthcheck(ctx, io)
 	default:

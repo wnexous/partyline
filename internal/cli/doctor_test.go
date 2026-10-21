@@ -87,6 +87,7 @@ func TestDoctorAllPass(t *testing.T) {
 		"ok   server: "+e.env.URL+" is reachable\n"+
 		"ok   token: agent token accepted\n"+
 		"ok   oh-my-pi (omp): MCP server in ~/.omp/agent/mcp.json runs "+d.binary+"\n"+
+		"     start a session: partyline omp\n"+
 		"ok   versions: partyline dev, server dev\n"+
 		"\nAll checks passed.\n", r.stdout)
 }
@@ -167,7 +168,7 @@ func TestDoctorReportsEachFailure(t *testing.T) {
 		r := d.run(t)
 		require.Equal(t, 1, r.code)
 		require.Contains(t, r.stdout, "FAIL oh-my-pi (omp): MCP server in ~/.omp/agent/mcp.json runs "+gone+", which does not exist\n"+
-			"     fix: run partyline setup --harness omp\n")
+			"     fix: run partyline setup --harness omp, then start a session with partyline omp\n")
 	})
 	t.Run("no harness registered", func(t *testing.T) {
 		e := newChannelEnv(t)
@@ -175,7 +176,8 @@ func TestDoctorReportsEachFailure(t *testing.T) {
 		writeConfig(t, d.home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
 		r := d.run(t)
 		require.Equal(t, 1, r.code)
-		require.Contains(t, r.stdout, "FAIL harnesses: Partyline is not registered in any installed harness\n     fix: run partyline setup\n")
+		require.Contains(t, r.stdout, "FAIL harnesses: Partyline is not registered in any installed harness\n"+
+			"     fix: run partyline setup, then start a session with partyline <harness> (see partyline --help)\n")
 	})
 	t.Run("versions differ", func(t *testing.T) {
 		old := Version
@@ -198,41 +200,4 @@ func TestDoctorReportsEachFailure(t *testing.T) {
 		require.Equal(t, 1, r.code)
 		require.Contains(t, r.stdout, "FAIL versions: partyline dev, server unknown\n     fix: the server did not report its version; update the server\n")
 	})
-}
-
-// HAR-03: `partyline claude [args…]` execs claude with the development-channels flag for the
-// partyline server, followed by the user's arguments.
-func TestClaudeLauncher(t *testing.T) {
-	var gotPath string
-	var gotArgv []string
-	var errOut bytes.Buffer
-	code := execute(context.Background(), []string{"partyline", "claude", "--resume", "abc", "-p", "hi there"}, stdio{
-		stdout: &bytes.Buffer{}, stderr: &errOut, getenv: func(string) string { return "" },
-		lookPath: func(name string) (string, error) {
-			require.Equal(t, "claude", name)
-			return "/home/me/.local/bin/claude", nil
-		},
-		exec: func(path string, argv, _ []string) (int, error) {
-			gotPath, gotArgv = path, argv
-			return 7, nil
-		},
-	})
-	require.Equal(t, 7, code, errOut.String())
-	require.Equal(t, "/home/me/.local/bin/claude", gotPath)
-	require.Equal(t, []string{"claude", "--dangerously-load-development-channels", "server:partyline", "--resume", "abc", "-p", "hi there"}, gotArgv)
-}
-
-// HAR-03: without claude on PATH the launcher says so and exits 1.
-func TestClaudeLauncherWithoutClaude(t *testing.T) {
-	var errOut bytes.Buffer
-	code := execute(context.Background(), []string{"partyline", "claude"}, stdio{
-		stdout: &bytes.Buffer{}, stderr: &errOut, getenv: func(string) string { return "" },
-		lookPath: func(string) (string, error) { return "", errors.New("not found") },
-		exec: func(string, []string, []string) (int, error) {
-			t.Error("exec without claude")
-			return 0, nil
-		},
-	})
-	require.Equal(t, 1, code)
-	require.Contains(t, errOut.String(), "Claude Code (claude) is not on PATH")
 }

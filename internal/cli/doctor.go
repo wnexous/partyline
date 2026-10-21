@@ -18,7 +18,9 @@ import (
 // check is one line of the doctor report.
 type check struct {
 	name, detail, fix string
-	ok                bool
+	// start is the command that starts a session of a registered harness (HAR-03).
+	start string
+	ok    bool
 }
 
 // doctor runs `partyline doctor` (ONB-06): it checks the binary on PATH, the config file,
@@ -64,6 +66,9 @@ func doctor(ctx context.Context, io stdio) int {
 		fmt.Fprintf(io.stdout, "%s %s: %s\n", mark, c.name, c.detail)
 		if !c.ok && c.fix != "" {
 			fmt.Fprintf(io.stdout, "     fix: %s\n", c.fix)
+		}
+		if c.ok && c.start != "" {
+			fmt.Fprintf(io.stdout, "     start a session: %s\n", c.start)
 		}
 	}
 	if failed > 0 {
@@ -170,17 +175,24 @@ func checkHarnesses(ctx context.Context, env harness.Env) []check {
 			continue
 		}
 		found = true
+		start := "partyline " + r.ID()
+		allOK := true
 		for _, e := range entries {
 			if executableFile(e.Binary) {
 				out = append(out, check{name: r.Title(), detail: e.What + " runs " + e.Binary, ok: true})
 			} else {
+				allOK = false
 				out = append(out, check{name: r.Title(), detail: e.What + " runs " + e.Binary + ", which does not exist",
-					fix: "run partyline setup --harness " + r.ID()})
+					fix: "run partyline setup --harness " + r.ID() + ", then start a session with " + start})
 			}
+		}
+		if allOK {
+			out[len(out)-1].start = start
 		}
 	}
 	if !found {
-		out = append(out, check{name: "harnesses", detail: "Partyline is not registered in any installed harness", fix: "run partyline setup"})
+		out = append(out, check{name: "harnesses", detail: "Partyline is not registered in any installed harness",
+			fix: "run partyline setup, then start a session with partyline <harness> (see partyline --help)"})
 	}
 	return out
 }

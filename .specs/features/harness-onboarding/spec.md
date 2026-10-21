@@ -201,7 +201,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | NAME-03 | P1: Agent names | Tasks | Implementing |
 | HAR-01 | P1: Harness registration | Tasks | Implementing |
 | HAR-02 | P1: Harness registration | Tasks | Implementing |
-| HAR-03 | P1: Harness registration | Tasks | Implementing |
+| HAR-03 | P1: Harness registration | Tasks (T9, T31) | Implemented |
 | HAR-04 | P1: Harness registration | Tasks | Implementing |
 | HAR-05 | P1: Harness registration | Tasks (T27) | Implemented |
 | PUSH-01 | P1: Push adapters | Tasks | Implementing |
