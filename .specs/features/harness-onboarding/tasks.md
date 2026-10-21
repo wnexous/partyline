@@ -475,15 +475,15 @@ the web changes.
 #### T27: Safer harness config edits
 
 **What**: keep the first `.partyline.bak`; write through symlinks (atomic write next to the target, link kept); write the extension/plugin before the config entry and roll back on failure.
-**Where**: `internal/harness/harness.go`, `internal/harness/files.go`, `internal/harness/clis.go`
+**Where**: `internal/harness/harness.go`, `internal/harness/files.go` (the CLI registrars share `writeDoc`)
 **Depends on**: T26
 **Reuses**: `writeFileAtomic`
 **Requirement**: HAR-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] second Apply keeps the original backup bytes
-- [ ] symlinked config: link stays a link, target gets the entry
-- [ ] config write failure leaves no extension behind; extension write failure leaves the config untouched
+- [x] second Apply keeps the original backup bytes
+- [x] symlinked config: link stays a link, target gets the entry
+- [x] config write failure leaves no extension behind; extension write failure leaves the config untouched
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(harness): keep backups, symlinks and a consistent state when editing configs`

@@ -111,6 +111,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 2. IF a Partyline entry already exists for a harness THEN setup SHALL update it in place and keep every other entry byte-for-byte. (HAR-02)
 3. WHEN `partyline claude [args…]` runs THEN it SHALL exec `claude --dangerously-load-development-channels server:partyline [args…]`. (HAR-03)
 4. `partyline setup --uninstall` SHALL remove exactly the entries and files setup added. (HAR-04)
+5. WHEN setup edits a harness config file itself THEN it SHALL keep the first `<file>.partyline.bak` (never overwrite an existing backup), SHALL write through a symlink (the link stays, its target gets the change, written atomically next to the target), and SHALL write the extension/plugin file before the config entry, restoring the previous extension (or deleting a new one) IF the config cannot be written. (HAR-05; fix iteration 1)
 
 **Independent Test**: Fake HOME with fake harness CLIs; setup writes/updates each config; uninstall restores the originals.
 
@@ -200,6 +201,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | HAR-02 | P1: Harness registration | Tasks | Implementing |
 | HAR-03 | P1: Harness registration | Tasks | Implementing |
 | HAR-04 | P1: Harness registration | Tasks | Implementing |
+| HAR-05 | P1: Harness registration | Tasks (T27) | Implemented |
 | PUSH-01 | P1: Push adapters | Tasks | Implementing |
 | PUSH-02 | P1: Push adapters | Tasks | Implementing |
 | PUSH-03 | P1: Push adapters | Tasks | Implementing |

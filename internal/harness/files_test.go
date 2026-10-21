@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -217,4 +218,124 @@ func TestOpenCodeXDGConfigHome(t *testing.T) {
 	require.NoError(t, registrar(t, env, "opencode").Apply(context.Background()))
 	require.FileExists(t, filepath.Join(xdg, "opencode", "opencode.json"))
 	require.FileExists(t, filepath.Join(xdg, "opencode", "plugins", "partyline.ts"))
+}
+
+// skipUnlessUnixPerms skips tests that rely on unix permission bits or symlinks, and runs
+// that are root (root ignores permission bits).
+func skipUnlessUnixPerms(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs unix permission bits and a non-root user")
+	}
+}
+
+// HAR-05: running setup twice keeps the first backup (the file before Partyline was ever
+// added), not a copy that already holds the Partyline entry.
+func TestFileHarnessKeepsFirstBackup(t *testing.T) {
+	env, _ := testEnv(t, nil)
+	c := fileCases[1] // pi
+	cfg := filepath.Join(env.Home, c.config)
+	writeFile(t, cfg, c.orig)
+	r := registrar(t, env, c.id)
+	require.NoError(t, r.Apply(context.Background()))
+	env.Binary = "/opt/new/partyline"
+	require.NoError(t, registrar(t, env, c.id).Apply(context.Background()))
+	require.Contains(t, readFile(t, cfg), "/opt/new/partyline")
+	require.Equal(t, c.orig, readFile(t, cfg+".partyline.bak"), "the first backup is kept")
+}
+
+// HAR-05: a symlinked config (dotfile managers) stays a symlink: setup writes the entry into
+// the link's target, keeps the backup next to the link, and uninstall restores the target.
+func TestFileHarnessWritesThroughSymlink(t *testing.T) {
+	skipUnlessUnixPerms(t)
+	for _, c := range fileCases {
+		t.Run(c.id, func(t *testing.T) {
+			env, _ := testEnv(t, nil)
+			cfg := filepath.Join(env.Home, c.config)
+			target := filepath.Join(env.Home, "dotfiles", c.id+".json")
+			writeFile(t, target, c.orig)
+			require.NoError(t, os.MkdirAll(filepath.Dir(cfg), 0o755))
+			require.NoError(t, os.Symlink(target, cfg))
+			r := registrar(t, env, c.id)
+
+			require.NoError(t, r.Apply(context.Background()))
+			fi, err := os.Lstat(cfg)
+			require.NoError(t, err)
+			require.Equal(t, os.ModeSymlink, fi.Mode()&os.ModeSymlink, "the config is still a symlink")
+			require.Equal(t, c.withEntry, readFile(t, target))
+			require.Equal(t, c.orig, readFile(t, cfg+".partyline.bak"))
+
+			require.NoError(t, r.Remove(context.Background()))
+			fi, err = os.Lstat(cfg)
+			require.NoError(t, err)
+			require.Equal(t, os.ModeSymlink, fi.Mode()&os.ModeSymlink)
+			require.Equal(t, c.orig, readFile(t, target))
+		})
+	}
+}
+
+// HAR-05: the extension is written before the config entry, and a config that cannot be
+// written rolls the extension back: no config ever points at a missing extension, and an
+// extension from an earlier setup keeps its content.
+func TestFileHarnessConfigFailureRollsBackExtension(t *testing.T) {
+	skipUnlessUnixPerms(t)
+	for _, earlier := range []bool{false, true} {
+		t.Run(map[bool]string{false: "fresh", true: "earlier setup"}[earlier], func(t *testing.T) {
+			env, _ := testEnv(t, nil)
+			c := fileCases[1] // pi
+			cfg, ext := filepath.Join(env.Home, c.config), filepath.Join(env.Home, c.ext)
+			writeFile(t, cfg, c.orig)
+			old := "// partyline v1.0.0: written by `partyline setup`; `partyline setup --uninstall` removes it.\nold\n"
+			require.NoError(t, os.MkdirAll(filepath.Dir(ext), 0o755)) // writable, inside the config dir
+			if earlier {
+				writeFile(t, ext, old)
+			}
+			require.NoError(t, os.Chmod(filepath.Dir(cfg), 0o555))
+			t.Cleanup(func() { _ = os.Chmod(filepath.Dir(cfg), 0o755) })
+
+			require.Error(t, registrar(t, env, c.id).Apply(context.Background()))
+			require.Equal(t, c.orig, readFile(t, cfg))
+			if earlier {
+				require.Equal(t, old, readFile(t, ext))
+			} else {
+				requireMissing(t, ext)
+			}
+		})
+	}
+}
+
+// HAR-05: an extension that cannot be written leaves the config untouched (no entry, no
+// backup).
+func TestFileHarnessExtensionFailureLeavesConfig(t *testing.T) {
+	skipUnlessUnixPerms(t)
+	env, _ := testEnv(t, nil)
+	c := fileCases[0] // opencode
+	cfg, ext := filepath.Join(env.Home, c.config), filepath.Join(env.Home, c.ext)
+	writeFile(t, cfg, c.orig)
+	require.NoError(t, os.MkdirAll(filepath.Dir(ext), 0o555))
+	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(ext), 0o755) })
+
+	require.Error(t, registrar(t, env, c.id).Apply(context.Background()))
+	require.Equal(t, c.orig, readFile(t, cfg))
+	requireMissing(t, cfg+".partyline.bak")
+	requireMissing(t, ext)
+}
+
+// HAR-05: uninstall keeps a symlinked config that ends up empty: the link stays and its
+// target holds the empty object (a plain file left empty is deleted, as before).
+func TestFileHarnessKeepsEmptiedSymlink(t *testing.T) {
+	skipUnlessUnixPerms(t)
+	env, _ := testEnv(t, nil)
+	cfg := filepath.Join(env.Home, ".pi/agent/mcp.json")
+	target := filepath.Join(env.Home, "dotfiles", "pi.json")
+	writeFile(t, target, "{}\n")
+	require.NoError(t, os.MkdirAll(filepath.Dir(cfg), 0o755))
+	require.NoError(t, os.Symlink(target, cfg))
+	r := registrar(t, env, "pi")
+	require.NoError(t, r.Apply(context.Background()))
+	require.NoError(t, r.Remove(context.Background()))
+	fi, err := os.Lstat(cfg)
+	require.NoError(t, err)
+	require.Equal(t, os.ModeSymlink, fi.Mode()&os.ModeSymlink)
+	require.JSONEq(t, "{}", readFile(t, target))
 }

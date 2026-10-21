@@ -121,10 +121,26 @@ func (h *fileHarness) Apply(context.Context) error {
 	if err := d.set(h.value(h.env.Binary), h.keys...); err != nil {
 		return err
 	}
-	if err := writeDoc(d, existed, true); err != nil {
+	// HAR-05: the extension first, so the config never names a missing extension; when the
+	// config cannot be written, the extension goes back to what it was.
+	var previous []byte
+	if exists {
+		if previous, err = os.ReadFile(h.extPath()); err != nil {
+			return err
+		}
+	}
+	if err := writeFileAtomic(h.extPath(), content, 0o644); err != nil {
 		return err
 	}
-	return writeFileAtomic(h.extPath(), content, 0o644)
+	if err := writeDoc(d, existed, true); err != nil {
+		if exists {
+			_ = writeFileAtomic(h.extPath(), previous, 0o644)
+		} else {
+			_ = os.Remove(h.extPath())
+		}
+		return err
+	}
+	return nil
 }
 
 func (h *fileHarness) RemovePlan(context.Context) []string {
