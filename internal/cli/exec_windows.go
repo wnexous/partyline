@@ -23,3 +23,6 @@ func execProgram(path string, argv, env []string) (int, error) {
 	}
 	return 0, nil
 }
+
+// execKeepsPID: the harness runs as a child with its own process id.
+const execKeepsPID = false

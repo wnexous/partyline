@@ -69,6 +69,8 @@ type stdio struct {
 	// launcherEnv returns the launcher variables of the nearest launched ancestor process
 	// (withLauncherEnv); nil means none (Run sets procLauncherEnv).
 	launcherEnv func() map[string]string
+	// getpid is this process id (nil: os.Getpid); a launcher passes it on as the session key.
+	getpid func() int
 }
 
 // Run executes the command named in args[1] and returns the process exit code. SIGINT and

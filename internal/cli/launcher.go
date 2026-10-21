@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/wnexous/partyline/internal/channel"
@@ -65,6 +66,22 @@ func newSessionID() (string, error) {
 	return "pl-" + hex.EncodeToString(b[:]), nil
 }
 
+// launchSessionID is the session key a launch passes on. Where the launcher execs the
+// harness (execKeepsPID) it is this process id, which the harness keeps: a tools-only server
+// that the harness starts with a filtered environment (Codex passes it no PARTYLINE_* variable)
+// falls back to its parent process id, the same key, so the session's hook and tools share
+// one agent. Elsewhere it is a fresh random id.
+func launchSessionID(io stdio) (string, error) {
+	if !execKeepsPID {
+		return newSessionID()
+	}
+	getpid := io.getpid
+	if getpid == nil {
+		getpid = os.Getpid
+	}
+	return strconv.Itoa(getpid()), nil
+}
+
 // launcherFlags takes the leading --name and --project flags (also --name=<v>) off args
 // (CLI-01); the rest goes to the harness unchanged.
 func launcherFlags(args []string) (name, project string, rest []string, err error) {
@@ -116,7 +133,7 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	}
 	warnUnregistered(ctx, l.id, title, io)
 
-	session, err := newSessionID()
+	session, err := launchSessionID(io)
 	if err != nil {
 		fmt.Fprintf(io.stderr, "partyline %s: session id: %v\n", l.id, err)
 		return 1

@@ -56,7 +56,7 @@ T8 → T9 → T10 → T11
 ### Phase 4: Verifier fixes (iteration 1)
 
 ```
-T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19
+T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20
 ```
 
 ---
@@ -338,3 +338,17 @@ T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(agents): scope session holds by machine`
+
+#### T20: Launcher session key is its process id
+
+**What**: on Unix the launcher sets `PARTYLINE_SESSION` to its own pid, which `exec` keeps for the harness, so a tools-only server started by a harness that strips the environment and cannot be read through `/proc` (native Codex) derives the same key from its parent pid as the hook gets from the variable; Windows keeps the random id.
+**Where**: `internal/cli/launcher.go`
+**Depends on**: T19
+**Reuses**: `execProgram`, channel parent-pid fallback
+**Requirement**: ID-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Every Unix launch passes its pid as `PARTYLINE_SESSION`; launches still get distinct keys; the random-id mutant fails the launcher test
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(cli): use the launcher pid as the session key on unix`

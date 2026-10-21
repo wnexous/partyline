@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,6 +29,9 @@ type launchMachine struct {
 	codex   bool // `codex mcp get partyline` finds the server
 	environ []string
 }
+
+// launchPIDs hands every fake launch its own process id, as real launches have.
+var launchPIDs atomic.Int64
 
 func newLaunchMachine(t *testing.T) *launchMachine {
 	t.Helper()
@@ -70,6 +75,7 @@ type launchRun struct {
 	path   string
 	argv   []string
 	env    []string
+	pid    int // the process id the launcher ran as
 }
 
 func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
@@ -77,6 +83,8 @@ func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
 	var r launchRun
 	var errOut bytes.Buffer
 	vars := map[string]string{"HOME": m.home}
+	pid := int(4100 + launchPIDs.Add(1))
+	r.pid = pid
 	r.code = execute(context.Background(), append([]string{"partyline"}, args...), stdio{
 		stdin: bytes.NewReader(nil), stdout: &bytes.Buffer{}, stderr: &errOut,
 		getenv:     func(k string) string { return vars[k] },
@@ -99,6 +107,7 @@ func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
 			return []byte("Error: No MCP server named 'partyline' found."), errors.New("exit status 1")
 		},
 		environ: func() []string { return append([]string(nil), m.environ...) },
+		getpid:  func() int { return pid },
 		exec: func(path string, argv, env []string) (int, error) {
 			r.execed, r.path, r.argv, r.env = true, path, argv, env
 			return 7, nil
@@ -160,6 +169,11 @@ func TestLaunchersExecTheHarness(t *testing.T) {
 			id := r.sessionID(t)
 			require.Regexp(t, sessionIDPattern, id)
 			require.NotEqual(t, "inherited", id)
+			if execKeepsPID {
+				// The harness keeps the launcher's pid, so a tools-only server it starts
+				// with a filtered environment derives this key from its parent pid.
+				require.Equal(t, strconv.Itoa(r.pid), id)
+			}
 			require.False(t, seen[id], "every launch gets a fresh session id")
 			seen[id] = true
 			harnessID := c.binary

@@ -296,6 +296,17 @@ migration is `0015`.
 - Not verified against a real Codex: a harness process that makes itself non-dumpable has an
   environment only root can read; the walk then needs a readable ancestor (an npm wrapper, or
   nothing for a native binary the launcher exec'd directly) and otherwise falls back.
+  T20 closes that case on Unix: the launcher's `PARTYLINE_SESSION` is its own pid (below).
+
+## Launcher session key is its pid (ID-01, T20)
+- On Unix (`execKeepsPID`) `partyline <harness>` sets `PARTYLINE_SESSION` to its own process
+  id (`launchSessionID`). `syscall.Exec` keeps that pid for the harness, so a tools-only
+  server the harness starts directly with a filtered environment falls back to its parent
+  pid: the same key the hook reads from `PARTYLINE_SESSION`. One session, one agent, even
+  when `/proc/<pid>/environ` of a non-dumpable harness is unreadable.
+- Windows keeps the random `pl-<16 hex>` id (the harness runs as a child with its own pid).
+- pi and OpenCode already pass their own pid as `PARTYLINE_SESSION`; holds are scoped by owner
+  and machine (T19), and a running process's pid is unique on its machine.
 
 ## Tools-only harness flag (ID-01, HAR-01, T18)
 - `partyline channel --tools-only --harness <id>` with `<id>` in codex, gemini, opencode, pi

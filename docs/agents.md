@@ -86,7 +86,9 @@ the same agent. Codex CLI starts its tools with a reduced environment; on Linux 
 read `PARTYLINE_SESSION`, `PARTYLINE_HARNESS`, `PARTYLINE_PROJECT` and `PARTYLINE_AGENT` (and
 nothing else) from the nearest parent process that has them. Setup registers the Codex and
 Gemini tools as `partyline channel --tools-only --harness codex` (or `gemini`), so their agents
-carry the right harness on every system. Started without the launcher, a tools-only session uses its parent process as
+carry the right harness on every system. On Linux and macOS the launcher's session key is its
+own process id, which the harness keeps, so tools that see no variable at all still find the
+same key from their parent process. Started without the launcher, a tools-only session uses its parent process as
 the key, and the hook falls back to the project's first free temporary agent.
 
 Rename agents and projects on the Agents page. A room can have a whole project as a member:
