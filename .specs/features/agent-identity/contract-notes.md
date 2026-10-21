@@ -133,3 +133,100 @@ offline and gets no `connected_at`). Identity = `X-Partyline-Agent` (principal `
 - T9/T10 (web): fixtures `makeAgent` now fill `display_name` (= name), `harness` "agent",
   `machine` "", `kind` "fixed", `archived` false; the members list has no group for
   `project` members yet.
+
+# Contract Notes (from agent-identity Phases 2-3: T5-T11)
+
+Binding for the Verifier and later features. Migration `0012_project_author_names.sql`; the
+next migration is `0013` (the harness-onboarding fix branch reserves `0090`).
+
+## Active session and delivery (PROJ-07, PROJ-09, PROJ-10, T5)
+- `delivery.ActiveSession(ctx, q, online, projectID)`: the project's agents ordered by
+  `connected_at` DESC (NULL last, then id), the first one `online` (Presence). Same rule in
+  the dispatcher, `access`, `Registry.SessionRooms` and `Registry.ActiveSession`. Ties within
+  one millisecond fall to the id.
+- `delivery.Plan`: `Targets.ProjectIDs` lists every project member except the authoring
+  agent's project (`Draft.AuthorProjectID`, set by the dispatcher from the author agent's
+  `project_id`). PROJ-09 applies to project deliveries only: a session of the same project that
+  is a member of the room itself still receives the active session's posts as a member (old
+  same-project agents keep talking to each other).
+- Dispatcher: a project target goes to its active session unless that agent is also a direct
+  member target (one delivery, the direct one with the agent member's settings). Project
+  deliveries use the project member's `display_name`, `delivery` and `keywords`
+  (`delivery.ProjectPrefs`: mentions also match `@<project name>`), "reply to me" counts replies
+  to any agent of the project (`Facts.WantedByProject`), and trust is computed for the project
+  owner.
+- REST rule (decided): the active session of a member project uses the room's agent tools as
+  a member would. `access.AgentRoomLevel` answers post for it (`ActiveInProjectRoom`), so
+  post, reply, react, history and attachments work; `list_rooms`, `room_info` and the room
+  name lookup use `Registry.SessionRooms` (member rooms plus the project's rooms while active;
+  `room_info.me` is the project member). Any other session of the project gets the non-member
+  answers (403 "not a member of room <room>", 404 for reply targets and attachments).
+  `access.Options.Online` carries Presence (the app creates Presence before the Authorizer).
+- Author names (0012): an agent's message in a room is named by its own member display name,
+  else the project member's display name there, else the agent's display name. The connectors'
+  sender signs with the agent member row, else the project member row
+  (`Sender.authorMember`).
+
+## Project cursors and backlog (PROJ-08, T6)
+- An ack advances the agent cursor when the agent is a member of the room, and the project
+  cursor when the agent's project is a member (any session of the project, active or not).
+- Backlog on connect walks `SessionRooms`: project rooms use the project cursor,
+  `Count/ListProjectBacklog` (messages of every agent of the project left out), 50 per room
+  with the skipped notice, the project member's settings. A connecting session is the active
+  one once attached, so it always gets its project's backlog. `Pending` (tools-only) keeps
+  member rooms only: tools-only sessions are never online, never active, and get no project
+  deliveries.
+
+## Channel identity (ID-01..03, CLI-01, T7)
+- `channel.Identity{Name, Project, Harness, Machine}`; the link sends `X-Partyline-Project`,
+  `-Harness`, `-Machine` on every dial, the REST client on every call. No name → no
+  `X-Partyline-Agent` until the welcome, then the assigned name with mode `temporary`; after a
+  `replaced` close it asks for a new name. The derived unique mode (`UniqueName`,
+  `DeriveName`) is gone; `channel.DeriveProject(dir)` returns the raw git root or folder
+  basename; `channel.IsHomeDir`.
+- Resolution (`cli.sessionIdentity`): name = `--name` > `--agent` > `PARTYLINE_AGENT`;
+  project = `--project` > `PARTYLINE_PROJECT` > `DeriveProject(cwd)`, with `home` in the home
+  folder or `/` (one stderr line `partyline <cmd>: started in the home folder; using project
+  "home" (pass --project <name> or --name <agent> to choose)` when no name was given);
+  harness = `--harness` (channel) > `PARTYLINE_HARNESS` > `claude` for the full channel (empty
+  = agent for listen and tools-only); machine = hostname.
+- Launchers take leading `--name`/`--project` (`--name=x` too; a flag without a value exits 2)
+  and pass `PARTYLINE_AGENT`, `PARTYLINE_PROJECT` (replacing inherited ones) and
+  `PARTYLINE_HARNESS=<id>` along with `PARTYLINE_SESSION`; they print the home warning too
+  (the channel's stderr is hidden inside Claude Code).
+- Tools-only: registers with the listen session file's name + mode temporary, else the
+  explicit name, else no name (a temporary agent); tool calls use the session file name, else
+  the explicit name, else the registered name (waits up to the tool timeout for it). The
+  turn-end hook registers the same way (no name → the lowest offline temporary agent of the
+  project and `PARTYLINE_HARNESS`, the same one the tools-only channel got).
+- `internal/channel/mcp`: notifications wait `ReadyDelay` (2 s) after the first `tools/list`
+  answer, or `ReadyFallback` (5 s) after `notifications/initialized` without one (UAT finding:
+  Claude Code 2.1.304 dropped the connect backlog). Tests in `channel` and `cli` set both to 0
+  in `TestMain`.
+
+## CLI and API (CLI-02, T8)
+- `GET /api/v1/agent/agents[?include_archived=true]` (agent tokens, no registered agent
+  needed): the token owner's own agents as `dto.Agent`.
+- `partyline agents [--all] [--url] [--token]`: one block per project (online projects first,
+  then by name, "No project" last), rows `state  display name  name  harness  machine  kind[,
+  archived]`, online first then by display name.
+
+## Web (PROJ-04..07, T9, T10)
+- Agents page reads `GET /agents?include_archived=true` (`queryKeys.agentsWithArchived`) and
+  filters archived ones client-side behind "Show archived (N)" (shown only when N > 0);
+  machine/harness selects appear when there are 2+ values; groups and rows via
+  `lib/agents.ts` (`groupByProject`, `harnessLabel`). Inline rename (Enter saves, Escape
+  cancels, 1-64 characters) for agents and owned projects; "Keep" (pin) promotes a temporary
+  agent. Presence events patch both agent lists and clear `archived` on connect.
+- `dto.RoomMember` gains `active_session{id, name, display_name}` and `online` for project
+  members. A session connecting or leaving publishes `MembersChanged` for its project's rooms
+  (`Presence.projectRoomsChanged`), so every viewer refetches members.
+- `access.changed` is sent for project grants to users with a level on the project; the web
+  invalidates `queryKeys.projects`. The member picker lists projects first ("<Project> (any
+  session)", online count from the visible agents), then agents fixed before temporary, by
+  display name.
+
+## Notes
+- `make check` stayed ~10 minutes; `TestLinkPausesAfterReplaced` did not fail in this batch.
+- Not covered by a real harness: project delivery to pi/OpenCode (listen) sessions and the
+  Codex/Gemini hooks with temporary names; they share the code paths tested with fakes.
