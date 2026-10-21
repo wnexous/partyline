@@ -36,8 +36,20 @@ const (
 	// "<name>-N" (N ≥ 2) and the welcome frame carries it (NAME-02). Without it the newest
 	// connection replaces the older one (NAME-03).
 	HeaderAgentMode = "X-Partyline-Agent-Mode"
-	// AgentModeUnique is the HeaderAgentMode value for derived agent names.
+	// AgentModeUnique is the HeaderAgentMode value for derived agent names (clients from before
+	// projects; current clients send HeaderProject instead).
 	AgentModeUnique = "unique"
+	// AgentModeTemporary is the HeaderAgentMode value of a session that reconnects under the
+	// temporary name the server assigned it: the same temporary agent, newest wins (ID-01).
+	AgentModeTemporary = "temporary"
+	// HeaderProject names the session's project (git root or working directory basename, or
+	// --project). With it, a session without HeaderAgent gets a temporary agent named after
+	// project and harness, and HeaderAgent names a fixed agent (ID-01, ID-02).
+	HeaderProject = "X-Partyline-Project"
+	// HeaderHarness is the launcher's harness id (claude, opencode, pi, omp, codex, gemini).
+	HeaderHarness = "X-Partyline-Harness"
+	// HeaderMachine is the session's hostname.
+	HeaderMachine = "X-Partyline-Machine"
 	// HeaderSignature carries "sha256=<hex HMAC>" on webhook requests in both directions.
 	HeaderSignature = "X-Partyline-Signature"
 	// HeaderTimestamp carries the unix seconds used in the webhook signature.

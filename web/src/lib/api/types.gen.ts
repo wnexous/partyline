@@ -144,7 +144,14 @@ export type AgentFrameType = typeof AgentFrameTypeWelcome | typeof AgentFrameTyp
  */
 export interface AgentInfo {
   id: string;
+  /**
+   * Name is the agent name to send in X-Partyline-Agent from now on.
+   */
   name: string;
+  /**
+   * DisplayName is the name people read (Agent.DisplayName).
+   */
+  display_name: string;
   owner: string; // owner's username
 }
 /**
@@ -232,9 +239,29 @@ export const HeaderAgent = "X-Partyline-Agent";
  */
 export const HeaderAgentMode = "X-Partyline-Agent-Mode";
 /**
- * AgentModeUnique is the HeaderAgentMode value for derived agent names.
+ * AgentModeUnique is the HeaderAgentMode value for derived agent names (clients from before
+ * projects; current clients send HeaderProject instead).
  */
 export const AgentModeUnique = "unique";
+/**
+ * AgentModeTemporary is the HeaderAgentMode value of a session that reconnects under the
+ * temporary name the server assigned it: the same temporary agent, newest wins (ID-01).
+ */
+export const AgentModeTemporary = "temporary";
+/**
+ * HeaderProject names the session's project (git root or working directory basename, or
+ * --project). With it, a session without HeaderAgent gets a temporary agent named after
+ * project and harness, and HeaderAgent names a fixed agent (ID-01, ID-02).
+ */
+export const HeaderProject = "X-Partyline-Project";
+/**
+ * HeaderHarness is the launcher's harness id (claude, opencode, pi, omp, codex, gemini).
+ */
+export const HeaderHarness = "X-Partyline-Harness";
+/**
+ * HeaderMachine is the session's hostname.
+ */
+export const HeaderMachine = "X-Partyline-Machine";
 /**
  * HeaderSignature carries "sha256=<hex HMAC>" on webhook requests in both directions.
  */

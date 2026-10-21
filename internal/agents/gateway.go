@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -84,7 +83,8 @@ type Gateway struct {
 	closed bool
 	wg     sync.WaitGroup
 
-	// uniqueMu serializes unique-mode registrations from the name choice to the attach.
+	// uniqueMu serializes registrations whose name the server picks, from the name choice to
+	// the attach.
 	uniqueMu sync.Mutex
 	// pendingMu serializes Pending calls, so two callers never get the same message.
 	pendingMu sync.Mutex
@@ -166,16 +166,17 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "invalid or expired credentials"))
 		return
 	}
-	// A derived name (unique mode) picks a free name and attaches under one lock, so two
-	// sessions connecting at once never pick the same name.
+	// A name the server picks (temporary or unique mode) is chosen and attached under one
+	// lock, so two sessions connecting at once never pick the same name (ID-01).
 	release := func() {}
-	unique := r.Header.Get(dto.HeaderAgentMode) == dto.AgentModeUnique
-	if unique {
+	id := IdentityFromHeader(r.Header)
+	id.Name = p.AgentName
+	if id.Allocates() {
 		g.uniqueMu.Lock()
 		release = sync.OnceFunc(g.uniqueMu.Unlock)
 		defer release()
 	}
-	row, err := g.register(r.Context(), p, unique)
+	row, err := g.register(r.Context(), p, id)
 	if err != nil {
 		if errors.Is(err, ErrAgentLimit) {
 			g.d.Logger.WarnContext(r.Context(), "agent: limit reached", "owner_id", p.UserID, "request_id", httpx.RequestID(r.Context()))
@@ -265,54 +266,17 @@ func (g *Gateway) watchRevocations(ctx context.Context, c *conn, p authn.Princip
 	}
 }
 
-// register upserts the agent named by the principal and returns it with its owner's name.
-// In unique mode it registers the first of <name>, <name>-2 … <name>-50 that is offline or
-// new instead (NAME-02); the per-owner agent cap still applies to new names.
-func (g *Gateway) register(ctx context.Context, p authn.Principal, unique bool) (db.GetAgentWithOwnerRow, error) {
-	name := p.AgentName
-	if unique {
-		var err error
-		if name, err = g.freeName(ctx, p.UserID, Slug(p.AgentName)); err != nil {
-			return db.GetAgentWithOwnerRow{}, err
-		}
-	}
-	a, err := g.d.Registry.Upsert(ctx, p.UserID, name)
+// register resolves the connecting session's agent from its identity headers (ID-01, ID-02)
+// and stamps its connect time, then returns it with its owner's name.
+func (g *Gateway) register(ctx context.Context, p authn.Principal, id Identity) (db.GetAgentWithOwnerRow, error) {
+	a, err := g.d.Registry.Resolve(ctx, p.UserID, id)
 	if err != nil {
 		return db.GetAgentWithOwnerRow{}, err
 	}
+	if err := g.d.Registry.MarkConnected(ctx, a.ID); err != nil {
+		return db.GetAgentWithOwnerRow{}, err
+	}
 	return g.d.Store.R().GetAgentWithOwner(ctx, a.ID)
-}
-
-// freeName returns the first name of base, base-2 … base-MaxAgentsPerOwner that is not an
-// online agent of the owner. When every one is online the owner has reached the agent cap.
-func (g *Gateway) freeName(ctx context.Context, ownerID, base string) (string, error) {
-	for n := 1; n <= MaxAgentsPerOwner; n++ {
-		name := suffixedName(base, n)
-		a, err := g.d.Store.R().GetAgentByName(ctx, db.GetAgentByNameParams{OwnerID: ownerID, Name: name})
-		if errors.Is(err, sql.ErrNoRows) {
-			return name, nil
-		}
-		if err != nil {
-			return "", err
-		}
-		if !g.d.Presence.Online(a.ID) {
-			return name, nil
-		}
-	}
-	return "", ErrAgentLimit
-}
-
-// suffixedName is base for n = 1, else base + "-n", with base shortened so the result fits
-// MaxNameLength.
-func suffixedName(base string, n int) string {
-	if n <= 1 {
-		return base
-	}
-	suffix := fmt.Sprintf("-%d", n)
-	if len(base)+len(suffix) > MaxNameLength {
-		base = strings.TrimRight(base[:MaxNameLength-len(suffix)], "-._")
-	}
-	return base + suffix
 }
 
 // conn is one agent connection; it is the agent's Session in Presence.
@@ -370,7 +334,7 @@ func (c *conn) write(ctx context.Context, v any) error {
 func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow) error {
 	a := row.Agent
 	if err := c.write(ctx, dto.AgentWelcomeFrame{
-		Type: dto.AgentFrameTypeWelcome, Agent: dto.AgentInfo{ID: a.ID, Name: a.Name, Owner: row.OwnerUsername},
+		Type: dto.AgentFrameTypeWelcome, Agent: dto.AgentInfo{ID: a.ID, Name: a.Name, DisplayName: DisplayName(a), Owner: row.OwnerUsername},
 	}); err != nil {
 		return err
 	}

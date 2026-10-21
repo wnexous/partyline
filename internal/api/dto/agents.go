@@ -119,9 +119,12 @@ const (
 
 // AgentInfo identifies the connected agent in the welcome frame.
 type AgentInfo struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Owner string `json:"owner"` // owner's username
+	ID string `json:"id"`
+	// Name is the agent name to send in X-Partyline-Agent from now on.
+	Name string `json:"name"`
+	// DisplayName is the name people read (Agent.DisplayName).
+	DisplayName string `json:"display_name"`
+	Owner       string `json:"owner"` // owner's username
 }
 
 // AgentWelcomeFrame is the first frame after the agent WebSocket opens.

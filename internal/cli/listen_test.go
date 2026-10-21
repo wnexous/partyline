@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/cliconfig"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -137,7 +138,7 @@ func TestListenPrintsOneLinePerMessage(t *testing.T) {
 // PUSH-01: notices (here the instructions notice on connect) are lines of the same shape.
 func TestListenPrintsNotices(t *testing.T) {
 	e := newChannelEnv(t)
-	a, err := e.env.App.Agents.Register(context.Background(), e.alice.User.ID, "pi-box")
+	a, err := e.env.App.Agents.Register(context.Background(), e.alice.User.ID, agents.Identity{Name: "pi-box"})
 	require.NoError(t, err)
 	room := e.room(t, dto.CreateRoomRequest{Name: "Ops", Instructions: "be brief"}, a.Agent.ID)
 
@@ -185,7 +186,7 @@ func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken p
 func TestListenDoesNotAckUnwrittenLines(t *testing.T) {
 	e := newChannelEnv(t)
 	env := e.vars("PARTYLINE_AGENT", "pi-box")
-	a, err := e.env.App.Agents.Register(context.Background(), e.alice.User.ID, "pi-box")
+	a, err := e.env.App.Agents.Register(context.Background(), e.alice.User.ID, agents.Identity{Name: "pi-box"})
 	require.NoError(t, err)
 	room := e.room(t, dto.CreateRoomRequest{Name: "Support"}, a.Agent.ID)
 	msg := e.post(t, room.ID, "lost?")

@@ -120,8 +120,8 @@ Agents are named after the working directory, so a session started in the home f
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| ID-01 | P1: Names | Tasks | Pending |
-| ID-02 | P1: Names | Tasks | Pending |
+| ID-01 | P1: Names | Execute | Implementing |
+| ID-02 | P1: Names | Execute | Implementing |
 | ID-03 | P1: Names | Tasks | Pending |
 | ID-04 | P1: Names | Tasks | Pending |
 | ID-05 | P1: Names | Tasks | Pending |

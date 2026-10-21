@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -28,7 +29,7 @@ func runHook(name, stdin string, env map[string]string) (code int, stdout, stder
 // hookRoom registers agent name over REST, adds it to a room and returns the room.
 func (e *channelEnv) hookRoom(t *testing.T, name string) dto.Room {
 	t.Helper()
-	a, err := e.env.App.Agents.Register(context.Background(), e.alice.User.ID, name)
+	a, err := e.env.App.Agents.Register(context.Background(), e.alice.User.ID, agents.Identity{Name: name})
 	require.NoError(t, err)
 	return e.room(t, dto.CreateRoomRequest{Name: "Builds"}, a.Agent.ID)
 }

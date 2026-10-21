@@ -274,6 +274,23 @@ func (q *Queries) GetMessageRoomSeq(ctx context.Context, id string) (GetMessageR
 	return i, err
 }
 
+const getProject = `-- name: GetProject :one
+SELECT id, owner_id, slug, name, created_at FROM projects WHERE id = ?
+`
+
+func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
+	row := q.db.QueryRowContext(ctx, getProject, id)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Slug,
+		&i.Name,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getProjectBySlug = `-- name: GetProjectBySlug :one
 SELECT id, owner_id, slug, name, created_at FROM projects WHERE owner_id = ? AND slug = ?
 `
@@ -555,6 +572,20 @@ func (q *Queries) ListAgentsForUser(ctx context.Context, userID string) ([]ListA
 	return items, nil
 }
 
+const markAgentConnected = `-- name: MarkAgentConnected :exec
+UPDATE agents SET connected_at = ?, archived_at = NULL WHERE id = ?
+`
+
+type MarkAgentConnectedParams struct {
+	ConnectedAt sql.NullInt64
+	ID          string
+}
+
+func (q *Queries) MarkAgentConnected(ctx context.Context, arg MarkAgentConnectedParams) error {
+	_, err := q.db.ExecContext(ctx, markAgentConnected, arg.ConnectedAt, arg.ID)
+	return err
+}
+
 const touchAgent = `-- name: TouchAgent :exec
 UPDATE agents SET last_seen_at = ? WHERE id = ?
 `
@@ -585,7 +616,7 @@ func (q *Queries) UpdateAgentDescription(ctx context.Context, arg UpdateAgentDes
 
 const updateAgentIdentity = `-- name: UpdateAgentIdentity :exec
 UPDATE agents
-SET project_id = ?, harness = ?, machine = ?, kind = ?, auto_name = ?, session_no = ?
+SET project_id = ?, harness = ?, machine = ?, kind = ?, auto_name = ?, session_no = ?, archived_at = NULL
 WHERE id = ?
 `
 

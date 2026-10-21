@@ -91,5 +91,11 @@ SELECT * FROM projects WHERE owner_id = ? AND slug = ?;
 
 -- name: UpdateAgentIdentity :exec
 UPDATE agents
-SET project_id = ?, harness = ?, machine = ?, kind = ?, auto_name = ?, session_no = ?
+SET project_id = ?, harness = ?, machine = ?, kind = ?, auto_name = ?, session_no = ?, archived_at = NULL
 WHERE id = ?;
+
+-- name: MarkAgentConnected :exec
+UPDATE agents SET connected_at = ?, archived_at = NULL WHERE id = ?;
+
+-- name: GetProject :one
+SELECT * FROM projects WHERE id = ?;

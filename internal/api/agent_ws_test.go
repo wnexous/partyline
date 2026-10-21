@@ -135,7 +135,7 @@ func TestAgentWSDeliversBacklogInOrder(t *testing.T) {
 
 	conn := f.dial(t)
 	w := conn.Welcome(wsWait)
-	require.Equal(t, dto.AgentInfo{ID: f.agentID, Name: "builder", Owner: "alice"}, w.Agent)
+	require.Equal(t, dto.AgentInfo{ID: f.agentID, Name: "builder", DisplayName: "builder", Owner: "alice"}, w.Agent)
 	for _, m := range want {
 		got := conn.Message(wsWait)
 		require.Equal(t, dto.RoomRef{ID: f.room.ID, Name: "Support"}, got.Room)

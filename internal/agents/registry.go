@@ -143,11 +143,11 @@ func (r *Registry) Upsert(ctx context.Context, ownerID, name string) (db.Agent, 
 	return out, err
 }
 
-// Register creates the owner's agent named Slug(name) like a first WebSocket connection would
-// (the agent cap applies) without bringing it online, and returns it with its owner. A
-// tools-only channel uses it, since it never opens the WebSocket (PUSH-02).
-func (r *Registry) Register(ctx context.Context, ownerID, name string) (db.GetAgentWithOwnerRow, error) {
-	a, err := r.Upsert(ctx, ownerID, name)
+// Register resolves the session's agent like a WebSocket connection would (Resolve: the
+// agent cap applies) without bringing it online, and returns it with its owner. A tools-only
+// channel uses it, since it never opens the WebSocket (PUSH-02).
+func (r *Registry) Register(ctx context.Context, ownerID string, id Identity) (db.GetAgentWithOwnerRow, error) {
+	a, err := r.Resolve(ctx, ownerID, id)
 	if err != nil {
 		return db.GetAgentWithOwnerRow{}, err
 	}

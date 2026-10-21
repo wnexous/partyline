@@ -82,7 +82,7 @@ T8 → T9 → T10 → T11
 **Requirement**: ID-01, ID-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Two sessions same project+harness → `#2`; explicit name newest-wins; concurrent connects get distinct N; cap respected
+- [x] Two sessions same project+harness → `#2`; explicit name newest-wins; concurrent connects get distinct N; cap respected
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): name sessions after project and harness`

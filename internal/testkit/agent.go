@@ -134,3 +134,14 @@ func (c *Client) DialAgentUnique(name string) (*AgentConn, *Response) {
 	}
 	return &AgentConn{T: c.T, Conn: conn, s: newFrameStream[AgentFrame](conn)}, resp
 }
+
+// DialAgentHeaders opens the agent WebSocket with the client's bearer token and the given
+// identity headers (X-Partyline-Agent, -Agent-Mode, -Project, -Harness, -Machine).
+func (c *Client) DialAgentHeaders(h http.Header) (*AgentConn, *Response) {
+	c.T.Helper()
+	conn, resp := c.dialWS("/api/v1/agent/ws", h)
+	if conn == nil {
+		return nil, resp
+	}
+	return &AgentConn{T: c.T, Conn: conn, s: newFrameStream[AgentFrame](conn)}, resp
+}

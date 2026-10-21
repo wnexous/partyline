@@ -126,7 +126,7 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 	}
 }
 
-// agentRegister registers the agent named by X-Partyline-Agent without a WebSocket, for
+// agentRegister registers the session's agent (identity headers, as on the WebSocket) without a WebSocket, for
 // `partyline channel --tools-only` (PUSH-02); the agent stays offline. Agent tokens only.
 func (s *server) agentRegister(w http.ResponseWriter, r *http.Request) error {
 	p, ok := authn.PrincipalFrom(r.Context())
@@ -136,11 +136,15 @@ func (s *server) agentRegister(w http.ResponseWriter, r *http.Request) error {
 	if p.Kind != authn.KindAgent {
 		return agents.ErrAgentTokenRequired
 	}
-	row, err := s.Agents.Register(r.Context(), p.UserID, p.AgentName)
+	id := agents.IdentityFromHeader(r.Header)
+	id.Name = p.AgentName
+	row, err := s.Agents.Register(r.Context(), p.UserID, id)
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, dto.AgentInfo{ID: row.Agent.ID, Name: row.Agent.Name, Owner: row.OwnerUsername})
+	httpx.WriteJSON(w, http.StatusOK, dto.AgentInfo{
+		ID: row.Agent.ID, Name: row.Agent.Name, DisplayName: agents.DisplayName(row.Agent), Owner: row.OwnerUsername,
+	})
 	return nil
 }
 
