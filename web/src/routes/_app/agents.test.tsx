@@ -38,7 +38,8 @@ describe("agents page (UI-15)", () => {
     });
     renderRoute("/agents");
 
-    const list = await screen.findByRole("list", { name: "Your agents" });
+    // Agents of no project form the "No project" group (PROJ-04).
+    const list = await screen.findByRole("list", { name: "Agents of No project" });
     const items = within(list).getAllByRole("listitem");
     expect(items.map((i) => i.getAttribute("aria-label"))).toEqual([
       "release-bot",
@@ -298,5 +299,236 @@ describe("connect an agent (WIZ-01)", () => {
     );
     expect(await within(dialog).findByText("partyline-2 is online")).toBeInTheDocument();
     expect(within(dialog).queryByText("old-box is online")).toBeNull();
+  });
+});
+
+describe("agents by project (PROJ-04, ID-04, ID-05, PROJ-05)", () => {
+  // Radix Select needs pointer capture and scrollIntoView, which jsdom lacks.
+  beforeEach(() => {
+    Element.prototype.hasPointerCapture ??= () => false;
+    Element.prototype.setPointerCapture ??= () => {};
+    Element.prototype.releasePointerCapture ??= () => {};
+    Element.prototype.scrollIntoView ??= () => {};
+  });
+
+  const ruthe = { id: "p1", slug: "ruthe", name: "Ruthe" };
+  const web = { id: "p2", slug: "web", name: "Web" };
+  const alpha = { id: "p3", slug: "alpha", name: "Alpha" };
+  const temp = (over: Parameters<typeof makeAgent>[0]) =>
+    makeAgent({ kind: "temporary", harness: "claude", machine: "laptop", ...over });
+  const fleet = () => [
+    temp({ id: "w1", name: "web-claude", display_name: "Web · Claude Code", project: web }),
+    temp({
+      id: "r1",
+      name: "ruthe-claude",
+      display_name: "Ruthe · Claude Code",
+      project: ruthe,
+      last_seen_at: "2026-10-18T12:00:00Z",
+    }),
+    temp({
+      id: "r2",
+      name: "ruthe-codex",
+      display_name: "Ruthe · Codex",
+      project: ruthe,
+      harness: "codex",
+      machine: "desk",
+      online: true,
+    }),
+    makeAgent({ id: "f1", name: "builder", project: alpha }),
+    makeAgent({ id: "n1", name: "loose" }),
+    temp({
+      id: "x1",
+      name: "web-claude-2",
+      display_name: "Web · Claude Code #2",
+      project: web,
+      archived: true,
+    }),
+  ];
+  const groupNames = () =>
+    screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent ?? "");
+
+  it("groups agents by project, live projects first, with harness, machine and kind", async () => {
+    mockApi({ "GET /me": json(200, me), "GET /agents": json(200, { items: fleet() }) });
+    renderRoute("/agents");
+    await screen.findByRole("list", { name: "Agents of Ruthe" });
+
+    expect(groupNames()).toEqual(["Ruthe", "Alpha", "Web", "No project"]);
+    const group = screen.getByRole("list", { name: "Agents of Ruthe" });
+    expect(
+      within(group)
+        .getAllByRole("listitem")
+        .map((i) => i.getAttribute("aria-label")),
+    ).toEqual(["Ruthe · Codex", "Ruthe · Claude Code"]);
+    expect(screen.getByText("1 of 2 online")).toBeInTheDocument();
+
+    const codex = row("Ruthe · Codex");
+    expect(within(codex).getByText("Online")).toBeInTheDocument();
+    expect(within(codex).getByText("Codex")).toBeInTheDocument();
+    expect(within(codex).getByText("desk")).toBeInTheDocument();
+    expect(within(codex).getByText("ruthe-codex")).toBeInTheDocument();
+    expect(within(codex).getByText("Temporary")).toBeInTheDocument();
+    const fixed = row("builder");
+    expect(within(fixed).queryByText("Temporary")).toBeNull();
+    expect(within(fixed).getByText("Agent")).toBeInTheDocument();
+    expect(within(fixed).queryByText("builder", { selector: ".font-mono" })).toBeNull();
+
+    expect(screen.queryByRole("listitem", { name: "Web · Claude Code #2" })).toBeNull();
+  });
+
+  it("shows archived agents only behind the toggle", async () => {
+    mockApi({ "GET /me": json(200, me), "GET /agents": json(200, { items: fleet() }) });
+    const user = userEvent.setup();
+    renderRoute("/agents");
+    await screen.findByRole("list", { name: "Agents of Web" });
+    expect(screen.queryByRole("listitem", { name: "Web · Claude Code #2" })).toBeNull();
+
+    await user.click(screen.getByRole("switch", { name: "Show archived (1)" }));
+    const archived = screen.getByRole("listitem", { name: "Web · Claude Code #2" });
+    expect(within(archived).getByText("Archived")).toBeInTheDocument();
+  });
+
+  it("asks the server for archived agents too", async () => {
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /agents": json(200, { items: fleet() }),
+    });
+    renderRoute("/agents");
+    await screen.findByRole("list", { name: "Agents of Ruthe" });
+    expect(
+      calls.some(
+        (c) => c.path === "/agents" && c.url.searchParams.get("include_archived") === "true",
+      ),
+    ).toBe(true);
+  });
+
+  it("filters by machine and by harness", async () => {
+    mockApi({ "GET /me": json(200, me), "GET /agents": json(200, { items: fleet() }) });
+    const user = userEvent.setup();
+    renderRoute("/agents");
+    await screen.findByRole("list", { name: "Agents of Ruthe" });
+
+    await user.click(screen.getByRole("combobox", { name: "Machine" }));
+    await user.click(await screen.findByRole("option", { name: "desk" }));
+    expect(groupNames()).toEqual(["Ruthe"]);
+    expect(
+      within(screen.getByRole("list", { name: "Agents of Ruthe" }))
+        .getAllByRole("listitem")
+        .map((i) => i.getAttribute("aria-label")),
+    ).toEqual(["Ruthe · Codex"]);
+
+    await user.click(screen.getByRole("combobox", { name: "Machine" }));
+    await user.click(await screen.findByRole("option", { name: "All machines" }));
+    await user.click(screen.getByRole("combobox", { name: "Harness" }));
+    await user.click(await screen.findByRole("option", { name: "Claude Code" }));
+    expect(groupNames()).toEqual(["Ruthe", "Web"]);
+    expect(screen.queryByRole("listitem", { name: "Ruthe · Codex" })).toBeNull();
+    expect(screen.getByRole("listitem", { name: "Ruthe · Claude Code" })).toBeInTheDocument();
+  });
+
+  it("renames an agent in place", async () => {
+    let agents = fleet();
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /agents": () => json(200, { items: agents }),
+      "PATCH /agents/r2": () => {
+        agents = agents.map((a) => (a.id === "r2" ? { ...a, display_name: "Ruthe reviewer" } : a));
+        return json(
+          200,
+          agents.find((a) => a.id === "r2"),
+        );
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/agents");
+    await user.click(await screen.findByRole("button", { name: "Rename Ruthe · Codex" }));
+    const field = screen.getByRole("textbox", { name: "New name for Ruthe · Codex" });
+    await user.clear(field);
+    expect(screen.getByText("Use 1 to 64 characters.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    await user.type(field, "  Ruthe reviewer {Enter}");
+    expect(await screen.findByRole("listitem", { name: "Ruthe reviewer" })).toBeInTheDocument();
+    const patch = calls.filter((c) => c.method === "PATCH");
+    expect(patch.map((c) => [c.path, c.body])).toEqual([
+      ["/agents/r2", { display_name: "Ruthe reviewer" }],
+    ]);
+  });
+
+  it("cancels a rename with Escape", async () => {
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /agents": json(200, { items: fleet() }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/agents");
+    await user.click(await screen.findByRole("button", { name: "Rename builder" }));
+    await user.type(screen.getByRole("textbox", { name: "New name for builder" }), "x{Escape}");
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(row("builder")).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+
+  it("keeps a temporary agent (promotes it to fixed)", async () => {
+    let agents = fleet();
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /agents": () => json(200, { items: agents }),
+      "PATCH /agents/r1": () => {
+        agents = agents.map((a) => (a.id === "r1" ? { ...a, kind: "fixed" as const } : a));
+        return json(
+          200,
+          agents.find((a) => a.id === "r1"),
+        );
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/agents");
+    await screen.findByRole("list", { name: "Agents of Ruthe" });
+    expect(within(row("builder")).queryByRole("button", { name: /^Keep/ })).toBeNull();
+    await user.click(
+      within(row("Ruthe · Claude Code")).getByRole("button", { name: "Keep Ruthe · Claude Code" }),
+    );
+    await waitFor(() =>
+      expect(within(row("Ruthe · Claude Code")).queryByText("Temporary")).toBeNull(),
+    );
+    expect(calls.filter((c) => c.method === "PATCH").map((c) => [c.path, c.body])).toEqual([
+      ["/agents/r1", { fixed: true }],
+    ]);
+  });
+
+  it("renames a project the user owns, not one shared with them", async () => {
+    let agents = [
+      ...fleet(),
+      makeAgent({
+        id: "s1",
+        name: "helper",
+        my_level: "use",
+        owner: { id: "u2", username: "bruno", display_name: "Bruno" },
+        project: { id: "p9", slug: "theirs", name: "Theirs" },
+      }),
+    ];
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /agents": () => json(200, { items: agents }),
+      "PATCH /projects/p1": () => {
+        agents = agents.map((a) =>
+          a.project?.id === "p1" ? { ...a, project: { ...ruthe, name: "Videos" } } : a,
+        );
+        return json(200, { ...ruthe, name: "Videos" });
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/agents");
+    await screen.findByRole("list", { name: "Agents of Theirs" });
+    expect(screen.queryByRole("button", { name: "Rename project Theirs" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rename project No project" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Rename project Ruthe" }));
+    const field = screen.getByRole("textbox", { name: "Rename project Ruthe" });
+    await user.clear(field);
+    await user.type(field, "Videos{Enter}");
+    expect(await screen.findByRole("heading", { name: "Videos" })).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "PATCH").map((c) => [c.path, c.body])).toEqual([
+      ["/projects/p1", { name: "Videos" }],
+    ]);
   });
 });

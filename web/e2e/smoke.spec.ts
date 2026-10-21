@@ -1,5 +1,13 @@
 import type { BrowserContext, Page, TestInfo } from "@playwright/test";
-import type { CreatedInvite, List, Me, Room, Token } from "../src/lib/api/types.gen";
+import type {
+  AgentInfo,
+  CreatedInvite,
+  CreatedToken,
+  List,
+  Me,
+  Room,
+  Token,
+} from "../src/lib/api/types.gen";
 import { ADMIN, apiCall, expect, MEMBER, test } from "./fixtures";
 import type { Instance } from "./server";
 
@@ -213,6 +221,57 @@ test("a machine is approved by typing its code; an old link with the code pre-fi
   expect(poll.status).toBe("approved");
   expect(poll.token).toMatch(/^pl_agent_/);
   expect(poll.approved_by).toBe(ADMIN.username);
+});
+
+/** Registers a temporary agent session of project for the logged-in context's user. */
+async function registerSession(
+  context: BrowserContext,
+  instance: Instance,
+  project: string,
+  harness: string,
+) {
+  const token = await apiCall<CreatedToken>(context.request, instance, "POST", "/tokens", {
+    kind: "agent",
+    name: `e2e-${project}-${harness}`,
+  });
+  const res = await context.request.post(`${instance.url}/api/v1/agent/register`, {
+    headers: {
+      Authorization: `Bearer ${token.secret}`,
+      "X-Partyline-Project": project,
+      "X-Partyline-Harness": harness,
+      "X-Partyline-Machine": "e2e-box",
+    },
+  });
+  expect(res.ok(), `register → ${res.status()}`).toBe(true);
+  return (await res.json()) as AgentInfo;
+}
+
+test("agents are grouped by project and the owner renames the project (PROJ-04, PROJ-05)", async ({
+  context,
+  page,
+  instance,
+}) => {
+  await loginAs(context, instance, ADMIN);
+  const session = await registerSession(context, instance, "ruthe", "claude");
+  expect(session.display_name).toBe("Ruthe · Claude Code");
+
+  await page.goto("/agents");
+  await expect(page.getByRole("heading", { name: "Ruthe", level: 2 })).toBeVisible();
+  const group = page.getByRole("list", { name: "Agents of Ruthe" });
+  const row = group.getByRole("listitem", { name: "Ruthe · Claude Code" });
+  await expect(row.getByText("Temporary")).toBeVisible();
+  await expect(row.getByText("e2e-box")).toBeVisible();
+
+  await page.getByRole("button", { name: "Rename project Ruthe" }).click();
+  const field = page.getByRole("textbox", { name: "Rename project Ruthe" });
+  await field.fill("Videos");
+  await field.press("Enter");
+  await expect(page.getByRole("heading", { name: "Videos", level: 2 })).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "Agents of Videos" }).getByRole("listitem", {
+      name: "Videos · Claude Code",
+    }),
+  ).toBeVisible();
 });
 
 test("main pages fit the viewport with no horizontal page scroll (UI-24)", async ({

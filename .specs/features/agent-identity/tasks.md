@@ -184,7 +184,7 @@ T8 → T9 → T10 → T11
 **Requirement**: PROJ-04, ID-04, ID-05, PROJ-05
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Groups render with online-first order; filters; toggle; rename/promote call PATCH
+- [x] Groups render with online-first order; filters; toggle; rename/promote call PATCH
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): organize agents by project`
