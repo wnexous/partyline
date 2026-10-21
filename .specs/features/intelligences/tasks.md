@@ -138,8 +138,8 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PROF-02, AID-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Table tests: `discord` → handle `discord`, display `Discord`; two bases `notes` → `notes`, `notes-2`; `2024-notes` → `ai-2024-notes`; `/` and `~` bases; accents; 40-char boundary (40 ok, 41 refused); uppercase input lower-cased; reserved words refused; must start with a letter
-- [ ] Gate check passes: `make check`
+- [x] Table tests: `discord` → handle `discord`, display `Discord`; two bases `notes` → `notes`, `notes-2`; `2024-notes` → `ai-2024-notes`; `/` and `~` bases; accents; 40-char boundary (40 ok, 41 refused); uppercase input lower-cased; reserved words refused; must start with a letter
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(handles): add handle and default name rules`
