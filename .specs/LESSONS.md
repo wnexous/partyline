@@ -15,10 +15,10 @@ Corroborated across multiple features. Safe to apply as guidance.
 - last seen: 2026-10-20T07:38:15Z
 
 ### L-018 - Negative tests must isolate the check under test so no other guard rejects the input first
-- signal: `surviving_mutant` · recurrence: 2 feature(s) · scope: `tests` · harmful: 0
+- signal: `surviving_mutant` · recurrence: 2 feature(s) · scope: `tests` · harmful: 1
 - features: agent-channel, core-platform
 - evidence: N17 internal/users/tokens_test.go:235 (tests) (+1 more)
-- last seen: 2026-10-20T07:38:14Z
+- last seen: 2026-10-21T12:56:38Z
 
 ### L-019 - Every behavior written into contract notes needs a test or it is unverified
 - signal: `surviving_mutant` · recurrence: 2 feature(s) · scope: `tests` · harmful: 1
@@ -251,6 +251,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - features: agent-identity
 - evidence: ID-01 edge case / PROJ-07 internal/agents/identity.go:333 (specs)
 - last seen: 2026-10-21T10:38:00Z
+
+### L-041 - When a preferred lookup runs before a fallback, test a case where the fallback alone would pick a different result
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
+- features: agent-identity
+- evidence: validation.md iteration 2 M17a internal/agents/identity.go:372 (tests)
+- last seen: 2026-10-21T12:56:38Z
 
 ## Quarantined (failed when applied - ignore)
 

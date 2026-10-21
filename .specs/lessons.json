@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 41,
+  "next_id": 42,
   "lessons": [
     {
       "id": "L-001",
@@ -326,13 +326,13 @@
         "core-platform"
       ],
       "recurrence": 2,
-      "harmful": 0,
+      "harmful": 1,
       "evidence": [
         "N17 internal/users/tokens_test.go:235 (tests)",
         "N1 internal/channel/tools.go:280; internal/channel/tools_unix_test.go:17-30 (tests)"
       ],
       "created": "2026-10-20T04:47:07Z",
-      "last_seen": "2026-10-20T07:38:14Z"
+      "last_seen": "2026-10-21T12:56:38Z"
     },
     {
       "id": "L-019",
@@ -733,6 +733,24 @@
       ],
       "created": "2026-10-21T10:38:00Z",
       "last_seen": "2026-10-21T10:38:00Z"
+    },
+    {
+      "id": "L-041",
+      "key": "surviving_mutant::when a preferred lookup runs before a fallback test a case where the fallback alone would pick a different result",
+      "text": "When a preferred lookup runs before a fallback, test a case where the fallback alone would pick a different result",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "agent-identity"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md iteration 2 M17a internal/agents/identity.go:372 (tests)"
+      ],
+      "created": "2026-10-21T12:56:38Z",
+      "last_seen": "2026-10-21T12:56:38Z"
     }
   ]
 }
