@@ -122,23 +122,23 @@ Agents are named after the working directory, so a session started in the home f
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| ID-01 | P1: Names | Execute | Implementing |
-| ID-02 | P1: Names | Execute | Implementing |
-| ID-03 | P1: Names | Execute | Implementing |
-| ID-04 | P1: Names | Execute | Implementing |
-| ID-05 | P1: Names | Execute | Implementing |
-| PROJ-01 | P1: Organization | Execute | Implementing |
-| PROJ-02 | P1: Organization | Execute | Implementing |
-| PROJ-03 | P1: Organization | Execute | Implementing |
-| PROJ-04 | P1: Organization | Execute | Implementing |
-| PROJ-05 | P1: Organization | Execute | Implementing |
-| PROJ-06 | P1: Project rooms | Execute | Implementing |
-| PROJ-07 | P1: Project rooms | Execute | Implementing |
-| PROJ-08 | P1: Project rooms | Execute | Implementing |
-| PROJ-09 | P1: Project rooms | Execute | Implementing |
-| PROJ-10 | P1: Project rooms | Execute | Implementing |
-| CLI-01 | P2: CLI | Execute | Implementing |
-| CLI-02 | P2: CLI | Execute | Implementing |
+| ID-01 | P1: Names | Execute | Verified |
+| ID-02 | P1: Names | Execute | Verified |
+| ID-03 | P1: Names | Execute | Verified |
+| ID-04 | P1: Names | Execute | Verified |
+| ID-05 | P1: Names | Execute | Verified |
+| PROJ-01 | P1: Organization | Execute | Verified |
+| PROJ-02 | P1: Organization | Execute | Verified |
+| PROJ-03 | P1: Organization | Execute | Verified |
+| PROJ-04 | P1: Organization | Execute | Verified |
+| PROJ-05 | P1: Organization | Execute | Verified |
+| PROJ-06 | P1: Project rooms | Execute | Verified |
+| PROJ-07 | P1: Project rooms | Execute | Verified |
+| PROJ-08 | P1: Project rooms | Execute | Verified |
+| PROJ-09 | P1: Project rooms | Execute | Verified |
+| PROJ-10 | P1: Project rooms | Execute | Verified |
+| CLI-01 | P2: CLI | Execute | Verified |
+| CLI-02 | P2: CLI | Execute | Verified |
 
 **Coverage:** 17 total, mapped in tasks.md
 

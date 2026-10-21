@@ -1,13 +1,92 @@
 # Agent Identity Verification Report
 
-## Validation (iteration 3): agent-identity - FAIL
+## Validation (iteration 4): agent-identity - PASS
+
+**Date**: 2026-10-21
+**Spec**: `.specs/features/agent-identity/spec.md` (ID-01 AC at `:51`, edge case at `:115`), `contract-notes.md` "Session key" rule 1 (`:264-266`)
+**Diff range**: `fe3816a..9d70f01` (`799d5a0` docs and example-name rename, `5800b35` iteration-3 report, T22 `9d70f01`), verified at 9d70f01
+**Verifier**: independent sub-agent (author ≠ verifier), worktree `partyline-verify-ai`, branch `verify/agent-identity-4`. This is the closure check the project owner authorized past the 3-iteration bound.
+
+**Result**: PASS. T22 closes Fix 7, the last open gap. M33 now fails `TestSessionHoldStaysInItsProjectAndHarness`. Each half of the test (another harness, another project) kills it on its own. The four earlier hold-logic mutants and three new ones are killed too. The `799d5a0` rename is a one-to-one string swap that changes no test semantics. `make check` exits 0 and `make e2e` passes 13 with 1 expected skip. Over the whole feature, all 17 ACs are verified with discriminating tests.
+
+### Iteration-3 gap
+
+| Gap | Fix | Re-check | Status |
+| --- | --- | -------- | ------ |
+| Fix 7: M33 survived (held lookup ignores the `<project>-<harness>` family) | T22 `9d70f01` | `internal/api/agent_session_test.go:242-256` `TestSessionHoldStaysInItsProjectAndHarness`. Key `4242` takes `proj-codex` / "Proj · Codex" (`:248`). The same key then registers for `proj`/gemini and must get `["proj-gemini","Proj · Gemini"]` (`:250`), and for `other`/codex `["other-codex","Other · Codex"]` (`:252`). The three agents are distinct (`:253-254`, IDs), and the key still gets `proj-codex` back as a whole `AgentInfo` (`:255`). M33 re-run in scratch is **killed** at `:250` (actual `["proj-codex","Proj · Gemini"]`). Probe M33b blanks the Gemini half in scratch, and M33 is still killed at `:252` (actual `["proj-codex","Other · Codex"]`) | ✅ Closed |
+
+**Spec-anchored check of T22**: the test asserts ID-01 outcomes only. These are the name `<project>-<harness>[-N]` and the display name `<Project> · <Harness label>` (`spec.md:51`), distinct agents per family, and "the session's own agent back" for the same key and family (`spec.md:115`, `contract-notes.md:264` "the agent of the `<project>-<harness>[-N]` family that the key holds"). It goes through `POST /api/v1/agent/register` via `registerSession` (`agent_session_test.go:20-27`). It never reads `session_key` or the store. `tasks.md` records T22 in the same commit, and its Done-when box is checked. No unchecked boxes remain.
+
+### `799d5a0` example-name rename
+
+The commit swaps a private-looking example project name for "Atlas" in 11 Go/TS test files (9 Go, 2 Vitest), `web/e2e/smoke.spec.ts` and the docs. Check: every removed test line maps to exactly one added line once the old name and "Atlas" are both normalized to one token, case kept. That is 111 removed and 111 added lines, with an identical multiset and pairwise equality, so only string literals and identifiers changed, consistently. Order-sensitive assertions keep their meaning. `agents.test.tsx` still expects the project group before "Alpha" (with "Atlas" > "Alpha", grouping is not alphabetical, so the assertion is, if anything, stricter). The slug and mention pairs stay aligned: `"Atlas Videos"` → `atlas-videos` (`internal/cli/agents_test.go`), and `"@atlas"` names the project "Atlas" (`internal/api/project_delivery_test.go:174-175`; M38 below proves this mention still reaches the project-name rule). Test functions went from 801 to 802 Go (`+1`, T22) and 325 to 325 TS. None was removed, and no assertion was weakened.
+
+### Spec-anchored acceptance criteria (overall, iterations 1-4)
+
+| AC | Evidence | Result |
+| -- | -------- | ------ |
+| ID-01 | Iteration-1 evidence (below) plus `agent_session_test.go:195` (M17a), `:218-220` (M17d), `:233`, `:235` (invalid key), `:250`, `:252`, `:255` (family of held keys, M33) | ✅ Verified |
+| ID-02 … ID-05, PROJ-01 … PROJ-10, CLI-01, CLI-02 (16 ACs) | Iteration-1 table "Spec-Anchored Acceptance Criteria" and iteration-2 fixes (Fix 1-4) stand. This range changed none of their code, only string literals in their tests (see rename check), and the full gate re-ran them green at 9d70f01 | ✅ Verified |
+
+**Status**: ✅ 17/17 ACs covered by assertions on spec-defined outcomes. No spec-precision gaps open.
+
+### Discrimination sensor (iteration 4)
+
+Scratch: a detached worktree `partyline-verify-ai-mut` at 9d70f01. Each mutant was an exact-string edit (one match enforced), followed by `go test -count=1 ./internal/api/ ./internal/agents/ ./internal/delivery/ ./internal/connectors/` and a revert with `git checkout -- .`. The baseline run on unmutated code passed. The worktree was then removed (`git worktree remove --force`, `prune`). The verify worktree's `git status --porcelain` was empty before and after, matching the baseline.
+
+| Mutation | File:line | Description | Killed? |
+| -------- | --------- | ----------- | ------- |
+| M33 (re-run) | `internal/agents/identity.go:378` | Held lookup ignores the family (`suffixedName(base, int(n)) == a.Name &&` removed) | ✅ Killed (`TestSessionHoldStaysInItsProjectAndHarness`, `agent_session_test.go:250`) |
+| M33b (probe) | same + Gemini half of the test blanked in scratch | Checks that the other-project half discriminates alone | ✅ Killed (`agent_session_test.go:252`) |
+| M17a (re-run) | `internal/agents/identity.go:372` | `if session != ""` → `if false && session != ""` | ✅ Killed (`TestToolsOnlySessionKeepsItsAgentWhenALowerOneFrees`) |
+| M17d (re-run) | `internal/store/db/agents.sql.go:1026` | `owner_id = ?` → `(owner_id = ? OR 1)` in `ListSessionAgents` | ✅ Killed (`TestAnotherOwnersHoldDoesNotSteerASession`) |
+| M31 (re-run) | `internal/agents/identity.go:378` | Machine check dropped from the held lookup | ✅ Killed (`TestSessionHoldsAreScopedByOwnerAndMachine`) |
+| M32 (re-run) | `internal/agents/identity.go:392` | Archived holds no longer released (`&& !a.ArchivedAt.Valid` removed) | ✅ Killed (`TestToolsOnlySessionHoldsItsAgentUntilArchived`) |
+| M36 (new) | `internal/agents/identity.go:393` | `freeName` loop takes any offline agent, fixed ones included (`(!temporaryOnly \|\| a.Kind == temporary)` → `true`) | ✅ Killed (`TestAgentWSTemporaryNameReusesOfflineTemporaryAgents`, `agent_identity_test.go:167`: actual `proj-claude-2`, expected `proj-claude-3`) |
+| M37 (new) | `internal/delivery/wants.go:176` | A reply to another session of the project no longer counts as a reply to the active one (PROJ-07) | ✅ Killed (`TestProjectMemberSettingsApplyToTheActiveSession`, `project_delivery_test.go:187`) |
+| M38 (new) | `internal/delivery/wants.go:59` | `@<project name>` no longer mentions a project member (PROJ-08 mentions) | ✅ Killed (`TestProjectMemberSettingsApplyToTheActiveSession`, `project_delivery_test.go:175`) |
+
+**Sensor depth**: P0 (identity and authorization of agent allocation). This iteration ran 9 runs: 5 re-runs, 1 probe and 3 new mutants, chosen where coverage looked thinnest (the kind filter of the loop, and project-member delivery rules).
+**Sensor outcome**: 9/9 killed. Survivors across iterations 1-3 (M7, M16, M17a, M17d, M33) are all killed now. M34 stays equivalent (iteration-3 argument).
+
+### Gate check (iteration 4)
+
+- **`make check`** at 9d70f01 exited 0, first run. It covers check-generate (clean), `golangci-lint` "0 issues.", `go vet`, and 31 Go packages `ok` with `-race`. Web Vitest passed 338/338 (32 files), integrations `bun test` 53 pass / 0 fail, and the web build and `go build ./...` succeeded. `TestLinkPausesAfterReplaced` did not fail. Log: `verify4-check.log`.
+- **`make e2e`** (`PLAYWRIGHT_CHROMIUM_EXECUTABLE` = headless shell 1248) exited 0 with 13 passed and 1 skipped. The skip is the expected mobile-360 `web/e2e/smoke.spec.ts:277`. Log: `verify4-e2e.log`.
+- **Test delta (`fe3816a..9d70f01`)**: +1 Go test function, 0 removed, and no assertion weakened.
+- **Code quality**: the commit only adds a test. It reuses `registerSession`, keeps the T21 test style (whole `AgentInfo`, IDs, exact names) and maps to ID-01. `799d5a0` is docs plus literal renames. ✅
+
+### Requirement traceability update (iteration 4)
+
+| Requirement | Previous | New |
+| ----------- | -------- | --- |
+| ID-01 | ⚠️ Behavior verified, 1 weak test (Fix 7) | ✅ Verified |
+| ID-02 … ID-05, PROJ-01 … PROJ-10, CLI-01, CLI-02 | ✅ Verified | ✅ Verified |
+
+`spec.md` Requirement Traceability: all 17 rows go from Implementing to Verified.
+
+### Summary (iteration 4)
+
+**Overall**: ✅ Ready. The agent-identity feature is verified over all 17 ACs (ID-01…05, PROJ-01…10, CLI-01, CLI-02). Iteration 1 covered all 17 ACs. Iterations 2-3 closed Fixes 1-6 (archive clearing, CLI and hook session keys, held lookup, owner scope). Iteration 4 closed Fix 7 (family of held keys).
+
+- **Spec-anchored check**: 17/17 ACs match the spec outcome, with no open spec-precision gap.
+- **Sensor**: 9/9 killed this iteration. No surviving non-equivalent mutant remains in the feature.
+- **Gate**: `make check` exit 0; `make e2e` 13 passed, 1 expected skip.
+- **Remaining notes (non-blocking)**: the iteration-3 M34 observation stands. The "online or not" clause of the held lookup (`contract-notes.md:265`) never changes an outcome, and a doc precision note is optional. In `spec.md`, "open a Atlas session" (PROJ story Independent Test) should read "an Atlas session", a cosmetic leftover from the rename.
+
+**Lessons (iteration 4)**: clean PASS, so none recorded. L-042 (candidate, from M33) was applied by T22 and worked. It needs a second feature to be promoted.
+
+---
+
+
+## Iteration 3 report: agent-identity - FAIL
 
 **Date**: 2026-10-21
 **Spec**: `.specs/features/agent-identity/spec.md` (ID-01 edge case at `:115`, tools-only precision row at `:35`), `contract-notes.md` "Session key" rules 1-3 (`:262-269`) and T19 (`:324-328`)
 **Diff range**: `66d6b97..fe3816a` (T21 `fe3816a`, tests only: `internal/api/agent_session_test.go` +59 lines, `tasks.md` T21 entry), verified at fe3816a
 **Verifier**: independent sub-agent (author ≠ verifier), worktree `partyline-verify-ai`, branch `verify/agent-identity-3`
 
-**Result**: FAIL. T21 closes both iteration-2 gaps: M17a and M17d now fail the new tests, and the optional invalid-key test exists and kills two server-side validation mutants. Both gates pass. One of the six new mutants on the same hold logic survived and is not equivalent. **M33** drops the family check from the held-agent lookup (`internal/agents/identity.go:378`), and no test fails. Under M33, a key that holds `proj-codex` and registers for Gemini (or for another project) gets `proj-codex` back, labelled "Proj · Gemini". The spec requires `proj-gemini` (ID-01, `spec.md:51`). The real code is correct, and a scratch probe passes on it and kills M33. The fix is tests only. This was iteration 3 of the 3-iteration fix→re-verify bound, so the remaining gap is **escalated to André** rather than looped again.
+**Iteration 3 verdict**: FAIL. T21 closes both iteration-2 gaps: M17a and M17d now fail the new tests, and the optional invalid-key test exists and kills two server-side validation mutants. Both gates pass. One of the six new mutants on the same hold logic survived and is not equivalent. **M33** drops the family check from the held-agent lookup (`internal/agents/identity.go:378`), and no test fails. Under M33, a key that holds `proj-codex` and registers for Gemini (or for another project) gets `proj-codex` back, labelled "Proj · Gemini". The spec requires `proj-gemini` (ID-01, `spec.md:51`). The real code is correct, and a scratch probe passes on it and kills M33. The fix is tests only. This was iteration 3 of the 3-iteration fix→re-verify bound, so the remaining gap is **escalated to André** rather than looped again.
 
 ### Iteration-2 gaps
 
