@@ -237,9 +237,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PROF-06, PROF-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] PNG, JPEG and WebP inputs (synthetic test images; a tiny WebP in `testdata`) become 256×256 PNG, centre-cropped (a 400×200 input keeps its middle square) (PROF-07)
-- [ ] GIF, text, truncated image, 2 MiB + 1 byte and 5000×10 dimensions → `ErrInvalid` (PROF-06)
-- [ ] Gate check passes: `make check`
+- [x] PNG, JPEG and WebP inputs (synthetic test images; a tiny WebP in `testdata`) become 256×256 PNG, centre-cropped (a 400×200 input keeps its middle square) (PROF-07)
+- [x] GIF, text, truncated image, 2 MiB + 1 byte and 5000×10 dimensions → `ErrInvalid` (PROF-06)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(avatars): crop and resize avatar uploads`
