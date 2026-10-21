@@ -645,7 +645,7 @@ before each commit.
 **Requirement**: ONB-11
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] spec wording matches `scripts/version.sh`; `VERSION=` and `VERSION=dev` both give the git version in a test
+- [x] spec wording matches `scripts/version.sh`; `VERSION=` and `VERSION=dev` both give the git version in a test
 **Tests**: integration
 **Gate**: build
 **Commit**: `docs(specs): say that VERSION=dev counts as unset for the image version`

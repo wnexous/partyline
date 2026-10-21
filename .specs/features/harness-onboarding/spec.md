@@ -59,7 +59,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 8. The saved token SHALL only be sent to the saved URL: IF a flag or env var names an instance URL other than the saved one (scheme, host and port compared) and no token is given THEN the command SHALL exit with an error naming both URLs instead of using the saved token. `setup` SHALL save the URL it started with (never a URL from the device poll), SHALL warn on stderr that `--token` is visible in the process list, and SHALL accept `--token-stdin` (exclusive with `--token` and `--browser`). (ONB-08; fix iteration 1)
 9. WHEN `partyline setup --uninstall` deletes the config file THEN it SHALL first revoke its agent token on the server (`DELETE /api/v1/agent/token`, agent tokens only) and report the result; a failed revoke SHALL be reported without failing the uninstall. A token the user declined under DEV-06 SHALL be revoked the same way. (ONB-09; fix iteration 1)
 10. `install.sh` SHALL run only when it was downloaded completely (all work in a `main` function called on its last line, so a script cut at any line downloads and writes nothing), and SHALL refuse plain `http://` instance, release and releases-API URLs (exit non-zero before any download) except for `localhost`, `127.0.0.1` and `[::1]`: the scheme is compared without case, the host must be exactly one of those three (optionally with a numeric port), a URL without a scheme is refused, and any URL whose authority holds user info (`@`) is refused, https included. (ONB-10; fix iterations 1 and 2)
-11. WHEN the Docker image is built without a `VERSION` build argument THEN the binary SHALL report `git describe --tags` of the `.git` in the build context, else `dev-<first 12 characters of the commit>` from that `.git` (no tag reachable, such as a shallow clone) or from `SOURCE_COMMIT`, else `dev`; a given `VERSION` SHALL win. (ONB-11; added in fix iteration 1)
+11. WHEN the Docker image is built without a `VERSION` build argument THEN the binary SHALL report `git describe --tags` of the `.git` in the build context, else `dev-<first 12 characters of the commit>` from that `.git` (no tag reachable, such as a shallow clone) or from `SOURCE_COMMIT`, else `dev`; a given `VERSION` SHALL win, except that an empty `VERSION` and `VERSION=dev` count as unset. (ONB-11; added in fix iteration 1, worded in fix iteration 2)
 
 **Independent Test**: Fresh HOME: run install.sh against a local release fixture, run setup with a token, run doctor → all pass.
 
@@ -189,7 +189,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | ONB-08 | P1: Install and setup | Tasks (T25, T35) | Implemented |
 | ONB-09 | P1: Install and setup | Tasks (T25) | Implemented |
 | ONB-10 | P1: Install and setup | Tasks (T26, T36) | Implemented |
-| ONB-11 | P1: Install and setup | Tasks (T30, T33) | Implemented |
+| ONB-11 | P1: Install and setup | Tasks (T30, T33, T37) | Implemented |
 | DEV-01 | P1: Browser approval | Tasks (T4, T6, T24) | Implemented |
 | DEV-02 | P1: Browser approval | Tasks (T4, T6, T16, T24) | Implemented |
 | DEV-03 | P1: Browser approval | Tasks (T4, T6) | Implemented |
