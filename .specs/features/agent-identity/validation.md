@@ -1,13 +1,106 @@
 # Agent Identity Verification Report
 
-## Validation (iteration 2): agent-identity - FAIL
+## Validation (iteration 3): agent-identity - FAIL
+
+**Date**: 2026-10-21
+**Spec**: `.specs/features/agent-identity/spec.md` (ID-01 edge case at `:115`, tools-only precision row at `:35`), `contract-notes.md` "Session key" rules 1-3 (`:262-269`) and T19 (`:324-328`)
+**Diff range**: `66d6b97..fe3816a` (T21 `fe3816a`, tests only: `internal/api/agent_session_test.go` +59 lines, `tasks.md` T21 entry), verified at fe3816a
+**Verifier**: independent sub-agent (author ≠ verifier), worktree `partyline-verify-ai`, branch `verify/agent-identity-3`
+
+**Result**: FAIL. T21 closes both iteration-2 gaps: M17a and M17d now fail the new tests, and the optional invalid-key test exists and kills two server-side validation mutants. Both gates pass. One of the six new mutants on the same hold logic survived and is not equivalent. **M33** drops the family check from the held-agent lookup (`internal/agents/identity.go:378`), and no test fails. Under M33, a key that holds `proj-codex` and registers for Gemini (or for another project) gets `proj-codex` back, labelled "Proj · Gemini". The spec requires `proj-gemini` (ID-01, `spec.md:51`). The real code is correct, and a scratch probe passes on it and kills M33. The fix is tests only. This was iteration 3 of the 3-iteration fix→re-verify bound, so the remaining gap is **escalated to André** rather than looped again.
+
+### Iteration-2 gaps
+
+| Gap | Fix | Re-check | Status |
+| --- | --- | -------- | ------ |
+| Fix 5: M17a survived (held lookup not discriminated) | T21 `fe3816a` | `internal/api/agent_session_test.go:183-197` `TestToolsOnlySessionKeepsItsAgentWhenALowerOneFrees`. A live session holds `proj-opencode` and the tools-only key `pl-tools` holds ` #2` (`:191` exact name + display name). The live session ends (`:194` `waitOffline`), and `:195` checks `Equal(tools, registerSession(... "pl-tools"))` on the whole `AgentInfo`. This is the spec outcome: the same key gets its own agent back (`spec.md:115`). M17a re-run in scratch is **killed** at `:195` ("the session's own agent, not the freed proj-opencode") | ✅ Closed |
+| Fix 6: M17d survived (owner scope of holds not discriminated) | T21 `fe3816a` | `agent_session_test.go:203-221` `TestAnotherOwnersHoldDoesNotSteerASession`. Bob's own keys hold `proj-codex` and ` -2` (`:212`), and alice's `pl-k` holds her ` -2` (`:215`). Bob's `pl-k` must get a new `proj-codex-3` / "Proj · Codex #3" (`:218`), takes none of b1, b2 or alice's agent (`:219` `NotContains` on IDs), and bob's `pl-b2` keeps its agent (`:220`, whole `AgentInfo`). Holds are per owner (`contract-notes.md:325`). M17d re-run is **killed** at `:218` (actual `proj-codex-2`) | ✅ Closed |
+| Optional: no API test for an invalid `X-Partyline-Session` | T21 `fe3816a` | `agent_session_test.go:226-236` `TestInvalidSessionKeyIsIgnored`. The keys `a/b`, `../x`, `with space` and a 65-character key each get `one` (`:233`), the keyless rule of `contract-notes.md:269`: holds are ignored, the lowest offline temporary agent. The valid key still holds its agent (`:235`). Kills M30 and M35 (below) | ✅ Closed |
+
+**Spec-anchored check of the new tests**: each assertion targets a spec-defined outcome, not an implementation detail. The tests compare names and display names (`:191`, `:218`), whole `dto.AgentInfo` values (`:195`, `:220`, `:233`, `:235`) and agent IDs (`:219`). None of them reads `session_key` or the store directly. All three map to ID-01 (the edge case at `spec.md:115` and the Assumptions row at `:35`), and to contract-notes rules 1 and 3 and T19.
+
+### Spec-anchored acceptance criteria (iteration 3)
+
+T21 touches tests only. The 17 ACs and their iteration-1 and iteration-2 evidence stand; the full gate re-ran them at fe3816a with no regression. Changed row:
+
+| AC | Spec-defined outcome | `file:line` + assertion | Result |
+| -- | -------------------- | ----------------------- | ------ |
+| ID-01 (tools-only edge: same key → own agent back) | The session's own agent, even when a lower number is free | `agent_session_test.go:195` (M17a killed) | ✅ |
+| ID-01 (holds per owner) | Another owner's hold never steers the session | `agent_session_test.go:218-220` (M17d killed) | ✅ |
+| ID-01 (invalid key) | Treated as no key (keyless rule) | `agent_session_test.go:233`, `:235` (M30, M35 killed) | ✅ |
+| ID-01 (name `<project>-<harness>[-N]` when a key is held in another family) | A key held for `proj-codex` that registers for Gemini, or for project `other`, gets `proj-gemini` / `other-codex` (`spec.md:51`; `contract-notes.md:264` "the agent of the `<project>-<harness>[-N]` family that the key holds") | none. M33 survives | ❌ GAP (Fix 7) |
+
+### Discrimination sensor (iteration 3)
+
+Scratch: a detached worktree `partyline-verify-ai-mut` at fe3816a. Each mutant was an exact-string edit (one match enforced), followed by `go test -count=1 ./internal/api/ ./internal/agents/` and a revert with `git checkout -- .`. The worktree was then removed and pruned. The verify worktree's `git status --porcelain` was empty before and after, matching the baseline.
+
+| Mutation | File:line | Description | Killed? |
+| -------- | --------- | ----------- | ------- |
+| M17a (re-run) | `internal/agents/identity.go:372` | `if session != ""` → `if false && session != ""` (held lookup disabled) | ✅ Killed (`TestToolsOnlySessionKeepsItsAgentWhenALowerOneFrees`, `agent_session_test.go:195`) |
+| M17d (re-run) | `internal/store/db/agents.sql.go:1026` | `owner_id = ?` → `(owner_id = ? OR 1)` in `ListSessionAgents` | ✅ Killed (`TestAnotherOwnersHoldDoesNotSteerASession`, `:218`) |
+| M30 | `internal/agents/identity.go:150` | Server-side key validation removed (`Session: h.Get(...)` without `SessionKey`); the client filter is untouched | ✅ Killed (`TestInvalidSessionKeyIsIgnored`) |
+| M31 | `internal/agents/identity.go:378` | Machine check dropped from the held lookup only (the loop still checks it) | ✅ Killed (`TestSessionHoldsAreScopedByOwnerAndMachine`) |
+| M32 | `internal/agents/identity.go:392` | Archived holds no longer released (`&& !a.ArchivedAt.Valid` removed from `heldByOther`) | ✅ Killed (`TestToolsOnlySessionHoldsItsAgentUntilArchived`) |
+| M33 | `internal/agents/identity.go:378` | Held lookup ignores the family (`suffixedName(base, n) == a.Name` removed): any held temporary agent of the key comes back | ❌ **Survived** → Fix 7 |
+| M34 | `internal/agents/identity.go:378` | Held lookup skips online agents (`&& !r.presence.Online(a.ID)` added) | ➖ Survived, **equivalent** (see below) |
+| M35 | `internal/agents/identity.go:136` | Key pattern also accepts `/` | ✅ Killed (`TestInvalidSessionKeyIsIgnored`) |
+
+**M33 probe** (scratch only, never committed): with the key `4242`, the probe registers `proj`/codex → `proj-codex`, then `proj`/gemini, `other`/codex, and `proj`/codex again. On the real code the results are `["proj-gemini","Proj · Gemini"]` and `other-codex`, and the key gets `proj-codex` back. Under M33 the second registration gets `["proj-codex","Proj · Gemini"]`, which fails the probe. The case is reachable: holds last until archived (24 h), and keys are pids. These are the launcher pid on Unix (T20), the pi/OpenCode pid and the parent-pid fallback, so a recycled pid on the same machine can start a session of another harness or project with a key that still holds an agent.
+
+**M34 is equivalent**: an agent is never held and online at the same time. Holds are created only by tools-only registrations (`identity.go:233`), and only on an agent `freeName` returned. That is either one the key already holds or one the loop found offline (`:393`). Every WebSocket resolve clears the hold of the agent it takes (`:272`). An allocating WebSocket holds `allocMu` across resolve and `Presence.Attach` (`internal/agents/gateway.go:171-174`, released at `:201`). So the "online or not" clause of the held lookup (`identity.go:365`, `contract-notes.md:265`) never changes an outcome. Observation: the clause, and its example "its listen half joining its tools-only half", describe a lookup that in practice always sees an offline agent. A spec or doc precision note is optional.
+
+**Sensor depth**: P0 (identity and authorization of agent allocation), 8 mutations this iteration (2 re-runs + 6 new).
+**Sensor outcome**: 6 killed, 1 equivalent, 1 survived (M33). FAIL.
+
+### Gate check (iteration 3)
+
+- **`make check`** at fe3816a exited 0. Details: check-generate clean, `golangci-lint` "0 issues.", `go vet`, 31 Go packages `ok` with `-race`, web Vitest 338/338 (32 files), integrations `bun test` 53 pass / 0 fail, web build, `go build ./...`. `TestLinkPausesAfterReplaced` did not fail; no rerun was needed. Log: `verify3-check.log`.
+- **`make e2e`** (`PLAYWRIGHT_CHROMIUM_EXECUTABLE` = headless shell 1248) exited 0 with 13 passed and 1 skipped. The skip is the expected mobile-360 `smoke.spec.ts:277`.
+- **Completion gate**: `validate_state.py --root . agent-identity` exits 1 with "verdict is FAIL - route the ranked gaps to fix tasks, then re-verify (feature is not done)". That is expected for this verdict.
+- **Test delta (`66d6b97..fe3816a`)**: +3 test functions, 0 removed, and no existing assertion changed.
+- **Code quality**: test-only commit; reuses `registerSession`, `dialSession` and `waitOffline`; T21 recorded in `tasks.md` in the same commit; every new test maps to ID-01. ✅
+
+### Fix plans (iteration 3)
+
+#### Fix 7: The held lookup's family check is not discriminated (M33) - Minor (tests only)
+- **Root cause**: in every keyed test, a key holds agents of one `<project>-<harness>` family only, so the family filter at `internal/agents/identity.go:378` never excludes a held agent.
+- **Fix task**: in `internal/api/agent_session_test.go`, add a test where one key holds `proj-codex` and then registers for another harness (`proj`/gemini → `["proj-gemini","Proj · Gemini"]`) and for another project (`other`/codex → `other-codex`). The key must still get `proj-codex` back for `proj`/codex (whole `AgentInfo`). The probe above is a ready template.
+- **Done when**: M33 (`suffixedName(base, int(n)) == a.Name &&` removed at `identity.go:378`) fails the test in a scratch worktree.
+- **Escalation**: this is the third fix→re-verify iteration. The orchestrator should put Fix 7 to André; a 4th iteration needs his go-ahead.
+
+### Requirement traceability update (iteration 3)
+
+| Requirement | Previous | New |
+| ----------- | -------- | --- |
+| ID-01 | ⚠️ Behavior verified, 2 weak tests (Fix 5, Fix 6) | ⚠️ Behavior verified; Fix 5 and Fix 6 closed; 1 weak test (Fix 7, family check of held keys) |
+| all other 16 ACs | ✅ Verified | ✅ Verified (no regression; iteration-1 and iteration-2 evidence stands) |
+
+### Summary (iteration 3)
+
+**Overall**: ❌ Not ready, by the sensor rule only. The behavior is correct, and every iteration-1 and iteration-2 gap is closed. One test-only gap remains (Fix 7). It is escalated after 3 iterations.
+
+- **Spec-anchored check**: 17/17 ACs match the spec outcome. ID-01 carries 1 non-discriminating assertion (the family of held keys).
+- **Sensor**: 6/7 non-equivalent mutants killed (M33 survived; M34 equivalent).
+- **Gate**: `make check` exit 0; `make e2e` 13 passed, 1 expected skip.
+
+**Lessons (iteration 3)**:
+- New candidate from M33: "Give every condition of a lookup's match predicate a test where only that condition excludes a candidate". Recorded as **L-042** (candidate).
+- L-041 (candidate) was applied by T21 and worked: M17a is killed. It needs a second feature to be promoted; the script does not confirm within one feature.
+- No confirmed lesson penalized. L-019 (contract-note behaviors need tests) is close: the family rule is written at `contract-notes.md:264`. It was not penalized because the iteration-2 report did not list the family rule among the T19 behaviors it checked.
+
+**Note for later iterations**: `validate_state.py` reads every `## Validation…` heading and every line where the word "result" is followed by a colon. The iteration-2 heading and verdict lines were therefore renamed to "Iteration 2 report" and "**Iteration 2 verdict**". Renaming the line to "Iteration 2 result" followed by a colon would still be read.
+
+---
+
+
+## Iteration 2 report: agent-identity - FAIL
 
 **Date**: 2026-10-21
 **Spec**: `.specs/features/agent-identity/spec.md` (PROJ-09 amended per AD-009; tools-only precision row in Assumptions and Edge Cases)
 **Diff range**: `334dcab..99021f2` (T12-T20: 39c0515, cc59327, 9b330be, e36482a, 8c4f1ca, cb20271, cdced07, 23e7464, 99021f2), verified on `main` at 99021f2
 **Verifier**: independent sub-agent (author ≠ verifier), worktree `partyline-verify-ai`, branch `verify/agent-identity-2`
 
-**Result**: FAIL. All four iteration-1 gaps are closed: M7 and M16 are killed, PROJ-09 and AD-009 agree with the tests, tools-only sessions get their own agents, and a project rename refreshes project-member rooms. Both gates pass. The verdict is FAIL because 2 of the 21 sensor mutants survived, both on the new session-key hold logic, and validate.md does not mark a feature done while a mutant survives. The code behaves correctly: scratch probes pass on the real code and kill both mutants. Both fixes are tests only.
+**Iteration 2 verdict**: FAIL. All four iteration-1 gaps are closed: M7 and M16 are killed, PROJ-09 and AD-009 agree with the tests, tools-only sessions get their own agents, and a project rename refreshes project-member rooms. Both gates pass. The verdict is FAIL because 2 of the 21 sensor mutants survived, both on the new session-key hold logic, and validate.md does not mark a feature done while a mutant survives. The code behaves correctly: scratch probes pass on the real code and kill both mutants. Both fixes are tests only.
 1. **M17a**: `freeName`'s held-agent lookup (`internal/agents/identity.go:372`) can be deleted and every test still passes. Without it, a tools-only session whose agent is not the lowest free one in its family moves to a lower agent once that agent frees up (an ended live session, or an archived sibling). This is the ID-01 edge case "the same key gets it back".
 2. **M17d**: the owner filter of `ListSessionAgents` (`internal/store/queries/agents.sql:104`) can be dropped and every test still passes. The lookup returns a name, which is then resolved within the owner, so no other owner's agent is ever reachable. Under the mutant, though, another owner's hold on the same key steers a session onto its own owner's agent that a different session holds.
 

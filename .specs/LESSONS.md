@@ -258,6 +258,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: validation.md iteration 2 M17a internal/agents/identity.go:372 (tests)
 - last seen: 2026-10-21T12:56:38Z
 
+### L-042 - Give every condition of a lookup's match predicate a test where only that condition excludes a candidate
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
+- features: agent-identity
+- evidence: validation.md iteration 3 M33 internal/agents/identity.go:378 (tests)
+- last seen: 2026-10-21T13:36:36Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

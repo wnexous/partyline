@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 42,
+  "next_id": 43,
   "lessons": [
     {
       "id": "L-001",
@@ -751,6 +751,24 @@
       ],
       "created": "2026-10-21T12:56:38Z",
       "last_seen": "2026-10-21T12:56:38Z"
+    },
+    {
+      "id": "L-042",
+      "key": "surviving_mutant::give every condition of a lookup s match predicate a test where only that condition excludes a candidate",
+      "text": "Give every condition of a lookup's match predicate a test where only that condition excludes a candidate",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "agent-identity"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md iteration 3 M33 internal/agents/identity.go:378 (tests)"
+      ],
+      "created": "2026-10-21T13:36:36Z",
+      "last_seen": "2026-10-21T13:36:36Z"
     }
   ]
 }
