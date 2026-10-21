@@ -497,7 +497,7 @@ the web changes.
 **Requirement**: PUSH-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] two async rejections: messages delivered A then B; nothing sent while a send is in flight
+- [x] two async rejections: messages delivered A then B; nothing sent while a send is in flight
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(integrations): keep omp messages in order when sends reject later`

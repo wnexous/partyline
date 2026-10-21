@@ -9,7 +9,9 @@
 // cannot hand to the session would be lost. It keeps such messages in memory, in order, and
 // retries: after 1 s doubling to 30 s, and at once when a turn ends (agent_end). A session
 // without a model is not sent to at all (omp 18.6.1 reports that failure only on screen, not
-// to the extension); a send that throws or returns a rejected promise is kept too.
+// to the extension); a send that throws or returns a rejected promise is kept too. Messages
+// go one at a time: when a send returns a promise, the next one waits for it, and a rejection
+// keeps the message at the head of the queue, so the order holds.
 
 type Ui = { notify?: (message: string, level?: string) => void };
 type Ctx = { isIdle(): boolean; hasUI?: boolean; ui?: Ui; model?: unknown };
@@ -100,6 +102,7 @@ export default function partyline(pi: OmpApi): void {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let delay = MIN_RETRY_MS;
 	let noticed = false; // one notice per outage
+	let sending = false; // a send's promise has not settled yet
 
 	function retryLater(reason: string): void {
 		if (!noticed) {
@@ -116,7 +119,7 @@ export default function partyline(pi: OmpApi): void {
 
 	function flush(): void {
 		const c = ctx;
-		if (!c) return;
+		if (!c || sending) return;
 		while (queue.length > 0) {
 			if ("model" in c && !c.model) {
 				retryLater("no model selected");
@@ -130,13 +133,22 @@ export default function partyline(pi: OmpApi): void {
 				retryLater(errorText(err));
 				return;
 			}
-			queue.shift();
 			if (isThenable(result)) {
-				result.then(undefined, (err: unknown) => {
-					queue.unshift(text);
-					retryLater(errorText(err));
-				});
+				sending = true;
+				result.then(
+					() => {
+						sending = false;
+						queue.shift();
+						flush();
+					},
+					(err: unknown) => {
+						sending = false;
+						retryLater(errorText(err));
+					},
+				);
+				return;
 			}
+			queue.shift();
 		}
 		if (timer !== undefined) clearTimeout(timer);
 		timer = undefined;

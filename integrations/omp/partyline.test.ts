@@ -15,6 +15,7 @@ function fakeOmp(opts: { idle?: boolean; hasUI?: boolean; model?: unknown; outco
 	const sent: Array<{ content: string; options?: { deliverAs?: string } }> = [];
 	const notices: Array<{ message: string; level?: string }> = [];
 	const outcomes = [...(opts.outcomes ?? [])];
+	const attempts: string[] = []; // the content of every sendUserMessage call, in order
 	let calls = 0;
 	const api = {
 		on(event: string, handler: Handler) {
@@ -22,6 +23,7 @@ function fakeOmp(opts: { idle?: boolean; hasUI?: boolean; model?: unknown; outco
 		},
 		sendUserMessage(content: string, options?: { deliverAs?: "steer" | "followUp" | "aside" }): unknown {
 			calls++;
+			attempts.push(content);
 			const o = outcomes.shift() ?? "ok";
 			if (o !== "ok" && "throw" in o) throw new Error(o.throw);
 			if (o !== "ok" && "reject" in o) return Promise.reject(new Error(o.reject));
@@ -38,7 +40,7 @@ function fakeOmp(opts: { idle?: boolean; hasUI?: boolean; model?: unknown; outco
 	partyline(api);
 	const emit = (server: string, method: string, params?: unknown) => handlers.get("mcp_notification")?.({ server, method, params }, ctx);
 	const agentEnd = () => handlers.get("agent_end")?.({ type: "agent_end", messages: [] }, ctx);
-	return { handlers, sent, notices, emit, agentEnd, ctx, calls: () => calls, fail: (...o: Outcome[]) => outcomes.push(...o) };
+	return { handlers, sent, notices, emit, agentEnd, ctx, calls: () => calls, attempts, fail: (...o: Outcome[]) => outcomes.push(...o) };
 }
 
 const flushPromises = () => new Promise<void>((resolve) => queueMicrotask(resolve)).then(() => undefined);
@@ -179,5 +181,27 @@ describe("omp extension", () => {
 		expect(time.delays()).toEqual([1_000]);
 		time.fire();
 		expect(omp.sent).toEqual([{ content: framingCases[0].text }]);
+	});
+
+	test("PUSH-03: sends whose promises reject later keep the order: one message at a time", async () => {
+		const omp = fakeOmp({ outcomes: [{ reject: "busy" }, { reject: "busy" }] });
+		const [a, b] = framingCases;
+		omp.emit("partyline", CHANNEL, notificationParams(a.record));
+		omp.emit("partyline", CHANNEL, notificationParams(b.record));
+		expect(omp.attempts).toEqual([a.text]); // b waits while a's send is in flight
+		await flushPromises();
+		expect(omp.notices).toEqual([held("busy")]);
+		expect(omp.attempts).toEqual([a.text]);
+
+		time.fire(); // a again: rejects a second time
+		expect(omp.attempts).toEqual([a.text, a.text]);
+		await flushPromises();
+		expect(omp.sent).toEqual([]);
+
+		time.fire(); // a goes through, then b
+		await flushPromises();
+		expect(omp.attempts).toEqual([a.text, a.text, a.text, b.text]);
+		expect(omp.sent).toEqual([{ content: a.text }, { content: b.text }]);
+		expect(omp.notices).toEqual([held("busy")]);
 	});
 });
