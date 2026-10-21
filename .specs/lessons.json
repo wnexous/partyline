@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 34,
+  "next_id": 38,
   "lessons": [
     {
       "id": "L-001",
@@ -607,6 +607,78 @@
       ],
       "created": "2026-10-20T15:04:35Z",
       "last_seen": "2026-10-20T15:04:35Z"
+    },
+    {
+      "id": "L-034",
+      "key": "surviving_mutant::when a guard is added to several sibling implementations give each sibling its own refusal test a test on one sibling does not cover the others",
+      "text": "When a guard is added to several sibling implementations, give each sibling its own refusal test; a test on one sibling does not cover the others",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "harness-onboarding"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md S04 (internal/harness/clis.go:276) (tests)"
+      ],
+      "created": "2026-10-21T08:27:24Z",
+      "last_seen": "2026-10-21T08:27:24Z"
+    },
+    {
+      "id": "L-035",
+      "key": "surviving_mutant::output the spec ties to a flag needs a negative assertion that it is absent when the flag is not given",
+      "text": "Output the spec ties to a flag needs a negative assertion that it is absent when the flag is not given",
+      "signal": "surviving_mutant",
+      "scope": "cli",
+      "status": "candidate",
+      "features": [
+        "harness-onboarding"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md Y03 (internal/cli/setup.go:188) (cli)"
+      ],
+      "created": "2026-10-21T08:27:24Z",
+      "last_seen": "2026-10-21T08:27:24Z"
+    },
+    {
+      "id": "L-036",
+      "key": "surviving_mutant::test every rule of an input allowlist scheme port shape host with one rejected case each not only the attacks that motivated it",
+      "text": "Test every rule of an input allowlist (scheme, port shape, host) with one rejected case each, not only the attacks that motivated it",
+      "signal": "surviving_mutant",
+      "scope": "scripts",
+      "status": "candidate",
+      "features": [
+        "harness-onboarding"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md I06, I07 (scripts/install.sh:58,67) (scripts)"
+      ],
+      "created": "2026-10-21T08:27:25Z",
+      "last_seen": "2026-10-21T08:27:25Z"
+    },
+    {
+      "id": "L-037",
+      "key": "spec_precision_gap::a url allowlist ac must say which schemes are accepted not only which plain http hosts are allowed",
+      "text": "A URL allowlist AC must say which schemes are accepted, not only which plain-http hosts are allowed",
+      "signal": "spec_precision_gap",
+      "scope": "spec",
+      "status": "candidate",
+      "features": [
+        "harness-onboarding"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md I07 / ONB-10 (spec)"
+      ],
+      "created": "2026-10-21T08:27:25Z",
+      "last_seen": "2026-10-21T08:27:25Z"
     }
   ]
 }

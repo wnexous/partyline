@@ -210,6 +210,30 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: spec.md Success Criteria (2 s DM latency); validation.md Spec-Anchored ACs (specs)
 - last seen: 2026-10-20T15:04:35Z
 
+### L-034 - When a guard is added to several sibling implementations, give each sibling its own refusal test; a test on one sibling does not cover the others
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
+- features: harness-onboarding
+- evidence: validation.md S04 (internal/harness/clis.go:276) (tests)
+- last seen: 2026-10-21T08:27:24Z
+
+### L-035 - Output the spec ties to a flag needs a negative assertion that it is absent when the flag is not given
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `cli` · harmful: 0
+- features: harness-onboarding
+- evidence: validation.md Y03 (internal/cli/setup.go:188) (cli)
+- last seen: 2026-10-21T08:27:24Z
+
+### L-036 - Test every rule of an input allowlist (scheme, port shape, host) with one rejected case each, not only the attacks that motivated it
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `scripts` · harmful: 0
+- features: harness-onboarding
+- evidence: validation.md I06, I07 (scripts/install.sh:58,67) (scripts)
+- last seen: 2026-10-21T08:27:25Z
+
+### L-037 - A URL allowlist AC must say which schemes are accepted, not only which plain-http hosts are allowed
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `spec` · harmful: 0
+- features: harness-onboarding
+- evidence: validation.md I07 / ONB-10 (spec)
+- last seen: 2026-10-21T08:27:25Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
