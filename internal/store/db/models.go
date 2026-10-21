@@ -25,6 +25,7 @@ type Agent struct {
 	ArchivedAt  sql.NullInt64
 	ConnectedAt sql.NullInt64
 	SessionKey  string
+	Folder      string
 }
 
 type AgentCursor struct {
@@ -82,6 +83,13 @@ type Chat struct {
 	Kind        string
 	LastSeenAt  sql.NullInt64
 	CreatedAt   int64
+	PersonID    sql.NullString
+}
+
+type ChatPerson struct {
+	ChatID     string
+	PersonID   string
+	LastSeenAt int64
 }
 
 type Connector struct {
@@ -98,6 +106,8 @@ type Connector struct {
 	UpdatedAt       int64
 	AutoRouteScope  string
 	AutoRouteRoomID sql.NullString
+	OperatorIid     sql.NullString
+	AccountLabel    string
 }
 
 type DeviceCodeAttempt struct {
@@ -142,6 +152,17 @@ type Identity struct {
 	CreatedAt     int64
 }
 
+type Intelligence struct {
+	ID           string
+	Kind         string
+	DisplayName  string
+	Handle       string
+	AvatarSha256 string
+	Bio          string
+	CreatedAt    int64
+	UpdatedAt    int64
+}
+
 type Invite struct {
 	ID        string
 	TokenHash string
@@ -152,6 +173,14 @@ type Invite struct {
 	UsedBy    sql.NullString
 	UsedAt    sql.NullInt64
 	RevokedAt sql.NullInt64
+}
+
+type Machine struct {
+	OwnerID    string
+	Hostname   string
+	Label      string
+	Home       string
+	LastSeenAt sql.NullInt64
 }
 
 type Message struct {
@@ -170,6 +199,7 @@ type Message struct {
 	RecipientsJson string
 	ExternalID     sql.NullString
 	CreatedAt      int64
+	AuthorIid      string
 }
 
 type MessageView struct {
@@ -179,6 +209,7 @@ type MessageView struct {
 	AuthorKind     string
 	AuthorID       string
 	AuthorUserID   string
+	AuthorIid      string
 	SenderID       string
 	SenderAltID    string
 	SenderName     string
@@ -189,6 +220,9 @@ type MessageView struct {
 	ExternalID     sql.NullString
 	CreatedAt      int64
 	AuthorName     string
+	AuthorHandle   string
+	AuthorIkind    string
+	AuthorAvatar   string
 }
 
 type Outbox struct {
@@ -201,6 +235,7 @@ type Outbox struct {
 	LastError     string
 	ExternalID    string
 	UpdatedAt     int64
+	Purpose       string
 }
 
 type PairingCode struct {
@@ -208,6 +243,17 @@ type PairingCode struct {
 	UserID      string
 	ConnectorID string
 	ExpiresAt   int64
+}
+
+type Person struct {
+	ID            string
+	ConnectorID   string
+	ExternalID    string
+	AltExternalID string
+	PlatformName  string
+	NameLocked    bool
+	LastSeenAt    sql.NullInt64
+	CreatedAt     int64
 }
 
 type Project struct {
@@ -222,6 +268,12 @@ type ProjectCursor struct {
 	ProjectID string
 	RoomID    string
 	Seq       int64
+}
+
+type ReadCursor struct {
+	UserID string
+	RoomID string
+	Seq    int64
 }
 
 type Room struct {
@@ -240,6 +292,10 @@ type Room struct {
 	Broadcast      bool
 	InstructionsBy string
 	UpdatedBy      string
+	Kind           string
+	DmA            sql.NullString
+	DmB            sql.NullString
+	ReadBaseline   int64
 }
 
 type RoomMember struct {
@@ -276,6 +332,7 @@ type User struct {
 	Locale       string
 	DisabledAt   sql.NullInt64
 	CreatedAt    int64
+	NotifyChatID sql.NullString
 }
 
 type WebhookReplay struct {

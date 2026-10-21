@@ -60,3 +60,6 @@ WHERE room_id IN (sqlc.slice(room_ids))
 ORDER BY created_at DESC, id DESC
 -- A positional LIMIT: sqlc numbers a named arg (?2) after a slice, which breaks the expansion.
 LIMIT ?;
+
+-- name: SetMessageAuthorIID :exec
+UPDATE messages SET author_iid = ? WHERE id = ?;

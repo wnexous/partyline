@@ -153,10 +153,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PROF-01, MIG-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Fresh database: handle unique case-insensitively; `rooms_dm_pair` refuses a second DM for a pair; `kind` CHECKs refuse unknown values
-- [ ] Deleting a user cascades to its agents, their intelligences and their DM rooms (triggers + FK); deleting a connector deletes its people and their intelligences
-- [ ] Existing tests stay green (the view keeps v0.3 author names through its fallbacks)
-- [ ] Gate check passes: `make check`
+- [x] Fresh database: handle unique case-insensitively; `rooms_dm_pair` refuses a second DM for a pair; `kind` CHECKs refuse unknown values
+- [x] Deleting a user cascades to its agents, their intelligences and their DM rooms (triggers + FK); deleting a connector deletes its people and their intelligences
+- [x] Existing tests stay green (the view keeps v0.3 author names through its fallbacks)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): add the intelligences schema`

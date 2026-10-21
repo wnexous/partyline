@@ -53,3 +53,9 @@ ON CONFLICT (connector_id, chat_id) DO UPDATE SET until = excluded.until;
 SELECT k.id AS connector_id, k.auto_route_room_id
 FROM chats c JOIN connectors k ON k.id = c.connector_id
 WHERE c.id = ?;
+
+-- name: SetConnectorOperator :exec
+UPDATE connectors SET operator_iid = ? WHERE id = ?;
+
+-- name: SetConnectorAccountLabel :exec
+UPDATE connectors SET account_label = ? WHERE id = ?;

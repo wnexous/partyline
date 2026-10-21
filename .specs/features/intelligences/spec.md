@@ -419,7 +419,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | ACC-05 | P1: Accounts | Tasks | Pending |
 | ACC-06 | P1: Accounts | Tasks | Pending |
 | ACC-07 | P1: Accounts | Tasks | Pending |
-| PROF-01 | P1: Profiles | Tasks | Pending |
+| PROF-01 | P1: Profiles | Execute | Implementing |
 | PROF-02 | P1: Profiles | Execute | Implementing |
 | PROF-03 | P1: Profiles | Tasks | Pending |
 | PROF-04 | P1: Profiles | Tasks | Pending |
@@ -445,7 +445,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | CLI-05 | P1: Login and setup | Tasks | Pending |
 | CLI-06 | P1: Login and setup | Tasks | Pending |
 | CLI-07 | P1: Login and setup | Tasks | Pending |
-| MIG-01 | P1: Migration | Tasks | Pending |
+| MIG-01 | P1: Migration | Execute | Implementing |
 | MIG-02 | P1: Migration | Tasks | Pending |
 | MIG-03 | P1: Migration | Tasks | Pending |
 | MIG-04 | P1: Migration | Tasks | Pending |

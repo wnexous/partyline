@@ -9,6 +9,30 @@ import (
 	"context"
 )
 
+const createNotifyOutbox = `-- name: CreateNotifyOutbox :exec
+INSERT INTO outbox (id, message_id, chat_id, purpose, next_attempt_at, updated_at)
+VALUES (?, ?, ?, 'notify', ?, ?)
+`
+
+type CreateNotifyOutboxParams struct {
+	ID            string
+	MessageID     string
+	ChatID        string
+	NextAttemptAt int64
+	UpdatedAt     int64
+}
+
+func (q *Queries) CreateNotifyOutbox(ctx context.Context, arg CreateNotifyOutboxParams) error {
+	_, err := q.db.ExecContext(ctx, createNotifyOutbox,
+		arg.ID,
+		arg.MessageID,
+		arg.ChatID,
+		arg.NextAttemptAt,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
 const deletePendingRoomChatOutbox = `-- name: DeletePendingRoomChatOutbox :execrows
 DELETE FROM outbox
 WHERE chat_id = ?1 AND status = 'pending'
@@ -29,7 +53,7 @@ func (q *Queries) DeletePendingRoomChatOutbox(ctx context.Context, arg DeletePen
 }
 
 const getOutbox = `-- name: GetOutbox :one
-SELECT id, message_id, chat_id, status, attempts, next_attempt_at, last_error, external_id, updated_at FROM outbox WHERE id = ?
+SELECT id, message_id, chat_id, status, attempts, next_attempt_at, last_error, external_id, updated_at, purpose FROM outbox WHERE id = ?
 `
 
 func (q *Queries) GetOutbox(ctx context.Context, id string) (Outbox, error) {
@@ -45,6 +69,7 @@ func (q *Queries) GetOutbox(ctx context.Context, id string) (Outbox, error) {
 		&i.LastError,
 		&i.ExternalID,
 		&i.UpdatedAt,
+		&i.Purpose,
 	)
 	return i, err
 }

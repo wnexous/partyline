@@ -60,7 +60,7 @@ func (q *Queries) FindChatMessageRef(ctx context.Context, arg FindChatMessageRef
 }
 
 const getChat = `-- name: GetChat :one
-SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at FROM chats WHERE id = ?
+SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at, person_id FROM chats WHERE id = ?
 `
 
 func (q *Queries) GetChat(ctx context.Context, id string) (Chat, error) {
@@ -74,12 +74,13 @@ func (q *Queries) GetChat(ctx context.Context, id string) (Chat, error) {
 		&i.Kind,
 		&i.LastSeenAt,
 		&i.CreatedAt,
+		&i.PersonID,
 	)
 	return i, err
 }
 
 const getChatByExternalID = `-- name: GetChatByExternalID :one
-SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at FROM chats WHERE connector_id = ? AND external_id = ?
+SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at, person_id FROM chats WHERE connector_id = ? AND external_id = ?
 `
 
 type GetChatByExternalIDParams struct {
@@ -98,6 +99,7 @@ func (q *Queries) GetChatByExternalID(ctx context.Context, arg GetChatByExternal
 		&i.Kind,
 		&i.LastSeenAt,
 		&i.CreatedAt,
+		&i.PersonID,
 	)
 	return i, err
 }
@@ -181,7 +183,7 @@ func (q *Queries) ListChatRoomIDs(ctx context.Context, memberID string) ([]strin
 }
 
 const listConnectorChats = `-- name: ListConnectorChats :many
-SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at FROM chats WHERE connector_id = ? ORDER BY title, external_id, id
+SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at, person_id FROM chats WHERE connector_id = ? ORDER BY title, external_id, id
 `
 
 func (q *Queries) ListConnectorChats(ctx context.Context, connectorID string) ([]Chat, error) {
@@ -201,6 +203,7 @@ func (q *Queries) ListConnectorChats(ctx context.Context, connectorID string) ([
 			&i.Kind,
 			&i.LastSeenAt,
 			&i.CreatedAt,
+			&i.PersonID,
 		); err != nil {
 			return nil, err
 		}
@@ -216,7 +219,7 @@ func (q *Queries) ListConnectorChats(ctx context.Context, connectorID string) ([
 }
 
 const listUsableChats = `-- name: ListUsableChats :many
-SELECT c.id, c.connector_id, c.external_id, c.title, c.kind, c.last_seen_at, c.created_at, k.id, k.owner_id, k.kind, k.name, k.config_json, k.secrets_enc, k.enabled, k.status, k.last_error, k.created_at, k.updated_at, k.auto_route_scope, k.auto_route_room_id
+SELECT c.id, c.connector_id, c.external_id, c.title, c.kind, c.last_seen_at, c.created_at, c.person_id, k.id, k.owner_id, k.kind, k.name, k.config_json, k.secrets_enc, k.enabled, k.status, k.last_error, k.created_at, k.updated_at, k.auto_route_scope, k.auto_route_room_id, k.operator_iid, k.account_label
 FROM chats c JOIN connectors k ON k.id = c.connector_id
 WHERE k.owner_id = ?1
    OR k.id IN (SELECT g.resource_id FROM grants g
@@ -246,6 +249,7 @@ func (q *Queries) ListUsableChats(ctx context.Context, userID string) ([]ListUsa
 			&i.Chat.Kind,
 			&i.Chat.LastSeenAt,
 			&i.Chat.CreatedAt,
+			&i.Chat.PersonID,
 			&i.Connector.ID,
 			&i.Connector.OwnerID,
 			&i.Connector.Kind,
@@ -259,6 +263,8 @@ func (q *Queries) ListUsableChats(ctx context.Context, userID string) ([]ListUsa
 			&i.Connector.UpdatedAt,
 			&i.Connector.AutoRouteScope,
 			&i.Connector.AutoRouteRoomID,
+			&i.Connector.OperatorIid,
+			&i.Connector.AccountLabel,
 		); err != nil {
 			return nil, err
 		}
@@ -301,7 +307,7 @@ ON CONFLICT (connector_id, external_id) DO UPDATE SET
     title = CASE WHEN excluded.title <> '' THEN excluded.title ELSE chats.title END,
     kind = CASE WHEN excluded.kind <> '' THEN excluded.kind ELSE chats.kind END,
     last_seen_at = COALESCE(excluded.last_seen_at, chats.last_seen_at)
-RETURNING id, connector_id, external_id, title, kind, last_seen_at, created_at
+RETURNING id, connector_id, external_id, title, kind, last_seen_at, created_at, person_id
 `
 
 type UpsertChatParams struct {
@@ -333,6 +339,7 @@ func (q *Queries) UpsertChat(ctx context.Context, arg UpsertChatParams) (Chat, e
 		&i.Kind,
 		&i.LastSeenAt,
 		&i.CreatedAt,
+		&i.PersonID,
 	)
 	return i, err
 }

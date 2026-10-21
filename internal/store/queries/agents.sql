@@ -200,3 +200,9 @@ SELECT room_id FROM room_members WHERE kind = 'project' AND member_id = ?;
 SELECT m.room_id FROM room_members m
 JOIN agents a ON a.project_id = m.member_id
 WHERE m.kind = 'project' AND a.id = ?;
+
+-- name: SetAgentFolder :exec
+UPDATE agents SET machine = ?, folder = ? WHERE id = ?;
+
+-- name: GetAgentByFolder :one
+SELECT * FROM agents WHERE owner_id = ? AND machine = ? AND folder = ? AND folder <> '';

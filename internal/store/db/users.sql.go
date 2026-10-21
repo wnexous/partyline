@@ -61,7 +61,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, display_name, password_hash, role, locale, disabled_at, created_at FROM users WHERE id = ?
+SELECT id, username, display_name, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
@@ -76,12 +76,13 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 		&i.Locale,
 		&i.DisabledAt,
 		&i.CreatedAt,
+		&i.NotifyChatID,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, display_name, password_hash, role, locale, disabled_at, created_at FROM users WHERE username = ?
+SELECT id, username, display_name, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users WHERE username = ?
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -96,12 +97,13 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.Locale,
 		&i.DisabledAt,
 		&i.CreatedAt,
+		&i.NotifyChatID,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, display_name, password_hash, role, locale, disabled_at, created_at FROM users ORDER BY username
+SELECT id, username, display_name, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users ORDER BY username
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -122,6 +124,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.Locale,
 			&i.DisabledAt,
 			&i.CreatedAt,
+			&i.NotifyChatID,
 		); err != nil {
 			return nil, err
 		}
@@ -147,6 +150,20 @@ type SetUserDisabledAtParams struct {
 
 func (q *Queries) SetUserDisabledAt(ctx context.Context, arg SetUserDisabledAtParams) error {
 	_, err := q.db.ExecContext(ctx, setUserDisabledAt, arg.DisabledAt, arg.ID)
+	return err
+}
+
+const setUserNotifyChat = `-- name: SetUserNotifyChat :exec
+UPDATE users SET notify_chat_id = ? WHERE id = ?
+`
+
+type SetUserNotifyChatParams struct {
+	NotifyChatID sql.NullString
+	ID           string
+}
+
+func (q *Queries) SetUserNotifyChat(ctx context.Context, arg SetUserNotifyChatParams) error {
+	_, err := q.db.ExecContext(ctx, setUserNotifyChat, arg.NotifyChatID, arg.ID)
 	return err
 }
 

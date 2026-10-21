@@ -179,7 +179,7 @@ func (q *Queries) GetMessageIDByExternalID(ctx context.Context, arg GetMessageID
 }
 
 const getMessageView = `-- name: GetMessageView :one
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views WHERE id = ?
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views WHERE id = ?
 `
 
 func (q *Queries) GetMessageView(ctx context.Context, id string) (MessageView, error) {
@@ -192,6 +192,7 @@ func (q *Queries) GetMessageView(ctx context.Context, id string) (MessageView, e
 		&i.AuthorKind,
 		&i.AuthorID,
 		&i.AuthorUserID,
+		&i.AuthorIid,
 		&i.SenderID,
 		&i.SenderAltID,
 		&i.SenderName,
@@ -202,6 +203,9 @@ func (q *Queries) GetMessageView(ctx context.Context, id string) (MessageView, e
 		&i.ExternalID,
 		&i.CreatedAt,
 		&i.AuthorName,
+		&i.AuthorHandle,
+		&i.AuthorIkind,
+		&i.AuthorAvatar,
 	)
 	return i, err
 }
@@ -253,7 +257,7 @@ func (q *Queries) ListAttachmentsByMessages(ctx context.Context, messageIds []st
 }
 
 const listLatestMessagesInRooms = `-- name: ListLatestMessagesInRooms :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id IN (/*SLICE:room_ids*/?)
 ORDER BY created_at DESC, id DESC
 LIMIT ?
@@ -292,6 +296,7 @@ func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestM
 			&i.AuthorKind,
 			&i.AuthorID,
 			&i.AuthorUserID,
+			&i.AuthorIid,
 			&i.SenderID,
 			&i.SenderAltID,
 			&i.SenderName,
@@ -302,6 +307,9 @@ func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestM
 			&i.ExternalID,
 			&i.CreatedAt,
 			&i.AuthorName,
+			&i.AuthorHandle,
+			&i.AuthorIkind,
+			&i.AuthorAvatar,
 		); err != nil {
 			return nil, err
 		}
@@ -317,7 +325,7 @@ func (q *Queries) ListLatestMessagesInRooms(ctx context.Context, arg ListLatestM
 }
 
 const listMessagesAfter = `-- name: ListMessagesAfter :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq > ?2 AND seq < ?3
 ORDER BY seq ASC
 LIMIT ?4
@@ -351,6 +359,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.AuthorKind,
 			&i.AuthorID,
 			&i.AuthorUserID,
+			&i.AuthorIid,
 			&i.SenderID,
 			&i.SenderAltID,
 			&i.SenderName,
@@ -361,6 +370,9 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 			&i.ExternalID,
 			&i.CreatedAt,
 			&i.AuthorName,
+			&i.AuthorHandle,
+			&i.AuthorIkind,
+			&i.AuthorAvatar,
 		); err != nil {
 			return nil, err
 		}
@@ -376,7 +388,7 @@ func (q *Queries) ListMessagesAfter(ctx context.Context, arg ListMessagesAfterPa
 }
 
 const listMessagesBefore = `-- name: ListMessagesBefore :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq < ?2
 ORDER BY seq DESC
 LIMIT ?3
@@ -404,6 +416,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.AuthorKind,
 			&i.AuthorID,
 			&i.AuthorUserID,
+			&i.AuthorIid,
 			&i.SenderID,
 			&i.SenderAltID,
 			&i.SenderName,
@@ -414,6 +427,9 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.ExternalID,
 			&i.CreatedAt,
 			&i.AuthorName,
+			&i.AuthorHandle,
+			&i.AuthorIkind,
+			&i.AuthorAvatar,
 		); err != nil {
 			return nil, err
 		}
@@ -429,7 +445,7 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 }
 
 const listOutboxByMessages = `-- name: ListOutboxByMessages :many
-SELECT id, message_id, chat_id, status, attempts, next_attempt_at, last_error, external_id, updated_at FROM outbox WHERE message_id IN (/*SLICE:message_ids*/?) ORDER BY id
+SELECT id, message_id, chat_id, status, attempts, next_attempt_at, last_error, external_id, updated_at, purpose FROM outbox WHERE message_id IN (/*SLICE:message_ids*/?) ORDER BY id
 `
 
 func (q *Queries) ListOutboxByMessages(ctx context.Context, messageIds []string) ([]Outbox, error) {
@@ -461,6 +477,7 @@ func (q *Queries) ListOutboxByMessages(ctx context.Context, messageIds []string)
 			&i.LastError,
 			&i.ExternalID,
 			&i.UpdatedAt,
+			&i.Purpose,
 		); err != nil {
 			return nil, err
 		}
@@ -477,7 +494,7 @@ func (q *Queries) ListOutboxByMessages(ctx context.Context, messageIds []string)
 
 const nextRoomSeq = `-- name: NextRoomSeq :one
 UPDATE rooms SET next_seq = next_seq + 1, updated_at = ? WHERE id = ?
-RETURNING id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, broadcast, instructions_by, updated_by
+RETURNING id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, broadcast, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline
 `
 
 type NextRoomSeqParams struct {
@@ -504,6 +521,10 @@ func (q *Queries) NextRoomSeq(ctx context.Context, arg NextRoomSeqParams) (Room,
 		&i.Broadcast,
 		&i.InstructionsBy,
 		&i.UpdatedBy,
+		&i.Kind,
+		&i.DmA,
+		&i.DmB,
+		&i.ReadBaseline,
 	)
 	return i, err
 }
@@ -519,6 +540,20 @@ type ResumeRoomParams struct {
 
 func (q *Queries) ResumeRoom(ctx context.Context, arg ResumeRoomParams) error {
 	_, err := q.db.ExecContext(ctx, resumeRoom, arg.UpdatedAt, arg.ID)
+	return err
+}
+
+const setMessageAuthorIID = `-- name: SetMessageAuthorIID :exec
+UPDATE messages SET author_iid = ? WHERE id = ?
+`
+
+type SetMessageAuthorIIDParams struct {
+	AuthorIid string
+	ID        string
+}
+
+func (q *Queries) SetMessageAuthorIID(ctx context.Context, arg SetMessageAuthorIIDParams) error {
+	_, err := q.db.ExecContext(ctx, setMessageAuthorIID, arg.AuthorIid, arg.ID)
 	return err
 }
 

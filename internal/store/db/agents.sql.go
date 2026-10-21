@@ -191,7 +191,7 @@ func (q *Queries) DeleteAgentMemberships(ctx context.Context, memberID string) (
 }
 
 const getAgent = `-- name: GetAgent :one
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key FROM agents WHERE id = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key, folder FROM agents WHERE id = ?
 `
 
 func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
@@ -214,12 +214,48 @@ func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
 		&i.ArchivedAt,
 		&i.ConnectedAt,
 		&i.SessionKey,
+		&i.Folder,
+	)
+	return i, err
+}
+
+const getAgentByFolder = `-- name: GetAgentByFolder :one
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key, folder FROM agents WHERE owner_id = ? AND machine = ? AND folder = ? AND folder <> ''
+`
+
+type GetAgentByFolderParams struct {
+	OwnerID string
+	Machine string
+	Folder  string
+}
+
+func (q *Queries) GetAgentByFolder(ctx context.Context, arg GetAgentByFolderParams) (Agent, error) {
+	row := q.db.QueryRowContext(ctx, getAgentByFolder, arg.OwnerID, arg.Machine, arg.Folder)
+	var i Agent
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.ProjectID,
+		&i.Harness,
+		&i.Machine,
+		&i.Kind,
+		&i.DisplayName,
+		&i.AutoName,
+		&i.SessionNo,
+		&i.ArchivedAt,
+		&i.ConnectedAt,
+		&i.SessionKey,
+		&i.Folder,
 	)
 	return i, err
 }
 
 const getAgentByName = `-- name: GetAgentByName :one
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key FROM agents WHERE owner_id = ? AND name = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key, folder FROM agents WHERE owner_id = ? AND name = ?
 `
 
 type GetAgentByNameParams struct {
@@ -247,6 +283,7 @@ func (q *Queries) GetAgentByName(ctx context.Context, arg GetAgentByNameParams) 
 		&i.ArchivedAt,
 		&i.ConnectedAt,
 		&i.SessionKey,
+		&i.Folder,
 	)
 	return i, err
 }
@@ -268,7 +305,7 @@ func (q *Queries) GetAgentCursor(ctx context.Context, arg GetAgentCursorParams) 
 }
 
 const getAgentWithOwner = `-- name: GetAgentWithOwner :one
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, a.session_key, u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, a.session_key, a.folder, u.username AS owner_username, u.display_name AS owner_display_name,
        CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN projects p ON p.id = a.project_id
@@ -303,6 +340,7 @@ func (q *Queries) GetAgentWithOwner(ctx context.Context, id string) (GetAgentWit
 		&i.Agent.ArchivedAt,
 		&i.Agent.ConnectedAt,
 		&i.Agent.SessionKey,
+		&i.Agent.Folder,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
 		&i.ProjectSlug,
@@ -449,7 +487,7 @@ func (q *Queries) InsertAgentIfMissing(ctx context.Context, arg InsertAgentIfMis
 }
 
 const listAgentBacklog = `-- name: ListAgentBacklog :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq > ?2
   AND NOT (author_kind = 'agent' AND author_id = ?3)
 ORDER BY seq DESC
@@ -484,6 +522,7 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 			&i.AuthorKind,
 			&i.AuthorID,
 			&i.AuthorUserID,
+			&i.AuthorIid,
 			&i.SenderID,
 			&i.SenderAltID,
 			&i.SenderName,
@@ -494,6 +533,9 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 			&i.ExternalID,
 			&i.CreatedAt,
 			&i.AuthorName,
+			&i.AuthorHandle,
+			&i.AuthorIkind,
+			&i.AuthorAvatar,
 		); err != nil {
 			return nil, err
 		}
@@ -509,7 +551,7 @@ func (q *Queries) ListAgentBacklog(ctx context.Context, arg ListAgentBacklogPara
 }
 
 const listAgentPending = `-- name: ListAgentPending :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq > ?2
   AND NOT (author_kind = 'agent' AND author_id = ?3)
 ORDER BY seq ASC
@@ -544,6 +586,7 @@ func (q *Queries) ListAgentPending(ctx context.Context, arg ListAgentPendingPara
 			&i.AuthorKind,
 			&i.AuthorID,
 			&i.AuthorUserID,
+			&i.AuthorIid,
 			&i.SenderID,
 			&i.SenderAltID,
 			&i.SenderName,
@@ -554,6 +597,9 @@ func (q *Queries) ListAgentPending(ctx context.Context, arg ListAgentPendingPara
 			&i.ExternalID,
 			&i.CreatedAt,
 			&i.AuthorName,
+			&i.AuthorHandle,
+			&i.AuthorIkind,
+			&i.AuthorAvatar,
 		); err != nil {
 			return nil, err
 		}
@@ -681,7 +727,7 @@ func (q *Queries) ListAgentRoomStates(ctx context.Context, memberID string) ([]L
 }
 
 const listAgentsForUser = `-- name: ListAgentsForUser :many
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, a.session_key, u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, a.session_key, a.folder, u.username AS owner_username, u.display_name AS owner_display_name,
        CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN projects p ON p.id = a.project_id
@@ -731,6 +777,7 @@ func (q *Queries) ListAgentsForUser(ctx context.Context, arg ListAgentsForUserPa
 			&i.Agent.ArchivedAt,
 			&i.Agent.ConnectedAt,
 			&i.Agent.SessionKey,
+			&i.Agent.Folder,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
 			&i.ProjectSlug,
@@ -778,7 +825,7 @@ func (q *Queries) ListArchiveCandidates(ctx context.Context, before sql.NullInt6
 }
 
 const listProjectBacklog = `-- name: ListProjectBacklog :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
 WHERE room_id = ?1 AND seq > ?2
   AND NOT (author_kind = 'agent' AND author_id IN (SELECT id FROM agents WHERE project_id = ?3))
 ORDER BY seq DESC
@@ -813,6 +860,7 @@ func (q *Queries) ListProjectBacklog(ctx context.Context, arg ListProjectBacklog
 			&i.AuthorKind,
 			&i.AuthorID,
 			&i.AuthorUserID,
+			&i.AuthorIid,
 			&i.SenderID,
 			&i.SenderAltID,
 			&i.SenderName,
@@ -823,6 +871,9 @@ func (q *Queries) ListProjectBacklog(ctx context.Context, arg ListProjectBacklog
 			&i.ExternalID,
 			&i.CreatedAt,
 			&i.AuthorName,
+			&i.AuthorHandle,
+			&i.AuthorIkind,
+			&i.AuthorAvatar,
 		); err != nil {
 			return nil, err
 		}
@@ -930,7 +981,7 @@ func (q *Queries) ListProjectRoomStates(ctx context.Context, arg ListProjectRoom
 }
 
 const listProjectSessions = `-- name: ListProjectSessions :many
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key FROM agents WHERE project_id = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key, folder FROM agents WHERE project_id = ?
 ORDER BY connected_at IS NULL, connected_at DESC, id
 `
 
@@ -961,6 +1012,7 @@ func (q *Queries) ListProjectSessions(ctx context.Context, projectID sql.NullStr
 			&i.ArchivedAt,
 			&i.ConnectedAt,
 			&i.SessionKey,
+			&i.Folder,
 		); err != nil {
 			return nil, err
 		}
@@ -1022,7 +1074,7 @@ func (q *Queries) ListProjectsForUser(ctx context.Context, userID string) ([]Lis
 }
 
 const listSessionAgents = `-- name: ListSessionAgents :many
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key FROM agents
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key, folder FROM agents
 WHERE owner_id = ? AND session_key = ? AND kind = 'temporary'
 ORDER BY session_no, name
 `
@@ -1059,6 +1111,7 @@ func (q *Queries) ListSessionAgents(ctx context.Context, arg ListSessionAgentsPa
 			&i.ArchivedAt,
 			&i.ConnectedAt,
 			&i.SessionKey,
+			&i.Folder,
 		); err != nil {
 			return nil, err
 		}
@@ -1074,7 +1127,7 @@ func (q *Queries) ListSessionAgents(ctx context.Context, arg ListSessionAgentsPa
 }
 
 const listTemporaryProjectAgents = `-- name: ListTemporaryProjectAgents :many
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key FROM agents WHERE project_id = ? AND kind = 'temporary'
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key, folder FROM agents WHERE project_id = ? AND kind = 'temporary'
 `
 
 func (q *Queries) ListTemporaryProjectAgents(ctx context.Context, projectID sql.NullString) ([]Agent, error) {
@@ -1103,6 +1156,7 @@ func (q *Queries) ListTemporaryProjectAgents(ctx context.Context, projectID sql.
 			&i.ArchivedAt,
 			&i.ConnectedAt,
 			&i.SessionKey,
+			&i.Folder,
 		); err != nil {
 			return nil, err
 		}
@@ -1174,6 +1228,21 @@ type SetAgentDisplayNameParams struct {
 
 func (q *Queries) SetAgentDisplayName(ctx context.Context, arg SetAgentDisplayNameParams) error {
 	_, err := q.db.ExecContext(ctx, setAgentDisplayName, arg.DisplayName, arg.ID)
+	return err
+}
+
+const setAgentFolder = `-- name: SetAgentFolder :exec
+UPDATE agents SET machine = ?, folder = ? WHERE id = ?
+`
+
+type SetAgentFolderParams struct {
+	Machine string
+	Folder  string
+	ID      string
+}
+
+func (q *Queries) SetAgentFolder(ctx context.Context, arg SetAgentFolderParams) error {
+	_, err := q.db.ExecContext(ctx, setAgentFolder, arg.Machine, arg.Folder, arg.ID)
 	return err
 }
 

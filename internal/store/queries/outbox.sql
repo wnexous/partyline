@@ -37,3 +37,7 @@ WHERE chat_id = sqlc.arg(chat_id) AND status = 'pending'
 SELECT external_id FROM outbox
 WHERE message_id = ? AND chat_id = ? AND status = 'sent' AND external_id <> ''
 LIMIT 1;
+
+-- name: CreateNotifyOutbox :exec
+INSERT INTO outbox (id, message_id, chat_id, purpose, next_attempt_at, updated_at)
+VALUES (?, ?, ?, 'notify', ?, ?);

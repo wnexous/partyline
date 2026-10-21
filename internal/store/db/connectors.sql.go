@@ -115,7 +115,7 @@ func (q *Queries) GetChatAutoRoute(ctx context.Context, id string) (GetChatAutoR
 }
 
 const getConnector = `-- name: GetConnector :one
-SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at, auto_route_scope, auto_route_room_id FROM connectors WHERE id = ?
+SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at, auto_route_scope, auto_route_room_id, operator_iid, account_label FROM connectors WHERE id = ?
 `
 
 func (q *Queries) GetConnector(ctx context.Context, id string) (Connector, error) {
@@ -135,12 +135,14 @@ func (q *Queries) GetConnector(ctx context.Context, id string) (Connector, error
 		&i.UpdatedAt,
 		&i.AutoRouteScope,
 		&i.AutoRouteRoomID,
+		&i.OperatorIid,
+		&i.AccountLabel,
 	)
 	return i, err
 }
 
 const getConnectorWithOwner = `-- name: GetConnectorWithOwner :one
-SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_scope, c.auto_route_room_id, u.username AS owner_username, u.display_name AS owner_display_name
+SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_scope, c.auto_route_room_id, c.operator_iid, c.account_label, u.username AS owner_username, u.display_name AS owner_display_name
 FROM connectors c JOIN users u ON u.id = c.owner_id
 WHERE c.id = ?
 `
@@ -168,6 +170,8 @@ func (q *Queries) GetConnectorWithOwner(ctx context.Context, id string) (GetConn
 		&i.Connector.UpdatedAt,
 		&i.Connector.AutoRouteScope,
 		&i.Connector.AutoRouteRoomID,
+		&i.Connector.OperatorIid,
+		&i.Connector.AccountLabel,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
 	)
@@ -175,7 +179,7 @@ func (q *Queries) GetConnectorWithOwner(ctx context.Context, id string) (GetConn
 }
 
 const listConnectorsForUser = `-- name: ListConnectorsForUser :many
-SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_scope, c.auto_route_room_id, u.username AS owner_username, u.display_name AS owner_display_name
+SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_scope, c.auto_route_room_id, c.operator_iid, c.account_label, u.username AS owner_username, u.display_name AS owner_display_name
 FROM connectors c JOIN users u ON u.id = c.owner_id
 WHERE c.owner_id = ?1
    OR c.id IN (SELECT g.resource_id FROM grants g
@@ -212,6 +216,8 @@ func (q *Queries) ListConnectorsForUser(ctx context.Context, userID string) ([]L
 			&i.Connector.UpdatedAt,
 			&i.Connector.AutoRouteScope,
 			&i.Connector.AutoRouteRoomID,
+			&i.Connector.OperatorIid,
+			&i.Connector.AccountLabel,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
 		); err != nil {
@@ -255,6 +261,20 @@ func (q *Queries) ListEnabledConnectorIDs(ctx context.Context) ([]string, error)
 	return items, nil
 }
 
+const setConnectorAccountLabel = `-- name: SetConnectorAccountLabel :exec
+UPDATE connectors SET account_label = ? WHERE id = ?
+`
+
+type SetConnectorAccountLabelParams struct {
+	AccountLabel string
+	ID           string
+}
+
+func (q *Queries) SetConnectorAccountLabel(ctx context.Context, arg SetConnectorAccountLabelParams) error {
+	_, err := q.db.ExecContext(ctx, setConnectorAccountLabel, arg.AccountLabel, arg.ID)
+	return err
+}
+
 const setConnectorLastError = `-- name: SetConnectorLastError :exec
 UPDATE connectors SET last_error = ? WHERE id = ?
 `
@@ -266,6 +286,20 @@ type SetConnectorLastErrorParams struct {
 
 func (q *Queries) SetConnectorLastError(ctx context.Context, arg SetConnectorLastErrorParams) error {
 	_, err := q.db.ExecContext(ctx, setConnectorLastError, arg.LastError, arg.ID)
+	return err
+}
+
+const setConnectorOperator = `-- name: SetConnectorOperator :exec
+UPDATE connectors SET operator_iid = ? WHERE id = ?
+`
+
+type SetConnectorOperatorParams struct {
+	OperatorIid sql.NullString
+	ID          string
+}
+
+func (q *Queries) SetConnectorOperator(ctx context.Context, arg SetConnectorOperatorParams) error {
+	_, err := q.db.ExecContext(ctx, setConnectorOperator, arg.OperatorIid, arg.ID)
 	return err
 }
 

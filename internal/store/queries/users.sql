@@ -28,3 +28,6 @@ UPDATE users SET password_hash = ? WHERE id = ?;
 
 -- name: CountActiveAdmins :one
 SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled_at IS NULL;
+
+-- name: SetUserNotifyChat :exec
+UPDATE users SET notify_chat_id = ? WHERE id = ?;
