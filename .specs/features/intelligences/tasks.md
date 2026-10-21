@@ -9,10 +9,10 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/intelligences/design.md`
-**Status**: Draft
+**Status**: Approved
 
-Before Execute, André confirms Spec issues 2, 4, 5 and 6 of the design (the tasks implement the
-recommended fix of each; a different answer changes T19, T30, T31 and T36).
+Spec issues 2, 4, 5 and 6 of the design were confirmed as recommended (2026-10-21); the tasks
+implement those fixes.
 
 ---
 
