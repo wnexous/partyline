@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { BotIcon, MessageCircleIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { BotIcon, FolderIcon, MessageCircleIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { chatTitle, platformLabel } from "@/components/message-item";
@@ -16,21 +16,25 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAutoFocus } from "@/hooks/use-auto-focus";
-import { useAddMember, useAgents, useChats } from "@/lib/api/queries";
+import { useAddMember, useAgents, useChats, useProjects } from "@/lib/api/queries";
 import {
   type Agent,
+  AgentKindTemporary,
   type Chat,
   LevelManage,
   LevelUse,
   type MemberKind,
+  type Project,
   type RoomMember,
 } from "@/lib/api/types.gen";
 import { useI18n } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 
 /*
- * Adds agents and chats to a room (UI-10). Only what the user may use is offered (ACL-05,
- * ACL-06): agents they own or hold `use` on, chats of connectors they can use (GET /chats).
+ * Adds projects, agents and chats to a room (UI-10, PROJ-06). Only what the user may use is
+ * offered (ACL-05, ACL-06): projects and agents they own or hold `use` on, chats of connectors
+ * they can use (GET /chats). Projects come first: a project member reaches whichever of its
+ * sessions is open, so it outlives any one session; fixed agents come before temporary ones.
  */
 
 const usableAgent = (a: Agent) => a.my_level === LevelManage || a.my_level === LevelUse;
@@ -70,6 +74,7 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   const { t } = useI18n();
   const autoFocus = useAutoFocus();
   const agents = useAgents();
+  const projects = useProjects();
   const chats = useChats();
   const add = useAddMember(roomId);
   const presence = useLiveStore((s) => s.presence);
@@ -77,12 +82,29 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   const [adding, setAdding] = useState<string | null>(null);
 
   const taken = useMemo(() => new Set(members.map((m) => `${m.kind}:${m.member_id}`)), [members]);
-  const agentList = (agents.data ?? []).filter(
-    (a) =>
-      usableAgent(a) &&
-      !taken.has(`agent:${a.id}`) &&
-      matches(query, a.name, a.description, a.owner.username),
+  const agentList = (agents.data ?? [])
+    .filter(
+      (a) =>
+        usableAgent(a) &&
+        !taken.has(`agent:${a.id}`) &&
+        matches(query, a.display_name, a.name, a.description, a.owner.username, a.project?.name),
+    )
+    .sort(
+      (a, b) =>
+        Number(a.kind === AgentKindTemporary) - Number(b.kind === AgentKindTemporary) ||
+        a.display_name.localeCompare(b.display_name),
+    );
+  const projectList = (projects.data ?? []).filter(
+    (p: Project) =>
+      !taken.has(`project:${p.id}`) && matches(query, p.name, p.slug, p.owner.username),
   );
+  // Online sessions per project, from the agents the user can see.
+  const onlineByProject = new Map<string, number>();
+  for (const a of agents.data ?? []) {
+    if (a.project && (presence[a.id]?.online ?? a.online)) {
+      onlineByProject.set(a.project.id, (onlineByProject.get(a.project.id) ?? 0) + 1);
+    }
+  }
   const chatList = (chats.data ?? []).filter(
     (c) =>
       !taken.has(`chat:${c.id}`) &&
@@ -101,8 +123,9 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
     );
   };
 
-  const loading = agents.isPending || chats.isPending;
-  const nothing = !loading && agentList.length === 0 && chatList.length === 0;
+  const loading = agents.isPending || chats.isPending || projects.isPending;
+  const nothing =
+    !loading && agentList.length === 0 && chatList.length === 0 && projectList.length === 0;
 
   return (
     <>
@@ -144,6 +167,37 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
           </div>
         ) : (
           <>
+            {projectList.length > 0 ? (
+              <CandidateGroup label={t("members.projects")}>
+                {projectList.map((p) => {
+                  const name = t("picker.projectAny", { name: p.name });
+                  const online = onlineByProject.get(p.id) ?? 0;
+                  return (
+                    <Candidate
+                      key={p.id}
+                      testId={`candidate-project-${p.id}`}
+                      icon={
+                        <FolderIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+                      }
+                      name={name}
+                      meta={
+                        <>
+                          <StatusDot online={online > 0} />
+                          <span>
+                            {online > 0
+                              ? t("picker.projectOnline", { count: online })
+                              : t("picker.noSession")}
+                          </span>
+                          <span>@{p.owner.username}</span>
+                        </>
+                      }
+                      busy={adding === `project:${p.id}`}
+                      onAdd={() => onAdd("project", p.id, name)}
+                    />
+                  );
+                })}
+              </CandidateGroup>
+            ) : null}
             {agentList.length > 0 ? (
               <CandidateGroup label={t("members.agents")}>
                 {agentList.map((a) => (
@@ -151,15 +205,18 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
                     key={a.id}
                     testId={`candidate-agent-${a.id}`}
                     icon={<BotIcon className="size-4 text-muted-foreground" aria-hidden="true" />}
-                    name={a.name}
+                    name={a.display_name}
                     meta={
                       <>
                         <StatusDot online={presence[a.id]?.online ?? a.online} withLabel />
                         <span>@{a.owner.username}</span>
+                        {a.kind === AgentKindTemporary ? (
+                          <span>{t("agents.temporary")}</span>
+                        ) : null}
                       </>
                     }
                     busy={adding === `agent:${a.id}`}
-                    onAdd={() => onAdd("agent", a.id, a.name)}
+                    onAdd={() => onAdd("agent", a.id, a.display_name)}
                   />
                 ))}
               </CandidateGroup>

@@ -96,8 +96,12 @@ type RoomMember struct {
 	Name     string     `json:"name"`      // agent display name, chat title, user display name or project name
 	// Outbound tells whether agent and user posts without explicit recipients reach this chat (DLV-03).
 	Outbound bool `json:"outbound"`
-	// Online is set for agent members.
+	// Online is set for agent members, and for project members: whether the project has an
+	// active session.
 	Online *bool `json:"online,omitempty"`
+	// ActiveSession is the session that receives a project member's messages (the project's
+	// most recently connected online agent, PROJ-07); absent while none is online.
+	ActiveSession *MemberSession `json:"active_session,omitempty"`
 	// Owner is set for agent and project members: the username of the agent's or project's
 	// owner.
 	Owner string `json:"owner,omitempty"`
@@ -114,6 +118,13 @@ type RoomMember struct {
 	// Keywords count as mentions (on word boundaries) when Delivery is mentions.
 	Keywords  []string  `json:"keywords"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// MemberSession names the active session of a project member.
+type MemberSession struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
 }
 
 // AddMemberRequest is the body of POST /rooms/{id}/members. Outbound defaults to true.

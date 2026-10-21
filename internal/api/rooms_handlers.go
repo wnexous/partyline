@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/wnexous/partyline/internal/access"
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
@@ -39,8 +41,9 @@ func (s *server) roomRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/attachments/{id}", authed(s.downloadAttachment))
 }
 
-// toMember renders a member; agent members carry their online state.
-func (s *server) toMember(m rooms.Member) dto.RoomMember {
+// toMember renders a member; agent members carry their online state, project members their
+// active session (PROJ-07).
+func (s *server) toMember(ctx context.Context, m rooms.Member) dto.RoomMember {
 	out := dto.RoomMember{
 		ID: m.ID, Kind: dto.MemberKind(m.Kind), MemberID: m.MemberID, Name: m.Name, Outbound: m.Outbound,
 		Owner: m.AgentOwner, ConnectorKind: m.ConnectorKind, ChatKind: dto.ChatKind(m.ChatKind),
@@ -50,6 +53,16 @@ func (s *server) toMember(m rooms.Member) dto.RoomMember {
 	if out.Kind == dto.MemberKindAgent && s.Agents != nil {
 		online := s.Agents.Online(m.MemberID)
 		out.Online = &online
+	}
+	if out.Kind == dto.MemberKindProject && s.Agents != nil {
+		a, ok, err := s.Agents.ActiveSession(ctx, m.MemberID)
+		if err != nil {
+			ok = false // best effort: the member still renders, without its session
+		}
+		out.Online = &ok
+		if ok {
+			out.ActiveSession = &dto.MemberSession{ID: a.ID, Name: a.Name, DisplayName: agents.DisplayName(a)}
+		}
 	}
 	return out
 }
@@ -164,7 +177,7 @@ func (s *server) listMembers(w http.ResponseWriter, r *http.Request, p authn.Pri
 	}
 	out := dto.List[dto.RoomMember]{Items: make([]dto.RoomMember, len(list))}
 	for i, m := range list {
-		out.Items[i] = s.toMember(m)
+		out.Items[i] = s.toMember(r.Context(), m)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
@@ -180,7 +193,7 @@ func (s *server) addMember(w http.ResponseWriter, r *http.Request, p authn.Princ
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, s.toMember(m))
+	httpx.WriteJSON(w, http.StatusCreated, s.toMember(r.Context(), m))
 	return nil
 }
 
@@ -196,7 +209,7 @@ func (s *server) updateMember(w http.ResponseWriter, r *http.Request, p authn.Pr
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, s.toMember(m))
+	httpx.WriteJSON(w, http.StatusOK, s.toMember(r.Context(), m))
 	return nil
 }
 

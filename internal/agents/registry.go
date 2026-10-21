@@ -217,6 +217,12 @@ func (r *Registry) SessionRooms(ctx context.Context, agentID string) ([]RoomStat
 	return out, nil
 }
 
+// ActiveSession returns the project's active session (PROJ-07); ok is false when none of its
+// agents is online.
+func (r *Registry) ActiveSession(ctx context.Context, projectID string) (db.Agent, bool, error) {
+	return delivery.ActiveSession(ctx, r.store.R(), r.presence.Online, projectID)
+}
+
 // Online reports whether the agent has a live connection.
 func (r *Registry) Online(agentID string) bool { return r.presence.Online(agentID) }
 

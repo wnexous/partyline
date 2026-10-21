@@ -1,4 +1,4 @@
-import { BotIcon, MessageCircleIcon, UserIcon, XIcon } from "lucide-react";
+import { BotIcon, FolderIcon, MessageCircleIcon, UserIcon, XIcon } from "lucide-react";
 import { type ReactNode, useId } from "react";
 import { toast } from "sonner";
 import { MemberSettings, memberSettingsSummary } from "@/components/member-settings";
@@ -13,11 +13,13 @@ import { useLiveStore } from "@/lib/live/store";
 
 /*
  * Room members (UI-10, UI-12): everything wired to the room, shown plainly. Agents show live
- * presence; chats show whether agent and people posts go out to them (outbound, DLV-03).
+ * presence; projects show the session that receives their messages (PROJ-07); chats show
+ * whether agent and people posts go out to them (outbound, DLV-03).
  */
 
 const GROUPS: { kind: MemberKind; label: MessageKey }[] = [
   { kind: "agent", label: "members.agents" },
+  { kind: "project", label: "members.projects" },
   { kind: "chat", label: "members.chats" },
   { kind: "user", label: "members.people" },
 ];
@@ -139,6 +141,27 @@ function MemberRow({
         ))}
       </>
     );
+  } else if (m.kind === "project") {
+    icon = <FolderIcon className="size-4 text-muted-foreground" aria-hidden="true" />;
+    meta = (
+      <>
+        <span className="flex w-full min-w-0 items-center gap-1.5">
+          <StatusDot online={m.active_session !== undefined} />
+          <span className="min-w-0 truncate">
+            {m.active_session
+              ? t("members.activeSession", { name: m.active_session.display_name })
+              : t("members.noSession")}
+          </span>
+        </span>
+        {m.owner ? <span>@{m.owner}</span> : null}
+        {m.display_name ? (
+          <span className="truncate">{t("memberSettings.as", { name: m.display_name })}</span>
+        ) : null}
+        {memberSettingsSummary(m).map((key) => (
+          <span key={key}>{t(key)}</span>
+        ))}
+      </>
+    );
   } else if (m.kind === "chat") {
     icon = <MessageCircleIcon className="size-4 text-info" aria-hidden="true" />;
     const kind = m.chat_kind ? CHAT_KIND[m.chat_kind] : undefined;
@@ -186,7 +209,9 @@ function MemberRow({
           )
         ) : null}
       </div>
-      {canManage && m.kind === "agent" ? <MemberSettings roomId={roomId} member={m} /> : null}
+      {canManage && (m.kind === "agent" || m.kind === "project") ? (
+        <MemberSettings roomId={roomId} member={m} />
+      ) : null}
       {canManage ? (
         <Button
           variant="ghost"

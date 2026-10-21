@@ -70,7 +70,21 @@ func (p *Presence) Attach(ctx context.Context, agent db.Agent, s Session) error 
 	if !wasOnline {
 		p.bus.Publish(events.AgentPresence{AgentID: agent.ID, OwnerID: agent.OwnerID, Online: true})
 	}
+	p.projectRoomsChanged(ctx, agent.ID)
 	return err
+}
+
+// projectRoomsChanged publishes MembersChanged for every room the agent's project is a member
+// of: a connect or disconnect can change the project's active session (PROJ-07), which the
+// room's member list shows.
+func (p *Presence) projectRoomsChanged(ctx context.Context, agentID string) {
+	rooms, err := p.store.R().ListAgentProjectRoomIDs(context.WithoutCancel(ctx), agentID)
+	if err != nil {
+		return // best effort: the list refreshes on the next change
+	}
+	for _, id := range rooms {
+		p.bus.Publish(events.MembersChanged{RoomID: id})
+	}
 }
 
 // Detach removes s when it is still the agent's session and marks the agent offline. It
@@ -86,6 +100,7 @@ func (p *Presence) Detach(ctx context.Context, agentID string, s Session) bool {
 	p.mu.Unlock()
 	_ = p.touch(ctx, agentID) // best effort: the agent row may be gone already
 	p.bus.Publish(events.AgentPresence{AgentID: agentID, OwnerID: cur.ownerID, Online: false})
+	p.projectRoomsChanged(ctx, agentID)
 	return true
 }
 

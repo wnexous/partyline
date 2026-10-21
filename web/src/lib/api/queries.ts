@@ -86,6 +86,7 @@ export const queryKeys = {
   sharing: (kind: SharingResource, id: string) => [kind, id, "sharing"] as const,
   agents: ["agents"] as const,
   agentsWithArchived: ["agents", "with-archived"] as const,
+  projects: ["projects"] as const,
   connectorKinds: ["connector-kinds"] as const,
   connectors: ["connectors"] as const,
   connector: (id: string) => ["connectors", id] as const,
@@ -568,6 +569,15 @@ export function useUpdateAgent() {
   });
 }
 
+/** Projects the user owns or may use (GET /projects), for adding a project to a room (PROJ-06). */
+export const projectsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.projects,
+    queryFn: () => api<List<Project>>("GET", "/projects").then(items),
+  });
+
+export const useProjects = () => useQuery(projectsQuery());
+
 /** Renames a project (PROJ-05); its temporary agents' readable names change with it. */
 export function useRenameProject() {
   const qc = useQueryClient();
@@ -577,6 +587,7 @@ export function useRenameProject() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.agents, exact: true });
       qc.invalidateQueries({ queryKey: queryKeys.agentsWithArchived, exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.projects });
       qc.invalidateQueries({ queryKey: queryKeys.rooms });
     },
   });

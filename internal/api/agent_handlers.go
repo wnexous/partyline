@@ -215,7 +215,7 @@ func (s *server) agentRooms(w http.ResponseWriter, r *http.Request, p authn.Prin
 		}
 		ar := dto.AgentRoom{ID: room.ID, Name: room.Name, Description: room.Description, Members: make([]dto.RoomMember, len(members))}
 		for i, m := range members {
-			ar.Members[i] = s.toMember(m)
+			ar.Members[i] = s.toMember(r.Context(), m)
 		}
 		out.Items = append(out.Items, ar)
 	}
@@ -248,7 +248,7 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 		Members:         make([]dto.RoomMember, len(members)),
 	}
 	for i, m := range members {
-		out.Members[i] = s.toMember(m)
+		out.Members[i] = s.toMember(r.Context(), m)
 		if (out.Members[i].Kind == dto.MemberKindAgent && m.MemberID == p.AgentID) ||
 			(st.ProjectID != "" && out.Members[i].Kind == dto.MemberKindProject && m.MemberID == st.ProjectID) {
 			out.Me = out.Members[i] // a session in the room through its project: the project member

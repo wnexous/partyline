@@ -274,6 +274,29 @@ test("agents are grouped by project and the owner renames the project (PROJ-04, 
   ).toBeVisible();
 });
 
+test("a project joins a room from the member picker and shows its session (PROJ-06, PROJ-07)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  test.skip(isMobile(testInfo), "the members panel is a sheet on phones; covered on desktop");
+  await loginAs(context, instance, ADMIN);
+  await registerSession(context, instance, "notes", "codex");
+  const room = await apiCall<Room>(context.request, instance, "POST", "/rooms", {
+    name: "e2e-projects",
+  });
+
+  await page.goto(`/rooms/${room.id}`);
+  await page.getByRole("button", { name: "Add members" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add members" });
+  await dialog.getByRole("button", { name: "Add Notes (any session)" }).click();
+  await page.keyboard.press("Escape");
+
+  const group = page.getByRole("region", { name: "Projects" });
+  await expect(group.getByText("Notes", { exact: true })).toBeVisible();
+  await expect(group.getByText("No session online; messages wait for the next one")).toBeVisible();
+});
+
 test("main pages fit the viewport with no horizontal page scroll (UI-24)", async ({
   context,
   page,

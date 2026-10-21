@@ -176,3 +176,9 @@ WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
   AND NOT (author_kind = 'agent' AND author_id IN (SELECT id FROM agents WHERE project_id = sqlc.arg(project_id)))
 ORDER BY seq DESC
 LIMIT sqlc.arg(limit);
+
+-- name: ListAgentProjectRoomIDs :many
+-- The rooms the agent's project is a member of.
+SELECT m.room_id FROM room_members m
+JOIN agents a ON a.project_id = m.member_id
+WHERE m.kind = 'project' AND a.id = ?;

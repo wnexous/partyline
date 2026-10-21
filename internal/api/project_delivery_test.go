@@ -219,3 +219,61 @@ func TestProjectActiveSessionUsesTheRoomTools(t *testing.T) {
 	other.Post("/api/v1/agent/messages/"+question.ID+"/reply", dto.ReplyRequest{Text: "x"}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	other.Get("/api/v1/agent/attachments/"+question.Attachments[0].ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
+
+// PROJ-07 (member list): a project member shows its active session and whether it is online;
+// a session connecting or leaving sends members.changed to the room's live viewers, and the
+// list then shows the new active session.
+func TestProjectMemberShowsTheActiveSession(t *testing.T) {
+	f := newProjectRoom(t)
+	first, one := f.session(t)
+	live := dialLive(t, f.alice)
+
+	member := func() dto.RoomMember {
+		t.Helper()
+		for _, m := range testkit.Decode[dto.List[dto.RoomMember]](f.alice.Get("/api/v1/rooms/" + f.room.ID + "/members").RequireStatus(http.StatusOK)).Items {
+			if m.Kind == dto.MemberKindProject {
+				return m
+			}
+		}
+		require.FailNow(t, "no project member")
+		return dto.RoomMember{}
+	}
+	m := member()
+	require.Equal(t, ptr(true), m.Online)
+	require.Equal(t, &dto.MemberSession{ID: one.ID, Name: "ruthe-claude", DisplayName: "Ruthe · Claude Code"}, m.ActiveSession)
+
+	second, two := f.session(t)
+	var changed dto.RoomIDData
+	live.Expect(dto.LiveEventTypeMembersChanged, &changed, liveWait)
+	require.Equal(t, f.room.ID, changed.RoomID)
+	require.Equal(t, two.ID, member().ActiveSession.ID)
+
+	second.Close()
+	f.waitOffline(t, two.ID)
+	live.Expect(dto.LiveEventTypeMembersChanged, &changed, liveWait)
+	require.Equal(t, one.ID, member().ActiveSession.ID, "the remaining session is active again")
+
+	first.Close()
+	f.waitOffline(t, one.ID)
+	live.Expect(dto.LiveEventTypeMembersChanged, &changed, liveWait)
+	m = member()
+	require.Equal(t, ptr(false), m.Online)
+	require.Nil(t, m.ActiveSession)
+}
+
+// PROJ-06 (live): sharing a project sends access.changed for it to the users who can use it
+// (so their member picker lists it), and to nobody else.
+func TestLiveProjectSharingSendsAccessChanged(t *testing.T) {
+	f := newProjectRoom(t)
+	f.session(t)
+	bob, carol := f.env.NewUser("bob"), f.env.NewUser("carol")
+	bobLive, carolLive := dialLive(t, bob), dialLive(t, carol)
+
+	f.alice.Put("/api/v1/projects/"+f.project+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: []dto.SharingUser{
+		{UserID: bob.User.ID, Level: dto.LevelUse},
+	}}).RequireStatus(http.StatusOK)
+	var got dto.AccessChangedData
+	bobLive.Expect(dto.LiveEventTypeAccessChanged, &got, liveWait)
+	require.Equal(t, dto.AccessChangedData{ResourceKind: "project", ResourceID: f.project}, got)
+	carolLive.ExpectNone(quiet)
+}

@@ -198,7 +198,7 @@ T8 → T9 → T10 → T11
 **Requirement**: PROJ-06, PROJ-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Add project calls API with kind project; active session label updates on presence events
+- [x] Add project calls API with kind project; active session label updates on presence events
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add projects to rooms`

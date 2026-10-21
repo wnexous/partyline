@@ -1014,9 +1014,15 @@ export interface RoomMember {
    */
   outbound: boolean;
   /**
-   * Online is set for agent members.
+   * Online is set for agent members, and for project members: whether the project has an
+   * active session.
    */
   online?: boolean;
+  /**
+   * ActiveSession is the session that receives a project member's messages (the project's
+   * most recently connected online agent, PROJ-07); absent while none is online.
+   */
+  active_session?: MemberSession;
   /**
    * Owner is set for agent and project members: the username of the agent's or project's
    * owner.
@@ -1043,6 +1049,14 @@ export interface RoomMember {
    */
   keywords: string[];
   created_at: string /* RFC 3339 */;
+}
+/**
+ * MemberSession names the active session of a project member.
+ */
+export interface MemberSession {
+  id: string;
+  name: string;
+  display_name: string;
 }
 /**
  * AddMemberRequest is the body of POST /rooms/{id}/members. Outbound defaults to true.

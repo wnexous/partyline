@@ -548,6 +548,36 @@ func (q *Queries) ListAgentPending(ctx context.Context, arg ListAgentPendingPara
 	return items, nil
 }
 
+const listAgentProjectRoomIDs = `-- name: ListAgentProjectRoomIDs :many
+SELECT m.room_id FROM room_members m
+JOIN agents a ON a.project_id = m.member_id
+WHERE m.kind = 'project' AND a.id = ?
+`
+
+// The rooms the agent's project is a member of.
+func (q *Queries) ListAgentProjectRoomIDs(ctx context.Context, id string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentProjectRoomIDs, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAgentRoomIDs = `-- name: ListAgentRoomIDs :many
 SELECT room_id FROM room_members WHERE kind = 'agent' AND member_id = ?
 `

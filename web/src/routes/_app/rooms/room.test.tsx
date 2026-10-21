@@ -273,6 +273,153 @@ describe("member picker (UI-10)", () => {
   });
 });
 
+describe("projects in rooms (PROJ-06, PROJ-07)", () => {
+  const ruthe = { id: "p1", slug: "ruthe", name: "Ruthe" };
+  const projects = {
+    items: [
+      {
+        ...ruthe,
+        owner: { id: "u1", username: "ana", display_name: "Ana Souza" },
+        my_level: "manage",
+        created_at: "2026-10-01T12:00:00Z",
+      },
+      {
+        id: "p2",
+        slug: "web",
+        name: "Web",
+        owner: { id: "u2", username: "bruno", display_name: "Bruno" },
+        my_level: "use",
+        created_at: "2026-10-01T12:00:00Z",
+      },
+    ],
+  };
+  const agents = {
+    items: [
+      makeAgent({ id: "a1", name: "release-bot", online: true }),
+      makeAgent({
+        id: "t1",
+        name: "ruthe-claude",
+        display_name: "Ruthe · Claude Code",
+        kind: "temporary",
+        project: ruthe,
+        online: true,
+      }),
+      makeAgent({ id: "f1", name: "zeta-bot", display_name: "zeta-bot" }),
+      makeAgent({ id: "a2", name: "triage", online: false }),
+    ],
+  };
+
+  it("offers projects first as any-session members, then fixed agents before temporary ones", async () => {
+    const { calls } = roomApi(
+      {},
+      {
+        "GET /projects": json(200, projects),
+        "GET /agents": json(200, agents),
+        "POST /rooms/r1/members": json(
+          201,
+          makeMember({ id: "mb-p", kind: "project", member_id: "p1", name: "Ruthe" }),
+        ),
+      },
+    );
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    await user.click(await screen.findByRole("button", { name: "Add members" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add members" });
+
+    const sections = await within(dialog).findAllByRole("region");
+    expect(sections.map((r) => r.getAttribute("aria-label"))).toEqual([
+      "Projects",
+      "Agents",
+      "Chats",
+    ]);
+    const project = within(dialog).getByTestId("candidate-project-p1");
+    expect(project).toHaveTextContent("Ruthe (any session)");
+    expect(project).toHaveTextContent("1 online");
+    expect(within(dialog).getByTestId("candidate-project-p2")).toHaveTextContent(
+      "No session online",
+    );
+    const agentIds = within(within(dialog).getByRole("region", { name: "Agents" }))
+      .getAllByRole("listitem")
+      .map((li) => li.getAttribute("data-testid"));
+    expect(agentIds).toEqual(["candidate-agent-a2", "candidate-agent-f1", "candidate-agent-t1"]);
+    expect(within(dialog).getByTestId("candidate-agent-t1")).toHaveTextContent(
+      "Ruthe · Claude Code",
+    );
+    expect(within(dialog).getByTestId("candidate-agent-t1")).toHaveTextContent("Temporary");
+
+    await user.click(within(project).getByRole("button", { name: "Add Ruthe (any session)" }));
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.method === "POST" && c.path === "/rooms/r1/members")?.body,
+      ).toEqual({ kind: "project", member_id: "p1" }),
+    );
+  });
+
+  it("does not offer a project that is already a member", async () => {
+    roomApi(
+      {},
+      {
+        "GET /projects": json(200, projects),
+        "GET /rooms/r1/members": json(200, {
+          items: [...members, makeMember({ id: "mb-p", kind: "project", member_id: "p1" })],
+        }),
+      },
+    );
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    await user.click(await screen.findByRole("button", { name: "Add members" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add members" });
+    expect(await within(dialog).findByTestId("candidate-project-p2")).toBeInTheDocument();
+    expect(within(dialog).queryByTestId("candidate-project-p1")).toBeNull();
+  });
+
+  it("shows a project member's active session and refreshes it on members.changed", async () => {
+    let projectMember = makeMember({
+      id: "mb-p",
+      kind: "project",
+      member_id: "p1",
+      name: "Ruthe",
+      online: true,
+      active_session: { id: "t1", name: "ruthe-claude", display_name: "Ruthe · Claude Code" },
+    });
+    roomApi(
+      {},
+      {
+        "GET /rooms/r1/members": () => json(200, { items: [...members, projectMember] }),
+      },
+    );
+    const { queryClient } = renderRoute("/rooms/r1");
+    const panel = await screen.findByRole("complementary", { name: "Members" });
+    const group = await within(panel).findByRole("region", { name: "Projects" });
+    const row = within(group).getByTestId("member-mb-p");
+    expect(row).toHaveTextContent("Ruthe");
+    expect(row).toHaveTextContent("Active: Ruthe · Claude Code");
+
+    projectMember = { ...projectMember, online: false, active_session: undefined };
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.members",
+        data: { room_id: "r1" },
+      }),
+    );
+    await waitFor(() =>
+      expect(within(panel).getByTestId("member-mb-p")).toHaveTextContent(
+        "No session online; messages wait for the next one",
+      ),
+    );
+  });
+
+  it("refreshes the projects a user can add when a project's access changes", () => {
+    const qc = makeQueryClient();
+    qc.setQueryData(queryKeys.projects, projects.items);
+    handleLiveEvent(qc, useLiveStore.getState(), {
+      type: "access.changed",
+      data: { resource_kind: "project", resource_id: "p2" },
+    });
+    expect(qc.getQueryState(queryKeys.projects)?.isInvalidated).toBe(true);
+  });
+});
+
 describe("composer by access level (UI-07)", () => {
   it("shows a read-only notice and no composer to view-only users", async () => {
     roomApi({ my_level: "view" });

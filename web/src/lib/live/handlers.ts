@@ -127,10 +127,11 @@ function prependFiles(qc: QueryClient, m: Message) {
   }
 }
 
-const RESOURCE_KEYS: Record<string, "rooms" | "agents" | "connectors"> = {
+const RESOURCE_KEYS: Record<string, "rooms" | "agents" | "connectors" | "projects"> = {
   room: "rooms",
   agent: "agents",
   connector: "connectors",
+  project: "projects",
 };
 
 export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: LiveEvent): void {
@@ -188,7 +189,9 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       if (!kind) return;
       qc.invalidateQueries({ queryKey: [kind], exact: true });
       qc.invalidateQueries({ queryKey: [kind, event.data.resource_id] });
-      if (kind !== "rooms") qc.invalidateQueries({ queryKey: queryKeys.chats });
+      if (kind === "agents" || kind === "connectors") {
+        qc.invalidateQueries({ queryKey: queryKeys.chats });
+      }
       return;
     }
 
