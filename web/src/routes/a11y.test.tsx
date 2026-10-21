@@ -51,6 +51,37 @@ function appApi(locale: "en" | "pt-BR") {
         }),
       ],
     }),
+    "GET /rooms/r1/attachments": json(200, {
+      items: [
+        {
+          id: "f2",
+          name: "rollout.png",
+          mime: "image/png",
+          size: 2048,
+          status: "stored",
+          kind: "image",
+          message_id: "m-r1-3",
+          message_seq: 3,
+          author_kind: "agent",
+          author_name: "release-bot",
+          created_at: "2026-10-19T12:00:00Z",
+        },
+        {
+          id: "f1",
+          name: "call.mp4",
+          mime: "video/mp4",
+          size: 0,
+          status: "too_large",
+          kind: "video",
+          message_id: "m-r1-2",
+          message_seq: 2,
+          author_kind: "chat",
+          author_name: "Ops on call",
+          created_at: "2026-10-19T11:00:00Z",
+        },
+      ],
+      has_more: true,
+    }),
     "GET /rooms/r1/messages": json(200, {
       items: [
         makeMessage({ seq: 3, author_kind: "agent", author_name: "release-bot", text: "**done**" }),
@@ -108,6 +139,16 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     const { container } = renderRoute("/rooms/r1");
     await screen.findByText("deploy 2.4");
     await screen.findByTestId("member-mb2");
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the room files tab has no axe violations", async () => {
+    appApi(locale);
+    const user = userEvent.setup();
+    const { container } = renderRoute("/rooms/r1");
+    await screen.findByText("deploy 2.4");
+    await user.click(screen.getByRole("button", { name: locale === "en" ? "Files" : "Arquivos" }));
+    await screen.findByTestId("file-f1");
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 

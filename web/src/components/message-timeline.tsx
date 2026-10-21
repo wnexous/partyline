@@ -1,7 +1,8 @@
 import type { InfiniteData } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDownIcon, MessagesSquareIcon } from "lucide-react";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
 import { MessageItem } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
@@ -61,14 +62,21 @@ function isGrouped(prev: Message | undefined, m: Message): boolean {
   return Date.parse(m.created_at) - Date.parse(prev.created_at) < GROUP_WINDOW_MS;
 }
 
+/** A message to bring into view (files panel "open in timeline"); a new object jumps again. */
+export interface MessageFocus {
+  id: string;
+  seq: number;
+}
+
 export interface MessageTimelineProps {
   roomId: string;
   meId: string;
   members?: RoomMember[];
+  focus?: MessageFocus | null;
   className?: string;
 }
 
-export function MessageTimeline({ roomId, meId, members, className }: MessageTimelineProps) {
+export function MessageTimeline({ roomId, meId, members, focus, className }: MessageTimelineProps) {
   const { t, locale } = useI18n();
   const query = useRoomMessages(roomId);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
@@ -128,6 +136,31 @@ export function MessageTimeline({ roomId, meId, members, className }: MessageTim
     },
     [items, virtualizer],
   );
+
+  // Bring a focused message into view, loading older pages until its seq is reached; it then
+  // gets the tape highlight. A message no longer stored (retention) ends the search.
+  const [pending, setPending] = useState<MessageFocus | null>(null);
+  const [flash, setFlash] = useState<{ id: string; at: number } | null>(null);
+  useEffect(() => {
+    if (focus) setPending(focus);
+  }, [focus]);
+  useLayoutEffect(() => {
+    if (!pending || !query.data) return;
+    const index = items.findIndex((m) => m.id === pending.id);
+    if (index >= 0) {
+      virtualizer.scrollToIndex(index, { align: "center" });
+      setFlash({ id: pending.id, at: Date.now() });
+      setPending(null);
+      return;
+    }
+    const oldest = items[0]?.seq;
+    if (hasNextPage && (oldest === undefined || oldest > pending.seq)) {
+      if (!isFetchingNextPage) void fetchNextPage();
+      return;
+    }
+    setPending(null);
+    toast(t("timeline.messageGone"));
+  }, [pending, query.data, items, hasNextPage, isFetchingNextPage, fetchNextPage, virtualizer, t]);
 
   const jumpToLatest = () => {
     virtualizer.scrollToIndex(items.length - 1, { align: "end" });
@@ -213,7 +246,10 @@ export function MessageTimeline({ roomId, meId, members, className }: MessageTim
                     members={memberMap}
                     replyTarget={m.reply_to ? (byId.get(m.reply_to) ?? null) : undefined}
                     grouped={!newDay && isGrouped(prev, m)}
-                    fresh={seenAt > 0 && now - seenAt < FRESH_MS}
+                    fresh={
+                      (seenAt > 0 && now - seenAt < FRESH_MS) ||
+                      (flash?.id === m.id && now - flash.at < FRESH_MS)
+                    }
                     onJumpTo={jumpTo}
                   />
                 </div>

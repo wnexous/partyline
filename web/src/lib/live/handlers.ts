@@ -1,5 +1,13 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { fetchMessages, type MessagePages, queryKeys, trimActivity } from "@/lib/api/queries";
+import {
+  type FileFilter,
+  type FilePages,
+  fetchMessages,
+  type MessagePages,
+  messageFiles,
+  queryKeys,
+  trimActivity,
+} from "@/lib/api/queries";
 import type {
   ActivityItem,
   Agent,
@@ -99,6 +107,26 @@ function prependActivity(qc: QueryClient, m: Message) {
   );
 }
 
+/** Puts a live message's files at the top of the room's cached files lists (FILES-05). */
+function prependFiles(qc: QueryClient, m: Message) {
+  if (m.attachments.length === 0) return;
+  const files = messageFiles(m);
+  for (const [key, data] of qc.getQueriesData<FilePages>({
+    queryKey: ["rooms", m.room_id, "files"],
+  })) {
+    const first = data?.pages[0];
+    if (!data || !first) continue;
+    const kind = key[3] as FileFilter;
+    const known = new Set(data.pages.flatMap((p) => p.items.map((f) => f.id)));
+    const fresh = files.filter((f) => !known.has(f.id) && (kind === "all" || f.kind === kind));
+    if (fresh.length === 0) continue;
+    qc.setQueryData<FilePages>(key, {
+      ...data,
+      pages: [{ ...first, items: [...fresh, ...first.items] }, ...data.pages.slice(1)],
+    });
+  }
+}
+
 const RESOURCE_KEYS: Record<string, "rooms" | "agents" | "connectors"> = {
   room: "rooms",
   agent: "agents",
@@ -120,6 +148,7 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       qc.setQueryData<Room>(queryKeys.room(m.room_id), (old) => (old ? bump(old) : old));
       patchList<Room>(qc, queryKeys.rooms, m.room_id, bump);
       prependActivity(qc, m);
+      prependFiles(qc, m);
       return;
     }
 
@@ -256,6 +285,10 @@ export async function catchUp(qc: QueryClient): Promise<void> {
   qc.invalidateQueries({ queryKey: queryKeys.agents });
   qc.invalidateQueries({ queryKey: queryKeys.connectors });
   qc.invalidateQueries({ queryKey: queryKeys.activity });
+  // Files lists refetch: messages missed while offline may have carried files.
+  qc.invalidateQueries({
+    predicate: (q) => q.queryKey[0] === "rooms" && q.queryKey[2] === "files",
+  });
   await Promise.all(
     cachedTimelines(qc).map(async ({ roomId, active }) => {
       const after = lastSeq(qc, roomId);

@@ -81,7 +81,7 @@ export function chatTitle(t: Translate, title: string | undefined, platform?: st
 }
 
 /** Images the server serves inline (others download); SVG is excluded on purpose. */
-const INLINE_IMAGES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+export const INLINE_IMAGES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 /** Reserved box for inline images (Attachment has no width/height). */
 const IMAGE_BOX = { width: 320, height: 240 } as const;
 const IMAGE_BOX_RATIO = "4 / 3";

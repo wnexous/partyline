@@ -85,9 +85,9 @@ Rooms collect images, audio and documents from chats and agents, but the only wa
 | FILES-01 | P1: Room files | Tasks | Implementing |
 | FILES-02 | P1: Room files | Tasks | Implementing |
 | FILES-03 | P1: Room files | Tasks | Implementing |
-| FILES-04 | P1: Room files | Tasks | Pending |
-| FILES-05 | P1: Room files | Tasks | Pending |
-| FILES-06 | P1: Room files | Tasks | Pending |
+| FILES-04 | P1: Room files | Tasks | Implementing |
+| FILES-05 | P1: Room files | Tasks | Implementing |
+| FILES-06 | P1: Room files | Tasks | Implementing |
 | TOKH-01 | P1: Token hygiene | Tasks | Implementing |
 | TOKH-02 | P1: Token hygiene | Tasks | Implementing |
 | TOKH-03 | P1: Token hygiene | Tasks | Implementing |

@@ -92,7 +92,7 @@ T3 → T4
 **Requirement**: FILES-04, FILES-05, FILES-06
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Renders files; filter changes query; live room.message with attachments appends; unavailable rows have no link
+- [x] Renders files; filter changes query; live room.message with attachments appends; unavailable rows have no link
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show a room's files`
