@@ -719,8 +719,8 @@ before each commit.
 **Requirement**: DEV-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 5 wrong codes, restart, the 6th code entry → 429; after a minute → accepted
-- [ ] existing limit and burst tests still pass unchanged
+- [x] 5 wrong codes, restart, the 6th code entry → 429; after a minute → accepted
+- [x] existing limit and burst tests still pass unchanged
 **Tests**: e2e (API)
 **Gate**: build
 **Commit**: `fix(devices): keep the wrong-code limit across restarts`

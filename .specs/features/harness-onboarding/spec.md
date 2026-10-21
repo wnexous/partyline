@@ -77,7 +77,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 2. WHEN a logged-in user types the code and approves the request THEN the server SHALL create an agent token named after the machine hostname and deliver it once to the polling CLI, together with the approver's username. (DEV-02)
 3. IF the request expires or is denied THEN the CLI SHALL exit non-zero with `approval expired` or `approval denied`. (DEV-03)
 4. The server SHALL rate-limit device polling to 1 request per 2 seconds per request and creation to 10 per hour per IP. (DEV-04)
-5. The server SHALL take the code in the request body of `POST /devices/lookup`, `/devices/approve` and `/devices/deny`, never in a URL, and IF a user has entered 5 unknown codes within the last minute THEN it SHALL answer further code entries of that user with 429 until a minute has passed since them. (DEV-05; fix iteration 1)
+5. The server SHALL take the code in the request body of `POST /devices/lookup`, `/devices/approve` and `/devices/deny`, never in a URL, and IF a user has entered 5 unknown codes within the last minute THEN it SHALL answer further code entries of that user with 429 until a minute has passed since them; the count SHALL survive a server restart. (DEV-05; fix iterations 1 and 2)
 6. WHEN the token is delivered THEN the CLI SHALL print `Approved by @<username> on <instance>` and, unless `--yes` is given, ask for confirmation; IF the user declines (or the input ends) THEN setup SHALL save nothing and exit non-zero. With `--yes` it SHALL also print on stderr `partyline setup: warning: --yes accepted the agent token of @<username> without asking; if @<username> is not you, run partyline setup --uninstall to revoke it`. (DEV-06; fix iterations 1 and 2)
 
 **Independent Test**: CLI starts, user approves in the web app, CLI saves the token.
@@ -194,7 +194,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | DEV-02 | P1: Browser approval | Tasks (T4, T6, T16, T24) | Implemented |
 | DEV-03 | P1: Browser approval | Tasks (T4, T6) | Implemented |
 | DEV-04 | P1: Browser approval | Tasks (T4) | Implemented |
-| DEV-05 | P1: Browser approval | Tasks (T24, T29) | Implemented |
+| DEV-05 | P1: Browser approval | Tasks (T24, T29, T42) | Implemented |
 | DEV-06 | P1: Browser approval | Tasks (T24, T41) | Implemented |
 | NAME-01 | P1: Agent names | Tasks (T3) | Implemented |
 | NAME-02 | P1: Agent names | Tasks (T3) | Implemented |

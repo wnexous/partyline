@@ -308,6 +308,24 @@ func TestDeviceWrongCodeLimitConcurrentBurst(t *testing.T) {
 	require.Equal(t, map[int]int{http.StatusNotFound: 5, http.StatusTooManyRequests: 7}, statuses)
 }
 
+// DEV-05: the wrong codes a user typed are kept in the database, so a server restart does not
+// hand out 5 fresh attempts: after 5 unknown codes and a restart the next code entry still
+// answers 429, until a minute has passed since them.
+func TestDeviceWrongCodeLimitSurvivesRestart(t *testing.T) {
+	e := newDeviceEnv(t)
+	c := e.create(t, "laptop-01")
+	for i := range 5 {
+		decide(e.alice, "lookup", fmt.Sprintf("WRONG%03d", i)).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	}
+	e.env.Restart()
+	decide(e.alice, "lookup", c.Code).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+	decide(e.alice, "approve", c.Code).RequireError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited)
+
+	e.clock.Advance(61 * time.Second)
+	d := testkit.Decode[dto.DeviceRequest](decide(e.alice, "approve", c.Code).RequireStatus(http.StatusOK))
+	require.Equal(t, dto.DeviceStatusApproved, d.Status)
+}
+
 // Auth matrix: reading, approving and denying need a logged-in user (401 anonymous, 403 for
 // agent tokens); creating and polling are anonymous but refuse agent tokens (403).
 func TestDeviceAuthMatrix(t *testing.T) {

@@ -18,9 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
-	"slices"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -92,10 +90,6 @@ type Deps struct {
 // Service manages device requests.
 type Service struct {
 	d Deps
-
-	mu sync.Mutex
-	// wrong holds the times of each user's recent wrong codes (DEV-05).
-	wrong map[string][]time.Time
 }
 
 // New returns a Service.
@@ -103,7 +97,7 @@ func New(d Deps) *Service {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Service{d: d, wrong: map[string][]time.Time{}}
+	return &Service{d: d}
 }
 
 // Created is a new request as the CLI sees it once.
@@ -231,41 +225,47 @@ func (s *Service) view(row db.DeviceRequest) Request {
 	return Request{DeviceRequest: row, Status: st}
 }
 
-// attempt reserves one code attempt for the user before the code is looked up, so a burst
-// cannot pass the limit (DEV-05). The caller calls done(false) when the code exists, which
+// attempt reserves one code attempt for the user before the code is looked up, in a write
+// transaction, so a burst cannot pass the limit (DEV-05). The attempts live in the database,
+// so a restart does not reset them. The caller calls done(false) when the code exists, which
 // gives the attempt back; an unknown code keeps counting for CodeAttemptWindow.
-func (s *Service) attempt(userID string) (done func(wrong bool), err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *Service) attempt(ctx context.Context, userID string) (done func(wrong bool), err error) {
 	now := s.d.Now()
-	recent := slices.DeleteFunc(s.wrong[userID], func(t time.Time) bool { return !now.Before(t.Add(CodeAttemptWindow)) })
-	if len(recent) >= CodeAttemptLimit {
-		s.wrong[userID] = recent
-		return nil, ErrTooManyCodes
+	var id int64
+	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		since := now.Add(-CodeAttemptWindow).UnixMilli()
+		if err := q.DeleteOldDeviceCodeAttempts(ctx, since); err != nil {
+			return err
+		}
+		n, err := q.CountDeviceCodeAttempts(ctx, db.CountDeviceCodeAttemptsParams{UserID: userID, AttemptedAt: since})
+		if err != nil {
+			return err
+		}
+		if n >= CodeAttemptLimit {
+			return ErrTooManyCodes
+		}
+		id, err = q.AddDeviceCodeAttempt(ctx, db.AddDeviceCodeAttemptParams{UserID: userID, AttemptedAt: now.UnixMilli()})
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
-	s.wrong[userID] = append(recent, now)
 	return func(wrong bool) {
 		if wrong {
 			return
 		}
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		list := s.wrong[userID]
-		if i := slices.IndexFunc(list, now.Equal); i >= 0 {
-			list = slices.Delete(list, i, i+1)
-		}
-		if len(list) == 0 {
-			delete(s.wrong, userID)
-		} else {
-			s.wrong[userID] = list
-		}
+		// Best effort: a refund that fails leaves one attempt counted for a minute.
+		rctx := context.WithoutCancel(ctx)
+		_ = s.d.Store.WithTx(rctx, func(q *db.Queries) error {
+			return q.DeleteDeviceCodeAttempt(rctx, id)
+		})
 	}, nil
 }
 
 // Lookup returns the request with the code the user typed, for the approval page (WIZ-02).
 // Unknown codes count against the user's attempts (DEV-05).
 func (s *Service) Lookup(ctx context.Context, p authn.Principal, code string) (Request, error) {
-	done, err := s.attempt(p.UserID)
+	done, err := s.attempt(ctx, p.UserID)
 	if err != nil {
 		return Request{}, err
 	}
@@ -302,7 +302,7 @@ func TokenName(machine string) string {
 }
 
 func (s *Service) decide(ctx context.Context, p authn.Principal, code string, approve bool) (Request, error) {
-	done, err := s.attempt(p.UserID)
+	done, err := s.attempt(ctx, p.UserID)
 	if err != nil {
 		return Request{}, err
 	}

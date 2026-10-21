@@ -90,6 +90,12 @@ type Connector struct {
 	AutoRouteRoomID sql.NullString
 }
 
+type DeviceCodeAttempt struct {
+	ID          int64
+	UserID      string
+	AttemptedAt int64
+}
+
 type DeviceRequest struct {
 	ID             string
 	CodeHash       string
