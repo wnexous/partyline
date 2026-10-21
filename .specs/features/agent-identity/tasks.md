@@ -262,7 +262,7 @@ T12 → T13 → T14 → T15 → T16
 **Requirement**: ID-01, PROJ-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Two tools-only sessions of one project → two agents (distinct names and ids); the same session (register again, hook) → its agent; no key → the previous agent; concurrent keyed registrations get distinct N; clients send the header
+- [x] Two tools-only sessions of one project → two agents (distinct names and ids); the same session (register again, hook) → its agent; no key → the previous agent; concurrent keyed registrations get distinct N; clients send the header
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(agents): keep tools-only sessions of one project apart`

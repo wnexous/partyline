@@ -50,6 +50,12 @@ const (
 	HeaderHarness = "X-Partyline-Harness"
 	// HeaderMachine is the session's hostname.
 	HeaderMachine = "X-Partyline-Machine"
+	// HeaderSession is the session key (PARTYLINE_SESSION; 1 to 64 of A-Z a-z 0-9 . _ -) that
+	// the channel, listen and the turn-end hook of one harness session share. A session that
+	// names no agent gets its own temporary agent back by this key, and a tools-only session
+	// (never online) holds its agent against other sessions until it is archived (ID-01).
+	// Other values are ignored; without it the server keeps the rule of older clients.
+	HeaderSession = "X-Partyline-Session"
 	// HeaderSignature carries "sha256=<hex HMAC>" on webhook requests in both directions.
 	HeaderSignature = "X-Partyline-Signature"
 	// HeaderTimestamp carries the unix seconds used in the webhook signature.

@@ -64,7 +64,7 @@ type gatewayStep struct {
 	close   websocket.StatusCode
 }
 
-type dialHeaders struct{ agent, mode, project, harness, machine string }
+type dialHeaders struct{ agent, mode, project, harness, machine, session string }
 
 func headerGateway(t *testing.T, script ...gatewayStep) (string, chan dialHeaders) {
 	t.Helper()
@@ -73,7 +73,7 @@ func headerGateway(t *testing.T, script ...gatewayStep) (string, chan dialHeader
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		dials <- dialHeaders{
 			agent: r.Header.Get(dto.HeaderAgent), mode: r.Header.Get(dto.HeaderAgentMode), project: r.Header.Get(dto.HeaderProject),
-			harness: r.Header.Get(dto.HeaderHarness), machine: r.Header.Get(dto.HeaderMachine),
+			harness: r.Header.Get(dto.HeaderHarness), machine: r.Header.Get(dto.HeaderMachine), session: r.Header.Get(dto.HeaderSession),
 		}
 		i := int(n.Add(1)) - 1
 		ws, err := websocket.Accept(w, r, nil)
@@ -149,6 +149,26 @@ func TestLinkTemporarySessionKeepsTheAssignedName(t *testing.T) {
 	again.agent = "proj-claude"
 	require.Equal(t, again, nextDial(t, dials), "then it keeps the new name")
 	require.Eventually(t, func() bool { return l.name() == "proj-claude" }, wait, 10*time.Millisecond)
+}
+
+// ID-01 (fix iteration 1): the session key travels as X-Partyline-Session on every dial, so
+// the server gives the session its own temporary agent; a value that is not a valid key is
+// not sent.
+func TestLinkSendsTheSessionKey(t *testing.T) {
+	for key, want := range map[string]string{"pl-0123456789abcdef": "pl-0123456789abcdef", "4242": "4242", "bad key/x": ""} {
+		url, dials := headerGateway(t, gatewayStep{welcome: "proj-claude", close: websocket.StatusInternalError})
+		l := newLink(mustURL(t, url), "pl_agent_x", "", http.DefaultClient, discard{}, &syncBuffer{}, fastTiming)
+		l.identity, l.temporary = sessionIdentity, true
+		l.identity.SessionKey = key
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { _ = l.run(ctx); close(done) }()
+		require.Equal(t, dialHeaders{project: "proj", harness: "claude", machine: "laptop", session: want}, nextDial(t, dials), key)
+		require.Equal(t, dialHeaders{agent: "proj-claude", mode: dto.AgentModeTemporary, project: "proj", harness: "claude", machine: "laptop", session: want},
+			nextDial(t, dials), "%s: reconnects send it too", key)
+		cancel()
+		<-done
+	}
 }
 
 // ID-02: an explicit name is sent alone (no mode) with the identity headers and kept whatever

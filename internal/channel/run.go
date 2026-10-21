@@ -82,7 +82,7 @@ func Run(ctx context.Context, o Options) error {
 	if o.Agent != "" {
 		agent = agents.Slug(o.Agent)
 	}
-	id := Identity{Name: agent, Project: o.Project, Harness: o.Harness, Machine: o.Machine}
+	id := Identity{Name: agent, Project: o.Project, Harness: o.Harness, Machine: o.Machine, SessionKey: o.SessionKey}
 	if id.Harness == "" && !o.ToolsOnly {
 		id.Harness = HarnessClaude
 	}

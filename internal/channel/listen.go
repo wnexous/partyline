@@ -73,7 +73,7 @@ func Listen(ctx context.Context, o ListenOptions) error {
 		agent = agents.Slug(o.Agent)
 	}
 	l := newLink(base, o.Token, agent, o.HTTPClient, &lineWriter{w: o.Stdout}, o.Stderr, o.timing)
-	l.identity = Identity{Name: agent, Project: o.Project, Harness: o.Harness, Machine: o.Machine}
+	l.identity = Identity{Name: agent, Project: o.Project, Harness: o.Harness, Machine: o.Machine, SessionKey: o.SessionKey}
 	l.temporary = agent == ""
 	var recorded string
 	path := sessionFile(tmp, o.SessionKey)

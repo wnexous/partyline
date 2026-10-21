@@ -98,6 +98,20 @@ WHERE id = ?;
 -- name: MarkAgentConnected :exec
 UPDATE agents SET connected_at = ?, archived_at = NULL WHERE id = ?;
 
+-- name: ListSessionAgents :many
+-- The owner's temporary agents held by a tools-only session key (ID-01).
+SELECT * FROM agents
+WHERE owner_id = ? AND session_key = ? AND kind = 'temporary'
+ORDER BY session_no, name;
+
+-- name: HoldAgentForSession :exec
+-- A tools-only session registered the agent: it holds it, and the registration counts as
+-- activity for archiving.
+UPDATE agents SET session_key = ?, last_seen_at = ? WHERE id = ?;
+
+-- name: ReleaseAgentSession :exec
+UPDATE agents SET session_key = '' WHERE id = ?;
+
 -- name: GetProject :one
 SELECT * FROM projects WHERE id = ?;
 

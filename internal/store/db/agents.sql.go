@@ -191,7 +191,7 @@ func (q *Queries) DeleteAgentMemberships(ctx context.Context, memberID string) (
 }
 
 const getAgent = `-- name: GetAgent :one
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at FROM agents WHERE id = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key FROM agents WHERE id = ?
 `
 
 func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
@@ -213,12 +213,13 @@ func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
 		&i.SessionNo,
 		&i.ArchivedAt,
 		&i.ConnectedAt,
+		&i.SessionKey,
 	)
 	return i, err
 }
 
 const getAgentByName = `-- name: GetAgentByName :one
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at FROM agents WHERE owner_id = ? AND name = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key FROM agents WHERE owner_id = ? AND name = ?
 `
 
 type GetAgentByNameParams struct {
@@ -245,6 +246,7 @@ func (q *Queries) GetAgentByName(ctx context.Context, arg GetAgentByNameParams) 
 		&i.SessionNo,
 		&i.ArchivedAt,
 		&i.ConnectedAt,
+		&i.SessionKey,
 	)
 	return i, err
 }
@@ -266,7 +268,7 @@ func (q *Queries) GetAgentCursor(ctx context.Context, arg GetAgentCursorParams) 
 }
 
 const getAgentWithOwner = `-- name: GetAgentWithOwner :one
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, a.session_key, u.username AS owner_username, u.display_name AS owner_display_name,
        CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN projects p ON p.id = a.project_id
@@ -300,6 +302,7 @@ func (q *Queries) GetAgentWithOwner(ctx context.Context, id string) (GetAgentWit
 		&i.Agent.SessionNo,
 		&i.Agent.ArchivedAt,
 		&i.Agent.ConnectedAt,
+		&i.Agent.SessionKey,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
 		&i.ProjectSlug,
@@ -404,6 +407,23 @@ func (q *Queries) GetProjectWithOwner(ctx context.Context, id string) (GetProjec
 		&i.OwnerDisplayName,
 	)
 	return i, err
+}
+
+const holdAgentForSession = `-- name: HoldAgentForSession :exec
+UPDATE agents SET session_key = ?, last_seen_at = ? WHERE id = ?
+`
+
+type HoldAgentForSessionParams struct {
+	SessionKey string
+	LastSeenAt sql.NullInt64
+	ID         string
+}
+
+// A tools-only session registered the agent: it holds it, and the registration counts as
+// activity for archiving.
+func (q *Queries) HoldAgentForSession(ctx context.Context, arg HoldAgentForSessionParams) error {
+	_, err := q.db.ExecContext(ctx, holdAgentForSession, arg.SessionKey, arg.LastSeenAt, arg.ID)
+	return err
 }
 
 const insertAgentIfMissing = `-- name: InsertAgentIfMissing :exec
@@ -661,7 +681,7 @@ func (q *Queries) ListAgentRoomStates(ctx context.Context, memberID string) ([]L
 }
 
 const listAgentsForUser = `-- name: ListAgentsForUser :many
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, a.session_key, u.username AS owner_username, u.display_name AS owner_display_name,
        CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN projects p ON p.id = a.project_id
@@ -710,6 +730,7 @@ func (q *Queries) ListAgentsForUser(ctx context.Context, arg ListAgentsForUserPa
 			&i.Agent.SessionNo,
 			&i.Agent.ArchivedAt,
 			&i.Agent.ConnectedAt,
+			&i.Agent.SessionKey,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
 			&i.ProjectSlug,
@@ -881,7 +902,7 @@ func (q *Queries) ListProjectRoomStates(ctx context.Context, arg ListProjectRoom
 }
 
 const listProjectSessions = `-- name: ListProjectSessions :many
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at FROM agents WHERE project_id = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key FROM agents WHERE project_id = ?
 ORDER BY connected_at IS NULL, connected_at DESC, id
 `
 
@@ -911,6 +932,7 @@ func (q *Queries) ListProjectSessions(ctx context.Context, projectID sql.NullStr
 			&i.SessionNo,
 			&i.ArchivedAt,
 			&i.ConnectedAt,
+			&i.SessionKey,
 		); err != nil {
 			return nil, err
 		}
@@ -971,8 +993,60 @@ func (q *Queries) ListProjectsForUser(ctx context.Context, userID string) ([]Lis
 	return items, nil
 }
 
+const listSessionAgents = `-- name: ListSessionAgents :many
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key FROM agents
+WHERE owner_id = ? AND session_key = ? AND kind = 'temporary'
+ORDER BY session_no, name
+`
+
+type ListSessionAgentsParams struct {
+	OwnerID    string
+	SessionKey string
+}
+
+// The owner's temporary agents held by a tools-only session key (ID-01).
+func (q *Queries) ListSessionAgents(ctx context.Context, arg ListSessionAgentsParams) ([]Agent, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionAgents, arg.OwnerID, arg.SessionKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Agent
+	for rows.Next() {
+		var i Agent
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.ProjectID,
+			&i.Harness,
+			&i.Machine,
+			&i.Kind,
+			&i.DisplayName,
+			&i.AutoName,
+			&i.SessionNo,
+			&i.ArchivedAt,
+			&i.ConnectedAt,
+			&i.SessionKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTemporaryProjectAgents = `-- name: ListTemporaryProjectAgents :many
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at FROM agents WHERE project_id = ? AND kind = 'temporary'
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key FROM agents WHERE project_id = ? AND kind = 'temporary'
 `
 
 func (q *Queries) ListTemporaryProjectAgents(ctx context.Context, projectID sql.NullString) ([]Agent, error) {
@@ -1000,6 +1074,7 @@ func (q *Queries) ListTemporaryProjectAgents(ctx context.Context, projectID sql.
 			&i.SessionNo,
 			&i.ArchivedAt,
 			&i.ConnectedAt,
+			&i.SessionKey,
 		); err != nil {
 			return nil, err
 		}
@@ -1034,6 +1109,15 @@ UPDATE agents SET kind = 'fixed', archived_at = NULL WHERE id = ?
 
 func (q *Queries) PromoteAgent(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, promoteAgent, id)
+	return err
+}
+
+const releaseAgentSession = `-- name: ReleaseAgentSession :exec
+UPDATE agents SET session_key = '' WHERE id = ?
+`
+
+func (q *Queries) ReleaseAgentSession(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, releaseAgentSession, id)
 	return err
 }
 

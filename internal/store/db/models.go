@@ -24,6 +24,7 @@ type Agent struct {
 	SessionNo   int64
 	ArchivedAt  sql.NullInt64
 	ConnectedAt sql.NullInt64
+	SessionKey  string
 }
 
 type AgentCursor struct {

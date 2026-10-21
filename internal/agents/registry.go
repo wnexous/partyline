@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -90,6 +91,11 @@ type Registry struct {
 	presence *Presence
 	now      func() time.Time
 	posts    *postLimiter
+
+	// allocMu serializes the sessions whose agent name the server picks (Identity.Allocates),
+	// from the name choice until the agent is online (WebSocket) or held (registration), so
+	// two sessions never pick the same name (ID-01).
+	allocMu sync.Mutex
 }
 
 // NewRegistry returns a Registry.
@@ -150,7 +156,11 @@ func (r *Registry) Upsert(ctx context.Context, ownerID, name string) (db.Agent, 
 // agent cap applies) without bringing it online, and returns it with its owner. A tools-only
 // channel uses it, since it never opens the WebSocket (PUSH-02).
 func (r *Registry) Register(ctx context.Context, ownerID string, id Identity) (db.GetAgentWithOwnerRow, error) {
-	a, err := r.Resolve(ctx, ownerID, id)
+	if id.Allocates() {
+		r.allocMu.Lock()
+		defer r.allocMu.Unlock()
+	}
+	a, err := r.resolve(ctx, ownerID, id, false)
 	if err != nil {
 		return db.GetAgentWithOwnerRow{}, err
 	}

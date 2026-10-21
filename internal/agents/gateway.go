@@ -83,9 +83,6 @@ type Gateway struct {
 	closed bool
 	wg     sync.WaitGroup
 
-	// uniqueMu serializes registrations whose name the server picks, from the name choice to
-	// the attach.
-	uniqueMu sync.Mutex
 	// pendingMu serializes Pending calls, so two callers never get the same message.
 	pendingMu sync.Mutex
 
@@ -172,8 +169,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id := IdentityFromHeader(r.Header)
 	id.Name = p.AgentName
 	if id.Allocates() {
-		g.uniqueMu.Lock()
-		release = sync.OnceFunc(g.uniqueMu.Unlock)
+		g.d.Registry.allocMu.Lock()
+		release = sync.OnceFunc(g.d.Registry.allocMu.Unlock)
 		defer release()
 	}
 	row, err := g.register(r.Context(), p, id)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -191,4 +192,53 @@ func TestWaitForMessagesWithListen(t *testing.T) {
 	r := c.next()["result"].(map[string]any)
 	require.Equal(t, true, r["isError"])
 	require.Equal(t, "messages are pushed to this agent's session; there is nothing to wait for", r["content"].([]any)[0].(map[string]any)["text"])
+}
+
+// ID-01 (fix iteration 1): two tools-only sessions of one project (Codex, never online) send
+// their session keys (PARTYLINE_SESSION) and get their own temporary agents; each session's
+// turn-end hook acts as its own agent, and a listen process of a session joins that session's
+// agent instead of adding one.
+func TestToolsOnlySessionsAndTheirHooksKeepTheirOwnAgents(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir()) // listen's session files
+	e := newChannelEnv(t)
+	session := func(key string) map[string]string {
+		return e.vars("PARTYLINE_PROJECT", "Notes", "PARTYLINE_HARNESS", "codex", "PARTYLINE_SESSION", key)
+	}
+	registered := func(name string) {
+		t.Helper()
+		require.Eventually(t, func() bool { _, ok := e.onlineNames(t)[name]; return ok }, chanWait, 20*time.Millisecond, name)
+	}
+	one := startChannel(t, []string{"--tools-only"}, session("pl-one"), "/tmp/src/other")
+	initialize(one)
+	registered("notes-codex")
+	two := startChannel(t, []string{"--tools-only"}, session("pl-two"), "/tmp/src/other")
+	initialize(two)
+	registered("notes-codex-2")
+
+	second := e.agentNamed(t, "notes-codex-2")
+	require.Equal(t, "Notes · Codex #2", second.DisplayName)
+	room := e.room(t, dto.CreateRoomRequest{Name: "Builds"}, second.ID)
+	msg := e.post(t, room.ID, "for the second session")
+
+	_, out, errOut := runHook("codex-stop", `{"cwd":"/work/notes"}`, session("pl-one"))
+	require.Equal(t, "{}\n", out, "the first session's hook acts as notes-codex: %s", errOut)
+	_, out, errOut = runHook("codex-stop", `{"cwd":"/work/notes"}`, session("pl-two"))
+	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`, "the second session's hook acts as notes-codex-2: %s", errOut)
+
+	startListen(t, session("pl-two"), "/tmp/src/other", io.Discard)
+	e.agent(t, "notes-codex-2")
+	names := e.onlineNames(t)
+	require.Equal(t, map[string]bool{"notes-codex": false, "notes-codex-2": true}, names, "listen joined its session's agent")
+}
+
+// agentNamed returns alice's agent named name, online or not.
+func (e *channelEnv) agentNamed(t *testing.T, name string) dto.Agent {
+	t.Helper()
+	for _, a := range testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items {
+		if a.Name == name {
+			return a
+		}
+	}
+	require.FailNow(t, "agent not listed", name)
+	return dto.Agent{}
 }

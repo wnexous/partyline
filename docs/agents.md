@@ -78,9 +78,18 @@ move to Archived on the Agents page and come back when they reconnect.
 - Started in the home folder (or `/`) without either, the session joins project `home` and the
   launcher prints a warning.
 
+Sessions without pushed messages (Codex and Gemini, and the tools half of pi and OpenCode) are
+never online. Each one still gets its own temporary agent (**Proj · Codex**, **Proj · Codex
+#2** …) when it carries a session key: `partyline <harness>` sets `PARTYLINE_SESSION` for the
+harness and everything it starts, so the session's tools, its turn-end hook and `listen` act as
+the same agent. Started without the launcher, a tools-only session uses its parent process as
+the key, and the hook falls back to the project's first free temporary agent.
+
 Rename agents and projects on the Agents page. A room can have a whole project as a member:
 its messages go to the project's most recently connected session, and messages posted while no
-session is open wait for the next one. Each account can register at most 50 agents; delete
+session is open wait for the next one. Only sessions that hold a live connection (Claude Code,
+oh-my-pi, or `partyline listen` for pi and OpenCode) can be that session: a Codex or Gemini
+session never receives a project member's messages; add its agent to the room instead. Each account can register at most 50 agents; delete
 unused agents on the Agents page.
 
 ## Claude Code

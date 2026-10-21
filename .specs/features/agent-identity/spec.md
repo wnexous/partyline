@@ -32,6 +32,7 @@ Agents are named after the working directory, so a session started in the home f
 | Archiving | Temporary agents offline for 24 h move to Archived (hidden by default); a reconnect restores them; fixed agents are never archived | Keeps the list short | y |
 | Project member delivery | Messages go to the project's active session: the most recently connected online agent of that project; if none is online, they wait (project cursor) and the next session of the project receives them as backlog | Survives restarts without duplicate replies | y |
 | Machine | The CLI sends the hostname; shown in the UI and used as a filter | Users run several machines | y |
+| Sessions without a live connection (precision for ID-01 and PROJ-07, fix iteration 1) | Tools-only sessions (Codex, Gemini, the tools half of pi/OpenCode, the turn-end hooks) are never online, so they never become a project's active session and never receive a project member's messages. They are told apart by the session key (`X-Partyline-Session`, from `PARTYLINE_SESSION`): each key gets its own temporary agent (` #N` while another one is held) and the same key gets it back. Without a key the server keeps the old rule (the lowest offline temporary agent) | Presence cannot tell two sessions that never connect live apart; the key the launcher already shares between a session's processes can | y |
 
 **Open questions:** none - all resolved or logged above.
 
@@ -111,6 +112,7 @@ Agents are named after the working directory, so a session started in the home f
 ## Edge Cases
 
 - IF two sessions connect at the same instant for the same project and harness THEN they SHALL get distinct numbers (ID-01).
+- IF two tools-only sessions of the same project and harness send different session keys THEN they SHALL get distinct temporary agents, and a session that registers again with its key (its tools or its turn-end hook) SHALL get its own agent back (ID-01).
 - WHEN the active session disconnects while another session of the project is online THEN the next most recent online session SHALL become active for new deliveries (PROJ-07).
 - IF a project member and one of its agents are both members of a room THEN that agent SHALL receive each message once (PROJ-07).
 

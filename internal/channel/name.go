@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 )
 
@@ -51,11 +52,18 @@ type Identity struct {
 	// Harness is the harness id (claude, opencode, pi, omp, codex, gemini); empty is "agent".
 	Harness string
 	Machine string
+	// SessionKey is the key the processes of one harness session share (PARTYLINE_SESSION):
+	// the server gives a session without a name its own temporary agent back by it and keeps
+	// tools-only sessions of one project apart (ID-01). Sent only when it is a valid key.
+	SessionKey string
 }
 
-// setHeaders sets the project, harness and machine headers that are not empty.
+// setHeaders sets the project, harness, machine and session headers that are not empty.
 func (id Identity) setHeaders(h http.Header) {
-	for k, v := range map[string]string{dto.HeaderProject: id.Project, dto.HeaderHarness: id.Harness, dto.HeaderMachine: id.Machine} {
+	for k, v := range map[string]string{
+		dto.HeaderProject: id.Project, dto.HeaderHarness: id.Harness, dto.HeaderMachine: id.Machine,
+		dto.HeaderSession: agents.SessionKey(id.SessionKey),
+	} {
 		if v != "" {
 			h.Set(k, v)
 		}

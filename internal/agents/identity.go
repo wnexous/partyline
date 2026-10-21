@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -126,13 +127,27 @@ type Identity struct {
 	Project string
 	Harness string
 	Machine string
+	// Session is X-Partyline-Session, the key the processes of one harness session share
+	// ("" when absent or not a valid key).
+	Session string
+}
+
+// sessionKeyPattern is a valid session key (the launcher's "pl-<hex>", a process id, …).
+var sessionKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+
+// SessionKey returns v when it is a valid session key, else "".
+func SessionKey(v string) string {
+	if !sessionKeyPattern.MatchString(v) {
+		return ""
+	}
+	return v
 }
 
 // IdentityFromHeader reads a session's identity headers.
 func IdentityFromHeader(h http.Header) Identity {
 	return Identity{
 		Name: h.Get(dto.HeaderAgent), Mode: h.Get(dto.HeaderAgentMode), Project: h.Get(dto.HeaderProject),
-		Harness: h.Get(dto.HeaderHarness), Machine: h.Get(dto.HeaderMachine),
+		Harness: h.Get(dto.HeaderHarness), Machine: h.Get(dto.HeaderMachine), Session: SessionKey(h.Get(dto.HeaderSession)),
 	}
 }
 
@@ -156,6 +171,9 @@ type identityPlan struct {
 	// already has one (new clients), else only agents without a project get it (old clients).
 	projectSlug, projectRaw string
 	forceProject            bool
+	// hold marks a tools-only registration that picked the agent for its session key: the
+	// agent is held by that key (see freeName).
+	hold bool
 }
 
 // temporaryBase is "<project>-<harness>", the project shortened so it fits MaxNameLength.
@@ -176,7 +194,13 @@ func sessionNumber(name, base string) int64 {
 	return 1
 }
 
-// Resolve returns the owner's agent for a connecting session, creating it when needed (the
+// Resolve resolves the agent of a session connecting on the WebSocket (see resolve). A live
+// session never holds its agent by session key: presence tells whether it is in use.
+func (r *Registry) Resolve(ctx context.Context, ownerID string, id Identity) (db.Agent, error) {
+	return r.resolve(ctx, ownerID, id, true)
+}
+
+// resolve returns the owner's agent for a connecting session, creating it when needed (the
 // per-owner cap applies to new agents), and records its project, harness and machine
 // (ID-01, ID-02). It unarchives the agent. Callers that Allocate hold a lock until the agent
 // is online, so two sessions never pick the same name.
@@ -188,7 +212,12 @@ func sessionNumber(name, base string) int64 {
 // the old "<name>[-N]" choice (first new or offline name; new agents are temporary in project
 // <name>), and a plain name keeps "newest wins" on that agent (a new one is fixed, in the
 // project its name derives).
-func (r *Registry) Resolve(ctx context.Context, ownerID string, id Identity) (db.Agent, error) {
+//
+// A session key (Identity.Session) refines the no-name case: the session's own temporary
+// agent comes back first (freeName). live tells a WebSocket session from a tools-only
+// registration: a tools-only registration that picked the agent holds it by its key, a live
+// session releases any hold.
+func (r *Registry) resolve(ctx context.Context, ownerID string, id Identity, live bool) (db.Agent, error) {
 	harness := HarnessID(id.Harness)
 	plan := identityPlan{}
 	project := id.project()
@@ -196,12 +225,12 @@ func (r *Registry) Resolve(ctx context.Context, ownerID string, id Identity) (db
 	case project != "" && strings.TrimSpace(id.Name) == "":
 		slug := Slug(project)
 		base := temporaryBase(slug, harness)
-		name, n, err := r.freeName(ctx, ownerID, base, true)
+		name, n, err := r.freeName(ctx, ownerID, base, true, id.Session)
 		if err != nil {
 			return db.Agent{}, err
 		}
 		plan = identityPlan{name: name, newKind: dto.AgentKindTemporary, forceKind: dto.AgentKindTemporary, sessionNo: n,
-			projectSlug: slug, projectRaw: project, forceProject: true}
+			projectSlug: slug, projectRaw: project, forceProject: true, hold: !live && id.Session != ""}
 	case project != "" && id.Mode == dto.AgentModeTemporary:
 		slug := Slug(project)
 		name := Slug(id.Name)
@@ -213,7 +242,7 @@ func (r *Registry) Resolve(ctx context.Context, ownerID string, id Identity) (db
 			projectSlug: slug, projectRaw: project, forceProject: true}
 	case id.Mode == dto.AgentModeUnique:
 		base := Slug(id.Name)
-		name, n, err := r.freeName(ctx, ownerID, base, false)
+		name, n, err := r.freeName(ctx, ownerID, base, false, "")
 		if err != nil {
 			return db.Agent{}, err
 		}
@@ -233,7 +262,18 @@ func (r *Registry) Resolve(ctx context.Context, ownerID string, id Identity) (db
 			return err
 		}
 		out, err = r.record(ctx, q, a, created, plan, id)
-		return err
+		if err != nil {
+			return err
+		}
+		switch {
+		case plan.hold:
+			out.SessionKey, out.LastSeenAt = id.Session, nullMillis(r.now())
+			return q.HoldAgentForSession(ctx, db.HoldAgentForSessionParams{SessionKey: out.SessionKey, LastSeenAt: out.LastSeenAt, ID: out.ID})
+		case live && out.SessionKey != "":
+			out.SessionKey = ""
+			return q.ReleaseAgentSession(ctx, out.ID)
+		}
+		return nil
 	})
 	return out, err
 }
@@ -320,7 +360,23 @@ func (r *Registry) ensureProject(ctx context.Context, q *db.Queries, ownerID, sl
 // freeName returns the first of base, base-2 … base-MaxAgentsPerOwner that is new or an
 // offline agent (an offline temporary agent when temporaryOnly), with its N. When none is,
 // the owner has reached the agent cap (ErrAgentLimit).
-func (r *Registry) freeName(ctx context.Context, ownerID, base string, temporaryOnly bool) (string, int64, error) {
+//
+// With a session key (ID-01): the temporary agent of that family the key holds comes back
+// first, online or not (the same session again, or its listen half joining its tools-only
+// half); offline agents held by another key are skipped unless archived. Without a key the
+// old rule applies and holds are ignored.
+func (r *Registry) freeName(ctx context.Context, ownerID, base string, temporaryOnly bool, session string) (string, int64, error) {
+	if session != "" {
+		held, err := r.store.R().ListSessionAgents(ctx, db.ListSessionAgentsParams{OwnerID: ownerID, SessionKey: session})
+		if err != nil {
+			return "", 0, err
+		}
+		for _, a := range held {
+			if n := sessionNumber(a.Name, base); suffixedName(base, int(n)) == a.Name {
+				return a.Name, n, nil
+			}
+		}
+	}
 	for n := 1; n <= MaxAgentsPerOwner; n++ {
 		name := suffixedName(base, n)
 		a, err := r.store.R().GetAgentByName(ctx, db.GetAgentByNameParams{OwnerID: ownerID, Name: name})
@@ -330,7 +386,8 @@ func (r *Registry) freeName(ctx context.Context, ownerID, base string, temporary
 		if err != nil {
 			return "", 0, err
 		}
-		if !r.presence.Online(a.ID) && (!temporaryOnly || a.Kind == string(dto.AgentKindTemporary)) {
+		heldByOther := session != "" && a.SessionKey != "" && a.SessionKey != session && !a.ArchivedAt.Valid
+		if !r.presence.Online(a.ID) && (!temporaryOnly || a.Kind == string(dto.AgentKindTemporary)) && !heldByOther {
 			return name, int64(n), nil
 		}
 	}
