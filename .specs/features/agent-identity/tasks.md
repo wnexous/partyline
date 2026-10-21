@@ -53,6 +53,12 @@ T5 → T6 → T7
 T8 → T9 → T10 → T11
 ```
 
+### Phase 4: Verifier fixes (iteration 1)
+
+```
+T12 → T13 → T14 → T15 → T16
+```
+
 ---
 
 ## Task Breakdown
@@ -216,3 +222,75 @@ T8 → T9 → T10 → T11
 **Tests**: e2e
 **Gate**: build
 **Commit**: `docs(specs): record agent identity smoke test`
+
+### Phase 4: Verifier fixes (iteration 1)
+
+#### T12: Unarchive assertions that discriminate
+
+**What**: the reconnect and promotion tests read `archived` from a list that hides archived agents (Verifier Fix 1, mutants M7 and M16 survived). Assert presence in the default list and read `?include_archived=true` with an explicit `archived: false`; add a promotion test that proves `archived_at` is cleared. Prove M7 (reconnect keeps `archived_at`) and M16 (promotion keeps it) now fail, in a scratch worktree.
+**Where**: `internal/api/agent_manage_test.go`
+**Depends on**: T11
+**Reuses**: `listAgents`, `dialSession`, testkit clock
+**Requirement**: PROJ-02, ID-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Reconnect and promotion tests assert presence and `archived == false` from `include_archived=true`; M7 and M16 are killed (scratch worktree)
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(agents): assert unarchive on reconnect and promotion`
+
+#### T13: PROJ-09 covers the project member path only (AD-009)
+
+**What**: amend PROJ-09: the project member never receives its own sessions' posts; a session of the same project that is itself a direct room member still receives them as that member. Record AD-009 in `STATE.md`, a matching sentence in `contract-notes.md`, a `PROJ-09 (AD-009)` comment at the plan rule, and make the tests cite the amended AC for both halves.
+**Where**: `.specs/features/agent-identity/spec.md`
+**Depends on**: T12
+**Reuses**: `internal/api/project_delivery_test.go` (PROJ-09 test)
+**Requirement**: PROJ-09
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Spec, AD-009, contract notes and test comments agree; tests assert no echo through the project member and delivery to the direct member
+**Tests**: integration
+**Gate**: build
+**Commit**: `docs(specs): narrow PROJ-09 to the project member path`
+
+#### T14: Tools-only sessions of one project get distinct agents
+
+**What**: send the session key (`PARTYLINE_SESSION`, else the existing fallback) in `X-Partyline-Session` from the channel, listen, tools-only and hook clients. The server keeps the key of a tools-only allocation on the agent (migration `0014`) and, when a session that names no agent sends a key, reuses that session's own agent, else the lowest free one, skipping offline temporary agents still held by another tools-only session (until they are archived). Without a key the old rule applies. Registrations share the allocation lock with the WebSocket. Document that tools-only sessions never become a project's active session (`docs/agents.md`, spec Assumptions).
+**Where**: `internal/agents/identity.go`
+**Depends on**: T13
+**Reuses**: `freeName`, the gateway allocation lock, `channel.Identity` headers
+**Requirement**: ID-01, PROJ-07
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Two tools-only sessions of one project → two agents (distinct names and ids); the same session (register again, hook) → its agent; no key → the previous agent; concurrent keyed registrations get distinct N; clients send the header
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(agents): keep tools-only sessions of one project apart`
+
+#### T15: Project rename refreshes the project's rooms live
+
+**What**: `RenameProject` also publishes `MembersChanged` for every room that has the project as a `kind: "project"` member (the live hub keeps its viewer-only rule).
+**Where**: `internal/agents/projects.go`
+**Depends on**: T14
+**Reuses**: `Registry.membersChanged`, live hub
+**Requirement**: PROJ-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] A room viewer gets `members.changed` for a project-member room on rename and the member list shows the new name; a non-viewer gets nothing
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(agents): refresh project member rooms on project rename`
+
+#### T16: Traceability and contract notes for the fixes
+
+**What**: annotate harness-onboarding NAME-01 as superseded by agent-identity ID-01; record the T12-T15 contract (session key header, reuse rule, rename event) in `contract-notes.md`.
+**Where**: `.specs/features/agent-identity/contract-notes.md`
+**Depends on**: T15
+**Reuses**: none
+**Requirement**: ID-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] NAME-01 carries the superseded note; contract notes describe the fixes
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record agent identity fix iteration 1 contract`

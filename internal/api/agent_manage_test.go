@@ -123,7 +123,19 @@ func TestTemporaryAgentArchivedAfterADayOffline(t *testing.T) {
 
 	_, back := dialSession(t, tok, sessionHeaders("proj", "claude", "laptop", "", ""))
 	require.Equal(t, gone.ID, back.ID, "the next session of the project reuses the archived agent")
-	require.False(t, listAgents(t, alice, "")[gone.Name].Archived, "a reconnect unarchives it")
+	requireUnarchived(t, alice, gone.Name, "a reconnect unarchives it")
+}
+
+// requireUnarchived asserts that the agent is listed by default and reads archived: false
+// with include_archived=true (PROJ-02, PROJ-03), so a still-archived agent cannot pass by
+// being absent from the default list.
+func requireUnarchived(t *testing.T, c *testkit.Client, name, msg string) {
+	t.Helper()
+	_, listed := listAgents(t, c, "")[name]
+	require.True(t, listed, "%s: listed without include_archived", msg)
+	a, ok := listAgents(t, c, "?include_archived=true")[name]
+	require.True(t, ok, "%s: listed with include_archived", msg)
+	require.False(t, a.Archived, msg)
 }
 
 // ID-05: promoting a temporary agent makes it fixed, so it is never archived; fixed: false is
@@ -162,8 +174,9 @@ func TestPromotingAnArchivedAgentUnarchivesIt(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, listAgents(t, alice, "?include_archived=true")[info.Name].Archived)
 
-	alice.Patch("/api/v1/agents/"+info.ID, dto.UpdateAgentRequest{Fixed: ptr(true)}).RequireStatus(http.StatusOK)
-	require.False(t, listAgents(t, alice, "")[info.Name].Archived)
+	got := testkit.Decode[dto.Agent](alice.Patch("/api/v1/agents/"+info.ID, dto.UpdateAgentRequest{Fixed: ptr(true)}).RequireStatus(http.StatusOK))
+	require.Equal(t, []any{dto.AgentKindFixed, false}, []any{got.Kind, got.Archived}, "the PATCH answer")
+	requireUnarchived(t, alice, info.Name, "promotion clears archived_at")
 }
 
 // PROJ-05: renaming a project changes its name everywhere (the project list, its temporary
