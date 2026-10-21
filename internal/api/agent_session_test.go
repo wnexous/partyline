@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -174,4 +175,62 @@ func TestSessionHoldsAreScopedByOwnerAndMachine(t *testing.T) {
 	require.Equal(t, "proj-codex", bobs.Name, "bob's session gets bob's own agent")
 	require.NotEqual(t, laptop.ID, bobs.ID)
 	require.Equal(t, laptop, register(aliceTok, "laptop"), "bob's registration took nothing of alice's")
+}
+
+// ID-01: a tools-only session gets back the agent it holds even when a lower number is free
+// again. A live session takes proj-opencode, the tools-only session takes " #2"; once the
+// live session ends, the tools-only session still gets " #2", not the freed first agent.
+func TestToolsOnlySessionKeepsItsAgentWhenALowerOneFrees(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+
+	liveConn, live := dialSession(t, tok, sessionHeaders("proj", "opencode", "laptop", "", ""))
+	require.Equal(t, "proj-opencode", live.Name)
+	tools := registerSession(t, tok, "proj", "opencode", "pl-tools")
+	require.Equal(t, []string{"proj-opencode-2", "Proj · OpenCode #2"}, []string{tools.Name, tools.DisplayName})
+
+	liveConn.Close()
+	waitOffline(t, alice, live.Name)
+	require.Equal(t, tools, registerSession(t, tok, "proj", "opencode", "pl-tools"),
+		"the session's own agent, not the freed proj-opencode")
+}
+
+// ID-01: another owner's hold on the same session key never steers a session. Bob's own keys
+// hold proj-codex and proj-codex-2; Alice's key K holds her proj-codex-2. Bob's session with
+// key K holds nothing of Bob's, so it gets a new proj-codex-3, never an agent another of
+// Bob's sessions holds.
+func TestAnotherOwnersHoldDoesNotSteerASession(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	aliceTok := alice.Token(dto.TokenKindAgent, "laptop")
+	bob := env.NewUser("bob")
+	bobTok := bob.Token(dto.TokenKindAgent, "laptop")
+
+	b1 := registerSession(t, bobTok, "proj", "codex", "pl-b1")
+	b2 := registerSession(t, bobTok, "proj", "codex", "pl-b2")
+	require.Equal(t, []string{"proj-codex", "proj-codex-2"}, []string{b1.Name, b2.Name})
+	a1 := registerSession(t, aliceTok, "proj", "codex", "pl-a1")
+	aK := registerSession(t, aliceTok, "proj", "codex", "pl-k")
+	require.Equal(t, []string{"proj-codex", "proj-codex-2"}, []string{a1.Name, aK.Name})
+
+	bK := registerSession(t, bobTok, "proj", "codex", "pl-k")
+	require.Equal(t, []string{"proj-codex-3", "Proj · Codex #3"}, []string{bK.Name, bK.DisplayName})
+	require.NotContains(t, []string{b1.ID, b2.ID, aK.ID}, bK.ID)
+	require.Equal(t, b2, registerSession(t, bobTok, "proj", "codex", "pl-b2"), "bob's second session keeps its agent")
+}
+
+// ID-01: the server ignores a session key that is not 1–64 characters of A-Za-z0-9._- and
+// applies the keyless rule (the lowest offline temporary agent, holds ignored) instead of
+// giving the bad key an agent of its own.
+func TestInvalidSessionKeyIsIgnored(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+
+	one := registerSession(t, tok, "proj", "codex", "pl-one")
+	for _, bad := range []string{"a/b", "../x", "with space", strings.Repeat("k", 65)} {
+		require.Equal(t, one, registerSession(t, tok, "proj", "codex", bad), "key %q", bad)
+	}
+	require.Equal(t, one, registerSession(t, tok, "proj", "codex", "pl-one"), "the valid key still holds its agent")
 }

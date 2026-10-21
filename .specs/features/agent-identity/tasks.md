@@ -56,7 +56,7 @@ T8 → T9 → T10 → T11
 ### Phase 4: Verifier fixes (iteration 1)
 
 ```
-T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20
+T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20 → T21
 ```
 
 ---
@@ -352,3 +352,17 @@ T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(cli): use the launcher pid as the session key on unix`
+
+#### T21: Tests for session holds (Verifier iteration 2)
+
+**What**: API tests that kill the iteration-2 survivors: a tools-only session gets its held agent back when a lower number frees up (M17a); another owner's hold on the same key never steers a session (M17d); the server ignores an invalid `X-Partyline-Session`.
+**Where**: `internal/api/agent_session_test.go`
+**Depends on**: T20
+**Reuses**: `registerSession`, `dialSession`, `waitOffline`
+**Requirement**: ID-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] M17a and M17d fail the new tests in a scratch worktree; the invalid-key test passes only with the server-side filter
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(agents): pin session hold lookup and owner scope`
