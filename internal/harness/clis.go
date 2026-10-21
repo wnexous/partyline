@@ -145,10 +145,13 @@ func (c *codex) Apply(ctx context.Context) error {
 	if _, _, err := readDoc(c.hooksPath()); err != nil {
 		return err
 	}
+	if _, err := c.env.writeTarget(c.hooksPath()); err != nil {
+		return err
+	}
 	if err := c.env.runCLI(ctx, "codex", c.addArgs()...); err != nil {
 		return err
 	}
-	return upsertHookGroup(c.hooksPath(), c.hookGroup(), CodexStopHook, codexHookKeys...)
+	return c.env.upsertHookGroup(c.hooksPath(), c.hookGroup(), CodexStopHook, codexHookKeys...)
 }
 
 // mcpCommand returns the command of the partyline MCP server Codex knows, or "".
@@ -195,7 +198,7 @@ func (c *codex) Remove(ctx context.Context) error {
 			return err
 		}
 	}
-	return removeHookGroups(c.hooksPath(), CodexStopHook, codexHookKeys...)
+	return c.env.removeHookGroups(c.hooksPath(), CodexStopHook, codexHookKeys...)
 }
 
 func (c *codex) Entries(ctx context.Context) ([]Entry, error) {
@@ -266,10 +269,13 @@ func (g *gemini) Apply(ctx context.Context) error {
 	if _, _, err := readDoc(g.settingsPath()); err != nil {
 		return err
 	}
+	if _, err := g.env.writeTarget(g.settingsPath()); err != nil {
+		return err
+	}
 	if err := g.env.runCLI(ctx, "gemini", g.addArgs()...); err != nil {
 		return err
 	}
-	return upsertHookGroup(g.settingsPath(), g.hookGroup(), GeminiAfterAgentHook, geminiHookKeys...)
+	return g.env.upsertHookGroup(g.settingsPath(), g.hookGroup(), GeminiAfterAgentHook, geminiHookKeys...)
 }
 
 func (g *gemini) mcpCommand() (string, error) {
@@ -301,7 +307,7 @@ func (g *gemini) Remove(ctx context.Context) error {
 			return err
 		}
 	}
-	return removeHookGroups(g.settingsPath(), GeminiAfterAgentHook, geminiHookKeys...)
+	return g.env.removeHookGroups(g.settingsPath(), GeminiAfterAgentHook, geminiHookKeys...)
 }
 
 func (g *gemini) Entries(context.Context) ([]Entry, error) {
@@ -378,7 +384,7 @@ func hookBinaries(path, hook string, keys ...string) ([]string, error) {
 
 // upsertHookGroup replaces the first Partyline hook group in the array at keys of path with
 // group, or appends group when there is none.
-func upsertHookGroup(path string, group any, hook string, keys ...string) error {
+func (e Env) upsertHookGroup(path string, group any, hook string, keys ...string) error {
 	d, existed, err := readDoc(path)
 	if err != nil {
 		return err
@@ -404,11 +410,11 @@ func upsertHookGroup(path string, group any, hook string, keys ...string) error 
 	if err != nil {
 		return err
 	}
-	return writeDoc(d, existed, true)
+	return e.writeDoc(d, existed, true)
 }
 
 // removeHookGroups deletes the Partyline hook groups from the array at keys of path.
-func removeHookGroups(path, hook string, keys ...string) error {
+func (e Env) removeHookGroups(path, hook string, keys ...string) error {
 	d, existed, err := readDoc(path)
 	if err != nil || !existed {
 		return err
@@ -417,5 +423,5 @@ func removeHookGroups(path, hook string, keys ...string) error {
 	if err != nil || n == 0 {
 		return err
 	}
-	return saveRemoval(d)
+	return e.saveRemoval(d)
 }

@@ -659,8 +659,8 @@ before each commit.
 **Requirement**: HAR-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] link into HOME (also through a symlinked HOME): written as before
-- [ ] link to a file outside HOME: Apply fails with `refusing to write through the symlink <link>: its target <target> is outside your home directory`; target, config and extension untouched
+- [x] link into HOME (also through a symlinked HOME): written as before
+- [x] link to a file outside HOME: Apply fails with `refusing to write through the symlink <link>: its target <target> is outside your home directory`; target, config and extension untouched
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(harness): write through a symlinked config only when it points into home`

@@ -107,6 +107,11 @@ func (h *fileHarness) Apply(context.Context) error {
 	if err != nil {
 		return err
 	}
+	for _, p := range []string{h.configPath(), h.extPath()} {
+		if _, err := h.env.writeTarget(p); err != nil {
+			return err
+		}
+	}
 	exists, written, err := writtenBySetup(h.extPath())
 	if err != nil {
 		return err
@@ -129,12 +134,12 @@ func (h *fileHarness) Apply(context.Context) error {
 			return err
 		}
 	}
-	if err := writeFileAtomic(h.extPath(), content, 0o644); err != nil {
+	if err := h.env.writeFileAtomic(h.extPath(), content, 0o644); err != nil {
 		return err
 	}
-	if err := writeDoc(d, existed, true); err != nil {
+	if err := h.env.writeDoc(d, existed, true); err != nil {
 		if exists {
-			_ = writeFileAtomic(h.extPath(), previous, 0o644)
+			_ = h.env.writeFileAtomic(h.extPath(), previous, 0o644)
 		} else {
 			_ = os.Remove(h.extPath())
 		}
@@ -167,7 +172,7 @@ func (h *fileHarness) Remove(context.Context) error {
 			return err
 		}
 		if found {
-			if err := saveRemoval(d); err != nil {
+			if err := h.env.saveRemoval(d); err != nil {
 				return err
 			}
 		}
