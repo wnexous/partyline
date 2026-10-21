@@ -147,22 +147,28 @@ test("connect an agent shows the install and setup commands and each harness's s
   await expect(code("Install command")).toHaveText(`curl -fsSL ${instance.url}/install.sh | sh`);
   await expect(code("Setup command")).toHaveText("partyline setup --browser");
 
-  const harnesses: [tab: string, start: string, manual: string][] = [
-    ["Claude Code", "partyline claude", ".mcp.json"],
-    ["OpenCode", "opencode", "~/.config/opencode/opencode.json"],
-    ["pi", "pi", "~/.pi/agent/mcp.json"],
-    ["omp", "omp", "~/.omp/agent/mcp.json"],
-    ["Codex", "codex", "~/.codex/config.toml"],
-    ["Gemini", "gemini", "~/.gemini/settings.json"],
+  // Every harness starts with its launcher, with one line on how messages reach it.
+  const PUSH = "Room messages arrive in the running session as they come in.";
+  const TURN_END =
+    "Messages arrive when it finishes its current turn, or when it calls wait_for_messages.";
+  const harnesses: [tab: string, start: string, delivery: string, manual: string][] = [
+    ["Claude Code", "partyline claude", PUSH, ".mcp.json"],
+    ["OpenCode", "partyline opencode", PUSH, "~/.config/opencode/opencode.json"],
+    ["pi", "partyline pi", PUSH, "~/.pi/agent/mcp.json"],
+    ["omp", "partyline omp", PUSH, "~/.omp/agent/mcp.json"],
+    ["Codex", "partyline codex", TURN_END, "~/.codex/config.toml"],
+    ["Gemini", "partyline gemini", TURN_END, "~/.gemini/settings.json"],
   ];
   const tabs = dialog.getByRole("tablist", { name: "Harness" });
   await expect(tabs.getByRole("tab")).toHaveText(harnesses.map(([tab]) => tab));
   await dialog.getByText("Advanced: register by hand").click();
-  for (const [tab, start, manual] of harnesses) {
+  for (const [tab, start, delivery, manual] of harnesses) {
     await tabs.getByRole("tab", { name: tab, exact: true }).click();
-    await expect(
-      dialog.getByRole("tabpanel").getByRole("figure", { name: "Start command" }).locator("pre"),
-    ).toHaveText(start);
+    const panel = dialog.getByRole("tabpanel");
+    await expect(panel.getByRole("figure", { name: "Start command" }).locator("pre")).toHaveText(
+      start,
+    );
+    await expect(panel.getByText(delivery, { exact: true })).toBeVisible();
     // The manual entry runs partyline, which reads the URL and token from its config file.
     const entry = (await code(manual).textContent()) ?? "";
     expect(entry, tab).toContain("partyline");

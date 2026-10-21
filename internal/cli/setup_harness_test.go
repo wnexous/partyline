@@ -78,6 +78,20 @@ func TestSetupRegistersConfirmedHarnesses(t *testing.T) {
 	require.NotContains(t, r.stdout, "Gemini CLI:")
 	_, err := os.Stat(filepath.Join(home, ".codex", "hooks.json"))
 	require.ErrorIs(t, err, os.ErrNotExist, "declined: no hook written")
+	// WIZ-01: setup ends with the launcher of the harness it registered, not of the skipped one.
+	require.True(t, strings.HasSuffix(r.stdout, "Skipped Codex CLI.\n\nStart a session with partyline claude.\n"), r.stdout)
+}
+
+// WIZ-01: after registering several harnesses setup names each one's launcher.
+func TestSetupEndsWithTheLaunchers(t *testing.T) {
+	e := newChannelEnv(t)
+	calls := &harnessCalls{}
+	r := runSetup(t, setupOpts{
+		env: map[string]string{"HOME": t.TempDir()}, lookPath: installed("claude", "codex", "gemini"), run: calls.run,
+	}, "--url", e.env.URL, "--token", e.secret, "--yes")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.True(t, strings.HasSuffix(r.stdout, "Registered Partyline in Gemini CLI.\n\n"+
+		"Start a session with partyline claude, partyline codex or partyline gemini.\n"), r.stdout)
 }
 
 // HAR-01: --harness picks the harnesses and --yes applies without asking.
@@ -92,6 +106,7 @@ func TestSetupHarnessFlagAndYes(t *testing.T) {
 	require.Equal(t, []string{geminiAdd}, calls.calls())
 	require.NotContains(t, r.stdout, "[Y/n]")
 	require.Contains(t, r.stdout, "Registered Partyline in Gemini CLI.")
+	require.True(t, strings.HasSuffix(r.stdout, "\nStart a session with partyline gemini.\n"), r.stdout)
 	require.FileExists(t, filepath.Join(home, ".gemini", "settings.json"))
 
 	// "none" skips the harness step.
@@ -100,6 +115,7 @@ func TestSetupHarnessFlagAndYes(t *testing.T) {
 		"--url", e.env.URL, "--token", e.secret, "--yes", "--harness", "none")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 	require.Empty(t, calls2.calls())
+	require.NotContains(t, r.stdout, "Start a session", "nothing registered, no launcher to name")
 }
 
 // An unknown harness name is a usage error, before anything is written.
@@ -118,7 +134,8 @@ func TestSetupNoHarnessFound(t *testing.T) {
 	r := runSetup(t, setupOpts{env: map[string]string{"HOME": t.TempDir()}}, "--url", e.env.URL, "--token", e.secret)
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 	require.Contains(t, r.stdout, "No supported harness found")
-	require.Contains(t, r.stdout, "partyline setup --harness <name>")
+	require.Contains(t, r.stdout, "Register one later with: partyline setup --harness <name>, then start it with partyline <name>\n")
+	require.NotContains(t, r.stdout, "Start a session")
 }
 
 // A failing registration is reported and makes setup exit 1; the credentials stay saved.
@@ -133,6 +150,7 @@ func TestSetupHarnessFailure(t *testing.T) {
 	require.Equal(t, 1, r.code)
 	require.Contains(t, r.stderr, "Claude Code: claude mcp add")
 	require.Contains(t, r.stderr, "permission denied")
+	require.NotContains(t, r.stdout, "Start a session", "a failed registration names no launcher")
 	requireSavedConfig(t, home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
 }
 

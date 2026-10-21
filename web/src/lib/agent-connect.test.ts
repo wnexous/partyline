@@ -26,11 +26,11 @@ describe("agent connect commands (WIZ-01)", () => {
   it("lists the six harnesses with their start command and delivery", () => {
     expect(HARNESSES.map((h) => [h.title, h.start, h.delivery])).toEqual([
       ["Claude Code", "partyline claude", "push"],
-      ["OpenCode", "opencode", "push"],
-      ["pi", "pi", "push"],
-      ["omp", "omp", "push"],
-      ["Codex", "codex", "turn"],
-      ["Gemini", "gemini", "turn"],
+      ["OpenCode", "partyline opencode", "push"],
+      ["pi", "partyline pi", "push"],
+      ["omp", "partyline omp", "push"],
+      ["Codex", "partyline codex", "turn"],
+      ["Gemini", "partyline gemini", "turn"],
     ]);
   });
 });

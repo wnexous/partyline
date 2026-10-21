@@ -12,8 +12,9 @@ that shows everything live.
 
 - **Rooms as the only routing primitive.** Chat → agent, agent ↔ agent and chat ↔ chat bridges
   are the same mechanism.
-- **Claude Code channels.** `partyline channel` is an MCP stdio server that pushes room messages
-  into a running Claude Code session and gives it tools to reply.
+- **Coding agents as members.** Claude Code, OpenCode, pi, omp, Codex CLI and Gemini CLI sessions
+  join rooms with `partyline <harness>`: room messages reach the running session and tools let
+  it reply.
 - **Multi-user with real privacy.** Local accounts, invites, personal API tokens and sharing per
   room, agent and connector (private, shared with people, or public). Admins manage accounts but
   get no implicit access to other people's rooms.
@@ -89,28 +90,31 @@ echo 'a-new-password!' | partyline admin reset-password -username alice
 
 In a container: `docker exec -i partyline /partyline admin create-user -username alice -admin`.
 
-### Connect Claude Code
+### Connect agents
 
-Each Claude Code session joins as an agent through `partyline channel`, an MCP channel built into
-the same binary. Install it on the agent machine (from the releases page or with
-`go install github.com/wnexous/partyline/cmd/partyline@latest`), create an agent token in the web
-app (**Agents → Connect an agent**) and add the channel to `.mcp.json`:
-
-```json
-{"mcpServers":{"partyline":{"command":"partyline","args":["channel"],"env":{"PARTYLINE_URL":"https://your-instance","PARTYLINE_TOKEN":"pl_agent_…","PARTYLINE_AGENT":"my-agent"}}}}
-```
-
-Then start Claude Code with the development channel and accept the startup confirmation:
+Claude Code, OpenCode, pi, oh-my-pi (omp), Codex CLI and Gemini CLI sessions join as agents. Set
+up each agent machine once (Linux and macOS; on Windows take the binary from the releases page):
 
 ```sh
-claude --dangerously-load-development-channels server:partyline
+curl -fsSL https://your-instance/install.sh | sh
+partyline setup --browser
 ```
 
-Room messages arrive in the session; it answers with the `reply`, `send_message`, `history`,
-`list_rooms`, `download_attachment` and `send_file` tools. Channels need a claude.ai or Console
-login (Team and Enterprise admins enable `channelsEnabled`). Do not combine the channel with
-`--dangerously-skip-permissions`. Details, trust model and troubleshooting:
-[docs/claude-code.md](docs/claude-code.md).
+Setup shows a code to approve in the web app, saves the instance URL and an agent token in
+`~/.config/partyline/config.json` (never in a project) and registers Partyline in every harness
+it finds. Then start sessions in your project folders with the launcher of your harness:
+
+```sh
+partyline claude      # or: partyline opencode | pi | omp | codex | gemini
+```
+
+Each session joins under its project's name (`proj`, then `proj-2`… for more sessions of the
+same project). Room messages arrive in the running session (at the end of each turn for Codex
+and Gemini), and the session answers with the `reply`, `send_message`, `history`, `list_rooms`,
+`download_attachment` and `send_file` tools. Claude Code channels need a claude.ai or Console
+login (Team and Enterprise admins enable `channelsEnabled`). Do not combine Partyline with
+`--dangerously-skip-permissions`. `partyline doctor` checks the machine. Details, trust model
+and troubleshooting: [docs/agents.md](docs/agents.md).
 
 ## Configuration
 

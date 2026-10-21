@@ -557,9 +557,9 @@ the web changes.
 **Requirement**: WIZ-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] unit and e2e tests assert `partyline <id>` for all six tabs and the expectation line per delivery
-- [ ] setup's final message names the launcher of each registered harness
-- [ ] docs and READMEs describe the launchers
+- [x] unit and e2e tests assert `partyline <id>` for all six tabs and the expectation line per delivery
+- [x] setup's final message names the launcher of each registered harness
+- [x] docs and READMEs describe the launchers
 **Tests**: unit, e2e
 **Gate**: build + e2e
 **Commit**: `feat(web): show partyline <harness> as the start command everywhere`

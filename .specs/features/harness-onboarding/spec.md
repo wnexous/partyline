@@ -212,7 +212,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | PUSH-06 | P1: Push adapters | Tasks | Implementing |
 | TURN-01 | P2: Codex and Gemini | Tasks | Implementing |
 | TURN-02 | P2: Codex and Gemini | Tasks | Implementing |
-| WIZ-01 | P2: Web wizard | Tasks | Implementing |
+| WIZ-01 | P2: Web wizard | Tasks (T15, T23, T32) | Implemented |
 | WIZ-02 | P2: Web wizard | Tasks | Implementing |
 
 **Coverage:** 29 total, mapped in tasks.md (UAT follow-ups: PUSH-06 → T18, PUSH-03 → T19, T20; HAR-01 → T20)

@@ -85,13 +85,15 @@ func (p *prompter) confirm(question string) bool {
 }
 
 // registerHarnesses shows each selected harness's changes and applies them after
-// confirmation (HAR-01). It returns false when a registration failed.
+// confirmation (HAR-01), then names the launcher of each harness it registered (WIZ-01). It
+// returns false when a registration failed.
 func registerHarnesses(ctx context.Context, regs []harness.Registrar, yes bool, p *prompter, io stdio) bool {
 	if len(regs) == 0 {
-		fmt.Fprintln(io.stdout, "\nNo supported harness found (Claude Code, Codex CLI, Gemini CLI, OpenCode, pi, omp).\nRegister one later with: partyline setup --harness <name>")
+		fmt.Fprintln(io.stdout, "\nNo supported harness found (Claude Code, Codex CLI, Gemini CLI, OpenCode, pi, omp).\nRegister one later with: partyline setup --harness <name>, then start it with partyline <name>")
 		return true
 	}
 	ok := true
+	var started []string
 	for _, r := range regs {
 		fmt.Fprintf(io.stdout, "\n%s:\n", r.Title())
 		for _, step := range r.Plan() {
@@ -107,8 +109,20 @@ func registerHarnesses(ctx context.Context, regs []harness.Registrar, yes bool, 
 			continue
 		}
 		fmt.Fprintf(io.stdout, "Registered Partyline in %s.\n", r.Title())
+		started = append(started, "partyline "+r.ID())
+	}
+	if len(started) > 0 {
+		fmt.Fprintf(io.stdout, "\nStart a session with %s.\n", orList(started))
 	}
 	return ok
+}
+
+// orList joins items as "a", "a or b", "a, b or c".
+func orList(items []string) string {
+	if len(items) == 1 {
+		return items[0]
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " or " + items[len(items)-1]
 }
 
 // uninstall removes what setup added (HAR-04): each harness's entries and files and, when

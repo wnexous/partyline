@@ -160,11 +160,11 @@ describe("agents page (UI-15)", () => {
 describe("connect an agent (WIZ-01)", () => {
   const harnesses = [
     { tab: "Claude Code", start: "partyline claude" },
-    { tab: "OpenCode", start: "opencode" },
-    { tab: "pi", start: "pi" },
-    { tab: "omp", start: "omp" },
-    { tab: "Codex", start: "codex" },
-    { tab: "Gemini", start: "gemini" },
+    { tab: "OpenCode", start: "partyline opencode" },
+    { tab: "pi", start: "partyline pi" },
+    { tab: "omp", start: "partyline omp" },
+    { tab: "Codex", start: "partyline codex" },
+    { tab: "Gemini", start: "partyline gemini" },
   ];
   const PUSH = "Room messages arrive in the running session as they come in.";
   const TURN_END =
@@ -227,7 +227,7 @@ describe("connect an agent (WIZ-01)", () => {
     expect(within(panel).getByText(/confirmation screen/i)).toBeInTheDocument();
     expect(within(panel).getByRole("link", { name: /Claude Code guide/ })).toHaveAttribute(
       "href",
-      "https://github.com/wnexous/partyline/blob/main/docs/claude-code.md",
+      "https://github.com/wnexous/partyline/blob/main/docs/agents.md#claude-code",
     );
   });
 

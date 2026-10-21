@@ -12,8 +12,9 @@ SQLite e um app web que mostra tudo ao vivo.
 
 - **A sala é a única primitiva de roteamento.** Chat → agente, agente ↔ agente e ponte
   chat ↔ chat são o mesmo mecanismo.
-- **Canais do Claude Code.** `partyline channel` é um servidor MCP via stdio que entrega as
-  mensagens da sala a uma sessão do Claude Code em execução e dá a ela ferramentas para responder.
+- **Agentes de código como membros.** Sessões do Claude Code, OpenCode, pi, omp, Codex CLI e
+  Gemini CLI entram nas salas com `partyline <harness>`: as mensagens da sala chegam na sessão em
+  andamento e as ferramentas permitem responder.
 - **Multiusuário com privacidade de verdade.** Contas locais, convites, tokens de API pessoais e
   compartilhamento por sala, agente e conector (privado, compartilhado com pessoas ou público).
   Admins gerenciam contas, mas não têm acesso implícito às salas dos outros.
@@ -90,28 +91,32 @@ echo 'uma-senha-nova!' | partyline admin reset-password -username alice
 
 Num contêiner: `docker exec -i partyline /partyline admin create-user -username alice -admin`.
 
-### Conectar o Claude Code
+### Conectar agentes
 
-Cada sessão do Claude Code entra como agente pelo `partyline channel`, um canal MCP que vem no
-mesmo binário. Instale-o na máquina do agente (pela página de releases ou com
-`go install github.com/wnexous/partyline/cmd/partyline@latest`), crie um token de agente no app
-web (**Agentes → Conectar um agente**) e adicione o canal ao `.mcp.json`:
-
-```json
-{"mcpServers":{"partyline":{"command":"partyline","args":["channel"],"env":{"PARTYLINE_URL":"https://sua-instancia","PARTYLINE_TOKEN":"pl_agent_…","PARTYLINE_AGENT":"meu-agente"}}}}
-```
-
-Depois inicie o Claude Code com o canal de desenvolvimento e aceite a confirmação de início:
+Sessões do Claude Code, OpenCode, pi, oh-my-pi (omp), Codex CLI e Gemini CLI entram como agentes.
+Prepare cada máquina de agente uma vez (Linux e macOS; no Windows, baixe o binário na página de
+releases):
 
 ```sh
-claude --dangerously-load-development-channels server:partyline
+curl -fsSL https://sua-instancia/install.sh | sh
+partyline setup --browser
 ```
 
-As mensagens da sala chegam na sessão, que responde com as ferramentas `reply`, `send_message`,
-`history`, `list_rooms`, `download_attachment` e `send_file`. Canais exigem login claude.ai ou
-Console (em Team e Enterprise o admin habilita `channelsEnabled`). Não combine o canal com
-`--dangerously-skip-permissions`. Detalhes, modelo de confiança e solução de problemas (em
-inglês): [docs/claude-code.md](docs/claude-code.md).
+O setup mostra um código para aprovar no app web, salva a URL da instância e um token de agente
+em `~/.config/partyline/config.json` (nunca num projeto) e registra o Partyline em todo harness
+que encontrar. Depois inicie as sessões nas pastas dos projetos com o lançador do seu harness:
+
+```sh
+partyline claude      # ou: partyline opencode | pi | omp | codex | gemini
+```
+
+Cada sessão entra com o nome do projeto (`proj`, depois `proj-2`… para mais sessões do mesmo
+projeto). As mensagens da sala chegam na sessão em andamento (no fim de cada turno no Codex e no
+Gemini), e a sessão responde com as ferramentas `reply`, `send_message`, `history`,
+`list_rooms`, `download_attachment` e `send_file`. Canais do Claude Code exigem login claude.ai
+ou Console (em Team e Enterprise o admin habilita `channelsEnabled`). Não combine o Partyline com
+`--dangerously-skip-permissions`. `partyline doctor` verifica a máquina. Detalhes, modelo de
+confiança e solução de problemas (em inglês): [docs/agents.md](docs/agents.md).
 
 ## Configuração
 

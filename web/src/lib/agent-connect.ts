@@ -2,16 +2,18 @@
  * What a machine needs to join partyline (WIZ-01, harness-onboarding): the installer served by
  * this instance, `partyline setup --browser` (approve the machine here, once; it saves the
  * credentials in the config file and registers partyline in every harness it finds), and the
- * command that starts each harness. The manual entries under "Advanced" never carry a token:
- * the partyline server reads the URL and token from the config file.
+ * launcher that starts each harness, `partyline <id>` (HAR-03). The manual entries under
+ * "Advanced" never carry a token: the partyline server reads the URL and token from the config
+ * file.
  */
 
 export const SETUP_COMMAND = "partyline setup --browser";
 /** Where `partyline setup` saves the instance URL and agent token (mode 0600). */
 export const CONFIG_FILE = "~/.config/partyline/config.json";
 export const RELEASES_URL = "https://github.com/wnexous/partyline/releases";
-export const CLAUDE_CODE_DOCS_URL =
-  "https://github.com/wnexous/partyline/blob/main/docs/claude-code.md";
+/** The guide for every harness; Claude Code's channel has its own section. */
+export const AGENTS_DOCS_URL = "https://github.com/wnexous/partyline/blob/main/docs/agents.md";
+export const CLAUDE_CODE_DOCS_URL = `${AGENTS_DOCS_URL}#claude-code`;
 
 /** `curl … | sh` against this instance's `/install.sh` (ONB-03 pre-fills the instance URL). */
 export function installCommand(origin: string): string {
@@ -26,7 +28,7 @@ export type Delivery = "push" | "turn";
 export interface Harness {
   id: HarnessId;
   title: string;
-  /** Command that starts a session in a project folder. */
+  /** Command that starts a session in a project folder: the launcher `partyline <id>`. */
   start: string;
   delivery: Delivery;
   /** Manual registration: the file to edit and the entry to merge into it. */
@@ -59,7 +61,7 @@ export const HARNESSES: readonly Harness[] = [
   {
     id: "opencode",
     title: "OpenCode",
-    start: "opencode",
+    start: "partyline opencode",
     delivery: "push",
     manual: {
       file: "~/.config/opencode/opencode.json",
@@ -73,7 +75,7 @@ export const HARNESSES: readonly Harness[] = [
   {
     id: "pi",
     title: "pi",
-    start: "pi",
+    start: "partyline pi",
     delivery: "push",
     manual: {
       file: "~/.pi/agent/mcp.json",
@@ -83,7 +85,7 @@ export const HARNESSES: readonly Harness[] = [
   {
     id: "omp",
     title: "omp",
-    start: "omp",
+    start: "partyline omp",
     delivery: "push",
     manual: {
       file: "~/.omp/agent/mcp.json",
@@ -93,7 +95,7 @@ export const HARNESSES: readonly Harness[] = [
   {
     id: "codex",
     title: "Codex",
-    start: "codex",
+    start: "partyline codex",
     delivery: "turn",
     manual: {
       file: "~/.codex/config.toml",
@@ -103,7 +105,7 @@ export const HARNESSES: readonly Harness[] = [
   {
     id: "gemini",
     title: "Gemini",
-    start: "gemini",
+    start: "partyline gemini",
     delivery: "turn",
     manual: {
       file: "~/.gemini/settings.json",
