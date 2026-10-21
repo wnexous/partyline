@@ -52,6 +52,14 @@ func AgentPrefs(a db.Agent, memberDisplayName, delivery, keywordsJSON string) Me
 	return p
 }
 
+// ProjectPrefs builds the prefs of a project membership as its active session a receives
+// them: "@<name>" also matches the project name.
+func ProjectPrefs(a db.Agent, projectName, memberDisplayName, delivery, keywordsJSON string) MemberPrefs {
+	p := AgentPrefs(a, memberDisplayName, delivery, keywordsJSON)
+	p.Names = append(p.Names, projectName)
+	return p
+}
+
 // Delivered describes a message as one agent sees it.
 type Delivered struct {
 	Text string
@@ -122,6 +130,8 @@ type Facts struct {
 	ChatKind string
 	// ReplyAuthorKind and ReplyAuthorID name the author of the replied message.
 	ReplyAuthorKind, ReplyAuthorID string
+	// ReplyAuthorProjectID is the project of the replied message's agent author, if any.
+	ReplyAuthorProjectID string
 }
 
 // LoadFacts reads the chat kind and the replied message's author of a stored message.
@@ -140,6 +150,13 @@ func LoadFacts(ctx context.Context, q *db.Queries, v db.MessageView) (Facts, err
 			return f, err
 		}
 		f.ReplyAuthorKind, f.ReplyAuthorID = r.AuthorKind, r.AuthorID
+		if r.AuthorKind == string(dto.AuthorKindAgent) {
+			a, err := q.GetAgent(ctx, r.AuthorID)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return f, err
+			}
+			f.ReplyAuthorProjectID = a.ProjectID.String
+		}
 	}
 	return f, nil
 }
@@ -149,5 +166,15 @@ func (f Facts) WantedBy(agentID, ownerID string, prefs MemberPrefs) bool {
 	return Wants(prefs, Delivered{
 		Text: f.Text, Trusted: Trusted(f.AuthorUserID, ownerID), ChatKind: f.ChatKind,
 		ReplyToAuthorIsMe: f.ReplyAuthorKind == string(dto.AuthorKindAgent) && f.ReplyAuthorID == agentID,
+	})
+}
+
+// WantedByProject applies Wants for the active session (agentID, ownerID) of project
+// projectID: a reply to any agent of the project counts as a reply to it.
+func (f Facts) WantedByProject(agentID, projectID, ownerID string, prefs MemberPrefs) bool {
+	replyToMe := f.ReplyAuthorKind == string(dto.AuthorKindAgent) &&
+		(f.ReplyAuthorID == agentID || (projectID != "" && f.ReplyAuthorProjectID == projectID))
+	return Wants(prefs, Delivered{
+		Text: f.Text, Trusted: Trusted(f.AuthorUserID, ownerID), ChatKind: f.ChatKind, ReplyToAuthorIsMe: replyToMe,
 	})
 }

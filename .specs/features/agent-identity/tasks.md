@@ -126,7 +126,7 @@ T8 → T9 → T10 → T11
 **Requirement**: PROJ-07, PROJ-09, PROJ-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Only the most recent online session gets it; active switches on disconnect; no echo to the same project; one delivery when also a direct member
+- [x] Only the most recent online session gets it; active switches on disconnect; no echo to the same project; one delivery when also a direct member
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(delivery): deliver project messages to the active session`

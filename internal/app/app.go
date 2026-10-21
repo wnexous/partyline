@@ -139,7 +139,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		_ = st.Close()
 		return nil, err
 	}
-	az := access.New(st, bus, access.Options{Now: opts.Now})
+	presence := agents.NewPresence(st, bus, opts.Now)
+	az := access.New(st, bus, access.Options{Now: opts.Now, Online: presence.Online})
 	a := &App{
 		Config: cfg,
 		Logger: opts.Logger,
@@ -152,7 +153,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Blobs:  blobs,
 		now:    opts.Now,
 	}
-	a.Presence = agents.NewPresence(st, bus, opts.Now)
+	a.Presence = presence
 	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Now: opts.Now})
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
 		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Logger: opts.Logger,

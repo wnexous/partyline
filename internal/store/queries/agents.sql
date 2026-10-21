@@ -138,3 +138,21 @@ SELECT * FROM agents WHERE project_id = ? AND kind = 'temporary';
 
 -- name: SetAgentAutoName :exec
 UPDATE agents SET auto_name = ? WHERE id = ?;
+
+-- name: ListProjectSessions :many
+-- A project's agents, most recently connected first (PROJ-07 picks the first one online).
+SELECT * FROM agents WHERE project_id = ?
+ORDER BY connected_at IS NULL, connected_at DESC, id;
+
+-- name: ListProjectRoomStates :many
+-- The rooms of a project member with the project's cursor and member settings (PROJ-07,
+-- PROJ-08), leaving out rooms where the agent is a member itself.
+SELECT r.id, r.name, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor,
+       m.display_name, m.delivery, m.keywords_json, r.instructions, r.instructions_by
+FROM room_members m
+JOIN rooms r ON r.id = m.room_id
+LEFT JOIN project_cursors c ON c.project_id = m.member_id AND c.room_id = m.room_id
+WHERE m.kind = 'project' AND m.member_id = sqlc.arg(project_id)
+  AND NOT EXISTS (SELECT 1 FROM room_members d
+                  WHERE d.room_id = m.room_id AND d.kind = 'agent' AND d.member_id = sqlc.arg(agent_id))
+ORDER BY r.name, r.id;

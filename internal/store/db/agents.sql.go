@@ -674,6 +674,115 @@ func (q *Queries) ListArchiveCandidates(ctx context.Context, before sql.NullInt6
 	return items, nil
 }
 
+const listProjectRoomStates = `-- name: ListProjectRoomStates :many
+SELECT r.id, r.name, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor,
+       m.display_name, m.delivery, m.keywords_json, r.instructions, r.instructions_by
+FROM room_members m
+JOIN rooms r ON r.id = m.room_id
+LEFT JOIN project_cursors c ON c.project_id = m.member_id AND c.room_id = m.room_id
+WHERE m.kind = 'project' AND m.member_id = ?1
+  AND NOT EXISTS (SELECT 1 FROM room_members d
+                  WHERE d.room_id = m.room_id AND d.kind = 'agent' AND d.member_id = ?2)
+ORDER BY r.name, r.id
+`
+
+type ListProjectRoomStatesParams struct {
+	ProjectID string
+	AgentID   string
+}
+
+type ListProjectRoomStatesRow struct {
+	ID             string
+	Name           string
+	AgentsPaused   bool
+	Cursor         int64
+	DisplayName    string
+	Delivery       string
+	KeywordsJson   string
+	Instructions   string
+	InstructionsBy string
+}
+
+// The rooms of a project member with the project's cursor and member settings (PROJ-07,
+// PROJ-08), leaving out rooms where the agent is a member itself.
+func (q *Queries) ListProjectRoomStates(ctx context.Context, arg ListProjectRoomStatesParams) ([]ListProjectRoomStatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectRoomStates, arg.ProjectID, arg.AgentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectRoomStatesRow
+	for rows.Next() {
+		var i ListProjectRoomStatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.AgentsPaused,
+			&i.Cursor,
+			&i.DisplayName,
+			&i.Delivery,
+			&i.KeywordsJson,
+			&i.Instructions,
+			&i.InstructionsBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectSessions = `-- name: ListProjectSessions :many
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at FROM agents WHERE project_id = ?
+ORDER BY connected_at IS NULL, connected_at DESC, id
+`
+
+// A project's agents, most recently connected first (PROJ-07 picks the first one online).
+func (q *Queries) ListProjectSessions(ctx context.Context, projectID sql.NullString) ([]Agent, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectSessions, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Agent
+	for rows.Next() {
+		var i Agent
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.ProjectID,
+			&i.Harness,
+			&i.Machine,
+			&i.Kind,
+			&i.DisplayName,
+			&i.AutoName,
+			&i.SessionNo,
+			&i.ArchivedAt,
+			&i.ConnectedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjectsForUser = `-- name: ListProjectsForUser :many
 SELECT p.id, p.owner_id, p.slug, p.name, p.created_at, u.username AS owner_username, u.display_name AS owner_display_name
 FROM projects p JOIN users u ON u.id = p.owner_id

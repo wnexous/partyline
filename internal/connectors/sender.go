@@ -61,9 +61,7 @@ func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) 
 	if msg.AuthorKind == string(dto.AuthorKindAgent) {
 		// MEM-01: an agent member with its signature off sends without the author header;
 		// AuthorName is already its display name in the room when it has one (MEM-02).
-		m, err := s.store.R().GetRoomMemberByMember(ctx, db.GetRoomMemberByMemberParams{
-			RoomID: msg.RoomID, Kind: string(dto.MemberKindAgent), MemberID: msg.AuthorID,
-		})
+		m, err := s.authorMember(ctx, msg.RoomID, msg.AuthorID)
 		switch {
 		case err == nil && !m.SignOutbound:
 			out.AuthorName = ""
@@ -98,6 +96,24 @@ func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) 
 		})
 	}
 	return s.manager.Send(ctx, chat.ConnectorID, out)
+}
+
+// authorMember returns the room member row whose settings sign an agent's message: its own
+// membership, else the membership of its project (PROJ-07); sql.ErrNoRows when neither exists.
+func (s *Sender) authorMember(ctx context.Context, roomID, agentID string) (db.RoomMember, error) {
+	q := s.store.R()
+	m, err := q.GetRoomMemberByMember(ctx, db.GetRoomMemberByMemberParams{RoomID: roomID, Kind: string(dto.MemberKindAgent), MemberID: agentID})
+	if !errors.Is(err, sql.ErrNoRows) {
+		return m, err
+	}
+	a, err := q.GetAgent(ctx, agentID)
+	if err != nil {
+		return db.RoomMember{}, err
+	}
+	if !a.ProjectID.Valid {
+		return db.RoomMember{}, sql.ErrNoRows
+	}
+	return q.GetRoomMemberByMember(ctx, db.GetRoomMemberByMemberParams{RoomID: roomID, Kind: string(dto.MemberKindProject), MemberID: a.ProjectID.String})
 }
 
 // quote returns the platform id (and sender) of the replied message in the chat: the

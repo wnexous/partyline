@@ -245,3 +245,38 @@ func TestPlanNoBroadcast(t *testing.T) {
 	got = Plan(RoomState{NoBroadcast: true, BridgeChats: true}, members, Draft{AuthorKind: dto.AuthorKindChat, AuthorID: "C1"})
 	require.Equal(t, []string{"C3"}, got.ChatIDs)
 }
+
+// PROJ-07, PROJ-09: project members are targets of every post except those of an agent of
+// that project; an agent of another project, or of none, does not exclude it.
+func TestPlanProjectMembers(t *testing.T) {
+	members := []Member{
+		{Kind: dto.MemberKindAgent, ID: "A1"},
+		{Kind: dto.MemberKindProject, ID: "P1"},
+		{Kind: dto.MemberKindChat, ID: "C1", Outbound: true},
+		{Kind: dto.MemberKindProject, ID: "P2"},
+	}
+	cases := []struct {
+		name string
+		msg  Draft
+		want []string
+	}{
+		{"user", Draft{AuthorKind: dto.AuthorKindUser, AuthorID: "U1"}, []string{"P1", "P2"}},
+		{"chat", Draft{AuthorKind: dto.AuthorKindChat, AuthorID: "C1"}, []string{"P1", "P2"}},
+		{"system", Draft{AuthorKind: dto.AuthorKindSystem}, []string{"P1", "P2"}},
+		{"agent of P1", Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "S1", AuthorProjectID: "P1"}, []string{"P2"}},
+		{"member agent of P2", Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "A1", AuthorProjectID: "P2"}, []string{"P1"}},
+		{"agent of no project", Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "S9"}, []string{"P1", "P2"}},
+		{"agent of another project", Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "S9", AuthorProjectID: "P9"}, []string{"P1", "P2"}},
+		// A user whose id equals a project id is not an agent of that project.
+		{"user id equal to a project id", Draft{AuthorKind: dto.AuthorKindUser, AuthorID: "P1", AuthorProjectID: "P1"}, []string{"P1", "P2"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Plan(RoomState{}, members, tc.msg)
+			require.Equal(t, tc.want, got.ProjectIDs)
+		})
+	}
+	got := Plan(RoomState{}, members, Draft{AuthorKind: dto.AuthorKindUser, AuthorID: "U1"})
+	require.Equal(t, []string{"A1"}, got.AgentIDs, "projects are not agent targets")
+	require.Equal(t, []string{"C1"}, got.ChatIDs, "projects are not chat targets")
+}

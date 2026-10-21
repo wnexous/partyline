@@ -3,10 +3,12 @@
 package agents
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -168,6 +170,51 @@ func (r *Registry) Lookup(ctx context.Context, ownerID, name string) (db.Agent, 
 // Rooms lists the rooms the agent is a member of, with its cursor and the pause flag.
 func (r *Registry) Rooms(ctx context.Context, agentID string) ([]db.ListAgentRoomStatesRow, error) {
 	return r.store.R().ListAgentRoomStates(ctx, agentID)
+}
+
+// RoomState is a room an agent receives messages from, with its cursor, settings and pause
+// flag: as a member, or through its project (ProjectID set; the cursor and settings are the
+// project member's).
+type RoomState struct {
+	db.ListAgentRoomStatesRow
+	ProjectID string
+}
+
+// SessionRooms lists the agent's rooms by name: those it is a member of and, while it is its
+// project's active session, the rooms its project is a member of (PROJ-07). A room it is in
+// both ways counts as a member room.
+func (r *Registry) SessionRooms(ctx context.Context, agentID string) ([]RoomState, error) {
+	q := r.store.R()
+	direct, err := q.ListAgentRoomStates(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RoomState, 0, len(direct))
+	for _, st := range direct {
+		out = append(out, RoomState{ListAgentRoomStatesRow: st})
+	}
+	a, err := q.GetAgent(ctx, agentID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !a.ProjectID.Valid) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	active, ok, err := delivery.ActiveSession(ctx, q, r.presence.Online, a.ProjectID.String)
+	if err != nil || !ok || active.ID != agentID {
+		return out, err
+	}
+	viaProject, err := q.ListProjectRoomStates(ctx, db.ListProjectRoomStatesParams{ProjectID: a.ProjectID.String, AgentID: agentID})
+	if err != nil {
+		return nil, err
+	}
+	for _, st := range viaProject {
+		out = append(out, RoomState{ListAgentRoomStatesRow: db.ListAgentRoomStatesRow(st), ProjectID: a.ProjectID.String})
+	}
+	slices.SortStableFunc(out, func(x, y RoomState) int {
+		return cmp.Or(strings.Compare(x.Name, y.Name), strings.Compare(x.ID, y.ID))
+	})
+	return out, nil
 }
 
 // Online reports whether the agent has a live connection.

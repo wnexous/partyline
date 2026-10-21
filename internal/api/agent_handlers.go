@@ -169,9 +169,10 @@ func (s *server) agentOnly(h principalFunc) apiFunc {
 	}
 }
 
-// agentRooms lists the agent's rooms with their members (TOOL-09).
+// agentRooms lists the agent's rooms with their members (TOOL-09), including its project's
+// rooms while it is the project's active session (PROJ-07).
 func (s *server) agentRooms(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	states, err := s.Agents.Rooms(r.Context(), p.AgentID)
+	states, err := s.Agents.SessionRooms(r.Context(), p.AgentID)
 	if err != nil {
 		return err
 	}
@@ -221,23 +222,25 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 	}
 	for i, m := range members {
 		out.Members[i] = s.toMember(m)
-		if out.Members[i].Kind == dto.MemberKindAgent && m.MemberID == p.AgentID {
-			out.Me = out.Members[i]
+		if (out.Members[i].Kind == dto.MemberKindAgent && m.MemberID == p.AgentID) ||
+			(st.ProjectID != "" && out.Members[i].Kind == dto.MemberKindProject && m.MemberID == st.ProjectID) {
+			out.Me = out.Members[i] // a session in the room through its project: the project member
 		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
 }
 
-// resolveRoom finds the agent's room by id, else by name (case-insensitive) among its rooms.
-// Unknown rooms and rooms without the agent are 403 "not a member of room <room>" (TOOL-04);
-// a name shared by several of its rooms is 409.
-func (s *server) resolveRoom(ctx context.Context, p authn.Principal, ref string) (db.ListAgentRoomStatesRow, error) {
-	states, err := s.Agents.Rooms(ctx, p.AgentID)
+// resolveRoom finds the agent's room by id, else by name (case-insensitive) among its rooms
+// (SessionRooms: its project's rooms count while it is the active session). Unknown rooms and
+// rooms without the agent are 403 "not a member of room <room>" (TOOL-04); a name shared by
+// several of its rooms is 409.
+func (s *server) resolveRoom(ctx context.Context, p authn.Principal, ref string) (agents.RoomState, error) {
+	states, err := s.Agents.SessionRooms(ctx, p.AgentID)
 	if err != nil {
-		return db.ListAgentRoomStatesRow{}, err
+		return agents.RoomState{}, err
 	}
-	var byName []db.ListAgentRoomStatesRow
+	var byName []agents.RoomState
 	for _, st := range states {
 		if st.ID == ref {
 			return st, nil
@@ -250,9 +253,9 @@ func (s *server) resolveRoom(ctx context.Context, p authn.Principal, ref string)
 	case 1:
 		return byName[0], nil
 	case 0:
-		return db.ListAgentRoomStatesRow{}, errNotMember(ref)
+		return agents.RoomState{}, errNotMember(ref)
 	default:
-		return db.ListAgentRoomStatesRow{}, errAmbiguousRoom
+		return agents.RoomState{}, errAmbiguousRoom
 	}
 }
 
@@ -287,7 +290,7 @@ func (s *server) agentHistory(w http.ResponseWriter, r *http.Request, p authn.Pr
 	return nil
 }
 
-func agentMessage(room db.ListAgentRoomStatesRow, m rooms.Message, ownerID string) dto.AgentMessage {
+func agentMessage(room agents.RoomState, m rooms.Message, ownerID string) dto.AgentMessage {
 	return dto.AgentMessage{
 		Room:    dto.RoomRef{ID: room.ID, Name: room.Name},
 		Trusted: delivery.Trusted(m.AuthorUserID, ownerID),

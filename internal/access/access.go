@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -65,14 +66,18 @@ func maxLevel(a, b Level) Level {
 type Options struct {
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
+	// Online reports whether an agent has a live session; it picks a project's active
+	// session. Nil counts every agent offline.
+	Online func(agentID string) bool
 }
 
 // Authorizer resolves access levels and manages grants.
 type Authorizer struct {
-	store *store.Store
-	bus   *events.Bus
-	now   func() time.Time
-	audit *audit.Log
+	store  *store.Store
+	bus    *events.Bus
+	now    func() time.Time
+	audit  *audit.Log
+	online func(agentID string) bool
 }
 
 // New returns an Authorizer. GrantsChanged events are published on bus.
@@ -80,7 +85,7 @@ func New(st *store.Store, bus *events.Bus, opts Options) *Authorizer {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &Authorizer{store: st, bus: bus, now: opts.Now, audit: audit.New(st, opts.Now)}
+	return &Authorizer{store: st, bus: bus, now: opts.Now, audit: audit.New(st, opts.Now), online: opts.Online}
 }
 
 // RoomLevel resolves the caller's level on a room (ACL-02). A user gets the highest of
@@ -105,19 +110,45 @@ func (a *Authorizer) UserRoomLevel(ctx context.Context, userID, roomID string) (
 	return a.level(ctx, KindRoom, roomID, room.OwnerID, userID)
 }
 
-// AgentRoomLevel is post when the agent is a member of the room, else None.
+// AgentRoomLevel is post when the agent is a member of the room, or when it is the active
+// session of a project that is a member of the room (the agent then uses the room's tools as
+// a member would: post, reply, react, history, attachments), else None.
 func (a *Authorizer) AgentRoomLevel(ctx context.Context, agentID, roomID string) (Level, error) {
 	if agentID == "" {
 		return None, nil
 	}
-	n, err := a.store.R().CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: roomID, Kind: string(dto.MemberKindAgent), MemberID: agentID})
+	q := a.store.R()
+	n, err := q.CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: roomID, Kind: string(dto.MemberKindAgent), MemberID: agentID})
 	if err != nil {
 		return None, err
 	}
-	if n == 0 {
-		return None, nil
+	if n > 0 {
+		return dto.LevelPost, nil
+	}
+	ok, err := a.ActiveInProjectRoom(ctx, agentID, roomID)
+	if err != nil || !ok {
+		return None, err
 	}
 	return dto.LevelPost, nil
+}
+
+// ActiveInProjectRoom reports whether the agent is the active session of a project that is a
+// member of the room (PROJ-07).
+func (a *Authorizer) ActiveInProjectRoom(ctx context.Context, agentID, roomID string) (bool, error) {
+	q := a.store.R()
+	agent, err := q.GetAgent(ctx, agentID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !agent.ProjectID.Valid) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	n, err := q.CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: roomID, Kind: string(dto.MemberKindProject), MemberID: agent.ProjectID.String})
+	if err != nil || n == 0 {
+		return false, err
+	}
+	active, ok, err := delivery.ActiveSession(ctx, q, a.online, agent.ProjectID.String)
+	return ok && active.ID == agentID, err
 }
 
 // grantedLevels returns, per resource id of kind, the highest level granted to the user or everyone.

@@ -237,3 +237,51 @@ func TestOutboundAuthorFollowsMemberSettings(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// PROJ-06, PROJ-07 (MEM-01, MEM-02 for projects): the active session of a member project signs
+// with its readable name by default, with the project member's display name when set, and
+// without an author when the project member's signature is off.
+func TestOutboundAuthorFollowsProjectMemberSettings(t *testing.T) {
+	e := newOutboundEnv(t)
+	h := http.Header{}
+	h.Set(dto.HeaderProject, "ruthe")
+	h.Set(dto.HeaderHarness, "claude")
+	session, resp := e.alice.Token(dto.TokenKindAgent, "desk").DialAgentHeaders(h)
+	require.NotNil(t, session, "upgrade refused: %d", resp.Status)
+	info := session.Welcome(connectortest.Timeout).Agent
+	var agents dto.List[dto.Agent]
+	e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK).Decode(&agents)
+	var project string
+	for _, a := range agents.Items {
+		if a.ID == info.ID {
+			project = a.Project.ID
+		}
+	}
+	member := testkit.Decode[dto.RoomMember](e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members",
+		dto.AddMemberRequest{Kind: dto.MemberKindProject, MemberID: project}).RequireStatus(http.StatusCreated))
+	rest := e.alice.Token(dto.TokenKindAgent, "desk-rest").WithHeader(dto.HeaderAgent, info.Name)
+	post := func(text string) dto.Message {
+		t.Helper()
+		m := testkit.Decode[dto.Message](rest.Post("/api/v1/agent/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: text}).RequireStatus(http.StatusCreated))
+		require.Equal(t, info.ID, m.AuthorID)
+		return m
+	}
+
+	m := post("default")
+	sent := e.inst.WaitSend(t)
+	require.Equal(t, m.ID, sent.MessageID)
+	require.Equal(t, "Ruthe · Claude Code", sent.AuthorName)
+
+	e.alice.Patch("/api/v1/rooms/"+e.room.ID+"/members/"+member.ID, dto.UpdateMemberRequest{DisplayName: ptr("Ruthe bot")}).RequireStatus(http.StatusOK)
+	m = post("named")
+	sent = e.inst.WaitSend(t)
+	require.Equal(t, m.ID, sent.MessageID)
+	require.Equal(t, "Ruthe bot", sent.AuthorName)
+	require.Equal(t, "Ruthe bot", e.authorName(t, e.room.ID, m.ID), "the timeline shows the project member's display name")
+
+	e.alice.Patch("/api/v1/rooms/"+e.room.ID+"/members/"+member.ID, dto.UpdateMemberRequest{SignOutbound: ptr(false)}).RequireStatus(http.StatusOK)
+	m = post("unsigned")
+	sent = e.inst.WaitSend(t)
+	require.Equal(t, m.ID, sent.MessageID)
+	require.Equal(t, "", sent.AuthorName)
+}
