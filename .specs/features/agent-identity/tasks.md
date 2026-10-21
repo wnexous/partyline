@@ -56,7 +56,7 @@ T8 → T9 → T10 → T11
 ### Phase 4: Verifier fixes (iteration 1)
 
 ```
-T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20 → T21
+T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20 → T21 → T22
 ```
 
 ---
@@ -366,3 +366,17 @@ T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19 → T20 → T21
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(agents): pin session hold lookup and owner scope`
+
+#### T22: Test that a hold stays in its project and harness (Verifier iteration 3)
+
+**What**: API test that kills M33: a session key holding `proj-codex` that registers for Gemini gets `proj-gemini`, for project `other` gets `other-codex`, and still gets `proj-codex` back.
+**Where**: `internal/api/agent_session_test.go`
+**Depends on**: T21
+**Reuses**: `registerSession`
+**Requirement**: ID-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] M33 (held lookup ignoring the project-harness family) fails the new test in a scratch worktree
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(agents): keep a session hold within its project and harness`

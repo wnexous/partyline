@@ -234,3 +234,23 @@ func TestInvalidSessionKeyIsIgnored(t *testing.T) {
 	}
 	require.Equal(t, one, registerSession(t, tok, "proj", "codex", "pl-one"), "the valid key still holds its agent")
 }
+
+// ID-01: a session key holds an agent only within its own project and harness. Keys are pids
+// and holds last a day, so a recycled key can arrive for another harness or project: it then
+// gets that family's agent (proj-gemini, other-codex), and still gets proj-codex back for
+// proj and Codex.
+func TestSessionHoldStaysInItsProjectAndHarness(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+
+	codex := registerSession(t, tok, "proj", "codex", "4242")
+	require.Equal(t, []string{"proj-codex", "Proj · Codex"}, []string{codex.Name, codex.DisplayName})
+	gemini := registerSession(t, tok, "proj", "gemini", "4242")
+	require.Equal(t, []string{"proj-gemini", "Proj · Gemini"}, []string{gemini.Name, gemini.DisplayName})
+	other := registerSession(t, tok, "other", "codex", "4242")
+	require.Equal(t, []string{"other-codex", "Other · Codex"}, []string{other.Name, other.DisplayName})
+	require.NotContains(t, []string{codex.ID, gemini.ID}, other.ID)
+	require.NotEqual(t, codex.ID, gemini.ID)
+	require.Equal(t, codex, registerSession(t, tok, "proj", "codex", "4242"))
+}
