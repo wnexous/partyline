@@ -141,7 +141,7 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 			return err
 		}
 		m := agentRows[id]
-		if !facts.WantedBy(id, agent.OwnerID, Prefs(agent.Name, m.DisplayName, m.Delivery, m.KeywordsJson)) {
+		if !facts.WantedBy(id, agent.OwnerID, AgentPrefs(agent, m.DisplayName, m.Delivery, m.KeywordsJson)) {
 			continue // MEM-03, MEM-04: stored, not pushed
 		}
 		d.o.Agents.Push(id, dto.AgentMessage{Room: ref, Trusted: Trusted(msg.AuthorUserID, agent.OwnerID), Message: msg})

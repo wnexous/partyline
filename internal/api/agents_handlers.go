@@ -2,8 +2,8 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
-	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -18,6 +18,10 @@ func (s *server) agentRoutes(mux *http.ServeMux) {
 	s.handle(mux, "DELETE /api/v1/agents/{id}", authed(s.deleteAgent))
 	s.handle(mux, "GET /api/v1/agents/{id}/sharing", authed(s.getAgentSharing))
 	s.handle(mux, "PUT /api/v1/agents/{id}/sharing", authed(s.putAgentSharing))
+	s.handle(mux, "GET /api/v1/projects", authed(s.listProjects))
+	s.handle(mux, "PATCH /api/v1/projects/{id}", authed(s.updateProject))
+	s.handle(mux, "GET /api/v1/projects/{id}/sharing", authed(s.getProjectSharing))
+	s.handle(mux, "PUT /api/v1/projects/{id}/sharing", authed(s.putProjectSharing))
 }
 
 func toAgent(a agents.Agent) dto.Agent {
@@ -34,7 +38,9 @@ func toAgent(a agents.Agent) dto.Agent {
 }
 
 func (s *server) listAgents(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	list, err := s.Agents.ListVisible(r.Context(), p)
+	// PROJ-03: archived agents only with include_archived=true.
+	includeArchived, _ := strconv.ParseBool(r.URL.Query().Get("include_archived"))
+	list, err := s.Agents.ListVisible(r.Context(), p, includeArchived)
 	if err != nil {
 		return err
 	}
@@ -51,17 +57,9 @@ func (s *server) updateAgent(w http.ResponseWriter, r *http.Request, p authn.Pri
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	id := r.PathValue("id")
-	var a agents.Agent
-	var err error
-	if req.Description != nil {
-		a, err = s.Agents.UpdateDescription(r.Context(), p, id, *req.Description)
-	} else {
-		a, err = s.Agents.Get(r.Context(), p, id)
-		if err == nil && a.Level != dto.LevelManage {
-			err = access.ErrForbidden
-		}
-	}
+	a, err := s.Agents.Update(r.Context(), p, r.PathValue("id"), agents.AgentUpdate{
+		Description: req.Description, DisplayName: req.DisplayName, Fixed: req.Fixed,
+	})
 	if err != nil {
 		return err
 	}
@@ -94,6 +92,65 @@ func (s *server) putAgentSharing(w http.ResponseWriter, r *http.Request, p authn
 		return err
 	}
 	v, err := s.Agents.SetSharing(r.Context(), p, r.PathValue("id"), visibilityFrom(req))
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, toSharing(v))
+	return nil
+}
+
+func toProject(p agents.Project) dto.Project {
+	return dto.Project{
+		ID: p.ID, Slug: p.Slug, Name: p.Name,
+		Owner:   dto.User{ID: p.OwnerID, Username: p.OwnerUsername, DisplayName: p.OwnerDisplayName},
+		MyLevel: p.Level, CreatedAt: convert.Time(p.CreatedAt),
+	}
+}
+
+// listProjects lists the projects the user owns or may use.
+func (s *server) listProjects(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	list, err := s.Agents.Projects(r.Context(), p)
+	if err != nil {
+		return err
+	}
+	out := dto.List[dto.Project]{Items: make([]dto.Project, len(list))}
+	for i, pr := range list {
+		out.Items[i] = toProject(pr)
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// updateProject renames the project (PROJ-05); only the owner may.
+func (s *server) updateProject(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.UpdateProjectRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	pr, err := s.Agents.RenameProject(r.Context(), p, r.PathValue("id"), req.Name)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, toProject(pr))
+	return nil
+}
+
+func (s *server) getProjectSharing(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	v, err := s.Agents.ProjectSharing(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, toSharing(v))
+	return nil
+}
+
+// putProjectSharing replaces the project's use grants with a visibility preset.
+func (s *server) putProjectSharing(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.Sharing
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	v, err := s.Agents.SetProjectSharing(r.Context(), p, r.PathValue("id"), visibilityFrom(req))
 	if err != nil {
 		return err
 	}

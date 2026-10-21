@@ -243,6 +243,9 @@ func (a *App) Start(ctx context.Context) error {
 	a.background(bg, "retention", func(ctx context.Context) error {
 		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger)
 	})
+	a.background(bg, "agent-archive", func(ctx context.Context) error {
+		return a.Agents.RunArchive(ctx, agents.ArchiveInterval, a.Logger) // PROJ-02
+	})
 	a.ready.Store(true)
 	return nil
 }

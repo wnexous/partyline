@@ -96,7 +96,7 @@ T8 → T9 → T10 → T11
 **Requirement**: ID-04, ID-05, PROJ-02, PROJ-03, PROJ-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Rename visible in timeline/members/outbound; promote stops archiving; 24 h archive with fake clock; reconnect unarchives; auth matrix
+- [x] Rename visible in timeline/members/outbound; promote stops archiving; 24 h archive with fake clock; reconnect unarchives; auth matrix
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): rename, promote and archive agents`

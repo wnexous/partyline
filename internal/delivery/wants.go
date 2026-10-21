@@ -17,7 +17,8 @@ import (
 type MemberPrefs struct {
 	// Delivery is all (also when empty), mentions or trusted.
 	Delivery dto.DeliveryMode
-	// Names are mentioned as "@<name>": the member's display name and the agent name.
+	// Names are mentioned as "@<name>": the member's display name and the agent name (and,
+	// through AgentPrefs, the agent's display name).
 	Names []string
 	// Keywords count as mentions on word boundaries.
 	Keywords []string
@@ -28,6 +29,27 @@ func Prefs(agentName, displayName, delivery, keywordsJSON string) MemberPrefs {
 	var keywords []string
 	_ = json.Unmarshal([]byte(keywordsJSON), &keywords)
 	return MemberPrefs{Delivery: dto.DeliveryMode(delivery), Names: []string{displayName, agentName}, Keywords: keywords}
+}
+
+// AgentDisplayName is the name people read for an agent: the owner's rename, else the
+// readable name of a temporary agent, else the agent name (ID-01, ID-04).
+func AgentDisplayName(a db.Agent) string {
+	switch {
+	case a.DisplayName != "":
+		return a.DisplayName
+	case a.AutoName != "":
+		return a.AutoName
+	default:
+		return a.Name
+	}
+}
+
+// AgentPrefs builds the prefs of agent a's membership: "@<name>" also matches the agent's
+// display name (ID-04).
+func AgentPrefs(a db.Agent, memberDisplayName, delivery, keywordsJSON string) MemberPrefs {
+	p := Prefs(a.Name, memberDisplayName, delivery, keywordsJSON)
+	p.Names = append(p.Names, AgentDisplayName(a))
+	return p
 }
 
 // Delivered describes a message as one agent sees it.

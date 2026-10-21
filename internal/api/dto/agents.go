@@ -54,9 +54,26 @@ type Agent struct {
 	CreatedAt  time.Time   `json:"created_at"`
 }
 
-// UpdateAgentRequest is the body of PATCH /agents/{id}.
+// MaxAgentDisplayName is the longest agent display name in characters (ID-04).
+const MaxAgentDisplayName = 64
+
+// MaxProjectName is the longest project name in characters (PROJ-05).
+const MaxProjectName = 64
+
+// UpdateAgentRequest is the body of PATCH /agents/{id} (owner only); absent fields are
+// unchanged.
 type UpdateAgentRequest struct {
 	Description *string `json:"description,omitempty"`
+	// DisplayName renames the agent everywhere: 1 to MaxAgentDisplayName characters (ID-04).
+	DisplayName *string `json:"display_name,omitempty"`
+	// Fixed set to true promotes a temporary agent to fixed, so it is never archived (ID-05).
+	Fixed *bool `json:"fixed,omitempty"`
+}
+
+// UpdateProjectRequest is the body of PATCH /projects/{id} (owner only): the new name, 1 to
+// MaxProjectName characters; the slug never changes (PROJ-05).
+type UpdateProjectRequest struct {
+	Name string `json:"name"`
 }
 
 // AgentRoom is a room as seen by an agent (GET /agent/rooms, TOOL-09).

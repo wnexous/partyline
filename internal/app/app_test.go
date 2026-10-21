@@ -151,3 +151,27 @@ func TestStartRunsRetention(t *testing.T) {
 		return errors.Is(err, sql.ErrNoRows)
 	}, jobDeadline, 10*time.Millisecond, "retention did not delete the expired message")
 }
+
+// PROJ-02: Start runs the daily archive job, whose first pass archives a temporary agent
+// offline for more than 24 hours.
+func TestStartRunsAgentArchive(t *testing.T) {
+	a := newApp(t)
+	ctx := context.Background()
+	require.NoError(t, a.Store.Migrate(ctx))
+	user, agent := store.NewID(), store.NewID()
+	old := time.Now().Add(-25 * time.Hour).UnixMilli()
+	require.NoError(t, a.Store.WithTx(ctx, func(q *db.Queries) error {
+		if err := q.CreateUser(ctx, db.CreateUserParams{ID: user, Username: "alice", PasswordHash: "x", Role: "member"}); err != nil {
+			return err
+		}
+		if err := q.CreateAgent(ctx, db.CreateAgentParams{ID: agent, OwnerID: user, Name: "proj-claude", CreatedAt: old}); err != nil {
+			return err
+		}
+		return q.UpdateAgentIdentity(ctx, db.UpdateAgentIdentityParams{Harness: "claude", Kind: string(dto.AgentKindTemporary), ID: agent})
+	}))
+	require.NoError(t, a.Start(ctx))
+	require.Eventually(t, func() bool {
+		got, err := a.Store.R().GetAgent(ctx, agent)
+		return err == nil && got.ArchivedAt.Valid
+	}, jobDeadline, 10*time.Millisecond, "the archive job did not archive the stale temporary agent")
+}

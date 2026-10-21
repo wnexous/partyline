@@ -26,6 +26,20 @@ func (q *Queries) AdvanceAgentCursor(ctx context.Context, arg AdvanceAgentCursor
 	return err
 }
 
+const archiveAgent = `-- name: ArchiveAgent :exec
+UPDATE agents SET archived_at = ? WHERE id = ? AND kind = 'temporary' AND archived_at IS NULL
+`
+
+type ArchiveAgentParams struct {
+	ArchivedAt sql.NullInt64
+	ID         string
+}
+
+func (q *Queries) ArchiveAgent(ctx context.Context, arg ArchiveAgentParams) error {
+	_, err := q.db.ExecContext(ctx, archiveAgent, arg.ArchivedAt, arg.ID)
+	return err
+}
+
 const countAgentBacklog = `-- name: CountAgentBacklog :one
 SELECT COUNT(*) FROM messages
 WHERE room_id = ?1 AND seq > ?2
@@ -313,6 +327,33 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, arg GetProjectBySlugPara
 	return i, err
 }
 
+const getProjectWithOwner = `-- name: GetProjectWithOwner :one
+SELECT p.id, p.owner_id, p.slug, p.name, p.created_at, u.username AS owner_username, u.display_name AS owner_display_name
+FROM projects p JOIN users u ON u.id = p.owner_id
+WHERE p.id = ?
+`
+
+type GetProjectWithOwnerRow struct {
+	Project          Project
+	OwnerUsername    string
+	OwnerDisplayName string
+}
+
+func (q *Queries) GetProjectWithOwner(ctx context.Context, id string) (GetProjectWithOwnerRow, error) {
+	row := q.db.QueryRowContext(ctx, getProjectWithOwner, id)
+	var i GetProjectWithOwnerRow
+	err := row.Scan(
+		&i.Project.ID,
+		&i.Project.OwnerID,
+		&i.Project.Slug,
+		&i.Project.Name,
+		&i.Project.CreatedAt,
+		&i.OwnerUsername,
+		&i.OwnerDisplayName,
+	)
+	return i, err
+}
+
 const insertAgentIfMissing = `-- name: InsertAgentIfMissing :exec
 INSERT INTO agents (id, owner_id, name, description, created_at) VALUES (?, ?, ?, '', ?)
 ON CONFLICT (owner_id, name) DO NOTHING
@@ -455,6 +496,33 @@ func (q *Queries) ListAgentPending(ctx context.Context, arg ListAgentPendingPara
 	return items, nil
 }
 
+const listAgentRoomIDs = `-- name: ListAgentRoomIDs :many
+SELECT room_id FROM room_members WHERE kind = 'agent' AND member_id = ?
+`
+
+func (q *Queries) ListAgentRoomIDs(ctx context.Context, memberID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentRoomIDs, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAgentRoomStates = `-- name: ListAgentRoomStates :many
 SELECT r.id, r.name, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor,
        m.display_name, m.delivery, m.keywords_json, r.instructions, r.instructions_by
@@ -515,11 +583,17 @@ SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.
        CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN projects p ON p.id = a.project_id
-WHERE a.owner_id = ?1
-   OR a.id IN (SELECT g.resource_id FROM grants g
-               WHERE g.resource_kind = 'agent' AND g.subject IN (?1, '*'))
+WHERE (a.owner_id = ?1
+       OR a.id IN (SELECT g.resource_id FROM grants g
+                   WHERE g.resource_kind = 'agent' AND g.subject IN (?1, '*')))
+  AND (CAST(?2 AS BOOLEAN) OR a.archived_at IS NULL)
 ORDER BY a.name, u.username, a.id
 `
+
+type ListAgentsForUserParams struct {
+	UserID          string
+	IncludeArchived bool
+}
 
 type ListAgentsForUserRow struct {
 	Agent            Agent
@@ -529,8 +603,8 @@ type ListAgentsForUserRow struct {
 	ProjectName      string
 }
 
-func (q *Queries) ListAgentsForUser(ctx context.Context, userID string) ([]ListAgentsForUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, listAgentsForUser, userID)
+func (q *Queries) ListAgentsForUser(ctx context.Context, arg ListAgentsForUserParams) ([]ListAgentsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentsForUser, arg.UserID, arg.IncludeArchived)
 	if err != nil {
 		return nil, err
 	}
@@ -572,6 +646,123 @@ func (q *Queries) ListAgentsForUser(ctx context.Context, userID string) ([]ListA
 	return items, nil
 }
 
+const listArchiveCandidates = `-- name: ListArchiveCandidates :many
+SELECT id FROM agents
+WHERE kind = 'temporary' AND archived_at IS NULL AND COALESCE(last_seen_at, created_at) < ?1
+`
+
+func (q *Queries) ListArchiveCandidates(ctx context.Context, before sql.NullInt64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listArchiveCandidates, before)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectsForUser = `-- name: ListProjectsForUser :many
+SELECT p.id, p.owner_id, p.slug, p.name, p.created_at, u.username AS owner_username, u.display_name AS owner_display_name
+FROM projects p JOIN users u ON u.id = p.owner_id
+WHERE p.owner_id = ?1
+   OR p.id IN (SELECT g.resource_id FROM grants g
+               WHERE g.resource_kind = 'project' AND g.subject IN (?1, '*'))
+ORDER BY p.name, u.username, p.id
+`
+
+type ListProjectsForUserRow struct {
+	Project          Project
+	OwnerUsername    string
+	OwnerDisplayName string
+}
+
+func (q *Queries) ListProjectsForUser(ctx context.Context, userID string) ([]ListProjectsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectsForUserRow
+	for rows.Next() {
+		var i ListProjectsForUserRow
+		if err := rows.Scan(
+			&i.Project.ID,
+			&i.Project.OwnerID,
+			&i.Project.Slug,
+			&i.Project.Name,
+			&i.Project.CreatedAt,
+			&i.OwnerUsername,
+			&i.OwnerDisplayName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTemporaryProjectAgents = `-- name: ListTemporaryProjectAgents :many
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at FROM agents WHERE project_id = ? AND kind = 'temporary'
+`
+
+func (q *Queries) ListTemporaryProjectAgents(ctx context.Context, projectID sql.NullString) ([]Agent, error) {
+	rows, err := q.db.QueryContext(ctx, listTemporaryProjectAgents, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Agent
+	for rows.Next() {
+		var i Agent
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.ProjectID,
+			&i.Harness,
+			&i.Machine,
+			&i.Kind,
+			&i.DisplayName,
+			&i.AutoName,
+			&i.SessionNo,
+			&i.ArchivedAt,
+			&i.ConnectedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markAgentConnected = `-- name: MarkAgentConnected :exec
 UPDATE agents SET connected_at = ?, archived_at = NULL WHERE id = ?
 `
@@ -583,6 +774,43 @@ type MarkAgentConnectedParams struct {
 
 func (q *Queries) MarkAgentConnected(ctx context.Context, arg MarkAgentConnectedParams) error {
 	_, err := q.db.ExecContext(ctx, markAgentConnected, arg.ConnectedAt, arg.ID)
+	return err
+}
+
+const promoteAgent = `-- name: PromoteAgent :exec
+UPDATE agents SET kind = 'fixed', archived_at = NULL WHERE id = ?
+`
+
+func (q *Queries) PromoteAgent(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, promoteAgent, id)
+	return err
+}
+
+const setAgentAutoName = `-- name: SetAgentAutoName :exec
+UPDATE agents SET auto_name = ? WHERE id = ?
+`
+
+type SetAgentAutoNameParams struct {
+	AutoName string
+	ID       string
+}
+
+func (q *Queries) SetAgentAutoName(ctx context.Context, arg SetAgentAutoNameParams) error {
+	_, err := q.db.ExecContext(ctx, setAgentAutoName, arg.AutoName, arg.ID)
+	return err
+}
+
+const setAgentDisplayName = `-- name: SetAgentDisplayName :exec
+UPDATE agents SET display_name = ? WHERE id = ?
+`
+
+type SetAgentDisplayNameParams struct {
+	DisplayName string
+	ID          string
+}
+
+func (q *Queries) SetAgentDisplayName(ctx context.Context, arg SetAgentDisplayNameParams) error {
+	_, err := q.db.ExecContext(ctx, setAgentDisplayName, arg.DisplayName, arg.ID)
 	return err
 }
 
@@ -640,5 +868,19 @@ func (q *Queries) UpdateAgentIdentity(ctx context.Context, arg UpdateAgentIdenti
 		arg.SessionNo,
 		arg.ID,
 	)
+	return err
+}
+
+const updateProjectName = `-- name: UpdateProjectName :exec
+UPDATE projects SET name = ? WHERE id = ?
+`
+
+type UpdateProjectNameParams struct {
+	Name string
+	ID   string
+}
+
+func (q *Queries) UpdateProjectName(ctx context.Context, arg UpdateProjectNameParams) error {
+	_, err := q.db.ExecContext(ctx, updateProjectName, arg.Name, arg.ID)
 	return err
 }

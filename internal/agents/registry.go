@@ -15,6 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -218,26 +219,16 @@ func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, projectSlug, pr
 	}
 }
 
-// DisplayName is the name people read for the agent: the owner's rename, else the readable
-// name of a temporary agent, else the agent name (ID-01, ID-04).
-func DisplayName(a db.Agent) string {
-	switch {
-	case a.DisplayName != "":
-		return a.DisplayName
-	case a.AutoName != "":
-		return a.AutoName
-	default:
-		return a.Name
-	}
-}
+// DisplayName is the name people read for the agent (delivery.AgentDisplayName).
+func DisplayName(a db.Agent) string { return delivery.AgentDisplayName(a) }
 
 // ListVisible returns the agents the user owns plus those shared with the user (use grants,
-// own or everyone), by name.
-func (r *Registry) ListVisible(ctx context.Context, p authn.Principal) ([]Agent, error) {
+// own or everyone), by name. Archived agents are left out unless includeArchived (PROJ-03).
+func (r *Registry) ListVisible(ctx context.Context, p authn.Principal, includeArchived bool) ([]Agent, error) {
 	if p.Kind != authn.KindUser {
 		return nil, access.ErrForbidden
 	}
-	rows, err := r.store.R().ListAgentsForUser(ctx, p.UserID)
+	rows, err := r.store.R().ListAgentsForUser(ctx, db.ListAgentsForUserParams{UserID: p.UserID, IncludeArchived: includeArchived})
 	if err != nil {
 		return nil, err
 	}
@@ -252,21 +243,75 @@ func (r *Registry) ListVisible(ctx context.Context, p authn.Principal) ([]Agent,
 	return out, nil
 }
 
-// UpdateDescription changes the agent's description; requires ownership (manage).
-func (r *Registry) UpdateDescription(ctx context.Context, p authn.Principal, agentID, description string) (Agent, error) {
+// AgentUpdate changes an agent; nil fields are unchanged.
+type AgentUpdate struct {
+	Description *string
+	// DisplayName renames the agent (ID-04): 1 to 64 characters after trimming.
+	DisplayName *string
+	// Fixed promotes a temporary agent to fixed (ID-05); only true is accepted.
+	Fixed *bool
+}
+
+// Update changes the agent's description, display name or kind; requires ownership
+// (manage). An invalid field changes nothing (422).
+func (r *Registry) Update(ctx context.Context, p authn.Principal, agentID string, u AgentUpdate) (Agent, error) {
 	if _, err := r.authorize(ctx, p, agentID, dto.LevelManage); err != nil {
 		return Agent{}, err
 	}
-	if utf8.RuneCountInString(description) > MaxDescriptionLength {
-		return Agent{}, &validation.Error{Fields: map[string]string{"description": "must have at most 1000 characters"}}
+	check := validation.Check{}
+	if u.Description != nil && utf8.RuneCountInString(*u.Description) > MaxDescriptionLength {
+		check.Add("description", "must have at most 1000 characters")
 	}
+	var display string
+	if u.DisplayName != nil {
+		display = strings.TrimSpace(*u.DisplayName)
+		if n := utf8.RuneCountInString(display); n == 0 || n > dto.MaxAgentDisplayName {
+			check.Add("display_name", "must have 1 to 64 characters")
+		}
+	}
+	if u.Fixed != nil && !*u.Fixed {
+		check.Add("fixed", "can only be true: a fixed agent stays fixed")
+	}
+	if err := check.Err(); err != nil {
+		return Agent{}, err
+	}
+	var roomIDs []string
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
-		return q.UpdateAgentDescription(ctx, db.UpdateAgentDescriptionParams{Description: description, ID: agentID})
+		if u.Description != nil {
+			if err := q.UpdateAgentDescription(ctx, db.UpdateAgentDescriptionParams{Description: *u.Description, ID: agentID}); err != nil {
+				return err
+			}
+		}
+		if u.DisplayName != nil {
+			if err := q.SetAgentDisplayName(ctx, db.SetAgentDisplayNameParams{DisplayName: display, ID: agentID}); err != nil {
+				return err
+			}
+			var err error
+			if roomIDs, err = q.ListAgentRoomIDs(ctx, agentID); err != nil {
+				return err
+			}
+		}
+		if u.Fixed != nil {
+			return q.PromoteAgent(ctx, agentID)
+		}
+		return nil
 	})
 	if err != nil {
 		return Agent{}, err
 	}
+	r.membersChanged(roomIDs) // member names changed
 	return r.Get(ctx, p, agentID)
+}
+
+// membersChanged publishes MembersChanged once per room.
+func (r *Registry) membersChanged(roomIDs []string) {
+	seen := map[string]bool{}
+	for _, id := range roomIDs {
+		if !seen[id] {
+			seen[id] = true
+			r.bus.Publish(events.MembersChanged{RoomID: id})
+		}
+	}
 }
 
 // Delete removes the agent with its room memberships, grants and cursors and closes its

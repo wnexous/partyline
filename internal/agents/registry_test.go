@@ -190,7 +190,7 @@ func TestListVisibleOwnedAndUseGrants(t *testing.T) {
 	f.grant(t, shared, alice.UserID)
 	f.grant(t, public, access.Everyone)
 
-	list, err := f.reg.ListVisible(ctx, alice)
+	list, err := f.reg.ListVisible(ctx, alice, false)
 	require.NoError(t, err)
 	got := map[string]access.Level{}
 	for _, a := range list {
@@ -198,7 +198,7 @@ func TestListVisibleOwnedAndUseGrants(t *testing.T) {
 	}
 	require.Equal(t, map[string]access.Level{own: dto.LevelManage, shared: dto.LevelUse, public: dto.LevelUse}, got)
 
-	list, err = f.reg.ListVisible(ctx, bob)
+	list, err = f.reg.ListVisible(ctx, bob, false)
 	require.NoError(t, err)
 	ids := []string{}
 	for _, a := range list {
@@ -262,15 +262,15 @@ func TestUpdateDescription(t *testing.T) {
 	agent := f.upsert(t, alice, "builder")
 	f.grant(t, agent, bob.UserID)
 
-	a, err := f.reg.UpdateDescription(ctx, alice, agent, "Builds things")
+	a, err := f.reg.Update(ctx, alice, agent, AgentUpdate{Description: ptr("Builds things")})
 	require.NoError(t, err)
 	require.Equal(t, "Builds things", a.Description)
 	require.Equal(t, dto.LevelManage, a.Level)
 
-	_, err = f.reg.UpdateDescription(ctx, bob, agent, "hijack")
+	_, err = f.reg.Update(ctx, bob, agent, AgentUpdate{Description: ptr("hijack")})
 	require.ErrorIs(t, err, access.ErrForbidden)
 
-	_, err = f.reg.UpdateDescription(ctx, alice, agent, strings.Repeat("x", 1001))
+	_, err = f.reg.Update(ctx, alice, agent, AgentUpdate{Description: ptr(strings.Repeat("x", 1001))})
 	var verr *validation.Error
 	require.ErrorAs(t, err, &verr)
 	require.Contains(t, verr.Fields, "description")
@@ -307,3 +307,5 @@ func TestPresenceReplaceAndOffline(t *testing.T) {
 	require.False(t, f.presence.Online(agent.ID))
 	require.Equal(t, []events.Event{events.AgentPresence{AgentID: agent.ID, OwnerID: alice.UserID, Online: false}}, drain(ch))
 }
+
+func ptr[T any](v T) *T { return &v }

@@ -39,7 +39,7 @@ DELETE FROM rooms WHERE id = ?;
 -- name: ListRoomMembers :many
 SELECT sqlc.embed(m),
        CAST(CASE m.kind
-            WHEN 'agent' THEN COALESCE(a.name, '')
+            WHEN 'agent' THEN COALESCE(NULLIF(a.display_name, ''), NULLIF(a.auto_name, ''), a.name, '')
             WHEN 'chat' THEN COALESCE(c.title, '')
             ELSE COALESCE(NULLIF(u.display_name, ''), u.username, '')
             END AS TEXT) AS name,

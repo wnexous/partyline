@@ -427,7 +427,7 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		if err != nil {
 			return nil, err
 		}
-		prefs := delivery.Prefs(a.Name, st.DisplayName, st.Delivery, st.KeywordsJson)
+		prefs := delivery.AgentPrefs(a, st.DisplayName, st.Delivery, st.KeywordsJson)
 		// MEM-03, MEM-04: unwanted messages are not delivered. Those before the first delivered
 		// one move the cursor (before that message is written); later ones wait for an ack.
 		written, skippedTo := false, int64(0)

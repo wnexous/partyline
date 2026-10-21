@@ -45,7 +45,7 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, limit int) ([]dto.Age
 			return nil, err
 		}
 		ref := dto.RoomRef{ID: st.ID, Name: st.Name}
-		prefs := delivery.Prefs(a.Name, st.DisplayName, st.Delivery, st.KeywordsJson)
+		prefs := delivery.AgentPrefs(a, st.DisplayName, st.Delivery, st.KeywordsJson)
 		for _, m := range msgs {
 			facts, err := delivery.LoadFacts(ctx, g.d.Store.R(), m.MessageView)
 			if err != nil {

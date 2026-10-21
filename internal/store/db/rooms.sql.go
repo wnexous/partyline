@@ -260,7 +260,7 @@ func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithO
 const listRoomMembers = `-- name: ListRoomMembers :many
 SELECT m.id, m.room_id, m.kind, m.member_id, m.outbound, m.added_by, m.created_at, m.display_name, m.sign_outbound, m.delivery, m.keywords_json,
        CAST(CASE m.kind
-            WHEN 'agent' THEN COALESCE(a.name, '')
+            WHEN 'agent' THEN COALESCE(NULLIF(a.display_name, ''), NULLIF(a.auto_name, ''), a.name, '')
             WHEN 'chat' THEN COALESCE(c.title, '')
             ELSE COALESCE(NULLIF(u.display_name, ''), u.username, '')
             END AS TEXT) AS name,

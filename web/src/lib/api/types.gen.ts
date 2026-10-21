@@ -69,10 +69,34 @@ export interface Agent {
   created_at: string /* RFC 3339 */;
 }
 /**
- * UpdateAgentRequest is the body of PATCH /agents/{id}.
+ * MaxAgentDisplayName is the longest agent display name in characters (ID-04).
+ */
+export const MaxAgentDisplayName = 64;
+/**
+ * MaxProjectName is the longest project name in characters (PROJ-05).
+ */
+export const MaxProjectName = 64;
+/**
+ * UpdateAgentRequest is the body of PATCH /agents/{id} (owner only); absent fields are
+ * unchanged.
  */
 export interface UpdateAgentRequest {
   description?: string;
+  /**
+   * DisplayName renames the agent everywhere: 1 to MaxAgentDisplayName characters (ID-04).
+   */
+  display_name?: string;
+  /**
+   * Fixed set to true promotes a temporary agent to fixed, so it is never archived (ID-05).
+   */
+  fixed?: boolean;
+}
+/**
+ * UpdateProjectRequest is the body of PATCH /projects/{id} (owner only): the new name, 1 to
+ * MaxProjectName characters; the slug never changes (PROJ-05).
+ */
+export interface UpdateProjectRequest {
+  name: string;
 }
 /**
  * AgentRoom is a room as seen by an agent (GET /agent/rooms, TOOL-09).

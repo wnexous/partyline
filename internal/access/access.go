@@ -1,5 +1,5 @@
 // Package access authorizes every resource through one grants table (AD-005): it resolves a
-// caller's level on rooms, agents and connectors and replaces grants from visibility presets.
+// caller's level on rooms, agents, connectors and projects and replaces grants from visibility presets.
 // Instance admins get no implicit access (ACL-08).
 package access
 
@@ -35,10 +35,11 @@ const (
 	KindRoom      Kind = "room"
 	KindAgent     Kind = "agent"
 	KindConnector Kind = "connector"
+	KindProject   Kind = "project"
 )
 
 // Level is an access level; None ("") means no access. Rooms order view < post < manage;
-// agents and connectors order use < manage, where manage means ownership.
+// agents, connectors and projects order use < manage, where manage means ownership.
 type Level = dto.Level
 
 // None is the absence of access.
@@ -164,6 +165,24 @@ func (a *Authorizer) ConnectorLevel(ctx context.Context, userID, connectorID str
 		return None, err
 	}
 	return a.level(ctx, KindConnector, connectorID, c.OwnerID, userID)
+}
+
+// ProjectLevel is manage for the project's owner, use for grantees, else None.
+func (a *Authorizer) ProjectLevel(ctx context.Context, userID, projectID string) (Level, error) {
+	p, err := a.store.R().GetProject(ctx, projectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return None, nil
+	}
+	if err != nil {
+		return None, err
+	}
+	return a.level(ctx, KindProject, projectID, p.OwnerID, userID)
+}
+
+// CanUseProject reports whether the user owns the project or holds a use grant on it (PROJ-06).
+func (a *Authorizer) CanUseProject(ctx context.Context, userID, projectID string) (bool, error) {
+	l, err := a.ProjectLevel(ctx, userID, projectID)
+	return AtLeast(l, dto.LevelUse), err
 }
 
 // CanUseAgent reports whether the user owns the agent or holds a use grant on it (ACL-05).

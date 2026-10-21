@@ -26,9 +26,10 @@ SELECT sqlc.embed(a), u.username AS owner_username, u.display_name AS owner_disp
        CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN projects p ON p.id = a.project_id
-WHERE a.owner_id = sqlc.arg(user_id)
-   OR a.id IN (SELECT g.resource_id FROM grants g
-               WHERE g.resource_kind = 'agent' AND g.subject IN (sqlc.arg(user_id), '*'))
+WHERE (a.owner_id = sqlc.arg(user_id)
+       OR a.id IN (SELECT g.resource_id FROM grants g
+                   WHERE g.resource_kind = 'agent' AND g.subject IN (sqlc.arg(user_id), '*')))
+  AND (CAST(sqlc.arg(include_archived) AS BOOLEAN) OR a.archived_at IS NULL)
 ORDER BY a.name, u.username, a.id;
 
 -- name: UpdateAgentDescription :exec
@@ -99,3 +100,41 @@ UPDATE agents SET connected_at = ?, archived_at = NULL WHERE id = ?;
 
 -- name: GetProject :one
 SELECT * FROM projects WHERE id = ?;
+
+-- name: SetAgentDisplayName :exec
+UPDATE agents SET display_name = ? WHERE id = ?;
+
+-- name: PromoteAgent :exec
+UPDATE agents SET kind = 'fixed', archived_at = NULL WHERE id = ?;
+
+-- name: ListArchiveCandidates :many
+SELECT id FROM agents
+WHERE kind = 'temporary' AND archived_at IS NULL AND COALESCE(last_seen_at, created_at) < sqlc.arg(before);
+
+-- name: ArchiveAgent :exec
+UPDATE agents SET archived_at = ? WHERE id = ? AND kind = 'temporary' AND archived_at IS NULL;
+
+-- name: ListAgentRoomIDs :many
+SELECT room_id FROM room_members WHERE kind = 'agent' AND member_id = ?;
+
+-- name: ListProjectsForUser :many
+SELECT sqlc.embed(p), u.username AS owner_username, u.display_name AS owner_display_name
+FROM projects p JOIN users u ON u.id = p.owner_id
+WHERE p.owner_id = sqlc.arg(user_id)
+   OR p.id IN (SELECT g.resource_id FROM grants g
+               WHERE g.resource_kind = 'project' AND g.subject IN (sqlc.arg(user_id), '*'))
+ORDER BY p.name, u.username, p.id;
+
+-- name: GetProjectWithOwner :one
+SELECT sqlc.embed(p), u.username AS owner_username, u.display_name AS owner_display_name
+FROM projects p JOIN users u ON u.id = p.owner_id
+WHERE p.id = ?;
+
+-- name: UpdateProjectName :exec
+UPDATE projects SET name = ? WHERE id = ?;
+
+-- name: ListTemporaryProjectAgents :many
+SELECT * FROM agents WHERE project_id = ? AND kind = 'temporary';
+
+-- name: SetAgentAutoName :exec
+UPDATE agents SET auto_name = ? WHERE id = ?;

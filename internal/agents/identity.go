@@ -21,7 +21,7 @@ const (
 	// MaxMachineLength is the longest machine name kept, in characters.
 	MaxMachineLength = 64
 	// MaxProjectNameLength is the longest project name, in characters (PROJ-05).
-	MaxProjectNameLength = 64
+	MaxProjectNameLength = dto.MaxProjectName
 	// DefaultHarness is the harness of sessions that name none, or an unknown one.
 	DefaultHarness = "agent"
 )
