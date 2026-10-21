@@ -4,8 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"strings"
+	goio "io"
 	"time"
 
 	"github.com/wnexous/partyline/internal/channel"
@@ -52,21 +51,18 @@ func hookCmd(ctx context.Context, args []string, io stdio) int {
 		fmt.Fprintln(io.stderr, "partyline hook: not configured; run partyline setup")
 		return allow()
 	}
-	// The same name the tools-only channel of this session uses: PARTYLINE_AGENT, else the
-	// session directory's derived name.
-	agent := strings.TrimSpace(io.getenv("PARTYLINE_AGENT"))
-	if agent == "" {
-		dir := in.Cwd
-		if dir == "" && io.getwd != nil {
-			dir, _ = io.getwd()
-		}
-		if dir != "" {
-			agent = channel.DeriveName(dir)
-		}
+	// The same agent the tools-only channel of this session uses: PARTYLINE_AGENT, else the
+	// temporary agent of the session's project and harness (ID-01), which the server returns
+	// to both since neither is ever online.
+	hio := io
+	hio.stderr = goio.Discard // no terminal to warn
+	if in.Cwd != "" {
+		hio.getwd = func() (string, error) { return in.Cwd, nil }
 	}
+	id, _ := sessionIdentity("hook", "", "", "", hio)
 	ctx, cancel := context.WithTimeout(ctx, hookTimeout)
 	defer cancel()
-	msgs, err := channel.Pending(ctx, channel.PendingOptions{URL: creds.URL, Token: creds.Token, Agent: agent})
+	msgs, err := channel.Pending(ctx, channel.PendingOptions{URL: creds.URL, Token: creds.Token, Agent: id.Name, Identity: id})
 	if err != nil {
 		fmt.Fprintln(io.stderr, "partyline hook:", err)
 		return allow()
@@ -80,9 +76,9 @@ func hookCmd(ctx context.Context, args []string, io stdio) int {
 	return 0
 }
 
-func readAllLimited(r io.Reader, n int64) ([]byte, error) {
+func readAllLimited(r goio.Reader, n int64) ([]byte, error) {
 	if r == nil {
 		return nil, nil
 	}
-	return io.ReadAll(io.LimitReader(r, n))
+	return goio.ReadAll(goio.LimitReader(r, n))
 }

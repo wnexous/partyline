@@ -9,9 +9,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/wnexous/partyline/internal/agents"
+	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/channel/mcp"
 )
 
@@ -24,12 +26,13 @@ type Options struct {
 	URL string
 	// Token is an agent token (pl_agent_...).
 	Token string
-	// Agent is the agent name; it is slugified like the server does (empty → "agent").
+	// Agent is the explicit agent name (--name), slugified like the server does: a fixed
+	// agent, newest session wins (ID-02). Empty makes the session temporary: the server names
+	// it after Project and Harness and the channel keeps that name (ID-01).
 	Agent string
-	// UniqueName marks a derived name (not set by the user): when that agent is online in
-	// another session, the server assigns the next free "<name>-N" and the channel uses it
-	// (NAME-02). An explicit name replaces the older session instead (NAME-03).
-	UniqueName bool
+	// Project is the session's project (ID-01); Machine its hostname. Both are sent on connect.
+	Project string
+	Machine string
 	// TempDir is where download_attachment saves files (<TempDir>/partyline/<agent>/);
 	// empty means os.TempDir().
 	TempDir string
@@ -38,12 +41,13 @@ type Options struct {
 	// ToolsOnly serves the tools without the agent WebSocket, for harnesses that get the
 	// messages from `partyline listen` (PUSH-02). The agent is registered over REST and the
 	// tools act as the agent named in the session file of SessionKey when listen recorded
-	// one, else as Agent (never in unique mode: without a socket there is no welcome).
+	// one, else as Agent, else as the temporary agent the registration returned.
 	ToolsOnly bool
 	// SessionKey names the session file listen writes (see ListenOptions.SessionKey).
 	SessionKey string
-	// Harness names the harness that runs the full channel when it is not Claude Code;
-	// HarnessOmp switches the MCP instructions to OmpInstructions. Empty means Claude Code.
+	// Harness is the harness id sent on connect; HarnessOmp also switches the MCP
+	// instructions to OmpInstructions. Empty means Claude Code for the full channel and an
+	// unknown harness ("agent") for a tools-only one.
 	Harness string
 
 	Stdin  io.Reader
@@ -74,7 +78,14 @@ func Run(ctx context.Context, o Options) error {
 	if o.HTTPClient == nil {
 		o.HTTPClient = &http.Client{}
 	}
-	agent := agents.Slug(o.Agent)
+	agent := ""
+	if o.Agent != "" {
+		agent = agents.Slug(o.Agent)
+	}
+	id := Identity{Name: agent, Project: o.Project, Harness: o.Harness, Machine: o.Machine}
+	if id.Harness == "" && !o.ToolsOnly {
+		id.Harness = HarnessClaude
+	}
 
 	instructions := Instructions
 	switch {
@@ -91,21 +102,29 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return fmt.Errorf("temp dir: %w", err)
 	}
-	t := &tools{dir: filepath.Join(tmp, "partyline", agent)}
+	dirName := agent
+	if dirName == "" {
+		dirName = agents.Slug(o.Project) // a temporary session: the project's folder
+	}
+	t := &tools{dir: filepath.Join(tmp, "partyline", dirName)}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if o.ToolsOnly {
 		path := sessionFile(tmp, o.SessionKey)
+		reg := &registration{done: make(chan struct{})}
 		name := func() string {
 			if n := readSessionName(path); n != "" {
 				return n
 			}
-			return agent
+			if agent != "" {
+				return agent
+			}
+			return reg.wait(toolTimeout)
 		}
-		t.api = &client{base: base, token: o.Token, agent: name, http: o.HTTPClient}
+		t.api = &client{base: base, token: o.Token, agent: name, identity: id, http: o.HTTPClient}
 		t.register(srv)
 		t.registerWait(srv)
-		go t.api.register(ctx, o.Stderr)
+		go reg.run(ctx, t.api, agent, path, o.Stderr)
 		err := srv.Serve(ctx)
 		if errors.Is(err, context.Canceled) {
 			return nil
@@ -113,8 +132,8 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 	l := newLink(base, o.Token, agent, o.HTTPClient, srv, o.Stderr, o.timing)
-	l.unique = o.UniqueName
-	t.api = &client{base: base, token: o.Token, agent: l.name, http: o.HTTPClient}
+	l.identity, l.temporary = id, agent == ""
+	t.api = &client{base: base, token: o.Token, agent: l.name, identity: id, http: o.HTTPClient}
 	t.link = l
 	t.register(srv)
 
@@ -138,4 +157,49 @@ func Run(ctx context.Context, o Options) error {
 	case <-time.After(closeTimeout):
 	}
 	return serveErr
+}
+
+// registration registers a tools-only session's agent once (PUSH-02) and keeps the name the
+// server returned for a temporary session.
+type registration struct {
+	done chan struct{}
+	mu   sync.Mutex
+	name string
+}
+
+// run registers the agent the session's tools act as: the one listen recorded in the session
+// file (its temporary name, mode temporary), else the explicit agent, else a new temporary
+// agent of the session's project and harness. A failure is reported on stderr; the tools then
+// answer with the server's error.
+func (r *registration) run(ctx context.Context, c *client, agent, sessionPath string, stderr io.Writer) {
+	defer close(r.done)
+	name, mode := agent, ""
+	if n := readSessionName(sessionPath); n != "" {
+		name, mode = n, dto.AgentModeTemporary
+	}
+	info, err := c.register(ctx, name, mode)
+	if err != nil {
+		if ctx.Err() == nil {
+			label := name
+			if label == "" {
+				label = "for project " + c.identity.Project
+			}
+			fmt.Fprintf(stderr, "partyline: cannot register agent %s: %v\n", label, err)
+		}
+		return
+	}
+	r.mu.Lock()
+	r.name = info.Name
+	r.mu.Unlock()
+}
+
+// wait returns the registered name once the registration ended, waiting at most d.
+func (r *registration) wait(d time.Duration) string {
+	select {
+	case <-r.done:
+	case <-time.After(d):
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.name
 }

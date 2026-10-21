@@ -258,25 +258,21 @@ func TestChannelToolsOnlyOpensNoSocket(t *testing.T) {
 	require.False(t, e.onlineNames(t)["codex-box"])
 }
 
-// PUSH-02: listen and a tools-only channel of the same harness process share the agent name:
-// listen gets a free name (proj-2) when proj is taken, and the tools act as proj-2. A
-// tools-only channel without a listen sibling keeps the derived name (no unique mode).
+// PUSH-02, ID-01: listen and a tools-only channel of the same harness process share the
+// agent name: listen gets the temporary name (proj-pi) and the sibling's tools act as it. A
+// tools-only channel without a listen sibling registers a temporary agent of its own
+// (proj-pi-2, since proj-pi is online).
 func TestToolsOnlySharesTheNameWithListen(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
 	e := newChannelEnv(t)
 	wd := "/tmp/src/proj"
-	holder := startChannel(t, nil, e.vars(), wd)
-	initialize(holder)
-	proj := e.agent(t, "proj")
-
-	listen := startListen(t, e.vars("PARTYLINE_SESSION", "harness-1"), wd, nil)
-	proj2 := e.agent(t, "proj-2")
+	listen := startListen(t, e.vars("PARTYLINE_SESSION", "harness-1", "PARTYLINE_HARNESS", "pi"), wd, nil)
+	proj := e.agent(t, "proj-pi")
 	sessionPath := filepath.Join(os.TempDir(), "partyline", ".sessions", "harness-1")
 	require.Eventually(t, func() bool {
 		data, err := os.ReadFile(sessionPath)
-		return err == nil && strings.TrimSpace(string(data)) == "proj-2"
+		return err == nil && strings.TrimSpace(string(data)) == "proj-pi"
 	}, chanWait, 20*time.Millisecond)
-	room := e.room(t, dto.CreateRoomRequest{Name: "Shared"}, proj.ID, proj2.ID)
 
 	post := func(c *mcpClient, id int, text string) {
 		t.Helper()
@@ -286,11 +282,23 @@ func TestToolsOnlySharesTheNameWithListen(t *testing.T) {
 		r := c.next()
 		require.Equal(t, false, r["result"].(map[string]any)["isError"], "result: %v", r)
 	}
-	tools := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_SESSION", "harness-1"), wd)
+	tools := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_SESSION", "harness-1", "PARTYLINE_HARNESS", "pi"), wd)
 	initialize(tools)
-	post(tools, 7, "from the sibling")
-	alone := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_SESSION", "harness-2"), wd)
+	alone := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_SESSION", "harness-2", "PARTYLINE_HARNESS", "pi"), wd)
 	initialize(alone)
+	var proj2 dto.Agent
+	require.Eventually(t, func() bool {
+		list := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK))
+		for _, a := range list.Items {
+			if a.Name == "proj-pi-2" {
+				proj2 = a
+				return true
+			}
+		}
+		return false
+	}, chanWait, 20*time.Millisecond, "the lone tools-only channel registers its own temporary agent")
+	room := e.room(t, dto.CreateRoomRequest{Name: "Shared"}, proj.ID, proj2.ID)
+	post(tools, 7, "from the sibling")
 	post(alone, 8, "from a lone tools-only")
 
 	page := testkit.Decode[dto.Page[dto.Message]](e.alice.Get("/api/v1/rooms/" + room.ID + "/messages").RequireStatus(http.StatusOK))
@@ -298,8 +306,8 @@ func TestToolsOnlySharesTheNameWithListen(t *testing.T) {
 	for _, m := range page.Items {
 		authors[m.Text] = m.AuthorID
 	}
-	require.Equal(t, proj2.ID, authors["from the sibling"])
-	require.Equal(t, proj.ID, authors["from a lone tools-only"])
+	require.Equal(t, proj.ID, authors["from the sibling"])
+	require.Equal(t, proj2.ID, authors["from a lone tools-only"])
 
 	require.NoError(t, listen.in.Close())
 	require.Equal(t, 0, listen.exit())

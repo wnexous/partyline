@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/wnexous/partyline/internal/channel"
 	"github.com/wnexous/partyline/internal/harness"
 )
 
@@ -64,12 +65,45 @@ func newSessionID() (string, error) {
 	return "pl-" + hex.EncodeToString(b[:]), nil
 }
 
-// launch runs `partyline <harness> [args…]`: it replaces this process with the harness binary
-// found on PATH, the launcher's own arguments and then args unchanged, in this environment
-// with PARTYLINE_SESSION set to a fresh id, so the listen and tools-only processes of this
-// session share their agent name and no other session does (HAR-03). Without the binary it
-// exits 127; when Partyline is not registered in the harness it warns once and starts anyway.
+// launcherFlags takes the leading --name and --project flags (also --name=<v>) off args
+// (CLI-01); the rest goes to the harness unchanged.
+func launcherFlags(args []string) (name, project string, rest []string, err error) {
+	for len(args) > 0 {
+		flag, value, inline := strings.Cut(args[0], "=")
+		if flag != "--name" && flag != "--project" {
+			break
+		}
+		if !inline {
+			if len(args) < 2 {
+				return "", "", nil, fmt.Errorf("%s needs a value", flag)
+			}
+			value, args = args[1], args[1:]
+		}
+		args = args[1:]
+		if flag == "--name" {
+			name = value
+		} else {
+			project = value
+		}
+	}
+	return name, project, args, nil
+}
+
+// launch runs `partyline <harness> [--name <agent>] [--project <project>] [args…]`: it
+// replaces this process with the harness binary found on PATH, the launcher's own arguments
+// and then args unchanged, in this environment with PARTYLINE_SESSION set to a fresh id, so
+// the listen and tools-only processes of this session share their agent name and no other
+// session does (HAR-03), PARTYLINE_HARNESS set to the harness id and PARTYLINE_AGENT and
+// PARTYLINE_PROJECT set from --name and --project, which the session's partyline processes
+// read (CLI-01). Started in the home folder without a project or name it prints the home
+// warning (ID-03). Without the binary it exits 127; when Partyline is not registered in the
+// harness it warns once and starts anyway.
 func launch(ctx context.Context, l launcher, args []string, io stdio) int {
+	name, project, args, err := launcherFlags(args)
+	if err != nil {
+		fmt.Fprintf(io.stderr, "partyline %s: %v\n", l.id, err)
+		return 2
+	}
 	title := harnessTitle(l.id)
 	lookPath := io.lookPath
 	if lookPath == nil {
@@ -91,13 +125,42 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	if environ == nil {
 		environ = os.Environ
 	}
+	set := map[string]string{sessionEnvVar: session, "PARTYLINE_HARNESS": l.id}
+	if name != "" {
+		set["PARTYLINE_AGENT"] = name
+	}
+	if project != "" {
+		set["PARTYLINE_PROJECT"] = project
+	}
 	var env []string
 	for _, kv := range environ() {
-		if !strings.HasPrefix(kv, sessionEnvVar+"=") {
+		k, _, _ := strings.Cut(kv, "=")
+		if _, replaced := set[k]; !replaced {
 			env = append(env, kv)
 		}
 	}
-	env = append(env, sessionEnvVar+"="+session)
+	for _, k := range []string{sessionEnvVar, "PARTYLINE_HARNESS", "PARTYLINE_AGENT", "PARTYLINE_PROJECT"} {
+		if v, ok := set[k]; ok {
+			env = append(env, k+"="+v)
+		}
+	}
+	envOf := func(k string) string {
+		for _, kv := range env {
+			if v, ok := strings.CutPrefix(kv, k+"="); ok {
+				return v
+			}
+		}
+		return ""
+	}
+	if envOf("PARTYLINE_AGENT") == "" && envOf("PARTYLINE_PROJECT") == "" {
+		getwd := io.getwd
+		if getwd == nil {
+			getwd = os.Getwd
+		}
+		if wd, err := getwd(); err == nil && channel.IsHomeDir(wd, envOf("HOME")) {
+			fmt.Fprintln(io.stderr, homeWarning(l.id))
+		}
+	}
 
 	argv := append(append([]string{l.id}, l.extra...), args...)
 	run := io.exec

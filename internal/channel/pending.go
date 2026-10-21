@@ -69,8 +69,12 @@ func (t *tools) waitForMessages(ctx context.Context, args json.RawMessage) (stri
 
 // PendingOptions configure Pending.
 type PendingOptions struct {
-	URL, Token, Agent string
-	HTTPClient        *http.Client
+	URL, Token string
+	// Agent is the explicit agent name; empty registers the session (Identity) first and uses
+	// the temporary agent the server returns, as a tools-only channel of the session does.
+	Agent      string
+	Identity   Identity
+	HTTPClient *http.Client
 }
 
 // Pending returns the agent's undelivered messages without waiting and counts them as
@@ -83,7 +87,17 @@ func Pending(ctx context.Context, o PendingOptions) ([]dto.AgentMessage, error) 
 	if o.HTTPClient == nil {
 		o.HTTPClient = &http.Client{}
 	}
-	name := agents.Slug(o.Agent)
-	c := &client{base: base, token: o.Token, agent: func() string { return name }, http: o.HTTPClient}
+	name := ""
+	if o.Agent != "" {
+		name = agents.Slug(o.Agent)
+	}
+	c := &client{base: base, token: o.Token, agent: func() string { return name }, identity: o.Identity, http: o.HTTPClient}
+	if name == "" {
+		info, err := c.register(ctx, "", "")
+		if err != nil {
+			return nil, err
+		}
+		name = info.Name
+	}
 	return c.pending(ctx, 0)
 }

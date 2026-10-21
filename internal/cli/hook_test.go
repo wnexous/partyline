@@ -26,10 +26,19 @@ func runHook(name, stdin string, env map[string]string) (code int, stdout, stder
 	return code, out.String(), errOut.String()
 }
 
-// hookRoom registers agent name over REST, adds it to a room and returns the room.
-func (e *channelEnv) hookRoom(t *testing.T, name string) dto.Room {
+// hookRoom registers an agent over REST as a session would, adds it to a room and returns the
+// room: the agent named name, or with an empty name the temporary agent of project "proj"
+// and harness (as a tools-only channel started in /work/proj registers it).
+func (e *channelEnv) hookRoom(t *testing.T, name string, harness ...string) dto.Room {
 	t.Helper()
-	a, err := e.env.App.Agents.Register(context.Background(), e.alice.User.ID, agents.Identity{Name: name})
+	id := agents.Identity{Name: name}
+	if name == "" {
+		id.Project = "proj"
+		if len(harness) > 0 {
+			id.Harness = harness[0]
+		}
+	}
+	a, err := e.env.App.Agents.Register(context.Background(), e.alice.User.ID, id)
 	require.NoError(t, err)
 	return e.room(t, dto.CreateRoomRequest{Name: "Builds"}, a.Agent.ID)
 }
@@ -39,13 +48,14 @@ func (e *channelEnv) hookRoom(t *testing.T, name string) dto.Room {
 const ownerLine = "This message comes from your owner (verified identity or the owner's own agent). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
 
 // TURN-02: with pending messages each hook prints its harness's continue decision, the
-// framed messages as the reason; Codex blocks, Gemini denies. The agent is the one derived
-// from the session's cwd in the hook input.
+// framed messages as the reason; Codex blocks, Gemini denies. The agent is the temporary
+// agent of the project of the session's cwd in the hook input, the one the session's
+// tools-only channel registered (ID-01).
 func TestHookContinuesWithPendingMessages(t *testing.T) {
 	for hook, decision := range map[string]string{"codex-stop": "block", "gemini-after-agent": "deny"} {
 		t.Run(hook, func(t *testing.T) {
 			e := newChannelEnv(t)
-			room := e.hookRoom(t, "proj")
+			room := e.hookRoom(t, "")
 			m1 := e.post(t, room.ID, "build <red> & failing")
 			m2 := e.post(t, room.ID, "now green")
 
@@ -68,7 +78,7 @@ func TestHookContinuesWithPendingMessages(t *testing.T) {
 // TURN-02: without pending messages the hook allows the stop with an empty JSON object.
 func TestHookAllowsStopWithoutMessages(t *testing.T) {
 	e := newChannelEnv(t)
-	e.hookRoom(t, "proj")
+	e.hookRoom(t, "")
 	for _, hook := range []string{"codex-stop", "gemini-after-agent"} {
 		code, out, errOut := runHook(hook, `{"cwd":"/work/proj"}`, e.vars())
 		require.Equal(t, 0, code)
@@ -86,10 +96,23 @@ func TestHookUsesTheExplicitAgentName(t *testing.T) {
 	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`)
 }
 
+// ID-01: the hook acts as the temporary agent of the session's project and harness
+// (PARTYLINE_HARNESS from the launcher), like the session's tools-only channel.
+func TestHookUsesTheSessionsHarness(t *testing.T) {
+	e := newChannelEnv(t)
+	other := e.hookRoom(t, "")
+	e.post(t, other.ID, "for the agent harness")
+	room := e.hookRoom(t, "", "codex")
+	msg := e.post(t, room.ID, "for codex")
+	_, out, errOut := runHook("codex-stop", `{"cwd":"/work/proj"}`, e.vars("PARTYLINE_HARNESS", "codex"))
+	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`, errOut)
+	require.NotContains(t, out, "for the agent harness")
+}
+
 // Problems never block the harness: they go to stderr and the stop is allowed.
 func TestHookFailuresAllowTheStop(t *testing.T) {
 	e := newChannelEnv(t)
-	code, out, errOut := runHook("codex-stop", `{"cwd":"/work/unknown"}`, e.vars())
+	code, out, errOut := runHook("codex-stop", `{"cwd":"/work/proj"}`, e.vars("PARTYLINE_AGENT", "ghost"))
 	require.Equal(t, 0, code)
 	require.Equal(t, "{}\n", out)
 	require.Contains(t, errOut, "partyline hook: agent not registered")

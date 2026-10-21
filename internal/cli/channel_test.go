@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -150,7 +151,12 @@ func TestChannelEndToEnd(t *testing.T) {
 	require.Equal(t, channel.Instructions, res["instructions"], "MCP-02: the real channel instructions")
 	c.send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
 
-	agent := e.agent(t, "my-project")
+	agent := e.agent(t, "my-project-claude")
+	host, err := os.Hostname()
+	require.NoError(t, err)
+	require.Equal(t, []any{"My Project · Claude Code", "claude", host, dto.AgentKindTemporary, "My Project"},
+		[]any{agent.DisplayName, agent.Harness, agent.Machine, agent.Kind, agent.Project.Name},
+		"ID-01: the session's project, harness and machine reach the server")
 	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
 	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agent.ID}).RequireStatus(http.StatusCreated)
 	question := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "reply with pong"}).RequireStatus(http.StatusCreated))

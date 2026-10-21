@@ -16,11 +16,14 @@ import (
 
 // ListenOptions configure Listen.
 type ListenOptions struct {
-	// URL, Token, Agent and UniqueName mean what they mean for Run.
-	URL        string
-	Token      string
-	Agent      string
-	UniqueName bool
+	// URL, Token, Agent, Project, Harness and Machine mean what they mean for Run; an empty
+	// Harness is sent as unknown ("agent").
+	URL     string
+	Token   string
+	Agent   string
+	Project string
+	Harness string
+	Machine string
 	// SessionKey names the session file where the agent name in use is recorded for a
 	// tools-only channel of the same harness process; empty records nothing.
 	SessionKey string
@@ -65,8 +68,13 @@ func Listen(ctx context.Context, o ListenOptions) error {
 		}()
 	}
 
-	l := newLink(base, o.Token, agents.Slug(o.Agent), o.HTTPClient, &lineWriter{w: o.Stdout}, o.Stderr, o.timing)
-	l.unique = o.UniqueName
+	agent := ""
+	if o.Agent != "" {
+		agent = agents.Slug(o.Agent)
+	}
+	l := newLink(base, o.Token, agent, o.HTTPClient, &lineWriter{w: o.Stdout}, o.Stderr, o.timing)
+	l.identity = Identity{Name: agent, Project: o.Project, Harness: o.Harness, Machine: o.Machine}
+	l.temporary = agent == ""
 	var recorded string
 	path := sessionFile(tmp, o.SessionKey)
 	if path != "" {

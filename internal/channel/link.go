@@ -112,9 +112,12 @@ type link struct {
 	queueCap  int
 	readLimit int64
 
-	// unique marks a derived agent name: the first connection asks the server for a free
-	// name (NAME-02); assigned is the name the welcome frame gave, used from then on.
-	unique bool
+	// identity is sent on every connection (project, harness, machine). Without an explicit
+	// agent name the session is temporary: the first connection sends no name and the server
+	// names a temporary agent (ID-01); assigned is the name the welcome frame gave, sent from
+	// then on with mode temporary so reconnects keep that agent.
+	identity  Identity
+	temporary bool
 	// onName, when set, receives the agent name in use after each welcome frame (listen
 	// records it for the tools-only channel, PUSH-02).
 	onName func(name string)
@@ -144,25 +147,30 @@ func (l *link) nameLocked() string {
 	return l.agent
 }
 
-// dialName is the name the next connection sends and whether it asks for a free name: a
-// derived name asks until the server assigned one, then reconnects keep that name.
-func (l *link) dialName() (string, bool) {
+// dialName is the agent name and mode the next connection sends: an explicit name alone
+// (fixed agent, newest wins); for a temporary session no name until the server assigned one,
+// then that name with mode temporary.
+func (l *link) dialName() (name, mode string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.unique && l.assigned == "" {
-		return l.agent, true
+	switch {
+	case !l.temporary:
+		return l.agent, ""
+	case l.assigned == "":
+		return "", ""
+	default:
+		return l.assigned, dto.AgentModeTemporary
 	}
-	return l.nameLocked(), false
 }
 
-// welcome records the name of a welcome frame for a derived name and reports the name in use
-// to onName.
+// welcome records the name of a welcome frame for a temporary session and reports the name
+// in use to onName.
 func (l *link) welcome(data []byte) {
 	var f dto.AgentWelcomeFrame
 	if json.Unmarshal(data, &f) != nil || f.Type != dto.AgentFrameTypeWelcome || f.Agent.Name == "" {
 		return
 	}
-	if l.unique {
+	if l.temporary {
 		l.mu.Lock()
 		l.assigned = f.Agent.Name
 		l.mu.Unlock()
@@ -262,7 +270,7 @@ func (l *link) run(ctx context.Context) error {
 			l.setState(stateReplaced)
 			fmt.Fprintf(l.stderr, "partyline: another session connected as agent %s; pausing for %s\n", l.name(), l.t.replacedPause)
 			l.mu.Lock()
-			l.assigned = "" // a derived name asks for a free name again instead of fighting
+			l.assigned = "" // a temporary session asks for a new name instead of fighting
 			l.mu.Unlock()
 			wait, backoff = l.t.replacedPause, l.t.minBackoff
 		case outAgentLimit:
@@ -292,11 +300,14 @@ func (l *link) wsURL() string {
 func (l *link) session(ctx context.Context) (outcome, error) {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+l.token)
-	name, unique := l.dialName()
-	h.Set(dto.HeaderAgent, name)
-	if unique {
-		h.Set(dto.HeaderAgentMode, dto.AgentModeUnique)
+	name, mode := l.dialName()
+	if name != "" {
+		h.Set(dto.HeaderAgent, name)
 	}
+	if mode != "" {
+		h.Set(dto.HeaderAgentMode, mode)
+	}
+	l.identity.setHeaders(h)
 	ws, resp, err := websocket.Dial(ctx, l.wsURL(), &websocket.DialOptions{HTTPClient: l.http, HTTPHeader: h})
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()

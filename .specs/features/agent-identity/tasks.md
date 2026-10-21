@@ -154,7 +154,7 @@ T8 → T9 → T10 → T11
 **Requirement**: ID-03, CLI-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Headers asserted; home dir → project `home` + one warning; flags override
+- [x] Headers asserted; home dir → project `home` + one warning; flags override
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): send project, harness and machine on connect`

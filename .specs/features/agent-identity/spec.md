@@ -122,7 +122,7 @@ Agents are named after the working directory, so a session started in the home f
 | --- | --- | --- | --- |
 | ID-01 | P1: Names | Execute | Implementing |
 | ID-02 | P1: Names | Execute | Implementing |
-| ID-03 | P1: Names | Tasks | Pending |
+| ID-03 | P1: Names | Execute | Implementing |
 | ID-04 | P1: Names | Execute | Implementing |
 | ID-05 | P1: Names | Execute | Implementing |
 | PROJ-01 | P1: Organization | Execute | Implementing |
@@ -135,7 +135,7 @@ Agents are named after the working directory, so a session started in the home f
 | PROJ-08 | P1: Project rooms | Execute | Implementing |
 | PROJ-09 | P1: Project rooms | Execute | Implementing |
 | PROJ-10 | P1: Project rooms | Execute | Implementing |
-| CLI-01 | P2: CLI | Tasks | Pending |
+| CLI-01 | P2: CLI | Execute | Implementing |
 | CLI-02 | P2: CLI | Tasks | Pending |
 
 **Coverage:** 17 total, mapped in tasks.md

@@ -42,6 +42,8 @@ Start a session with Partyline (the arguments go to the harness unchanged):
   omp [args...]          oh-my-pi
   codex [args...]        Codex CLI
   gemini [args...]       Gemini CLI
+Put --name <agent> (a fixed agent) and --project <name> before the arguments to choose the
+session's agent and project; otherwise it is a temporary agent of the folder's project.
 `
 
 // stdio holds what a command reads and writes; tests replace each part.

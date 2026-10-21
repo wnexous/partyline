@@ -127,7 +127,7 @@ var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 // HAR-03: every launcher (and Claude's aliases) execs the harness binary found on PATH with
 // the user's arguments unchanged (Claude first gets the development-channels flag), returns
 // its exit code, and passes this environment on with a fresh PARTYLINE_SESSION in place of
-// the inherited one. A registered harness starts without a warning.
+// the inherited one and PARTYLINE_HARNESS set to the harness id (CLI-01). A registered harness starts without a warning.
 func TestLaunchersExecTheHarness(t *testing.T) {
 	user := []string{"--resume", "abc", "-p", "hi there", "--", "--help"}
 	cases := []struct {
@@ -162,7 +162,8 @@ func TestLaunchersExecTheHarness(t *testing.T) {
 			require.NotEqual(t, "inherited", id)
 			require.False(t, seen[id], "every launch gets a fresh session id")
 			seen[id] = true
-			require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8", "PARTYLINE_SESSION=" + id}, r.env)
+			harnessID := c.binary
+			require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8", "PARTYLINE_SESSION=" + id, "PARTYLINE_HARNESS=" + harnessID}, r.env)
 		})
 	}
 }
@@ -227,10 +228,10 @@ func TestLaunchedSessionsInOneFolderKeepTheirNames(t *testing.T) {
 
 	e := newChannelEnv(t)
 	wd := "/tmp/src/proj"
-	listen1 := startListen(t, e.vars("PARTYLINE_SESSION", first), wd, nil)
-	proj := e.agent(t, "proj")
-	listen2 := startListen(t, e.vars("PARTYLINE_SESSION", second), wd, nil)
-	proj2 := e.agent(t, "proj-2")
+	listen1 := startListen(t, e.vars("PARTYLINE_SESSION", first, "PARTYLINE_HARNESS", "pi"), wd, nil)
+	proj := e.agent(t, "proj-pi")
+	listen2 := startListen(t, e.vars("PARTYLINE_SESSION", second, "PARTYLINE_HARNESS", "pi"), wd, nil)
+	proj2 := e.agent(t, "proj-pi-2")
 	for _, id := range []string{first, second} {
 		path := filepath.Join(os.TempDir(), "partyline", ".sessions", id)
 		require.Eventually(t, func() bool { _, err := os.Stat(path); return err == nil }, chanWait, 20*time.Millisecond, "session file %s", path)
@@ -239,7 +240,7 @@ func TestLaunchedSessionsInOneFolderKeepTheirNames(t *testing.T) {
 
 	post := func(session string, id int, text string) {
 		t.Helper()
-		c := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_SESSION", session), wd)
+		c := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_SESSION", session, "PARTYLINE_HARNESS", "pi"), wd)
 		initialize(c)
 		c.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{
 			"name": "send_message", "arguments": map[string]any{"room": "Shared", "text": text},
@@ -262,6 +263,48 @@ func TestLaunchedSessionsInOneFolderKeepTheirNames(t *testing.T) {
 	require.NoError(t, listen2.in.Close())
 	require.Equal(t, 0, listen1.exit())
 	require.Equal(t, 0, listen2.exit())
+}
+
+// CLI-01: leading --name and --project (also --name=<v>) are taken off the harness's
+// arguments and passed on as PARTYLINE_AGENT and PARTYLINE_PROJECT, replacing inherited
+// values; later arguments that look the same go to the harness unchanged. A flag without a
+// value exits 2 and runs nothing.
+func TestLauncherPassesNameAndProject(t *testing.T) {
+	m := newLaunchMachine(t)
+	m.environ = append(m.environ, "PARTYLINE_AGENT=inherited", "PARTYLINE_HARNESS=pi")
+	m.onPath["claude"] = true
+	m.register(t, "claude")
+
+	r := m.run(t, "claude", "--name", "ruthe-bot", "--project=Ruthe", "--resume", "--name", "x")
+	require.Equal(t, 7, r.code, r.stderr)
+	require.Equal(t, []string{"claude", "--dangerously-load-development-channels", "server:partyline", "--resume", "--name", "x"}, r.argv)
+	id := r.sessionID(t)
+	require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8",
+		"PARTYLINE_SESSION=" + id, "PARTYLINE_HARNESS=claude", "PARTYLINE_AGENT=ruthe-bot", "PARTYLINE_PROJECT=Ruthe"}, r.env)
+
+	r = m.run(t, "claude", "--project")
+	require.Equal(t, 2, r.code)
+	require.False(t, r.execed)
+	require.Equal(t, "partyline claude: --project needs a value\n", r.stderr)
+}
+
+// ID-03: a launch from the home folder without --project or --name warns once on stderr and
+// starts; with either flag it does not warn.
+func TestLauncherWarnsInTheHomeFolder(t *testing.T) {
+	m := newLaunchMachine(t)
+	m.onPath["claude"] = true
+	m.register(t, "claude")
+	t.Chdir(m.home)
+
+	r := m.run(t, "claude")
+	require.Equal(t, 7, r.code)
+	require.True(t, r.execed)
+	require.Equal(t, "partyline claude: started in the home folder; using project \"home\" (pass --project <name> or --name <agent> to choose)\n", r.stderr)
+	for _, args := range [][]string{{"claude", "--project", "notes"}, {"claude", "--name", "helper"}} {
+		r = m.run(t, args...)
+		require.Equal(t, 7, r.code)
+		require.Empty(t, r.stderr, "%v", args)
+	}
 }
 
 // HAR-03: `partyline --help` (and -h, help) prints the usage with every launcher on stdout.

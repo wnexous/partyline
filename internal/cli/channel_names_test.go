@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -25,10 +26,11 @@ func (e *channelEnv) onlineNames(t *testing.T) map[string]bool {
 	return names
 }
 
-// NAME-01, NAME-02 (independent test): two channels started in the same project without
-// PARTYLINE_AGENT register as proj and proj-2; the name comes from the git root even when the
-// session starts in a subdirectory.
-func TestChannelDerivedNamesInSameProject(t *testing.T) {
+// ID-01 (independent test): two channels started in the same project without a name
+// register as the temporary agents proj-claude and proj-claude-2 ("Proj · Claude Code" and
+// "… #2"); the project comes from the git root even when the session starts in a
+// subdirectory.
+func TestChannelTemporaryNamesInSameProject(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
@@ -44,11 +46,63 @@ func TestChannelDerivedNamesInSameProject(t *testing.T) {
 	env := map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret}
 	first := startChannel(t, nil, env, repo)
 	initialize(first)
-	e.agent(t, "proj")
+	one := e.agent(t, "proj-claude")
 	second := startChannel(t, nil, env, sub)
 	initialize(second)
-	e.agent(t, "proj-2")
-	require.Equal(t, map[string]bool{"proj": true, "proj-2": true}, e.onlineNames(t))
+	two := e.agent(t, "proj-claude-2")
+	require.Equal(t, map[string]bool{"proj-claude": true, "proj-claude-2": true}, e.onlineNames(t))
+	require.Equal(t, []string{"Proj · Claude Code", "Proj · Claude Code #2"}, []string{one.DisplayName, two.DisplayName})
+	require.Empty(t, first.stderr.String()+second.stderr.String(), "no home warning")
+}
+
+// CLI-01: --name and --project reach the server: the session is the fixed agent of that name
+// in that project, whatever the working directory.
+func TestChannelNameAndProjectFlags(t *testing.T) {
+	e := newChannelEnv(t)
+	c := startChannel(t, []string{"--name", "ruthe-bot", "--project", "Ruthe Videos"}, e.vars(), "/tmp/src/other")
+	initialize(c)
+	a := e.agent(t, "ruthe-bot")
+	require.Equal(t, []any{dto.AgentKindFixed, "Ruthe Videos", "ruthe-videos", "claude"},
+		[]any{a.Kind, a.Project.Name, a.Project.Slug, a.Harness})
+
+	c2 := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_PROJECT", "Notes", "PARTYLINE_HARNESS", "codex"), "/tmp/src/other")
+	initialize(c2)
+	var got dto.Agent
+	require.Eventually(t, func() bool {
+		list := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK))
+		for _, a := range list.Items {
+			if a.Name == "notes-codex" {
+				got = a
+				return true
+			}
+		}
+		return false
+	}, chanWait, 20*time.Millisecond, "PARTYLINE_PROJECT and PARTYLINE_HARNESS name the tools-only session")
+	require.Equal(t, []any{dto.AgentKindTemporary, "Notes · Codex"}, []any{got.Kind, got.DisplayName})
+}
+
+// ID-03: a session started in the home folder (or /) without --project or --name joins
+// project "home" and prints one warning line; with --name it does not warn.
+func TestChannelWarnsInTheHomeFolder(t *testing.T) {
+	e := newChannelEnv(t)
+	home := "/home/someone"
+	c := startChannel(t, nil, e.vars("HOME", home), home)
+	initialize(c)
+	a := e.agent(t, "home-claude")
+	require.Equal(t, "Home · Claude Code", a.DisplayName)
+	require.Equal(t, "partyline channel: started in the home folder; using project \"home\" (pass --project <name> or --name <agent> to choose)\n", c.stderr.String())
+
+	root := startListen(t, e.vars("HOME", home), "/", io.Discard)
+	e.agent(t, "home-agent")
+	require.Eventually(t, func() bool {
+		return root.stderr.String() == "partyline listen: started in the home folder; using project \"home\" (pass --project <name> or --name <agent> to choose)\n"
+	}, chanWait, 20*time.Millisecond, "stderr: %s", root.stderr.String())
+
+	named := startChannel(t, []string{"--name", "helper"}, e.vars("HOME", home), home)
+	initialize(named)
+	h := e.agent(t, "helper")
+	require.Equal(t, "home", h.Project.Slug)
+	require.Empty(t, named.stderr.String())
 }
 
 // NAME-03: an explicit PARTYLINE_AGENT keeps "newest wins": the second session replaces the
