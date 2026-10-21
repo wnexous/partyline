@@ -189,11 +189,52 @@ func TestCodexRegistersToolsAndStopHook(t *testing.T) {
 		"          }\n        ]\n      }", 1), readFile(t, hooks), "HAR-02: every other byte unchanged")
 	require.Equal(t, codexHooksOrig, readFile(t, hooks+".partyline.bak"), "backup of the previous file")
 
-	// Again with another binary: the group is updated in place, not duplicated.
+	// Again with the same binary: the group is updated in place, not duplicated.
 	after := readFile(t, hooks)
-	env.Binary = "/new/partyline"
 	require.NoError(t, registrar(t, env, "codex").Apply(context.Background()))
-	require.Equal(t, strings.Replace(after, "/opt/bin/partyline hook", "/new/partyline hook", 1), readFile(t, hooks))
+	require.Equal(t, after, readFile(t, hooks))
+}
+
+// HAR-02, HAR-04: a hook group is Partyline's only when its command is exactly the one setup
+// writes for this binary. Groups of other programs named partyline* (a wrapper, or a
+// partyline binary at another path) are kept byte for byte by Apply and Remove, and Entries
+// does not list them.
+func TestHookGroupsOwnedOnlyWithExactCommand(t *testing.T) {
+	foreign := `{
+  "hooks": {
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "/usr/local/bin/partyline-wrapper hook codex-stop"}]},
+      {"hooks": [{"type": "command", "command": "/other/partyline hook codex-stop"}]},
+      {"hooks": [{"type": "command", "command": "/opt/bin/partyline hook codex-stop --extra"}]}
+    ]
+  }
+}
+`
+	env, cli := testEnv(t, nil)
+	hooks := filepath.Join(env.Home, ".codex", "hooks.json")
+	writeFile(t, hooks, foreign)
+	cli.handle = func(line string) ([]byte, error) {
+		if line == "codex mcp get partyline --json" {
+			return []byte("Error: No MCP server named 'partyline' found."), errors.New("exit status 1")
+		}
+		return nil, nil
+	}
+	r := registrar(t, env, "codex")
+	entries, err := r.Entries(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, entries, "no hook of another binary is listed")
+	require.Empty(t, r.RemovePlan(context.Background()))
+
+	require.NoError(t, r.Apply(context.Background()))
+	stop := jsonAt(t, hooks, "hooks", "Stop").([]any)
+	require.Len(t, stop, 4, "the three foreign groups stay, ours is appended")
+	require.Equal(t, decode(t, codexGroup), stop[3])
+	entries, err = r.Entries(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []Entry{{What: "Stop hook in ~/.codex/hooks.json", Binary: testBinary}}, entries)
+
+	require.NoError(t, r.Remove(context.Background()))
+	require.Equal(t, foreign, readFile(t, hooks), "uninstall removed only our group")
 }
 
 // HAR-04 (Codex CLI): uninstall removes the MCP server and only the Partyline hook; the
@@ -261,7 +302,7 @@ func TestHookCommandQuotesBinary(t *testing.T) {
 	hooks := filepath.Join(env.Home, ".codex", "hooks.json")
 	group := jsonAt(t, hooks, "hooks", "Stop").([]any)[0].(map[string]any)
 	require.Equal(t, "'/opt/my tools/partyline' hook codex-stop", group["hooks"].([]any)[0].(map[string]any)["command"])
-	bins, err := hookBinaries(hooks, CodexStopHook, codexHookKeys...)
+	bins, err := env.hookBinaries(hooks, CodexStopHook, codexHookKeys...)
 	require.NoError(t, err)
 	require.Equal(t, []string{"/opt/my tools/partyline"}, bins)
 }

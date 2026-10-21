@@ -85,21 +85,28 @@ func (p *prompter) confirm(question string) bool {
 }
 
 // registerHarnesses shows each selected harness's changes and applies them after
-// confirmation (HAR-01), then names the launcher of each harness it registered (WIZ-01). It
-// returns false when a registration failed.
-func registerHarnesses(ctx context.Context, regs []harness.Registrar, yes bool, p *prompter, io stdio) bool {
+// confirmation (HAR-01), then names the launcher of each harness it registered (WIZ-01).
+// When every registration succeeded it deletes the config backups it created, unless
+// --keep-backups (HAR-05). It returns false when a registration failed.
+func registerHarnesses(ctx context.Context, regs []harness.Registrar, f setupFlags, p *prompter, io stdio) bool {
 	if len(regs) == 0 {
 		fmt.Fprintln(io.stdout, "\nNo supported harness found (Claude Code, Codex CLI, Gemini CLI, OpenCode, pi, omp).\nRegister one later with: partyline setup --harness <name>, then start it with partyline <name>")
 		return true
 	}
 	ok := true
 	var started []string
+	earlier := map[string]bool{}
+	for _, r := range regs {
+		for _, b := range r.Backups() {
+			earlier[b] = exists(b)
+		}
+	}
 	for _, r := range regs {
 		fmt.Fprintf(io.stdout, "\n%s:\n", r.Title())
 		for _, step := range r.Plan() {
 			fmt.Fprintf(io.stdout, "  %s\n", step)
 		}
-		if !yes && !p.confirm(fmt.Sprintf("Register Partyline in %s?", r.Title())) {
+		if !f.yes && !p.confirm(fmt.Sprintf("Register Partyline in %s?", r.Title())) {
 			fmt.Fprintf(io.stdout, "Skipped %s.\n", r.Title())
 			continue
 		}
@@ -111,10 +118,38 @@ func registerHarnesses(ctx context.Context, regs []harness.Registrar, yes bool, 
 		fmt.Fprintf(io.stdout, "Registered Partyline in %s.\n", r.Title())
 		started = append(started, "partyline "+r.ID())
 	}
+	if ok {
+		settleBackups(regs, earlier, f.keepBackup, io)
+	}
 	if len(started) > 0 {
 		fmt.Fprintf(io.stdout, "\nStart a session with %s.\n", orList(started))
 	}
 	return ok
+}
+
+// settleBackups deletes the backups this run created (earlier[b] false), or names them when
+// keep is set. A backup that existed before the run is left alone; doctor reports it.
+func settleBackups(regs []harness.Registrar, earlier map[string]bool, keep bool, io stdio) {
+	for _, r := range regs {
+		for _, b := range r.Backups() {
+			if earlier[b] || !exists(b) {
+				continue
+			}
+			if keep {
+				fmt.Fprintf(io.stdout, "\nKept the backup %s\n", b)
+				continue
+			}
+			if err := os.Remove(b); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				fmt.Fprintf(io.stderr, "partyline setup: could not delete the backup %s: %v\n", b, err)
+			}
+		}
+	}
+}
+
+// exists reports whether something (a file or a link) is at path.
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
 }
 
 // orList joins items as "a", "a or b", "a, b or c".

@@ -101,6 +101,9 @@ type Registrar interface {
 	Remove(ctx context.Context) error
 	// Entries lists the registered items and the binary each runs (for doctor).
 	Entries(ctx context.Context) ([]Entry, error)
+	// Backups lists the backup files Apply may create, one per config file setup edits
+	// itself (HAR-05).
+	Backups() []string
 }
 
 // All returns the registrars of every supported harness.
@@ -129,20 +132,10 @@ func shellQuote(s string) string {
 // hookCommand is the shell command of a Partyline hook.
 func hookCommand(binary, hook string) string { return shellQuote(binary) + " hook " + hook }
 
-// hookBinary returns the binary of a Partyline hook command, or "" when cmd is not one.
-func hookBinary(cmd, hook string) string {
-	bin, ok := strings.CutSuffix(strings.TrimSpace(cmd), " hook "+hook)
-	if !ok {
-		return ""
-	}
-	bin = strings.TrimSpace(bin)
-	if len(bin) >= 2 && bin[0] == '\'' && bin[len(bin)-1] == '\'' {
-		bin = strings.ReplaceAll(bin[1:len(bin)-1], `'\''`, "'")
-	}
-	if !strings.HasPrefix(filepath.Base(bin), "partyline") {
-		return ""
-	}
-	return bin
+// ownsHook reports whether cmd is exactly the hook command setup writes for this binary. A
+// hook of any other program, even one named partyline*, is not Partyline's to change.
+func (e Env) ownsHook(cmd, hook string) bool {
+	return strings.TrimSpace(cmd) == hookCommand(e.Binary, hook)
 }
 
 // tildePath shortens a path under home to ~/… for display.
@@ -174,9 +167,12 @@ const backupSuffix = ".partyline.bak"
 
 // writeDoc saves an edited config file with the previous mode (0644 for a new file) through
 // a temp file renamed over path. With backup set, the previous content is first copied to
-// <path>.partyline.bak, unless that backup exists: the first one, from before Partyline was
-// added, is kept (HAR-05).
-func writeDoc(d *docEdit, existed, backup bool) error {
+// <path>.partyline.bak (mode 0600: the config may hold other secrets), unless that backup
+// exists: the first one, from before Partyline was added, is kept (HAR-05). A symlink at path must point into the home (see writeTarget).
+func (e Env) writeDoc(d *docEdit, existed, backup bool) error {
+	if _, err := e.writeTarget(d.path); err != nil {
+		return err
+	}
 	mode := fs.FileMode(0o644)
 	if existed {
 		fi, err := os.Stat(d.path)
@@ -185,16 +181,16 @@ func writeDoc(d *docEdit, existed, backup bool) error {
 		}
 		mode = fi.Mode().Perm()
 		if backup {
-			if err := keepBackup(d.path, mode); err != nil {
+			if err := e.keepBackup(d.path); err != nil {
 				return err
 			}
 		}
 	}
-	return writeFileAtomic(d.path, d.data, mode)
+	return e.writeFileAtomic(d.path, d.data, mode)
 }
 
-// keepBackup copies path to <path>.partyline.bak unless that file exists.
-func keepBackup(path string, mode fs.FileMode) error {
+// keepBackup copies path to the private file <path>.partyline.bak unless that file exists.
+func (e Env) keepBackup(path string) error {
 	if _, err := os.Lstat(path + backupSuffix); err == nil || !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
@@ -202,19 +198,39 @@ func keepBackup(path string, mode fs.FileMode) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(path+backupSuffix, old, mode)
+	return e.writeFileAtomic(path+backupSuffix, old, 0o600)
+}
+
+// writeTarget returns the file a write to path changes: path itself, or the target of a
+// symlink at path (dotfile managers, HAR-05). A symlink whose target is outside the user's
+// home is refused, so a planted link cannot make setup write anywhere else.
+func (e Env) writeTarget(path string) (string, error) {
+	fi, err := os.Lstat(path)
+	if err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+		return path, nil
+	}
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("follow the symlink %s: %w", path, err)
+	}
+	home, err := filepath.EvalSymlinks(e.Home)
+	if err != nil {
+		home = e.Home
+	}
+	rel, err := filepath.Rel(home, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("refusing to write through the symlink %s: its target %s is outside your home directory %s", path, target, e.Home)
+	}
+	return target, nil
 }
 
 // writeFileAtomic writes data to path through a temp file in the same directory. A symlink at
-// path is followed: the temp file goes next to its target and replaces the target, so the
-// link stays (dotfile managers, HAR-05).
-func writeFileAtomic(path string, data []byte, mode fs.FileMode) error {
-	if fi, err := os.Lstat(path); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
-		target, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			return fmt.Errorf("follow the symlink %s: %w", path, err)
-		}
-		path = target
+// path is followed when it points into the home: the temp file goes next to its target and
+// replaces the target, so the link stays (dotfile managers, HAR-05).
+func (e Env) writeFileAtomic(path string, data []byte, mode fs.FileMode) error {
+	path, err := e.writeTarget(path)
+	if err != nil {
+		return err
 	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil { // #nosec G301 -- harness config dirs are not secret
@@ -242,12 +258,12 @@ func writeFileAtomic(path string, data []byte, mode fs.FileMode) error {
 
 // saveRemoval writes d after a removal, or deletes the file when only an empty object is
 // left (a symlink is kept and its target written instead), and deletes the backup setup kept.
-func saveRemoval(d *docEdit) error {
+func (e Env) saveRemoval(d *docEdit) error {
 	var err error
 	if fi, lerr := os.Lstat(d.path); d.empty() && (lerr != nil || fi.Mode()&fs.ModeSymlink == 0) {
 		err = os.Remove(d.path)
 	} else {
-		err = writeDoc(d, true, false)
+		err = e.writeDoc(d, true, false)
 	}
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err

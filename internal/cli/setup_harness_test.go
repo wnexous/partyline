@@ -215,3 +215,64 @@ func TestSetupUninstallReportsFailedRevoke(t *testing.T) {
 	_, err := os.Stat(configPath(home))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
+
+// HAR-05: setup deletes the backups it created once every harness was registered; with
+// --keep-backups it keeps them (and names them); after a failed registration they stay. A
+// backup that existed before the run is not setup's to delete.
+func TestSetupRemovesItsBackups(t *testing.T) {
+	e := newChannelEnv(t)
+	const orig = "{\"mcpServers\": {\"fs\": {\"command\": \"npx\"}}}\n"
+	piConfig := func(home string) string { return filepath.Join(home, ".pi", "agent", "mcp.json") }
+	newHome := func(t *testing.T) string {
+		home := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Dir(piConfig(home)), 0o755))
+		require.NoError(t, os.WriteFile(piConfig(home), []byte(orig), 0o644))
+		return home
+	}
+
+	t.Run("removed after success", func(t *testing.T) {
+		home := newHome(t)
+		r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL, "--token", e.secret, "--yes")
+		require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+		require.Contains(t, r.stdout, "Registered Partyline in pi.")
+		_, err := os.Lstat(piConfig(home) + ".partyline.bak")
+		require.ErrorIs(t, err, os.ErrNotExist)
+		require.NotContains(t, r.stdout, "backup")
+	})
+
+	t.Run("kept with --keep-backups", func(t *testing.T) {
+		home := newHome(t)
+		r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL, "--token", e.secret, "--yes", "--keep-backups")
+		require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+		bak := piConfig(home) + ".partyline.bak"
+		data, err := os.ReadFile(bak)
+		require.NoError(t, err)
+		require.Equal(t, orig, string(data))
+		fi, err := os.Stat(bak)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+		require.Contains(t, r.stdout, "\nKept the backup "+bak+"\n")
+	})
+
+	t.Run("kept after a failure", func(t *testing.T) {
+		home := newHome(t)
+		calls := &harnessCalls{answer: func(string) ([]byte, error) { return []byte("boom"), errors.New("exit status 1") }}
+		r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}, lookPath: installed("claude"), run: calls.run},
+			"--url", e.env.URL, "--token", e.secret, "--yes")
+		require.Equal(t, 1, r.code)
+		data, err := os.ReadFile(piConfig(home) + ".partyline.bak")
+		require.NoError(t, err)
+		require.Equal(t, orig, string(data))
+	})
+
+	t.Run("an earlier backup stays", func(t *testing.T) {
+		home := newHome(t)
+		bak := piConfig(home) + ".partyline.bak"
+		require.NoError(t, os.WriteFile(bak, []byte("earlier\n"), 0o600))
+		r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL, "--token", e.secret, "--yes")
+		require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+		data, err := os.ReadFile(bak)
+		require.NoError(t, err)
+		require.Equal(t, "earlier\n", string(data))
+	})
+}

@@ -10,6 +10,22 @@ import (
 	"database/sql"
 )
 
+const addDeviceCodeAttempt = `-- name: AddDeviceCodeAttempt :one
+INSERT INTO device_code_attempts (user_id, attempted_at) VALUES (?, ?) RETURNING id
+`
+
+type AddDeviceCodeAttemptParams struct {
+	UserID      string
+	AttemptedAt int64
+}
+
+func (q *Queries) AddDeviceCodeAttempt(ctx context.Context, arg AddDeviceCodeAttemptParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, addDeviceCodeAttempt, arg.UserID, arg.AttemptedAt)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const claimDevicePoll = `-- name: ClaimDevicePoll :execrows
 UPDATE device_requests SET last_poll_at = ?1
 WHERE id = ?2 AND (last_poll_at IS NULL OR last_poll_at <= ?3)
@@ -27,6 +43,22 @@ func (q *Queries) ClaimDevicePoll(ctx context.Context, arg ClaimDevicePollParams
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const countDeviceCodeAttempts = `-- name: CountDeviceCodeAttempts :one
+SELECT COUNT(*) FROM device_code_attempts WHERE user_id = ? AND attempted_at > ?
+`
+
+type CountDeviceCodeAttemptsParams struct {
+	UserID      string
+	AttemptedAt int64
+}
+
+func (q *Queries) CountDeviceCodeAttempts(ctx context.Context, arg CountDeviceCodeAttemptsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countDeviceCodeAttempts, arg.UserID, arg.AttemptedAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const countDeviceRequestsSince = `-- name: CountDeviceRequestsSince :one
@@ -95,6 +127,24 @@ func (q *Queries) DecideDeviceRequest(ctx context.Context, arg DecideDeviceReque
 		arg.TokenOnceEnc,
 		arg.ID,
 	)
+	return err
+}
+
+const deleteDeviceCodeAttempt = `-- name: DeleteDeviceCodeAttempt :exec
+DELETE FROM device_code_attempts WHERE id = ?
+`
+
+func (q *Queries) DeleteDeviceCodeAttempt(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteDeviceCodeAttempt, id)
+	return err
+}
+
+const deleteOldDeviceCodeAttempts = `-- name: DeleteOldDeviceCodeAttempts :exec
+DELETE FROM device_code_attempts WHERE attempted_at <= ?
+`
+
+func (q *Queries) DeleteOldDeviceCodeAttempts(ctx context.Context, attemptedAt int64) error {
+	_, err := q.db.ExecContext(ctx, deleteOldDeviceCodeAttempts, attemptedAt)
 	return err
 }
 

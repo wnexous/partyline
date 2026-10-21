@@ -137,7 +137,7 @@ offline and gets no `connected_at`). Identity = `X-Partyline-Agent` (principal `
 # Contract Notes (from agent-identity Phases 2-3: T5-T11)
 
 Binding for the Verifier and later features. Migration `0012_project_author_names.sql`; the
-next migration is `0013` (the harness-onboarding fix branch reserves `0090`).
+next migration is `0014` (the harness-onboarding fixes took `0013`, renumbered from `0090` at merge).
 
 ## Active session and delivery (PROJ-07, PROJ-09, PROJ-10, T5)
 - `delivery.ActiveSession(ctx, q, online, projectID)`: the project's agents ordered by

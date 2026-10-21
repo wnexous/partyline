@@ -54,12 +54,12 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 3. The server SHALL serve `install.sh` at `/install.sh` with the instance URL pre-filled as the default for setup. (ONB-03)
 4. WHEN `partyline setup` runs THEN it SHALL ask for the instance URL and either an agent token or browser approval, verify them against the server, and write `~/.config/partyline/config.json` with mode 0600. (ONB-04)
 5. WHEN `partyline channel` starts without `PARTYLINE_URL`/`PARTYLINE_TOKEN` THEN it SHALL read them from the config file; env vars and flags SHALL override the file. (ONB-05)
-6. WHEN `partyline doctor` runs THEN it SHALL report pass/fail with a fix hint for: binary on PATH, config file present and private, server reachable, token valid, each registered harness entry pointing to an existing binary, and the local and server versions. (ONB-06)
+6. WHEN `partyline doctor` runs THEN it SHALL report pass/fail with a fix hint for: binary on PATH, config file present and private, server reachable, token valid, each registered harness entry pointing to an existing binary, and the local and server versions; a leftover `<file>.partyline.bak` SHALL be reported as a warning with the command that deletes it, without failing. (ONB-06)
 7. `partyline version` SHALL print the module version from build info when built with `go install` (not `dev`). (ONB-07)
 8. The saved token SHALL only be sent to the saved URL: IF a flag or env var names an instance URL other than the saved one (scheme, host and port compared) and no token is given THEN the command SHALL exit with an error naming both URLs instead of using the saved token. `setup` SHALL save the URL it started with (never a URL from the device poll), SHALL warn on stderr that `--token` is visible in the process list, and SHALL accept `--token-stdin` (exclusive with `--token` and `--browser`). (ONB-08; fix iteration 1)
 9. WHEN `partyline setup --uninstall` deletes the config file THEN it SHALL first revoke its agent token on the server (`DELETE /api/v1/agent/token`, agent tokens only) and report the result; a failed revoke SHALL be reported without failing the uninstall. A token the user declined under DEV-06 SHALL be revoked the same way. (ONB-09; fix iteration 1)
-10. `install.sh` SHALL run only when it was downloaded completely (all work in a `main` function called on its last line, so a script cut at any line downloads and writes nothing), and SHALL refuse plain `http://` instance, release and releases-API URLs (exit non-zero before any download) except for `localhost`, `127.0.0.1` and `[::1]`. (ONB-10; fix iteration 1)
-11. WHEN the Docker image is built without a `VERSION` build argument THEN the binary SHALL report `git describe --tags` of the `.git` in the build context, else `dev-<first 12 characters of the commit>` from that `.git` (no tag reachable, such as a shallow clone) or from `SOURCE_COMMIT`, else `dev`; a given `VERSION` SHALL win. (ONB-11; added in fix iteration 1)
+10. `install.sh` SHALL run only when it was downloaded completely (all work in a `main` function called on its last line, so a script cut at any line downloads and writes nothing), and SHALL refuse plain `http://` instance, release and releases-API URLs (exit non-zero before any download) except for `localhost`, `127.0.0.1` and `[::1]`: the scheme is compared without case, the host must be exactly one of those three (optionally with a numeric port), a URL without a scheme or with any scheme other than `https` and `http` (for example `ftp`) is refused, and any URL whose authority holds user info (`@`) is refused, https included. (ONB-10; fix iterations 1 and 2)
+11. WHEN the Docker image is built without a `VERSION` build argument THEN the binary SHALL report `git describe --tags` of the `.git` in the build context, else `dev-<first 12 characters of the commit>` from that `.git` (no tag reachable, such as a shallow clone) or from `SOURCE_COMMIT`, else `dev`; a given `VERSION` SHALL win, except that an empty `VERSION` and `VERSION=dev` count as unset. (ONB-11; added in fix iteration 1, worded in fix iteration 2)
 
 **Independent Test**: Fresh HOME: run install.sh against a local release fixture, run setup with a token, run doctor → all pass.
 
@@ -77,8 +77,8 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 2. WHEN a logged-in user types the code and approves the request THEN the server SHALL create an agent token named after the machine hostname and deliver it once to the polling CLI, together with the approver's username. (DEV-02)
 3. IF the request expires or is denied THEN the CLI SHALL exit non-zero with `approval expired` or `approval denied`. (DEV-03)
 4. The server SHALL rate-limit device polling to 1 request per 2 seconds per request and creation to 10 per hour per IP. (DEV-04)
-5. The server SHALL take the code in the request body of `POST /devices/lookup`, `/devices/approve` and `/devices/deny`, never in a URL, and IF a user has entered 5 unknown codes within the last minute THEN it SHALL answer further code entries of that user with 429 until a minute has passed since them. (DEV-05; fix iteration 1)
-6. WHEN the token is delivered THEN the CLI SHALL print `Approved by @<username> on <instance>` and, unless `--yes` is given, ask for confirmation; IF the user declines (or the input ends) THEN setup SHALL save nothing and exit non-zero. (DEV-06; fix iteration 1)
+5. The server SHALL take the code in the request body of `POST /devices/lookup`, `/devices/approve` and `/devices/deny`, never in a URL, and IF a user has entered 5 unknown codes within the last minute THEN it SHALL answer further code entries of that user with 429 until a minute has passed since them; the count SHALL survive a server restart. (DEV-05; fix iterations 1 and 2)
+6. WHEN the token is delivered THEN the CLI SHALL print `Approved by @<username> on <instance>` and, unless `--yes` is given, ask for confirmation; IF the user declines (or the input ends) THEN setup SHALL save nothing and exit non-zero. With `--yes` it SHALL also print on stderr `partyline setup: warning: --yes accepted the agent token of @<username> without asking; if @<username> is not you, run partyline setup --uninstall to revoke it`. (DEV-06; fix iterations 1 and 2)
 
 **Independent Test**: CLI starts, user approves in the web app, CLI saves the token.
 
@@ -111,8 +111,8 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 1. WHEN setup detects a harness THEN it SHALL show the exact change and, after confirmation, register Partyline at user scope with the binary's absolute path: Claude Code (`claude mcp add --scope user`), OpenCode (global `opencode.json` + plugin), pi (`~/.pi/agent/mcp.json` + extension), omp (`~/.omp/agent/mcp.json` + extension), Codex CLI (`codex mcp add` + Stop hook), Gemini CLI (`gemini mcp add -s user` + AfterAgent hook). (HAR-01)
 2. IF a Partyline entry already exists for a harness THEN setup SHALL update it in place. In the files setup edits itself (OpenCode's `opencode.json`, pi's and omp's `mcp.json`, Codex's `hooks.json` and the `hooks` of Gemini's `settings.json`) every other byte SHALL stay as it was. Files a harness CLI manages (`~/.claude.json` through `claude mcp add`, Codex's `config.toml` through `codex mcp add`, the `mcpServers` of Gemini's `settings.json` through `gemini mcp add`) are rewritten by that CLI; there setup SHALL change only the partyline entry. (HAR-02; reworded in fix iteration 1)
 3. WHEN `partyline <harness> [args…]` runs for `claude` (aliases `claudecode`, `claude-code`), `opencode`, `pi`, `omp`, `codex` or `gemini` THEN it SHALL exec that harness's binary found on PATH with every remaining argument passed through unchanged (`claude` gets `--dangerously-load-development-channels server:partyline` before them) and the environment of `partyline` with `PARTYLINE_SESSION` set to a fresh unique id, replacing any inherited value, so that `listen` and the tools-only MCP server of that session share the derived agent name and two sessions in the same folder never share it. IF the binary is not on PATH THEN it SHALL exit 127 with `<harness> is not installed (install it, then run partyline setup)`. IF Partyline is not registered in that harness THEN it SHALL print one warning suggesting `partyline setup --harness <id>` and still start it. `partyline --help` SHALL list the launchers, and `doctor` SHALL name `partyline <id>` for each registered harness. (HAR-03; extended to every harness in fix iteration 1)
-4. `partyline setup --uninstall` SHALL remove exactly the entries and files setup added. (HAR-04)
-5. WHEN setup edits a harness config file itself THEN it SHALL keep the first `<file>.partyline.bak` (never overwrite an existing backup), SHALL write through a symlink (the link stays, its target gets the change, written atomically next to the target), and SHALL write the extension/plugin file before the config entry, restoring the previous extension (or deleting a new one) IF the config cannot be written. (HAR-05; fix iteration 1)
+4. `partyline setup --uninstall` SHALL remove exactly the entries and files setup added. A Codex Stop or Gemini AfterAgent hook group counts as Partyline's only when its command is exactly the one setup writes for the running binary (`<absolute path> hook <name>`); hooks of any other program, including another `partyline*` binary or path, are never changed, removed or listed. (HAR-04; ownership narrowed in fix iteration 2)
+5. WHEN setup edits a harness config file itself THEN it SHALL keep the first `<file>.partyline.bak` (never overwrite an existing backup) with mode 0600, SHALL delete the backups it created once every selected harness was registered unless `--keep-backups` is given (a failed run keeps them), SHALL write through a symlink whose resolved target is inside the user's home (the link stays, its target gets the change, written atomically next to the target) and refuse, changing nothing, a symlink whose target is outside the home, and SHALL write the extension/plugin file before the config entry, restoring the previous extension (or deleting a new one) IF the config cannot be written. (HAR-05; fix iteration 1)
 
 **Independent Test**: Fake HOME with fake harness CLIs; setup writes/updates each config; uninstall restores the originals.
 
@@ -184,26 +184,26 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | ONB-03 | P1: Install and setup | Tasks (T5) | Implemented |
 | ONB-04 | P1: Install and setup | Tasks (T2, T6, T25) | Implemented |
 | ONB-05 | P1: Install and setup | Tasks (T2, T25, T29) | Implemented |
-| ONB-06 | P1: Install and setup | Tasks (T9) | Implemented |
+| ONB-06 | P1: Install and setup | Tasks (T9, T40) | Implemented |
 | ONB-07 | P1: Install and setup | Tasks (T1) | Implemented |
-| ONB-08 | P1: Install and setup | Tasks (T25) | Implemented |
+| ONB-08 | P1: Install and setup | Tasks (T25, T35) | Implemented |
 | ONB-09 | P1: Install and setup | Tasks (T25) | Implemented |
-| ONB-10 | P1: Install and setup | Tasks (T26) | Implemented |
-| ONB-11 | P1: Install and setup | Tasks (T30, T33) | Implemented |
+| ONB-10 | P1: Install and setup | Tasks (T26, T36) | Implemented |
+| ONB-11 | P1: Install and setup | Tasks (T30, T33, T37) | Implemented |
 | DEV-01 | P1: Browser approval | Tasks (T4, T6, T24) | Implemented |
 | DEV-02 | P1: Browser approval | Tasks (T4, T6, T16, T24) | Implemented |
 | DEV-03 | P1: Browser approval | Tasks (T4, T6) | Implemented |
 | DEV-04 | P1: Browser approval | Tasks (T4) | Implemented |
-| DEV-05 | P1: Browser approval | Tasks (T24, T29) | Implemented |
-| DEV-06 | P1: Browser approval | Tasks (T24) | Implemented |
+| DEV-05 | P1: Browser approval | Tasks (T24, T29, T42) | Implemented |
+| DEV-06 | P1: Browser approval | Tasks (T24, T41) | Implemented |
 | NAME-01 | P1: Agent names | Tasks (T3) | Implemented |
 | NAME-02 | P1: Agent names | Tasks (T3) | Implemented |
 | NAME-03 | P1: Agent names | Tasks (T3) | Implemented |
 | HAR-01 | P1: Harness registration | Tasks (T7, T8, T17, T20) | Implemented |
-| HAR-02 | P1: Harness registration | Tasks (T7, T8, T29, T30) | Implemented |
+| HAR-02 | P1: Harness registration | Tasks (T7, T8, T29, T30, T39) | Implemented |
 | HAR-03 | P1: Harness registration | Tasks (T9, T30, T31) | Implemented |
-| HAR-04 | P1: Harness registration | Tasks (T7, T8) | Implemented |
-| HAR-05 | P1: Harness registration | Tasks (T27) | Implemented |
+| HAR-04 | P1: Harness registration | Tasks (T7, T8, T39) | Implemented |
+| HAR-05 | P1: Harness registration | Tasks (T27, T38, T40) | Implemented |
 | PUSH-01 | P1: Push adapters | Tasks (T10) | Implemented |
 | PUSH-02 | P1: Push adapters | Tasks (T10) | Implemented |
 | PUSH-03 | P1: Push adapters | Tasks (T11, T17, T19, T20, T22, T28) | Implemented |
@@ -215,7 +215,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | WIZ-01 | P2: Web wizard | Tasks (T15, T23, T30, T32) | Implemented |
 | WIZ-02 | P2: Web wizard | Tasks (T16, T24) | Implemented |
 
-**Coverage:** 35 total, all mapped in tasks.md (UAT follow-ups: PUSH-06 → T18, PUSH-03 → T19, T20; HAR-01 → T20; fix iteration 1: T23-T33, with HAR-03 and WIZ-01 extended to every harness and ONB-11 added)
+**Coverage:** 35 total, all mapped in tasks.md (UAT follow-ups: PUSH-06 → T18, PUSH-03 → T19, T20; HAR-01 → T20; fix iteration 1: T23-T33, with HAR-03 and WIZ-01 extended to every harness and ONB-11 added; fix iteration 2: T35-T42 for ONB-06, ONB-08, ONB-10, ONB-11, DEV-05, DEV-06, HAR-02, HAR-04, HAR-05)
 
 ---
 

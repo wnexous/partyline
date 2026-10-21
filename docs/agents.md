@@ -34,7 +34,10 @@ Setup saves the instance URL and the agent token in `~/.config/partyline/config.
 0600, never in a project), then finds the installed harnesses, shows the exact change for each
 one and registers Partyline after you confirm. It ends with the command that starts each
 harness it registered. `partyline setup --harness codex,pi` registers only those;
-`partyline setup --uninstall` removes everything setup added and revokes the token.
+`partyline setup --uninstall` removes everything setup added and revokes the token. Before
+changing a harness config file setup copies it to a private `<file>.partyline.bak` and deletes
+that copy once every harness is registered; `--keep-backups` keeps it, and `partyline doctor`
+lists any copy left behind.
 
 ## 3. Start a session
 

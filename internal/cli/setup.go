@@ -63,6 +63,7 @@ type setupFlags struct {
 	yes        bool
 	harness    string
 	uninstall  bool
+	keepBackup bool
 }
 
 func newPrompter(io stdio) *prompter { return &prompter{in: bufio.NewReader(io.stdin), out: io.stdout} }
@@ -82,6 +83,7 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 	flags.BoolVar(&f.yes, "yes", false, "do not ask; use the defaults and apply every change")
 	flags.StringVar(&f.harness, "harness", "", "harnesses to register, comma-separated: claude, codex, gemini, opencode, pi, omp, or none (default: the installed ones)")
 	flags.BoolVar(&f.uninstall, "uninstall", false, "remove what setup added: harness entries, extension files and the config file")
+	flags.BoolVar(&f.keepBackup, "keep-backups", false, "keep the <file>.partyline.bak copy of each harness config setup changes (default: deleted after a successful run)")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -129,7 +131,7 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 		return 1
 	}
 	fmt.Fprintf(io.stdout, "Saved the instance URL and agent token to %s\n", path)
-	if !registerHarnesses(ctx, regs, f.yes, p, io) {
+	if !registerHarnesses(ctx, regs, f, p, io) {
 		return 1
 	}
 	return 0
@@ -183,6 +185,11 @@ func setupCredentials(ctx context.Context, f setupFlags, saved cliconfig.Config,
 		// DEV-06: name the account the token belongs to, so an approval by someone else
 		// (a phished or misdirected code) is noticed before anything is saved.
 		fmt.Fprintf(io.stdout, "Approved by @%s on %s\n", approver, base)
+		if f.yes {
+			// --yes skips the question, so say on stderr (seen even when stdout is not)
+			// whose token this is and how to undo it.
+			fmt.Fprintf(io.stderr, "partyline setup: warning: --yes accepted the agent token of @%s without asking; if @%s is not you, run partyline setup --uninstall to revoke it\n", approver, approver)
+		}
 		if !f.yes && !p.confirm(fmt.Sprintf("Save this agent token of @%s on this machine?", approver)) {
 			msg := "revoked it"
 			if err := revokeAgentToken(ctx, base, got); err != nil {

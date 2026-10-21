@@ -23,3 +23,15 @@ UPDATE device_requests SET status = ?, user_id = ?, token_id = ?, token_once_enc
 
 -- name: TakeDeviceToken :exec
 UPDATE device_requests SET token_once_enc = NULL WHERE id = ?;
+
+-- name: DeleteOldDeviceCodeAttempts :exec
+DELETE FROM device_code_attempts WHERE attempted_at <= ?;
+
+-- name: CountDeviceCodeAttempts :one
+SELECT COUNT(*) FROM device_code_attempts WHERE user_id = ? AND attempted_at > ?;
+
+-- name: AddDeviceCodeAttempt :one
+INSERT INTO device_code_attempts (user_id, attempted_at) VALUES (?, ?) RETURNING id;
+
+-- name: DeleteDeviceCodeAttempt :exec
+DELETE FROM device_code_attempts WHERE id = ?;

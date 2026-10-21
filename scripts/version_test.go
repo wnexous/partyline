@@ -62,13 +62,15 @@ func skipWithoutShellAndGit(t *testing.T) {
 	}
 }
 
-// ONB-11: a VERSION build argument wins over git and SOURCE_COMMIT; "dev" counts as unset.
+// ONB-11: a VERSION build argument wins over git and SOURCE_COMMIT; an empty VERSION and
+// VERSION=dev count as unset.
 func TestVersionArgumentWins(t *testing.T) {
 	skipWithoutShellAndGit(t)
 	dir := repo(t)
 	git(t, dir, "tag", "v1.2.3")
 	require.Equal(t, "v9.9.9\n", versionOf(t, dir, "VERSION=v9.9.9", "SOURCE_COMMIT=0123456789abcdef"))
 	require.Equal(t, "v1.2.3\n", versionOf(t, dir, "VERSION=dev"))
+	require.Equal(t, "v1.2.3\n", versionOf(t, dir, "VERSION="))
 }
 
 // ONB-11: without VERSION the build context's .git gives `git describe --tags`: the tag on

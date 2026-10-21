@@ -326,7 +326,8 @@ func TestSetupBrowserDenied(t *testing.T) {
 }
 
 // DEV-06: when the person at the terminal does not confirm the approver (answers "n", or the
-// input ends), setup saves nothing and exits 1; --yes accepts without asking.
+// input ends), setup saves nothing and exits 1; --yes accepts without asking but still warns
+// on stderr whose token it saved.
 func TestSetupBrowserApproverConfirmation(t *testing.T) {
 	for _, tc := range []struct {
 		name, stdin string
@@ -356,10 +357,13 @@ func TestSetupBrowserApproverConfirmation(t *testing.T) {
 			if tc.saved {
 				require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 				require.NotContains(t, r.stdout, "Save this agent token", "--yes does not ask")
+				// DEV-06: skipping the question still names the approver loudly, with the way back.
+				require.Contains(t, r.stderr, "partyline setup: warning: --yes accepted the agent token of @bob without asking; if @bob is not you, run partyline setup --uninstall to revoke it\n")
 				require.NoError(t, err)
 				return
 			}
 			require.Equal(t, 1, r.code)
+			require.NotContains(t, r.stderr, "--yes accepted", "the --yes warning appears only with --yes")
 			require.Contains(t, r.stdout, "Save this agent token of @bob on this machine? [Y/n]: ")
 			require.Contains(t, r.stderr, "not saved: the token belongs to @bob; revoked it.")
 			require.ErrorIs(t, err, os.ErrNotExist, "nothing saved")
@@ -438,4 +442,48 @@ func TestSetupBrowserSavesStartURL(t *testing.T) {
 	got, err := cliconfig.Load(configPath(home))
 	require.NoError(t, err)
 	require.Equal(t, start, got.URL)
+}
+
+// ONB-08: a token saved for instance A is never offered to instance B. `setup --url B` with
+// {A, tokenA} saved does not use the saved token: it asks for a token (interactive) or goes
+// straight to browser approval on B (--yes), and saves B with the token B delivered.
+func TestSetupDoesNotReuseTokenSavedForAnotherURL(t *testing.T) {
+	a := newChannelEnv(t)
+	for _, tc := range []struct {
+		name, stdin string
+		args        []string
+	}{
+		{name: "yes", args: []string{"--yes"}},
+		{name: "interactive", stdin: "\ny\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, clock, alice := deviceSetupEnv(t)
+			require.False(t, sameURL(a.env.URL, b.URL))
+			home := t.TempDir()
+			writeConfig(t, home, cliconfig.Config{URL: a.env.URL, Token: a.secret})
+			approved := false
+			r := runSetup(t, setupOpts{
+				env: map[string]string{"HOME": home}, hostname: "devbox", stdin: tc.stdin,
+				onSleep: func(stdout string) bool {
+					clock.Advance(2 * time.Second)
+					if code := approvalCode(stdout); code != "" && !approved {
+						typeCode(alice, "approve", code).RequireStatus(http.StatusOK)
+						approved = true
+					}
+					return true
+				},
+			}, append([]string{"--url", b.URL, "--harness", "none"}, tc.args...)...)
+			require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+			require.NotContains(t, r.stdout, "Using the saved agent token")
+			if tc.stdin != "" {
+				require.Contains(t, r.stdout, "Agent token (press Enter to approve this machine in the browser instead): ")
+			}
+			require.True(t, approved, "setup asked for a browser approval on B: %s", r.stdout)
+			got, err := cliconfig.Load(configPath(home))
+			require.NoError(t, err)
+			require.Equal(t, b.URL, got.URL)
+			require.NotEqual(t, a.secret, got.Token, "the token saved for A was not reused")
+			requireAgentToken(t, b, got.Token)
+		})
+	}
 }

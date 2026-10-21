@@ -339,3 +339,116 @@ func TestFileHarnessKeepsEmptiedSymlink(t *testing.T) {
 	require.Equal(t, os.ModeSymlink, fi.Mode()&os.ModeSymlink)
 	require.JSONEq(t, "{}", readFile(t, target))
 }
+
+// HAR-05: setup writes through a symlinked config or extension only when the link resolves
+// to a file inside the user's home (a symlinked home counts as home). A link to a file
+// outside home is refused with an error naming the link and its target, and nothing is
+// written: not the target, not the extension, not a backup.
+func TestHarnessRefusesSymlinkOutsideHome(t *testing.T) {
+	skipUnlessUnixPerms(t)
+	for _, c := range fileCases {
+		for _, which := range []string{"config", "extension"} {
+			t.Run(c.id+" "+which, func(t *testing.T) {
+				env, _ := testEnv(t, nil)
+				cfg, ext := filepath.Join(env.Home, c.config), filepath.Join(env.Home, c.ext)
+				link, target, orig := cfg, filepath.Join(t.TempDir(), "outside.json"), c.orig
+				if which == "extension" {
+					writeFile(t, cfg, c.orig)
+					link, target, orig = ext, filepath.Join(t.TempDir(), "outside.ts"), "// partyline v1.0.0: written by `partyline setup`; `partyline setup --uninstall` removes it.\nold\n"
+				}
+				writeFile(t, target, orig)
+				require.NoError(t, os.MkdirAll(filepath.Dir(link), 0o755))
+				require.NoError(t, os.Symlink(target, link))
+
+				err := registrar(t, env, c.id).Apply(context.Background())
+				require.EqualError(t, err, "refusing to write through the symlink "+link+": its target "+target+" is outside your home directory "+env.Home)
+				require.Equal(t, orig, readFile(t, target), "the target is untouched")
+				requireMissing(t, cfg+".partyline.bak")
+				if which == "config" {
+					requireMissing(t, ext)
+				} else {
+					require.Equal(t, c.orig, readFile(t, cfg), "the config is untouched")
+				}
+			})
+		}
+	}
+
+	t.Run("codex hooks", func(t *testing.T) {
+		env, cli := testEnv(t, nil)
+		hooks := filepath.Join(env.Home, ".codex", "hooks.json")
+		target := filepath.Join(t.TempDir(), "hooks.json")
+		writeFile(t, target, codexHooksOrig)
+		require.NoError(t, os.MkdirAll(filepath.Dir(hooks), 0o755))
+		require.NoError(t, os.Symlink(target, hooks))
+		err := registrar(t, env, "codex").Apply(context.Background())
+		require.EqualError(t, err, "refusing to write through the symlink "+hooks+": its target "+target+" is outside your home directory "+env.Home)
+		require.Empty(t, cli.calls, "no CLI ran")
+		require.Equal(t, codexHooksOrig, readFile(t, target))
+		requireMissing(t, hooks+".partyline.bak")
+	})
+
+	t.Run("gemini settings", func(t *testing.T) {
+		env, cli := testEnv(t, nil)
+		settings := filepath.Join(env.Home, ".gemini", "settings.json")
+		target := filepath.Join(t.TempDir(), "settings.json")
+		const orig = "{\n  \"theme\": \"Default\"\n}\n"
+		writeFile(t, target, orig)
+		require.NoError(t, os.MkdirAll(filepath.Dir(settings), 0o755))
+		require.NoError(t, os.Symlink(target, settings))
+		err := registrar(t, env, "gemini").Apply(context.Background())
+		require.EqualError(t, err, "refusing to write through the symlink "+settings+": its target "+target+" is outside your home directory "+env.Home)
+		require.Empty(t, cli.calls, "no CLI ran")
+		require.Equal(t, orig, readFile(t, target))
+		requireMissing(t, settings+".partyline.bak")
+	})
+
+	t.Run("symlinked home", func(t *testing.T) {
+		env, _ := testEnv(t, nil)
+		c := fileCases[1] // pi
+		realHome := env.Home
+		env.Home = filepath.Join(t.TempDir(), "home-link")
+		require.NoError(t, os.Symlink(realHome, env.Home))
+		cfg := filepath.Join(env.Home, c.config)
+		target := filepath.Join(realHome, "dotfiles", "pi.json")
+		writeFile(t, target, c.orig)
+		require.NoError(t, os.MkdirAll(filepath.Dir(cfg), 0o755))
+		require.NoError(t, os.Symlink(target, cfg))
+		require.NoError(t, registrar(t, env, c.id).Apply(context.Background()))
+		require.Equal(t, c.withEntry, readFile(t, target))
+	})
+}
+
+// HAR-05: the backup setup keeps may hold other secrets of the harness config, so it is
+// private (0600) even when the config is world-readable; Backups names the backup file of
+// every config setup edits itself (none for Claude Code, whose CLI edits its config).
+func TestBackupsArePrivate(t *testing.T) {
+	skipUnlessUnixPerms(t)
+	env, _ := testEnv(t, nil)
+	pi := filepath.Join(env.Home, ".pi/agent/mcp.json")
+	hooks := filepath.Join(env.Home, ".codex/hooks.json")
+	writeFile(t, pi, fileCases[1].orig)
+	writeFile(t, hooks, codexHooksOrig)
+	for _, id := range []string{"pi", "codex"} {
+		require.NoError(t, registrar(t, env, id).Apply(context.Background()))
+	}
+	for _, p := range []string{pi, hooks} {
+		fi, err := os.Stat(p + ".partyline.bak")
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o600), fi.Mode().Perm(), p)
+		fi, err = os.Stat(p)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o644), fi.Mode().Perm(), "the config keeps its mode")
+	}
+
+	want := map[string][]string{
+		"claude":   nil,
+		"codex":    {hooks + ".partyline.bak"},
+		"gemini":   {filepath.Join(env.Home, ".gemini/settings.json.partyline.bak")},
+		"opencode": {filepath.Join(env.Home, ".config/opencode/opencode.json.partyline.bak")},
+		"pi":       {pi + ".partyline.bak"},
+		"omp":      {filepath.Join(env.Home, ".omp/agent/mcp.json.partyline.bak")},
+	}
+	for _, r := range All(env) {
+		require.Equal(t, want[r.ID()], r.Backups(), r.ID())
+	}
+}
