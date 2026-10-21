@@ -103,11 +103,11 @@
 
 ## Handoff
 
-- **Feature**: routing-context
-- **Phase / Task**: Execute, Verifier fix iteration 1 (T18-T34) complete
-- **Completed**: T18-T34 on `main` (see tasks.md Phases 5-6; migration `0008`)
+- **Feature**: intelligences
+- **Phase / Task**: Tasks written (T1-T54, 9 phases); awaiting approval and André's answers to design Spec issues 2, 4, 5, 6
+- **Completed**: spec (`be30f10`), design (`c48b9c1`), tasks
 - **In-progress** (file:line): none
-- **Next step**: re-verify (iteration 2 of 3) over `8094902..HEAD`
-- **Blockers**: none
+- **Next step**: approve tasks, then Execute Phase 1 (T1)
+- **Blockers**: Spec issues 2, 4, 5, 6 need confirmation (tasks implement the recommended fixes)
 - **Uncommitted files**: none
 - **Branch**: main

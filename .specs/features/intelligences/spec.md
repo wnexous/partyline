@@ -371,92 +371,92 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AID-01 | P1: Folder identity | Design | Pending |
-| AID-02 | P1: Folder identity | Design | Pending |
-| AID-03 | P1: Folder identity | Design | Pending |
-| AID-04 | P1: Folder identity | Design | Pending |
-| AID-05 | P1: Folder identity | Design | Pending |
-| AID-06 | P1: Folder identity | Design | Pending |
-| AID-07 | P1: Folder identity | Design | Pending |
-| SES-01 | P1: One live session | Design | Pending |
-| SES-02 | P1: One live session | Design | Pending |
-| SES-03 | P1: One live session | Design | Pending |
-| SES-04 | P1: One live session | Design | Pending |
-| SES-05 | P1: One live session | Design | Pending |
-| SES-06 | P1: One live session | Design | Pending |
-| SES-07 | P1: One live session | Design | Pending |
-| SES-08 | P1: One live session | Design | Pending |
-| TREE-01 | P1: Tree | Design | Pending |
-| TREE-02 | P1: Tree | Design | Pending |
-| TREE-03 | P1: Tree | Design | Pending |
-| TREE-04 | P1: Tree | Design | Pending |
-| TREE-05 | P1: Tree | Design | Pending |
-| TREE-06 | P1: Tree | Design | Pending |
-| TREE-07 | P1: Tree | Design | Pending |
-| CONT-01 | P1: Contacts and DMs | Design | Pending |
-| DM-01 | P1: Contacts and DMs | Design | Pending |
-| DM-02 | P1: Contacts and DMs | Design | Pending |
-| DM-03 | P1: Contacts and DMs | Design | Pending |
-| DM-04 | P1: Contacts and DMs | Design | Pending |
-| DM-05 | P1: Contacts and DMs | Design | Pending |
-| DM-06 | P1: Contacts and DMs | Design | Pending |
-| DM-07 | P1: Contacts and DMs | Design | Pending |
-| DM-08 | P1: Contacts and DMs | Design | Pending |
-| GRP-01 | P1: Groups | Design | Pending |
-| GRP-02 | P1: Groups | Design | Pending |
-| GRP-03 | P1: Groups | Design | Pending |
-| GRP-04 | P1: Groups | Design | Pending |
-| PEOP-01 | P1: People | Design | Pending |
-| PEOP-02 | P1: People | Design | Pending |
-| PEOP-03 | P1: People | Design | Pending |
-| PEOP-04 | P1: People | Design | Pending |
-| PEOP-05 | P1: People | Design | Pending |
-| PEOP-06 | P1: People | Design | Pending |
-| ACC-01 | P1: Accounts | Design | Pending |
-| ACC-02 | P1: Accounts | Design | Pending |
-| ACC-03 | P1: Accounts | Design | Pending |
-| ACC-04 | P1: Accounts | Design | Pending |
-| ACC-05 | P1: Accounts | Design | Pending |
-| ACC-06 | P1: Accounts | Design | Pending |
-| ACC-07 | P1: Accounts | Design | Pending |
-| PROF-01 | P1: Profiles | Design | Pending |
-| PROF-02 | P1: Profiles | Design | Pending |
-| PROF-03 | P1: Profiles | Design | Pending |
-| PROF-04 | P1: Profiles | Design | Pending |
-| PROF-05 | P1: Profiles | Design | Pending |
-| PROF-06 | P1: Profiles | Design | Pending |
-| PROF-07 | P1: Profiles | Design | Pending |
-| PROF-08 | P1: Profiles | Design | Pending |
-| PROF-09 | P1: Profiles | Design | Pending |
-| PROF-10 | P1: Profiles | Design | Pending |
-| PROF-11 | P1: Profiles | Design | Pending |
-| LAY-01 | P1: Messenger layout | Design | Pending |
-| LAY-02 | P1: Messenger layout | Design | Pending |
-| LAY-03 | P1: Messenger layout | Design | Pending |
-| LAY-04 | P1: Messenger layout | Design | Pending |
-| LAY-05 | P1: Messenger layout | Design | Pending |
-| LAY-06 | P1: Messenger layout | Design | Pending |
-| AGRP-01 | P2: AIs create groups | Design | Pending |
-| AGRP-02 | P2: AIs create groups | Design | Pending |
-| CLI-01 | P1: Login and setup | Design | Pending |
-| CLI-02 | P1: Login and setup | Design | Pending |
-| CLI-03 | P1: Login and setup | Design | Pending |
-| CLI-04 | P1: Login and setup | Design | Pending |
-| CLI-05 | P1: Login and setup | Design | Pending |
-| CLI-06 | P1: Login and setup | Design | Pending |
-| CLI-07 | P1: Login and setup | Design | Pending |
-| MIG-01 | P1: Migration | Design | Pending |
-| MIG-02 | P1: Migration | Design | Pending |
-| MIG-03 | P1: Migration | Design | Pending |
-| MIG-04 | P1: Migration | Design | Pending |
-| MIG-05 | P1: Migration | Design | Pending |
-| MRG-01 | P2: Merge | Design | Pending |
-| MRG-02 | P2: Merge | Design | Pending |
-| NOTI-01 | P2: Notify on apps | Design | Pending |
-| NOTI-02 | P2: Notify on apps | Design | Pending |
-| NOTI-03 | P2: Notify on apps | Design | Pending |
+| AID-01 | P1: Folder identity | Tasks | Pending |
+| AID-02 | P1: Folder identity | Tasks | Pending |
+| AID-03 | P1: Folder identity | Tasks | Pending |
+| AID-04 | P1: Folder identity | Tasks | Pending |
+| AID-05 | P1: Folder identity | Tasks | Pending |
+| AID-06 | P1: Folder identity | Tasks | Pending |
+| AID-07 | P1: Folder identity | Tasks | Pending |
+| SES-01 | P1: One live session | Tasks | Pending |
+| SES-02 | P1: One live session | Tasks | Pending |
+| SES-03 | P1: One live session | Tasks | Pending |
+| SES-04 | P1: One live session | Tasks | Pending |
+| SES-05 | P1: One live session | Tasks | Pending |
+| SES-06 | P1: One live session | Tasks | Pending |
+| SES-07 | P1: One live session | Tasks | Pending |
+| SES-08 | P1: One live session | Tasks | Pending |
+| TREE-01 | P1: Tree | Tasks | Pending |
+| TREE-02 | P1: Tree | Tasks | Pending |
+| TREE-03 | P1: Tree | Tasks | Pending |
+| TREE-04 | P1: Tree | Tasks | Pending |
+| TREE-05 | P1: Tree | Tasks | Pending |
+| TREE-06 | P1: Tree | Tasks | Pending |
+| TREE-07 | P1: Tree | Tasks | Pending |
+| CONT-01 | P1: Contacts and DMs | Tasks | Pending |
+| DM-01 | P1: Contacts and DMs | Tasks | Pending |
+| DM-02 | P1: Contacts and DMs | Tasks | Pending |
+| DM-03 | P1: Contacts and DMs | Tasks | Pending |
+| DM-04 | P1: Contacts and DMs | Tasks | Pending |
+| DM-05 | P1: Contacts and DMs | Tasks | Pending |
+| DM-06 | P1: Contacts and DMs | Tasks | Pending |
+| DM-07 | P1: Contacts and DMs | Tasks | Pending |
+| DM-08 | P1: Contacts and DMs | Tasks | Pending |
+| GRP-01 | P1: Groups | Tasks | Pending |
+| GRP-02 | P1: Groups | Tasks | Pending |
+| GRP-03 | P1: Groups | Tasks | Pending |
+| GRP-04 | P1: Groups | Tasks | Pending |
+| PEOP-01 | P1: People | Tasks | Pending |
+| PEOP-02 | P1: People | Tasks | Pending |
+| PEOP-03 | P1: People | Tasks | Pending |
+| PEOP-04 | P1: People | Tasks | Pending |
+| PEOP-05 | P1: People | Tasks | Pending |
+| PEOP-06 | P1: People | Tasks | Pending |
+| ACC-01 | P1: Accounts | Tasks | Pending |
+| ACC-02 | P1: Accounts | Tasks | Pending |
+| ACC-03 | P1: Accounts | Tasks | Pending |
+| ACC-04 | P1: Accounts | Tasks | Pending |
+| ACC-05 | P1: Accounts | Tasks | Pending |
+| ACC-06 | P1: Accounts | Tasks | Pending |
+| ACC-07 | P1: Accounts | Tasks | Pending |
+| PROF-01 | P1: Profiles | Tasks | Pending |
+| PROF-02 | P1: Profiles | Tasks | Pending |
+| PROF-03 | P1: Profiles | Tasks | Pending |
+| PROF-04 | P1: Profiles | Tasks | Pending |
+| PROF-05 | P1: Profiles | Tasks | Pending |
+| PROF-06 | P1: Profiles | Tasks | Pending |
+| PROF-07 | P1: Profiles | Tasks | Pending |
+| PROF-08 | P1: Profiles | Tasks | Pending |
+| PROF-09 | P1: Profiles | Tasks | Pending |
+| PROF-10 | P1: Profiles | Tasks | Pending |
+| PROF-11 | P1: Profiles | Tasks | Pending |
+| LAY-01 | P1: Messenger layout | Tasks | Pending |
+| LAY-02 | P1: Messenger layout | Tasks | Pending |
+| LAY-03 | P1: Messenger layout | Tasks | Pending |
+| LAY-04 | P1: Messenger layout | Tasks | Pending |
+| LAY-05 | P1: Messenger layout | Tasks | Pending |
+| LAY-06 | P1: Messenger layout | Tasks | Pending |
+| AGRP-01 | P2: AIs create groups | Tasks | Pending |
+| AGRP-02 | P2: AIs create groups | Tasks | Pending |
+| CLI-01 | P1: Login and setup | Tasks | Pending |
+| CLI-02 | P1: Login and setup | Tasks | Pending |
+| CLI-03 | P1: Login and setup | Tasks | Pending |
+| CLI-04 | P1: Login and setup | Tasks | Pending |
+| CLI-05 | P1: Login and setup | Tasks | Pending |
+| CLI-06 | P1: Login and setup | Tasks | Pending |
+| CLI-07 | P1: Login and setup | Tasks | Pending |
+| MIG-01 | P1: Migration | Tasks | Pending |
+| MIG-02 | P1: Migration | Tasks | Pending |
+| MIG-03 | P1: Migration | Tasks | Pending |
+| MIG-04 | P1: Migration | Tasks | Pending |
+| MIG-05 | P1: Migration | Tasks | Pending |
+| MRG-01 | P2: Merge | Tasks | Pending |
+| MRG-02 | P2: Merge | Tasks | Pending |
+| NOTI-01 | P2: Notify on apps | Tasks | Pending |
+| NOTI-02 | P2: Notify on apps | Tasks | Pending |
+| NOTI-03 | P2: Notify on apps | Tasks | Pending |
 
-**Coverage:** 84 total, 0 mapped to tasks (Design pending)
+**Coverage:** 84 total, 84 mapped to tasks (see `tasks.md` Requirement Coverage)
 
 ---
 
