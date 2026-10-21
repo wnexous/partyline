@@ -79,7 +79,9 @@ func (r *Registry) GetProject(ctx context.Context, p authn.Principal, projectID 
 }
 
 // RenameProject changes the project's name (1 to 64 characters after trimming; the slug
-// stays) and the readable names of its temporary agents (PROJ-05); requires ownership.
+// stays) and the readable names of its temporary agents (PROJ-05); requires ownership. It
+// publishes MembersChanged for the rooms of those agents and for the rooms that have the
+// project as a member, whose member lists show the project's name.
 func (r *Registry) RenameProject(ctx context.Context, p authn.Principal, projectID, name string) (Project, error) {
 	if _, err := r.authorizeProject(ctx, p, projectID, dto.LevelManage); err != nil {
 		return Project{}, err
@@ -93,6 +95,11 @@ func (r *Registry) RenameProject(ctx context.Context, p authn.Principal, project
 		if err := q.UpdateProjectName(ctx, db.UpdateProjectNameParams{Name: name, ID: projectID}); err != nil {
 			return err
 		}
+		member, err := q.ListProjectRoomIDs(ctx, projectID)
+		if err != nil {
+			return err
+		}
+		roomIDs = append(roomIDs, member...)
 		list, err := q.ListTemporaryProjectAgents(ctx, sql.NullString{String: projectID, Valid: true})
 		if err != nil {
 			return err

@@ -299,3 +299,33 @@ func TestRenamesAnnounceMemberChanges(t *testing.T) {
 	live.Expect(dto.LiveEventTypeMembersChanged, &ref, liveWait)
 	require.Equal(t, room.ID, ref.RoomID)
 }
+
+// PROJ-05: renaming a project tells the live viewers of every room that has the project as a
+// member (kind project) that the room's members changed, so they show the new name; users who
+// cannot view the room hear nothing.
+func TestProjectRenameRefreshesItsRoomsLive(t *testing.T) {
+	env := testkit.New(t)
+	alice, bob, carol := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol")
+	_, projectID := sessionProject(t, alice, "proj")
+	room := createRoom(alice, "Ops")
+	addProject(alice, room.ID, projectID).RequireStatus(http.StatusCreated)
+	shareRoom(alice, room.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelPost})
+	aliceLive, bobLive, carolLive := dialLive(t, alice), dialLive(t, bob), dialLive(t, carol)
+	bobLive.ExpectNone(quiet, dto.LiveEventTypeAgentPresence)
+
+	alice.Patch("/api/v1/projects/"+projectID, dto.UpdateProjectRequest{Name: "Ruthe"}).RequireStatus(http.StatusOK)
+	var ref dto.RoomIDData
+	bobLive.Expect(dto.LiveEventTypeMembersChanged, &ref, liveWait)
+	require.Equal(t, room.ID, ref.RoomID)
+	aliceLive.Expect(dto.LiveEventTypeMembersChanged, &ref, liveWait)
+	require.Equal(t, room.ID, ref.RoomID)
+	carolLive.ExpectNone(quiet)
+
+	var names []string
+	for _, m := range testkit.Decode[dto.List[dto.RoomMember]](bob.Get("/api/v1/rooms/" + room.ID + "/members").RequireStatus(http.StatusOK)).Items {
+		if m.Kind == dto.MemberKindProject {
+			names = append(names, m.Name)
+		}
+	}
+	require.Equal(t, []string{"Ruthe"}, names)
+}

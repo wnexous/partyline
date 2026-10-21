@@ -191,6 +191,10 @@ WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
 ORDER BY seq DESC
 LIMIT sqlc.arg(limit);
 
+-- name: ListProjectRoomIDs :many
+-- The rooms that have the project as a member (kind project).
+SELECT room_id FROM room_members WHERE kind = 'project' AND member_id = ?;
+
 -- name: ListAgentProjectRoomIDs :many
 -- The rooms the agent's project is a member of.
 SELECT m.room_id FROM room_members m

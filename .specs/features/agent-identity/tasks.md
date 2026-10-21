@@ -276,7 +276,7 @@ T12 → T13 → T14 → T15 → T16
 **Requirement**: PROJ-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A room viewer gets `members.changed` for a project-member room on rename and the member list shows the new name; a non-viewer gets nothing
+- [x] A room viewer gets `members.changed` for a project-member room on rename and the member list shows the new name; a non-viewer gets nothing
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(agents): refresh project member rooms on project rename`

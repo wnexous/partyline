@@ -837,6 +837,34 @@ func (q *Queries) ListProjectBacklog(ctx context.Context, arg ListProjectBacklog
 	return items, nil
 }
 
+const listProjectRoomIDs = `-- name: ListProjectRoomIDs :many
+SELECT room_id FROM room_members WHERE kind = 'project' AND member_id = ?
+`
+
+// The rooms that have the project as a member (kind project).
+func (q *Queries) ListProjectRoomIDs(ctx context.Context, memberID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectRoomIDs, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjectRoomStates = `-- name: ListProjectRoomStates :many
 SELECT r.id, r.name, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor,
        m.display_name, m.delivery, m.keywords_json, r.instructions, r.instructions_by
