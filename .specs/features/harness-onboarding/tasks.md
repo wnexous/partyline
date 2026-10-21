@@ -466,8 +466,8 @@ the web changes.
 **Requirement**: ONB-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] a script cut before its last line does nothing (no download, no file)
-- [ ] `PARTYLINE_URL=http://example.test` exits 1 with a message; `http://127.0.0.1:…`, `http://localhost:…`, `http://[::1]:…` accepted
+- [x] a script cut before its last line does nothing (no download, no file)
+- [x] `PARTYLINE_URL=http://example.test` exits 1 with a message; `http://127.0.0.1:…`, `http://localhost:…`, `http://[::1]:…` accepted
 **Tests**: integration
 **Gate**: build
 **Commit**: `fix(scripts): run the installer only when it downloaded completely`

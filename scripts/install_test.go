@@ -78,6 +78,13 @@ func newRelease(t *testing.T, tag string, platforms ...string) *release {
 	return r
 }
 
+// count is the number of requests the fake GitHub received.
+func (r *release) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.requests)
+}
+
 func (r *release) requested(path string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -297,4 +304,82 @@ func TestRawInstallHasNoDefaultURL(t *testing.T) {
 // ONB-03: a URL with a single quote stays one shell word.
 func TestInstallQuotesURL(t *testing.T) {
 	require.Contains(t, scripts.Install("https://x.example.com/a'b"), `DEFAULT_URL='https://x.example.com/a'\''b'`)
+}
+
+// homeFiles lists every file under home (relative paths).
+func homeFiles(t *testing.T, home string) []string {
+	t.Helper()
+	var out []string
+	require.NoError(t, filepath.WalkDir(home, func(path string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			rel, _ := filepath.Rel(home, path)
+			out = append(out, rel)
+		}
+		return err
+	}))
+	return out
+}
+
+// ONB-10: `curl … | sh` may run a script cut short by a dropped connection. Cut at any line
+// before its last, the served script downloads nothing and writes nothing.
+func TestInstallTruncatedRunsNothing(t *testing.T) {
+	r := newRelease(t, "v1.4.0", hostPlatform(t))
+	served := scripts.Install("https://partyline.example.com")
+	lines := strings.SplitAfter(served, "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	for cut := 1; cut < len(lines); cut++ {
+		home := t.TempDir()
+		res := runInstall(t, strings.Join(lines[:cut], ""), r, map[string]string{"HOME": home})
+		require.Empty(t, homeFiles(t, home), "cut after line %d wrote files (exit %d)", cut, res.code)
+		require.NotContains(t, res.stdout, "Downloading", "cut after line %d", cut)
+	}
+	require.Zero(t, r.count(), "a truncated script made requests")
+
+	// The whole script still installs.
+	home := t.TempDir()
+	res := runInstall(t, served, r, map[string]string{"HOME": home})
+	require.Equal(t, 0, res.code, "stderr: %s", res.stderr)
+	require.FileExists(t, filepath.Join(home, ".local", "bin", "partyline"))
+}
+
+// ONB-10: plain http is refused for the instance and the release URLs, before anything is
+// downloaded, except for loopback hosts (localhost, 127.0.0.1, ::1).
+func TestInstallRefusesPlainHTTP(t *testing.T) {
+	r := newRelease(t, "v1.4.0", hostPlatform(t))
+	for _, tc := range []struct {
+		name, script string
+		env          map[string]string
+		bad          string
+	}{
+		{name: "served from http", script: scripts.Install("http://partyline.example.com"), bad: "http://partyline.example.com"},
+		{name: "PARTYLINE_URL", script: raw(t), env: map[string]string{"PARTYLINE_URL": "http://10.0.0.5:8080"}, bad: "http://10.0.0.5:8080"},
+		{name: "release base", script: raw(t), env: map[string]string{"PARTYLINE_RELEASE_BASE": "http://mirror.example.com/download"}, bad: "http://mirror.example.com/download"},
+		{name: "releases API", script: raw(t), env: map[string]string{"PARTYLINE_RELEASES_API": "http://api.example.com/latest"}, bad: "http://api.example.com/latest"},
+		{name: "localhost lookalike", script: scripts.Install("http://localhost.example.com"), bad: "http://localhost.example.com"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			env := map[string]string{"HOME": home}
+			for k, v := range tc.env {
+				env[k] = v
+			}
+			before := r.count()
+			res := runInstall(t, tc.script, r, env)
+			require.Equal(t, 1, res.code, "stdout: %s", res.stdout)
+			require.Contains(t, res.stderr, "partyline install: refusing plain http URL "+tc.bad+": use https")
+			require.Empty(t, homeFiles(t, home))
+			require.Equal(t, before, r.count(), "nothing downloaded")
+		})
+	}
+
+	for _, u := range []string{"http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080"} {
+		home := t.TempDir()
+		res := runInstall(t, scripts.Install(u), r, map[string]string{"HOME": home})
+		require.Equal(t, 0, res.code, "%s: %s", u, res.stderr)
+		data, err := os.ReadFile(filepath.Join(home, ".config", "partyline", "config.json"))
+		require.NoError(t, err)
+		require.JSONEq(t, `{"url":"`+u+`","token":""}`, string(data))
+	}
 }

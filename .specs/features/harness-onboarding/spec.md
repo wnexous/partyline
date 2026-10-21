@@ -58,6 +58,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 7. `partyline version` SHALL print the module version from build info when built with `go install` (not `dev`). (ONB-07)
 8. The saved token SHALL only be sent to the saved URL: IF a flag or env var names an instance URL other than the saved one (scheme, host and port compared) and no token is given THEN the command SHALL exit with an error naming both URLs instead of using the saved token. `setup` SHALL save the URL it started with (never a URL from the device poll), SHALL warn on stderr that `--token` is visible in the process list, and SHALL accept `--token-stdin` (exclusive with `--token` and `--browser`). (ONB-08; fix iteration 1)
 9. WHEN `partyline setup --uninstall` deletes the config file THEN it SHALL first revoke its agent token on the server (`DELETE /api/v1/agent/token`, agent tokens only) and report the result; a failed revoke SHALL be reported without failing the uninstall. A token the user declined under DEV-06 SHALL be revoked the same way. (ONB-09; fix iteration 1)
+10. `install.sh` SHALL run only when it was downloaded completely (all work in a `main` function called on its last line, so a script cut at any line downloads and writes nothing), and SHALL refuse plain `http://` instance, release and releases-API URLs (exit non-zero before any download) except for `localhost`, `127.0.0.1` and `[::1]`. (ONB-10; fix iteration 1)
 
 **Independent Test**: Fresh HOME: run install.sh against a local release fixture, run setup with a token, run doctor → all pass.
 
@@ -185,6 +186,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | ONB-07 | P1: Install and setup | Tasks | Implementing |
 | ONB-08 | P1: Install and setup | Tasks (T25) | Implemented |
 | ONB-09 | P1: Install and setup | Tasks (T25) | Implemented |
+| ONB-10 | P1: Install and setup | Tasks (T26) | Implemented |
 | DEV-01 | P1: Browser approval | Tasks | Implementing |
 | DEV-02 | P1: Browser approval | Tasks | Implementing |
 | DEV-03 | P1: Browser approval | Tasks | Implementing |
