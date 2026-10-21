@@ -35,6 +35,7 @@ func (s *server) roomRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/rooms/{id}/messages", authed(s.listMessages))
 	s.handle(mux, "POST /api/v1/rooms/{id}/messages", authed(s.postMessage))
 	s.handle(mux, "POST /api/v1/rooms/{id}/resume", authed(s.resumeRoom))
+	s.handle(mux, "GET /api/v1/rooms/{id}/attachments", authed(s.listRoomFiles))
 	s.handle(mux, "GET /api/v1/attachments/{id}", authed(s.downloadAttachment))
 }
 

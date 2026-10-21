@@ -62,7 +62,7 @@ T3 → T4
 **Requirement**: FILES-01, FILES-02, FILES-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Newest first, limit default 50 / max 100, cursor works; kind filter; 422 unknown kind; auth matrix (viewer 200, stranger 404)
+- [x] Newest first, limit default 50 / max 100, cursor works; kind filter; 422 unknown kind; auth matrix (viewer 200, stranger 404)
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): list a room's files`

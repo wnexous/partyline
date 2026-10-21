@@ -593,6 +593,39 @@ export interface DeviceRequest {
 }
 
 //////////
+// source: files.go
+
+/**
+ * FileKind groups attachments by MIME family for the room files list (FILES-01, FILES-03).
+ */
+export const FileKindImage = "image";
+export const FileKindAudio = "audio";
+export const FileKindVideo = "video";
+export const FileKindDocument = "document";
+/**
+ * File kinds: image/*, audio/*, video/*, and document for every other type.
+ */
+export type FileKind = typeof FileKindImage | typeof FileKindAudio | typeof FileKindVideo | typeof FileKindDocument;
+/**
+ * RoomFile is one attachment of GET /rooms/{id}/attachments?kind=&before=&limit= (newest first,
+ * limit default DefaultPageSize, max MaxPageSize; the next page starts before=<last id>).
+ * Download it with GET /attachments/{id} unless its status is too_large or unavailable.
+ */
+export interface RoomFile {
+  id: string;
+  name: string;
+  mime: string;
+  size: number /* int64 */;
+  status: AttachmentStatus;
+  kind: FileKind;
+  message_id: string;
+  message_seq: number /* int64 */;
+  author_kind: AuthorKind;
+  author_name: string;
+  created_at: string /* RFC 3339 */;
+}
+
+//////////
 // source: live.go
 
 /**

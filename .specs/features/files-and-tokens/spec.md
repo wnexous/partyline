@@ -82,9 +82,9 @@ Rooms collect images, audio and documents from chats and agents, but the only wa
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| FILES-01 | P1: Room files | Tasks | Pending |
-| FILES-02 | P1: Room files | Tasks | Pending |
-| FILES-03 | P1: Room files | Tasks | Pending |
+| FILES-01 | P1: Room files | Tasks | Implementing |
+| FILES-02 | P1: Room files | Tasks | Implementing |
+| FILES-03 | P1: Room files | Tasks | Implementing |
 | FILES-04 | P1: Room files | Tasks | Pending |
 | FILES-05 | P1: Room files | Tasks | Pending |
 | FILES-06 | P1: Room files | Tasks | Pending |
