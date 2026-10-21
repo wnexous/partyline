@@ -70,7 +70,7 @@ T18 → T19 → T20 → T21 → T22
 ### Phase 6: Verifier fix iteration 1
 
 ```
-T23 → T24 → T25 → T26 → T27 → T28 → T29 → T30 → T31
+T23 → T24 → T25 → T26 → T27 → T28 → T29 → T30 → T31 → T32 → T33 → T34
 ```
 
 ---
@@ -518,23 +518,72 @@ the web changes.
 
 #### T30: Spec precision for HAR-02 and PUSH-05
 
-**What**: HAR-02 separates files setup edits (byte-for-byte) from CLI-managed files (the harness CLI rewrites them; only the partyline entry may change); PUSH-05 names `promptAsync` with the `prompt` fallback.
+**What**: HAR-02 separates files setup edits (byte-for-byte) from CLI-managed files (the harness CLI rewrites them; only the partyline entry may change); PUSH-05 names `promptAsync` with the `prompt` fallback. The user's request for one launcher per harness amends HAR-03 and WIZ-01; the image version issue adds ONB-11.
 **Where**: `.specs/features/harness-onboarding/spec.md`
 **Depends on**: T29
 **Reuses**: contract notes
-**Requirement**: HAR-02, PUSH-05
+**Requirement**: HAR-02, PUSH-05, HAR-03, WIZ-01, ONB-11
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] spec wording matches the shipped behavior and the tests that cover it
+- [x] spec wording matches the shipped behavior and the tests that cover it
+- [x] HAR-03, WIZ-01 and ONB-11 specify the launchers and the image version (user request), with T31-T33 planned
 **Tests**: none
 **Gate**: build
-**Commit**: `docs(specs): reword HAR-02 and PUSH-05 to match the harness behavior`
+**Commit**: `docs(specs): reword HAR-02 and PUSH-05, specify one launcher per harness`
 
-#### T31: Record fix iteration 1
+#### T31: One launcher per harness
 
-**What**: contract notes for T23-T29, design risk table, traceability.
-**Where**: `.specs/features/harness-onboarding/contract-notes.md`, `design.md`, `spec.md`
+**What**: `partyline claude|claudecode|claude-code|opencode|pi|omp|codex|gemini [args…]` execs the harness binary from PATH with the arguments passed through (`claude` adds the channel flags) and a fresh `PARTYLINE_SESSION`; not installed → exit 127; not registered → one warning, still starts; `--help` lists the launchers; `doctor` names `partyline <id>`.
+**Where**: `internal/cli/launcher.go`, `internal/cli/cli.go`, `internal/cli/doctor.go`
 **Depends on**: T30
+**Reuses**: `stdio.exec` seam, `harness.Registrar.Entries`
+**Requirement**: HAR-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] exact argv and env per harness (exec seam), aliases, arguments passed through unchanged
+- [ ] `PARTYLINE_SESSION` is a fresh safe id per launch and replaces an inherited one; listen and tools-only share the name through it
+- [ ] binary missing → exit 127 with the spec message, nothing executed; not registered → one warning naming `partyline setup --harness <id>`, still executed
+- [ ] `partyline --help` lists every launcher; doctor's harness lines name `partyline <id>`
+**Tests**: unit, integration
+**Gate**: build
+**Commit**: `feat(cli): start every harness with partyline <harness>`
+
+#### T32: Wizard, setup and docs use the launchers
+
+**What**: the wizard's start command is `partyline <id>` on every tab (expectation line kept); `partyline setup` ends with `Start a session with partyline <id>`; `docs/agents.md` covers every harness (`docs/claude-code.md` points to it); READMEs' quickstart uses the launchers; UI-14 expects the new commands.
+**Where**: `web/src/lib/agent-connect.ts`, `web/src/components/connect-agent-dialog.tsx`, `web/src/lib/i18n/*.ts`, `web/e2e/smoke.spec.ts`, `internal/cli/setup*.go`, `docs/`, `README*.md`
+**Depends on**: T31
+**Reuses**: `HARNESSES`
+**Requirement**: WIZ-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] unit and e2e tests assert `partyline <id>` for all six tabs and the expectation line per delivery
+- [ ] setup's final message names the launcher of each registered harness
+- [ ] docs and READMEs describe the launchers
+**Tests**: unit, e2e
+**Gate**: build + e2e
+**Commit**: `feat(web): show partyline <harness> as the start command everywhere`
+
+#### T33: Image version from git
+
+**What**: `scripts/version.sh` resolves the version (VERSION, else `git describe --tags`, else `dev-<12>` from git or SOURCE_COMMIT, else `dev`); the Dockerfile runs it; `.git` joins the build context.
+**Where**: `scripts/version.sh`, `scripts/version_test.go`, `Dockerfile`, `.dockerignore`, `README*.md`
+**Depends on**: T32
+**Reuses**: install test harness
+**Requirement**: ONB-11
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] each fallback level has a test with a real git repository; VERSION wins
+- [ ] hadolint reports nothing
+**Tests**: integration
+**Gate**: build
+**Commit**: `build(docker): derive the image version from git when VERSION is unset`
+
+#### T34: Record fix iteration 1
+
+**What**: contract notes for T23-T33, design risk table, traceability.
+**Where**: `.specs/features/harness-onboarding/contract-notes.md`, `design.md`, `spec.md`
+**Depends on**: T33
 **Reuses**: none
 **Requirement**: all touched
 **Tools**: MCP: NONE; Skill: NONE
