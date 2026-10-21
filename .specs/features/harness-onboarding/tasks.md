@@ -674,8 +674,8 @@ before each commit.
 **Requirement**: HAR-02, HAR-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] a group running `/usr/local/bin/partyline-wrapper hook codex-stop` or another partyline path survives Apply and Remove byte for byte and is not listed by Entries
-- [ ] the group with the exact command is updated in place and removed
+- [x] a group running `/usr/local/bin/partyline-wrapper hook codex-stop` or another partyline path survives Apply and Remove byte for byte and is not listed by Entries
+- [x] the group with the exact command is updated in place and removed
 **Tests**: unit
 **Gate**: build
 **Commit**: `fix(harness): own only the hook groups that run this partyline binary`

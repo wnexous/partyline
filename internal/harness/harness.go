@@ -129,20 +129,10 @@ func shellQuote(s string) string {
 // hookCommand is the shell command of a Partyline hook.
 func hookCommand(binary, hook string) string { return shellQuote(binary) + " hook " + hook }
 
-// hookBinary returns the binary of a Partyline hook command, or "" when cmd is not one.
-func hookBinary(cmd, hook string) string {
-	bin, ok := strings.CutSuffix(strings.TrimSpace(cmd), " hook "+hook)
-	if !ok {
-		return ""
-	}
-	bin = strings.TrimSpace(bin)
-	if len(bin) >= 2 && bin[0] == '\'' && bin[len(bin)-1] == '\'' {
-		bin = strings.ReplaceAll(bin[1:len(bin)-1], `'\''`, "'")
-	}
-	if !strings.HasPrefix(filepath.Base(bin), "partyline") {
-		return ""
-	}
-	return bin
+// ownsHook reports whether cmd is exactly the hook command setup writes for this binary. A
+// hook of any other program, even one named partyline*, is not Partyline's to change.
+func (e Env) ownsHook(cmd, hook string) bool {
+	return strings.TrimSpace(cmd) == hookCommand(e.Binary, hook)
 }
 
 // tildePath shortens a path under home to ~/… for display.

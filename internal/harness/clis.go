@@ -179,7 +179,7 @@ func (c *codex) RemovePlan(ctx context.Context) []string {
 	if cmd, _ := c.mcpCommand(ctx); cmd != "" {
 		plan = append(plan, "run: codex mcp remove "+ServerName)
 	}
-	if bins, _ := hookBinaries(c.hooksPath(), CodexStopHook, codexHookKeys...); len(bins) > 0 {
+	if bins, _ := c.env.hookBinaries(c.hooksPath(), CodexStopHook, codexHookKeys...); len(bins) > 0 {
 		plan = append(plan, fmt.Sprintf("edit %s: remove the Partyline Stop hook", c.env.tildePath(c.hooksPath())))
 	}
 	return plan
@@ -210,7 +210,7 @@ func (c *codex) Entries(ctx context.Context) ([]Entry, error) {
 	if cmd != "" {
 		out = append(out, Entry{What: "MCP server in " + c.env.tildePath(filepath.Join(c.home(), "config.toml")), Binary: cmd})
 	}
-	bins, err := hookBinaries(c.hooksPath(), CodexStopHook, codexHookKeys...)
+	bins, err := c.env.hookBinaries(c.hooksPath(), CodexStopHook, codexHookKeys...)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +291,7 @@ func (g *gemini) RemovePlan(context.Context) []string {
 	if cmd, _ := g.mcpCommand(); cmd != "" {
 		plan = append(plan, "run: gemini mcp remove -s user "+ServerName)
 	}
-	if bins, _ := hookBinaries(g.settingsPath(), GeminiAfterAgentHook, geminiHookKeys...); len(bins) > 0 {
+	if bins, _ := g.env.hookBinaries(g.settingsPath(), GeminiAfterAgentHook, geminiHookKeys...); len(bins) > 0 {
 		plan = append(plan, fmt.Sprintf("edit %s: remove the Partyline AfterAgent hook", g.env.tildePath(g.settingsPath())))
 	}
 	return plan
@@ -320,7 +320,7 @@ func (g *gemini) Entries(context.Context) ([]Entry, error) {
 	if cmd != "" {
 		out = append(out, Entry{What: "MCP server in " + where, Binary: cmd})
 	}
-	bins, err := hookBinaries(g.settingsPath(), GeminiAfterAgentHook, geminiHookKeys...)
+	bins, err := g.env.hookBinaries(g.settingsPath(), GeminiAfterAgentHook, geminiHookKeys...)
 	if err != nil {
 		return nil, err
 	}
@@ -345,28 +345,27 @@ func stringAt(d *docEdit, keys ...string) (string, error) {
 	return s, nil
 }
 
-// groupBinaries returns the partyline binaries of the hook commands in a hook group (a
-// {"hooks": [{"command": …}]} object).
-func groupBinaries(raw []byte, hook string) []string {
+// ownsGroup reports whether a hook group (a {"hooks": [{"command": …}]} object) holds a hook
+// with the exact command setup writes for this binary.
+func (e Env) ownsGroup(raw []byte, hook string) bool {
 	var group struct {
 		Hooks []struct {
 			Command string `json:"command"`
 		} `json:"hooks"`
 	}
 	if json.Unmarshal(raw, &group) != nil {
-		return nil
+		return false
 	}
-	var out []string
 	for _, h := range group.Hooks {
-		if b := hookBinary(h.Command, hook); b != "" {
-			out = append(out, b)
+		if e.ownsHook(h.Command, hook) {
+			return true
 		}
 	}
-	return out
+	return false
 }
 
-// hookBinaries lists the binaries of the Partyline hooks in the array at keys of path.
-func hookBinaries(path, hook string, keys ...string) ([]string, error) {
+// hookBinaries lists the binary of each Partyline hook group in the array at keys of path.
+func (e Env) hookBinaries(path, hook string, keys ...string) ([]string, error) {
 	d, _, err := readDoc(path)
 	if err != nil {
 		return nil, err
@@ -376,8 +375,10 @@ func hookBinaries(path, hook string, keys ...string) ([]string, error) {
 		return nil, err
 	}
 	var out []string
-	for _, e := range arr.elems {
-		out = append(out, groupBinaries(d.raw(e), hook)...)
+	for _, el := range arr.elems {
+		if e.ownsGroup(d.raw(el), hook) {
+			out = append(out, e.Binary)
+		}
 	}
 	return out, nil
 }
@@ -395,8 +396,8 @@ func (e Env) upsertHookGroup(path string, group any, hook string, keys ...string
 	}
 	idx := -1
 	if arr != nil && arr.kind == '[' {
-		for i, e := range arr.elems {
-			if len(groupBinaries(d.raw(e), hook)) > 0 {
+		for i, el := range arr.elems {
+			if e.ownsGroup(d.raw(el), hook) {
 				idx = i
 				break
 			}
@@ -419,7 +420,7 @@ func (e Env) removeHookGroups(path, hook string, keys ...string) error {
 	if err != nil || !existed {
 		return err
 	}
-	n, err := d.removeElems(func(raw []byte) bool { return len(groupBinaries(raw, hook)) > 0 }, keys...)
+	n, err := d.removeElems(func(raw []byte) bool { return e.ownsGroup(raw, hook) }, keys...)
 	if err != nil || n == 0 {
 		return err
 	}
