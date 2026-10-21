@@ -511,7 +511,7 @@ the web changes.
 **Requirement**: ONB-05, DEV-05, HAR-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] each test fails against a mutant that removes the check
+- [x] each test fails against a mutant that removes the check
 **Tests**: unit, e2e
 **Gate**: build
 **Commit**: `test: cover config permissions in listen, device csrf and invalid codex toml`

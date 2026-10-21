@@ -327,6 +327,32 @@ func TestDeviceAuthMatrix(t *testing.T) {
 	require.Equal(t, dto.DeviceStatusPending, d.Status)
 }
 
+// SEC-02 on the device routes: a logged-in browser session cannot be made to look up,
+// approve or deny a code from another site (foreign Origin or Sec-Fetch-Site) or without
+// proving its origin, and none of those attempts changes the request; a same-origin request
+// of the same session goes through.
+func TestDeviceDecisionsRefuseCrossOrigin(t *testing.T) {
+	e := newDeviceEnv(t)
+	c := e.create(t, "laptop-01")
+	foreign := map[string]*testkit.Client{
+		"foreign origin":             e.alice.WithHeader("Origin", "https://evil.example.test"),
+		"cross-site fetch":           e.alice.WithHeader("Sec-Fetch-Site", "cross-site"),
+		"same-site, not same-origin": e.alice.WithHeader("Sec-Fetch-Site", "same-site"),
+		"no origin proof":            e.alice.WithHeader("Origin", ""),
+	}
+	for name, client := range foreign {
+		for _, action := range []string{"lookup", "approve", "deny"} {
+			err := decide(client, action, c.Code).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+			require.Equal(t, "cross-origin request refused", err.Message, "%s %s", name, action)
+		}
+	}
+	require.Equal(t, dto.DevicePoll{Status: dto.DeviceStatusPending},
+		testkit.Decode[dto.DevicePoll](e.poll(c.PollSecret).RequireStatus(http.StatusOK)), "nothing was approved or denied")
+
+	d := testkit.Decode[dto.DeviceRequest](decide(e.alice.WithHeader("Sec-Fetch-Site", "same-origin"), "approve", c.Code).RequireStatus(http.StatusOK))
+	require.Equal(t, dto.DeviceStatusApproved, d.Status)
+}
+
 // Audit: creation, approval, denial and delivery are recorded without secrets.
 func TestDeviceAudit(t *testing.T) {
 	e := newDeviceEnv(t)

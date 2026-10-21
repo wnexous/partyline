@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -336,6 +337,57 @@ func TestInvalidHarnessFileIsNotTouched(t *testing.T) {
 			require.Equal(t, "{\"hooks\": {,}}", readFile(t, path))
 		})
 	}
+}
+
+// invalidCodexTOML is a config.toml with an unclosed table header.
+const invalidCodexTOML = "model = \"gpt-5\"\n[mcp_servers.other\ncommand = \"x\"\n"
+
+// codexTOMLError is what codex-cli 0.163.0 prints for invalidCodexTOML (captured on the devbox),
+// with the config path in place of its first line's path.
+func codexTOMLError(path string) string {
+	return "Error: failed to load bootstrap configuration\n\nCaused by:\n    0: " + path +
+		":2:19: unclosed table, expected `]`\n    1: TOML parse error at line 2, column 19\n" +
+		"         |\n       2 | [mcp_servers.other\n         |                   ^\n       unclosed table, expected `]`\n"
+}
+
+// Edge case (HAR-02): Codex's config.toml is managed by `codex mcp add`. When it is not valid
+// TOML, codex refuses it; setup reports codex's parse error (naming the file), leaves
+// config.toml as it was and does not add the Stop hook.
+func TestCodexInvalidTOMLIsNotTouched(t *testing.T) {
+	env, cli := testEnv(t, nil)
+	cfg := filepath.Join(env.Home, ".codex", "config.toml")
+	writeFile(t, cfg, invalidCodexTOML)
+	cli.handle = func(line string) ([]byte, error) {
+		if strings.HasPrefix(line, "codex mcp add ") {
+			return []byte(codexTOMLError(cfg)), errors.New("exit status 1")
+		}
+		return nil, nil
+	}
+	err := registrar(t, env, "codex").Apply(context.Background())
+	require.ErrorContains(t, err, cfg+":2:19: unclosed table")
+	require.ErrorContains(t, err, "TOML parse error at line 2, column 19")
+	require.Equal(t, []string{"codex mcp add partyline -- /opt/bin/partyline channel --tools-only"}, cli.calls)
+	require.Equal(t, invalidCodexTOML, readFile(t, cfg))
+	requireMissing(t, filepath.Join(env.Home, ".codex", "hooks.json"))
+}
+
+// The same with the real Codex CLI when it is installed: its own TOML parser refuses the file.
+func TestCodexInvalidTOMLRealCLI(t *testing.T) {
+	if _, err := exec.LookPath("codex"); err != nil {
+		t.Skip("codex is not installed")
+	}
+	home := t.TempDir()
+	codexHome := filepath.Join(home, ".codex")
+	t.Setenv("CODEX_HOME", codexHome) // never the user's real Codex config
+	env := Env{Home: home, Binary: testBinary, Version: "v1.2.3", Getenv: os.Getenv}
+	cfg := filepath.Join(codexHome, "config.toml")
+	writeFile(t, cfg, invalidCodexTOML)
+
+	err := registrar(t, env, "codex").Apply(context.Background())
+	require.ErrorContains(t, err, "TOML parse error at line 2")
+	require.ErrorContains(t, err, cfg)
+	require.Equal(t, invalidCodexTOML, readFile(t, cfg))
+	requireMissing(t, filepath.Join(codexHome, "hooks.json"))
 }
 
 // A failing harness CLI is reported with its output.

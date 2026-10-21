@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/cliconfig"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -194,6 +196,28 @@ func TestListenDoesNotAckUnwrittenLines(t *testing.T) {
 
 	again := startListen(t, env, "/tmp/wd", nil)
 	require.Equal(t, msg.ID, again.line()["message_id"])
+}
+
+// Edge case (ONB-05): listen refuses a config file that is not 0600, like channel and doctor.
+// The file names a working server and token, so only the permission check can stop listen: it
+// exits 1 with the chmod fix before connecting, prints no line and never shows the token.
+func TestListenRefusesConfigFileNot0600(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix permission bits")
+	}
+	e := newChannelEnv(t)
+	home := t.TempDir()
+	path := writeConfig(t, home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
+	require.NoError(t, os.Chmod(path, 0o640)) // group-readable only
+
+	var out lockedBuffer
+	p := startListen(t, map[string]string{"HOME": home, "PARTYLINE_AGENT": "pi-box"}, "/tmp/wd", &out)
+	require.Equal(t, 1, p.exit())
+	require.Contains(t, p.stderr.String(), "partyline listen: config file "+path+" has mode 0640, want 0600")
+	require.Contains(t, p.stderr.String(), "run chmod 600 "+path)
+	require.NotContains(t, p.stderr.String(), e.secret)
+	require.Empty(t, out.String())
+	require.False(t, e.onlineNames(t)["pi-box"], "listen did not connect")
 }
 
 // PUSH-02: a tools-only channel serves the tools without the push socket: the agent is
