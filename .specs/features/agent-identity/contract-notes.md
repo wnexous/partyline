@@ -233,3 +233,55 @@ next migration is `0014` (the harness-onboarding fixes took `0013`, renumbered f
 - `make check` stayed ~10 minutes; `TestLinkPausesAfterReplaced` did not fail in this batch.
 - Not covered by a real harness: project delivery to pi/OpenCode (listen) sessions and the
   Codex/Gemini hooks with temporary names; they share the code paths tested with fakes.
+
+# Contract Notes (from agent-identity fix iteration 1: T12-T16)
+
+Binding for the Verifier and later features. Migration `0014_agent_session_key.sql`; the next
+migration is `0015`.
+
+## Unarchive tests (PROJ-02, ID-05, T12)
+- `requireUnarchived` (api tests) requires the agent in the default list and `archived: false`
+  with `include_archived=true`. Reconnect and promotion use it; the promotion test also checks
+  the PATCH answer (`kind: fixed`, `archived: false`).
+
+## PROJ-09 (AD-009, T13)
+- PROJ-09 is amended to the implemented rule: a post by any session of a project never goes
+  through that project's room membership; a same-project session that is a direct agent
+  member still receives it as that member. `delivery.Plan` excludes only the project target.
+
+## Session keys and temporary agents (ID-01, PROJ-07, T14)
+- Header `X-Partyline-Session` (`dto.HeaderSession`): the session key, 1-64 of
+  `[A-Za-z0-9._-]` (`agents.SessionKey`); other values are ignored on both sides.
+  `agents.Identity.Session`, `channel.Identity.SessionKey`.
+- Clients: the full channel, `channel --tools-only` and `listen` send `PARTYLINE_SESSION`, else
+  their parent process id (the existing session-file key), on every dial and REST call. The
+  turn-end hook sends `PARTYLINE_SESSION` only (its parent need not be the harness); without
+  it the hook sends no key.
+- Column `agents.session_key` ('' = not held). Queries `ListSessionAgents`,
+  `HoldAgentForSession` (key + `last_seen_at`), `ReleaseAgentSession`.
+- Name choice for a session without a name (`freeName`, under `Registry.allocMu`, which the
+  WebSocket and `POST /agent/register` now share):
+  1. With a key: the owner's temporary agent of the `<project>-<harness>[-N]` family that the
+     key holds, online or not (the same session again, its hook, or its listen half joining
+     its tools-only half).
+  2. Else the lowest N that is new or an offline temporary agent; with a key, an agent held
+     by another key is skipped unless archived.
+  3. Without a key: rule 2 without the hold check (old clients; holds are ignored).
+- Holding: a `POST /agent/register` that chose the agent this way with a key stores the key
+  on it and stamps `last_seen_at`, so each registration (the hook registers every turn)
+  keeps it out of the 24 h archive. The hold ends when the agent is archived. A WebSocket
+  connect clears the key on whatever agent it resolves: live sessions are tracked by
+  presence, so an offline live agent is reused as before and the list stays short.
+- Name + mode `temporary` (reconnect after a welcome, pi/OpenCode tools reading listen's
+  session file) and explicit names ignore the key.
+- Tools-only sessions are never online: they never become a project's active session and never
+  get project deliveries (spec Assumptions, `docs/agents.md`).
+- Not verified against real Codex or Gemini: whether `PARTYLINE_SESSION` (and
+  `PARTYLINE_HARNESS`) reach the harness's MCP server process. If a harness strips them, the
+  tools-only key falls back to the parent process id, and a launcher-started hook (which has
+  the variable) holds a different key than its tools-only channel.
+
+## Project rename (PROJ-05, T15)
+- `PATCH /projects/{id}` publishes `MembersChanged` for the rooms of the project's temporary
+  agents and for every room with the project as a `kind: "project"` member
+  (`ListProjectRoomIDs`). The live hub delivers it to the room's viewers only.

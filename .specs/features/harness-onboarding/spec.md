@@ -93,6 +93,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 **Acceptance Criteria**:
 
 1. WHEN `PARTYLINE_AGENT` is unset THEN the channel SHALL derive the name from the git repository root's basename, else the working directory's basename, slugified. (NAME-01)
+   > **Superseded** by agent-identity ID-01 (2026-10-21): a session without a name now sends its project (the same git root or folder basename) and harness, and the server names a temporary agent `<project>-<harness>[-N]` ("<Project> · <Harness label>"). The derived-name mode survives on the server only for clients from before projects. See `.specs/features/agent-identity/spec.md`.
 2. WHEN a derived name is already online in another session THEN the server SHALL register the session as the next free `<name>-N` (N ≥ 2) and the welcome frame SHALL carry the final name. (NAME-02)
 3. WHEN the name is set explicitly THEN the server SHALL keep "newest wins" replacement. (NAME-03)
 
@@ -196,7 +197,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | DEV-04 | P1: Browser approval | Tasks (T4) | Implemented |
 | DEV-05 | P1: Browser approval | Tasks (T24, T29, T42) | Implemented |
 | DEV-06 | P1: Browser approval | Tasks (T24, T41) | Implemented |
-| NAME-01 | P1: Agent names | Tasks (T3) | Implemented |
+| NAME-01 | P1: Agent names | Tasks (T3) | Superseded by agent-identity ID-01 |
 | NAME-02 | P1: Agent names | Tasks (T3) | Implemented |
 | NAME-03 | P1: Agent names | Tasks (T3) | Implemented |
 | HAR-01 | P1: Harness registration | Tasks (T7, T8, T17, T20) | Implemented |

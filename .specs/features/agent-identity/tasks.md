@@ -290,7 +290,7 @@ T12 → T13 → T14 → T15 → T16
 **Requirement**: ID-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] NAME-01 carries the superseded note; contract notes describe the fixes
+- [x] NAME-01 carries the superseded note; contract notes describe the fixes
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record agent identity fix iteration 1 contract`
