@@ -104,7 +104,7 @@ Scratch: `git worktree add --detach /tmp/claude-1001/pl-files-mutants 1718767`. 
 | W15 | `web/src/routes/_app/tokens.tsx:469` | confirm closes before outcome (no `preventDefault`) | ✅ failure test |
 
 **Sensor depth**: expanded. The feature touches auth: room access and token ownership.
-**Sensor outcome (before closure)**: 33/34 effective mutants killed. 1 survived (W12). B18 and B19 alone are equivalent mutants (the limit is capped in two places); their combination is killed. Result: FAIL ❌.
+**Sensor outcome (before closure)**: 33/34 effective mutants killed. 1 survived (W12). B18 and B19 alone are equivalent mutants (the limit is capped in two places); their combination is killed. outcome: FAIL ❌.
 
 ---
 
