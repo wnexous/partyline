@@ -428,7 +428,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | PROF-07 | P1: Profiles | Tasks | Pending |
 | PROF-08 | P1: Profiles | Tasks | Pending |
 | PROF-09 | P1: Profiles | Tasks | Pending |
-| PROF-10 | P1: Profiles | Tasks | Pending |
+| PROF-10 | P1: Profiles | Execute | Implementing |
 | PROF-11 | P1: Profiles | Tasks | Pending |
 | LAY-01 | P1: Messenger layout | Tasks | Pending |
 | LAY-02 | P1: Messenger layout | Tasks | Pending |

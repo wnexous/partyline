@@ -26,6 +26,10 @@ type RoomChanged struct {
 // MembersChanged reports that a room's members were added, updated or removed.
 type MembersChanged struct{ RoomID string }
 
+// IntelligenceChanged reports that an intelligence's profile (name, handle, bio or avatar)
+// changed. ID is the intelligence id, shared with its user, agent or person row.
+type IntelligenceChanged struct{ ID string }
+
 // GrantsChanged reports that the grants of a room, agent or connector changed.
 type GrantsChanged struct{ ResourceKind, ResourceID string }
 
@@ -85,17 +89,18 @@ func (e SessionsRevoked) Revokes(userID, sessionID, tokenID string) bool {
 // Lagged tells a subscriber it missed events because its buffer was full.
 type Lagged struct{}
 
-func (MessageCreated) isEvent()  {}
-func (RoomChanged) isEvent()     {}
-func (MembersChanged) isEvent()  {}
-func (GrantsChanged) isEvent()   {}
-func (AgentPresence) isEvent()   {}
-func (ConnectorStatus) isEvent() {}
-func (ChatDiscovered) isEvent()  {}
-func (OutboxChanged) isEvent()   {}
-func (IdentityLinked) isEvent()  {}
-func (SessionsRevoked) isEvent() {}
-func (Lagged) isEvent()          {}
+func (MessageCreated) isEvent()      {}
+func (RoomChanged) isEvent()         {}
+func (MembersChanged) isEvent()      {}
+func (IntelligenceChanged) isEvent() {}
+func (GrantsChanged) isEvent()       {}
+func (AgentPresence) isEvent()       {}
+func (ConnectorStatus) isEvent()     {}
+func (ChatDiscovered) isEvent()      {}
+func (OutboxChanged) isEvent()       {}
+func (IdentityLinked) isEvent()      {}
+func (SessionsRevoked) isEvent()     {}
+func (Lagged) isEvent()              {}
 
 // Bus fans out events to subscribers in publish order.
 type Bus struct {

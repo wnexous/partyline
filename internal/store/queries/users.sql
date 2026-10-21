@@ -31,3 +31,7 @@ SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled_at IS NULL;
 
 -- name: SetUserNotifyChat :exec
 UPDATE users SET notify_chat_id = ? WHERE id = ?;
+
+-- name: SetUserDisplayName :exec
+-- Mirrors intelligences.display_name until the legacy column is dropped.
+UPDATE users SET display_name = ? WHERE id = ?;

@@ -153,3 +153,59 @@ SQL part of `0015_intelligences.sql`, before the view:
   reply goes out to chat `100`; the fixture's pending outbox row is sent too.
 - Not covered here (later tasks): design test-plan item 6 (0016, T51) and the timeline's
   person name with platform badge (GRP-03, T11).
+
+## T7 - Intelligences service and creation hooks (PROF-01, PROF-02, PROF-10)
+
+Package `internal/intelligences` (`service.go`; the tree builder of T25 lives next to it):
+
+- `Create(ctx, q, NewParams{ID, Kind, DisplayName, HandleBase, Now}) (db.Intelligence, error)`
+  inserts the intelligence in the caller's transaction. `Kind` is `handles.User`, `AI` or
+  `Person` (human, ai, human; it picks the `user-`/`ai-`/`contact-` prefix of a default handle).
+  Handle = first free `handles.Default(Kind, HandleBase)`, `-2`, `-3`, … across the whole
+  instance (one namespace for users, AIs and people). Display name = `CleanDisplayName(DisplayName)`,
+  else the cleaned `HandleBase`, else the handle. **Every transaction that inserts a user, an
+  agent or a person must call it** (T13 `ResolveFolder` and T26 `People.Seen` still have to).
+  Today it is called by `users.insertAccount` (first-run setup, invite accept, admin create;
+  display name = the cleaned account display name, else the username, handle from the
+  username), `Registry.Upsert` and `Registry.getOrCreate` (so `Resolve` and `Register`; handle
+  from the agent name, display name = `delivery.AgentDisplayName`).
+- `CleanDisplayName(s)`: drops control characters and invalid UTF-8, trims, cuts to 64 code
+  points. Accounts store the cleaned name in `users.display_name` too.
+- **The v0.3 columns `users.display_name` ('' = show the username) and `agents.display_name` are
+  mirrors of `intelligences.display_name` until T51 drops them.** Every writer keeps both:
+  `Service.Update` mirrors a display-name change into the subtype row; the v0.3 paths still in
+  use write the intelligence through `SetDisplayName(ctx, q, id, name, now) (changed, err)`:
+  `users.UpdateProfile` (an empty display name shows the username), `Registry.Update` (owner
+  rename), `Registry.record` (the readable name of a temporary agent) and
+  `Registry.RenameProject`. A row without an intelligence is left alone. `message_views` and the
+  member lists read the intelligence first, so a new rename path must call it.
+- `Announce(ctx, bus, q, id, members)` publishes `events.IntelligenceChanged{ID}` and, when
+  `members`, `events.MembersChanged{RoomID}` for every room the intelligence is a direct member
+  of (agent or user member). Call it after the transaction committed. The live hub does not
+  render `IntelligenceChanged` yet (T9 adds the `intelligence.changed` frame).
+- `Service` (`app.App.Intelligences`, `intelligences.New(Deps{Store, Access, Bus, Now})`):
+  - `Get(ctx, p, id) (Profile, error)`: `Profile` embeds `db.Intelligence` and adds `Role`
+    (`RoleUser`, `RoleAI`, `RolePerson`) and `CanEdit`. Not visible or unknown →
+    `access.ErrNotFound`.
+  - `CanSee(ctx, p, id)` / `CanEdit(ctx, p, id)`. Disabled and unknown users see and edit
+    nothing (AUTH-10). Self: a user principal on their own intelligence, an agent principal on
+    its own AI (see + edit). Users: every active user sees every user intelligence; only the
+    user edits it. AIs: the owner (manage) sees and edits; a `use` grantee sees; anyone who can
+    view (`access.UserRoomLevel`) a room where the AI is a direct member or wrote a message
+    (`messages.author_iid`) sees; an agent principal sees what its owner sees but edits only
+    itself; admins get nothing. People: users who own or may `use` the connector see and
+    edit; an agent principal of such a user sees, never edits.
+  - `Update(ctx, p, id, ProfileUpdate{DisplayName, Handle, Bio *string}) (Profile, error)`:
+    404 `access.ErrNotFound` without view, 403 `access.ErrForbidden` with view but no edit,
+    `*validation.Error` with fields `display_name` (1-64 code points after dropping control
+    characters and trimming), `handle` (`handles.Validate` after trimming; lower-cased) and
+    `bio` (0-280 code points; control characters except `\n` dropped, trimmed) with nothing
+    applied, `ErrHandleTaken` when another intelligence has the handle (case-insensitive; the
+    unique index is the last guard). Only changed values are written; a no-op update writes and
+    announces nothing. A change announces `IntelligenceChanged`, plus `MembersChanged` when the
+    display name or handle changed. T9 maps `ErrHandleTaken` to 409 `handle_taken`.
+- sqlc added: `GetIntelligenceWithRole` (the row with `role`, `agent_owner_id`,
+  `person_connector_id`), `SetIntelligenceDisplayName`, `ListMemberRoomIDs`,
+  `ListIntelligenceRoomIDs` (member rooms ∪ authored rooms), `SetUserDisplayName`.
+- Not in T7: a person edit does not set `people.name_locked` and person visibility has no
+  shared-conversation rule yet (T27); avatars (T10); `Message.author` (T11).

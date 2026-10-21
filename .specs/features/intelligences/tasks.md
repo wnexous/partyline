@@ -221,9 +221,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PROF-01, PROF-02, PROF-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Every new user and agent gets exactly one intelligence (PROF-01); handle rules and 409 `handle_taken` (PROF-02, PROF-10); display 1/64/65 and bio 280/281 boundaries
-- [ ] `CanSee`/`CanEdit` cases of the design's security section (self, other user, AI owner, AI grantee, stranger, person via connector use)
-- [ ] Gate check passes: `make check`
+- [x] Every new user and agent gets exactly one intelligence (PROF-01); handle rules and 409 `handle_taken` (PROF-02, PROF-10); display 1/64/65 and bio 280/281 boundaries
+- [x] `CanSee`/`CanEdit` cases of the design's security section (self, other user, AI owner, AI grantee, stranger, person via connector use)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(intelligences): add the intelligence profile service`

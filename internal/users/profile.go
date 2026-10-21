@@ -9,6 +9,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/store/db"
 )
 
@@ -46,6 +47,7 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, up ProfileUp
 		return db.User{}, &ValidationError{Fields: fields}
 	}
 	var u db.User
+	var renamed bool
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		var err error
 		u, err = q.GetUser(ctx, userID)
@@ -56,15 +58,31 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, up ProfileUp
 			return err
 		}
 		if up.DisplayName != nil {
-			u.DisplayName = *up.DisplayName
+			u.DisplayName = intelligences.CleanDisplayName(*up.DisplayName)
 		}
 		if up.Locale != nil {
 			u.Locale = *up.Locale
 		}
-		return q.UpdateUserProfile(ctx, db.UpdateUserProfileParams{DisplayName: u.DisplayName, Locale: u.Locale, ID: userID})
+		if err := q.UpdateUserProfile(ctx, db.UpdateUserProfileParams{DisplayName: u.DisplayName, Locale: u.Locale, ID: userID}); err != nil {
+			return err
+		}
+		if up.DisplayName == nil {
+			return nil
+		}
+		// The account's intelligence is what names the user everywhere (PROF-03); an empty
+		// display name shows the username again.
+		name := u.DisplayName
+		if name == "" {
+			name = u.Username
+		}
+		renamed, err = intelligences.SetDisplayName(ctx, q, userID, name, s.now())
+		return err
 	})
 	if err != nil {
 		return db.User{}, err
+	}
+	if renamed {
+		intelligences.Announce(ctx, s.bus, s.store.R(), userID, true)
 	}
 	return u, nil
 }

@@ -153,6 +153,21 @@ func (q *Queries) SetUserDisabledAt(ctx context.Context, arg SetUserDisabledAtPa
 	return err
 }
 
+const setUserDisplayName = `-- name: SetUserDisplayName :exec
+UPDATE users SET display_name = ? WHERE id = ?
+`
+
+type SetUserDisplayNameParams struct {
+	DisplayName string
+	ID          string
+}
+
+// Mirrors intelligences.display_name until the legacy column is dropped.
+func (q *Queries) SetUserDisplayName(ctx context.Context, arg SetUserDisplayNameParams) error {
+	_, err := q.db.ExecContext(ctx, setUserDisplayName, arg.DisplayName, arg.ID)
+	return err
+}
+
 const setUserNotifyChat = `-- name: SetUserNotifyChat :exec
 UPDATE users SET notify_chat_id = ? WHERE id = ?
 `

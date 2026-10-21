@@ -27,6 +27,7 @@ import (
 	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/identities"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/live"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
@@ -82,7 +83,9 @@ type App struct {
 	Users  *users.Service
 	Access *access.Authorizer
 	Rooms  *rooms.Service
-	Blobs  *attachments.Store
+	// Intelligences serves the profiles of users, AIs and people.
+	Intelligences *intelligences.Service
+	Blobs         *attachments.Store
 	// Presence tracks connected agents; Agents is the agent registry.
 	Presence *agents.Presence
 	Agents   *agents.Registry
@@ -142,16 +145,17 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	presence := agents.NewPresence(st, bus, opts.Now)
 	az := access.New(st, bus, access.Options{Now: opts.Now, Online: presence.Online})
 	a := &App{
-		Config: cfg,
-		Logger: opts.Logger,
-		Store:  st,
-		Box:    box,
-		Bus:    bus,
-		Users:  usersSvc,
-		Access: az,
-		Rooms:  rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
-		Blobs:  blobs,
-		now:    opts.Now,
+		Config:        cfg,
+		Logger:        opts.Logger,
+		Store:         st,
+		Box:           box,
+		Bus:           bus,
+		Users:         usersSvc,
+		Access:        az,
+		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
+		Blobs:         blobs,
+		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now}),
+		now:           opts.Now,
 	}
 	a.Presence = presence
 	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Now: opts.Now})
