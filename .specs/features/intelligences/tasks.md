@@ -170,9 +170,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: MIG-01, MIG-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Every user and agent has one intelligence with a valid unique handle and the v0.3 display name; agents are unlinked (`folder = ''`)
-- [ ] One person per (connector, sender id); `author_iid` per author case (user, agent, linked chat sender, unlinked sender, senderless chat, system) (MIG-04)
-- [ ] Gate check passes: `make check`
+- [x] Every user and agent has one intelligence with a valid unique handle and the v0.3 display name; agents are unlinked (`folder = ''`)
+- [x] One person per (connector, sender id); `author_iid` per author case (user, agent, linked chat sender, unlinked sender, senderless chat, system) (MIG-04)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): backfill intelligences and message authors`

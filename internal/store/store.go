@@ -96,7 +96,9 @@ func (s *Store) ReadTx(ctx context.Context, fn func(q *db.Queries) error) error 
 type Hook func(ctx context.Context, tx *sql.Tx) error
 
 // hooks maps a migration version (the file name without ".sql") to its Go step.
-var hooks = map[string]Hook{}
+var hooks = map[string]Hook{
+	"0015_intelligences": backfillIntelligences,
+}
 
 // migrations holds the embedded migration files at its root.
 var migrations = func() fs.FS {
