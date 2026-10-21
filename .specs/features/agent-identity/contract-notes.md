@@ -310,6 +310,13 @@ migration is `0015`.
   `channel --tools-only` for Codex and Gemini; they keep working (label from the recovered
   `PARTYLINE_HARNESS` where T17 applies, else `agent`).
 
+## Session holds per owner and machine (ID-01, T19)
+- Holds were already per owner (`ListSessionAgents` filters `owner_id`). A key now matches a
+  held agent only when the agent's machine equals the session's `X-Partyline-Machine`; an
+  empty machine on either side matches (old rows, a failed hostname). A key held on another
+  machine counts as held by another session. Parent pid keys repeat across machines; launcher
+  keys are random. No migration: `agents.machine` already exists.
+
 ## Project rename (PROJ-05, T15)
 - `PATCH /projects/{id}` publishes `MembersChanged` for the rooms of the project's temporary
   agents and for every room with the project as a `kind: "project"` member

@@ -143,3 +143,35 @@ func TestLiveSessionsAndToolsOnlySessionKeys(t *testing.T) {
 	_, next := dialSession(t, tok, keyedHeaders("proj", "opencode", "pl-three"))
 	require.Equal(t, tools, next, "a live session does not hold its agent after it ends")
 }
+
+// ID-01 (T19): a session key holds an agent only for its owner and machine. Parent pid keys
+// repeat across machines: the same key on another machine of the owner gets its own agent, the
+// same key and machine gets its agent back, and another owner's same key never reaches the
+// owner's agents. (A session without a machine still matches: see
+// TestLiveSessionsAndToolsOnlySessionKeys.)
+func TestSessionHoldsAreScopedByOwnerAndMachine(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	aliceTok := alice.Token(dto.TokenKindAgent, "laptop")
+	bob := env.NewUser("bob")
+	bobTok := bob.Token(dto.TokenKindAgent, "laptop")
+	register := func(tok *testkit.Client, machine string) dto.AgentInfo {
+		t.Helper()
+		c := tok.WithHeader(dto.HeaderProject, "proj").WithHeader(dto.HeaderHarness, "codex").
+			WithHeader(dto.HeaderSession, "4242").WithHeader(dto.HeaderMachine, machine)
+		return testkit.Decode[dto.AgentInfo](c.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
+	}
+
+	laptop := register(aliceTok, "laptop")
+	desktop := register(aliceTok, "desktop")
+	require.Equal(t, []string{"proj-codex", "proj-codex-2"}, []string{laptop.Name, desktop.Name},
+		"the same key on another machine is another session")
+	require.NotEqual(t, laptop.ID, desktop.ID)
+	require.Equal(t, laptop, register(aliceTok, "laptop"), "same key and machine: the session's agent")
+	require.Equal(t, desktop, register(aliceTok, "desktop"))
+
+	bobs := register(bobTok, "laptop")
+	require.Equal(t, "proj-codex", bobs.Name, "bob's session gets bob's own agent")
+	require.NotEqual(t, laptop.ID, bobs.ID)
+	require.Equal(t, laptop, register(aliceTok, "laptop"), "bob's registration took nothing of alice's")
+}

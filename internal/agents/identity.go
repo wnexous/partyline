@@ -225,7 +225,7 @@ func (r *Registry) resolve(ctx context.Context, ownerID string, id Identity, liv
 	case project != "" && strings.TrimSpace(id.Name) == "":
 		slug := Slug(project)
 		base := temporaryBase(slug, harness)
-		name, n, err := r.freeName(ctx, ownerID, base, true, id.Session)
+		name, n, err := r.freeName(ctx, ownerID, base, true, id.Session, cleanText(id.Machine, MaxMachineLength))
 		if err != nil {
 			return db.Agent{}, err
 		}
@@ -242,7 +242,7 @@ func (r *Registry) resolve(ctx context.Context, ownerID string, id Identity, liv
 			projectSlug: slug, projectRaw: project, forceProject: true}
 	case id.Mode == dto.AgentModeUnique:
 		base := Slug(id.Name)
-		name, n, err := r.freeName(ctx, ownerID, base, false, "")
+		name, n, err := r.freeName(ctx, ownerID, base, false, "", "")
 		if err != nil {
 			return db.Agent{}, err
 		}
@@ -364,15 +364,18 @@ func (r *Registry) ensureProject(ctx context.Context, q *db.Queries, ownerID, sl
 // With a session key (ID-01): the temporary agent of that family the key holds comes back
 // first, online or not (the same session again, or its listen half joining its tools-only
 // half); offline agents held by another key are skipped unless archived. Without a key the
-// old rule applies and holds are ignored.
-func (r *Registry) freeName(ctx context.Context, ownerID, base string, temporaryOnly bool, session string) (string, int64, error) {
+// old rule applies and holds are ignored. A hold is the owner's and the machine's (T19):
+// parent pid keys repeat across machines, so a key held on another machine is another
+// session's; an unknown machine on either side matches.
+func (r *Registry) freeName(ctx context.Context, ownerID, base string, temporaryOnly bool, session, machine string) (string, int64, error) {
+	sameMachine := func(a db.Agent) bool { return machine == "" || a.Machine == "" || a.Machine == machine }
 	if session != "" {
 		held, err := r.store.R().ListSessionAgents(ctx, db.ListSessionAgentsParams{OwnerID: ownerID, SessionKey: session})
 		if err != nil {
 			return "", 0, err
 		}
 		for _, a := range held {
-			if n := sessionNumber(a.Name, base); suffixedName(base, int(n)) == a.Name {
+			if n := sessionNumber(a.Name, base); suffixedName(base, int(n)) == a.Name && sameMachine(a) {
 				return a.Name, n, nil
 			}
 		}
@@ -386,7 +389,7 @@ func (r *Registry) freeName(ctx context.Context, ownerID, base string, temporary
 		if err != nil {
 			return "", 0, err
 		}
-		heldByOther := session != "" && a.SessionKey != "" && a.SessionKey != session && !a.ArchivedAt.Valid
+		heldByOther := session != "" && a.SessionKey != "" && (a.SessionKey != session || !sameMachine(a)) && !a.ArchivedAt.Valid
 		if !r.presence.Online(a.ID) && (!temporaryOnly || a.Kind == string(dto.AgentKindTemporary)) && !heldByOther {
 			return name, int64(n), nil
 		}

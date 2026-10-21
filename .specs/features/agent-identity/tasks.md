@@ -334,7 +334,7 @@ T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19
 **Requirement**: ID-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Same key on two machines → two agents; same key and machine → the same agent; same key of another owner → that owner's own agent
+- [x] Same key on two machines → two agents; same key and machine → the same agent; same key of another owner → that owner's own agent
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(agents): scope session holds by machine`
