@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 )
 
 // LatestProtocolVersion is the newest protocol revision the server speaks. A client asking for
@@ -87,13 +88,22 @@ type Server struct {
 
 	initOnce    sync.Once
 	initialized chan struct{}
-	doneOnce    sync.Once
-	done        chan struct{}
+	listedOnce  sync.Once
+	listed      chan struct{}
+	readyOnce   sync.Once
+	ready       chan struct{}
+	// readyDelay and readyFallback are ReadyDelay and ReadyFallback when the server was made.
+	readyDelay, readyFallback time.Duration
+	doneOnce                  sync.Once
+	done                      chan struct{}
 }
 
 // NewServer returns a server reading requests from in and writing to out.
 func NewServer(in io.Reader, out io.Writer, info ServerInfo) *Server {
-	return &Server{in: in, out: out, info: info, initialized: make(chan struct{}), done: make(chan struct{})}
+	return &Server{
+		in: in, out: out, info: info, initialized: make(chan struct{}), listed: make(chan struct{}),
+		ready: make(chan struct{}), done: make(chan struct{}), readyDelay: ReadyDelay, readyFallback: ReadyFallback,
+	}
 }
 
 // HandleTool registers a tool. Call it before Serve.
@@ -101,12 +111,21 @@ func (s *Server) HandleTool(def ToolDef, fn ToolFunc) {
 	s.tools = append(s.tools, tool{def: def, fn: fn})
 }
 
-// Notify sends a JSON-RPC notification. Before the client has sent notifications/initialized
-// it blocks until then, so the notification is emitted after initialization; it returns once
-// the line is written, or ErrClosed when the server stops first.
+// Readiness waits (see Ready); NewServer reads them, tests shorten them.
+var (
+	// ReadyDelay is the wait after the first tools/list answer before notifications go out.
+	ReadyDelay = 2 * time.Second
+	// ReadyFallback is how long after notifications/initialized a client that never lists
+	// the tools is considered ready.
+	ReadyFallback = 5 * time.Second
+)
+
+// Notify sends a JSON-RPC notification. Until the client is ready for notifications (Ready)
+// it blocks, so no notification reaches a client that would drop it; it returns once the
+// line is written, or ErrClosed when the server stops first.
 func (s *Server) Notify(method string, params any) error {
 	select {
-	case <-s.initialized:
+	case <-s.Ready():
 	case <-s.done:
 		return ErrClosed
 	}
@@ -120,6 +139,37 @@ func (s *Server) Notify(method string, params any) error {
 
 // Initialized is closed once the client has sent notifications/initialized.
 func (s *Server) Initialized() <-chan struct{} { return s.initialized }
+
+// Ready is closed once the client takes notifications: ReadyDelay after the answer to its
+// first tools/list (following notifications/initialized), or ReadyFallback after
+// notifications/initialized when it does not list the tools. Claude Code 2.1.304 drops
+// channel notifications that arrive right after it initializes, before it has set the
+// channel up: the backlog a session gets on connect was acknowledged but never shown
+// (agent-identity UAT; 1.5 s after tools/list was enough there).
+func (s *Server) Ready() <-chan struct{} {
+	s.readyOnce.Do(func() {
+		go func() {
+			select {
+			case <-s.initialized:
+			case <-s.done:
+				return
+			}
+			select {
+			case <-s.listed:
+				select {
+				case <-time.After(s.readyDelay):
+				case <-s.done:
+					return
+				}
+			case <-time.After(s.readyFallback):
+			case <-s.done:
+				return
+			}
+			close(s.ready)
+		}()
+	})
+	return s.ready
+}
 
 type request struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -234,7 +284,9 @@ func (s *Server) handle(ctx context.Context, wg *sync.WaitGroup, line []byte) er
 		for i, t := range s.tools {
 			defs[i] = t.def
 		}
-		return s.reply(req.ID, map[string]any{"tools": defs})
+		err := s.reply(req.ID, map[string]any{"tools": defs})
+		s.listedOnce.Do(func() { close(s.listed) })
+		return err
 	case "tools/call":
 		var p struct {
 			Name      string          `json:"name"`
