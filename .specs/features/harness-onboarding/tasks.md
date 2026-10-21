@@ -705,7 +705,7 @@ before each commit.
 **Requirement**: DEV-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `--yes` output: the approver line on stdout and `partyline setup: --yes: saved the agent token of @<user> without asking; if that is not your account, run partyline setup --uninstall` on stderr
+- [x] `--yes` output: the approver line on stdout and `partyline setup: --yes: saved the agent token of @<user> without asking; if that is not your account, run partyline setup --uninstall` on stderr
 **Tests**: integration
 **Gate**: build
 **Commit**: `fix(cli): name the approver loudly when setup --yes skips the confirmation`

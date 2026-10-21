@@ -326,7 +326,8 @@ func TestSetupBrowserDenied(t *testing.T) {
 }
 
 // DEV-06: when the person at the terminal does not confirm the approver (answers "n", or the
-// input ends), setup saves nothing and exits 1; --yes accepts without asking.
+// input ends), setup saves nothing and exits 1; --yes accepts without asking but still warns
+// on stderr whose token it saved.
 func TestSetupBrowserApproverConfirmation(t *testing.T) {
 	for _, tc := range []struct {
 		name, stdin string
@@ -356,6 +357,8 @@ func TestSetupBrowserApproverConfirmation(t *testing.T) {
 			if tc.saved {
 				require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 				require.NotContains(t, r.stdout, "Save this agent token", "--yes does not ask")
+				// DEV-06: skipping the question still names the approver loudly, with the way back.
+				require.Contains(t, r.stderr, "partyline setup: warning: --yes accepted the agent token of @bob without asking; if @bob is not you, run partyline setup --uninstall to revoke it\n")
 				require.NoError(t, err)
 				return
 			}

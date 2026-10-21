@@ -185,6 +185,11 @@ func setupCredentials(ctx context.Context, f setupFlags, saved cliconfig.Config,
 		// DEV-06: name the account the token belongs to, so an approval by someone else
 		// (a phished or misdirected code) is noticed before anything is saved.
 		fmt.Fprintf(io.stdout, "Approved by @%s on %s\n", approver, base)
+		if f.yes {
+			// --yes skips the question, so say on stderr (seen even when stdout is not)
+			// whose token this is and how to undo it.
+			fmt.Fprintf(io.stderr, "partyline setup: warning: --yes accepted the agent token of @%s without asking; if @%s is not you, run partyline setup --uninstall to revoke it\n", approver, approver)
+		}
 		if !f.yes && !p.confirm(fmt.Sprintf("Save this agent token of @%s on this machine?", approver)) {
 			msg := "revoked it"
 			if err := revokeAgentToken(ctx, base, got); err != nil {
