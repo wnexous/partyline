@@ -91,6 +91,8 @@ func (c *claude) Remove(ctx context.Context) error {
 	return c.env.runCLI(ctx, "claude", c.removeArgs()...)
 }
 
+func (c *claude) Backups() []string { return nil }
+
 func (c *claude) Entries(context.Context) ([]Entry, error) {
 	cmd, err := c.registered()
 	if err != nil || cmd == "" {
@@ -201,6 +203,8 @@ func (c *codex) Remove(ctx context.Context) error {
 	return c.env.removeHookGroups(c.hooksPath(), CodexStopHook, codexHookKeys...)
 }
 
+func (c *codex) Backups() []string { return []string{c.hooksPath() + backupSuffix} }
+
 func (c *codex) Entries(ctx context.Context) ([]Entry, error) {
 	var out []Entry
 	cmd, err := c.mcpCommand(ctx)
@@ -309,6 +313,8 @@ func (g *gemini) Remove(ctx context.Context) error {
 	}
 	return g.env.removeHookGroups(g.settingsPath(), GeminiAfterAgentHook, geminiHookKeys...)
 }
+
+func (g *gemini) Backups() []string { return []string{g.settingsPath() + backupSuffix} }
 
 func (g *gemini) Entries(context.Context) ([]Entry, error) {
 	var out []Entry

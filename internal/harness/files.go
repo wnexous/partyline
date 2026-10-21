@@ -183,6 +183,8 @@ func (h *fileHarness) Remove(context.Context) error {
 	return os.Remove(h.extPath())
 }
 
+func (h *fileHarness) Backups() []string { return []string{h.configPath() + backupSuffix} }
+
 func (h *fileHarness) Entries(context.Context) ([]Entry, error) {
 	d, _, err := readDoc(h.configPath())
 	if err != nil {

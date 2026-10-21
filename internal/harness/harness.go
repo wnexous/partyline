@@ -101,6 +101,9 @@ type Registrar interface {
 	Remove(ctx context.Context) error
 	// Entries lists the registered items and the binary each runs (for doctor).
 	Entries(ctx context.Context) ([]Entry, error)
+	// Backups lists the backup files Apply may create, one per config file setup edits
+	// itself (HAR-05).
+	Backups() []string
 }
 
 // All returns the registrars of every supported harness.
@@ -164,8 +167,8 @@ const backupSuffix = ".partyline.bak"
 
 // writeDoc saves an edited config file with the previous mode (0644 for a new file) through
 // a temp file renamed over path. With backup set, the previous content is first copied to
-// <path>.partyline.bak, unless that backup exists: the first one, from before Partyline was
-// added, is kept (HAR-05). A symlink at path must point into the home (see writeTarget).
+// <path>.partyline.bak (mode 0600: the config may hold other secrets), unless that backup
+// exists: the first one, from before Partyline was added, is kept (HAR-05). A symlink at path must point into the home (see writeTarget).
 func (e Env) writeDoc(d *docEdit, existed, backup bool) error {
 	if _, err := e.writeTarget(d.path); err != nil {
 		return err
@@ -178,7 +181,7 @@ func (e Env) writeDoc(d *docEdit, existed, backup bool) error {
 		}
 		mode = fi.Mode().Perm()
 		if backup {
-			if err := e.keepBackup(d.path, mode); err != nil {
+			if err := e.keepBackup(d.path); err != nil {
 				return err
 			}
 		}
@@ -186,8 +189,8 @@ func (e Env) writeDoc(d *docEdit, existed, backup bool) error {
 	return e.writeFileAtomic(d.path, d.data, mode)
 }
 
-// keepBackup copies path to <path>.partyline.bak unless that file exists.
-func (e Env) keepBackup(path string, mode fs.FileMode) error {
+// keepBackup copies path to the private file <path>.partyline.bak unless that file exists.
+func (e Env) keepBackup(path string) error {
 	if _, err := os.Lstat(path + backupSuffix); err == nil || !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
@@ -195,7 +198,7 @@ func (e Env) keepBackup(path string, mode fs.FileMode) error {
 	if err != nil {
 		return err
 	}
-	return e.writeFileAtomic(path+backupSuffix, old, mode)
+	return e.writeFileAtomic(path+backupSuffix, old, 0o600)
 }
 
 // writeTarget returns the file a write to path changes: path itself, or the target of a

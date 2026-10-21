@@ -63,6 +63,7 @@ type setupFlags struct {
 	yes        bool
 	harness    string
 	uninstall  bool
+	keepBackup bool
 }
 
 func newPrompter(io stdio) *prompter { return &prompter{in: bufio.NewReader(io.stdin), out: io.stdout} }
@@ -82,6 +83,7 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 	flags.BoolVar(&f.yes, "yes", false, "do not ask; use the defaults and apply every change")
 	flags.StringVar(&f.harness, "harness", "", "harnesses to register, comma-separated: claude, codex, gemini, opencode, pi, omp, or none (default: the installed ones)")
 	flags.BoolVar(&f.uninstall, "uninstall", false, "remove what setup added: harness entries, extension files and the config file")
+	flags.BoolVar(&f.keepBackup, "keep-backups", false, "keep the <file>.partyline.bak copy of each harness config setup changes (default: deleted after a successful run)")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -129,7 +131,7 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 		return 1
 	}
 	fmt.Fprintf(io.stdout, "Saved the instance URL and agent token to %s\n", path)
-	if !registerHarnesses(ctx, regs, f.yes, p, io) {
+	if !registerHarnesses(ctx, regs, f, p, io) {
 		return 1
 	}
 	return 0

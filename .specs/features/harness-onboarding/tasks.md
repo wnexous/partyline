@@ -689,9 +689,9 @@ before each commit.
 **Requirement**: HAR-05, ONB-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] backup mode 0600 even when the config is 0644
-- [ ] after a successful setup no backup it created is left; with `--keep-backups` it stays; after a failed registration it stays
-- [ ] doctor prints `WARN backups: <path> …` with a fix and does not fail on it
+- [x] backup mode 0600 even when the config is 0644
+- [x] after a successful setup no backup it created is left; with `--keep-backups` it stays; after a failed registration it stays
+- [x] doctor prints `WARN backups: <path> …` with a fix and does not fail on it
 **Tests**: unit, integration
 **Gate**: build
 **Commit**: `fix(cli): keep config backups private and remove them after setup`

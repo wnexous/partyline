@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -200,4 +201,25 @@ func TestDoctorReportsEachFailure(t *testing.T) {
 		require.Equal(t, 1, r.code)
 		require.Contains(t, r.stdout, "FAIL versions: partyline dev, server unknown\n     fix: the server did not report its version; update the server\n")
 	})
+}
+
+// ONB-06, HAR-05: a backup setup left (kept with --keep-backups, after a failed run, or by an
+// older version) is reported as a warning with the command that deletes it; it does not fail
+// doctor.
+func TestDoctorWarnsAboutLeftoverBackups(t *testing.T) {
+	e := newChannelEnv(t)
+	d := newDoctorEnv(t)
+	writeConfig(t, d.home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
+	d.registerOmp(t, d.binary)
+	bak := filepath.Join(d.home, ".pi", "agent", "mcp.json.partyline.bak")
+	require.NoError(t, os.MkdirAll(filepath.Dir(bak), 0o755))
+	require.NoError(t, os.WriteFile(bak, []byte("{}"), 0o600))
+
+	r := d.run(t)
+	require.Equal(t, 0, r.code, r.stdout)
+	require.Contains(t, r.stdout, "     start a session: partyline omp\n"+
+		"WARN backups: "+bak+" is a copy of a harness config that setup kept\n"+
+		"     fix: delete it once you no longer need it: rm "+bak+"\n"+
+		"ok   versions: ")
+	require.True(t, strings.HasSuffix(r.stdout, "\nAll checks passed.\n"), r.stdout)
 }

@@ -21,6 +21,8 @@ type check struct {
 	// start is the command that starts a session of a registered harness (HAR-03).
 	start string
 	ok    bool
+	// warn marks a finding that needs attention but does not fail doctor.
+	warn bool
 }
 
 // doctor runs `partyline doctor` (ONB-06): it checks the binary on PATH, the config file,
@@ -54,17 +56,23 @@ func doctor(ctx context.Context, io stdio) int {
 	for _, c := range checkHarnesses(ctx, env) {
 		add(c)
 	}
+	for _, c := range checkBackups(env) {
+		add(c)
+	}
 	add(checkVersions(buildVersion(), serverVersion, creds.URL))
 
 	failed := 0
 	for _, c := range checks {
 		mark := "ok  "
-		if !c.ok {
+		switch {
+		case c.warn:
+			mark = "WARN"
+		case !c.ok:
 			mark = "FAIL"
 			failed++
 		}
 		fmt.Fprintf(io.stdout, "%s %s: %s\n", mark, c.name, c.detail)
-		if !c.ok && c.fix != "" {
+		if (!c.ok || c.warn) && c.fix != "" {
 			fmt.Fprintf(io.stdout, "     fix: %s\n", c.fix)
 		}
 		if c.ok && c.start != "" {
@@ -193,6 +201,21 @@ func checkHarnesses(ctx context.Context, env harness.Env) []check {
 	if !found {
 		out = append(out, check{name: "harnesses", detail: "Partyline is not registered in any installed harness",
 			fix: "run partyline setup, then start a session with partyline <harness> (see partyline --help)"})
+	}
+	return out
+}
+
+// checkBackups warns about each harness config backup setup left behind (HAR-05): it may hold
+// other secrets of that config.
+func checkBackups(env harness.Env) []check {
+	var out []check
+	for _, r := range harness.All(env) {
+		for _, b := range r.Backups() {
+			if exists(b) {
+				out = append(out, check{name: "backups", detail: b + " is a copy of a harness config that setup kept",
+					fix: "delete it once you no longer need it: rm " + b, warn: true})
+			}
+		}
 	}
 	return out
 }

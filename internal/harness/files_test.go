@@ -402,3 +402,38 @@ func TestHarnessRefusesSymlinkOutsideHome(t *testing.T) {
 		require.Equal(t, c.withEntry, readFile(t, target))
 	})
 }
+
+// HAR-05: the backup setup keeps may hold other secrets of the harness config, so it is
+// private (0600) even when the config is world-readable; Backups names the backup file of
+// every config setup edits itself (none for Claude Code, whose CLI edits its config).
+func TestBackupsArePrivate(t *testing.T) {
+	skipUnlessUnixPerms(t)
+	env, _ := testEnv(t, nil)
+	pi := filepath.Join(env.Home, ".pi/agent/mcp.json")
+	hooks := filepath.Join(env.Home, ".codex/hooks.json")
+	writeFile(t, pi, fileCases[1].orig)
+	writeFile(t, hooks, codexHooksOrig)
+	for _, id := range []string{"pi", "codex"} {
+		require.NoError(t, registrar(t, env, id).Apply(context.Background()))
+	}
+	for _, p := range []string{pi, hooks} {
+		fi, err := os.Stat(p + ".partyline.bak")
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o600), fi.Mode().Perm(), p)
+		fi, err = os.Stat(p)
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o644), fi.Mode().Perm(), "the config keeps its mode")
+	}
+
+	want := map[string][]string{
+		"claude":   nil,
+		"codex":    {hooks + ".partyline.bak"},
+		"gemini":   {filepath.Join(env.Home, ".gemini/settings.json.partyline.bak")},
+		"opencode": {filepath.Join(env.Home, ".config/opencode/opencode.json.partyline.bak")},
+		"pi":       {pi + ".partyline.bak"},
+		"omp":      {filepath.Join(env.Home, ".omp/agent/mcp.json.partyline.bak")},
+	}
+	for _, r := range All(env) {
+		require.Equal(t, want[r.ID()], r.Backups(), r.ID())
+	}
+}
