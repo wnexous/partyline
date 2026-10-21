@@ -8,14 +8,15 @@
 ## Spec issues
 
 Found while designing. Wording fixes that keep the meaning are applied to `spec.md` (issues 1
-and 3). The others change or add behaviour, so the spec is left as written and the design
-implements the recommendation until André confirms or overrules it.
+and 3). The others change or add behaviour; the orchestrator accepted every recommendation on
+2026-10-21 under André's standing authorization to decide what is most adequate (issues 2, 4,
+5 and 6 confirmed as recommended; André can still overrule them).
 
 1. **Handle scope (wording, applied).** AID-06 and the "Default name" assumption say handles are
    unique *per owner*; PROF-02 and the "Handles" assumption say unique *across the instance*.
    Instance-wide uniqueness implies per-owner uniqueness and is what mentions need (one
    namespace). Fix applied: AID-06 and the assumption now say "unique across the instance".
-2. **v0.3 catch-all rooms vs ACC-06 (needs confirmation).** A connector with a v0.3 catch-all room
+2. **v0.3 catch-all rooms vs ACC-06 (confirmed as recommended).** A connector with a v0.3 catch-all room
    (`auto_route_room_id`, the production WhatsApp routes) routes every new chat into that room.
    ACC-06 makes each new group chat its own group and each DM a DM with the operator. Applying
    ACC-06 on upgrade silently changes where new chats of production connectors go (GRP-01 and
@@ -26,17 +27,17 @@ implements the recommendation until André confirms or overrules it.
 3. **ACC-02 condition (wording, applied).** ACC-02 reads unconditional, but ACC-06 makes the
    platform-DM rule apply only WHERE the auto-route includes DMs (and CON-07 keeps unrouted
    chats out). Fix applied: ACC-02 starts with "WHERE the connector's auto-route includes DMs".
-4. **User members of groups (needs confirmation).** Today a `user` room member gets no access and
+4. **User members of groups (confirmed as recommended).** Today a `user` room member gets no access and
    no deliveries (`access.UserRoomLevel` reads ownership and grants only). The messenger premise
    (LAY-04 "create it with … the chosen members", AGRP-01, DM-08 "limited to its two
    intelligences") assumes a member sees and writes in the conversation. **Recommended**: a
    `user` member of a group gets `post` on it, and a DM participant gets `post` on the DM.
    Membership becomes an access source next to grants (recorded as AD-011, amends AD-005).
-5. **Owner of an AI in the AI's DMs (needs confirmation).** DM-08 makes an AI's DMs visible to
+5. **Owner of an AI in the AI's DMs (confirmed as recommended).** DM-08 makes an AI's DMs visible to
    its owner and `use` grantees, but a DM has exactly two intelligences (DM-02), so a third
    author would break it. **Recommended**: they get `view` (read-only); only the two
    participants post. AI DMs are listed on the AI's profile, not in the owner's sidebar.
-6. **Takeover prompt for tools-only harnesses (needs confirmation).** SES-01..03 say "the
+6. **Takeover prompt for tools-only harnesses (confirmed as recommended).** SES-01..03 say "the
    launcher"; Codex and Gemini have no live connection (tools only, assumption "Tools-only
    processes"), so a takeover from them would only disconnect the live session without
    replacing it. **Recommended**: the prompt and `--take-over` apply to launchers whose harness
