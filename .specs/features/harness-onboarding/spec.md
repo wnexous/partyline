@@ -179,43 +179,43 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| ONB-01 | P1: Install and setup | Tasks | Implementing |
-| ONB-02 | P1: Install and setup | Tasks | Implementing |
-| ONB-03 | P1: Install and setup | Tasks | Implementing |
-| ONB-04 | P1: Install and setup | Tasks | Implementing |
-| ONB-05 | P1: Install and setup | Tasks | Implementing |
-| ONB-06 | P1: Install and setup | Tasks | Implementing |
-| ONB-07 | P1: Install and setup | Tasks | Implementing |
+| ONB-01 | P1: Install and setup | Tasks (T5) | Implemented |
+| ONB-02 | P1: Install and setup | Tasks (T5) | Implemented |
+| ONB-03 | P1: Install and setup | Tasks (T5) | Implemented |
+| ONB-04 | P1: Install and setup | Tasks (T2, T6, T25) | Implemented |
+| ONB-05 | P1: Install and setup | Tasks (T2, T25, T29) | Implemented |
+| ONB-06 | P1: Install and setup | Tasks (T9) | Implemented |
+| ONB-07 | P1: Install and setup | Tasks (T1) | Implemented |
 | ONB-08 | P1: Install and setup | Tasks (T25) | Implemented |
 | ONB-09 | P1: Install and setup | Tasks (T25) | Implemented |
 | ONB-10 | P1: Install and setup | Tasks (T26) | Implemented |
-| ONB-11 | P1: Install and setup | Tasks (T33) | Implemented |
-| DEV-01 | P1: Browser approval | Tasks | Implementing |
-| DEV-02 | P1: Browser approval | Tasks | Implementing |
-| DEV-03 | P1: Browser approval | Tasks | Implementing |
-| DEV-04 | P1: Browser approval | Tasks | Implementing |
-| DEV-05 | P1: Browser approval | Tasks (T24) | Implemented |
+| ONB-11 | P1: Install and setup | Tasks (T30, T33) | Implemented |
+| DEV-01 | P1: Browser approval | Tasks (T4, T6, T24) | Implemented |
+| DEV-02 | P1: Browser approval | Tasks (T4, T6, T16, T24) | Implemented |
+| DEV-03 | P1: Browser approval | Tasks (T4, T6) | Implemented |
+| DEV-04 | P1: Browser approval | Tasks (T4) | Implemented |
+| DEV-05 | P1: Browser approval | Tasks (T24, T29) | Implemented |
 | DEV-06 | P1: Browser approval | Tasks (T24) | Implemented |
-| NAME-01 | P1: Agent names | Tasks | Implementing |
-| NAME-02 | P1: Agent names | Tasks | Implementing |
-| NAME-03 | P1: Agent names | Tasks | Implementing |
-| HAR-01 | P1: Harness registration | Tasks | Implementing |
-| HAR-02 | P1: Harness registration | Tasks | Implementing |
-| HAR-03 | P1: Harness registration | Tasks (T9, T31) | Implemented |
-| HAR-04 | P1: Harness registration | Tasks | Implementing |
+| NAME-01 | P1: Agent names | Tasks (T3) | Implemented |
+| NAME-02 | P1: Agent names | Tasks (T3) | Implemented |
+| NAME-03 | P1: Agent names | Tasks (T3) | Implemented |
+| HAR-01 | P1: Harness registration | Tasks (T7, T8, T17, T20) | Implemented |
+| HAR-02 | P1: Harness registration | Tasks (T7, T8, T29, T30) | Implemented |
+| HAR-03 | P1: Harness registration | Tasks (T9, T30, T31) | Implemented |
+| HAR-04 | P1: Harness registration | Tasks (T7, T8) | Implemented |
 | HAR-05 | P1: Harness registration | Tasks (T27) | Implemented |
-| PUSH-01 | P1: Push adapters | Tasks | Implementing |
-| PUSH-02 | P1: Push adapters | Tasks | Implementing |
-| PUSH-03 | P1: Push adapters | Tasks | Implementing |
-| PUSH-04 | P1: Push adapters | Tasks | Implementing |
-| PUSH-05 | P1: Push adapters | Tasks | Implementing |
-| PUSH-06 | P1: Push adapters | Tasks | Implementing |
-| TURN-01 | P2: Codex and Gemini | Tasks | Implementing |
-| TURN-02 | P2: Codex and Gemini | Tasks | Implementing |
-| WIZ-01 | P2: Web wizard | Tasks (T15, T23, T32) | Implemented |
-| WIZ-02 | P2: Web wizard | Tasks | Implementing |
+| PUSH-01 | P1: Push adapters | Tasks (T10) | Implemented |
+| PUSH-02 | P1: Push adapters | Tasks (T10) | Implemented |
+| PUSH-03 | P1: Push adapters | Tasks (T11, T17, T19, T20, T22, T28) | Implemented |
+| PUSH-04 | P1: Push adapters | Tasks (T12, T17) | Implemented |
+| PUSH-05 | P1: Push adapters | Tasks (T13, T17, T30) | Implemented |
+| PUSH-06 | P1: Push adapters | Tasks (T11, T12, T13, T18, T20, T22) | Implemented |
+| TURN-01 | P2: Codex and Gemini | Tasks (T14) | Implemented |
+| TURN-02 | P2: Codex and Gemini | Tasks (T14) | Implemented |
+| WIZ-01 | P2: Web wizard | Tasks (T15, T23, T30, T32) | Implemented |
+| WIZ-02 | P2: Web wizard | Tasks (T16, T24) | Implemented |
 
-**Coverage:** 29 total, mapped in tasks.md (UAT follow-ups: PUSH-06 → T18, PUSH-03 → T19, T20; HAR-01 → T20)
+**Coverage:** 35 total, all mapped in tasks.md (UAT follow-ups: PUSH-06 → T18, PUSH-03 → T19, T20; HAR-01 → T20; fix iteration 1: T23-T33, with HAR-03 and WIZ-01 extended to every harness and ONB-11 added)
 
 ---
 

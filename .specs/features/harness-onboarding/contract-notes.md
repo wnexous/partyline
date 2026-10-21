@@ -417,3 +417,99 @@ and a flaky gate test.
   new one. The test now pauses first (a user post keeps `agents_paused`, asserted) and passes
   `-count=20`. `TestDispatchSkipsPausedRoom` already used this order.
 
+
+# Contract Notes (fix iteration 1: T23-T33)
+
+From `validation.md` iteration 1 (FAIL: stale UI-14), the security weaknesses the maintainer
+chose to fix, and the user's request for one launcher per harness.
+
+## UI-14 (WIZ-01, T23, T32)
+- `web/e2e/smoke.spec.ts` UI-14 opens **Connect an agent**, checks the install command with the
+  instance origin and `partyline setup --browser`, the six tabs, each tab's start command
+  `partyline <id>` and its delivery line (push or turn end), and that no Advanced entry holds
+  `token`, `PARTYLINE_`, `pl_agent` or a URL; the token list is unchanged afterwards.
+
+## Typed-code device approval (DEV-01, DEV-02, DEV-05, DEV-06, WIZ-02, T24)
+- `approve_url` is `<instance>/devices`; setup prints it and the code (`ABCD-EFGH`), never a
+  URL with the code. `POST /api/v1/devices/lookup|approve|deny` take `{"code": …}` in the body
+  (the `{code}` path routes are gone). A user's 6th unknown code within a minute → 429
+  `rate_limited` (valid codes included) until a minute has passed; other users are unaffected.
+- The delivering poll carries `approved_by`; setup prints `Approved by @<user> on <instance>`
+  and asks before saving (`--yes` accepts; declined or end of input → nothing saved, the token
+  revoked, exit 1). `/devices/<code>` redirects to `/devices` with an empty field.
+- The routes sit behind the global CSRF check (`internal/api/middleware.go` `csrf`): a cookie
+  session from a foreign Origin, a cross-site or same-site fetch, or without Origin and
+  Sec-Fetch-Site gets 403 "cross-origin request refused" and the request stays pending
+  (`TestDeviceDecisionsRefuseCrossOrigin`, T29).
+
+## Saved tokens and uninstall (ONB-08, ONB-09, T25)
+- `cliconfig.Resolve` refuses a flag or env URL that differs from the saved URL (scheme, host
+  and port) when no token is given: the error names both URLs. Browser setup saves the URL it
+  started with. `--token` warns on stderr that it shows in `ps`; `--token-stdin` reads it
+  (exclusive with `--token` and `--browser`).
+- `DELETE /api/v1/agent/token` revokes the calling agent token; `setup --uninstall` calls it
+  before deleting the config file and reports the result (a failure does not stop the
+  uninstall).
+- `listen` resolves credentials the same way and refuses a config file that is not 0600 with
+  the chmod fix, before connecting (`TestListenRefusesConfigFileNot0600`, T29).
+
+## Installer (ONB-10, T26)
+- `install.sh` runs everything inside `main`, called on its last line; plain `http://`
+  instance, release and releases-API URLs exit 1 before any download except localhost,
+  127.0.0.1 and [::1].
+
+## Harness config edits (HAR-02, HAR-05, T27, T29, T30)
+- The first `<file>.partyline.bak` is kept; a symlinked config stays a link and its target is
+  written atomically next to it; the extension is written before the config entry and restored
+  (or removed) when the config write fails.
+- HAR-02 is reworded: byte-for-byte holds for the files setup edits itself; `~/.claude.json`,
+  Codex's `config.toml` and Gemini's `mcpServers` are rewritten by the harness CLI, which only
+  changes the partyline entry. An invalid `config.toml` makes `codex mcp add` fail with its TOML
+  error (codex-cli 0.163.0: `<path>:<line>:<col>: …` and `TOML parse error at line …`); setup
+  reports it, the file stays as it was and no Stop hook is added (`TestCodexInvalidTOML*`; the
+  real-CLI variant skips without codex).
+
+## omp one message at a time (PUSH-03, T28)
+- When `sendUserMessage` returns a promise, `flush` sets `sending` and returns; the message stays
+  at the head of the queue. Fulfilled → shift and flush the rest; rejected → keep it, notice once
+  per outage, retry by timer or `agent_end`. A flush while `sending` does nothing, so B is never
+  sent before A settles.
+
+## PUSH-05 wording (T30)
+- The OpenCode plugin calls `client.session.promptAsync`, or `client.session.prompt` when the
+  SDK has no `promptAsync` (the spec now says so).
+
+## Launchers (HAR-03, WIZ-01, T31, T32)
+- `partyline claude|claudecode|claude-code|opencode|pi|omp|codex|gemini [args…]`
+  (`internal/cli/launcher.go`): the binary is the registrar id looked up on PATH; argv is
+  `[<id>, <extra>…, <args>…]` with extra `--dangerously-load-development-channels
+  server:partyline` for claude only; the process is replaced (`syscall.Exec`; Windows runs a
+  child and passes the exit code).
+- Environment: this process's (`stdio.environ`, default `os.Environ`) without any
+  `PARTYLINE_SESSION`, plus `PARTYLINE_SESSION=pl-<16 hex>` (crypto/rand), for every harness.
+  listen and `channel --tools-only` use it as the session key, so one session shares one
+  derived name and a second session in the same folder gets `<name>-2` for both its processes.
+- Binary missing → exit 127, `partyline <id>: <Title> is not installed (install it, then run
+  partyline setup)`, nothing executed. Not registered (`Registrar.Entries` empty) → stderr
+  `partyline <id>: Partyline is not registered in <Title>; run partyline setup --harness <id>.
+  Starting anyway.`; an unreadable registration says so with the error; either way it starts.
+  Titles: Claude Code, OpenCode, pi, oh-my-pi (omp), Codex CLI, Gemini CLI.
+- `partyline --help`, `-h`, `help` print the usage (with a "Start a session with Partyline"
+  block listing the six launchers and Claude's aliases) on stdout, exit 0.
+- `doctor`: after the entries of a registered harness whose binaries all exist,
+  `     start a session: partyline <id>`; a broken entry's fix is `run partyline setup --harness
+  <id>, then start a session with partyline <id>`; none registered → `run partyline setup, then
+  start a session with partyline <harness> (see partyline --help)`.
+- `setup` ends with `Start a session with partyline a, partyline b or partyline c.` naming the
+  harnesses registered in that run (none registered → no line).
+- Web: `HARNESSES[].start` is `partyline <id>`; the Claude guide link is
+  `docs/agents.md#claude-code`. `docs/agents.md` is the guide for every harness;
+  `docs/claude-code.md` is a pointer to it.
+
+## Image version (ONB-11, T33)
+- `scripts/version.sh` (run by the Dockerfile's build stage in `/src`): `VERSION` unless empty
+  or `dev`; else `git describe --tags` when `.git` exists here; else `dev-<12>` of its HEAD;
+  else `dev-<12>` of `SOURCE_COMMIT`; else `dev`. `ARG VERSION=""`; `.dockerignore` no longer
+  drops `.git`; `go build -buildvcs=false` keeps Go from stamping VCS data. CI and releases
+  still pass `VERSION`. Not run in a real Docker build here (no Docker on the devbox): the
+  script is tested directly and a static test pins the Dockerfile and `.dockerignore` lines.
