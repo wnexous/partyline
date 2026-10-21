@@ -140,7 +140,7 @@ T8 → T9 → T10 → T11
 **Requirement**: PROJ-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Offline post → next session of the project receives it; restart → no duplicate; cap/notice
+- [x] Offline post → next session of the project receives it; restart → no duplicate; cap/notice
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): deliver project backlog to new sessions`

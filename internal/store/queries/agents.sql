@@ -156,3 +156,23 @@ WHERE m.kind = 'project' AND m.member_id = sqlc.arg(project_id)
   AND NOT EXISTS (SELECT 1 FROM room_members d
                   WHERE d.room_id = m.room_id AND d.kind = 'agent' AND d.member_id = sqlc.arg(agent_id))
 ORDER BY r.name, r.id;
+
+-- name: AdvanceProjectCursor :exec
+INSERT INTO project_cursors (project_id, room_id, seq) VALUES (?, ?, ?)
+ON CONFLICT (project_id, room_id) DO UPDATE SET seq = MAX(project_cursors.seq, excluded.seq);
+
+-- name: GetProjectCursor :one
+SELECT seq FROM project_cursors WHERE project_id = ? AND room_id = ?;
+
+-- name: CountProjectBacklog :one
+-- A project's undelivered messages in a room, leaving out those of its own agents (PROJ-09).
+SELECT COUNT(*) FROM messages
+WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
+  AND NOT (author_kind = 'agent' AND author_id IN (SELECT id FROM agents WHERE project_id = sqlc.arg(project_id)));
+
+-- name: ListProjectBacklog :many
+SELECT * FROM message_views
+WHERE room_id = sqlc.arg(room_id) AND seq > sqlc.arg(after_seq)
+  AND NOT (author_kind = 'agent' AND author_id IN (SELECT id FROM agents WHERE project_id = sqlc.arg(project_id)))
+ORDER BY seq DESC
+LIMIT sqlc.arg(limit);

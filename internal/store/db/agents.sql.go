@@ -26,6 +26,22 @@ func (q *Queries) AdvanceAgentCursor(ctx context.Context, arg AdvanceAgentCursor
 	return err
 }
 
+const advanceProjectCursor = `-- name: AdvanceProjectCursor :exec
+INSERT INTO project_cursors (project_id, room_id, seq) VALUES (?, ?, ?)
+ON CONFLICT (project_id, room_id) DO UPDATE SET seq = MAX(project_cursors.seq, excluded.seq)
+`
+
+type AdvanceProjectCursorParams struct {
+	ProjectID string
+	RoomID    string
+	Seq       int64
+}
+
+func (q *Queries) AdvanceProjectCursor(ctx context.Context, arg AdvanceProjectCursorParams) error {
+	_, err := q.db.ExecContext(ctx, advanceProjectCursor, arg.ProjectID, arg.RoomID, arg.Seq)
+	return err
+}
+
 const archiveAgent = `-- name: ArchiveAgent :exec
 UPDATE agents SET archived_at = ? WHERE id = ? AND kind = 'temporary' AND archived_at IS NULL
 `
@@ -65,6 +81,26 @@ SELECT COUNT(*) FROM agents WHERE owner_id = ?
 
 func (q *Queries) CountAgentsByOwner(ctx context.Context, ownerID string) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countAgentsByOwner, ownerID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countProjectBacklog = `-- name: CountProjectBacklog :one
+SELECT COUNT(*) FROM messages
+WHERE room_id = ?1 AND seq > ?2
+  AND NOT (author_kind = 'agent' AND author_id IN (SELECT id FROM agents WHERE project_id = ?3))
+`
+
+type CountProjectBacklogParams struct {
+	RoomID    string
+	AfterSeq  int64
+	ProjectID sql.NullString
+}
+
+// A project's undelivered messages in a room, leaving out those of its own agents (PROJ-09).
+func (q *Queries) CountProjectBacklog(ctx context.Context, arg CountProjectBacklogParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countProjectBacklog, arg.RoomID, arg.AfterSeq, arg.ProjectID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -325,6 +361,22 @@ func (q *Queries) GetProjectBySlug(ctx context.Context, arg GetProjectBySlugPara
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getProjectCursor = `-- name: GetProjectCursor :one
+SELECT seq FROM project_cursors WHERE project_id = ? AND room_id = ?
+`
+
+type GetProjectCursorParams struct {
+	ProjectID string
+	RoomID    string
+}
+
+func (q *Queries) GetProjectCursor(ctx context.Context, arg GetProjectCursorParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getProjectCursor, arg.ProjectID, arg.RoomID)
+	var seq int64
+	err := row.Scan(&seq)
+	return seq, err
 }
 
 const getProjectWithOwner = `-- name: GetProjectWithOwner :one
@@ -664,6 +716,66 @@ func (q *Queries) ListArchiveCandidates(ctx context.Context, before sql.NullInt6
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectBacklog = `-- name: ListProjectBacklog :many
+SELECT id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name FROM message_views
+WHERE room_id = ?1 AND seq > ?2
+  AND NOT (author_kind = 'agent' AND author_id IN (SELECT id FROM agents WHERE project_id = ?3))
+ORDER BY seq DESC
+LIMIT ?4
+`
+
+type ListProjectBacklogParams struct {
+	RoomID    string
+	AfterSeq  int64
+	ProjectID sql.NullString
+	Limit     int64
+}
+
+func (q *Queries) ListProjectBacklog(ctx context.Context, arg ListProjectBacklogParams) ([]MessageView, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectBacklog,
+		arg.RoomID,
+		arg.AfterSeq,
+		arg.ProjectID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MessageView
+	for rows.Next() {
+		var i MessageView
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Seq,
+			&i.AuthorKind,
+			&i.AuthorID,
+			&i.AuthorUserID,
+			&i.SenderID,
+			&i.SenderAltID,
+			&i.SenderName,
+			&i.Kind,
+			&i.Text,
+			&i.ReplyTo,
+			&i.RecipientsJson,
+			&i.ExternalID,
+			&i.CreatedAt,
+			&i.AuthorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
