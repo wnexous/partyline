@@ -119,7 +119,7 @@ func TestDeviceTokenBelongsToApprover(t *testing.T) {
 	conn, _ := e.env.Anon().WithBearer(p.Token).DialAgent("setup-check")
 	require.NotNil(t, conn)
 	require.Equal(t, "bob", conn.Welcome(wsWait).Agent.Owner)
-	require.Empty(t, testkit.Decode[dto.List[dto.Token]](e.alice.Get("/api/v1/tokens").RequireStatus(http.StatusOK)).Items)
+	require.Empty(t, testkit.Decode[dto.List[dto.Token]](e.alice.Get("/api/v1/tokens?include_revoked=true").RequireStatus(http.StatusOK)).Items)
 }
 
 // DEV-03: a denied request polls as denied and can no longer be approved.
@@ -132,7 +132,7 @@ func TestDeviceDeny(t *testing.T) {
 	p := testkit.Decode[dto.DevicePoll](e.poll(c.PollSecret).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DevicePoll{Status: dto.DeviceStatusDenied}, p)
 	decide(e.alice, "approve", c.Code).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
-	require.Empty(t, testkit.Decode[dto.List[dto.Token]](e.alice.Get("/api/v1/tokens").RequireStatus(http.StatusOK)).Items)
+	require.Empty(t, testkit.Decode[dto.List[dto.Token]](e.alice.Get("/api/v1/tokens?include_revoked=true").RequireStatus(http.StatusOK)).Items)
 
 	// An approved request cannot be denied afterwards either.
 	c2 := e.create(t, "laptop-02")
@@ -259,7 +259,7 @@ func TestDeviceCodeNotInPath(t *testing.T) {
 	}
 	d := testkit.Decode[dto.DeviceRequest](decide(e.alice, "lookup", c.Code).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.DeviceStatusPending, d.Status)
-	require.Empty(t, testkit.Decode[dto.List[dto.Token]](e.alice.Get("/api/v1/tokens").RequireStatus(http.StatusOK)).Items)
+	require.Empty(t, testkit.Decode[dto.List[dto.Token]](e.alice.Get("/api/v1/tokens?include_revoked=true").RequireStatus(http.StatusOK)).Items)
 }
 
 // DEV-05: a user may type 5 unknown codes per minute; the 6th attempt answers 429 even with a

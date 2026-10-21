@@ -236,12 +236,15 @@ func TestTokenEndpoints(t *testing.T) {
 	script.Get("/api/v1/me").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	bob.WithBearer("pl_user_0000000000000000000000000000000000000000000").Get("/api/v1/me").
 		RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
-	list = testkit.Decode[dto.List[dto.Token]](bob.Get("/api/v1/tokens").RequireStatus(http.StatusOK))
+	list = testkit.Decode[dto.List[dto.Token]](bob.Get("/api/v1/tokens?include_revoked=true").RequireStatus(http.StatusOK))
+	found := false
 	for _, tok := range list.Items {
 		if tok.ID == userTok.Token.ID {
+			found = true
 			require.NotNil(t, tok.RevokedAt)
 		}
 	}
+	require.True(t, found, "revoked tokens are listed with include_revoked=true (TOKH-01)")
 
 	carol := env.NewUser("carol")
 	carol.Delete("/api/v1/tokens/"+created.Token.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)

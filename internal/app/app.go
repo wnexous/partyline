@@ -241,7 +241,8 @@ func (a *App) Start(ctx context.Context) error {
 	a.background(bg, "agent-dispatcher", dispatcher.Run)
 	a.ConnectorManager.Start(bg)
 	a.background(bg, "retention", func(ctx context.Context) error {
-		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger)
+		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger,
+			rooms.RetentionTask{Name: "revoked_tokens", Run: a.Users.PurgeRevokedTokens})
 	})
 	a.background(bg, "agent-archive", func(ctx context.Context) error {
 		return a.Agents.RunArchive(ctx, agents.ArchiveInterval, a.Logger) // PROJ-02

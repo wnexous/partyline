@@ -57,8 +57,15 @@ func (s *Service) Cleanup(ctx context.Context) (CleanupResult, error) {
 	return res, err
 }
 
-// RunRetention runs Cleanup now and then every interval until ctx is done.
-func (s *Service) RunRetention(ctx context.Context, interval time.Duration, log *slog.Logger) error {
+// RetentionTask is another cleanup the retention job runs on every pass, such as purging
+// tokens revoked long ago (TOKH-03). Run returns how many rows it removed.
+type RetentionTask struct {
+	Name string
+	Run  func(context.Context) (int64, error)
+}
+
+// RunRetention runs Cleanup and the extra tasks now and then every interval until ctx is done.
+func (s *Service) RunRetention(ctx context.Context, interval time.Duration, log *slog.Logger, tasks ...RetentionTask) error {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -68,6 +75,15 @@ func (s *Service) RunRetention(ctx context.Context, interval time.Duration, log 
 			log.Error("retention cleanup failed", "err", err)
 		case err == nil && (res.Messages > 0 || res.Blobs > 0):
 			log.Info("retention cleanup", "messages", res.Messages, "blobs", res.Blobs)
+		}
+		for _, task := range tasks {
+			n, err := task.Run(ctx)
+			switch {
+			case err != nil && ctx.Err() == nil:
+				log.Error("retention cleanup failed", "task", task.Name, "err", err)
+			case err == nil && n > 0:
+				log.Info("retention cleanup", "task", task.Name, "removed", n)
+			}
 		}
 		select {
 		case <-ctx.Done():

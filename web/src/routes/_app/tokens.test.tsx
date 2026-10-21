@@ -32,6 +32,7 @@ const revoked: Token = {
 };
 
 beforeEach(() => {
+  window.localStorage.clear();
   useLiveStore.setState({ locale: "en" });
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(BASE);
@@ -46,8 +47,11 @@ const row = (name: string) => screen.getByRole("listitem", { name });
 describe("tokens page (UI-19)", () => {
   it("lists tokens by prefix with kind and state, revoked ones without a revoke button", async () => {
     mockApi({ "GET /me": json(200, me), "GET /tokens": json(200, { items: [active, revoked] }) });
+    const user = userEvent.setup();
     renderRoute("/tokens");
     await screen.findByRole("listitem", { name: "ci deploy script" });
+    // Revoked tokens are hidden by default (TOKH-04).
+    await user.click(screen.getByRole("switch", { name: /Show revoked/ }));
     expect(within(row("ci deploy script")).getByText(/pl_user_Q8zt/)).toBeInTheDocument();
     expect(within(row("ci deploy script")).getByText("User")).toBeInTheDocument();
     expect(within(row("old laptop")).getByText("Agent")).toBeInTheDocument();
@@ -153,5 +157,106 @@ describe("tokens page (UI-19)", () => {
     await waitFor(() =>
       expect(calls.some((c) => c.method === "DELETE" && c.path === "/tokens/t1")).toBe(true),
     );
+  });
+});
+
+describe("revoked tokens (TOKH-04)", () => {
+  const expired: Token = {
+    id: "t3",
+    kind: "user",
+    name: "old export",
+    prefix: "pl_user_Xx9a",
+    created_at: "2026-08-01T12:00:00Z",
+    expires_at: "2026-09-01T12:00:00Z",
+  };
+
+  it("hides revoked tokens by default and shows them with the remembered toggle", async () => {
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /tokens": json(200, { items: [active, revoked, expired] }),
+    });
+    const user = userEvent.setup();
+    const first = renderRoute("/tokens");
+    await screen.findByRole("listitem", { name: "ci deploy script" });
+    expect(calls.find((c) => c.path === "/tokens")?.url.searchParams.get("include_revoked")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("listitem", { name: "old laptop" })).toBeNull();
+    // Expired but not revoked stays listed.
+    expect(row("old export")).toHaveTextContent("Expired");
+
+    const toggle = screen.getByRole("switch", { name: /Show revoked/ });
+    expect(toggle).not.toBeChecked();
+    expect(toggle.closest("div")).toHaveTextContent("1");
+    await user.click(toggle);
+    expect(await screen.findByRole("listitem", { name: "old laptop" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("partyline.tokens.showRevoked")).toBe("1");
+    // Delete is offered only on revoked rows: an expired token that was never revoked has none
+    // (the server answers 409 for it).
+    expect(within(row("old laptop")).getByRole("button", { name: /Delete/ })).toBeInTheDocument();
+    expect(within(row("old export")).queryByRole("button", { name: /Delete/ })).toBeNull();
+
+    // The choice is remembered for this browser.
+    first.unmount();
+    renderRoute("/tokens");
+    expect(await screen.findByRole("listitem", { name: "old laptop" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: /Show revoked/ })).toBeChecked();
+    await user.click(screen.getByRole("switch", { name: /Show revoked/ }));
+    await waitFor(() => expect(screen.queryByRole("listitem", { name: "old laptop" })).toBeNull());
+    expect(window.localStorage.getItem("partyline.tokens.showRevoked")).toBeNull();
+  });
+
+  it("offers no toggle when nothing is revoked", async () => {
+    mockApi({ "GET /me": json(200, me), "GET /tokens": json(200, { items: [active] }) });
+    renderRoute("/tokens");
+    await screen.findByRole("listitem", { name: "ci deploy script" });
+    expect(screen.queryByRole("switch", { name: /Show revoked/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Delete/ })).toBeNull();
+  });
+
+  it("deletes a revoked token after confirmation and removes its row", async () => {
+    window.localStorage.setItem("partyline.tokens.showRevoked", "1");
+    let items = [active, revoked];
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /tokens": () => json(200, { items }),
+      "DELETE /tokens/t2/purge": () => {
+        items = [active];
+        return new Response(null, { status: 204 });
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/tokens");
+    await screen.findByRole("listitem", { name: "old laptop" });
+    // Only revoked rows can be deleted.
+    expect(within(row("ci deploy script")).queryByRole("button", { name: /Delete/ })).toBeNull();
+
+    await user.click(within(row("old laptop")).getByRole("button", { name: "Delete old laptop" }));
+    const confirm = await screen.findByRole("alertdialog", { name: "Delete old laptop?" });
+    await user.click(within(confirm).getByRole("button", { name: "Delete token" }));
+    await waitFor(() => expect(screen.queryByRole("listitem", { name: "old laptop" })).toBeNull());
+    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual([
+      "/tokens/t2/purge",
+    ]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(row("ci deploy script")).toBeInTheDocument();
+  });
+
+  it("keeps the row and says so when the delete fails", async () => {
+    window.localStorage.setItem("partyline.tokens.showRevoked", "1");
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /tokens": json(200, { items: [active, revoked] }),
+      "DELETE /tokens/t2/purge": apiError(409, "conflict"),
+    });
+    const user = userEvent.setup();
+    renderRoute("/tokens");
+    await user.click(await screen.findByRole("button", { name: "Delete old laptop" }));
+    const confirm = await screen.findByRole("alertdialog");
+    await user.click(within(confirm).getByRole("button", { name: "Delete token" }));
+    expect(await screen.findByText("Couldn’t delete the token.")).toBeInTheDocument();
+    // The confirmation stays open over the list, which still has the row.
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByRole("listitem", { name: "old laptop", hidden: true })).toBeInTheDocument();
   });
 });

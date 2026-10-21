@@ -176,6 +176,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusGone, dto.ErrorCodeGone, "invite already used, revoked or expired")
 	case errors.Is(err, users.ErrUsernameTaken):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "username already taken")
+	case errors.Is(err, users.ErrTokenActive):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "revoke the token before deleting it")
 	case errors.Is(err, users.ErrSelfAdminChange), errors.Is(err, users.ErrLastAdmin):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, err.Error())
 	case errors.Is(err, agents.ErrNotRegistered):

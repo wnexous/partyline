@@ -62,7 +62,7 @@ T3 → T4
 **Requirement**: FILES-01, FILES-02, FILES-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Newest first, limit default 50 / max 100, cursor works; kind filter; 422 unknown kind; auth matrix (viewer 200, stranger 404)
+- [x] Newest first, limit default 50 / max 100, cursor works; kind filter; 422 unknown kind; auth matrix (viewer 200, stranger 404)
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): list a room's files`
@@ -76,7 +76,7 @@ T3 → T4
 **Requirement**: TOKH-01, TOKH-02, TOKH-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Default list omits revoked; purge rules; 29-day kept / 31-day purged (fake clock); purged secret → 401
+- [x] Default list omits revoked; purge rules; 29-day kept / 31-day purged (fake clock); purged secret → 401
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): hide, purge and expire revoked tokens`
@@ -92,7 +92,7 @@ T3 → T4
 **Requirement**: FILES-04, FILES-05, FILES-06
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Renders files; filter changes query; live room.message with attachments appends; unavailable rows have no link
+- [x] Renders files; filter changes query; live room.message with attachments appends; unavailable rows have no link
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show a room's files`
@@ -106,7 +106,7 @@ T3 → T4
 **Requirement**: TOKH-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Default hides revoked; toggle shows; delete calls purge and removes the row
+- [x] Default hides revoked; toggle shows; delete calls purge and removes the row
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): tidy revoked tokens`

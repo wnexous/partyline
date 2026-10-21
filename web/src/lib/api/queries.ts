@@ -29,6 +29,8 @@ import {
   DefaultActivityLimit,
   DefaultPageSize,
   type DeviceRequest,
+  type FileKind,
+  FileKindDocument,
   type Identity,
   type Invite,
   type InviteInfo,
@@ -43,6 +45,7 @@ import {
   type PairingRequest,
   type PostMessageRequest,
   type Room,
+  type RoomFile,
   type RoomMember,
   type Session,
   type SetupRequest,
@@ -77,6 +80,7 @@ export const queryKeys = {
   room: (id: string) => ["rooms", id] as const,
   roomMembers: (id: string) => ["rooms", id, "members"] as const,
   roomMessages: (id: string) => ["rooms", id, "messages"] as const,
+  roomFiles: (id: string, kind: FileFilter) => ["rooms", id, "files", kind] as const,
   sharing: (kind: SharingResource, id: string) => [kind, id, "sharing"] as const,
   agents: ["agents"] as const,
   connectorKinds: ["connector-kinds"] as const,
@@ -204,10 +208,14 @@ export const useUsers = () =>
     queryFn: () => api<List<User>>("GET", "/users").then(items),
   });
 
+/** Every token of the user, revoked ones included: the tokens page decides what to show. */
 export const useTokens = () =>
   useQuery({
     queryKey: queryKeys.tokens,
-    queryFn: () => api<List<Token>>("GET", "/tokens").then(items),
+    queryFn: () =>
+      api<List<Token>>("GET", "/tokens", undefined, { query: { include_revoked: true } }).then(
+        items,
+      ),
   });
 
 export function useCreateToken() {
@@ -215,6 +223,18 @@ export function useCreateToken() {
   return useMutation({
     mutationFn: (req: CreateTokenRequest) => api<CreatedToken>("POST", "/tokens", req),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tokens }),
+  });
+}
+
+/** Deletes a revoked token for good (TOKH-02); the row leaves the cached list at once. */
+export function usePurgeToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>("DELETE", `/tokens/${id}/purge`),
+    onSuccess: (_, id) => {
+      qc.setQueryData<Token[]>(queryKeys.tokens, (old) => old?.filter((t) => t.id !== id));
+      qc.invalidateQueries({ queryKey: queryKeys.tokens });
+    },
   });
 }
 
@@ -403,6 +423,56 @@ export function usePostMessage(roomId: string) {
 }
 
 export const attachmentUrl = (id: string) => `/api/v1/attachments/${id}`;
+
+// ---------------------------------------------------------------------------------------------
+// Room files (FILES-01, FILES-04)
+
+/** A files list filter: one kind, or every file. */
+export type FileFilter = FileKind | "all";
+
+/** The kind the server gives a file: its MIME family, document for everything else. */
+export function fileKindOf(mime: string): FileKind {
+  const family = mime.toLowerCase().split("/")[0];
+  return family === "image" || family === "audio" || family === "video" ? family : FileKindDocument;
+}
+
+/** A message's attachments as room files, newest first like the files list. */
+export function messageFiles(m: Message): RoomFile[] {
+  return m.attachments
+    .map((a) => ({
+      ...a,
+      kind: fileKindOf(a.mime),
+      message_id: m.id,
+      message_seq: m.seq,
+      author_kind: m.author_kind,
+      author_name: m.author_name,
+      created_at: m.created_at,
+    }))
+    .reverse();
+}
+
+export type FilePages = InfiniteData<Page<RoomFile>, string | undefined>;
+
+/** A room's files, newest first; fetchNextPage loads older ones (cursor = last id). */
+export const roomFilesQuery = (roomId: string, kind: FileFilter) =>
+  infiniteQueryOptions({
+    queryKey: queryKeys.roomFiles(roomId, kind),
+    queryFn: ({ pageParam, signal }) =>
+      api<Page<RoomFile>>("GET", `/rooms/${roomId}/attachments`, undefined, {
+        query: {
+          kind: kind === "all" ? undefined : kind,
+          before: pageParam,
+          limit: DefaultPageSize,
+        },
+        signal,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page: Page<RoomFile>) =>
+      page.has_more ? page.items[page.items.length - 1]?.id : undefined,
+  });
+
+export const useRoomFiles = (roomId: string, kind: FileFilter) =>
+  useInfiniteQuery(roomFilesQuery(roomId, kind));
 
 // ---------------------------------------------------------------------------------------------
 // Dashboard activity

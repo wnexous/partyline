@@ -82,16 +82,16 @@ Rooms collect images, audio and documents from chats and agents, but the only wa
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| FILES-01 | P1: Room files | Tasks | Pending |
-| FILES-02 | P1: Room files | Tasks | Pending |
-| FILES-03 | P1: Room files | Tasks | Pending |
-| FILES-04 | P1: Room files | Tasks | Pending |
-| FILES-05 | P1: Room files | Tasks | Pending |
-| FILES-06 | P1: Room files | Tasks | Pending |
-| TOKH-01 | P1: Token hygiene | Tasks | Pending |
-| TOKH-02 | P1: Token hygiene | Tasks | Pending |
-| TOKH-03 | P1: Token hygiene | Tasks | Pending |
-| TOKH-04 | P1: Token hygiene | Tasks | Pending |
+| FILES-01 | P1: Room files | Tasks | Implementing |
+| FILES-02 | P1: Room files | Tasks | Implementing |
+| FILES-03 | P1: Room files | Tasks | Implementing |
+| FILES-04 | P1: Room files | Tasks | Implementing |
+| FILES-05 | P1: Room files | Tasks | Implementing |
+| FILES-06 | P1: Room files | Tasks | Implementing |
+| TOKH-01 | P1: Token hygiene | Tasks | Implementing |
+| TOKH-02 | P1: Token hygiene | Tasks | Implementing |
+| TOKH-03 | P1: Token hygiene | Tasks | Implementing |
+| TOKH-04 | P1: Token hygiene | Tasks | Implementing |
 
 **Coverage:** 10 total, mapped in tasks.md
 
