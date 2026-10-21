@@ -73,6 +73,12 @@ T18 → T19 → T20 → T21 → T22
 T23 → T24 → T25 → T26 → T27 → T28 → T29 → T30 → T31 → T32 → T33 → T34
 ```
 
+### Phase 7: Verifier fix iteration 2
+
+```
+T35 → T36 → T37 → T38 → T39 → T40 → T41 → T42 → T43
+```
+
 ---
 
 ## Task Breakdown
@@ -592,3 +598,143 @@ the web changes.
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record the harness-onboarding fix iteration 1`
+
+### Phase 7: Verifier fix iteration 2
+
+From `validation.md` (iteration 2): gaps 1-3 and the remaining security weaknesses the
+maintainer chose to harden. Same protocol as Phase 6: a discriminating test first (checked
+against a mutant or probe in a scratch worktree, removed after), then the fix; `make check`
+before each commit.
+
+#### T35: Setup does not reuse a token saved for another instance
+
+**What**: test that `setup --url B` with a token saved for instance A asks for a new token or approval and never sends A's token to B (kills K03).
+**Where**: `internal/cli/setup_test.go`
+**Depends on**: T34
+**Reuses**: `deviceSetupEnv`, `newChannelEnv`, `approvalCode`
+**Requirement**: ONB-08
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] `--yes` and interactive runs against B with `{A, tokenA}` saved: no "Using the saved agent token", browser approval on B, config ends `{B, new token}` and the new token differs from tokenA
+- [x] the test fails against mutant K03 (`sameURL` check removed)
+**Tests**: integration
+**Gate**: build
+**Commit**: `test(cli): pin that setup never reuses a token saved for another instance`
+
+#### T36: Installer parses the URL before allowing plain http
+
+**What**: `require_https` lowercases the scheme, refuses any URL whose authority holds `@`, extracts the host (`[::1]`, ports) and allows `http` only for exactly `localhost`, `127.0.0.1` or `::1`.
+**Where**: `scripts/install.sh`, `scripts/install_test.go`
+**Depends on**: T35
+**Reuses**: `TestInstallRefusesPlainHTTP`
+**Requirement**: ONB-10
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] refused before any download: `Http://…`, `hTTp://…`, `HTTP://…`, `http://localhost:80@evil.com/`, `http://127.0.0.1:1@evil.com`, `http://[::1]:8080@evil.com`, `https://user@host` (userinfo)
+- [ ] accepted: `http://localhost:8080`, `http://127.0.0.1:8080`, `http://[::1]:8080`, `HTTP://localhost:8080`, `https://…`
+**Tests**: integration
+**Gate**: build
+**Commit**: `fix(scripts): parse the installer URL before allowing plain http`
+
+#### T37: ONB-11 says VERSION=dev counts as unset
+
+**What**: the spec states that an empty `VERSION` or `VERSION=dev` is treated as unset; the test pins both.
+**Where**: `.specs/features/harness-onboarding/spec.md`, `scripts/version_test.go`
+**Depends on**: T36
+**Reuses**: `versionOf`
+**Requirement**: ONB-11
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] spec wording matches `scripts/version.sh`; `VERSION=` and `VERSION=dev` both give the git version in a test
+**Tests**: integration
+**Gate**: build
+**Commit**: `docs(specs): say that VERSION=dev counts as unset for the image version`
+
+#### T38: Write through a symlink only into HOME
+
+**What**: a symlinked harness config or extension is written through only when its resolved target is inside the user's home; otherwise setup refuses with an error naming the link and its target and changes nothing.
+**Where**: `internal/harness/harness.go`, `internal/harness/files.go`, `internal/harness/clis.go`, `internal/harness/files_test.go`
+**Depends on**: T37
+**Reuses**: `writeFileAtomic`
+**Requirement**: HAR-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] link into HOME (also through a symlinked HOME): written as before
+- [ ] link to a file outside HOME: Apply fails with `refusing to write through the symlink <link>: its target <target> is outside your home directory`; target, config and extension untouched
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(harness): write through a symlinked config only when it points into home`
+
+#### T39: Hook groups are ours only with the exact command
+
+**What**: a Codex Stop or Gemini AfterAgent hook belongs to Partyline only when its command is exactly the command setup writes for this binary (`<absolute path> hook <name>`, quoted as setup quotes it); other `partyline*` binaries are left alone by update, uninstall and doctor.
+**Where**: `internal/harness/harness.go`, `internal/harness/clis.go`, `internal/harness/clis_test.go`
+**Depends on**: T38
+**Reuses**: `hookCommand`
+**Requirement**: HAR-02, HAR-04
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] a group running `/usr/local/bin/partyline-wrapper hook codex-stop` or another partyline path survives Apply and Remove byte for byte and is not listed by Entries
+- [ ] the group with the exact command is updated in place and removed
+**Tests**: unit
+**Gate**: build
+**Commit**: `fix(harness): own only the hook groups that run this partyline binary`
+
+#### T40: Private, temporary config backups
+
+**What**: `.partyline.bak` files are written 0600; setup deletes the backups it created once every harness was registered, unless `--keep-backups`; doctor reports leftover backups.
+**Where**: `internal/harness/*.go`, `internal/cli/setup.go`, `internal/cli/setup_harness.go`, `internal/cli/doctor.go`, tests
+**Depends on**: T39
+**Reuses**: `keepBackup`, doctor checks
+**Requirement**: HAR-05, ONB-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] backup mode 0600 even when the config is 0644
+- [ ] after a successful setup no backup it created is left; with `--keep-backups` it stays; after a failed registration it stays
+- [ ] doctor prints `WARN backups: <path> …` with a fix and does not fail on it
+**Tests**: unit, integration
+**Gate**: build
+**Commit**: `fix(cli): keep config backups private and remove them after setup`
+
+#### T41: `--yes` still names the approver
+
+**What**: with `--yes` the browser setup prints `Approved by @<user> on <instance>` and a warning on stderr that the token was saved without confirmation and how to undo it.
+**Where**: `internal/cli/setup.go`, `internal/cli/setup_test.go`
+**Depends on**: T40
+**Reuses**: DEV-06 test
+**Requirement**: DEV-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] `--yes` output: the approver line on stdout and `partyline setup: --yes: saved the agent token of @<user> without asking; if that is not your account, run partyline setup --uninstall` on stderr
+**Tests**: integration
+**Gate**: build
+**Commit**: `fix(cli): name the approver loudly when setup --yes skips the confirmation`
+
+#### T42: Wrong-code limit survives a restart
+
+**What**: the DEV-05 wrong-code attempts live in a `device_code_attempts` table (migration 0090), reserved in a write transaction; a restart keeps the limit.
+**Where**: `internal/store/migrations/0090_device_code_attempts.sql`, `internal/store/queries/devices.sql`, `internal/store/db/*`, `internal/devices/devices.go`, `internal/api/devices_handlers_test.go`
+**Depends on**: T41
+**Reuses**: `testkit.Env.Restart`
+**Requirement**: DEV-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] 5 wrong codes, restart, the 6th code entry → 429; after a minute → accepted
+- [ ] existing limit and burst tests still pass unchanged
+**Tests**: e2e (API)
+**Gate**: build
+**Commit**: `fix(devices): keep the wrong-code limit across restarts`
+
+#### T43: Record fix iteration 2
+
+**What**: contract notes for T35-T42 (migration number 0090 flagged for renumbering at merge), spec ACs and traceability.
+**Where**: `.specs/features/harness-onboarding/contract-notes.md`, `spec.md`, `design.md`
+**Depends on**: T42
+**Reuses**: none
+**Requirement**: all touched
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] contract notes and traceability describe the shipped behavior
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): record the harness-onboarding fix iteration 2`
