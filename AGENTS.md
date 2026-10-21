@@ -31,10 +31,14 @@ Override a tool path with the Makefile variables, e.g. `make lint GOLANGCI_LINT=
 ## Workflow
 
 - `make generate` after changing SQL queries, migrations or `internal/api/dto`.
-- `make test` runs all tests with the race detector; `make integrations-test` runs the TypeScript
-  adapters' tests in `integrations/` (`bun test`, fake host APIs).
-- `make check` is the gate: generated-code drift, lint, vet, tests, build. It must pass before
-  every commit.
+- `make test` runs all Go tests (sharded across processes; `SHARDS=N` overrides the shard count)
+  plus the web unit tests; `RACE=1` adds the race detector (local runs default to no race, for
+  speed). `make integrations-test` runs the TypeScript adapters' tests in `integrations/`
+  (`bun test`, fake host APIs).
+- `make check` is the commit gate: generated-code drift, lint, vet, Go tests, web checks/tests,
+  integrations tests and the build, with the independent stages running in parallel. It must
+  pass before every commit. `make check-race` (`make check RACE=1`) runs the same gate with the
+  race detector before pushing; CI runs that gate.
 - Commits follow Conventional Commits (`feat(scope): ...`, `fix: ...`), one logical change each.
 
 ## Rules
