@@ -41,4 +41,4 @@ Retention job: `UPDATE agents SET archived_at = now WHERE kind='temporary' AND a
 `--name`, `--project` on `partyline <harness>`, `channel`, `listen`; home-folder warning; `partyline agents` (table grouped by project).
 
 ## Web
-Agents page grouped by project; project rename; agent rename/promote; archived toggle; machine/harness filters; member picker lists projects ("Ruthe (any session)") and fixed agents first.
+Agents page grouped by project; project rename; agent rename/promote; archived toggle; machine/harness filters; member picker lists projects ("Atlas (any session)") and fixed agents first.

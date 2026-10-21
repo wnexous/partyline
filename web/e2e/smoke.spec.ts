@@ -252,18 +252,18 @@ test("agents are grouped by project and the owner renames the project (PROJ-04, 
   instance,
 }) => {
   await loginAs(context, instance, ADMIN);
-  const session = await registerSession(context, instance, "ruthe", "claude");
-  expect(session.display_name).toBe("Ruthe · Claude Code");
+  const session = await registerSession(context, instance, "atlas", "claude");
+  expect(session.display_name).toBe("Atlas · Claude Code");
 
   await page.goto("/agents");
-  await expect(page.getByRole("heading", { name: "Ruthe", level: 2 })).toBeVisible();
-  const group = page.getByRole("list", { name: "Agents of Ruthe" });
-  const row = group.getByRole("listitem", { name: "Ruthe · Claude Code" });
+  await expect(page.getByRole("heading", { name: "Atlas", level: 2 })).toBeVisible();
+  const group = page.getByRole("list", { name: "Agents of Atlas" });
+  const row = group.getByRole("listitem", { name: "Atlas · Claude Code" });
   await expect(row.getByText("Temporary")).toBeVisible();
   await expect(row.getByText("e2e-box")).toBeVisible();
 
-  await page.getByRole("button", { name: "Rename project Ruthe" }).click();
-  const field = page.getByRole("textbox", { name: "Rename project Ruthe" });
+  await page.getByRole("button", { name: "Rename project Atlas" }).click();
+  const field = page.getByRole("textbox", { name: "Rename project Atlas" });
   await field.fill("Videos");
   await field.press("Enter");
   await expect(page.getByRole("heading", { name: "Videos", level: 2 })).toBeVisible();

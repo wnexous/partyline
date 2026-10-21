@@ -289,12 +289,12 @@ func TestLauncherPassesNameAndProject(t *testing.T) {
 	m.onPath["claude"] = true
 	m.register(t, "claude")
 
-	r := m.run(t, "claude", "--name", "ruthe-bot", "--project=Ruthe", "--resume", "--name", "x")
+	r := m.run(t, "claude", "--name", "atlas-bot", "--project=Atlas", "--resume", "--name", "x")
 	require.Equal(t, 7, r.code, r.stderr)
 	require.Equal(t, []string{"claude", "--dangerously-load-development-channels", "server:partyline", "--resume", "--name", "x"}, r.argv)
 	id := r.sessionID(t)
 	require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8",
-		"PARTYLINE_SESSION=" + id, "PARTYLINE_HARNESS=claude", "PARTYLINE_AGENT=ruthe-bot", "PARTYLINE_PROJECT=Ruthe"}, r.env)
+		"PARTYLINE_SESSION=" + id, "PARTYLINE_HARNESS=claude", "PARTYLINE_AGENT=atlas-bot", "PARTYLINE_PROJECT=Atlas"}, r.env)
 
 	r = m.run(t, "claude", "--project")
 	require.Equal(t, 2, r.code)

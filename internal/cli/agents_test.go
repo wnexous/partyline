@@ -46,15 +46,15 @@ func (e *channelEnv) dialAs(t *testing.T, project, harness, machine string, name
 // The output matches GET /agents.
 func TestAgentsListsByProject(t *testing.T) {
 	e := newChannelEnv(t)
-	ruthe1 := e.dialAs(t, "ruthe", "claude", "laptop")
-	defer ruthe1.Close()
-	ruthe2 := e.dialAs(t, "ruthe", "claude", "desk")
-	defer ruthe2.Close()
+	atlas1 := e.dialAs(t, "atlas", "claude", "laptop")
+	defer atlas1.Close()
+	atlas2 := e.dialAs(t, "atlas", "claude", "desk")
+	defer atlas2.Close()
 	aaa := e.dialAs(t, "aaa", "codex", "laptop")
 	aaa.Close()
-	alpha := e.dialAs(t, "ruthe", "claude", "laptop", "alpha")
+	alpha := e.dialAs(t, "atlas", "claude", "laptop", "alpha")
 	alpha.Close()
-	e.agent(t, "ruthe-claude-2")
+	e.agent(t, "atlas-claude-2")
 	_, err := e.env.App.Agents.Upsert(context.Background(), e.alice.User.ID, "builder")
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { n := e.onlineNames(t); return !n["aaa-codex"] && !n["alpha"] }, chanWait, 20*time.Millisecond)
@@ -62,9 +62,9 @@ func TestAgentsListsByProject(t *testing.T) {
 	code, out, errOut := runAgents(e.vars())
 	require.Equal(t, 0, code, errOut)
 	require.Equal(t, strings.Join([]string{
-		"Ruthe",
-		"  online   Ruthe · Claude Code     ruthe-claude    claude  laptop  temporary",
-		"  online   Ruthe · Claude Code #2  ruthe-claude-2  claude  desk    temporary",
+		"Atlas",
+		"  online   Atlas · Claude Code     atlas-claude    claude  laptop  temporary",
+		"  online   Atlas · Claude Code #2  atlas-claude-2  claude  desk    temporary",
 		"  offline  alpha                   alpha           claude  laptop  fixed",
 		"",
 		"Aaa",

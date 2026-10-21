@@ -99,7 +99,7 @@ func TestOwnerAgentsForAgentTokens(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	conn, info := dialSession(t, tok, sessionHeaders("ruthe", "claude", "laptop", "", ""))
+	conn, info := dialSession(t, tok, sessionHeaders("atlas", "claude", "laptop", "", ""))
 	defer conn.Close()
 	builder := registerAgent(t, env, alice, "builder")
 	shared := registerAgent(t, env, bob, "helper")

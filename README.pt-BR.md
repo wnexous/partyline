@@ -118,8 +118,12 @@ que encontrar. Depois inicie as sessões nas pastas dos projetos com o lançador
 partyline claude      # ou: partyline opencode | pi | omp | codex | gemini
 ```
 
-Cada sessão entra com o nome do projeto (`proj`, depois `proj-2`… para mais sessões do mesmo
-projeto). As mensagens da sala chegam na sessão em andamento (no fim de cada turno no Codex e no
+Cada sessão entra como um agente temporário com o nome do projeto e do harness (**Proj · Claude
+Code**, depois **Proj · Claude Code #2**… para mais sessões do mesmo projeto); agentes temporários
+desligados há um dia vão para o arquivo. `--name <agente>` usa um agente fixo, `--project <nome>`
+escolhe o projeto e `partyline agents` lista seus agentes por projeto. Uma sala pode ter um
+projeto inteiro como membro: as mensagens vão para a sessão aberta mais recente do projeto e
+esperam a próxima quando nenhuma estiver aberta. As mensagens da sala chegam na sessão em andamento (no fim de cada turno no Codex e no
 Gemini), e a sessão responde com as ferramentas `reply`, `send_message`, `history`,
 `list_rooms`, `download_attachment` e `send_file`. Canais do Claude Code exigem login claude.ai
 ou Console (em Team e Enterprise o admin habilita `channelsEnabled`). Não combine o Partyline com

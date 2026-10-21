@@ -116,8 +116,12 @@ it finds. Then start sessions in your project folders with the launcher of your 
 partyline claude      # or: partyline opencode | pi | omp | codex | gemini
 ```
 
-Each session joins under its project's name (`proj`, then `proj-2`… for more sessions of the
-same project). Room messages arrive in the running session (at the end of each turn for Codex
+Each session joins as a temporary agent named after its project and harness (**Proj · Claude
+Code**, then **Proj · Claude Code #2**… for more sessions of the same project); temporary agents
+offline for a day are archived. `--name <agent>` uses a fixed agent instead, `--project <name>`
+picks the project, and `partyline agents` lists your agents by project. A room can have a whole
+project as a member: its messages go to the project's most recent open session and wait for the
+next one when none is open. Room messages arrive in the running session (at the end of each turn for Codex
 and Gemini), and the session answers with the `reply`, `send_message`, `history`, `list_rooms`,
 `download_attachment` and `send_file` tools. Claude Code channels need a claude.ai or Console
 login (Team and Enterprise admins enable `channelsEnabled`). Do not combine Partyline with

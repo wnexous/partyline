@@ -11,7 +11,7 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// projectRoom is alice's room "Ops" with her project "ruthe" as a member. Sessions of the
+// projectRoom is alice's room "Ops" with her project "atlas" as a member. Sessions of the
 // project connect one clock second apart, so the last one dialed is the active session.
 type projectRoom struct {
 	env     *testkit.Env
@@ -33,12 +33,12 @@ func newProjectRoom(t *testing.T) *projectRoom {
 	return f
 }
 
-// session connects a new temporary session of project "ruthe"; the first one creates the
+// session connects a new temporary session of project "atlas"; the first one creates the
 // project and puts it in the room.
 func (f *projectRoom) session(t *testing.T) (*testkit.AgentConn, dto.AgentInfo) {
 	t.Helper()
 	f.clock.Advance(time.Second)
-	conn, info := dialSession(t, f.token, sessionHeaders("ruthe", "claude", "laptop", "", ""))
+	conn, info := dialSession(t, f.token, sessionHeaders("atlas", "claude", "laptop", "", ""))
 	if f.project == "" {
 		f.project = listedAgent(t, f.alice, info.ID).Project.ID
 		f.member = testkit.Decode[dto.RoomMember](addProject(f.alice, f.room.ID, f.project).RequireStatus(http.StatusCreated))
@@ -72,7 +72,7 @@ func TestProjectMessageGoesToTheActiveSession(t *testing.T) {
 	f := newProjectRoom(t)
 	first, _ := f.session(t)
 	second, two := f.session(t)
-	require.Equal(t, "Ruthe · Claude Code #2", two.DisplayName)
+	require.Equal(t, "Atlas · Claude Code #2", two.DisplayName)
 
 	one := f.post(f.alice, "first message")
 	got := second.Message(wsWait)
@@ -115,7 +115,7 @@ func TestProjectRepliesDoNotEchoToTheProject(t *testing.T) {
 
 	reply := testkit.Decode[dto.Message](f.rest(info).Post("/api/v1/agent/messages/"+question.ID+"/reply",
 		dto.ReplyRequest{Text: "all green"}).RequireStatus(http.StatusCreated))
-	require.Equal(t, []any{dto.AuthorKindAgent, info.ID, "Ruthe · Claude Code #2", question.ID},
+	require.Equal(t, []any{dto.AuthorKindAgent, info.ID, "Atlas · Claude Code #2", question.ID},
 		[]any{reply.AuthorKind, reply.AuthorID, reply.AuthorName, reply.ReplyTo})
 	require.Equal(t, reply.ID, memberConn.Message(wsWait).Message.ID, "a member session receives it as a member")
 
@@ -167,18 +167,18 @@ func TestProjectMemberSettingsApplyToTheActiveSession(t *testing.T) {
 	older, _ := f.session(t)
 	newer, newerInfo := f.session(t)
 	f.alice.Patch("/api/v1/rooms/"+f.room.ID+"/members/"+f.member.ID, dto.UpdateMemberRequest{
-		DisplayName: ptr("Ruthe bot"), Delivery: ptr(dto.DeliveryModeMentions),
+		DisplayName: ptr("Atlas bot"), Delivery: ptr(dto.DeliveryModeMentions),
 	}).RequireStatus(http.StatusOK)
 
 	f.post(f.alice, "hello everyone")
-	byProject := f.post(f.alice, "@ruthe are you there?")
+	byProject := f.post(f.alice, "@atlas are you there?")
 	require.Equal(t, byProject.ID, newer.Message(wsWait).Message.ID, "the plain message is not delivered")
-	byDisplay := f.post(f.alice, "ping @Ruthe bot")
+	byDisplay := f.post(f.alice, "ping @Atlas bot")
 	require.Equal(t, byDisplay.ID, newer.Message(wsWait).Message.ID)
 
 	status := testkit.Decode[dto.Message](f.rest(newerInfo).Post(agentRoomPath(f.room.ID, "/messages"),
 		dto.PostMessageRequest{Text: "status: green"}).RequireStatus(http.StatusCreated))
-	require.Equal(t, "Ruthe bot", status.AuthorName, "the project member's display name names the session")
+	require.Equal(t, "Atlas bot", status.AuthorName, "the project member's display name names the session")
 
 	newer.Close()
 	f.waitOffline(t, newerInfo.ID)
@@ -241,7 +241,7 @@ func TestProjectMemberShowsTheActiveSession(t *testing.T) {
 	}
 	m := member()
 	require.Equal(t, ptr(true), m.Online)
-	require.Equal(t, &dto.MemberSession{ID: one.ID, Name: "ruthe-claude", DisplayName: "Ruthe · Claude Code"}, m.ActiveSession)
+	require.Equal(t, &dto.MemberSession{ID: one.ID, Name: "atlas-claude", DisplayName: "Atlas · Claude Code"}, m.ActiveSession)
 
 	second, two := f.session(t)
 	var changed dto.RoomIDData

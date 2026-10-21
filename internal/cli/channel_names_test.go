@@ -59,10 +59,10 @@ func TestChannelTemporaryNamesInSameProject(t *testing.T) {
 // in that project, whatever the working directory.
 func TestChannelNameAndProjectFlags(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, []string{"--name", "ruthe-bot", "--project", "Ruthe Videos"}, e.vars(), "/tmp/src/other")
+	c := startChannel(t, []string{"--name", "atlas-bot", "--project", "Atlas Videos"}, e.vars(), "/tmp/src/other")
 	initialize(c)
-	a := e.agent(t, "ruthe-bot")
-	require.Equal(t, []any{dto.AgentKindFixed, "Ruthe Videos", "ruthe-videos", "claude"},
+	a := e.agent(t, "atlas-bot")
+	require.Equal(t, []any{dto.AgentKindFixed, "Atlas Videos", "atlas-videos", "claude"},
 		[]any{a.Kind, a.Project.Name, a.Project.Slug, a.Harness})
 
 	c2 := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_PROJECT", "Notes", "PARTYLINE_HARNESS", "codex"), "/tmp/src/other")

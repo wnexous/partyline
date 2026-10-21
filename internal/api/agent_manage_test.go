@@ -49,16 +49,16 @@ func TestAgentRenameShowsEverywhere(t *testing.T) {
 	before := f.postAsAgent(t, "before")
 	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{Delivery: ptr(dto.DeliveryModeMentions)})
 
-	got := testkit.Decode[dto.Agent](f.alice.Patch("/api/v1/agents/"+f.agentID, dto.UpdateAgentRequest{DisplayName: ptr("  Ruthe bot  ")}).RequireStatus(http.StatusOK))
-	require.Equal(t, []string{"builder", "Ruthe bot"}, []string{got.Name, got.DisplayName}, "trimmed; the internal name stays")
-	require.Equal(t, "Ruthe bot", listedAgent(t, f.alice, f.agentID).DisplayName)
-	require.Equal(t, "Ruthe bot", agentMember(t, f.alice, f.room.ID, f.agentID).Name)
-	require.Equal(t, "Ruthe bot", timelineAuthor(t, f.alice, f.room.ID, before.ID))
+	got := testkit.Decode[dto.Agent](f.alice.Patch("/api/v1/agents/"+f.agentID, dto.UpdateAgentRequest{DisplayName: ptr("  Atlas bot  ")}).RequireStatus(http.StatusOK))
+	require.Equal(t, []string{"builder", "Atlas bot"}, []string{got.Name, got.DisplayName}, "trimmed; the internal name stays")
+	require.Equal(t, "Atlas bot", listedAgent(t, f.alice, f.agentID).DisplayName)
+	require.Equal(t, "Atlas bot", agentMember(t, f.alice, f.room.ID, f.agentID).Name)
+	require.Equal(t, "Atlas bot", timelineAuthor(t, f.alice, f.room.ID, before.ID))
 	after := f.postAsAgent(t, "after")
-	require.Equal(t, "Ruthe bot", timelineAuthor(t, f.alice, f.room.ID, after.ID))
+	require.Equal(t, "Atlas bot", timelineAuthor(t, f.alice, f.room.ID, after.ID))
 
 	f.post(f.alice, "nobody is named here")
-	mention := f.post(f.alice, "ping @ruthe bot, please")
+	mention := f.post(f.alice, "ping @atlas bot, please")
 	require.Equal(t, mention.ID, conn.Message(wsWait).Message.ID, "only the mention by the new name is pushed")
 
 	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: ptr("Lolo")})
@@ -199,21 +199,21 @@ func TestProjectRename(t *testing.T) {
 	p := projects[0]
 	require.Equal(t, []any{"proj", "Proj", dto.LevelManage, "alice"}, []any{p.Slug, p.Name, p.MyLevel, p.Owner.Username})
 
-	got := testkit.Decode[dto.Project](alice.Patch("/api/v1/projects/"+p.ID, dto.UpdateProjectRequest{Name: "  Ruthe  "}).RequireStatus(http.StatusOK))
-	require.Equal(t, []string{p.ID, "proj", "Ruthe"}, []string{got.ID, got.Slug, got.Name})
+	got := testkit.Decode[dto.Project](alice.Patch("/api/v1/projects/"+p.ID, dto.UpdateProjectRequest{Name: "  Atlas  "}).RequireStatus(http.StatusOK))
+	require.Equal(t, []string{p.ID, "proj", "Atlas"}, []string{got.ID, got.Slug, got.Name})
 	agents := listAgents(t, alice, "")
-	require.Equal(t, []string{"Ruthe · Claude Code", "Ruthe · Claude Code #2"}, []string{agents[one.Name].DisplayName, agents[two.Name].DisplayName})
-	require.Equal(t, dto.ProjectRef{ID: p.ID, Slug: "proj", Name: "Ruthe"}, *agents[one.Name].Project)
-	require.Equal(t, "Ruthe · Claude Code", timelineAuthor(t, alice, room.ID, msg.ID))
+	require.Equal(t, []string{"Atlas · Claude Code", "Atlas · Claude Code #2"}, []string{agents[one.Name].DisplayName, agents[two.Name].DisplayName})
+	require.Equal(t, dto.ProjectRef{ID: p.ID, Slug: "proj", Name: "Atlas"}, *agents[one.Name].Project)
+	require.Equal(t, "Atlas · Claude Code", timelineAuthor(t, alice, room.ID, msg.ID))
 
 	_, three := dialSession(t, tok, sessionHeaders("proj", "claude", "laptop", "", ""))
-	require.Equal(t, "Ruthe · Claude Code #3", three.DisplayName, "a session does not rename the project back")
+	require.Equal(t, "Atlas · Claude Code #3", three.DisplayName, "a session does not rename the project back")
 
 	for _, bad := range []string{"", "  ", strings.Repeat("x", 65)} {
 		e := alice.Patch("/api/v1/projects/"+p.ID, dto.UpdateProjectRequest{Name: bad}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 		require.Equal(t, "must have 1 to 64 characters", e.Fields["name"], "%q", bad)
 	}
-	require.Equal(t, "Ruthe", testkit.Decode[dto.List[dto.Project]](alice.Get("/api/v1/projects").RequireStatus(http.StatusOK)).Items[0].Name)
+	require.Equal(t, "Atlas", testkit.Decode[dto.List[dto.Project]](alice.Get("/api/v1/projects").RequireStatus(http.StatusOK)).Items[0].Name)
 }
 
 // projectSetup creates a project of the owner shared with the viewer (use grant).
@@ -295,7 +295,7 @@ func TestRenamesAnnounceMemberChanges(t *testing.T) {
 	require.Equal(t, room.ID, ref.RoomID)
 
 	project := listedAgent(t, alice, info.ID).Project
-	alice.Patch("/api/v1/projects/"+project.ID, dto.UpdateProjectRequest{Name: "Ruthe"}).RequireStatus(http.StatusOK)
+	alice.Patch("/api/v1/projects/"+project.ID, dto.UpdateProjectRequest{Name: "Atlas"}).RequireStatus(http.StatusOK)
 	live.Expect(dto.LiveEventTypeMembersChanged, &ref, liveWait)
 	require.Equal(t, room.ID, ref.RoomID)
 }
@@ -313,7 +313,7 @@ func TestProjectRenameRefreshesItsRoomsLive(t *testing.T) {
 	aliceLive, bobLive, carolLive := dialLive(t, alice), dialLive(t, bob), dialLive(t, carol)
 	bobLive.ExpectNone(quiet, dto.LiveEventTypeAgentPresence)
 
-	alice.Patch("/api/v1/projects/"+projectID, dto.UpdateProjectRequest{Name: "Ruthe"}).RequireStatus(http.StatusOK)
+	alice.Patch("/api/v1/projects/"+projectID, dto.UpdateProjectRequest{Name: "Atlas"}).RequireStatus(http.StatusOK)
 	var ref dto.RoomIDData
 	bobLive.Expect(dto.LiveEventTypeMembersChanged, &ref, liveWait)
 	require.Equal(t, room.ID, ref.RoomID)
@@ -327,5 +327,5 @@ func TestProjectRenameRefreshesItsRoomsLive(t *testing.T) {
 			names = append(names, m.Name)
 		}
 	}
-	require.Equal(t, []string{"Ruthe"}, names)
+	require.Equal(t, []string{"Atlas"}, names)
 }

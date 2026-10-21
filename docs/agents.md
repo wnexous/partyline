@@ -72,9 +72,9 @@ and the harness, for example **Proj · Claude Code**; a second session of the sa
 harness at the same time is **Proj · Claude Code #2**. Temporary agents offline for 24 hours
 move to Archived on the Agents page and come back when they reconnect.
 
-- `partyline claude --name ruthe-bot` (or `PARTYLINE_AGENT`) uses the fixed agent `ruthe-bot`:
+- `partyline claude --name atlas-bot` (or `PARTYLINE_AGENT`) uses the fixed agent `atlas-bot`:
   it is never archived and the newest session with that name wins.
-- `partyline claude --project Ruthe` (or `PARTYLINE_PROJECT`) chooses the project.
+- `partyline claude --project Atlas` (or `PARTYLINE_PROJECT`) chooses the project.
 - Started in the home folder (or `/`) without either, the session joins project `home` and the
   launcher prints a warning.
 

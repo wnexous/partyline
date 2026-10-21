@@ -274,11 +274,11 @@ describe("member picker (UI-10)", () => {
 });
 
 describe("projects in rooms (PROJ-06, PROJ-07)", () => {
-  const ruthe = { id: "p1", slug: "ruthe", name: "Ruthe" };
+  const atlas = { id: "p1", slug: "atlas", name: "Atlas" };
   const projects = {
     items: [
       {
-        ...ruthe,
+        ...atlas,
         owner: { id: "u1", username: "ana", display_name: "Ana Souza" },
         my_level: "manage",
         created_at: "2026-10-01T12:00:00Z",
@@ -298,10 +298,10 @@ describe("projects in rooms (PROJ-06, PROJ-07)", () => {
       makeAgent({ id: "a1", name: "release-bot", online: true }),
       makeAgent({
         id: "t1",
-        name: "ruthe-claude",
-        display_name: "Ruthe · Claude Code",
+        name: "atlas-claude",
+        display_name: "Atlas · Claude Code",
         kind: "temporary",
-        project: ruthe,
+        project: atlas,
         online: true,
       }),
       makeAgent({ id: "f1", name: "zeta-bot", display_name: "zeta-bot" }),
@@ -317,7 +317,7 @@ describe("projects in rooms (PROJ-06, PROJ-07)", () => {
         "GET /agents": json(200, agents),
         "POST /rooms/r1/members": json(
           201,
-          makeMember({ id: "mb-p", kind: "project", member_id: "p1", name: "Ruthe" }),
+          makeMember({ id: "mb-p", kind: "project", member_id: "p1", name: "Atlas" }),
         ),
       },
     );
@@ -333,7 +333,7 @@ describe("projects in rooms (PROJ-06, PROJ-07)", () => {
       "Chats",
     ]);
     const project = within(dialog).getByTestId("candidate-project-p1");
-    expect(project).toHaveTextContent("Ruthe (any session)");
+    expect(project).toHaveTextContent("Atlas (any session)");
     expect(project).toHaveTextContent("1 online");
     expect(within(dialog).getByTestId("candidate-project-p2")).toHaveTextContent(
       "No session online",
@@ -343,11 +343,11 @@ describe("projects in rooms (PROJ-06, PROJ-07)", () => {
       .map((li) => li.getAttribute("data-testid"));
     expect(agentIds).toEqual(["candidate-agent-a2", "candidate-agent-f1", "candidate-agent-t1"]);
     expect(within(dialog).getByTestId("candidate-agent-t1")).toHaveTextContent(
-      "Ruthe · Claude Code",
+      "Atlas · Claude Code",
     );
     expect(within(dialog).getByTestId("candidate-agent-t1")).toHaveTextContent("Temporary");
 
-    await user.click(within(project).getByRole("button", { name: "Add Ruthe (any session)" }));
+    await user.click(within(project).getByRole("button", { name: "Add Atlas (any session)" }));
     await waitFor(() =>
       expect(
         calls.find((c) => c.method === "POST" && c.path === "/rooms/r1/members")?.body,
@@ -378,9 +378,9 @@ describe("projects in rooms (PROJ-06, PROJ-07)", () => {
       id: "mb-p",
       kind: "project",
       member_id: "p1",
-      name: "Ruthe",
+      name: "Atlas",
       online: true,
-      active_session: { id: "t1", name: "ruthe-claude", display_name: "Ruthe · Claude Code" },
+      active_session: { id: "t1", name: "atlas-claude", display_name: "Atlas · Claude Code" },
     });
     roomApi(
       {},
@@ -392,8 +392,8 @@ describe("projects in rooms (PROJ-06, PROJ-07)", () => {
     const panel = await screen.findByRole("complementary", { name: "Members" });
     const group = await within(panel).findByRole("region", { name: "Projects" });
     const row = within(group).getByTestId("member-mb-p");
-    expect(row).toHaveTextContent("Ruthe");
-    expect(row).toHaveTextContent("Active: Ruthe · Claude Code");
+    expect(row).toHaveTextContent("Atlas");
+    expect(row).toHaveTextContent("Active: Atlas · Claude Code");
 
     projectMember = { ...projectMember, online: false, active_session: undefined };
     act(() =>

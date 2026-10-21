@@ -29,11 +29,11 @@ func addProject(c *testkit.Client, roomID, projectID string) *testkit.Response {
 func TestAddProjectMember(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob, carol := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol")
-	_, own := sessionProject(t, alice, "ruthe")
+	_, own := sessionProject(t, alice, "atlas")
 	room := createRoom(alice, "Ops")
 
 	m := testkit.Decode[dto.RoomMember](addProject(alice, room.ID, own).RequireStatus(http.StatusCreated))
-	require.Equal(t, []any{dto.MemberKindProject, own, "Ruthe", "alice", true, dto.DeliveryModeAll},
+	require.Equal(t, []any{dto.MemberKindProject, own, "Atlas", "alice", true, dto.DeliveryModeAll},
 		[]any{m.Kind, m.MemberID, m.Name, m.Owner, m.Outbound, m.Delivery})
 	addProject(alice, room.ID, own).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 
@@ -56,7 +56,7 @@ func TestAddProjectMember(t *testing.T) {
 func TestAddProjectMemberNeedsUseOnTheProject(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
-	_, alices := sessionProject(t, alice, "ruthe")
+	_, alices := sessionProject(t, alice, "atlas")
 	room := createRoom(bob, "Bob's room")
 	shareRoom(bob, room.ID, dto.SharingUser{UserID: alice.User.ID, Level: dto.LevelView})
 	addProject(bob, room.ID, alices).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
@@ -66,15 +66,15 @@ func TestAddProjectMemberNeedsUseOnTheProject(t *testing.T) {
 func TestProjectMemberSettings(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
-	_, project := sessionProject(t, alice, "ruthe")
+	_, project := sessionProject(t, alice, "atlas")
 	room := createRoom(alice, "Ops")
 	m := testkit.Decode[dto.RoomMember](addProject(alice, room.ID, project).RequireStatus(http.StatusCreated))
 
 	got := testkit.Decode[dto.RoomMember](alice.Patch("/api/v1/rooms/"+room.ID+"/members/"+m.ID, dto.UpdateMemberRequest{
-		DisplayName: ptr("Ruthe bot"), SignOutbound: ptr(false), Delivery: ptr(dto.DeliveryModeMentions),
+		DisplayName: ptr("Atlas bot"), SignOutbound: ptr(false), Delivery: ptr(dto.DeliveryModeMentions),
 		Keywords: &[]string{"video"}, Outbound: ptr(false),
 	}).RequireStatus(http.StatusOK))
-	require.Equal(t, []any{"Ruthe bot", false, dto.DeliveryModeMentions, []string{"video"}, false},
+	require.Equal(t, []any{"Atlas bot", false, dto.DeliveryModeMentions, []string{"video"}, false},
 		[]any{got.DisplayName, got.SignOutbound, got.Delivery, got.Keywords, got.Outbound})
 
 	e := alice.Patch("/api/v1/rooms/"+room.ID+"/members/"+m.ID, dto.UpdateMemberRequest{Delivery: ptr(dto.DeliveryMode("loud"))}).
@@ -85,7 +85,7 @@ func TestProjectMemberSettings(t *testing.T) {
 // PROJ-06: agents see project members in list_rooms (GET /agent/rooms) and room_info.
 func TestAgentsSeeProjectMembers(t *testing.T) {
 	f := newAgentRoom(t)
-	_, project := sessionProject(t, f.alice, "ruthe")
+	_, project := sessionProject(t, f.alice, "atlas")
 	addProject(f.alice, f.room.ID, project).RequireStatus(http.StatusCreated)
 	conn := f.dial(t)
 	conn.Welcome(wsWait)
@@ -99,7 +99,7 @@ func TestAgentsSeeProjectMembers(t *testing.T) {
 				found = append(found, m.MemberID+"/"+m.Name+"/"+m.Owner)
 			}
 		}
-		require.Equal(t, []string{project + "/Ruthe/alice"}, found)
+		require.Equal(t, []string{project + "/Atlas/alice"}, found)
 	}
 	rooms := testkit.Decode[dto.List[dto.AgentRoom]](agent.Get("/api/v1/agent/rooms").RequireStatus(http.StatusOK)).Items
 	require.Len(t, rooms, 1)

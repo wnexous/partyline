@@ -244,7 +244,7 @@ func ptr[T any](v T) *T { return &v }
 func TestOutboundAuthorFollowsProjectMemberSettings(t *testing.T) {
 	e := newOutboundEnv(t)
 	h := http.Header{}
-	h.Set(dto.HeaderProject, "ruthe")
+	h.Set(dto.HeaderProject, "atlas")
 	h.Set(dto.HeaderHarness, "claude")
 	session, resp := e.alice.Token(dto.TokenKindAgent, "desk").DialAgentHeaders(h)
 	require.NotNil(t, session, "upgrade refused: %d", resp.Status)
@@ -270,14 +270,14 @@ func TestOutboundAuthorFollowsProjectMemberSettings(t *testing.T) {
 	m := post("default")
 	sent := e.inst.WaitSend(t)
 	require.Equal(t, m.ID, sent.MessageID)
-	require.Equal(t, "Ruthe · Claude Code", sent.AuthorName)
+	require.Equal(t, "Atlas · Claude Code", sent.AuthorName)
 
-	e.alice.Patch("/api/v1/rooms/"+e.room.ID+"/members/"+member.ID, dto.UpdateMemberRequest{DisplayName: ptr("Ruthe bot")}).RequireStatus(http.StatusOK)
+	e.alice.Patch("/api/v1/rooms/"+e.room.ID+"/members/"+member.ID, dto.UpdateMemberRequest{DisplayName: ptr("Atlas bot")}).RequireStatus(http.StatusOK)
 	m = post("named")
 	sent = e.inst.WaitSend(t)
 	require.Equal(t, m.ID, sent.MessageID)
-	require.Equal(t, "Ruthe bot", sent.AuthorName)
-	require.Equal(t, "Ruthe bot", e.authorName(t, e.room.ID, m.ID), "the timeline shows the project member's display name")
+	require.Equal(t, "Atlas bot", sent.AuthorName)
+	require.Equal(t, "Atlas bot", e.authorName(t, e.room.ID, m.ID), "the timeline shows the project member's display name")
 
 	e.alice.Patch("/api/v1/rooms/"+e.room.ID+"/members/"+member.ID, dto.UpdateMemberRequest{SignOutbound: ptr(false)}).RequireStatus(http.StatusOK)
 	m = post("unsigned")

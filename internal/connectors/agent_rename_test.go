@@ -16,12 +16,12 @@ func TestOutboundAuthorFollowsAgentRename(t *testing.T) {
 	e := newOutboundEnv(t)
 	agents := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items
 	require.Len(t, agents, 1)
-	e.alice.Patch("/api/v1/agents/"+agents[0].ID, dto.UpdateAgentRequest{DisplayName: ptr("Ruthe bot")}).RequireStatus(http.StatusOK)
+	e.alice.Patch("/api/v1/agents/"+agents[0].ID, dto.UpdateAgentRequest{DisplayName: ptr("Atlas bot")}).RequireStatus(http.StatusOK)
 
 	m := e.agentPost(t, e.room.ID, "renamed")
 	sent := e.inst.WaitSend(t)
 	require.Equal(t, m.ID, sent.MessageID)
-	require.Equal(t, "Ruthe bot", sent.AuthorName)
+	require.Equal(t, "Atlas bot", sent.AuthorName)
 
 	e.patchAgentMember(t, e.room.ID, dto.UpdateMemberRequest{DisplayName: ptr("Lolo")})
 	m = e.agentPost(t, e.room.ID, "member name")
