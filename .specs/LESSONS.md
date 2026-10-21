@@ -21,10 +21,10 @@ Corroborated across multiple features. Safe to apply as guidance.
 - last seen: 2026-10-20T07:38:14Z
 
 ### L-019 - Every behavior written into contract notes needs a test or it is unverified
-- signal: `surviving_mutant` · recurrence: 2 feature(s) · scope: `tests` · harmful: 0
+- signal: `surviving_mutant` · recurrence: 2 feature(s) · scope: `tests` · harmful: 1
 - features: core-platform, routing-context
 - evidence: N18 internal/live/hub.go:244-245 (tests) (+1 more)
-- last seen: 2026-10-20T15:04:35Z
+- last seen: 2026-10-21T10:38:00Z
 
 ### L-029 - Run the full make check (lint included) before committing even a test-only or orchestrator edit
 - signal: `gate_fail` · recurrence: 2 feature(s) · scope: `process` · harmful: 0
@@ -233,6 +233,24 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - features: harness-onboarding
 - evidence: validation.md I07 / ONB-10 (spec)
 - last seen: 2026-10-21T08:27:25Z
+
+### L-038 - Assert an item is present before checking a field on it when the list under test filters items out; a missing entry reads as zero values and passes
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
+- features: agent-identity
+- evidence: internal/api/agent_manage_test.go:126 (M7), :166 (M16) (tests)
+- last seen: 2026-10-21T10:38:00Z
+
+### L-039 - When an echo or exclusion rule targets a group member, the spec must say whether it also covers the group's sessions that are direct recipients
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `delivery` · harmful: 0
+- features: agent-identity
+- evidence: PROJ-09 internal/api/project_delivery_test.go:119 (delivery)
+- last seen: 2026-10-21T10:38:00Z
+
+### L-040 - Presence-based rules such as active session or distinct session numbers must say how they apply to sessions that never hold a live connection
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `specs` · harmful: 0
+- features: agent-identity
+- evidence: ID-01 edge case / PROJ-07 internal/agents/identity.go:333 (specs)
+- last seen: 2026-10-21T10:38:00Z
 
 ## Quarantined (failed when applied - ignore)
 

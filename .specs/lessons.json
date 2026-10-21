@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 38,
+  "next_id": 41,
   "lessons": [
     {
       "id": "L-001",
@@ -346,13 +346,13 @@
         "routing-context"
       ],
       "recurrence": 2,
-      "harmful": 0,
+      "harmful": 1,
       "evidence": [
         "N18 internal/live/hub.go:244-245 (tests)",
         "validation.md G26 internal/agents/gateway.go:358 (tests)"
       ],
       "created": "2026-10-20T04:47:07Z",
-      "last_seen": "2026-10-20T15:04:35Z"
+      "last_seen": "2026-10-21T10:38:00Z"
     },
     {
       "id": "L-020",
@@ -679,6 +679,60 @@
       ],
       "created": "2026-10-21T08:27:25Z",
       "last_seen": "2026-10-21T08:27:25Z"
+    },
+    {
+      "id": "L-038",
+      "key": "surviving_mutant::assert an item is present before checking a field on it when the list under test filters items out a missing entry reads as zero values and passes",
+      "text": "Assert an item is present before checking a field on it when the list under test filters items out; a missing entry reads as zero values and passes",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "agent-identity"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/api/agent_manage_test.go:126 (M7), :166 (M16) (tests)"
+      ],
+      "created": "2026-10-21T10:38:00Z",
+      "last_seen": "2026-10-21T10:38:00Z"
+    },
+    {
+      "id": "L-039",
+      "key": "spec_deviation::when an echo or exclusion rule targets a group member the spec must say whether it also covers the group s sessions that are direct recipients",
+      "text": "When an echo or exclusion rule targets a group member, the spec must say whether it also covers the group's sessions that are direct recipients",
+      "signal": "spec_deviation",
+      "scope": "delivery",
+      "status": "candidate",
+      "features": [
+        "agent-identity"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "PROJ-09 internal/api/project_delivery_test.go:119 (delivery)"
+      ],
+      "created": "2026-10-21T10:38:00Z",
+      "last_seen": "2026-10-21T10:38:00Z"
+    },
+    {
+      "id": "L-040",
+      "key": "spec_precision_gap::presence based rules such as active session or distinct session numbers must say how they apply to sessions that never hold a live connection",
+      "text": "Presence-based rules such as active session or distinct session numbers must say how they apply to sessions that never hold a live connection",
+      "signal": "spec_precision_gap",
+      "scope": "specs",
+      "status": "candidate",
+      "features": [
+        "agent-identity"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "ID-01 edge case / PROJ-07 internal/agents/identity.go:333 (specs)"
+      ],
+      "created": "2026-10-21T10:38:00Z",
+      "last_seen": "2026-10-21T10:38:00Z"
     }
   ]
 }
