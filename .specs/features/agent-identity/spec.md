@@ -86,7 +86,7 @@ Agents are named after the working directory, so a session started in the home f
 1. WHEN a manager adds a project member (`kind: "project"`) THEN the system SHALL require the manager to own the project or hold `use` on it, else 403. (PROJ-06)
 2. WHEN a message is delivered to a project member THEN the system SHALL push it only to the project's active session (most recently connected online agent of the project); IF none is online THEN it SHALL wait. (PROJ-07)
 3. WHEN a session of the project connects THEN it SHALL receive, as backlog, the project's undelivered messages for each room the project belongs to (same 50-per-room cap and notice as agents). (PROJ-08)
-4. WHEN the active session replies THEN the reply SHALL be authored by that agent and SHALL NOT be delivered back to any session of the same project. (PROJ-09)
+4. WHEN the active session replies THEN the reply SHALL be authored by that agent and SHALL NOT be delivered through the project member to any session of the same project (posts of any session of a project never reach that project member); a session of the same project that is itself a direct agent member of the room SHALL still receive it as that member, since direct membership is an explicit subscription (AD-009). (PROJ-09)
 5. The system SHALL compute `trusted` for project deliveries exactly as for agents (owner of the project). (PROJ-10)
 
 **Independent Test**: Room with project "Ruthe"; post while offline; open a Ruthe session → it receives the message; restart it → the new session keeps receiving.

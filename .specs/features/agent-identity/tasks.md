@@ -248,7 +248,7 @@ T12 → T13 → T14 → T15 → T16
 **Requirement**: PROJ-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Spec, AD-009, contract notes and test comments agree; tests assert no echo through the project member and delivery to the direct member
+- [x] Spec, AD-009, contract notes and test comments agree; tests assert no echo through the project member and delivery to the direct member
 **Tests**: integration
 **Gate**: build
 **Commit**: `docs(specs): narrow PROJ-09 to the project member path`

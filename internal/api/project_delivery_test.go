@@ -98,10 +98,11 @@ func TestProjectActiveSessionThatIsAMemberGetsEachMessageOnce(t *testing.T) {
 	conn.ExpectNone(500 * time.Millisecond)
 }
 
-// PROJ-09: the active session's reply is authored by that agent and is not delivered back
-// to it; a post of another session of the project (here a member of the room itself) does
-// not reach the active session through the project either. A session that is a member of the
-// room itself still receives the active session's reply as a member.
+// PROJ-09 (amended, AD-009): the active session's reply is authored by that agent and is not
+// delivered through the project member: the active session does not get it back, and a post
+// of another session of the project (here a direct member of the room) does not reach the
+// active session through the project either. A session of the same project that is a direct
+// member of the room still receives the active session's reply as that member.
 func TestProjectRepliesDoNotEchoToTheProject(t *testing.T) {
 	f := newProjectRoom(t)
 	memberConn, memberInfo := f.session(t)

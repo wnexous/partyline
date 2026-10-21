@@ -73,6 +73,8 @@ func Plan(room RoomState, members []Member, msg Draft) Targets {
 		case dto.MemberKindAgent:
 			t.AgentIDs = append(t.AgentIDs, m.ID)
 		case dto.MemberKindProject:
+			// PROJ-09 (AD-009): a project member never receives its own sessions' posts; a
+			// session of that project that is a direct member above still receives them.
 			if msg.AuthorKind != dto.AuthorKindAgent || m.ID != msg.AuthorProjectID {
 				t.ProjectIDs = append(t.ProjectIDs, m.ID)
 			}

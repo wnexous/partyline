@@ -246,8 +246,9 @@ func TestPlanNoBroadcast(t *testing.T) {
 	require.Equal(t, []string{"C3"}, got.ChatIDs)
 }
 
-// PROJ-07, PROJ-09: project members are targets of every post except those of an agent of
-// that project; an agent of another project, or of none, does not exclude it.
+// PROJ-07, PROJ-09 (AD-009): project members are targets of every post except those of an
+// agent of that project; an agent of another project, or of none, does not exclude it. The
+// exclusion covers the project member only, never a direct agent member.
 func TestPlanProjectMembers(t *testing.T) {
 	members := []Member{
 		{Kind: dto.MemberKindAgent, ID: "A1"},
@@ -279,4 +280,7 @@ func TestPlanProjectMembers(t *testing.T) {
 	got := Plan(RoomState{}, members, Draft{AuthorKind: dto.AuthorKindUser, AuthorID: "U1"})
 	require.Equal(t, []string{"A1"}, got.AgentIDs, "projects are not agent targets")
 	require.Equal(t, []string{"C1"}, got.ChatIDs, "projects are not chat targets")
+	got = Plan(RoomState{}, members, Draft{AuthorKind: dto.AuthorKindAgent, AuthorID: "S2", AuthorProjectID: "P2"})
+	require.Equal(t, []any{[]string{"A1"}, []string{"P1"}}, []any{got.AgentIDs, got.ProjectIDs},
+		"PROJ-09 (AD-009): a direct agent member still receives a post of a session of its own project (A1 belongs to P2)")
 }

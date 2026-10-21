@@ -149,6 +149,9 @@ next migration is `0014` (the harness-onboarding fixes took `0013`, renumbered f
   `project_id`). PROJ-09 applies to project deliveries only: a session of the same project that
   is a member of the room itself still receives the active session's posts as a member (old
   same-project agents keep talking to each other).
+  This is the ratified PROJ-09 (AD-009, fix iteration 1): the project member never receives
+  its own sessions' posts; a same-project session that is a direct member receives them as
+  that member.
 - Dispatcher: a project target goes to its active session unless that agent is also a direct
   member target (one delivery, the direct one with the agent member's settings). Project
   deliveries use the project member's `display_name`, `delivery` and `keywords`

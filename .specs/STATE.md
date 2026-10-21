@@ -67,6 +67,15 @@
 - **Status**: active
 - **Amended** (2026-10-20, connectors fix iteration 2, S5): a pairing code is requested for one connector the user owns or may use and links only through it (migration `0005`); changing a connector's endpoint fields deletes the identities linked through it (audited). Linking through a shared connector is now always the user's explicit choice.
 
+### AD-009
+- **Decision**: PROJ-09's echo rule covers the project member path only. A post by any session of a project is never delivered through that project's room membership. A session of the same project that is itself a direct agent member of the room still receives the post as that member.
+- **Reason**: Direct membership is an explicit subscription. Sessions of one project can collaborate in a room (for example agents migrated into one project that already talked to each other), and suppressing their direct deliveries would silently break them.
+- **Trade-off**: A session that is both the project's active session and a direct member still gets one delivery (the direct one), and a direct-member session of the project sees its sibling's replies; owners who want no echo at all keep same-project sessions out of the room as direct members.
+- **Scope**: agent-identity (PROJ-09), delivery.
+- **Date**: 2026-10-21
+- **Status**: active
+- **Context**: Verifier iteration 1 flagged the narrower implementation as an unratified SPEC_DEVIATION. The orchestrator decided under André's standing authorization to choose what is most adequate; the spec was amended to match the implemented rule.
+
 ## Handoff
 
 - **Feature**: routing-context
