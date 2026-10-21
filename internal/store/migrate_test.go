@@ -24,6 +24,9 @@ func (s *Store) applyMigration(ctx context.Context, name string) error {
 	return s.migrate(ctx, fstest.MapFS{name: {Data: body}}, hooks)
 }
 
+// migrationsBefore returns the embedded migration files older than version.
+func migrationsBefore(version string) fs.FS { return olderThan{FS: migrations, version: version} }
+
 func openEmpty(t *testing.T) *Store {
 	t.Helper()
 	s, err := Open(filepath.Join(t.TempDir(), "partyline.db"))

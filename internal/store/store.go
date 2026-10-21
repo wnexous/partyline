@@ -115,6 +115,26 @@ func (s *Store) Migrate(ctx context.Context) error {
 	return s.migrate(ctx, migrations, hooks)
 }
 
+// olderThan lists only the files of FS whose names sort before version.
+type olderThan struct {
+	fs.FS
+	version string
+}
+
+func (o olderThan) ReadDir(name string) ([]fs.DirEntry, error) {
+	entries, err := fs.ReadDir(o.FS, name)
+	if err != nil {
+		return nil, err
+	}
+	var kept []fs.DirEntry
+	for _, e := range entries {
+		if e.Name() < o.version {
+			kept = append(kept, e)
+		}
+	}
+	return kept, nil
+}
+
 // migrate applies the pending *.sql files of fsys in name order, each followed by its hook,
 // records each version and commits once.
 func (s *Store) migrate(ctx context.Context, fsys fs.FS, hooks map[string]Hook) error {

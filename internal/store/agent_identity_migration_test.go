@@ -46,7 +46,8 @@ func TestAgentIdentityMigrationKeepsDataAndAcceptsProjects(t *testing.T) {
 		require.NoError(t, exec(stmt), stmt)
 	}
 
-	require.NoError(t, s.Migrate(ctx))
+	// Up to 0014: 0015 replaces projects with agent members (see projects_conversion_test.go).
+	require.NoError(t, s.migrate(ctx, migrationsBefore("0015"), hooks))
 
 	// Members and grants keep every column.
 	type member struct {

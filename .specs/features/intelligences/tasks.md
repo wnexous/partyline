@@ -186,9 +186,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: MIG-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Project member → direct member of the latest-connected agent with `display_name`, `sign_outbound`, `delivery`, `keywords_json`, `outbound` copied; a direct member already present keeps its own settings; a project without agents loses its membership
-- [ ] No projects, project members or project grants remain; agents' `project_id` is NULL
-- [ ] Gate check passes: `make check`
+- [x] Project member → direct member of the latest-connected agent with `display_name`, `sign_outbound`, `delivery`, `keywords_json`, `outbound` copied; a direct member already present keeps its own settings; a project without agents loses its membership
+- [x] No projects, project members or project grants remain; agents' `project_id` is NULL
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): convert v0.3 projects into agent members`

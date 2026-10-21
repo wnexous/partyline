@@ -447,7 +447,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | CLI-07 | P1: Login and setup | Tasks | Pending |
 | MIG-01 | P1: Migration | Execute | Implementing |
 | MIG-02 | P1: Migration | Tasks | Pending |
-| MIG-03 | P1: Migration | Tasks | Pending |
+| MIG-03 | P1: Migration | Execute | Implementing |
 | MIG-04 | P1: Migration | Execute | Implementing |
 | MIG-05 | P1: Migration | Execute | Implementing |
 | MRG-01 | P2: Merge | Tasks | Pending |

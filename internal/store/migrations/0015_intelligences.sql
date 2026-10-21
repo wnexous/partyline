@@ -94,6 +94,42 @@ BEGIN DELETE FROM intelligences WHERE id = OLD.id; END;
 CREATE TRIGGER people_intelligence_delete AFTER DELETE ON people
 BEGIN DELETE FROM intelligences WHERE id = OLD.id; END;
 
+-- v0.3 projects are removed (MIG-03). Each project room member becomes a direct member of the
+-- project's most recently connected agent (connected_at DESC, never-connected last, then id:
+-- the v0.3 active-session order) with the member's settings; a direct membership that already
+-- exists keeps its own settings (OR IGNORE on UNIQUE (room_id, kind, member_id)). A project
+-- without agents loses its membership: nothing could receive it.
+INSERT OR IGNORE INTO room_members (id, room_id, kind, member_id, outbound, added_by, created_at,
+                                    display_name, sign_outbound, delivery, keywords_json)
+SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' ||
+             hex(randomblob(2)) || '-' || hex(randomblob(6))),
+       pm.room_id, 'agent', s.agent_id, pm.outbound, pm.added_by, pm.created_at,
+       pm.display_name, pm.sign_outbound, pm.delivery, pm.keywords_json
+FROM room_members pm
+JOIN (SELECT p.id AS project_id,
+             (SELECT a.id FROM agents a WHERE a.project_id = p.id
+              ORDER BY a.connected_at IS NULL, a.connected_at DESC, a.id LIMIT 1) AS agent_id
+      FROM projects p) s ON s.project_id = pm.member_id
+WHERE pm.kind = 'project' AND s.agent_id IS NOT NULL
+ORDER BY pm.created_at, pm.id;
+
+-- The project's delivery cursors move to that agent; the furthest cursor wins.
+INSERT INTO agent_cursors (agent_id, room_id, seq)
+SELECT s.agent_id, pc.room_id, pc.seq
+FROM project_cursors pc
+JOIN (SELECT p.id AS project_id,
+             (SELECT a.id FROM agents a WHERE a.project_id = p.id
+              ORDER BY a.connected_at IS NULL, a.connected_at DESC, a.id LIMIT 1) AS agent_id
+      FROM projects p) s ON s.project_id = pc.project_id
+WHERE s.agent_id IS NOT NULL
+ON CONFLICT (agent_id, room_id) DO UPDATE SET seq = MAX(agent_cursors.seq, excluded.seq);
+
+DELETE FROM room_members WHERE kind = 'project';
+DELETE FROM grants WHERE resource_kind = 'project';
+-- agents.project_id becomes NULL (ON DELETE SET NULL); project_cursors go with their project.
+-- The projects and project_cursors tables stay until 0016.
+DELETE FROM projects;
+
 -- Authors are named by their intelligence. The fallbacks after it are transitional (removed
 -- in 0016): rows written before author_iid is set on insert, agents and users created before
 -- their intelligence exists, and project members until project code is removed keep their
