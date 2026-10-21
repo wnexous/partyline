@@ -29,6 +29,7 @@ Commands:
                          --tools-only serves the tools without receiving messages;
                          --harness omp describes the omp extension's message framing
   listen                 print incoming messages as JSON lines (used by the pi and OpenCode adapters)
+  agents                 list your agents by project with their online state; --all adds archived ones
   hook codex-stop|gemini-after-agent
                          turn-end hook: continue the session with undelivered room messages
   doctor                 check this machine: binary, config file, server, token, harnesses, versions
@@ -101,6 +102,8 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return listenCmd(ctx, args[2:], io)
 	case "hook":
 		return hookCmd(ctx, args[2:], io)
+	case "agents":
+		return agentsCmd(ctx, args[2:], io)
 	case "doctor":
 		return doctor(ctx, io)
 	case "healthcheck":

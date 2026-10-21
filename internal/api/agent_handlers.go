@@ -50,6 +50,33 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/v1/agent/register", s.agentRegister)
 	s.handle(mux, "GET /api/v1/agent/pending", s.agentOnly(s.agentPending))
 	s.handle(mux, "DELETE /api/v1/agent/token", s.revokeOwnAgentToken)
+	s.handle(mux, "GET /api/v1/agent/agents", s.ownerAgents)
+}
+
+// ownerAgents lists the agents the token's owner owns, like GET /agents
+// (include_archived=true adds archived ones), for `partyline agents` (CLI-02). Agent tokens
+// only; no registered agent is needed.
+func (s *server) ownerAgents(w http.ResponseWriter, r *http.Request) error {
+	p, ok := authn.PrincipalFrom(r.Context())
+	if !ok {
+		return errNotLoggedIn
+	}
+	if p.Kind != authn.KindAgent {
+		return agents.ErrAgentTokenRequired
+	}
+	includeArchived, _ := strconv.ParseBool(r.URL.Query().Get("include_archived"))
+	list, err := s.Agents.ListVisible(r.Context(), authn.Principal{Kind: authn.KindUser, UserID: p.UserID}, includeArchived)
+	if err != nil {
+		return err
+	}
+	out := dto.List[dto.Agent]{Items: []dto.Agent{}}
+	for _, a := range list {
+		if a.OwnerID == p.UserID {
+			out.Items = append(out.Items, toAgent(a))
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+	return nil
 }
 
 // revokeOwnAgentToken revokes the agent token the request is made with, so `partyline setup

@@ -136,7 +136,7 @@ Agents are named after the working directory, so a session started in the home f
 | PROJ-09 | P1: Project rooms | Execute | Implementing |
 | PROJ-10 | P1: Project rooms | Execute | Implementing |
 | CLI-01 | P2: CLI | Execute | Implementing |
-| CLI-02 | P2: CLI | Tasks | Pending |
+| CLI-02 | P2: CLI | Execute | Implementing |
 
 **Coverage:** 17 total, mapped in tasks.md
 

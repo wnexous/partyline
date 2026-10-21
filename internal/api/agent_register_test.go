@@ -1,6 +1,8 @@
 package api_test
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"testing"
@@ -8,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -87,4 +90,38 @@ func TestAgentRevokeOwnTokenAuth(t *testing.T) {
 	toks := testkit.Decode[dto.List[dto.Token]](user.Get("/api/v1/tokens").RequireStatus(http.StatusOK))
 	require.Len(t, toks.Items, 1)
 	require.Nil(t, toks.Items[0].RevokedAt, "the user token stays valid")
+}
+
+// CLI-02: GET /agent/agents lists the agents the token's owner owns, as GET /agents shows them
+// (archived ones only with include_archived=true; agents shared by others left out). Agent
+// tokens only, no registered agent needed.
+func TestOwnerAgentsForAgentTokens(t *testing.T) {
+	env := testkit.New(t)
+	alice, bob := env.NewUser("alice"), env.NewUser("bob")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	conn, info := dialSession(t, tok, sessionHeaders("ruthe", "claude", "laptop", "", ""))
+	defer conn.Close()
+	builder := registerAgent(t, env, alice, "builder")
+	shared := registerAgent(t, env, bob, "helper")
+	shareAgent(bob, shared, alice.User.ID)
+	require.NoError(t, env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
+		if err := q.UpdateAgentIdentity(context.Background(), db.UpdateAgentIdentityParams{Kind: string(dto.AgentKindTemporary), Harness: "agent", ID: builder}); err != nil {
+			return err
+		}
+		return q.ArchiveAgent(context.Background(), db.ArchiveAgentParams{ArchivedAt: sql.NullInt64{Int64: 1, Valid: true}, ID: builder})
+	}))
+
+	list := testkit.Decode[dto.List[dto.Agent]](tok.Get("/api/v1/agent/agents").RequireStatus(http.StatusOK)).Items
+	require.Len(t, list, 1)
+	require.Equal(t, listedAgent(t, alice, info.ID), list[0])
+
+	all := testkit.Decode[dto.List[dto.Agent]](tok.Get("/api/v1/agent/agents?include_archived=true").RequireStatus(http.StatusOK)).Items
+	names := map[string]bool{}
+	for _, a := range all {
+		names[a.Name] = a.Archived
+	}
+	require.Equal(t, map[string]bool{info.Name: false, "builder": true}, names)
+
+	alice.Token(dto.TokenKindUser, "cli").Get("/api/v1/agent/agents").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	env.Anon().Get("/api/v1/agent/agents").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }

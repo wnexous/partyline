@@ -170,7 +170,7 @@ T8 → T9 → T10 → T11
 **Requirement**: CLI-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Output matches API data against testkit
+- [x] Output matches API data against testkit
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): list agents by project`
