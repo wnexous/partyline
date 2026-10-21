@@ -191,6 +191,10 @@ describe("revoked tokens (TOKH-04)", () => {
     await user.click(toggle);
     expect(await screen.findByRole("listitem", { name: "old laptop" })).toBeInTheDocument();
     expect(window.localStorage.getItem("partyline.tokens.showRevoked")).toBe("1");
+    // Delete is offered only on revoked rows: an expired token that was never revoked has none
+    // (the server answers 409 for it).
+    expect(within(row("old laptop")).getByRole("button", { name: /Delete/ })).toBeInTheDocument();
+    expect(within(row("old export")).queryByRole("button", { name: /Delete/ })).toBeNull();
 
     // The choice is remembered for this browser.
     first.unmount();
