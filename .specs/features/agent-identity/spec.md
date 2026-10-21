@@ -130,7 +130,7 @@ Agents are named after the working directory, so a session started in the home f
 | PROJ-03 | P1: Organization | Execute | Implementing |
 | PROJ-04 | P1: Organization | Tasks | Pending |
 | PROJ-05 | P1: Organization | Execute | Implementing |
-| PROJ-06 | P1: Project rooms | Tasks | Pending |
+| PROJ-06 | P1: Project rooms | Execute | Implementing |
 | PROJ-07 | P1: Project rooms | Tasks | Pending |
 | PROJ-08 | P1: Project rooms | Tasks | Pending |
 | PROJ-09 | P1: Project rooms | Tasks | Pending |

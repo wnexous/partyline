@@ -58,6 +58,9 @@ const (
 	MemberKindAgent MemberKind = "agent"
 	MemberKindChat  MemberKind = "chat"
 	MemberKindUser  MemberKind = "user"
+	// MemberKindProject is a project of agents: its active session receives the room's
+	// messages (PROJ-06, PROJ-07).
+	MemberKindProject MemberKind = "project"
 )
 
 // MaxRoomInstructions is the longest room instructions text in characters (INS-01).
@@ -89,19 +92,20 @@ const MaxMemberKeyword = 64
 type RoomMember struct {
 	ID       string     `json:"id"`
 	Kind     MemberKind `json:"kind"`
-	MemberID string     `json:"member_id"` // agent, chat or user id
-	Name     string     `json:"name"`      // agent name, chat title or user display name
+	MemberID string     `json:"member_id"` // agent, chat, user or project id
+	Name     string     `json:"name"`      // agent display name, chat title, user display name or project name
 	// Outbound tells whether agent and user posts without explicit recipients reach this chat (DLV-03).
 	Outbound bool `json:"outbound"`
 	// Online is set for agent members.
 	Online *bool `json:"online,omitempty"`
-	// Owner is set for agent members: the username of the agent's owner.
+	// Owner is set for agent and project members: the username of the agent's or project's
+	// owner.
 	Owner string `json:"owner,omitempty"`
 	// ConnectorKind and ChatKind are set for chat members.
 	ConnectorKind string   `json:"connector_kind,omitempty"`
 	ChatKind      ChatKind `json:"chat_kind,omitempty"`
-	// DisplayName, SignOutbound, Delivery and Keywords are per-room settings of agent members
-	// (MEM-01..05); other kinds carry the defaults ("", true, all, []).
+	// DisplayName, SignOutbound, Delivery and Keywords are per-room settings of agent and
+	// project members (MEM-01..05); other kinds carry the defaults ("", true, all, []).
 	// DisplayName replaces the agent name in outbound headers and the timeline when set.
 	DisplayName string `json:"display_name"`
 	// SignOutbound adds the author header to the agent's messages sent to chats.

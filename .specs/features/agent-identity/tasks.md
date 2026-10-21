@@ -110,7 +110,7 @@ T8 → T9 → T10 → T11
 **Requirement**: PROJ-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Owner/use can add; stranger 403; duplicate 409; settings PATCH works for project members
+- [x] Owner/use can add; stranger 403; duplicate 409; settings PATCH works for project members
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(rooms): add projects as room members`

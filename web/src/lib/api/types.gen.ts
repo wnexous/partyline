@@ -931,9 +931,14 @@ export const MemberKindAgent = "agent";
 export const MemberKindChat = "chat";
 export const MemberKindUser = "user";
 /**
+ * MemberKindProject is a project of agents: its active session receives the room's
+ * messages (PROJ-06, PROJ-07).
+ */
+export const MemberKindProject = "project";
+/**
  * Room member kinds.
  */
-export type MemberKind = typeof MemberKindAgent | typeof MemberKindChat | typeof MemberKindUser;
+export type MemberKind = typeof MemberKindAgent | typeof MemberKindChat | typeof MemberKindUser | typeof MemberKindProject;
 /**
  * MaxRoomInstructions is the longest room instructions text in characters (INS-01).
  */
@@ -969,8 +974,8 @@ export const MaxMemberKeyword = 64;
 export interface RoomMember {
   id: string;
   kind: MemberKind;
-  member_id: string; // agent, chat or user id
-  name: string; // agent name, chat title or user display name
+  member_id: string; // agent, chat, user or project id
+  name: string; // agent display name, chat title, user display name or project name
   /**
    * Outbound tells whether agent and user posts without explicit recipients reach this chat (DLV-03).
    */
@@ -980,7 +985,8 @@ export interface RoomMember {
    */
   online?: boolean;
   /**
-   * Owner is set for agent members: the username of the agent's owner.
+   * Owner is set for agent and project members: the username of the agent's or project's
+   * owner.
    */
   owner?: string;
   /**
@@ -989,8 +995,8 @@ export interface RoomMember {
   connector_kind?: string;
   chat_kind?: ChatKind;
   /**
-   * DisplayName, SignOutbound, Delivery and Keywords are per-room settings of agent members
-   * (MEM-01..05); other kinds carry the defaults ("", true, all, []).
+   * DisplayName, SignOutbound, Delivery and Keywords are per-room settings of agent and
+   * project members (MEM-01..05); other kinds carry the defaults ("", true, all, []).
    * DisplayName replaces the agent name in outbound headers and the timeline when set.
    */
   display_name: string;

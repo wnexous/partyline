@@ -21,9 +21,9 @@ import (
 // Member is a room member with its display details.
 type Member struct {
 	db.RoomMember
-	// Name is the agent name, chat title or user display name.
+	// Name is the agent display name, chat title, user display name or project name.
 	Name string
-	// AgentOwner is the username of an agent member's owner.
+	// AgentOwner is the username of an agent or project member's owner.
 	AgentOwner string
 	// ConnectorKind and ChatKind describe chat members.
 	ConnectorKind string
@@ -70,9 +70,9 @@ type MemberInput struct {
 	Outbound *bool
 }
 
-// AddMember adds an agent, chat or user to a room; requires manage. Agents need the caller
-// to own or use the agent (ACL-05), chats to own or use the chat's connector (ACL-06);
-// otherwise ErrForbidden.
+// AddMember adds an agent, chat, user or project to a room; requires manage. Agents need the
+// caller to own or use the agent (ACL-05), chats to own or use the chat's connector (ACL-06),
+// projects to own or use the project (PROJ-06); otherwise ErrForbidden.
 func (s *Service) AddMember(ctx context.Context, p authn.Principal, roomID string, in MemberInput) (Member, error) {
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
 		return Member{}, err
@@ -131,6 +131,15 @@ func (s *Service) checkUse(ctx context.Context, userID string, in MemberInput) e
 		if !ok {
 			return access.ErrForbidden
 		}
+	case dto.MemberKindProject:
+		// PROJ-06: the caller owns the project or holds use on it; unknown projects alike.
+		ok, err := s.az.CanUseProject(ctx, userID, in.MemberID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return access.ErrForbidden
+		}
 	case dto.MemberKindUser:
 		u, err := s.store.R().GetUser(ctx, in.MemberID)
 		if errors.Is(err, sql.ErrNoRows) || (err == nil && u.DisabledAt.Valid) {
@@ -138,13 +147,13 @@ func (s *Service) checkUse(ctx context.Context, userID string, in MemberInput) e
 		}
 		return err
 	default:
-		return &validation.Error{Fields: map[string]string{"kind": "must be agent, chat or user"}}
+		return &validation.Error{Fields: map[string]string{"kind": "must be agent, chat, user or project"}}
 	}
 	return nil
 }
 
 // MemberUpdate changes a member; nil fields are unchanged. DisplayName, SignOutbound,
-// Delivery and Keywords apply to agent members only (MEM-01..05).
+// Delivery and Keywords apply to agent and project members only (MEM-01..05, PROJ-06).
 type MemberUpdate struct {
 	Outbound     *bool
 	DisplayName  *string
@@ -173,7 +182,7 @@ func Keywords(m db.RoomMember) []string {
 // apply validates u against the member and returns the updated row (MEM-05).
 func (u MemberUpdate) apply(m db.RoomMember) (db.RoomMember, error) {
 	check := validation.Check{}
-	if m.Kind != string(dto.MemberKindAgent) {
+	if m.Kind != string(dto.MemberKindAgent) && m.Kind != string(dto.MemberKindProject) {
 		for field, set := range u.agentSettings() {
 			if set {
 				check.Add(field, "only for agent members")
