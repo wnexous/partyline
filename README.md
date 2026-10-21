@@ -73,6 +73,14 @@ docker compose up -d
 docker compose logs partyline | grep -i "setup token"
 ```
 
+### Build the image from source
+
+`docker build -t partyline .` in a clone, or a PaaS such as Dokploy pointed at the repository.
+The version the server reports (`/healthz`, `partyline version`, `partyline doctor`) is the
+`VERSION` build argument when given, else `git describe --tags` of the clone (the `.git`
+directory is part of the build context), else `dev-<commit>` for a clone without tags (a
+shallow clone) or from `SOURCE_COMMIT`, else `dev`.
+
 ### Binary
 
 Download an archive from the [releases page](https://github.com/wnexous/partyline/releases), then:

@@ -573,8 +573,8 @@ the web changes.
 **Requirement**: ONB-11
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] each fallback level has a test with a real git repository; VERSION wins
-- [ ] hadolint reports nothing
+- [x] each fallback level has a test with a real git repository; VERSION wins
+- [x] hadolint reports nothing
 **Tests**: integration
 **Gate**: build
 **Commit**: `build(docker): derive the image version from git when VERSION is unset`

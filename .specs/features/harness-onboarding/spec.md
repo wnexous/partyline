@@ -189,7 +189,7 @@ Connecting a session is error-prone. The web wizard tells users to `go install` 
 | ONB-08 | P1: Install and setup | Tasks (T25) | Implemented |
 | ONB-09 | P1: Install and setup | Tasks (T25) | Implemented |
 | ONB-10 | P1: Install and setup | Tasks (T26) | Implemented |
-| ONB-11 | P1: Install and setup | Tasks (T33) | Implementing |
+| ONB-11 | P1: Install and setup | Tasks (T33) | Implemented |
 | DEV-01 | P1: Browser approval | Tasks | Implementing |
 | DEV-02 | P1: Browser approval | Tasks | Implementing |
 | DEV-03 | P1: Browser approval | Tasks | Implementing |

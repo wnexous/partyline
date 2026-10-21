@@ -1,4 +1,4 @@
-.git
+# .git stays in the context: scripts/version.sh reads the version from it (ONB-11).
 .github
 .specs
 .impeccable
