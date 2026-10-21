@@ -279,7 +279,23 @@ migration is `0015`.
 - Not verified against real Codex or Gemini: whether `PARTYLINE_SESSION` (and
   `PARTYLINE_HARNESS`) reach the harness's MCP server process. If a harness strips them, the
   tools-only key falls back to the parent process id, and a launcher-started hook (which has
-  the variable) holds a different key than its tools-only channel.
+  the variable) holds a different key than its tools-only channel. T17 recovers them (below).
+
+## Launcher variables a harness strips (ID-01, T17)
+- Codex CLI starts MCP servers with an allowlisted environment (HOME, PATH, USER, SHELL, LANG,
+  TERM, TMPDIR, TZ … plus per-server `env`/`env_vars`), so the tools-only channel of a
+  `partyline codex` session misses the launcher variables.
+- When a channel, listen or hook process has no `PARTYLINE_SESSION`, it reads
+  `/proc/<pid>/environ` of its parent and up to 3 further ancestors (`maxAncestors` = 4,
+  parent pid from `/proc/<pid>/stat`) and takes from the nearest one that has
+  `PARTYLINE_SESSION` only `PARTYLINE_SESSION`, `PARTYLINE_HARNESS`, `PARTYLINE_PROJECT` and
+  `PARTYLINE_AGENT` (`withLauncherEnv`, `internal/cli/procenv.go`). The process's own
+  variables win. Unreadable environments are passed over silently; nothing is logged.
+- No such ancestor, or no `/proc` (macOS, Windows): the old rule (parent pid key for channel
+  and listen, no key for the hook).
+- Not verified against a real Codex: a harness process that makes itself non-dumpable has an
+  environment only root can read; the walk then needs a readable ancestor (an npm wrapper, or
+  nothing for a native binary the launcher exec'd directly) and otherwise falls back.
 
 ## Project rename (PROJ-05, T15)
 - `PATCH /projects/{id}` publishes `MembersChanged` for the rooms of the project's temporary

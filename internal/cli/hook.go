@@ -54,9 +54,12 @@ func hookCmd(ctx context.Context, args []string, io stdio) int {
 	}
 	// The same agent the tools-only channel of this session uses: PARTYLINE_AGENT, else the
 	// temporary agent of the session's project and harness (ID-01) that the session key
-	// (PARTYLINE_SESSION, set by the launcher) holds. Without that variable the hook sends no
-	// key (its parent process need not be the harness) and gets the lowest offline temporary
-	// agent of the project and harness, as before session keys.
+	// (PARTYLINE_SESSION, set by the launcher) holds. A harness that strips the hook's
+	// environment loses the launcher variables; they come from the nearest launched ancestor
+	// (withLauncherEnv). Without them the hook sends no key (its parent process need not be the
+	// harness) and gets the lowest offline temporary agent of the project and harness, as
+	// before session keys.
+	io = withLauncherEnv(io)
 	hio := io
 	hio.stderr = goio.Discard // no terminal to warn
 	if in.Cwd != "" {

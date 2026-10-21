@@ -65,6 +65,9 @@ type stdio struct {
 	// where it cannot; environ is the environment a launcher passes on (nil: os.Environ).
 	exec    func(path string, argv, env []string) (int, error)
 	environ func() []string
+	// launcherEnv returns the launcher variables of the nearest launched ancestor process
+	// (withLauncherEnv); nil means none (Run sets procLauncherEnv).
+	launcherEnv func() map[string]string
 }
 
 // Run executes the command named in args[1] and returns the process exit code. SIGINT and
@@ -72,7 +75,7 @@ type stdio struct {
 func Run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return execute(ctx, args, stdio{stdin: os.Stdin, stdout: stdout, stderr: stderr, getenv: os.Getenv, getwd: os.Getwd})
+	return execute(ctx, args, stdio{stdin: os.Stdin, stdout: stdout, stderr: stderr, getenv: os.Getenv, getwd: os.Getwd, launcherEnv: procLauncherEnv})
 }
 
 func execute(ctx context.Context, args []string, io stdio) int {

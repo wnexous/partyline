@@ -56,7 +56,7 @@ T8 → T9 → T10 → T11
 ### Phase 4: Verifier fixes (iteration 1)
 
 ```
-T12 → T13 → T14 → T15 → T16
+T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19
 ```
 
 ---
@@ -294,3 +294,47 @@ T12 → T13 → T14 → T15 → T16
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): record agent identity fix iteration 1 contract`
+
+#### T17: Recover the launcher variables a harness strips
+
+**What**: Codex (and other harnesses) start MCP servers with a filtered environment, so a tools-only channel of a `partyline <harness>` session misses `PARTYLINE_SESSION` and keys itself by its parent pid while the hook uses the launcher's key: one session, two agents. When `PARTYLINE_SESSION` is missing, channel, listen and hook read the nearest ancestor process (up to 4 levels, `/proc/<pid>/environ`, unreadable ones skipped) that has it and take only `PARTYLINE_SESSION`, `PARTYLINE_HARNESS`, `PARTYLINE_PROJECT` and `PARTYLINE_AGENT` from it; their own variables win. Without `/proc` (macOS, Windows) or such an ancestor, the old rule applies (parent pid key for channel and listen, no key for the hook). Never logs the environment.
+**Where**: `internal/cli/procenv.go`
+**Depends on**: T16
+**Reuses**: `stdio.getenv`, `resolveAgent`, hook identity
+**Requirement**: ID-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Environ parser and ancestor walk tested on a fake `/proc` (nearest wins, unreadable skipped, depth bound, only the four keys) and on a real Linux child process
+- [x] Tools-only channel with a stripped environment takes key, harness and project from the ancestor; the hook of that session maps to the same single agent; no ancestor → parent pid key
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(cli): recover launcher variables a harness strips from its servers`
+
+#### T18: Setup names the harness of tools-only servers
+
+**What**: `partyline channel --tools-only --harness <id>` (codex, gemini, opencode, pi) sends that harness id, winning over the environment; without `--tools-only` only `omp` stays valid. `partyline setup` registers Codex and Gemini as `channel --tools-only --harness codex|gemini`. Entries written before (`channel --tools-only`) are still listed, updated and removed (ownership is by command, not arguments).
+**Where**: `internal/harness/clis.go`
+**Depends on**: T17
+**Reuses**: `channelCmd` flag checks, harness registrar tests
+**Requirement**: ID-01, HAR-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Setup plan/apply run the new command lines; old entries still recognised by Entries/Remove
+- [ ] A tools-only channel with `--harness codex` and no environment registers harness codex; the flag wins over `PARTYLINE_HARNESS`; invalid combinations exit 2
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(harness): register tools-only servers with their harness`
+
+#### T19: Session holds are scoped by machine
+
+**What**: a session key matches a held agent only on the same machine (an unknown machine on either side matches), so parent pid keys of two machines of one owner never share an agent; holds stay scoped by owner.
+**Where**: `internal/agents/identity.go`
+**Depends on**: T18
+**Reuses**: `freeName`, `registerSession`
+**Requirement**: ID-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [ ] Same key on two machines → two agents; same key and machine → the same agent; same key of another owner → that owner's own agent
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(agents): scope session holds by machine`

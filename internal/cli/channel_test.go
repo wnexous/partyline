@@ -51,6 +51,13 @@ type mcpClient struct {
 
 func startChannel(t *testing.T, args []string, env map[string]string, wd string) *mcpClient {
 	t.Helper()
+	return startChannelWith(t, args, env, wd, nil)
+}
+
+// startChannelWith is startChannel for a process whose nearest launched ancestor has the
+// launcher variables ancestor (nil: none).
+func startChannelWith(t *testing.T, args []string, env map[string]string, wd string, ancestor map[string]string) *mcpClient {
+	t.Helper()
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	c := &mcpClient{t: t, in: inW, lines: make(chan map[string]any, 64), stderr: &lockedBuffer{}, code: make(chan int, 1)}
@@ -68,6 +75,9 @@ func startChannel(t *testing.T, args []string, env map[string]string, wd string)
 		stdin: inR, stdout: outW, stderr: c.stderr,
 		getenv: func(k string) string { return env[k] },
 		getwd:  func() (string, error) { return wd, nil },
+	}
+	if ancestor != nil {
+		std.launcherEnv = func() map[string]string { return ancestor }
 	}
 	go func() {
 		c.code <- execute(context.Background(), append([]string{"partyline", "channel"}, args...), std)

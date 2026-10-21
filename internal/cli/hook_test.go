@@ -18,12 +18,22 @@ import (
 )
 
 func runHook(name, stdin string, env map[string]string) (code int, stdout, stderr string) {
+	return runHookWith(name, stdin, env, nil)
+}
+
+// runHookWith is runHook for a process whose nearest launched ancestor has the launcher
+// variables ancestor (nil: none).
+func runHookWith(name, stdin string, env, ancestor map[string]string) (code int, stdout, stderr string) {
 	var out, errOut bytes.Buffer
-	code = execute(context.Background(), []string{"partyline", "hook", name}, stdio{
+	std := stdio{
 		stdin: strings.NewReader(stdin), stdout: &out, stderr: &errOut,
 		getenv: func(k string) string { return env[k] },
 		getwd:  func() (string, error) { return "/somewhere/else", nil },
-	})
+	}
+	if ancestor != nil {
+		std.launcherEnv = func() map[string]string { return ancestor }
+	}
+	code = execute(context.Background(), []string{"partyline", "hook", name}, std)
 	return code, out.String(), errOut.String()
 }
 

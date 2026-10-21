@@ -82,7 +82,9 @@ Sessions without pushed messages (Codex and Gemini, and the tools half of pi and
 never online. Each one still gets its own temporary agent (**Proj · Codex**, **Proj · Codex
 #2** …) when it carries a session key: `partyline <harness>` sets `PARTYLINE_SESSION` for the
 harness and everything it starts, so the session's tools, its turn-end hook and `listen` act as
-the same agent. Started without the launcher, a tools-only session uses its parent process as
+the same agent. Codex CLI starts its tools with a reduced environment; on Linux the tools then
+read `PARTYLINE_SESSION`, `PARTYLINE_HARNESS`, `PARTYLINE_PROJECT` and `PARTYLINE_AGENT` (and
+nothing else) from the nearest parent process that has them. Started without the launcher, a tools-only session uses its parent process as
 the key, and the hook falls back to the project's first free temporary agent.
 
 Rename agents and projects on the Agents page. A room can have a whole project as a member:

@@ -92,6 +92,7 @@ func sessionIdentity(cmd string, name, agent, project string, io stdio) (channel
 // `partyline setup`, and the session identity (sessionIdentity). It prints the problem and
 // returns an exit code when URL or token are missing (2) or the config file cannot be used (1).
 func resolveAgent(cmd string, f agentFlags, io stdio) (agentConn, int) {
+	io = withLauncherEnv(io)
 	creds, err := cliconfig.Resolve(cliconfig.Config{URL: *f.url, Token: *f.token}, io.getenv)
 	if err != nil {
 		fmt.Fprintf(io.stderr, "partyline %s: %v\n", cmd, err)
@@ -104,7 +105,8 @@ func resolveAgent(cmd string, f agentFlags, io stdio) (agentConn, int) {
 	id, _ := sessionIdentity(cmd, *f.name, *f.agent, *f.project, io)
 	c := agentConn{url: creds.URL, token: creds.Token, agent: id.Name, project: id.Project, harness: id.Harness, machine: id.Machine}
 	// listen and a tools-only channel spawned by the same harness process share the session
-	// key: PARTYLINE_SESSION, else the parent process id.
+	// key: PARTYLINE_SESSION (this process's, else the nearest launched ancestor's), else the
+	// parent process id.
 	c.sessionKey = strings.TrimSpace(io.getenv("PARTYLINE_SESSION"))
 	if c.sessionKey == "" {
 		c.sessionKey = strconv.Itoa(os.Getppid())
