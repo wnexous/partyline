@@ -363,6 +363,7 @@ func TestSetupBrowserApproverConfirmation(t *testing.T) {
 				return
 			}
 			require.Equal(t, 1, r.code)
+			require.NotContains(t, r.stderr, "--yes accepted", "the --yes warning appears only with --yes")
 			require.Contains(t, r.stdout, "Save this agent token of @bob on this machine? [Y/n]: ")
 			require.Contains(t, r.stderr, "not saved: the token belongs to @bob; revoked it.")
 			require.ErrorIs(t, err, os.ErrNotExist, "nothing saved")

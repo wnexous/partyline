@@ -373,6 +373,8 @@ func TestInstallRefusesPlainHTTP(t *testing.T) {
 		{name: "::1 user info", script: raw(t), env: map[string]string{"PARTYLINE_RELEASE_BASE": "http://[::1]:8080@evil.com/download"}, msg: userMsg("http://[::1]:8080@evil.com/download")},
 		{name: "https user info", script: raw(t), env: map[string]string{"PARTYLINE_URL": "https://me:pw@partyline.example.com"}, msg: userMsg("https://me:pw@partyline.example.com")},
 		{name: "no scheme", script: raw(t), env: map[string]string{"PARTYLINE_URL": "partyline.example.com"}, msg: "partyline install: refusing URL partyline.example.com: use https"},
+		{name: "non-numeric loopback port", script: raw(t), env: map[string]string{"PARTYLINE_URL": "http://localhost:8a80"}, msg: httpMsg("http://localhost:8a80")},
+		{name: "other scheme on loopback", script: raw(t), env: map[string]string{"PARTYLINE_URL": "ftp://localhost/x"}, msg: "partyline install: refusing URL ftp://localhost/x: use https"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()

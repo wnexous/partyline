@@ -387,6 +387,21 @@ func TestHarnessRefusesSymlinkOutsideHome(t *testing.T) {
 		requireMissing(t, hooks+".partyline.bak")
 	})
 
+	t.Run("gemini settings", func(t *testing.T) {
+		env, cli := testEnv(t, nil)
+		settings := filepath.Join(env.Home, ".gemini", "settings.json")
+		target := filepath.Join(t.TempDir(), "settings.json")
+		const orig = "{\n  \"theme\": \"Default\"\n}\n"
+		writeFile(t, target, orig)
+		require.NoError(t, os.MkdirAll(filepath.Dir(settings), 0o755))
+		require.NoError(t, os.Symlink(target, settings))
+		err := registrar(t, env, "gemini").Apply(context.Background())
+		require.EqualError(t, err, "refusing to write through the symlink "+settings+": its target "+target+" is outside your home directory "+env.Home)
+		require.Empty(t, cli.calls, "no CLI ran")
+		require.Equal(t, orig, readFile(t, target))
+		requireMissing(t, settings+".partyline.bak")
+	})
+
 	t.Run("symlinked home", func(t *testing.T) {
 		env, _ := testEnv(t, nil)
 		c := fileCases[1] // pi
