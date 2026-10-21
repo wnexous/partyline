@@ -1,12 +1,23 @@
 # Harness Onboarding Validation
 
-## Validation: harness-onboarding - FAIL ❌
+## Validation: harness-onboarding (iteration 2) - FAIL ❌
 
-**Date**: 2026-10-20
-**Spec**: `.specs/features/harness-onboarding/spec.md`
-**Diff range**: `2ce415c^..65e4778` (T1-T22; spec from b9d5995)
-**Verifier**: independent sub-agent (author ≠ verifier), detached worktree `partyline-verify-ho` at 65e4778
-**Verdict**: FAIL ❌ (one gate failure; every AC has test evidence; 39/39 effective mutants killed)
+**Date**: 2026-10-21
+**Spec**: `.specs/features/harness-onboarding/spec.md` (amended in fix iteration 1: DEV-01, DEV-05/06, ONB-08..11, HAR-02/03/05, PUSH-03/05, WIZ-01/02)
+**Diff range**: `65315a0..59ec52d` (HEAD = `v0.2.1`). Fix commits T23-T34: c2a9b70, 0502632, 6873b2e, 39be9e0, 90e8f50, f3b01b7, 832472c, ea77399, bd9df00, c2a524e, d5c2577, 6c157dd. Not in scope: routing-context merge commits and 59ec52d (other features' specs).
+**Verifier**: independent sub-agent (author ≠ verifier), detached worktree `partyline-verify-ho` at 59ec52d
+**Verdict**: FAIL ❌. Both gates pass. Every iteration-1 gap is fixed and 48 of 49 mutants are killed. Two minor gaps remain: one surviving mutant (ONB-08 in setup) and a way around the ONB-10 http refusal.
+
+---
+
+## Iteration history
+
+| Iteration | Range | Result | Main gaps |
+| --- | --- | --- | --- |
+| 1 (2026-10-20) | `2ce415c^..65e4778` | FAIL: `make e2e` 4 passed, 2 failed (stale UI-14); 39/39 mutants killed | stale e2e UI-14; omp async reorder; `.partyline.bak` overwritten; symlinked configs replaced; missing listen/CSRF/TOML tests; HAR-02 and PUSH-05 spec precision; 6 security weaknesses |
+| 2 (this report) | `65315a0..59ec52d` | FAIL (minor): gates green, 48/49 mutants killed | K03 survives (setup reuses a saved token for another URL, untested); ONB-10 http refusal bypassable |
+
+Iteration-1 gaps, status now: 1 e2e ✅ fixed (`web/e2e/smoke.spec.ts:134`), 2 omp order ✅ (`integrations/omp/partyline.test.ts:186`), 3 backup ✅ (`internal/harness/files_test.go:234`), 4 symlink ✅ (`files_test.go:249`), 5 missing evidence ✅ (`internal/cli/listen_test.go:204`, `internal/api/devices_handlers_test.go:334`, `internal/harness/clis_test.go:356,375`), precision HAR-02/PUSH-05 ✅ (reworded in ea77399).
 
 ---
 
@@ -14,117 +25,113 @@
 
 | Task | Status | Notes |
 | ---- | ------ | ----- |
-| T1-T16 | ✅ Done | Commits 2ce415c … 4374418 |
-| T17 | ✅ Done | `uat.md`: Claude Code, pi, OpenCode pass. omp, Codex and Gemini are partial because the devbox credentials do not work for them (follow-up 3 is still open) |
-| T18-T22 | ✅ Done | c1eed23 … 65e4778; the UAT fixes were not re-run against real harnesses (uat.md says so) |
-| (missing) | ❌ | No task updated `web/e2e/smoke.spec.ts` UI-14 after T15 replaced the wizard, so `make e2e` fails (Gap 1) |
+| T1-T22 | ✅ Done | Verified in iteration 1 |
+| T23-T34 | ✅ Done | All `[x]` in tasks.md. Each has a commit, except that T34 is the docs record (6c157dd) |
 
 ---
 
 ## Gate Check
 
-- **Build gate `make check`** (generate, lint, vet, web lint/typecheck, `go test -race ./...`, web vitest, `make integrations-test`, web build, go build): **EXIT 0**. All 31 Go packages pass, web 298/298 tests (30 files), integrations 52/52 tests.
-- **`make e2e`** (`PLAYWRIGHT_CHROMIUM_EXECUTABLE=…chromium_headless_shell-1243…`): **EXIT 2 on both runs, so it is deterministic**. The results were 4 passed, 2 failed and 2 did not run. `web/e2e/smoke.spec.ts:133` UI-14, on desktop-1280 and mobile-360, waits for `getByLabel("Agent name")` and a "Create token" button (`smoke.spec.ts:142-143`). T15 (5cc45a1) removed both from the wizard, so the test times out after 60 s. The suite runs in serial mode (`smoke.spec.ts:8`), so UI-24 (`:168`) is skipped. Run on its own (`-g "UI-01|UI-04|UI-24"`), UI-24 passes 6/6.
-- **Test delta (diff range)**: +137 Go `func Test`, 0 removed; web +18 `it(` and −9 `it(`. The removed web tests are those of the old token-creating wizard, which T15 replaced. The deletion is justified, but the e2e equivalent was neither removed nor rewritten. 52 new `bun test` cases.
-- Skipped tests: the Windows-only skips in doctor and install are justified (unix permission bits, POSIX installer).
+- **`make check`** (generate, lint, vet, web lint/typecheck, `go test -race ./...`, vitest, `make integrations-test`, web build, go build): **EXIT 0**. 31/31 Go packages ok, web 307/307 (30 files), integrations 53/53.
+- **`make e2e`** (`PLAYWRIGHT_CHROMIUM_EXECUTABLE=~/.cache/ms-playwright/chromium_headless_shell-1248/…`): **EXIT 0, 10/10 passed** (UI-01/02, UI-04, UI-14/WIZ-01, WIZ-02/DEV-06, UI-24 on desktop-1280 and mobile-360). Passed on the first run, so no re-run was needed.
+- **Test delta (fix commits)**: +47 Go `func Test` and web/bun `it(`/`test(` cases, −9. The 9 removals were all rewritten for the new behavior: the devices page tests became the typed-code tests in `web/src/routes/_app/devices.test.tsx`, the a11y test was renamed "…before and after the code", and `TestClaudeLauncher*` became `internal/cli/launcher_test.go:131,172`.
+- Porcelain of the verify tree was empty before and after the gates and the sensor.
 
 ---
 
-## Spec-Anchored Acceptance Criteria
+## Spec-Anchored Acceptance Criteria (ACs new or changed in fix iteration 1; the others are unchanged from iteration 1 and still pass)
 
 | Criterion | Spec-defined outcome | `file:line` + assertion | Result |
 | --- | --- | --- | --- |
-| ONB-01 install latest, verify, ~/.local/bin, PATH hint | binary 0755 in `~/.local/bin`, latest from API, hint `export PATH="<dir>:$PATH"` | `scripts/install_test.go:145` `require.Equal(0o755, …Perm())`, `require.True(r.requested("/api/latest"))`, `require.Contains(stdout, \`export PATH="…:$PATH"\`)`; `:169` no hint when on PATH; `:182` 4 os/arch assets + unsupported fail | ✅ |
-| ONB-02 checksum mismatch → non-zero, no binary | exit≠0, install dir empty | `scripts/install_test.go:225` `require.NotEqual(0, code)`, `require.Empty(entries, "no binary and no temporary file")`; `:241` unlisted asset | ✅ |
-| ONB-03 `/install.sh` with instance URL default | served script has `DEFAULT_URL='<instance>'` | `internal/api/install_handler_test.go:51` `require.Contains(body, "DEFAULT_URL='"+env.URL+"'\n")`; `scripts/install_test.go:257` writes `{"url":…,"token":""}` 0600/0700 and never overwrites; `:298` quote escaping | ✅ |
-| ONB-04 setup verifies and writes config 0600 | token verified, file 0600, nothing written on failure | `internal/cli/setup_test.go:111` `requireSavedConfig` (0600); `:166` invalid token → exit 1 and no file / file byte-identical; `:188` user token refused; `:201` unreachable | ✅ |
-| ONB-05 channel reads file; env/flags override | flag > env > file | `internal/cliconfig/config_test.go:130` exact `Config{…}` per precedence level; `internal/cli/channel_config_test.go:32,43,59` | ✅ |
-| ONB-06 doctor checks + fix hints | pass/fail line + fix per check | `internal/cli/doctor_test.go:77` exact all-pass stdout; `:95` one subtest per failing check with its exact `fix:` text (binary, config missing/0640/dir 0750/no token, server, token, missing harness binary, no harness, versions differ/unknown) | ✅ |
-| ONB-07 module version from build info | module version, `(devel)`→`dev`, ldflags win | `internal/cli/version_test.go:32,42,53` `require.Equal("v1.2.3\n", out)` etc. | ✅ |
-| DEV-01 8-char code, 10 min, URL `<instance>/devices/<code>` | regex `[A-HJ-NP-Z2-9]{8}`, expires_at = t0+10 min | `internal/api/devices_handlers_test.go:51` `require.Regexp`, `require.Equal(env.URL+"/devices/"+code, ApproveURL)`, `require.True(t0.Add(10m).Equal(ExpiresAt))`; CLI prints it: `internal/cli/setup_test.go:229` | ✅ |
-| DEV-02 approval → token named after host, delivered once | `<host> (via setup)`, agent kind, owned by approver, second poll no token | `devices_handlers_test.go:81` `require.Equal("laptop-01 (via setup)", …)`, `require.Equal(DevicePoll{Status: approved}, again)`; `:106` owner = approver; `setup_test.go:229` `"devbox-7 (via setup)"` | ✅ |
-| DEV-03 expired/denied → exit≠0 with message | `approval expired` / `approval denied` | `setup_test.go:292` `require.Equal(1, code)`, `Contains("approval denied")`; `:312` `"approval expired"` after 5 polls of 2 min; server: `devices_handlers_test.go:119,138` (410 on approve after expiry, poll reads `expired`) | ✅ |
-| DEV-04 poll 1/2 s per request; create 10/h/IP | 429 at 1.9 s, 200 at 2 s; 11th create 429 | `devices_handlers_test.go:208` `RequireError(429)` at +1.9 s, `RequireStatus(200)` at +2.0 s; `:162` 11th → 429, other IP ok, +61 min ok; `:177` IPv6 /64; `:187` burst exactly 10/16 | ✅ |
-| NAME-01 git root basename, else cwd, slugified | `my-repo` from subdir, `plain-dir` outside git | `internal/channel/name_test.go:25` `require.Equal("my-repo", DeriveName(sub))`, `require.Equal("plain-dir", …)` | ✅ |
-| NAME-02 derived name online → `<name>-N`, welcome carries it | `proj`, `proj-2`, `proj-3`; offline reused; cap 50 | `internal/api/agent_names_test.go:38` welcome names; `:56` reuse; `:89` concurrent distinct; `:145` cap 409 "agent limit reached"; `:171` length limit; CLI `internal/cli/channel_names_test.go:31` `{"proj","proj-2"}` online | ✅ |
-| NAME-03 explicit → newest wins | old socket closed 4000 `replaced` | `agent_names_test.go:126` `require.Equal(StatusCode(4000), ce.Code)`, `"replaced"`; `channel_names_test.go:56` | ✅ |
-| HAR-01 show exact change, confirm, register at user scope with absolute path | exact CLI argv / JSON entry per harness | `internal/cli/setup_harness_test.go:60` plan printed before `[Y/n]`, declined → nothing; `internal/harness/clis_test.go:96,170,292` exact argv (`claude mcp add --scope user …`, `codex mcp add … --tools-only` + Stop hook, `gemini mcp add -s user …` + AfterAgent); `files_test.go:90` exact entries for OpenCode/pi/omp + extension with version header; `:68` absolute binary in extension | ✅ |
-| HAR-02 update in place, others byte-for-byte | file equals expected bytes | `files_test.go:90` `require.Equal(c.withEntry, readFile(cfg))`, `:127` in-place update; `clis_test.go:170` hooks.json exact bytes + update in place | ✅ for files setup edits ⚠️ For `~/.claude.json`, `config.toml` and Gemini's `mcpServers`, the harness CLI rewrites the file itself (contract notes say so; the spec does not) |
-| HAR-03 `partyline claude …` argv | `claude --dangerously-load-development-channels server:partyline [args]` | `internal/cli/doctor_test.go:205` `require.Equal([]string{"claude","--dangerously-load-development-channels","server:partyline","--resume","abc","-p","hi there"}, argv)` | ✅ |
-| HAR-04 uninstall removes exactly what was added | original bytes back, extension + .bak gone, foreign files kept | `files_test.go:90` `require.Equal(c.orig, readFile(cfg))`, `requireMissing(ext/.bak)`; `:146` created config deleted; `:179` foreign extension kept; `clis_test.go:200,231,292`; `setup_harness_test.go:139` | ✅ |
-| PUSH-01 listen: JSON line per message, ack after write | exact meta+content map; unwritten line not acked | `internal/cli/listen_test.go:112` `require.Equal(map[string]string{…}, p.line())`; `:155` cursor moves, not repeated; `:183` write failure → exit 1, message redelivered | ✅ |
-| PUSH-02 tools-only: no push socket, shares name | agent never online; tools use listen's name | `listen_test.go:201`, `:239`; `internal/api/agent_register_test.go:17` registered offline | ✅ |
-| PUSH-03 omp: notification → sendUserMessage (followUp while busy); hold and retry 1 s→30 s, agent_end, one notice | exact sent list, delays `[1000,2000,4000,8000,16000,30000,30000]` | `integrations/omp/partyline.test.ts` "a channel notification while idle…" `toEqual([{content}])`, "busy … followUp", "retries back off…" exact delays, "held messages keep their order…", "without a model nothing is sent; agent_end…" | ✅ (sync throws). ⚠️ Order is not kept when sends return promises that later reject (Gap 3) |
-| PUSH-04 pi: spawn listen, `sendMessage(…, {triggerTurn:true, deliverAs:"followUp"})` | exact options | `integrations/pi/partyline.test.ts:52,65` | ✅ |
-| PUSH-05 OpenCode: listen → active session prompt (async) | `promptAsync` on active top-level session; queued before first | `integrations/opencode/partyline.test.ts:71,81,91,100,109` | ✅ (spec names `session.prompt`; the code uses `promptAsync` and falls back to `prompt`. The contract notes record this) |
-| PUSH-06 framing + trust-aware line; instructions explain both | literal owner/data lines; `trusted` only "true" → owner | `internal/channel/frame_test.go:14` (shared `framing.json`), `:32` literal lines incl. `"yes"`,`"TRUE"`,`""` → data line; adapters: per-case `PUSH-06: framing` tests + `testdata/shared.test.ts` identical blocks; instructions `internal/channel/instructions_test.go:23,53,66` | ✅ (message_id/chat_id attrs added beyond spec list, documented) |
-| TURN-01 `wait_for_messages(≤300)` pending or empty on timeout | "no new messages in N seconds"; 301 → 422 | `internal/cli/hook_test.go:111` exact texts, ≥1 s elapsed; `internal/api/agent_pending_test.go:93,117` | ✅ |
-| TURN-02 hooks: block/deny with messages as reason; none → allow | `{"decision":"block"\|"deny","reason":<framed>}`, else `{}` | `hook_test.go:43` exact map incl. framed reason; `:68` `"{}\n"`; `:89` failures → `{}` exit 0 | ✅ |
-| WIZ-01 install + `setup --browser`, harness selector with start command, manual JSON without token | exact commands, 6 tabs, no token | `web/src/routes/_app/agents.test.tsx:186,202,234` exact strings; `web/src/lib/agent-connect.test.ts`; e2e `web/e2e/smoke.spec.ts:133` **stale, fails** | ✅ unit / ❌ e2e |
-| WIZ-02 `/devices/<code>`: machine, code, Approve/Deny | shown, approve/deny call API | `web/src/routes/_app/devices.test.tsx:36,49,68,86,114,128,157` | ✅ |
+| ONB-08 saved token only to saved URL | error naming both URLs when flag/env URL differs (scheme, host, port) and no token | `internal/cliconfig/config_test.go:177` `require.ErrorAs(err, &mismatch)` for env URL, flag URL, other port, other scheme; `internal/cli/channel_config_test.go:60` channel exits with both URLs | ✅ for Resolve; ⚠️ **setup** reuse only guarded in code (`internal/cli/setup.go:167`), mutant K03 survives |
+| ONB-08 setup saves start URL, `--token` warning, `--token-stdin` exclusive | start URL saved; warning text; exit 2 for combos | `internal/cli/setup_test.go:422` `require.Equal(start, got.URL)`; `:396` `Contains("warning: --token is visible…")`, `NotContains(secret)`, 3 combos → `Equal(2, code)` | ✅ |
+| ONB-09 uninstall revokes first, reports; failed revoke does not fail | `DELETE /api/v1/agent/token`; "Revoked …" / "Could not revoke …"; exit 0 | `internal/cli/setup_harness_test.go:159` `Contains("Revoked the agent token on "+URL)` + token now 401; `:204` failed revoke reported, file gone, exit 0; server `internal/api/agent_register_test.go:59,81` (self only, user token 403, anon 401); declined DEV-06 token revoked `setup_test.go:330` `NotNil(RevokedAt)` | ✅ |
+| ONB-10 main wrapper; refuse http except loopback | cut script does nothing; exit≠0 before download | `scripts/install_test.go:325` every cut line → no files, no requests; `:349` 5 http cases refused, loopback 3 allowed | ✅ as tested; ❌ **conformance probe**: `Http://evil`, `hTTp://…` and `http://localhost:80@evil.com/` pass `require_https` (`scripts/install.sh:47-52`), and curl connects to the non-loopback host |
+| ONB-11 Docker version from git | describe → dev-<12> (shallow/no tag or SOURCE_COMMIT) → dev; VERSION wins | `scripts/version_test.go:66,76,89,105,115` exact strings (`"v1.2.3-1-g"+short`, `"dev-"+head[:12]`, `"dev-0123456789ab"`, `"dev"`) | ✅ (`VERSION=dev` counts as unset, `version.sh:13`. The script documents this; the spec does not) |
+| DEV-01 `<instance>/devices` + code `ABCD-EFGH`, no URL with code | `approve_url == URL+"/devices"`; printed code regex with hyphen | `internal/api/devices_handlers_test.go:56` `Equal(URL+"/devices", ApproveURL)`; `internal/cli/setup_test.go:246` regex `…\n\n  ([A-HJ-NP-Z2-9]{4})-([A-HJ-NP-Z2-9]{4})\n`, `NotContains("/devices/")` | ✅ |
+| DEV-02 token named after host, delivered once, with approver | `"<host> (via setup)"`, `approved_by` | `devices_handlers_test.go:86` `Equal("alice", p.ApprovedBy)`, second poll has no token; `setup_test.go:246` `"devbox-7 (via setup)"` | ✅ |
+| DEV-05 code in body; 5 unknown codes/min/user → 429 | old path routes not 200; 6th → 429, other user ok, +61 s ok | `devices_handlers_test.go:253` `NotEqual(200, GET/POST …/{code}…)`; `:268` exact 404×5 then 429×3, bob 200, 59 s 429, 61 s 200; `:292` burst `{404:5, 429:7}` | ✅ |
+| DEV-06 `Approved by @<user> on <instance>`, confirm unless `--yes`; decline/EOF → nothing saved, exit≠0 | exact line and prompt | `setup_test.go:246` `Contains("\nApproved by @alice on "+URL+"\nSave this agent token of @alice on this machine? [Y/n]: ")`; `:330` declined / EOF → exit 1, no file, revoked; `--yes` → saved, no prompt | ✅ |
+| HAR-02 (reworded) other bytes kept in setup-edited files; CLI-managed files change only the entry | exact bytes / exact argv | `internal/harness/files_test.go:91,128`; `clis_test.go:97,171,293` exact argv | ✅ (precision gap closed) |
+| HAR-03 launchers: argv, env with fresh `PARTYLINE_SESSION`, aliases, 127 + text, unregistered warning, `--help`, doctor | exact argv/env/stderr per harness | `internal/cli/launcher_test.go:131` exact argv for 8 commands, exact env (inherited id replaced, fresh per launch); `:172` 127 + exact text ×7; `:196` exact warning ×6 + still execs; `:220` two launches in one folder → `proj`/`proj-2` end to end; `:268` help block; `internal/cli/doctor_test.go:90` `"     start a session: partyline omp\n"` | ✅ |
+| HAR-05 keep first backup, write through symlink, extension before config + rollback | `.bak` = original bytes; link kept and target edited; config untouched or extension restored/deleted | `files_test.go:234` `Equal(c.orig, …bak)` after 2nd Apply; `:249` ×3 harnesses link kept, target = withEntry, uninstall restores; `:280` config unwritable → ext restored (earlier) / missing (fresh); `:309` ext unwritable → config and .bak untouched; `:326` emptied symlink kept | ✅ |
+| PUSH-03 one at a time, rejection stays at head | attempts `[a]` while in flight; A then B after 2 rejections | `integrations/omp/partyline.test.ts:186` `toEqual([a.text])`, then `[a,a,a,b]`, `sent` A then B, one notice | ✅ |
+| PUSH-05 (reworded) `promptAsync`, fallback `prompt` | as worded | `integrations/opencode/partyline.test.ts:71,109` | ✅ (precision gap closed) |
+| WIZ-01 launchers in wizard + setup end line | `partyline <id>` ×6, delivery line, no token in Advanced; `Start a session with partyline a, b or c.` | `web/e2e/smoke.spec.ts:134` 6 tabs, exact start command + delivery, no `token\|PARTYLINE_\|pl_agent\|https?:`, token list unchanged; `web/src/lib/agent-connect.test.ts:26`; `internal/cli/setup_harness_test.go:86` exact suffix | ✅ |
+| WIZ-02 type code first; old `/devices/<code>` → empty `/devices` | nothing shown before lookup; machine, address, age after | `web/src/routes/_app/devices.test.tsx:48` no region/buttons and no API call; `:59` body `{code}`, Address `203.0.113.24`, Requested `3 min. ago`; `:210` redirect, empty field, no lookup; e2e `smoke.spec.ts:183` | ✅ |
 
-**Status**: All 28 ACs have spec-anchored unit/integration evidence. ⚠️ 2 spec-precision gaps (HAR-02 for CLI-managed files, PUSH-05 prompt vs promptAsync). ❌ The e2e gate fails.
+**Status**: 35/35 ACs have spec-anchored evidence. The HAR-02 and PUSH-05 precision gaps are closed. ❌ ONB-10 does not hold for mixed-case schemes or loopback userinfo. ⚠️ ONB-08 (setup path) has no test.
 
 ---
 
 ## Edge Cases
 
-- [x] Config not 0600 → channel and doctor refuse and print the chmod fix (`internal/cli/channel_config_test.go:69`, `doctor_test.go:95` subtests). `listen` and the hooks use the same `cliconfig.Resolve` (`internal/cliconfig/config.go:145`), which refuses it as well. No listen-level test covers this (minor).
-- [x] git root beats the subdirectory (`internal/channel/name_test.go:38`).
-- [x] Invalid JSON harness file is not touched and the parse error names the file (`internal/harness/files_test.go:160`, `clis_test.go:325`). Invalid TOML in `config.toml` is left to `codex mcp add`, which refuses it; there is no test with a real TOML error.
-- [x] Device poll after expiry: a pending request reads `expired`, and an approved one still delivers its token (`devices_handlers_test.go:138`).
-- [x] Approval auth: anonymous 401, agent token 403 (`devices_handlers_test.go:246`). CSRF comes from the global middleware (`internal/api/middleware.go:234`, tested in `middleware_test.go:140` on another route). No device-route CSRF test exists.
+- [x] Config not 0600: channel, listen and doctor refuse it (`internal/cli/channel_config_test.go:85`, `listen_test.go:204`, `doctor_test.go:96`).
+- [x] The git root wins over the working directory (`internal/channel/name_test.go`, unchanged).
+- [x] Invalid JSON/TOML is not touched (`internal/harness/files_test.go:161`, `clis_test.go:326,356`; the real Codex CLI with a temp `CODEX_HOME`: `clis_test.go:375`).
+- [x] Device routes refuse cross-origin requests (`devices_handlers_test.go:334`).
+- [ ] Setup with a saved token for instance A and `--url B` without a token: the code asks for or approves a new token (`setup.go:167`), but no test covers it (K03).
 
 ---
 
 ## Discrimination Sensor
 
-Scratch: `git worktree add --detach /tmp/claude-1001/pl-ho-mutants 65e4778`. `web/node_modules` was symlinked from the verify tree. Each mutation was applied, the targeted tests ran, and the file was restored. The worktree was then removed. The verify-tree `git status --porcelain` matched the pre-sensor baseline (empty before and after).
+Scratch: `git worktree add --detach /tmp/claude-1001/pl-ho-mutants2 HEAD` (`web/node_modules` symlinked from the verify tree, unlinked before removal). Each mutant was applied, its targeted tests ran (go test without -race, `bun test omp`, vitest), and the file was restored with `git checkout`. The worktree was then removed. Verify-tree porcelain was the same as the baseline (empty) before and after. 6 mutants did not compile at first (unused variable or import). They were rewritten to compile and re-run, so none counts as killed by a build failure.
 
-| # | File:line | Mutation | Killed? |
-| - | --------- | -------- | ------- |
-| G01 | `internal/devices/devices.go:41` | RequestTTL 10→11 min | ✅ |
-| G02 | `internal/devices/devices.go:331` | token not cleared after delivery | ✅ |
-| G03 | `internal/devices/devices.go:188` | `n >= CreateLimit` → `>` | ✅ |
-| G04 | `internal/devices/devices.go:315` | poll interval halved | ✅ |
-| G05 | `internal/devices/devices.go:263` | expired request approvable | ✅ |
-| G06 | `internal/cliconfig/config.go:97` | dir check ignores group bits | ✅ |
-| G07 | `internal/cliconfig/config.go:152` | env ignored for URL | ✅ |
-| G08 | `internal/cliconfig/config.go:123` | config saved 0644 | ✅ |
-| G09 | `internal/agents/gateway.go:297` | online agents count as free names | ✅ |
-| G10 | `internal/agents/gateway.go:313` | suffix starts at -3 | ✅ |
-| G11 | `internal/harness/harness.go:237` | uninstall keeps `.partyline.bak` | ✅ |
-| G12 | `internal/harness/harness.go:166` | parse errors ignored | ✅ |
-| G13 | `internal/cli/launcher.go:13` | `server:partyline` dropped from argv | ✅ |
-| G14 | `internal/cli/hook.go:23` | Gemini decision `deny`→`block` | ✅ |
-| G15 | `internal/cli/hook.go:70` | hook fails closed (exit 1) | ✅ |
-| G16 | `internal/channel/listen.go:120` | write error swallowed (ack anyway) | ✅ |
-| G17 | `internal/channel/frame.go:37` | `trusted != "false"` → owner line | ✅ |
-| G18 | `scripts/install.sh:80` | checksum mismatch only warns | ✅ |
-| G19 | `scripts/install.sh:79` | binary unpacked into install dir before verification | ✅ |
-| G20 | `scripts/scripts.go:19` | instance URL not substituted | ✅ |
-| G21 | `internal/cli/doctor.go:202` | differing versions pass | ✅ |
-| G22 | `internal/api/agent_handlers.go:77` | wait=301 accepted | ✅ |
-| G23 | `internal/channel/run.go:100` | tools-only ignores listen's name | ✅ |
-| G24 | `internal/harness/files.go:244` | omp args lose `--harness omp` | ✅ |
-| T01 | `integrations/omp/partyline.ts:128` | always followUp (idle never starts a turn) | ✅ |
-| T02 | `integrations/omp/partyline.ts:27` | max backoff 60 s | ✅ |
-| T03 | `integrations/omp/partyline.ts:121` | no-model check removed | ✅ |
-| T04 | `integrations/omp/partyline.ts:106` | notice on every failure | ✅ |
-| T05 | `integrations/pi/partyline.ts:180` | `triggerTurn:false` | ✅ |
-| T06 | `integrations/opencode/partyline.ts:218` | parentID check removed in created branch | ⚪ equivalent (the `children.has` guard at :223 still blocks it), replaced by T06b |
-| T06b | `integrations/opencode/partyline.ts:223` | `children.has(id)` guard removed | ✅ |
-| T07 | all 3 adapters `frame()` | `trusted !== "false"` | ✅ |
-| T08 | pi + OpenCode supervision | restart on exit 2 | ✅ |
-| T09 | `integrations/omp/partyline.ts:136` | rejected send dropped, not re-queued | ✅ |
-| W01 | `web/src/lib/agent-connect.ts:18` | trailing slash kept | ✅ |
-| W02 | `web/src/lib/agent-connect.ts:97` | Codex delivery `push` | ✅ |
-| W03 | `web/src/routes/_app/devices.$code.tsx:99` | 410 not shown as expired | ✅ |
-| W04 | `web/src/routes/_app/devices.$code.tsx:214` | Approve sends deny | ✅ |
-| W05 | `web/src/lib/agent-connect.ts:110` | token placeholder in Gemini manual entry | ✅ |
+| # | File | Mutation | Killed? |
+| - | ---- | -------- | ------- |
+| D01 | `internal/api/devices_handlers.go:49` | `approve_url` carries the code again | ✅ |
+| D02 | `internal/devices/devices.go` `attempt` | `>= CodeAttemptLimit` → `>` | ✅ |
+| D03 | `devices.go` `attempt` | known codes never refunded | ✅ |
+| D04 | `devices.go` | window 1 → 2 min | ✅ |
+| D05 | `devices.go` `decide` | wrong codes on approve/deny not counted | ✅ |
+| D06 | `devices.go` `Poll` | `approved_by` empty | ✅ |
+| D07 | `internal/cli/setup.go:186` | approver confirmation skipped | ✅ |
+| D08 | `setup.go:188` | declined token not revoked | ✅ |
+| D09 | `setup.go` `displayCode` | code without hyphen | ✅ |
+| D10 | `setup.go:185` | approver not printed | ✅ |
+| D11 | `devices.go` `Lookup` | lookup not rate limited | ✅ |
+| D12 | `internal/cli/setup_harness.go:81` | "n" accepted as yes | ✅ |
+| K01 | `internal/cliconfig/config.go:170` | saved token paired with foreign URL | ✅ |
+| K02 | `config.go` `SameURL` | scheme and port ignored | ✅ |
+| **K03** | `internal/cli/setup.go:167` | **setup reuses saved token for another `--url`** | ❌ **Survived** |
+| K04 | `setup.go:92` | `--token` warning removed | ✅ |
+| K05 | `setup.go:88` | `--token-stdin` not exclusive | ✅ |
+| K06 | `setup_harness.go:173` | uninstall does not revoke | ✅ |
+| K07 | `setup_harness.go:173` | config deleted before revoke | ✅ |
+| K08 | `internal/api/agent_handlers.go` | user tokens can self-revoke | ✅ |
+| I01 | `scripts/install.sh:141` | `main` never called | ✅ |
+| I02 | `install.sh:54` | no `main` wrapper (top-level body) | ✅ |
+| I03 | `install.sh:63` | http release base allowed | ✅ |
+| I04 | `install.sh:49` | `localhost*` lookalike allowed | ✅ |
+| I05 | `install.sh:64` | http instance URL allowed | ✅ |
+| H01 | `internal/harness/harness.go` `keepBackup` | backup overwritten each run | ✅ |
+| H02 | `harness.go` `writeFileAtomic` | symlink replaced | ✅ |
+| H03 | `internal/harness/files.go:136` | no extension rollback | ✅ |
+| H04 | `files.go:137` | rollback deletes previous extension | ✅ |
+| H05 | `harness.go` `saveRemoval` | emptied symlink deleted | ✅ |
+| L01 | `internal/cli/launcher.go:96` | inherited `PARTYLINE_SESSION` kept | ✅ |
+| L02 | `launcher.go:81` | missing binary exits 1 | ✅ |
+| L03 | `launcher.go:39` | `claude-code` alias dropped | ✅ |
+| L04 | `launcher.go:140` | no unregistered warning | ✅ |
+| L05 | `launcher.go:102` | user args dropped | ✅ |
+| L06 | `launcher.go:30` | Claude loses channel flag | ✅ |
+| L07 | `launcher.go:64` | session id constant | ✅ |
+| L08 | `internal/cli/doctor.go` | doctor does not name `partyline <id>` | ✅ |
+| V01 | `scripts/version.sh:13` | VERSION does not win | ✅ |
+| V02 | `version.sh:24` | 8-char sha | ✅ |
+| V03 | `version.sh:23` | no rev-parse fallback | ✅ |
+| V04 | `version.sh:28` | SOURCE_COMMIT ignored | ✅ |
+| T01 | `integrations/omp/partyline.ts` `flush` | sends while one is in flight | ✅ |
+| T02 | `partyline.ts` reject branch | rejected message dropped | ✅ |
+| T03 | `partyline.ts` | thenable ignored (iteration-1 behavior) | ✅ |
+| W01 | `web/src/routes/_app/devices.index.tsx:38` | hyphen not stripped | ✅ |
+| W02 | `devices.index.tsx:44` | 429 shown as generic | ✅ |
+| W03 | `web/src/lib/agent-connect.ts:98` | Codex start command `codex` | ✅ |
+| W04 | `web/src/routes/_app/devices.$code.tsx:9` | old link redirects elsewhere | ✅ |
 
-**Sensor depth**: expanded (P0 auth/credential paths), Go + TS + web.
-**Sensor outcome**: 39/39 effective mutants killed (1 equivalent mutant excluded); no surviving mutant.
+**Sensor depth**: expanded (P0 auth/credential paths), Go, shell, TS and web.
+**Result**: 48/49 killed. ❌ K03 survived.
 
 ---
 
@@ -133,37 +140,47 @@ Scratch: `git worktree add --detach /tmp/claude-1001/pl-ho-mutants 65e4778`. `we
 | Principle | Status |
 | --- | --- |
 | Minimum code / surgical changes | ✅ |
-| No scope creep | ✅ (`channel --harness omp` and `POST /agent/register` are justified by UAT / PUSH-02) |
-| Matches patterns (DTOs → tygo, testkit e2e, sqlc) | ✅ |
-| Spec-anchored outcome check | ✅ with 2 ⚠️ precision gaps |
-| Per-layer coverage (routes happy + edge + error, auth matrix) | ✅ devices, pending, register, install |
-| Every test maps to an AC / edge case / Done-when | ✅ |
-| Documented guidelines: `AGENTS.md`, `contract-notes.md`, `.specs/LESSONS.md` | ⚠️ L-029 (full gate before commit) does not cover `make e2e`, which is where the regression hid |
+| No scope creep | ✅ (`DELETE /agent/token` is required by ONB-09) |
+| Matches patterns (dto → tygo, testkit, exec seam) | ✅ |
+| Spec-anchored outcome check | ✅ except ONB-10 conformance and the untested ONB-08 setup path |
+| Per-layer coverage (routes happy + edge + error, auth matrix) | ✅ lookup/approve/deny/revoke, auth + CSRF + rate limit |
+| Every test maps to an AC / edge case | ✅ |
+| Guidelines: `AGENTS.md`, `contract-notes.md`, `.specs/LESSONS.md` | ✅ |
 
-### Web Interface Guidelines (WIZ-01/02; pinned rules)
+### Web Interface Guidelines (WIZ-01/02, pinned rules)
 
-- `web/src/routes/_app/devices.$code.tsx:206-218`: one click on Approve grants an agent token, and the page has no "type the code from your terminal" step. The code is part of the link (see Security 2).
-- `devices.$code.tsx:184-188`: `role="timer"` with `aria-live="off"` is acceptable. The countdown is decorative, and expiry switches the page state.
-- `web/src/components/connect-agent-dialog.tsx`: tabs are labelled (`aria-label`), decorative icons are `aria-hidden`, the `<summary>` has a focus-visible ring and motion-reduce, external links use `noopener`, and code is marked `translate="no"`. No findings.
+- `web/src/routes/_app/devices.index.tsx:115-129`: the input has a label, `autoComplete="off"`, `spellCheck={false}` and `translate="no"`. Errors render in `FormAlert` with `role="alert"`, and the loading text is "Checking…". Minor: no `name` attribute; the placeholder `ABCD-EFGH` has no `…`; the "Continue" label is generic.
+- `devices.index.tsx:262-263`: the `role="timer"` countdown has `aria-live="off"`, which is acceptable because expiry switches the view. Decorative icons are `aria-hidden`, and machine/IP are `truncate`/`translate="no"`.
+- Approve/Deny are not destructive in the guideline sense (Deny is reversible by re-running setup). No blocking findings.
 
 ---
 
 ## Ranked Gaps / Fix Plans
 
-1. **Blocker: `make e2e` fails.** In `web/e2e/smoke.spec.ts:133-166`, UI-14 still drives the removed token-creating wizard (Agent name, Create token, `.mcp.json` with `PARTYLINE_TOKEN`). That contradicts WIZ-01 ("no token inline"). Fix: rewrite UI-14 for the new wizard: install command with the instance origin, `partyline setup --browser`, harness tabs and start commands, and no `pl_agent`/`PARTYLINE_TOKEN` in the Advanced entries. Optionally add a devices approve e2e. Done when `make e2e` passes 8/8 on both projects.
-2. **Major: the omp retry order breaks for async rejections** (PUSH-03 "retry in order"). `integrations/omp/partyline.ts:133-139` shifts the message out of the queue before its promise settles and keeps sending the next one. A later rejection `unshift`s the message after newer ones were delivered, and two rejections reverse the order. omp 18.6.1 returns void, so this is latent today. Fix: stop the flush loop on a thenable until it settles. Test: two sends that reject must be delivered A then B.
-3. **Minor: running setup twice overwrites the `.partyline.bak`.** `internal/harness/harness.go:186-193` backs up the file on every Apply, so after a second `setup` the backup already contains the Partyline entry. Fix: keep the first backup.
-4. **Minor: the atomic rename replaces symlinked harness configs** (dotfile managers). `writeFileAtomic` (`internal/harness/harness.go:200`) renames over the link. Fix: resolve the symlink and write the target, or refuse.
-5. **Minor: missing evidence.** No listen-level test for a non-0600 config refusal, no device-route CSRF test, and no real-TOML parse-error test.
+1. **Minor: surviving mutant K03, ONB-08 setup path untested.** Setup only reuses the saved token when the start URL matches the saved one (`internal/cli/setup.go:167`), but no test fails when that check is removed. Fix: in `internal/cli/setup_test.go`, save `{URL: A, Token: tA}`, run `setup --url B --yes` (and the interactive variant) against a second testkit server, then assert that the output does not include "Using the saved agent token", that server B never received `tA` (or that setup enters browser approval), and that the file is unchanged on failure. Done when K03 is killed.
+2. **Minor: ONB-10 http refusal can be bypassed** (`scripts/install.sh:47-52`). The pattern list is case-sensitive, so `Http://` and `hTTp://` pass. The loopback patterns also accept userinfo: `http://localhost:80@evil.com/`, `http://127.0.0.1:1@evil.com` and `http://[::1]:x@evil.com`. curl accepts both forms and connects to the non-loopback host over plain http (verified with curl against 127.0.0.2). Fix: lowercase the scheme before matching, refuse any `@` in the authority, and add both forms to `TestInstallRefusesPlainHTTP` (`scripts/install_test.go:349`). Exploiting this needs control of `PARTYLINE_*` env vars or a mixed-case `PARTYLINE_PUBLIC_URL`.
+3. **Cosmetic: spec precision ONB-11.** The spec says "a given `VERSION` SHALL win", but `VERSION=dev` counts as unset (`scripts/version.sh:13`, tested at `version_test.go:71`). Fix: say so in the spec.
 
-## Security Weaknesses (not fixed; for the maintainer)
+---
 
-1. **Installer supply chain.** `checksums.txt` comes from the same GitHub release as the binary. It catches corruption, not a compromised release or account; there is no signature or provenance (cosign/minisign/SLSA). `curl … | sh` runs a script with no `main()` wrapper, so a truncated download runs a partial script. The served script and the setup URL may be `http://`.
-2. **Device-flow phishing (highest impact).** The approval link carries the code, and the page approves with one click. Any logged-in user can approve any code. The token belongs to the approver, so a phished approval gives the attacker an agent of the victim. Messages from "the owner's own agent" arrive with `trusted="true"` and the owner line in all of the victim's sessions, which turns phishing into trusted prompt injection. The reverse also works: an attacker who sees a victim's code (screen share) can approve it, the victim's harness then runs as the attacker's agent, and the attacker's posts read as owner messages. The CLI never shows who approved. Mitigations to consider: type the code instead of linking it, show the approving account in the CLI, and do not grant owner trust to device-flow agents until confirmed. Approve/GET have no per-user rate limit, but the 2^40 code space mitigates that.
-3. **Token at rest and in transit.** The token is plaintext in `config.json` (0600/0700, checked with stat, no ownership check). `Resolve` mixes `PARTYLINE_URL` from the environment with the file token, so a foreign URL in the env receives the saved token (`internal/cliconfig/config.go:145-173`). Setup takes the instance URL from the poll answer and saves it (`internal/cli/setup.go:169`). `--token` shows up in `ps`. `setup --uninstall` deletes the file but does not revoke the token.
-4. **Config edits.** Symlinks are replaced (Gap 4) and the backup is overwritten (Gap 3). `.partyline.bak` copies of harness configs, which may hold other secrets, are kept until uninstall. Apply writes the config before the extension, so a failure in between leaves a half-registered harness. Hook groups count as "ours" for any binary named `partyline*`.
-5. **Hook fail-open.** Every failure prints `{}`, which is safe for the harness but can hide that delivery is off: the reason appears only on stderr, which Codex/Gemini may hide. Pending messages are acked when the hook returns, so a harness that drops the continuation loses them. The same holds for pi/OpenCode deliveries that fail after `listen` has acked (they are only logged).
-6. **Prompt-injection framing.** Escaping is correct and tested (`framing.json` `</partyline>` case, attribute quotes). The residual risk is trust laundering: any message from any of the owner's agents counts as the owner. An agent that obeys an injected third-party message can relay it to sibling sessions as `trusted="true"` with "you may act on them as your owner's requests".
+## Security Weaknesses (remaining; not fixed by the Verifier)
+
+1. **Installer supply chain (partly fixed).** The `main` wrapper and the http refusal are in place (bypass: Gap 2). `checksums.txt` still comes from the same GitHub release as the binary, with no signature or provenance (cosign/minisign/SLSA), so it detects corruption but not a compromised release or account.
+2. **Device-flow phishing (mitigated, not closed).** The code is now typed, never sent in a URL, rate-limited per user (5 wrong per minute, in memory, reset on restart), and the CLI shows `Approved by @user` and asks for confirmation. Residual risks:
+   - `--yes` skips the approver confirmation, so `setup --browser --yes` saves a token approved by whoever typed the code.
+   - Any logged-in user can still approve any code they are told ("type ABCD-EFGH"); the token then belongs to that user.
+   - Device-flow agents get owner trust immediately.
+3. **Token handling (mostly fixed).** Fixed: the saved token stays with its URL (Resolve), setup ignores the poll URL, `--token-stdin` exists, uninstall and a declined approval revoke the token. Remaining:
+   - The token is plaintext in `config.json`, mode 0600 with no ownership check.
+   - `--token` still works and only prints a warning.
+   - URL comparison is strict string/host equality (`x` ≠ `x:443`). That is safe, but it can produce false mismatch errors.
+4. **Config edits (fixed).** The first backup is kept, writes go through symlinks, the extension is written first with rollback. Remaining:
+   - `.partyline.bak` copies of harness configs, which may hold other secrets, stay until uninstall.
+   - Hook groups count as "ours" for any binary named `partyline*`.
+   - `writeFileAtomic` follows a symlinked config to any target, including one outside `$HOME`.
+5. **Hook fail-open (unchanged).** Every failure prints `{}`, and the reason goes only to stderr, which Codex and Gemini may hide. Messages are acked when the hook returns, and pi/OpenCode deliveries that fail after `listen` acked are only logged. The omp queue is in memory only, and a send promise that never settles stalls it.
+6. **Framing / trust laundering (unchanged).** Escaping is correct. Any message from any of the owner's agents still reads as `trusted="true"`, so an agent that obeys an injected third-party message can relay it to sibling sessions as owner instructions.
+7. **Build (new, low).** `scripts/version.sh` runs `git -c safe.directory='*' describe` on the build context's `.git`, which disables git's ownership check. `describe` runs no hooks or fsmonitor, so the exposure is limited to a malicious `.git/config` in a context the builder already trusts.
 
 ---
 
@@ -171,9 +188,9 @@ Scratch: `git worktree add --detach /tmp/claude-1001/pl-ho-mutants 65e4778`. `we
 
 | Requirement | Previous | New |
 | --- | --- | --- |
-| ONB-01..07, DEV-01..04, NAME-01..03, HAR-01..04, PUSH-01..02, PUSH-04..06, TURN-01..02, WIZ-02 | Implementing | ✅ Verified |
-| PUSH-03 | Implementing | ⚠️ Verified for sync failures; async ordering needs a fix (Gap 2) |
-| WIZ-01 | Implementing | ❌ Needs fix (stale e2e UI-14, Gap 1) |
+| ONB-01..07, ONB-09, ONB-11, DEV-01..06, NAME-01..03, HAR-01..05, PUSH-01..06, TURN-01..02, WIZ-01..02 | Implemented | ✅ Verified |
+| ONB-08 | Implemented | ⚠️ Verified for Resolve/channel; setup path untested (Gap 1) |
+| ONB-10 | Implemented | ❌ Needs fix (Gap 2) |
 
 (spec.md is left untouched; the Verifier does not edit artifacts beyond this report.)
 
@@ -181,8 +198,8 @@ Scratch: `git worktree add --detach /tmp/claude-1001/pl-ho-mutants 65e4778`. `we
 
 ## Summary
 
-**Overall**: ❌ Not ready: one gate failure (`make e2e`)
-**Spec-anchored check**: 28/28 ACs have evidence; 2 spec-precision gaps
-**Sensor**: 39/39 killed (+1 equivalent)
-**Gate**: `make check` passed; `make e2e` 4 passed, 2 failed, 2 not run (deterministic, re-run confirmed)
-**Next steps**: Fix 1 (e2e UI-14), then Fix 2 (omp async order). Re-verify, iteration 1 of 3.
+**Overall**: ❌ Not ready, but the gaps are minor. Both gates are green, and every iteration-1 gap and security fix is verified.
+**Spec-anchored check**: 35/35 ACs have evidence. ONB-10 has a conformance gap; ONB-11 has a cosmetic precision note.
+**Sensor**: 48/49 killed (K03 survived).
+**Gate**: `make check` EXIT 0 (Go 31 packages, web 307, integrations 53); `make e2e` 10/10.
+**Next steps**: Fix 1 (K03 test) and Fix 2 (installer scheme case + userinfo), then re-verify. This is iteration 2 of 3.
