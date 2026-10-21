@@ -125,7 +125,7 @@ Agents are named after the working directory, so a session started in the home f
 | ID-03 | P1: Names | Tasks | Pending |
 | ID-04 | P1: Names | Tasks | Pending |
 | ID-05 | P1: Names | Tasks | Pending |
-| PROJ-01 | P1: Organization | Tasks | Pending |
+| PROJ-01 | P1: Organization | Execute | Implementing |
 | PROJ-02 | P1: Organization | Tasks | Pending |
 | PROJ-03 | P1: Organization | Tasks | Pending |
 | PROJ-04 | P1: Organization | Tasks | Pending |

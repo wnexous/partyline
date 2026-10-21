@@ -68,7 +68,7 @@ T8 → T9 → T10 → T11
 **Requirement**: PROJ-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Migration test from the previous schema with existing agents, members and grants; CHECKs accept `project`
+- [x] Migration test from the previous schema with existing agents, members and grants; CHECKs accept `project`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): add projects and agent identity columns`

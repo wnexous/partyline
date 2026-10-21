@@ -21,11 +21,16 @@ func (s *server) agentRoutes(mux *http.ServeMux) {
 }
 
 func toAgent(a agents.Agent) dto.Agent {
-	return dto.Agent{
-		ID: a.ID, Name: a.Name, Description: a.Description,
+	out := dto.Agent{
+		ID: a.ID, Name: a.Name, DisplayName: agents.DisplayName(a.Agent), Description: a.Description,
+		Harness: a.Harness, Machine: a.Machine, Kind: dto.AgentKind(a.Kind), Archived: a.ArchivedAt.Valid,
 		Owner:   dto.User{ID: a.OwnerID, Username: a.OwnerUsername, DisplayName: a.OwnerDisplayName},
 		MyLevel: a.Level, Online: a.Online, LastSeenAt: convert.OptTime(a.LastSeenAt), CreatedAt: convert.Time(a.CreatedAt),
 	}
+	if a.ProjectID.Valid {
+		out.Project = &dto.ProjectRef{ID: a.ProjectID.String, Slug: a.ProjectSlug, Name: a.ProjectName}
+	}
+	return out
 }
 
 func (s *server) listAgents(w http.ResponseWriter, r *http.Request, p authn.Principal) error {

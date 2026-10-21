@@ -15,6 +15,15 @@ type Agent struct {
 	Description string
 	CreatedAt   int64
 	LastSeenAt  sql.NullInt64
+	ProjectID   sql.NullString
+	Harness     string
+	Machine     string
+	Kind        string
+	DisplayName string
+	AutoName    string
+	SessionNo   int64
+	ArchivedAt  sql.NullInt64
+	ConnectedAt sql.NullInt64
 }
 
 type AgentCursor struct {
@@ -192,6 +201,20 @@ type PairingCode struct {
 	UserID      string
 	ConnectorID string
 	ExpiresAt   int64
+}
+
+type Project struct {
+	ID        string
+	OwnerID   string
+	Slug      string
+	Name      string
+	CreatedAt int64
+}
+
+type ProjectCursor struct {
+	ProjectID string
+	RoomID    string
+	Seq       int64
 }
 
 type Room struct {

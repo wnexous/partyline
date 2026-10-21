@@ -4,12 +4,64 @@
 // source: agents.go
 
 /**
- * Agent is a Claude Code session registered by an agent token (GET /agents).
+ * AgentKind tells whether an agent was named by its owner or by the server.
+ */
+/**
+ * AgentKindFixed is an agent named with --name (or registered before projects existed); it
+ * is never archived.
+ */
+export const AgentKindFixed = "fixed";
+/**
+ * AgentKindTemporary is a session named after its project and harness; it is archived after
+ * 24 hours offline.
+ */
+export const AgentKindTemporary = "temporary";
+/**
+ * Agent kinds (ID-01, ID-02).
+ */
+export type AgentKind = typeof AgentKindFixed | typeof AgentKindTemporary;
+/**
+ * ProjectRef names the project of an agent (PROJ-01).
+ */
+export interface ProjectRef {
+  id: string;
+  slug: string; // stable, unique per owner
+  name: string; // what the owner reads; renamable (PROJ-05)
+}
+/**
+ * Project groups an owner's agents (GET /projects).
+ */
+export interface Project {
+  id: string;
+  slug: string;
+  name: string;
+  owner: User;
+  my_level: Level; // manage for the owner, use for grantees
+  created_at: string /* RFC 3339 */;
+}
+/**
+ * Agent is a coding-agent session registered by an agent token (GET /agents).
  */
 export interface Agent {
   id: string;
+  /**
+   * Name is the internal name the agent uses in X-Partyline-Agent.
+   */
   name: string;
+  /**
+   * DisplayName is the owner's rename, else "<Project> · <Harness>[ #N]" for temporary
+   * agents, else Name (ID-01, ID-04).
+   */
+  display_name: string;
   description: string;
+  /**
+   * Project is absent for agents that belong to no project.
+   */
+  project?: ProjectRef;
+  harness: string; // claude, opencode, pi, omp, codex, gemini or agent
+  machine: string; // the session's hostname; empty when unknown
+  kind: AgentKind;
+  archived: boolean;
   owner: User;
   my_level: Level; // manage for the owner, use for grantees
   online: boolean;

@@ -80,10 +80,16 @@ export function makeMember(over: Partial<RoomMember> = {}): RoomMember {
 }
 
 export function makeAgent(over: Partial<Agent> = {}): Agent {
+  const name = over.name ?? "release-bot";
   return {
     id: "a1",
-    name: "release-bot",
+    name,
+    display_name: name,
     description: "",
+    harness: "agent",
+    machine: "",
+    kind: "fixed",
+    archived: false,
     owner: { id: "u1", username: "ana", display_name: "Ana Souza" },
     my_level: "manage",
     online: false,

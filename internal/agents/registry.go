@@ -105,6 +105,9 @@ type Agent struct {
 	db.Agent
 	OwnerUsername    string
 	OwnerDisplayName string
+	// ProjectSlug and ProjectName describe the agent's project; empty without one.
+	ProjectSlug string
+	ProjectName string
 	// Level is manage for the owner and use for grantees.
 	Level access.Level
 	// Online tells whether the agent has a live connection.
@@ -205,11 +208,27 @@ func (r *Registry) Get(ctx context.Context, p authn.Principal, agentID string) (
 	if err != nil {
 		return Agent{}, err
 	}
-	return r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, l), nil
+	return r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.ProjectSlug, row.ProjectName, l), nil
 }
 
-func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay string, l access.Level) Agent {
-	return Agent{Agent: a, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Online: r.presence.Online(a.ID)}
+func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, projectSlug, projectName string, l access.Level) Agent {
+	return Agent{
+		Agent: a, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay,
+		ProjectSlug: projectSlug, ProjectName: projectName, Level: l, Online: r.presence.Online(a.ID),
+	}
+}
+
+// DisplayName is the name people read for the agent: the owner's rename, else the readable
+// name of a temporary agent, else the agent name (ID-01, ID-04).
+func DisplayName(a db.Agent) string {
+	switch {
+	case a.DisplayName != "":
+		return a.DisplayName
+	case a.AutoName != "":
+		return a.AutoName
+	default:
+		return a.Name
+	}
 }
 
 // ListVisible returns the agents the user owns plus those shared with the user (use grants,
@@ -228,7 +247,7 @@ func (r *Registry) ListVisible(ctx context.Context, p authn.Principal) ([]Agent,
 		if row.Agent.OwnerID == p.UserID {
 			l = dto.LevelManage
 		}
-		out = append(out, r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, l))
+		out = append(out, r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.ProjectSlug, row.ProjectName, l))
 	}
 	return out, nil
 }

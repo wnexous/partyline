@@ -15,13 +15,17 @@ SELECT * FROM agents WHERE owner_id = ? AND name = ?;
 SELECT COUNT(*) FROM agents WHERE owner_id = ?;
 
 -- name: GetAgentWithOwner :one
-SELECT sqlc.embed(a), u.username AS owner_username, u.display_name AS owner_display_name
+SELECT sqlc.embed(a), u.username AS owner_username, u.display_name AS owner_display_name,
+       CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
 FROM agents a JOIN users u ON u.id = a.owner_id
+LEFT JOIN projects p ON p.id = a.project_id
 WHERE a.id = ?;
 
 -- name: ListAgentsForUser :many
-SELECT sqlc.embed(a), u.username AS owner_username, u.display_name AS owner_display_name
+SELECT sqlc.embed(a), u.username AS owner_username, u.display_name AS owner_display_name,
+       CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
 FROM agents a JOIN users u ON u.id = a.owner_id
+LEFT JOIN projects p ON p.id = a.project_id
 WHERE a.owner_id = sqlc.arg(user_id)
    OR a.id IN (SELECT g.resource_id FROM grants g
                WHERE g.resource_kind = 'agent' AND g.subject IN (sqlc.arg(user_id), '*'))
@@ -77,3 +81,15 @@ ON CONFLICT (agent_id, room_id) DO UPDATE SET seq = MAX(agent_cursors.seq, exclu
 
 -- name: GetAgentCursor :one
 SELECT seq FROM agent_cursors WHERE agent_id = ? AND room_id = ?;
+
+-- name: CreateProjectIfMissing :exec
+INSERT INTO projects (id, owner_id, slug, name, created_at) VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (owner_id, slug) DO NOTHING;
+
+-- name: GetProjectBySlug :one
+SELECT * FROM projects WHERE owner_id = ? AND slug = ?;
+
+-- name: UpdateAgentIdentity :exec
+UPDATE agents
+SET project_id = ?, harness = ?, machine = ?, kind = ?, auto_name = ?, session_no = ?
+WHERE id = ?;

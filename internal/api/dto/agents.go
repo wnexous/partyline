@@ -2,16 +2,56 @@ package dto
 
 import "time"
 
-// Agent is a Claude Code session registered by an agent token (GET /agents).
+// AgentKind tells whether an agent was named by its owner or by the server.
+type AgentKind string
+
+// Agent kinds (ID-01, ID-02).
+const (
+	// AgentKindFixed is an agent named with --name (or registered before projects existed); it
+	// is never archived.
+	AgentKindFixed AgentKind = "fixed"
+	// AgentKindTemporary is a session named after its project and harness; it is archived after
+	// 24 hours offline.
+	AgentKindTemporary AgentKind = "temporary"
+)
+
+// ProjectRef names the project of an agent (PROJ-01).
+type ProjectRef struct {
+	ID   string `json:"id"`
+	Slug string `json:"slug"` // stable, unique per owner
+	Name string `json:"name"` // what the owner reads; renamable (PROJ-05)
+}
+
+// Project groups an owner's agents (GET /projects).
+type Project struct {
+	ID        string    `json:"id"`
+	Slug      string    `json:"slug"`
+	Name      string    `json:"name"`
+	Owner     User      `json:"owner"`
+	MyLevel   Level     `json:"my_level"` // manage for the owner, use for grantees
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Agent is a coding-agent session registered by an agent token (GET /agents).
 type Agent struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Owner       User       `json:"owner"`
-	MyLevel     Level      `json:"my_level"` // manage for the owner, use for grantees
-	Online      bool       `json:"online"`
-	LastSeenAt  *time.Time `json:"last_seen_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID string `json:"id"`
+	// Name is the internal name the agent uses in X-Partyline-Agent.
+	Name string `json:"name"`
+	// DisplayName is the owner's rename, else "<Project> · <Harness>[ #N]" for temporary
+	// agents, else Name (ID-01, ID-04).
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
+	// Project is absent for agents that belong to no project.
+	Project    *ProjectRef `json:"project,omitempty"`
+	Harness    string      `json:"harness"` // claude, opencode, pi, omp, codex, gemini or agent
+	Machine    string      `json:"machine"` // the session's hostname; empty when unknown
+	Kind       AgentKind   `json:"kind"`
+	Archived   bool        `json:"archived"`
+	Owner      User        `json:"owner"`
+	MyLevel    Level       `json:"my_level"` // manage for the owner, use for grantees
+	Online     bool        `json:"online"`
+	LastSeenAt *time.Time  `json:"last_seen_at,omitempty"`
+	CreatedAt  time.Time   `json:"created_at"`
 }
 
 // UpdateAgentRequest is the body of PATCH /agents/{id}.

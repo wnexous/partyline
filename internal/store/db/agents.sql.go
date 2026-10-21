@@ -79,6 +79,30 @@ func (q *Queries) CreateAgent(ctx context.Context, arg CreateAgentParams) error 
 	return err
 }
 
+const createProjectIfMissing = `-- name: CreateProjectIfMissing :exec
+INSERT INTO projects (id, owner_id, slug, name, created_at) VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (owner_id, slug) DO NOTHING
+`
+
+type CreateProjectIfMissingParams struct {
+	ID        string
+	OwnerID   string
+	Slug      string
+	Name      string
+	CreatedAt int64
+}
+
+func (q *Queries) CreateProjectIfMissing(ctx context.Context, arg CreateProjectIfMissingParams) error {
+	_, err := q.db.ExecContext(ctx, createProjectIfMissing,
+		arg.ID,
+		arg.OwnerID,
+		arg.Slug,
+		arg.Name,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const deleteAgent = `-- name: DeleteAgent :exec
 DELETE FROM agents WHERE id = ?
 `
@@ -117,7 +141,7 @@ func (q *Queries) DeleteAgentMemberships(ctx context.Context, memberID string) (
 }
 
 const getAgent = `-- name: GetAgent :one
-SELECT id, owner_id, name, description, created_at, last_seen_at FROM agents WHERE id = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at FROM agents WHERE id = ?
 `
 
 func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
@@ -130,12 +154,21 @@ func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
 		&i.Description,
 		&i.CreatedAt,
 		&i.LastSeenAt,
+		&i.ProjectID,
+		&i.Harness,
+		&i.Machine,
+		&i.Kind,
+		&i.DisplayName,
+		&i.AutoName,
+		&i.SessionNo,
+		&i.ArchivedAt,
+		&i.ConnectedAt,
 	)
 	return i, err
 }
 
 const getAgentByName = `-- name: GetAgentByName :one
-SELECT id, owner_id, name, description, created_at, last_seen_at FROM agents WHERE owner_id = ? AND name = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at FROM agents WHERE owner_id = ? AND name = ?
 `
 
 type GetAgentByNameParams struct {
@@ -153,6 +186,15 @@ func (q *Queries) GetAgentByName(ctx context.Context, arg GetAgentByNameParams) 
 		&i.Description,
 		&i.CreatedAt,
 		&i.LastSeenAt,
+		&i.ProjectID,
+		&i.Harness,
+		&i.Machine,
+		&i.Kind,
+		&i.DisplayName,
+		&i.AutoName,
+		&i.SessionNo,
+		&i.ArchivedAt,
+		&i.ConnectedAt,
 	)
 	return i, err
 }
@@ -174,8 +216,10 @@ func (q *Queries) GetAgentCursor(ctx context.Context, arg GetAgentCursorParams) 
 }
 
 const getAgentWithOwner = `-- name: GetAgentWithOwner :one
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, u.username AS owner_username, u.display_name AS owner_display_name
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, u.username AS owner_username, u.display_name AS owner_display_name,
+       CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
 FROM agents a JOIN users u ON u.id = a.owner_id
+LEFT JOIN projects p ON p.id = a.project_id
 WHERE a.id = ?
 `
 
@@ -183,6 +227,8 @@ type GetAgentWithOwnerRow struct {
 	Agent            Agent
 	OwnerUsername    string
 	OwnerDisplayName string
+	ProjectSlug      string
+	ProjectName      string
 }
 
 func (q *Queries) GetAgentWithOwner(ctx context.Context, id string) (GetAgentWithOwnerRow, error) {
@@ -195,8 +241,19 @@ func (q *Queries) GetAgentWithOwner(ctx context.Context, id string) (GetAgentWit
 		&i.Agent.Description,
 		&i.Agent.CreatedAt,
 		&i.Agent.LastSeenAt,
+		&i.Agent.ProjectID,
+		&i.Agent.Harness,
+		&i.Agent.Machine,
+		&i.Agent.Kind,
+		&i.Agent.DisplayName,
+		&i.Agent.AutoName,
+		&i.Agent.SessionNo,
+		&i.Agent.ArchivedAt,
+		&i.Agent.ConnectedAt,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
+		&i.ProjectSlug,
+		&i.ProjectName,
 	)
 	return i, err
 }
@@ -214,6 +271,28 @@ func (q *Queries) GetMessageRoomSeq(ctx context.Context, id string) (GetMessageR
 	row := q.db.QueryRowContext(ctx, getMessageRoomSeq, id)
 	var i GetMessageRoomSeqRow
 	err := row.Scan(&i.RoomID, &i.Seq)
+	return i, err
+}
+
+const getProjectBySlug = `-- name: GetProjectBySlug :one
+SELECT id, owner_id, slug, name, created_at FROM projects WHERE owner_id = ? AND slug = ?
+`
+
+type GetProjectBySlugParams struct {
+	OwnerID string
+	Slug    string
+}
+
+func (q *Queries) GetProjectBySlug(ctx context.Context, arg GetProjectBySlugParams) (Project, error) {
+	row := q.db.QueryRowContext(ctx, getProjectBySlug, arg.OwnerID, arg.Slug)
+	var i Project
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Slug,
+		&i.Name,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
@@ -415,8 +494,10 @@ func (q *Queries) ListAgentRoomStates(ctx context.Context, memberID string) ([]L
 }
 
 const listAgentsForUser = `-- name: ListAgentsForUser :many
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, u.username AS owner_username, u.display_name AS owner_display_name
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, u.username AS owner_username, u.display_name AS owner_display_name,
+       CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
 FROM agents a JOIN users u ON u.id = a.owner_id
+LEFT JOIN projects p ON p.id = a.project_id
 WHERE a.owner_id = ?1
    OR a.id IN (SELECT g.resource_id FROM grants g
                WHERE g.resource_kind = 'agent' AND g.subject IN (?1, '*'))
@@ -427,6 +508,8 @@ type ListAgentsForUserRow struct {
 	Agent            Agent
 	OwnerUsername    string
 	OwnerDisplayName string
+	ProjectSlug      string
+	ProjectName      string
 }
 
 func (q *Queries) ListAgentsForUser(ctx context.Context, userID string) ([]ListAgentsForUserRow, error) {
@@ -445,8 +528,19 @@ func (q *Queries) ListAgentsForUser(ctx context.Context, userID string) ([]ListA
 			&i.Agent.Description,
 			&i.Agent.CreatedAt,
 			&i.Agent.LastSeenAt,
+			&i.Agent.ProjectID,
+			&i.Agent.Harness,
+			&i.Agent.Machine,
+			&i.Agent.Kind,
+			&i.Agent.DisplayName,
+			&i.Agent.AutoName,
+			&i.Agent.SessionNo,
+			&i.Agent.ArchivedAt,
+			&i.Agent.ConnectedAt,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
+			&i.ProjectSlug,
+			&i.ProjectName,
 		); err != nil {
 			return nil, err
 		}
@@ -486,5 +580,34 @@ type UpdateAgentDescriptionParams struct {
 
 func (q *Queries) UpdateAgentDescription(ctx context.Context, arg UpdateAgentDescriptionParams) error {
 	_, err := q.db.ExecContext(ctx, updateAgentDescription, arg.Description, arg.ID)
+	return err
+}
+
+const updateAgentIdentity = `-- name: UpdateAgentIdentity :exec
+UPDATE agents
+SET project_id = ?, harness = ?, machine = ?, kind = ?, auto_name = ?, session_no = ?
+WHERE id = ?
+`
+
+type UpdateAgentIdentityParams struct {
+	ProjectID sql.NullString
+	Harness   string
+	Machine   string
+	Kind      string
+	AutoName  string
+	SessionNo int64
+	ID        string
+}
+
+func (q *Queries) UpdateAgentIdentity(ctx context.Context, arg UpdateAgentIdentityParams) error {
+	_, err := q.db.ExecContext(ctx, updateAgentIdentity,
+		arg.ProjectID,
+		arg.Harness,
+		arg.Machine,
+		arg.Kind,
+		arg.AutoName,
+		arg.SessionNo,
+		arg.ID,
+	)
 	return err
 }
