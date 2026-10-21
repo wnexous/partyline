@@ -91,7 +91,7 @@ Rooms collect images, audio and documents from chats and agents, but the only wa
 | TOKH-01 | P1: Token hygiene | Tasks | Implementing |
 | TOKH-02 | P1: Token hygiene | Tasks | Implementing |
 | TOKH-03 | P1: Token hygiene | Tasks | Implementing |
-| TOKH-04 | P1: Token hygiene | Tasks | Pending |
+| TOKH-04 | P1: Token hygiene | Tasks | Implementing |
 
 **Coverage:** 10 total, mapped in tasks.md
 

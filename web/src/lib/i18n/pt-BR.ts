@@ -583,6 +583,15 @@ export const ptBR: Dictionary = {
   "tokens.revokeConfirm": "Revogar token",
   "tokens.revokedToast": "{name} revogado",
   "tokens.revokeFailed": "Não foi possível revogar o token.",
+  "tokens.showRevoked": "Mostrar revogados",
+  "tokens.delete": "Excluir {name}",
+  "tokens.deleteShort": "Excluir",
+  "tokens.deleteTitle": "Excluir {name}?",
+  "tokens.deleteBody":
+    "Ele sai desta lista de vez; o registro de auditoria guarda o histórico. Tokens revogados também são excluídos sozinhos 30 dias depois da revogação.",
+  "tokens.deleteConfirm": "Excluir token",
+  "tokens.deletedToast": "{name} excluído",
+  "tokens.deleteFailed": "Não foi possível excluir o token.",
   "tokens.secretTitle": "Copie seu novo token",
   "tokens.secretBody":
     "Guarde-o onde ele será usado, como um gerenciador de senhas ou um segredo do CI.",

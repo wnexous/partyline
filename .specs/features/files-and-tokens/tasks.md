@@ -106,7 +106,7 @@ T3 → T4
 **Requirement**: TOKH-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Default hides revoked; toggle shows; delete calls purge and removes the row
+- [x] Default hides revoked; toggle shows; delete calls purge and removes the row
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): tidy revoked tokens`

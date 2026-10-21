@@ -577,6 +577,15 @@ export const en = {
   "tokens.revokeConfirm": "Revoke token",
   "tokens.revokedToast": "{name} revoked",
   "tokens.revokeFailed": "Couldn’t revoke the token.",
+  "tokens.showRevoked": "Show revoked",
+  "tokens.delete": "Delete {name}",
+  "tokens.deleteShort": "Delete",
+  "tokens.deleteTitle": "Delete {name}?",
+  "tokens.deleteBody":
+    "It leaves this list for good; the audit log keeps its record. Revoked tokens are also deleted on their own 30 days after they were revoked.",
+  "tokens.deleteConfirm": "Delete token",
+  "tokens.deletedToast": "{name} deleted",
+  "tokens.deleteFailed": "Couldn’t delete the token.",
   "tokens.secretTitle": "Copy your new token",
   "tokens.secretBody": "Store it where it will be used, like a password manager or a CI secret.",
   "tokens.secretWarning":

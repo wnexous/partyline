@@ -30,12 +30,14 @@ import {
 import { Form } from "@/components/ui/form";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { isApiError } from "@/lib/api/client";
-import { useCreateToken, useRevokeToken, useTokens } from "@/lib/api/queries";
+import { useCreateToken, usePurgeToken, useRevokeToken, useTokens } from "@/lib/api/queries";
 import { type CreatedToken, type Token, TokenKindAgent, TokenKindUser } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/lib/forms";
 import { type MessageKey, useI18n, useT } from "@/lib/i18n";
 import { type CreateTokenForm, createTokenSchema, TOKEN_EXPIRY_DAYS } from "@/lib/schemas";
+import { readStorage, writeStorage } from "@/lib/theme";
 import { formatAbsolute, formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +46,9 @@ export const Route = createFileRoute("/_app/tokens")({
 });
 
 const DAY = 86_400_000;
+
+/** Per-browser choice to list revoked tokens too (TOKH-04); hidden by default. */
+const SHOW_REVOKED_KEY = "partyline.tokens.showRevoked";
 
 const KIND_LABEL: Record<string, MessageKey> = {
   agent: "tokens.kind.agent",
@@ -77,7 +82,16 @@ function TokensPage() {
   const [creating, setCreating] = useState(false);
   const [revealed, setRevealed] = useState<CreatedToken | null>(null);
   const [revoking, setRevoking] = useState<Token | null>(null);
+  const [deleting, setDeleting] = useState<Token | null>(null);
+  const [showRevoked, setShowRevoked] = useState(() => readStorage(SHOW_REVOKED_KEY) === "1");
+  const switchId = useId();
   const sorted = useMemo(() => [...(tokens.data ?? [])].sort(byStateThenNewest), [tokens.data]);
+  const revokedCount = sorted.filter((t) => t.revoked_at).length;
+  const visible = showRevoked ? sorted : sorted.filter((t) => !t.revoked_at);
+  const toggleRevoked = (on: boolean) => {
+    setShowRevoked(on);
+    writeStorage(SHOW_REVOKED_KEY, on ? "1" : null);
+  };
 
   const create = (
     <Button onClick={() => setCreating(true)}>
@@ -91,7 +105,24 @@ function TokensPage() {
       <PageHeader
         title={t("page.tokensTitle")}
         description={t("page.tokensBody")}
-        actions={sorted.length > 0 ? create : null}
+        actions={
+          revokedCount > 0 || visible.length > 0 ? (
+            <>
+              {revokedCount > 0 ? (
+                <div className="flex items-center gap-2 pr-2 text-sm">
+                  <Switch id={switchId} checked={showRevoked} onCheckedChange={toggleRevoked} />
+                  <label htmlFor={switchId} className="flex items-center gap-1.5">
+                    {t("tokens.showRevoked")}
+                    <span className="font-mono text-xs text-muted-foreground tabular">
+                      {revokedCount}
+                    </span>
+                  </label>
+                </div>
+              ) : null}
+              {visible.length > 0 ? create : null}
+            </>
+          ) : null
+        }
       />
       {tokens.isPending ? (
         <div className="space-y-3 px-4 py-6 md:px-8" aria-hidden="true">
@@ -105,14 +136,19 @@ function TokensPage() {
             {t("common.retry")}
           </Button>
         </div>
-      ) : sorted.length === 0 ? (
+      ) : visible.length === 0 ? (
         <EmptyState icon={KeyRoundIcon} title={t("tokens.emptyTitle")} action={create}>
           <p>{t("tokens.emptyBody")}</p>
         </EmptyState>
       ) : (
         <ul aria-label={t("tokens.listLabel")} className="divide-y border-b">
-          {sorted.map((token) => (
-            <TokenRow key={token.id} token={token} onRevoke={() => setRevoking(token)} />
+          {visible.map((token) => (
+            <TokenRow
+              key={token.id}
+              token={token}
+              onRevoke={() => setRevoking(token)}
+              onDelete={() => setDeleting(token)}
+            />
           ))}
         </ul>
       )}
@@ -143,11 +179,20 @@ function TokensPage() {
         ) : null}
       </SecretOnceDialog>
       <RevokeTokenDialog token={revoking} onClose={() => setRevoking(null)} />
+      <DeleteTokenDialog token={deleting} onClose={() => setDeleting(null)} />
     </>
   );
 }
 
-function TokenRow({ token, onRevoke }: { token: Token; onRevoke: () => void }) {
+function TokenRow({
+  token,
+  onRevoke,
+  onDelete,
+}: {
+  token: Token;
+  onRevoke: () => void;
+  onDelete: () => void;
+}) {
   const { t, locale } = useI18n();
   const state = tokenState(token);
   return (
@@ -203,6 +248,16 @@ function TokenRow({ token, onRevoke }: { token: Token; onRevoke: () => void }) {
           onClick={onRevoke}
         >
           {t("tokens.revokeShort")}
+        </Button>
+      ) : state === "revoked" ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={t("tokens.delete", { name: token.name })}
+          className="text-muted-foreground hover:text-destructive"
+          onClick={onDelete}
+        >
+          {t("tokens.deleteShort")}
         </Button>
       ) : null}
     </li>
@@ -386,6 +441,43 @@ function RevokeTokenDialog({ token, onClose }: { token: Token | null; onClose: (
             }}
           >
             {t("tokens.revokeConfirm")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function DeleteTokenDialog({ token, onClose }: { token: Token | null; onClose: () => void }) {
+  const t = useT();
+  const purge = usePurgeToken();
+  return (
+    <AlertDialog open={token !== null} onOpenChange={(open) => (open ? null : onClose())}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {t("tokens.deleteTitle", { name: token?.name ?? "" })}
+          </AlertDialogTitle>
+          <AlertDialogDescription>{t("tokens.deleteBody")}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-white hover:bg-destructive/90"
+            disabled={purge.isPending}
+            onClick={(e) => {
+              e.preventDefault();
+              if (!token) return;
+              purge.mutate(token.id, {
+                onSuccess: () => {
+                  toast(t("tokens.deletedToast", { name: token.name }));
+                  onClose();
+                },
+                onError: () => toast.error(t("tokens.deleteFailed")),
+              });
+            }}
+          >
+            {t("tokens.deleteConfirm")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
