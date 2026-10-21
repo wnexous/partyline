@@ -1,12 +1,16 @@
 # Harness Onboarding Validation
 
-## Validation: harness-onboarding (iteration 2) - FAIL ❌
+## Validation: harness-onboarding - PASS ✅ (iteration-3 gaps closed)
+
+> **Gap closure (orchestrator, 2026-10-21)**: commit "test: close the last harness-onboarding gaps" adds the Gemini outside-home settings symlink subtest (S04), asserts the `--yes` warning is absent without `--yes` (Y03), and adds installer rows for a non-numeric loopback port (I06) and `ftp://localhost` (I07); ONB-10 now names the accepted schemes. Each mutant was re-applied in the working copy and reverted: S04 → FAIL, Y03 → FAIL, I06 → FAIL, I07 → FAIL. `make check` EXIT 0 after the change.
+
+### Iteration-3 verdict before gap closure (kept for history): FAIL ❌
 
 **Date**: 2026-10-21
-**Spec**: `.specs/features/harness-onboarding/spec.md` (amended in fix iteration 1: DEV-01, DEV-05/06, ONB-08..11, HAR-02/03/05, PUSH-03/05, WIZ-01/02)
-**Diff range**: `65315a0..59ec52d` (HEAD = `v0.2.1`). Fix commits T23-T34: c2a9b70, 0502632, 6873b2e, 39be9e0, 90e8f50, f3b01b7, 832472c, ea77399, bd9df00, c2a524e, d5c2577, 6c157dd. Not in scope: routing-context merge commits and 59ec52d (other features' specs).
-**Verifier**: independent sub-agent (author ≠ verifier), detached worktree `partyline-verify-ho` at 59ec52d
-**Verdict**: FAIL ❌. Both gates pass. Every iteration-1 gap is fixed and 48 of 49 mutants are killed. Two minor gaps remain: one surviving mutant (ONB-08 in setup) and a way around the ONB-10 http refusal.
+**Spec**: `.specs/features/harness-onboarding/spec.md` (amended in fix iteration 2: ONB-06, ONB-10, ONB-11, DEV-05, DEV-06, HAR-04, HAR-05)
+**Diff range**: `b46fcd4..011f5d5` (fix commits T35-T43: a830bbd, a7c5985, ee125e8, ff26f2c, fa3d30d, 6aeaf00, 733c21d, 9de9784, 011f5d5; migration 0090 `device_code_attempts`)
+**Verifier**: independent sub-agent (author ≠ verifier), detached worktree `partyline-verify-ho` at 011f5d5
+**Verdict**: FAIL ❌. The gaps are in the tests only. Both gates pass. Every iteration-2 gap is fixed: K03 is killed, and the ONB-10 bypasses are refused in dash and bash. The probes confirm the code is correct. Four mutants on new code still survive, so tests are missing. This was the third and last fix→re-verify iteration, so the decision goes to the user (see Ranked Gaps).
 
 ---
 
@@ -14,10 +18,11 @@
 
 | Iteration | Range | Result | Main gaps |
 | --- | --- | --- | --- |
-| 1 (2026-10-20) | `2ce415c^..65e4778` | FAIL: `make e2e` 4 passed, 2 failed (stale UI-14); 39/39 mutants killed | stale e2e UI-14; omp async reorder; `.partyline.bak` overwritten; symlinked configs replaced; missing listen/CSRF/TOML tests; HAR-02 and PUSH-05 spec precision; 6 security weaknesses |
-| 2 (this report) | `65315a0..59ec52d` | FAIL (minor): gates green, 48/49 mutants killed | K03 survives (setup reuses a saved token for another URL, untested); ONB-10 http refusal bypassable |
+| 1 (2026-10-20) | `2ce415c^..65e4778` | FAIL: e2e 4/6; 39/39 killed | stale e2e UI-14; omp async reorder; backup overwritten; symlinks replaced; missing tests; HAR-02/PUSH-05 precision |
+| 2 (2026-10-21) | `65315a0..59ec52d` | FAIL: gates green; 48/49 killed | K03 survived (setup reused token for another URL); ONB-10 http refusal bypassable (`Http://`, `http://localhost:80@evil.com`) |
+| 3 (this report) | `b46fcd4..011f5d5` | FAIL (tests only): gates green; 34 non-equivalent mutants, 30 killed, 4 survived (+2 benign, 4 equivalent) | S04 Gemini refusal untested; Y03 `--yes` warning not pinned absent without `--yes`; I06 numeric port and I07 non-http scheme in installer untested |
 
-Iteration-1 gaps, status now: 1 e2e ✅ fixed (`web/e2e/smoke.spec.ts:134`), 2 omp order ✅ (`integrations/omp/partyline.test.ts:186`), 3 backup ✅ (`internal/harness/files_test.go:234`), 4 symlink ✅ (`files_test.go:249`), 5 missing evidence ✅ (`internal/cli/listen_test.go:204`, `internal/api/devices_handlers_test.go:334`, `internal/harness/clis_test.go:356,375`), precision HAR-02/PUSH-05 ✅ (reworded in ea77399).
+Status of the iteration-2 gaps: 1 K03 ✅ killed (`internal/cli/setup_test.go:449`), 2 ONB-10 bypass ✅ refused (`scripts/install_test.go:351`, plus the probes below), 3 ONB-11 wording ✅ (spec ONB-11 reworded; `scripts/version_test.go:73` `VERSION=` → git version).
 
 ---
 
@@ -25,113 +30,105 @@ Iteration-1 gaps, status now: 1 e2e ✅ fixed (`web/e2e/smoke.spec.ts:134`), 2 o
 
 | Task | Status | Notes |
 | ---- | ------ | ----- |
-| T1-T22 | ✅ Done | Verified in iteration 1 |
-| T23-T34 | ✅ Done | All `[x]` in tasks.md. Each has a commit, except that T34 is the docs record (6c157dd) |
+| T1-T34 | ✅ Done | Verified in iterations 1-2 |
+| T35-T43 | ✅ Done | All `[x]`, one commit each (T43 is the docs record). The `--yes` stderr text in the T41 Done-when differs from the spec and the code; the spec and the code match (cosmetic) |
 
 ---
 
 ## Gate Check
 
-- **`make check`** (generate, lint, vet, web lint/typecheck, `go test -race ./...`, vitest, `make integrations-test`, web build, go build): **EXIT 0**. 31/31 Go packages ok, web 307/307 (30 files), integrations 53/53.
-- **`make e2e`** (`PLAYWRIGHT_CHROMIUM_EXECUTABLE=~/.cache/ms-playwright/chromium_headless_shell-1248/…`): **EXIT 0, 10/10 passed** (UI-01/02, UI-04, UI-14/WIZ-01, WIZ-02/DEV-06, UI-24 on desktop-1280 and mobile-360). Passed on the first run, so no re-run was needed.
-- **Test delta (fix commits)**: +47 Go `func Test` and web/bun `it(`/`test(` cases, −9. The 9 removals were all rewritten for the new behavior: the devices page tests became the typed-code tests in `web/src/routes/_app/devices.test.tsx`, the a11y test was renamed "…before and after the code", and `TestClaudeLauncher*` became `internal/cli/launcher_test.go:131,172`.
-- Porcelain of the verify tree was empty before and after the gates and the sensor.
+- **`make check`**: **EXIT 0**. 31/31 Go packages ok (`go test -race`), web vitest 307/307 (30 files), integrations `bun test` 53/53, lint/vet/typecheck/build ok.
+- **`make e2e`** (`PLAYWRIGHT_CHROMIUM_EXECUTABLE=~/.cache/ms-playwright/chromium_headless_shell-1248/…`): **EXIT 0, 10/10 passed** on the first run. No re-run was needed, and `TestLinkPausesAfterReplaced` did not flake in `make check`.
+- **Test delta (fix commits)**: +7 Go tests, 0 removed. One assertion changed on purpose: `clis_test.go:192` "another binary updates in place" became "same binary". Under the narrowed HAR-04, another binary's group is not Partyline's. See the residual weakness in 4c.
+- The verify-tree porcelain was empty before and after the gates and the sensor.
 
 ---
 
-## Spec-Anchored Acceptance Criteria (ACs new or changed in fix iteration 1; the others are unchanged from iteration 1 and still pass)
+## Spec-Anchored Acceptance Criteria (ACs changed in fix iteration 2; the other 28 still pass as in iterations 1-2 and their tests are unchanged)
 
 | Criterion | Spec-defined outcome | `file:line` + assertion | Result |
 | --- | --- | --- | --- |
-| ONB-08 saved token only to saved URL | error naming both URLs when flag/env URL differs (scheme, host, port) and no token | `internal/cliconfig/config_test.go:177` `require.ErrorAs(err, &mismatch)` for env URL, flag URL, other port, other scheme; `internal/cli/channel_config_test.go:60` channel exits with both URLs | ✅ for Resolve; ⚠️ **setup** reuse only guarded in code (`internal/cli/setup.go:167`), mutant K03 survives |
-| ONB-08 setup saves start URL, `--token` warning, `--token-stdin` exclusive | start URL saved; warning text; exit 2 for combos | `internal/cli/setup_test.go:422` `require.Equal(start, got.URL)`; `:396` `Contains("warning: --token is visible…")`, `NotContains(secret)`, 3 combos → `Equal(2, code)` | ✅ |
-| ONB-09 uninstall revokes first, reports; failed revoke does not fail | `DELETE /api/v1/agent/token`; "Revoked …" / "Could not revoke …"; exit 0 | `internal/cli/setup_harness_test.go:159` `Contains("Revoked the agent token on "+URL)` + token now 401; `:204` failed revoke reported, file gone, exit 0; server `internal/api/agent_register_test.go:59,81` (self only, user token 403, anon 401); declined DEV-06 token revoked `setup_test.go:330` `NotNil(RevokedAt)` | ✅ |
-| ONB-10 main wrapper; refuse http except loopback | cut script does nothing; exit≠0 before download | `scripts/install_test.go:325` every cut line → no files, no requests; `:349` 5 http cases refused, loopback 3 allowed | ✅ as tested; ❌ **conformance probe**: `Http://evil`, `hTTp://…` and `http://localhost:80@evil.com/` pass `require_https` (`scripts/install.sh:47-52`), and curl connects to the non-loopback host |
-| ONB-11 Docker version from git | describe → dev-<12> (shallow/no tag or SOURCE_COMMIT) → dev; VERSION wins | `scripts/version_test.go:66,76,89,105,115` exact strings (`"v1.2.3-1-g"+short`, `"dev-"+head[:12]`, `"dev-0123456789ab"`, `"dev"`) | ✅ (`VERSION=dev` counts as unset, `version.sh:13`. The script documents this; the spec does not) |
-| DEV-01 `<instance>/devices` + code `ABCD-EFGH`, no URL with code | `approve_url == URL+"/devices"`; printed code regex with hyphen | `internal/api/devices_handlers_test.go:56` `Equal(URL+"/devices", ApproveURL)`; `internal/cli/setup_test.go:246` regex `…\n\n  ([A-HJ-NP-Z2-9]{4})-([A-HJ-NP-Z2-9]{4})\n`, `NotContains("/devices/")` | ✅ |
-| DEV-02 token named after host, delivered once, with approver | `"<host> (via setup)"`, `approved_by` | `devices_handlers_test.go:86` `Equal("alice", p.ApprovedBy)`, second poll has no token; `setup_test.go:246` `"devbox-7 (via setup)"` | ✅ |
-| DEV-05 code in body; 5 unknown codes/min/user → 429 | old path routes not 200; 6th → 429, other user ok, +61 s ok | `devices_handlers_test.go:253` `NotEqual(200, GET/POST …/{code}…)`; `:268` exact 404×5 then 429×3, bob 200, 59 s 429, 61 s 200; `:292` burst `{404:5, 429:7}` | ✅ |
-| DEV-06 `Approved by @<user> on <instance>`, confirm unless `--yes`; decline/EOF → nothing saved, exit≠0 | exact line and prompt | `setup_test.go:246` `Contains("\nApproved by @alice on "+URL+"\nSave this agent token of @alice on this machine? [Y/n]: ")`; `:330` declined / EOF → exit 1, no file, revoked; `--yes` → saved, no prompt | ✅ |
-| HAR-02 (reworded) other bytes kept in setup-edited files; CLI-managed files change only the entry | exact bytes / exact argv | `internal/harness/files_test.go:91,128`; `clis_test.go:97,171,293` exact argv | ✅ (precision gap closed) |
-| HAR-03 launchers: argv, env with fresh `PARTYLINE_SESSION`, aliases, 127 + text, unregistered warning, `--help`, doctor | exact argv/env/stderr per harness | `internal/cli/launcher_test.go:131` exact argv for 8 commands, exact env (inherited id replaced, fresh per launch); `:172` 127 + exact text ×7; `:196` exact warning ×6 + still execs; `:220` two launches in one folder → `proj`/`proj-2` end to end; `:268` help block; `internal/cli/doctor_test.go:90` `"     start a session: partyline omp\n"` | ✅ |
-| HAR-05 keep first backup, write through symlink, extension before config + rollback | `.bak` = original bytes; link kept and target edited; config untouched or extension restored/deleted | `files_test.go:234` `Equal(c.orig, …bak)` after 2nd Apply; `:249` ×3 harnesses link kept, target = withEntry, uninstall restores; `:280` config unwritable → ext restored (earlier) / missing (fresh); `:309` ext unwritable → config and .bak untouched; `:326` emptied symlink kept | ✅ |
-| PUSH-03 one at a time, rejection stays at head | attempts `[a]` while in flight; A then B after 2 rejections | `integrations/omp/partyline.test.ts:186` `toEqual([a.text])`, then `[a,a,a,b]`, `sent` A then B, one notice | ✅ |
-| PUSH-05 (reworded) `promptAsync`, fallback `prompt` | as worded | `integrations/opencode/partyline.test.ts:71,109` | ✅ (precision gap closed) |
-| WIZ-01 launchers in wizard + setup end line | `partyline <id>` ×6, delivery line, no token in Advanced; `Start a session with partyline a, b or c.` | `web/e2e/smoke.spec.ts:134` 6 tabs, exact start command + delivery, no `token\|PARTYLINE_\|pl_agent\|https?:`, token list unchanged; `web/src/lib/agent-connect.test.ts:26`; `internal/cli/setup_harness_test.go:86` exact suffix | ✅ |
-| WIZ-02 type code first; old `/devices/<code>` → empty `/devices` | nothing shown before lookup; machine, address, age after | `web/src/routes/_app/devices.test.tsx:48` no region/buttons and no API call; `:59` body `{code}`, Address `203.0.113.24`, Requested `3 min. ago`; `:210` redirect, empty field, no lookup; e2e `smoke.spec.ts:183` | ✅ |
+| ONB-06 doctor reports leftover backup as warning | `WARN` line with delete command; doctor does not fail | `internal/cli/doctor_test.go:221` `Contains("WARN backups: "+bak+" is a copy…\n     fix: delete it once you no longer need it: rm "+bak)`, `Equal(0, r.code)`, suffix `All checks passed.` | ✅ |
+| ONB-08 setup never reuses a token saved for another URL | no "Using the saved agent token"; browser approval on B; config `{B, new token}` | `internal/cli/setup_test.go:449` `NotContains("Using the saved agent token")`, `True(approved)`, `Equal(b.URL, got.URL)`, `:484` `NotEqual(a.secret, got.Token)`, `requireAgentToken(b, …)` (--yes and interactive) | ✅ (K03 killed) |
+| ONB-10 scheme without case, exact loopback host + numeric port, no scheme-less, no userinfo | exit 1 with message, nothing downloaded; loopback allowed | `scripts/install_test.go:351` 14 refused cases with exact `refusing plain http URL …`/`user info (@) is not allowed`/`refusing URL … use https`, `Equal(before, r.count())`; `:392` 6 accepted incl. `HTTP://LocalHost:8080/` | ✅ behavior (probes); ⚠️ the numeric-port rule (I06) and non-http schemes (I07) have no test |
+| ONB-11 empty VERSION and `VERSION=dev` count as unset | git version | `scripts/version_test.go:72-73` `Equal("v1.2.3\n", …"VERSION=dev")`, `…"VERSION="` | ✅ |
+| DEV-05 count survives restart | 5 wrong, restart → 429; +61 s → 200 approved | `internal/api/devices_handlers_test.go:314` `RequireError(429)` after `e.env.Restart()` (`:320`) for lookup and approve, then `Equal(DeviceStatusApproved, d.Status)` | ✅ |
+| DEV-06 `--yes` stderr warning | exact text on stderr | `internal/cli/setup_test.go:361` `Contains(r.stderr, "partyline setup: warning: --yes accepted the agent token of @bob without asking; if @bob is not you, run partyline setup --uninstall to revoke it\n")` | ✅; ⚠️ nothing pins that the warning is absent without `--yes` (Y03) |
+| HAR-04 hook group is ours only with exact command | other partyline* groups unchanged, unlisted; ours appended/removed | `internal/harness/clis_test.go:202` `Empty(entries)`, `Empty(RemovePlan)`, `:230` `Len(stop, 4)`, `Equal(foreign, readFile(hooks))` after Remove | ✅ |
+| HAR-05 backup 0600; deleted after success unless `--keep-backups`; failed run keeps; earlier backup kept | mode and presence | `internal/harness/files_test.go:422` `Equal(0o600, …)` with config 0644; `internal/cli/setup_harness_test.go:222` ErrNotExist after success, `:253` 0600 + `Kept the backup` with flag, kept after failure, earlier backup bytes kept | ✅ |
+| HAR-05 symlink into home written; outside home refused, nothing changed | exact error; target/config/ext/backup untouched | `files_test.go:364` `EqualError("refusing to write through the symlink "+link+": its target "+target+" is outside your home directory "+env.Home)` ×(opencode, pi, omp)×(config, extension), target bytes and `requireMissing(bak)`; `:384` Codex hooks + `Empty(cli.calls)`; symlinked home writes | ✅ for file harnesses and Codex; ⚠️ **Gemini not tested** (S04 survives; the probe shows the code refuses correctly, with no CLI call) |
 
-**Status**: 35/35 ACs have spec-anchored evidence. The HAR-02 and PUSH-05 precision gaps are closed. ❌ ONB-10 does not hold for mixed-case schemes or loopback userinfo. ⚠️ ONB-08 (setup path) has no test.
+**Status**: 35/35 ACs have spec-anchored evidence. The behavior of every amended AC was confirmed. Some branches are untested: Gemini's refusal, the `--yes` warning's absence, the installer's port and scheme rules.
 
 ---
 
 ## Edge Cases
 
-- [x] Config not 0600: channel, listen and doctor refuse it (`internal/cli/channel_config_test.go:85`, `listen_test.go:204`, `doctor_test.go:96`).
-- [x] The git root wins over the working directory (`internal/channel/name_test.go`, unchanged).
-- [x] Invalid JSON/TOML is not touched (`internal/harness/files_test.go:161`, `clis_test.go:326,356`; the real Codex CLI with a temp `CODEX_HOME`: `clis_test.go:375`).
-- [x] Device routes refuse cross-origin requests (`devices_handlers_test.go:334`).
-- [ ] Setup with a saved token for instance A and `--url B` without a token: the code asks for or approves a new token (`setup.go:167`), but no test covers it (K03).
+- [x] Setup with `{A, tokenA}` saved and `--url B`: browser approval on B, A's token never sent (`setup_test.go:449`).
+- [x] Pre-existing backup is not deleted by setup (`setup_harness_test.go:222` "an earlier backup stays"); doctor warns about it.
+- [x] Symlinked home counts as home (`files_test.go:347` "symlinked home").
+- [x] Wrong-code burst still capped at 5 with the DB limiter (`devices_handlers_test.go:292` `{404:5, 429:7}`).
+- [ ] A symlinked config directory (e.g. `~/.pi/agent → /outside`) is written outside home, backup included (probe A). The spec only addresses a symlink at the file. Recorded as residual weakness 4b.
+- [ ] Binary path changed between setups: the old Codex/Gemini hook group stays, a second one is appended, and uninstall and doctor no longer see the old one (probe B). This follows from the narrowed HAR-04. Recorded as residual weakness 4c.
+
+### ONB-10 conformance probes (`require_https` extracted from `scripts/install.sh:47-75`, run under dash and bash, identical results)
+
+Refused: `Http://evil.com`, `hTTp://evil.com`, `HTTP://evil.com`, `http://localhost:80@evil.com/`, `http://127.0.0.1:1@evil.com`, `http://[::1]:8080@evil.com`, `evil.com`, `//evil.com`, `localhost:8080`, `http://localhost.evil.com`, `http://localhost.`, `http://127.0.0.1.nip.io`, `http://127.1`, `http://0x7f000001`, `http://2130706433`, `http://[::1]evil.com`, `http://[::1].evil.com`, `http://[::ffff:127.0.0.1]`, `http://localhost:80evil`, `http://localhost\@evil.com`, `http://localhost%40evil.com`, space/tab/newline/comma injections, `http:/evil.com`, `http:\\evil.com`, `ftp://x`, `http://user@localhost`.
+Allowed (all loopback): `http://[::1]`, `http://[::1]:8080[/x]`, `http://localhost:8080`, `HTTP://LocalHost:8080/`, `http://LOCALHOST`, `http://127.0.0.1`, `http://localhost:`, `http://localhost:080`, `http://localhost/https://evil`, `http://localhost#@evil.com`, `http://localhost?@evil.com`, `https://…`. curl 8 and wget both connect to `localhost` for the `#@`/`?@` forms (checked against port 9). `http://localhost:99999` is allowed by the script but rejected by curl and wget ("Bad port"), which is harmless.
 
 ---
 
 ## Discrimination Sensor
 
-Scratch: `git worktree add --detach /tmp/claude-1001/pl-ho-mutants2 HEAD` (`web/node_modules` symlinked from the verify tree, unlinked before removal). Each mutant was applied, its targeted tests ran (go test without -race, `bun test omp`, vitest), and the file was restored with `git checkout`. The worktree was then removed. Verify-tree porcelain was the same as the baseline (empty) before and after. 6 mutants did not compile at first (unused variable or import). They were rewritten to compile and re-run, so none counts as killed by a build failure.
+Scratch: `git worktree add --detach /tmp/claude-1001/pl-ho-mutants3 011f5d5`. A Python runner applied each mutant by exact single-match replacement, built and vetted the code, ran the targeted tests (`go test -count=1`, with `-race` for P04), and restored the file with `git checkout`. The scratch worktree and a second probe worktree were then removed with `git worktree remove --force` and pruned. The verify tree was never stashed or edited, and its porcelain was empty before and after. Two mutants did not compile at first (S01, P03). They were rewritten (S01b, P03b) and run, so none counts as killed by a build failure.
 
 | # | File | Mutation | Killed? |
 | - | ---- | -------- | ------- |
-| D01 | `internal/api/devices_handlers.go:49` | `approve_url` carries the code again | ✅ |
-| D02 | `internal/devices/devices.go` `attempt` | `>= CodeAttemptLimit` → `>` | ✅ |
-| D03 | `devices.go` `attempt` | known codes never refunded | ✅ |
-| D04 | `devices.go` | window 1 → 2 min | ✅ |
-| D05 | `devices.go` `decide` | wrong codes on approve/deny not counted | ✅ |
-| D06 | `devices.go` `Poll` | `approved_by` empty | ✅ |
-| D07 | `internal/cli/setup.go:186` | approver confirmation skipped | ✅ |
-| D08 | `setup.go:188` | declined token not revoked | ✅ |
-| D09 | `setup.go` `displayCode` | code without hyphen | ✅ |
-| D10 | `setup.go:185` | approver not printed | ✅ |
-| D11 | `devices.go` `Lookup` | lookup not rate limited | ✅ |
-| D12 | `internal/cli/setup_harness.go:81` | "n" accepted as yes | ✅ |
-| K01 | `internal/cliconfig/config.go:170` | saved token paired with foreign URL | ✅ |
-| K02 | `config.go` `SameURL` | scheme and port ignored | ✅ |
-| **K03** | `internal/cli/setup.go:167` | **setup reuses saved token for another `--url`** | ❌ **Survived** |
-| K04 | `setup.go:92` | `--token` warning removed | ✅ |
-| K05 | `setup.go:88` | `--token-stdin` not exclusive | ✅ |
-| K06 | `setup_harness.go:173` | uninstall does not revoke | ✅ |
-| K07 | `setup_harness.go:173` | config deleted before revoke | ✅ |
-| K08 | `internal/api/agent_handlers.go` | user tokens can self-revoke | ✅ |
-| I01 | `scripts/install.sh:141` | `main` never called | ✅ |
-| I02 | `install.sh:54` | no `main` wrapper (top-level body) | ✅ |
-| I03 | `install.sh:63` | http release base allowed | ✅ |
-| I04 | `install.sh:49` | `localhost*` lookalike allowed | ✅ |
-| I05 | `install.sh:64` | http instance URL allowed | ✅ |
-| H01 | `internal/harness/harness.go` `keepBackup` | backup overwritten each run | ✅ |
-| H02 | `harness.go` `writeFileAtomic` | symlink replaced | ✅ |
-| H03 | `internal/harness/files.go:136` | no extension rollback | ✅ |
-| H04 | `files.go:137` | rollback deletes previous extension | ✅ |
-| H05 | `harness.go` `saveRemoval` | emptied symlink deleted | ✅ |
-| L01 | `internal/cli/launcher.go:96` | inherited `PARTYLINE_SESSION` kept | ✅ |
-| L02 | `launcher.go:81` | missing binary exits 1 | ✅ |
-| L03 | `launcher.go:39` | `claude-code` alias dropped | ✅ |
-| L04 | `launcher.go:140` | no unregistered warning | ✅ |
-| L05 | `launcher.go:102` | user args dropped | ✅ |
-| L06 | `launcher.go:30` | Claude loses channel flag | ✅ |
-| L07 | `launcher.go:64` | session id constant | ✅ |
-| L08 | `internal/cli/doctor.go` | doctor does not name `partyline <id>` | ✅ |
-| V01 | `scripts/version.sh:13` | VERSION does not win | ✅ |
-| V02 | `version.sh:24` | 8-char sha | ✅ |
-| V03 | `version.sh:23` | no rev-parse fallback | ✅ |
-| V04 | `version.sh:28` | SOURCE_COMMIT ignored | ✅ |
-| T01 | `integrations/omp/partyline.ts` `flush` | sends while one is in flight | ✅ |
-| T02 | `partyline.ts` reject branch | rejected message dropped | ✅ |
-| T03 | `partyline.ts` | thenable ignored (iteration-1 behavior) | ✅ |
-| W01 | `web/src/routes/_app/devices.index.tsx:38` | hyphen not stripped | ✅ |
-| W02 | `devices.index.tsx:44` | 429 shown as generic | ✅ |
-| W03 | `web/src/lib/agent-connect.ts:98` | Codex start command `codex` | ✅ |
-| W04 | `web/src/routes/_app/devices.$code.tsx:9` | old link redirects elsewhere | ✅ |
+| K03 | `internal/cli/setup.go:169` | saved token reused for any `--url` (iteration-2 survivor) | ✅ |
+| S01b | `internal/harness/harness.go:221` | outside-home check removed (`rel` never `..`) | ✅ |
+| S02 | `harness.go:216` | HOME not resolved through symlinks | ✅ |
+| S03 | `internal/harness/clis.go:150` | Codex pre-check removed (CLI runs before refusal) | ✅ |
+| **S04** | `clis.go:276` | **Gemini pre-check removed (`gemini mcp add` runs before refusal)** | ❌ Survived |
+| S05 | `harness.go:173` | `writeDoc` guard removed | ⚪ equivalent (all callers pre-check; `writeFileAtomic` checks again) |
+| S06 | `internal/harness/files.go:110` | file-harness pre-check removed | ⚪ equivalent (the extension write is checked; on config refusal the rollback deletes or restores it, so the end state is the same) |
+| S07 | `harness.go:222` | outside-home link silently written | ✅ |
+| O01 | `harness.go:138` | ownership by suffix + "partyline" (iteration-2 rule) | ✅ |
+| O02 | `harness.go:138` | prefix match (accepts `… --extra`) | ✅ |
+| O03 | `clis.go:385` | Entries lists every group | ✅ |
+| O04 | `clis.go:429` | Remove deletes any group mentioning partyline | ✅ |
+| O05 | `clis.go:406` | Apply updates first group with `hook <name>` | ✅ |
+| O06 | `clis.go:370` | a group with an empty `hooks` array counts as ours | 🟡 survived, benign (no program's hook changes) |
+| B01 | `harness.go:201` | backup 0644 | ✅ |
+| B02 | `internal/cli/setup_harness.go:121` | backups never settled | ✅ |
+| B03 | `setup_harness.go:139` | `--keep-backups` ignored | ✅ |
+| B04 | `setup_harness.go:121` | backups deleted after a failed run | ✅ |
+| B05 | `setup_harness.go:135` | pre-existing backup deleted | ✅ |
+| B10 | `setup_harness.go:101` | every backup treated as pre-existing | ✅ |
+| B06 | `internal/cli/doctor.go:216` | backup reported as FAIL | ✅ |
+| B07 | `doctor.go:59` | backup check not run | ✅ |
+| B08 | `doctor.go:75` | fix line only for `!ok` | ⚪ equivalent (warn checks have `ok=false`) |
+| B09 | `doctor.go:68` | no WARN mark | ✅ |
+| Y01 | `setup.go:188` | no `--yes` warning | ✅ |
+| Y02 | `setup.go:191` | warning on stdout | ✅ |
+| **Y03** | `setup.go:188` | **warning printed also without `--yes`** | ❌ Survived |
+| Y04 | `setup.go:191` | second `@<user>` wrong | ✅ |
+| P01 | `internal/devices/devices.go:100` | attempts wiped on service start (restart reset) | ✅ |
+| P02 | `devices.go:237` | all attempts expire each call | ✅ |
+| P03b | `devices.go:260` | known code not refunded | ✅ |
+| P04 | `devices.go:235` | count and insert in separate transactions | ✅ (burst test, `-race`) |
+| P05 | `devices.go:240` | window shortened by 2 s | ✅ |
+| P06 | `internal/store/db/devices.sql.go` | counts other users' attempts | ✅ |
+| I01 | `scripts/install.sh:50` | scheme not lowercased | ✅ |
+| I02 | `install.sh:53` | userinfo allowed | ✅ |
+| I03 | `install.sh:49` | scheme-less check removed | ⚪ equivalent (the scheme `case` refuses with the same message) |
+| I04 | `install.sh:64` | host not lowercased | ✅ |
+| I05 | `install.sh:61` | IPv6 bracket parsing removed | ✅ |
+| **I06** | `install.sh:67` | **non-numeric port allowed** | ❌ Survived (curl/wget reject such ports, so low risk) |
+| **I07** | `install.sh:58` | **schemes other than http/https fall through to the host check (`ftp://localhost` allowed)** | ❌ Survived |
+| I08 | `install.sh:51` | authority cut only at `/` (refuses `http://localhost?x`) | 🟡 survived, stricter (no accepted URL with `?`/`#` in the tests) |
 
-**Sensor depth**: expanded (P0 auth/credential paths), Go, shell, TS and web.
-**Result**: 48/49 killed. ❌ K03 survived.
+**Sensor depth**: expanded (P0 credential/auth/supply-chain), ≥12 mutations on T38-T42 (S×7, O×6, B×9, Y×4, P×6) plus K03 and I×8.
+**Sensor outcome (iteration 3)**: 44 mutants run. 4 are equivalent; of the other 40, 34 were killed, 4 survived (S04, Y03, I06, I07) and 2 survived but are benign (O06, I08). FAIL ❌.
 
 ---
 
@@ -139,48 +136,45 @@ Scratch: `git worktree add --detach /tmp/claude-1001/pl-ho-mutants2 HEAD` (`web/
 
 | Principle | Status |
 | --- | --- |
-| Minimum code / surgical changes | ✅ |
-| No scope creep | ✅ (`DELETE /agent/token` is required by ONB-09) |
-| Matches patterns (dto → tygo, testkit, exec seam) | ✅ |
-| Spec-anchored outcome check | ✅ except ONB-10 conformance and the untested ONB-08 setup path |
-| Per-layer coverage (routes happy + edge + error, auth matrix) | ✅ lookup/approve/deny/revoke, auth + CSRF + rate limit |
-| Every test maps to an AC / edge case | ✅ |
+| Minimum code / surgical changes | ✅ (`Backups()` on the Registrar interface is the minimum needed for doctor and settle) |
+| No scope creep | ✅ |
+| Matches patterns (sqlc queries + migration, testkit Restart, Env methods) | ✅. Migration `0090` is flagged in the contract notes for renumbering at merge |
+| Spec-anchored outcome check | ✅ with the 4 test gaps above |
+| Per-layer coverage | ✅ route (restart, burst), CLI, harness unit; ⚠️ Gemini sibling of the symlink guard |
+| Every test maps to an AC | ✅ |
 | Guidelines: `AGENTS.md`, `contract-notes.md`, `.specs/LESSONS.md` | ✅ |
 
-### Web Interface Guidelines (WIZ-01/02, pinned rules)
+---
 
-- `web/src/routes/_app/devices.index.tsx:115-129`: the input has a label, `autoComplete="off"`, `spellCheck={false}` and `translate="no"`. Errors render in `FormAlert` with `role="alert"`, and the loading text is "Checking…". Minor: no `name` attribute; the placeholder `ABCD-EFGH` has no `…`; the "Continue" label is generic.
-- `devices.index.tsx:262-263`: the `role="timer"` countdown has `aria-live="off"`, which is acceptable because expiry switches the view. Decorative icons are `aria-hidden`, and machine/IP are `truncate`/`translate="no"`.
-- Approve/Deny are not destructive in the guideline sense (Deny is reversible by re-running setup). No blocking findings.
+## Ranked Gaps / Fix Plans (test-only; the behavior is correct, confirmed by probes)
+
+1. **Minor, S04 (HAR-05)**: no test refuses a Gemini `settings.json` symlink outside home. The probe confirms the code refuses it with the exact error and makes no CLI call. Fix: add a `gemini` subtest beside "codex hooks" in `TestHarnessRefusesSymlinkOutsideHome` (`internal/harness/files_test.go:376`) with `EqualError(…)`, `Empty(cli.calls)` and the target bytes unchanged.
+2. **Minor, Y03 (DEV-06)**: the interactive cases of `TestSetupBrowserApproverConfirmation` (`internal/cli/setup_test.go:331`) do not assert `NotContains(r.stderr, "--yes accepted")`.
+3. **Minor, I06 (ONB-10 "optionally with a numeric port")**: add a refused `http://localhost:80evil` to `TestInstallRefusesPlainHTTP` (`scripts/install_test.go:351`).
+4. **Minor, I07 (ONB-10)**: add a refused `ftp://localhost/x` (or `file://localhost/…`) case. The spec does not name other schemes, so also state in ONB-10 that only `https` (and `http` to loopback) are accepted.
+5. Cosmetic: the `--yes` stderr text in the T41 Done-when (`tasks.md`) is not the shipped text. The spec and the code agree.
+6. Optional (benign survivors): accept `http://localhost:8080/?x` in the allowed list (I08); a hook group with empty `hooks` (O06).
+
+**Escalation**: this was the third fix→re-verify iteration, so the protocol bound is reached. The remaining gaps are four missing assertions, about 15 lines of tests, with no behavior change. The user decides whether to merge with these as follow-up or to run one more fix round.
 
 ---
 
-## Ranked Gaps / Fix Plans
+## Security Weaknesses: final status (not fixed by the Verifier)
 
-1. **Minor: surviving mutant K03, ONB-08 setup path untested.** Setup only reuses the saved token when the start URL matches the saved one (`internal/cli/setup.go:167`), but no test fails when that check is removed. Fix: in `internal/cli/setup_test.go`, save `{URL: A, Token: tA}`, run `setup --url B --yes` (and the interactive variant) against a second testkit server, then assert that the output does not include "Using the saved agent token", that server B never received `tA` (or that setup enters browser approval), and that the file is unchanged on failure. Done when K03 is killed.
-2. **Minor: ONB-10 http refusal can be bypassed** (`scripts/install.sh:47-52`). The pattern list is case-sensitive, so `Http://` and `hTTp://` pass. The loopback patterns also accept userinfo: `http://localhost:80@evil.com/`, `http://127.0.0.1:1@evil.com` and `http://[::1]:x@evil.com`. curl accepts both forms and connects to the non-loopback host over plain http (verified with curl against 127.0.0.2). Fix: lowercase the scheme before matching, refuse any `@` in the authority, and add both forms to `TestInstallRefusesPlainHTTP` (`scripts/install_test.go:349`). Exploiting this needs control of `PARTYLINE_*` env vars or a mixed-case `PARTYLINE_PUBLIC_URL`.
-3. **Cosmetic: spec precision ONB-11.** The spec says "a given `VERSION` SHALL win", but `VERSION=dev` counts as unset (`scripts/version.sh:13`, tested at `version_test.go:71`). Fix: say so in the spec.
-
----
-
-## Security Weaknesses (remaining; not fixed by the Verifier)
-
-1. **Installer supply chain (partly fixed).** The `main` wrapper and the http refusal are in place (bypass: Gap 2). `checksums.txt` still comes from the same GitHub release as the binary, with no signature or provenance (cosign/minisign/SLSA), so it detects corruption but not a compromised release or account.
-2. **Device-flow phishing (mitigated, not closed).** The code is now typed, never sent in a URL, rate-limited per user (5 wrong per minute, in memory, reset on restart), and the CLI shows `Approved by @user` and asks for confirmation. Residual risks:
-   - `--yes` skips the approver confirmation, so `setup --browser --yes` saves a token approved by whoever typed the code.
-   - Any logged-in user can still approve any code they are told ("type ABCD-EFGH"); the token then belongs to that user.
-   - Device-flow agents get owner trust immediately.
-3. **Token handling (mostly fixed).** Fixed: the saved token stays with its URL (Resolve), setup ignores the poll URL, `--token-stdin` exists, uninstall and a declined approval revoke the token. Remaining:
-   - The token is plaintext in `config.json`, mode 0600 with no ownership check.
-   - `--token` still works and only prints a warning.
-   - URL comparison is strict string/host equality (`x` ≠ `x:443`). That is safe, but it can produce false mismatch errors.
-4. **Config edits (fixed).** The first backup is kept, writes go through symlinks, the extension is written first with rollback. Remaining:
-   - `.partyline.bak` copies of harness configs, which may hold other secrets, stay until uninstall.
-   - Hook groups count as "ours" for any binary named `partyline*`.
-   - `writeFileAtomic` follows a symlinked config to any target, including one outside `$HOME`.
-5. **Hook fail-open (unchanged).** Every failure prints `{}`, and the reason goes only to stderr, which Codex and Gemini may hide. Messages are acked when the hook returns, and pi/OpenCode deliveries that fail after `listen` acked are only logged. The omp queue is in memory only, and a send promise that never settles stalls it.
-6. **Framing / trust laundering (unchanged).** Escaping is correct. Any message from any of the owner's agents still reads as `trusted="true"`, so an agent that obeys an injected third-party message can relay it to sibling sessions as owner instructions.
-7. **Build (new, low).** `scripts/version.sh` runs `git -c safe.directory='*' describe` on the build context's `.git`, which disables git's ownership check. `describe` runs no hooks or fsmonitor, so the exposure is limited to a malicious `.git/config` in a context the builder already trusts.
+1. **Installer supply chain.** ✅ The http refusal now holds: every bypass in the probe list is refused under dash and bash, and the allowed forms reach only loopback in curl and wget. ✅ The `main` wrapper is in place. ⚠️ Still open: `checksums.txt` comes from the same release as the binary, with no signature or provenance (cosign/minisign/SLSA).
+2. **Device-flow phishing (mitigated).**
+   - ✅ The code is typed, never in a URL. The wrong-code limit is now in the database and survives a restart. `--yes` names the approver on stdout and warns on stderr.
+   - ⚠️ Still open: `--yes` still saves without confirmation.
+   - ⚠️ Still open: any logged-in user can approve a code they are told, and the token is then theirs.
+   - ⚠️ Still open: device-flow agents get owner trust immediately.
+3. **Token handling.** ✅ The saved token stays with its URL (Resolve and setup). ✅ `--token-stdin` exists. ✅ Uninstall and a declined approval revoke the token. ⚠️ Still open: the token is plaintext in `config.json` (0600, no ownership check), and `--token` only warns.
+4. **Config edits (mostly fixed).**
+   - a. ✅ New backups are 0600 and deleted after a successful setup, and doctor warns about leftovers. ⚠️ A backup from an older version stays 0644 (probe C), though doctor names it.
+   - b. ✅ A symlinked config file pointing outside home is refused. ⚠️ A symlinked config directory (`~/.pi/agent → /elsewhere`) is still written outside home, backup included (probe A). Exploiting it needs write access to the home, so it is low.
+   - c. ✅ Only the exact hook command counts as Partyline's. ⚠️ Trade-off: after the binary moves (`go install` vs `install.sh`), re-running setup leaves the old group and appends a new one. Codex/Gemini then run both, and uninstall and doctor do not see the old one (probe B). Fix idea: doctor could warn about groups with `* hook codex-stop|gemini-after-agent` that are not ours.
+5. **Hook fail-open (unchanged).** Failures print `{}`, and the reason goes only to stderr. Deliveries are acked when the hook returns, the omp queue is in memory only, and a send promise that never settles stalls it.
+6. **Trust laundering (unchanged).** Any of the owner's agents reads as `trusted="true"`, so an agent that obeys an injected message can relay it to sibling sessions as owner instructions.
+7. **Build (unchanged, low).** `scripts/version.sh` uses `git -c safe.directory='*' describe`.
 
 ---
 
@@ -188,18 +182,16 @@ Scratch: `git worktree add --detach /tmp/claude-1001/pl-ho-mutants2 HEAD` (`web/
 
 | Requirement | Previous | New |
 | --- | --- | --- |
-| ONB-01..07, ONB-09, ONB-11, DEV-01..06, NAME-01..03, HAR-01..05, PUSH-01..06, TURN-01..02, WIZ-01..02 | Implemented | ✅ Verified |
-| ONB-08 | Implemented | ⚠️ Verified for Resolve/channel; setup path untested (Gap 1) |
-| ONB-10 | Implemented | ❌ Needs fix (Gap 2) |
+| All 35 (ONB-01..11, DEV-01..06, NAME-01..03, HAR-01..05, PUSH-01..06, TURN-01..02, WIZ-01..02) | Implemented | ✅ Behavior verified |
+| HAR-05, DEV-06, ONB-10 | Implemented | ⚠️ Verified; missing assertions S04, Y03, I06, I07 |
 
-(spec.md is left untouched; the Verifier does not edit artifacts beyond this report.)
+(spec.md is left untouched; the Verifier edits no artifact beyond this report.)
 
 ---
 
 ## Summary
 
-**Overall**: ❌ Not ready, but the gaps are minor. Both gates are green, and every iteration-1 gap and security fix is verified.
-**Spec-anchored check**: 35/35 ACs have evidence. ONB-10 has a conformance gap; ONB-11 has a cosmetic precision note.
-**Sensor**: 48/49 killed (K03 survived).
+**Overall**: ❌ Not ready by protocol: 4 surviving mutants, all test-strength gaps. The behavior is correct, and both gates are green. Iteration 3 of 3, so this goes to the user.
+**Spec-anchored check**: 35/35 ACs have evidence. 4 branches of amended ACs have no assertion.
+**Sensor**: 44 mutants run: 34 killed, 4 survived, 2 benign survivors, 4 equivalent.
 **Gate**: `make check` EXIT 0 (Go 31 packages, web 307, integrations 53); `make e2e` 10/10.
-**Next steps**: Fix 1 (K03 test) and Fix 2 (installer scheme case + userinfo), then re-verify. This is iteration 2 of 3.
