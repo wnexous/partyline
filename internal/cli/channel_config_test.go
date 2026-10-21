@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/channel"
 	"github.com/wnexous/partyline/internal/cliconfig"
 )
@@ -123,4 +125,35 @@ func TestChannelHarnessFlagErrors(t *testing.T) {
 	code, _, errOut = run("channel", "--harness", "omp", "--tools-only")
 	require.Equal(t, 2, code)
 	require.Contains(t, errOut, "partyline channel: --harness omp runs the full channel; drop --tools-only")
+}
+
+// ID-01 (T18): `channel --tools-only --harness <id>` (how setup registers Codex and Gemini)
+// registers the session under that harness without any launcher variable, and the flag wins
+// over PARTYLINE_HARNESS.
+func TestToolsOnlyChannelHarnessFlag(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	e := newChannelEnv(t)
+	registered := func(name string) dto.Agent {
+		t.Helper()
+		require.Eventually(t, func() bool { _, ok := e.onlineNames(t)[name]; return ok }, chanWait, 20*time.Millisecond, name)
+		return e.agentNamed(t, name)
+	}
+	codex := startChannel(t, []string{"--tools-only", "--harness", "codex"}, e.vars(), "/work/notes")
+	initialize(codex)
+	a := registered("notes-codex")
+	require.Equal(t, []string{"codex", "Notes · Codex"}, []string{a.Harness, a.DisplayName})
+
+	gemini := startChannel(t, []string{"--tools-only", "--harness", "gemini"}, e.vars("PARTYLINE_HARNESS", "pi", "PARTYLINE_SESSION", "pl-g"), "/work/notes")
+	initialize(gemini)
+	a = registered("notes-gemini")
+	require.Equal(t, "gemini", a.Harness, "the flag wins over PARTYLINE_HARNESS")
+	require.NotContains(t, e.onlineNames(t), "notes-pi")
+}
+
+// ID-01 (T18): with --tools-only, --harness takes the tools-only harnesses; anything else
+// exits 2 before connecting.
+func TestToolsOnlyChannelHarnessFlagErrors(t *testing.T) {
+	code, _, errOut := run("channel", "--tools-only", "--harness", "claude")
+	require.Equal(t, 2, code)
+	require.Contains(t, errOut, `partyline channel: unknown --harness "claude" with --tools-only (known: codex, gemini, opencode, pi)`)
 }

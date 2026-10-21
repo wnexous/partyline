@@ -297,6 +297,19 @@ migration is `0015`.
   environment only root can read; the walk then needs a readable ancestor (an npm wrapper, or
   nothing for a native binary the launcher exec'd directly) and otherwise falls back.
 
+## Tools-only harness flag (ID-01, HAR-01, T18)
+- `partyline channel --tools-only --harness <id>` with `<id>` in codex, gemini, opencode, pi
+  (`toolsOnlyHarnesses`) sends that harness on registration; the flag wins over
+  `PARTYLINE_HARNESS`. Without `--tools-only` only `omp` is valid (unchanged); `--harness omp
+  --tools-only` and other ids exit 2.
+- `partyline setup` registers `codex mcp add partyline -- <abs> channel --tools-only --harness
+  codex` and `gemini mcp add -s user partyline <abs> channel --tools-only --harness gemini`.
+  Ownership (Entries, RemovePlan, Remove) is by command only, so entries written before
+  (`channel --tools-only`) stay Partyline's and the next setup replaces them.
+- Not changed: the web app's manual entries (Connect an agent → Advanced) still show
+  `channel --tools-only` for Codex and Gemini; they keep working (label from the recovered
+  `PARTYLINE_HARNESS` where T17 applies, else `agent`).
+
 ## Project rename (PROJ-05, T15)
 - `PATCH /projects/{id}` publishes `MembersChanged` for the rooms of the project's temporary
   agents and for every room with the project as a `kind: "project"` member

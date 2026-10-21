@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -114,26 +115,36 @@ func resolveAgent(cmd string, f agentFlags, io stdio) (agentConn, int) {
 	return c, 0
 }
 
+// toolsOnlyHarnesses are the --harness values of `channel --tools-only`: the harnesses that
+// run the tools without the push socket. setup names the harness for Codex and Gemini, which
+// start MCP servers without the launcher's PARTYLINE_HARNESS (ID-01).
+var toolsOnlyHarnesses = []string{"codex", "gemini", "opencode", "pi"}
+
 // channelCmd runs `partyline channel`: the MCP stdio server Claude Code loads as a channel.
 // Without --name the session is temporary: the server names it after its project and harness
 // (ID-01). With --tools-only it serves the tools without the push socket
 // (PUSH-02), acting as the agent `partyline listen` of the same harness recorded. With
-// --harness omp the MCP instructions describe the omp extension's <partyline …> framing.
+// --harness omp the MCP instructions describe the omp extension's <partyline …> framing; with
+// --tools-only, --harness names the session's harness and wins over PARTYLINE_HARNESS.
 func channelCmd(ctx context.Context, args []string, io stdio) int {
 	fs := flag.NewFlagSet("channel", flag.ContinueOnError)
 	fs.SetOutput(io.stderr)
 	f := addAgentFlags(fs)
 	toolsOnly := fs.Bool("tools-only", false, "serve the tools without receiving messages (pair with partyline listen, or for harnesses without push)")
-	harness := fs.String("harness", "", "the harness running the full channel when it is not Claude Code (omp)")
+	harness := fs.String("harness", "", "the harness running the full channel when it is not Claude Code (omp); with --tools-only the session's harness (codex, gemini, opencode, pi)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	switch {
-	case *harness != "" && *harness != channel.HarnessOmp:
-		fmt.Fprintf(io.stderr, "partyline channel: unknown --harness %q (known: %s)\n", *harness, channel.HarnessOmp)
-		return 2
-	case *harness != "" && *toolsOnly:
+	case *harness == "":
+	case *harness == channel.HarnessOmp && *toolsOnly:
 		fmt.Fprintf(io.stderr, "partyline channel: --harness %s runs the full channel; drop --tools-only\n", *harness)
+		return 2
+	case *toolsOnly && !slices.Contains(toolsOnlyHarnesses, *harness):
+		fmt.Fprintf(io.stderr, "partyline channel: unknown --harness %q with --tools-only (known: %s)\n", *harness, strings.Join(toolsOnlyHarnesses, ", "))
+		return 2
+	case !*toolsOnly && *harness != channel.HarnessOmp:
+		fmt.Fprintf(io.stderr, "partyline channel: unknown --harness %q (known: %s)\n", *harness, channel.HarnessOmp)
 		return 2
 	}
 	c, code := resolveAgent("channel", f, io)

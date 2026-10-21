@@ -104,7 +104,10 @@ func (c *claude) Entries(context.Context) ([]Entry, error) {
 // --- Codex CLI -----------------------------------------------------------------------
 
 // codex registers the tools with `codex mcp add` (~/.codex/config.toml; it replaces an
-// existing entry) and a Stop hook in ~/.codex/hooks.json ($CODEX_HOME respected).
+// existing entry) and a Stop hook in ~/.codex/hooks.json ($CODEX_HOME respected). The server
+// runs `channel --tools-only --harness codex`: Codex starts MCP servers without the launcher's
+// PARTYLINE_HARNESS, so the harness is named on the command line (ID-01). Entries are
+// recognised by their command, so ones written without --harness stay Partyline's.
 type codex struct{ env Env }
 
 func (c *codex) ID() string     { return "codex" }
@@ -121,7 +124,7 @@ func (c *codex) home() string {
 func (c *codex) hooksPath() string { return filepath.Join(c.home(), "hooks.json") }
 
 func (c *codex) addArgs() []string {
-	return []string{"mcp", "add", ServerName, "--", c.env.Binary, "channel", "--tools-only"}
+	return []string{"mcp", "add", ServerName, "--", c.env.Binary, "channel", "--tools-only", "--harness", c.ID()}
 }
 
 // hookGroup is the Stop hook group Partyline adds.
@@ -235,7 +238,8 @@ func jsonPart(out []byte) []byte {
 // --- Gemini CLI ----------------------------------------------------------------------
 
 // gemini registers the tools with `gemini mcp add -s user` (~/.gemini/settings.json; it
-// replaces an existing entry) and an AfterAgent hook in the same file.
+// replaces an existing entry), as `channel --tools-only --harness gemini` like Codex, and an
+// AfterAgent hook in the same file.
 type gemini struct{ env Env }
 
 func (g *gemini) ID() string     { return "gemini" }
@@ -245,7 +249,7 @@ func (g *gemini) Detected() bool { _, err := g.env.lookPath("gemini"); return er
 func (g *gemini) settingsPath() string { return filepath.Join(g.env.Home, ".gemini", "settings.json") }
 
 func (g *gemini) addArgs() []string {
-	return []string{"mcp", "add", "-s", "user", ServerName, g.env.Binary, "channel", "--tools-only"}
+	return []string{"mcp", "add", "-s", "user", ServerName, g.env.Binary, "channel", "--tools-only", "--harness", g.ID()}
 }
 
 func (g *gemini) hookGroup() any {

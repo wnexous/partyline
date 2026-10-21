@@ -27,7 +27,8 @@ Commands:
                          browser) and register Partyline in the installed harnesses; --uninstall undoes it
   channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_AGENT or the config file);
                          --tools-only serves the tools without receiving messages;
-                         --harness omp describes the omp extension's message framing
+                         --harness omp describes the omp extension's message framing;
+                         with --tools-only, --harness codex|gemini|opencode|pi names the harness
   listen                 print incoming messages as JSON lines (used by the pi and OpenCode adapters)
   agents                 list your agents by project with their online state; --all adds archived ones
   hook codex-stop|gemini-after-agent

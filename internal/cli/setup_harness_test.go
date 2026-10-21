@@ -53,8 +53,8 @@ func installed(names ...string) func(string) (string, error) {
 
 const (
 	claudeAdd = "claude mcp add --scope user partyline -- " + testBinary + " channel"
-	codexAdd  = "codex mcp add partyline -- " + testBinary + " channel --tools-only"
-	geminiAdd = "gemini mcp add -s user partyline " + testBinary + " channel --tools-only"
+	codexAdd  = "codex mcp add partyline -- " + testBinary + " channel --tools-only --harness codex"
+	geminiAdd = "gemini mcp add -s user partyline " + testBinary + " channel --tools-only --harness gemini"
 )
 
 // HAR-01: setup offers each detected harness, shows the exact change before asking, and

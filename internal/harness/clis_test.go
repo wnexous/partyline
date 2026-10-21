@@ -165,7 +165,8 @@ const codexHooksOrig = `{
 
 const codexGroup = `{"hooks":[{"type":"command","command":"/opt/bin/partyline hook codex-stop","timeout":30}]}`
 
-// HAR-01, HAR-02 (Codex CLI): `codex mcp add partyline -- <abs> channel --tools-only` and a
+// HAR-01, HAR-02 (Codex CLI): `codex mcp add partyline -- <abs> channel --tools-only --harness
+// codex` (the harness named for ID-01, T18) and a
 // Stop hook appended to ~/.codex/hooks.json next to the existing hooks; applying again
 // updates in place.
 func TestCodexRegistersToolsAndStopHook(t *testing.T) {
@@ -174,7 +175,7 @@ func TestCodexRegistersToolsAndStopHook(t *testing.T) {
 	writeFile(t, hooks, codexHooksOrig)
 	r := registrar(t, env, "codex")
 	require.Equal(t, "Codex CLI", r.Title())
-	add := "codex mcp add partyline -- /opt/bin/partyline channel --tools-only"
+	add := "codex mcp add partyline -- /opt/bin/partyline channel --tools-only --harness codex"
 	require.Equal(t, []string{"run: " + add, "edit ~/.codex/hooks.json: add to hooks.Stop " + codexGroup}, r.Plan())
 
 	require.NoError(t, r.Apply(context.Background()))
@@ -329,7 +330,7 @@ func geminiCLI(t *testing.T, settings string) func(string) ([]byte, error) {
 }
 
 // HAR-01, HAR-02, HAR-04 (Gemini CLI): `gemini mcp add -s user partyline <abs> channel
-// --tools-only` and an AfterAgent hook in ~/.gemini/settings.json; uninstall gives back the
+// --tools-only --harness gemini` (ID-01, T18) and an AfterAgent hook in ~/.gemini/settings.json; uninstall gives back the
 // original file.
 func TestGeminiRegistersAndRemoves(t *testing.T) {
 	env, cli := testEnv(t, nil)
@@ -338,7 +339,7 @@ func TestGeminiRegistersAndRemoves(t *testing.T) {
 	cli.handle = geminiCLI(t, settings)
 	r := registrar(t, env, "gemini")
 	require.Equal(t, "Gemini CLI", r.Title())
-	add := "gemini mcp add -s user partyline /opt/bin/partyline channel --tools-only"
+	add := "gemini mcp add -s user partyline /opt/bin/partyline channel --tools-only --harness gemini"
 	require.Equal(t, []string{"run: " + add, "edit ~/.gemini/settings.json: add to hooks.AfterAgent " + geminiGroup}, r.Plan())
 
 	require.NoError(t, r.Apply(context.Background()))
@@ -407,7 +408,7 @@ func TestCodexInvalidTOMLIsNotTouched(t *testing.T) {
 	err := registrar(t, env, "codex").Apply(context.Background())
 	require.ErrorContains(t, err, cfg+":2:19: unclosed table")
 	require.ErrorContains(t, err, "TOML parse error at line 2, column 19")
-	require.Equal(t, []string{"codex mcp add partyline -- /opt/bin/partyline channel --tools-only"}, cli.calls)
+	require.Equal(t, []string{"codex mcp add partyline -- /opt/bin/partyline channel --tools-only --harness codex"}, cli.calls)
 	require.Equal(t, invalidCodexTOML, readFile(t, cfg))
 	requireMissing(t, filepath.Join(env.Home, ".codex", "hooks.json"))
 }
@@ -439,4 +440,42 @@ func TestCLIFailureCarriesOutput(t *testing.T) {
 	}
 	err := registrar(t, env, "claude").Apply(context.Background())
 	require.ErrorContains(t, err, "MCP server partyline already exists")
+}
+
+// HAR-04, ID-01 (T18): entries registered before setup named the harness
+// (`channel --tools-only`, no --harness) are still Partyline's: Entries lists them, setup
+// replaces them with the new command line and uninstall removes them.
+func TestToolsOnlyEntriesWithoutHarnessFlagStayOwned(t *testing.T) {
+	t.Run("codex", func(t *testing.T) {
+		env, cli := testEnv(t, nil)
+		cli.handle = func(line string) ([]byte, error) {
+			if line == "codex mcp get partyline --json" {
+				return []byte(`{"name":"partyline","transport":{"type":"stdio","command":"/opt/bin/partyline","args":["channel","--tools-only"]}}`), nil
+			}
+			return nil, nil
+		}
+		r := registrar(t, env, "codex")
+		entries, err := r.Entries(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, []Entry{{What: "MCP server in ~/.codex/config.toml", Binary: testBinary}}, entries)
+		require.Equal(t, []string{"run: codex mcp remove partyline"}, r.RemovePlan(context.Background()))
+		cli.calls = nil
+		require.NoError(t, r.Apply(context.Background()))
+		require.Equal(t, []string{"codex mcp add partyline -- /opt/bin/partyline channel --tools-only --harness codex"}, cli.calls,
+			"codex mcp add replaces the old entry")
+		cli.calls = nil
+		require.NoError(t, r.Remove(context.Background()))
+		require.Equal(t, []string{"codex mcp get partyline --json", "codex mcp remove partyline"}, cli.calls)
+	})
+	t.Run("gemini", func(t *testing.T) {
+		env, cli := testEnv(t, nil)
+		settings := filepath.Join(env.Home, ".gemini", "settings.json")
+		writeFile(t, settings, `{"mcpServers":{"partyline":{"command":"/opt/bin/partyline","args":["channel","--tools-only"]}}}`)
+		r := registrar(t, env, "gemini")
+		entries, err := r.Entries(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, []Entry{{What: "MCP server in ~/.gemini/settings.json", Binary: testBinary}}, entries)
+		require.NoError(t, r.Remove(context.Background()))
+		require.Equal(t, []string{"gemini mcp remove -s user partyline"}, cli.calls)
+	})
 }

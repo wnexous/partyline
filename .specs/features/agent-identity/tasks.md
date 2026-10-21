@@ -319,8 +319,8 @@ T12 → T13 → T14 → T15 → T16 → T17 → T18 → T19
 **Requirement**: ID-01, HAR-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Setup plan/apply run the new command lines; old entries still recognised by Entries/Remove
-- [ ] A tools-only channel with `--harness codex` and no environment registers harness codex; the flag wins over `PARTYLINE_HARNESS`; invalid combinations exit 2
+- [x] Setup plan/apply run the new command lines; old entries still recognised by Entries/Remove
+- [x] A tools-only channel with `--harness codex` and no environment registers harness codex; the flag wins over `PARTYLINE_HARNESS`; invalid combinations exit 2
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(harness): register tools-only servers with their harness`
