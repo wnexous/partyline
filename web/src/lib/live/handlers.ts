@@ -183,11 +183,10 @@ function bumpConversation(qc: QueryClient, openRoomId: string | null, m: Message
   );
 }
 
-const RESOURCE_KEYS: Record<string, "rooms" | "agents" | "connectors" | "projects"> = {
+const RESOURCE_KEYS: Record<string, "rooms" | "agents" | "connectors"> = {
   room: "rooms",
   agent: "agents",
   connector: "connectors",
-  project: "projects",
 };
 
 export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: LiveEvent): void {
@@ -280,19 +279,15 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
     case "agent.presence": {
       const { agent_id, online, last_seen_at } = event.data;
       actions.setPresence(agent_id, { online, last_seen_at });
-      for (const key of [queryKeys.agents, queryKeys.agentsWithArchived]) {
-        patchList<Agent>(qc, key, agent_id, (a) => ({
-          ...a,
-          online,
-          // A connect unarchives the agent on the server (PROJ-02).
-          archived: online ? false : a.archived,
-          last_seen_at: last_seen_at ?? a.last_seen_at,
-        }));
-        // Agents are created on their first connection: an unknown id means the list is stale.
-        const cached = qc.getQueryData<Agent[]>(key);
-        if (cached && !cached.some((a) => a.id === agent_id)) {
-          qc.invalidateQueries({ queryKey: key, exact: true });
-        }
+      patchList<Agent>(qc, queryKeys.agents, agent_id, (a) => ({
+        ...a,
+        online,
+        last_seen_at: last_seen_at ?? a.last_seen_at,
+      }));
+      // Agents are created on their first connection: an unknown id means the list is stale.
+      const cached = qc.getQueryData<Agent[]>(queryKeys.agents);
+      if (cached && !cached.some((a) => a.id === agent_id)) {
+        qc.invalidateQueries({ queryKey: queryKeys.agents, exact: true });
       }
       // The contacts overlay the live state themselves; one that lacks the AI is out of date.
       const contacts = qc.getQueryData<Contacts>(queryKeys.contacts);

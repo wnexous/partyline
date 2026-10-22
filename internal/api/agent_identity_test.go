@@ -26,8 +26,7 @@ func listedAgent(t *testing.T, c *testkit.Client, id string) dto.Agent {
 }
 
 // AID-01, ID-04: every AI is listed with the name people read (its profile's), its app and
-// machine; the legacy fields are constant: fixed, not archived, no project (until a v0.3
-// project is put on it).
+// machine; the legacy fields are constant: fixed, not archived, no project.
 func TestAgentListCarriesIdentity(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
@@ -37,11 +36,6 @@ func TestAgentListCarriesIdentity(t *testing.T) {
 	require.Nil(t, a.Project)
 	require.Equal(t, []any{"builder", "claude", testkit.Machine, dto.AgentKindFixed, false},
 		[]any{a.DisplayName, a.Harness, a.Machine, a.Kind, a.Archived})
-
-	projectID := createProject(t, env, alice, "proj", "Proj")
-	putInProject(t, env, id, projectID)
-	a = listedAgent(t, alice, id)
-	require.Equal(t, &dto.ProjectRef{ID: projectID, Slug: "proj", Name: "Proj"}, a.Project)
 }
 
 // AID-02: the harness and machine a session sends are cleaned: harness aliases map to their id

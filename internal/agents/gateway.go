@@ -453,10 +453,8 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 // agent's cursor that its delivery mode wants (MEM-03, MEM-04), oldest first and at most
 // BacklogLimit (AGT-08). When more are pending it first sends a notice with the skipped count
 // and moves the cursor past them (AGT-09). A room with instructions first gets one
-// InstructionsNotice, paused or not (INS-03). The rooms of the agent's project count while it
-// is the project's active session, with the project's cursor and settings, leaving out the
-// messages of the project's own agents (PROJ-08, PROJ-09). It returns the highest sequence
-// number seen per room.
+// InstructionsNotice, paused or not (INS-03). It returns the highest sequence number seen per
+// room.
 func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]int64, error) {
 	sent := map[string]int64{}
 	states, err := g.d.Registry.SessionRooms(ctx, a.ID)
@@ -467,7 +465,6 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	projectName := ""
 	for _, st := range states {
 		ref := delivery.RoomRef(st.ID, st.Name, st.Kind)
 		if st.Instructions != "" { // INS-03: once per room and connection, before its messages
@@ -481,13 +478,6 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		}
 		if st.AgentsPaused {
 			continue // DLV-08: no agent delivery while the loop guard holds the room
-		}
-		if st.ProjectID != "" && projectName == "" {
-			p, err := g.d.Store.R().GetProject(ctx, st.ProjectID)
-			if err != nil {
-				return nil, err
-			}
-			projectName = p.Name
 		}
 		// The count and the list read one snapshot, so a message posted in between cannot
 		// make the skipped count disagree with the cursor jump (S6).
@@ -527,10 +517,6 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		wanted := func(f delivery.Facts) bool {
 			return f.WantedBy(a.ID, a.OwnerID, delivery.Prefs(profile, st.DisplayName, st.Delivery, st.KeywordsJson))
 		}
-		if st.ProjectID != "" {
-			prefs := delivery.ProjectPrefs(profile, projectName, st.DisplayName, st.Delivery, st.KeywordsJson)
-			wanted = func(f delivery.Facts) bool { return f.WantedByProject(a.ID, st.ProjectID, a.OwnerID, prefs) }
-		}
 		// MEM-03, MEM-04: unwanted messages are not delivered. Those before the first delivered
 		// one move the cursor (before that message is written); later ones wait for an ack.
 		written, skippedTo := false, int64(0)
@@ -568,33 +554,20 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 	return sent, nil
 }
 
-// countBacklog counts the room's undelivered messages for the agent, or for its project when
-// the room is a project room.
+// countBacklog counts the room's undelivered messages for the agent.
 func countBacklog(ctx context.Context, q *db.Queries, agentID string, st RoomState) (int64, error) {
-	if st.ProjectID != "" {
-		return q.CountProjectBacklog(ctx, db.CountProjectBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, ProjectID: nullString(st.ProjectID)})
-	}
 	return q.CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, AgentID: agentID})
 }
 
 // listBacklog lists the newest BacklogLimit undelivered messages counted by countBacklog.
 func listBacklog(ctx context.Context, q *db.Queries, agentID string, st RoomState) ([]db.MessageView, error) {
-	if st.ProjectID != "" {
-		return q.ListProjectBacklog(ctx, db.ListProjectBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, ProjectID: nullString(st.ProjectID), Limit: BacklogLimit})
-	}
 	return q.ListAgentBacklog(ctx, db.ListAgentBacklogParams{RoomID: st.ID, AfterSeq: st.Cursor, AgentID: agentID, Limit: BacklogLimit})
 }
 
-// advanceRoom moves the cursor of the room's delivery: the project's for a project room, else
-// the agent's.
+// advanceRoom moves the cursor of the room's delivery for the agent.
 func (g *Gateway) advanceRoom(ctx context.Context, agentID string, st RoomState, seq int64) error {
-	if st.ProjectID != "" {
-		return g.advanceProject(ctx, st.ProjectID, st.ID, seq)
-	}
 	return g.advance(ctx, agentID, st.ID, seq)
 }
-
-func nullString(s string) sql.NullString { return sql.NullString{String: s, Valid: s != ""} }
 
 // readAcks reads frames from the agent and records acks (AGT-07) until the connection ends.
 func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
@@ -614,10 +587,8 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 	}
 }
 
-// ack moves the agent's cursor in the message's room to the message, never backwards, and
-// the cursor of the agent's project when the project is a member of that room: a message any
-// session of the project acknowledged is delivered to the project (PROJ-08). Messages of rooms
-// the agent is in neither way are ignored.
+// ack moves the agent's cursor in the message's room to the message, never backwards. Messages
+// of rooms the agent is not in are ignored.
 func (g *Gateway) ack(ctx context.Context, agentID, messageID string) error {
 	q := g.d.Store.R()
 	m, err := q.GetMessageRoomSeq(ctx, messageID)
@@ -632,33 +603,14 @@ func (g *Gateway) ack(ctx context.Context, agentID, messageID string) error {
 		return err
 	}
 	if n > 0 {
-		if err := g.advance(ctx, agentID, m.RoomID, m.Seq); err != nil {
-			return err
-		}
+		return g.advance(ctx, agentID, m.RoomID, m.Seq)
 	}
-	a, err := q.GetAgent(ctx, agentID)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !a.ProjectID.Valid) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	n, err = q.CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: m.RoomID, Kind: string(dto.MemberKindProject), MemberID: a.ProjectID.String})
-	if err != nil || n == 0 {
-		return err
-	}
-	return g.advanceProject(ctx, a.ProjectID.String, m.RoomID, m.Seq)
+	return nil
 }
 
 func (g *Gateway) advance(ctx context.Context, agentID, roomID string, seq int64) error {
 	return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		return q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: agentID, RoomID: roomID, Seq: seq})
-	})
-}
-
-func (g *Gateway) advanceProject(ctx context.Context, projectID, roomID string, seq int64) error {
-	return g.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		return q.AdvanceProjectCursor(ctx, db.AdvanceProjectCursorParams{ProjectID: projectID, RoomID: roomID, Seq: seq})
 	})
 }
 

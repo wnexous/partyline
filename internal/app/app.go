@@ -149,7 +149,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		return nil, err
 	}
 	presence := agents.NewPresence(st, bus, opts.Now)
-	az := access.New(st, bus, access.Options{Now: opts.Now, Online: presence.Online})
+	az := access.New(st, bus, access.Options{Now: opts.Now})
 	a := &App{
 		Config:        cfg,
 		Logger:        opts.Logger,

@@ -123,21 +123,9 @@ func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) 
 }
 
 // authorMember returns the room member row whose settings sign an agent's message: its own
-// membership, else the membership of its project (PROJ-07); sql.ErrNoRows when neither exists.
+// membership; sql.ErrNoRows when it has none.
 func (s *Sender) authorMember(ctx context.Context, roomID, agentID string) (db.RoomMember, error) {
-	q := s.store.R()
-	m, err := q.GetRoomMemberByMember(ctx, db.GetRoomMemberByMemberParams{RoomID: roomID, Kind: string(dto.MemberKindAgent), MemberID: agentID})
-	if !errors.Is(err, sql.ErrNoRows) {
-		return m, err
-	}
-	a, err := q.GetAgent(ctx, agentID)
-	if err != nil {
-		return db.RoomMember{}, err
-	}
-	if !a.ProjectID.Valid {
-		return db.RoomMember{}, sql.ErrNoRows
-	}
-	return q.GetRoomMemberByMember(ctx, db.GetRoomMemberByMemberParams{RoomID: roomID, Kind: string(dto.MemberKindProject), MemberID: a.ProjectID.String})
+	return s.store.R().GetRoomMemberByMember(ctx, db.GetRoomMemberByMemberParams{RoomID: roomID, Kind: string(dto.MemberKindAgent), MemberID: agentID})
 }
 
 // quote returns the platform id (and sender) of the replied message in the chat: the

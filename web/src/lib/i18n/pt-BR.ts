@@ -392,9 +392,6 @@ export const ptBR: Dictionary = {
   "members.agents": "Agentes",
   "members.chats": "Chats",
   "members.users": "Usuários",
-  "members.projects": "Projetos",
-  "members.activeSession": "Ativa: {name}",
-  "members.noSession": "Nenhuma sessão online; as mensagens esperam a próxima",
   "members.empty":
     "Nenhum membro ainda. Adicione agentes e chats para as mensagens terem para onde ir.",
   "members.chatKind.group": "grupo",
@@ -545,7 +542,7 @@ export const ptBR: Dictionary = {
   "connect.open": "Conectar um agente",
   "connect.title": "Conectar um agente",
   "connect.body":
-    "Dois comandos preparam a máquina uma vez. Depois disso, toda sessão iniciada nela entra no partyline com o nome do projeto.",
+    "Dois comandos preparam a máquina uma vez. Depois disso, cada pasta em que você inicia uma sessão vira uma IA própria.",
   "connect.stepInstall": "Instale o partyline",
   "connect.installLabel": "Comando de instalação",
   "connect.installBody":
@@ -557,7 +554,7 @@ export const ptBR: Dictionary = {
   "connect.setupLabel": "Comando de configuração",
   "connect.stepStart": "Inicie uma sessão",
   "connect.startBody":
-    "Rode na pasta de um projeto. Cada sessão entra com o nome do projeto, com -2, -3… para mais sessões do mesmo projeto.",
+    "Rode na pasta em que a IA trabalha. A pasta é a IA; uma segunda sessão nela pergunta antes de assumir.",
   "connect.harness": "Harness",
   "connect.startLabel": "Comando de início",
   "connect.push": "As mensagens das salas chegam na sessão em andamento assim que são enviadas.",

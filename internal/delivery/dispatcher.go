@@ -39,8 +39,7 @@ const dispatcherBuffer = 1024
 
 // AgentDispatcher pushes every new room message to the online agents the delivery plan
 // targets (DLV-02) and whose delivery mode wants it (MEM-03, MEM-04), with a trusted flag
-// computed for each receiving agent (DLV-06). A project member's message goes to the
-// project's active session (PROJ-07, PROJ-10). Rooms
+// computed for each receiving agent (DLV-06). Rooms
 // whose agent delivery is paused by the loop guard get no pushes (DLV-08). Offline agents
 // receive the message from their backlog when they reconnect.
 type AgentDispatcher struct {
@@ -103,42 +102,22 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 		return err
 	}
 	members := make([]Member, len(rows))
-	memberRows := map[string]db.RoomMember{} // agent and project rows by kind/id
+	memberRows := map[string]db.RoomMember{} // agent rows by id
 	for i, r := range rows {
 		members[i] = Member{Kind: dto.MemberKind(r.RoomMember.Kind), ID: r.RoomMember.MemberID, Outbound: r.RoomMember.Outbound}
-		if r.RoomMember.Kind == string(dto.MemberKindAgent) || r.RoomMember.Kind == string(dto.MemberKindProject) {
-			memberRows[r.RoomMember.Kind+"/"+r.RoomMember.MemberID] = r.RoomMember
+		if r.RoomMember.Kind == string(dto.MemberKindAgent) {
+			memberRows[r.RoomMember.MemberID] = r.RoomMember
 		}
 	}
 	var recipients []string
 	_ = json.Unmarshal([]byte(view.RecipientsJson), &recipients)
 	draft := Draft{AuthorKind: dto.AuthorKind(view.AuthorKind), AuthorID: view.AuthorID, Recipients: recipients}
-	if draft.AuthorKind == dto.AuthorKindAgent {
-		author, err := q.GetAgent(ctx, view.AuthorID)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		draft.AuthorProjectID = author.ProjectID.String
-	}
 	targets := Plan(RoomState{BridgeChats: room.BridgeChats}, members, draft)
 
-	var pushes []push
-	direct := map[string]bool{}
+	var pushes []string
 	for _, id := range targets.AgentIDs {
-		direct[id] = true
 		if d.o.Agents.Online(id) {
-			pushes = append(pushes, push{agentID: id})
-		}
-	}
-	for _, pid := range targets.ProjectIDs {
-		// PROJ-07: only the project's active session; none online → it waits (PROJ-08). An
-		// active session that is also a direct member gets the message once, as a member.
-		a, ok, err := ActiveSession(ctx, q, d.o.Agents.Online, pid)
-		if err != nil {
-			return err
-		}
-		if ok && !direct[a.ID] {
-			pushes = append(pushes, push{agentID: a.ID, projectID: pid})
+			pushes = append(pushes, id)
 		}
 	}
 	if len(pushes) == 0 {
@@ -156,40 +135,23 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 	if err != nil {
 		return err
 	}
-	for _, t := range pushes {
-		agent, err := q.GetAgent(ctx, t.agentID)
+	for _, agentID := range pushes {
+		agent, err := q.GetAgent(ctx, agentID)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
 		if err != nil {
 			return err
 		}
-		profile, err := IntelligenceOf(ctx, q, t.agentID)
+		profile, err := IntelligenceOf(ctx, q, agentID)
 		if err != nil {
 			return err
 		}
-		ownerID, wanted := agent.OwnerID, false
-		if t.projectID == "" {
-			m := memberRows[string(dto.MemberKindAgent)+"/"+t.agentID]
-			wanted = facts.WantedBy(t.agentID, ownerID, Prefs(profile, m.DisplayName, m.Delivery, m.KeywordsJson))
-		} else {
-			project, err := q.GetProject(ctx, t.projectID)
-			if errors.Is(err, sql.ErrNoRows) {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			// PROJ-10: trust follows the project's owner; the project member's settings apply.
-			ownerID = project.OwnerID
-			m := memberRows[string(dto.MemberKindProject)+"/"+t.projectID]
-			wanted = facts.WantedByProject(t.agentID, t.projectID, ownerID,
-				ProjectPrefs(profile, project.Name, m.DisplayName, m.Delivery, m.KeywordsJson))
-		}
-		if !wanted {
+		m := memberRows[agentID]
+		if !facts.WantedBy(agentID, agent.OwnerID, Prefs(profile, m.DisplayName, m.Delivery, m.KeywordsJson)) {
 			continue // MEM-03, MEM-04: stored, not pushed
 		}
-		d.o.Agents.Push(t.agentID, dto.AgentMessage{Room: refs.of(t.agentID), Trusted: Trusted(msg.AuthorUserID, ownerID), Message: msg})
+		d.o.Agents.Push(agentID, dto.AgentMessage{Room: refs.of(agentID), Trusted: Trusted(msg.AuthorUserID, agent.OwnerID), Message: msg})
 	}
 	return nil
 }
@@ -226,10 +188,4 @@ func roomRefs(ctx context.Context, q *db.Queries, room db.Room) (roomNames, erro
 		}
 	}
 	return names, nil
-}
-
-// push is one live delivery: to an agent member, or to a project's active session.
-type push struct {
-	agentID   string
-	projectID string // set for a delivery through a project member
 }

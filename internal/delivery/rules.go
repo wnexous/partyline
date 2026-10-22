@@ -8,7 +8,7 @@ import "github.com/wnexous/partyline/internal/api/dto"
 // Member is a room member as the delivery rules see it.
 type Member struct {
 	Kind dto.MemberKind
-	// ID is the agent, chat, user or project id (room_members.member_id).
+	// ID is the agent, chat or user id (room_members.member_id).
 	ID string
 	// Outbound tells whether agent and user posts without explicit recipients (DLV-03) and
 	// bridged chat posts (DLV-05) reach this chat.
@@ -29,9 +29,6 @@ type Draft struct {
 	AuthorKind dto.AuthorKind
 	// AuthorID is the authoring agent, chat or user id; empty for system messages.
 	AuthorID string
-	// AuthorProjectID is the project of an authoring agent; empty otherwise. That project
-	// member does not receive the message (PROJ-09).
-	AuthorProjectID string
 	// Recipients are explicit chat ids (DLV-04); only agent and user authors set them.
 	Recipients []string
 }
@@ -42,14 +39,11 @@ type Targets struct {
 	AgentIDs []string
 	// ChatIDs get an outbox entry each.
 	ChatIDs []string
-	// ProjectIDs receive the message through their active session (PROJ-07).
-	ProjectIDs []string
 }
 
 // Plan returns the delivery targets of msg, in member order:
 //   - never the author itself (DLV-01);
 //   - every other agent member (DLV-02);
-//   - every project member but the authoring agent's project (PROJ-07, PROJ-09);
 //   - agent and user posts: the listed chats with Outbound on when Recipients is set (DLV-04),
 //     otherwise every chat with Outbound on (DLV-03), or none when the room does not
 //     broadcast (ROUTE-06);
@@ -72,12 +66,6 @@ func Plan(room RoomState, members []Member, msg Draft) Targets {
 		switch m.Kind {
 		case dto.MemberKindAgent:
 			t.AgentIDs = append(t.AgentIDs, m.ID)
-		case dto.MemberKindProject:
-			// PROJ-09 (AD-009): a project member never receives its own sessions' posts; a
-			// session of that project that is a direct member above still receives them.
-			if msg.AuthorKind != dto.AuthorKindAgent || m.ID != msg.AuthorProjectID {
-				t.ProjectIDs = append(t.ProjectIDs, m.ID)
-			}
 		case dto.MemberKindChat:
 			if chatReceives(room, m, msg, listed) {
 				t.ChatIDs = append(t.ChatIDs, m.ID)

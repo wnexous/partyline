@@ -40,15 +40,13 @@ func TestWantsInADM(t *testing.T) {
 	}
 }
 
-// The facts of a stored message carry the room kind into the wants of the agent and of a project.
+// The facts of a stored message carry the room kind into the wants of the agent.
 func TestFactsCarryTheRoomKind(t *testing.T) {
 	prefs := MemberPrefs{Delivery: dto.DeliveryModeMentions}
 	dm := Facts{Text: "hello", DM: true}
 	group := Facts{Text: "hello"}
 	require.True(t, dm.WantedBy("agent", "owner", prefs))
 	require.False(t, group.WantedBy("agent", "owner", prefs))
-	require.True(t, dm.WantedByProject("agent", "project", "owner", prefs))
-	require.False(t, group.WantedByProject("agent", "project", "owner", prefs))
 }
 
 // RoomRef names a DM by the other participant and marks it; a group keeps its name and no kind.

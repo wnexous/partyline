@@ -31,8 +31,9 @@ import { cn } from "@/lib/utils";
 /*
  * "Connect an agent" (WIZ-01): install partyline from this instance, approve the machine once
  * with `partyline setup --browser` (it saves the credentials and registers every harness it
- * finds), then start a session of the chosen harness in a project folder. No token is created
- * or shown here; "Advanced" shows the manual entry, which reads the token from the config file.
+ * finds), then start a session of the chosen harness in the folder the AI works in. No token is
+ * created or shown here; "Advanced" shows the manual entry, which reads the token from the config
+ * file.
  * The footer waits for the first session that comes online while the dialog is open.
  */
 
@@ -232,9 +233,8 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
 }
 
 /**
- * Live line at the bottom of the wizard: the session's name is chosen on its machine (project
- * folder, `-2` for a second session), so it waits for any of the viewer's agents that was not
- * online when the dialog opened.
+ * Live line at the bottom of the wizard: the AI is the folder the session runs in, so it waits
+ * for any of the viewer's agents that was not online when the dialog opened.
  */
 function AgentArrival() {
   const t = useT();

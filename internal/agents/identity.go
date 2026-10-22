@@ -67,8 +67,7 @@ func cleanText(s string, limit int) string {
 	return s
 }
 
-// MarkConnected stamps the agent's last connect (which also picks a project's active session
-// until the projects are removed).
+// MarkConnected stamps the agent's last connect.
 func (r *Registry) MarkConnected(ctx context.Context, agentID string) error {
 	return r.store.WithTx(ctx, func(q *db.Queries) error {
 		return q.MarkAgentConnected(ctx, db.MarkAgentConnectedParams{ConnectedAt: nullMillis(r.now()), ID: agentID})

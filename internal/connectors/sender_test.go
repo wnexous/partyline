@@ -2,8 +2,6 @@ package connectors_test
 
 import (
 	"bytes"
-	"context"
-	"database/sql"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -16,8 +14,6 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
-	"github.com/wnexous/partyline/internal/store"
-	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -247,50 +243,3 @@ func TestOutboundAuthorFollowsMemberSettings(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
-
-// PROJ-06, PROJ-07 (MEM-01, MEM-02 for projects): the active session of a member project signs
-// with its readable name by default, with the project member's display name when set, and
-// without an author when the project member's signature is off.
-func TestOutboundAuthorFollowsProjectMemberSettings(t *testing.T) {
-	e := newOutboundEnv(t)
-	ctx := context.Background()
-	atlas := e.env.NewAI(e.alice, "atlas-claude")
-	project := store.NewID()
-	require.NoError(t, e.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
-		if err := q.CreateProject(ctx, db.CreateProjectParams{ID: project, OwnerID: e.alice.User.ID, Slug: "atlas", Name: "Atlas", CreatedAt: 1}); err != nil {
-			return err
-		}
-		return q.SetAgentProject(ctx, db.SetAgentProjectParams{ProjectID: sql.NullString{String: project, Valid: true}, ID: atlas})
-	}))
-	session, resp := e.alice.Token(dto.TokenKindAgent, "desk").DialAgent("atlas-claude")
-	require.NotNil(t, session, "upgrade refused: %d", resp.Status)
-	info := session.Welcome(connectortest.Timeout).Agent
-	require.Equal(t, atlas, info.ID)
-	member := testkit.Decode[dto.RoomMember](e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members",
-		dto.AddMemberRequest{Kind: dto.MemberKindProject, MemberID: project}).RequireStatus(http.StatusCreated))
-	rest := e.alice.Token(dto.TokenKindAgent, "desk-rest").AsAgent("atlas-claude")
-	post := func(text string) dto.Message {
-		t.Helper()
-		m := testkit.Decode[dto.Message](rest.Post("/api/v1/agent/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: text}).RequireStatus(http.StatusCreated))
-		require.Equal(t, info.ID, m.AuthorID)
-		return m
-	}
-
-	m := post("default")
-	sent := e.inst.WaitSend(t)
-	require.Equal(t, m.ID, sent.MessageID)
-	require.Equal(t, "atlas-claude", sent.AuthorName)
-
-	e.alice.Patch("/api/v1/rooms/"+e.room.ID+"/members/"+member.ID, dto.UpdateMemberRequest{DisplayName: ptr("Atlas bot")}).RequireStatus(http.StatusOK)
-	m = post("named")
-	sent = e.inst.WaitSend(t)
-	require.Equal(t, m.ID, sent.MessageID)
-	require.Equal(t, "Atlas bot", sent.AuthorName)
-	require.Equal(t, "Atlas bot", e.authorName(t, e.room.ID, m.ID), "the timeline shows the project member's display name")
-
-	e.alice.Patch("/api/v1/rooms/"+e.room.ID+"/members/"+member.ID, dto.UpdateMemberRequest{SignOutbound: ptr(false)}).RequireStatus(http.StatusOK)
-	m = post("unsigned")
-	sent = e.inst.WaitSend(t)
-	require.Equal(t, m.ID, sent.MessageID)
-	require.Equal(t, "", sent.AuthorName)
-}

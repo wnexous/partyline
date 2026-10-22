@@ -58,10 +58,9 @@ SELECT sqlc.embed(m),
        CAST(CASE m.kind
             WHEN 'agent' THEN COALESCE(i.display_name, NULLIF(a.display_name, ''), a.name, '')
             WHEN 'chat' THEN COALESCE(c.title, '')
-            WHEN 'project' THEN COALESCE(p.name, '')
             ELSE COALESCE(i.display_name, NULLIF(u.display_name, ''), u.username, '')
             END AS TEXT) AS name,
-       CAST(COALESCE(ao.username, po.username, '') AS TEXT) AS agent_owner,
+       CAST(COALESCE(ao.username, '') AS TEXT) AS agent_owner,
        CAST(COALESCE(cn.kind, '') AS TEXT) AS connector_kind,
        CAST(COALESCE(c.kind, '') AS TEXT) AS chat_kind,
        CAST(COALESCE(i.id, '') AS TEXT) AS intelligence_id,
@@ -76,8 +75,6 @@ LEFT JOIN users ao ON ao.id = a.owner_id
 LEFT JOIN chats c ON m.kind = 'chat' AND c.id = m.member_id
 LEFT JOIN connectors cn ON cn.id = c.connector_id
 LEFT JOIN users u ON m.kind = 'user' AND u.id = m.member_id
-LEFT JOIN projects p ON m.kind = 'project' AND p.id = m.member_id
-LEFT JOIN users po ON po.id = p.owner_id
 WHERE m.room_id = ?
 ORDER BY m.created_at, m.id;
 

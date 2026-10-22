@@ -2197,3 +2197,39 @@ Web only. No API changed; it closes T47's open MRG-01 note.
   tree/shared/user rows, and no action when there is no other AI), `lib/api/contacts.test.tsx` (the hook's request and
   cache: the AI dropped from the flat lists, contacts/conversations/rooms stale, the profile stale without refetch; a
   409 leaves the cached contacts alone), `routes/a11y.test.tsx` (axe on the open dialog, en and pt-BR).
+
+## T50 - Remove v0.3 projects (MIG-03)
+
+- **Deleted**: the `/projects*` routes and handlers, `agents.Project(s)/GetProject/RenameProject/
+  ProjectSharing/SetProjectSharing`, `access.KindProject`, `ProjectLevel`, `CanUseProject`,
+  `ActiveInProjectRoom` and the project branch of `AgentRoomLevel` (`Options.Online` went with
+  it), `dto.MemberKindProject`/`MemberSession`/`RoomMember.active_session`, the project cases of
+  `rooms.checkUse` and the member-settings gate, `delivery.ActiveSession`/`ProjectIDs`/
+  `AuthorProjectID`/`ProjectPrefs`/`WantedByProject`/`ReplyAuthorProjectID`, the dispatcher's
+  project pushes and project-owner trust fallback, `Presence.projectRoomsChanged`, the gateway's
+  project cursors/backlog (`advanceProject`, `countBacklog`/`listBacklog` project branches), the
+  sender's project member fallback, the hub's project `access.changed` case, and the sqlc
+  project queries (`GetProject`, `ListProjectsForUser`, `GetProjectWithOwner`,
+  `UpdateProjectName`, `ListProjectSessions`, `ListProjectRoomStates`, `AdvanceProjectCursor`,
+  `GetProjectCursor`, `CountProjectBacklog`, `ListProjectBacklog`, `ListProjectRoomIDs`,
+  `ListAgentProjectRoomIDs`, `SetAgentProject`, `CreateProject`); `ListRoomMembers` no longer
+  joins `projects`. Agents and users always deliver through their own member row and cursor.
+- **Kept on purpose**: migrations 0011/0012/0015 (applied history; 0015's `message_views` keeps
+  its transitional project joins until 0016 recreates it in T51), the empty `projects`/
+  `project_cursors` tables and `agents.project_id` (AD-012; T51 drops what SQLite can), the
+  `project` values still allowed by the `room_members`/`grants` CHECKs (T51 keeps them dead), the
+  `dto.Project`/`ProjectRef`/`UpdateProjectRequest`/`MaxProjectName` types and `Agent.project`
+  (T51 removes the legacy DTOs), and the CLI `--project` flags (accepted and ignored for older
+  clients). The T5 conversion test (`projects_conversion_test.go`), the 0011 migration test and
+  the v0.3 fixture still poke the tables with raw SQL, as the schema stays until T51.
+- **Web**: removed `useProjects`/`useRenameProject`, `queryKeys.projects`, the `projects`
+  live-resource key and the project member group in `member-list.tsx` (with its i18n keys); the
+  dead v0.3 hooks `useAgentsWithArchived`/`useUpdateAgent` and the archived-patch in
+  `agent.presence` went too (no page used them since the agents page was replaced). The connect
+  wizard's copy no longer says sessions join under a project's name: the folder is the AI. The
+  room page keeps the guard test that it offers no projects and never calls `/projects`.
+- **Tests**: `internal/api/projects_removed_test.go` - `/api/v1/projects*` is 404 for the owner
+  and a stranger and 403 for an AI token (agent-endpoint scope), and adding a `project` (or any
+  unknown) member is 422 `kind` = "must be agent, chat or user" with nothing added. Project-only
+  tests deleted: the four `internal/api/project_*_test.go`, the project delivery/room tests, the
+  sender project-signature test and the project cases of the delivery/agent/API tests.
