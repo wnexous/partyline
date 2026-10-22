@@ -357,6 +357,7 @@ export const en = {
   "composer.attach": "Attach files",
   "composer.removeFile": "Remove {name}",
   "composer.hint": "Enter to send · Shift+Enter for a new line",
+  "composer.mentions": "Mention someone",
   "composer.readOnly": "You can read this room but not post. Ask a room manager for post access.",
   "composer.forbidden": "You’re not allowed to post in this room.",
   "composer.tooLarge": "Those files are too large for this server.",

@@ -2774,3 +2774,41 @@ Claude Code event carries no trailing line like the framed harnesses' "Reply wit
   `TestOmpInstructions` assert it; the tools-only test is untouched. They fail on the previous text.
 - **Not shown by any test:** whether a model now answers a bare greeting with `reply`. The UAT's repeat of
   step 4 with fresh sessions is still open (`uat.md` says so).
+
+## MP-MEN - Mention suggestions in the composer (MEN-01..MEN-06)
+
+Web only: `web/src/components/mention-suggestions.tsx` (new) and `composer.tsx`.
+
+- **Source.** Candidates are the `intelligence` of the room's `agent` and `user` members plus every
+  `people` entry of its `chat` members (the people seen in a chat; only `GET /rooms/{id}/members`
+  fills it), deduped by id, with a non-empty handle, minus the viewer (`GET /me`'s id). Chat members
+  themselves are never suggested.
+- **Trigger.** `mentionAt(text, caret)` returns the `@word` the caret is inside: the characters
+  between the `@` and the caret are `[\p{L}\p{N}_-]` and the `@` starts a word (the character before
+  it is not `[\p{L}\p{N}_]`, T12's rule), so `joe@atlas.example` opens nothing. The word ends at
+  the first character outside that class (whitespace or punctuation); the completion replaces the
+  whole word.
+- **Filter.** `matchMentions` folds diacritics (NFD, then `\p{Diacritic}` removed) and case on both
+  sides, keeps candidates whose display name or handle contains the query, keeps everyone for an
+  empty query and caps the result at `MaxMentionSuggestions = 8`.
+- **Keys and taps.** Up/Down move with wrap; Enter and Tab replace the whole `@word` with
+  `@handle ` and never submit; Escape closes the list for that word until the caret leaves it (a
+  re-entered word opens again); a tap/click on an option inserts it and keeps the focus in the box.
+  The list closes whenever the caret is no longer inside the word; the caret is resynced on
+  change/select/keyup/click/focus because `select` alone misses some browsers' arrow keys. After a
+  completion an effect on the text puts the caret after the trailing space, so the controlled
+  textarea does not jump to the end.
+- **A11y.** While the list is open the textarea is `role="combobox"` with `aria-expanded`,
+  `aria-controls` and `aria-activedescendant` naming the active option; closed it stays
+  `role=textbox`, so the app's existing `getByRole("textbox", { name: "Message …" })` locators keep
+  working. The list is `role=listbox` with `aria-label` `composer.mentions`; each option is
+  `role=option` with `aria-selected`, `tabIndex=-1` and the shared `IntelligenceAvatar`,
+  `KindBadge` (AI, the platform for a person, nothing for a user, T43), display name and `@handle`.
+  The dynamic role is why `composer.tsx` carries one
+  `biome-ignore lint/a11y/useAriaPropsSupportedByRole` (the linter only sees the textarea's
+  implicit role).
+- **Tests.** `mention-suggestions.test.tsx` covers every AC id: `mentionAt`/`mentionCandidates`/
+  `matchMentions` as units and the real `Composer` (with `GET /me` and the post stub) for the
+  viewer exclusion, the cap, the accent/case filter, the trailing space and no POST on Enter, Tab
+  and a tap, Escape and caret-out closing, no match sending as usual and the combobox/listbox/
+  `aria-activedescendant` roles.
