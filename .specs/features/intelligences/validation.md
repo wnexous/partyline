@@ -1,13 +1,200 @@
 # Intelligences Validation
 
+## Validation (iteration 2): intelligences - FAIL ❌
+
+**Result**: FAIL - every iteration-1 gap that had a fix task is closed, and all 8 non-equivalent iteration-1 survivors are now killed. M30 is equivalent; its double-guard variant is killed. All gates pass: `make check-race`, and the formerly flaky takeover test passed 30 of 30 under `-race`. 83 of 84 ACs match their spec outcome. Two new mutants survive, both test-only gaps with no product defect. N18: the amended SES-06 promises that a silent connection goes offline within 35 s, and no test drives the ping-failure path. W8: the AI badge added to the route-chat dialog in fed9454 has no test. This is iteration 2 of 3, and fixing both takes two tests.
+
+**Date**: 2026-10-22
+**Spec**: `.specs/features/intelligences/spec.md` (84 requirements; amended by T58, T66 and T68; AD-013, AD-014)
+**Diff range**: `cf5440f^..fed9454`: the Phase 10 fix round T56-T69 (`cf5440f..771de75`, merged as `b76dcf5`) plus `fed9454` (AI badge in the command palette and the route-chat dialog). 53 files, +1 893 / −136.
+**Verifier**: independent sub-agent (author ≠ verifier), worktree `partyline-verify-intel` on `verify/intelligences-2` at `fed9454`.
+
+### Task Completion
+
+| Task | Status | Notes |
+| --- | --- | --- |
+| T1-T55 | ✅ Done | As in iteration 1. |
+| T54 | ✅ Done | `uat.md`: real Claude Code UAT PASS with Finding 1. Its follow-up (T69) is a text change. Only a new real session can show its effect, and none was run here (hard rule). |
+| T56-T69 | ✅ Done | Every `Done when` is checked in `tasks.md`. The commits are `cf5440f..771de75`. |
+
+### Iteration-1 gaps re-checked
+
+| Gap | Fix | Evidence (asserts the spec outcome) | Closed? |
+| --- | --- | --- | --- |
+| 1 MRG-01 merge skips undelivered/unread | `internal/conversations/merge.go:244-266,315-336` (up-to-date check before append; `cursorHolder`) | `internal/api/merge_test.go:426-430` survivor cursor `0`, pending `{"to atlas 1","to atlas 2","History merged from @old","to old"}`, alice read cursor `0`, `Unread == 3`; `:470-478` up-to-date parties move (4/5, 5/4, `Unread` 0); `:501-504` each AI's cursor credited to itself (6 vs 5) | ✅ (M19, N01-N03 killed) |
+| 2 check-race flake / duplicate after takeover | `internal/agents/gateway.go:474` `sent[st.ID] = st.Cursor` | `internal/agents/gateway_live_test.go:131-134` late push of an acked message → `taker.ExpectNone`, next message arrives; `go test -race -count=30 -run TestTakenOverChannelNotifiesOnceAndDeliversNothingMore` 30/30 | ✅ (N04, N05, N17 killed) |
+| 3 PEOP-04 vs DM-08 | AD-013 (André), spec PEOP-04/DM-08 amended | `internal/api/people_test.go:182-243`: alice and dave (`use` on Atlas) get `LevelView` on the platform DM and 200 on the avatar (`:214-220`); dave's profile `{Dana, platform, CanEdit false}`, `Person == nil`, patch 403 (`:223-227`); bob (connector) sees the person but gets 404 on the DM (`:229-231`); carol and the admin get 404 on the DM, profile and avatar (`:234-240`) | ✅ (N14, N15 killed) |
+| 4 M17/M18 participant order | tests only | `internal/connectors/notify_test.go:307,312` AI sorts first → `{dmB, "Atlas: your report is ready"}`; `internal/api/direct_messages_test.go:366,375` AI sorts first → `ErrCounterpartDisabled` | ✅ (M17, M18, N10 killed) |
+| 5 M10b no process id | tests only | `internal/agents/presence_test.go:85-108` second attach without id `ErrBusy`, `Busy` true; `internal/api/agent_live_test.go:113-119` 409 `identity_busy`, first stays live | ✅ (M10b + Attach-only variant killed) |
+| 6 ACC-05 trust source | AD-014 (André), `internal/connectors/selfmsg.go:52-55` | `internal/connectors/selfmsg_test.go:89-102` owner operates → `Trusted` true, `AuthorUserID` = alice; AI operates → `Trusted` false, `AuthorUserID` empty, author = AI; back to owner → trusted | ✅ (N06, N07 killed) |
+| 7 PROF-07 height / person avatar | tests only | `internal/avatars/avatars_test.go:169-171` 10×5000, 4097×1 and 1×4097 are `ErrInvalid`; `:216-222` 1×4096 accepted; `internal/api/people_test.go:291-314` person avatar `image/png` 256×256 (`requireGreenSquare`) for owner, connector grantee, room viewer and chat viewer; carol and the admin get 404 | ✅ (M23 killed) |
+| 8 PROF-09 badges | header, new-group, files (+ DTO `author`) | `web/src/routes/_app/rooms/conversation.test.tsx:211` both participants with their badges ("AI", "WhatsApp"); `web/src/components/new-group-dialog.test.tsx:294,306`; `web/src/components/room-files.test.tsx:159`; `internal/api/files_handlers_test.go:34-64`; `internal/api/people_test.go:273-288` | ✅ (W3-W7, N13 killed). The route-chat dialog badge from `fed9454` has no test (W8 survived, see below). |
+| 9 CLI-04 / M15 / M16 | `internal/cli/setup_harness.go:259-262`, `internal/cli/menu.go:107-124`; CLI-03/04 amended | `internal/cli/setup_menu_test.go:66-71` one line per harness (`already registered`, `- … not registered`); `:92-104` registered-not-installed starts checked, Enter keeps it; `:135-139` failure → exit 1, `✗ Claude Code:` on stderr, Gemini still registered; `internal/cli/menu_test.go:78-84` `a` touches installed items only | ✅ (M15, M16, N11, N12 killed) |
+| 10 M30 senderless platform DM | test only | `internal/connectors/platform_dm_test.go:278-300` no DM, no person, no message, nothing delivered, no failure logged | ✅ The outcome is pinned. M30 itself is **equivalent**, see the sensor. |
+| 11 W1 clamp | test only | `web/src/lib/api/queries.test.ts:70-74` 1 unread, read to seq 5 of 10 → stays 1 | ✅ (W1 killed) |
+| 12 notify outbox visibility | `internal/api/convert/convert.go:38-67`, `internal/live/hub.go:378-383`, `internal/rooms/messages.go:495-531` | `internal/connectors/notify_test.go:343` AI's own answer has no notify row; `:347-356` bob sees row + live status; `:359-373` owner and `use` grantee: timeline `Outbox` empty, live frame empty, no `outbox.status`; `:379-399` AI acting for its owner's DM sees none, alice does | ✅ (N08, N09, N10 killed) |
+| 13 spec text | T68 | SES-06, TREE-02, DM-02, DM-08, PEOP-01 amended; each now matches the code and the tests (table below) | ✅ except SES-06's new 35-s clause, which has no test (N18) |
+| 14 other minor findings | not tasked | Still open: late-member unread baseline, operator-validation race (500 not 422), `settle` blocking the inbound loop up to 10 s, people squatting AI handles, tools-half of a refused pi/OpenCode session | ⏭️ Carried over (Minor, not AC failures) |
+| UAT Finding 1 | T69 | `internal/channel/instructions_test.go:75-77` literal `terminalSentence` once, after the tool paragraph; `:99` in the omp text; tools-only text unchanged | ✅ for the text (N16 killed). Behaviour still needs a real session. |
+
+### Gate Check
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Build | `make check` | ✅ exit 0 in 127 s: 0 lint issues, no generated-code drift. Go: every package `ok` (api 338, channel 112, cli 137, connectors 128, agents 32, avatars 8 tests …). Web: 48 files / 778 tests. Integrations: 70 pass / 0 fail. Build OK. |
+| Race | `make check-race` | ✅ exit 0 in 493 s (web 778/778). |
+| Race, isolated | `go test -race -count=30 -run 'TestTakenOverChannelNotifiesOnceAndDeliversNothingMore$' ./internal/channel/` | ✅ `ok` in 84 s: 30/30, run with the sensor loading the machine. Iteration 1: 1 in 8 failed. |
+| E2E | `make e2e` (Chromium headless shell 1248) | ✅ 20 passed (10 × desktop-1280 + mobile-360) |
+
+- **Test count**: Go +23 top-level tests since iteration 1 (api 329→338, channel 111→112, cli 133→137, connectors 123→128, …). Web went from 770 to 778. No test was deleted. Two assertions were changed on purpose to follow the decisions: `selfmsg_test.go` "trusted" became `False` (AD-014), and `notify_test.go:407` became `Empty(msg.Outbox)` (T67). Both are spec changes, not weakening.
+- **Skipped tests**: none. `git status --porcelain` was empty before and after every gate.
+
+### Spec-Anchored Acceptance Criteria (recount over all 84)
+
+The 74 ACs that iteration 1 marked ✅ were re-checked against the amended spec. Their outcome text is unchanged. Their evidence still holds, but line numbers moved in the test files that Phase 10 touched (current lines below). The rows below are those that changed status, changed outcome text, or gained evidence.
+
+| AC | Spec-defined outcome (current text) | Evidence | Result |
+| --- | --- | --- | --- |
+| SES-04 | 409 `identity_busy`, busy text on every tool | + `internal/agents/presence_test.go:85`, `internal/api/agent_live_test.go:113-119` | ✅ |
+| SES-05 | one notice, then nothing | `internal/channel/session_lost_test.go:151,159`; `internal/agents/gateway_live_test.go:131-134` | ✅ stable (30/30 under `-race`) |
+| SES-06 | offline ≤5 s on close or drop; a silent connection is dropped by the ping (25 s + 10 s write timeout), offline ≤35 s | 5 s: `internal/api/agent_live_test.go:245`. 35 s: **no test**. The interval is injectable (`gateway.go:73`), and ignoring a failed ping (N18) survives every package. | ❌ Partial |
+| TREE-02 | path label before the name; home node `~`, folder column `~/…` | `web/src/routes/_app/contacts.test.tsx:181-184` `getByText("c/d ›")`, `/c\/d ›\s*E/`, `getByText("~")`, `getByText("~/c/d/e")`; `internal/intelligences/tree_test.go:31,47` | ✅ |
+| DM-02 | 422 `dm_members_fixed` for a viewer; 404 for a caller who cannot view | `internal/api/direct_messages_test.go:296-298` 422, `:304-306` 404; `:375` AI-first order | ✅ |
+| DM-03 | live session receives the DM; reply in the DM (+ instruction text) | iteration-1 evidence + `internal/channel/instructions_test.go:75` | ✅ |
+| DM-08 | two participants; AI owner and named `use` grantees view (also DMs with people, AD-013); `*` grant does not; grants 422 | `internal/api/people_test.go:214-216` `{dm, LevelView}`; `internal/access/access_test.go:577` public AI's DM not visible to everyone; `internal/api/room_membership_access_test.go:85,100` | ✅ |
+| PEOP-01 | person only for routed messages; unrouted chat records no person | `internal/connectors/people_test.go:89` `Empty(e.people(t), "an unrouted chat records no person")`; `internal/connectors/platform_dm_test.go:290` | ✅ |
+| PEOP-04 | connector users see + edit + account; conversation viewers and AI `use` grantees read only; nobody else, admins included | `internal/api/people_test.go:141,147,153-158,223-241` | ✅ |
+| PROF-07 | 256×256 PNG; served to who can see; size bounds | `internal/avatars/avatars_test.go:169-171,216`; `internal/api/people_test.go:291-314` | ✅ |
+| PROF-09 | badge + @handle next to every name | gap-8 evidence above + `web/src/components/command-menu.test.tsx:35` | ✅ (W8: route-chat dialog untested) |
+| ACC-05 | authored by operator; trusted as owner only when the owner operates | `internal/connectors/selfmsg_test.go:89-102` | ✅ |
+| CLI-03 | installed or registered pre-selected; `a` = installed only | `internal/cli/menu_test.go:51,78-84`; `internal/cli/setup_menu_test.go:93` `"> [x] Claude Code  not installed · registered"` | ✅ |
+| CLI-04 | one result line per harness; exit non-zero on failure; nothing else changed | `internal/cli/setup_menu_test.go:66-71,94-97,135-139` | ✅ |
+| MRG-01 | groups, DMs merged, cursors (now: only for up-to-date parties), grants, messages, delete, audit | `internal/api/merge_test.go:426-430,470-478,501-504` + iteration-1 lines | ✅ |
+| NOTI-02 | "<AI name>: <text>", links, outbox marked; delivery visible to the DM's user only | `internal/connectors/notify_test.go:312,411`, `:343-373` | ✅ |
+| NOTI-03 | retries; DM readable | `internal/connectors/notify_test.go:565-582` (moved from `:470,474`) | ✅ |
+| DM-05 | only via the account the sender operates | `internal/connectors/platform_dm_test.go:378-384` (moved from `:322,331`) | ✅ |
+
+**Status**: 83 ✅ / 0 ⚠️ / 1 ❌ (SES-06: the 35-s clause added by T68 has no evidence).
+
+### Edge Cases (changed since iteration 1)
+
+- [x] Disabled counterpart is refused in both pair orders: `internal/api/direct_messages_test.go:347,375`.
+- [x] Merge with a counterpart AI: `internal/api/merge_test.go:483-505`.
+- [x] Senderless platform DM: `internal/connectors/platform_dm_test.go:278`.
+- [~] Width < 40 and hostname truncation: unchanged from iteration 1 (Minor notes).
+
+### Discrimination Sensor
+
+The sensor ran in the detached scratch worktree `/home/dev/orca/projects/partyline-verify-intel-mut` at `fed9454`. One mutant was applied at a time, followed by `go test -count=1 -p 4` on the covering packages (filtered with `-run`; the survivors were run against whole packages) or `bun x vitest run` for W*. After each mutant the file was restored with `git checkout` inside the scratch, and the scratch was checked to be clean before the next one. At the end the scratch was removed with `git worktree remove --force` and pruned. `git status --porcelain` of the verify worktree was empty before and after.
+
+**Iteration-1 survivors, re-run**
+
+| # | File:line | Mutation | Killed? |
+| --- | --- | --- | --- |
+| M10b | `internal/agents/presence.go:93,124` | empty live id counts as the holder's process | ✅ `TestPresenceTreatsTwoConnectionsWithoutAProcessIDAsTwoProcesses`, `TestTwoConnectionsWithoutAProcessIDAreTwoProcesses` |
+| M10b′ | `internal/agents/presence.go:93` | Attach-only variant | ✅ `TestPresenceTreatsTwoConnectionsWithoutAProcessIDAsTwoProcesses` |
+| M15 | `internal/cli/setup_harness.go:144` | `Selected: s.installed` | ✅ `TestSetupMenuKeepsARegisteredHarnessThatIsNotInstalled` |
+| M16 | `internal/cli/setup_harness.go:162` | failed apply exits 0 | ✅ `TestSetupMenuExitsNonZeroWhenAHarnessFails` |
+| M17 | `internal/rooms/notify.go:23-26` | notify target = `dm_a` always | ✅ `TestAIDMIsCopiedToTheAppOfAUserThatSortsAfterTheAI`, `TestTheCopysDeliveryIsVisibleOnlyToTheUserOfTheDM` |
+| M18 | `internal/rooms/messages.go:116-119` | counterpart check uses the owner's id for AI posts | ✅ `TestPostByAnAIThatSortsBeforeTheDisabledUserIsRefused` |
+| M19 | `internal/conversations/merge.go:341-346` | every appended AI cursor credited to the survivor | ✅ `TestMergeCreditsEachAICursorToItself` |
+| M23 | `internal/avatars/avatars.go:52` | height bound removed | ✅ `TestProcessRejectsInvalidInputs/too_tall`, `/one_pixel_too_tall` |
+| M30 | `internal/connectors/autoroute.go:210` | senderless guard removed | ➖ **Equivalent.** `EnsurePlatformDM` refuses an empty author first (`internal/conversations/platform.go:58`, `ErrDMSelf` → not routed), so no outcome changes, the log line included. Removing both guards (M30b) is ✅ killed by `TestPlatformDMWithoutASenderIsNotRouted`, and removing only the conversations guard (M30c) also survives. The two guards are redundant and the behaviour is pinned. The test comment ("refused by the database and logged") names the wrong guard; that is cosmetic. |
+| W1 | `web/src/lib/api/queries.ts:540` | clamp removed | ✅ `queries.test.ts` "never raises the count … (W1)" |
+
+**New mutations on the fixed code**
+
+| # | File:line | Mutation | Killed? |
+| --- | --- | --- | --- |
+| N01 | `internal/conversations/merge.go:356` | `agentUpToDate` always true | ✅ `TestMergeKeepsWhatTheSurvivorHasNotReceivedOrRead` |
+| N02 | `internal/conversations/merge.go:363` | `userUpToDate` always true | ✅ `TestMergeKeepsWhatTheSurvivorHasNotReceivedOrRead` |
+| N03 | `internal/conversations/merge.go:363` | `userUpToDate` always false | ✅ `TestMergeCarriesDirectMessages`, `TestMergeMovesTheCursorsOfPartiesThatWereUpToDate` |
+| N04 | `internal/agents/gateway.go:474` | `sent` seeding removed (pre-fix) | ✅ `TestTakeoverDropsALatePushOfAnAcknowledgedMessage` |
+| N05 | `internal/agents/gateway.go:474` | seeded with `cursor + 1` (off by one) | ✅ 5 tests, among them `TestTakenOverChannelNotifiesOnceAndDeliversNothingMore`, `TestTakeoverMakesTheNewSessionLive` |
+| N06 | `internal/connectors/selfmsg.go:53` | AD-014 condition inverted | ✅ `TestOwnAccountMessageIsTrustedOnlyWhenTheOwnerOperatesTheAccount` (+1) |
+| N07 | `internal/connectors/selfmsg.go:54` | AI-operated account keeps the owner's user (pre-AD-014) | ✅ same 2 tests |
+| N08 | `internal/api/convert/convert.go:38-43` | `Viewer` returns the user id for agents too | ✅ `TestTheCopysDeliveryIsNotShownToTheAIEvenForItsOwnersDM` |
+| N09 | `internal/live/hub.go:380` | `outbox.status` of a notify copy sent to every viewer | ✅ `TestTheCopysDeliveryIsVisibleOnlyToTheUserOfTheDM` |
+| N10 | `internal/rooms/messages.go:514-517` | `notifiedUser` = `dm_a` always | ✅ `TestAIDMIsCopiedToTheAppOfAUserThatSortsAfterTheAI`, `TestTheCopysDeliveryIsVisibleOnlyToTheUserOfTheDM` |
+| N11 | `internal/cli/setup_harness.go:260` | no "already registered" line | ✅ `TestSetupMenuAppliesTheChecklist`, `TestSetupMenuKeepsARegisteredHarnessThatIsNotInstalled` |
+| N12 | `internal/cli/menu.go:120-124` | `a` toggles items that are not installed | ✅ `TestMenuKeys`, `TestMenuAllLeavesItemsThatAreNotInstalledAsTheyWere`, `TestSetupMenuAllChecksOnlyInstalledHarnesses` |
+| N13 | `internal/api/convert/convert.go:140` | file author loses its platform | ✅ `TestRoomFilesNameAPersonWithItsPlatform` |
+| N14 | `internal/access/access.go:173` | named `use` grant no longer gives view on the AI's DMs (AD-013) | ✅ `TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople`, `TestDMRoutesAuthMatrix` |
+| N15 | `internal/intelligences/service.go:400-401` | person not readable through a viewable conversation | ✅ 6 tests incl. `TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople`, `TestPersonAvatarIsServedToWhoCanSeeThePerson` |
+| N16 | `internal/channel/instructions.go:43` | `terminalNote` dropped from the omp text | ✅ `TestOmpInstructions` |
+| N17 | `internal/agents/gateway.go:442` | drop check `<=` → `<` | ✅ `TestTakeoverDropsALatePushOfAnAcknowledgedMessage`, `TestAgentLivePushSkipsBacklogOverlap` |
+| N18 | `internal/agents/gateway.go:436-439` | failed ping ignored: a silent connection is never dropped (SES-06, 35 s) | ❌ **Survived** (`./internal/agents/ ./internal/api/ ./internal/channel/` whole packages) |
+| W3 | `web/src/components/conversation-header.tsx:46` | both-participants header disabled | ✅ `conversation.test.tsx` (2 tests) |
+| W4 | `web/src/components/room-files.tsx:285` | file author always a plain name | ✅ `room-files.test.tsx` (2 tests) |
+| W5 | `web/src/components/command-menu.tsx:124` | palette badge removed (`fed9454`) | ✅ `command-menu.test.tsx` "marks an AI with a human-looking name as an AI (PROF-09)" |
+| W6 | `web/src/components/new-group-dialog.tsx:185` | picked member without badge | ✅ `new-group-dialog.test.tsx:294` |
+| W7 | `web/src/components/new-group-dialog.tsx:154` | refused member without badge | ✅ `new-group-dialog.test.tsx:306` (+1) |
+| W8 | `web/src/components/route-chat-dialog.tsx:134` | route-chat badge removed (`fed9454`) | ❌ **Survived** (all of `src/components` and `src/routes`; the dialog has no test file) |
+
+**Sensor depth**: P0-full. There were 36 runs: 10 re-runs of iteration-1 mutants (the 9 survivors plus the Attach-only variant), 24 new mutants and 2 equivalence probes (M30b, M30c). Four further attempts did not compile on the first try (`declared and not used`); they were rewritten and run as M18, N01-N03 and N09 above.
+**Sensor outcome**: 32/36 killed. Of the 4 survivors, M30 and M30c are equivalent (redundant guards, pinned together), and N18 and W8 are genuine. FAIL ❌: 2 genuine survivors → fix tasks.
+
+### Code Quality
+
+| Principle | Status |
+| --- | --- |
+| Minimum code / surgical | ✅ The fixes are small and local: merge pre-check, one seeding line, a trust condition, a viewer filter, CLI result lines. |
+| No scope creep | ✅ The palette and route-chat badges (`fed9454`) implement PROF-09's "every name". |
+| Matches patterns | ✅ sqlc query added for files (`internal/store/queries/files.sql`), DTO + tygo regenerated, no drift. |
+| Spec-anchored outcome check | ⚠️ SES-06's 35-s clause has no test (T68 called it untestable, but the ping interval is injectable). |
+| Per-layer coverage | ⚠️ The route-chat dialog has no component test (W8). |
+| Every test maps to a requirement | ✅ The new tests cite AC ids and lessons (L-042, L-044, L-045, L-046, L-050). |
+| Documented guidelines (`AGENTS.md`, `contract-notes.md`, `.specs/LESSONS.md`) | ✅ L-018 note: M30's test cannot isolate the autoroute guard because `platform.go:58` rejects first. The outcome is still pinned, so L-018 is not penalized. |
+
+### Gaps and Fix Plans (ranked)
+
+1. **Minor - SES-06 / N18: the 35-s bound for a silent connection has no test.** `internal/agents/gateway.go:434-440`. Fix task: in `internal/agents/gateway_live_test.go` (or `internal/api/agent_live_test.go`), build the app with a short `PingInterval` (`gateway.go:73`), dial an agent connection and stop reading it, so pongs are never answered. Assert that the AI goes offline (presence event / `Presence.Online` false) within ping + write timeout. If 10 s is too slow for the suite, make `writeTimeout` a `Deps` field as `PingInterval` is. The test must fail with the ping error ignored (N18). Also correct T68's commit claim that no test can reach the bound.
+2. **Minor - PROF-09 / W8: the route-chat dialog's AI badge is untested.** `web/src/components/route-chat-dialog.tsx:134` (added in `fed9454`). Fix task: add `web/src/components/route-chat-dialog.test.tsx`, render the dialog with an AI whose display name looks human, and assert `getByTestId("kind-badge")` has text "AI" next to it. The test must fail without the badge.
+3. **Cosmetic - M30 test comment.** `internal/connectors/platform_dm_test.go:274-277` says the database would refuse an empty participant. In fact `EnsurePlatformDM` (`internal/conversations/platform.go:58`) refuses it first. Optionally reword the comment; no behaviour change.
+4. **Carried over (Minor, not AC failures, iteration-1 gap 14)**: unread baseline for late group members; operator validation racing deletion (500); `settle` holding the inbound loop up to 10 s; people squatting AI handles; tools-half of a refused pi/OpenCode session; attachment blobs of a deleted AI's DMs; hostname truncation/`unknown`.
+5. **Open UAT follow-up**: repeat UAT step 4 with fresh Claude Code sessions to confirm that the T69 text makes models answer greetings with `reply` (`uat.md` Finding 1 stays open until then).
+
+### Requirement Traceability Update
+
+The verdict is FAIL, so `spec.md` stays at `Implementing`. After the two fix tasks pass re-verification (iteration 3), set all 84 to `Verified`.
+
+| Requirement | Previous Status | Status this iteration would give |
+| --- | --- | --- |
+| 83 ACs (all but SES-06) | Implementing | ✅ Verified at the next PASS |
+| SES-06 | Implementing | ❌ Needs Fix (gap 1) |
+| PROF-09 | Implementing | ✅ outcome verified; W8 test gap (gap 2) |
+
+### Summary
+
+**Overall**: ❌ Not Ready by the gate (two test-only gaps). The product behaviour checked here has no known defect.
+
+**Spec-anchored check**: 83/84 matched; 0 spec-precision gaps; 1 partial (SES-06, 35-s clause untested).
+**Sensor**: 32/36 killed; 2 equivalent (M30, M30c), 2 genuine survivors (N18, W8).
+**Gate**: `make check` ✅, `make check-race` ✅, takeover test `-race -count=30` ✅ 30/30, `make e2e` ✅ 20/20.
+**Completion gate**: `validate_state.py --root . intelligences` exits 1 with "validation.md verdict is FAIL - route the ranked gaps to fix tasks, then re-verify". This is expected for a FAIL.
+
+**What works**: merge now keeps undelivered and unread messages and credits each cursor to its own party. Takeover no longer replays acknowledged messages, and the race gate is stable. AD-013 and AD-014 are implemented exactly as decided and pinned by tests. A notify copy's delivery is visible only to the DM's user, in every renderer: timeline, post answer, activity, live frame and status event. Setup prints one result line per harness and exits 1 on failure, and `a` selects installed harnesses only. Kind badges appear in the header, new-group dialog, files list and palette. The channel instructions now say that terminal text never reaches the sender.
+
+**Production-release blockers**: none in product behaviour. The release gate is FAIL only because of gaps 1 and 2 (each one test). Fixing them and re-verifying (iteration 3 of 3) clears it. UAT Finding 1 should be repeated with a real session before announcing DM support for Claude Code.
+
+### Lessons distilled (iteration 2)
+
+- **Added (candidates)**: L-051 from N18 (SES-06) and L-052 from W8 (PROF-09). They are listed in `.specs/LESSONS.md`.
+- **Not penalized**: L-018. M30 is an equivalent mutant whose behaviour is pinned by the double-guard probe M30b, not a missed outcome.
+- **Not added**: none for M30. A redundant guard is not a test failure.
+
+---
+
+# Iteration 1 (2026-10-22, diff `be30f10^..d52458b`)
+
 **Date**: 2026-10-22
 **Spec**: `.specs/features/intelligences/spec.md` (84 requirements)
 **Diff range**: `be30f10^..d52458b` (96 commits, 390 files, +51 673 / −10 367)
 **Verifier**: independent sub-agent (author ≠ verifier; the code was written by Sonnet 5.5, DeepSeek and Claude Opus workers)
 
-## Validation: intelligences - FAIL ❌
+## Iteration 1 report: intelligences - FAIL ❌
 
-**Result**: FAIL - 74/84 ACs matched their spec outcome; 4 are partial (one is a confirmed delivery-loss defect in merge, MRG-01) and 6 have spec-precision gaps. 9 of 32 sensor mutants survived. `make check-race` is flaky: run 1 failed on one load-sensitive takeover test (it fails 1 in 8 runs alone under `-race`), run 2 passed. `make check` and `make e2e` (20/20) pass. T54 (real Claude Code UAT) is still pending.
+**Iteration 1 verdict** - FAIL - 74/84 ACs matched their spec outcome; 4 are partial (one is a confirmed delivery-loss defect in merge, MRG-01) and 6 have spec-precision gaps. 9 of 32 sensor mutants survived. `make check-race` is flaky: run 1 failed on one load-sensitive takeover test (it fails 1 in 8 runs alone under `-race`), run 2 passed. `make check` and `make e2e` (20/20) pass. T54 (real Claude Code UAT) is still pending.
 
 The core of the release is sound. The v0.3 → 0015/0016 migration preserves every row of every table and rolls back as one transaction. I found no cross-owner leak in DMs, profiles, avatars, folder identity or adoption. The failures below are bounded and each has a one-line fix.
 
@@ -244,7 +431,7 @@ Every mutant ran in the detached scratch worktree `/home/dev/orca/projects/party
 The Attach-only variant of M10b (`presence.go:93` alone) also survived. It is unreachable through the gateway, because `Presence.Busy` runs first (`internal/agents/gateway.go:189`).
 
 **Sensor depth**: P0-full (critical feature): 32 behaviour-level mutants across migration, authorization, live session, folder identity, operators/signatures, conversations, CLI and web.
-**Result**: 23/32 killed - FAIL ❌ (9 survivors → fix tasks).
+**Iteration 1 sensor outcome** - 23/32 killed - FAIL ❌ (9 survivors → fix tasks).
 
 ---
 

@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 51,
+  "next_id": 53,
   "lessons": [
     {
       "id": "L-001",
@@ -915,6 +915,42 @@
       ],
       "created": "2026-10-22T18:03:33Z",
       "last_seen": "2026-10-22T18:03:33Z"
+    },
+    {
+      "id": "L-051",
+      "key": "surviving_mutant::test every timing bound an ac states by injecting a short interval and driving the failure branch of the heartbeat",
+      "text": "Test every timing bound an AC states by injecting a short interval and driving the failure branch of the heartbeat",
+      "signal": "surviving_mutant",
+      "scope": "delivery",
+      "status": "candidate",
+      "features": [
+        "intelligences"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "N18 internal/agents/gateway.go:436-439 (SES-06) (delivery)"
+      ],
+      "created": "2026-10-22T21:14:04Z",
+      "last_seen": "2026-10-22T21:14:04Z"
+    },
+    {
+      "id": "L-052",
+      "key": "surviving_mutant::every new ui surface that renders an ac required marker gets its own assertion in the commit that adds it",
+      "text": "Every new UI surface that renders an AC-required marker gets its own assertion in the commit that adds it",
+      "signal": "surviving_mutant",
+      "scope": "web",
+      "status": "candidate",
+      "features": [
+        "intelligences"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "W8 web/src/components/route-chat-dialog.tsx:134 (PROF-09) (web)"
+      ],
+      "created": "2026-10-22T21:14:05Z",
+      "last_seen": "2026-10-22T21:14:05Z"
     }
   ]
 }
