@@ -96,6 +96,7 @@ type Registry struct {
 	audit    *audit.Log
 	now      func() time.Time
 	posts    *postLimiter
+	creates  *postLimiter
 
 	// allocMu serializes the creation and adoption of folder identities (ResolveFolder), so
 	// concurrent sessions of one new folder end up with the same identity.
@@ -121,7 +122,8 @@ func NewRegistry(d Deps) *Registry {
 	}
 	return &Registry{
 		store: d.Store, az: d.Access, bus: d.Bus, presence: d.Presence, audit: d.Audit, now: d.Now,
-		posts: newPostLimiter(PostLimit, PostWindow, d.Now), machines: map[machineKey]machineSeen{},
+		posts: newPostLimiter(PostLimit, PostWindow, d.Now), creates: newPostLimiter(CreateLimit, CreateWindow, d.Now),
+		machines: map[machineKey]machineSeen{},
 	}
 }
 
@@ -211,6 +213,10 @@ func (r *Registry) ActiveSession(ctx context.Context, projectID string) (db.Agen
 
 // Online reports whether the agent has a live connection.
 func (r *Registry) Online(agentID string) bool { return r.presence.Online(agentID) }
+
+// AllowCreate records the creation of a conversation (a DM or a group) by the agent; false means
+// it already created CreateLimit within CreateWindow (DM-04, AGRP-01).
+func (r *Registry) AllowCreate(agentID string) bool { return r.creates.allow(agentID) }
 
 // AllowPost records a post by the agent; false means the agent already posted PostLimit
 // messages within PostWindow (TOOL-08).
@@ -377,7 +383,8 @@ func (r *Registry) membersChanged(roomIDs []string) {
 }
 
 // Delete removes the agent with its room memberships, grants and cursors and closes its
-// live connection; requires ownership (manage).
+// live connection; requires ownership (manage). Its direct messages go with it (DM-08): the
+// intelligence's deletion cascades to every room that names it as a participant.
 func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string) error {
 	if _, err := r.authorize(ctx, p, agentID, dto.LevelManage); err != nil {
 		return err
@@ -398,6 +405,10 @@ func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string
 	}
 	r.presence.Kick(ctx, agentID, CloseDeleted, ReasonDeleted)
 	for _, id := range roomIDs {
+		if _, err := r.store.R().GetRoom(ctx, id); errors.Is(err, sql.ErrNoRows) {
+			r.bus.Publish(events.RoomChanged{RoomID: id, Deleted: true}) // a DM of the agent
+			continue
+		}
 		r.bus.Publish(events.MembersChanged{RoomID: id})
 	}
 	return nil

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
@@ -421,4 +422,354 @@ func TestSetVisibilityValidation(t *testing.T) {
 			require.Equal(t, before, f.grantRows(t, tc.kind, tc.id))
 		})
 	}
+}
+
+// intelligence gives an existing user or agent its intelligence row, which a DM's participant
+// columns reference.
+func (f *fixture) intelligence(t *testing.T, id string, kind string) {
+	t.Helper()
+	f.exec(t, func(q *db.Queries) error {
+		return q.CreateIntelligence(context.Background(), db.CreateIntelligenceParams{
+			ID: id, Kind: kind, DisplayName: "n-" + id[len(id)-6:], Handle: "h-" + id[len(id)-8:],
+			CreatedAt: t0.UnixMilli(), UpdatedAt: t0.UnixMilli(),
+		})
+	})
+}
+
+// human is a user with an intelligence; ai an agent with one.
+func (f *fixture) human(t *testing.T, name string, role dto.Role) string {
+	t.Helper()
+	id := f.user(t, name, role)
+	f.intelligence(t, id, "human")
+	return id
+}
+
+func (f *fixture) ai(t *testing.T, ownerID string) string {
+	t.Helper()
+	id := f.agent(t, ownerID)
+	f.intelligence(t, id, "ai")
+	return id
+}
+
+// dm stores a direct message between the intelligences a and b, created by ownerID, with the
+// participants as members (as opening a DM does).
+func (f *fixture) dm(t *testing.T, ownerID, a, b string) string {
+	t.Helper()
+	id := f.dmWithoutMembers(t, ownerID, a, b)
+	for _, p := range []string{a, b} {
+		kind := dto.MemberKindUser
+		if _, err := f.st.R().GetAgent(context.Background(), p); err == nil {
+			kind = dto.MemberKindAgent
+		}
+		f.exec(t, func(q *db.Queries) error {
+			return q.CreateRoomMember(context.Background(), db.CreateRoomMemberParams{
+				ID: store.NewID(), RoomID: id, Kind: string(kind), MemberID: p, Outbound: true, CreatedAt: t0.UnixMilli(),
+			})
+		})
+	}
+	return id
+}
+
+// dmWithoutMembers stores only the room row, whose participant columns are all a DM's access
+// rule may read.
+func (f *fixture) dmWithoutMembers(t *testing.T, ownerID, a, b string) string {
+	t.Helper()
+	if a > b {
+		a, b = b, a
+	}
+	id := store.NewID()
+	f.exec(t, func(q *db.Queries) error {
+		return q.CreateDMRoom(context.Background(), db.CreateDMRoomParams{
+			ID: id, OwnerID: ownerID, DmA: sql.NullString{String: a, Valid: true}, DmB: sql.NullString{String: b, Valid: true},
+			CreatedAt: t0.UnixMilli(), UpdatedAt: t0.UnixMilli(),
+		})
+	})
+	return id
+}
+
+func (f *fixture) addUserMember(t *testing.T, roomID, userID string) {
+	t.Helper()
+	f.exec(t, func(q *db.Queries) error {
+		return q.CreateRoomMember(context.Background(), db.CreateRoomMemberParams{
+			ID: store.NewID(), RoomID: roomID, Kind: string(dto.MemberKindUser), MemberID: userID, Outbound: true, CreatedAt: t0.UnixMilli(),
+		})
+	})
+}
+
+func (f *fixture) levelOf(t *testing.T, userID, roomID string) Level {
+	t.Helper()
+	l, err := f.az.RoomLevel(context.Background(), user(userID), roomID)
+	require.NoError(t, err)
+	return l
+}
+
+// DM-08, AD-011: a DM's access comes from its two participants: a participant posts; the owner
+// of an AI participant and users granted use on it only view; everybody else, instance admins and
+// holders of a room grant included, has none.
+func TestDMRoomLevelMatrix(t *testing.T) {
+	f := newFixture(t)
+	alice := f.human(t, "alice", dto.RoleMember) // the participant
+	bob := f.human(t, "bob", dto.RoleMember)     // owns the AI
+	dave := f.human(t, "dave", dto.RoleMember)   // granted use on the AI
+	carol := f.human(t, "carol", dto.RoleMember) // stranger
+	admin := f.human(t, "admin", dto.RoleAdmin)
+	atlas := f.ai(t, bob)
+	f.grant(t, KindAgent, atlas, dave, dto.LevelUse)
+	room := f.dm(t, alice, alice, atlas)
+
+	for _, tc := range []struct {
+		who  string
+		id   string
+		want Level
+	}{
+		{"participant", alice, dto.LevelPost},
+		{"owner of the AI", bob, dto.LevelView},
+		{"use grantee of the AI", dave, dto.LevelView},
+		{"stranger", carol, None},
+		{"admin without a grant", admin, None},
+	} {
+		require.Equal(t, tc.want, f.levelOf(t, tc.id, room), tc.who)
+	}
+	require.Equal(t, None, f.levelOf(t, alice, store.NewID()), "a missing room")
+
+	// The AI is a member of its DM, so its tools post there (AgentRoomLevel).
+	l, err := f.az.RoomLevel(context.Background(), authn.Principal{Kind: authn.KindAgent, UserID: bob, AgentID: atlas}, room)
+	require.NoError(t, err)
+	require.Equal(t, dto.LevelPost, l)
+}
+
+// DM-08: grants never give access to a DM, and neither does the owner column of the room row.
+func TestDMRoomLevelIgnoresGrantsAndOwnerColumn(t *testing.T) {
+	f := newFixture(t)
+	alice := f.human(t, "alice", dto.RoleMember)
+	bob := f.human(t, "bob", dto.RoleMember)
+	carol := f.human(t, "carol", dto.RoleMember)
+	atlas := f.ai(t, bob)
+	room := f.dm(t, carol, alice, atlas) // carol created the row but is no participant
+
+	// A grant row on a DM can only exist by writing around the API, which refuses them.
+	f.grant(t, KindRoom, room, Everyone, dto.LevelManage)
+	f.grant(t, KindRoom, room, carol, dto.LevelManage)
+	f.grant(t, KindRoom, room, bob, dto.LevelManage)
+	require.Equal(t, None, f.levelOf(t, carol, room), "neither the owner column nor a manage grant")
+	require.Equal(t, dto.LevelView, f.levelOf(t, bob, room), "a grant does not raise the AI owner's view")
+	require.Equal(t, dto.LevelPost, f.levelOf(t, alice, room), "a grant does not raise the participant's post")
+	stranger := f.human(t, "stranger", dto.RoleMember)
+	require.Equal(t, None, f.levelOf(t, stranger, room), "an everyone grant on a DM gives nothing")
+
+	// A user member row of someone who is no participant gives no access either.
+	f.addUserMember(t, room, stranger)
+	require.Equal(t, None, f.levelOf(t, stranger, room))
+}
+
+// DM-08: the participants' columns alone decide; member rows are not read.
+func TestDMRoomLevelReadsOnlyTheParticipantColumns(t *testing.T) {
+	f := newFixture(t)
+	alice := f.human(t, "alice", dto.RoleMember)
+	bob := f.human(t, "bob", dto.RoleMember)
+	room := f.dmWithoutMembers(t, alice, alice, bob)
+	require.Equal(t, dto.LevelPost, f.levelOf(t, alice, room))
+	require.Equal(t, dto.LevelPost, f.levelOf(t, bob, room))
+}
+
+// DM-08: public use on an AI does not expose its DMs; only the owner and users granted use by name
+// view them.
+func TestDMOfAPublicAIIsNotVisibleToEveryone(t *testing.T) {
+	f := newFixture(t)
+	owner := f.human(t, "owner", dto.RoleMember)
+	alice := f.human(t, "alice", dto.RoleMember)
+	bob := f.human(t, "bob", dto.RoleMember)
+	atlas := f.ai(t, owner)
+	f.grant(t, KindAgent, atlas, Everyone, dto.LevelUse)
+	room := f.dm(t, alice, alice, atlas)
+
+	require.Equal(t, dto.LevelPost, f.levelOf(t, alice, room))
+	require.Equal(t, dto.LevelView, f.levelOf(t, owner, room))
+	require.Equal(t, None, f.levelOf(t, bob, room), "bob may use the AI, he does not read alice's DM with it")
+
+	f.grant(t, KindAgent, atlas, bob, dto.LevelUse) // by name now
+	require.Equal(t, dto.LevelView, f.levelOf(t, bob, room))
+}
+
+// DM-08: a DM of two AIs is viewed by both owners (and their grantees) and posted in by nobody
+// through the web; two users post.
+func TestDMBetweenAIsAndBetweenUsers(t *testing.T) {
+	f := newFixture(t)
+	alice := f.human(t, "alice", dto.RoleMember)
+	bob := f.human(t, "bob", dto.RoleMember)
+	carol := f.human(t, "carol", dto.RoleMember)
+	atlas, orion := f.ai(t, alice), f.ai(t, bob)
+	f.grant(t, KindAgent, orion, carol, dto.LevelUse)
+
+	ais := f.dm(t, alice, atlas, orion) // created by atlas: the row's owner is atlas's owner
+	require.Equal(t, dto.LevelView, f.levelOf(t, alice, ais))
+	require.Equal(t, dto.LevelView, f.levelOf(t, bob, ais))
+	require.Equal(t, dto.LevelView, f.levelOf(t, carol, ais), "a grantee of either AI")
+
+	users := f.dm(t, alice, alice, bob)
+	require.Equal(t, dto.LevelPost, f.levelOf(t, alice, users))
+	require.Equal(t, dto.LevelPost, f.levelOf(t, bob, users))
+	require.Equal(t, None, f.levelOf(t, carol, users))
+
+	// Alice also owns atlas: she posts as the participant and does not need a lower view.
+	own := f.dm(t, alice, alice, atlas)
+	require.Equal(t, dto.LevelPost, f.levelOf(t, alice, own))
+}
+
+// AUTH-10 for DMs: a disabled user has no access to a DM, as participant or as the AI's owner.
+func TestDMRoomLevelDisabledUsers(t *testing.T) {
+	f := newFixture(t)
+	alice := f.human(t, "alice", dto.RoleMember)
+	bob := f.human(t, "bob", dto.RoleMember)
+	atlas := f.ai(t, bob)
+	room := f.dm(t, alice, alice, atlas)
+
+	f.disable(t, alice, true)
+	require.Equal(t, None, f.levelOf(t, alice, room))
+	require.Equal(t, dto.LevelView, f.levelOf(t, bob, room), "the other users are not affected")
+	f.disable(t, bob, true)
+	require.Equal(t, None, f.levelOf(t, bob, room))
+	f.disable(t, alice, false)
+	f.disable(t, bob, false)
+	require.Equal(t, dto.LevelPost, f.levelOf(t, alice, room))
+	require.Equal(t, dto.LevelView, f.levelOf(t, bob, room))
+}
+
+// AD-011: a user member of a group posts in it, next to ownership and grants (the highest wins).
+func TestGroupUserMemberPosts(t *testing.T) {
+	f := newFixture(t)
+	owner := f.human(t, "owner", dto.RoleMember)
+	member := f.human(t, "member", dto.RoleMember)
+	viewer := f.human(t, "viewer", dto.RoleMember)
+	manager := f.human(t, "manager", dto.RoleMember)
+	outsider := f.human(t, "outsider", dto.RoleMember)
+	group, other := f.room(t, owner), f.room(t, owner)
+	for _, id := range []string{member, viewer, manager} {
+		f.addUserMember(t, group, id)
+	}
+	f.grant(t, KindRoom, group, viewer, dto.LevelView)
+	f.grant(t, KindRoom, group, manager, dto.LevelManage)
+	f.addUserMember(t, other, outsider)
+
+	require.Equal(t, dto.LevelPost, f.levelOf(t, member, group), "a member posts")
+	require.Equal(t, dto.LevelPost, f.levelOf(t, viewer, group), "member beats a view grant")
+	require.Equal(t, dto.LevelManage, f.levelOf(t, manager, group), "a manage grant beats membership")
+	require.Equal(t, dto.LevelManage, f.levelOf(t, owner, group))
+	require.Equal(t, None, f.levelOf(t, outsider, group), "a member of another group")
+	require.Equal(t, dto.LevelPost, f.levelOf(t, outsider, other))
+	admin := f.human(t, "admin", dto.RoleAdmin)
+	require.Equal(t, None, f.levelOf(t, admin, group), "admins stay out (AD-005)")
+}
+
+// AD-011: only user members count; an agent member's owner gets nothing from it, and a removed or
+// disabled member loses the access.
+func TestGroupMembershipAccessEnds(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	owner := f.human(t, "owner", dto.RoleMember)
+	member := f.human(t, "member", dto.RoleMember)
+	agentOwner := f.human(t, "agentowner", dto.RoleMember)
+	group := f.room(t, owner)
+	atlas := f.ai(t, agentOwner)
+	f.addAgentMember(t, group, atlas)
+	f.addUserMember(t, group, member)
+
+	require.Equal(t, None, f.levelOf(t, agentOwner, group), "the owner of a member AI is no member")
+	require.Equal(t, dto.LevelPost, f.levelOf(t, member, group))
+
+	f.disable(t, member, true)
+	require.Equal(t, None, f.levelOf(t, member, group), "a disabled member")
+	f.disable(t, member, false)
+	require.Equal(t, dto.LevelPost, f.levelOf(t, member, group))
+
+	f.exec(t, func(q *db.Queries) error {
+		row, err := q.GetRoomMemberByMember(ctx, db.GetRoomMemberByMemberParams{RoomID: group, Kind: string(dto.MemberKindUser), MemberID: member})
+		require.NoError(t, err)
+		return q.DeleteRoomMember(ctx, row.ID)
+	})
+	require.Equal(t, None, f.levelOf(t, member, group), "removed")
+}
+
+// DM-06 source: GrantedRoomLevels lists the groups the user is a member of and the DMs the user
+// takes part in next to the grants; the DMs a user only views through an AI are not listed, and
+// grants on DMs are ignored.
+func TestGrantedRoomLevelsIncludeMembershipAndDMs(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	owner := f.human(t, "owner", dto.RoleMember)
+	alice := f.human(t, "alice", dto.RoleMember)
+	bob := f.human(t, "bob", dto.RoleMember)
+	atlas := f.ai(t, alice)
+
+	granted, memberOf, both, owned, notMine := f.room(t, owner), f.room(t, owner), f.room(t, owner), f.room(t, alice), f.room(t, owner)
+	f.grant(t, KindRoom, granted, alice, dto.LevelView)
+	f.addUserMember(t, memberOf, alice)
+	f.addUserMember(t, both, alice)
+	f.grant(t, KindRoom, both, alice, dto.LevelManage)
+	f.addUserMember(t, notMine, bob)
+	withBob := f.dm(t, alice, alice, bob)
+	withAtlas := f.dm(t, bob, bob, atlas) // alice owns atlas: she views this one, it is not hers
+	strayGrant := f.dm(t, bob, bob, f.human(t, "erin", dto.RoleMember))
+	f.grant(t, KindRoom, strayGrant, alice, dto.LevelManage) // written around the API
+
+	got, err := f.az.GrantedRoomLevels(ctx, alice)
+	require.NoError(t, err)
+	require.Equal(t, map[string]Level{
+		granted: dto.LevelView, memberOf: dto.LevelPost, both: dto.LevelManage, withBob: dto.LevelPost,
+	}, got, "owned rooms are not included; neither are DMs viewed through an AI or granted by a stray row")
+	require.NotContains(t, got, owned)
+	require.NotContains(t, got, withAtlas)
+
+	everyone, err := f.az.GrantedRoomLevels(ctx, bob)
+	require.NoError(t, err)
+	require.Equal(t, dto.LevelPost, everyone[withBob])
+	require.Equal(t, dto.LevelPost, everyone[withAtlas])
+	require.Equal(t, dto.LevelPost, everyone[notMine])
+	require.Equal(t, dto.LevelPost, everyone[strayGrant])
+
+	f.disable(t, alice, true)
+	got, err = f.az.GrantedRoomLevels(ctx, alice)
+	require.NoError(t, err)
+	require.Empty(t, got, "a disabled user")
+}
+
+// DM-08: sharing a DM is refused whatever the preset, with nothing written: no grant, no audit
+// entry, no event.
+func TestSetVisibilityRefusesDM(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	alice := f.human(t, "alice", dto.RoleMember)
+	bob := f.human(t, "bob", dto.RoleMember)
+	carol := f.human(t, "carol", dto.RoleMember)
+	atlas := f.ai(t, bob)
+	room := f.dm(t, alice, alice, atlas)
+	sub, cancel := f.bus.Subscribe(8)
+	defer cancel()
+
+	for name, v := range map[string]Visibility{
+		"private": {Mode: dto.VisibilityPrivate},
+		"shared":  {Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: carol, Level: dto.LevelView}}},
+		"public":  {Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost},
+		"invalid": {Mode: "secret"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := f.az.SetVisibility(ctx, alice, KindRoom, room, alice, v)
+			require.ErrorIs(t, err, ErrDMNoSharing)
+		})
+	}
+	require.Empty(t, f.grantRows(t, KindRoom, room), "no grant was written")
+	require.Equal(t, None, f.levelOf(t, carol, room))
+	entries, _, err := audit.New(f.st, nil).List(ctx, "")
+	require.NoError(t, err)
+	require.Empty(t, entries, "no audit entry")
+	select {
+	case e := <-sub:
+		t.Fatalf("unexpected event %#v", e)
+	default:
+	}
+
+	// The same call on a group keeps working.
+	group := f.room(t, alice)
+	require.NoError(t, f.az.SetVisibility(ctx, alice, KindRoom, group, alice, Visibility{Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: carol, Level: dto.LevelView}}}))
+	require.Equal(t, []string{carol + "=view"}, f.grantRows(t, KindRoom, group))
 }

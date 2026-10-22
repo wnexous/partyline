@@ -394,14 +394,14 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | TREE-06 | P1: Tree | Tasks | Pending |
 | TREE-07 | P1: Tree | Tasks | Pending |
 | CONT-01 | P1: Contacts and DMs | Tasks | Pending |
-| DM-01 | P1: Contacts and DMs | Tasks | Pending |
-| DM-02 | P1: Contacts and DMs | Tasks | Pending |
-| DM-03 | P1: Contacts and DMs | Tasks | Pending |
-| DM-04 | P1: Contacts and DMs | Tasks | Pending |
+| DM-01 | P1: Contacts and DMs | Execute | Implementing |
+| DM-02 | P1: Contacts and DMs | Execute | Implementing |
+| DM-03 | P1: Contacts and DMs | Execute | Implementing |
+| DM-04 | P1: Contacts and DMs | Execute | Implementing |
 | DM-05 | P1: Contacts and DMs | Tasks | Pending |
-| DM-06 | P1: Contacts and DMs | Tasks | Pending |
-| DM-07 | P1: Contacts and DMs | Tasks | Pending |
-| DM-08 | P1: Contacts and DMs | Tasks | Pending |
+| DM-06 | P1: Contacts and DMs | Execute | Implementing |
+| DM-07 | P1: Contacts and DMs | Execute | Implementing |
+| DM-08 | P1: Contacts and DMs | Execute | Implementing |
 | GRP-01 | P1: Groups | Execute | Implementing |
 | GRP-02 | P1: Groups | Tasks | Pending |
 | GRP-03 | P1: Groups | Execute | Implementing |
@@ -430,14 +430,14 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | PROF-09 | P1: Profiles | Execute | Implementing |
 | PROF-10 | P1: Profiles | Execute | Implementing |
 | PROF-11 | P1: Profiles | Tasks | Pending |
-| LAY-01 | P1: Messenger layout | Tasks | Pending |
+| LAY-01 | P1: Messenger layout | Execute | Implementing |
 | LAY-02 | P1: Messenger layout | Tasks | Pending |
 | LAY-03 | P1: Messenger layout | Tasks | Pending |
-| LAY-04 | P1: Messenger layout | Tasks | Pending |
+| LAY-04 | P1: Messenger layout | Execute | Implementing |
 | LAY-05 | P1: Messenger layout | Tasks | Pending |
 | LAY-06 | P1: Messenger layout | Tasks | Pending |
-| AGRP-01 | P2: AIs create groups | Tasks | Pending |
-| AGRP-02 | P2: AIs create groups | Tasks | Pending |
+| AGRP-01 | P2: AIs create groups | Execute | Implementing |
+| AGRP-02 | P2: AIs create groups | Execute | Implementing |
 | CLI-01 | P1: Login and setup | Execute | Implementing |
 | CLI-02 | P1: Login and setup | Execute | Implementing |
 | CLI-03 | P1: Login and setup | Execute | Implementing |

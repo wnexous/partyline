@@ -4,9 +4,13 @@ import "time"
 
 // Room is a routing room (GET /rooms, GET /rooms/{id}).
 type Room struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	ID string `json:"id"`
+	// Kind tells a group from a direct message; a DM has no name and exactly two Participants.
+	Kind ConversationKind `json:"kind"`
+	// Participants are the two intelligences of a DM, in id order; empty for a group.
+	Participants []IntelligenceRef `json:"participants"`
+	Name         string            `json:"name"`
+	Description  string            `json:"description"`
 	// Instructions is free text for the room's agents (INS-01), up to MaxRoomInstructions
 	// characters; agents read it with the room_info tool.
 	Instructions string     `json:"instructions"`
@@ -267,10 +271,14 @@ type OutboxItem struct {
 	UpdatedAt time.Time    `json:"updated_at"`
 }
 
-// RoomRef names a room inside agent frames and events.
+// RoomRef names a room inside agent frames and events. In the frames an AI receives, a DM is
+// named by the display name of the other participant and marked Kind dm (DM-03); a group
+// carries no Kind.
 type RoomRef struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Kind is dm for a direct message; absent for a group.
+	Kind ConversationKind `json:"kind,omitempty"`
 }
 
 // ActivityItem is one entry of GET /activity: a message with the room it was posted in.

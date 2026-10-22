@@ -696,3 +696,306 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   tests never exec a real harness (`stdio.exec`) and use `testkit` for the end-to-end takeover.
   The environment still carries `PARTYLINE_FOLDER`, `PARTYLINE_HARNESS`,
   `PARTYLINE_TAKEOVER` (only when taking over) and `PARTYLINE_AGENT`.
+
+## T19 - Access for DMs and group members (DM-08, AD-011)
+
+- **`access.UserRoomLevel`** (and `RoomLevel` for user principals), after the active-user check
+  (AUTH-10: disabled and unknown users resolve to none):
+  - *group*: the highest of ownership (manage), the user's and everyone's grants and, as a `user`
+    member, **post**. A `post` or `manage` from grants/ownership short-circuits the membership
+    lookup.
+  - *DM*: **post** for a participant (`rooms.dm_a`/`dm_b` equals the user); **view** when a
+    participant is an AI the user owns or was granted `use` on **by name**; none otherwise. Only
+    the two participant columns are read: member rows, the row's `owner_id` and grants are not.
+    A grant row on a DM (only possible by writing around the API) gives nothing, and admins get
+    nothing (AD-005).
+  - **Clarification of DM-08 / Spec issue 5:** the everyone grant (`*`, "public use") on an AI does
+    **not** make its DMs viewable by everyone. "Users granted `use`" reads as users named in a
+    grant; otherwise sharing an AI with the whole instance would let every user read every other
+    user's DM with it. The AI's owner and named `use` grantees view (`access.CountSubjectGrants`).
+  - A DM between two AIs is viewed by both owners and both AIs' named grantees; nobody posts
+    through the web (only the AIs, through `AgentRoomLevel`: an agent member posts).
+- **`AgentRoomLevel`** is unchanged (an agent member posts), which covers the AI side of a DM.
+- **`GrantedRoomLevels`** now reads `ListUserRoomLevels` (it replaces `ListGrantLevelsByKind`):
+  grants on **groups** (own or everyone), `user` membership of a group (post) and DMs the user
+  takes part in (post), highest wins. Ownership stays out, and so do DMs viewed only through an
+  AI and grants on DMs. `ListRoomsForUser` selects the same candidates (owned, granted and member
+  groups, own DMs) and **`rooms.Service.List` no longer turns `owner_id` into manage for a DM**
+  (a DM has no owner to manage it, DM-02). So `GET /rooms`, `/activity` and the live hub's
+  initial visible set include a user's DMs and member groups; the DMs an AI owner only views are
+  reachable by id and are not listed (Spec issue 5).
+- **Sharing**: `Authorizer.SetVisibility` on a DM returns `access.ErrDMNoSharing` before it
+  validates or writes anything (no grant, no audit entry, no `GrantsChanged`). `rooms.Service.
+  SetSharing` checks view first (stranger: 404), then the DM (**422 `dm_no_sharing`**,
+  `dto.ErrorCodeDMNoSharing`, for anyone who can view the DM), then manage (403): so a DM
+  participant gets 422, not 403, on `PUT /rooms/{id}/sharing`.
+- **Live**: adding or removing a `user` member publishes `events.GrantsChanged{room}` after
+  `MembersChanged`, so the hub sends the new member `room.changed` (with their level) plus
+  `access.changed`, and the removed member `room.deleted` (membership is an access source next
+  to grants). Message frames follow `view`: the owner of an AI and its named grantees receive
+  `room.message` for the AI's DMs, strangers nothing.
+- **`CanSee` consequence**: a user member of a group now "shares a viewable conversation" with
+  the AIs in it, so they can read those AIs' profiles (not edit).
+- `dto.ConversationKind` (`group` | `dm`, `ConversationKindGroup`/`DM`) is the room kind type;
+  `Room.kind` itself arrives with T20.
+- Tests: `internal/access/access_test.go` (DM matrix, owner column and grants ignored, public AI,
+  AI-to-AI and user-to-user DMs, disabled users, group membership, `GrantedRoomLevels`,
+  `SetVisibility` on a DM) and `internal/api/room_membership_access_test.go` (the DM auth matrix
+  over every room route, 422 `dm_no_sharing`, the room list, member posting over HTTP, live
+  frames). DMs are stored by the test helper `storeDM` until T20 adds `OpenDM`.
+
+## T20 - Direct messages (DM-01, DM-02, DM-08)
+
+- **`conversations.Service`** (`app.App.Conversations`; `conversations.New(Deps{Store, Rooms,
+  Intelligences, Bus, AllowCreate, Now})`) is new. `OpenDM(ctx, p, withID) (rooms.Room, created bool,
+  error)` acts as the user of a user principal and as the AI (`p.AgentID`) of an agent principal,
+  whose visibility is its owner's (`p.UserID`). Order of the checks: principal kind → empty `with`
+  (422 `invalid`, field `with`) → `with` is the caller (`ErrDMSelf`) → `Intelligences.CanSee`
+  (`ErrContactNotFound`; an unknown id and an invisible one are the same answer, even in the
+  message) → role (user and AI go on; a person is `ErrNoRouteToPerson`; an intelligence without an
+  account is `ErrContactNotFound`) → the pair's existing DM, returned with `created` false and
+  **without asking the limit** → for an AI that has to create one, `Deps.AllowCreate(agentID)`
+  (`ErrRateLimited`; nil allows; the registry's 10 per hour arrives with T24) → creation.
+- **Creation** is one write transaction: `InsertDMRoom … ON CONFLICT DO NOTHING` on the sorted pair
+  (`dm_a < dm_b`, partial unique index `rooms_dm_pair`) plus one member row per participant. A caller
+  that lost the race gets the winner's room and `created` false, so exactly one of any number of
+  concurrent opens (from either side) is a 201. An AI that loses the race has still used one slot of
+  its limit. The room: `kind dm`, `name ''`, `owner_id` = `p.UserID` (the user who opened it, the
+  AI's owner for an AI), `broadcast 1`, `bridge_chats 0`, retention and everything else the table
+  defaults (90 days); members `user` (users) or `agent` (AIs, `delivery all`, outbound on,
+  `added_by` = `p.UserID`). The owner column gives no access (T19). After the commit:
+  `RoomChanged` and `MembersChanged`, so the other participant's sockets (and an AI owner's, who
+  views it) get `room.changed` with their level.
+- **DM-05 (this task's part):** a person target is always 422 `no_route_to_person`, since a person
+  is reached through a platform conversation only. T30 adds that route (a DM chat of the person on a
+  connector whose operator is the caller) in front of this refusal. Nothing else refuses a disabled
+  target at open time: such a DM can be opened and is read-only (`counterpart_disabled`).
+- **`POST /api/v1/conversations/dm`** `dto.OpenDMRequest{with}` (an intelligence id) → `dto.Room`:
+  **201** when created, **200** for the existing DM. Sessions and user tokens only (an agent token is
+  403 like on every non-agent route; the AI's own route is T24's `POST /agent/dms`). Errors: 422
+  `dm_self`, 404 `contact_not_found` (`dto.ErrorCodeContactNotFound`), 422 `no_route_to_person`, 422
+  `invalid` for a missing `with`, 400 for a malformed body, 429 `rate_limited` (AIs only, T24).
+- **`dto.Room.kind`** (`group` | `dm`) and **`participants`** (the two `IntelligenceRef`s of a DM in
+  id order with their `role`/`platform`; always an array, empty for a group) come from
+  `rooms.Room.Participants` (`ListRoomParticipants`, loaded by `rooms.view` for DMs only). A DM has
+  an empty `name` (the other participant titles it in the UI) and `member_count` 2.
+- **DM guards in `rooms`** (new sentinels `rooms.ErrDMMembersFixed`, `rooms.ErrCounterpartDisabled`):
+  - `AddMember`, `UpdateMember` and `RemoveMember` check view first (404 for a caller without it),
+    then the DM rule, then manage: whoever can view a DM — a participant, an AI's owner or grantee —
+    gets **422 `dm_members_fixed`**, never 403. Nothing is written. (Same order as T19's
+    `dm_no_sharing`.)
+  - `PATCH` and `DELETE /rooms/{id}` and `resume` stay 403 for everybody who can view a DM, since
+    nobody has manage (T19).
+  - `Service.Post` (every path that posts as a user or an AI: the web, `reply`, `react`,
+    `send_message`) refuses a DM whose other participant is a **disabled user** with **403
+    `counterpart_disabled`**; reading, listing and the member list keep working. A counterpart that
+    is an AI or a person never blocks. System and chat-authored messages do not go through this
+    check.
+- **Lifecycle (DM-08 edge case):** deleting an AI deletes its intelligence (trigger) and so its DMs
+  with their members, messages, attachments, outbox rows and read cursors (foreign keys).
+  `Registry.Delete` now publishes `RoomChanged{Deleted}` for the member rooms that no longer exist
+  (their sockets hear `room.deleted`) and `MembersChanged` for the others; a DM the AI's owner only
+  viewed was never in that socket's visible set and sends nothing. Blob files of the deleted DMs
+  are swept by the retention job like any unreferenced blob. Deleting a user cascades the same way
+  without events (as before for owned rooms).
+- sqlc: `InsertDMRoom` (`:execrows`), `ListRoomParticipants`. Error codes with their statuses:
+  `dm_members_fixed` 422, `dm_self` 422, `contact_not_found` 404, `no_route_to_person` 422,
+  `counterpart_disabled` 403 (all in `dto/common.go`, all observed at their status by tests).
+- Known interaction, fixed by T23: AIs are members of their DMs, so `GET /agent/rooms` already lists
+  them (with an empty name) and `resolveRoom`'s name match must not treat that name as a room name.
+- Tests: `internal/api/direct_messages_test.go` (open/reopen from both sides, 12 concurrent opens,
+  AI target and the owner's view, refusals, person, authorization matrix with owner / use grantee /
+  stranger / admin / agent token / anonymous, members fixed for participant and AI owner,
+  counterpart disabled and re-enabled, AI deletion with live `room.deleted`, live announcement) and
+  `internal/conversations/dm_test.go` (the agent-principal rules and the `AllowCreate` hook).
+
+## T21 - Groups with members (LAY-04)
+
+- **`POST /api/v1/groups`** `dto.CreateGroupRequest{name, description?, members[]}` → **201** `dto.Room`
+  (kind `group`, `my_level manage`). `members` are intelligence ids (users and AIs; the web sends the
+  ones it picked, T24's tool resolves handles first). Sessions and user tokens, any user of the
+  instance (an agent token is 403 on this path, an anonymous caller 401). The group has the defaults
+  of `POST /rooms`: broadcast on, bridge off, 90 days of retention, no instructions. The room's
+  `updated_by` is the owner (INS-06).
+- **`conversations.Service.CreateGroup(ctx, p, GroupInput{Name, Description, Members})`** serves
+  both principals: the owner is `p.UserID` (the AI's owner for an AI, whose own id is added as the
+  **first** `agent` member and counts towards the limit). Order: principal → name and description
+  (`rooms.ValidateCreate`, 1-100 / 0-1000 code points) → member ids (a blank id, or more than
+  `dto.MaxGroupMembers` = **50** distinct ids → 422 `invalid`, field `members`) → every member →
+  `AllowCreate` (AIs only) → creation. Validation errors therefore win over refused members, and a
+  request that creates nothing never uses an AI's allowance. Repeated ids count once. The owner is a
+  member **only when listed** (as `POST /rooms`; an AI's group lists the owner explicitly, AGRP-01).
+  The result is `Rooms.Get` for the caller (an AI sees it at `post`).
+- **Member rules** are the owner's add-member rules: id → `GetIntelligenceWithRole`; a **user** becomes a
+  `user` member when `rooms.CheckMember` accepts it (exists and enabled; a user may list
+  themselves), an **AI** an `agent` member when the owner owns it or may use it (a public `*` use grant
+  counts); an external **person** is refused (`person`: people join groups through bridged chats,
+  never as members) to a caller who can see them (`Intelligences.CanSee`, which follows the
+  connector), and as `not_found` to anyone else, so that no caller learns which handles or ids are
+  people of connectors they cannot reach; anything else is not found. New in `rooms`: `Service.CheckMember(ctx, ownerID,
+  MemberInput) (ok, err)` (the rules of `AddMember`, as a question), `Service.CreateWithMembers(ctx,
+  ownerID, CreateInput, []MemberInput) (id, err)` (the one transaction `Create` now uses too;
+  callers check the members first) and `rooms.ValidateCreate`. Members get `outbound` on and AIs
+  `delivery all`, like `AddMember`; `added_by` is the owner. After the commit: `RoomChanged` (the
+  members' sockets learn the group at their level) and `MembersChanged`.
+- **All-or-nothing refusal (AGRP-02):** any member the owner cannot add makes the whole request
+  **422 `members_refused`** (`dto.ErrorCodeMembersRefused`) and creates nothing: `error.refused` is
+  the new list `[{id, reason}]` (`dto.Error.Refused`, `httpx.Error.Refused`, `conversations.
+  MembersRefusedError`), **every** refused member in the order asked, valid ones not listed.
+  Reasons (`dto.RefusedReason`): `not_found` for an unknown id, a disabled user and an AI the owner
+  may not use (it must not be told apart from an id that does not exist — the answers are
+  identical) and, for a caller who cannot see them, an external person; `person` for an external
+  person the caller can see.
+- Rate limit: the hook of T20 is asked once per group an AI actually creates (design: "10 new
+  conversations per hour per AI" covers DMs and groups); T24 wires the registry limiter and the
+  HTTP route.
+- Tests: `internal/api/groups_test.go` (members and what they see, the AI's own room list, owners of
+  member AIs and strangers excluded, each refusal reason alone and all together, validation order and
+  the 50-member boundary with repeated ids, authorization of the route, live announcement) and
+  `internal/conversations/groups_test.go` (an AI's group, its refusals, the allowance).
+
+## T22 - Read state and the conversation list (DM-06, DM-07, LAY-01)
+
+- **`GET /api/v1/conversations`** → `dto.List[dto.Conversation]`, users only (an agent token is 403,
+  anonymous 401): the caller's groups (owned, granted or user-member, `Rooms.List`) and the DMs they
+  take part in; a DM an AI's owner or grantee only views is **not** listed (T19), a stranger's list
+  is `{"items": []}`. Newest activity first (`activity_at` desc, then title case-insensitive, then
+  id). `Conversation`: `id` (the room id), `kind`, `title` (the group's name; for a DM the other
+  participant's display name), `counterpart` (`IntelligenceRef` with role and platform, DMs only),
+  `my_level`, `last_message?`, `unread`, `activity_at` (the last message's time, else the room's
+  creation), `member_names`.
+- **`last_message`** is the newest message that still exists in the room (retention may have purged the
+  latest ones; with none left the field is absent, `unread` 0 and `activity_at` the creation).
+  `MessagePreview{seq, author_id, author_name, text, created_at}`: `text` is the first
+  `dto.MaxPreviewLength` = **80 code points** of the message (bytes preserved, no ellipsis, no
+  whitespace normalisation); a message whose text is blank and that has files is `"[<first file
+  name>]"` (files in creation order); text wins over files. `author_id` is the author's intelligence
+  (`author_iid`, else the user/AI of an older row; empty for system messages and chat senders
+  without a person). **`author_name` is filled in groups only** (LAY-01: the sender prefix is a group
+  matter) and is empty in a DM; reactions are messages like any other.
+- **`member_names`**: up to `dto.MaxConversationMemberNames` = 20 `"Display name @handle"` of the users
+  and AIs that are members, in the order they were added (a bridged chat is not an intelligence and
+  adds none until T27); for a DM the other participant alone; always an array.
+- **Unread (DM-06)** per user: messages with `seq > MAX(read position, rooms.read_baseline)` whose
+  `author_iid` is not the user (so the user's own messages, also the ones typed on their linked
+  platform account, never count; system messages, AIs, other users and unattributed chat messages
+  do). The baseline is per room (v0.3 history counts as read) and applies to everybody; a read
+  position behind it changes nothing, one ahead of it wins. One grouped query for all rooms
+  (`CountUnreadByRoom`), `ListLastMessages` and `ListMemberNames` likewise.
+- **`PUT /api/v1/rooms/{id}/read`** `dto.MarkReadRequest{seq?}` → **200** `dto.ReadState{room_id, seq,
+  unread}` (the position that holds and what is unread after it). View is enough (404 without it,
+  also for an AI owner marking the DM they view); users only. `seq` absent → up to the newest
+  message; `seq` past the newest → the newest (so a later message is unread); `seq` lower than the
+  held position or 0 → the held position stays; negative → 422 `invalid` (`seq`); a non-number → 400.
+  The position is `read_cursors.seq` (`UpsertReadCursor` keeps the maximum); an empty room stores
+  nothing and answers `seq 0`.
+- **Live (DM-07)**: every `MarkRead` publishes `events.ReadChanged{UserID, RoomID, Seq}` — also when
+  the position did not move, with the position that holds — and the hub sends **`room.read`**
+  (`dto.LiveRoomRead`, data `dto.ReadData{room_id, seq}`) to the sockets of that user only, every
+  tab included. Other users, even in the same room, receive nothing.
+- `conversations.Service.List(ctx, p)` and `MarkRead(ctx, p, roomID, seq *int64)` implement it
+  (`list.go`); `List` reuses `Rooms.List` for the visible set and the levels, so it follows T19.
+- Tests: `internal/api/conversations_list_test.go` (order and fields, whose list holds what, unread per
+  user with own messages / AI messages / baseline / positions, monotonic and clamped marking,
+  authorization of both routes, `room.read` to the reader's tabs only, 79/80/81 code points with
+  multi-byte and emoji text, file previews, member names and the 20 cap, retention).
+
+## T23 - AIs receive and see DMs (DM-03, GRP-04)
+
+- **Room naming for an AI.** In every frame an AI receives, a DM's `dto.RoomRef` is `{id, name:
+  <display name of the other participant, relative to that AI>, kind: "dm"}`; a group keeps
+  `{id, name}` with **no `kind`** (`dto.RoomRef.Kind` is `omitempty`, so every group frame is byte for
+  byte what it was). One DM is therefore named differently for its two participants when both are
+  AIs. `delivery.RoomRef(id, name, kind)` builds it; the live dispatcher resolves the names of a DM
+  once per message (`ListRoomParticipants`) and gives each recipient its own; the backlog, the
+  pending path, `history` and `room_info` take the name from the room state, where
+  `ListAgentRoomStates` now returns `name` (the counterpart's display name for a DM), `kind`,
+  `with_id` and `with_handle` (`agents.RoomState.Kind/WithID/WithHandle`; `ListProjectRoomStates`
+  returns the same columns, constant for groups).
+- **Delivery rule.** A message posted in a DM passes `all` and `mentions` (it is addressed to the AI)
+  and is held back by `trusted` unless the owner wrote it: `delivery.Delivered.DM` /
+  `Facts.DM`, set by `LoadFacts(ctx, q, view, roomKind)` — the room kind is a required argument
+  now, so the dispatcher, the connect backlog and `GET /agent/pending` all apply it. Keywords,
+  mentions by name/handle and replies are untouched in groups.
+- **Channel notification meta (`channel.Format`).** New keys: `conversation` (`dm` for a room whose
+  ref has kind dm, else `group`, on every message), `author_id` and `author_handle` (the
+  intelligence of `Message.Author`, only when it has an id; the handle only when it has one). For a DM
+  `room_name` is the counterpart. Room notices (`FormatNotice`) keep their shape (no
+  `conversation`), but name a DM by the counterpart through their `RoomRef`. The history tool's
+  records, `partyline listen`'s JSON lines, the hooks' frames and `wait_for_messages` are built from
+  the same record, so they carry the keys too.
+- **Frame.** `channel.Frame` (and `frame()` in the omp, pi and OpenCode adapters, still identical
+  copies) puts `conversation="…"` right after `room` when the record has one; records without it
+  render as before. `integrations/testdata/framing.json` gained three cases (a DM from the owner, a
+  DM from another user with markup in names and text, a group message from a chat); the Go and TS
+  suites read the same file. Every existing test that asserted a whole meta map or a framed text was
+  extended with the new keys and nothing else.
+- **Agent routes.** `GET /agent/rooms` returns `dto.AgentRoom{id, kind, name, description, with?,
+  members}` for groups and DMs (`with` is the other participant's `IntelligenceRef`, DMs only; a DM's
+  `name` is the counterpart's display name). `resolveRoom` finds, in this order, a room by **id**, a
+  DM by **`@handle`** of the other participant (case-insensitive, the AI's own DMs only), else a
+  **group** by name (case-insensitive or slug). A DM is never found by a name: its title is not
+  unique, and an empty room name used to slug to `agent`. Anything else is the old 403 "not a member
+  of room <ref>"; a name shared by two groups is still 409. `room_info` answers the DM's ref with
+  `kind`. `history`, `send_message`, `send_file`, `reply` and `react` work on a DM like on a group.
+- **Channel tools.** `list_rooms` entries have `kind`, and `with{id, name, handle, kind}` for a DM
+  (omitted for a group); the `room` argument descriptions now say "room id, room name, or @handle of
+  the intelligence you have a DM with". `Instructions`, `ToolsOnlyInstructions` and `OmpInstructions`
+  explain `conversation` (the channel's in meta keys with `author_handle`, the framed ones in
+  attributes and `list_rooms`); no existing sentence changed.
+- Docs: `docs/agents.md` shows the new keys and the DM addressing.
+- Tests: `internal/api/dm_agent_test.go` (a user's DM to a live AI with the reply in the same DM and
+  another user's DM kept apart, groups marked `group`, `all`/`mentions`/`trusted` in DMs with a
+  group control, DM backlog and pending under `mentions`, `GET /agent/rooms`, resolution by id /
+  handle / name), `internal/channel/dm_test.go` (the real channel: notification, tools by `@handle`,
+  `list_rooms`, the instructions), `internal/channel/format_test.go`, `internal/delivery/
+  wants_dm_test.go`, and the shared framing cases (Go `TestFrameMatchesTheAdapters`, `bun test`).
+
+## T24 - AI-initiated DMs and groups (DM-04, AGRP-01, AGRP-02)
+
+- **`POST /api/v1/agent/dms`** `dto.AgentDMRequest{to, text, chat_ids?}` → **201** `dto.Message` (the
+  posted message; its `room_id` is the DM), agent token acting as the AI of the folder headers
+  (`agentOnly`: a session, a user token, a missing folder and an anonymous caller are 403 / 403 /
+  422 `folder_required` / 401). `to` is `"@handle"`, a bare `handle` (case-insensitive) or an
+  intelligence id: `conversations.Service.Contact` tries the handle first and otherwise hands the
+  reference on unchanged, so a handle that exists but is not visible answers exactly like one that
+  does not. The DM is the T20 `OpenDM` of the AI principal, with everything it says: the target must
+  be visible to the **AI's owner** (404 `contact_not_found` for an unknown or invisible target, the
+  same body), 422 `dm_self`, 422 `no_route_to_person` for a person (T30 refines it), and the room is
+  owned by the owner. Writing to an existing DM reopens it silently; the message goes to the same DM
+  whatever form of `to` names it. Visibility is the owner's, so it changes with what the owner
+  gets: an AI that wrote to a user becomes visible to that user (T7: a shared conversation), who can
+  then write to it; an AI the owner may `use` is a target, the one of an owner who shared nothing is
+  not.
+- **Order and cost.** Validation first (`conversations.ValidateDM`: `to` present and not just "@";
+  text non-blank and within 16 000 code points; `chat_ids` count) → 422 `invalid` with fields `to`
+  and/or `text`, **before** anything is spent or created → `Agents.AllowPost` (the 30 messages a
+  minute) → `SendDM` → `OpenDM` (the allowance below, only for a DM it creates) → `Rooms.Post`. A
+  DM this very call created that then refuses the post (for example a `chat_ids` entry that is no
+  chat of a new DM, or a disabled counterpart) is **deleted again** if nobody wrote in it
+  (`DeleteEmptyDMRoom`, `next_seq = 1`), with `room.deleted` for the sockets that heard of it, so
+  no empty DM is left; the creation slot it used stays spent.
+- **`POST /api/v1/agent/groups`** `dto.CreateGroupRequest{name, description?, members[]}` where each member
+  is `"@handle"`, a handle or an id → **201** `dto.CreatedGroup{room, name}`. It is T21's
+  `CreateGroup` for the AI principal (`CreateGroupNamed` resolves the names first): owner = the
+  AI's owner, the AI the first member, every member checked by the owner's add-member rules, all
+  or nothing. A refusal is 422 `members_refused` whose `refused[].id` is **the reference as the AI
+  wrote it** (`"@sage"`, not the id it resolved to; the first reference when two name one
+  intelligence), reasons as in T21, valid members left out. Validation errors win over refusals;
+  blank entries and more than 50 members are 422 `invalid`.
+- **Allowance (DM-04, AGRP-01):** `agents.Registry.AllowCreate(agentID)` is a sliding window of
+  `agents.CreateLimit` = **10** new conversations per `CreateWindow` = **1 hour** per AI, DMs and
+  groups together, in memory like the post limit (a restart resets it; it follows the app's clock).
+  It is asked only when a conversation is about to be created, after every other check: a reopened
+  DM, an unknown or invisible target, a refused group and an invalid request cost nothing. The 11th
+  is **429 `rate_limited`** ("too many new conversations") and creates nothing; another AI of the
+  same owner has its own window. `app.go` wires it as `conversations.Deps.AllowCreate`.
+- sqlc: `DeleteEmptyDMRoom` (`:execrows`). `rooms.ValidatePost(PostInput)` is the exported part of
+  the post validation.
+- Tests: `internal/api/agent_conversations_test.go` (a first DM to the owner seen in their list and
+  live, three forms of `to`, visible and invisible targets with identical refusals, self / person /
+  validation with 35 invalid requests not spending the post limit, no empty DM after a refused post,
+  an AI reaching a live AI of another owner untrusted, group creation with mixed references and the AI
+  posting in it, refusals echoed as named, the 10-per-hour window on a manual clock with reopen /
+  refusal / other-AI / one hour later, authorization of both routes) and the `AllowCreate` tests of
+  T20 and T21 in `internal/conversations`.

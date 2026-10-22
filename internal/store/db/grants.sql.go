@@ -9,6 +9,24 @@ import (
 	"context"
 )
 
+const countSubjectGrants = `-- name: CountSubjectGrants :one
+SELECT COUNT(*) FROM grants WHERE resource_kind = ? AND resource_id = ? AND subject = ?
+`
+
+type CountSubjectGrantsParams struct {
+	ResourceKind string
+	ResourceID   string
+	Subject      string
+}
+
+// Grants of exactly this subject on a resource; the everyone subject '*' is not counted for a user.
+func (q *Queries) CountSubjectGrants(ctx context.Context, arg CountSubjectGrantsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSubjectGrants, arg.ResourceKind, arg.ResourceID, arg.Subject)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createGrant = `-- name: CreateGrant :exec
 INSERT INTO grants (resource_kind, resource_id, subject, level, created_by, created_at)
 VALUES (?, ?, ?, ?, ?, ?)
@@ -84,44 +102,6 @@ func (q *Queries) ListGrantLevels(ctx context.Context, arg ListGrantLevelsParams
 	return items, nil
 }
 
-const listGrantLevelsByKind = `-- name: ListGrantLevelsByKind :many
-SELECT resource_id, level FROM grants
-WHERE resource_kind = ?1 AND subject IN (?2, '*')
-`
-
-type ListGrantLevelsByKindParams struct {
-	ResourceKind string
-	UserID       string
-}
-
-type ListGrantLevelsByKindRow struct {
-	ResourceID string
-	Level      string
-}
-
-func (q *Queries) ListGrantLevelsByKind(ctx context.Context, arg ListGrantLevelsByKindParams) ([]ListGrantLevelsByKindRow, error) {
-	rows, err := q.db.QueryContext(ctx, listGrantLevelsByKind, arg.ResourceKind, arg.UserID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListGrantLevelsByKindRow
-	for rows.Next() {
-		var i ListGrantLevelsByKindRow
-		if err := rows.Scan(&i.ResourceID, &i.Level); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listGrantsWithUsers = `-- name: ListGrantsWithUsers :many
 SELECT g.subject, g.level,
        CAST(COALESCE(u.username, '') AS TEXT) AS username,
@@ -159,6 +139,50 @@ func (q *Queries) ListGrantsWithUsers(ctx context.Context, arg ListGrantsWithUse
 			&i.Username,
 			&i.DisplayName,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserRoomLevels = `-- name: ListUserRoomLevels :many
+SELECT g.resource_id AS room_id, CAST(g.level AS TEXT) AS level
+FROM grants g JOIN rooms r ON r.id = g.resource_id
+WHERE g.resource_kind = 'room' AND r.kind = 'group' AND g.subject IN (?1, '*')
+UNION ALL
+SELECT m.room_id, CAST('post' AS TEXT)
+FROM room_members m JOIN rooms r ON r.id = m.room_id
+WHERE m.kind = 'user' AND m.member_id = ?1 AND r.kind = 'group'
+UNION ALL
+SELECT r.id, CAST('post' AS TEXT)
+FROM rooms r
+WHERE r.kind = 'dm' AND (r.dm_a = ?1 OR r.dm_b = ?1)
+`
+
+type ListUserRoomLevelsRow struct {
+	RoomID string
+	Level  string
+}
+
+// The levels a user holds on rooms next to owning them: grants (own or everyone) on groups, a user
+// membership of a group (post) and taking part in a DM (post). Grants on DMs are ignored (DM-08).
+func (q *Queries) ListUserRoomLevels(ctx context.Context, userID string) ([]ListUserRoomLevelsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUserRoomLevels, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserRoomLevelsRow
+	for rows.Next() {
+		var i ListUserRoomLevelsRow
+		if err := rows.Scan(&i.RoomID, &i.Level); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

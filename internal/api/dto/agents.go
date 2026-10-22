@@ -75,10 +75,14 @@ type UpdateProjectRequest struct {
 
 // AgentRoom is a room as seen by an agent (GET /agent/rooms, TOOL-09).
 type AgentRoom struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	Members     []RoomMember `json:"members"`
+	ID   string           `json:"id"`
+	Kind ConversationKind `json:"kind"`
+	// Name is the group's name; for a DM it is the display name of the other participant.
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// With is the other participant of a DM, relative to the AI; absent for a group.
+	With    *IntelligenceRef `json:"with,omitempty"`
+	Members []RoomMember     `json:"members"`
 }
 
 // AgentMessage is a message delivered to an agent. Trusted is computed for the receiving
@@ -182,4 +186,20 @@ type AgentNoticeFrame struct {
 type AgentAckFrame struct {
 	Type      AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeAck"`
 	MessageID string         `json:"message_id"`
+}
+
+// AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its
+// owner can see, opening the DM when there is none. To is the target's "@handle", handle or id;
+// ChatIDs reach chats of the DM like the recipients of a post.
+type AgentDMRequest struct {
+	To      string   `json:"to"`
+	Text    string   `json:"text"`
+	ChatIDs []string `json:"chat_ids,omitempty"`
+}
+
+// CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name. Its
+// request is a CreateGroupRequest whose members are "@handle", handle or id.
+type CreatedGroup struct {
+	Room string `json:"room"`
+	Name string `json:"name"`
 }

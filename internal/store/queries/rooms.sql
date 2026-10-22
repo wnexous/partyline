@@ -25,6 +25,8 @@ LEFT JOIN intelligences oi ON oi.id = r.owner_id
 WHERE r.id = ?;
 
 -- name: ListRoomsForUser :many
+-- The conversations a user may have in a list: the groups they own, are granted or are a member
+-- of, and the DMs they take part in. The DMs they only view through an AI are left out.
 SELECT sqlc.embed(r), u.username AS owner_username, u.display_name AS owner_display_name,
        CAST(COALESCE(oi.kind, '') AS TEXT) AS owner_ikind,
        CAST(COALESCE(oi.display_name, '') AS TEXT) AS owner_iname,
@@ -33,9 +35,12 @@ SELECT sqlc.embed(r), u.username AS owner_username, u.display_name AS owner_disp
        (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count
 FROM rooms r JOIN users u ON u.id = r.owner_id
 LEFT JOIN intelligences oi ON oi.id = r.owner_id
-WHERE r.owner_id = sqlc.arg(user_id)
-   OR r.id IN (SELECT g.resource_id FROM grants g
-               WHERE g.resource_kind = 'room' AND g.subject IN (sqlc.arg(user_id), '*'))
+WHERE (r.kind = 'group' AND r.owner_id = sqlc.arg(user_id))
+   OR (r.kind = 'group' AND r.id IN (SELECT g.resource_id FROM grants g
+                                     WHERE g.resource_kind = 'room' AND g.subject IN (sqlc.arg(user_id), '*')))
+   OR (r.kind = 'group' AND r.id IN (SELECT m.room_id FROM room_members m
+                                     WHERE m.kind = 'user' AND m.member_id = sqlc.arg(user_id)))
+   OR (r.kind = 'dm' AND (r.dm_a = sqlc.arg(user_id) OR r.dm_b = sqlc.arg(user_id)))
 ORDER BY r.name COLLATE NOCASE, r.id;
 
 -- name: UpdateRoom :exec

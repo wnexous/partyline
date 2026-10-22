@@ -421,9 +421,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Matrix: participant post; AI owner and `use` grantee view; another user, an admin and a `*` grant none; group user member post; disabled user none (DM-08)
-- [ ] Sharing a DM → 422 `dm_no_sharing` with nothing written (DM-08)
-- [ ] Gate check passes: `make check`
+- [x] Matrix: participant post; AI owner and `use` grantee view; another user, an admin and a `*` grant none; group user member post; disabled user none (DM-08)
+- [x] Sharing a DM → 422 `dm_no_sharing` with nothing written (DM-08)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(access): give DM participants and group members access`
@@ -437,10 +437,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-01, DM-02, DM-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Opening a DM twice (also concurrently) returns the same room; 201 then 200 (DM-01); self → 422 `dm_self`; invisible target → 404 `contact_not_found`
-- [ ] Add/remove/update member on a DM → 422 `dm_members_fixed`; PATCH/DELETE room 403; disabled counterpart → readable, post 403 `counterpart_disabled` (DM-02)
-- [ ] Deleting the AI deletes its DMs and memberships (DM-08 edge case)
-- [ ] Gate check passes: `make check`
+- [x] Opening a DM twice (also concurrently) returns the same room; 201 then 200 (DM-01); self → 422 `dm_self`; invisible target → 404 `contact_not_found`
+- [x] Add/remove/update member on a DM → 422 `dm_members_fixed`; PATCH/DELETE room 403; disabled counterpart → readable, post 403 `counterpart_disabled` (DM-02)
+- [x] Deleting the AI deletes its DMs and memberships (DM-08 edge case)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): open one direct message per pair`
@@ -454,9 +454,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: LAY-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Group created with the user as owner and every chosen user and AI as member; the members see it (LAY-04)
-- [ ] One AI the user may not use → 422 `members_refused` listing it, nothing created
-- [ ] Gate check passes: `make check`
+- [x] Group created with the user as owner and every chosen user and AI as member; the members see it (LAY-04)
+- [x] One AI the user may not use → 422 `members_refused` listing it, nothing created
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): create groups with members`
@@ -470,10 +470,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-06, DM-07, LAY-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] List orders DMs and groups by newest activity with per-user unread counts that exclude the user's own messages and the pre-upgrade baseline (DM-06)
-- [ ] Marking read sets unread 0 for that user only, never moves backwards, and emits `room.read` to that user's sockets (DM-07)
-- [ ] Preview: 80 code points, sender name in groups, `[file name]` for attachments only (LAY-01 data)
-- [ ] Gate check passes: `make check`
+- [x] List orders DMs and groups by newest activity with per-user unread counts that exclude the user's own messages and the pre-upgrade baseline (DM-06)
+- [x] Marking read sets unread 0 for that user only, never moves backwards, and emits `room.read` to that user's sockets (DM-07)
+- [x] Preview: 80 code points, sender name in groups, `[file name]` for attachments only (LAY-01 data)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): list conversations with unread counts`
@@ -487,9 +487,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-03, GRP-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A user's DM to a live AI arrives with `conversation="dm"`, the sender's name and handle; the AI's `reply` appears in the DM (DM-03)
-- [ ] Group deliveries carry `conversation="group"` and keep delivery modes, keywords and signatures (GRP-04); Go and TS framing parity tests pass
-- [ ] Gate check passes: `make check`
+- [x] A user's DM to a live AI arrives with `conversation="dm"`, the sender's name and handle; the AI's `reply` appears in the DM (DM-03)
+- [x] Group deliveries carry `conversation="group"` and keep delivery modes, keywords and signatures (GRP-04); Go and TS framing parity tests pass
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): deliver direct messages to AIs`
@@ -503,10 +503,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-04, AGRP-01, AGRP-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] AI posts `to: @owner-handle` with no prior conversation → DM created and visible in the owner's conversation list (DM-04); invisible target → 404 `contact_not_found`
-- [ ] AI creates a group with its owner and another visible AI → owned by the owner, AI is a member (AGRP-01); a refused member → 422 listing it, nothing created (AGRP-02)
-- [ ] 11th new conversation within an hour → 429 `rate_limited`; reopening an existing DM is not counted
-- [ ] Gate check passes: `make check`
+- [x] AI posts `to: @owner-handle` with no prior conversation → DM created and visible in the owner's conversation list (DM-04); invisible target → 404 `contact_not_found`
+- [x] AI creates a group with its owner and another visible AI → owned by the owner, AI is a member (AGRP-01); a refused member → 422 listing it, nothing created (AGRP-02)
+- [x] 11th new conversation within an hour → 429 `rate_limited`; reopening an existing DM is not counted
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): let AIs open DMs and create groups`

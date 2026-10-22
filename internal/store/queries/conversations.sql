@@ -19,3 +19,57 @@ SELECT seq FROM read_cursors WHERE user_id = ? AND room_id = ?;
 
 -- name: DeleteReadCursor :exec
 DELETE FROM read_cursors WHERE user_id = ? AND room_id = ?;
+
+-- name: InsertDMRoom :execrows
+-- Creates the DM of a pair unless the pair has one (rooms_dm_pair): 1 row when created, 0 when it
+-- existed. dm_a and dm_b are the sorted participants (dm_a < dm_b).
+INSERT INTO rooms (id, owner_id, name, kind, dm_a, dm_b, created_at, updated_at)
+VALUES (?, ?, '', 'dm', ?, ?, ?, ?)
+ON CONFLICT DO NOTHING;
+
+-- name: ListRoomParticipants :many
+-- The two intelligences of a DM, by id, each with the subtype row it shares its id with (role:
+-- user, ai or person) and, for a person, the kind of its connector.
+SELECT sqlc.embed(i),
+       CAST(CASE WHEN u.id IS NOT NULL THEN 'user' WHEN a.id IS NOT NULL THEN 'ai'
+                 WHEN p.id IS NOT NULL THEN 'person' ELSE '' END AS TEXT) AS role,
+       CAST(COALESCE(c.kind, '') AS TEXT) AS platform
+FROM rooms r
+JOIN intelligences i ON i.id = r.dm_a OR i.id = r.dm_b
+LEFT JOIN users u ON u.id = i.id
+LEFT JOIN agents a ON a.id = i.id
+LEFT JOIN people p ON p.id = i.id
+LEFT JOIN connectors c ON c.id = p.connector_id
+WHERE r.id = ? AND r.kind = 'dm'
+ORDER BY i.id;
+
+-- name: ListLastMessages :many
+-- The newest message that still exists of each room (retention may have deleted the latest ones).
+SELECT v.* FROM message_views v
+JOIN (SELECT m.room_id, MAX(m.seq) AS seq FROM messages m
+      WHERE m.room_id IN (sqlc.slice('room_ids')) GROUP BY m.room_id) newest
+  ON newest.room_id = v.room_id AND newest.seq = v.seq;
+
+-- name: CountUnreadByRoom :many
+-- Per room, the messages after the user's read position and after the room's baseline (history
+-- from before the upgrade counts as read) that the user did not write (DM-06). Rooms without
+-- unread messages have no row.
+SELECT m.room_id, COUNT(*) AS unread
+FROM messages m
+JOIN rooms r ON r.id = m.room_id
+LEFT JOIN read_cursors c ON c.room_id = m.room_id AND c.user_id = sqlc.arg(user_id)
+WHERE m.room_id IN (sqlc.slice('room_ids'))
+  AND m.seq > MAX(COALESCE(c.seq, 0), r.read_baseline)
+  AND m.author_iid <> sqlc.arg(user_id)
+GROUP BY m.room_id;
+
+-- name: ListMemberNames :many
+-- The users and AIs that are members of the rooms, in the order they were added.
+SELECT m.room_id, i.display_name, i.handle
+FROM room_members m JOIN intelligences i ON i.id = m.member_id
+WHERE m.kind IN ('agent', 'user') AND m.room_id IN (sqlc.slice('room_ids'))
+ORDER BY m.room_id, m.created_at, m.id;
+
+-- name: DeleteEmptyDMRoom :execrows
+-- Deletes a DM nobody has written in: the one a failed first post leaves behind.
+DELETE FROM rooms WHERE id = ? AND kind = 'dm' AND next_seq = 1;

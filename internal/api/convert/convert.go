@@ -17,8 +17,13 @@ func Time(ms int64) time.Time { return time.UnixMilli(ms).UTC() }
 
 // Room renders a room as seen by the caller (MyLevel).
 func Room(r rooms.Room) dto.Room {
+	participants := make([]dto.IntelligenceRef, len(r.Participants))
+	for i, p := range r.Participants {
+		participants[i] = IntelligenceRef(p.Intelligence, dto.IntelligenceRole(p.Role), p.Platform)
+	}
 	return dto.Room{
-		ID: r.ID, Name: r.Name, Description: r.Description, Instructions: r.Instructions,
+		ID: r.ID, Kind: dto.ConversationKind(r.Kind), Participants: participants,
+		Name: r.Name, Description: r.Description, Instructions: r.Instructions,
 		Owner:      dto.User{ID: r.OwnerID, Username: r.OwnerUsername, DisplayName: r.OwnerDisplayName, Intelligence: ownerRef(r)},
 		Visibility: r.Visibility, MyLevel: r.Level, BridgeChats: r.BridgeChats, Broadcast: r.Broadcast,
 		CatchAll: r.CatchAll, RetentionDays: int(r.RetentionDays), AgentsPaused: r.AgentsPaused, LastSeq: r.LastSeq(),

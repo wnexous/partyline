@@ -52,23 +52,23 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.react))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_message",
-		Description: "Post a message to a room you belong to, optionally only to some of its chats.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id or room name"},"text":{"type":"string","description":"message text"},"chat_ids":{"type":"array","items":{"type":"string"},"description":"optional chat ids (the chat_id of a chat message, or member_id of chat members from list_rooms) to answer only those chats, at most 10 chats per message; empty sends to every chat of the room"},"recipients":{"type":"array","items":{"type":"string"},"description":"older name of chat_ids; still accepted"}},"required":["room","text"]}`),
+		Description: "Post a message to a room or DM you belong to, optionally only to some of its chats.",
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"text":{"type":"string","description":"message text"},"chat_ids":{"type":"array","items":{"type":"string"},"description":"optional chat ids (the chat_id of a chat message, or member_id of chat members from list_rooms) to answer only those chats, at most 10 chats per message; empty sends to every chat of the room"},"recipients":{"type":"array","items":{"type":"string"},"description":"older name of chat_ids; still accepted"}},"required":["room","text"]}`),
 	}, t.guard(t.sendMessage))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "room_info",
 		Description: "Read a room's instructions for agents, its members (chats with platform and kind) and your own membership settings in it.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id or room name"}},"required":["room"]}`),
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"}},"required":["room"]}`),
 	}, t.guard(t.roomInfo))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "list_rooms",
-		Description: "List the rooms you belong to with their members (agents show whether they are online).",
+		Description: "List the rooms and direct messages you belong to with their members (agents show whether they are online); a direct message has kind dm and says who it is with.",
 		InputSchema: schema(`{"type":"object","properties":{}}`),
 	}, t.guard(t.listRooms))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "history",
 		Description: "Read earlier messages of a room, oldest first. Page back with before = the message_id of the oldest message returned.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id or room name"},"before":{"type":"string","description":"only messages older than this message_id"},"limit":{"type":"integer","minimum":1,"maximum":100,"description":"how many messages (default 20, at most 100)"}},"required":["room"]}`),
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"before":{"type":"string","description":"only messages older than this message_id"},"limit":{"type":"integer","minimum":1,"maximum":100,"description":"how many messages (default 20, at most 100)"}},"required":["room"]}`),
 	}, t.guard(t.history))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "download_attachment",
@@ -78,7 +78,7 @@ func (t *tools) register(srv *mcp.Server) {
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_file",
 		Description: "Upload a local file to a room, with an optional caption and reply_to.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id or room name"},"path":{"type":"string","description":"local file path"},"caption":{"type":"string","description":"optional text sent with the file"},"reply_to":{"type":"string","description":"optional message_id this file answers"}},"required":["room","path"]}`),
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"path":{"type":"string","description":"local file path"},"caption":{"type":"string","description":"optional text sent with the file"},"reply_to":{"type":"string","description":"optional message_id this file answers"}},"required":["room","path"]}`),
 	}, t.guard(t.sendFile))
 }
 
@@ -200,12 +200,23 @@ func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, 
 	return sent(m), nil
 }
 
-// roomListing is one room in the list_rooms answer (TOOL-09).
+// roomListing is one room in the list_rooms answer (TOOL-09). A DM has kind "dm", is named by the
+// other participant and says who that is in With; its room argument can be "@" + With.Handle.
 type roomListing struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Members     []memberListing `json:"members"`
+	ID          string               `json:"id"`
+	Kind        dto.ConversationKind `json:"kind"`
+	Name        string               `json:"name"`
+	With        *contactListing      `json:"with,omitempty"`
+	Description string               `json:"description,omitempty"`
+	Members     []memberListing      `json:"members"`
+}
+
+// contactListing is the other participant of a DM.
+type contactListing struct {
+	ID     string               `json:"id"`
+	Name   string               `json:"name"`
+	Handle string               `json:"handle"`
+	Kind   dto.IntelligenceKind `json:"kind"`
 }
 
 type memberListing struct {
@@ -223,7 +234,10 @@ func (t *tools) listRooms(ctx context.Context, _ json.RawMessage) (string, error
 	}
 	out := make([]roomListing, 0, len(rooms.Items))
 	for _, r := range rooms.Items {
-		l := roomListing{ID: r.ID, Name: r.Name, Description: r.Description, Members: make([]memberListing, 0, len(r.Members))}
+		l := roomListing{ID: r.ID, Kind: r.Kind, Name: r.Name, Description: r.Description, Members: make([]memberListing, 0, len(r.Members))}
+		if r.With != nil {
+			l.With = &contactListing{ID: r.With.ID, Name: r.With.DisplayName, Handle: r.With.Handle, Kind: r.With.Kind}
+		}
 		for _, m := range r.Members {
 			l.Members = append(l.Members, memberListing{Kind: m.Kind, MemberID: m.MemberID, Name: m.Name, Owner: m.Owner, Online: m.Online})
 		}

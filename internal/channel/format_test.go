@@ -38,7 +38,7 @@ func TestFormatMeta(t *testing.T) {
 				m.Chat = &dto.ChatRef{ID: "chat-1", Title: "Family group", Kind: dto.ChatKindGroup, Platform: "whatsapp"}
 			}),
 			want: map[string]string{
-				"room": room.ID, "room_name": "Support", "message_id": "0190c0de-0000-7000-8000-000000000001",
+				"room": room.ID, "room_name": "Support", "message_id": "0190c0de-0000-7000-8000-000000000001", "conversation": "group",
 				"author": "Family", "author_kind": "chat", "sender_name": "Grandma", "trusted": "false", "kind": "text",
 				"chat_id": "chat-1", "chat_title": "Family group", "chat_kind": "group", "platform": "whatsapp",
 				"sender_id": "5511999990000",
@@ -51,7 +51,7 @@ func TestFormatMeta(t *testing.T) {
 			}),
 			trusted: true,
 			want: map[string]string{
-				"room": room.ID, "room_name": "Support", "message_id": "0190c0de-0000-7000-8000-000000000001",
+				"room": room.ID, "room_name": "Support", "message_id": "0190c0de-0000-7000-8000-000000000001", "conversation": "group",
 				"author": "builder", "author_kind": "agent", "sender_name": "", "trusted": "true", "kind": "text",
 				"reply_to": "0190c0de-0000-7000-8000-000000000000",
 			},
@@ -63,7 +63,7 @@ func TestFormatMeta(t *testing.T) {
 			}),
 			trusted: true,
 			want: map[string]string{
-				"room": room.ID, "room_name": "Support", "message_id": "0190c0de-0000-7000-8000-000000000001",
+				"room": room.ID, "room_name": "Support", "message_id": "0190c0de-0000-7000-8000-000000000001", "conversation": "group",
 				"author": "Alice", "author_kind": "user", "sender_name": "", "trusted": "true", "kind": "image",
 			},
 		},
@@ -73,7 +73,7 @@ func TestFormatMeta(t *testing.T) {
 				m.AuthorName, m.Kind = "Partyline", dto.MessageKindSystem
 			}),
 			want: map[string]string{
-				"room": room.ID, "room_name": "Support", "message_id": "0190c0de-0000-7000-8000-000000000001",
+				"room": room.ID, "room_name": "Support", "message_id": "0190c0de-0000-7000-8000-000000000001", "conversation": "group",
 				"author": "Partyline", "author_kind": "system", "sender_name": "", "trusted": "false", "kind": "system",
 			},
 		},
@@ -146,4 +146,45 @@ func TestInstructionsExplainChatFields(t *testing.T) {
 	for _, key := range []string{"chat_id", "chat_title", `chat_kind="group|dm|channel"`, `platform="whatsapp|telegram|discord|webhook"`, "sender_id"} {
 		require.Contains(t, Instructions, key)
 	}
+}
+
+// DM-03: a message of a DM says conversation="dm" and names the room by the other participant;
+// the author's intelligence travels as author_id and author_handle when it is known (GRP-04 keeps
+// every other field of a group message).
+func TestFormatConversationAndAuthor(t *testing.T) {
+	dm := msg(dto.AuthorKindUser, func(m *dto.Message) {
+		m.AuthorID, m.AuthorName = "user-1", "Alice A."
+		m.Author = dto.IntelligenceRef{ID: "user-1", Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "Alice A.", Handle: "alice-a"}
+	})
+	dm.Room = dto.RoomRef{ID: room.ID, Name: "Alice A.", Kind: dto.ConversationKindDM}
+	dm.Trusted = true
+	require.Equal(t, map[string]string{
+		"conversation": "dm", "room": room.ID, "room_name": "Alice A.", "message_id": "0190c0de-0000-7000-8000-000000000001",
+		"author": "Alice A.", "author_kind": "user", "author_id": "user-1", "author_handle": "alice-a",
+		"sender_name": "", "trusted": "true", "kind": "text",
+	}, Format(dm).Meta)
+
+	// The same author in a group: only conversation differs.
+	group := dm
+	group.Room = room
+	meta := Format(group).Meta
+	require.Equal(t, "group", meta["conversation"])
+	require.Equal(t, "Support", meta["room_name"])
+	require.Equal(t, "alice-a", meta["author_handle"])
+
+	// An author without a handle names its id only; one without an intelligence names neither.
+	noHandle := msg(dto.AuthorKindChat, func(m *dto.Message) { m.Author = dto.IntelligenceRef{ID: "person-1"} })
+	meta = Format(noHandle).Meta
+	require.Equal(t, "person-1", meta["author_id"])
+	require.NotContains(t, meta, "author_handle")
+	meta = Format(msg(dto.AuthorKindSystem, nil)).Meta
+	require.NotContains(t, meta, "author_id")
+	require.NotContains(t, meta, "author_handle")
+}
+
+// The notice of a room keeps its shape; a DM notice is named by the other participant.
+func TestFormatNoticeOfADM(t *testing.T) {
+	n := FormatNotice(dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Room: dto.RoomRef{ID: "r9", Name: "Alice A.", Kind: dto.ConversationKindDM}, Text: "5 older messages skipped"})
+	require.Equal(t, "Alice A.", n.Meta["room_name"])
+	require.Equal(t, "r9", n.Meta["room"])
 }

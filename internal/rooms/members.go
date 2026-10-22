@@ -72,6 +72,30 @@ func (s *Service) member(ctx context.Context, roomID, memberRowID string) (Membe
 	return Member{}, access.ErrNotFound
 }
 
+// authorizeMembers authorizes a change of the room's members: a caller without view gets
+// ErrNotFound; whoever can view a DM gets ErrDMMembersFixed, since a DM has exactly its two
+// intelligences (DM-02); the others need manage.
+func (s *Service) authorizeMembers(ctx context.Context, p authn.Principal, roomID string) error {
+	l, err := s.authorize(ctx, p, roomID, dto.LevelView)
+	if err != nil {
+		return err
+	}
+	r, err := s.store.R().GetRoom(ctx, roomID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return access.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if r.Kind == string(dto.ConversationKindDM) {
+		return ErrDMMembersFixed
+	}
+	if !access.AtLeast(l, dto.LevelManage) {
+		return access.ErrForbidden
+	}
+	return nil
+}
+
 // MemberInput names a member to add. Outbound defaults to true.
 type MemberInput struct {
 	Kind     dto.MemberKind
@@ -83,7 +107,7 @@ type MemberInput struct {
 // caller to own or use the agent (ACL-05), chats to own or use the chat's connector (ACL-06),
 // projects to own or use the project (PROJ-06); otherwise ErrForbidden.
 func (s *Service) AddMember(ctx context.Context, p authn.Principal, roomID string, in MemberInput) (Member, error) {
-	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
+	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
 		return Member{}, err
 	}
 	if err := s.checkUse(ctx, p.UserID, in); err != nil {
@@ -111,7 +135,31 @@ func (s *Service) AddMember(ctx context.Context, p authn.Principal, roomID strin
 		return Member{}, err
 	}
 	s.bus.Publish(events.MembersChanged{RoomID: roomID})
+	if in.Kind == dto.MemberKindUser {
+		s.accessChanged(roomID) // a user member gains access to the group (AD-011)
+	}
 	return s.member(ctx, roomID, id)
+}
+
+// accessChanged tells live clients that who may access the room changed through membership,
+// as sharing does: new members learn the room, removed ones lose it.
+func (s *Service) accessChanged(roomID string) {
+	s.bus.Publish(events.GrantsChanged{ResourceKind: string(access.KindRoom), ResourceID: roomID})
+}
+
+// CheckMember reports whether ownerID may put the member in a group they own, by the rules of
+// AddMember: an AI needs ownership or use, a user must exist and be enabled. False means the
+// member is refused; an unknown AI and one the owner may not use are the same answer.
+func (s *Service) CheckMember(ctx context.Context, ownerID string, in MemberInput) (bool, error) {
+	err := s.checkUse(ctx, ownerID, in)
+	var invalid *validation.Error
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, access.ErrForbidden), errors.As(err, &invalid):
+		return false, nil
+	}
+	return false, err
 }
 
 // checkUse verifies the caller may put the agent or chat in a room.
@@ -246,7 +294,7 @@ func (u MemberUpdate) apply(m db.RoomMember) (db.RoomMember, error) {
 // UpdateMember changes a member's outbound flag and, for agents, its settings (MEM-01..05);
 // requires manage. Invalid settings change nothing.
 func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, memberRowID string, u MemberUpdate) (Member, error) {
-	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
+	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
 		return Member{}, err
 	}
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
@@ -295,9 +343,10 @@ func (s *Service) skipAutoRoute(ctx context.Context, q *db.Queries, roomID, chat
 // pending (not yet sent) outbox entries in this room are deleted in the same tx (ROOM-01).
 // Requires manage.
 func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, memberRowID string) error {
-	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
+	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
 		return err
 	}
+	var removedKind string
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		m, err := q.GetRoomMember(ctx, db.GetRoomMemberParams{ID: memberRowID, RoomID: roomID})
 		if err != nil {
@@ -306,6 +355,7 @@ func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, m
 			}
 			return err
 		}
+		removedKind = m.Kind
 		if m.Kind == string(dto.MemberKindChat) {
 			// Cancel what was queued for this chat in this room but not sent yet (ROOM-01).
 			if _, err := q.DeletePendingRoomChatOutbox(ctx, db.DeletePendingRoomChatOutboxParams{ChatID: m.MemberID, RoomID: roomID}); err != nil {
@@ -321,5 +371,8 @@ func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, m
 		return err
 	}
 	s.bus.Publish(events.MembersChanged{RoomID: roomID})
+	if removedKind == string(dto.MemberKindUser) {
+		s.accessChanged(roomID) // the user loses the access membership gave
+	}
 	return nil
 }

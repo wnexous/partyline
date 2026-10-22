@@ -86,6 +86,26 @@ const (
 	// ErrorCodeIdentityBusy is a connection for an AI that has a live session in another
 	// process (409); Details say who, in which app and since when (SES-04).
 	ErrorCodeIdentityBusy ErrorCode = "identity_busy" // 409
+	// ErrorCodeDMNoSharing is an attempt to share a direct message: a DM is visible to its two
+	// intelligences only (422, DM-08).
+	ErrorCodeDMNoSharing ErrorCode = "dm_no_sharing"
+	// ErrorCodeDMMembersFixed is an attempt to add, change or remove a member of a direct
+	// message: it has exactly its two intelligences (422, DM-02).
+	ErrorCodeDMMembersFixed ErrorCode = "dm_members_fixed"
+	// ErrorCodeDMSelf is a direct message opened with oneself (422, DM-01).
+	ErrorCodeDMSelf ErrorCode = "dm_self"
+	// ErrorCodeContactNotFound is a direct message with an intelligence that does not exist or
+	// that the caller cannot see; the two cases look alike (404, DM-01, DM-04).
+	ErrorCodeContactNotFound ErrorCode = "contact_not_found"
+	// ErrorCodeNoRouteToPerson is a direct message with an external person that no platform
+	// conversation of the sender reaches (422, DM-05).
+	ErrorCodeNoRouteToPerson ErrorCode = "no_route_to_person"
+	// ErrorCodeCounterpartDisabled is a post in a direct message whose other participant is a
+	// disabled user: the DM stays readable (403, DM-02).
+	ErrorCodeCounterpartDisabled ErrorCode = "counterpart_disabled"
+	// ErrorCodeMembersRefused is a new group with a member its owner may not add; Refused lists
+	// them and nothing was created (422, LAY-04, AGRP-02).
+	ErrorCodeMembersRefused ErrorCode = "members_refused"
 )
 
 // ErrorBody is the envelope of every error response.
@@ -101,6 +121,8 @@ type Error struct {
 	// Details carries facts about the refusal that are not request fields: for identity_busy the
 	// BusyDetail keys.
 	Details map[string]string `json:"details,omitempty"`
+	// Refused lists the members of members_refused, in the order they were asked for.
+	Refused []RefusedMember `json:"refused,omitempty"`
 }
 
 // Keys of Error.Details for identity_busy: the AI's display name, the id and the readable name of

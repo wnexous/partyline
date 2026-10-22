@@ -30,8 +30,17 @@ type MembersChanged struct{ RoomID string }
 // changed. ID is the intelligence id, shared with its user, agent or person row.
 type IntelligenceChanged struct{ ID string }
 
-// GrantsChanged reports that the grants of a room, agent or connector changed.
+// GrantsChanged reports that who may access a room, agent or connector changed: its grants, or,
+// for a room, its user members (membership is an access source next to grants).
 type GrantsChanged struct{ ResourceKind, ResourceID string }
+
+// ReadChanged reports that a user marked a room read up to Seq (the position that holds, never
+// behind an earlier one). Only that user's own sockets hear about it.
+type ReadChanged struct {
+	UserID string
+	RoomID string
+	Seq    int64
+}
 
 // AgentPresence reports that an agent connected or disconnected.
 type AgentPresence struct {
@@ -94,6 +103,7 @@ func (RoomChanged) isEvent()         {}
 func (MembersChanged) isEvent()      {}
 func (IntelligenceChanged) isEvent() {}
 func (GrantsChanged) isEvent()       {}
+func (ReadChanged) isEvent()         {}
 func (AgentPresence) isEvent()       {}
 func (ConnectorStatus) isEvent()     {}
 func (ChatDiscovered) isEvent()      {}

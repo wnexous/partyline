@@ -21,7 +21,7 @@ var (
 
 // Frame renders a message record (the channel notification's meta fields plus "content", as
 // `partyline listen` prints it) the way the omp, pi and OpenCode adapters do (PUSH-06):
-// <partyline room=… chat=… platform=… from=… trusted=… message_id=… chat_id=…>text</partyline>
+// <partyline room=… conversation=… chat=… platform=… from=… trusted=… message_id=… chat_id=…>text</partyline>
 // and the trust line (OwnerLine or DataLine). Absent fields are left out; markup in the text
 // is escaped.
 func Frame(r map[string]string) string {
@@ -39,6 +39,7 @@ func Frame(r map[string]string) string {
 	}
 	attrs := [][2]string{
 		{"room", first("room_name", "room")},
+		{"conversation", r["conversation"]},
 		{"chat", r["chat_title"]},
 		{"platform", r["platform"]},
 		{"from", first("sender_name", "author")},

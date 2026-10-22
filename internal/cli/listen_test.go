@@ -118,15 +118,18 @@ func TestListenPrintsOneLinePerMessage(t *testing.T) {
 
 	msg := e.post(t, room.ID, "first line\nsecond line")
 	require.Equal(t, map[string]string{
-		"content":     "first line\nsecond line",
-		"room":        room.ID,
-		"room_name":   "Support",
-		"message_id":  msg.ID,
-		"author":      msg.AuthorName,
-		"author_kind": "user",
-		"sender_name": msg.SenderName,
-		"trusted":     "true",
-		"kind":        string(msg.Kind),
+		"content":       "first line\nsecond line",
+		"conversation":  "group",
+		"room":          room.ID,
+		"room_name":     "Support",
+		"message_id":    msg.ID,
+		"author":        msg.AuthorName,
+		"author_kind":   "user",
+		"author_id":     e.alice.User.ID,
+		"author_handle": "alice",
+		"sender_name":   msg.SenderName,
+		"trusted":       "true",
+		"kind":          string(msg.Kind),
 	}, p.line())
 
 	next := e.post(t, room.ID, "again")

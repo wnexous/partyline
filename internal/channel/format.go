@@ -23,8 +23,10 @@ type Notification struct {
 
 // Format renders a delivered message (AGT-05): content is the text plus one line per
 // attachment; meta carries the room, message and author fields and the recipient-relative
-// trusted flag ("true"/"false"). A chat-authored message also names its chat (CTX-01):
-// chat_id (usable as a send_message recipient), chat_title, chat_kind, platform and
+// trusted flag ("true"/"false"). conversation is "dm" for a direct message (room_name is then
+// the other participant) and "group" otherwise (DM-03, GRP-04); author_id and author_handle name
+// the author's intelligence when it is known. A chat-authored message also names its chat
+// (CTX-01): chat_id (usable as a send_message recipient), chat_title, chat_kind, platform and
 // sender_id; other authors carry none of them (CTX-02).
 func Format(m dto.AgentMessage) Notification {
 	msg := m.Message
@@ -35,15 +37,26 @@ func Format(m dto.AgentMessage) Notification {
 	for _, a := range msg.Attachments {
 		lines = append(lines, "[attachment "+a.ID+": "+a.Name+", "+a.Mime+"]")
 	}
+	conversation := dto.ConversationKindGroup
+	if m.Room.Kind == dto.ConversationKindDM {
+		conversation = dto.ConversationKindDM
+	}
 	meta := map[string]string{
-		"room":        m.Room.ID,
-		"room_name":   m.Room.Name,
-		"message_id":  msg.ID,
-		"author":      msg.AuthorName,
-		"author_kind": string(msg.AuthorKind),
-		"sender_name": msg.SenderName,
-		"trusted":     strconv.FormatBool(m.Trusted),
-		"kind":        string(msg.Kind),
+		"conversation": string(conversation),
+		"room":         m.Room.ID,
+		"room_name":    m.Room.Name,
+		"message_id":   msg.ID,
+		"author":       msg.AuthorName,
+		"author_kind":  string(msg.AuthorKind),
+		"sender_name":  msg.SenderName,
+		"trusted":      strconv.FormatBool(m.Trusted),
+		"kind":         string(msg.Kind),
+	}
+	if a := msg.Author; a.ID != "" {
+		meta["author_id"] = a.ID
+		if a.Handle != "" {
+			meta["author_handle"] = a.Handle
+		}
 	}
 	if msg.ReplyTo != "" {
 		meta["reply_to"] = msg.ReplyTo

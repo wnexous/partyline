@@ -375,9 +375,12 @@ SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days
        (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count
 FROM rooms r JOIN users u ON u.id = r.owner_id
 LEFT JOIN intelligences oi ON oi.id = r.owner_id
-WHERE r.owner_id = ?1
-   OR r.id IN (SELECT g.resource_id FROM grants g
-               WHERE g.resource_kind = 'room' AND g.subject IN (?1, '*'))
+WHERE (r.kind = 'group' AND r.owner_id = ?1)
+   OR (r.kind = 'group' AND r.id IN (SELECT g.resource_id FROM grants g
+                                     WHERE g.resource_kind = 'room' AND g.subject IN (?1, '*')))
+   OR (r.kind = 'group' AND r.id IN (SELECT m.room_id FROM room_members m
+                                     WHERE m.kind = 'user' AND m.member_id = ?1))
+   OR (r.kind = 'dm' AND (r.dm_a = ?1 OR r.dm_b = ?1))
 ORDER BY r.name COLLATE NOCASE, r.id
 `
 
@@ -392,6 +395,8 @@ type ListRoomsForUserRow struct {
 	MemberCount      int64
 }
 
+// The conversations a user may have in a list: the groups they own, are granted or are a member
+// of, and the DMs they take part in. The DMs they only view through an AI are left out.
 func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRoomsForUserRow, error) {
 	rows, err := q.db.QueryContext(ctx, listRoomsForUser, userID)
 	if err != nil {

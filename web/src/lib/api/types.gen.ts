@@ -96,8 +96,16 @@ export interface UpdateProjectRequest {
  */
 export interface AgentRoom {
   id: string;
+  kind: ConversationKind;
+  /**
+   * Name is the group's name; for a DM it is the display name of the other participant.
+   */
   name: string;
   description: string;
+  /**
+   * With is the other participant of a DM, relative to the AI; absent for a group.
+   */
+  with?: IntelligenceRef;
   members: RoomMember[];
 }
 /**
@@ -226,6 +234,24 @@ export interface AgentAckFrame {
   type: typeof AgentFrameTypeAck;
   message_id: string;
 }
+/**
+ * AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its
+ * owner can see, opening the DM when there is none. To is the target's "@handle", handle or id;
+ * ChatIDs reach chats of the DM like the recipients of a post.
+ */
+export interface AgentDMRequest {
+  to: string;
+  text: string;
+  chat_ids?: string[];
+}
+/**
+ * CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name. Its
+ * request is a CreateGroupRequest whose members are "@handle", handle or id.
+ */
+export interface CreatedGroup {
+  room: string;
+  name: string;
+}
 
 //////////
 // source: common.go
@@ -351,9 +377,43 @@ export const ErrorCodeFolderInvalid = "folder_invalid"; // 422
  */
 export const ErrorCodeIdentityBusy = "identity_busy"; // 409
 /**
+ * ErrorCodeDMNoSharing is an attempt to share a direct message: a DM is visible to its two
+ * intelligences only (422, DM-08).
+ */
+export const ErrorCodeDMNoSharing = "dm_no_sharing";
+/**
+ * ErrorCodeDMMembersFixed is an attempt to add, change or remove a member of a direct
+ * message: it has exactly its two intelligences (422, DM-02).
+ */
+export const ErrorCodeDMMembersFixed = "dm_members_fixed";
+/**
+ * ErrorCodeDMSelf is a direct message opened with oneself (422, DM-01).
+ */
+export const ErrorCodeDMSelf = "dm_self";
+/**
+ * ErrorCodeContactNotFound is a direct message with an intelligence that does not exist or
+ * that the caller cannot see; the two cases look alike (404, DM-01, DM-04).
+ */
+export const ErrorCodeContactNotFound = "contact_not_found";
+/**
+ * ErrorCodeNoRouteToPerson is a direct message with an external person that no platform
+ * conversation of the sender reaches (422, DM-05).
+ */
+export const ErrorCodeNoRouteToPerson = "no_route_to_person";
+/**
+ * ErrorCodeCounterpartDisabled is a post in a direct message whose other participant is a
+ * disabled user: the DM stays readable (403, DM-02).
+ */
+export const ErrorCodeCounterpartDisabled = "counterpart_disabled";
+/**
+ * ErrorCodeMembersRefused is a new group with a member its owner may not add; Refused lists
+ * them and nothing was created (422, LAY-04, AGRP-02).
+ */
+export const ErrorCodeMembersRefused = "members_refused";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeMembersRefused;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -372,6 +432,10 @@ export interface Error {
    * BusyDetail keys.
    */
   details?: { [key: string]: string};
+  /**
+   * Refused lists the members of members_refused, in the order they were asked for.
+   */
+  refused?: RefusedMember[];
 }
 export const BusyDetailDisplayName = "display_name";
 export const BusyDetailApp = "app";
@@ -676,6 +740,152 @@ export interface HookAttachment {
 }
 
 //////////
+// source: conversations.go
+
+/**
+ * ConversationKind tells a group from a direct message. Both are rooms (AD-002, AD-011): a DM
+ * has exactly two intelligences, keyed by their ids on the room row, and nobody manages it (DM-02).
+ */
+export const ConversationKindGroup = "group";
+export const ConversationKindDM = "dm";
+/**
+ * Conversation kinds.
+ */
+export type ConversationKind = typeof ConversationKindGroup | typeof ConversationKindDM;
+/**
+ * OpenDMRequest is the body of POST /conversations/dm: the intelligence to talk to, by id
+ * (DM-01). The answer is the DM as a Room: 201 when it was created, 200 when it already existed.
+ */
+export interface OpenDMRequest {
+  with: string;
+}
+/**
+ * MaxGroupMembers is the most members a new group is created with (LAY-04); the AI that creates
+ * a group counts as one.
+ */
+export const MaxGroupMembers = 50;
+/**
+ * CreateGroupRequest is the body of POST /groups (LAY-04) and of an AI's group creation (AGRP-01).
+ * Members are the ids of the users and AIs to put in the group, each checked with the add-member
+ * rules of the group's owner before anything is created; the owner is a member only when listed.
+ * Repeated ids count once.
+ */
+export interface CreateGroupRequest {
+  name: string;
+  description?: string;
+  members: string[];
+}
+/**
+ * RefusedReason says why a member could not be added to a new group.
+ */
+/**
+ * RefusedReasonNotFound is an id that is no enabled user and no AI the owner may use.
+ */
+export const RefusedReasonNotFound = "not_found";
+/**
+ * RefusedReasonPerson is an external person, who joins a group through a bridged chat only.
+ */
+export const RefusedReasonPerson = "person";
+/**
+ * Reasons a member is refused. An AI the owner may not use is not_found as well: it must not be
+ * told apart from an id that does not exist.
+ */
+export type RefusedReason = typeof RefusedReasonNotFound | typeof RefusedReasonPerson;
+/**
+ * RefusedMember is a member of a new group that was refused (422 members_refused).
+ */
+export interface RefusedMember {
+  id: string;
+  reason: RefusedReason;
+}
+/**
+ * Conversation is one row of the messenger's conversation list (GET /conversations, DM-06,
+ * LAY-01): a group the caller can view or a DM the caller takes part in. The list is newest
+ * activity first.
+ */
+export interface Conversation {
+  /**
+   * ID is the room id.
+   */
+  id: string;
+  kind: ConversationKind;
+  /**
+   * Title is the group's name, or the display name of the other participant of a DM.
+   */
+  title: string;
+  /**
+   * Counterpart is the other participant of a DM; absent for a group.
+   */
+  counterpart?: IntelligenceRef;
+  my_level: Level;
+  /**
+   * LastMessage is absent while the conversation has no message.
+   */
+  last_message?: MessagePreview;
+  /**
+   * Unread counts the messages after the caller's read position (and after the room's
+   * pre-upgrade baseline) that the caller did not write.
+   */
+  unread: number /* int */;
+  /**
+   * ActivityAt is the time of the last message, else of the room's creation.
+   */
+  activity_at: string /* RFC 3339 */;
+  /**
+   * MemberNames are up to MaxConversationMemberNames "Name @handle" entries of the users and
+   * AIs of a group (the other participant of a DM), for the sidebar search.
+   */
+  member_names: string[];
+}
+/**
+ * MaxConversationMemberNames bounds Conversation.MemberNames.
+ */
+export const MaxConversationMemberNames = 20;
+/**
+ * MaxPreviewLength is the length of a message preview in code points (LAY-01).
+ */
+export const MaxPreviewLength = 80;
+/**
+ * MessagePreview is the last message of a conversation.
+ */
+export interface MessagePreview {
+  seq: number /* int64 */;
+  /**
+   * AuthorID is the intelligence that wrote it; empty for system messages and for chat senders
+   * without one.
+   */
+  author_id: string;
+  /**
+   * AuthorName is the author's display name in a group, where the list prefixes it; empty in a
+   * DM.
+   */
+  author_name: string;
+  /**
+   * Text is the first MaxPreviewLength code points of the message, or "[file name]" for a
+   * message that is only an attachment.
+   */
+  text: string;
+  created_at: string /* RFC 3339 */;
+}
+/**
+ * MarkReadRequest is the body of PUT /rooms/{id}/read: the newest message the caller has seen. An
+ * absent seq reads everything; a seq past the newest message counts as the newest; an earlier one
+ * than the current position changes nothing (DM-07).
+ */
+export interface MarkReadRequest {
+  seq?: number /* int64 */;
+}
+/**
+ * ReadState is the answer of PUT /rooms/{id}/read: the read position that holds and what is
+ * still unread after it.
+ */
+export interface ReadState {
+  room_id: string;
+  seq: number /* int64 */;
+  unread: number /* int */;
+}
+
+//////////
 // source: devices.go
 
 /**
@@ -935,6 +1145,7 @@ export const LiveEventTypeHello = "hello";
 export const LiveEventTypeRoomMessage = "room.message";
 export const LiveEventTypeRoomChanged = "room.changed";
 export const LiveEventTypeRoomDeleted = "room.deleted";
+export const LiveEventTypeRoomRead = "room.read";
 export const LiveEventTypeMembersChanged = "room.members";
 export const LiveEventTypeAccessChanged = "access.changed";
 export const LiveEventTypeAgentPresence = "agent.presence";
@@ -951,12 +1162,13 @@ export const LiveEventTypeLagged = "lagged";
 /**
  * Live event types.
  */
-export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeOutboxStatus | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged;
+export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeOutboxStatus | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged;
 export type LiveEvent =
   | LiveHello
   | LiveRoomMessage
   | LiveRoomChanged
   | LiveRoomDeleted
+  | LiveRoomRead
   | LiveMembersChanged
   | LiveAccessChanged
   | LiveAgentPresence
@@ -1000,6 +1212,21 @@ export interface LiveRoomChanged {
 export interface LiveRoomDeleted {
   type: typeof LiveEventTypeRoomDeleted;
   data: RoomIDData;
+}
+/**
+ * LiveRoomRead reports that the user marked a room read, on this socket or another one of
+ * theirs: the unread count of the room is zero up to Seq (DM-07). Only the reader receives it.
+ */
+export interface LiveRoomRead {
+  type: typeof LiveEventTypeRoomRead;
+  data: ReadData;
+}
+/**
+ * ReadData is the read position that holds in a room: the newest message the user has read.
+ */
+export interface ReadData {
+  room_id: string;
+  seq: number /* int64 */;
 }
 /**
  * LiveMembersChanged reports that a room's members changed; refetch GET /rooms/{id}/members.
@@ -1109,6 +1336,14 @@ export interface LiveLagged {
  */
 export interface Room {
   id: string;
+  /**
+   * Kind tells a group from a direct message; a DM has no name and exactly two Participants.
+   */
+  kind: ConversationKind;
+  /**
+   * Participants are the two intelligences of a DM, in id order; empty for a group.
+   */
+  participants: IntelligenceRef[];
   name: string;
   description: string;
   /**
@@ -1428,11 +1663,17 @@ export interface OutboxItem {
   updated_at: string /* RFC 3339 */;
 }
 /**
- * RoomRef names a room inside agent frames and events.
+ * RoomRef names a room inside agent frames and events. In the frames an AI receives, a DM is
+ * named by the display name of the other participant and marked Kind dm (DM-03); a group
+ * carries no Kind.
  */
 export interface RoomRef {
   id: string;
   name: string;
+  /**
+   * Kind is dm for a direct message; absent for a group.
+   */
+  kind?: ConversationKind;
 }
 /**
  * ActivityItem is one entry of GET /activity: a message with the room it was posted in.

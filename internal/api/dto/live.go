@@ -12,6 +12,7 @@ const (
 	LiveEventTypeRoomMessage     LiveEventType = "room.message"
 	LiveEventTypeRoomChanged     LiveEventType = "room.changed"
 	LiveEventTypeRoomDeleted     LiveEventType = "room.deleted"
+	LiveEventTypeRoomRead        LiveEventType = "room.read"
 	LiveEventTypeMembersChanged  LiveEventType = "room.members"
 	LiveEventTypeAccessChanged   LiveEventType = "access.changed"
 	LiveEventTypeAgentPresence   LiveEventType = "agent.presence"
@@ -31,6 +32,7 @@ var _ = `export type LiveEvent =
   | LiveRoomMessage
   | LiveRoomChanged
   | LiveRoomDeleted
+  | LiveRoomRead
   | LiveMembersChanged
   | LiveAccessChanged
   | LiveAgentPresence
@@ -69,6 +71,19 @@ type LiveRoomChanged struct {
 type LiveRoomDeleted struct {
 	Type LiveEventType `json:"type" tstype:"typeof LiveEventTypeRoomDeleted"`
 	Data RoomIDData    `json:"data"`
+}
+
+// LiveRoomRead reports that the user marked a room read, on this socket or another one of
+// theirs: the unread count of the room is zero up to Seq (DM-07). Only the reader receives it.
+type LiveRoomRead struct {
+	Type LiveEventType `json:"type" tstype:"typeof LiveEventTypeRoomRead"`
+	Data ReadData      `json:"data"`
+}
+
+// ReadData is the read position that holds in a room: the newest message the user has read.
+type ReadData struct {
+	RoomID string `json:"room_id"`
+	Seq    int64  `json:"seq"`
 }
 
 // LiveMembersChanged reports that a room's members changed; refetch GET /rooms/{id}/members.

@@ -26,6 +26,14 @@ import (
 // ErrAlreadyMember is returned when adding a member twice (409).
 var ErrAlreadyMember = errors.New("already a member of the room")
 
+// ErrDMMembersFixed is returned when a member of a direct message is added, changed or removed:
+// a DM has exactly its two intelligences (422 dm_members_fixed, DM-02).
+var ErrDMMembersFixed = errors.New("the members of a direct message are fixed")
+
+// ErrCounterpartDisabled is returned when posting in a direct message whose other participant is a
+// disabled user: the DM stays readable (403 counterpart_disabled, DM-02).
+var ErrCounterpartDisabled = errors.New("the other participant of the direct message is disabled")
+
 // Limits of room fields.
 const (
 	MaxNameLength        = 100
@@ -82,6 +90,16 @@ type Room struct {
 	InstructionsByName string
 	// OwnerIntelligence is the owner's profile (ID empty when the owner has none).
 	OwnerIntelligence db.Intelligence
+	// Participants are the two intelligences of a DM, by id; none for a group.
+	Participants []Participant
+}
+
+// Participant is one of the two intelligences of a DM.
+type Participant struct {
+	db.Intelligence
+	// Role is user, ai or person; Platform is the connector kind of a person.
+	Role     string
+	Platform string
 }
 
 // LastSeq is the sequence number of the room's latest message (0 when empty).
@@ -159,29 +177,71 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	if p.Kind != authn.KindUser {
 		return Room{}, access.ErrForbidden
 	}
+	id, err := s.CreateWithMembers(ctx, p.UserID, in, nil)
+	if err != nil {
+		return Room{}, err
+	}
+	return s.Get(ctx, p, id)
+}
+
+// ValidateCreate checks the fields of a new room the way Create does and writes nothing; callers
+// that have more to check before they create validate first, so that a bad name is reported
+// before anything else.
+func ValidateCreate(in CreateInput) error {
+	retention := DefaultRetentionDays
+	if in.RetentionDays != nil {
+		retention = *in.RetentionDays
+	}
+	return validateRoom(roomText(in.Name), roomText(in.Description), roomText(in.Instructions), retention)
+}
+
+// CreateWithMembers makes a group owned by ownerID with the members in one transaction and
+// returns its id (LAY-04, AGRP-01). The owner gets manage by ownership and is a member only when
+// listed. The members are not checked here: callers check each one with CheckMember first, so
+// that a refused member creates nothing.
+func (s *Service) CreateWithMembers(ctx context.Context, ownerID string, in CreateInput, members []MemberInput) (string, error) {
 	retention := DefaultRetentionDays
 	if in.RetentionDays != nil {
 		retention = *in.RetentionDays
 	}
 	name, description, instructions := roomText(in.Name), roomText(in.Description), roomText(in.Instructions)
 	if err := validateRoom(name, description, instructions, retention); err != nil {
-		return Room{}, err
+		return "", err
+	}
+	author := ""
+	if instructions != "" {
+		author = ownerID
 	}
 	now := s.now().UnixMilli()
 	id := store.NewID()
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		return q.CreateRoom(ctx, db.CreateRoomParams{
-			ID: id, OwnerID: p.UserID, Name: name, Description: description, Instructions: instructions,
-			InstructionsBy: instructionsBy(p, instructions),
+		if err := q.CreateRoom(ctx, db.CreateRoomParams{
+			ID: id, OwnerID: ownerID, Name: name, Description: description, Instructions: instructions,
+			InstructionsBy: author,
 			BridgeChats:    in.BridgeChats, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
-			UpdatedBy: p.UserID, // INS-06: the creator wrote the name and description
-		})
+			UpdatedBy: ownerID, // INS-06: the creator wrote the name and description
+		}); err != nil {
+			return err
+		}
+		for _, m := range members {
+			outbound := m.Outbound == nil || *m.Outbound
+			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
+				ID: store.NewID(), RoomID: id, Kind: string(m.Kind), MemberID: m.MemberID,
+				Outbound: outbound, AddedBy: ownerID, CreatedAt: now,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
-		return Room{}, err
+		return "", err
 	}
 	s.bus.Publish(events.RoomChanged{RoomID: id})
-	return s.Get(ctx, p, id)
+	if len(members) > 0 {
+		s.bus.Publish(events.MembersChanged{RoomID: id})
+	}
+	return id, nil
 }
 
 // Get returns a room the caller can view.
@@ -227,13 +287,26 @@ func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDispl
 		}
 		by = u.Username
 	}
+	var participants []Participant
+	if r.Kind == string(dto.ConversationKindDM) {
+		rows, err := s.store.R().ListRoomParticipants(ctx, r.ID)
+		if err != nil {
+			return Room{}, err
+		}
+		for _, row := range rows {
+			participants = append(participants, Participant{Intelligence: row.Intelligence, Role: row.Role, Platform: row.Platform})
+		}
+	}
 	return Room{
 		Room: r, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Visibility: v.Mode,
 		MemberCount: members, CatchAll: catchAll > 0, InstructionsByName: by, OwnerIntelligence: owner,
+		Participants: participants,
 	}, nil
 }
 
-// List returns the rooms the calling user can view, by name.
+// List returns the conversations the calling user lists, by name: the groups they own, were
+// granted or are a member of, and the DMs they take part in. A DM the user only views through
+// an AI is not listed (it is reachable by id).
 func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 	if p.Kind != authn.KindUser {
 		return nil, access.ErrForbidden
@@ -249,8 +322,8 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 	out := make([]Room, 0, len(rows))
 	for _, row := range rows {
 		l := granted[row.Room.ID]
-		if row.Room.OwnerID == p.UserID {
-			l = dto.LevelManage
+		if row.Room.OwnerID == p.UserID && row.Room.Kind == string(dto.ConversationKindGroup) {
+			l = dto.LevelManage // a DM has no owner to manage it (DM-02)
 		}
 		if l == access.None {
 			continue
@@ -378,14 +451,22 @@ func (s *Service) Sharing(ctx context.Context, p authn.Principal, roomID string)
 	return s.az.Sharing(ctx, access.KindRoom, roomID)
 }
 
-// SetSharing replaces the room's grants with a visibility preset (ACL-07); requires manage.
+// SetSharing replaces the room's grants with a visibility preset (ACL-07); requires manage. A
+// DM cannot be shared: whoever can view it gets access.ErrDMNoSharing (DM-08).
 func (s *Service) SetSharing(ctx context.Context, p authn.Principal, roomID string, v access.Visibility) (access.Visibility, error) {
-	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
+	l, err := s.authorize(ctx, p, roomID, dto.LevelView)
+	if err != nil {
 		return access.Visibility{}, err
 	}
 	r, err := s.store.R().GetRoom(ctx, roomID)
 	if err != nil {
 		return access.Visibility{}, err
+	}
+	if r.Kind == string(dto.ConversationKindDM) {
+		return access.Visibility{}, access.ErrDMNoSharing // whoever views it is told so (DM-08)
+	}
+	if !access.AtLeast(l, dto.LevelManage) {
+		return access.Visibility{}, access.ErrForbidden
 	}
 	if err := s.az.SetVisibility(ctx, p.UserID, access.KindRoom, roomID, r.OwnerID, v); err != nil {
 		return access.Visibility{}, err
