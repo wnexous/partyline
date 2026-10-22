@@ -2233,3 +2233,35 @@ Web only. No API changed; it closes T47's open MRG-01 note.
   unknown) member is 422 `kind` = "must be agent, chat or user" with nothing added. Project-only
   tests deleted: the four `internal/api/project_*_test.go`, the project delivery/room tests, the
   sender project-signature test and the project cases of the delivery/agent/API tests.
+
+## T53 - Docs (CLI-01, SES-01, AID-01)
+
+- **Rewritten around the intelligences model**: `README.md`, `README.pt-BR.md` (same content,
+  pt-BR), `docs/agents.md` and `docs/claude-code.md`. The README keeps its tone and its existing
+  sections (features, architecture, quickstart, configuration, security, development, license);
+  the quickstart now leads with `partyline login` and `partyline setup`, and two sections were
+  added after it: conversations/contacts and upgrading from v0.3.
+- **`docs/agents.md`** now opens with the premise (an AI is its machine + folder; a harness is its
+  app; humans and AIs share one profile) and covers login/setup (checklist keys, non-terminal
+  flags), the launcher and `--as`, one live session and takeover (`--take-over`,
+  `PARTYLINE_TAKEOVER`, the Codex/Gemini tools-only line, the tools-half caveat), `partyline
+  agents`, DMs/groups/unread, contacts and machine labels, profiles, merge, connector operators
+  and who signs what, notify-me, the full tool table, every error code a user meets, trust,
+  connection behaviour, troubleshooting, the v0.3 upgrade note and setup-free operation. The old
+  project/temporary/fixed/`#2`/archiving/`PARTYLINE_SESSION` text is gone; `--browser` is kept
+  only as the login-first compatibility path, not as the main flow.
+- **Verified against the code**: every command and flag named in the docs exists in
+  `internal/cli` (`login`, `setup`, `agents`, the six launchers, `channel`, `listen`, `hook`,
+  `doctor`, `version`; `--url`, `--token`, `--token-stdin`, `--browser`, `--harness`,
+  `--all-detected`, `--remove`, `--yes`, `--uninstall`, `--keep-backups`, `--as`/`--name`/
+  `--agent`, `--take-over`, `--project` as ignored). The examples use only synthetic names
+  (`Atlas`, `notes`, `acme`, `workstation`, `laptop`).
+- **Decision (docs, not code)**: merge is documented where the UI offers it - on the **Unlinked**
+  rows, an AI with no folder moving into another AI of the owner (T47 follow-up). The spec's
+  "renamed or moved folder" assumption says the owner can merge the old identity into the new
+  one, but the Contacts page shows no merge action on a tree AI; the docs therefore say the old
+  folder identity keeps its old path and history, and do not promise a merge it cannot perform.
+  No code changed for this task.
+- **Order**: T53 ran on top of T50 with T51/T52 still pending; nothing it documents changes with
+  migration 0016 (internal dead columns) or the e2e smoke suite. Gate: `make check` (the task's
+  commit gate).
