@@ -500,10 +500,16 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in P
 			}
 			return err
 		}
-		if next.DisplayName != cur.DisplayName {
-			return mirrorDisplayName(ctx, q, Role(d.Role), id, next.DisplayName)
+		if next.DisplayName == cur.DisplayName {
+			return nil
 		}
-		return nil
+		if Role(d.Role) == RolePerson {
+			// PEOP-05, PROF-11: a name chosen here is not replaced by platform name changes.
+			if err := q.SetPersonNameLocked(ctx, db.SetPersonNameLockedParams{NameLocked: true, ID: id}); err != nil {
+				return err
+			}
+		}
+		return mirrorDisplayName(ctx, q, Role(d.Role), id, next.DisplayName)
 	})
 	if err != nil {
 		return Profile{}, err

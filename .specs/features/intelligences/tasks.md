@@ -538,10 +538,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PEOP-01, PEOP-02, PEOP-05, PEOP-06, GRP-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] New sender → one person intelligence per (connector, external id) with the platform name; the same sender in two chats is one person (PEOP-01)
-- [ ] Linked sender's messages are authored by the user's intelligence (PEOP-02); trusted flags unchanged for every author case (PEOP-06)
-- [ ] Platform rename updates the person on the next message; after a user rename it does not (PEOP-05); timeline shows the person's name with the platform (GRP-03)
-- [ ] Gate check passes: `make check`
+- [x] New sender → one person intelligence per (connector, external id) with the platform name; the same sender in two chats is one person (PEOP-01)
+- [x] Linked sender's messages are authored by the user's intelligence (PEOP-02); trusted flags unchanged for every author case (PEOP-06)
+- [x] Platform rename updates the person on the next message; after a user rename it does not (PEOP-05); timeline shows the person's name with the platform (GRP-03)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): record people who write through connectors`

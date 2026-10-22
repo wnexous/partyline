@@ -71,6 +71,9 @@ type ChatMessage struct {
 	SenderName  string
 	// SenderUserID is the user a verified identity resolves to; empty when unverified (DLV-06).
 	SenderUserID string
+	// AuthorIID is the intelligence that wrote the message (GRP-03): the user a verified sender
+	// is linked to (PEOP-02), else the sender's person. Empty for a sender without an id.
+	AuthorIID string
 	// ExternalID is the platform message id; a repeat returns the stored message (CON-10).
 	ExternalID string
 	Kind       dto.MessageKind
@@ -84,8 +87,9 @@ type draft struct {
 	authorKind   dto.AuthorKind
 	authorID     string
 	authorUserID string
-	// authorIID is the author's intelligence: the user's or the agent's own id. It is empty
-	// for system messages and, until their person is known, for chat messages.
+	// authorIID is the author's intelligence: the user's or the agent's own id, the linked user
+	// or the person of a chat sender. It is empty for system messages and chat senders without
+	// an id.
 	authorIID   string
 	senderID    string
 	senderAltID string
@@ -168,7 +172,7 @@ func (s *Service) PostFromChat(ctx context.Context, roomID string, in ChatMessag
 		kind = dto.MessageKindText
 	}
 	return s.post(ctx, roomID, draft{
-		authorKind: dto.AuthorKindChat, authorID: in.ChatID, authorUserID: in.SenderUserID,
+		authorKind: dto.AuthorKindChat, authorID: in.ChatID, authorUserID: in.SenderUserID, authorIID: in.AuthorIID,
 		senderID: in.SenderID, senderAltID: in.SenderAltID, senderName: in.SenderName,
 		kind: kind, text: in.Text, replyTo: in.ReplyTo, externalID: in.ExternalID, files: in.Files,
 	})

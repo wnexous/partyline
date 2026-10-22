@@ -37,6 +37,9 @@ type PipelineDeps struct {
 	Rooms      *rooms.Service
 	Blobs      *attachments.Store
 	Identities *identities.Service
+	// People records who writes (PEOP-01); the pipeline builds one from Store, Bus and Now
+	// when nil.
+	People *People
 	// MaxUploadBytes bounds stored media (CON-11).
 	MaxUploadBytes int64
 	Logger         *slog.Logger
@@ -63,6 +66,9 @@ func NewPipeline(d PipelineDeps) *Pipeline {
 	}
 	if d.Now == nil {
 		d.Now = time.Now
+	}
+	if d.People == nil {
+		d.People = NewPeople(PeopleDeps{Store: d.Store, Bus: d.Bus, Now: d.Now})
 	}
 	return &Pipeline{d: d, routes: map[string]*routeState{}}
 }
@@ -162,6 +168,17 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 	if err != nil {
 		return err
 	}
+	person, err := p.d.People.Seen(ctx, Sighting{
+		ConnectorID: src.ConnectorID, ConnectorKind: src.Kind, Chat: chat,
+		SenderID: m.SenderID, AltID: m.SenderAltID, Name: m.SenderName, At: at,
+	})
+	if err != nil {
+		return err
+	}
+	author := senderUser // a verified sender is the user (PEOP-02), any other the person (GRP-03)
+	if author == "" {
+		author = person.ID
+	}
 	files := p.saveMedia(ctx, src, m.Media)
 	kind := dto.MessageKind(m.Kind)
 	if kind == "" {
@@ -179,7 +196,7 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 		}
 		_, err := p.d.Rooms.PostFromChat(ctx, roomID, rooms.ChatMessage{
 			ChatID: chat.ID, SenderID: m.SenderID, SenderAltID: m.SenderAltID, SenderName: m.SenderName,
-			SenderUserID: senderUser, ExternalID: m.MessageID, Kind: kind, Text: truncate(m.Text), ReplyTo: replyTo, Files: files,
+			SenderUserID: senderUser, AuthorIID: author, ExternalID: m.MessageID, Kind: kind, Text: truncate(m.Text), ReplyTo: replyTo, Files: files,
 		})
 		var verr *validation.Error
 		switch {

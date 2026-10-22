@@ -49,6 +49,22 @@ func (q *Queries) DeletePerson(ctx context.Context, id string) error {
 	return err
 }
 
+const getChatPerson = `-- name: GetChatPerson :one
+SELECT chat_id, person_id, last_seen_at FROM chat_people WHERE chat_id = ? AND person_id = ?
+`
+
+type GetChatPersonParams struct {
+	ChatID   string
+	PersonID string
+}
+
+func (q *Queries) GetChatPerson(ctx context.Context, arg GetChatPersonParams) (ChatPerson, error) {
+	row := q.db.QueryRowContext(ctx, getChatPerson, arg.ChatID, arg.PersonID)
+	var i ChatPerson
+	err := row.Scan(&i.ChatID, &i.PersonID, &i.LastSeenAt)
+	return i, err
+}
+
 const getPerson = `-- name: GetPerson :one
 SELECT id, connector_id, external_id, alt_external_id, platform_name, name_locked, last_seen_at, created_at FROM people WHERE id = ?
 `

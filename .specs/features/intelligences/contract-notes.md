@@ -999,3 +999,64 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   posting in it, refusals echoed as named, the 10-per-hour window on a manual clock with reopen /
   refusal / other-AI / one hour later, authorization of both routes) and the `AllowCreate` tests of
   T20 and T21 in `internal/conversations`.
+
+## T26 - People from inbound messages (PEOP-01, PEOP-02, PEOP-05, PEOP-06, GRP-03)
+
+- **`connectors.People`** (`people.go`; `Pipeline` builds one from its deps unless
+  `PipelineDeps.People` is set). `Seen(ctx, Sighting{ConnectorID, ConnectorKind, Chat, SenderID, AltID,
+  Name, At}) (db.Person, error)` runs for every inbound message **that reaches at least one room**:
+  after the chat is recorded and routed (the catch-all may route it) and the repeats are dropped,
+  before the message is posted. An unrouted chat, a chat refused by a catch-all cap (ROUTE-11), a
+  pairing command, an empty message and a repeat record nobody: CON-07 keeps nothing of unrouted
+  chats, and a sender id is a phone number or an account id. A message with neither a sender id nor an
+  alternative id has no person (the zero `db.Person`, `author_iid` empty). T30 will call it earlier
+  for the platform DMs it routes.
+- **Who is a person**: the person of (connector, id) found by `GetPersonByExternalID` for the sender id
+  and then the alternative id (a match on `external_id` before one on `alt_external_id`), so the same
+  account seen under its phone or its LID is one person, in either order; a person of another connector
+  never matches (AD-008). Concurrent first messages of one sender create one person: the write
+  transaction decides again under the single-writer lock. A sender id of `""` with an alternative id
+  uses the alternative id, as `ResolveSender` does.
+- **Creation (PEOP-01)**: `intelligences.Create` (`handles.Person`, kind `human`) with the platform name
+  cleaned by `CleanDisplayName`, else `"<Platform> contact"` (`connectors.PlatformLabel`: `WhatsApp
+  contact`); the handle derives from that name across the instance's one namespace (`customer`,
+  `customer-2`, `alice-2` when the user has `@alice`). `people`: `external_id` = the sender id,
+  `alt_external_id` = the other id (or ''), `platform_name` = the cleaned platform name ('' when it gave
+  none), `created_at` = now, `last_seen_at` = the message time.
+- **Alternative id**: `external_id` never changes; `alt_external_id` is the id of the message that is not
+  the external id, kept while the message still reports it and replaced by the latest other id otherwise
+  (a person first seen without an alt learns it from a later sighting; a message without ids keeps it).
+- **Name (PEOP-05)**: a non-empty cleaned platform name that differs from `platform_name` is stored in
+  `platform_name`; the intelligence's display name follows it unless `name_locked` (then only
+  `platform_name` moves). The handle never changes by itself. An empty or blank name changes nothing,
+  and a person first seen without a name takes the first name it shows. A display-name change publishes
+  `events.IntelligenceChanged` (live `intelligence.changed` to the users who can see the person);
+  creating a person publishes nothing.
+- **Lock (PROF-11, brought forward from T27)**: `intelligences.Service.Update` sets
+  `people.name_locked` in the same transaction when the display name of a **person** changes (not for a
+  bio or handle edit, nor for a rename to the name it already has), so PEOP-05's "unless the user
+  renamed the contact" holds end to end. T27 adds visibility and the profile on top of it.
+- **Chat links**: `chat_people` gets a row for (chat, person) on first sight, and `chats.person_id` names
+  the person for chats of kind `dm` (the counterpart; the latest person to write in the chat wins; a
+  person known from a group becomes the counterpart of a DM chat it later writes in). Group and channel
+  chats keep `person_id` NULL.
+- **Throttle**: `people.last_seen_at` and `chat_people.last_seen_at` are written when missing or when the
+  message time is at least `connectors.SeenInterval` (10 minutes) after the stored one, so they follow
+  the message's time, never move back, and a message that changes nothing is answered from the read pool
+  without a write. A message time in the future (a phone with a wrong clock) or zero counts as now.
+- **Author (PEOP-02, GRP-03, PEOP-06)**: `rooms.ChatMessage.AuthorIID` is stored as `messages.author_iid`:
+  the user a verified sender is linked to (`ResolveSender`, AD-008 unchanged), else the person.
+  `author_kind` stays `chat` and `author_id` the chat; `author_user_id` and therefore `trusted` are
+  exactly what they were (a person, a sender named like the owner, a senderless message and a sender
+  verified as another user are never trusted). The timeline, the live frame and `author_name` show the
+  person's current display name, with `author.platform` = the connector kind; a chat message without
+  any sender id still shows the chat's title and has no author id. History keeps the person after a
+  sender is linked, and the person row stays (T27 shows it as an app of the user).
+- sqlc added: `GetChatPerson`.
+- Tests (`internal/connectors/people_test.go`): a new sender (profile, live frame, unrouted chat), a
+  nameless sender, `PlatformLabel`, people keyed by sender (two chats, same name twice, handle namespace),
+  per connector, phone/LID folding in both orders and learning the alt id, a linked sender, trust for six
+  author cases through a live agent, platform rename (+ live `intelligence.changed`, blank names, first
+  name later), the user's rename lock (bio and handle edits do not lock), senderless messages, DM
+  counterparts (new and known person), the 10-minute throttle and the future clamp, concurrent first
+  messages.

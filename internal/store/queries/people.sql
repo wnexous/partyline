@@ -35,3 +35,6 @@ SELECT * FROM chat_people WHERE chat_id = ? ORDER BY last_seen_at DESC, person_i
 
 -- name: SetChatPerson :exec
 UPDATE chats SET person_id = ? WHERE id = ?;
+
+-- name: GetChatPerson :one
+SELECT * FROM chat_people WHERE chat_id = ? AND person_id = ?;
