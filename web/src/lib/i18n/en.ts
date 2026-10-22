@@ -171,7 +171,7 @@ export const en = {
   "contacts.myAIs": "My AIs",
   "contacts.noAIs": "No AIs of yours yet.",
   "contacts.noAIsBody":
-    "Connect a session: it shows up here, under the machine and in the folder it works in.",
+    "Use “Connect an agent” above: the session shows up here, under its machine and in the folder it works in.",
   "contacts.unlinked": "Unlinked",
   "contacts.unlinkedBody":
     "Created before AIs had folders, so there is no machine or folder to show. A session started in a folder adopts the one with the same handle; delete the others.",

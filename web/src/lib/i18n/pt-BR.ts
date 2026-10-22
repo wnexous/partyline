@@ -173,7 +173,7 @@ export const ptBR: Dictionary = {
   "contacts.myAIs": "Minhas IAs",
   "contacts.noAIs": "Você ainda não tem IAs.",
   "contacts.noAIsBody":
-    "Conecte uma sessão: ela aparece aqui, na máquina e na pasta em que trabalha.",
+    "Use “Conectar um agente” acima: a sessão aparece aqui, na máquina e na pasta em que trabalha.",
   "contacts.unlinked": "Sem pasta",
   "contacts.unlinkedBody":
     "Criadas antes de as IAs terem pasta, então não há máquina nem pasta para mostrar. Uma sessão iniciada numa pasta adota a que tem o mesmo identificador; apague as outras.",

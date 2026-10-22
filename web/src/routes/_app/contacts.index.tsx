@@ -104,13 +104,10 @@ function ContactsPage() {
                     <MachineGroup key={machine.hostname} machine={machine} live={live} />
                   ))
                 ) : (
-                  <div className="space-y-3 px-4 pt-1 pb-2 text-sm text-muted-foreground md:px-8">
+                  // The page header has the one button that connects an AI.
+                  <div className="space-y-1 px-4 pt-1 pb-2 text-sm text-muted-foreground md:px-8">
                     <p>{t("contacts.noAIs")}</p>
                     <p>{t("contacts.noAIsBody")}</p>
-                    <Button variant="outline" size="sm" onClick={() => setConnecting(true)}>
-                      <PlugIcon aria-hidden="true" />
-                      {t("connect.open")}
-                    </Button>
                   </div>
                 )}
               </Section>

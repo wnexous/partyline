@@ -938,8 +938,9 @@ describe("loading, failing and empty", () => {
     expect(section.getByText("No AIs of yours yet.")).toBeInTheDocument();
     expect(screen.getByTestId("contact-u2")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "No contacts yet" })).toBeNull();
-    // The header action is there; so is the one beside the hint, which opens the same wizard.
-    await user.click(section.getByRole("button", { name: "Connect an agent" }));
+    // One button connects an AI, the page header's: not a second one beside the hint.
+    expect(section.queryByRole("button", { name: "Connect an agent" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Connect an agent" }));
     expect(await screen.findByRole("dialog", { name: "Connect an agent" })).toBeInTheDocument();
   });
 });

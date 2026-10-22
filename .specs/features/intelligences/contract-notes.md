@@ -1553,8 +1553,8 @@ Web only. No API changed.
   page point to it. The palette's AI entries open `/contacts` (T48 sends them to the profile).
 - **Page**: header (Contacts, and "Connect an agent" once there is anything to show), a filter box (`<search>`, "Filter
   contacts", clear button and Escape), then the sections in this order, each an `h2`: **My AIs**, **Unlinked**, **Shared with
-  me**, **People**, **Users**; a section with nothing to show is left out (My AIs stays, with a hint and a connect button, while
-  the filter is empty). No contact at all (no AI, unlinked, shared, user or connector): the empty state "No contacts yet" with the
+  me**, **People**, **Users**; a section with nothing to show is left out (My AIs stays, with a hint that points at the header's
+  connect button, while the filter is empty: there is one connect button on the page, so a user with no AI yet does not see two). No contact at all (no AI, unlinked, shared, user or connector): the empty state "No contacts yet" with the
   connect action. A failed load shows an alert with "Try again". `ConnectAgentDialog` is the page's, as it was the agents
   page's: it survives the empty state turning into the list when the first AI registers.
 - **Machines** (`components/machine-group.tsx`, TREE-01..04): one group per machine (`section` named by its heading), ordered by
