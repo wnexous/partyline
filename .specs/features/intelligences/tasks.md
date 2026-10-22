@@ -1271,8 +1271,8 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: DM-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `Instructions` and `OmpInstructions` carry the sentence, asserted in `internal/channel/instructions_test.go` against its literal wording; the tools-only text is unchanged
-- [ ] Gate check passes: `make check`
+- [x] `Instructions` and `OmpInstructions` carry the sentence, asserted in `internal/channel/instructions_test.go` against its literal wording; the tools-only text is unchanged
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(channel): say that terminal text never reaches the sender`

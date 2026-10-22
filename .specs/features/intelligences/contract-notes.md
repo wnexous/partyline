@@ -2753,3 +2753,23 @@ read. The traceability statuses stay `Implementing` (the Verifier moves them on 
 - **PEOP-01.** People are made when a message is routed into a conversation; a chat that is routed nowhere
   records the chat and nobody (CON-07, T26): `TestInboundNewSenderBecomesOnePerson` ("an unrouted chat
   records no person") and the platform DM scope tests.
+
+## T69 - The channel says that terminal text never reaches the sender (DM-03, UAT finding 1)
+
+`uat.md` Finding 1: Claude Code turns every channel event into a user turn and the model answered a bare
+"oi" in its terminal, so the person in the web DM saw nothing; messages that asked for something got a
+`reply`. The instructions said "reply with the reply tool" but not that terminal text goes nowhere, and a
+Claude Code event carries no trailing line like the framed harnesses' "Reply with the partyline tools".
+
+- **Text.** `terminalNote` (`internal/channel/instructions.go`): "Text you write in the terminal never
+  reaches the person or the room that wrote to you: only the reply, send_message and react tools do.
+  Answer every DM or room message that deserves an answer, a greeting such as "oi" included, with the reply
+  tool (or acknowledge it with react), never with text in the terminal alone." It sits right after the tool
+  paragraph in `Instructions` (Claude Code) and `OmpInstructions` (omp, the full channel whose events the
+  extension frames). `ToolsOnlyInstructions` is unchanged: pi, OpenCode, Codex and Gemini messages end with
+  a line that says to use the tools, which Claude Code events do not have.
+- **Tests** (`internal/channel/instructions_test.go`): `terminalSentence` is the literal wording;
+  `TestChannelInstructionsSayThatTerminalTextReachesNobody` (once, after the tool paragraph) and
+  `TestOmpInstructions` assert it; the tools-only test is untouched. They fail on the previous text.
+- **Not shown by any test:** whether a model now answers a bare greeting with `reply`. The UAT's repeat of
+  step 4 with fresh sessions is still open (`uat.md` says so).
