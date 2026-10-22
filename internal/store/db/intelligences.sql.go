@@ -112,6 +112,78 @@ func (q *Queries) GetIntelligenceByHandle(ctx context.Context, handle string) (I
 	return i, err
 }
 
+const getIntelligenceWithRole = `-- name: GetIntelligenceWithRole :one
+SELECT i.id, i.kind, i.display_name, i.handle, i.avatar_sha256, i.bio, i.created_at, i.updated_at,
+       CAST(CASE WHEN u.id IS NOT NULL THEN 'user' WHEN a.id IS NOT NULL THEN 'ai'
+                 WHEN p.id IS NOT NULL THEN 'person' ELSE '' END AS TEXT) AS role,
+       CAST(COALESCE(a.owner_id, '') AS TEXT) AS agent_owner_id,
+       CAST(COALESCE(p.connector_id, '') AS TEXT) AS person_connector_id
+FROM intelligences i
+LEFT JOIN users u ON u.id = i.id
+LEFT JOIN agents a ON a.id = i.id
+LEFT JOIN people p ON p.id = i.id
+WHERE i.id = ?
+`
+
+type GetIntelligenceWithRoleRow struct {
+	Intelligence      Intelligence
+	Role              string
+	AgentOwnerID      string
+	PersonConnectorID string
+}
+
+// The intelligence with the subtype row it shares its id with: role is user, ai or person
+// (” for an orphan), plus the AI's owner and the person's connector.
+func (q *Queries) GetIntelligenceWithRole(ctx context.Context, id string) (GetIntelligenceWithRoleRow, error) {
+	row := q.db.QueryRowContext(ctx, getIntelligenceWithRole, id)
+	var i GetIntelligenceWithRoleRow
+	err := row.Scan(
+		&i.Intelligence.ID,
+		&i.Intelligence.Kind,
+		&i.Intelligence.DisplayName,
+		&i.Intelligence.Handle,
+		&i.Intelligence.AvatarSha256,
+		&i.Intelligence.Bio,
+		&i.Intelligence.CreatedAt,
+		&i.Intelligence.UpdatedAt,
+		&i.Role,
+		&i.AgentOwnerID,
+		&i.PersonConnectorID,
+	)
+	return i, err
+}
+
+const listIntelligenceRoomIDs = `-- name: ListIntelligenceRoomIDs :many
+SELECT room_id FROM room_members WHERE kind IN ('agent', 'user') AND member_id = ?1
+UNION
+SELECT room_id FROM messages WHERE author_iid = ?1 AND author_iid <> ''
+`
+
+// The rooms where the intelligence is a member or wrote a message: the conversations it can
+// share with a caller (CanSee).
+func (q *Queries) ListIntelligenceRoomIDs(ctx context.Context, id string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listIntelligenceRoomIDs, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIntelligencesByIDs = `-- name: ListIntelligencesByIDs :many
 SELECT id, kind, display_name, handle, avatar_sha256, bio, created_at, updated_at FROM intelligences WHERE id IN (/*SLICE:ids*/?)
 `
@@ -158,6 +230,34 @@ func (q *Queries) ListIntelligencesByIDs(ctx context.Context, ids []string) ([]I
 	return items, nil
 }
 
+const listMemberRoomIDs = `-- name: ListMemberRoomIDs :many
+SELECT DISTINCT room_id FROM room_members WHERE kind IN ('agent', 'user') AND member_id = ?
+`
+
+// The rooms the intelligence is a direct member of (an AI or a user member).
+func (q *Queries) ListMemberRoomIDs(ctx context.Context, memberID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listMemberRoomIDs, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setIntelligenceAvatar = `-- name: SetIntelligenceAvatar :exec
 UPDATE intelligences SET avatar_sha256 = ?, updated_at = ? WHERE id = ?
 `
@@ -170,6 +270,21 @@ type SetIntelligenceAvatarParams struct {
 
 func (q *Queries) SetIntelligenceAvatar(ctx context.Context, arg SetIntelligenceAvatarParams) error {
 	_, err := q.db.ExecContext(ctx, setIntelligenceAvatar, arg.AvatarSha256, arg.UpdatedAt, arg.ID)
+	return err
+}
+
+const setIntelligenceDisplayName = `-- name: SetIntelligenceDisplayName :exec
+UPDATE intelligences SET display_name = ?, updated_at = ? WHERE id = ?
+`
+
+type SetIntelligenceDisplayNameParams struct {
+	DisplayName string
+	UpdatedAt   int64
+	ID          string
+}
+
+func (q *Queries) SetIntelligenceDisplayName(ctx context.Context, arg SetIntelligenceDisplayNameParams) error {
+	_, err := q.db.ExecContext(ctx, setIntelligenceDisplayName, arg.DisplayName, arg.UpdatedAt, arg.ID)
 	return err
 }
 

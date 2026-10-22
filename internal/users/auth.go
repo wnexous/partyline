@@ -11,6 +11,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -45,7 +46,7 @@ func (s *Service) Setup(ctx context.Context, token string, in AccountInput) (db.
 		return db.User{}, err
 	}
 	u := db.User{
-		ID: store.NewID(), Username: in.Username, DisplayName: in.DisplayName,
+		ID: store.NewID(), Username: in.Username, DisplayName: intelligences.CleanDisplayName(in.DisplayName),
 		PasswordHash: hash, Role: string(dto.RoleAdmin), CreatedAt: ms(s.now()),
 	}
 	err = s.store.WithTx(ctx, func(q *db.Queries) error {
@@ -56,10 +57,7 @@ func (s *Service) Setup(ctx context.Context, token string, in AccountInput) (db.
 		if n > 0 {
 			return ErrSetupDone
 		}
-		if err := q.CreateUser(ctx, db.CreateUserParams{
-			ID: u.ID, Username: u.Username, DisplayName: u.DisplayName,
-			PasswordHash: u.PasswordHash, Role: u.Role, CreatedAt: u.CreatedAt,
-		}); err != nil {
+		if err := insertAccount(ctx, q, u); err != nil {
 			return err
 		}
 		return s.audit.Record(ctx, q, audit.Entry{

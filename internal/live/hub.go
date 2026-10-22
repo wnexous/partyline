@@ -22,6 +22,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
 )
@@ -55,6 +56,8 @@ type Deps struct {
 	Access *access.Authorizer
 	Rooms  *rooms.Service
 	Store  *store.Store
+	// Intelligences decides who sees a profile change; optional.
+	Intelligences *intelligences.Service
 	// PublicURL is the instance URL; upgrades must come from its origin (LIVE-03).
 	PublicURL *url.URL
 	Logger    *slog.Logger
@@ -371,6 +374,19 @@ func (c *conn) render(ctx context.Context, e events.Event) ([]frame, error) {
 		return []frame{{Type: dto.LiveEventTypeOutboxStatus, Data: dto.OutboxUpdate{
 			RoomID: e.RoomID, MessageID: e.MessageID, OutboxItem: convert.OutboxItem(o),
 		}}}, nil
+
+	case events.IntelligenceChanged:
+		if d.Intelligences == nil {
+			return nil, nil
+		}
+		prof, err := d.Intelligences.Get(ctx, c.p, e.ID)
+		if errors.Is(err, access.ErrNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return []frame{{Type: dto.LiveEventTypeIntelligenceChanged, Data: convert.ProfileRef(prof)}}, nil
 
 	case events.IdentityLinked:
 		if e.UserID != c.p.UserID {

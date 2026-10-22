@@ -28,6 +28,9 @@ type Member struct {
 	// ConnectorKind and ChatKind describe chat members.
 	ConnectorKind string
 	ChatKind      string
+	// Intelligence is the profile of an agent or user member (ID empty for other kinds and for
+	// members that have none).
+	Intelligence db.Intelligence
 }
 
 // Members lists a room's members in the order they were added; requires view.
@@ -45,7 +48,13 @@ func (s *Service) members(ctx context.Context, roomID string) ([]Member, error) 
 	}
 	out := make([]Member, len(rows))
 	for i, r := range rows {
-		out[i] = Member{RoomMember: r.RoomMember, Name: r.Name, AgentOwner: r.AgentOwner, ConnectorKind: r.ConnectorKind, ChatKind: r.ChatKind}
+		out[i] = Member{
+			RoomMember: r.RoomMember, Name: r.Name, AgentOwner: r.AgentOwner, ConnectorKind: r.ConnectorKind, ChatKind: r.ChatKind,
+			Intelligence: db.Intelligence{
+				ID: r.IntelligenceID, Kind: r.IntelligenceKind, DisplayName: r.IntelligenceName,
+				Handle: r.IntelligenceHandle, AvatarSha256: r.IntelligenceAvatar,
+			},
+		}
 	}
 	return out, nil
 }

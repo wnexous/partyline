@@ -71,16 +71,18 @@ type ErrorCode string
 
 // Error codes and the HTTP status they come with.
 const (
-	ErrorCodeInvalid      ErrorCode = "invalid"      // 400 malformed request, 422 validation
-	ErrorCodeUnauthorized ErrorCode = "unauthorized" // 401
-	ErrorCodeForbidden    ErrorCode = "forbidden"    // 403
-	ErrorCodeNotFound     ErrorCode = "not_found"    // 404, also when the caller cannot view the resource
-	ErrorCodeConflict     ErrorCode = "conflict"     // 409
-	ErrorCodeGone         ErrorCode = "gone"         // 410, e.g. used or expired invite
-	ErrorCodeTooLarge     ErrorCode = "too_large"    // 413
-	ErrorCodeRateLimited  ErrorCode = "rate_limited" // 429
-	ErrorCodeInternal     ErrorCode = "internal"     // 500
-	ErrorCodeUnavailable  ErrorCode = "unavailable"  // 503, or 502 when a connector's platform failed
+	ErrorCodeInvalid       ErrorCode = "invalid"        // 400 malformed request, 422 validation
+	ErrorCodeUnauthorized  ErrorCode = "unauthorized"   // 401
+	ErrorCodeForbidden     ErrorCode = "forbidden"      // 403
+	ErrorCodeNotFound      ErrorCode = "not_found"      // 404, also when the caller cannot view the resource
+	ErrorCodeConflict      ErrorCode = "conflict"       // 409
+	ErrorCodeGone          ErrorCode = "gone"           // 410, e.g. used or expired invite
+	ErrorCodeTooLarge      ErrorCode = "too_large"      // 413
+	ErrorCodeRateLimited   ErrorCode = "rate_limited"   // 429
+	ErrorCodeInternal      ErrorCode = "internal"       // 500
+	ErrorCodeUnavailable   ErrorCode = "unavailable"    // 503, or 502 when a connector's platform failed
+	ErrorCodeHandleTaken   ErrorCode = "handle_taken"   // 409, the @handle belongs to another intelligence
+	ErrorCodeAvatarInvalid ErrorCode = "avatar_invalid" // 422, the avatar is not an acceptable image
 )
 
 // ErrorBody is the envelope of every error response.

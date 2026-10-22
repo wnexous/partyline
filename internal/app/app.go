@@ -27,6 +27,7 @@ import (
 	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/identities"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/live"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
@@ -82,7 +83,9 @@ type App struct {
 	Users  *users.Service
 	Access *access.Authorizer
 	Rooms  *rooms.Service
-	Blobs  *attachments.Store
+	// Intelligences serves the profiles of users, AIs and people.
+	Intelligences *intelligences.Service
+	Blobs         *attachments.Store
 	// Presence tracks connected agents; Agents is the agent registry.
 	Presence *agents.Presence
 	Agents   *agents.Registry
@@ -142,16 +145,17 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	presence := agents.NewPresence(st, bus, opts.Now)
 	az := access.New(st, bus, access.Options{Now: opts.Now, Online: presence.Online})
 	a := &App{
-		Config: cfg,
-		Logger: opts.Logger,
-		Store:  st,
-		Box:    box,
-		Bus:    bus,
-		Users:  usersSvc,
-		Access: az,
-		Rooms:  rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
-		Blobs:  blobs,
-		now:    opts.Now,
+		Config:        cfg,
+		Logger:        opts.Logger,
+		Store:         st,
+		Box:           box,
+		Bus:           bus,
+		Users:         usersSvc,
+		Access:        az,
+		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
+		Blobs:         blobs,
+		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Blobs: blobs, Now: opts.Now}),
+		now:           opts.Now,
 	}
 	a.Presence = presence
 	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Now: opts.Now})
@@ -188,30 +192,31 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Rooms: a.Rooms, Runner: a.ConnectorManager, Now: opts.Now,
 	})
 	a.Live = live.New(live.Deps{
-		Bus: bus, Access: az, Rooms: a.Rooms, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
+		Bus: bus, Access: az, Rooms: a.Rooms, Intelligences: a.Intelligences, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
 		Sessions: usersSvc, SessionCheckInterval: opts.LiveSessionCheck,
 	})
 	auditLog := audit.New(st, opts.Now)
 	a.Devices = devices.New(devices.Deps{Store: st, Users: usersSvc, Box: box, Audit: auditLog, Now: opts.Now})
 	a.handler = api.New(api.Deps{
-		Config:     cfg,
-		Users:      usersSvc,
-		Rooms:      a.Rooms,
-		Agents:     a.Agents,
-		Connectors: a.Connectors,
-		Identities: a.Identities,
-		Devices:    a.Devices,
-		Hooks:      a.ConnectorManager,
-		FileLinks:  fileLinks,
-		Blobs:      blobs,
-		Audit:      auditLog,
-		Live:       a.Live,
-		AgentWS:    a.Gateway,
-		Inbox:      a.Gateway,
-		WebUI:      webui.Handler(cfg.PublicURL),
-		Logger:     opts.Logger,
-		Ready:      a.ready.Load,
-		Version:    version,
+		Config:        cfg,
+		Users:         usersSvc,
+		Rooms:         a.Rooms,
+		Agents:        a.Agents,
+		Intelligences: a.Intelligences,
+		Connectors:    a.Connectors,
+		Identities:    a.Identities,
+		Devices:       a.Devices,
+		Hooks:         a.ConnectorManager,
+		FileLinks:     fileLinks,
+		Blobs:         blobs,
+		Audit:         auditLog,
+		Live:          a.Live,
+		AgentWS:       a.Gateway,
+		Inbox:         a.Gateway,
+		WebUI:         webui.Handler(cfg.PublicURL),
+		Logger:        opts.Logger,
+		Ready:         a.ready.Load,
+		Version:       version,
 	})
 	return a, nil
 }

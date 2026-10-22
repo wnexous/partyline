@@ -377,6 +377,10 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 	if err != nil {
 		return nil, err
 	}
+	profile, err := delivery.IntelligenceOf(ctx, g.d.Store.R(), a.ID)
+	if err != nil {
+		return nil, err
+	}
 	projectName := ""
 	for _, st := range states {
 		ref := dto.RoomRef{ID: st.ID, Name: st.Name}
@@ -435,10 +439,10 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 			return nil, err
 		}
 		wanted := func(f delivery.Facts) bool {
-			return f.WantedBy(a.ID, a.OwnerID, delivery.AgentPrefs(a, st.DisplayName, st.Delivery, st.KeywordsJson))
+			return f.WantedBy(a.ID, a.OwnerID, delivery.Prefs(profile, st.DisplayName, st.Delivery, st.KeywordsJson))
 		}
 		if st.ProjectID != "" {
-			prefs := delivery.ProjectPrefs(a, projectName, st.DisplayName, st.Delivery, st.KeywordsJson)
+			prefs := delivery.ProjectPrefs(profile, projectName, st.DisplayName, st.Delivery, st.KeywordsJson)
 			wanted = func(f delivery.Facts) bool { return f.WantedByProject(a.ID, st.ProjectID, a.OwnerID, prefs) }
 		}
 		// MEM-03, MEM-04: unwanted messages are not delivered. Those before the first delivered

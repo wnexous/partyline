@@ -153,3 +153,173 @@ SQL part of `0015_intelligences.sql`, before the view:
   reply goes out to chat `100`; the fixture's pending outbox row is sent too.
 - Not covered here (later tasks): design test-plan item 6 (0016, T51) and the timeline's
   person name with platform badge (GRP-03, T11).
+
+## T7 - Intelligences service and creation hooks (PROF-01, PROF-02, PROF-10)
+
+Package `internal/intelligences` (`service.go`; the tree builder of T25 lives next to it):
+
+- `Create(ctx, q, NewParams{ID, Kind, DisplayName, HandleBase, Now}) (db.Intelligence, error)`
+  inserts the intelligence in the caller's transaction. `Kind` is `handles.User`, `AI` or
+  `Person` (human, ai, human; it picks the `user-`/`ai-`/`contact-` prefix of a default handle).
+  Handle = first free `handles.Default(Kind, HandleBase)`, `-2`, `-3`, … across the whole
+  instance (one namespace for users, AIs and people). Display name = `CleanDisplayName(DisplayName)`,
+  else the cleaned `HandleBase`, else the handle. **Every transaction that inserts a user, an
+  agent or a person must call it** (T13 `ResolveFolder` and T26 `People.Seen` still have to).
+  Today it is called by `users.insertAccount` (first-run setup, invite accept, admin create;
+  display name = the cleaned account display name, else the username, handle from the
+  username), `Registry.Upsert` and `Registry.getOrCreate` (so `Resolve` and `Register`; handle
+  from the agent name, display name = `delivery.AgentDisplayName`).
+- `CleanDisplayName(s)`: drops control characters and invalid UTF-8, trims, cuts to 64 code
+  points. Accounts store the cleaned name in `users.display_name` too.
+- **The v0.3 columns `users.display_name` ('' = show the username) and `agents.display_name` are
+  mirrors of `intelligences.display_name` until T51 drops them.** Every writer keeps both:
+  `Service.Update` mirrors a display-name change into the subtype row; the v0.3 paths still in
+  use write the intelligence through `SetDisplayName(ctx, q, id, name, now) (changed, err)`:
+  `users.UpdateProfile` (an empty display name shows the username), `Registry.Update` (owner
+  rename), `Registry.record` (the readable name of a temporary agent) and
+  `Registry.RenameProject`. A row without an intelligence is left alone. `message_views` and the
+  member lists read the intelligence first, so a new rename path must call it.
+- `Announce(ctx, bus, q, id, members)` publishes `events.IntelligenceChanged{ID}` and, when
+  `members`, `events.MembersChanged{RoomID}` for every room the intelligence is a direct member
+  of (agent or user member). Call it after the transaction committed. The live hub does not
+  render `IntelligenceChanged` yet (T9 adds the `intelligence.changed` frame).
+- `Service` (`app.App.Intelligences`, `intelligences.New(Deps{Store, Access, Bus, Now})`):
+  - `Get(ctx, p, id) (Profile, error)`: `Profile` embeds `db.Intelligence` and adds `Role`
+    (`RoleUser`, `RoleAI`, `RolePerson`) and `CanEdit`. Not visible or unknown →
+    `access.ErrNotFound`.
+  - `CanSee(ctx, p, id)` / `CanEdit(ctx, p, id)`. Disabled and unknown users see and edit
+    nothing (AUTH-10). Self: a user principal on their own intelligence, an agent principal on
+    its own AI (see + edit). Users: every active user sees every user intelligence; only the
+    user edits it. AIs: the owner (manage) sees and edits; a `use` grantee sees; anyone who can
+    view (`access.UserRoomLevel`) a room where the AI is a direct member or wrote a message
+    (`messages.author_iid`) sees; an agent principal sees what its owner sees but edits only
+    itself; admins get nothing. People: users who own or may `use` the connector see and
+    edit; an agent principal of such a user sees, never edits.
+  - `Update(ctx, p, id, ProfileUpdate{DisplayName, Handle, Bio *string}) (Profile, error)`:
+    404 `access.ErrNotFound` without view, 403 `access.ErrForbidden` with view but no edit,
+    `*validation.Error` with fields `display_name` (1-64 code points after dropping control
+    characters and trimming), `handle` (`handles.Validate` after trimming; lower-cased) and
+    `bio` (0-280 code points; control characters except `\n` dropped, trimmed) with nothing
+    applied, `ErrHandleTaken` when another intelligence has the handle (case-insensitive; the
+    unique index is the last guard). Only changed values are written; a no-op update writes and
+    announces nothing. A change announces `IntelligenceChanged`, plus `MembersChanged` when the
+    display name or handle changed. T9 maps `ErrHandleTaken` to 409 `handle_taken`.
+- sqlc added: `GetIntelligenceWithRole` (the row with `role`, `agent_owner_id`,
+  `person_connector_id`), `SetIntelligenceDisplayName`, `ListMemberRoomIDs`,
+  `ListIntelligenceRoomIDs` (member rooms ∪ authored rooms), `SetUserDisplayName`.
+- Not in T7: a person edit does not set `people.name_locked` and person visibility has no
+  shared-conversation rule yet (T27); avatars (T10); `Message.author` (T11).
+
+## T9 - Profile API (PROF-03, PROF-05, PROF-10, AID-06)
+
+- `GET /api/v1/intelligences/{id}` → `dto.IntelligenceProfile`: the `IntelligenceRef` fields
+  (`id`, `kind` human|ai, `role` user|ai|person, `display_name`, `handle`, `avatar_url?`,
+  `platform?`) flattened, plus `bio`, `can_edit`, `ai?` (`AIDetail`), `apps` and
+  `conversations` (both always arrays; `conversations` stays empty until the conversation
+  tasks fill it, `apps` is `[{kind:"web"}]` for users and `[{kind:<harness id>,label}]` for
+  AIs). 404 `not_found` for what the caller cannot see (`Service.CanSee`), also for an unknown
+  id.
+- `PATCH /api/v1/intelligences/{id}` with `UpdateProfileRequest{display_name?, handle?, bio?}`
+  → 200 with the stored profile. 404 not visible, 403 `forbidden` visible but not editable (an
+  AI's use grantee, another user, an admin), 422 `invalid` with `fields` `display_name`,
+  `handle` and/or `bio` and nothing applied, 409 **`handle_taken`**
+  (`dto.ErrorCodeHandleTaken`, from `intelligences.ErrHandleTaken`), 400 for a malformed body.
+  Sessions and user tokens may call it; agent tokens only reach `/agent/*` (403 elsewhere).
+- `AIDetail`: `owner` (the owner's `IntelligenceRef`), `machine`, `machine_label` (the owner's
+  label from `machines`, else the hostname), `folder` and `folder_label` (`''` while the AI is
+  unlinked; `intelligences.FolderLabel(home, folder)` gives `~`, `~/x` or the absolute path),
+  `app` (the harness id), `online`, `last_seen_at`, `connected_at`, `my_level` (`manage` owner,
+  `use` grantee, absent when the AI is only visible through a shared conversation).
+  `intelligences.Profile` carries the same data: `Platform` (a person's connector kind) and
+  `Agent *AgentInfo`. `Service.Rows(ctx, ids)` returns intelligence rows by id without
+  authorizing (for ids a handler took from data the caller can see).
+- `dto.Me.intelligence` (always set) is returned by `GET/PATCH /me`, `POST /setup`,
+  `POST /auth/login` and the invite accept; `dto.User.intelligence` (optional) is set by the
+  `GET /users` directory (active accounts) and, from T11, by room owners. `PATCH /me` keeps
+  its v0.3 behaviour (an empty display name shows the username) and writes the account's
+  intelligence (T7).
+- Live: `intelligence.changed` (`dto.LiveIntelligenceChanged`, data = `IntelligenceRef`) goes
+  to the sockets of every user who can see the intelligence, for each
+  `events.IntelligenceChanged`.
+- Not in T9: `PersonDetail` and the person's apps/conversations (T27), conversations of an AI
+  (T22+), avatars (T10).
+
+## T10 - Avatar upload, serving and the agent profile endpoints (PROF-04, PROF-06, PROF-07)
+
+- `PUT /api/v1/intelligences/{id}/avatar`: raw image body (any `Content-Type`; the content is
+  sniffed), PNG, JPEG or WebP up to 2 MiB (`avatars.MaxBytes`), stored as a centre-cropped
+  256×256 PNG in the blob store (`attachments.Store.Put`, content-addressed) and referenced by
+  `intelligences.avatar_sha256`. 200 with the `IntelligenceProfile` (its `avatar_url` is
+  `/api/v1/intelligences/{id}/avatar?v=<sha256 of the stored PNG>`, `convert.AvatarURL`).
+  422 **`avatar_invalid`** (`dto.ErrorCodeAvatarInvalid`, from `avatars.ErrInvalid`) for another
+  format, a body over 2 MiB, an image that cannot be decoded or has a side over 4096 px: the old
+  avatar stays. The request body limit of avatar routes is the instance upload limit (at least
+  2 MiB + 1), not 1 MiB, so a file over 2 MiB is 422, one over the upload limit 413.
+  403 for a caller who can see but not edit, 404 for one who cannot see (checked before the
+  image is read).
+- `DELETE /api/v1/intelligences/{id}/avatar` → 204 (also when there is none); same rights.
+- `GET /api/v1/intelligences/{id}/avatar` → the PNG (`Content-Type: image/png`,
+  `Cache-Control: private, max-age=31536000, immutable`, `ETag: "<sha>"`, the API's
+  `nosniff` and `default-src 'none'` headers) for callers who `CanSee` the intelligence; 404
+  for everybody else and when there is no avatar.
+- `PATCH /api/v1/agent/profile` (`UpdateProfileRequest`) and `PUT /api/v1/agent/profile/avatar`
+  (raw image): the calling agent edits its own AI only (`agentOnly`: agent token + the agent
+  identity of the request; sessions and user tokens get 403, anonymous 401). They answer with the
+  `IntelligenceProfile` and use the same errors (409 `handle_taken`, 422).
+- Service: `Service.SetAvatar(ctx, p, id, r)`, `ClearAvatar`, `Avatar` (returns the open blob and
+  its sha); `intelligences.Deps.Blobs`. Both set and clear announce `IntelligenceChanged` and
+  `MembersChanged` for the member rooms.
+- Retention: `rooms.Service.Cleanup` and the room-delete blob cleanup count a blob as used when
+  an attachment **or** an avatar references it (`blobReferenced`), so a replaced or removed
+  avatar is swept after the one-hour grace period and the current one never is.
+
+## T11 - Message and member authors as intelligences (AID-06, PROF-03, GRP-03)
+
+- `rooms.insert` stores `messages.author_iid`: the user's id for user posts, the agent's id for
+  agent posts (users and agents share their id with their intelligence); `''` for system
+  messages and, **until T26 sets it (linked user, else person)**, for chat messages.
+  `CreateMessage` takes `AuthorIid`; `rooms.draft.authorIID` is the field to fill.
+- `dto.Message.author` (`IntelligenceRef`, always present) is built by `convert.Message` from the
+  `message_views` author columns: user and agent authors are their own intelligence (an
+  `author_iid`-less row of those kinds falls back to `author_id`); a chat message has an author
+  only when `author_iid` is set: the person (`role person`, `platform` = the chat's connector
+  kind) or, when it equals `author_user_id`, the linked user (`role user`, no platform). System
+  messages and chat senders without an intelligence give `author = {display_name: <shown name>}`
+  with an empty `id`, `kind`, `role` and `handle`. `author.display_name` is the name the
+  timeline shows (`author_name`): a name set for an AI in the room (GRP-04) wins there, while
+  `author.handle` and `author.avatar_url` are the profile's. `author_id`, `author_name`,
+  `author_user_id` and the `sender_*` fields are unchanged.
+- `dto.RoomMember.intelligence` (optional) is set for agent and user members: the profile's
+  `IntelligenceRef` (`role` ai/user). `RoomMember.name` is the profile display name for them
+  (the v0.3 names are the fallback); `RoomMember.display_name` stays the per-room agent setting.
+  Chat and project members have none. The same `toMember` serves the agent tools
+  (`list_rooms`, `room_info`).
+- `dto.Room.owner.intelligence` (optional `IntelligenceRef` of the owner) in `GET /rooms/{id}`,
+  `GET /rooms` and `room.changed` frames; `rooms.Room.OwnerIntelligence` is the data
+  (`ID == ''` when the owner has none). `rooms.Member.Intelligence` likewise.
+- sqlc: `ListRoomMembers` returns `intelligence_*` columns; `GetRoomWithOwner` and
+  `ListRoomsForUser` return `owner_ikind/iname/handle/avatar`.
+- Web fixtures `makeMessage`/`makeMe` carry the new required fields (`author`, `intelligence`).
+
+## T12 - Mentions and signatures follow the profile (AID-06, PROF-03, GRP-04)
+
+- `delivery.MemberPrefs` has `Names` (the name set for the member in the room and the AI's
+  profile display name) and `Handle` (the profile handle). `delivery.Prefs(profile db.Intelligence,
+  memberDisplayName, delivery, keywordsJSON)` builds it; `ProjectPrefs(profile, projectName, …)`
+  adds the project's name (project members stay until T50); `AgentPrefs` is gone.
+  `delivery.IntelligenceOf(ctx, q, agentID)` loads the profile (zero value for an agent without
+  one, which then answers to its room name only). The internal agent `name` and `auto_name` are
+  no mention any more. Callers: the dispatcher (live push), the gateway backlog and
+  `GET /agent/pending`.
+- Matching, case-insensitive: a name is mentioned as `@<name>` with no letter, digit or
+  underscore right before the `@` and none of letter, digit, underscore or `-` right after the
+  name (`@Atlas-2` is no mention of "Atlas"); the handle as `@<handle>` with the same rule
+  before and no `[a-z0-9-]` right after it, so `@atlas` never reaches `@atlas-2`, an address such
+  as `joe@atlas.example` mentions nobody, and after a rename the old handle stops matching.
+  Keywords keep the word rule they had (a `-` after a keyword is still a boundary). Delivery
+  modes, keywords and broadcast are unchanged. Two AIs that share a display name are both
+  reached by `@<that name>`; handles are what tells them apart.
+- Outbound signatures already read the view's author name (the profile display name, or the name
+  set in the room), so they follow profile renames made by the owner (`PATCH
+  /intelligences/{id}`) or by the AI (`PATCH /agent/profile`): covered by
+  `TestOutboundAuthorFollowsProfileRename`.

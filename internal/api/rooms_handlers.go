@@ -54,6 +54,14 @@ func (s *server) toMember(ctx context.Context, m rooms.Member) dto.RoomMember {
 		online := s.Agents.Online(m.MemberID)
 		out.Online = &online
 	}
+	if m.Intelligence.ID != "" && (out.Kind == dto.MemberKindAgent || out.Kind == dto.MemberKindUser) {
+		role := dto.IntelligenceRoleUser
+		if out.Kind == dto.MemberKindAgent {
+			role = dto.IntelligenceRoleAI
+		}
+		ref := convert.IntelligenceRef(m.Intelligence, role, "")
+		out.Intelligence = &ref
+	}
 	if out.Kind == dto.MemberKindProject && s.Agents != nil {
 		a, ok, err := s.Agents.ActiveSession(ctx, m.MemberID)
 		if err != nil {

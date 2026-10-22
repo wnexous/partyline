@@ -376,7 +376,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | AID-03 | P1: Folder identity | Execute | Implementing |
 | AID-04 | P1: Folder identity | Tasks | Pending |
 | AID-05 | P1: Folder identity | Tasks | Pending |
-| AID-06 | P1: Folder identity | Tasks | Pending |
+| AID-06 | P1: Folder identity | Execute | Implementing |
 | AID-07 | P1: Folder identity | Tasks | Pending |
 | SES-01 | P1: One live session | Tasks | Pending |
 | SES-02 | P1: One live session | Tasks | Pending |
@@ -404,8 +404,8 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | DM-08 | P1: Contacts and DMs | Tasks | Pending |
 | GRP-01 | P1: Groups | Execute | Implementing |
 | GRP-02 | P1: Groups | Tasks | Pending |
-| GRP-03 | P1: Groups | Tasks | Pending |
-| GRP-04 | P1: Groups | Tasks | Pending |
+| GRP-03 | P1: Groups | Execute | Implementing |
+| GRP-04 | P1: Groups | Execute | Implementing |
 | PEOP-01 | P1: People | Tasks | Pending |
 | PEOP-02 | P1: People | Tasks | Pending |
 | PEOP-03 | P1: People | Tasks | Pending |
@@ -421,14 +421,14 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | ACC-07 | P1: Accounts | Tasks | Pending |
 | PROF-01 | P1: Profiles | Execute | Implementing |
 | PROF-02 | P1: Profiles | Execute | Implementing |
-| PROF-03 | P1: Profiles | Tasks | Pending |
-| PROF-04 | P1: Profiles | Tasks | Pending |
-| PROF-05 | P1: Profiles | Tasks | Pending |
-| PROF-06 | P1: Profiles | Tasks | Pending |
-| PROF-07 | P1: Profiles | Tasks | Pending |
+| PROF-03 | P1: Profiles | Execute | Implementing |
+| PROF-04 | P1: Profiles | Execute | Implementing |
+| PROF-05 | P1: Profiles | Execute | Implementing |
+| PROF-06 | P1: Profiles | Execute | Implementing |
+| PROF-07 | P1: Profiles | Execute | Implementing |
 | PROF-08 | P1: Profiles | Tasks | Pending |
 | PROF-09 | P1: Profiles | Tasks | Pending |
-| PROF-10 | P1: Profiles | Tasks | Pending |
+| PROF-10 | P1: Profiles | Execute | Implementing |
 | PROF-11 | P1: Profiles | Tasks | Pending |
 | LAY-01 | P1: Messenger layout | Tasks | Pending |
 | LAY-02 | P1: Messenger layout | Tasks | Pending |

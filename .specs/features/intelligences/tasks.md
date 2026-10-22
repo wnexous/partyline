@@ -221,9 +221,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PROF-01, PROF-02, PROF-10
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Every new user and agent gets exactly one intelligence (PROF-01); handle rules and 409 `handle_taken` (PROF-02, PROF-10); display 1/64/65 and bio 280/281 boundaries
-- [ ] `CanSee`/`CanEdit` cases of the design's security section (self, other user, AI owner, AI grantee, stranger, person via connector use)
-- [ ] Gate check passes: `make check`
+- [x] Every new user and agent gets exactly one intelligence (PROF-01); handle rules and 409 `handle_taken` (PROF-02, PROF-10); display 1/64/65 and bio 280/281 boundaries
+- [x] `CanSee`/`CanEdit` cases of the design's security section (self, other user, AI owner, AI grantee, stranger, person via connector use)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(intelligences): add the intelligence profile service`
@@ -253,8 +253,8 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PROF-03, PROF-05, PROF-10, AID-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A user edits their own profile; an AI's owner edits the AI's profile (rename shows in the AI's profile and the agents list, AID-06); grantee 403, stranger 404; 409 `handle_taken`; 422 per invalid field with nothing applied (L-017 for each status)
-- [ ] Gate check passes: `make check`
+- [x] A user edits their own profile; an AI's owner edits the AI's profile (rename shows in the AI's profile and the agents list, AID-06); grantee 403, stranger 404; 409 `handle_taken`; 422 per invalid field with nothing applied (L-017 for each status)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): read and edit intelligence profiles`
@@ -268,11 +268,11 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PROF-04, PROF-06, PROF-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Upload → 256×256 PNG served to users who can see the intelligence, 404 to others; headers `nosniff`, CSP, cache (PROF-07)
-- [ ] Invalid upload → 422 `avatar_invalid` and the old avatar is still served (PROF-06)
-- [ ] An agent token updates its own AI's display name, handle, bio and avatar (PROF-04 server side); it cannot edit another AI
-- [ ] A replaced avatar's blob is swept after the grace period; the current one is kept
-- [ ] Gate check passes: `make check`
+- [x] Upload → 256×256 PNG served to users who can see the intelligence, 404 to others; headers `nosniff`, CSP, cache (PROF-07)
+- [x] Invalid upload → 422 `avatar_invalid` and the old avatar is still served (PROF-06)
+- [x] An agent token updates its own AI's display name, handle, bio and avatar (PROF-04 server side); it cannot edit another AI
+- [x] A replaced avatar's blob is swept after the grace period; the current one is kept
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): upload and serve avatars`
@@ -286,9 +286,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-06, PROF-03, GRP-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] After renaming a user and an AI, old and new messages in the timeline and the member list show the new display name, handle and avatar (AID-06, PROF-03); the per-room agent display name still wins in its room (GRP-04)
-- [ ] Chat-authored messages expose `author` when `author_iid` is set (GRP-03 display path)
-- [ ] Gate check passes: `make check`
+- [x] After renaming a user and an AI, old and new messages in the timeline and the member list show the new display name, handle and avatar (AID-06, PROF-03); the per-room agent display name still wins in its room (GRP-04)
+- [x] Chat-authored messages expose `author` when `author_iid` is set (GRP-03 display path)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): name message authors and members by intelligence`
@@ -302,9 +302,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-06, PROF-03, GRP-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A mentions-mode AI receives `@newhandle` and `@New Name` after a rename and not `@oldhandle`; `@atlas` does not reach `@atlas-2` (AID-06)
-- [ ] Outbound to a chat carries the AI's new display name as signature; delivery modes, keywords, broadcast unchanged (GRP-04)
-- [ ] Gate check passes: `make check`
+- [x] A mentions-mode AI receives `@newhandle` and `@New Name` after a rename and not `@oldhandle`; `@atlas` does not reach `@atlas-2` (AID-06)
+- [x] Outbound to a chat carries the AI's new display name as signature; delivery modes, keywords, broadcast unchanged (GRP-04)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(delivery): match mentions by handle and profile name`

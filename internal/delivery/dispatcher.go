@@ -161,10 +161,14 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 		if err != nil {
 			return err
 		}
+		profile, err := IntelligenceOf(ctx, q, t.agentID)
+		if err != nil {
+			return err
+		}
 		ownerID, wanted := agent.OwnerID, false
 		if t.projectID == "" {
 			m := memberRows[string(dto.MemberKindAgent)+"/"+t.agentID]
-			wanted = facts.WantedBy(t.agentID, ownerID, AgentPrefs(agent, m.DisplayName, m.Delivery, m.KeywordsJson))
+			wanted = facts.WantedBy(t.agentID, ownerID, Prefs(profile, m.DisplayName, m.Delivery, m.KeywordsJson))
 		} else {
 			project, err := q.GetProject(ctx, t.projectID)
 			if errors.Is(err, sql.ErrNoRows) {
@@ -177,7 +181,7 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 			ownerID = project.OwnerID
 			m := memberRows[string(dto.MemberKindProject)+"/"+t.projectID]
 			wanted = facts.WantedByProject(t.agentID, t.projectID, ownerID,
-				ProjectPrefs(agent, project.Name, m.DisplayName, m.Delivery, m.KeywordsJson))
+				ProjectPrefs(profile, project.Name, m.DisplayName, m.Delivery, m.KeywordsJson))
 		}
 		if !wanted {
 			continue // MEM-03, MEM-04: stored, not pushed

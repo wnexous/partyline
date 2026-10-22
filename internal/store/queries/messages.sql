@@ -6,9 +6,9 @@ RETURNING *;
 UPDATE rooms SET agent_streak = ?, agents_paused = ? WHERE id = ?;
 
 -- name: CreateMessage :exec
-INSERT INTO messages (id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id,
+INSERT INTO messages (id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id,
                       sender_name, kind, text, reply_to, recipients_json, external_id, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetMessageView :one
 SELECT * FROM message_views WHERE id = ?;

@@ -10,6 +10,8 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/delivery"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
 )
@@ -90,7 +92,7 @@ func (r *Registry) RenameProject(ctx context.Context, p authn.Principal, project
 	if n := utf8.RuneCountInString(name); n == 0 || n > dto.MaxProjectName {
 		return Project{}, &validation.Error{Fields: map[string]string{"name": "must have 1 to 64 characters"}}
 	}
-	var roomIDs []string
+	var roomIDs, renamed []string
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
 		if err := q.UpdateProjectName(ctx, db.UpdateProjectNameParams{Name: name, ID: projectID}); err != nil {
 			return err
@@ -105,8 +107,17 @@ func (r *Registry) RenameProject(ctx context.Context, p authn.Principal, project
 			return err
 		}
 		for _, a := range list {
-			if err := q.SetAgentAutoName(ctx, db.SetAgentAutoNameParams{AutoName: AutoName(name, a.Harness, a.SessionNo), ID: a.ID}); err != nil {
+			a.AutoName = AutoName(name, a.Harness, a.SessionNo)
+			if err := q.SetAgentAutoName(ctx, db.SetAgentAutoNameParams{AutoName: a.AutoName, ID: a.ID}); err != nil {
 				return err
+			}
+			// The intelligence names the agent everywhere; an explicit rename still wins.
+			changed, err := intelligences.SetDisplayName(ctx, q, a.ID, delivery.AgentDisplayName(a), r.now())
+			if err != nil {
+				return err
+			}
+			if changed {
+				renamed = append(renamed, a.ID)
 			}
 			ids, err := q.ListAgentRoomIDs(ctx, a.ID)
 			if err != nil {
@@ -118,6 +129,9 @@ func (r *Registry) RenameProject(ctx context.Context, p authn.Principal, project
 	})
 	if err != nil {
 		return Project{}, err
+	}
+	for _, id := range renamed {
+		intelligences.Announce(ctx, r.bus, r.store.R(), id, false)
 	}
 	r.membersChanged(roomIDs)
 	return r.GetProject(ctx, p, projectID)

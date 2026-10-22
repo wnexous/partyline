@@ -20,6 +20,8 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/handles"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -147,9 +149,21 @@ func (r *Registry) Upsert(ctx context.Context, ownerID, name string) (db.Agent, 
 			return err
 		}
 		out, err = q.GetAgentByName(ctx, db.GetAgentByNameParams{OwnerID: ownerID, Name: name})
-		return err
+		if err != nil {
+			return err
+		}
+		return r.createIntelligence(ctx, q, out)
 	})
 	return out, err
+}
+
+// createIntelligence gives a newly inserted agent its intelligence (PROF-01): its name and
+// handle derive from the agent name, which a later rename or readable session name updates.
+func (r *Registry) createIntelligence(ctx context.Context, q *db.Queries, a db.Agent) error {
+	_, err := intelligences.Create(ctx, q, intelligences.NewParams{
+		ID: a.ID, Kind: handles.AI, DisplayName: delivery.AgentDisplayName(a), HandleBase: a.Name, Now: r.now(),
+	})
+	return err
 }
 
 // Register resolves the session's agent like a WebSocket connection would (Resolve: the
@@ -339,6 +353,7 @@ func (r *Registry) Update(ctx context.Context, p authn.Principal, agentID string
 		return Agent{}, err
 	}
 	var roomIDs []string
+	var renamed bool
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
 		if u.Description != nil {
 			if err := q.UpdateAgentDescription(ctx, db.UpdateAgentDescriptionParams{Description: *u.Description, ID: agentID}); err != nil {
@@ -350,6 +365,9 @@ func (r *Registry) Update(ctx context.Context, p authn.Principal, agentID string
 				return err
 			}
 			var err error
+			if renamed, err = intelligences.SetDisplayName(ctx, q, agentID, display, r.now()); err != nil {
+				return err
+			}
 			if roomIDs, err = q.ListAgentRoomIDs(ctx, agentID); err != nil {
 				return err
 			}
@@ -361,6 +379,9 @@ func (r *Registry) Update(ctx context.Context, p authn.Principal, agentID string
 	})
 	if err != nil {
 		return Agent{}, err
+	}
+	if renamed {
+		intelligences.Announce(ctx, r.bus, r.store.R(), agentID, false)
 	}
 	r.membersChanged(roomIDs) // member names changed
 	return r.Get(ctx, p, agentID)

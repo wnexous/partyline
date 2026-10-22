@@ -13,6 +13,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/delivery"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -298,7 +300,10 @@ func (r *Registry) getOrCreate(ctx context.Context, q *db.Queries, ownerID, name
 		return db.Agent{}, false, err
 	}
 	a, err = q.GetAgentByName(ctx, db.GetAgentByNameParams{OwnerID: ownerID, Name: name})
-	return a, true, err
+	if err != nil {
+		return db.Agent{}, false, err
+	}
+	return a, true, r.createIntelligence(ctx, q, a)
 }
 
 // record stores the session's project, harness, machine and kind on the agent, recomputes the
@@ -344,6 +349,12 @@ func (r *Registry) record(ctx context.Context, q *db.Queries, a db.Agent, create
 		ProjectID: a.ProjectID, Harness: a.Harness, Machine: a.Machine, Kind: a.Kind,
 		AutoName: a.AutoName, SessionNo: a.SessionNo, ID: a.ID,
 	})
+	if err != nil {
+		return a, err
+	}
+	// The intelligence names the agent everywhere: it follows the readable name of a
+	// temporary agent until folders replace session naming.
+	_, err = intelligences.SetDisplayName(ctx, q, a.ID, delivery.AgentDisplayName(a), r.now())
 	return a, err
 }
 

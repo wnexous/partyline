@@ -94,6 +94,9 @@ type RoomMember struct {
 	Kind     MemberKind `json:"kind"`
 	MemberID string     `json:"member_id"` // agent, chat, user or project id
 	Name     string     `json:"name"`      // agent display name, chat title, user display name or project name
+	// Intelligence is the profile summary of an agent or user member: handle, kind and avatar
+	// next to the name (PROF-03, PROF-09). Absent for chat and project members.
+	Intelligence *IntelligenceRef `json:"intelligence,omitempty"`
 	// Outbound tells whether agent and user posts without explicit recipients reach this chat (DLV-03).
 	Outbound bool `json:"outbound"`
 	// Online is set for agent members, and for project members: whether the project has an
@@ -185,6 +188,11 @@ type Message struct {
 	AuthorKind AuthorKind `json:"author_kind"`
 	AuthorID   string     `json:"author_id,omitempty"` // agent id, chat id or user id; empty for system
 	AuthorName string     `json:"author_name"`
+	// Author is the author's intelligence (PROF-03, GRP-03): the user, the AI, the person of a
+	// chat or the user a chat sender is linked to. Its display name is AuthorName, so a name
+	// set for an AI in the room wins. For system messages and chat senders without an
+	// intelligence the id, kind, role and handle are empty.
+	Author IntelligenceRef `json:"author"`
 	// AuthorUserID is the user the author resolves to (DLV-06): the user, the agent's owner or
 	// the owner of a verified chat identity. Empty for unverified chat senders and system messages.
 	AuthorUserID string `json:"author_user_id,omitempty"`
