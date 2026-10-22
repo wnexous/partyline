@@ -106,6 +106,9 @@ const (
 	// ErrorCodeMembersRefused is a new group with a member its owner may not add; Refused lists
 	// them and nothing was created (422, LAY-04, AGRP-02).
 	ErrorCodeMembersRefused ErrorCode = "members_refused"
+	// ErrorCodeIdentityOnline is a merge of an AI that has a live session: it must be offline
+	// (409, MRG-02).
+	ErrorCodeIdentityOnline ErrorCode = "identity_online"
 )
 
 // ErrorBody is the envelope of every error response.

@@ -98,6 +98,43 @@ func (q *Queries) CreateDMRoom(ctx context.Context, arg CreateDMRoomParams) erro
 	return err
 }
 
+const deleteDuplicateAgentGroupMemberships = `-- name: DeleteDuplicateAgentGroupMemberships :many
+DELETE FROM room_members
+WHERE room_members.kind = 'agent' AND room_members.member_id = ?1
+  AND room_members.room_id IN (SELECT g.id FROM rooms g WHERE g.kind = 'group')
+  AND room_members.room_id IN (SELECT o.room_id FROM room_members o WHERE o.kind = 'agent' AND o.member_id = ?2)
+RETURNING room_id
+`
+
+type DeleteDuplicateAgentGroupMembershipsParams struct {
+	FromID string
+	IntoID string
+}
+
+// Merge: the groups where both AIs are members keep the surviving AI's membership and settings.
+func (q *Queries) DeleteDuplicateAgentGroupMemberships(ctx context.Context, arg DeleteDuplicateAgentGroupMembershipsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, deleteDuplicateAgentGroupMemberships, arg.FromID, arg.IntoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteEmptyDMRoom = `-- name: DeleteEmptyDMRoom :execrows
 DELETE FROM rooms WHERE id = ? AND kind = 'dm' AND next_seq = 1
 `
@@ -207,6 +244,54 @@ func (q *Queries) InsertDMRoom(ctx context.Context, arg InsertDMRoomParams) (int
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const listAgentDMRooms = `-- name: ListAgentDMRooms :many
+SELECT id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, broadcast, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline FROM rooms WHERE kind = 'dm' AND (dm_a = ?1 OR dm_b = ?1) ORDER BY id
+`
+
+// The DMs an AI takes part in (merge, MRG-01).
+func (q *Queries) ListAgentDMRooms(ctx context.Context, id sql.NullString) ([]Room, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentDMRooms, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Room
+	for rows.Next() {
+		var i Room
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Name,
+			&i.Description,
+			&i.BridgeChats,
+			&i.RetentionDays,
+			&i.NextSeq,
+			&i.AgentStreak,
+			&i.AgentsPaused,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Instructions,
+			&i.Broadcast,
+			&i.InstructionsBy,
+			&i.UpdatedBy,
+			&i.Kind,
+			&i.DmA,
+			&i.DmB,
+			&i.ReadBaseline,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listChatDMRoomIDs = `-- name: ListChatDMRoomIDs :many
@@ -481,6 +566,38 @@ func (q *Queries) ListRoomActivity(ctx context.Context, ids []string) ([]ListRoo
 	return items, nil
 }
 
+const listRoomAgentCursors = `-- name: ListRoomAgentCursors :many
+SELECT agent_id, seq FROM agent_cursors WHERE room_id = ?
+`
+
+type ListRoomAgentCursorsRow struct {
+	AgentID string
+	Seq     int64
+}
+
+func (q *Queries) ListRoomAgentCursors(ctx context.Context, roomID string) ([]ListRoomAgentCursorsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRoomAgentCursors, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoomAgentCursorsRow
+	for rows.Next() {
+		var i ListRoomAgentCursorsRow
+		if err := rows.Scan(&i.AgentID, &i.Seq); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRoomChatConnectors = `-- name: ListRoomChatConnectors :many
 SELECT k.id, k.owner_id, k.operator_iid
 FROM room_members m JOIN chats c ON c.id = m.member_id JOIN connectors k ON k.id = c.connector_id
@@ -504,6 +621,78 @@ func (q *Queries) ListRoomChatConnectors(ctx context.Context, roomID string) ([]
 	for rows.Next() {
 		var i ListRoomChatConnectorsRow
 		if err := rows.Scan(&i.ID, &i.OwnerID, &i.OperatorIid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoomChatMemberRows = `-- name: ListRoomChatMemberRows :many
+SELECT id, room_id, kind, member_id, outbound, added_by, created_at, display_name, sign_outbound, delivery, keywords_json FROM room_members WHERE room_id = ? AND kind = 'chat' ORDER BY created_at, id
+`
+
+func (q *Queries) ListRoomChatMemberRows(ctx context.Context, roomID string) ([]RoomMember, error) {
+	rows, err := q.db.QueryContext(ctx, listRoomChatMemberRows, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoomMember
+	for rows.Next() {
+		var i RoomMember
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Kind,
+			&i.MemberID,
+			&i.Outbound,
+			&i.AddedBy,
+			&i.CreatedAt,
+			&i.DisplayName,
+			&i.SignOutbound,
+			&i.Delivery,
+			&i.KeywordsJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoomMessageOrder = `-- name: ListRoomMessageOrder :many
+SELECT id, seq FROM messages WHERE room_id = ? ORDER BY seq
+`
+
+type ListRoomMessageOrderRow struct {
+	ID  string
+	Seq int64
+}
+
+// A room's messages in the order they were written.
+func (q *Queries) ListRoomMessageOrder(ctx context.Context, roomID string) ([]ListRoomMessageOrderRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRoomMessageOrder, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoomMessageOrderRow
+	for rows.Next() {
+		var i ListRoomMessageOrderRow
+		if err := rows.Scan(&i.ID, &i.Seq); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -572,6 +761,261 @@ func (q *Queries) ListRoomParticipants(ctx context.Context, id string) ([]ListRo
 		return nil, err
 	}
 	return items, nil
+}
+
+const listRoomReadCursors = `-- name: ListRoomReadCursors :many
+SELECT user_id, seq FROM read_cursors WHERE room_id = ?
+`
+
+type ListRoomReadCursorsRow struct {
+	UserID string
+	Seq    int64
+}
+
+func (q *Queries) ListRoomReadCursors(ctx context.Context, roomID string) ([]ListRoomReadCursorsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRoomReadCursors, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoomReadCursorsRow
+	for rows.Next() {
+		var i ListRoomReadCursorsRow
+		if err := rows.Scan(&i.UserID, &i.Seq); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const mergeAgentGrants = `-- name: MergeAgentGrants :exec
+INSERT INTO grants (resource_kind, resource_id, subject, level, created_by, created_at)
+SELECT g.resource_kind, ?1, g.subject, g.level, g.created_by, g.created_at
+FROM grants g
+WHERE g.resource_kind = 'agent' AND g.resource_id = ?2
+ON CONFLICT (resource_kind, resource_id, subject) DO UPDATE SET level =
+    CASE WHEN (CASE excluded.level WHEN 'view' THEN 1 WHEN 'post' THEN 2 WHEN 'use' THEN 3 ELSE 4 END)
+              > (CASE grants.level WHEN 'view' THEN 1 WHEN 'post' THEN 2 WHEN 'use' THEN 3 ELSE 4 END)
+         THEN excluded.level ELSE grants.level END
+`
+
+type MergeAgentGrantsParams struct {
+	IntoID string
+	FromID string
+}
+
+// Merge: who may use the merged AI may use the surviving one; where both grant a subject the higher
+// level wins.
+func (q *Queries) MergeAgentGrants(ctx context.Context, arg MergeAgentGrantsParams) error {
+	_, err := q.db.ExecContext(ctx, mergeAgentGrants, arg.IntoID, arg.FromID)
+	return err
+}
+
+const mergeAgentGroupCursors = `-- name: MergeAgentGroupCursors :exec
+INSERT INTO agent_cursors (agent_id, room_id, seq)
+SELECT ?1, c.room_id, c.seq
+FROM agent_cursors c JOIN rooms r ON r.id = c.room_id
+WHERE c.agent_id = ?2 AND r.kind = 'group'
+  AND EXISTS (SELECT 1 FROM room_members m WHERE m.room_id = c.room_id AND m.kind = 'agent' AND m.member_id = ?1)
+ON CONFLICT (agent_id, room_id) DO UPDATE SET seq = MAX(agent_cursors.seq, excluded.seq)
+`
+
+type MergeAgentGroupCursorsParams struct {
+	IntoID string
+	FromID string
+}
+
+// Merge: the surviving AI's delivery cursor in each group it is a member of is the larger of the two.
+func (q *Queries) MergeAgentGroupCursors(ctx context.Context, arg MergeAgentGroupCursorsParams) error {
+	_, err := q.db.ExecContext(ctx, mergeAgentGroupCursors, arg.IntoID, arg.FromID)
+	return err
+}
+
+const moveAgentGroupMemberships = `-- name: MoveAgentGroupMemberships :many
+UPDATE room_members SET member_id = ?1
+WHERE room_members.kind = 'agent' AND room_members.member_id = ?2
+  AND room_members.room_id IN (SELECT g.id FROM rooms g WHERE g.kind = 'group')
+RETURNING room_id
+`
+
+type MoveAgentGroupMembershipsParams struct {
+	IntoID string
+	FromID string
+}
+
+// Merge: the groups only the merged AI is a member of become the surviving AI's, settings included.
+func (q *Queries) MoveAgentGroupMemberships(ctx context.Context, arg MoveAgentGroupMembershipsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, moveAgentGroupMemberships, arg.IntoID, arg.FromID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const moveMessage = `-- name: MoveMessage :exec
+UPDATE messages SET room_id = ?, seq = ? WHERE id = ?
+`
+
+type MoveMessageParams struct {
+	RoomID string
+	Seq    int64
+	ID     string
+}
+
+func (q *Queries) MoveMessage(ctx context.Context, arg MoveMessageParams) error {
+	_, err := q.db.ExecContext(ctx, moveMessage, arg.RoomID, arg.Seq, arg.ID)
+	return err
+}
+
+const moveRoomMember = `-- name: MoveRoomMember :exec
+UPDATE room_members SET room_id = ? WHERE id = ?
+`
+
+type MoveRoomMemberParams struct {
+	RoomID string
+	ID     string
+}
+
+func (q *Queries) MoveRoomMember(ctx context.Context, arg MoveRoomMemberParams) error {
+	_, err := q.db.ExecContext(ctx, moveRoomMember, arg.RoomID, arg.ID)
+	return err
+}
+
+const reassignAgentMessages = `-- name: ReassignAgentMessages :exec
+UPDATE messages SET author_id = ?1 WHERE author_kind = 'agent' AND author_id = ?2
+`
+
+type ReassignAgentMessagesParams struct {
+	IntoID string
+	FromID string
+}
+
+// Merge: the messages the merged AI wrote are the surviving AI's (author_id for agent messages,
+// author_iid for those of any kind, such as the ones typed on the platform account it operated).
+func (q *Queries) ReassignAgentMessages(ctx context.Context, arg ReassignAgentMessagesParams) error {
+	_, err := q.db.ExecContext(ctx, reassignAgentMessages, arg.IntoID, arg.FromID)
+	return err
+}
+
+const reassignAuthorIntelligence = `-- name: ReassignAuthorIntelligence :exec
+UPDATE messages SET author_iid = ?1 WHERE author_iid = ?2
+`
+
+type ReassignAuthorIntelligenceParams struct {
+	IntoID string
+	FromID string
+}
+
+func (q *Queries) ReassignAuthorIntelligence(ctx context.Context, arg ReassignAuthorIntelligenceParams) error {
+	_, err := q.db.ExecContext(ctx, reassignAuthorIntelligence, arg.IntoID, arg.FromID)
+	return err
+}
+
+const reassignConnectorOperator = `-- name: ReassignConnectorOperator :many
+UPDATE connectors SET operator_iid = ?1 WHERE operator_iid = ?2
+RETURNING id
+`
+
+type ReassignConnectorOperatorParams struct {
+	IntoID sql.NullString
+	FromID sql.NullString
+}
+
+func (q *Queries) ReassignConnectorOperator(ctx context.Context, arg ReassignConnectorOperatorParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, reassignConnectorOperator, arg.IntoID, arg.FromID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const replaceAgentCursor = `-- name: ReplaceAgentCursor :exec
+UPDATE agent_cursors SET agent_id = ?1 WHERE room_id = ?2 AND agent_id = ?3
+`
+
+type ReplaceAgentCursorParams struct {
+	IntoID string
+	RoomID string
+	FromID string
+}
+
+func (q *Queries) ReplaceAgentCursor(ctx context.Context, arg ReplaceAgentCursorParams) error {
+	_, err := q.db.ExecContext(ctx, replaceAgentCursor, arg.IntoID, arg.RoomID, arg.FromID)
+	return err
+}
+
+const replaceAgentMember = `-- name: ReplaceAgentMember :exec
+UPDATE room_members SET member_id = ?1 WHERE room_id = ?2 AND kind = 'agent' AND member_id = ?3
+`
+
+type ReplaceAgentMemberParams struct {
+	IntoID string
+	RoomID string
+	FromID string
+}
+
+func (q *Queries) ReplaceAgentMember(ctx context.Context, arg ReplaceAgentMemberParams) error {
+	_, err := q.db.ExecContext(ctx, replaceAgentMember, arg.IntoID, arg.RoomID, arg.FromID)
+	return err
+}
+
+const setDMRoomPair = `-- name: SetDMRoomPair :exec
+UPDATE rooms SET dm_a = ?, dm_b = ?, updated_at = ? WHERE id = ? AND kind = 'dm'
+`
+
+type SetDMRoomPairParams struct {
+	DmA       sql.NullString
+	DmB       sql.NullString
+	UpdatedAt int64
+	ID        string
+}
+
+// Merge: a DM of the merged AI becomes the surviving AI's (dm_a and dm_b are sorted).
+func (q *Queries) SetDMRoomPair(ctx context.Context, arg SetDMRoomPairParams) error {
+	_, err := q.db.ExecContext(ctx, setDMRoomPair,
+		arg.DmA,
+		arg.DmB,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
 }
 
 const setRoomReadBaseline = `-- name: SetRoomReadBaseline :exec

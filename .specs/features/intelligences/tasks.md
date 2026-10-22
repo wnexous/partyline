@@ -688,9 +688,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: MRG-01, MRG-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Unlinked A merged into folder AI B: groups (B's settings win), cursors (max), grants, DMs (re-keyed or appended after the notice), authored messages and operators move to B; A is gone; audit written (MRG-01)
-- [ ] A online → 409 `identity_online`, nothing changed (MRG-02); another owner's AI 404; A = B 422
-- [ ] Gate check passes: `make check`
+- [x] Unlinked A merged into folder AI B: groups (B's settings win), cursors (max), grants, DMs (re-keyed or appended after the notice), authored messages and operators move to B; A is gone; audit written (MRG-01)
+- [x] A online → 409 `identity_online`, nothing changed (MRG-02); another owner's AI 404; A = B 422
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): merge one AI identity into another`

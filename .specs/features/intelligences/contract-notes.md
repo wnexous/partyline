@@ -1454,3 +1454,69 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   leaving notify rows alone) and `internal/delivery/outbox_test.go` (notify rows outside the room, permanent
   errors).
 
+## T35 - Merge identities (MRG-01, MRG-02)
+
+- **`POST /api/v1/agents/{id}/merge`** `dto.MergeAgentRequest{into}` (sessions and user tokens; agent tokens
+  are 403, anonymous 401) → **200 `dto.Agent` of the AI that remains** (`into`, as `PATCH /agents/{id}` shows an
+  agent). `{id}` is the AI that is merged away (`from`). Order of the checks: the right to `from` (**404**
+  when the caller can neither own nor use it, also for an unknown id and for an admin, AD-005; **403** when
+  they may only `use` it) → `into` (**422 `invalid`**, field `into`: `required` when blank, `must be a
+  different AI` when equal to `from`; both before `into` is looked up and after `from` was authorized, so a
+  stranger learns nothing) → the right to `into` (404 / 403 as for `from`) → `from` online (**409
+  `identity_online`**, `dto.ErrorCodeIdentityOnline`, `conversations.ErrIdentityOnline`) → the merge.
+  Both AIs must be owned by the caller (manage); a malformed body is 400. Every refusal changes nothing.
+  `into` may be online (its session simply gets the new rooms); `from` must be offline.
+- **`conversations.Service.Merge(ctx, p, fromID, intoID)`**, one write transaction (a failure anywhere leaves
+  the database as it was; `TestMergeIsAllOrNothing`):
+  1. **Group memberships** (`rooms.kind = group`): where both are members, `from`'s row is deleted and the
+     survivor's row and settings stay; otherwise `from`'s row becomes the survivor's (same row id, per-room
+     display name, delivery mode, keywords, signature and `outbound` come along).
+  2. **Delivery cursors in those groups**: the survivor's cursor becomes `MAX(own, from's)` for every group it is
+     a member of.
+  3. **DMs** of `from`, one by one, with the other participant X:
+     - X is the survivor: the DM goes away with its history (the two are one AI now, a DM with oneself cannot
+       exist); this is the only data a merge discards.
+     - the survivor has no DM with X: the DM becomes theirs, **kept as it is** (same room id, messages,
+       member rows, read cursors): the pair key and the agent member are rewritten and `from`'s cursor in it
+       becomes the survivor's. A person's platform DM keeps its chat member.
+     - the survivor has a DM with X: a **system message `History merged from @<from handle>`**
+       (`conversations.MergeNotice`) is added to the end of the survivor's DM, then **`from`'s messages are moved
+       there** (`messages.room_id`/`seq` updated, so ids, attachments, outbox rows, replies and external ids
+       stay) **in the order they were written (their old `seq`)**, with new numbers after the notice. The
+       chats that were members of the old DM become members of the survivor's, so what waits in the outbox can
+       still be sent; **cursors are renumbered**: a cursor that had read/received
+       up to old `seq` c becomes the new number of the last moved message at or before c (0 when none, nothing
+       is written), and the larger of that and the existing cursor holds, for the agent cursors of both sides
+       (`from`'s is applied to the survivor) and the users' read cursors; the old DM is deleted. The design's
+       "in `created_at` order" is the same order: a room's `seq` follows time; ordering by `seq` keeps
+       the cursor renumbering exact.
+  4. **Grants** on `from` become the survivor's per subject (the higher level wins, `view` < `post` < `use` <
+     `manage`; agent grants are `use` in practice); `from`'s grants are deleted. Anybody who could use `from`
+     can use the survivor, which is what lets the rooms those users own keep the member that moved in.
+  5. **Messages**: `author_id` of agent messages and `author_iid` of any (the ones typed on the platform account
+     `from` operated) become the survivor's, in every room.
+  6. **Connectors** that `from` operated are operated by the survivor (`operator_iid`).
+  7. `from` is deleted (its remaining memberships, its grants, the agent row; the intelligence, cursors and
+     any DM left cascade) and **`agent.merge` is audited** (`audit.ActionAgentMerge`, actor the caller, target
+     kind `agent`, target id the survivor, detail `{from, into, from_handle, into_handle, connectors: [ids]}`).
+- **Events after the commit**: `room.members` for every group whose members changed and for the re-keyed and
+  appended DMs; `room.changed` for those DMs (their participants changed); `room.deleted` for the deleted DMs
+  (only sockets that had the DM in their set hear it, so not the owner who merely views the DM between two of
+  their AIs); `access.changed` for the survivor (who may use it changed) and `intelligence.changed` for both
+  AIs. The appended history and the notice are not announced as new messages: AIs get what is undelivered
+  by the renumbered cursors, as backlog on their next connection and through `pending`.
+- **Race with a session**: after the commit `Deps.Kick` closes a live session of `from` that attached between the
+  check and the commit (wired to `Presence.Kick` with `CloseDeleted`, as `Registry.Delete` does), so no socket
+  holds a deleted AI. `Deps.Online` is `Presence.Online`; `Deps.Access` is the authorizer.
+- sqlc added: `ListAgentDMRooms`, `DeleteDuplicateAgentGroupMemberships`, `MoveAgentGroupMemberships`,
+  `MergeAgentGroupCursors`, `MergeAgentGrants`, `ListRoomMessageOrder`, `MoveMessage`, `ListRoomChatMemberRows`,
+  `MoveRoomMember`, `ListRoomAgentCursors`, `ListRoomReadCursors`, `SetDMRoomPair`, `ReplaceAgentMember`,
+  `ReplaceAgentCursor`, `ReassignAgentMessages`, `ReassignAuthorIntelligence`, `ReassignConnectorOperator`.
+- Tests: `internal/api/merge_test.go` (groups with both settings cases, cursors, grants, messages and the
+  audit entry for an unlinked AI merged into a folder AI, the grant-level rule, DMs: appended with notice and
+  renumbered cursors, re-keyed with its cursor, the DM between the two, live frames, the connector operator, an
+  online AI refused and merged once offline into an online one, the authorization and validation matrix, the
+  all-or-nothing rollback with a forced failure, the kick and online seams) and
+  `internal/connectors/merge_test.go` (a platform DM keeps running after its operator AI is merged; an appended
+  platform DM moves its chat and keeps what waits in the outbox sendable).
+

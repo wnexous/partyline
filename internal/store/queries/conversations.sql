@@ -117,3 +117,84 @@ WHERE k.owner_id = sqlc.arg(user_id)
    OR k.id IN (SELECT g.resource_id FROM grants g
                WHERE g.resource_kind = 'connector' AND g.subject IN (sqlc.arg(user_id), '*'))
 ORDER BY k.name, c.title, c.id;
+
+-- name: ListAgentDMRooms :many
+-- The DMs an AI takes part in (merge, MRG-01).
+SELECT * FROM rooms WHERE kind = 'dm' AND (dm_a = sqlc.arg(id) OR dm_b = sqlc.arg(id)) ORDER BY id;
+
+-- name: DeleteDuplicateAgentGroupMemberships :many
+-- Merge: the groups where both AIs are members keep the surviving AI's membership and settings.
+DELETE FROM room_members
+WHERE room_members.kind = 'agent' AND room_members.member_id = sqlc.arg(from_id)
+  AND room_members.room_id IN (SELECT g.id FROM rooms g WHERE g.kind = 'group')
+  AND room_members.room_id IN (SELECT o.room_id FROM room_members o WHERE o.kind = 'agent' AND o.member_id = sqlc.arg(into_id))
+RETURNING room_id;
+
+-- name: MoveAgentGroupMemberships :many
+-- Merge: the groups only the merged AI is a member of become the surviving AI's, settings included.
+UPDATE room_members SET member_id = sqlc.arg(into_id)
+WHERE room_members.kind = 'agent' AND room_members.member_id = sqlc.arg(from_id)
+  AND room_members.room_id IN (SELECT g.id FROM rooms g WHERE g.kind = 'group')
+RETURNING room_id;
+
+-- name: MergeAgentGroupCursors :exec
+-- Merge: the surviving AI's delivery cursor in each group it is a member of is the larger of the two.
+INSERT INTO agent_cursors (agent_id, room_id, seq)
+SELECT sqlc.arg(into_id), c.room_id, c.seq
+FROM agent_cursors c JOIN rooms r ON r.id = c.room_id
+WHERE c.agent_id = sqlc.arg(from_id) AND r.kind = 'group'
+  AND EXISTS (SELECT 1 FROM room_members m WHERE m.room_id = c.room_id AND m.kind = 'agent' AND m.member_id = sqlc.arg(into_id))
+ON CONFLICT (agent_id, room_id) DO UPDATE SET seq = MAX(agent_cursors.seq, excluded.seq);
+
+-- name: MergeAgentGrants :exec
+-- Merge: who may use the merged AI may use the surviving one; where both grant a subject the higher
+-- level wins.
+INSERT INTO grants (resource_kind, resource_id, subject, level, created_by, created_at)
+SELECT g.resource_kind, sqlc.arg(into_id), g.subject, g.level, g.created_by, g.created_at
+FROM grants g
+WHERE g.resource_kind = 'agent' AND g.resource_id = sqlc.arg(from_id)
+ON CONFLICT (resource_kind, resource_id, subject) DO UPDATE SET level =
+    CASE WHEN (CASE excluded.level WHEN 'view' THEN 1 WHEN 'post' THEN 2 WHEN 'use' THEN 3 ELSE 4 END)
+              > (CASE grants.level WHEN 'view' THEN 1 WHEN 'post' THEN 2 WHEN 'use' THEN 3 ELSE 4 END)
+         THEN excluded.level ELSE grants.level END;
+
+-- name: ListRoomMessageOrder :many
+-- A room's messages in the order they were written.
+SELECT id, seq FROM messages WHERE room_id = ? ORDER BY seq;
+
+-- name: MoveMessage :exec
+UPDATE messages SET room_id = ?, seq = ? WHERE id = ?;
+
+-- name: ListRoomChatMemberRows :many
+SELECT * FROM room_members WHERE room_id = ? AND kind = 'chat' ORDER BY created_at, id;
+
+-- name: MoveRoomMember :exec
+UPDATE room_members SET room_id = ? WHERE id = ?;
+
+-- name: ListRoomAgentCursors :many
+SELECT agent_id, seq FROM agent_cursors WHERE room_id = ?;
+
+-- name: ListRoomReadCursors :many
+SELECT user_id, seq FROM read_cursors WHERE room_id = ?;
+
+-- name: SetDMRoomPair :exec
+-- Merge: a DM of the merged AI becomes the surviving AI's (dm_a and dm_b are sorted).
+UPDATE rooms SET dm_a = ?, dm_b = ?, updated_at = ? WHERE id = ? AND kind = 'dm';
+
+-- name: ReplaceAgentMember :exec
+UPDATE room_members SET member_id = sqlc.arg(into_id) WHERE room_id = sqlc.arg(room_id) AND kind = 'agent' AND member_id = sqlc.arg(from_id);
+
+-- name: ReplaceAgentCursor :exec
+UPDATE agent_cursors SET agent_id = sqlc.arg(into_id) WHERE room_id = sqlc.arg(room_id) AND agent_id = sqlc.arg(from_id);
+
+-- name: ReassignAgentMessages :exec
+-- Merge: the messages the merged AI wrote are the surviving AI's (author_id for agent messages,
+-- author_iid for those of any kind, such as the ones typed on the platform account it operated).
+UPDATE messages SET author_id = sqlc.arg(into_id) WHERE author_kind = 'agent' AND author_id = sqlc.arg(from_id);
+
+-- name: ReassignAuthorIntelligence :exec
+UPDATE messages SET author_iid = sqlc.arg(into_id) WHERE author_iid = sqlc.arg(from_id);
+
+-- name: ReassignConnectorOperator :many
+UPDATE connectors SET operator_iid = sqlc.arg(into_id) WHERE operator_iid = sqlc.arg(from_id)
+RETURNING id;

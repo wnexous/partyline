@@ -110,6 +110,13 @@ type RoomInfo struct {
 	Me              RoomMember   `json:"me"`
 }
 
+// MergeAgentRequest is the body of POST /agents/{id}/merge: the AI the one in the path is merged
+// into. Both are the caller's; the first is deleted and everything it had moves to the second
+// (MRG-01).
+type MergeAgentRequest struct {
+	Into string `json:"into"`
+}
+
 // ReactRequest is the body of POST /agent/messages/{id}/react: one emoji (REACT-01).
 type ReactRequest struct {
 	Emoji string `json:"emoji"`

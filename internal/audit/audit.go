@@ -48,6 +48,8 @@ const (
 	// ActionAgentAdopt records a v0.3 identity linked to the folder of its first session
 	// (MIG-02).
 	ActionAgentAdopt = "agent.adopt"
+	// ActionAgentMerge records an AI identity merged into another of the same owner (MRG-01).
+	ActionAgentMerge = "agent.merge"
 )
 
 // Target kinds.

@@ -142,6 +142,14 @@ export interface RoomInfo {
   me: RoomMember;
 }
 /**
+ * MergeAgentRequest is the body of POST /agents/{id}/merge: the AI the one in the path is merged
+ * into. Both are the caller's; the first is deleted and everything it had moves to the second
+ * (MRG-01).
+ */
+export interface MergeAgentRequest {
+  into: string;
+}
+/**
  * ReactRequest is the body of POST /agent/messages/{id}/react: one emoji (REACT-01).
  */
 export interface ReactRequest {
@@ -411,9 +419,14 @@ export const ErrorCodeCounterpartDisabled = "counterpart_disabled";
  */
 export const ErrorCodeMembersRefused = "members_refused";
 /**
+ * ErrorCodeIdentityOnline is a merge of an AI that has a live session: it must be offline
+ * (409, MRG-02).
+ */
+export const ErrorCodeIdentityOnline = "identity_online";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeMembersRefused;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeMembersRefused | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */
