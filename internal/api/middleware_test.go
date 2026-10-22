@@ -270,3 +270,37 @@ func TestSessionCookieIsUserPrincipal(t *testing.T) {
 	require.Equal(t, "user", e.Kind)
 	require.Equal(t, f.adminID, e.UserID)
 }
+
+// PROF-06: an avatar upload is a raw image that may be larger than a JSON body: up to the
+// instance upload limit, and never below 2 MiB + 1 byte (so a 2 MiB file is accepted and a
+// larger one reaches the handler, which refuses it as an invalid avatar). Only PUT on the two
+// avatar routes gets this; every other route keeps the 1 MiB JSON limit.
+func TestAvatarUploadBodyLimit(t *testing.T) {
+	const upload = 3 << 20
+	f := newMWFixture(t, nil, upload)
+	send := func(method, path string, size int) *http.Response {
+		t.Helper()
+		return f.do(t, method, path, bytes.NewReader(bytes.Repeat([]byte("a"), size)), withBearer(f.user))
+	}
+	// The routes do not exist in this fixture: a body within the limit reaches the router (404).
+	for _, path := range []string{"/api/v1/intelligences/abc/avatar", "/api/v1/agent/profile/avatar"} {
+		require.Equal(t, http.StatusNotFound, send(http.MethodPut, path, 2<<20+1).StatusCode, path+": over 2 MiB still reaches the handler")
+		require.Equal(t, http.StatusNotFound, send(http.MethodPut, path, upload).StatusCode, path+": up to the upload limit")
+		requireErrorCode(t, send(http.MethodPut, path, upload+1), http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge)
+	}
+	for _, c := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/intelligences/abc/avatar"}, // another method
+		{http.MethodPut, "/api/v1/intelligences/abc"},         // the profile, not its avatar
+		{http.MethodPut, "/api/v1/rooms/abc/avatar"},          // another resource
+		{http.MethodPut, "/api/v1/agent/profile"},             // an agent route that is no upload
+	} {
+		requireErrorCode(t, send(c.method, c.path, httpx.MaxJSONBody+1), http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge)
+	}
+
+	small := newMWFixture(t, nil, 1<<20) // an upload limit under 2 MiB does not shrink avatars
+	big := func(size int) *http.Response {
+		return small.do(t, http.MethodPut, "/api/v1/intelligences/abc/avatar", bytes.NewReader(bytes.Repeat([]byte("a"), size)), withBearer(small.user))
+	}
+	require.Equal(t, http.StatusNotFound, big(2<<20+1).StatusCode)
+	requireErrorCode(t, big(2<<20+2), http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge)
+}

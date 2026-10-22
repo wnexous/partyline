@@ -243,3 +243,32 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
   `events.IntelligenceChanged`.
 - Not in T9: `PersonDetail` and the person's apps/conversations (T27), conversations of an AI
   (T22+), avatars (T10).
+
+## T10 - Avatar upload, serving and the agent profile endpoints (PROF-04, PROF-06, PROF-07)
+
+- `PUT /api/v1/intelligences/{id}/avatar`: raw image body (any `Content-Type`; the content is
+  sniffed), PNG, JPEG or WebP up to 2 MiB (`avatars.MaxBytes`), stored as a centre-cropped
+  256×256 PNG in the blob store (`attachments.Store.Put`, content-addressed) and referenced by
+  `intelligences.avatar_sha256`. 200 with the `IntelligenceProfile` (its `avatar_url` is
+  `/api/v1/intelligences/{id}/avatar?v=<sha256 of the stored PNG>`, `convert.AvatarURL`).
+  422 **`avatar_invalid`** (`dto.ErrorCodeAvatarInvalid`, from `avatars.ErrInvalid`) for another
+  format, a body over 2 MiB, an image that cannot be decoded or has a side over 4096 px: the old
+  avatar stays. The request body limit of avatar routes is the instance upload limit (at least
+  2 MiB + 1), not 1 MiB, so a file over 2 MiB is 422, one over the upload limit 413.
+  403 for a caller who can see but not edit, 404 for one who cannot see (checked before the
+  image is read).
+- `DELETE /api/v1/intelligences/{id}/avatar` → 204 (also when there is none); same rights.
+- `GET /api/v1/intelligences/{id}/avatar` → the PNG (`Content-Type: image/png`,
+  `Cache-Control: private, max-age=31536000, immutable`, `ETag: "<sha>"`, the API's
+  `nosniff` and `default-src 'none'` headers) for callers who `CanSee` the intelligence; 404
+  for everybody else and when there is no avatar.
+- `PATCH /api/v1/agent/profile` (`UpdateProfileRequest`) and `PUT /api/v1/agent/profile/avatar`
+  (raw image): the calling agent edits its own AI only (`agentOnly`: agent token + the agent
+  identity of the request; sessions and user tokens get 403, anonymous 401). They answer with the
+  `IntelligenceProfile` and use the same errors (409 `handle_taken`, 422).
+- Service: `Service.SetAvatar(ctx, p, id, r)`, `ClearAvatar`, `Avatar` (returns the open blob and
+  its sha); `intelligences.Deps.Blobs`. Both set and clear announce `IntelligenceChanged` and
+  `MembersChanged` for the member rooms.
+- Retention: `rooms.Service.Cleanup` and the room-delete blob cleanup count a blob as used when
+  an attachment **or** an avatar references it (`blobReferenced`), so a replaced or removed
+  avatar is swept after the one-hour grace period and the current one never is.

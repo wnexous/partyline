@@ -21,8 +21,8 @@ import (
 var ErrInvalid = errors.New("invalid avatar image")
 
 const (
-	// maxBytes is the upload limit from PROF-06 (2 MiB).
-	maxBytes = 2 << 20
+	// MaxBytes is the upload limit from PROF-06 (2 MiB).
+	MaxBytes = 2 << 20
 	// maxDimension bounds decoded dimensions before decoding (decompression bombs).
 	maxDimension = 4096
 	// size is the side of the stored avatar (PROF-07).
@@ -33,11 +33,11 @@ const (
 // 256x256 PNG, center-cropped to a square and scaled with CatmullRom. Any other
 // input returns ErrInvalid.
 func Process(r io.Reader) ([]byte, error) {
-	data, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
+	data, err := io.ReadAll(io.LimitReader(r, MaxBytes+1))
 	if err != nil {
 		return nil, ErrInvalid
 	}
-	if len(data) > maxBytes {
+	if len(data) > MaxBytes {
 		return nil, ErrInvalid
 	}
 	switch http.DetectContentType(data) {

@@ -18,6 +18,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/avatars"
 	"github.com/wnexous/partyline/internal/users"
 )
 
@@ -138,12 +139,17 @@ func clientIP(trusted []netip.Prefix, next http.Handler) http.Handler {
 }
 
 // bodyLimit caps request bodies at 1 MiB, or at the upload limit plus 1 MiB of envelope for
-// multipart requests (SEC-03).
+// multipart requests (SEC-03). An avatar upload is a raw image: it may use the upload limit
+// (at least 2 MiB and one byte), so that a file over 2 MiB reaches the handler and is refused
+// as an invalid avatar (PROF-06).
 func bodyLimit(maxUpload int64, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		limit := int64(httpx.MaxJSONBody)
 		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err == nil && mt == "multipart/form-data" {
 			limit += maxUpload
+		}
+		if isAvatarUpload(r) {
+			limit = max(maxUpload, avatars.MaxBytes+1)
 		}
 		if r.ContentLength > limit {
 			httpx.WriteError(w, httpx.NewError(http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge, "request body too large"))
@@ -152,6 +158,17 @@ func bodyLimit(maxUpload int64, next http.Handler) http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isAvatarUpload reports whether r uploads an avatar image: PUT /intelligences/{id}/avatar or
+// PUT /agent/profile/avatar.
+func isAvatarUpload(r *http.Request) bool {
+	if r.Method != http.MethodPut {
+		return false
+	}
+	path := r.URL.Path
+	return path == agentPathPrefix+"profile/avatar" ||
+		(strings.HasPrefix(path, "/api/v1/intelligences/") && strings.HasSuffix(path, "/avatar"))
 }
 
 var errUnauthorized = httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "invalid or expired credentials")

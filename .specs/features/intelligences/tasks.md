@@ -268,11 +268,11 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PROF-04, PROF-06, PROF-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Upload → 256×256 PNG served to users who can see the intelligence, 404 to others; headers `nosniff`, CSP, cache (PROF-07)
-- [ ] Invalid upload → 422 `avatar_invalid` and the old avatar is still served (PROF-06)
-- [ ] An agent token updates its own AI's display name, handle, bio and avatar (PROF-04 server side); it cannot edit another AI
-- [ ] A replaced avatar's blob is swept after the grace period; the current one is kept
-- [ ] Gate check passes: `make check`
+- [x] Upload → 256×256 PNG served to users who can see the intelligence, 404 to others; headers `nosniff`, CSP, cache (PROF-07)
+- [x] Invalid upload → 422 `avatar_invalid` and the old avatar is still served (PROF-06)
+- [x] An agent token updates its own AI's display name, handle, bio and avatar (PROF-04 server side); it cannot edit another AI
+- [x] A replaced avatar's blob is swept after the grace period; the current one is kept
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): upload and serve avatars`

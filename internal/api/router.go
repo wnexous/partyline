@@ -12,6 +12,7 @@ import (
 	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/avatars"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/devices"
@@ -87,6 +88,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.adminRoutes(mux)
 	s.roomRoutes(mux)
 	s.intelligenceRoutes(mux)
+	s.avatarRoutes(mux)
 	s.agentRoutes(mux)
 	s.agentAPIRoutes(mux)
 	s.connectorRoutes(mux)
@@ -188,6 +190,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent not registered: connect the channel first")
 	case errors.Is(err, access.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
+	case errors.Is(err, avatars.ErrInvalid):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeAvatarInvalid, "the avatar must be a PNG, JPEG or WebP image up to 2 MB")
 	case errors.Is(err, intelligences.ErrHandleTaken):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHandleTaken, "handle already taken")
 	case errors.Is(err, rooms.ErrAlreadyMember):

@@ -1,9 +1,12 @@
 package intelligences
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"io"
+	"os"
 	"strings"
 	"time"
 	"unicode"
@@ -11,7 +14,9 @@ import (
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/avatars"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/store"
@@ -166,6 +171,8 @@ type Deps struct {
 	Store  *store.Store
 	Access *access.Authorizer
 	Bus    *events.Bus
+	// Blobs stores the avatars.
+	Blobs *attachments.Store
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
 }
@@ -175,6 +182,7 @@ type Service struct {
 	store *store.Store
 	az    *access.Authorizer
 	bus   *events.Bus
+	blobs *attachments.Store
 	now   func() time.Time
 }
 
@@ -183,7 +191,7 @@ func New(d Deps) *Service {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Service{store: d.Store, az: d.Access, bus: d.Bus, now: d.Now}
+	return &Service{store: d.Store, az: d.Access, bus: d.Bus, blobs: d.Blobs, now: d.Now}
 }
 
 // Profile is an intelligence as one caller reads it.
@@ -382,6 +390,25 @@ func (s *Service) sharesConversation(ctx context.Context, userID, iid string) (b
 	return false, nil
 }
 
+// editable resolves the intelligence and requires the caller to edit it: access.ErrNotFound
+// without view, access.ErrForbidden with view but no edit.
+func (s *Service) editable(ctx context.Context, p authn.Principal, id string) (db.GetIntelligenceWithRoleRow, error) {
+	d, err := s.detail(ctx, id)
+	if err != nil {
+		return d, err
+	}
+	see, edit, err := s.rights(ctx, p, d)
+	switch {
+	case err != nil:
+		return d, err
+	case !see:
+		return d, access.ErrNotFound
+	case !edit:
+		return d, access.ErrForbidden
+	}
+	return d, nil
+}
+
 // ProfileUpdate holds the changes to a profile; nil fields are unchanged.
 type ProfileUpdate struct {
 	DisplayName *string // 1-64 code points after trimming
@@ -427,19 +454,9 @@ func (in ProfileUpdate) validate() (valid, error) {
 // handle in use is ErrHandleTaken (PROF-10). A change announces IntelligenceChanged, and
 // MembersChanged for the rooms the intelligence is a member of when its name or handle changed.
 func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in ProfileUpdate) (Profile, error) {
-	d, err := s.detail(ctx, id)
+	d, err := s.editable(ctx, p, id)
 	if err != nil {
 		return Profile{}, err
-	}
-	see, edit, err := s.rights(ctx, p, d)
-	if err != nil {
-		return Profile{}, err
-	}
-	switch {
-	case !see:
-		return Profile{}, access.ErrNotFound
-	case !edit:
-		return Profile{}, access.ErrForbidden
 	}
 	v, err := in.validate()
 	if err != nil {
@@ -511,4 +528,85 @@ func mirrorDisplayName(ctx context.Context, q *db.Queries, role Role, id, name s
 		return q.SetAgentDisplayName(ctx, db.SetAgentDisplayNameParams{DisplayName: name, ID: id})
 	}
 	return nil
+}
+
+// SetAvatar replaces the avatar of an intelligence the caller can edit with the image read from
+// r: PNG, JPEG or WebP up to 2 MiB, stored centre-cropped as a 256x256 PNG (PROF-06, PROF-07).
+// An image that is not acceptable is avatars.ErrInvalid and the old avatar stays.
+func (s *Service) SetAvatar(ctx context.Context, p authn.Principal, id string, r io.Reader) (Profile, error) {
+	if _, err := s.editable(ctx, p, id); err != nil {
+		return Profile{}, err
+	}
+	img, err := avatars.Process(r)
+	if err != nil {
+		return Profile{}, err
+	}
+	sha, _, err := s.blobs.Put(bytes.NewReader(img), int64(len(img)))
+	if err != nil {
+		return Profile{}, err
+	}
+	return s.storeAvatar(ctx, p, id, sha)
+}
+
+// ClearAvatar removes the avatar of an intelligence the caller can edit; the UI shows initials
+// again (PROF-08). Removing a missing avatar is not an error.
+func (s *Service) ClearAvatar(ctx context.Context, p authn.Principal, id string) error {
+	if _, err := s.editable(ctx, p, id); err != nil {
+		return err
+	}
+	_, err := s.storeAvatar(ctx, p, id, "")
+	return err
+}
+
+// storeAvatar points the intelligence at the avatar blob sha ("" for none) and announces the
+// change. The replaced blob stays until the retention sweep finds nothing referencing it.
+func (s *Service) storeAvatar(ctx context.Context, p authn.Principal, id, sha string) (Profile, error) {
+	var changed bool
+	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+		cur, err := q.GetIntelligence(ctx, id)
+		if err != nil {
+			return err
+		}
+		if cur.AvatarSha256 == sha {
+			return nil
+		}
+		changed = true
+		return q.SetIntelligenceAvatar(ctx, db.SetIntelligenceAvatarParams{AvatarSha256: sha, UpdatedAt: s.now().UnixMilli(), ID: id})
+	})
+	if err != nil {
+		return Profile{}, err
+	}
+	if changed {
+		Announce(ctx, s.bus, s.store.R(), id, true) // member lists show avatars
+	}
+	d, err := s.detail(ctx, id)
+	if err != nil {
+		return Profile{}, err
+	}
+	return s.profile(ctx, p, d, true)
+}
+
+// Avatar opens the stored avatar PNG of an intelligence the caller can see, with its content
+// hash. Without view, without an avatar or with a blob that is gone it is access.ErrNotFound.
+func (s *Service) Avatar(ctx context.Context, p authn.Principal, id string) (*os.File, string, error) {
+	d, err := s.detail(ctx, id)
+	if err != nil {
+		return nil, "", err
+	}
+	see, _, err := s.rights(ctx, p, d)
+	if err != nil {
+		return nil, "", err
+	}
+	sha := d.Intelligence.AvatarSha256
+	if !see || sha == "" {
+		return nil, "", access.ErrNotFound
+	}
+	f, err := s.blobs.Open(sha)
+	if errors.Is(err, attachments.ErrNotFound) {
+		return nil, "", access.ErrNotFound
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	return f, sha, nil
 }

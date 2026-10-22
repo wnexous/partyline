@@ -50,8 +50,7 @@ func (s *Service) Cleanup(ctx context.Context) (CleanupResult, error) {
 		return res, nil
 	}
 	removed, err := s.blobs.Sweep(now.Add(-blobGrace), func(sha string) (bool, error) {
-		n, err := s.store.R().CountAttachmentsBySHA(ctx, sha)
-		return n > 0, err
+		return s.blobReferenced(ctx, sha)
 	})
 	res.Blobs = removed
 	return res, err
@@ -93,6 +92,16 @@ func (s *Service) RunRetention(ctx context.Context, interval time.Duration, log 
 	}
 }
 
+// blobReferenced reports whether an attachment or an intelligence's avatar uses the blob.
+func (s *Service) blobReferenced(ctx context.Context, sha string) (bool, error) {
+	n, err := s.store.R().CountAttachmentsBySHA(ctx, sha)
+	if err != nil || n > 0 {
+		return n > 0, err
+	}
+	n, err = s.store.R().CountIntelligenceAvatar(ctx, sha)
+	return n > 0, err
+}
+
 // removeRoomBlobs deletes, best effort, the blobs of a deleted room that no attachment
 // references any more (ROOM-02); the retention sweep remains the backstop.
 func (s *Service) removeRoomBlobs(ctx context.Context, shas []string) {
@@ -101,8 +110,7 @@ func (s *Service) removeRoomBlobs(ctx context.Context, shas []string) {
 	}
 	cutoff := s.now().Add(-deleteBlobGrace)
 	for _, sha := range shas {
-		n, err := s.store.R().CountAttachmentsBySHA(ctx, sha)
-		if err != nil || n > 0 {
+		if used, err := s.blobReferenced(ctx, sha); err != nil || used {
 			continue
 		}
 		_, _ = s.blobs.DeleteIfOlder(sha, cutoff)

@@ -154,7 +154,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Access:        az,
 		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
 		Blobs:         blobs,
-		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now}),
+		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Blobs: blobs, Now: opts.Now}),
 		now:           opts.Now,
 	}
 	a.Presence = presence

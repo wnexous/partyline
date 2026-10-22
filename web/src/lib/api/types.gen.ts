@@ -324,10 +324,11 @@ export const ErrorCodeRateLimited = "rate_limited"; // 429
 export const ErrorCodeInternal = "internal"; // 500
 export const ErrorCodeUnavailable = "unavailable"; // 503, or 502 when a connector's platform failed
 export const ErrorCodeHandleTaken = "handle_taken"; // 409, the @handle belongs to another intelligence
+export const ErrorCodeAvatarInvalid = "avatar_invalid"; // 422, the avatar is not an acceptable image
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid;
 /**
  * ErrorBody is the envelope of every error response.
  */
