@@ -560,7 +560,13 @@ func TestToolUpdateProfileSetsTheAvatarFromAFile(t *testing.T) {
 
 	webp, err := os.ReadFile("../avatars/testdata/tiny.webp")
 	require.NoError(t, err)
-	for name, data := range map[string][]byte{"jpeg": encodeJPEG(t, bands(300, 300)), "webp": webp} {
+	// A fixed order: the WebP fixture is solid green, the same picture as the first PNG's middle
+	// square, so it must follow the three-band JPEG to be a new avatar.
+	for _, f := range []struct {
+		name string
+		data []byte
+	}{{"jpeg", encodeJPEG(t, bands(300, 300))}, {"webp", webp}} {
+		name, data := f.name, f.data
 		text, isErr = s.call("update_profile", toolArgs("display_name", "Atlas "+name, "avatar_path", writeFile(t, dir, "avatar."+name, data)))
 		require.False(t, isErr, "%s: %s", name, text)
 		got := decodeText[profileAnswer](t, text)
