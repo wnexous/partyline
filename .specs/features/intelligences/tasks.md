@@ -706,9 +706,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: SES-01, SES-02, SES-03, SES-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Live identity + terminal → exact prompt text with display name, app and HH:MM (SES-01); `y` → harness exec'd with `PARTYLINE_TAKEOVER=1` and the old session closed `taken_over` (SES-02); `n`/enter/EOF → exit 1, harness not started (SES-03)
-- [ ] No terminal → no prompt, started without takeover unless `--take-over` or `PARTYLINE_TAKEOVER=1` (SES-07); server unreachable → started without asking
-- [ ] Gate check passes: `make check`
+- [x] Live identity + terminal → exact prompt text with display name, app and HH:MM (SES-01); `y` → harness exec'd with `PARTYLINE_TAKEOVER=1` and the old session closed `taken_over` (SES-02); `n`/enter/EOF → exit 1, harness not started (SES-03)
+- [x] No terminal → no prompt, started without takeover unless `--take-over` or `PARTYLINE_TAKEOVER=1` (SES-07); server unreachable → started without asking
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): ask before taking over a live session`

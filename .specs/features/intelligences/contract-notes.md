@@ -652,3 +652,47 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
 - Spec-faithful deviations: registered-but-not-detected harnesses start checked (the spec only
   names detected unregistered ones); `--remove` alone does not register the detected ones;
   `--harness` and `--all-detected` together are a usage error.
+
+## T36 - Takeover prompt in the launcher (SES-01, SES-02, SES-03, SES-07)
+
+- **Flags**: leading `--take-over` (bare, anywhere among the leading flags) is consent to take
+  the AI's live session over; it is stripped from the harness's arguments. `--as` (and
+  `--name`, unchanged alias) and the ignored `--project` keep their T15 behaviour, including
+  the `--project is ignored: an AI is identified by its folder` line; `--name` gains no notice
+  (the T15 contract only documents the alias). `partyline --help` names `--take-over`.
+- **Folder**: the lookup asks about the folder the session is being started in, i.e. the
+  launcher's canonical working directory. An inherited `PARTYLINE_FOLDER` is not used (as for
+  the folder the launcher passes to the harness). The request sends the same folder headers as
+  every process (`X-Partyline-Machine/-Folder/-Home/-Harness/-Adopt`, folder and home
+  `url.PathEscape`d) with the `Authorization: Bearer` token; the harness header is the launcher
+  id.
+- **Credentials**: `cliconfig.Resolve` (no flags: `PARTYLINE_URL`/`PARTYLINE_TOKEN`, else the
+  saved config). Without a URL or token, or when the config cannot be read, the launcher asks
+  nothing and starts the harness; the channel then reports whatever it finds.
+- **Lookup**: `GET /api/v1/agent/session` with a 2 s timeout (`launcherSessionTimeout`). Any
+  failure (unreachable, timeout, non-200, invalid JSON) starts the harness without asking.
+- **Prompt** (SES-01..03): only for harnesses that open a live session (`claude`, `opencode`,
+  `pi`, `omp`), only when the AI is online and **both** stdin (fd 0) and stderr (fd 2) are
+  terminals. Text, on stderr, with no trailing newline:
+  `<display name> is open in another session (<app label>, since <HH:MM>). Take over? [y/N] `.
+  The app label is `agents.HarnessLabel` of `SessionState.App` (the same label the busy text
+  uses, not the harness id); HH:MM is `connected_at` in the launcher's local zone (`stdio.now`'s
+  location; `time.Local` in production), and `time.Now` only if the server omitted it. The
+  display name falls back to `This intelligence` when the ref is absent.
+- **Answer** (SES-02, SES-03): `y`/`yes` in any case → start with `PARTYLINE_TAKEOVER=1`;
+  every other answer, an empty line or EOF → exit **1** and start nothing. Terminal check:
+  `stdio.isTerminal(0) && stdio.isTerminal(2)` (nil: `term.IsTerminal`).
+- **Consent without asking** (SES-07): `--take-over` or `PARTYLINE_TAKEOVER=1` skips both the
+  lookup and the prompt and sets `PARTYLINE_TAKEOVER=1`. Without a terminal the launcher does
+  not ask and starts without takeover; a live session then makes the channel report busy.
+  Without consent an inherited `PARTYLINE_TAKEOVER` is dropped from the harness environment
+  (a restart never takes over by accident).
+- **Codex and Gemini** (design Spec issue 6, confirmed): they never take over, and
+  `--take-over`/`PARTYLINE_TAKEOVER` have no effect on them (the environment variable is
+  dropped). When the lookup says the AI is online they print one line to stderr and start:
+  `<display name> is also open in another session (<app label>, since <HH:MM>); this session
+  uses tools only`.
+- **Seams**: `stdio.isTerminal`, `stdio.stdin`, `stdio.now` (zone) and `stdio.sessionHTTP`;
+  tests never exec a real harness (`stdio.exec`) and use `testkit` for the end-to-end takeover.
+  The environment still carries `PARTYLINE_FOLDER`, `PARTYLINE_HARNESS`,
+  `PARTYLINE_TAKEOVER` (only when taking over) and `PARTYLINE_AGENT`.
