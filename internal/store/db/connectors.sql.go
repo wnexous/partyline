@@ -97,7 +97,7 @@ func (q *Queries) GetAutoRouteSkip(ctx context.Context, arg GetAutoRouteSkipPara
 }
 
 const getChatAutoRoute = `-- name: GetChatAutoRoute :one
-SELECT k.id AS connector_id, k.auto_route_room_id
+SELECT k.id AS connector_id, k.auto_route_room_id, k.auto_route_scope
 FROM chats c JOIN connectors k ON k.id = c.connector_id
 WHERE c.id = ?
 `
@@ -105,12 +105,13 @@ WHERE c.id = ?
 type GetChatAutoRouteRow struct {
 	ConnectorID     string
 	AutoRouteRoomID sql.NullString
+	AutoRouteScope  string
 }
 
 func (q *Queries) GetChatAutoRoute(ctx context.Context, id string) (GetChatAutoRouteRow, error) {
 	row := q.db.QueryRowContext(ctx, getChatAutoRoute, id)
 	var i GetChatAutoRouteRow
-	err := row.Scan(&i.ConnectorID, &i.AutoRouteRoomID)
+	err := row.Scan(&i.ConnectorID, &i.AutoRouteRoomID, &i.AutoRouteScope)
 	return i, err
 }
 

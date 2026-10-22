@@ -622,9 +622,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: ACC-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Scope `groups`/`all`: first message of a new group chat creates one group with the operator (AI member or user) and the bridged chat; the operator AI receives it and its reply goes back (ACC-06)
-- [ ] Scope `dms` leaves group chats unrouted; the 60/hour cap still applies
-- [ ] Gate check passes: `make check`
+- [x] Scope `groups`/`all`: first message of a new group chat creates one group with the operator (AI member or user) and the bridged chat; the operator AI receives it and its reply goes back (ACC-06)
+- [x] Scope `dms` leaves group chats unrouted; the 60/hour cap still applies
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): turn new group chats into groups`

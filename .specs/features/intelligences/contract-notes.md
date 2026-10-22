@@ -1280,3 +1280,38 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   and without connector access, a never-routed person, strangers and the owner before/after the change;
   clearing the room keeps the scope; deleting the catch-all room stops routing at once with a live
   status.
+
+## T31 - New group chats become groups (ACC-06)
+
+- **Group and channel chats** of a connector in per-chat mode (scope `groups` or `all`, no catch-all
+  room, see T30) that belong to no room get **a group of their own** on their first message
+  (`Pipeline.autoGroup`, `route`): `rooms.CreateWithMembers(owner = the connector's owner, name =
+  roomName(chat, kind))` (the chat title cut to 100 characters, else "<Platform> chat"), broadcast on,
+  chat bridging off, 90 days of retention, no instructions, with the **operator** as a member (the owner's
+  AI as an `agent` member with delivery `all`, or the owner as a `user` member) and the **chat** with
+  outbound on. The operator therefore receives the chat's messages (trusted only when the sender is
+  verified as the AI's owner) and an AI's reply is queued for the chat (broadcast); the owner manages the
+  group by ownership. Members are checked with the owner's add-member rules first; if the owner can no
+  longer add one of them the connector reports `auto-route room unavailable` and the message is not
+  stored. `room.changed`/`room.members` are published by `CreateWithMembers`.
+- A chat that already belongs to **any** room is left as it is (the owner routed it, or it has its
+  group). The operator is a member of the group **as of its creation**: changing the operator later does
+  not edit existing groups (DMs follow the operator, T30; groups are the owner's to manage).
+- **Cap and serialization**: groups and DMs share the connector's 60 new routes per hour
+  (`routeState`); at the cap the message is not stored, the detail is `auto-route limit reached`, a new
+  chat is not recorded, a known one is, and the next successful route clears the detail. The connector's
+  routes are serialized and the chat and its rooms are read again under the lock (`ListChatRooms`), so
+  concurrent first messages make one group. The `routeHook` test seam runs before the chat is recorded.
+- **Waiting after a removal (ROUTE-02's edge case, extended)**: a chat taken out of a room of a
+  per-chat connector (`rooms.skipAutoRoute`: the catch-all room as before, or any room when the connector
+  has a scope on and no catch-all room) is not given a group for 24 hours (`auto_route_skips`); a manager
+  may add it back at once. Without it the next message would have made another group immediately. DMs
+  cannot lose their chat (members are fixed) and re-homing deletes the member row directly, so they are
+  never skipped. `GetChatAutoRoute` also returns the scope.
+- Code layout: the whole automatic routing (catch-all, per-chat DMs and groups, the status details and
+  the caps) now lives in `internal/connectors/autoroute.go`; `inbound.go` keeps the pipeline and the
+  author resolution. Nothing else moved.
+- Tests (`internal/connectors/auto_groups_test.go`): a group chat becomes a group (name, owner, members,
+  broadcast, the AI's frame and reply), channel chats, owner as operator, untitled and over-long titles,
+  scopes dms/off, a chat in a room by hand, a catch-all connector, the concurrent burst, the cap shared
+  with DMs (30 + 30), and the 24-hour wait after a removal with a manager adding the chat back.

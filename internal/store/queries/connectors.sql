@@ -50,7 +50,7 @@ INSERT INTO auto_route_skips (connector_id, chat_id, until) VALUES (?, ?, ?)
 ON CONFLICT (connector_id, chat_id) DO UPDATE SET until = excluded.until;
 
 -- name: GetChatAutoRoute :one
-SELECT k.id AS connector_id, k.auto_route_room_id
+SELECT k.id AS connector_id, k.auto_route_room_id, k.auto_route_scope
 FROM chats c JOIN connectors k ON k.id = c.connector_id
 WHERE c.id = ?;
 
