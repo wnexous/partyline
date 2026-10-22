@@ -101,6 +101,26 @@
 - **Date**: 2026-10-21
 - **Status**: active
 
+### AD-013
+- **Decision**: A user granted `use` on an AI reads that AI's DMs with external people (the platform DMs between the people who write to a connector account and the AI that operates it) and those people's profiles and avatars (name, platform, the conversations the user can view), without any access to the connector. The grantee cannot edit the person or see the account behind it: both stay with the users of the connector. Nobody else sees a person: not a user who has neither the AI grant nor the connector, and not an admin.
+- **Reason**: Sharing an AI shares the conversations it holds. A grantee who may read an AI's DMs sees who writes to it, and the owner chose that grantee. Asking for the connector as well would hide an AI's own conversations from the users it was shared with.
+- **Trade-off**: A grantee reads what people wrote to the owner's account and sees their names and photos without connector access; the owner controls this through who gets `use` on the AI. The alternative, `CanUseConnector` for every DM that has a chat member, was rejected.
+- **Scope**: access (DM-08), intelligences (PEOP-03, PEOP-04), web-app.
+- **Date**: 2026-10-22 (decided by André)
+- **Status**: active
+- **Amends**: AD-011 (who views a DM); PEOP-04 and DM-08 of the intelligences spec now say it.
+- **Context**: Verifier iteration 1 of the intelligences feature (gap 3): PEOP-04 ("nobody else") and DM-08 ("use grantees view") contradicted each other. Pinned by `TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople`.
+
+### AD-014
+- **Decision**: A message written from a connector's own account on the platform itself (typed on its phone or web client, not the echo of a Partyline send, ACC-05) is trusted by the owner's AIs as the owner's only when the connector's operator is the owner, a user. When an AI operates the account the message is authored by that AI, carries no user and is never trusted as the owner's. Echoes of Partyline's own sends are still dropped, and AIs of other users never trust it.
+- **Reason**: The owner's own account is the owner's: what is typed on it is the owner. An AI's account may be held by anyone with its phone or session, so the text proves nothing about who wrote it, and AD-006 makes trust depend on a resolved owner.
+- **Trade-off**: The owner who types on an AI's account is not recognised as the owner by that AI (or the owner's other AIs) and must write from the web app or from a verified chat identity. A catch-all connector now stores these messages where CON-12 dropped them.
+- **Scope**: connectors (ACC-05), delivery (`trusted`), agent-channel.
+- **Date**: 2026-10-22 (decided by André)
+- **Status**: active
+- **Amends**: AD-006 (adds this source of `trusted`); ACC-05 refines CON-12 of the connectors spec: only the echo of a Partyline send is dropped.
+- **Context**: Verifier iteration 1 of the intelligences feature (gap 6): own-account messages were stored with `author_user_id` = the connector's owner whoever the operator was (contract-notes T33), a trust source AD-006 did not list. Pinned by `TestOwnAccountMessageIsTrustedOnlyWhenTheOwnerOperatesTheAccount`.
+
 ## Handoff
 
 - **Feature**: intelligences

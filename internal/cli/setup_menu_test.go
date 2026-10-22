@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -20,9 +22,15 @@ func loggedInSetup(t *testing.T) (home string, opts setupOpts) {
 	return home, setupOpts{env: map[string]string{"HOME": home}, hostname: "devbox"}
 }
 
+// resultLinesOf are the lines of a setup run that report the harness: ✓ for what worked, - for a
+// harness that is not registered and was left so, ✗ for a failure.
+func resultLinesOf(out, title string) []string {
+	return regexp.MustCompile(`(?m)^(?:✓|✗|-) `+regexp.QuoteMeta(title)+`: .+$`).FindAllString(ansi.ReplaceAllString(out, ""), -1)
+}
+
 // CLI-04: a menu apply registers the selected unregistered harnesses, removes Partyline from
 // the deselected registered ones, leaves the selected registered ones untouched and prints one
-// result line per changed harness. The fake runner records exactly the harness CLI calls.
+// result line per harness, changed or not. The fake runner records exactly the harness CLI calls.
 func TestSetupMenuAppliesTheChecklist(t *testing.T) {
 	home, opts := loggedInSetup(t)
 	calls := &harnessCalls{}
@@ -55,13 +63,80 @@ func TestSetupMenuAppliesTheChecklist(t *testing.T) {
 	require.Contains(t, r.stdout, "✓ Claude Code: registered\n")
 	require.Contains(t, r.stdout, "✓ Gemini CLI: registered\n")
 	require.Contains(t, r.stdout, "✓ pi: removed\n")
-	require.NotContains(t, r.stdout, "oh-my-pi (omp): ", "the untouched harness gets no result line")
+	require.Contains(t, r.stdout, "✓ oh-my-pi (omp): already registered\n", "an untouched registered harness still gets its line")
+	require.Contains(t, r.stdout, "- Codex CLI: not registered\n")
+	require.Contains(t, r.stdout, "- OpenCode: not registered\n")
+	for _, title := range []string{"Claude Code", "Codex CLI", "Gemini CLI", "OpenCode", "pi", "oh-my-pi (omp)"} {
+		require.Len(t, resultLinesOf(r.stdout, title), 1, "one result line for %s", title)
+	}
 	require.True(t, strings.HasSuffix(r.stdout, "\nStart a session with partyline claude.\n"), r.stdout)
 
 	require.NoFileExists(t, piConfig, "pi was removed and its config held nothing else")
 	omp, err := os.ReadFile(ompConfig)
 	require.NoError(t, err)
 	require.Contains(t, string(omp), "partyline", "omp was not touched")
+}
+
+// CLI-03, CLI-04 (L-045, M15): a harness that is registered but not installed starts checked, so a
+// plain Enter changes nothing and says so; unchecking it is what removes Partyline from it.
+func TestSetupMenuKeepsARegisteredHarnessThatIsNotInstalled(t *testing.T) {
+	home, opts := loggedInSetup(t)
+	claudeConfig := filepath.Join(home, ".claude.json")
+	require.NoError(t, os.WriteFile(claudeConfig, []byte(`{"mcpServers":{"partyline":{"command":"`+testBinary+`","args":["channel"]}}}`), 0o600))
+	calls := &harnessCalls{}
+	opts.lookPath, opts.run = installed(), calls.run // no harness CLI is installed
+	opts.terminal = true
+
+	opts.stdin = "\r"
+	r := runSetup(t, opts)
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, menuRows(r.stdout), "> [x] Claude Code  not installed · registered", "it starts checked")
+	require.Contains(t, r.stdout, "✓ Claude Code: already registered\n")
+	require.NotContains(t, r.stdout, "removed")
+	require.Empty(t, mutationCalls(calls.calls()), "Enter changed nothing")
+
+	opts.stdin = " \r" // uncheck it
+	r = runSetup(t, opts)
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, r.stdout, "✓ Claude Code: removed\n")
+	require.Equal(t, []string{"claude mcp remove --scope user partyline"}, mutationCalls(calls.calls()))
+}
+
+// CLI-03 (L-045): `a` checks the installed harnesses only; one that is not installed would fail to
+// register and stays unchecked.
+func TestSetupMenuAllChecksOnlyInstalledHarnesses(t *testing.T) {
+	_, opts := loggedInSetup(t)
+	calls := &harnessCalls{}
+	opts.lookPath, opts.run = installed("claude"), calls.run
+	opts.terminal = true
+	opts.stdin = " a\r" // uncheck the preselected claude, then a checks it again
+	r := runSetup(t, opts)
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Equal(t, []string{claudeAdd}, mutationCalls(calls.calls()), "only the installed harness is registered")
+	require.Contains(t, r.stdout, "✓ Claude Code: registered\n")
+	require.Contains(t, r.stdout, "- Codex CLI: not registered\n")
+	require.Empty(t, r.stderr)
+}
+
+// CLI-04 (L-045, M16): a harness that cannot be changed prints its error on stderr and setup exits 1;
+// the other harnesses are still applied and still reported.
+func TestSetupMenuExitsNonZeroWhenAHarnessFails(t *testing.T) {
+	_, opts := loggedInSetup(t)
+	calls := &harnessCalls{answer: func(line string) ([]byte, error) {
+		if strings.HasPrefix(line, "claude mcp add") {
+			return []byte("boom"), errors.New("exit status 1")
+		}
+		return nil, nil
+	}}
+	opts.lookPath, opts.run = installed("claude", "gemini"), calls.run
+	opts.terminal = true
+	opts.stdin = "\r" // the detected harnesses start checked
+	r := runSetup(t, opts)
+	require.Equal(t, 1, r.code, "a failed apply is not a success")
+	require.Contains(t, r.stderr, "✗ Claude Code: ")
+	require.Contains(t, r.stdout, "✓ Gemini CLI: registered\n", "the others are still applied")
+	require.Contains(t, mutationCalls(calls.calls()), geminiAdd)
+	require.NotContains(t, r.stdout, "Claude Code: registered")
 }
 
 // CLI-03 + CLI-04: q cancels the menu without changes and without harness calls.

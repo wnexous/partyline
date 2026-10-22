@@ -105,15 +105,22 @@ func (m Menu) Run() ([]bool, bool, error) {
 				selected[active] = !selected[active]
 			}
 		case keyAll:
-			all := true
-			for _, on := range selected {
-				if !on {
-					all = false
-					break
+			// Only installed items: one that is not installed cannot be registered, and one that is
+			// registered without being installed keeps its state.
+			all, installed := true, false
+			for i, item := range m.Items {
+				if item.Installed {
+					installed = true
+					all = all && selected[i]
 				}
 			}
-			for i := range selected {
-				selected[i] = !all
+			if !installed {
+				continue
+			}
+			for i, item := range m.Items {
+				if item.Installed {
+					selected[i] = !all
+				}
 			}
 		case keyApply:
 			return selected, true, nil

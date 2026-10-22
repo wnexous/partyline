@@ -98,6 +98,27 @@ func TestASecondSessionIsRefusedWhileTheFirstIsLive(t *testing.T) {
 	require.NoError(t, first.Closed(200*time.Millisecond), "and stays open")
 }
 
+// SES-04 (L-042): a connection that sends no X-Partyline-Live header is a process of its own: two
+// of them for one AI are two processes, the second is refused with 409 identity_busy before the
+// upgrade and the first stays live, receives and is not replaced.
+func TestTwoConnectionsWithoutAProcessIDAreTwoProcesses(t *testing.T) {
+	l := newLiveEnv(t)
+	require.Empty(t, acme.Headers().Get(dto.HeaderLive), "the folder carries no process id")
+	first, resp := l.tok.DialAgentHeaders(acme.Headers())
+	require.NotNil(t, first, "upgrade refused: %d %s", resp.Status, resp.Body)
+	id := first.Welcome(wsWait).Agent.ID
+	l.addMember(t, id)
+
+	second, resp := l.tok.DialAgentHeaders(acme.Headers())
+	require.Nil(t, second)
+	resp.RequireError(http.StatusConflict, dto.ErrorCodeIdentityBusy)
+
+	require.True(t, l.env.App.Presence.Online(id))
+	m := l.post(t, "still here?")
+	require.Equal(t, m.ID, first.Message(wsWait).Message.ID, "the first connection keeps receiving")
+	require.NoError(t, first.Closed(200*time.Millisecond), "and is not replaced")
+}
+
 // SES-04: the refusal is only for the AI that is held: another folder, or the same folder on
 // another machine, is another AI and connects at the same time.
 func TestBusyOnlyBlocksTheSameAI(t *testing.T) {

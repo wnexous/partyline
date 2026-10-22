@@ -148,6 +148,9 @@ func TestProcessRejectsInvalidInputs(t *testing.T) {
 	oversized := make([]byte, 2<<20+1)
 	copy(oversized, valid)
 	tooWide := encodePNG(t, image.NewRGBA(image.Rect(0, 0, 5000, 10)))
+	tooTall := encodePNG(t, image.NewRGBA(image.Rect(0, 0, 10, 5000)))
+	oneTooWide := encodePNG(t, image.NewRGBA(image.Rect(0, 0, 4097, 1)))
+	oneTooTall := encodePNG(t, image.NewRGBA(image.Rect(0, 0, 1, 4097)))
 
 	var gifBuf bytes.Buffer
 	if err := gif.Encode(&gifBuf, image.NewRGBA(image.Rect(0, 0, 10, 10)), nil); err != nil {
@@ -163,6 +166,9 @@ func TestProcessRejectsInvalidInputs(t *testing.T) {
 		{"truncated png", truncated},
 		{"two mebibytes plus one", oversized},
 		{"too wide", tooWide},
+		{"too tall", tooTall},
+		{"one pixel too wide", oneTooWide},
+		{"one pixel too tall", oneTooTall},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -201,6 +207,15 @@ func TestProcessRejectsUnreadableInput(t *testing.T) {
 func TestProcessAcceptsMaximumDimension(t *testing.T) {
 	// 4096 is the inclusive bound from the decompression-bomb guard.
 	out, err := avatars.Process(bytes.NewReader(encodePNG(t, image.NewRGBA(image.Rect(0, 0, 4096, 1)))))
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	decodeOutput(t, out)
+}
+
+func TestProcessAcceptsMaximumHeight(t *testing.T) {
+	// The bound is the same for the height: 4096 is accepted, 4097 is not (see the invalid inputs).
+	out, err := avatars.Process(bytes.NewReader(encodePNG(t, image.NewRGBA(image.Rect(0, 0, 1, 4096)))))
 	if err != nil {
 		t.Fatalf("Process: %v", err)
 	}

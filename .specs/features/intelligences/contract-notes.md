@@ -1483,7 +1483,8 @@ T47-T49 pages.
   `author_kind chat`, `author_id` the chat, `author_iid` the operator (`operator_iid`, else the owner, read
   from the connector when the message is handled, so a change applies at once), `author_user_id` the
   connector's **owner**. The owner's own account is the owner's, so the owner's AIs get it **trusted**
-  whoever the operator is (AD-006); AIs of other users do not. `sender_id`, `sender_alt_id` and
+  whoever the operator is (AD-006); AIs of other users do not. **Superseded by T59 / AD-014:** only
+  when the owner operates the account; an AI operator's messages carry no user. `sender_id`, `sender_alt_id` and
   `sender_name` stay what the platform gave (the account), which replies need for quoting.
 - **Rendering:** a chat message authored by an AI (`author_iid` of kind `ai`, i.e. an AI operating the
   account) now has `author.role = ai` (`convert.messageAuthor`); before, a chat message was only a `user`
@@ -2447,3 +2448,329 @@ Recorded in `uat.md`; no code changed. Every checklist item passed against Claud
   Not fixed here: it is a change to what the model is told with an effect only a real model can
   show, so the proposal (a sentence in `conversationNote`, a test on the text, several fresh-session
   repeats) stays in `uat.md` for the coordinator to schedule.
+
+## T56 - Merge keeps what the surviving AI and the counterpart have not received or read (MRG-01)
+
+Phase 10 (Verifier fixes, iteration 1) repairs the defect of `validation.md` gap 1: appending a
+merged DM to the survivor's DM with the same counterpart credited the merged AI's cursor, renumbered
+past the survivor's own history, to the survivor (and the counterpart's read cursor the same way),
+so the survivor's undelivered messages and the counterpart's unread ones were skipped for good.
+
+- **Rule.** `appendDM` moves a party's cursor of the merged DM into the surviving DM, to the
+  renumbered position and with the larger of the two cursors winning, **only when that party was up
+  to date in the surviving DM before the merge**. Otherwise its cursor stays. The check runs before
+  the history is appended, once per holder: the merged AI's cursor belongs to the survivor, a
+  counterpart AI's to itself (M19), a read cursor to its user (the counterpart or the owner who
+  viewed the DM).
+- **Up to date means nothing pending, not cursor at the last number.** An AI is up to date when no
+  message after its cursor was written by someone else (`CountAgentBacklog`, the backlog's own
+  predicate; an AI that never received anything is at 0); a user when `CountUnreadByRoom` has no row
+  for the room (the same count as the sidebar, read baseline included). An AI that answered last has
+  its cursor below its own message and a user whose own message is the newest has a read cursor below
+  it, so "cursor at the last number" would leave both behind and the merge would deliver the whole
+  history of the merged AI again and mark it unread. `TestMergeMovesTheCursorsOfPartiesThatWereUpToDate`
+  asserts that.
+- **At-least-once for the rest.** A party that was not up to date keeps its cursor and so receives
+  (or sees as unread) everything after it in the merged DM: its own pending messages, the notice and
+  the merged history, including what the merged AI had already received. That is a duplicate at worst;
+  the old rule lost messages. The unread count of such a user therefore includes the merged history.
+- **Unchanged.** Re-keyed DMs (the survivor had none with that counterpart) keep their rows and
+  cursors as they are; group cursors still take the larger of the two (`MergeAgentGroupCursors`).
+- **Tests** (`internal/api/merge_test.go`): `TestMergeKeepsWhatTheSurvivorHasNotReceivedOrRead` (the
+  Verifier's reproduction: two undelivered messages, cursor 0 before and after, the user's read cursor
+  stays 0), `TestMergeMovesTheCursorsOfPartiesThatWereUpToDate` (own message last for an AI and for a
+  user), `TestMergeCreditsEachAICursorToItself` (counterpart AI, M19); the old
+  `TestMergeCarriesDirectMessages` passes unchanged. Scratch copy: the old behaviour (always advance)
+  fails the first, M19 fails the third, a variant that counts the party's own trailing message as
+  pending fails the second for AIs and for users.
+
+## T57 - A takeover never replays what the old session acknowledged (SES-02, SES-05)
+
+`validation.md` gap 2 and the intermittent `make check-race` failure of
+`TestTakenOverChannelNotifiesOnceAndDeliversNothingMore` (3 of 30 runs under `-race` before this fix).
+
+- **Cause.** `Gateway.run` drops a live push whose number is at or below `sent[room]`, but `sent` held
+  only the messages the reconnect backlog had just sent. When the old session had already acknowledged
+  a message, the new session's backlog sent nothing for that room, `sent[room]` stayed 0 and the
+  dispatcher, still handing the same message on, delivered it to the new session a second time. Under
+  load the dispatcher is slower than the takeover, which is how the test saw the earlier message
+  instead of the later one.
+- **Fix.** `backlog` starts `sent[room]` at the AI's cursor (`RoomState.Cursor`) for every room of the
+  AI, paused ones included. What the cursor covers was received, or skipped on purpose (an unwanted
+  message, the skipped notice), by an earlier connection, so a live push at or below it is dropped.
+  Messages above the cursor are unchanged: the backlog sends them and `sent` follows. The same holds for
+  a plain reconnect of the same process.
+- **Not changed.** Delivery stays at-least-once for an unacknowledged message: it is above the cursor,
+  so the new session receives it from its backlog (and the late push of it is dropped as before).
+- **Test.** `TestTakeoverDropsALatePushOfAnAcknowledgedMessage` (`internal/agents/gateway_live_test.go`):
+  holder session receives and acknowledges a message, a second session takes the AI over, the test
+  pushes the message again through `Gateway.Push` as the dispatcher would and expects no frame, then a
+  new message arrives. It fails on the previous code (the late push is delivered). The channel test
+  passed `go test -race -count=100` and `-count=30`.
+
+## T58 - Record AD-013: use grantees of an AI see its DMs with people (PEOP-04, DM-08)
+
+`validation.md` gap 3. PEOP-04 said "nobody else" sees a connector's people; DM-08 gives the users
+granted `use` on an AI `view` on all of its DMs, and a platform DM has the person as a participant, so a
+grantee read the DM, the person's profile and its avatar without any access to the connector. André
+decided on 2026-10-22 to keep the behaviour: **AD-013** in `STATE.md`, PEOP-04 and DM-08 in `spec.md`
+say it. No code changes.
+
+- **Who sees a person** (unchanged, now written down): the users who own or may `use` the connector
+  (profile, account, edit); a user who can view a conversation where the person was seen or wrote
+  (profile without account, no edit): a group that bridges the person's chat, or, through DM-08, the DM
+  of an AI the user may use; nobody else, admins included.
+- **Who sees the AI's platform DM:** the person (through its chat), the AI, the AI's owner and the users
+  granted `use` on it by name (`access.dmLevel`, `viewsAIOf`; the `*` grant does not count, T19). The
+  connector's users see the person and not the AI's DM unless they hold one of those roles.
+- **Test:** `TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople` (`internal/api/people_test.go`): a
+  platform DM between a person and the operator AI; the owner and a `use` grantee without connector
+  access read the room (level `view`), its message, the person's profile (no account, no edit, 403 on
+  edit) and avatar and list the DM among the person's conversations; a connector user edits the person
+  and gets 404 on the DM; a stranger and the admin get 404 on the DM, its messages, the profile and the
+  avatar. Scratch copy: ignoring `use` grants for DMs, giving every user view of the DM and hiding the
+  person from a conversation's viewers each fail it.
+
+## T59 - Own-account messages are trusted as the owner only when the owner operates the account (ACC-05)
+
+`validation.md` gap 6 and André's decision of 2026-10-22, recorded as **AD-014** in `STATE.md`
+(an amendment of AD-006).
+
+- **Change.** `handleSelf` (`internal/connectors/selfmsg.go`) stores the message with
+  `author_user_id` = the connector's owner only when the owner operates the account
+  (`operator_iid` NULL). When an AI operates it (`operator_iid` set) the message keeps `author_iid` =
+  that AI (rendered with `author.role = ai`, as before) but has no `author_user_id`, so
+  `delivery.Trusted` is false for every AI. T33 trusted it for the owner's AIs whoever the operator was;
+  the code and `TestOwnAccountMessageIsAuthoredByTheOperator` said so (that assertion changed outcome
+  and now says `Trusted == false` and an empty `AuthorUserID` for the AI half). The message is still
+  stored once per room, bridged and delivered like any chat message; AIs with delivery mode `trusted`
+  no longer receive it when an AI operates the account.
+- **CON-12.** The connectors spec dropped every message of the connector's own account; ACC-05 already
+  stores the ones that are not the echo of a Partyline send. AD-014 says so in one place.
+- **Docs.** `README.md`, `README.pt-BR.md` (security model) and `docs/agents.md` (who signs what) say
+  that typed text is trusted as the owner's only on an account the owner operates.
+- **Tests** (`internal/connectors/selfmsg_test.go`): `TestOwnAccountMessageIsTrustedOnlyWhenTheOwnerOperatesTheAccount`
+  pins both halves and the way back (owner operator: trusted, authored by the owner; AI operator: not
+  trusted, no user, authored by the AI; the owner operates again: trusted). It and the first test fail on
+  the previous code.
+
+## T60 - Cover DMs where the AI is the first participant (NOTI-02, DM-02)
+
+Tests only; no code changes (`validation.md` gap 4, mutants M17 and M18, L-044). The ids of a DM's
+participants are sorted (`dm_a < dm_b`) and ids are UUIDv7 from one process, so the intelligence created
+first sorts first. Every earlier fixture created the user first, so the branch that swaps the two sides
+never ran.
+
+- `TestAIDMIsCopiedToTheAppOfAUserThatSortsAfterTheAI` (`internal/connectors/notify_test.go`): bob is
+  created after Atlas, links a phone through a connector alice shared with him and chooses it; what
+  Atlas writes to `@bob` is copied to bob's phone as "Atlas: <text>", with one notify row and none for
+  alice's phone. The test asserts the order of the ids first, so it cannot silently stop covering it.
+- `TestPostByAnAIThatSortsBeforeTheDisabledUserIsRefused` (`internal/api/direct_messages_test.go`): an
+  AI that sorts before a disabled user gets `ErrCounterpartDisabled` for its post, nothing is stored and
+  the post works once the user is enabled.
+- Scratch copy: M17 (`other` is always `dm_a`) fails the first, M18 (the counterpart check uses the
+  owner's id for an AI's post) fails the second; the older tests passed under both.
+
+## T61 - A second live connection without a process id is busy (SES-04)
+
+Tests only; no code changes (`validation.md` gap 5, mutant M10b, L-042). `Presence.Attach` and
+`Presence.Busy` both guard the process-id comparison with `liveID != ""`: an empty id never matches, so
+two connections that send no `X-Partyline-Live` header (an old client, or an id that fails
+`liveIDPattern`) are two processes. Every earlier test sent an id from the holder or only from the
+newcomer, which an unguarded comparison also passes.
+
+- `TestPresenceTreatsTwoConnectionsWithoutAProcessIDAsTwoProcesses` (`internal/agents/presence_test.go`):
+  a holder attached with no id refuses a second attach with no id (`ErrBusy`, holder untouched, `Busy`
+  reports it), and with takeover the second replaces it as `taken_over`, not as the silent `reconnected`.
+- `TestTwoConnectionsWithoutAProcessIDAreTwoProcesses` (`internal/api/agent_live_test.go`): the second
+  WebSocket of one folder without the header gets 409 `identity_busy`, the first stays open and keeps
+  receiving.
+- Scratch copy: removing the guard in both places fails both tests; in `Attach` alone only the unit test
+  fails (the gateway checks `Busy` first, so the Attach-only variant is unreachable through it); in `Busy`
+  alone both fail.
+
+## T62 - Avatar height bound and a person's avatar served (PROF-06, PROF-07)
+
+Tests only; no code changes (`validation.md` gap 7, mutant M23, L-046).
+
+- **Dimension bound.** `avatars.Process` refuses an image wider or taller than 4096 pixels before
+  decoding it (decompression bombs), checked on the decoded header (`DecodeConfig`). A 10×5000 image
+  has a tiny file and passes every other check, which is how removing the height half survived.
+  `TestProcessRejectsInvalidInputs` now also has 10×5000, 4097×1 and 1×4097 (each side of the bound, both
+  axes), and `TestProcessAcceptsMaximumHeight` accepts 1×4096 next to the existing 4096×1. Scratch copy:
+  dropping the height check fails the two tall cases.
+- **A person's avatar is served (PROF-07).** `TestPersonAvatarIsServedToWhoCanSeeThePerson`
+  (`internal/api/people_test.go`): a user granted `use` on the connector sets the avatar of a person; the
+  connector's owner, that user, a viewer of a room where the person wrote and a viewer of a chat where it
+  was seen get a 256×256 PNG (the centre crop, `image/png`) and the same `avatar_url` in the profile;
+  carol and the admin get 404 for the avatar and the profile. Scratch copy: never serving persons'
+  avatars, and serving them without the visibility check, each fail it.
+
+## T63 - A platform DM without a sender is not routed (ACC-02)
+
+Test only; no code changes (`validation.md` gap 10, mutant M30, L-019). contract-notes T30 says "a sender
+without any id has nobody to make a DM with: not routed" and no test said it.
+
+- `TestPlatformDMWithoutASenderIsNotRouted` (`internal/connectors/platform_dm_test.go`): a DM chat message
+  with an empty sender id and sender name records the chat and nothing else: the chat is in no room, there
+  is no DM, no person, no stored message, the operator AI receives nothing, and the app logs no failed
+  message; the next message of the chat that names its sender is routed to a DM as usual.
+- **M30 is equivalent as the Verifier defined it.** Two guards refuse a senderless author: the pipeline's
+  (`platformDM`: `who.iid() == ""` returns an unrouted chat) and `EnsurePlatformDM`'s (`in.Author.ID == ""`
+  returns `ErrDMSelf`, which the pipeline also treats as unrouted). Removing either one alone changes no
+  outcome, so the scratch copy passes the test; that is defence in depth, not a gap. Removing **both**
+  routes the message into a DM with an empty participant, which the database refuses (foreign key on
+  `rooms.dm_a`), and the pipeline logs "inbound message failed": the test fails on that log line, so it
+  kills the fault the mutant stood for. The log assertion is what makes it discriminate; the other
+  outcomes (no room, DM, person, message) hold under the foreign-key failure as well.
+
+## T64 - The unread count never rises when a room is marked read (LAY-02, DM-07)
+
+Test only; no code changes (`validation.md` gap 11, mutant W1, L-046). `markConversationRead`
+(`web/src/lib/api/queries.ts`) sets a conversation's unread count to `min(unread, last seq - read seq)`:
+what lies after the read position can still be unread, and the count never goes up here, so a read answer
+that arrives late cannot undo a newer count. Dropping the `min` (count = messages after the position)
+passed every test because each used a position at or past the unread messages.
+
+- `markConversationRead (DM-07, LAY-02)` in `web/src/lib/api/queries.test.ts`: five messages after the
+  position with one unread stays one; three unread read up to the message before the last is one; a
+  position at the last message clears the count. Scratch copy: W1 fails the first only; the live-handler
+  tests passed under it.
+
+## T65 - The kind badge next to every name (PROF-09)
+
+`validation.md` gap 8: three places showed a bare display name where PROF-09 wants the badge next to
+it. `IntelligenceName`/`KindBadge` now render in each.
+
+- **Conversation header** (`web/src/components/conversation-header.tsx`). A DM the viewer reads only
+  through an AI (the owner or a grantee: no counterpart) names both participants, each as an
+  `IntelligenceName` (name with handle tooltip, AI or platform badge, "You" for the viewer), joined by the
+  new `conversation.and` word ("and"/"e") inside the `<h1>`. A DM with a counterpart and a group are
+  unchanged (title text, the counterpart's badge and @handle). `conversationTitle` still returns plain text
+  for the document title and keeps `conversation.between`. The heading's accessible name is now
+  "Atlas AI and Bob Lima" (the old assertion said "Atlas and Bob Lima" and changed outcome).
+- **New group dialog** (`web/src/components/new-group-dialog.tsx`). The chips of the picked members and
+  the list of refused members render the member as an `IntelligenceName`; a refused id the contacts do not
+  show still prints the bare id.
+- **Room files** (`web/src/components/room-files.tsx`). A file's author is shown with its badge when it
+  resolved to an intelligence; the displayed name stays `author_name` (the name the timeline shows, as
+  `message-item` does). This needs the author on the wire:
+  - `dto.RoomFile.Author` (`IntelligenceRef`, required): `GET /rooms/{id}/attachments` renders it with
+    `convert.FileAuthor`, which fills a message-view row from the files query and calls the function that
+    renders a message's author, so a file and its message always agree. `ListRoomFiles` also selects
+    `author_id`, `author_user_id`, `author_iid`, `author_handle`, `author_ikind`, `author_avatar` and the
+    platform of the author chat (`LEFT JOIN chats, connectors`). A chat account that resolved to nobody
+    has no id and only the name. sqlc and tygo regenerated (`internal/store/db/files.sql.go`,
+    `web/src/lib/api/types.gen.ts`); no migration.
+  - `messageFiles` (the live `room.message` path) copies the message's `author`.
+- **Existing tests that changed outcome:** `TestRoomFilesList` expects the author of the file; the
+  heading name above; the room-file fixtures of `room-files.test.tsx`, `rooms/room-files.test.tsx` and
+  `a11y.test.tsx` now carry `author` (the API always sends it).
+- **Tests.** Go: `TestRoomFilesCarryTheirAuthor` (user, AI, unresolved chat sender),
+  `TestRoomFilesNameAPersonWithItsPlatform` (person with platform). Vitest: header with an AI and a
+  WhatsApp person, picked and refused members in the new group dialog, the files list (AI, person, user,
+  unresolved sender) and a live file's AI badge. Each failed before the change.
+- **Not changed (not in the Verifier's list):** the command palette's AI entries and the route-chat
+  dialog's AI list print a bare name under an AI-only heading with a bot icon, and the sidebar header shows
+  the viewer's own name. The member picker, the contacts rows, the new-conversation list, the participant
+  and member lists and the timeline already use `IntelligenceName`.
+
+## T66 - Setup prints a result per harness and `a` selects installed harnesses (CLI-03, CLI-04)
+
+`validation.md` gap 9 and the surviving mutants M15 and M16 (L-045).
+
+- **One line for every harness of the menu (CLI-04).** `applyHarnessSelection` reports each harness:
+  `✓ <title>: registered` / `✓ <title>: removed` when it changed, `✓ <title>: already registered` when it
+  was selected and registered, `- <title>: not registered` when it was neither, and `✗ <title>: <error>`
+  on stderr when the change failed. The menu path only: `--harness`, `--all-detected` and `--remove` still
+  report the harnesses they name (CLI-05) and nothing else. The old assertion that an untouched harness
+  gets no line (`TestSetupMenuAppliesTheChecklist`) changed outcome; the spec said "one result line per
+  harness" and that was the right reading. The exit code is non-zero (1) when any change failed; the other
+  harnesses are still applied and reported, and the backups are kept as the failed run left them.
+- **`a` (CLI-03).** It acts on the installed items only: when every installed item is checked it clears
+  them, otherwise it checks them; an item that is not installed is never checked by it (it would fail to
+  register) and a registered, not installed one keeps its state (so `a` never removes it); with nothing
+  installed it does nothing. The spec said "selects all", which also checked harnesses that then failed to
+  apply. CLI-03 and CLI-04 in `spec.md`, `README.md`, `README.pt-BR.md` and `docs/agents.md` say it.
+- **Registered but not installed (M15).** It already started checked (`Selected: installed || registered`,
+  so a plain Enter changes nothing); no test covered it. `TestSetupMenuKeepsARegisteredHarnessThatIsNotInstalled`
+  seeds a user-scope entry in the test HOME's `.claude.json` with no CLI installed: the row reads
+  `not installed · registered`, starts checked, Enter reports "already registered" and calls nothing, and
+  unchecking it runs `claude mcp remove`.
+- **Tests:** `TestMenuKeys` (the `a` cases changed outcome), `TestMenuAllLeavesItemsThatAreNotInstalledAsTheyWere`,
+  `TestSetupMenuAllChecksOnlyInstalledHarnesses`, `TestSetupMenuExitsNonZeroWhenAHarnessFails` (exit 1,
+  `✗ Claude Code:` on stderr, Gemini still registered). Scratch copy: M15 fails the registered-not-installed
+  test, M16 (exit 0 on a failed apply) fails the failure test, and the unrestricted `a` fails the two `a` tests.
+
+## T67 - The notify copy's delivery is visible only to the DM's user (NOTI-02, NOTI-03, DM-08)
+
+`validation.md` gap 12 (`convert.go:113`, `live/hub.go:370-379`). The outbox row of a notify copy
+(purpose `notify`: the id of the user's chat and the platform's errors) was rendered with the message to
+everyone who could read the DM: the AI's owner, the users granted `use` on the AI and the AI itself.
+
+- **Rule.** The row is part of a message only for the user the DM is with, and the user's `outbox.status`
+  events reach only that user. Everyone else gets the message without it. An ordinary delivery (a chat that
+  is a member of the room) is unchanged and shown as before.
+- **Who is "the DM's user".** `rooms.Message.NotifyUserID`, set by `withDetails` when a notify row is
+  loaded: the DM's participant that is not the AI that wrote the message (the room's `dm_a`/`dm_b`).
+  `Rooms.NotifiedUser(messageID)` answers the same for the live hub's status events.
+- **Rendering.** `convert.Message` renders without notify rows, so every AI-facing path (frames, pending,
+  history, the AI's own answers) never carries one; `convert.MessageFor(m, viewer)` adds them when `viewer`
+  is the notified user. `convert.Viewer(p)` is the principal's user id for a user session or token and ""
+  for an agent, whose `UserID` is its owner's: an AI is not the user of its owner's DM even when its owner
+  is. REST list and post (`rooms_handlers.go`), the activity feed and the live `room.message` frame use
+  `MessageFor`; the hub drops a notify `outbox.status` for every connection but the DM's user's.
+- **Existing assertions that changed outcome:** `TestAIDMIsCopiedToTheChosenApp` read the notify row in
+  the AI's own answer and now expects none (alice sees it through her timeline and live event, as before);
+  my `TestAIDMIsCopiedToTheAppOfAUserThatSortsAfterTheAI` (T60) uses the same view.
+- **Docs.** `docs/agents.md` ("Notify me on another app") says the copy's status is the user's alone.
+- **Tests** (`internal/connectors/notify_test.go`): `TestTheCopysDeliveryIsVisibleOnlyToTheUserOfTheDM`
+  (a use grantee, the AI's owner, the AI's answer and history, live message frames and status events: the
+  DM's user gets the row, the others none), `TestTheCopysDeliveryIsNotShownToTheAIEvenForItsOwnersDM` (the
+  AI with its owner's id, through the room route and the history). Scratch copy: rendering the row for
+  everyone, sending status events to everyone and treating an agent as its owner each fail them.
+
+## T68 - Align the spec text with the verified behaviour (SES-06, TREE-02, DM-02, DM-08, PEOP-01)
+
+`validation.md` gap 13 (L-048, L-049). Spec text only; the code and the tests are the ones the Verifier
+read. The traceability statuses stay `Implementing` (the Verifier moves them on re-verification), and
+`tasks.md` names T68 for the five requirements.
+
+- **SES-06.** Two bounds: 5 s when the connection closes or is dropped (the server sees EOF or a reset
+  at once: `TestTheLiveSessionEndingFreesTheAI`, graceful close and `CloseNow`), and 35 s when it goes
+  silent without closing (the gateway pings every `DefaultPingInterval` = 25 s and gives the ping the 10 s
+  `writeTimeout`; a failed ping ends the connection and the AI goes offline). No test reaches the 35 s: the
+  kit cannot make a half-open TCP connection and the ping interval is not an option of the app.
+- **TREE-02.** The builder gives each node a `Path` (the chain of folders without an identity, `c/d`,
+  `projects/acme/agents`, `/srv` outside home) and a `Name` (the folder's base name, `~` for home). The web
+  and `partyline agents` print `Path › <display name>`; the `~` shows in the folder column (`~/atlas`,
+  `~`). `internal/intelligences/tree_test.go` (collapse, `~`), `internal/cli/agents_test.go` (golden) and
+  `contacts.test.tsx` (the folder labels) assert it.
+- **DM-02.** 422 `dm_members_fixed` for a caller who can view the DM, 404 for one who cannot, so a stranger
+  learns nothing: `direct_messages_test.go` (the 422s for the participants, the AI's owner and a grantee, the
+  404s for a stranger).
+- **DM-08.** A `*` use grant gives no view, only a grant by name does (`access.viewsAIOf` counts subject
+  grants by user id): `TestDMOfAPublicAIIsNotVisibleToEveryone`.
+- **PEOP-01.** People are made when a message is routed into a conversation; a chat that is routed nowhere
+  records the chat and nobody (CON-07, T26): `TestInboundNewSenderBecomesOnePerson` ("an unrouted chat
+  records no person") and the platform DM scope tests.
+
+## T69 - The channel says that terminal text never reaches the sender (DM-03, UAT finding 1)
+
+`uat.md` Finding 1: Claude Code turns every channel event into a user turn and the model answered a bare
+"oi" in its terminal, so the person in the web DM saw nothing; messages that asked for something got a
+`reply`. The instructions said "reply with the reply tool" but not that terminal text goes nowhere, and a
+Claude Code event carries no trailing line like the framed harnesses' "Reply with the partyline tools".
+
+- **Text.** `terminalNote` (`internal/channel/instructions.go`): "Text you write in the terminal never
+  reaches the person or the room that wrote to you: only the reply, send_message and react tools do.
+  Answer every DM or room message that deserves an answer, a greeting such as "oi" included, with the reply
+  tool (or acknowledge it with react), never with text in the terminal alone." It sits right after the tool
+  paragraph in `Instructions` (Claude Code) and `OmpInstructions` (omp, the full channel whose events the
+  extension frames). `ToolsOnlyInstructions` is unchanged: pi, OpenCode, Codex and Gemini messages end with
+  a line that says to use the tools, which Claude Code events do not have.
+- **Tests** (`internal/channel/instructions_test.go`): `terminalSentence` is the literal wording;
+  `TestChannelInstructionsSayThatTerminalTextReachesNobody` (once, after the tool paragraph) and
+  `TestOmpInstructions` assert it; the tools-only test is untouched. They fail on the previous text.
+- **Not shown by any test:** whether a model now answers a bare greeting with `reply`. The UAT's repeat of
+  step 4 with fresh sessions is still open (`uat.md` says so).

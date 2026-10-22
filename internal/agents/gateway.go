@@ -453,8 +453,9 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 // agent's cursor that its delivery mode wants (MEM-03, MEM-04), oldest first and at most
 // BacklogLimit (AGT-08). When more are pending it first sends a notice with the skipped count
 // and moves the cursor past them (AGT-09). A room with instructions first gets one
-// InstructionsNotice, paused or not (INS-03). It returns the highest sequence number seen per
-// room.
+// InstructionsNotice, paused or not (INS-03). It returns, per room, the highest sequence number
+// the agent has already been through: its cursor, or the last message listed now when that is
+// later. A live push at or below it is not delivered again.
 func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]int64, error) {
 	sent := map[string]int64{}
 	states, err := g.d.Registry.SessionRooms(ctx, a.ID)
@@ -466,6 +467,11 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		return nil, err
 	}
 	for _, st := range states {
+		// An earlier connection already received (or the backlog skipped on purpose) whatever the
+		// cursor covers. The dispatcher may still push such a message, late, to this connection:
+		// after a takeover the old session acknowledged it, so the new backlog sends nothing and
+		// a bare 0 here would let the push through a second time (SES-05).
+		sent[st.ID] = st.Cursor
 		ref := delivery.RoomRef(st.ID, st.Name, st.Kind)
 		if st.Instructions != "" { // INS-03: once per room and connection, before its messages
 			text := InstructionsNoticeUntrusted

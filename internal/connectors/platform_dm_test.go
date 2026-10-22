@@ -1,8 +1,10 @@
 package connectors_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"sync"
@@ -248,6 +250,51 @@ func TestPlatformDMFollowsTheOperator(t *testing.T) {
 	rooms = pc.roomsOf(t, chat)
 	require.Equal(t, []string{aliceDM}, rooms, "the DM with the owner")
 	require.Len(t, pc.messages(t, aliceDM), 2)
+}
+
+// logSink collects what the app logs.
+type logSink struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *logSink) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *logSink) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
+}
+
+// ACC-02 (contract-notes T30, L-019): a DM chat message whose sender has no id has nobody to make a
+// DM with, so it is not routed: the chat is recorded, no DM, person or message is made, the
+// operator AI receives nothing and nothing fails (a DM with an empty participant would be refused
+// by the database and logged as a failed message). A later message of the chat that names its
+// sender is routed as usual.
+func TestPlatformDMWithoutASenderIsNotRouted(t *testing.T) {
+	logs := &logSink{}
+	pc := newPerChat(t, testkit.WithLogger(slog.New(slog.NewTextHandler(logs, nil))))
+	stored := pc.messageCount(t)
+
+	anonymous := dmText(dmA, "N1", "who writes?")
+	anonymous.SenderID, anonymous.SenderAltID, anonymous.SenderName = "", "", ""
+	pc.emit(anonymous)
+
+	require.True(t, pc.hasChat(t, dmA), "the chat is recorded")
+	require.Empty(t, pc.roomsOf(t, pc.chatID(t, dmA)), "and sits in no room")
+	require.Zero(t, pc.dmRooms(t))
+	require.Empty(t, pc.people(t))
+	require.Equal(t, stored, pc.messageCount(t), "the message is not stored")
+	pc.atlas.ExpectNone(300 * time.Millisecond)
+	require.NotContains(t, logs.String(), "inbound message failed", "leaving it unrouted is no failure")
+
+	pc.emit(dmText(dmA, "A1", "now with a sender"))
+	require.Equal(t, "now with a sender", pc.atlas.Message(connectortest.Timeout).Message.Text)
+	require.Equal(t, 1, pc.dmRooms(t))
 }
 
 // ACC-02 (no self-DM): a sender who is the operator gets no DM with themself; the chat is

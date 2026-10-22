@@ -19,7 +19,9 @@ const selfPoll = 50 * time.Millisecond
 // itself, e.g. on the phone of the account, or the echo of a message Partyline sent through it.
 // Only a chat that already sits in rooms takes it: it creates no chat, no conversation and no
 // person, and it is no pairing command. The echo of a send is dropped; anything else is authored
-// by the connector's operator, as the owner's own account, so the owner's AIs trust it (AD-006).
+// by the connector's operator. When the owner operates the account it is the owner's own, so the
+// owner's AIs trust it; when an AI operates it nothing proves who typed, so it carries no user
+// and nobody trusts it as the owner's (AD-014, amending AD-006).
 func (p *Pipeline) handleSelf(ctx context.Context, src Source, m Inbound) error {
 	if (strings.TrimSpace(m.Text) == "" && len(m.Media) == 0) || pairingCommand.MatchString(m.Text) {
 		return nil
@@ -47,7 +49,11 @@ func (p *Pipeline) handleSelf(ctx context.Context, src Source, m Inbound) error 
 	if err != nil {
 		return err
 	}
-	return p.post(ctx, src, chat, m, roomIDs, conn.OwnerID, operatorID(conn))
+	user := conn.OwnerID
+	if conn.OperatorIid.Valid { // an AI operates the account
+		user = ""
+	}
+	return p.post(ctx, src, chat, m, roomIDs, user, operatorID(conn))
 }
 
 // settle holds the message back until no send to the chat is running, at most SelfHold, and

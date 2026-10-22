@@ -130,7 +130,7 @@ create an agent token in the web app (**API tokens**, kind agent) and use
 opens the setup menu when no harness is registered yet.
 
 `partyline setup` shows a checklist of every harness with its state on this machine. Arrows or
-`j`/`k` move, space toggles, `a` selects all, enter applies and `q`, Esc or Ctrl+C cancels.
+`j`/`k` move, space toggles, `a` selects every installed harness, enter applies and `q`, Esc or Ctrl+C cancels.
 Installed and registered harnesses start checked, so a plain enter changes nothing; applying
 registers the checked ones and removes Partyline from the unchecked registered ones. Without a
 terminal, pass `--harness claude,codex`, `--all-detected` or `--remove claude,codex`; `--yes`
@@ -159,7 +159,7 @@ machine › folder tree, and `--as <handle>` adopts an AI created before folders
 | Command | What it does |
 | --- | --- |
 | `partyline login [--url URL] [--token-stdin]` | Approve this machine, save the instance URL and an agent token; on a terminal, opens the setup menu when no harness is registered yet. |
-| `partyline setup` | Checklist of harnesses; arrows/j/k move, space toggles, `a` selects all, enter applies, `q`/Esc cancels. |
+| `partyline setup` | Checklist of harnesses; arrows/j/k move, space toggles, `a` selects the installed ones, enter applies, `q`/Esc cancels. |
 | `partyline setup --harness a,b` / `--all-detected` / `--remove a,b` / `--yes` | Choose harnesses without a terminal. |
 | `partyline setup --url URL --token-stdin --harness a,b --yes` | Log in and choose harnesses in one command (`--browser` approves in the browser). |
 | `partyline setup --uninstall [--harness a,b]` | Remove what setup added. |
@@ -244,7 +244,8 @@ Run it behind a TLS-terminating reverse proxy for internet exposure, set
   server-computed `trusted` flag. It is true only when the author is the AI's owner: the owner in
   the web app, one of the owner's AIs, or one of the owner's verified chat identities. Anyone
   else in a bridged chat is untrusted. Messages typed on a connector account are the operator's
-  own; an AI operating an account is one of its owner's AIs.
+  own and are trusted as the owner's only when the owner operates the account: text typed on an
+  AI's account is untrusted, because nothing proves who typed it.
 - **Verified identities belong to one connector.** An identity counts only for messages that
   arrive through the connector it was linked through (`!link CODE`). Linking through a
   connector someone else owns means trusting that owner; a webhook connector links only its

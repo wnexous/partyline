@@ -11,7 +11,8 @@ import (
 
 const listRoomFiles = `-- name: ListRoomFiles :many
 SELECT a.id, a.message_id, a.mime, a.name, a.size, a.status, a.created_at, v.seq AS message_seq,
-       v.author_kind, v.author_name,
+       v.author_kind, v.author_name, v.author_id, v.author_user_id, v.author_iid, v.author_handle,
+       v.author_ikind, v.author_avatar, CAST(COALESCE(k.kind, '') AS TEXT) AS chat_platform,
        CAST(CASE
             WHEN lower(a.mime) LIKE 'image/%' THEN 'image'
             WHEN lower(a.mime) LIKE 'audio/%' THEN 'audio'
@@ -19,6 +20,8 @@ SELECT a.id, a.message_id, a.mime, a.name, a.size, a.status, a.created_at, v.seq
             ELSE 'document'
             END AS TEXT) AS kind
 FROM attachments a JOIN message_views v ON v.id = a.message_id
+LEFT JOIN chats c ON v.author_kind = 'chat' AND c.id = v.author_id
+LEFT JOIN connectors k ON k.id = c.connector_id
 WHERE v.room_id = ?1 AND a.id < ?2
   AND (CAST(?3 AS TEXT) = '' OR CAST(?3 AS TEXT) = CASE
             WHEN lower(a.mime) LIKE 'image/%' THEN 'image'
@@ -38,17 +41,24 @@ type ListRoomFilesParams struct {
 }
 
 type ListRoomFilesRow struct {
-	ID         string
-	MessageID  string
-	Mime       string
-	Name       string
-	Size       int64
-	Status     string
-	CreatedAt  int64
-	MessageSeq int64
-	AuthorKind string
-	AuthorName string
-	Kind       string
+	ID           string
+	MessageID    string
+	Mime         string
+	Name         string
+	Size         int64
+	Status       string
+	CreatedAt    int64
+	MessageSeq   int64
+	AuthorKind   string
+	AuthorName   string
+	AuthorID     string
+	AuthorUserID string
+	AuthorIid    string
+	AuthorHandle string
+	AuthorIkind  string
+	AuthorAvatar string
+	ChatPlatform string
+	Kind         string
 }
 
 // Files of a room newest first (FILES-01): attachment ids are UUIDv7, so id order is time
@@ -78,6 +88,13 @@ func (q *Queries) ListRoomFiles(ctx context.Context, arg ListRoomFilesParams) ([
 			&i.MessageSeq,
 			&i.AuthorKind,
 			&i.AuthorName,
+			&i.AuthorID,
+			&i.AuthorUserID,
+			&i.AuthorIid,
+			&i.AuthorHandle,
+			&i.AuthorIkind,
+			&i.AuthorAvatar,
+			&i.ChatPlatform,
 			&i.Kind,
 		); err != nil {
 			return nil, err

@@ -107,6 +107,15 @@ T42 → T43 → T44 → T45 → T46 → T47 → T48 → T49
 T50 → T51 → T52 → T53 → T54
 ```
 
+### Phase 10: Verifier fixes (iteration 1)
+
+One fix iteration (the FAIL of `validation.md` plus Finding 1 of `uat.md`), run by one worker in
+order. André's decisions on Gaps 3 and 6 are final (AD-013, AD-014). No migration.
+
+```
+T56 → T57 → T58 → T59 → T60 → T61 → T62 → T63 → T64 → T65 → T66 → T67 → T68 → T69
+```
+
 ---
 
 ## Task Breakdown
@@ -1040,12 +1049,240 @@ design needs the API to return them). See `contract-notes.md`, T48.
 **Gate**: build
 **Commit**: `feat(web): merge any of your AIs from its profile`
 
+### Phase 10: Verifier fixes (iteration 1)
+
+Source: `validation.md` (FAIL, 2026-10-22: gaps 1-14 and the surviving mutants M10b, M15, M16, M17,
+M18, M19, M23, M30, W1) and `uat.md` Finding 1. Each test is written first and shown to fail on the
+bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix follows.
+
+#### T56: Merge keeps what the surviving AI and the counterpart have not received or read
+
+**What**: `appendDM` moves a party's cursor in the surviving DM only when that party had nothing pending there before the merge (an AI: no message after its cursor that it did not write; a user: no unread message); otherwise the cursor stays, so nothing undelivered or unread is skipped. A cursor of the merged DM is credited to its own party: the merged AI's to the survivor, a counterpart AI's to itself.
+**Where**: `internal/conversations/merge.go`
+**Depends on**: T55 (Phase 9)
+**Reuses**: `renumber`, `CountAgentBacklog`, `CountUnreadByRoom`
+**Requirement**: MRG-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] The survivor had two undelivered messages in its DM with X and the merged AI's DM with X had one received message: after the merge the survivor's cursor is still 0 and its two messages are still pending; a counterpart user's read cursor stays behind the messages the user had not read, so they still count as unread (MRG-01, validation gap 1)
+- [x] A party that had received or read everything of the surviving DM, also when it wrote the last message itself, moves to the renumbered position of its cursor in the merged DM (the larger wins, as before; `TestMergeCarriesDirectMessages` still passes)
+- [x] When the counterpart of a merged DM is an AI, its cursor stays its own, renumbered, and the survivor's cursor comes from the merged AI's alone (M19)
+- [x] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(conversations): keep undelivered messages when merging DMs`
+
+#### T57: A takeover never replays what the old session acknowledged
+
+**What**: `Gateway.backlog` seeds the per-room high-water mark `sent[room]` with the AI's cursor, so a live push at or below the cursor is dropped, not only the ones the reconnect backlog just sent (L-050). The late dispatcher push of an acknowledged message no longer reaches the session that took over, which was also the cause of the `make check-race` failure of `TestTakenOverChannelNotifiesOnceAndDeliversNothingMore`.
+**Where**: `internal/agents/gateway.go`
+**Depends on**: T56
+**Reuses**: `agents.Gateway.Push`, `testkit.Folder` (takeover dial)
+**Requirement**: SES-02, SES-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A message pushed late for a message the old session already acknowledged is not delivered to the session that took the AI over, and the next message is (SES-05)
+- [x] `go test -race -count=30 -run TestTakenOverChannelNotifiesOnceAndDeliversNothingMore ./internal/channel/` passes 30 of 30 (3 of 30 failed before)
+- [x] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(agents): drop live pushes at or below the acked cursor`
+
+#### T58: Record AD-013: use grantees of an AI see its DMs with people
+
+**What**: André decided (2026-10-22) to keep the access rule: a user granted `use` on an AI reads the AI's DMs with external people and those people's profiles and avatars. PEOP-04 and DM-08 state it, `STATE.md` records AD-013, and a test pins it: the grantee sees the AI's platform DM and the person; a user with neither the AI grant nor the connector gets 404 for the DM, the profile and the avatar.
+**Where**: `internal/api/people_test.go`
+**Depends on**: T57
+**Reuses**: the platform DM fixtures of `internal/connectors/platform_dm_test.go`, `peopleFixture`
+**Requirement**: PEOP-04, DM-08
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A `use` grantee of the operator AI reads the platform DM between the AI and a person, the person's profile and its avatar; the AI's owner too; a user with neither the grant nor the connector, and an admin, get 404 on each (PEOP-04, DM-08)
+- [x] `spec.md` PEOP-04 and DM-08 say exactly that and `STATE.md` has AD-013 (decided by André 2026-10-22)
+- [x] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `docs(specs): record AD-013 for use grantees of an AI's DMs`
+
+#### T59: Own-account messages are trusted as the owner only when the owner operates the account
+
+**What**: `handleSelf` stores `author_user_id` = the connector's owner only when the connector's operator is the owner (a user): the owner's own account is the owner's. When an AI operates the account the message is authored by that AI and carries no user, so no AI trusts it as the owner's (André 2026-10-22). This replaces T33's "whoever the operator is". `STATE.md` records AD-014 as an amendment of AD-006.
+**Where**: `internal/connectors/selfmsg.go`
+**Depends on**: T58
+**Reuses**: `operatorID`, `TestOwnAccountMessageIsAuthoredByTheOperator`
+**Requirement**: ACC-05
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Operator = the owner: the message typed on the account is authored by the owner and trusted by the owner's AI (ACC-05)
+- [x] Operator = an AI: it is authored by that AI, carries no `author_user_id` and is not trusted by the owner's AIs (the assertion of `TestOwnAccountMessageIsAuthoredByTheOperator` that said "trusted" follows the decision)
+- [x] `STATE.md` has AD-014 (amends AD-006, decided by André 2026-10-22)
+- [x] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `fix(connectors): trust own-account messages only when the owner operates`
+
+#### T60: Cover DMs where the AI is the first participant
+
+**What**: tests with the AI created before the user, so the AI is `dm_a` of the DM: the notify copy (NOTI-02, M17) and the refusal of a post to a disabled counterpart (DM-02, M18) hold for either order of the pair (L-044). `internal/api/direct_messages_test.go` gets the DM-02 case.
+**Where**: `internal/connectors/notify_test.go`
+**Depends on**: T59
+**Reuses**: `notifyEnv`, `dmByService`
+**Requirement**: NOTI-02, DM-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] An AI that sorts before the user writes to the user's DM and the text arrives on the user's chosen app, as "<AI name>: <text>" (M17)
+- [x] A post by an AI that sorts before a disabled user is refused with `counterpart_disabled` and stores nothing (M18)
+- [x] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test: cover DMs where the AI is the first participant`
+
+#### T61: A second live connection without a process id is busy
+
+**What**: tests for a connection that sends no `X-Partyline-Live` header: `Presence.Attach` and `Presence.Busy` treat it as another process, and the gateway answers the second one 409 `identity_busy` (M10b, L-042).
+**Where**: `internal/agents/presence_test.go`
+**Depends on**: T60
+**Reuses**: `testkit.Folder.Headers`, `DialAgentHeaders`
+**Requirement**: SES-04
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Two attaches without a process id: the second is `ErrBusy`, and `Busy` reports the holder (the Attach-only variant of M10b)
+- [x] Two WebSocket connections of one folder without the live header: the second is refused with 409 `identity_busy` and the first stays live (M10b)
+- [x] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `test(agents): refuse a second live connection without a process id`
+
+#### T62: Avatar height bound and a person's avatar served
+
+**What**: `avatars.Process` rejects an image taller than 4096 (a 10×5000 PNG) like a wider one and accepts exactly 4096 (M23, L-046); an avatar a connector user set for a person is served to the users who can see the person, 256×256 PNG, and to nobody else (PROF-07).
+**Where**: `internal/avatars/avatars_test.go`
+**Depends on**: T61
+**Reuses**: `peopleFixture`
+**Requirement**: PROF-07, PROF-06
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] 10×5000 and 1×4097 are `ErrInvalid`; 1×4096 is accepted (M23)
+- [x] A person's avatar set by a grantee of its connector is served as `image/png` 256×256 to the connector's users and to a viewer of a conversation where the person wrote; carol and the admin get 404 (PROF-07)
+- [x] Gate check passes: `make check`
+**Tests**: unit
+**Gate**: build
+**Commit**: `test(avatars): bound the image height and serve a person's avatar`
+
+#### T63: A platform DM without a sender is not routed
+
+**What**: a test for the behaviour contract-notes T30 states and no test covered (L-019, M30): a DM chat message whose sender has no id creates no DM, no person and no route, stores nothing and reaches nobody; the chat is recorded.
+**Where**: `internal/connectors/platform_dm_test.go`
+**Depends on**: T62
+**Reuses**: `perChat`, `dmRooms`
+**Requirement**: ACC-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A message from a DM chat with an empty sender id leaves no DM room, no message, nothing delivered to the operator AI, and the chat recorded in no room
+- [x] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `test(connectors): pin that a platform DM without a sender is not routed`
+
+#### T64: The unread count never rises when a room is marked read
+
+**What**: a test with a read position older than the unread count allows (`last_message.seq - seq` above `unread`): `markConversationRead` keeps the lower count, so a late answer cannot undo a newer one (W1, L-046).
+**Where**: `web/src/lib/api/queries.test.ts`
+**Depends on**: T63
+**Reuses**: `makeConversation` fixtures
+**Requirement**: LAY-02, DM-07
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] A conversation with 1 unread and its last message at seq 10, marked read up to seq 5, keeps 1 unread (the clamp), and one with 3 unread read up to seq 9 shows 1
+- [x] Gate check passes: `make check`
+**Tests**: unit
+**Gate**: build
+**Commit**: `test(web): never raise the unread count when a room is marked read`
+
+#### T65: The kind badge next to every name
+
+**What**: `IntelligenceName`/`KindBadge` render in the conversation header (both participants of a DM seen through an AI), the new-group dialog (selected members and refused ones) and the room files list. A room file carries its author's intelligence (`author`, as a message does) so the badge can name an AI or a platform; DTO and generated types follow.
+**Where**: `web/src/components/conversation-header.tsx`
+**Depends on**: T64
+**Reuses**: `IntelligenceName`, `KindBadge`, `convert.messageAuthor`
+**Requirement**: PROF-09
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] The header of a DM between two intelligences, seen by the owner of the AI, shows the name, badge and handle of both; the new-group dialog shows the badge next to each selected and each refused member; the files list shows it next to the author (PROF-09)
+- [x] `GET /rooms/{id}/attachments` returns the author's intelligence (kind, role, platform) and the generated types follow (`make generate` leaves no drift)
+- [x] Gate check passes: `make check`
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(web): show the kind badge in the header, new groups and files`
+
+#### T66: Setup prints a result per harness and `a` selects installed harnesses
+
+**What**: after a menu apply, one result line per harness of the menu (changed ones say registered or removed, unchanged ones already registered or not registered); `a` checks only installed harnesses; a registered harness that is not installed starts checked; a failed apply exits non-zero (CLI-04, M15, M16, L-045). CLI-03's text follows.
+**Where**: `internal/cli/setup_harness.go`
+**Depends on**: T65
+**Reuses**: `harnessCalls`, `runSetup`, `menuRows`
+**Requirement**: CLI-03, CLI-04
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Every harness of the menu gets a line, changed or not; the old assertion "the untouched harness gets no result line" follows CLI-04's "one result line per harness"
+- [x] `a` never checks a harness that is not installed; a registered, not installed harness starts checked and Enter leaves it registered (M15)
+- [x] A harness whose apply fails prints `✗ <name>: <error>` on stderr and setup exits 1 while the other harnesses are still applied (M16)
+- [x] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(cli): print a result line per harness and limit a to installed`
+
+#### T67: The notify copy's delivery is visible only to the DM's user
+
+**What**: the outbox row of a notify copy (purpose `notify`: the chat id of the user's app and its errors) is part of a message only for the user the DM is with. The AI's owner, users granted `use` on the AI and the AI itself do not get it in timelines, post answers, history, live frames or `outbox.status` events.
+**Where**: `internal/api/convert/convert.go`
+**Depends on**: T66
+**Reuses**: `notifyEnv`, `copyOf`
+**Requirement**: NOTI-02, NOTI-03, DM-08
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] The DM's user sees the copy's status in the timeline and in the live status event; the AI's owner and a `use` grantee, who can read the DM, see neither, and the AI's own answers carry no notify row (NOTI-02, NOTI-03)
+- [x] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(api): show the notify copy's delivery only to the DM's user`
+
+#### T68: Align the spec text with the verified behaviour
+
+**What**: SES-06 states the bound for a connection that dies without closing (ping every 25 s plus a 10 s write timeout, 35 s) next to the 5 s of a clean close; TREE-02 says what renders `~`; DM-02 says a caller who cannot view the DM gets 404; DM-08 says a public (`*`) grant does not give view; PEOP-01 says people are created for routed messages only (L-048, L-049). The coverage tables name T68 for these requirements.
+**Where**: `.specs/features/intelligences/spec.md`
+**Depends on**: T67
+**Reuses**: contract-notes T17, T25, T26
+**Requirement**: SES-06, TREE-02, DM-02, DM-08, PEOP-01
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] Each of the five acceptance criteria states what the code does, with the code or test evidence (`file:line`) named in the commit body and the one bound no test can reach (SES-06's 35 s) said so
+- [x] Gate check passes: `make check`
+**Tests**: none
+**Gate**: build
+**Commit**: `docs(specs): align the intelligences spec with verified behaviour`
+
+#### T69: The channel says that terminal text never reaches the sender
+
+**What**: UAT Finding 1: the instructions of the full channel (Claude Code, and omp's framed variant) say that text the model writes in its terminal reaches neither the sender of a DM nor a room, so every message that deserves an answer, a greeting such as "oi" included, is answered with `reply` or acknowledged with `react`. `uat.md` records the follow-up.
+**Where**: `internal/channel/instructions.go`
+**Depends on**: T68
+**Reuses**: `instructionsOf`
+**Requirement**: DM-03
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] `Instructions` and `OmpInstructions` carry the sentence, asserted in `internal/channel/instructions_test.go` against its literal wording; the tools-only text is unchanged
+- [x] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `fix(channel): say that terminal text never reaches the sender`
+
 ---
 
 ## Phase Execution Map
 
 ```
-Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9
+Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9 → Phase 10
 
 Phase 1:  T1 → T2 → T3 → T4 → T5 → T6
 Phase 2:  T7 → T8 → T9 → T10 → T11 → T12
@@ -1055,10 +1292,13 @@ Phase 5:  T26 → T27 → T28 → T29 → T30 → T31
 Phase 6:  T32 → T33 → T34 → T35
 Phase 7:  T36 → T37 → T38 → T39 → T40 → T41
 Phase 8:  T42 → T43 → T44 → T45 → T46 → T47 → T48 → T49
-Phase 9:  T50 → T51 → T52 → T53 → T54 → T55
+Phase 9:  T50 → T51 → T52 → T53 → T54
+          T55 (a follow-up added after T54; it depends on T48 only)
+Phase 10: T56 → T57 → T58 → T59 → T60 → T61 → T62 → T63 → T64 → T65 → T66 → T67 → T68 → T69
 ```
 
-Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, or two batches) · P7 · P8 · P9.
+Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, or two batches) · P7 · P8 · P9 · P10
+(one fix iteration of 14 tasks, run by one worker in order).
 
 ---
 
@@ -1074,15 +1314,15 @@ Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, o
 | AID-06 | T9, T11, T12 |
 | AID-07 | T15 |
 | SES-01 | T14, T36, T53, T54 |
-| SES-02 | T17, T36, T54 |
+| SES-02 | T17, T36, T54, T57 |
 | SES-03 | T36, T54 |
-| SES-04 | T17, T18 |
-| SES-05 | T18, T54 |
-| SES-06 | T17 |
+| SES-04 | T17, T18, T61 |
+| SES-05 | T18, T54, T57 |
+| SES-06 | T17, T68 |
 | SES-07 | T36 |
 | SES-08 | T17 |
 | TREE-01 | T25, T47, T52 |
-| TREE-02 | T25, T47 |
+| TREE-02 | T25, T47, T68 |
 | TREE-03 | T25, T28, T47 |
 | TREE-04 | T28, T47 |
 | TREE-05 | T47 |
@@ -1090,28 +1330,28 @@ Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, o
 | TREE-07 | T41, T54 |
 | CONT-01 | T28, T47 |
 | DM-01 | T20, T45, T52 |
-| DM-02 | T20, T46 |
-| DM-03 | T23, T54 |
+| DM-02 | T20, T46, T60, T68 |
+| DM-03 | T23, T54, T69 |
 | DM-04 | T24, T37, T54 |
 | DM-05 | T30 |
 | DM-06 | T22, T42, T44 |
-| DM-07 | T22, T46 |
-| DM-08 | T19, T20 |
+| DM-07 | T22, T46, T64 |
+| DM-08 | T19, T20, T58, T67, T68 |
 | GRP-01 | T6, T51 |
 | GRP-02 | T27, T46 |
 | GRP-03 | T11, T26 |
 | GRP-04 | T12, T23 |
-| PEOP-01 | T26 |
+| PEOP-01 | T26, T68 |
 | PEOP-02 | T26 |
 | PEOP-03 | T27, T48 |
-| PEOP-04 | T27 |
+| PEOP-04 | T27, T58 |
 | PEOP-05 | T26 |
 | PEOP-06 | T26 |
 | ACC-01 | T29, T49 |
-| ACC-02 | T30 |
+| ACC-02 | T30, T63 |
 | ACC-03 | T32 |
 | ACC-04 | T32 |
-| ACC-05 | T33 |
+| ACC-05 | T33, T59 |
 | ACC-06 | T30, T31 |
 | ACC-07 | T29, T48 |
 | PROF-01 | T3, T7 |
@@ -1119,14 +1359,14 @@ Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, o
 | PROF-03 | T9, T11, T12, T48, T49, T52 |
 | PROF-04 | T10, T37, T54 |
 | PROF-05 | T9, T48 |
-| PROF-06 | T8, T10 |
-| PROF-07 | T8, T10 |
+| PROF-06 | T8, T10, T62 |
+| PROF-07 | T8, T10, T62 |
 | PROF-08 | T43 |
-| PROF-09 | T43, T46 |
+| PROF-09 | T43, T46, T65 |
 | PROF-10 | T7, T9 |
 | PROF-11 | T27, T48 |
 | LAY-01 | T22, T44, T52 |
-| LAY-02 | T42, T44 |
+| LAY-02 | T42, T44, T64 |
 | LAY-03 | T45 |
 | LAY-04 | T21, T45 |
 | LAY-05 | T44, T52 |
@@ -1135,8 +1375,8 @@ Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, o
 | AGRP-02 | T24, T37 |
 | CLI-01 | T38, T53, T54 |
 | CLI-02 | T40 |
-| CLI-03 | T39 |
-| CLI-04 | T40, T54 |
+| CLI-03 | T39, T66 |
+| CLI-04 | T40, T54, T66 |
 | CLI-05 | T40 |
 | CLI-06 | T40 |
 | CLI-07 | T40 |
@@ -1145,11 +1385,11 @@ Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, o
 | MIG-03 | T5, T50 |
 | MIG-04 | T4 |
 | MIG-05 | T1, T6, T51 |
-| MRG-01 | T35, T47, T55 |
+| MRG-01 | T35, T47, T55, T56 |
 | MRG-02 | T35, T55 |
 | NOTI-01 | T34, T49 |
-| NOTI-02 | T34 |
-| NOTI-03 | T34 |
+| NOTI-02 | T34, T60, T67 |
+| NOTI-03 | T34, T67 |
 
 84 of 84 requirements map to at least one task.
 
@@ -1214,6 +1454,20 @@ Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, o
 | T53 | docs | ✅ Granular |
 | T54 | UAT record | ✅ Granular |
 | T55 | one page + one shared selector | ✅ Granular |
+| T56 | one function (`appendDM`) | ✅ Granular |
+| T57 | one line of seeding in one function | ✅ Granular |
+| T58 | one pinning test + two spec paragraphs + AD-013 | ⚠️ Cohesive (the decision, its spec text and its test belong together) |
+| T59 | one argument in one function + AD-014 | ⚠️ Cohesive (decision and code change) |
+| T60 | two tests of one participant-order rule | ✅ Granular |
+| T61 | one rule, unit and WebSocket test | ✅ Granular |
+| T62 | one bound + one serving test | ⚠️ Cohesive (both are PROF-07's open half) |
+| T63 | one test | ✅ Granular |
+| T64 | one test | ✅ Granular |
+| T65 | three components + one DTO field | ⚠️ Cohesive (the files list needs the author on the wire) |
+| T66 | one apply function + the `a` key | ⚠️ Cohesive (one menu flow) |
+| T67 | one render rule, REST and live | ⚠️ Cohesive (the rule must hold on every path) |
+| T68 | five spec paragraphs | ⚠️ Cohesive (one spec pass) |
+| T69 | one text and its test | ✅ Granular |
 
 ---
 
@@ -1275,7 +1529,21 @@ Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, o
 | T52 | T51 | T51 → T52 | ✅ Match |
 | T53 | T52 | T52 → T53 | ✅ Match |
 | T54 | T53 | T53 → T54 | ✅ Match |
-| T55 | T48 (Phase 8) | T54 → T55 | ⚠️ Follow-up added after T54: it only touches the T48 page |
+| T55 | T48 (Phase 8) | none (a follow-up added after T54) | ✅ Match: it only touches the T48 page, so the map draws no arrow from T54 |
+| T56 | T55 (Phase 9) | start of Phase 10 | ✅ Match |
+| T57 | T56 | T56 → T57 | ✅ Match |
+| T58 | T57 | T57 → T58 | ✅ Match |
+| T59 | T58 | T58 → T59 | ✅ Match |
+| T60 | T59 | T59 → T60 | ✅ Match |
+| T61 | T60 | T60 → T61 | ✅ Match |
+| T62 | T61 | T61 → T62 | ✅ Match |
+| T63 | T62 | T62 → T63 | ✅ Match |
+| T64 | T63 | T63 → T64 | ✅ Match |
+| T65 | T64 | T64 → T65 | ✅ Match |
+| T66 | T65 | T65 → T66 | ✅ Match |
+| T67 | T66 | T66 → T67 | ✅ Match |
+| T68 | T67 | T67 → T68 | ✅ Match |
+| T69 | T68 | T68 → T69 | ✅ Match |
 
 No task depends on a later phase.
 
@@ -1340,6 +1608,20 @@ No task depends on a later phase.
 | T53 | Docs | none | none | ✅ OK |
 | T54 | UAT (real harness) | e2e (manual UAT) | e2e | ✅ OK |
 | T55 | Web | unit | unit | ✅ OK |
+| T56 | Services + HTTP (merge) | e2e | e2e | ✅ OK |
+| T57 | WS gateway | e2e | e2e | ✅ OK |
+| T58 | HTTP (access) + spec | e2e | e2e | ✅ OK |
+| T59 | Pipeline | integration | integration | ✅ OK |
+| T60 | Services + HTTP | e2e | e2e | ✅ OK |
+| T61 | Presence + WS | e2e | e2e | ✅ OK |
+| T62 | Pure rules + HTTP | unit, e2e | unit (with an api e2e test) | ✅ OK |
+| T63 | Pipeline | integration | integration | ✅ OK |
+| T64 | Web lib | unit | unit | ✅ OK |
+| T65 | Web + HTTP DTO | unit, e2e | unit (with an api e2e test) | ✅ OK |
+| T66 | CLI | e2e | e2e | ✅ OK |
+| T67 | HTTP + live | e2e | e2e | ✅ OK |
+| T68 | Docs | none | none | ✅ OK |
+| T69 | Channel | e2e | e2e | ✅ OK |
 
 Tests for removed v0.3 behaviour (T16, T50) are replaced by tests of the rule that supersedes it,
 named in the commit body; no other test is deleted or weakened.

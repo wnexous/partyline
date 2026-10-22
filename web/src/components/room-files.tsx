@@ -9,6 +9,7 @@ import {
   MessageSquareShareIcon,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { formatBytes, INLINE_IMAGES } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -257,7 +258,7 @@ function FileRow({
             </span>
           )}
           <span aria-hidden="true">·</span>
-          <span className="truncate">{f.author_name}</span>
+          <FileAuthor file={f} />
         </p>
       </div>
       <Button
@@ -271,5 +272,20 @@ function FileRow({
         <MessageSquareShareIcon aria-hidden="true" />
       </Button>
     </li>
+  );
+}
+
+/**
+ * Who wrote a file: its author's name with the kind badge (PROF-09). The name is the one the
+ * timeline shows. A chat account the server could not resolve to an intelligence has no id and
+ * keeps only that name.
+ */
+function FileAuthor({ file }: { file: RoomFile }) {
+  const { author } = file;
+  if (!author.id) return <span className="truncate">{file.author_name}</span>;
+  return (
+    <IntelligenceName
+      intelligence={{ ...author, display_name: file.author_name || author.display_name }}
+    />
   );
 }

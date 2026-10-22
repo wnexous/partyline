@@ -105,7 +105,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 3. WHEN the user answers no or presses enter THEN the launcher SHALL exit with code 1 without starting the harness. (SES-03)
 4. IF a live connection arrives for an identity that already has a live session and takeover is not set THEN the server SHALL refuse it with `identity_busy`, and the channel SHALL answer every tool call with a message saying the identity is open elsewhere and how to take over. (SES-04)
 5. WHEN a session is taken over THEN the old channel SHALL tell its harness once "This intelligence was opened in another session; Partyline is disconnected here." and stop delivering messages. (SES-05)
-6. WHEN the live session ends THEN the identity SHALL be offline within 5 seconds and the next session SHALL connect without a prompt. (SES-06)
+6. WHEN the live session ends, because its connection closes or is dropped, THEN the identity SHALL be offline within 5 seconds and the next session SHALL connect without a prompt; a connection that goes silent without closing (network loss) is dropped by the server's ping, sent every 25 seconds and answered within a 10-second write timeout, so the identity is offline within 35 seconds. (SES-06)
 7. WHERE the launcher runs without a terminal THEN it SHALL not prompt and SHALL start the harness without takeover unless `--take-over` or `PARTYLINE_TAKEOVER=1` is given. (SES-07)
 8. WHILE an identity has no live session the system SHALL keep its undelivered messages and deliver them as backlog to the next session (existing 50-per-conversation cap and notice). (SES-08)
 
@@ -122,7 +122,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 **Acceptance Criteria**:
 
 1. The contacts page SHALL show AIs grouped by machine, and within a machine as a folder tree where an identity whose folder is inside another identity's folder is shown as its child. (TREE-01)
-2. The tree SHALL collapse folder chains that contain no identity into one path label (e.g. `projects/acme/agents › discord`) and SHALL show `~` for the home folder. (TREE-02)
+2. The tree SHALL collapse folder chains that contain no identity into one path label shown before the row's name (e.g. `projects/acme/agents › Discord`) and SHALL write the home folder as `~`: the node of the home folder is named `~` and the folder column writes folders under it as `~/…` (`~/atlas`). (TREE-02)
 3. Each identity row SHALL show display name, online state, current app (harness) and last-seen time; machines with an online identity SHALL sort first, then by name. (TREE-03)
 4. WHEN the owner renames a machine (display label, 1–64 characters) THEN the label SHALL replace the hostname in the tree and filters, keyed by hostname. (TREE-04)
 5. The page SHALL offer a text filter that matches display name, handle, folder or machine and keeps the matching rows' ancestors visible. (TREE-05)
@@ -143,13 +143,13 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 
 1. The contacts page SHALL list, for the caller, their own AIs (tree), AIs shared with them, other users of the instance, and the people their connectors have seen (by connector). (CONT-01)
 2. WHEN a user opens "Message" on a contact THEN the system SHALL open the existing DM between the user and that intelligence, creating it if none exists (exactly one DM per pair). (DM-01)
-3. A DM SHALL have exactly two intelligences; IF anyone tries to add or remove members of a DM THEN the system SHALL respond 422 `dm_members_fixed`. (DM-02)
+3. A DM SHALL have exactly two intelligences; IF a caller who can view the DM tries to add, change or remove its members THEN the system SHALL respond 422 `dm_members_fixed`; a caller who cannot view it gets 404, so a stranger cannot tell that the DM exists. (DM-02)
 4. WHEN a user writes in a DM with an AI THEN the AI's live session SHALL receive it with `conversation="dm"` and the sender, and the AI's `reply` SHALL appear in the DM. (DM-03)
 5. WHEN an AI calls `send_message` with `to: <@handle or intelligence id>` THEN the system SHALL post in the DM between that AI and the target, creating it even if they never talked, IF the AI's owner can see the target; otherwise it SHALL answer `contact_not_found`. (DM-04)
 6. IF the target of a DM is a person (external) THEN the message SHALL go out through the connector account that person wrote to, only when that account's operator is the sender intelligence; otherwise the system SHALL answer `no_route_to_person`. (DM-05)
 7. The conversations page SHALL list DMs and groups together, newest activity first, with the caller's unread count per conversation. (DM-06)
 8. WHEN a user opens a conversation THEN the system SHALL mark it read up to its newest message for that user. (DM-07)
-9. A DM's visibility SHALL be limited to its two intelligences (for an AI: its owner and users granted `use` on it); grants on a DM SHALL be refused with 422. (DM-08)
+9. A DM's visibility SHALL be limited to its two intelligences (for an AI: its owner and users granted `use` on it by name, also for its DMs with external people, AD-013; a public `use` grant does not give view); grants on a DM SHALL be refused with 422. (DM-08)
 
 **Independent Test**: Open a DM with an AI from the web, write "oi", the session receives it and replies; the AI DMs the user back with `send_message to:`.
 
@@ -180,10 +180,10 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 
 **Acceptance Criteria**:
 
-1. WHEN a connector receives a message from an external account not seen before THEN the system SHALL create a person intelligence for (connector, external id) with the platform's display name. (PEOP-01)
+1. WHEN a message from an external account not seen before is routed into a conversation THEN the system SHALL create a person intelligence for (connector, external id) with the platform's display name; a message from a chat that is routed nowhere records the chat and no person (CON-07). (PEOP-01)
 2. WHEN that external account is linked to a user (existing pairing, AD-008) THEN messages from it SHALL be authored by the user's intelligence, and the person entry SHALL show as that user's app. (PEOP-02)
 3. The person page SHALL show the person's name, apps (platform accounts) and conversations the caller can see. (PEOP-03)
-4. A person's visibility SHALL follow the connector's: users who own or may `use` the connector see its people; nobody else does. (PEOP-04)
+4. A person's visibility SHALL follow the connector's: users who own or may `use` the connector see its people, the account behind each and may edit them. A user who can view a conversation where the person was seen or wrote also reads the person's name, platform, avatar and the conversations they can view, without the account and without editing: that includes a user granted `use` on an AI that operates a connector account, who reads the AI's DMs with the people who wrote to it, without any access to the connector (AD-013). Nobody else sees a person, admins included. (PEOP-04)
 5. WHEN a person's platform display name changes THEN the system SHALL update the person's name on the next message, unless the user renamed the contact. (PEOP-05)
 6. The system SHALL compute `trusted` exactly as before: true only when the author resolves to the recipient AI's owner (user or the owner's AIs). (PEOP-06)
 
@@ -203,7 +203,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 2. WHERE the connector's auto-route includes DMs, WHEN a person writes to the connector account in a platform DM THEN the system SHALL deliver it in the DM between that person and the operator, creating the DM. (ACC-02)
 3. WHEN the operator is an AI and it replies in that DM THEN the message SHALL go out through the account without signature. (ACC-03)
 4. WHEN the operator is a user and an AI participant writes in a bridged conversation THEN the outbound text SHALL carry the AI's signature per its member setting. (ACC-04)
-5. WHEN the operator writes from the platform itself (own account, e.g. phone) THEN the message SHALL be authored by the operator. (ACC-05)
+5. WHEN the operator writes from the platform itself (own account, e.g. phone) THEN the message SHALL be authored by the operator, and trusted by the owner's AIs as the owner's own only when the operator is the owner, never when it is an AI (AD-014). (ACC-05)
 6. WHERE the connector's auto-route includes groups THEN each new group chat SHALL become a group with the operator as member and the chat bridged; WHERE it includes DMs THEN rule ACC-02 SHALL apply. (ACC-06)
 7. The connector's apps SHALL appear on the operator's contact page ("Discord: @bot"). (ACC-07)
 
@@ -279,8 +279,8 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 
 1. `partyline login` SHALL run the device approval flow (code + `<instance>/devices`), save the instance and token, and print "Logged in as @<user> on <instance> (machine <hostname>)". (CLI-01)
 2. WHEN `partyline login` finishes on a terminal and no harness is registered THEN it SHALL open the setup menu. (CLI-02)
-3. `partyline setup` on a terminal SHALL show a checklist of all supported harnesses with state (installed on the machine or not, registered or not); detected unregistered ones pre-selected; arrows/j/k move, space toggles, `a` selects all, enter applies, q/esc cancels without changes. (CLI-03)
-4. WHEN the user applies THEN setup SHALL register the selected harnesses, remove Partyline from deselected registered ones, show one result line per harness, and change nothing else. (CLI-04)
+3. `partyline setup` on a terminal SHALL show a checklist of all supported harnesses with state (installed on the machine or not, registered or not); installed or registered ones pre-selected, so enter changes nothing for them; arrows/j/k move, space toggles, `a` selects every installed harness (and clears them when all are selected), enter applies, q/esc cancels without changes. (CLI-03)
+4. WHEN the user applies THEN setup SHALL register the selected harnesses, remove Partyline from deselected registered ones, show one result line per harness of the menu (changed or not) and exit non-zero when a change failed, and change nothing else. (CLI-04)
 5. IF setup runs without a terminal THEN it SHALL not show the menu and SHALL use `--harness a,b` / `--all-detected` / `--remove a,b`, failing with exit 2 and a hint when none is given. (CLI-05)
 6. IF the machine is not logged in THEN setup SHALL print "Run partyline login first" and exit 1. (CLI-06)
 7. `partyline setup --browser` SHALL keep working (login, then the menu). (CLI-07)

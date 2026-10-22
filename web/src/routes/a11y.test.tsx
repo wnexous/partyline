@@ -123,6 +123,7 @@ function appApi(locale: "en" | "pt-BR") {
           message_seq: 3,
           author_kind: "agent",
           author_name: "release-bot",
+          author: makeAI({ id: "a9", display_name: "release-bot", handle: "release-bot" }),
           created_at: "2026-10-19T12:00:00Z",
         },
         {
@@ -136,6 +137,7 @@ function appApi(locale: "en" | "pt-BR") {
           message_seq: 2,
           author_kind: "chat",
           author_name: "Ops on call",
+          author: makePerson({ id: "p7", display_name: "Ops on call", handle: "ops-on-call" }),
           created_at: "2026-10-19T11:00:00Z",
         },
       ],

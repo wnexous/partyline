@@ -35,8 +35,9 @@ func (e *outboundEnv) stored(t *testing.T) int {
 
 // ACC-05: a message typed on the platform with the connector's own account (FromSelf, an id
 // Partyline never sent), in a chat that sits in a room, is authored by the operator (the owner by
-// default, else the AI that operates the account) and trusted by the owner's AIs as the owner's
-// own account. A repeat of it is stored once, and its reply target is kept.
+// default, else the AI that operates the account) and, when the owner operates the account,
+// trusted by the owner's AIs as the owner's own (AD-014: not when an AI does). A repeat of it is
+// stored once, and its reply target is kept.
 func TestOwnAccountMessageIsAuthoredByTheOperator(t *testing.T) {
 	e := newOutboundEnv(t)
 	e.emit(text(groupID, "M1", "where is my order?"))
@@ -60,16 +61,45 @@ func TestOwnAccountMessageIsAuthoredByTheOperator(t *testing.T) {
 	e.emit(typed)
 	require.Equal(t, 2, e.stored(t), "the same message twice is stored once")
 
-	// An AI operates the account now: it is the author, and the account is still the owner's.
+	// An AI operates the account now: it is the author, and no user (AD-014).
 	atlas := e.env.NewAI(e.alice, "atlas")
 	e.patch(t, dto.UpdateConnectorRequest{OperatorID: &atlas})
 	e.emit(own(groupID, "P2", "typed on Atlas's number"))
 	got = e.helper.Message(connectortest.Timeout)
 	author = got.Message.Author
 	require.Equal(t, []any{atlas, dto.IntelligenceRoleAI, dto.IntelligenceKindAI}, []any{author.ID, author.Role, author.Kind})
-	require.True(t, got.Trusted, "an AI's account is the owner's")
-	require.Equal(t, e.alice.User.ID, got.Message.AuthorUserID)
+	require.False(t, got.Trusted, "nothing proves that the owner typed on an AI's account")
+	require.Empty(t, got.Message.AuthorUserID)
 	require.Equal(t, 3, e.stored(t))
+}
+
+// ACC-05, AD-014: what is typed on the connector's own account is trusted by the owner's AIs as the
+// owner's only when the owner operates the account. When an AI operates it the message is that AI's,
+// typed by whoever holds the account, and no AI trusts it as the owner's; giving the account back to
+// the owner restores the trust.
+func TestOwnAccountMessageIsTrustedOnlyWhenTheOwnerOperatesTheAccount(t *testing.T) {
+	e := newOutboundEnv(t)
+	atlas := e.env.NewAI(e.alice, "atlas")
+	typed := func(id, body string) dto.AgentMessageFrame {
+		e.emit(own(groupID, id, body))
+		return e.helper.Message(connectortest.Timeout)
+	}
+
+	owner := typed("P1", "typed by the owner")
+	require.True(t, owner.Trusted, "the owner's account, the owner's AI")
+	require.Equal(t, []any{e.alice.User.ID, e.alice.User.ID}, []any{owner.Message.AuthorUserID, owner.Message.Author.ID})
+
+	e.patch(t, dto.UpdateConnectorRequest{OperatorID: &atlas})
+	ai := typed("P2", "typed on the AI's account")
+	require.False(t, ai.Trusted, "an AI's account is not the owner's")
+	require.Empty(t, ai.Message.AuthorUserID)
+	require.Equal(t, atlas, ai.Message.Author.ID, "it is still written by the AI that operates the account")
+
+	back := ""
+	e.patch(t, dto.UpdateConnectorRequest{OperatorID: &back})
+	again := typed("P3", "typed by the owner again")
+	require.True(t, again.Trusted)
+	require.Equal(t, e.alice.User.ID, again.Message.AuthorUserID)
 }
 
 // ACC-05: media typed or sent from the platform itself are stored like any other chat media.

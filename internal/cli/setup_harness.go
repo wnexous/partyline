@@ -229,8 +229,10 @@ func applyHarnessFlags(ctx context.Context, regs []harness.Registrar, register, 
 }
 
 // applyHarnessSelection registers what is selected and not registered yet and removes
-// Partyline from what is registered and no longer selected, one result line per changed or
-// failed harness (CLI-04). It returns whether every change succeeded and the resulting state.
+// Partyline from what is registered and no longer selected, and reports every harness of the menu
+// with one result line: registered or removed when it changed, already registered or not
+// registered when it did not, an error on stderr when it failed (CLI-04). It returns whether every
+// change succeeded and the resulting state.
 func applyHarnessSelection(ctx context.Context, states []harnessState, selected []bool, io stdio) (bool, []bool) {
 	ok := true
 	final := make([]bool, len(states))
@@ -254,6 +256,10 @@ func applyHarnessSelection(ctx context.Context, states []harnessState, selected 
 			}
 			final[i] = false
 			fmt.Fprintf(io.stdout, "✓ %s: removed\n", s.reg.Title())
+		case want:
+			fmt.Fprintf(io.stdout, "✓ %s: already registered\n", s.reg.Title())
+		default:
+			fmt.Fprintf(io.stdout, "- %s: not registered\n", s.reg.Title())
 		}
 	}
 	return ok, final

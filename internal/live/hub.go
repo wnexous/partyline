@@ -307,7 +307,7 @@ func (c *conn) render(ctx context.Context, e events.Event) ([]frame, error) {
 			return nil, err
 		}
 		c.visible[e.RoomID] = true
-		return []frame{{Type: dto.LiveEventTypeRoomMessage, Data: convert.Message(m)}}, nil
+		return []frame{{Type: dto.LiveEventTypeRoomMessage, Data: convert.MessageFor(m, convert.Viewer(c.p))}}, nil
 
 	case events.RoomChanged:
 		if e.Deleted {
@@ -374,6 +374,12 @@ func (c *conn) render(ctx context.Context, e events.Event) ([]frame, error) {
 		o, err := d.Store.R().GetOutbox(ctx, e.OutboxID)
 		if err != nil {
 			return nil, ignoreMissing(err)
+		}
+		if o.Purpose == string(dto.OutboxPurposeNotify) { // the copy's delivery is for the DM's user (NOTI-02)
+			user, err := d.Rooms.NotifiedUser(ctx, e.MessageID)
+			if err != nil || user == "" || user != convert.Viewer(c.p) {
+				return nil, err
+			}
 		}
 		return []frame{{Type: dto.LiveEventTypeOutboxStatus, Data: dto.OutboxUpdate{
 			RoomID: e.RoomID, MessageID: e.MessageID, OutboxItem: convert.OutboxItem(o),

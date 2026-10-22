@@ -57,7 +57,7 @@
     ● Notes  @notes  Claude Code  online  ~/atlas/notes
 ```
 
-## Finding 1: a bare greeting is answered in the terminal, not in the DM (open)
+## Finding 1: a bare greeting is answered in the terminal, not in the DM (text fixed in T69; repeat pending)
 
 Claude Code turns every channel event into a user turn, and the model chooses how to answer. For
 "oi" it wrote a greeting in its own terminal and did not call `reply`, so the person in the web
@@ -81,6 +81,15 @@ Proposed follow-up (not scheduled, not tried): say in `conversationNote` that th
 participant of a DM sees only what the model sends with `reply` or `send_message`, add a test on
 the instruction text, then repeat step 4 with several fresh sessions to see whether bare
 greetings are answered in the DM.
+
+Follow-up done (Phase 10, T69): the instructions of the full channel (Claude Code and omp) now
+carry a paragraph, `terminalNote`, right after the tool paragraph: text written in the terminal
+never reaches the person or the room that wrote; every DM or room message that deserves an
+answer, a greeting such as "oi" included, is answered with `reply` (or acknowledged with `react`),
+never in the terminal alone. `internal/channel/instructions_test.go` asserts the literal sentence
+in both texts. What a model does with it only a real session shows, and none was started in the
+fix iteration: step 4 with several fresh sessions is still to repeat, so the finding stays open
+until the next UAT does.
 
 ## Notes
 

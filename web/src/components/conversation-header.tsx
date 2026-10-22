@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { AiStatusLine } from "@/components/ai-status";
 import { BackToConversations } from "@/components/back-link";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
+import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { KindBadge } from "@/components/intelligence/kind-badge";
 import { VisibilityLabel } from "@/components/room-visibility";
 import { ConversationKindDM, type Room } from "@/lib/api/types.gen";
@@ -21,7 +22,9 @@ export function conversationTitle(room: Room, viewerId: string, t: Translate): s
 /**
  * The conversation page's header: avatar, title and kind badge; for a DM the counterpart's
  * @handle and, for an AI, whether it is online and in which app; for a group its visibility and
- * description. `actions` are the page's buttons, `back` the way back on a phone.
+ * description. A DM the viewer only reads through an AI has no counterpart: both participants are
+ * named, each with its own badge (PROF-09). `actions` are the page's buttons, `back` the way
+ * back on a phone.
  */
 export function ConversationHeader({
   room,
@@ -39,6 +42,8 @@ export function ConversationHeader({
   const isDM = room.kind === ConversationKindDM;
   const counterpart = counterpartOf(room, viewerId);
   const face = isDM ? (counterpart ?? room.participants[0]) : undefined;
+  const [first, second] = room.participants;
+  const between = isDM && !counterpart && first && second ? ([first, second] as const) : null;
 
   return (
     <header
@@ -54,7 +59,15 @@ export function ConversationHeader({
       />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
-          <h1 className="truncate text-lg font-semibold tracking-[-0.015em]">{title}</h1>
+          {between ? (
+            <h1 className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-lg tracking-[-0.015em]">
+              <IntelligenceName intelligence={between[0]} viewerId={viewerId} />
+              <span className="font-normal text-muted-foreground">{t("conversation.and")}</span>
+              <IntelligenceName intelligence={between[1]} viewerId={viewerId} />
+            </h1>
+          ) : (
+            <h1 className="truncate text-lg font-semibold tracking-[-0.015em]">{title}</h1>
+          )}
           {counterpart ? (
             <KindBadge intelligence={counterpart} viewerId={viewerId} className="shrink-0" />
           ) : null}

@@ -354,6 +354,32 @@ func TestPostInADMWithADisabledCounterpartIsRefused(t *testing.T) {
 	alice.Post(path+"/messages", dto.PostMessageRequest{Text: "welcome back"}).RequireStatus(http.StatusCreated)
 }
 
+// DM-02 (L-044): the refusal does not depend on which participant sorts first. Here the AI was
+// created before the disabled user, so it is the first participant (dm_a) of their DM; its post is
+// refused, stores nothing, and works again once the user is enabled.
+func TestPostByAnAIThatSortsBeforeTheDisabledUserIsRefused(t *testing.T) {
+	env := testkit.New(t)
+	admin := env.SetupAdmin()
+	alice := env.NewUser("alice")
+	atlas := env.NewAI(alice, "atlas")
+	bob := env.NewUser("bob") // created after Atlas: Atlas sorts first
+	require.Less(t, atlas, bob.User.ID, "Atlas is the first participant of the DM")
+	as := authn.Principal{Kind: authn.KindAgent, UserID: alice.User.ID, AgentID: atlas}
+	ctx := context.Background()
+	room := dmByService(t, env, as, bob.User.ID)
+	_, err := env.App.Rooms.Post(ctx, as, room, rooms.PostInput{Text: "before"})
+	require.NoError(t, err)
+
+	disableUser(admin, bob.User.ID, true)
+	_, err = env.App.Rooms.Post(ctx, as, room, rooms.PostInput{Text: "anybody there?"})
+	require.ErrorIs(t, err, rooms.ErrCounterpartDisabled)
+	require.Len(t, timelineOf(t, alice, room), 1, "the refused post stored nothing; alice reads the AI's DM")
+
+	disableUser(admin, bob.User.ID, false)
+	_, err = env.App.Rooms.Post(ctx, as, room, rooms.PostInput{Text: "welcome back"})
+	require.NoError(t, err)
+}
+
 // dmByService opens the DM of the principal with an intelligence through the service, for the
 // agent principals whose HTTP route arrives with the AI tools.
 func dmByService(t *testing.T, env *testkit.Env, p authn.Principal, with string) string {

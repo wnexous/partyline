@@ -48,8 +48,8 @@ func TestMenuKeys(t *testing.T) {
 		{"down arrow moves down", "\x1b[B \r", []bool{true, true, false}},
 		{"up arrow moves up", "\x1b[B\x1b[A \r", []bool{false, false, false}},
 		{"j and k move", "jj\r", []bool{true, false, false}},
-		{"a selects all", "a\r", []bool{true, true, true}},
-		{"a again clears all", "aa\r", []bool{false, false, false}},
+		{"a selects every installed item and no other", "a\r", []bool{true, true, false}},
+		{"a again clears them", "aa\r", []bool{false, false, false}},
 		{"unknown keys are ignored", "xz\x1b[C \r", []bool{false, false, false}},
 		{"unknown escape sequences are ignored", "\x1b[1~\r", []bool{true, false, false}},
 		{"escape followed by a non-bracket byte is ignored", "\x1bX \r", []bool{false, false, false}},
@@ -62,6 +62,26 @@ func TestMenuKeys(t *testing.T) {
 			require.Equal(t, tt.want, selected)
 		})
 	}
+}
+
+// CLI-03 (L-045): `a` only touches the installed items: an item that is not installed would fail
+// to register, and one that is registered without being installed keeps its state, so a is never what
+// removes Partyline from it.
+func TestMenuAllLeavesItemsThatAreNotInstalledAsTheyWere(t *testing.T) {
+	items := []MenuItem{
+		{Title: "Claude Code", Installed: true},
+		{Title: "Codex CLI"},
+		{Title: "pi", Registered: true, Selected: true},
+	}
+	selected, ok, _ := runMenu(t, items, "a\r", 80)
+	require.True(t, ok)
+	require.Equal(t, []bool{true, false, true}, selected, "the installed item is checked; the others stay as they were")
+
+	selected, _, _ = runMenu(t, items, "aa\r", 80)
+	require.Equal(t, []bool{false, false, true}, selected, "a again clears the installed items only")
+
+	selected, _, _ = runMenu(t, []MenuItem{{Title: "Codex CLI"}, {Title: "pi", Registered: true, Selected: true}}, "a\r", 80)
+	require.Equal(t, []bool{false, true}, selected, "nothing is installed: a changes nothing")
 }
 
 func TestMenuCancelKeepsSelection(t *testing.T) {

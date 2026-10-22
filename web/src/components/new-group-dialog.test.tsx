@@ -290,6 +290,33 @@ describe("a refused member (LAY-04)", () => {
   });
 });
 
+describe("kind badges next to names (PROF-09)", () => {
+  it("marks each picked member with its badge: an AI as AI, a user with none", async () => {
+    const { user, dialog } = await open();
+    await user.click(box(dialog, "Atlas"));
+    await user.click(box(dialog, "Bob Lima"));
+    const picked = within(dialog).getByRole("list", { name: "Selected members" });
+    const [atlas, bob] = within(picked).getAllByRole("listitem") as [HTMLElement, HTMLElement];
+    expect(within(atlas).getByText("Atlas")).toBeInTheDocument();
+    expect(within(atlas).getByTestId("kind-badge")).toHaveTextContent("AI");
+    expect(within(bob).getByText("Bob Lima")).toBeInTheDocument();
+    expect(within(bob).queryByTestId("kind-badge")).toBeNull();
+  });
+
+  it("marks a refused AI as an AI in the list of refused members", async () => {
+    const { user, dialog } = await open({
+      "POST /groups": apiErrorWithRefused([{ id: "a4", reason: "person" }]),
+    });
+    await user.type(nameField(dialog), "release crew");
+    await user.click(box(dialog, "Old helper"));
+    await user.click(create(dialog));
+    const alert = await within(dialog).findByRole("alert");
+    const refused = within(within(alert).getByRole("listitem"));
+    expect(refused.getByText("Old helper")).toBeInTheDocument();
+    expect(refused.getByTestId("kind-badge")).toHaveTextContent("AI");
+  });
+});
+
 describe("other failures", () => {
   it("shows the server's reason for the name under the name", async () => {
     const { user, dialog } = await open({

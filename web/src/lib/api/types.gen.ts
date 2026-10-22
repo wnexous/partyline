@@ -1117,6 +1117,12 @@ export interface RoomFile {
   message_seq: number /* int64 */;
   author_kind: AuthorKind;
   author_name: string;
+  /**
+   * Author is the intelligence that wrote the message, rendered as Message.Author is (PROF-09):
+   * it carries the kind, role and platform the badge next to the name needs. It has no id when
+   * the sender is a chat account that resolved to nobody.
+   */
+  author: IntelligenceRef;
   created_at: string /* RFC 3339 */;
 }
 

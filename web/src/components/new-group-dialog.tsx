@@ -147,17 +147,22 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
               >
                 <p className="font-medium">{t("newGroup.refusedTitle")}</p>
                 <ul className="space-y-1">
-                  {stillRefused.map((r) => (
-                    <li key={r.id}>
-                      <span className="font-medium">
-                        {byId.get(r.id)?.ref.display_name ?? r.id}
-                      </span>
-                      {": "}
-                      {r.reason === RefusedReasonPerson
-                        ? t("newGroup.refusedPerson")
-                        : t("newGroup.refusedNotFound")}
-                    </li>
-                  ))}
+                  {stillRefused.map((r) => {
+                    const member = byId.get(r.id);
+                    return (
+                      <li key={r.id}>
+                        {member ? (
+                          <IntelligenceName intelligence={member.ref} />
+                        ) : (
+                          <span className="font-medium">{r.id}</span>
+                        )}
+                        {": "}
+                        {r.reason === RefusedReasonPerson
+                          ? t("newGroup.refusedPerson")
+                          : t("newGroup.refusedNotFound")}
+                      </li>
+                    );
+                  })}
                 </ul>
                 <p>{t("newGroup.refusedHint")}</p>
               </div>
@@ -177,7 +182,7 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
                       className="flex max-w-full items-center gap-1.5 rounded-full border bg-secondary py-0.5 pr-0.5 pl-1 text-sm"
                     >
                       <IntelligenceAvatar intelligence={p.ref} size="sm" decorative />
-                      <span className="min-w-0 truncate">{p.ref.display_name}</span>
+                      <IntelligenceName intelligence={p.ref} />
                       <button
                         type="button"
                         aria-label={t("newGroup.remove", { name: p.ref.display_name })}

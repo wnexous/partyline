@@ -2,6 +2,7 @@ package agents_test
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -85,4 +87,49 @@ drain:
 		}
 	}
 	require.Equal(t, []events.AgentPresence{{AgentID: id, OwnerID: alice.User.ID, Online: true}}, announced, "only the winner was announced")
+}
+
+// SES-05 (L-050): a message the old session already acknowledged does not reach the session that
+// took the AI over. The dispatcher can still be handing the message on when the new session
+// attaches (the new session's backlog is empty, its cursor already covers the message), so the
+// gateway drops every live push at or below the AI's cursor; a later message arrives.
+func TestTakeoverDropsALatePushOfAnAcknowledgedMessage(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	agentID := env.NewAI(alice, "builder")
+	ctx := context.Background()
+	room := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
+	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agentID}).RequireStatus(http.StatusCreated)
+	post := func(text string) dto.Message {
+		t.Helper()
+		return testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: text}).RequireStatus(http.StatusCreated))
+	}
+	token := alice.Token(dto.TokenKindAgent, "laptop")
+	folder := testkit.FolderOf("builder")
+
+	holder, resp := token.DialFolder(folder)
+	require.NotNil(t, holder, "upgrade refused: %d %s", resp.Status, resp.Body)
+	holder.Welcome(time.Minute)
+	before := post("before the takeover")
+	require.Equal(t, before.ID, holder.Message(time.Minute).Message.ID)
+	holder.Ack(before.ID)
+	require.Eventually(t, func() bool {
+		seq, err := env.App.Store.R().GetAgentCursor(ctx, db.GetAgentCursorParams{AgentID: agentID, RoomID: room.ID})
+		return err == nil && seq == before.Seq
+	}, time.Minute, 10*time.Millisecond, "the ack is recorded")
+
+	folder.Takeover = true
+	taker, resp := token.DialFolder(folder)
+	require.NotNil(t, taker, "upgrade refused: %d %s", resp.Status, resp.Body)
+	taker.Welcome(time.Minute)
+	require.Equal(t, agents.CloseTakenOver, websocket.CloseStatus(holder.Closed(time.Minute)))
+
+	// The dispatcher, late, pushes the acknowledged message to the AI's session: the new one.
+	late, err := env.App.Gateway.Message(ctx, before.ID)
+	require.NoError(t, err)
+	require.True(t, env.App.Gateway.Push(agentID, dto.AgentMessage{Room: dto.RoomRef{ID: room.ID, Name: "Support"}, Message: late}), "queued for the new session")
+	taker.ExpectNone(500 * time.Millisecond)
+
+	after := post("after the takeover")
+	require.Equal(t, after.ID, taker.Message(time.Minute).Message.ID, "the next message arrives")
 }

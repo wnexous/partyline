@@ -78,6 +78,34 @@ func TestPresenceRefusesASecondProcess(t *testing.T) {
 	require.True(t, ok, "a connection that tells no process is another process")
 }
 
+// SES-04 (L-042): a connection that sends no process id is a process of its own, also when the
+// session that holds the AI sent none either. Two such connections are two processes: the second
+// is refused, and even with takeover it replaces the first as a takeover (taken_over), never as the
+// silent reconnect of one process.
+func TestPresenceTreatsTwoConnectionsWithoutAProcessIDAsTwoProcesses(t *testing.T) {
+	p, attach := newPresenceFixture(t)
+	first, second := &fakeSession{}, &fakeSession{}
+	fresh, err := attach(first, "", false)
+	require.NoError(t, err)
+	require.True(t, fresh)
+	drain(p.events)
+
+	fresh, err = attach(second, "", false)
+	require.ErrorIs(t, err, ErrBusy)
+	require.False(t, fresh)
+	_, _, closed := first.state()
+	require.Zero(t, closed, "the holder is untouched")
+	busy, ok := p.presence.Busy(p.agent.ID, "")
+	require.True(t, ok, "a second connection that tells no process is blocked by a holder that told none")
+	require.Equal(t, t0, busy.Since)
+
+	fresh, err = attach(second, "", true)
+	require.NoError(t, err)
+	require.True(t, fresh, "a takeover starts a new session")
+	code, reason, closed := first.state()
+	require.Equal(t, []any{1, CloseTakenOver, "taken_over"}, []any{closed, code, reason}, "closed as taken over, not as a reconnect")
+}
+
 // SES-02: a session that takes over closes the old one with taken_over and becomes the live
 // session; the AI stays online (no offline/online events) and its time restarts.
 func TestPresenceTakeoverClosesTheOldSession(t *testing.T) {

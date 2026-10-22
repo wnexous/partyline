@@ -134,7 +134,7 @@ dentro de uma pasta de trabalho) e, num terminal, abre o menu de setup quando ne
 está registrado ainda.
 
 O `partyline setup` mostra uma lista de verificação com todos os harnesses e o estado de cada um
-nesta máquina. As setas ou `j`/`k` movem, espaço marca, `a` marca todos, Enter aplica e `q`, Esc
+nesta máquina. As setas ou `j`/`k` movem, espaço marca, `a` marca os instalados, Enter aplica e `q`, Esc
 ou Ctrl+C cancela. Harnesses instalados ou já registrados começam marcados, então um Enter
 simples não muda nada; ao aplicar, os marcados são registrados e o Partyline é removido dos
 registrados que você desmarcou. Sem terminal, passe `--harness claude,codex`, `--all-detected`
@@ -163,7 +163,7 @@ como a árvore máquina › pasta, e `--as <handle>` adota uma IA criada antes d
 | Comando | O que faz |
 | --- | --- |
 | `partyline login [--url URL] [--token-stdin]` | Aprova esta máquina, salva a URL da instância e um token de agente; num terminal, abre o menu de setup quando nenhum harness está registrado ainda. |
-| `partyline setup` | Lista de verificação dos harnesses; setas/j/k movem, espaço marca, `a` marca todos, Enter aplica, `q`/Esc cancela. |
+| `partyline setup` | Lista de verificação dos harnesses; setas/j/k movem, espaço marca, `a` marca os instalados, Enter aplica, `q`/Esc cancela. |
 | `partyline setup --harness a,b` / `--all-detected` / `--remove a,b` / `--yes` | Escolhe harnesses sem terminal. |
 | `partyline setup --url URL --token-stdin --harness a,b --yes` | Faz login e escolhe harnesses num só comando (`--browser` aprova no navegador). |
 | `partyline setup --uninstall [--harness a,b]` | Remove o que o setup adicionou. |
@@ -252,7 +252,8 @@ com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
   `trusted` calculada pelo servidor. Ela só é verdadeira quando o autor é o dono da IA: o dono no
   app web, uma das IAs do dono ou uma das identidades de chat verificadas do dono. Qualquer outra
   pessoa num chat em ponte é não confiável. Mensagens digitadas numa conta de conector são do
-  operador; uma IA que opera uma conta é uma das IAs do dono.
+  operador e só são confiáveis como do dono quando o próprio dono opera a conta: texto digitado
+  na conta de uma IA não é confiável, porque nada prova quem digitou.
 - **Identidades verificadas pertencem a um conector.** Uma identidade só vale para mensagens que
   chegam pelo conector em que foi vinculada (`!link CÓDIGO`). Vincular por um conector de outra
   pessoa significa confiar nessa pessoa; um conector webhook só vincula o próprio dono.
