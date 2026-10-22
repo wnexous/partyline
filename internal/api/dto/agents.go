@@ -75,10 +75,14 @@ type UpdateProjectRequest struct {
 
 // AgentRoom is a room as seen by an agent (GET /agent/rooms, TOOL-09).
 type AgentRoom struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	Members     []RoomMember `json:"members"`
+	ID   string           `json:"id"`
+	Kind ConversationKind `json:"kind"`
+	// Name is the group's name; for a DM it is the display name of the other participant.
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// With is the other participant of a DM, relative to the AI; absent for a group.
+	With    *IntelligenceRef `json:"with,omitempty"`
+	Members []RoomMember     `json:"members"`
 }
 
 // AgentMessage is a message delivered to an agent. Trusted is computed for the receiving

@@ -44,13 +44,18 @@ RETURNING room_id;
 DELETE FROM agents WHERE id = ?;
 
 -- name: ListAgentRoomStates :many
-SELECT r.id, r.name, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor,
-       m.display_name, m.delivery, m.keywords_json, r.instructions, r.instructions_by
+-- The rooms an agent is a member of. A DM is named by the display name of its other participant
+-- (with_id and with_handle name that intelligence), a group by its name.
+SELECT r.id, CAST(CASE WHEN r.kind = 'dm' THEN COALESCE(w.display_name, '') ELSE r.name END AS TEXT) AS name,
+       r.kind, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor,
+       m.display_name, m.delivery, m.keywords_json, r.instructions, r.instructions_by,
+       CAST(COALESCE(w.id, '') AS TEXT) AS with_id, CAST(COALESCE(w.handle, '') AS TEXT) AS with_handle
 FROM room_members m
 JOIN rooms r ON r.id = m.room_id
+LEFT JOIN intelligences w ON r.kind = 'dm' AND w.id = CASE WHEN r.dm_a = m.member_id THEN r.dm_b ELSE r.dm_a END
 LEFT JOIN agent_cursors c ON c.agent_id = m.member_id AND c.room_id = m.room_id
 WHERE m.kind = 'agent' AND m.member_id = ?
-ORDER BY r.name, r.id;
+ORDER BY name, r.id;
 
 -- name: CountAgentBacklog :one
 SELECT COUNT(*) FROM messages
@@ -117,8 +122,9 @@ ORDER BY connected_at IS NULL, connected_at DESC, id;
 -- name: ListProjectRoomStates :many
 -- The rooms of a project member with the project's cursor and member settings (PROJ-07,
 -- PROJ-08), leaving out rooms where the agent is a member itself.
-SELECT r.id, r.name, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor,
-       m.display_name, m.delivery, m.keywords_json, r.instructions, r.instructions_by
+SELECT r.id, r.name, r.kind, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor,
+       m.display_name, m.delivery, m.keywords_json, r.instructions, r.instructions_by,
+       CAST('' AS TEXT) AS with_id, CAST('' AS TEXT) AS with_handle
 FROM room_members m
 JOIN rooms r ON r.id = m.room_id
 LEFT JOIN project_cursors c ON c.project_id = m.member_id AND c.room_id = m.room_id

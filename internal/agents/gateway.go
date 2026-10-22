@@ -469,7 +469,7 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 	}
 	projectName := ""
 	for _, st := range states {
-		ref := dto.RoomRef{ID: st.ID, Name: st.Name}
+		ref := delivery.RoomRef(st.ID, st.Name, st.Kind)
 		if st.Instructions != "" { // INS-03: once per room and connection, before its messages
 			text := InstructionsNoticeUntrusted
 			if st.InstructionsBy == a.OwnerID {
@@ -535,7 +535,7 @@ func (g *Gateway) backlog(ctx context.Context, c *conn, a db.Agent) (map[string]
 		// one move the cursor (before that message is written); later ones wait for an ack.
 		written, skippedTo := false, int64(0)
 		for _, m := range msgs {
-			facts, err := delivery.LoadFacts(ctx, g.d.Store.R(), m.MessageView)
+			facts, err := delivery.LoadFacts(ctx, g.d.Store.R(), m.MessageView, st.Kind)
 			if err != nil {
 				return nil, err
 			}

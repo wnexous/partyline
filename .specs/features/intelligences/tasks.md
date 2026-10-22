@@ -487,9 +487,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-03, GRP-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A user's DM to a live AI arrives with `conversation="dm"`, the sender's name and handle; the AI's `reply` appears in the DM (DM-03)
-- [ ] Group deliveries carry `conversation="group"` and keep delivery modes, keywords and signatures (GRP-04); Go and TS framing parity tests pass
-- [ ] Gate check passes: `make check`
+- [x] A user's DM to a live AI arrives with `conversation="dm"`, the sender's name and handle; the AI's `reply` appears in the DM (DM-03)
+- [x] Group deliveries carry `conversation="group"` and keep delivery modes, keywords and signatures (GRP-04); Go and TS framing parity tests pass
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): deliver direct messages to AIs`

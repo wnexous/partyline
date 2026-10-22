@@ -804,3 +804,54 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   user with own messages / AI messages / baseline / positions, monotonic and clamped marking,
   authorization of both routes, `room.read` to the reader's tabs only, 79/80/81 code points with
   multi-byte and emoji text, file previews, member names and the 20 cap, retention).
+
+## T23 - AIs receive and see DMs (DM-03, GRP-04)
+
+- **Room naming for an AI.** In every frame an AI receives, a DM's `dto.RoomRef` is `{id, name:
+  <display name of the other participant, relative to that AI>, kind: "dm"}`; a group keeps
+  `{id, name}` with **no `kind`** (`dto.RoomRef.Kind` is `omitempty`, so every group frame is byte for
+  byte what it was). One DM is therefore named differently for its two participants when both are
+  AIs. `delivery.RoomRef(id, name, kind)` builds it; the live dispatcher resolves the names of a DM
+  once per message (`ListRoomParticipants`) and gives each recipient its own; the backlog, the
+  pending path, `history` and `room_info` take the name from the room state, where
+  `ListAgentRoomStates` now returns `name` (the counterpart's display name for a DM), `kind`,
+  `with_id` and `with_handle` (`agents.RoomState.Kind/WithID/WithHandle`; `ListProjectRoomStates`
+  returns the same columns, constant for groups).
+- **Delivery rule.** A message posted in a DM passes `all` and `mentions` (it is addressed to the AI)
+  and is held back by `trusted` unless the owner wrote it: `delivery.Delivered.DM` /
+  `Facts.DM`, set by `LoadFacts(ctx, q, view, roomKind)` — the room kind is a required argument
+  now, so the dispatcher, the connect backlog and `GET /agent/pending` all apply it. Keywords,
+  mentions by name/handle and replies are untouched in groups.
+- **Channel notification meta (`channel.Format`).** New keys: `conversation` (`dm` for a room whose
+  ref has kind dm, else `group`, on every message), `author_id` and `author_handle` (the
+  intelligence of `Message.Author`, only when it has an id; the handle only when it has one). For a DM
+  `room_name` is the counterpart. Room notices (`FormatNotice`) keep their shape (no
+  `conversation`), but name a DM by the counterpart through their `RoomRef`. The history tool's
+  records, `partyline listen`'s JSON lines, the hooks' frames and `wait_for_messages` are built from
+  the same record, so they carry the keys too.
+- **Frame.** `channel.Frame` (and `frame()` in the omp, pi and OpenCode adapters, still identical
+  copies) puts `conversation="…"` right after `room` when the record has one; records without it
+  render as before. `integrations/testdata/framing.json` gained three cases (a DM from the owner, a
+  DM from another user with markup in names and text, a group message from a chat); the Go and TS
+  suites read the same file. Every existing test that asserted a whole meta map or a framed text was
+  extended with the new keys and nothing else.
+- **Agent routes.** `GET /agent/rooms` returns `dto.AgentRoom{id, kind, name, description, with?,
+  members}` for groups and DMs (`with` is the other participant's `IntelligenceRef`, DMs only; a DM's
+  `name` is the counterpart's display name). `resolveRoom` finds, in this order, a room by **id**, a
+  DM by **`@handle`** of the other participant (case-insensitive, the AI's own DMs only), else a
+  **group** by name (case-insensitive or slug). A DM is never found by a name: its title is not
+  unique, and an empty room name used to slug to `agent`. Anything else is the old 403 "not a member
+  of room <ref>"; a name shared by two groups is still 409. `room_info` answers the DM's ref with
+  `kind`. `history`, `send_message`, `send_file`, `reply` and `react` work on a DM like on a group.
+- **Channel tools.** `list_rooms` entries have `kind`, and `with{id, name, handle, kind}` for a DM
+  (omitted for a group); the `room` argument descriptions now say "room id, room name, or @handle of
+  the intelligence you have a DM with". `Instructions`, `ToolsOnlyInstructions` and `OmpInstructions`
+  explain `conversation` (the channel's in meta keys with `author_handle`, the framed ones in
+  attributes and `list_rooms`); no existing sentence changed.
+- Docs: `docs/agents.md` shows the new keys and the DM addressing.
+- Tests: `internal/api/dm_agent_test.go` (a user's DM to a live AI with the reply in the same DM and
+  another user's DM kept apart, groups marked `group`, `all`/`mentions`/`trusted` in DMs with a
+  group control, DM backlog and pending under `mentions`, `GET /agent/rooms`, resolution by id /
+  handle / name), `internal/channel/dm_test.go` (the real channel: notification, tools by `@handle`,
+  `list_rooms`, the instructions), `internal/channel/format_test.go`, `internal/delivery/
+  wants_dm_test.go`, and the shared framing cases (Go `TestFrameMatchesTheAdapters`, `bun test`).

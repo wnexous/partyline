@@ -71,6 +71,8 @@ type Delivered struct {
 	Text string
 	// Trusted is the message's trust for this agent (DLV-06).
 	Trusted bool
+	// DM is set when the message was posted in a direct message: it is addressed to the AI.
+	DM bool
 	// ChatKind is the kind of the authoring chat (group, dm, channel); empty for other authors.
 	ChatKind string
 	// ReplyToAuthorIsMe is set when the message replies to one of this agent's messages.
@@ -78,15 +80,15 @@ type Delivered struct {
 }
 
 // Wants reports whether an agent member with prefs m receives message d (MEM-03, MEM-04):
-// all receives everything; trusted only trusted messages; mentions only DM chat messages,
-// replies to its messages, "@<name>" mentions (case-insensitive) and keywords, both on word
-// boundaries.
+// all receives everything; trusted only trusted messages; mentions only messages of a DM
+// (addressed to the AI), DM chat messages, replies to its messages, "@<name>" mentions
+// (case-insensitive) and keywords, both on word boundaries.
 func Wants(m MemberPrefs, d Delivered) bool {
 	switch m.Delivery {
 	case dto.DeliveryModeTrusted:
 		return d.Trusted
 	case dto.DeliveryModeMentions:
-		if d.ChatKind == string(dto.ChatKindDM) || d.ReplyToAuthorIsMe {
+		if d.DM || d.ChatKind == string(dto.ChatKindDM) || d.ReplyToAuthorIsMe {
 			return true
 		}
 		for _, name := range m.Names {
@@ -149,6 +151,8 @@ func continuesHandle(r rune) bool {
 type Facts struct {
 	Text         string
 	AuthorUserID string
+	// DM is set for a message of a direct message.
+	DM bool
 	// ChatKind is the authoring chat's kind; empty for other authors.
 	ChatKind string
 	// ReplyAuthorKind and ReplyAuthorID name the author of the replied message.
@@ -157,9 +161,10 @@ type Facts struct {
 	ReplyAuthorProjectID string
 }
 
-// LoadFacts reads the chat kind and the replied message's author of a stored message.
-func LoadFacts(ctx context.Context, q *db.Queries, v db.MessageView) (Facts, error) {
-	f := Facts{Text: v.Text, AuthorUserID: v.AuthorUserID}
+// LoadFacts reads the chat kind and the replied message's author of a stored message posted in
+// a room of roomKind (group or dm).
+func LoadFacts(ctx context.Context, q *db.Queries, v db.MessageView, roomKind string) (Facts, error) {
+	f := Facts{Text: v.Text, AuthorUserID: v.AuthorUserID, DM: roomKind == string(dto.ConversationKindDM)}
 	if v.AuthorKind == string(dto.AuthorKindChat) {
 		chat, err := q.GetChat(ctx, v.AuthorID)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -187,7 +192,7 @@ func LoadFacts(ctx context.Context, q *db.Queries, v db.MessageView) (Facts, err
 // WantedBy applies Wants for the agent (id, owner) with prefs.
 func (f Facts) WantedBy(agentID, ownerID string, prefs MemberPrefs) bool {
 	return Wants(prefs, Delivered{
-		Text: f.Text, Trusted: Trusted(f.AuthorUserID, ownerID), ChatKind: f.ChatKind,
+		Text: f.Text, Trusted: Trusted(f.AuthorUserID, ownerID), DM: f.DM, ChatKind: f.ChatKind,
 		ReplyToAuthorIsMe: f.ReplyAuthorKind == string(dto.AuthorKindAgent) && f.ReplyAuthorID == agentID,
 	})
 }
@@ -198,6 +203,17 @@ func (f Facts) WantedByProject(agentID, projectID, ownerID string, prefs MemberP
 	replyToMe := f.ReplyAuthorKind == string(dto.AuthorKindAgent) &&
 		(f.ReplyAuthorID == agentID || (projectID != "" && f.ReplyAuthorProjectID == projectID))
 	return Wants(prefs, Delivered{
-		Text: f.Text, Trusted: Trusted(f.AuthorUserID, ownerID), ChatKind: f.ChatKind, ReplyToAuthorIsMe: replyToMe,
+		Text: f.Text, Trusted: Trusted(f.AuthorUserID, ownerID), DM: f.DM, ChatKind: f.ChatKind, ReplyToAuthorIsMe: replyToMe,
 	})
+}
+
+// RoomRef names a room in the frames an agent receives: a group by its name, a DM by name (the
+// display name of the other participant, relative to the agent) and marked kind dm (DM-03). A
+// group carries no kind.
+func RoomRef(id, name, kind string) dto.RoomRef {
+	ref := dto.RoomRef{ID: id, Name: name}
+	if kind == string(dto.ConversationKindDM) {
+		ref.Kind = dto.ConversationKindDM
+	}
+	return ref
 }

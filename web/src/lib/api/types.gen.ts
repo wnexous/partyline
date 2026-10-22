@@ -96,8 +96,16 @@ export interface UpdateProjectRequest {
  */
 export interface AgentRoom {
   id: string;
+  kind: ConversationKind;
+  /**
+   * Name is the group's name; for a DM it is the display name of the other participant.
+   */
   name: string;
   description: string;
+  /**
+   * With is the other participant of a DM, relative to the AI; absent for a group.
+   */
+  with?: IntelligenceRef;
   members: RoomMember[];
 }
 /**
@@ -1637,11 +1645,17 @@ export interface OutboxItem {
   updated_at: string /* RFC 3339 */;
 }
 /**
- * RoomRef names a room inside agent frames and events.
+ * RoomRef names a room inside agent frames and events. In the frames an AI receives, a DM is
+ * named by the display name of the other participant and marked Kind dm (DM-03); a group
+ * carries no Kind.
  */
 export interface RoomRef {
   id: string;
   name: string;
+  /**
+   * Kind is dm for a direct message; absent for a group.
+   */
+  kind?: ConversationKind;
 }
 /**
  * ActivityItem is one entry of GET /activity: a message with the room it was posted in.

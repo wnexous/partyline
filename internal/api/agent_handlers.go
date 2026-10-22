@@ -291,7 +291,16 @@ func (s *server) agentRooms(w http.ResponseWriter, r *http.Request, p authn.Prin
 		if err != nil {
 			return err
 		}
-		ar := dto.AgentRoom{ID: room.ID, Name: room.Name, Description: room.Description, Members: make([]dto.RoomMember, len(members))}
+		ar := dto.AgentRoom{
+			ID: room.ID, Kind: dto.ConversationKind(room.Kind), Name: st.Name, Description: room.Description,
+			Members: make([]dto.RoomMember, len(members)),
+		}
+		for _, part := range room.Participants {
+			if part.ID != p.AgentID { // a DM, seen from the AI: the other participant
+				with := convert.IntelligenceRef(part.Intelligence, dto.IntelligenceRole(part.Role), part.Platform)
+				ar.With = &with
+			}
+		}
 		for i, m := range members {
 			ar.Members[i] = s.toMember(r.Context(), m)
 		}
@@ -317,7 +326,7 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 		return err
 	}
 	out := dto.RoomInfo{
-		Room: dto.RoomRef{ID: room.ID, Name: room.Name}, Instructions: room.Instructions,
+		Room: delivery.RoomRef(st.ID, st.Name, st.Kind), Instructions: room.Instructions,
 		InstructionsBy: room.InstructionsByName,
 		// INS-04: trusted only when the calling agent's owner saved them.
 		InstructionsTrusted: room.Instructions != "" && room.InstructionsBy == p.UserID,
@@ -336,19 +345,29 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 	return nil
 }
 
-// resolveRoom finds the agent's room by id, else by name (case-insensitive) among its rooms
-// (SessionRooms: its project's rooms count while it is the active session). Unknown rooms and
-// rooms without the agent are 403 "not a member of room <room>" (TOOL-04); a name shared by
-// several of its rooms is 409.
+// resolveRoom finds the agent's room by id, by "@handle" of the other participant of one of its
+// DMs, else by name (case-insensitive) among its groups (SessionRooms: its project's rooms count
+// while it is the active session). A DM is never found by a name, its title being the other
+// participant's display name, which is not unique (DM-03). Unknown rooms and rooms without the
+// agent are 403 "not a member of room <room>" (TOOL-04); a name shared by several of its groups
+// is 409.
 func (s *server) resolveRoom(ctx context.Context, p authn.Principal, ref string) (agents.RoomState, error) {
 	states, err := s.Agents.SessionRooms(ctx, p.AgentID)
 	if err != nil {
 		return agents.RoomState{}, err
 	}
+	handle, isHandle := strings.CutPrefix(ref, "@")
 	var byName []agents.RoomState
 	for _, st := range states {
+		isDM := st.Kind == string(dto.ConversationKindDM)
 		if st.ID == ref {
 			return st, nil
+		}
+		if isDM {
+			if isHandle && handle != "" && strings.EqualFold(st.WithHandle, handle) {
+				return st, nil
+			}
+			continue
 		}
 		if strings.EqualFold(st.Name, ref) || agents.Slug(st.Name) == ref {
 			byName = append(byName, st)
@@ -397,7 +416,7 @@ func (s *server) agentHistory(w http.ResponseWriter, r *http.Request, p authn.Pr
 
 func agentMessage(room agents.RoomState, m rooms.Message, ownerID string) dto.AgentMessage {
 	return dto.AgentMessage{
-		Room:    dto.RoomRef{ID: room.ID, Name: room.Name},
+		Room:    delivery.RoomRef(room.ID, room.Name, room.Kind),
 		Trusted: delivery.Trusted(m.AuthorUserID, ownerID),
 		Message: convert.Message(m),
 	}

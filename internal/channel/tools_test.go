@@ -215,8 +215,8 @@ func TestToolHistory(t *testing.T) {
 	require.Equal(t, posted[24].ID, page.Messages[19]["message_id"])
 	last := page.Messages[19]
 	require.Equal(t, map[string]string{
-		"room": e.room.ID, "room_name": "Support", "message_id": posted[24].ID, "author": "alice",
-		"author_kind": "user", "sender_name": "", "trusted": "true", "kind": "text", "content": "msg 25",
+		"conversation": "group", "room": e.room.ID, "room_name": "Support", "message_id": posted[24].ID, "author": "alice",
+		"author_kind": "user", "author_id": e.alice.User.ID, "author_handle": "alice", "sender_name": "", "trusted": "true", "kind": "text", "content": "msg 25",
 	}, last)
 
 	text, isErr = s.call("history", toolArgs("room", e.room.ID, "before", posted[5].ID, "limit", 3))

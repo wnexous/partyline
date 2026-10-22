@@ -271,10 +271,14 @@ type OutboxItem struct {
 	UpdatedAt time.Time    `json:"updated_at"`
 }
 
-// RoomRef names a room inside agent frames and events.
+// RoomRef names a room inside agent frames and events. In the frames an AI receives, a DM is
+// named by the display name of the other participant and marked Kind dm (DM-03); a group
+// carries no Kind.
 type RoomRef struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Kind is dm for a direct message; absent for a group.
+	Kind ConversationKind `json:"kind,omitempty"`
 }
 
 // ActivityItem is one entry of GET /activity: a message with the room it was posted in.

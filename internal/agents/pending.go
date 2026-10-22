@@ -48,10 +48,10 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, limit int) ([]dto.Age
 		if err != nil {
 			return nil, err
 		}
-		ref := dto.RoomRef{ID: st.ID, Name: st.Name}
+		ref := delivery.RoomRef(st.ID, st.Name, st.Kind)
 		prefs := delivery.Prefs(profile, st.DisplayName, st.Delivery, st.KeywordsJson)
 		for _, m := range msgs {
-			facts, err := delivery.LoadFacts(ctx, g.d.Store.R(), m.MessageView)
+			facts, err := delivery.LoadFacts(ctx, g.d.Store.R(), m.MessageView, st.Kind)
 			if err != nil {
 				return nil, err
 			}

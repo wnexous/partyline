@@ -144,7 +144,7 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 	if len(pushes) == 0 {
 		return nil
 	}
-	facts, err := LoadFacts(ctx, q, view)
+	facts, err := LoadFacts(ctx, q, view, room.Kind)
 	if err != nil {
 		return err
 	}
@@ -152,7 +152,10 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 	if err != nil {
 		return err
 	}
-	ref := dto.RoomRef{ID: room.ID, Name: room.Name}
+	refs, err := roomRefs(ctx, q, room)
+	if err != nil {
+		return err
+	}
 	for _, t := range pushes {
 		agent, err := q.GetAgent(ctx, t.agentID)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -186,9 +189,43 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 		if !wanted {
 			continue // MEM-03, MEM-04: stored, not pushed
 		}
-		d.o.Agents.Push(t.agentID, dto.AgentMessage{Room: ref, Trusted: Trusted(msg.AuthorUserID, ownerID), Message: msg})
+		d.o.Agents.Push(t.agentID, dto.AgentMessage{Room: refs.of(t.agentID), Trusted: Trusted(msg.AuthorUserID, ownerID), Message: msg})
 	}
 	return nil
+}
+
+// roomNames names a room for each agent that receives from it: a group has one name; a DM is
+// named after the participant that is not the agent.
+type roomNames struct {
+	group dto.RoomRef
+	dm    map[string]dto.RoomRef // by participant: the ref its counterpart reads
+}
+
+func (n roomNames) of(agentID string) dto.RoomRef {
+	if ref, ok := n.dm[agentID]; ok {
+		return ref
+	}
+	return n.group
+}
+
+func roomRefs(ctx context.Context, q *db.Queries, room db.Room) (roomNames, error) {
+	names := roomNames{group: RoomRef(room.ID, room.Name, room.Kind)}
+	if room.Kind != string(dto.ConversationKindDM) {
+		return names, nil
+	}
+	parts, err := q.ListRoomParticipants(ctx, room.ID)
+	if err != nil {
+		return roomNames{}, err
+	}
+	names.dm = make(map[string]dto.RoomRef, len(parts))
+	for _, p := range parts {
+		for _, other := range parts {
+			if other.Intelligence.ID != p.Intelligence.ID {
+				names.dm[p.Intelligence.ID] = RoomRef(room.ID, other.Intelligence.DisplayName, room.Kind)
+			}
+		}
+	}
+	return names, nil
 }
 
 // push is one live delivery: to an agent member, or to a project's active session.

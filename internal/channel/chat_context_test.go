@@ -54,7 +54,7 @@ func TestPushCarriesChatContext(t *testing.T) {
 	n := s.notification()
 	require.Equal(t, "from the group", n.Content)
 	require.Equal(t, map[string]string{
-		"room": e.room.ID, "room_name": "Support", "message_id": backlog.ID, "author": "Grandma",
+		"conversation": "group", "room": e.room.ID, "room_name": "Support", "message_id": backlog.ID, "author": "Grandma",
 		"author_kind": "chat", "sender_name": "Grandma", "trusted": "false", "kind": "text",
 		"chat_id": group, "chat_title": "Lollerie", "chat_kind": "group", "platform": "whatsapp",
 		"sender_id": "5511999990000@s.whatsapp.net",
@@ -63,7 +63,7 @@ func TestPushCarriesChatContext(t *testing.T) {
 	live := e.fromChat(dm, "4242", "Bob", "hi from telegram")
 	n = s.notification()
 	require.Equal(t, map[string]string{
-		"room": e.room.ID, "room_name": "Support", "message_id": live.ID, "author": "Bob",
+		"conversation": "group", "room": e.room.ID, "room_name": "Support", "message_id": live.ID, "author": "Bob",
 		"author_kind": "chat", "sender_name": "Bob", "trusted": "false", "kind": "text",
 		"chat_id": dm, "chat_title": "Bob Smith", "chat_kind": "dm", "platform": "telegram", "sender_id": "4242",
 	}, n.Meta)
@@ -71,16 +71,16 @@ func TestPushCarriesChatContext(t *testing.T) {
 	user := e.post("from alice")
 	n = s.notification()
 	require.Equal(t, map[string]string{
-		"room": e.room.ID, "room_name": "Support", "message_id": user.ID, "author": "alice",
-		"author_kind": "user", "sender_name": "", "trusted": "true", "kind": "text",
+		"conversation": "group", "room": e.room.ID, "room_name": "Support", "message_id": user.ID, "author": "alice",
+		"author_kind": "user", "author_id": e.alice.User.ID, "author_handle": "alice", "sender_name": "", "trusted": "true", "kind": "text",
 	}, n.Meta)
 
 	agent := testkit.Decode[dto.Message](e.alice.WithBearer(e.secret).AsAgent("helper").
 		Post("/api/v1/agent/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: "from helper"}).RequireStatus(http.StatusCreated))
 	n = s.notification()
 	require.Equal(t, map[string]string{
-		"room": e.room.ID, "room_name": "Support", "message_id": agent.ID, "author": "helper",
-		"author_kind": "agent", "sender_name": "", "trusted": "true", "kind": "text",
+		"conversation": "group", "room": e.room.ID, "room_name": "Support", "message_id": agent.ID, "author": "helper",
+		"author_kind": "agent", "author_id": helper, "author_handle": "helper", "sender_name": "", "trusted": "true", "kind": "text",
 	}, n.Meta)
 }
 
@@ -100,14 +100,14 @@ func TestHistoryCarriesChatContext(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(text), &page))
 	require.Len(t, page.Messages, 2)
 	require.Equal(t, map[string]string{
-		"room": e.room.ID, "room_name": "Support", "message_id": m.ID, "author": "carol",
+		"conversation": "group", "room": e.room.ID, "room_name": "Support", "message_id": m.ID, "author": "carol",
 		"author_kind": "chat", "sender_name": "carol", "trusted": "false", "kind": "text",
 		"chat_id": group, "chat_title": "Guild #general", "chat_kind": "channel", "platform": "discord",
 		"sender_id": "998877", "content": "hello channel",
 	}, page.Messages[0])
 	require.Equal(t, map[string]string{
-		"room": e.room.ID, "room_name": "Support", "message_id": user.ID, "author": "alice",
-		"author_kind": "user", "sender_name": "", "trusted": "true", "kind": "text", "content": "hello room",
+		"conversation": "group", "room": e.room.ID, "room_name": "Support", "message_id": user.ID, "author": "alice",
+		"author_kind": "user", "author_id": e.alice.User.ID, "author_handle": "alice", "sender_name": "", "trusted": "true", "kind": "text", "content": "hello room",
 	}, page.Messages[1])
 
 	// The room timeline renders the same chat reference (web, ChatRef).

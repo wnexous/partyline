@@ -62,8 +62,8 @@ func TestHookContinuesWithPendingMessages(t *testing.T) {
 			require.True(t, strings.HasSuffix(out, "}\n") && strings.Count(out, "\n") == 1, "stdout is one JSON line: %q", out)
 			var got map[string]string
 			require.NoError(t, json.Unmarshal([]byte(out), &got))
-			reason := `<partyline room="Builds" from="` + m1.AuthorName + `" trusted="true" message_id="` + m1.ID + `">build &lt;red&gt; &amp; failing</partyline>` + "\n" + ownerLine +
-				"\n\n" + `<partyline room="Builds" from="` + m2.AuthorName + `" trusted="true" message_id="` + m2.ID + `">now green</partyline>` + "\n" + ownerLine
+			reason := `<partyline room="Builds" conversation="group" from="` + m1.AuthorName + `" trusted="true" message_id="` + m1.ID + `">build &lt;red&gt; &amp; failing</partyline>` + "\n" + ownerLine +
+				"\n\n" + `<partyline room="Builds" conversation="group" from="` + m2.AuthorName + `" trusted="true" message_id="` + m2.ID + `">now green</partyline>` + "\n" + ownerLine
 			require.Equal(t, map[string]string{"decision": decision, "reason": reason}, got)
 
 			code, out, _ = runHook(hook, `{"cwd":"/work/proj"}`, e.vars())
@@ -174,7 +174,7 @@ func TestWaitForMessagesTool(t *testing.T) {
 	msg := e.post(t, room.ID, "ship it")
 	text, isErr = call(3, map[string]any{"timeout_seconds": 5})
 	require.False(t, isErr, text)
-	require.Equal(t, `<partyline room="Builds" from="`+msg.AuthorName+`" trusted="true" message_id="`+msg.ID+`">ship it</partyline>`+"\n"+ownerLine, text)
+	require.Equal(t, `<partyline room="Builds" conversation="group" from="`+msg.AuthorName+`" trusted="true" message_id="`+msg.ID+`">ship it</partyline>`+"\n"+ownerLine, text)
 
 	full := startChannel(t, nil, e.vars(), "/work/claude-box")
 	initialize(full)
