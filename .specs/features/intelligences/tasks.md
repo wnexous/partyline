@@ -503,10 +503,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-04, AGRP-01, AGRP-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] AI posts `to: @owner-handle` with no prior conversation → DM created and visible in the owner's conversation list (DM-04); invisible target → 404 `contact_not_found`
-- [ ] AI creates a group with its owner and another visible AI → owned by the owner, AI is a member (AGRP-01); a refused member → 422 listing it, nothing created (AGRP-02)
-- [ ] 11th new conversation within an hour → 429 `rate_limited`; reopening an existing DM is not counted
-- [ ] Gate check passes: `make check`
+- [x] AI posts `to: @owner-handle` with no prior conversation → DM created and visible in the owner's conversation list (DM-04); invisible target → 404 `contact_not_found`
+- [x] AI creates a group with its owner and another visible AI → owned by the owner, AI is a member (AGRP-01); a refused member → 422 listing it, nothing created (AGRP-02)
+- [x] 11th new conversation within an hour → 429 `rate_limited`; reopening an existing DM is not counted
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): let AIs open DMs and create groups`

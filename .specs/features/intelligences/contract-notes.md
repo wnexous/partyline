@@ -855,3 +855,52 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   handle / name), `internal/channel/dm_test.go` (the real channel: notification, tools by `@handle`,
   `list_rooms`, the instructions), `internal/channel/format_test.go`, `internal/delivery/
   wants_dm_test.go`, and the shared framing cases (Go `TestFrameMatchesTheAdapters`, `bun test`).
+
+## T24 - AI-initiated DMs and groups (DM-04, AGRP-01, AGRP-02)
+
+- **`POST /api/v1/agent/dms`** `dto.AgentDMRequest{to, text, chat_ids?}` → **201** `dto.Message` (the
+  posted message; its `room_id` is the DM), agent token acting as the AI of the folder headers
+  (`agentOnly`: a session, a user token, a missing folder and an anonymous caller are 403 / 403 /
+  422 `folder_required` / 401). `to` is `"@handle"`, a bare `handle` (case-insensitive) or an
+  intelligence id: `conversations.Service.Contact` tries the handle first and otherwise hands the
+  reference on unchanged, so a handle that exists but is not visible answers exactly like one that
+  does not. The DM is the T20 `OpenDM` of the AI principal, with everything it says: the target must
+  be visible to the **AI's owner** (404 `contact_not_found` for an unknown or invisible target, the
+  same body), 422 `dm_self`, 422 `no_route_to_person` for a person (T30 refines it), and the room is
+  owned by the owner. Writing to an existing DM reopens it silently; the message goes to the same DM
+  whatever form of `to` names it. Visibility is the owner's, so it changes with what the owner
+  gets: an AI that wrote to a user becomes visible to that user (T7: a shared conversation), who can
+  then write to it; an AI the owner may `use` is a target, the one of an owner who shared nothing is
+  not.
+- **Order and cost.** Validation first (`conversations.ValidateDM`: `to` present and not just "@";
+  text non-blank and within 16 000 code points; `chat_ids` count) → 422 `invalid` with fields `to`
+  and/or `text`, **before** anything is spent or created → `Agents.AllowPost` (the 30 messages a
+  minute) → `SendDM` → `OpenDM` (the allowance below, only for a DM it creates) → `Rooms.Post`. A
+  DM this very call created that then refuses the post (for example a `chat_ids` entry that is no
+  chat of a new DM, or a disabled counterpart) is **deleted again** if nobody wrote in it
+  (`DeleteEmptyDMRoom`, `next_seq = 1`), with `room.deleted` for the sockets that heard of it, so
+  no empty DM is left; the creation slot it used stays spent.
+- **`POST /api/v1/agent/groups`** `dto.CreateGroupRequest{name, description?, members[]}` where each member
+  is `"@handle"`, a handle or an id → **201** `dto.CreatedGroup{room, name}`. It is T21's
+  `CreateGroup` for the AI principal (`CreateGroupNamed` resolves the names first): owner = the
+  AI's owner, the AI the first member, every member checked by the owner's add-member rules, all
+  or nothing. A refusal is 422 `members_refused` whose `refused[].id` is **the reference as the AI
+  wrote it** (`"@sage"`, not the id it resolved to; the first reference when two name one
+  intelligence), reasons as in T21, valid members left out. Validation errors win over refusals;
+  blank entries and more than 50 members are 422 `invalid`.
+- **Allowance (DM-04, AGRP-01):** `agents.Registry.AllowCreate(agentID)` is a sliding window of
+  `agents.CreateLimit` = **10** new conversations per `CreateWindow` = **1 hour** per AI, DMs and
+  groups together, in memory like the post limit (a restart resets it; it follows the app's clock).
+  It is asked only when a conversation is about to be created, after every other check: a reopened
+  DM, an unknown or invisible target, a refused group and an invalid request cost nothing. The 11th
+  is **429 `rate_limited`** ("too many new conversations") and creates nothing; another AI of the
+  same owner has its own window. `app.go` wires it as `conversations.Deps.AllowCreate`.
+- sqlc: `DeleteEmptyDMRoom` (`:execrows`). `rooms.ValidatePost(PostInput)` is the exported part of
+  the post validation.
+- Tests: `internal/api/agent_conversations_test.go` (a first DM to the owner seen in their list and
+  live, three forms of `to`, visible and invisible targets with identical refusals, self / person /
+  validation with 35 invalid requests not spending the post limit, no empty DM after a refused post,
+  an AI reaching a live AI of another owner untrusted, group creation with mixed references and the AI
+  posting in it, refusals echoed as named, the 10-per-hour window on a manual clock with reopen /
+  refusal / other-AI / one hour later, authorization of both routes) and the `AllowCreate` tests of
+  T20 and T21 in `internal/conversations`.

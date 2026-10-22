@@ -69,3 +69,7 @@ SELECT m.room_id, i.display_name, i.handle
 FROM room_members m JOIN intelligences i ON i.id = m.member_id
 WHERE m.kind IN ('agent', 'user') AND m.room_id IN (sqlc.slice('room_ids'))
 ORDER BY m.room_id, m.created_at, m.id;
+
+-- name: DeleteEmptyDMRoom :execrows
+-- Deletes a DM nobody has written in: the one a failed first post leaves behind.
+DELETE FROM rooms WHERE id = ? AND kind = 'dm' AND next_seq = 1;

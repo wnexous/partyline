@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
@@ -140,4 +141,78 @@ func (s *Service) createDM(ctx context.Context, p authn.Principal, pair db.GetDM
 		return nil
 	})
 	return id, created, err
+}
+
+// Contact resolves how an AI names an intelligence, "@handle", a bare handle or an id (any case
+// for a handle), to the intelligence's id. A reference that names no handle is returned as it is,
+// so that the checks that follow answer for it as for any unknown id: whether a handle or an id
+// exists is not told to anyone who cannot see it.
+func (s *Service) Contact(ctx context.Context, ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if handle := strings.TrimPrefix(ref, "@"); handle != "" {
+		i, err := s.store.R().GetIntelligenceByHandle(ctx, strings.ToLower(handle))
+		if err == nil {
+			return i.ID, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return "", err
+		}
+	}
+	return ref, nil
+}
+
+// SendDM posts the AI's message in its DM with the intelligence named by to (an "@handle", a
+// handle or an id), opening the DM first when the pair has none (DM-04). The request is validated
+// before anything is created; the DM is opened by OpenDM, with its rules and its allowance (an
+// existing DM is not counted); and a DM this call created that then refuses the post is deleted
+// again, so no empty DM is left behind.
+func (s *Service) SendDM(ctx context.Context, p authn.Principal, to string, in rooms.PostInput) (rooms.Message, error) {
+	if err := ValidateDM(to, in); err != nil {
+		return rooms.Message{}, err
+	}
+	id, err := s.Contact(ctx, to)
+	if err != nil {
+		return rooms.Message{}, err
+	}
+	room, created, err := s.OpenDM(ctx, p, id)
+	if err != nil {
+		return rooms.Message{}, err
+	}
+	msg, err := s.rooms.Post(ctx, p, room.ID, in)
+	if err != nil && created {
+		s.discard(ctx, room.ID)
+	}
+	return msg, err
+}
+
+// discard deletes a DM nobody has written in and tells the sockets that heard of it. Best effort:
+// a DM that cannot be deleted stays, empty.
+func (s *Service) discard(ctx context.Context, roomID string) {
+	var n int64
+	err := s.store.WithTx(ctx, func(q *db.Queries) (err error) {
+		n, err = q.DeleteEmptyDMRoom(ctx, roomID)
+		return err
+	})
+	if err == nil && n > 0 {
+		s.bus.Publish(events.RoomChanged{RoomID: roomID, Deleted: true})
+	}
+}
+
+// ValidateDM checks the request of SendDM and writes nothing: the target must be named and the
+// message valid. Both problems are reported together, as fields to and text.
+func ValidateDM(to string, in rooms.PostInput) error {
+	check := validation.Check{}
+	if h := strings.TrimSpace(to); h == "" || h == "@" {
+		check.Add("to", "required")
+	}
+	if err := rooms.ValidatePost(in); err != nil {
+		var invalid *validation.Error
+		if !errors.As(err, &invalid) {
+			return err
+		}
+		for field, reason := range invalid.Fields {
+			check.Add(field, reason)
+		}
+	}
+	return check.Err()
 }

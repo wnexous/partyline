@@ -187,3 +187,19 @@ type AgentAckFrame struct {
 	Type      AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeAck"`
 	MessageID string         `json:"message_id"`
 }
+
+// AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its
+// owner can see, opening the DM when there is none. To is the target's "@handle", handle or id;
+// ChatIDs reach chats of the DM like the recipients of a post.
+type AgentDMRequest struct {
+	To      string   `json:"to"`
+	Text    string   `json:"text"`
+	ChatIDs []string `json:"chat_ids,omitempty"`
+}
+
+// CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name. Its
+// request is a CreateGroupRequest whose members are "@handle", handle or id.
+type CreatedGroup struct {
+	Room string `json:"room"`
+	Name string `json:"name"`
+}

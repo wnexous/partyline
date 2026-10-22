@@ -397,7 +397,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | DM-01 | P1: Contacts and DMs | Execute | Implementing |
 | DM-02 | P1: Contacts and DMs | Execute | Implementing |
 | DM-03 | P1: Contacts and DMs | Execute | Implementing |
-| DM-04 | P1: Contacts and DMs | Tasks | Pending |
+| DM-04 | P1: Contacts and DMs | Execute | Implementing |
 | DM-05 | P1: Contacts and DMs | Tasks | Pending |
 | DM-06 | P1: Contacts and DMs | Execute | Implementing |
 | DM-07 | P1: Contacts and DMs | Execute | Implementing |
@@ -436,8 +436,8 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | LAY-04 | P1: Messenger layout | Execute | Implementing |
 | LAY-05 | P1: Messenger layout | Tasks | Pending |
 | LAY-06 | P1: Messenger layout | Tasks | Pending |
-| AGRP-01 | P2: AIs create groups | Tasks | Pending |
-| AGRP-02 | P2: AIs create groups | Tasks | Pending |
+| AGRP-01 | P2: AIs create groups | Execute | Implementing |
+| AGRP-02 | P2: AIs create groups | Execute | Implementing |
 | CLI-01 | P1: Login and setup | Tasks | Pending |
 | CLI-02 | P1: Login and setup | Tasks | Pending |
 | CLI-03 | P1: Login and setup | Tasks | Pending |

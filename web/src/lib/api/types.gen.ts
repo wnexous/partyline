@@ -234,6 +234,24 @@ export interface AgentAckFrame {
   type: typeof AgentFrameTypeAck;
   message_id: string;
 }
+/**
+ * AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its
+ * owner can see, opening the DM when there is none. To is the target's "@handle", handle or id;
+ * ChatIDs reach chats of the DM like the recipients of a post.
+ */
+export interface AgentDMRequest {
+  to: string;
+  text: string;
+  chat_ids?: string[];
+}
+/**
+ * CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name. Its
+ * request is a CreateGroupRequest whose members are "@handle", handle or id.
+ */
+export interface CreatedGroup {
+  room: string;
+  name: string;
+}
 
 //////////
 // source: common.go

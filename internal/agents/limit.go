@@ -11,6 +11,13 @@ const (
 	PostWindow = time.Minute
 )
 
+// Agent conversation creation rate limit: an AI creates at most CreateLimit new DMs and groups
+// per CreateWindow (DM-04, AGRP-01).
+const (
+	CreateLimit  = 10
+	CreateWindow = time.Hour
+)
+
 // postLimiter allows at most limit events per agent within a sliding window.
 type postLimiter struct {
 	limit  int

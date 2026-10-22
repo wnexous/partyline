@@ -136,3 +136,32 @@ func (s *Service) member(ctx context.Context, p authn.Principal, id string) (roo
 	}
 	return m, "", nil
 }
+
+// CreateGroupNamed is CreateGroup for members named the way an AI names them: "@handle", a bare
+// handle or an id (Contact). The members an owner cannot add come back as they were named, not
+// as the ids they resolved to, so the AI recognises them (AGRP-02).
+func (s *Service) CreateGroupNamed(ctx context.Context, p authn.Principal, in GroupInput) (rooms.Room, error) {
+	named := map[string]string{} // resolved id -> how the first reference to it read
+	ids := make([]string, 0, len(in.Members))
+	for _, ref := range in.Members {
+		id, err := s.Contact(ctx, ref)
+		if err != nil {
+			return rooms.Room{}, err
+		}
+		if _, ok := named[id]; !ok {
+			named[id] = strings.TrimSpace(ref)
+		}
+		ids = append(ids, id)
+	}
+	in.Members = ids
+	room, err := s.CreateGroup(ctx, p, in)
+	var refused *MembersRefusedError
+	if errors.As(err, &refused) {
+		for i, r := range refused.Refused {
+			if ref, ok := named[r.ID]; ok {
+				refused.Refused[i].ID = ref
+			}
+		}
+	}
+	return room, err
+}

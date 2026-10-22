@@ -98,6 +98,19 @@ func (q *Queries) CreateDMRoom(ctx context.Context, arg CreateDMRoomParams) erro
 	return err
 }
 
+const deleteEmptyDMRoom = `-- name: DeleteEmptyDMRoom :execrows
+DELETE FROM rooms WHERE id = ? AND kind = 'dm' AND next_seq = 1
+`
+
+// Deletes a DM nobody has written in: the one a failed first post leaves behind.
+func (q *Queries) DeleteEmptyDMRoom(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteEmptyDMRoom, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteReadCursor = `-- name: DeleteReadCursor :exec
 DELETE FROM read_cursors WHERE user_id = ? AND room_id = ?
 `

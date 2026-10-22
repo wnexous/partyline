@@ -174,6 +174,13 @@ func (s *Service) PostFromChat(ctx context.Context, roomID string, in ChatMessag
 	})
 }
 
+// ValidatePost checks a message the way Post does before it stores it (MSG-02) and writes
+// nothing, for callers that create something to post into and must not create it for a message
+// that will be refused.
+func ValidatePost(in PostInput) error {
+	return draft{text: in.Text, recipients: in.Recipients, files: in.Files}.validate()
+}
+
 // validate applies MSG-02.
 func (d draft) validate() error {
 	check := validation.Check{}

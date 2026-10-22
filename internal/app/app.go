@@ -161,9 +161,11 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		now:           opts.Now,
 	}
 	a.Presence = presence
-	a.Conversations = conversations.New(conversations.Deps{Store: st, Rooms: a.Rooms, Intelligences: a.Intelligences, Bus: bus, Now: opts.Now})
 	auditLog := audit.New(st, opts.Now)
 	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Audit: auditLog, Now: opts.Now})
+	a.Conversations = conversations.New(conversations.Deps{
+		Store: st, Rooms: a.Rooms, Intelligences: a.Intelligences, Bus: bus, AllowCreate: a.Agents.AllowCreate, Now: opts.Now,
+	})
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
 		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Logger: opts.Logger,
 		Bus: bus, Sessions: usersSvc,
