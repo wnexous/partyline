@@ -2670,9 +2670,10 @@ it. `IntelligenceName`/`KindBadge` now render in each.
   `TestRoomFilesNameAPersonWithItsPlatform` (person with platform). Vitest: header with an AI and a
   WhatsApp person, picked and refused members in the new group dialog, the files list (AI, person, user,
   unresolved sender) and a live file's AI badge. Each failed before the change.
-- **Not changed:** other places that print a name (the command menu, the route-chat dialog, the member
-  picker's row text, the sidebar header) were not in the Verifier's list; the member picker and the
-  contacts rows already use `IntelligenceName`.
+- **Not changed (not in the Verifier's list):** the command palette's AI entries and the route-chat
+  dialog's AI list print a bare name under an AI-only heading with a bot icon, and the sidebar header shows
+  the viewer's own name. The member picker, the contacts rows, the new-conversation list, the participant
+  and member lists and the timeline already use `IntelligenceName`.
 
 ## T66 - Setup prints a result per harness and `a` selects installed harnesses (CLI-03, CLI-04)
 
