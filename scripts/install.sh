@@ -154,10 +154,10 @@ main() {
 			) || fail "cannot write $config_dir/config.json"
 		fi
 		echo
-		echo "Next: partyline setup --browser"
+		echo "Next: partyline login"
 	else
 		echo
-		echo "Next: partyline setup --browser --url https://<your instance>"
+		echo "Next: partyline login --url https://<your instance>"
 	fi
 }
 

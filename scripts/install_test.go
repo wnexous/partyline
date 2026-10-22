@@ -269,7 +269,7 @@ func TestServedInstallSavesInstanceURL(t *testing.T) {
 	home := t.TempDir()
 	res := runInstall(t, served, r, map[string]string{"HOME": home})
 	require.Equal(t, 0, res.code, "stderr: %s", res.stderr)
-	require.Contains(t, res.stdout, "Next: partyline setup --browser")
+	require.Contains(t, res.stdout, "Next: partyline login")
 	cfg := filepath.Join(home, ".config", "partyline", "config.json")
 	data, err := os.ReadFile(cfg)
 	require.NoError(t, err)
@@ -296,7 +296,7 @@ func TestRawInstallHasNoDefaultURL(t *testing.T) {
 	home := t.TempDir()
 	res := runInstall(t, raw(t), r, map[string]string{"HOME": home})
 	require.Equal(t, 0, res.code, "stderr: %s", res.stderr)
-	require.Contains(t, res.stdout, "Next: partyline setup --browser --url https://<your instance>")
+	require.Contains(t, res.stdout, "Next: partyline login --url https://<your instance>")
 	_, err := os.Stat(filepath.Join(home, ".config", "partyline", "config.json"))
 	require.True(t, os.IsNotExist(err))
 }
