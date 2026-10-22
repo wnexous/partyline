@@ -1017,9 +1017,9 @@ design needs the API to return them). See `contract-notes.md`, T48.
 **Requirement**: AID-01, AID-02, SES-01, SES-02, SES-03, SES-05, DM-03, DM-04, PROF-04, AGRP-01, TREE-07, CLI-01, CLI-04
 **Tools**: MCP: NONE; Skill: `orca-cli`
 **Done when**:
-- [ ] Recorded pass/fail with observations for: session in folder `atlas` → AI "Atlas"; exit and resume (`partyline claude -c`) → same identity (AID-01, AID-02); second session in `atlas` → prompt, `n` exits 1, `y` takes over and the first shows the notice (SES-01..03, SES-05); web DM "oi" → `conversation="dm"` and a reply in the DM (DM-03); the AI `send_message to:` the user → DM at the top of the sidebar (DM-04); `update_profile` rename + avatar (PROF-04); `create_group` (AGRP-01); `partyline agents` shows `atlas` and a nested `atlas/notes` session (TREE-07); login/setup output (CLI-01, CLI-04); server log has no message text, tokens or errors
-- [ ] Failures become fix tasks in a new phase
-- [ ] Gate check passes: `make check`
+- [x] Recorded pass/fail with observations for: session in folder `atlas` → AI "Atlas"; exit and resume (`partyline claude -c`) → same identity (AID-01, AID-02); second session in `atlas` → prompt, `n` exits 1, `y` takes over and the first shows the notice (SES-01..03, SES-05); web DM "oi" → `conversation="dm"` and a reply in the DM (DM-03); the AI `send_message to:` the user → DM at the top of the sidebar (DM-04); `update_profile` rename + avatar (PROF-04); `create_group` (AGRP-01); `partyline agents` shows `atlas` and a nested `atlas/notes` session (TREE-07); login/setup output (CLI-01, CLI-04); server log has no message text, tokens or errors
+- [x] Failures become fix tasks in a new phase (no acceptance criterion failed; Finding 1 in `uat.md` proposes one follow-up, not scheduled)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `docs(specs): record the intelligences UAT`
