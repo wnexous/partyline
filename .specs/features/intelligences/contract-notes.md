@@ -1397,3 +1397,60 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   a typed message during a send stored after it; the 10 s limit with a stuck send on a manual clock;
   no hold without a send; nothing created in unknown or unrouted chats; a pairing command ignored; the
   registry's memory and pruning; Discord own/other bot/early messages; reported ids with a failure midway.
+
+## T34 - Notify me on another app (NOTI-01, NOTI-02, NOTI-03)
+
+- **`GET /api/v1/me/notify-options`** (sessions and user tokens; an agent token is 403, anonymous 401) →
+  `dto.List[dto.NotifyOption]{chat_id, title, connector: ConnectorRef, account}`, always an array: the **DM
+  chats** (`chats.kind = dm`) of the **accounts the caller linked** (an `identities` row of theirs on the
+  chat's connector matching the chat's person, `chats.person_id`, by external id or alternative id like
+  `ResolveIdentityUser`), on the connectors the caller **owns or may `use`** (a grant to them or to everyone).
+  `account` is the identity's display, else its external id. A group or channel chat, an account nobody
+  linked, an account linked through another connector (AD-008) and another user's account are no options.
+  Ordered by connector name, chat title, id. `conversations.Service.NotifyOptions(ctx, userID)`; sqlc
+  `ListNotifyOptions`.
+- **`PUT /api/v1/me/notify`** `dto.SetNotifyRequest{chat_id}` (`string | null`) → 200 `dto.Me`.
+  `chat_id` must be the id of one of the caller's options; null (or absent) clears. Any other value (an
+  unknown id, `""`, a chat of a group, of a DM nobody linked, of another user, a room id) is **422
+  `invalid`** with the field `chat_id` and changes nothing; choosing the chat already chosen is a no-op 200.
+  The check and the write are one transaction (`Service.SetNotify`). `dto.Me.notify_chat_id` (optional, absent
+  when none) is set by `GET/PATCH /me` and the answer of `PUT /me/notify`; it is the stored choice, whether
+  or not the chat is still an option (the list is the authority).
+- **The copy** (`rooms.Service.insert` → `notifyChat`, same transaction as the message): an **AI's text post
+  in a DM whose other participant is an enabled user with `notify_chat_id` set** queues one outbox row
+  `purpose notify` (`CreateNotifyOutbox`) for that chat. No copy for: a user's own posts, another user's
+  (user-to-user DMs included), system messages, **reactions**, groups, DMs with another AI or a person, a
+  disabled user, nothing chosen. **A chat that already receives the message as an outbound member of the
+  room is not sent it twice** (a user who writes to the AI that operates the account from that very phone
+  has the chat in the DM): the ordinary delivery stands and no copy is queued. A DM to a disabled user is
+  refused before (`counterpart_disabled`).
+- **Worker**: `ListDueOutbox` returns `purpose` and no longer filters notify rows by room membership (the
+  user's app is no member); `delivery.Delivery.Purpose` (`dto.OutboxPurpose`, `room` or `notify`) tells the
+  sender. Retries, backoff (2, 4, 8, 16 s), `failed` after 5 attempts, `outbox.status` frames and the
+  startup requeue are the ones of every outbox row. **`delivery.Permanent(err)`** (new, `IsPermanent`) marks
+  an error retrying cannot fix: the worker marks the entry `failed` at once (attempts = that attempt) with
+  the error's text. `DeletePendingRoomChatOutbox` (ROOM-01: a chat leaving a room cancels what waits for it)
+  now deletes only `purpose = room` rows: a notify copy does not depend on membership.
+- **Sender** (`connectors.Sender.Send` → `sendNotify`): text = `"<AI display name>: <text>"` (the name the
+  timeline shows, the profile's in a DM), a blank text gives `"<AI display name>:"`, then **one line per
+  stored attachment** `<public URL>/api/v1/attachments/<id>` (`connectors.AttachmentLinkPath`; the link opens
+  for the user once logged in; no files are uploaded); no author line (`AuthorName` empty), no quote.
+  `NewSender` takes the instance's public URL (`cfg.PublicURL`). Reported ids go to `SentIDs` like any send,
+  so the echo of a copy is not mistaken for a message typed on the account (ACC-05). **Usability check at
+  send time** (`Sender.notifyTarget`): the room is a DM, the user exists and is enabled, **still has this
+  chat as `notify_chat_id`** and the chat **still is one of their options** (`conversations.NotifyUsable`);
+  otherwise the send fails **permanently** with `notify target no longer available` before touching the
+  connector (the user cleared or changed the choice, unlinked the account, lost the connector, was
+  disabled). A connector that is down (`connector is not running`) or a platform error is retried (NOTI-03).
+- **`dto.OutboxItem.purpose`** (`notify`; omitted for ordinary deliveries, `dto.OutboxPurpose`) is in
+  `Message.outbox` and in the live `outbox.status` frame, so everyone who can view the DM (the AI's owner and
+  `use` grantees included) sees the copy's delivery and its failure; the chat id is opaque to them (the chat
+  is no member of the room). Web types regenerated.
+- Tests: `internal/connectors/notify_test.go` (the options by caller / group / unlinked / second connector /
+  alternative ids / connector access, choosing and its 422s and null, the authorization of both routes, the
+  copy with name prefix / no signature / live frame / rename, what is not copied, attachment links, no
+  duplicate for a member chat, the retry schedule to `failed` after 5, a platform error then success, a
+  target taken away by clearing / another choice / unlinking / losing the connector / being disabled, ROOM-01
+  leaving notify rows alone) and `internal/delivery/outbox_test.go` (notify rows outside the room, permanent
+  errors).
+

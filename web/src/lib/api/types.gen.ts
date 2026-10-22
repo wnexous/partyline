@@ -1524,6 +1524,33 @@ export interface LiveLagged {
 }
 
 //////////
+// source: notify.go
+
+/**
+ * NotifyOption is a chat that can receive a copy of the DMs AIs write to the caller (NOTI-01):
+ * the DM chat of an account the caller linked, on a connector they own or may use.
+ */
+export interface NotifyOption {
+  chat_id: string;
+  /**
+   * Title is the chat's title on the platform.
+   */
+  title: string;
+  connector: ConnectorRef;
+  /**
+   * Account is the linked account the chat belongs to, as the identities page shows it.
+   */
+  account: string;
+}
+/**
+ * SetNotifyRequest is the body of PUT /me/notify: the chat to notify, one of the chats of GET
+ * /me/notify-options, or null for none.
+ */
+export interface SetNotifyRequest {
+  chat_id?: string | null;
+}
+
+//////////
 // source: rooms.go
 
 /**
@@ -1857,12 +1884,33 @@ export const OutboxStatusFailed = "failed";
  */
 export type OutboxStatus = typeof OutboxStatusPending | typeof OutboxStatusSending | typeof OutboxStatusSent | typeof OutboxStatusFailed;
 /**
+ * OutboxPurpose says why a message is delivered to a chat.
+ */
+/**
+ * OutboxPurposeRoom is the delivery of a room message to a chat member of the room.
+ */
+export const OutboxPurposeRoom = "room";
+/**
+ * OutboxPurposeNotify is the copy of an AI's DM sent to the app its user chose (NOTI-02).
+ */
+export const OutboxPurposeNotify = "notify";
+/**
+ * Outbox purposes. A delivery to a chat that is a member of the room is the default and carries
+ * no purpose in OutboxItem.
+ */
+export type OutboxPurpose = typeof OutboxPurposeRoom | typeof OutboxPurposeNotify;
+/**
  * OutboxItem is the delivery of a message to one chat.
  */
 export interface OutboxItem {
   id: string;
   chat_id: string;
   status: OutboxStatus;
+  /**
+   * Purpose is notify for the copy of an AI's DM sent to the user's chosen app (that chat is
+   * no member of the room); absent for an ordinary delivery.
+   */
+  purpose?: OutboxPurpose;
   attempts: number /* int */;
   last_error?: string;
   updated_at: string /* RFC 3339 */;
@@ -1944,6 +1992,11 @@ export interface Me {
   role: Role;
   locale: string;
   created_at: string /* RFC 3339 */;
+  /**
+   * NotifyChatID is the chat of one of the user's linked apps that receives a copy of the DMs
+   * AIs write to them (PUT /me/notify); absent when they chose none (NOTI-01).
+   */
+  notify_chat_id?: string;
 }
 /**
  * UpdateMeRequest is the body of PATCH /me; absent fields are unchanged.

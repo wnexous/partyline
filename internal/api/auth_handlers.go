@@ -29,7 +29,7 @@ func msTime(v int64) time.Time { return convert.Time(v) }
 func toMe(u db.User) dto.Me {
 	return dto.Me{
 		ID: u.ID, Username: u.Username, DisplayName: u.DisplayName,
-		Role: dto.Role(u.Role), Locale: u.Locale, CreatedAt: msTime(u.CreatedAt),
+		Role: dto.Role(u.Role), Locale: u.Locale, CreatedAt: msTime(u.CreatedAt), NotifyChatID: u.NotifyChatID.String,
 	}
 }
 

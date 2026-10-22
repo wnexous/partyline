@@ -162,7 +162,7 @@ func TestOutboxSendSuccess(t *testing.T) {
 	require.Equal(t, 1, r.Attempts)
 	require.Equal(t, "ext-"+id, r.ExternalID)
 	require.Len(t, sender.calls, 1)
-	require.Equal(t, delivery.Delivery{OutboxID: id, MessageID: msgID, RoomID: f.room, ChatID: f.chat, Attempt: 1}, sender.calls[0])
+	require.Equal(t, delivery.Delivery{OutboxID: id, MessageID: msgID, RoomID: f.room, ChatID: f.chat, Purpose: dto.OutboxPurposeRoom, Attempt: 1}, sender.calls[0])
 
 	var last events.OutboxChanged
 	statuses := []string{}
@@ -298,4 +298,59 @@ func TestOutboxSkipsChatsNoLongerMembers(t *testing.T) {
 
 	require.Zero(t, sender.count(), "a removed chat must not be sent to")
 	require.NotEqual(t, "sent", f.row(t, id).Status)
+}
+
+// sendFunc is a Sender that runs a function.
+type sendFunc func(ctx context.Context, d delivery.Delivery) (string, error)
+
+func (f sendFunc) Send(ctx context.Context, d delivery.Delivery) (string, error) { return f(ctx, d) }
+
+// NOTI-02: the copy of an AI's DM for a user's chosen app (purpose notify) goes to a chat that
+// is no member of the message's room, and the sender is told it is a copy.
+func TestOutboxSendsNotifyEntriesToChatsOutsideTheRoom(t *testing.T) {
+	f := newFixture(t)
+	c := &clock{now: t0}
+	sender := &fakeSender{}
+	msgID, id := f.queue(t, 1, dto.OutboxStatusPending, t0)
+	f.exec(t, "UPDATE outbox SET purpose = 'notify' WHERE id = ?", id)
+	f.exec(t, "DELETE FROM room_members WHERE room_id = ? AND member_id = ?", f.room, f.chat)
+
+	require.NoError(t, f.worker(f.st, sender, c.Now, 0).Flush(context.Background()))
+
+	require.Equal(t, "sent", f.row(t, id).Status)
+	require.Equal(t, []delivery.Delivery{{OutboxID: id, MessageID: msgID, RoomID: f.room, ChatID: f.chat, Purpose: dto.OutboxPurposeNotify, Attempt: 1}}, sender.calls)
+}
+
+// A sender that says an error is permanent gets the entry failed at once, with the error's text and
+// no further attempts (NOTI-03 retries connector failures, not a target the user took away).
+func TestOutboxFailsAtOnceOnAPermanentError(t *testing.T) {
+	f := newFixture(t)
+	c := &clock{now: t0}
+	ch, cancel := f.bus.Subscribe(16)
+	defer cancel()
+	_, id := f.queue(t, 1, dto.OutboxStatusPending, t0)
+	calls := 0
+	w := f.worker(f.st, sendFunc(func(context.Context, delivery.Delivery) (string, error) {
+		calls++
+		return "", delivery.Permanent(errors.New("no longer available"))
+	}), c.Now, 0)
+
+	require.NoError(t, w.Flush(context.Background()))
+
+	r := f.row(t, id)
+	require.Equal(t, row{Status: "failed", Attempts: 1, NextAttemptAt: r.NextAttemptAt, LastError: "no longer available"}, r)
+	c.Set(t0.Add(time.Hour))
+	require.NoError(t, w.Flush(context.Background()))
+	require.Equal(t, 1, calls, "a permanent failure is never retried")
+	var statuses []string
+	for _, e := range drainEvents(ch) {
+		statuses = append(statuses, e.Status)
+	}
+	require.Equal(t, []string{"sending", "failed"}, statuses)
+
+	// An ordinary error is not permanent, also when wrapped around a permanent one's text.
+	require.True(t, delivery.IsPermanent(delivery.Permanent(errors.New("x"))))
+	require.True(t, delivery.IsPermanent(errors.Join(errors.New("context"), delivery.Permanent(errors.New("x")))))
+	require.False(t, delivery.IsPermanent(errors.New("x")))
+	require.Nil(t, delivery.Permanent(nil))
 }

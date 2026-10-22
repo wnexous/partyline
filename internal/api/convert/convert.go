@@ -111,10 +111,14 @@ func messageAuthor(m rooms.Message) dto.IntelligenceRef {
 
 // OutboxItem renders one outbound delivery.
 func OutboxItem(o db.Outbox) dto.OutboxItem {
-	return dto.OutboxItem{
+	item := dto.OutboxItem{
 		ID: o.ID, ChatID: o.ChatID, Status: dto.OutboxStatus(o.Status), Attempts: int(o.Attempts),
 		LastError: o.LastError, UpdatedAt: Time(o.UpdatedAt),
 	}
+	if o.Purpose == string(dto.OutboxPurposeNotify) { // an ordinary delivery carries none
+		item.Purpose = dto.OutboxPurposeNotify
+	}
+	return item
 }
 
 // OptTime converts a nullable unix-milliseconds column to a time pointer.

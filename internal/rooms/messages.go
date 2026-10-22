@@ -385,6 +385,15 @@ func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, memb
 			return db.Room{}, events.MessageCreated{}, err
 		}
 	}
+	notify, err := s.notifyChat(ctx, q, room, d, targets)
+	if err != nil {
+		return db.Room{}, events.MessageCreated{}, err
+	}
+	if notify != "" { // NOTI-02: the user's chosen app gets a copy of the AI's DM
+		if err := q.CreateNotifyOutbox(ctx, db.CreateNotifyOutboxParams{ID: store.NewID(), MessageID: id, ChatID: notify, NextAttemptAt: now, UpdatedAt: now}); err != nil {
+			return db.Room{}, events.MessageCreated{}, err
+		}
+	}
 	return room, events.MessageCreated{RoomID: roomID, MessageID: id, Seq: seq}, nil
 }
 

@@ -197,7 +197,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	})
 	a.sender = opts.Sender
 	if a.sender == nil && !opts.DisableOutbox {
-		a.sender = connectors.NewSender(st, a.Rooms, blobs, a.ConnectorManager, sentIDs)
+		a.sender = connectors.NewSender(st, a.Rooms, blobs, a.ConnectorManager, sentIDs, cfg.PublicURL)
 	}
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
 		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Rooms: a.Rooms, Runner: a.ConnectorManager, Now: opts.Now,

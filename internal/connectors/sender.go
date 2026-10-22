@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -24,12 +26,16 @@ type Sender struct {
 	blobs   *attachments.Store
 	manager *Manager
 	sent    *SentIDs
+	// publicURL is the instance's public URL without a trailing slash: the base of the
+	// attachment links of the copies sent to a user's chosen app (NOTI-02).
+	publicURL string
 }
 
 // NewSender returns a Sender. sent, when given, remembers the platform ids of what it sends, so
 // that the inbound pipeline can tell an echo of it from the operator's own message (ACC-05).
-func NewSender(st *store.Store, rs *rooms.Service, blobs *attachments.Store, m *Manager, sent *SentIDs) *Sender {
-	return &Sender{store: st, rooms: rs, blobs: blobs, manager: m, sent: sent}
+// publicURL is the base of the links it writes to attachments.
+func NewSender(st *store.Store, rs *rooms.Service, blobs *attachments.Store, m *Manager, sent *SentIDs, publicURL *url.URL) *Sender {
+	return &Sender{store: st, rooms: rs, blobs: blobs, manager: m, sent: sent, publicURL: strings.TrimRight(publicURL.String(), "/")}
 }
 
 var _ delivery.Sender = (*Sender)(nil)
@@ -39,7 +45,8 @@ var _ delivery.Sender = (*Sender)(nil)
 // member's settings (MEM-01, MEM-02) unless the author operates the connector (ACC-03, ACC-04),
 // and sends it through the chat's connector. A stopped
 // connector fails with ErrNotRunning, so the outbox retries (CON-05). Reaction messages go to
-// the connector's Reactor instead (REACT-01).
+// the connector's Reactor instead (REACT-01). The copy of an AI's DM for a user's chosen app
+// is written by sendNotify (NOTI-02).
 func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) {
 	chat, err := s.store.R().GetChat(ctx, d.ChatID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -47,6 +54,9 @@ func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) 
 	}
 	if err != nil {
 		return "", err
+	}
+	if d.Purpose == dto.OutboxPurposeNotify {
+		return s.sendNotify(ctx, d, chat)
 	}
 	view, err := s.store.R().GetMessageView(ctx, d.MessageID)
 	if err != nil {

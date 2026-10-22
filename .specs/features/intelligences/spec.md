@@ -452,9 +452,9 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | MIG-05 | P1: Migration | Execute | Implementing |
 | MRG-01 | P2: Merge | Tasks | Pending |
 | MRG-02 | P2: Merge | Tasks | Pending |
-| NOTI-01 | P2: Notify on apps | Tasks | Pending |
-| NOTI-02 | P2: Notify on apps | Tasks | Pending |
-| NOTI-03 | P2: Notify on apps | Tasks | Pending |
+| NOTI-01 | P2: Notify on apps | Execute | Implementing |
+| NOTI-02 | P2: Notify on apps | Execute | Implementing |
+| NOTI-03 | P2: Notify on apps | Execute | Implementing |
 
 **Coverage:** 84 total, 84 mapped to tasks (see `tasks.md` Requirement Coverage)
 

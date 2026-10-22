@@ -268,14 +268,29 @@ const (
 	OutboxStatusFailed  OutboxStatus = "failed"
 )
 
+// OutboxPurpose says why a message is delivered to a chat.
+type OutboxPurpose string
+
+// Outbox purposes. A delivery to a chat that is a member of the room is the default and carries
+// no purpose in OutboxItem.
+const (
+	// OutboxPurposeRoom is the delivery of a room message to a chat member of the room.
+	OutboxPurposeRoom OutboxPurpose = "room"
+	// OutboxPurposeNotify is the copy of an AI's DM sent to the app its user chose (NOTI-02).
+	OutboxPurposeNotify OutboxPurpose = "notify"
+)
+
 // OutboxItem is the delivery of a message to one chat.
 type OutboxItem struct {
-	ID        string       `json:"id"`
-	ChatID    string       `json:"chat_id"`
-	Status    OutboxStatus `json:"status"`
-	Attempts  int          `json:"attempts"`
-	LastError string       `json:"last_error,omitempty"`
-	UpdatedAt time.Time    `json:"updated_at"`
+	ID     string       `json:"id"`
+	ChatID string       `json:"chat_id"`
+	Status OutboxStatus `json:"status"`
+	// Purpose is notify for the copy of an AI's DM sent to the user's chosen app (that chat is
+	// no member of the room); absent for an ordinary delivery.
+	Purpose   OutboxPurpose `json:"purpose,omitempty"`
+	Attempts  int           `json:"attempts"`
+	LastError string        `json:"last_error,omitempty"`
+	UpdatedAt time.Time     `json:"updated_at"`
 }
 
 // RoomRef names a room inside agent frames and events. In the frames an AI receives, a DM is

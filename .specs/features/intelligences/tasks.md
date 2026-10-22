@@ -671,10 +671,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: NOTI-01, NOTI-02, NOTI-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Options list only the caller's linked accounts with a DM chat on usable connectors; choosing another chat → 422; `null` clears (NOTI-01)
-- [ ] AI DM to the user → `<AI name>: <text>` (plus attachment links) sent to that chat, outbox marked sent (NOTI-02); a user's own DM posts are not copied
-- [ ] Connector down → retries with backoff, `failed` after 5, the DM still readable (NOTI-03)
-- [ ] Gate check passes: `make check`
+- [x] Options list only the caller's linked accounts with a DM chat on usable connectors; choosing another chat → 422; `null` clears (NOTI-01)
+- [x] AI DM to the user → `<AI name>: <text>` (plus attachment links) sent to that chat, outbox marked sent (NOTI-02); a user's own DM posts are not copied
+- [x] Connector down → retries with backoff, `failed` after 5, the DM still readable (NOTI-03)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): copy AI DMs to the user's chosen app`

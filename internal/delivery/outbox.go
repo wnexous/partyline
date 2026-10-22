@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync/atomic"
 	"time"
@@ -28,8 +29,32 @@ type Delivery struct {
 	MessageID string
 	RoomID    string
 	ChatID    string
+	// Purpose is why the message goes to the chat: OutboxPurposeNotify for the copy of an AI's DM
+	// sent to the user's chosen app (NOTI-02), else a delivery to a chat member of the room.
+	Purpose dto.OutboxPurpose
 	// Attempt is 1 for the first try.
 	Attempt int
+}
+
+// permanentError is a send error that retrying cannot fix.
+type permanentError struct{ err error }
+
+func (e permanentError) Error() string { return e.err.Error() }
+func (e permanentError) Unwrap() error { return e.err }
+
+// Permanent marks err as one that retrying cannot fix: the worker marks the entry failed at
+// once, with err's text, instead of retrying it.
+func Permanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	return permanentError{err}
+}
+
+// IsPermanent reports whether err, or an error it wraps, was marked by Permanent.
+func IsPermanent(err error) bool {
+	var p permanentError
+	return errors.As(err, &p)
 }
 
 // Sender delivers a message to an external chat and returns the platform message id.
@@ -165,7 +190,8 @@ func (w *OutboxWorker) send(ctx context.Context, row db.ListDueOutboxRow) error 
 	attempt := int(row.Attempts) + 1
 	sendCtx, cancel := context.WithTimeout(ctx, w.o.SendTimeout)
 	externalID, sendErr := w.o.Sender.Send(sendCtx, Delivery{
-		OutboxID: row.ID, MessageID: row.MessageID, RoomID: row.RoomID, ChatID: row.ChatID, Attempt: attempt,
+		OutboxID: row.ID, MessageID: row.MessageID, RoomID: row.RoomID, ChatID: row.ChatID,
+		Purpose: dto.OutboxPurpose(row.Purpose), Attempt: attempt,
 	})
 	cancel()
 
@@ -183,7 +209,7 @@ func (w *OutboxWorker) send(ctx context.Context, row db.ListDueOutboxRow) error 
 	}
 
 	status := dto.OutboxStatusPending
-	if attempt >= MaxAttempts {
+	if attempt >= MaxAttempts || IsPermanent(sendErr) {
 		status = dto.OutboxStatusFailed
 	}
 	// The error text comes from the connector, which redacts its secrets; it is stored for
