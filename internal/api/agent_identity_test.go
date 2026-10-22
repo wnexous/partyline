@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -25,17 +26,28 @@ func listedAgent(t *testing.T, c *testkit.Client, id string) dto.Agent {
 	return dto.Agent{}
 }
 
-// AID-01, ID-04: every AI is listed with the name people read (its profile's), its app and
-// machine; the legacy fields are constant: fixed, not archived, no project.
+// AID-01, ID-04: every AI is listed with its profile (the name people read and its @handle), its
+// app and machine, and none of the v0.3 name, kind, archive or project fields.
 func TestAgentListCarriesIdentity(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	id := env.NewAI(alice, "builder")
 
 	a := listedAgent(t, alice, id)
-	require.Nil(t, a.Project)
-	require.Equal(t, []any{"builder", "claude", testkit.Machine, dto.AgentKindFixed, false},
-		[]any{a.DisplayName, a.Harness, a.Machine, a.Kind, a.Archived})
+	require.Equal(t, []any{id, "builder", "claude", testkit.Machine},
+		[]any{a.Intelligence.ID, a.Intelligence.DisplayName, a.Harness, a.Machine})
+	require.Equal(t, []any{dto.IntelligenceKindAI, dto.IntelligenceRoleAI, "builder"},
+		[]any{a.Intelligence.Kind, a.Intelligence.Role, a.Intelligence.Handle})
+
+	raw := alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)
+	var list struct {
+		Items []map[string]json.RawMessage `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(raw.Body), &list))
+	require.Len(t, list.Items, 1)
+	for _, legacy := range []string{"name", "display_name", "kind", "archived", "project"} {
+		require.NotContains(t, list.Items[0], legacy, "the v0.3 field %s is gone", legacy)
+	}
 }
 
 // AID-02: the harness and machine a session sends are cleaned: harness aliases map to their id

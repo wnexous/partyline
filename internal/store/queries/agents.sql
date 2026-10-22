@@ -8,19 +8,25 @@ SELECT * FROM agents WHERE id = ?;
 SELECT COUNT(*) FROM agents WHERE owner_id = ?;
 
 -- name: GetAgentWithOwner :one
-SELECT sqlc.embed(a), u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT sqlc.embed(a), u.username AS owner_username,
+       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
-       CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name
+       CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
+       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN intelligences i ON i.id = a.id
+LEFT JOIN intelligences ui ON ui.id = u.id
 WHERE a.id = ?;
 
 -- name: ListAgentsForUser :many
-SELECT sqlc.embed(a), u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT sqlc.embed(a), u.username AS owner_username,
+       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
-       CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name
+       CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
+       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN intelligences i ON i.id = a.id
+LEFT JOIN intelligences ui ON ui.id = u.id
 WHERE (a.owner_id = sqlc.arg(user_id)
        OR a.id IN (SELECT g.resource_id FROM grants g
                    WHERE g.resource_kind = 'agent' AND g.subject IN (sqlc.arg(user_id), '*')))
@@ -84,9 +90,6 @@ SELECT seq FROM agent_cursors WHERE agent_id = ? AND room_id = ?;
 
 -- name: MarkAgentConnected :exec
 UPDATE agents SET connected_at = ? WHERE id = ?;
-
--- name: SetAgentDisplayName :exec
-UPDATE agents SET display_name = ? WHERE id = ?;
 
 -- name: ListAgentRoomIDs :many
 SELECT room_id FROM room_members WHERE kind = 'agent' AND member_id = ?;

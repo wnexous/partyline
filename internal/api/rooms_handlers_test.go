@@ -10,11 +10,14 @@ import (
 	"net/textproto"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/handles"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -31,12 +34,17 @@ func shareRoom(c *testkit.Client, roomID string, users ...dto.SharingUser) {
 	c.Put("/api/v1/rooms/"+roomID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: users}).RequireStatus(http.StatusOK)
 }
 
-// storeAgent inserts an agent row (the agent registry comes with the agent-channel feature).
+// storeAgent inserts an agent row with its profile (the display name and handle are name).
 func storeAgent(t *testing.T, env *testkit.Env, ownerID, name string) string {
 	t.Helper()
+	ctx := context.Background()
 	id := store.NewID()
-	require.NoError(t, env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
-		return q.CreateAgent(context.Background(), db.CreateAgentParams{ID: id, OwnerID: ownerID, Name: name})
+	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		if err := q.CreateAgent(ctx, db.CreateAgentParams{ID: id, OwnerID: ownerID, Name: name}); err != nil {
+			return err
+		}
+		_, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: id, Kind: handles.AI, DisplayName: name, HandleBase: name, Now: time.Now()})
+		return err
 	}))
 	return id
 }
@@ -211,7 +219,8 @@ func TestRoomSharingEndpoint(t *testing.T) {
 	shareRoom(alice, r.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelView})
 	s := testkit.Decode[dto.Sharing](bob.Get(path + "/sharing").RequireStatus(http.StatusOK))
 	require.Equal(t, dto.VisibilityShared, s.Mode)
-	require.Equal(t, []dto.SharingUser{{UserID: bob.User.ID, Level: dto.LevelView, Username: "bob"}}, s.Users)
+	require.Equal(t, []dto.SharingUser{{UserID: bob.User.ID, Level: dto.LevelView, Username: "bob", DisplayName: "bob"}}, s.Users,
+		"an account that chose no name goes by its username")
 	require.Equal(t, dto.LevelView, testkit.Decode[dto.Room](bob.Get(path).RequireStatus(http.StatusOK)).MyLevel)
 	bob.Post(path+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	carol.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)

@@ -74,19 +74,31 @@ func (f *fixture) count(t *testing.T, query string, args ...any) int {
 	return n
 }
 
-// user creates an account and returns its principal.
+// intelligence gives an account or an AI its profile, the one place a name lives: the display
+// name people read and the @handle.
+func (f *fixture) intelligence(t *testing.T, id, kind, display, handle string) {
+	t.Helper()
+	f.exec(t, "INSERT INTO intelligences (id, kind, display_name, handle, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+		id, kind, display, handle, t0.UnixMilli(), t0.UnixMilli())
+}
+
+// user creates an account, named like its username with an upper-case first letter, and returns
+// its principal.
 func (f *fixture) user(t *testing.T, name string, role dto.Role) authn.Principal {
 	t.Helper()
 	id := store.NewID()
-	f.exec(t, "INSERT INTO users (id, username, display_name, password_hash, role, created_at) VALUES (?, ?, ?, 'x', ?, ?)",
-		id, name, strings.ToUpper(name[:1])+name[1:], string(role), t0.UnixMilli())
+	f.exec(t, "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, 'x', ?, ?)",
+		id, name, string(role), t0.UnixMilli())
+	f.intelligence(t, id, "human", strings.ToUpper(name[:1])+name[1:], name)
 	return authn.Principal{Kind: authn.KindUser, UserID: id, Role: string(role)}
 }
 
+// agent creates an AI named name for owner and returns its id.
 func (f *fixture) agent(t *testing.T, owner authn.Principal, name string) string {
 	t.Helper()
 	id := store.NewID()
 	f.exec(t, "INSERT INTO agents (id, owner_id, name, created_at) VALUES (?, ?, ?, ?)", id, owner.UserID, name, t0.UnixMilli())
+	f.intelligence(t, id, "ai", name, "ai-"+name)
 	return id
 }
 

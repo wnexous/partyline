@@ -112,11 +112,15 @@ function PaletteBody({ me, onDone }: { me: Me; onDone: () => void }) {
               <PaletteItem
                 key={agent.id}
                 value={`agent:${agent.id}`}
-                keywords={[agent.name, agent.display_name, agent.description]}
+                keywords={[
+                  agent.intelligence.handle,
+                  agent.intelligence.display_name,
+                  agent.description,
+                ]}
                 onSelect={() => go("/contacts/$id", { id: agent.id })}
                 icon={<BotIcon aria-hidden="true" />}
-                label={agent.display_name}
-                hint={`@${agent.name}`}
+                label={agent.intelligence.display_name}
+                hint={`@${agent.intelligence.handle}`}
                 trailing={<StatusDot online={presence[agent.id]?.online ?? agent.online} />}
               />
             ))}

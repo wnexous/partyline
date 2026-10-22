@@ -86,7 +86,7 @@ func (s *server) agentSession(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := dto.SessionState{}
 	if found {
-		ref := dto.IntelligenceRef{ID: a.ID, Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: agents.DisplayName(a)}
+		ref := dto.IntelligenceRef{ID: a.ID, Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI}
 		rows, err := s.Intelligences.Rows(r.Context(), []string{a.ID})
 		if err != nil {
 			return err
@@ -249,7 +249,7 @@ func (s *server) agentRegister(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	httpx.WriteJSON(w, http.StatusOK, dto.AgentInfo{
-		ID: row.Agent.ID, Name: agents.GoesBy(row.Handle, row.Agent.Name), DisplayName: agents.NameOf(row.ProfileName, row.Agent), Owner: row.OwnerUsername,
+		ID: row.Agent.ID, Name: row.Handle, DisplayName: row.ProfileName, Owner: row.OwnerUsername,
 	})
 	return nil
 }

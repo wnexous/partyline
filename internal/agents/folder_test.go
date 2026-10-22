@@ -104,8 +104,6 @@ func TestResolveFolderCreatesTheIdentityOnceForAnyHarness(t *testing.T) {
 	require.Equal(t, "ai", i.Kind)
 	require.Equal(t, "Acme", i.DisplayName)
 	require.Equal(t, "acme", i.Handle)
-	require.Equal(t, "Acme", f.storedAgent(t, first.ID).DisplayName, "the v0.3 display name column mirrors the profile")
-	require.Equal(t, "Acme", DisplayName(first), "so the name people read is not the row's id")
 
 	for _, harness := range []string{"opencode", "pi", "claude", "omp"} {
 		id.Harness = harness

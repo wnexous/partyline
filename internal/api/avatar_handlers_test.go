@@ -255,7 +255,7 @@ func TestAgentUpdatesItsOwnProfile(t *testing.T) {
 	require.Equal(t, []any{builder, "Atlas", "atlas", "Runs the builds", dto.IntelligenceRoleAI, true},
 		[]any{got.ID, got.DisplayName, got.Handle, got.Bio, got.Role, got.CanEdit})
 	require.Equal(t, got, profileOf(t, alice, builder), "the owner reads the same profile")
-	require.Equal(t, "Atlas", listedAgent(t, alice, builder).DisplayName, "the agents list follows (AID-06)")
+	require.Equal(t, "Atlas", listedAgent(t, alice, builder).Intelligence.DisplayName, "the agents list follows (AID-06)")
 
 	withAvatar := testkit.Decode[dto.IntelligenceProfile](agent.DoRaw(http.MethodPut, "/api/v1/agent/profile/avatar", "image/png",
 		bytes.NewReader(pngBytes(t, bands(400, 200)))).RequireStatus(http.StatusOK))

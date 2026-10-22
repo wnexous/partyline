@@ -18,13 +18,7 @@ type Agent struct {
 	ProjectID   sql.NullString
 	Harness     string
 	Machine     string
-	Kind        string
-	DisplayName string
-	AutoName    string
-	SessionNo   int64
-	ArchivedAt  sql.NullInt64
 	ConnectedAt sql.NullInt64
-	SessionKey  string
 	Folder      string
 }
 
@@ -264,12 +258,6 @@ type Project struct {
 	CreatedAt int64
 }
 
-type ProjectCursor struct {
-	ProjectID string
-	RoomID    string
-	Seq       int64
-}
-
 type ReadCursor struct {
 	UserID string
 	RoomID string
@@ -326,7 +314,6 @@ type Session struct {
 type User struct {
 	ID           string
 	Username     string
-	DisplayName  string
 	PasswordHash string
 	Role         string
 	Locale       string

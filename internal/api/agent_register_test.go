@@ -110,7 +110,7 @@ func TestOwnerAgentsForAgentTokens(t *testing.T) {
 	list := testkit.Decode[dto.List[dto.Agent]](tok.Get("/api/v1/agent/agents").RequireStatus(http.StatusOK)).Items
 	names := map[string]bool{}
 	for _, a := range list {
-		names[a.DisplayName] = a.Online
+		names[a.Intelligence.DisplayName] = a.Online
 	}
 	require.Equal(t, map[string]bool{info.DisplayName: true, "builder": false}, names, "alice's own agents, not the one shared with her")
 	require.Equal(t, listedAgent(t, alice, info.ID), func() dto.Agent {

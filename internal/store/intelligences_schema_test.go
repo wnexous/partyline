@@ -143,24 +143,27 @@ func TestDeletesCascadeToIntelligencesAndDMs(t *testing.T) {
 	require.Equal(t, 1, e.count(`SELECT COUNT(*) FROM intelligences WHERE id = 'u2'`))
 }
 
-// The view names authors by their intelligence (author_iid first, then the author's own
-// intelligence) and keeps the v0.3 names for rows without one; the per-room agent display
-// name still wins in its room (GRP-04).
+// The view names an author by its intelligence (author_iid); the display name an agent member
+// has in a room still wins in that room (GRP-04). A chat message without an intelligence is named
+// by the sender, then the chat; a system message is Partyline. There are no fallbacks to the
+// user or agent row: 0016 removed them with the legacy name columns, so an author without an
+// intelligence has no name.
 func TestMessageViewNamesAuthors(t *testing.T) {
 	e := newSchemaEnv(t)
-	e.must(`INSERT INTO users (id, username, display_name, password_hash, role, created_at) VALUES
-		('u1', 'alice', 'Alice A.', 'x', 'member', 1), ('u2', 'bob', '', 'x', 'member', 1), ('u3', 'carol', '', 'x', 'member', 1)`)
-	e.must(`INSERT INTO agents (id, owner_id, name, display_name, auto_name, created_at) VALUES
-		('a1', 'u1', 'atlas', '', '', 1), ('a2', 'u1', 'proj-claude', '', 'Proj · Claude', 1),
-		('a3', 'u1', 'helper', 'Helper', '', 1), ('a4', 'u1', 'named', '', '', 1)`)
-	e.must(`INSERT INTO rooms (id, owner_id, name, created_at, updated_at) VALUES ('r1', 'u1', 'ops', 1, 1)`)
+	e.must(`INSERT INTO users (id, username, password_hash, role, created_at) VALUES
+		('u1', 'alice', 'x', 'member', 1), ('u2', 'bob', 'x', 'member', 1), ('u3', 'carol', 'x', 'member', 1)`)
+	e.must(`INSERT INTO agents (id, owner_id, name, created_at) VALUES
+		('a1', 'u1', 'atlas', 1), ('a2', 'u1', 'helper', 1), ('a4', 'u1', 'named', 1)`)
+	e.must(`INSERT INTO rooms (id, owner_id, name, created_at, updated_at) VALUES ('r1', 'u1', 'ops', 1, 1), ('r2', 'u1', 'dev', 1, 1)`)
 	e.must(`INSERT INTO room_members (id, room_id, kind, member_id, display_name, created_at) VALUES ('rm1', 'r1', 'agent', 'a4', 'Ops Bot', 1)`)
 	e.must(`INSERT INTO connectors (id, owner_id, kind, name, created_at, updated_at) VALUES ('k1', 'u1', 'telegram', 'tg', 1, 1)`)
 	e.must(`INSERT INTO chats (id, connector_id, external_id, title, created_at) VALUES ('c1', 'k1', '42', 'Family', 1)`)
 	e.must(`INSERT INTO people (id, connector_id, external_id, created_at) VALUES ('p1', 'k1', '7', 1)`)
 	require.NoError(t, e.s.WithTx(context.Background(), func(q *db.Queries) error {
 		for _, i := range []db.CreateIntelligenceParams{
+			{ID: "u1", Kind: "human", DisplayName: "Alice A.", Handle: "alice"},
 			{ID: "u3", Kind: "human", DisplayName: "Carol C.", Handle: "carol", AvatarSha256: "abc"},
+			{ID: "a1", Kind: "ai", DisplayName: "Atlas", Handle: "atlas"},
 			{ID: "a4", Kind: "ai", DisplayName: "Named AI", Handle: "named"},
 			{ID: "p1", Kind: "human", DisplayName: "Maria", Handle: "maria"},
 		} {
@@ -171,17 +174,17 @@ func TestMessageViewNamesAuthors(t *testing.T) {
 		return nil
 	}))
 	e.must(`INSERT INTO messages (id, room_id, seq, author_kind, author_id, sender_id, sender_name, author_iid, created_at) VALUES
-		('m1', 'r1', 1, 'user', 'u1', '', '', '', 1),
+		('m1', 'r1', 1, 'user', 'u1', '', '', 'u1', 1),
 		('m2', 'r1', 2, 'user', 'u2', '', '', '', 1),
-		('m3', 'r1', 3, 'user', 'u3', '', '', '', 1),
-		('m4', 'r1', 4, 'agent', 'a1', '', '', '', 1),
+		('m3', 'r1', 3, 'user', 'u3', '', '', 'u3', 1),
+		('m4', 'r1', 4, 'agent', 'a1', '', '', 'a1', 1),
 		('m5', 'r1', 5, 'agent', 'a2', '', '', '', 1),
-		('m6', 'r1', 6, 'agent', 'a3', '', '', '', 1),
-		('m7', 'r1', 7, 'agent', 'a4', '', '', '', 1),
-		('m8', 'r1', 8, 'chat', 'c1', '9', 'Grandma', '', 1),
-		('m9', 'r1', 9, 'chat', 'c1', '', '', '', 1),
-		('m10', 'r1', 10, 'chat', 'c1', '7', 'Old Name', 'p1', 1),
-		('m11', 'r1', 11, 'system', '', '', '', '', 1)`)
+		('m6', 'r1', 6, 'agent', 'a4', '', '', 'a4', 1),
+		('m7', 'r2', 1, 'agent', 'a4', '', '', 'a4', 1),
+		('m8', 'r1', 7, 'chat', 'c1', '9', 'Grandma', '', 1),
+		('m9', 'r1', 8, 'chat', 'c1', '', '', '', 1),
+		('m10', 'r1', 9, 'chat', 'c1', '7', 'Old Name', 'p1', 1),
+		('m11', 'r1', 10, 'system', '', '', '', '', 1)`)
 
 	type author struct{ Name, Handle, Kind, Avatar string }
 	got := map[string]author{}
@@ -196,13 +199,13 @@ func TestMessageViewNamesAuthors(t *testing.T) {
 	require.NoError(t, rows.Err())
 	require.NoError(t, rows.Close())
 	require.Equal(t, map[string]author{
-		"m1":  {Name: "Alice A."},
-		"m2":  {Name: "bob"},
+		"m1":  {Name: "Alice A.", Handle: "alice", Kind: "human"},
+		"m2":  {Name: ""}, // no intelligence: no fallback to the username
 		"m3":  {Name: "Carol C.", Handle: "carol", Kind: "human", Avatar: "abc"},
-		"m4":  {Name: "atlas"},
-		"m5":  {Name: "Proj · Claude"},
-		"m6":  {Name: "Helper"},
-		"m7":  {Name: "Ops Bot", Handle: "named", Kind: "ai"},
+		"m4":  {Name: "Atlas", Handle: "atlas", Kind: "ai"},
+		"m5":  {Name: ""}, // no intelligence: no fallback to the agent name
+		"m6":  {Name: "Ops Bot", Handle: "named", Kind: "ai"},
+		"m7":  {Name: "Named AI", Handle: "named", Kind: "ai"}, // the member name belongs to its room
 		"m8":  {Name: "Grandma"},
 		"m9":  {Name: "Family"},
 		"m10": {Name: "Maria", Handle: "maria", Kind: "human"},

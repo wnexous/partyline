@@ -7,11 +7,13 @@ SELECT * FROM invites WHERE token_hash = ?;
 
 -- name: ListInvites :many
 SELECT sqlc.embed(i),
-       c.username AS creator_username, c.display_name AS creator_display_name,
-       COALESCE(u.username, '') AS used_by_username, COALESCE(u.display_name, '') AS used_by_display_name
+       c.username AS creator_username, CAST(COALESCE(ci.display_name, '') AS TEXT) AS creator_display_name,
+       COALESCE(u.username, '') AS used_by_username, CAST(COALESCE(ui.display_name, '') AS TEXT) AS used_by_display_name
 FROM invites i
 JOIN users c ON c.id = i.created_by
+LEFT JOIN intelligences ci ON ci.id = c.id
 LEFT JOIN users u ON u.id = i.used_by
+LEFT JOIN intelligences ui ON ui.id = u.id
 ORDER BY i.created_at DESC, i.id DESC;
 
 -- name: MarkInviteUsed :execrows

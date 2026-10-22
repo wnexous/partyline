@@ -14,7 +14,7 @@ INSERT INTO room_members (id, room_id, kind, member_id, outbound, added_by, crea
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetRoomWithOwner :one
-SELECT sqlc.embed(r), u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT sqlc.embed(r), u.username AS owner_username,
        CAST(COALESCE(oi.kind, '') AS TEXT) AS owner_ikind,
        CAST(COALESCE(oi.display_name, '') AS TEXT) AS owner_iname,
        CAST(COALESCE(oi.handle, '') AS TEXT) AS owner_handle,
@@ -27,7 +27,7 @@ WHERE r.id = ?;
 -- name: ListRoomsForUser :many
 -- The conversations a user may have in a list: the groups they own, are granted or are a member
 -- of, and the DMs they take part in. The DMs they only view through an AI are left out.
-SELECT sqlc.embed(r), u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT sqlc.embed(r), u.username AS owner_username,
        CAST(COALESCE(oi.kind, '') AS TEXT) AS owner_ikind,
        CAST(COALESCE(oi.display_name, '') AS TEXT) AS owner_iname,
        CAST(COALESCE(oi.handle, '') AS TEXT) AS owner_handle,
@@ -52,13 +52,11 @@ WHERE id = ?;
 DELETE FROM rooms WHERE id = ?;
 
 -- name: ListRoomMembers :many
--- Agent and user members are named by their intelligence (PROF-03); the v0.3 names are the
--- fallback for rows that have none.
+-- Agent and user members are named by their intelligence (PROF-03); a chat by its title.
 SELECT sqlc.embed(m),
        CAST(CASE m.kind
-            WHEN 'agent' THEN COALESCE(i.display_name, NULLIF(a.display_name, ''), a.name, '')
             WHEN 'chat' THEN COALESCE(c.title, '')
-            ELSE COALESCE(i.display_name, NULLIF(u.display_name, ''), u.username, '')
+            ELSE COALESCE(i.display_name, '')
             END AS TEXT) AS name,
        CAST(COALESCE(ao.username, '') AS TEXT) AS agent_owner,
        CAST(COALESCE(cn.kind, '') AS TEXT) AS connector_kind,

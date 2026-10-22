@@ -79,7 +79,7 @@ func TestAcceptInviteCreatesAccountOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "bob", u.Username)
 	require.Equal(t, "member", u.Role)
-	require.Equal(t, "Bob", u.DisplayName)
+	require.Equal(t, "Bob", f.displayName(t, u.ID))
 
 	_, _, err = f.svc.Login(ctx, LoginInput{Username: "bob", Password: memberPassword, IP: "192.0.2.1"})
 	require.NoError(t, err)

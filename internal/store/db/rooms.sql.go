@@ -222,7 +222,7 @@ func (q *Queries) GetRoomMemberByMember(ctx context.Context, arg GetRoomMemberBy
 }
 
 const getRoomWithOwner = `-- name: GetRoomWithOwner :one
-SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.broadcast, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.broadcast, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, u.username AS owner_username,
        CAST(COALESCE(oi.kind, '') AS TEXT) AS owner_ikind,
        CAST(COALESCE(oi.display_name, '') AS TEXT) AS owner_iname,
        CAST(COALESCE(oi.handle, '') AS TEXT) AS owner_handle,
@@ -234,14 +234,13 @@ WHERE r.id = ?
 `
 
 type GetRoomWithOwnerRow struct {
-	Room             Room
-	OwnerUsername    string
-	OwnerDisplayName string
-	OwnerIkind       string
-	OwnerIname       string
-	OwnerHandle      string
-	OwnerAvatar      string
-	MemberCount      int64
+	Room          Room
+	OwnerUsername string
+	OwnerIkind    string
+	OwnerIname    string
+	OwnerHandle   string
+	OwnerAvatar   string
+	MemberCount   int64
 }
 
 func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithOwnerRow, error) {
@@ -268,7 +267,6 @@ func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithO
 		&i.Room.DmB,
 		&i.Room.ReadBaseline,
 		&i.OwnerUsername,
-		&i.OwnerDisplayName,
 		&i.OwnerIkind,
 		&i.OwnerIname,
 		&i.OwnerHandle,
@@ -281,9 +279,8 @@ func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithO
 const listRoomMembers = `-- name: ListRoomMembers :many
 SELECT m.id, m.room_id, m.kind, m.member_id, m.outbound, m.added_by, m.created_at, m.display_name, m.sign_outbound, m.delivery, m.keywords_json,
        CAST(CASE m.kind
-            WHEN 'agent' THEN COALESCE(i.display_name, NULLIF(a.display_name, ''), a.name, '')
             WHEN 'chat' THEN COALESCE(c.title, '')
-            ELSE COALESCE(i.display_name, NULLIF(u.display_name, ''), u.username, '')
+            ELSE COALESCE(i.display_name, '')
             END AS TEXT) AS name,
        CAST(COALESCE(ao.username, '') AS TEXT) AS agent_owner,
        CAST(COALESCE(cn.kind, '') AS TEXT) AS connector_kind,
@@ -317,8 +314,7 @@ type ListRoomMembersRow struct {
 	IntelligenceAvatar string
 }
 
-// Agent and user members are named by their intelligence (PROF-03); the v0.3 names are the
-// fallback for rows that have none.
+// Agent and user members are named by their intelligence (PROF-03); a chat by its title.
 func (q *Queries) ListRoomMembers(ctx context.Context, roomID string) ([]ListRoomMembersRow, error) {
 	rows, err := q.db.QueryContext(ctx, listRoomMembers, roomID)
 	if err != nil {
@@ -364,7 +360,7 @@ func (q *Queries) ListRoomMembers(ctx context.Context, roomID string) ([]ListRoo
 }
 
 const listRoomsForUser = `-- name: ListRoomsForUser :many
-SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.broadcast, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, u.username AS owner_username, u.display_name AS owner_display_name,
+SELECT r.id, r.owner_id, r.name, r.description, r.bridge_chats, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.broadcast, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, u.username AS owner_username,
        CAST(COALESCE(oi.kind, '') AS TEXT) AS owner_ikind,
        CAST(COALESCE(oi.display_name, '') AS TEXT) AS owner_iname,
        CAST(COALESCE(oi.handle, '') AS TEXT) AS owner_handle,
@@ -382,14 +378,13 @@ ORDER BY r.name COLLATE NOCASE, r.id
 `
 
 type ListRoomsForUserRow struct {
-	Room             Room
-	OwnerUsername    string
-	OwnerDisplayName string
-	OwnerIkind       string
-	OwnerIname       string
-	OwnerHandle      string
-	OwnerAvatar      string
-	MemberCount      int64
+	Room          Room
+	OwnerUsername string
+	OwnerIkind    string
+	OwnerIname    string
+	OwnerHandle   string
+	OwnerAvatar   string
+	MemberCount   int64
 }
 
 // The conversations a user may have in a list: the groups they own, are granted or are a member
@@ -424,7 +419,6 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRo
 			&i.Room.DmB,
 			&i.Room.ReadBaseline,
 			&i.OwnerUsername,
-			&i.OwnerDisplayName,
 			&i.OwnerIkind,
 			&i.OwnerIname,
 			&i.OwnerHandle,

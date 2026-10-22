@@ -35,8 +35,8 @@ func TestAgentRenameShowsEverywhere(t *testing.T) {
 	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{Delivery: ptr(dto.DeliveryModeMentions)})
 
 	got := testkit.Decode[dto.Agent](f.alice.Patch("/api/v1/agents/"+f.agentID, dto.UpdateAgentRequest{DisplayName: ptr("  Atlas bot  ")}).RequireStatus(http.StatusOK))
-	require.Equal(t, []string{"builder", "Atlas bot"}, []string{got.Name, got.DisplayName}, "trimmed; the internal name stays")
-	require.Equal(t, "Atlas bot", listedAgent(t, f.alice, f.agentID).DisplayName)
+	require.Equal(t, []string{"builder", "Atlas bot"}, []string{got.Intelligence.Handle, got.Intelligence.DisplayName}, "trimmed; the handle stays")
+	require.Equal(t, "Atlas bot", listedAgent(t, f.alice, f.agentID).Intelligence.DisplayName)
 	require.Equal(t, "Atlas bot", agentMember(t, f.alice, f.room.ID, f.agentID).Name)
 	require.Equal(t, "Atlas bot", timelineAuthor(t, f.alice, f.room.ID, before.ID))
 	after := f.postAsAgent(t, "after")
@@ -64,10 +64,10 @@ func TestAgentRenameValidation(t *testing.T) {
 		require.Equal(t, "must have 1 to 64 characters", e.Fields["display_name"], "%q", bad)
 	}
 	a := listedAgent(t, alice, id)
-	require.Equal(t, []string{"builder", ""}, []string{a.DisplayName, a.Description}, "nothing applied")
+	require.Equal(t, []string{"builder", ""}, []string{a.Intelligence.DisplayName, a.Description}, "nothing applied")
 
 	long := strings.Repeat("é", 64)
-	require.Equal(t, long, testkit.Decode[dto.Agent](patch(dto.UpdateAgentRequest{DisplayName: ptr(long)}).RequireStatus(http.StatusOK)).DisplayName)
+	require.Equal(t, long, testkit.Decode[dto.Agent](patch(dto.UpdateAgentRequest{DisplayName: ptr(long)}).RequireStatus(http.StatusOK)).Intelligence.DisplayName)
 }
 
 // ID-05 (clients from before folders): every AI is permanent, so promoting one is accepted and
@@ -78,7 +78,7 @@ func TestPromotingAnAgentIsAHarmlessNoOp(t *testing.T) {
 	id := env.NewAI(alice, "builder")
 
 	got := testkit.Decode[dto.Agent](alice.Patch("/api/v1/agents/"+id, dto.UpdateAgentRequest{Fixed: ptr(true)}).RequireStatus(http.StatusOK))
-	require.Equal(t, []any{dto.AgentKindFixed, "builder", false}, []any{got.Kind, got.DisplayName, got.Archived})
+	require.Equal(t, "builder", got.Intelligence.DisplayName)
 
 	e := alice.Patch("/api/v1/agents/"+id, dto.UpdateAgentRequest{Fixed: ptr(false)}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 	require.Contains(t, e.Fields, "fixed")

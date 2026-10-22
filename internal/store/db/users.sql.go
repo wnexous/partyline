@@ -33,14 +33,13 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 }
 
 const createUser = `-- name: CreateUser :exec
-INSERT INTO users (id, username, display_name, password_hash, role, locale, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO users (id, username, password_hash, role, locale, created_at)
+VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateUserParams struct {
 	ID           string
 	Username     string
-	DisplayName  string
 	PasswordHash string
 	Role         string
 	Locale       string
@@ -51,7 +50,6 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 	_, err := q.db.ExecContext(ctx, createUser,
 		arg.ID,
 		arg.Username,
-		arg.DisplayName,
 		arg.PasswordHash,
 		arg.Role,
 		arg.Locale,
@@ -61,7 +59,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, display_name, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users WHERE id = ?
+SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
@@ -70,7 +68,6 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
-		&i.DisplayName,
 		&i.PasswordHash,
 		&i.Role,
 		&i.Locale,
@@ -82,7 +79,7 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, display_name, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users WHERE username = ?
+SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users WHERE username = ?
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -91,7 +88,6 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
-		&i.DisplayName,
 		&i.PasswordHash,
 		&i.Role,
 		&i.Locale,
@@ -146,7 +142,7 @@ func (q *Queries) ListContactUsers(ctx context.Context, id string) ([]ListContac
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, display_name, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users ORDER BY username
+SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users ORDER BY username
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -161,7 +157,6 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.Username,
-			&i.DisplayName,
 			&i.PasswordHash,
 			&i.Role,
 			&i.Locale,
@@ -196,18 +191,17 @@ func (q *Queries) SetUserDisabledAt(ctx context.Context, arg SetUserDisabledAtPa
 	return err
 }
 
-const setUserDisplayName = `-- name: SetUserDisplayName :exec
-UPDATE users SET display_name = ? WHERE id = ?
+const setUserLocale = `-- name: SetUserLocale :exec
+UPDATE users SET locale = ? WHERE id = ?
 `
 
-type SetUserDisplayNameParams struct {
-	DisplayName string
-	ID          string
+type SetUserLocaleParams struct {
+	Locale string
+	ID     string
 }
 
-// Mirrors intelligences.display_name until the legacy column is dropped.
-func (q *Queries) SetUserDisplayName(ctx context.Context, arg SetUserDisplayNameParams) error {
-	_, err := q.db.ExecContext(ctx, setUserDisplayName, arg.DisplayName, arg.ID)
+func (q *Queries) SetUserLocale(ctx context.Context, arg SetUserLocaleParams) error {
+	_, err := q.db.ExecContext(ctx, setUserLocale, arg.Locale, arg.ID)
 	return err
 }
 
@@ -236,21 +230,6 @@ type UpdateUserPasswordParams struct {
 
 func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
 	_, err := q.db.ExecContext(ctx, updateUserPassword, arg.PasswordHash, arg.ID)
-	return err
-}
-
-const updateUserProfile = `-- name: UpdateUserProfile :exec
-UPDATE users SET display_name = ?, locale = ? WHERE id = ?
-`
-
-type UpdateUserProfileParams struct {
-	DisplayName string
-	Locale      string
-	ID          string
-}
-
-func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) error {
-	_, err := q.db.ExecContext(ctx, updateUserProfile, arg.DisplayName, arg.Locale, arg.ID)
 	return err
 }
 

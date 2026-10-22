@@ -34,7 +34,7 @@ type ProfileUpdate struct {
 	Locale      *string
 }
 
-// UpdateProfile changes the user's display name or locale.
+// UpdateProfile changes the user's display name (the name of their intelligence) or locale.
 func (s *Service) UpdateProfile(ctx context.Context, userID string, up ProfileUpdate) (db.User, error) {
 	fields := map[string]string{}
 	if up.DisplayName != nil && utf8.RuneCountInString(*up.DisplayName) > maxDisplayName {
@@ -57,21 +57,18 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, up ProfileUp
 		if err != nil {
 			return err
 		}
-		if up.DisplayName != nil {
-			u.DisplayName = intelligences.CleanDisplayName(*up.DisplayName)
-		}
 		if up.Locale != nil {
 			u.Locale = *up.Locale
-		}
-		if err := q.UpdateUserProfile(ctx, db.UpdateUserProfileParams{DisplayName: u.DisplayName, Locale: u.Locale, ID: userID}); err != nil {
-			return err
+			if err := q.SetUserLocale(ctx, db.SetUserLocaleParams{Locale: u.Locale, ID: userID}); err != nil {
+				return err
+			}
 		}
 		if up.DisplayName == nil {
 			return nil
 		}
 		// The account's intelligence is what names the user everywhere (PROF-03); an empty
 		// display name shows the username again.
-		name := u.DisplayName
+		name := intelligences.CleanDisplayName(*up.DisplayName)
 		if name == "" {
 			name = u.Username
 		}

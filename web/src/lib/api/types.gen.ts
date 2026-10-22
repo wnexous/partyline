@@ -4,56 +4,18 @@
 // source: agents.go
 
 /**
- * AgentKind tells whether an agent was named by its owner or by the server.
- */
-export const AgentKindFixed = "fixed";
-export const AgentKindTemporary = "temporary";
-/**
- * Agent kinds. Every AI is permanent now: the API always answers fixed, and the field goes away
- * with the pages that read it.
- */
-export type AgentKind = typeof AgentKindFixed | typeof AgentKindTemporary;
-/**
- * ProjectRef names the project of an agent (PROJ-01).
- */
-export interface ProjectRef {
-  id: string;
-  slug: string; // stable, unique per owner
-  name: string; // what the owner reads; renamable (PROJ-05)
-}
-/**
- * Project groups an owner's agents (GET /projects).
- */
-export interface Project {
-  id: string;
-  slug: string;
-  name: string;
-  owner: User;
-  my_level: Level; // manage for the owner, use for grantees
-  created_at: string /* RFC 3339 */;
-}
-/**
- * Agent is a coding-agent session registered by an agent token (GET /agents).
+ * Agent is an AI as the agents list shows it (GET /agents): its profile, owner, machine, app and
+ * presence.
  */
 export interface Agent {
   id: string;
   /**
-   * Name is the name the agent goes by: its @handle. It goes away with the legacy fields.
+   * Intelligence is the AI's profile: the display name people read, its @handle and avatar.
    */
-  name: string;
-  /**
-   * DisplayName is the name people read: the AI's profile display name (ID-04).
-   */
-  display_name: string;
+  intelligence: IntelligenceRef;
   description: string;
-  /**
-   * Project is absent for agents that belong to no project.
-   */
-  project?: ProjectRef;
   harness: string; // claude, opencode, pi, omp, codex, gemini or agent
   machine: string; // the session's hostname; empty when unknown
-  kind: AgentKind; // always fixed
-  archived: boolean; // always false
   owner: User;
   my_level: Level; // manage for the owner, use for grantees
   online: boolean;
@@ -64,10 +26,6 @@ export interface Agent {
  * MaxAgentDisplayName is the longest agent display name in characters (ID-04).
  */
 export const MaxAgentDisplayName = 64;
-/**
- * MaxProjectName is the longest project name in characters (PROJ-05).
- */
-export const MaxProjectName = 64;
 /**
  * UpdateAgentRequest is the body of PATCH /agents/{id} (owner only); absent fields are
  * unchanged.
@@ -83,13 +41,6 @@ export interface UpdateAgentRequest {
    * nothing and false is refused (ID-05).
    */
   fixed?: boolean;
-}
-/**
- * UpdateProjectRequest is the body of PATCH /projects/{id} (owner only): the new name, 1 to
- * MaxProjectName characters; the slug never changes (PROJ-05).
- */
-export interface UpdateProjectRequest {
-  name: string;
 }
 /**
  * AgentRoom is a room as seen by an agent (GET /agent/rooms, TOOL-09).
@@ -178,11 +129,11 @@ export type AgentFrameType = typeof AgentFrameTypeWelcome | typeof AgentFrameTyp
 export interface AgentInfo {
   id: string;
   /**
-   * Name is the name the agent goes by (Agent.Name).
+   * Name is the AI's @handle.
    */
   name: string;
   /**
-   * DisplayName is the name people read (Agent.DisplayName).
+   * DisplayName is the name people read: the AI's profile display name.
    */
   display_name: string;
   owner: string; // owner's username

@@ -624,9 +624,9 @@ func TestAccountDisplayNameChangeIsAnnounced(t *testing.T) {
 	require.Empty(t, gathered(), "a locale change is no profile change")
 }
 
-// The v0.3 name columns mirror the profile until they are dropped, so readers that were not
-// converted yet show the same name.
-func TestUpdateMirrorsTheLegacyDisplayNameColumns(t *testing.T) {
+// The profile is the only place a name lives (the v0.3 name columns are gone): the readers of an
+// AI's and an account's name see a rename at once.
+func TestUpdateRenamesWhatEveryReaderShows(t *testing.T) {
 	w := newWorld(t)
 	atlas := w.agent(w.alice, "atlas")
 	_, err := w.svc.Update(w.ctx, asUser(w.alice), atlas, intelligences.ProfileUpdate{DisplayName: ptr("Atlas Prime")})
@@ -634,13 +634,9 @@ func TestUpdateMirrorsTheLegacyDisplayNameColumns(t *testing.T) {
 	_, err = w.svc.Update(w.ctx, asUser(w.alice), w.alice.User.ID, intelligences.ProfileUpdate{DisplayName: ptr("Alice A.")})
 	require.NoError(t, err)
 
-	q := w.env.App.Store.R()
-	agent, err := q.GetAgent(w.ctx, atlas)
+	row, err := w.env.App.Store.R().GetAgentWithOwner(w.ctx, atlas)
 	require.NoError(t, err)
-	require.Equal(t, "Atlas Prime", agents.DisplayName(agent))
-	user, err := q.GetUser(w.ctx, w.alice.User.ID)
-	require.NoError(t, err)
-	require.Equal(t, "Alice A.", user.DisplayName)
+	require.Equal(t, []string{"Atlas Prime", "Alice A."}, []string{row.ProfileName, row.OwnerDisplayName})
 }
 
 // Create allocates handles across kinds from one namespace: users, AIs and people never share

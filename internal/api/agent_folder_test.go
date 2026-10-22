@@ -46,7 +46,7 @@ func TestAgentToolsCallActsAsTheFoldersAI(t *testing.T) {
 	list := ownedAIs(t, alice)
 	require.Len(t, list, 1, "the first call creates the AI of the folder")
 	ai := list[0]
-	require.Equal(t, []any{"codex", "devbox", "Acme", false}, []any{ai.Harness, ai.Machine, ai.DisplayName, ai.Online})
+	require.Equal(t, []any{"codex", "devbox", "Acme", false}, []any{ai.Harness, ai.Machine, ai.Intelligence.DisplayName, ai.Online})
 	prof := profileOf(t, alice, ai.ID)
 	require.Equal(t, []any{dto.IntelligenceKindAI, "acme", "Acme"}, []any{prof.Kind, prof.Handle, prof.DisplayName})
 	require.Equal(t, []any{"devbox", "/home/alice/acme", "~/acme", "codex"},
@@ -450,6 +450,5 @@ func TestRemovedNamingHeadersAreIgnored(t *testing.T) {
 	list := ownedAIs(t, alice)
 	require.Len(t, list, 1)
 	a := list[0]
-	require.Equal(t, []any{"acme", dto.AgentKindFixed, false}, []any{a.Name, a.Kind, a.Archived}, "named after its folder, not after the header")
-	require.Nil(t, a.Project)
+	require.Equal(t, "acme", a.Intelligence.Handle, "named after its folder, not after the header")
 }

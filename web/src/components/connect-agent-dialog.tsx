@@ -265,7 +265,9 @@ function AgentArrival() {
     >
       <StatusDot online={Boolean(arrived)} />
       <span className="truncate">
-        {arrived ? t("connect.online", { name: arrived.name }) : t("connect.waiting")}
+        {arrived
+          ? t("connect.online", { name: arrived.intelligence.display_name })
+          : t("connect.waiting")}
       </span>
     </p>
   );
