@@ -394,8 +394,8 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | TREE-06 | P1: Tree | Tasks | Pending |
 | TREE-07 | P1: Tree | Tasks | Pending |
 | CONT-01 | P1: Contacts and DMs | Tasks | Pending |
-| DM-01 | P1: Contacts and DMs | Tasks | Pending |
-| DM-02 | P1: Contacts and DMs | Tasks | Pending |
+| DM-01 | P1: Contacts and DMs | Execute | Implementing |
+| DM-02 | P1: Contacts and DMs | Execute | Implementing |
 | DM-03 | P1: Contacts and DMs | Tasks | Pending |
 | DM-04 | P1: Contacts and DMs | Tasks | Pending |
 | DM-05 | P1: Contacts and DMs | Tasks | Pending |

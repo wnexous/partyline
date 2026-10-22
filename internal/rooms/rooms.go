@@ -26,6 +26,14 @@ import (
 // ErrAlreadyMember is returned when adding a member twice (409).
 var ErrAlreadyMember = errors.New("already a member of the room")
 
+// ErrDMMembersFixed is returned when a member of a direct message is added, changed or removed:
+// a DM has exactly its two intelligences (422 dm_members_fixed, DM-02).
+var ErrDMMembersFixed = errors.New("the members of a direct message are fixed")
+
+// ErrCounterpartDisabled is returned when posting in a direct message whose other participant is a
+// disabled user: the DM stays readable (403 counterpart_disabled, DM-02).
+var ErrCounterpartDisabled = errors.New("the other participant of the direct message is disabled")
+
 // Limits of room fields.
 const (
 	MaxNameLength        = 100
@@ -82,6 +90,16 @@ type Room struct {
 	InstructionsByName string
 	// OwnerIntelligence is the owner's profile (ID empty when the owner has none).
 	OwnerIntelligence db.Intelligence
+	// Participants are the two intelligences of a DM, by id; none for a group.
+	Participants []Participant
+}
+
+// Participant is one of the two intelligences of a DM.
+type Participant struct {
+	db.Intelligence
+	// Role is user, ai or person; Platform is the connector kind of a person.
+	Role     string
+	Platform string
 }
 
 // LastSeq is the sequence number of the room's latest message (0 when empty).
@@ -227,9 +245,20 @@ func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDispl
 		}
 		by = u.Username
 	}
+	var participants []Participant
+	if r.Kind == string(dto.ConversationKindDM) {
+		rows, err := s.store.R().ListRoomParticipants(ctx, r.ID)
+		if err != nil {
+			return Room{}, err
+		}
+		for _, row := range rows {
+			participants = append(participants, Participant{Intelligence: row.Intelligence, Role: row.Role, Platform: row.Platform})
+		}
+	}
 	return Room{
 		Room: r, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Visibility: v.Mode,
 		MemberCount: members, CatchAll: catchAll > 0, InstructionsByName: by, OwnerIntelligence: owner,
+		Participants: participants,
 	}, nil
 }
 

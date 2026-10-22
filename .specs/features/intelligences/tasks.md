@@ -437,10 +437,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-01, DM-02, DM-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Opening a DM twice (also concurrently) returns the same room; 201 then 200 (DM-01); self → 422 `dm_self`; invisible target → 404 `contact_not_found`
-- [ ] Add/remove/update member on a DM → 422 `dm_members_fixed`; PATCH/DELETE room 403; disabled counterpart → readable, post 403 `counterpart_disabled` (DM-02)
-- [ ] Deleting the AI deletes its DMs and memberships (DM-08 edge case)
-- [ ] Gate check passes: `make check`
+- [x] Opening a DM twice (also concurrently) returns the same room; 201 then 200 (DM-01); self → 422 `dm_self`; invisible target → 404 `contact_not_found`
+- [x] Add/remove/update member on a DM → 422 `dm_members_fixed`; PATCH/DELETE room 403; disabled counterpart → readable, post 403 `counterpart_disabled` (DM-02)
+- [x] Deleting the AI deletes its DMs and memberships (DM-08 edge case)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): open one direct message per pair`

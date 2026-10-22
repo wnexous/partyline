@@ -15,6 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/avatars"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/intelligences"
@@ -31,6 +32,8 @@ type Deps struct {
 	Agents *agents.Registry
 	// Intelligences serves profiles of users, AIs and people.
 	Intelligences *intelligences.Service
+	// Conversations opens direct messages and creates groups.
+	Conversations *conversations.Service
 	// Connectors manages connectors and their chats.
 	Connectors *connectors.Service
 	// Hooks finds the running connector of POST /api/v1/hooks/{id}; FileLinks resolves the
@@ -87,6 +90,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.authRoutes(mux)
 	s.adminRoutes(mux)
 	s.roomRoutes(mux)
+	s.conversationRoutes(mux)
 	s.intelligenceRoutes(mux)
 	s.avatarRoutes(mux)
 	s.agentRoutes(mux)
@@ -196,6 +200,18 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHandleTaken, "handle already taken")
 	case errors.Is(err, access.ErrDMNoSharing):
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeDMNoSharing, "a direct message cannot be shared")
+	case errors.Is(err, rooms.ErrDMMembersFixed):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeDMMembersFixed, "the members of a direct message cannot be changed")
+	case errors.Is(err, rooms.ErrCounterpartDisabled):
+		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeCounterpartDisabled, "the other participant of this direct message is disabled")
+	case errors.Is(err, conversations.ErrDMSelf):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeDMSelf, "a direct message needs two different intelligences")
+	case errors.Is(err, conversations.ErrContactNotFound):
+		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeContactNotFound, "contact not found")
+	case errors.Is(err, conversations.ErrNoRouteToPerson):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeNoRouteToPerson, "no conversation of yours reaches this person")
+	case errors.Is(err, conversations.ErrRateLimited):
+		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many new conversations, try again later")
 	case errors.Is(err, rooms.ErrAlreadyMember):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "already a member of the room")
 	case errors.Is(err, access.ErrForbidden):

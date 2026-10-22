@@ -4,9 +4,13 @@ import "time"
 
 // Room is a routing room (GET /rooms, GET /rooms/{id}).
 type Room struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	ID string `json:"id"`
+	// Kind tells a group from a direct message; a DM has no name and exactly two Participants.
+	Kind ConversationKind `json:"kind"`
+	// Participants are the two intelligences of a DM, in id order; empty for a group.
+	Participants []IntelligenceRef `json:"participants"`
+	Name         string            `json:"name"`
+	Description  string            `json:"description"`
 	// Instructions is free text for the room's agents (INS-01), up to MaxRoomInstructions
 	// characters; agents read it with the room_info tool.
 	Instructions string     `json:"instructions"`

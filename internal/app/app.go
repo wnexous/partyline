@@ -23,6 +23,7 @@ import (
 	"github.com/wnexous/partyline/internal/connectors/telegram"
 	"github.com/wnexous/partyline/internal/connectors/webhook"
 	"github.com/wnexous/partyline/internal/connectors/whatsapp"
+	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/events"
@@ -85,6 +86,8 @@ type App struct {
 	Rooms  *rooms.Service
 	// Intelligences serves the profiles of users, AIs and people.
 	Intelligences *intelligences.Service
+	// Conversations opens direct messages and creates groups.
+	Conversations *conversations.Service
 	Blobs         *attachments.Store
 	// Presence tracks connected agents; Agents is the agent registry.
 	Presence *agents.Presence
@@ -158,6 +161,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		now:           opts.Now,
 	}
 	a.Presence = presence
+	a.Conversations = conversations.New(conversations.Deps{Store: st, Rooms: a.Rooms, Intelligences: a.Intelligences, Bus: bus, Now: opts.Now})
 	auditLog := audit.New(st, opts.Now)
 	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Audit: auditLog, Now: opts.Now})
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
@@ -203,6 +207,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Rooms:         a.Rooms,
 		Agents:        a.Agents,
 		Intelligences: a.Intelligences,
+		Conversations: a.Conversations,
 		Connectors:    a.Connectors,
 		Identities:    a.Identities,
 		Devices:       a.Devices,

@@ -50,6 +50,8 @@ export function makeMe(over: Partial<Me> = {}): Me {
 export function makeRoom(over: Partial<Room> = {}): Room {
   return {
     id: "r1",
+    kind: "group",
+    participants: [],
     name: "general",
     description: "",
     instructions: "",

@@ -356,9 +356,33 @@ export const ErrorCodeIdentityBusy = "identity_busy"; // 409
  */
 export const ErrorCodeDMNoSharing = "dm_no_sharing";
 /**
+ * ErrorCodeDMMembersFixed is an attempt to add, change or remove a member of a direct
+ * message: it has exactly its two intelligences (422, DM-02).
+ */
+export const ErrorCodeDMMembersFixed = "dm_members_fixed";
+/**
+ * ErrorCodeDMSelf is a direct message opened with oneself (422, DM-01).
+ */
+export const ErrorCodeDMSelf = "dm_self";
+/**
+ * ErrorCodeContactNotFound is a direct message with an intelligence that does not exist or
+ * that the caller cannot see; the two cases look alike (404, DM-01, DM-04).
+ */
+export const ErrorCodeContactNotFound = "contact_not_found";
+/**
+ * ErrorCodeNoRouteToPerson is a direct message with an external person that no platform
+ * conversation of the sender reaches (422, DM-05).
+ */
+export const ErrorCodeNoRouteToPerson = "no_route_to_person";
+/**
+ * ErrorCodeCounterpartDisabled is a post in a direct message whose other participant is a
+ * disabled user: the DM stays readable (403, DM-02).
+ */
+export const ErrorCodeCounterpartDisabled = "counterpart_disabled";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -693,6 +717,13 @@ export const ConversationKindDM = "dm";
  * Conversation kinds.
  */
 export type ConversationKind = typeof ConversationKindGroup | typeof ConversationKindDM;
+/**
+ * OpenDMRequest is the body of POST /conversations/dm: the intelligence to talk to, by id
+ * (DM-01). The answer is the DM as a Room: 201 when it was created, 200 when it already existed.
+ */
+export interface OpenDMRequest {
+  with: string;
+}
 
 //////////
 // source: devices.go
@@ -1128,6 +1159,14 @@ export interface LiveLagged {
  */
 export interface Room {
   id: string;
+  /**
+   * Kind tells a group from a direct message; a DM has no name and exactly two Participants.
+   */
+  kind: ConversationKind;
+  /**
+   * Participants are the two intelligences of a DM, in id order; empty for a group.
+   */
+  participants: IntelligenceRef[];
   name: string;
   description: string;
   /**

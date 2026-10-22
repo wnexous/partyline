@@ -648,3 +648,68 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   `SetVisibility` on a DM) and `internal/api/room_membership_access_test.go` (the DM auth matrix
   over every room route, 422 `dm_no_sharing`, the room list, member posting over HTTP, live
   frames). DMs are stored by the test helper `storeDM` until T20 adds `OpenDM`.
+
+## T20 - Direct messages (DM-01, DM-02, DM-08)
+
+- **`conversations.Service`** (`app.App.Conversations`; `conversations.New(Deps{Store, Rooms,
+  Intelligences, Bus, AllowCreate, Now})`) is new. `OpenDM(ctx, p, withID) (rooms.Room, created bool,
+  error)` acts as the user of a user principal and as the AI (`p.AgentID`) of an agent principal,
+  whose visibility is its owner's (`p.UserID`). Order of the checks: principal kind → empty `with`
+  (422 `invalid`, field `with`) → `with` is the caller (`ErrDMSelf`) → `Intelligences.CanSee`
+  (`ErrContactNotFound`; an unknown id and an invisible one are the same answer, even in the
+  message) → role (user and AI go on; a person is `ErrNoRouteToPerson`; an intelligence without an
+  account is `ErrContactNotFound`) → the pair's existing DM, returned with `created` false and
+  **without asking the limit** → for an AI that has to create one, `Deps.AllowCreate(agentID)`
+  (`ErrRateLimited`; nil allows; the registry's 10 per hour arrives with T24) → creation.
+- **Creation** is one write transaction: `InsertDMRoom … ON CONFLICT DO NOTHING` on the sorted pair
+  (`dm_a < dm_b`, partial unique index `rooms_dm_pair`) plus one member row per participant. A caller
+  that lost the race gets the winner's room and `created` false, so exactly one of any number of
+  concurrent opens (from either side) is a 201. An AI that loses the race has still used one slot of
+  its limit. The room: `kind dm`, `name ''`, `owner_id` = `p.UserID` (the user who opened it, the
+  AI's owner for an AI), `broadcast 1`, `bridge_chats 0`, retention and everything else the table
+  defaults (90 days); members `user` (users) or `agent` (AIs, `delivery all`, outbound on,
+  `added_by` = `p.UserID`). The owner column gives no access (T19). After the commit:
+  `RoomChanged` and `MembersChanged`, so the other participant's sockets (and an AI owner's, who
+  views it) get `room.changed` with their level.
+- **DM-05 (this task's part):** a person target is always 422 `no_route_to_person`, since a person
+  is reached through a platform conversation only. T30 adds that route (a DM chat of the person on a
+  connector whose operator is the caller) in front of this refusal. Nothing else refuses a disabled
+  target at open time: such a DM can be opened and is read-only (`counterpart_disabled`).
+- **`POST /api/v1/conversations/dm`** `dto.OpenDMRequest{with}` (an intelligence id) → `dto.Room`:
+  **201** when created, **200** for the existing DM. Sessions and user tokens only (an agent token is
+  403 like on every non-agent route; the AI's own route is T24's `POST /agent/dms`). Errors: 422
+  `dm_self`, 404 `contact_not_found` (`dto.ErrorCodeContactNotFound`), 422 `no_route_to_person`, 422
+  `invalid` for a missing `with`, 400 for a malformed body, 429 `rate_limited` (AIs only, T24).
+- **`dto.Room.kind`** (`group` | `dm`) and **`participants`** (the two `IntelligenceRef`s of a DM in
+  id order with their `role`/`platform`; always an array, empty for a group) come from
+  `rooms.Room.Participants` (`ListRoomParticipants`, loaded by `rooms.view` for DMs only). A DM has
+  an empty `name` (the other participant titles it in the UI) and `member_count` 2.
+- **DM guards in `rooms`** (new sentinels `rooms.ErrDMMembersFixed`, `rooms.ErrCounterpartDisabled`):
+  - `AddMember`, `UpdateMember` and `RemoveMember` check view first (404 for a caller without it),
+    then the DM rule, then manage: whoever can view a DM — a participant, an AI's owner or grantee —
+    gets **422 `dm_members_fixed`**, never 403. Nothing is written. (Same order as T19's
+    `dm_no_sharing`.)
+  - `PATCH` and `DELETE /rooms/{id}` and `resume` stay 403 for everybody who can view a DM, since
+    nobody has manage (T19).
+  - `Service.Post` (every path that posts as a user or an AI: the web, `reply`, `react`,
+    `send_message`) refuses a DM whose other participant is a **disabled user** with **403
+    `counterpart_disabled`**; reading, listing and the member list keep working. A counterpart that
+    is an AI or a person never blocks. System and chat-authored messages do not go through this
+    check.
+- **Lifecycle (DM-08 edge case):** deleting an AI deletes its intelligence (trigger) and so its DMs
+  with their members, messages, attachments, outbox rows and read cursors (foreign keys).
+  `Registry.Delete` now publishes `RoomChanged{Deleted}` for the member rooms that no longer exist
+  (their sockets hear `room.deleted`) and `MembersChanged` for the others; a DM the AI's owner only
+  viewed was never in that socket's visible set and sends nothing. Blob files of the deleted DMs
+  are swept by the retention job like any unreferenced blob. Deleting a user cascades the same way
+  without events (as before for owned rooms).
+- sqlc: `InsertDMRoom` (`:execrows`), `ListRoomParticipants`. Error codes with their statuses:
+  `dm_members_fixed` 422, `dm_self` 422, `contact_not_found` 404, `no_route_to_person` 422,
+  `counterpart_disabled` 403 (all in `dto/common.go`, all observed at their status by tests).
+- Known interaction, fixed by T23: AIs are members of their DMs, so `GET /agent/rooms` already lists
+  them (with an empty name) and `resolveRoom`'s name match must not treat that name as a room name.
+- Tests: `internal/api/direct_messages_test.go` (open/reopen from both sides, 12 concurrent opens,
+  AI target and the owner's view, refusals, person, authorization matrix with owner / use grantee /
+  stranger / admin / agent token / anonymous, members fixed for participant and AI owner,
+  counterpart disabled and re-enabled, AI deletion with live `room.deleted`, live announcement) and
+  `internal/conversations/dm_test.go` (the agent-principal rules and the `AllowCreate` hook).

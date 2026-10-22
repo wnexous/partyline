@@ -72,6 +72,30 @@ func (s *Service) member(ctx context.Context, roomID, memberRowID string) (Membe
 	return Member{}, access.ErrNotFound
 }
 
+// authorizeMembers authorizes a change of the room's members: a caller without view gets
+// ErrNotFound; whoever can view a DM gets ErrDMMembersFixed, since a DM has exactly its two
+// intelligences (DM-02); the others need manage.
+func (s *Service) authorizeMembers(ctx context.Context, p authn.Principal, roomID string) error {
+	l, err := s.authorize(ctx, p, roomID, dto.LevelView)
+	if err != nil {
+		return err
+	}
+	r, err := s.store.R().GetRoom(ctx, roomID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return access.ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if r.Kind == string(dto.ConversationKindDM) {
+		return ErrDMMembersFixed
+	}
+	if !access.AtLeast(l, dto.LevelManage) {
+		return access.ErrForbidden
+	}
+	return nil
+}
+
 // MemberInput names a member to add. Outbound defaults to true.
 type MemberInput struct {
 	Kind     dto.MemberKind
@@ -83,7 +107,7 @@ type MemberInput struct {
 // caller to own or use the agent (ACL-05), chats to own or use the chat's connector (ACL-06),
 // projects to own or use the project (PROJ-06); otherwise ErrForbidden.
 func (s *Service) AddMember(ctx context.Context, p authn.Principal, roomID string, in MemberInput) (Member, error) {
-	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
+	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
 		return Member{}, err
 	}
 	if err := s.checkUse(ctx, p.UserID, in); err != nil {
@@ -255,7 +279,7 @@ func (u MemberUpdate) apply(m db.RoomMember) (db.RoomMember, error) {
 // UpdateMember changes a member's outbound flag and, for agents, its settings (MEM-01..05);
 // requires manage. Invalid settings change nothing.
 func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, memberRowID string, u MemberUpdate) (Member, error) {
-	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
+	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
 		return Member{}, err
 	}
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
@@ -304,7 +328,7 @@ func (s *Service) skipAutoRoute(ctx context.Context, q *db.Queries, roomID, chat
 // pending (not yet sent) outbox entries in this room are deleted in the same tx (ROOM-01).
 // Requires manage.
 func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, memberRowID string) error {
-	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
+	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
 		return err
 	}
 	var removedKind string

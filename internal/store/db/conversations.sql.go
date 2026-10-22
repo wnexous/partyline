@@ -105,6 +105,95 @@ func (q *Queries) GetReadCursor(ctx context.Context, arg GetReadCursorParams) (i
 	return seq, err
 }
 
+const insertDMRoom = `-- name: InsertDMRoom :execrows
+INSERT INTO rooms (id, owner_id, name, kind, dm_a, dm_b, created_at, updated_at)
+VALUES (?, ?, '', 'dm', ?, ?, ?, ?)
+ON CONFLICT DO NOTHING
+`
+
+type InsertDMRoomParams struct {
+	ID        string
+	OwnerID   string
+	DmA       sql.NullString
+	DmB       sql.NullString
+	CreatedAt int64
+	UpdatedAt int64
+}
+
+// Creates the DM of a pair unless the pair has one (rooms_dm_pair): 1 row when created, 0 when it
+// existed. dm_a and dm_b are the sorted participants (dm_a < dm_b).
+func (q *Queries) InsertDMRoom(ctx context.Context, arg InsertDMRoomParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, insertDMRoom,
+		arg.ID,
+		arg.OwnerID,
+		arg.DmA,
+		arg.DmB,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const listRoomParticipants = `-- name: ListRoomParticipants :many
+SELECT i.id, i.kind, i.display_name, i.handle, i.avatar_sha256, i.bio, i.created_at, i.updated_at,
+       CAST(CASE WHEN u.id IS NOT NULL THEN 'user' WHEN a.id IS NOT NULL THEN 'ai'
+                 WHEN p.id IS NOT NULL THEN 'person' ELSE '' END AS TEXT) AS role,
+       CAST(COALESCE(c.kind, '') AS TEXT) AS platform
+FROM rooms r
+JOIN intelligences i ON i.id = r.dm_a OR i.id = r.dm_b
+LEFT JOIN users u ON u.id = i.id
+LEFT JOIN agents a ON a.id = i.id
+LEFT JOIN people p ON p.id = i.id
+LEFT JOIN connectors c ON c.id = p.connector_id
+WHERE r.id = ? AND r.kind = 'dm'
+ORDER BY i.id
+`
+
+type ListRoomParticipantsRow struct {
+	Intelligence Intelligence
+	Role         string
+	Platform     string
+}
+
+// The two intelligences of a DM, by id, each with the subtype row it shares its id with (role:
+// user, ai or person) and, for a person, the kind of its connector.
+func (q *Queries) ListRoomParticipants(ctx context.Context, id string) ([]ListRoomParticipantsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRoomParticipants, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoomParticipantsRow
+	for rows.Next() {
+		var i ListRoomParticipantsRow
+		if err := rows.Scan(
+			&i.Intelligence.ID,
+			&i.Intelligence.Kind,
+			&i.Intelligence.DisplayName,
+			&i.Intelligence.Handle,
+			&i.Intelligence.AvatarSha256,
+			&i.Intelligence.Bio,
+			&i.Intelligence.CreatedAt,
+			&i.Intelligence.UpdatedAt,
+			&i.Role,
+			&i.Platform,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setRoomReadBaseline = `-- name: SetRoomReadBaseline :exec
 UPDATE rooms SET read_baseline = ? WHERE id = ?
 `

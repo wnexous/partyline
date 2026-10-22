@@ -104,6 +104,13 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelPost); err != nil {
 		return Message{}, err
 	}
+	author := p.UserID
+	if p.Kind == authn.KindAgent {
+		author = p.AgentID
+	}
+	if err := s.checkCounterpart(ctx, roomID, author); err != nil {
+		return Message{}, err
+	}
 	kind := in.Kind
 	if kind == "" {
 		kind = dto.MessageKindText
@@ -117,6 +124,33 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 		d.authorKind, d.authorID, d.authorIID = dto.AuthorKindAgent, p.AgentID, p.AgentID
 	}
 	return s.post(ctx, roomID, d)
+}
+
+// checkCounterpart refuses a post in a DM whose other participant is a disabled user; the DM
+// stays readable (DM-02). Rooms that are not DMs, and counterparts that are AIs or people, pass.
+func (s *Service) checkCounterpart(ctx context.Context, roomID, authorIID string) error {
+	r, err := s.store.R().GetRoom(ctx, roomID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return access.ErrNotFound
+	}
+	if err != nil || r.Kind != string(dto.ConversationKindDM) {
+		return err
+	}
+	other := r.DmA.String
+	if other == authorIID {
+		other = r.DmB.String
+	}
+	u, err := s.store.R().GetUser(ctx, other)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if u.DisabledAt.Valid {
+		return ErrCounterpartDisabled
+	}
+	return nil
 }
 
 // PostFromChat stores a message received from a chat that is a member of the room. Callers

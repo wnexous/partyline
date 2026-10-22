@@ -377,7 +377,8 @@ func (r *Registry) membersChanged(roomIDs []string) {
 }
 
 // Delete removes the agent with its room memberships, grants and cursors and closes its
-// live connection; requires ownership (manage).
+// live connection; requires ownership (manage). Its direct messages go with it (DM-08): the
+// intelligence's deletion cascades to every room that names it as a participant.
 func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string) error {
 	if _, err := r.authorize(ctx, p, agentID, dto.LevelManage); err != nil {
 		return err
@@ -398,6 +399,10 @@ func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string
 	}
 	r.presence.Kick(ctx, agentID, CloseDeleted, ReasonDeleted)
 	for _, id := range roomIDs {
+		if _, err := r.store.R().GetRoom(ctx, id); errors.Is(err, sql.ErrNoRows) {
+			r.bus.Publish(events.RoomChanged{RoomID: id, Deleted: true}) // a DM of the agent
+			continue
+		}
 		r.bus.Publish(events.MembersChanged{RoomID: id})
 	}
 	return nil

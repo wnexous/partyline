@@ -1,0 +1,143 @@
+package conversations
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+
+	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/rooms"
+	"github.com/wnexous/partyline/internal/store"
+	"github.com/wnexous/partyline/internal/store/db"
+	"github.com/wnexous/partyline/internal/validation"
+)
+
+// OpenDM returns the direct message between the caller and the intelligence withID, creating it
+// when the pair has none (DM-01); created tells which. The caller is the user, or the AI of an
+// agent principal, whose visibility is its owner's (DM-04). A DM is a room of kind dm whose two
+// participants, keyed by their sorted ids, are its only members; its owner column names the user
+// who started it (the AI's owner for an AI) and gives no access (AD-011).
+//
+//   - withID is the caller itself: ErrDMSelf. An empty withID is a validation error.
+//   - withID is unknown or not visible to the caller: ErrContactNotFound, the same for both.
+//   - withID is an external person: ErrNoRouteToPerson, since a person is reached through the
+//     platform conversations of a connector only (DM-05).
+//   - An AI that has to create the DM is asked to AllowCreate first: ErrRateLimited. Opening an
+//     existing DM is never counted.
+//
+// Concurrent calls for one pair create one room: the creation is a single write transaction on
+// the unique pair key, and exactly one caller sees created.
+func (s *Service) OpenDM(ctx context.Context, p authn.Principal, withID string) (rooms.Room, bool, error) {
+	me, err := selfOf(p)
+	if err != nil {
+		return rooms.Room{}, false, err
+	}
+	if withID == "" {
+		return rooms.Room{}, false, &validation.Error{Fields: map[string]string{"with": "required"}}
+	}
+	if withID == me.id {
+		return rooms.Room{}, false, ErrDMSelf
+	}
+	target, err := s.contact(ctx, p, withID)
+	if err != nil {
+		return rooms.Room{}, false, err
+	}
+	var targetKind dto.MemberKind
+	switch intelligences.Role(target.Role) {
+	case intelligences.RoleUser:
+		targetKind = dto.MemberKindUser
+	case intelligences.RoleAI:
+		targetKind = dto.MemberKindAgent
+	case intelligences.RolePerson:
+		return rooms.Room{}, false, ErrNoRouteToPerson
+	default: // an intelligence without account: nobody to talk to
+		return rooms.Room{}, false, ErrContactNotFound
+	}
+	pair := sortedPair(me.id, withID)
+	existing, err := s.store.R().GetDMRoom(ctx, pair)
+	switch {
+	case err == nil:
+		room, err := s.rooms.Get(ctx, p, existing.ID)
+		return room, false, err
+	case !errors.Is(err, sql.ErrNoRows):
+		return rooms.Room{}, false, err
+	}
+	if me.kind == dto.MemberKindAgent && s.allowCreate != nil && !s.allowCreate(p.AgentID) {
+		return rooms.Room{}, false, ErrRateLimited
+	}
+	roomID, created, err := s.createDM(ctx, p, pair, [2]participant{{me.id, me.kind}, {withID, targetKind}})
+	if err != nil {
+		return rooms.Room{}, false, err
+	}
+	if created {
+		s.bus.Publish(events.RoomChanged{RoomID: roomID})
+		s.bus.Publish(events.MembersChanged{RoomID: roomID})
+	}
+	room, err := s.rooms.Get(ctx, p, roomID)
+	return room, created, err
+}
+
+// contact resolves the target of a DM: the intelligence must exist and be visible to the caller
+// (the caller's owner for an AI).
+func (s *Service) contact(ctx context.Context, p authn.Principal, id string) (db.GetIntelligenceWithRoleRow, error) {
+	see, err := s.ints.CanSee(ctx, p, id)
+	if err != nil {
+		return db.GetIntelligenceWithRoleRow{}, err
+	}
+	if !see {
+		return db.GetIntelligenceWithRoleRow{}, ErrContactNotFound
+	}
+	d, err := s.store.R().GetIntelligenceWithRole(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return db.GetIntelligenceWithRoleRow{}, ErrContactNotFound
+	}
+	return d, err
+}
+
+// participant is one side of a DM and the kind of room member it becomes.
+type participant struct {
+	id   string
+	kind dto.MemberKind
+}
+
+// sortedPair is the key of a DM: the two ids in order (dm_a < dm_b).
+func sortedPair(x, y string) db.GetDMRoomParams {
+	if x > y {
+		x, y = y, x
+	}
+	return db.GetDMRoomParams{DmA: sql.NullString{String: x, Valid: true}, DmB: sql.NullString{String: y, Valid: true}}
+}
+
+// createDM inserts the room and one member row per participant in one write transaction. When the
+// pair already has its DM (a concurrent caller was first) it returns that room and created false.
+func (s *Service) createDM(ctx context.Context, p authn.Principal, pair db.GetDMRoomParams, who [2]participant) (string, bool, error) {
+	id := store.NewID()
+	now := s.now().UnixMilli()
+	created := false
+	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+		n, err := q.InsertDMRoom(ctx, db.InsertDMRoomParams{
+			ID: id, OwnerID: p.UserID, DmA: pair.DmA, DmB: pair.DmB, CreatedAt: now, UpdatedAt: now,
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			existing, err := q.GetDMRoom(ctx, pair)
+			id = existing.ID
+			return err
+		}
+		created = true
+		for _, m := range who {
+			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
+				ID: store.NewID(), RoomID: id, Kind: string(m.kind), MemberID: m.id, Outbound: true, AddedBy: p.UserID, CreatedAt: now,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return id, created, err
+}
