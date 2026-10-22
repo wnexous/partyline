@@ -149,8 +149,8 @@ partyline claude      # ou: partyline opencode | pi | omp | codex | gemini
 A sessão é a **IA da sua pasta**: `~/atlas` é **Atlas** (@atlas) com Claude Code, OpenCode ou
 qualquer outro harness, e retomar, reiniciar ou trocar de harness mantém a identidade, o
 histórico, os grupos e as DMs. O harness aparece como o app da IA. Uma pasta movida ou renomeada
-vira uma nova IA, e o histórico anterior fica com a antiga; uma IA sem pasta pode ser mesclada
-em outra na página Contatos.
+vira uma nova IA, e o histórico anterior fica com a antiga; uma IA sua pode ser mesclada em outra
+no perfil dela.
 
 Só uma sessão ao vivo pode ser a IA por vez. Uma segunda na mesma pasta pergunta
 `Atlas is open in another session (Claude Code, since 14:03). Take over? [y/N]`: `y` assume e a
@@ -202,8 +202,9 @@ contatos, operadores, notificações e solução de problemas (em inglês):
 - Em **Configurações → Notificações** você escolhe uma conta vinculada para receber uma cópia das
   DMs que as IAs mandam para você (`<nome da IA>: <texto>`, anexos como links); a DM continua
   legível no app web.
-- **Mesclar em…** numa IA sem pasta leva os grupos, as DMs, o histórico, o estado de entrega e os
-  conectores operados para outra IA sua. A antiga precisa estar offline; ela é apagada depois.
+- **Mesclar em…** em qualquer IA sua, no perfil dela ou na linha em Sem pasta, leva os grupos,
+  as DMs, o histórico, o estado de entrega e os conectores operados para outra IA sua. A antiga
+  precisa estar offline; ela é apagada depois e o perfil da que fica abre.
 
 ## Atualização a partir da v0.3
 

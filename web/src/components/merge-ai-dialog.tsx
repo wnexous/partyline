@@ -17,27 +17,39 @@ import { ErrorCodeIdentityOnline, type IntelligenceRef } from "@/lib/api/types.g
 import { useT } from "@/lib/i18n";
 
 /*
- * Merge an unlinked AI into another AI the user owns (MRG-01, MRG-02): the one picked keeps
+ * Merge one of the caller's AIs into another one (MRG-01, MRG-02): the one picked keeps
  * everything the other had - groups, direct messages, history, sharing and connectors - and the
- * other is deleted. An AI with a live session is refused until its session ends.
+ * other is deleted. A page that shows the AI afterwards (its profile) passes `onMerged` to open
+ * the survivor. An AI with a live session is refused until its session ends.
  */
 
 export function MergeAIDialog({
   ai,
   candidates,
   onClose,
+  onMerged,
 }: {
   /** The AI that is merged away; null means the dialog is closed. */
   ai: IntelligenceRef | null;
   /** The AIs it may merge into (the owner's, itself left out). */
   candidates: IntelligenceRef[];
   onClose: () => void;
+  /** Called with the id of the AI that remains once the merge succeeded, before the dialog closes. */
+  onMerged?: (survivorId: string) => void;
 }) {
   return (
     <Dialog open={ai !== null} onOpenChange={(open) => (open ? undefined : onClose())}>
       <DialogContent>
         {/* Keyed by the AI: a different opening starts from nothing picked and no old error. */}
-        {ai ? <MergeForm key={ai.id} ai={ai} candidates={candidates} onClose={onClose} /> : null}
+        {ai ? (
+          <MergeForm
+            key={ai.id}
+            ai={ai}
+            candidates={candidates}
+            onClose={onClose}
+            onMerged={onMerged}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
@@ -47,10 +59,12 @@ function MergeForm({
   ai,
   candidates,
   onClose,
+  onMerged,
 }: {
   ai: IntelligenceRef;
   candidates: IntelligenceRef[];
   onClose: () => void;
+  onMerged?: (survivorId: string) => void;
 }) {
   const t = useT();
   const id = useId();
@@ -70,6 +84,7 @@ function MergeForm({
         onSuccess: (survivor) => {
           toast.success(t("merge.done", { name: ai.display_name, into: survivor.display_name }));
           onClose();
+          onMerged?.(survivor.id);
         },
         onError: (err) => {
           if (isApiError(err) && err.code === ErrorCodeIdentityOnline) {
