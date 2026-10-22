@@ -987,8 +987,8 @@ design needs the API to return them). See `contract-notes.md`, T48.
 **Requirement**: LAY-01, LAY-05, DM-01, PROF-03, TREE-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `make e2e` passes on desktop-1280 and mobile-360
-- [ ] Gate check passes: `make check`
+- [x] `make e2e` passes on desktop-1280 and mobile-360
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(web): cover the messenger in the smoke suite`
