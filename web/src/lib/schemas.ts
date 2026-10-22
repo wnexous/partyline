@@ -3,9 +3,12 @@ import {
   DeliveryModeAll,
   DeliveryModeMentions,
   DeliveryModeTrusted,
+  HandlePattern,
   MaxMemberDisplayName,
   MaxMemberKeyword,
   MaxMemberKeywords,
+  MaxProfileBio,
+  MaxProfileDisplayName,
   MaxRoomInstructions,
   MaxTextLength,
   PasswordMinLength,
@@ -56,6 +59,31 @@ export const acceptInviteSchema = z.object({
 /** POST /groups: a name is required; the members are picked apart from the form (LAY-04). */
 export const createGroupSchema = z.object({
   name: z.string().trim().min(1, msg("validation.required")),
+});
+
+const handleRe = new RegExp(HandlePattern);
+
+/** The handle as the server reads it: no leading @, no spaces around it, lower case. */
+export const normalizeHandle = (text: string) => text.trim().replace(/^@+/, "").toLowerCase();
+
+/**
+ * The profile of any intelligence (PROF-03, PROF-05, PROF-11): a display name, a handle and a
+ * bio, with the limits of the contract counted in code points like the server counts them.
+ */
+export const profileEditSchema = z.object({
+  display_name: z
+    .string()
+    .trim()
+    .min(1, msg("validation.required"))
+    .refine((v) => textLength(v) <= MaxProfileDisplayName, msg("validation.displayName")),
+  handle: z
+    .string()
+    .transform(normalizeHandle)
+    .refine((v) => handleRe.test(v), msg("validation.handle")),
+  bio: z
+    .string()
+    .trim()
+    .refine((v) => textLength(v) <= MaxProfileBio, msg("validation.bio")),
 });
 
 /** PATCH /rooms/{id}: retention in whole days, 0 keeps messages forever (OPS-02). */
@@ -139,6 +167,7 @@ export type AcceptInviteForm = z.input<typeof acceptInviteSchema>;
 export type CreateGroupForm = z.input<typeof createGroupSchema>;
 export type CreateTokenForm = z.input<typeof createTokenSchema>;
 export type ProfileForm = z.input<typeof profileSchema>;
+export type ProfileEditForm = z.input<typeof profileEditSchema>;
 export type ChangePasswordForm = z.input<typeof changePasswordSchema>;
 export type RoomSettingsForm = z.input<typeof roomSettingsSchema>;
 export type MemberSettingsForm = z.input<typeof memberSettingsSchema>;
@@ -150,4 +179,5 @@ export const validationVars = {
   "validation.keywords": { max: MaxMemberKeywords },
   "validation.keyword": { max: MaxMemberKeyword },
   "validation.instructions": { max: MaxRoomInstructions },
+  "validation.bio": { max: MaxProfileBio },
 } as const;

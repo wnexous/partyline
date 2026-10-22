@@ -11,6 +11,7 @@ import {
   makeMachineTree,
   makeMe,
   makePerson,
+  makeProfile,
   makeRoom,
   makeTreeNode,
 } from "@/test/fixtures";
@@ -801,6 +802,55 @@ describe("shared AIs, users and people (CONT-01)", () => {
     expect(alert).toHaveTextContent("Couldn’t load the people of ops-line.");
     await user.click(within(alert).getByRole("button", { name: "Try again" }));
     expect(await screen.findByTestId("contact-p1")).toBeInTheDocument();
+  });
+});
+
+describe("opening a profile", () => {
+  it.each([
+    ["an AI in the tree", "a1", "Atlas"],
+    ["an unlinked AI", "a4", "Old helper"],
+    ["a shared AI", "a5", "Sage"],
+    ["a user", "u2", "Bob Lima"],
+  ])("links the name of %s to its profile", async (_what, id, name) => {
+    api(sampleContacts);
+    renderRoute("/contacts");
+    const link = await within(await screen.findByTestId(`contact-${id}`)).findByRole("link", {
+      name: new RegExp(name),
+    });
+    expect(link).toHaveAttribute("href", `/contacts/${id}`);
+  });
+
+  it("names the link by the contact alone, not by the line of details under it", async () => {
+    api(treeContacts);
+    renderRoute("/contacts");
+    await screen.findByRole("region", { name: "devbox" });
+    const link = within(row("a1")).getByRole("link");
+    expect(link).toHaveAccessibleName("A AI @a");
+  });
+
+  it("links a person to their profile too", async () => {
+    api(sampleContacts, { "GET /contacts/people": json(200, { items: [lia], has_more: false }) });
+    const user = userEvent.setup();
+    renderRoute("/contacts");
+    await user.click(await screen.findByRole("button", { name: /ops-line/ }));
+    const link = await within(await screen.findByTestId("contact-p1")).findByRole("link");
+    expect(link).toHaveAttribute("href", "/contacts/p1");
+  });
+
+  it("opens the profile of the contact that was clicked", async () => {
+    api(sampleContacts, {
+      "GET /intelligences/a1": json(
+        200,
+        makeProfile({ id: "a1", display_name: "Atlas", handle: "atlas", role: "ai", kind: "ai" }),
+      ),
+    });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/contacts");
+    await user.click(
+      await within(await screen.findByTestId("contact-a1")).findByRole("link", { name: /Atlas/ }),
+    );
+    await waitFor(() => expect(router.state.location.pathname).toBe("/contacts/a1"));
+    expect(await screen.findByRole("heading", { name: "Atlas", level: 1 })).toBeInTheDocument();
   });
 });
 

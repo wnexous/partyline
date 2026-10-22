@@ -916,9 +916,13 @@ panel lists AIs, users and chats; the people rows under each chat arrive with T2
 **Requirement**: PROF-03, PROF-05, PROF-11, PEOP-03, ACC-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Owner edits an AI (PROF-05) and connector users edit a person (PROF-11); `handle_taken` and `avatar_invalid` show as field errors; non-editors see no editor
-- [ ] Person page shows name, platform account and visible conversations (PEOP-03); an operator AI lists `Discord: @bot` (ACC-07)
-- [ ] Gate check passes: `make check`
+- [x] Owner edits an AI (PROF-05) and connector users edit a person (PROF-11); `handle_taken` and `avatar_invalid` show as field errors; non-editors see no editor
+- [x] Person page shows name, platform account and visible conversations (PEOP-03); an operator AI lists `Discord: @bot` (ACC-07)
+- [x] Gate check passes: `make check`
+
+**Open (conversations of AIs and users):** the profile API fills `conversations` for **persons** only (T27), so the page lists
+conversations for them; an AI's or a user's profile offers **Message** instead of a list (the "AI DMs read-only" list of the
+design needs the API to return them). See `contract-notes.md`, T48.
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): view and edit intelligence profiles`

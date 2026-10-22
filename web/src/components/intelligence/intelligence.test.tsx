@@ -89,6 +89,31 @@ describe("IntelligenceAvatar (PROF-08)", () => {
     expect(first.className).not.toBe(third.className);
   });
 
+  it("has a 96 px size for the profile page, with its initials larger", () => {
+    const { container } = renderWithProviders(
+      <>
+        <IntelligenceAvatar intelligence={ana} size="xl" />
+        <IntelligenceAvatar intelligence={ana} />
+      </>,
+    );
+    const [xl, normal] = [...container.querySelectorAll('[data-slot="avatar"]')];
+    expect(xl?.className).toContain("size-24");
+    expect(normal?.className).not.toContain("size-24");
+    expect(xl?.querySelector('[data-slot="avatar-fallback"]')?.className).toContain("text-2xl");
+  });
+
+  it("asks for an image of the size it shows", () => {
+    vi.stubGlobal("Image", LoadedImage);
+    const { container } = renderWithProviders(
+      <IntelligenceAvatar
+        intelligence={makeIntelligence({ avatar_url: "/api/v1/intelligences/u1/avatar?v=abc" })}
+        size="xl"
+      />,
+    );
+    expect(container.querySelector("img")).toHaveAttribute("width", "96");
+    expect(container.querySelector("img")).toHaveAttribute("height", "96");
+  });
+
   it("shows the avatar image with the display name as alt text", () => {
     vi.stubGlobal("Image", LoadedImage);
     renderWithProviders(

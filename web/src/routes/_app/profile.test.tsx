@@ -1,0 +1,900 @@
+import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { queryKeys } from "@/lib/api/queries";
+import type { IntelligenceProfile } from "@/lib/api/types.gen";
+import { handleLiveEvent } from "@/lib/live/handlers";
+import { useLiveStore } from "@/lib/live/store";
+import { apiError, json, mockApi } from "@/test/fetch";
+import {
+  makeAI,
+  makeIntelligence,
+  makeMe,
+  makePerson,
+  makeProfile,
+  makeRoom,
+} from "@/test/fixtures";
+import { stubLayout } from "@/test/layout";
+import { renderRoute } from "@/test/render";
+
+vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+
+/*
+ * The profile page (PROF-03, PROF-05, PROF-11, PEOP-03, ACC-07): what an intelligence is, with an
+ * editor for whoever may edit it - the user for themselves, the owner for an AI, the users of a
+ * connector for its people.
+ */
+
+/** happy-dom never loads images; report them as loaded so the avatar renders its <img>. */
+class LoadedImage {
+  complete = true;
+  naturalWidth = 1;
+  crossOrigin: string | null = null;
+  referrerPolicy = "";
+  src = "";
+  addEventListener() {}
+  removeEventListener() {}
+}
+
+stubLayout();
+beforeEach(() => {
+  useLiveStore.setState({ locale: "en", presence: {}, openRoomId: null });
+  URL.createObjectURL = vi.fn(() => "blob:preview-1");
+  URL.revokeObjectURL = vi.fn();
+});
+afterEach(() => vi.unstubAllGlobals());
+
+const me = makeMe();
+const ana = makeIntelligence();
+
+const atlasRef = makeAI();
+const atlas: IntelligenceProfile = makeProfile({
+  ...atlasRef,
+  bio: "Release captain.",
+  can_edit: true,
+  ai: {
+    owner: ana,
+    machine: "devbox",
+    machine_label: "Build box",
+    folder: "/home/dev/atlas",
+    folder_label: "~/atlas",
+    app: "claude",
+    online: false,
+    last_seen_at: "2026-10-19T09:00:00Z",
+    my_level: "manage",
+  },
+  apps: [
+    { kind: "claude", label: "Claude Code" },
+    { kind: "discord", label: "Discord: @atlasbot", connector_id: "k9" },
+  ],
+});
+
+const liaRef = makePerson();
+const lia: IntelligenceProfile = makeProfile({
+  ...liaRef,
+  bio: "",
+  can_edit: true,
+  person: {
+    connector: { id: "k1", kind: "whatsapp", name: "ops-line" },
+    external_id: "5511999990000",
+    name_locked: false,
+  },
+  apps: [{ kind: "whatsapp", label: "WhatsApp: 5511999990000", connector_id: "k1" }],
+  conversations: [
+    { id: "r1", name: "support-bridge" },
+    { id: "d9", name: "", kind: "dm" },
+  ],
+});
+
+function api(profile: IntelligenceProfile, extra: Parameters<typeof mockApi>[0] = {}) {
+  return mockApi({
+    "GET /me": json(200, me),
+    "GET /conversations": json(200, { items: [] }),
+    [`GET /intelligences/${profile.id}`]: json(200, profile),
+    ...extra,
+  });
+}
+
+const name = () => screen.findByRole("heading", { level: 1 });
+/** The page's header: the photo, the name, the badge, the handle and the bio. */
+const pageHeader = () => screen.getByRole("heading", { level: 1 }).closest("header") as HTMLElement;
+const field = (label: string) => screen.getByRole("textbox", { name: label });
+
+describe("reading a profile (PROF-09)", () => {
+  it("shows an AI's name with its badge, handle and bio, and where it lives", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
+    api(atlas);
+    renderRoute("/contacts/a1");
+    expect(await name()).toHaveTextContent("Atlas");
+    const header = pageHeader();
+    expect(within(header).getByText("AI")).toBeInTheDocument();
+    expect(within(header).getByText("@atlas")).toBeInTheDocument();
+    expect(within(header).getByText("Release captain.")).toBeInTheDocument();
+
+    const details = screen.getByRole("region", { name: "Details" });
+    expect(within(details).getByText("@ana")).toBeInTheDocument();
+    expect(within(details).getByText("Claude Code")).toBeInTheDocument();
+    expect(within(details).getByText("Offline")).toBeInTheDocument();
+    expect(within(details).getByText("Last seen 3 hr. ago")).toBeInTheDocument();
+    // The owner's label for the machine, with its hostname.
+    expect(within(details).getByText("Build box")).toBeInTheDocument();
+    expect(within(details).getByText("devbox")).toBeInTheDocument();
+    expect(within(details).getByText("~/atlas")).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("says an AI that no folder was ever linked to has none", async () => {
+    api({ ...atlas, ai: atlas.ai && { ...atlas.ai, folder: "", folder_label: "", machine: "" } });
+    renderRoute("/contacts/a1");
+    await name();
+    const details = screen.getByRole("region", { name: "Details" });
+    expect(within(details).getByText("No folder yet")).toBeInTheDocument();
+    expect(within(details).queryByText("~/atlas")).toBeNull();
+  });
+
+  it("follows live presence for an AI", async () => {
+    api(atlas);
+    const { queryClient } = renderRoute("/contacts/a1");
+    const details = await screen.findByRole("region", { name: "Details" });
+    expect(within(details).getByText("Offline")).toBeInTheDocument();
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "agent.presence",
+        data: { agent_id: "a1", online: true },
+      }),
+    );
+    expect(await within(details).findByText("Online")).toBeInTheDocument();
+    expect(within(details).queryByText(/Last seen/)).toBeNull();
+  });
+
+  it("shows another user without a badge, and no AI details", async () => {
+    const bob = makeProfile({ id: "u2", display_name: "Bob Lima", handle: "bob", bio: "On call." });
+    api(bob);
+    renderRoute("/contacts/u2");
+    expect(await name()).toHaveTextContent("Bob Lima");
+    const header = pageHeader();
+    expect(within(header).getByText("@bob")).toBeInTheDocument();
+    expect(within(header).queryByTestId("kind-badge")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Details" })).toBeNull();
+  });
+
+  it("marks the viewer's own profile as theirs and offers no message to oneself", async () => {
+    api(makeProfile({ can_edit: true }));
+    renderRoute("/contacts/u1");
+    await name();
+    const header = pageHeader();
+    expect(within(header).getByText("You")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Message/ })).toBeNull();
+  });
+
+  it("says when the contact does not exist or cannot be seen, and goes back to the contacts", async () => {
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
+      "GET /intelligences/zz": apiError(404, "not_found"),
+    });
+    renderRoute("/contacts/zz");
+    expect(
+      await screen.findByRole("heading", { name: "This contact is not on your line" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to contacts" })).toHaveAttribute(
+      "href",
+      "/contacts",
+    );
+  });
+
+  it("shows an error with a way to try again when the profile does not load", async () => {
+    let attempts = 0;
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
+      "GET /intelligences/a1": () => {
+        attempts += 1;
+        return attempts === 1 ? apiError(500, "internal", "boom") : json(200, atlas);
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Couldn’t load this profile.");
+    await user.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(await name()).toHaveTextContent("Atlas");
+  });
+
+  it("links back to the contacts from the page", async () => {
+    api(atlas);
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.getByRole("link", { name: "Contacts" })).toHaveAttribute("href", "/contacts");
+  });
+});
+
+describe("messaging from the profile (DM-01)", () => {
+  const dm = makeRoom({ id: "d1", kind: "dm", name: "", my_level: "post", member_count: 2 });
+
+  it("opens the DM with the intelligence", async () => {
+    const { calls } = api(atlas, {
+      "POST /conversations/dm": json(200, dm),
+      "GET /rooms/d1": json(200, dm),
+      "GET /rooms/d1/members": json(200, { items: [] }),
+      "GET /rooms/d1/messages": json(200, { items: [], has_more: false }),
+    });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/contacts/a1");
+    await user.click(await screen.findByRole("button", { name: "Message Atlas" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/rooms/d1"));
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ with: "a1" });
+  });
+
+  it("explains why a person cannot be messaged", async () => {
+    api(lia, { "POST /conversations/dm": apiError(422, "no_route_to_person") });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/contacts/p1");
+    await user.click(await screen.findByRole("button", { name: "Message Lia Costa" }));
+    expect(await screen.findByText(/You can’t message Lia Costa from here\./)).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/contacts/p1");
+  });
+});
+
+describe("editing a profile (PROF-03, PROF-05)", () => {
+  it("starts from the stored values and keeps Save off until something changes", async () => {
+    api(atlas);
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    expect(field("Display name")).toHaveValue("Atlas");
+    expect(field("Handle")).toHaveValue("atlas");
+    expect(field("Bio")).toHaveValue("Release captain.");
+    const save = screen.getByRole("button", { name: "Save profile" });
+    expect(save).toBeDisabled();
+    await user.type(field("Bio"), "!");
+    expect(save).toBeEnabled();
+    await user.type(field("Bio"), "{Backspace}");
+    expect(save).toBeDisabled();
+  });
+
+  it("lets the owner rename an AI: only what changed is sent, and the page shows it at once", async () => {
+    const renamed = {
+      ...atlas,
+      display_name: "Atlas Prime",
+      handle: "atlas-prime",
+      bio: "New bio.",
+    };
+    const { calls } = api(atlas, { "PATCH /intelligences/a1": json(200, renamed) });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.clear(field("Display name"));
+    await user.type(field("Display name"), "  Atlas Prime ");
+    await user.clear(field("Handle"));
+    await user.type(field("Handle"), "@Atlas-Prime");
+    await user.clear(field("Bio"));
+    await user.type(field("Bio"), "New bio.");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Atlas Prime"),
+    );
+    expect(calls.find((c) => c.method === "PATCH")).toMatchObject({
+      path: "/intelligences/a1",
+      body: { display_name: "Atlas Prime", handle: "atlas-prime", bio: "New bio." },
+    });
+    expect(await screen.findByText("Profile saved")).toBeInTheDocument();
+    // The form now holds what was saved, so Save is off again.
+    expect(field("Display name")).toHaveValue("Atlas Prime");
+    expect(screen.getByRole("button", { name: "Save profile" })).toBeDisabled();
+  });
+
+  it("sends only the field that changed", async () => {
+    const { calls } = api(atlas, {
+      "PATCH /intelligences/a1": json(200, { ...atlas, bio: "Shipping." }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.clear(field("Bio"));
+    await user.type(field("Bio"), "Shipping.");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    await screen.findByText("Profile saved");
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ bio: "Shipping." });
+  });
+
+  it("can empty the bio", async () => {
+    const { calls } = api(atlas, {
+      "PATCH /intelligences/a1": json(200, { ...atlas, bio: "" }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.clear(field("Bio"));
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    await screen.findByText("Profile saved");
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ bio: "" });
+  });
+
+  it("lets a person edit their own account", async () => {
+    const { calls } = api(makeProfile({ can_edit: true, bio: "Hi" }), {
+      "PATCH /intelligences/u1": json(
+        200,
+        makeProfile({ can_edit: true, bio: "Hi", display_name: "Ana S." }),
+      ),
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/u1");
+    await name();
+    await user.clear(field("Display name"));
+    await user.type(field("Display name"), "Ana S.");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    await screen.findByText("Profile saved");
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ display_name: "Ana S." });
+  });
+
+  it("shows no editor to someone who cannot edit", async () => {
+    api({ ...atlas, can_edit: false });
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("textbox", { name: "Display name" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
+    expect(screen.queryByLabelText("Upload photo")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Edit profile" })).toBeNull();
+    // They still read it all.
+    expect(screen.getByText("Release captain.")).toBeInTheDocument();
+  });
+
+  it("refuses an empty name, a bad handle and a long bio before asking the server", async () => {
+    const { calls } = api(atlas);
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.clear(field("Display name"));
+    await user.clear(field("Handle"));
+    await user.type(field("Handle"), "1 bad handle");
+    await user.clear(field("Bio"));
+    await user.click(field("Bio"));
+    await user.paste("x".repeat(281));
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(await screen.findByText("Required")).toBeInTheDocument();
+    expect(
+      screen.getByText("Start with a letter; then letters, digits or hyphens, up to 40."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("At most 280 characters")).toBeInTheDocument();
+    expect(field("Display name")).toHaveAttribute("aria-invalid", "true");
+    expect(field("Handle")).toHaveAttribute("aria-invalid", "true");
+    expect(field("Bio")).toHaveAttribute("aria-invalid", "true");
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+
+  it("counts the characters of the bio in code points, as the server does", async () => {
+    api(atlas);
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.getByText("16/280")).toBeInTheDocument();
+    await user.clear(field("Bio"));
+    await user.type(field("Bio"), "ab😀");
+    expect(screen.getByText("3/280")).toBeInTheDocument();
+  });
+
+  it("accepts the limits: 64 characters of name, 40 of handle, 280 of bio", async () => {
+    const { calls } = api(atlas, { "PATCH /intelligences/a1": json(200, atlas) });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.clear(field("Display name"));
+    await user.click(field("Display name"));
+    await user.paste("n".repeat(64));
+    await user.clear(field("Handle"));
+    await user.click(field("Handle"));
+    await user.paste(`a${"b".repeat(39)}`);
+    await user.clear(field("Bio"));
+    await user.click(field("Bio"));
+    await user.paste("x".repeat(280));
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+      display_name: "n".repeat(64),
+      handle: `a${"b".repeat(39)}`,
+      bio: "x".repeat(280),
+    });
+  });
+
+  it("refuses a name of 65 characters", async () => {
+    const { calls } = api(atlas);
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.clear(field("Display name"));
+    await user.click(field("Display name"));
+    await user.paste("n".repeat(65));
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(await screen.findByText("At most 64 characters")).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+});
+
+describe("what the server refuses", () => {
+  it("shows a taken handle under the handle and keeps the rest as typed", async () => {
+    api(atlas, { "PATCH /intelligences/a1": apiError(409, "handle_taken", "handle taken") });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.clear(field("Handle"));
+    await user.type(field("Handle"), "bob");
+    await user.clear(field("Bio"));
+    await user.type(field("Bio"), "Changed.");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(await screen.findByText("That handle is already taken.")).toBeInTheDocument();
+    expect(field("Handle")).toHaveAttribute("aria-invalid", "true");
+    expect(field("Handle")).toHaveValue("bob");
+    expect(field("Bio")).toHaveValue("Changed.");
+    // The header still shows what is stored.
+    expect(screen.getByText("@atlas", { selector: "header *" })).toBeInTheDocument();
+  });
+
+  it("clears the handle error when the handle is edited again", async () => {
+    api(atlas, { "PATCH /intelligences/a1": apiError(409, "handle_taken", "handle taken") });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.clear(field("Handle"));
+    await user.type(field("Handle"), "bob");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    await screen.findByText("That handle is already taken.");
+    await user.type(field("Handle"), "2");
+    await waitFor(() => expect(screen.queryByText("That handle is already taken.")).toBeNull());
+  });
+
+  it("shows the server's reasons for each field", async () => {
+    api(atlas, {
+      "PATCH /intelligences/a1": apiError(422, "invalid", "invalid", {
+        display_name: "must have 1 to 64 characters",
+        handle: "is reserved",
+        bio: "must have at most 280 characters",
+      }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.type(field("Bio"), "!");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(await screen.findByText("must have 1 to 64 characters")).toBeInTheDocument();
+    expect(screen.getByText("is reserved")).toBeInTheDocument();
+    expect(screen.getByText("must have at most 280 characters")).toBeInTheDocument();
+  });
+
+  it("says so when the server refuses the edit, or cannot be reached", async () => {
+    api(atlas, { "PATCH /intelligences/a1": apiError(403, "forbidden", "forbidden") });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.type(field("Bio"), "!");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("You can’t edit this profile.");
+  });
+
+  it("reports an unreachable server as such", async () => {
+    api(atlas, {
+      "PATCH /intelligences/a1": () => {
+        throw new TypeError("failed to fetch");
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.type(field("Bio"), "!");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Can’t reach the server.");
+  });
+});
+
+describe("the form follows changes made elsewhere", () => {
+  it("keeps what is typed from the moment the page appears: nothing resets the form on mount", async () => {
+    api(atlas);
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.clear(field("Bio"));
+    await user.type(field("Bio"), "Typed at once");
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(field("Bio")).toHaveValue("Typed at once");
+    expect(screen.getByRole("button", { name: "Save profile" })).toBeEnabled();
+  });
+
+  it("keeps what is typed when the same profile is fetched again", async () => {
+    api(atlas);
+    const user = userEvent.setup();
+    const { queryClient } = renderRoute("/contacts/a1");
+    await name();
+    await user.type(field("Bio"), " More.");
+    await act(() => queryClient.invalidateQueries({ queryKey: queryKeys.intelligence("a1") }));
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(field("Bio")).toHaveValue("Release captain. More.");
+    expect(screen.getByRole("button", { name: "Save profile" })).toBeEnabled();
+  });
+
+  it("shows a rename that arrives live while nothing was edited", async () => {
+    api(atlas);
+    const { queryClient } = renderRoute("/contacts/a1");
+    await name();
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "intelligence.changed",
+        data: { ...atlasRef, display_name: "Atlas Two", handle: "atlas-two" },
+      }),
+    );
+    await waitFor(() => expect(field("Display name")).toHaveValue("Atlas Two"));
+    expect(field("Handle")).toHaveValue("atlas-two");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Atlas Two");
+  });
+
+  it("leaves what the user is typing alone when a change arrives", async () => {
+    api(atlas);
+    const user = userEvent.setup();
+    const { queryClient } = renderRoute("/contacts/a1");
+    await name();
+    await user.type(field("Bio"), " More.");
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "intelligence.changed",
+        data: { ...atlasRef, display_name: "Atlas Two" },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Atlas Two"),
+    );
+    expect(field("Bio")).toHaveValue("Release captain. More.");
+  });
+});
+
+describe("the photo (PROF-03, PROF-06, PROF-07)", () => {
+  const png = () => new File([new Uint8Array([137, 80, 78, 71])], "me.png", { type: "image/png" });
+  /** The photo the avatar of the page's header shows, if it has one. */
+  const headerPhoto = () =>
+    within(pageHeader()).getByTestId("intelligence-avatar").querySelector("img");
+
+  beforeEach(() => vi.stubGlobal("Image", LoadedImage));
+
+  it("shows initials when there is no photo, and offers no removal", async () => {
+    api(atlas);
+    renderRoute("/contacts/a1");
+    await name();
+    const editor = screen.getByRole("region", { name: "Edit profile" });
+    expect(within(editor).getAllByTestId("intelligence-avatar")[0]).toHaveTextContent("A");
+    expect(within(editor).queryByRole("button", { name: "Remove photo" })).toBeNull();
+  });
+
+  it("previews the chosen file before sending anything, and sends it as it is once confirmed", async () => {
+    const withPhoto = { ...atlas, avatar_url: "/api/v1/intelligences/a1/avatar?v=abc" };
+    const { calls } = api(atlas, { "PUT /intelligences/a1/avatar": json(200, withPhoto) });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    const file = png();
+    await user.upload(screen.getByLabelText("Upload photo"), file);
+
+    const preview = await screen.findByAltText("Preview of the new photo");
+    expect(preview).toHaveAttribute("src", "blob:preview-1");
+    expect(URL.createObjectURL).toHaveBeenCalledWith(file);
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Use this photo" }));
+    await screen.findByText("Photo updated");
+    const put = calls.find((c) => c.method === "PUT");
+    expect(put?.path).toBe("/intelligences/a1/avatar");
+    expect(put?.body).toBe(file);
+    // The preview is gone, and the new avatar shows in the header.
+    await waitFor(() => expect(screen.queryByAltText("Preview of the new photo")).toBeNull());
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview-1");
+    expect(headerPhoto()).toHaveAttribute("src", "/api/v1/intelligences/a1/avatar?v=abc");
+    expect(await screen.findByRole("button", { name: "Remove photo" })).toBeInTheDocument();
+  });
+
+  it("drops the preview without sending anything when cancelled", async () => {
+    const { calls } = api(atlas);
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.upload(screen.getByLabelText("Upload photo"), png());
+    await screen.findByAltText("Preview of the new photo");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByAltText("Preview of the new photo")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Use this photo" })).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview-1");
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+  });
+
+  it("shows an image the server cannot use as an error under the photo, keeping the preview and the old photo", async () => {
+    const old = { ...atlas, avatar_url: "/api/v1/intelligences/a1/avatar?v=old" };
+    api(old, { "PUT /intelligences/a1/avatar": apiError(422, "avatar_invalid", "avatar invalid") });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.upload(screen.getByLabelText("Upload photo"), png());
+    await user.click(await screen.findByRole("button", { name: "Use this photo" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "That image can’t be used. Use a PNG, JPEG or WebP of up to 2 MB.",
+    );
+    // Nothing was lost: the preview can be tried again or cancelled, and the old photo stays.
+    expect(screen.getByAltText("Preview of the new photo")).toBeInTheDocument();
+    expect(headerPhoto()).toHaveAttribute("src", "/api/v1/intelligences/a1/avatar?v=old");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says a file over the instance's upload limit is too large", async () => {
+    api(atlas, { "PUT /intelligences/a1/avatar": apiError(413, "too_large", "too large") });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.upload(screen.getByLabelText("Upload photo"), png());
+    await user.click(await screen.findByRole("button", { name: "Use this photo" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("That file is too large.");
+  });
+
+  it("says so when the upload fails for another reason", async () => {
+    api(atlas, { "PUT /intelligences/a1/avatar": apiError(500, "internal", "boom") });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.upload(screen.getByLabelText("Upload photo"), png());
+    await user.click(await screen.findByRole("button", { name: "Use this photo" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Couldn’t upload the photo. Try again.",
+    );
+  });
+
+  it("disables the confirm button while the photo is on its way, so it is sent once", async () => {
+    let release: () => void = () => {};
+    const { calls } = api(atlas, {
+      "PUT /intelligences/a1/avatar": () =>
+        new Promise<Response>((resolve) => {
+          release = () => resolve(json(200, atlas));
+        }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.upload(screen.getByLabelText("Upload photo"), png());
+    await user.click(await screen.findByRole("button", { name: "Use this photo" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Sending…" })).toBeDisabled());
+    expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1);
+    release();
+    await waitFor(() => expect(screen.queryByAltText("Preview of the new photo")).toBeNull());
+  });
+
+  it("removes the photo, and the initials come back", async () => {
+    // The server forgets the photo: the refetch that follows must not bring it back.
+    let stored: IntelligenceProfile = {
+      ...atlas,
+      avatar_url: "/api/v1/intelligences/a1/avatar?v=abc",
+    };
+    const { calls } = api(stored, {
+      "GET /intelligences/a1": () => json(200, stored),
+      "DELETE /intelligences/a1/avatar": () => {
+        stored = atlas;
+        return new Response(null, { status: 204 });
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    const header = pageHeader();
+    expect(headerPhoto()).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove photo" }));
+    await screen.findByText("Photo removed");
+    expect(calls.find((c) => c.method === "DELETE")?.path).toBe("/intelligences/a1/avatar");
+    await waitFor(() => expect(headerPhoto()).toBeNull());
+    expect(within(header).getByTestId("intelligence-avatar")).toHaveTextContent("A");
+    expect(screen.queryByRole("button", { name: "Remove photo" })).toBeNull();
+  });
+
+  it("says so when the photo could not be removed", async () => {
+    const withPhoto = { ...atlas, avatar_url: "/api/v1/intelligences/a1/avatar?v=abc" };
+    api(withPhoto, { "DELETE /intelligences/a1/avatar": apiError(500, "internal", "boom") });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await name();
+    await user.click(await screen.findByRole("button", { name: "Remove photo" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Couldn’t remove the photo. Try again.",
+    );
+    expect(screen.getByRole("button", { name: "Remove photo" })).toBeInTheDocument();
+  });
+
+  it("only offers photo files in the picker", async () => {
+    api(atlas);
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.getByLabelText("Upload photo")).toHaveAttribute(
+      "accept",
+      "image/png,image/jpeg,image/webp",
+    );
+  });
+});
+
+describe("a person (PEOP-03, PROF-11)", () => {
+  it("shows the name, the platform account it writes from and who it is linked to", async () => {
+    api({
+      ...lia,
+      person: {
+        ...(lia.person as NonNullable<IntelligenceProfile["person"]>),
+        linked_user: makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" }),
+      },
+    });
+    renderRoute("/contacts/p1");
+    expect(await name()).toHaveTextContent("Lia Costa");
+    const header = pageHeader();
+    expect(within(header).getByText("WhatsApp")).toBeInTheDocument();
+    const details = screen.getByRole("region", { name: "Details" });
+    expect(within(details).getByText("ops-line")).toBeInTheDocument();
+    expect(within(details).getByText("5511999990000")).toBeInTheDocument();
+    const linked = within(details).getByRole("link", { name: /Bob Lima/ });
+    expect(linked).toHaveAttribute("href", "/contacts/u2");
+  });
+
+  it("lists the conversations the viewer can see, each opening it", async () => {
+    api(lia);
+    renderRoute("/contacts/p1");
+    await name();
+    const list = screen.getByRole("list", { name: "Conversations" });
+    const links = within(list).getAllByRole("link");
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["/rooms/r1", "/rooms/d9"]);
+    expect(links[0]).toHaveTextContent("support-bridge");
+    // A direct message has no name of its own.
+    expect(links[1]).toHaveTextContent("Direct message");
+  });
+
+  it("says there are none when the viewer can see no conversation with them", async () => {
+    api({ ...lia, conversations: [] });
+    renderRoute("/contacts/p1");
+    await name();
+    expect(screen.getByText("No conversation you can see yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Conversations" })).toBeNull();
+  });
+
+  it("lets the users of its connector rename it, and says a rename is kept over the platform's", async () => {
+    const { calls } = api(lia, {
+      "PATCH /intelligences/p1": json(200, {
+        ...lia,
+        display_name: "Lia C.",
+        person: {
+          ...(lia.person as NonNullable<IntelligenceProfile["person"]>),
+          name_locked: true,
+        },
+      }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/p1");
+    await name();
+    expect(screen.queryByText(/platform’s name/)).toBeNull();
+    await user.clear(field("Display name"));
+    await user.type(field("Display name"), "Lia C.");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    await screen.findByText("Profile saved");
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ display_name: "Lia C." });
+    expect(
+      await screen.findByText("Renamed here: the platform’s name no longer replaces it."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows only the platform to someone who sees them through a conversation, with no editor", async () => {
+    api({
+      ...lia,
+      can_edit: false,
+      person: undefined,
+      apps: [{ kind: "whatsapp", label: "WhatsApp" }],
+    });
+    renderRoute("/contacts/p1");
+    await name();
+    expect(screen.queryByRole("textbox", { name: "Display name" })).toBeNull();
+    const apps = screen.getByRole("region", { name: "Apps" });
+    expect(within(apps).getByText("WhatsApp")).toBeInTheDocument();
+    expect(within(apps).queryByRole("link")).toBeNull();
+    // Without the connector there is no account to show.
+    expect(screen.queryByText("5511999990000")).toBeNull();
+  });
+});
+
+describe("apps (ACC-07)", () => {
+  it("lists where an AI speaks, including the connectors it operates, each linking to its connector", async () => {
+    api(atlas);
+    renderRoute("/contacts/a1");
+    await name();
+    const apps = screen.getByRole("region", { name: "Apps" });
+    const items = within(apps).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual([
+      expect.stringContaining("Claude Code"),
+      expect.stringContaining("Discord: @atlasbot"),
+    ]);
+    expect(
+      within(items[1] as HTMLElement).getByRole("link", { name: /Discord: @atlasbot/ }),
+    ).toHaveAttribute("href", "/connectors/k9");
+    expect(within(items[0] as HTMLElement).queryByRole("link")).toBeNull();
+  });
+
+  it("lists a user's web app and the chat accounts verified as theirs", async () => {
+    api(
+      makeProfile({
+        can_edit: true,
+        apps: [
+          { kind: "web", label: "Web app" },
+          { kind: "whatsapp", label: "WhatsApp: 5511999990000", connector_id: "k1" },
+        ],
+      }),
+    );
+    renderRoute("/contacts/u1");
+    await name();
+    const apps = screen.getByRole("region", { name: "Apps" });
+    expect(within(apps).getByText("Web app")).toBeInTheDocument();
+    expect(within(apps).getByText("WhatsApp: 5511999990000")).toBeInTheDocument();
+  });
+
+  it("leaves the section out when there is nothing to list", async () => {
+    api({ ...atlas, apps: [] });
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("region", { name: "Apps" })).toBeNull();
+  });
+});
+
+describe("managing an AI", () => {
+  it("offers sharing and deleting to the owner, and neither to a user who only uses it", async () => {
+    api(atlas);
+    const owner = renderRoute("/contacts/a1");
+    await name();
+    expect(screen.getByRole("button", { name: "Share Atlas" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete Atlas" })).toBeInTheDocument();
+    owner.unmount();
+
+    api({ ...atlas, can_edit: false, ai: atlas.ai && { ...atlas.ai, my_level: "use" } });
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("button", { name: "Share Atlas" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete Atlas" })).toBeNull();
+    // They can still talk to it.
+    expect(screen.getByRole("button", { name: "Message Atlas" })).toBeInTheDocument();
+  });
+
+  it("deletes the AI after confirmation and returns to the contacts", async () => {
+    const { calls } = api(atlas, {
+      "DELETE /agents/a1": new Response(null, { status: 204 }),
+      "GET /contacts": json(200, {
+        me: ana,
+        machines: [],
+        unlinked: [],
+        shared: [],
+        users: [],
+        people: [],
+      }),
+    });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/contacts/a1");
+    await user.click(await screen.findByRole("button", { name: "Delete Atlas" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Delete Atlas?" });
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Delete AI" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/contacts"));
+    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/agents/a1"]);
+  });
+
+  it("opens the sharing dialog of the AI", async () => {
+    api(atlas, {
+      "GET /agents/a1/sharing": json(200, { mode: "private", users: [] }),
+      "GET /users": json(200, { items: [] }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await user.click(await screen.findByRole("button", { name: "Share Atlas" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("offers neither to the profile of a user or a person", async () => {
+    api(lia);
+    renderRoute("/contacts/p1");
+    await name();
+    expect(screen.queryByRole("button", { name: /^Share / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Delete / })).toBeNull();
+  });
+});

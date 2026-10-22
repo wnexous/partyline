@@ -308,6 +308,7 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24)", async
   instance,
 }, testInfo) => {
   await loginAs(context, instance, ADMIN);
+  const me = await apiCall<Me>(context.request, instance, "GET", "/me");
   const room = await apiCall<Room>(context.request, instance, "POST", "/rooms", {
     name: "e2e-narrow",
   });
@@ -322,6 +323,7 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24)", async
     ["/", homeHeading(testInfo)],
     [`/rooms/${room.id}`, "e2e-narrow"],
     ["/contacts", "Contacts"],
+    [`/contacts/${me.intelligence.id}`, me.intelligence.display_name],
     ["/connectors", "Connectors"],
     ["/settings", "Settings"],
   ];

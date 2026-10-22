@@ -1611,3 +1611,63 @@ Web only. No API changed.
   showing), `routes/messenger-shell.test.tsx` (the menu entry), `routes/_app/rooms/room.test.tsx` (the picker's link),
   `components/command-menu.test.tsx`, `routes/auth.test.tsx`, `routes/app-shell.test.tsx` and `routes/live-session.test.tsx` (they
   used `/agents` as an example route).
+
+## T48 - Profile page and editor (PROF-03, PROF-05, PROF-11, PEOP-03, ACC-07)
+
+Web only. No API changed.
+
+- **Route** `/contacts/$id` (`routes/_app/contacts.$id.tsx`), `GET /intelligences/{id}` through `useIntelligence`. A 404 (unknown or not
+  visible, the same answer) shows "This contact is not on your line" with "Back to contacts"; another failure an alert with "Try
+  again"; the first load a skeleton. The page opens from the contacts (the name of every row, of the people too, is a link that
+  **stretches over the row**, named by the contact alone; the Message and Delete buttons sit above it), from the palette (its AI
+  entries, now named by display name with the `@handle`, open the profile) and from the owner and "verified as" links below.
+  The "Contacts" menu entry stays active on it.
+- **Header**: a 96 px avatar (`IntelligenceAvatar size="xl"`, decorative: the `h1` carries the name), the `h1` display name, the kind
+  badge ("You" on one's own profile) with the `@handle`, the bio (line breaks kept) and the actions: **Message** (DM-01; not on
+  one's own profile; a person with no route says so in a toast) and, for an AI the viewer manages (`ai.my_level` = manage),
+  **Share** and **Delete**. Those two are **carried over from the agents page** that T47 removed, which was the only place to share
+  or delete an AI: `SharingDialog kind="agents"` (its `owner` is the AI's owner as `{id, username: handle, display_name}`) and
+  `DeleteAIDialog`, after which the page returns to `/contacts`. A user who only may use an AI sees neither.
+- **Editor** (`components/profile-editor.tsx`, for `can_edit`; the T49 settings page reuses it for the user's own profile): "Edit
+  profile" with the photo on the left and, on the right, **Display name**, **Handle** and **Bio** (`TextAreaField`, a running
+  `n/280` in code points), and **Save profile**, enabled only while something differs from what is stored. Rules from the contract
+  (`profileEditSchema`): name 1-64 after trimming (`MaxProfileDisplayName`), handle `HandlePattern` after dropping a leading `@`
+  and lower-casing (`normalizeHandle`), bio 0-280 (`MaxProfileBio`); a field that breaks one is refused before any request, under
+  the field. **Only what changed is sent** (`PATCH /intelligences/{id}`, so a bio emptied sends `bio: ""` and nothing else). The
+  answer replaces the cached profile and everywhere the intelligence shows (T42), and the form takes the stored values. Refusals:
+  409 `handle_taken` → "That handle is already taken." under Handle (cleared when it is edited); 422 `fields` → the server's text
+  under display_name, handle or bio; 403 → "You can’t edit this profile."; no network → the network message, above the form. A
+  change that arrives live (`intelligence.changed`: another tab, the AI renaming itself) reaches the fields the user has **not
+  touched**; an edited field keeps what was typed (`reset(stored, { keepDirtyValues: true })`, run only when the stored profile
+  differs from the one the form last saw: never on mount, and not when the same profile is fetched again). An earlier version reset
+  from an effect that read a stale `isDirty` and could wipe a just-typed edit under load (a flaky test caught it); two tests pin it.
+- **Photo**: the picker offers PNG, JPEG and WebP (`accept`; a label styled as a button wraps the file input, so it is named "Upload
+  photo" and reachable by keyboard). A chosen file is **previewed first** (round, as it will show; an object URL revoked when the
+  preview goes) and sent only on **Use this photo**, as the raw body with its own content type (`PUT .../avatar`, T10); Cancel
+  drops it. The web does **not** re-check the type or the size (the contract has no constant for them, AD-003): the server's
+  answer decides, as a field error under the photo with the preview and the old photo kept: 422 `avatar_invalid` → "That image can’t be
+  used. Use a PNG, JPEG or WebP of up to 2 MB.", 413 → "That file is too large.", anything else "Couldn’t upload the photo. Try
+  again."; the button reads "Sending…" and is disabled meanwhile, so it is sent once. **Remove photo** (`DELETE .../avatar`,
+  shown only with a photo) brings the initials back; a failure says so.
+- **Details** (AI or person with details): an AI shows its **owner** (linked), its **app** with the live online state (the store's
+  `agent.presence` over the profile's) and, offline, when it was last seen (or "Never connected"), its **machine** (the owner's
+  label, the hostname beside it when it differs), its **folder** (`~/…`, or "No folder yet" while it has none) and **your access**
+  (manage / use). A person shows its **connector** (linked to it), the **account** it writes from and, when the account is verified
+  as a user (PEOP-02), **verified as** (linked to that user), plus "Renamed here: the platform’s name no longer replaces it." once
+  its name is locked (PROF-11, PEOP-05). A viewer who sees a person only through a conversation gets neither (the API omits `person`
+  for them), and no editor.
+- **Apps** (ACC-07): one row per `apps` entry: the web app, the harness, the chat accounts verified as a user's, and the connectors an
+  AI or user **operates** (`Discord: @bot`); a row with a `connector_id` links to that connector. The section is left out when
+  there is none.
+- **Conversations** (PEOP-03): for a **person**, the list the API returns (the rooms the viewer can see, newest first, at most 100),
+  each opening its conversation, a DM without a name as "Direct message"; none says so. **Open:** the API fills `conversations`
+  for persons only (T27), so an AI's or a user's profile has no list (the design's "AI DMs, read-only" needs the API to return
+  them): Message stands in.
+- **Components**: `TextAreaField` (`form-fields.tsx`), `IntelligenceAvatar size="xl"`, `MessageButton compact={false}` (keeps its text
+  on a phone), `ProfileEditor`, `profileEditSchema`/`normalizeHandle`/`ProfileEditForm` (`lib/schemas.ts`), `validation.handle` and
+  `validation.bio`.
+- **e2e**: the no-horizontal-scroll list has the user's own profile page next to `/contacts`.
+- Tests: `routes/_app/profile.test.tsx` (reading, messaging, editing and its refusals, the form following live changes, the photo,
+  persons, apps, managing an AI), `routes/_app/contacts.test.tsx` (the links to profiles), `components/command-menu.test.tsx`
+  (an AI opens its profile), `routes/a11y.test.tsx` (axe on an AI's profile with a preview showing, on a person's, and on a phone,
+  in both languages).

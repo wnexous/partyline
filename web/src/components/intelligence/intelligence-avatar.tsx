@@ -38,9 +38,12 @@ export function avatarTone(id: string): string {
   return TONES[hash % TONES.length] ?? TONES[0];
 }
 
+const PIXELS = { sm: 24, default: 32, lg: 40, xl: 96 } as const;
+
 export interface IntelligenceAvatarProps {
   intelligence: IntelligenceRef;
-  size?: "default" | "sm" | "lg";
+  /** `xl` is the profile page's: 96 px. */
+  size?: "default" | "sm" | "lg" | "xl";
   className?: string;
   /** Hidden from assistive technology: the name sits right next to the face (rows, headers). */
   decorative?: boolean;
@@ -55,22 +58,23 @@ export function IntelligenceAvatar({
   const name = intelligence.display_name.trim() || intelligence.handle || "?";
   return (
     <Avatar
-      size={size}
+      size={size === "xl" ? "lg" : size}
       data-testid="intelligence-avatar"
       aria-hidden={decorative || undefined}
-      className={cn("shrink-0", className)}
+      className={cn("shrink-0", size === "xl" && "data-[size=lg]:size-24", className)}
     >
       {intelligence.avatar_url ? (
         <AvatarImage
           src={intelligence.avatar_url}
           alt={decorative ? "" : name}
-          width={size === "sm" ? 24 : size === "lg" ? 40 : 32}
-          height={size === "sm" ? 24 : size === "lg" ? 40 : 32}
+          width={PIXELS[size]}
+          height={PIXELS[size]}
         />
       ) : null}
       <AvatarFallback
         className={cn(
           "text-xs font-semibold tracking-wide uppercase select-none",
+          size === "xl" && "text-2xl",
           avatarTone(intelligence.id),
         )}
       >
