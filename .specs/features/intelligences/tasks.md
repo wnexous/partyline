@@ -817,8 +817,9 @@ sidebar) and the live handlers `room.message`, `room.read`, `room.changed`, `roo
 `access.changed`, `intelligence.changed` (conversations, timelines, members, participants, own account, profile).
 Part 2 (commit `feat(web): add the contacts and profile data layer`) added the hooks the contacts and profile pages read:
 contacts, people (paged, searchable), machine label, deleting an unlinked AI, the contacts and operator patches of
-`intelligence.changed`, presence-driven contact refreshes and the `makeContacts` family of fixtures. Still open, each with
-the task whose server API it calls: the merge hook (T35), the notify hooks (T34, T49) and the operator write (T49).
+`intelligence.changed`, presence-driven contact refreshes and the `makeContacts` family of fixtures. The hooks the pages
+then needed arrived with them: the notify hooks and the operator write with T49, the merge hook with the merge UI
+(below, T47).
 
 #### T43: Avatar, kind badge and name components
 
@@ -901,8 +902,9 @@ panel lists AIs, users and chats; the people rows under each chat arrive with T2
 - [x] Shared AIs, users and people sections render from the contacts data (CONT-01)
 - [x] Gate check passes: `make check`
 
-**Open (MRG-01):** the merge API (T35, `POST /agents/{id}/merge`) does not exist yet, so Unlinked offers **delete only**
-(and Message); the "merge into…" action arrives with T35 (see `contract-notes.md`, T47). MRG-01 stays Pending.
+**Delivered after T47 (MRG-01):** each unlinked AI now has **Merge into…**, which moves everything it has to another
+AI of the owner and deletes it; the merge API of T35 had not landed when the page did. See `contract-notes.md`, T47
+follow-up.
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add the contacts page with the machine tree`
@@ -936,9 +938,9 @@ design needs the API to return them). See `contract-notes.md`, T48.
 **Requirement**: PROF-03, NOTI-01, ACC-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Own profile changes show in the sidebar header right away (PROF-03); notify select lists the options and saves/clears (NOTI-01)
-- [ ] Connector owner picks an operator; grantees see it read-only (ACC-01)
-- [ ] Gate check passes: `make check`
+- [x] Own profile changes show in the sidebar header right away (PROF-03); notify select lists the options and saves/clears (NOTI-01)
+- [x] Connector owner picks an operator; grantees see it read-only (ACC-01)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): edit your profile, notifications and connector operators`

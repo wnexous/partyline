@@ -4,6 +4,7 @@ import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
 import { useId, useState } from "react";
 import { toast } from "sonner";
 import { FormAlert } from "@/components/form-fields";
+import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isApiError } from "@/lib/api/client";
@@ -33,9 +34,6 @@ const SCOPES: { scope: AutoRouteScope; label: MessageKey }[] = [
   { scope: AutoRouteScopeAll, label: "catchAll.scope.all" },
 ];
 
-const selectClass =
-  "h-9 w-full rounded-md border border-input bg-background px-2.5 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:bg-input/30";
-
 export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
   const t = useT();
   const rooms = useRooms();
@@ -50,17 +48,21 @@ export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
   const scopeErrorId = useId();
   const saveHintId = useId();
   const on = scope !== AutoRouteScopeOff;
+  // A stored scope other than off with no room is per-chat mode: each new chat opens its own
+  // conversation with the operator (T30). A legacy catch-all room still routes to that room.
+  const legacyRoomId = c.auto_route_room_id ?? "";
+  const perChat = on && legacyRoomId === "" && c.auto_route_scope !== AutoRouteScopeOff;
 
   const managed = (rooms.data ?? []).filter((r) => r.my_level === LevelManage);
   const roomName = managed.find((r) => r.id === roomId)?.name;
   const unknownRoom = roomId !== "" && rooms.data !== undefined && !roomName;
-  const dirty = scope !== c.auto_route_scope || roomId !== (c.auto_route_room_id ?? "");
+  const dirty = scope !== c.auto_route_scope || roomId !== legacyRoomId;
 
   const save = () => {
     setFormError(null);
     setRoomError(null);
     setScopeError(null);
-    if (on && roomId === "") {
+    if (on && roomId === "" && !perChat) {
       setRoomError(t("catchAll.roomRequired"));
       return;
     }
@@ -82,6 +84,30 @@ export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
             isApiError(err) && err.status === 403 ? t("catchAll.forbidden") : t("error.generic"),
           );
         },
+      },
+    );
+  };
+
+  // The v0.3 catch-all room keeps its old routing until the owner chooses per-chat mode, which
+  // is the room cleared and the scope kept (Spec issue 2).
+  const switchToPerChat = () => {
+    setFormError(null);
+    setRoomError(null);
+    setScopeError(null);
+    update.mutate(
+      { auto_route_room_id: "" },
+      {
+        onSuccess: (saved) => {
+          setRoomId(saved.auto_route_room_id ?? "");
+          setScope(saved.auto_route_scope);
+          toast.success(t("catchAll.perChatSaved"));
+        },
+        onError: (err) =>
+          setFormError(
+            isApiError(err) && err.status === 403
+              ? t("catchAll.forbidden")
+              : t("catchAll.switchFailed"),
+          ),
       },
     );
   };
@@ -153,7 +179,7 @@ export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
               </p>
             ) : (
               <>
-                <select
+                <NativeSelect
                   id={roomFieldId}
                   value={roomId}
                   onChange={(e) => {
@@ -162,7 +188,6 @@ export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
                   }}
                   aria-invalid={roomError ? true : undefined}
                   aria-describedby={roomError ? `${roomFieldId}-error` : `${roomFieldId}-hint`}
-                  className={selectClass}
                 >
                   <option value="">{t("catchAll.roomPlaceholder")}</option>
                   {unknownRoom ? (
@@ -173,14 +198,14 @@ export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
                       {r.name}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
                 {roomError ? (
                   <p id={`${roomFieldId}-error`} role="alert" className="text-sm text-destructive">
                     {roomError}
                   </p>
                 ) : (
                   <p id={`${roomFieldId}-hint`} className="text-xs text-muted-foreground">
-                    {t("catchAll.roomHint")}
+                    {perChat && roomId === "" ? t("catchAll.perChatHint") : t("catchAll.roomHint")}
                   </p>
                 )}
               </>
@@ -194,12 +219,31 @@ export function ConnectorCatchAll({ connector: c }: { connector: Connector }) {
             className="flex gap-2.5 rounded-md border border-warning/40 bg-warning/12 px-3 py-2.5 text-sm"
           >
             <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-            <p className="min-w-0">
-              <span className="font-medium">
-                {roomName ? t("catchAll.warning", { room: roomName }) : t("catchAll.warningNoRoom")}
-              </span>{" "}
-              <span className="text-foreground/80">{t("catchAll.warningTrust")}</span>
-            </p>
+            <div className="min-w-0 space-y-2">
+              <p>
+                <span className="font-medium">
+                  {perChat && roomId === ""
+                    ? t("catchAll.perChatWarning")
+                    : roomName
+                      ? t("catchAll.warning", { room: roomName })
+                      : t("catchAll.warningNoRoom")}
+                </span>{" "}
+                <span className="text-foreground/80">{t("catchAll.warningTrust")}</span>
+              </p>
+              {legacyRoomId !== "" ? (
+                <div className="space-y-1.5">
+                  <p className="text-foreground/80">{t("catchAll.legacyBody")}</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={update.isPending}
+                    onClick={switchToPerChat}
+                  >
+                    {t("catchAll.switchToPerChat")}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : null}
 

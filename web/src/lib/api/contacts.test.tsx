@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
+  makeAgent,
   makeAI,
   makeAIContact,
   makeContacts,
@@ -19,6 +20,7 @@ import {
   useContacts,
   useDeleteAgent,
   useIntelligence,
+  useMergeAgent,
   usePeople,
   useSetMachineLabel,
 } from "./queries";
@@ -301,6 +303,53 @@ describe("deleting an AI from the contacts (TREE-06)", () => {
     qc.setQueryData(queryKeys.contacts, contacts);
     const { result } = renderHook(() => useDeleteAgent(), { wrapper });
     await act(() => result.current.mutateAsync("a7").catch(() => undefined));
+    expect(qc.getQueryData(queryKeys.contacts)).toEqual(contacts);
+    expect(stale(queryKeys.contacts)).toBe(false);
+  });
+});
+
+describe("merging an unlinked AI (MRG-01, MRG-02)", () => {
+  const old = makeAIContact({
+    intelligence: makeAI({ id: "a7", display_name: "Old helper", handle: "old-helper" }),
+    folder: "",
+    folder_label: "",
+  });
+  const keep = makeAIContact({ intelligence: makeAI({ id: "a8", handle: "atlas" }) });
+
+  it("sends POST with the AI it merges into, drops it from the cached lists and refreshes the tree", async () => {
+    const survivor = makeAgent({ id: "a8", name: "Atlas" });
+    const { calls } = mockApi({ "POST /agents/a7/merge": json(200, survivor) });
+    qc.setQueryData(queryKeys.contacts, makeContacts({ unlinked: [old, keep], shared: [old] }));
+    qc.setQueryData(queryKeys.rooms, []);
+    qc.setQueryData(queryKeys.conversations, []);
+    qc.setQueryData(queryKeys.intelligence("a7"), makeProfile({ id: "a7" }));
+    const { result } = renderHook(() => useMergeAgent(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ from: "a7", into: "a8" });
+    });
+
+    expect(calls[0]).toMatchObject({ method: "POST", path: "/agents/a7/merge" });
+    expect(calls[0]?.body).toEqual({ into: "a8" });
+    const contacts = qc.getQueryData<Contacts>(queryKeys.contacts);
+    expect(contacts?.unlinked.map((c) => c.intelligence.id)).toEqual(["a8"]);
+    expect(contacts?.shared).toEqual([]);
+    // The tree, the conversations and the rooms the merged AI was in are the server's to rebuild.
+    expect(stale(queryKeys.contacts)).toBe(true);
+    expect(stale(queryKeys.conversations)).toBe(true);
+    expect(stale(queryKeys.rooms)).toBe(true);
+    // Its profile is stale without a refetch: the row it belonged to is about to leave.
+    expect(stale(queryKeys.intelligence("a7"))).toBe(true);
+  });
+
+  it("leaves the cached contacts alone when the AI is online (409 identity_online)", async () => {
+    mockApi({ "POST /agents/a7/merge": apiError(409, "identity_online") });
+    const contacts = makeContacts({ unlinked: [old, keep] });
+    qc.setQueryData(queryKeys.contacts, contacts);
+    const { result } = renderHook(() => useMergeAgent(), { wrapper });
+    await act(() => result.current.mutateAsync({ from: "a7", into: "a8" }).catch(() => undefined));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toMatchObject({ status: 409, code: "identity_online" });
     expect(qc.getQueryData(queryKeys.contacts)).toEqual(contacts);
     expect(stale(queryKeys.contacts)).toBe(false);
   });

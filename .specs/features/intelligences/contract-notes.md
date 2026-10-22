@@ -2115,3 +2115,85 @@ Web only. No API changed.
   renamed names, across a reconnect, for incomplete welcomes and not on `listen`),
   `internal/channel/tools_unix_test.go` (a named pipe as the avatar) and
   `internal/cli/channel_test.go` (the notice through the real `partyline channel`).
+
+## T49 - Own profile, notifications and connector operator (PROF-03, NOTI-01, ACC-01)
+
+Web only. No API changed.
+
+- **Settings, own profile** (`routes/_app/settings.tsx`): the display-name-only form is replaced by `ProfileEditor`
+  (T48) for the caller's own intelligence, loaded with `GET /intelligences/{me.intelligence.id}` (`useIntelligence`).
+  Display name, @handle, bio and photo are saved through `PATCH /intelligences/{id}` (and its avatar routes), the same
+  rules every profile follows; `PATCH /me` is still the locale's route and no longer the profile's. A failed load shows
+  "Couldn’t load this profile." with Try again; the first load a skeleton. The answer goes through `storeProfile` →
+  `patchIntelligence`, so the account menu (the sidebar header) shows the new name, handle and avatar at once, as does
+  every cached timeline, member list and contact row (PROF-03). The section keeps the page's `Section` layout and the
+  editor's own "Edit profile" heading.
+- **"Notify me here"** (`account.notify*`): a section after Profile with a native select. Options are `GET
+  /me/notify-options` (`useNotifyOptions`, key `["me","notify-options"]`), labelled `"{connector} · {account} · {title}"`
+  in the server's order; the first option (`""`) is "Don’t notify me anywhere". Save (`PUT /me/notify {chat_id}`; the
+  empty choice sends `{"chat_id": null}`) waits for a change and stores the answer's `dto.Me` under `["me"]`, so
+  `me.notify_chat_id` is the selection. A stored chat that is not an option (unlinked since) shows as "An account that
+  is no longer linked", so it can be cleared. A 422 `fields.chat_id` shows under the picker; other refusals above the
+  form. With no option and nothing stored the section replaces the form with a hint and a link to `/identities`. (NOTI-01)
+- **Connector operator** (`routes/_app/connectors/$connectorId.tsx`): the page header names the operator for every
+  viewer (`Operated by {name}`, the owner when `operator` is absent, as old fixtures have it). The connector settings
+  sheet (`ConnectorSettingsSheet`, shown to the owner only — `canManage`) gains an **Operator** block: a native select with the
+  owner (`{name} (you)`, the owner's own user id) and the caller's own AIs from `GET /contacts` (the machine tree in
+  order, then the unlinked; AIs shared with the caller are not options), an AI that is the stored operator but missing
+  from the list shown as its own option, and a Save that waits for a change and sends **only** `PATCH /connectors/{id}
+  {operator_id}` (no name/config, so the connector is not restarted or renamed). A 422 `fields.operator_id` shows under
+  the picker; a 403 "Only the connector’s owner can change its operator."; a success toasts. A `use` grantee has no
+  settings sheet and therefore reads the operator only in the header: read-only (ACC-01).
+- **Legacy catch-all notice** (`components/connector-catch-all.tsx`, Spec issue 2): a connector whose stored
+  `auto_route_room_id` is set keeps the v0.3 catch-all routing (T30), so its Catch-all card adds, inside the existing
+  warning note, "That is the old catch-all routing…" and **Switch to per-chat conversations**, a button that sends
+  `PATCH {auto_route_room_id: ""}` alone (the scope is kept) and syncs the card's state with the answer. After it the
+  card is in per-chat mode: the warning says "Each new chat becomes its own conversation with the operator.", the empty
+  room picker hints "Leave it empty: each new chat opens its own conversation with the operator." and a scope change
+  saves with an empty room (the server's rule since T30). A connector already in per-chat mode (scope other than off, no
+  room) renders that state from the start; saving a scope with an empty room from Off still asks for a room (turning a
+  v0.3 catch-all on), which the old ROUTE-04 rule and its test keep. The switch's failures show above the card
+  (403 "You need manage access…", anything else "Couldn’t switch. Try again."). The room picker uses the shared
+  `NativeSelect` (the same styles as before).
+- **Components**: `NativeSelect` (`components/native-select.tsx`, a styled native `<select>`: the platform's picker on a
+  phone, UI-24) is now also the catch-all room picker; no new dependency.
+- Tests: `routes/_app/settings.test.tsx` (the profile editor sends only what changed to `/intelligences/{id}` and the
+  account menu shows the new name; handle editing; notify options, save, clear, a stored choice that is no longer an
+  option and the no-option hint), `lib/api/notify.test.tsx` (the options hook and the choice's cache write, a 422
+  leaving it), `routes/_app/connectors/connectors.test.tsx` (the operator options and save, a grantee's read-only
+  header, a 422 under the picker, the legacy notice and switch keeping the scope, no switch without a legacy room,
+  both languages), `routes/a11y.test.tsx` (the settings page with the editor and the notify choice, en and pt-BR).
+
+## T47 follow-up - Merge UI (MRG-01, MRG-02)
+
+Web only. No API changed; it closes T47's open MRG-01 note.
+
+- **Where**: every Unlinked AI row on `/contacts` gains **Merge into…** (`ai.mergeShort`, an outline button with the
+  git-merge icon whose text hides below 640 px; its label names the AI: `ai.mergeAction`, "Merge {name} into another
+  AI"). It sits next to Message and Delete, and only on the unlinked rows: the tree's AIs, a shared AI and the users
+  have no merge action, and the unlinked list holds only the caller's own AIs (T28), so only the owner sees it. With no
+  other AI of the owner there is nothing to merge into and the action is left out. The candidates are the owner's AIs -
+  the machine tree in order, then the unlinked - with the AI being merged away left out; a shared AI is never a target.
+  The list does not follow the page filter: a filtered view cannot hide a target.
+- **Dialog** (`components/merge-ai-dialog.tsx`): a regular dialog (not an alert dialog: it asks a choice, not only a
+  confirmation), named by its title "Merge {name} into…", with the body "Everything {name} has moves to the AI you
+  pick…". A native select (`NativeSelect`, labelled "AI") starts on "Pick an AI" and lists each candidate as
+  "Name (@handle)"; Cancel closes without a request and Merge AI waits for a pick and for the request. The dialog body
+  is keyed by the AI, so a new opening starts with nothing picked and no old error. Merge deletes the AI, so the copy
+  says so (and to end its session first).
+- **Request and refresh** (`useMergeAgent`, `lib/api/queries.ts`): `POST /agents/{from}/merge {into}` (T35). On success
+  the dialog closes and toasts "{name} merged into {into}" (the survivor's display name from the answer); the cached
+  contacts drop the AI from the unlinked and shared lists at once (`withoutAI`) and `["contacts"]` is invalidated, so the
+  server rebuilds the tree and its machine groups (MRG-01). `["conversations"]` and `["rooms"]` (rooms, members and
+  messages) are invalidated too, because its DMs and group memberships moved, and its profile is marked stale without a
+  refetch (`refetchType: "none"`): the row that showed it is gone. The server's live frames (`room.members`,
+  `room.changed`, `room.deleted`, `access.changed`, `intelligence.changed`) patch what the pages already show.
+- **Refusals**: 409 `identity_online` (`ErrorCodeIdentityOnline`) shows "End its session first: {name} is online." in the
+  dialog's alert (MRG-02); the dialog stays open and nothing is refreshed. 403 "You can’t merge {name}.", a 422 with
+  `fields.into` under the picker, anything else (and the network) above it; a refusal changes nothing.
+- **i18n**: `ai.mergeAction`, `ai.mergeShort`, `merge.*` in `en.ts` and `pt-BR.ts`.
+- Tests: `routes/_app/contacts.test.tsx` (the candidates and the POST body, the tree refetched after the merge, the row
+  leaving at once and the toast, the 409 message with the dialog kept, Cancel sending nothing, the action absent on
+  tree/shared/user rows, and no action when there is no other AI), `lib/api/contacts.test.tsx` (the hook's request and
+  cache: the AI dropped from the flat lists, contacts/conversations/rooms stale, the profile stale without refetch; a
+  409 leaves the cached contacts alone), `routes/a11y.test.tsx` (axe on the open dialog, en and pt-BR).

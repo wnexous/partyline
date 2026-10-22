@@ -204,6 +204,19 @@ export const ptBR: Dictionary = {
   "ai.deleteConfirm": "Apagar IA",
   "ai.deleted": "{name} apagada",
   "ai.deleteFailed": "Não foi possível apagar {name}.",
+  "ai.mergeAction": "Mesclar {name} em outra IA",
+  "ai.mergeShort": "Mesclar em…",
+
+  "merge.title": "Mesclar {name} em…",
+  "merge.body":
+    "Tudo o que {name} tem vai para a IA que você escolher: conversas, histórico e compartilhamento. {name} é apagada; encerre a sessão dela antes, se estiver aberta.",
+  "merge.into": "IA",
+  "merge.pick": "Escolha uma IA",
+  "merge.confirm": "Mesclar IA",
+  "merge.done": "{name} mesclada em {into}",
+  "merge.failed": "Não foi possível mesclar {name}. Tente de novo.",
+  "merge.online": "Encerre a sessão dela antes: {name} está online.",
+  "merge.forbidden": "Você não pode mesclar {name}.",
 
   "validation.handle": "Comece com uma letra; depois letras, dígitos ou hífens, até 40.",
   "validation.bio": "No máximo {max} caracteres",
@@ -607,6 +620,18 @@ export const ptBR: Dictionary = {
   "connector.enabled": "Ativado",
   "connector.enabledHint": "Desligado, o partyline desconecta a conta e para os chats dela.",
   "connector.updateFailed": "Não foi possível atualizar o conector.",
+  "connector.operatedBy": "Operado por {name}",
+  "connector.operator": "Operador",
+  "connector.operatorBody":
+    "Quem escrever para esta conta fala com o operador: você ou uma das suas IAs.",
+  "connector.operatorPick": "Operador",
+  "connector.operatorOwner": "{name} (você)",
+  "connector.operatorHint":
+    "O operador responde às mensagens diretas da plataforma; a conta é o app dele.",
+  "connector.operatorSave": "Salvar operador",
+  "connector.operatorSaved": "Operador salvo",
+  "connector.operatorFailed": "Não foi possível mudar o operador.",
+  "connector.operatorForbidden": "Só o dono do conector pode mudar o operador.",
   "connector.inboundTitle": "Webhook de entrada",
   "connector.inboundBody":
     "Envie mensagens de chat por POST aqui, assinadas com o segredo do conector nos cabeçalhos X-Partyline-Signature e X-Partyline-Timestamp.",
@@ -731,8 +756,22 @@ export const ptBR: Dictionary = {
     "Configurando uma sessão do Claude Code? O assistente mostra a configuração completa:",
 
   "account.profile": "Perfil",
+  "account.profileBody": "Seu nome, foto, @handle e bio: como você aparece em todas as conversas.",
   "account.saveProfile": "Salvar perfil",
   "account.profileSaved": "Perfil salvo",
+  "account.notify": "Notificações",
+  "account.notifyBody":
+    "Receba uma cópia das mensagens diretas que as IAs enviam para você em uma das suas contas vinculadas.",
+  "account.notifyWhere": "Enviar para",
+  "account.notifyOff": "Não me notificar em lugar nenhum",
+  "account.notifyOption": "{connector} · {account} · {title}",
+  "account.notifyUnavailable": "Uma conta que não está mais vinculada",
+  "account.notifyHint": "Só aparecem chats diretos de contas que você mesmo vinculou.",
+  "account.notifySave": "Salvar notificações",
+  "account.notifySaved": "Notificações salvas",
+  "account.notifyNone": "Nenhuma conta vinculada pode receber mensagens ainda.",
+  "account.notifyLink": "Vincular uma conta",
+  "account.notifyLoadError": "Não foi possível carregar suas contas vinculadas.",
   "account.appearance": "Aparência",
   "account.appearanceBody": "Lembrada neste navegador. O idioma também fica salvo na sua conta.",
   "account.passwordBody": "Ninguém mais vê sua senha. Nem administradores conseguem lê-la.",
@@ -878,6 +917,14 @@ export const ptBR: Dictionary = {
     "Qualquer pessoa que escrever para esta conta vai chegar aos agentes dessa sala.",
   "catchAll.warningTrust":
     "As mensagens chegam como não confiáveis, a menos que venham das suas identidades verificadas.",
+  "catchAll.perChatWarning": "Cada chat novo vira uma conversa própria com o operador.",
+  "catchAll.perChatHint":
+    "Deixe em branco: cada chat novo abre uma conversa própria com o operador.",
+  "catchAll.legacyBody":
+    "Esse é o encaminhamento antigo. Mude para conversas por chat para cada chat novo virar uma conversa própria com o operador.",
+  "catchAll.switchToPerChat": "Mudar para conversas por chat",
+  "catchAll.perChatSaved": "Os chats novos agora abrem conversas próprias.",
+  "catchAll.switchFailed": "Não foi possível mudar. Tente de novo.",
   "catchAll.save": "Salvar encaminhamento",
   "catchAll.noChanges": "Nada mudou para salvar.",
   "catchAll.saved": "Encaminhamento salvo",

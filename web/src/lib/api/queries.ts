@@ -50,10 +50,12 @@ import {
   type MarkReadRequest,
   MaxPreviewLength,
   type Me,
+  type MergeAgentRequest,
   type Message,
   type MessagePreview,
   MultipartFileField,
   MultipartMessageField,
+  type NotifyOption,
   type OpenDMRequest,
   type Page,
   type PairingCode,
@@ -66,6 +68,7 @@ import {
   type RoomMember,
   type Session,
   type SetMachineLabelRequest,
+  type SetNotifyRequest,
   type SetupRequest,
   type SetupStatus,
   type Sharing,
@@ -91,6 +94,7 @@ export type SharingResource = "rooms" | "agents" | "connectors";
 
 export const queryKeys = {
   me: ["me"] as const,
+  notifyOptions: ["me", "notify-options"] as const,
   setupStatus: ["setup-status"] as const,
   invite: (token: string) => ["invite", token] as const,
   users: ["users"] as const,
@@ -760,6 +764,28 @@ export function useRemoveAvatar(id: string) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Notify me on another app (NOTI-01)
+
+/** The chats of the caller's linked accounts that can receive a copy of AIs' DMs (NOTI-01). */
+export const notifyOptionsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.notifyOptions,
+    queryFn: () => api<List<NotifyOption>>("GET", "/me/notify-options").then(items),
+  });
+
+export const useNotifyOptions = () => useQuery(notifyOptionsQuery());
+
+/** Chooses where AIs' direct messages reach the caller; null clears the choice (NOTI-01). */
+export function useSetNotify() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (chatId: string | null) =>
+      api<Me>("PUT", "/me/notify", { chat_id: chatId } satisfies SetNotifyRequest),
+    onSuccess: (me) => qc.setQueryData(queryKeys.me, me),
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
 // Contacts: the machine tree, shared AIs, users and the people of the user's connectors
 // (CONT-01, TREE-01..06)
 
@@ -1012,6 +1038,29 @@ export function useRenameProject() {
       qc.invalidateQueries({ queryKey: queryKeys.agentsWithArchived, exact: true });
       qc.invalidateQueries({ queryKey: queryKeys.projects });
       qc.invalidateQueries({ queryKey: queryKeys.rooms });
+    },
+  });
+}
+
+/**
+ * Merges an AI into another one of the caller's (MRG-01): the survivor keeps its groups, DMs,
+ * history, cursors, sharing and connectors, and the AI in `from` is deleted. Refused with 409
+ * `identity_online` while `from` has a live session (MRG-02).
+ */
+export function useMergeAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ from, into }: { from: string; into: string }) =>
+      api<Agent>("POST", `/agents/${from}/merge`, { into } satisfies MergeAgentRequest),
+    onSuccess: (_, { from }) => {
+      // The AI is gone from the flat lists at once; the tree, the conversations and the rooms it
+      // was in are the server's to rebuild.
+      qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withoutAI(old, from));
+      qc.invalidateQueries({ queryKey: queryKeys.contacts, exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.rooms });
+      // Its profile is marked stale without a refetch: the row that shows it is about to leave.
+      qc.invalidateQueries({ queryKey: queryKeys.intelligence(from), refetchType: "none" });
     },
   });
 }

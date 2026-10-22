@@ -1,16 +1,17 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Session } from "@/lib/api/types.gen";
+import type { NotifyOption, Session } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { LOCALE_KEY, THEME_KEY } from "@/lib/theme";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeMe } from "@/test/fixtures";
+import { makeMe, makeProfile } from "@/test/fixtures";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 const me = makeMe();
+const profile = makeProfile({ ...me.intelligence, can_edit: true });
 const sessions: Session[] = [
   {
     id: "s1",
@@ -34,8 +35,25 @@ const sessions: Session[] = [
 
 const base = {
   "GET /me": json(200, me),
+  "GET /intelligences/u1": json(200, profile),
+  "GET /me/notify-options": json(200, { items: [] }),
   "GET /me/sessions": json(200, { items: sessions }),
 };
+
+const notifyOptions: NotifyOption[] = [
+  {
+    chat_id: "c1",
+    title: "Lia Costa",
+    connector: { id: "k1", kind: "whatsapp", name: "ops-line" },
+    account: "+5511999990001",
+  },
+  {
+    chat_id: "c2",
+    title: "Atlas",
+    connector: { id: "k2", kind: "telegram", name: "ops-bot" },
+    account: "@ana",
+  },
+];
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -86,21 +104,107 @@ describe("settings page", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeInTheDocument();
   });
 
-  it("saves the display name", async () => {
-    const { calls } = mockApi({
-      ...base,
-      "PATCH /me": json(200, { ...me, display_name: "Ana S." }),
-    });
+  it("saves the profile and shows the new name in the sidebar right away (PROF-03)", async () => {
+    const saved = { ...profile, display_name: "Ana S.", bio: "On call this week." };
+    const { calls } = mockApi({ ...base, "PATCH /intelligences/u1": json(200, saved) });
     const user = userEvent.setup();
     renderRoute("/settings");
     const name = await screen.findByLabelText(/Display name/);
     expect(name).toHaveValue("Ana Souza");
     await user.clear(name);
-    await user.type(name, "  Ana S. ");
+    await user.type(name, "Ana S.");
+    await user.type(screen.getByLabelText("Bio"), "On call this week.");
     await user.click(screen.getByRole("button", { name: "Save profile" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "PATCH")).toBeDefined());
+    expect(calls.find((c) => c.method === "PATCH")?.path).toBe("/intelligences/u1");
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+      display_name: "Ana S.",
+      bio: "On call this week.",
+    });
+    // The account menu reads the account's own data, which the answer patched.
+    await user.click(screen.getByRole("button", { name: "Account menu" }));
+    expect(await screen.findByText("Ana S.")).toBeInTheDocument();
+  });
+
+  it("edits the @handle and the bio of one's own profile (PROF-03)", async () => {
+    const { calls } = mockApi({
+      ...base,
+      "PATCH /intelligences/u1": json(200, { ...profile, handle: "ana-souza" }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    const handle = await screen.findByLabelText(/Handle/);
+    expect(handle).toHaveValue("ana");
+    await user.clear(handle);
+    await user.type(handle, "@Ana-Souza");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "PATCH")).toBeDefined());
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ handle: "ana-souza" });
+  });
+
+  it("lists the chats of the linked accounts and saves and clears the notify choice (NOTI-01)", async () => {
+    let current = me;
+    const { calls } = mockApi({
+      ...base,
+      "GET /me/notify-options": json(200, { items: notifyOptions }),
+      "PUT /me/notify": (_url, init) => {
+        const body = JSON.parse(String(init?.body)) as { chat_id: string | null };
+        current = body.chat_id ? { ...me, notify_chat_id: body.chat_id } : { ...me };
+        return json(200, current);
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    const picker = await screen.findByRole("combobox", { name: "Send them to" });
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual([
+      "Don’t notify me anywhere",
+      "ops-line · +5511999990001 · Lia Costa",
+      "ops-bot · @ana · Atlas",
+    ]);
+    await user.selectOptions(picker, "c2");
+    await user.click(screen.getByRole("button", { name: "Save notifications" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "PUT")).toBeDefined());
+    expect(calls.find((c) => c.method === "PUT")?.body).toEqual({ chat_id: "c2" });
+    expect(await screen.findByText("Notifications saved")).toBeInTheDocument();
+    expect(picker).toHaveValue("c2");
+
+    await user.selectOptions(picker, "");
+    await user.click(screen.getByRole("button", { name: "Save notifications" }));
     await waitFor(() =>
-      expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ display_name: "Ana S." }),
+      expect(calls.filter((c) => c.method === "PUT").at(-1)?.body).toEqual({ chat_id: null }),
     );
+    expect(picker).toHaveValue("");
+  });
+
+  it("shows a stored choice that is no longer an option (NOTI-01)", async () => {
+    mockApi({
+      ...base,
+      "GET /me": json(200, { ...me, notify_chat_id: "c9" }),
+      "GET /me/notify-options": json(200, { items: notifyOptions }),
+    });
+    renderRoute("/settings");
+    const picker = await screen.findByRole("combobox", { name: "Send them to" });
+    expect(picker).toHaveValue("c9");
+    expect(within(picker).getByRole("option", { selected: true })).toHaveTextContent(
+      "An account that is no longer linked",
+    );
+  });
+
+  it("points at the linked accounts when no app can receive a copy (NOTI-01)", async () => {
+    mockApi(base);
+    renderRoute("/settings");
+    expect(
+      await screen.findByText("No linked account can receive messages yet."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Link a chat account" })).toHaveAttribute(
+      "href",
+      "/identities",
+    );
+    expect(screen.queryByRole("combobox", { name: "Send them to" })).toBeNull();
   });
 
   it("changes the password, checking the confirmation first", async () => {
