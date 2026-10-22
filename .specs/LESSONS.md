@@ -306,6 +306,18 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: make check-race TestTakenOverChannelNotifiesOnceAndDeliversNothingMore internal/agents/gateway.go:442,528 (delivery)
 - last seen: 2026-10-22T18:03:33Z
 
+### L-051 - Test every timing bound an AC states by injecting a short interval and driving the failure branch of the heartbeat
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `delivery` · harmful: 0
+- features: intelligences
+- evidence: N18 internal/agents/gateway.go:436-439 (SES-06) (delivery)
+- last seen: 2026-10-22T21:14:04Z
+
+### L-052 - Every new UI surface that renders an AC-required marker gets its own assertion in the commit that adds it
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web` · harmful: 0
+- features: intelligences
+- evidence: W8 web/src/components/route-chat-dialog.tsx:134 (PROF-09) (web)
+- last seen: 2026-10-22T21:14:05Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
