@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { BotIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { KindBadge } from "@/components/intelligence/kind-badge";
 import { chatTitle } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
 import {
@@ -126,8 +127,11 @@ function AgentChoice({ chat, onClose }: { chat: Chat; onClose: () => void }) {
                 >
                   <BotIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">
-                      {a.intelligence.display_name}
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-sm font-medium">
+                        {a.intelligence.display_name}
+                      </span>
+                      <KindBadge intelligence={a.intelligence} />
                     </span>
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
                       <StatusDot online={presence[a.id]?.online ?? a.online} withLabel />

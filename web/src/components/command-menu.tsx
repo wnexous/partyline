@@ -3,6 +3,7 @@ import { BotIcon, MessagesSquareIcon, PlugZapIcon } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 import { NAV_GROUPS } from "@/components/app-sidebar";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
+import { KindBadge } from "@/components/intelligence/kind-badge";
 import { platformLabel } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
 import {
@@ -120,6 +121,7 @@ function PaletteBody({ me, onDone }: { me: Me; onDone: () => void }) {
                 onSelect={() => go("/contacts/$id", { id: agent.id })}
                 icon={<BotIcon aria-hidden="true" />}
                 label={agent.intelligence.display_name}
+                badge={<KindBadge intelligence={agent.intelligence} />}
                 hint={`@${agent.intelligence.handle}`}
                 trailing={<StatusDot online={presence[agent.id]?.online ?? agent.online} />}
               />
@@ -177,6 +179,7 @@ function PaletteItem({
   onSelect,
   icon,
   label,
+  badge,
   hint,
   trailing,
 }: {
@@ -185,6 +188,8 @@ function PaletteItem({
   onSelect: () => void;
   icon: ReactNode;
   label: string;
+  /** Marks what the name belongs to (PROF-09), e.g. the AI badge. */
+  badge?: ReactNode;
   hint?: string;
   trailing?: ReactNode;
 }) {
@@ -200,6 +205,7 @@ function PaletteItem({
     >
       {icon}
       <span className="max-w-[70%] shrink-0 truncate font-medium">{label}</span>
+      {badge}
       {hint ? <span className="min-w-0 truncate text-xs text-muted-foreground">{hint}</span> : null}
       {trailing ? <span className="ml-auto shrink-0">{trailing}</span> : null}
     </CommandItem>

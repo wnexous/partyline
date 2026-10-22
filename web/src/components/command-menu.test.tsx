@@ -32,6 +32,24 @@ const options = (dialog: HTMLElement) =>
     .map((o) => o.textContent ?? "");
 
 describe("command palette (UI-22)", () => {
+  it("marks an AI with a human-looking name as an AI (PROF-09)", async () => {
+    mockApi({
+      "GET /me": json(200, makeMe({ role: "member" })),
+      "GET /conversations": json(200, {
+        items: [makeConversation({ id: "r1", title: "general" })],
+      }),
+      "GET /agents": json(200, { items: [makeAgent({ id: "a9", name: "Ana Lima" })] }),
+      "GET /connectors": json(200, { items: [makeConnector({ id: "k1", name: "ops-bot" })] }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/");
+    await screen.findByRole("list", { name: "Conversations" });
+    await user.keyboard("{Control>}k{/Control}");
+    const dialog = await palette();
+    const option = await within(dialog).findByRole("option", { name: /Ana Lima/ });
+    expect(within(option).getByText("AI")).toBeInTheDocument();
+  });
+
   it("opens with Ctrl+K and with Cmd+K, listing conversations, agents, connectors and pages", async () => {
     api();
     const user = userEvent.setup();
