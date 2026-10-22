@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -40,6 +41,9 @@ type setupOpts struct {
 	// any call fails the test, so no test ever runs a real harness CLI).
 	lookPath func(string) (string, error)
 	run      func(line string) ([]byte, error)
+	// terminal makes stdin and stdout terminals (the checklist menu) with the given width.
+	terminal bool
+	width    int
 }
 
 // testBinary is the partyline binary path setup registers in tests.
@@ -47,9 +51,47 @@ const testBinary = "/opt/partyline/bin/partyline"
 
 func runSetup(t *testing.T, o setupOpts, args ...string) setupRun {
 	t.Helper()
+	return runCommand(t, o, append([]string{"setup"}, args...)...)
+}
+
+// runLogin is one `partyline login` invocation with the same fakes as setup.
+func runLogin(t *testing.T, o setupOpts, args ...string) setupRun {
+	t.Helper()
+	return runCommand(t, o, append([]string{"login"}, args...)...)
+}
+
+// lineReader hands out at most one line per Read, like a terminal in canonical mode, so a
+// prompt cannot read ahead the answers meant for the next prompt.
+type lineReader struct{ r io.Reader }
+
+func (l lineReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	n := 0
+	for n < len(p) {
+		var b [1]byte
+		m, err := l.r.Read(b[:])
+		if m > 0 {
+			p[n] = b[0]
+			n++
+			if b[0] == '\n' {
+				return n, nil
+			}
+		}
+		if err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
+// runCommand runs one CLI command with a fake HOME and scripted stdin.
+func runCommand(t *testing.T, o setupOpts, args ...string) setupRun {
+	t.Helper()
 	var out, errOut lockedBuffer
 	std := stdio{
-		stdin: strings.NewReader(o.stdin), stdout: &out, stderr: &errOut,
+		stdin: lineReader{strings.NewReader(o.stdin)}, stdout: &out, stderr: &errOut,
 		getenv:     func(k string) string { return o.env[k] },
 		hostname:   func() (string, error) { return o.hostname, nil },
 		executable: func() (string, error) { return testBinary, nil },
@@ -67,6 +109,15 @@ func runSetup(t *testing.T, o setupOpts, args ...string) setupRun {
 			}
 			return o.run(line)
 		},
+		isTerminal: func(int) bool { return o.terminal },
+		termSize: func(int) (int, int, error) {
+			w := o.width
+			if w <= 0 {
+				w = 80
+			}
+			return w, 24, nil
+		},
+		rawTerm: &fakeRawTerminal{terminal: o.terminal},
 		sleep: func(_ context.Context, d time.Duration) bool {
 			if o.waits != nil {
 				*o.waits = append(*o.waits, d)
@@ -79,7 +130,7 @@ func runSetup(t *testing.T, o setupOpts, args ...string) setupRun {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), chanWait)
 	defer cancel()
-	code := execute(ctx, append([]string{"partyline", "setup"}, args...), std)
+	code := execute(ctx, append([]string{"partyline"}, args...), std)
 	return setupRun{code: code, stdout: out.String(), stderr: errOut.String()}
 }
 
@@ -110,33 +161,36 @@ func requireAgentToken(t *testing.T, env *testkit.Env, secret string) {
 func TestSetupWithToken(t *testing.T) {
 	e := newChannelEnv(t)
 	home := t.TempDir()
-	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL+"/", "--token", e.secret)
+	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL+"/", "--token", e.secret, "--harness", "none")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 	requireSavedConfig(t, home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
-	require.Contains(t, r.stdout, configPath(home))
+	require.Contains(t, r.stdout, "Logged in as @alice on "+e.env.URL)
 	require.NotContains(t, r.stdout+r.stderr, e.secret)
 }
 
-// ONB-04 + the served installer: a config with the instance URL and an empty token makes that
-// URL the default answer; the token is asked for on stdin.
-func TestSetupUsesInstallerURLAsDefault(t *testing.T) {
-	e := newChannelEnv(t)
+// CLI-06: a config with the installer's URL but no token is not a login; setup names the
+// command to run first instead of asking for credentials itself.
+func TestSetupRequiresLoginWithInstallerConfig(t *testing.T) {
 	home := t.TempDir()
-	writeConfig(t, home, cliconfig.Config{URL: e.env.URL})
-	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}, stdin: "\n" + e.secret + "\n"})
-	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
-	require.Contains(t, r.stdout, "Partyline URL ["+e.env.URL+"]: ")
-	require.Contains(t, r.stdout, "Agent token")
-	requireSavedConfig(t, home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
+	path := writeConfig(t, home, cliconfig.Config{URL: "http://installer.example.com"})
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--harness", "none")
+	require.Equal(t, 1, r.code)
+	require.Contains(t, r.stderr, "Run partyline login first")
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, before, after, "nothing changed")
 }
 
-// ONB-04: a typed URL wins over the default.
+// ONB-04: setup without a URL flag, PARTYLINE_URL or a saved URL prompts for it in the login
+// step.
 func TestSetupAsksForURL(t *testing.T) {
 	e := newChannelEnv(t)
 	home := t.TempDir()
-	writeConfig(t, home, cliconfig.Config{URL: "http://127.0.0.1:1"})
-	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}, stdin: e.env.URL + "\n"}, "--token", e.secret)
+	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}, stdin: e.env.URL + "\n"}, "--token", e.secret, "--harness", "none")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, r.stdout, "Partyline URL: ")
 	requireSavedConfig(t, home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
 }
 
@@ -146,7 +200,7 @@ func TestSetupKeepsSavedToken(t *testing.T) {
 	e := newChannelEnv(t)
 	home := t.TempDir()
 	writeConfig(t, home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
-	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--yes")
+	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--yes", "--harness", "none")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 	require.Contains(t, r.stdout, "Using the saved agent token")
 	requireSavedConfig(t, home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
@@ -154,7 +208,7 @@ func TestSetupKeepsSavedToken(t *testing.T) {
 	// A saved token that no longer works is an error, and the file stays as it was.
 	home2 := t.TempDir()
 	writeConfig(t, home2, cliconfig.Config{URL: e.env.URL, Token: "pl_agent_revoked"})
-	r = runSetup(t, setupOpts{env: map[string]string{"HOME": home2}}, "--yes")
+	r = runSetup(t, setupOpts{env: map[string]string{"HOME": home2}}, "--yes", "--harness", "none")
 	require.Equal(t, 1, r.code)
 	require.Contains(t, r.stderr, "the server rejected the token")
 	requireSavedConfig(t, home2, cliconfig.Config{URL: e.env.URL, Token: "pl_agent_revoked"})
@@ -262,7 +316,7 @@ func TestSetupBrowserApproval(t *testing.T) {
 			}
 			return true
 		},
-	}, "--url", env.URL, "--browser")
+	}, "--url", env.URL, "--browser", "--harness", "none")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 	m := approvalPattern.FindStringSubmatch(r.stdout)
 	require.NotNil(t, m, r.stdout)
@@ -285,13 +339,15 @@ func TestSetupBrowserApproval(t *testing.T) {
 	require.Equal(t, "devbox-7 (via setup)", toks.Items[0].Name, "DEV-02: named after the hostname")
 }
 
-// ONB-04: with no token given and no saved token, an empty answer to the token prompt starts
-// the browser approval.
-func TestSetupEmptyTokenAnswerStartsBrowserApproval(t *testing.T) {
+// CLI-07: --browser runs the login step and then shows the setup menu on a terminal; the
+// approved harness is registered.
+func TestSetupBrowserApprovesThenShowsTheMenu(t *testing.T) {
 	env, clock, alice := deviceSetupEnv(t)
 	home := t.TempDir()
+	calls := &harnessCalls{}
 	r := runSetup(t, setupOpts{
-		env: map[string]string{"HOME": home}, hostname: "devbox", stdin: "\ny\n",
+		env: map[string]string{"HOME": home}, hostname: "devbox", stdin: "y\n\r", terminal: true,
+		lookPath: installed("claude"), run: calls.run,
 		onSleep: func(stdout string) bool {
 			clock.Advance(2 * time.Second)
 			if code := approvalCode(stdout); code != "" {
@@ -299,8 +355,12 @@ func TestSetupEmptyTokenAnswerStartsBrowserApproval(t *testing.T) {
 			}
 			return true
 		},
-	}, "--url", env.URL)
+	}, "--url", env.URL, "--browser")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, r.stdout, "Logged in as @alice on "+env.URL)
+	require.Contains(t, r.stdout, "Claude Code  installed · not registered", "the menu opened after login")
+	require.Contains(t, r.stdout, "✓ Claude Code: registered")
+	require.Equal(t, []string{claudeAdd}, mutationCalls(calls.calls()))
 	got, err := cliconfig.Load(configPath(home))
 	require.NoError(t, err)
 	requireAgentToken(t, env, got.Token)
@@ -436,7 +496,7 @@ func TestSetupBrowserSavesStartURL(t *testing.T) {
 			}
 			return true
 		},
-	}, "--url", start, "--browser", "--yes")
+	}, "--url", start, "--browser", "--yes", "--harness", "none")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 	got, err := cliconfig.Load(configPath(home))
 	require.NoError(t, err)
@@ -457,7 +517,7 @@ func TestSetupDoesNotReuseTokenSavedForAnotherURL(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b, clock, alice := deviceSetupEnv(t)
-			require.False(t, sameURL(a.env.URL, b.URL))
+			require.False(t, cliconfig.SameURL(a.env.URL, b.URL))
 			home := t.TempDir()
 			writeConfig(t, home, cliconfig.Config{URL: a.env.URL, Token: a.secret})
 			approved := false
@@ -475,7 +535,7 @@ func TestSetupDoesNotReuseTokenSavedForAnotherURL(t *testing.T) {
 			require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 			require.NotContains(t, r.stdout, "Using the saved agent token")
 			if tc.stdin != "" {
-				require.Contains(t, r.stdout, "Agent token (press Enter to approve this machine in the browser instead): ")
+				require.Contains(t, r.stdout, "Open "+b.URL+"/devices", "the interactive path approves in the browser")
 			}
 			require.True(t, approved, "setup asked for a browser approval on B: %s", r.stdout)
 			got, err := cliconfig.Load(configPath(home))

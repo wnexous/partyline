@@ -601,3 +601,54 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   handle inline for detail rows instead. An empty handle renders no tooltip and no inline text.
 - Tests: `intelligence.test.tsx` renders the three components from synthetic intelligences and
   stubs the image loader (happy-dom never loads images) for the avatar-image case.
+
+## T38 - `partyline login` (CLI-01)
+
+- `loginCmd` (`internal/cli/login.go`, `partyline login [--url] [--token-stdin]`): instance URL
+  from `--url` → `PARTYLINE_URL` → the saved config → the prompt; normalized (no trailing
+  slash) and checked with `GET /healthz`. The agent token comes from the first stdin line with
+  `--token-stdin` (empty → exit 2), else from the unchanged browser approval flow
+  (`approveInBrowser`: page + code, polls every 2 s, DEV-01..03/DEV-06 texts, the
+  "Save this agent token of @…" confirmation and the `--yes` warning for setup). Denied and
+  expired approvals print the existing messages on stderr and exit 1; nothing is saved.
+- The token is verified with `GET /api/v1/agent/whoami` (`agentWhoAmI`, `dto.IntelligenceRef`)
+  **before** `cliconfig.Save` writes `{url, token}` with mode 0600, and login prints
+  `Logged in as @<handle> on <instance> (machine <hostname>)` from the whoami handle, not from
+  the approver name. Exit codes: 0 saved, 1 denied/expired/rejected/unreachable, 2 usage.
+- `loginFlags{token, yes, name}` is the seam setup reuses in T40: `name` prefixes messages
+  (`partyline login:`/`partyline setup:`) and `yes` keeps setup's DEV-06 behaviour.
+- Not in T38: opening the setup menu after login (CLI-02, wired in T40).
+
+## T40 - `partyline setup` as a checklist (CLI-02..07)
+
+- **Order**: parse and validate `--harness`/`--all-detected`/`--remove` (a mistyped name exits 2
+  before any credential is written) → `--uninstall` → credentials. `--url/--token/
+  --token-stdin/--browser` run `loginFlow` first (CLI-07; same texts and 0600 save as T38).
+  With none of them, a saved `{url, token}` is required: otherwise setup prints
+  `partyline setup: Run partyline login first` and exits 1 (CLI-06). Saved credentials are
+  verified with `GET /agent/whoami` and setup prints `Using the saved agent token.` Exit codes:
+  2 for usage/missing selection flag, 1 for login or harness failures.
+- **Menu** (CLI-03/04): terminal = `stdio.isTerminal(0)` and `(1)` (design: stdin and stdout).
+  Items are every `harness.All` registrar with `Installed = Detected()`, `Registered =
+  len(Entries()) > 0` (an unreadable entry set counts as unregistered) and
+  `Selected = Installed || Registered`, so detected unregistered harnesses are pre-selected
+  and a plain Enter changes nothing. Apply: selected+unregistered → `Apply`, deselected+
+  registered → `Remove`, everything else untouched; one line per changed or failed harness
+  (`✓ <Title>: registered|removed` on stdout, `✗ <Title>: <err>` on stderr) and
+  `Start a session with partyline <first registered id>`. Backups use the existing HAR-05
+  settle rule. A cancel (`q`/lone ESC/**Ctrl+C, byte 0x03**) exits 0 without changes or calls.
+  The menu is drawn by `cli.Menu` with `Width` from `stdio.termSize(1)` and raw mode from
+  `stdio.rawTerm`.
+- **No terminal** (CLI-05): without a selection flag setup prints
+  `partyline setup: no terminal: pass --harness a,b, --all-detected or --remove a,b` and exits
+  2. `--harness a,b` registers those only (an already registered one is untouched and still
+  named first), `--all-detected` registers every `Detected()` harness, `--remove a,b` removes
+  Partyline from them; `--yes` is accepted and ignored. `--harness none` (or
+  `--all-detected` matching nothing) registers nothing and prints the existing
+  "No supported harness found" hint.
+- **CLI-02**: `partyline login` on a terminal, after a successful login, opens the same menu
+  when no registrar reports entries; with any registered harness it returns without drawing
+  the menu.
+- Spec-faithful deviations: registered-but-not-detected harnesses start checked (the spec only
+  names detected unregistered ones); `--remove` alone does not register the detected ones;
+  `--harness` and `--all-detected` together are a usage error.

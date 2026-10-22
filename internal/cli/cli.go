@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/wnexous/partyline/internal/harness"
 )
 
@@ -23,8 +25,12 @@ Commands:
   serve                  run the server (configured with PARTYLINE_* environment variables)
   admin create-user      create an account; the password is read from stdin
   admin reset-password   set a new password and end the user's sessions; reads stdin
-  setup                  save the instance URL and an agent token (or approve this machine in the
-                         browser) and register Partyline in the installed harnesses; --uninstall undoes it
+  login                  approve this machine in the browser (or read the agent token from
+                         stdin) and save the instance URL and token
+  setup                  choose the harnesses Partyline registers itself in: a checklist on a
+                         terminal, --harness a,b / --all-detected / --remove a,b without one;
+                         --url/--token/--token-stdin/--browser run the login step first;
+                         --uninstall undoes it
   channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN or the config file);
                          --tools-only serves the tools without receiving messages;
                          --harness omp describes the omp extension's message framing;
@@ -71,6 +77,10 @@ type stdio struct {
 	launcherEnv func() map[string]string
 	// rawTerm offers raw terminal mode for the checklist menu; tests inject a fake.
 	rawTerm rawTerminal
+	// isTerminal reports whether fd is a terminal (nil: golang.org/x/term.IsTerminal);
+	// termSize returns its width and height (nil: golang.org/x/term.GetSize).
+	isTerminal func(fd int) bool
+	termSize   func(fd int) (width, height int, err error)
 }
 
 // Run executes the command named in args[1] and returns the process exit code. SIGINT and
@@ -78,7 +88,12 @@ type stdio struct {
 func Run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return execute(ctx, args, stdio{stdin: os.Stdin, stdout: stdout, stderr: stderr, getenv: os.Getenv, getwd: os.Getwd, launcherEnv: procLauncherEnv, rawTerm: osRawTerm{}})
+	return execute(ctx, args, stdio{
+		stdin: os.Stdin, stdout: stdout, stderr: stderr,
+		getenv: os.Getenv, getwd: os.Getwd, launcherEnv: procLauncherEnv, rawTerm: osRawTerm{},
+		isTerminal: term.IsTerminal,
+		termSize:   term.GetSize,
+	})
 }
 
 func execute(ctx context.Context, args []string, io stdio) int {
@@ -102,6 +117,8 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return admin(ctx, args[2:], io)
 	case "setup":
 		return setupCmd(ctx, args[2:], io)
+	case "login":
+		return loginCmd(ctx, args[2:], io)
 	case "channel":
 		return channelCmd(ctx, args[2:], io)
 	case "listen":

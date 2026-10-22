@@ -284,7 +284,9 @@ func readMenuKey(in *keyInput) menuKey {
 		return keyAll
 	case '\r', '\n':
 		return keyApply
-	case 'q':
+	case 'q', 0x03:
+		// 0x03 is Ctrl+C: raw mode delivers it as a byte, so it must cancel like q and
+		// restore the terminal.
 		return keyCancel
 	case 0x1b:
 		second, ok := in.nextWithin(escapeDelay)

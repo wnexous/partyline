@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/cliconfig"
+	"github.com/wnexous/partyline/internal/harness"
 )
 
 // devicePollInterval is how often `setup --browser` asks whether the machine was approved;
@@ -57,21 +57,23 @@ func (p *prompter) ask(question, def string) string {
 
 // setupFlags are the options of `partyline setup`.
 type setupFlags struct {
-	url, token string
-	tokenStdin bool
-	browser    bool
-	yes        bool
-	harness    string
-	uninstall  bool
-	keepBackup bool
+	url, token  string
+	tokenStdin  bool
+	browser     bool
+	yes         bool
+	harness     string
+	allDetected bool
+	remove      string
+	uninstall   bool
+	keepBackup  bool
 }
 
 func newPrompter(io stdio) *prompter { return &prompter{in: bufio.NewReader(io.stdin), out: io.stdout} }
 
-// setupCmd runs `partyline setup` (ONB-04): it asks for the instance URL (default: the
-// flag, PARTYLINE_URL, else the config file, which the served installer pre-fills) and an
-// agent token or a browser approval (DEV-01..03), verifies both against the server and
-// writes the private config file. Nothing is written when verification fails.
+// setupCmd runs `partyline setup` (CLI-03..07): with credentials flags it runs the login step
+// first, then registers and removes harnesses, from the checklist menu on a terminal or from
+// --harness/--all-detected/--remove without one. Without credentials it requires a saved
+// login (CLI-06) and verifies it.
 func setupCmd(ctx context.Context, args []string, io stdio) int {
 	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 	flags.SetOutput(io.stderr)
@@ -79,9 +81,11 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 	flags.StringVar(&f.url, "url", "", "Partyline instance URL (default $PARTYLINE_URL, else the config file)")
 	flags.StringVar(&f.token, "token", "", "agent token (else the saved one, else asked); visible to other users in ps, prefer --token-stdin")
 	flags.BoolVar(&f.tokenStdin, "token-stdin", false, "read the agent token from the first line of standard input")
-	flags.BoolVar(&f.browser, "browser", false, "approve this machine in the web app instead of pasting a token")
-	flags.BoolVar(&f.yes, "yes", false, "do not ask; use the defaults and apply every change")
-	flags.StringVar(&f.harness, "harness", "", "harnesses to register, comma-separated: claude, codex, gemini, opencode, pi, omp, or none (default: the installed ones)")
+	flags.BoolVar(&f.browser, "browser", false, "approve this machine in the web app instead of using a saved token")
+	flags.BoolVar(&f.yes, "yes", false, "do not ask; apply the selection as given")
+	flags.StringVar(&f.harness, "harness", "", "harnesses to register, comma-separated: claude, codex, gemini, opencode, pi, omp, or none")
+	flags.BoolVar(&f.allDetected, "all-detected", false, "register every harness installed on this machine")
+	flags.StringVar(&f.remove, "remove", "", "harnesses to remove Partyline from, comma-separated")
 	flags.BoolVar(&f.uninstall, "uninstall", false, "remove what setup added: harness entries, extension files and the config file")
 	flags.BoolVar(&f.keepBackup, "keep-backups", false, "keep the <file>.partyline.bak copy of each harness config setup changes (default: deleted after a successful run)")
 	if err := flags.Parse(args); err != nil {
@@ -103,108 +107,63 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 		fmt.Fprintln(io.stderr, "partyline setup:", err)
 		return 1
 	}
-	regs, err := selectHarnesses(env, f.harness)
+	regs := harness.All(env)
+	// A mistyped harness name must not write credentials, so validate the flags first.
+	register, err := namedHarnesses(env, f.harness)
 	if err != nil {
 		fmt.Fprintln(io.stderr, "partyline setup:", err)
 		return 2
 	}
-	path, err := cliconfig.Path(io.getenv)
+	remove, err := namedHarnesses(env, f.remove)
 	if err != nil {
 		fmt.Fprintln(io.stderr, "partyline setup:", err)
-		return 1
+		return 2
 	}
-	saved, err := cliconfig.Load(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		fmt.Fprintf(io.stderr, "partyline setup: ignoring the current config file: %v\n", err)
+	if f.allDetected {
+		if f.harness != "" {
+			fmt.Fprintln(io.stderr, "partyline setup: use only one of --harness and --all-detected")
+			return 2
+		}
+		for _, r := range regs {
+			if r.Detected() {
+				register = append(register, r)
+			}
+		}
 	}
+
+	saved, _, err := loadSavedConfig(io)
 	if err != nil {
+		fmt.Fprintf(io.stderr, "partyline setup: ignoring the current config file: %v\n", err)
 		saved = cliconfig.Config{}
 	}
-	p := newPrompter(io)
-
-	cfg, code := setupCredentials(ctx, f, saved, p, io)
-	if code != 0 {
-		return code
-	}
-	if err := cliconfig.Save(path, cfg); err != nil {
-		fmt.Fprintln(io.stderr, "partyline setup: save the config file:", err)
+	loggedIn := saved.URL != "" && saved.Token != ""
+	credentials := f.url != "" || f.token != "" || f.tokenStdin || f.browser
+	switch {
+	case credentials:
+		// CLI-07: --url/--token/--token-stdin/--browser run the login step first.
+		if _, code := loginFlow(ctx, loginFlags{url: f.url, token: f.token, tokenStdin: f.tokenStdin, yes: f.yes, name: "setup"}, io); code != 0 {
+			return code
+		}
+	case !loggedIn:
+		// CLI-06: setup never asks for credentials itself.
+		fmt.Fprintln(io.stderr, "partyline setup: Run partyline login first")
 		return 1
-	}
-	fmt.Fprintf(io.stdout, "Saved the instance URL and agent token to %s\n", path)
-	if !registerHarnesses(ctx, regs, f, p, io) {
-		return 1
-	}
-	return 0
-}
-
-// setupCredentials picks the URL and token, verifies them and returns them, or an exit code.
-func setupCredentials(ctx context.Context, f setupFlags, saved cliconfig.Config, p *prompter, io stdio) (cliconfig.Config, int) {
-	def := firstNonEmpty(f.url, io.getenv("PARTYLINE_URL"), saved.URL)
-	base := strings.TrimSpace(f.url)
-	if base == "" && !f.yes {
-		base = p.ask("Partyline URL", def)
-	}
-	if base == "" {
-		base = def
-	}
-	base, err := normalizeURL(base)
-	if err != nil {
-		fmt.Fprintln(io.stderr, "partyline setup:", err)
-		return cliconfig.Config{}, 2
-	}
-	if err := checkReachable(ctx, base); err != nil {
-		fmt.Fprintln(io.stderr, "partyline setup:", err)
-		return cliconfig.Config{}, 1
-	}
-
-	token := strings.TrimSpace(f.token)
-	if f.tokenStdin {
-		line, _ := p.in.ReadString('\n')
-		if token = strings.TrimSpace(line); token == "" {
-			fmt.Fprintln(io.stderr, "partyline setup: --token-stdin: no token on standard input")
-			return cliconfig.Config{}, 2
-		}
-	}
-	if token == "" && !f.browser {
-		if saved.Token != "" && sameURL(saved.URL, base) {
-			token = saved.Token
-			fmt.Fprintln(io.stdout, "Using the saved agent token (pass --token or --browser to replace it).")
-		}
-		if token == "" && !f.yes {
-			token = p.ask("Agent token (press Enter to approve this machine in the browser instead)", "")
-		}
-	}
-	if token == "" {
-		// ONB-08: the token is saved with the URL setup started with; the poll's URL is not
-		// trusted, so an answer naming another server cannot redirect the token.
-		got, approver, err := approveInBrowser(ctx, base, io)
-		if err != nil {
+	default:
+		if err := verifyAgentToken(ctx, saved.URL, saved.Token); err != nil {
 			fmt.Fprintln(io.stderr, "partyline setup:", err)
-			return cliconfig.Config{}, 1
+			return 1
 		}
-		// DEV-06: name the account the token belongs to, so an approval by someone else
-		// (a phished or misdirected code) is noticed before anything is saved.
-		fmt.Fprintf(io.stdout, "Approved by @%s on %s\n", approver, base)
-		if f.yes {
-			// --yes skips the question, so say on stderr (seen even when stdout is not)
-			// whose token this is and how to undo it.
-			fmt.Fprintf(io.stderr, "partyline setup: warning: --yes accepted the agent token of @%s without asking; if @%s is not you, run partyline setup --uninstall to revoke it\n", approver, approver)
-		}
-		if !f.yes && !p.confirm(fmt.Sprintf("Save this agent token of @%s on this machine?", approver)) {
-			msg := "revoked it"
-			if err := revokeAgentToken(ctx, base, got); err != nil {
-				msg = fmt.Sprintf("could not revoke it (%v); revoke %q in the web app (Tokens)", err, machineName(io)+" (via setup)")
-			}
-			fmt.Fprintf(io.stderr, "partyline setup: not saved: the token belongs to @%s; %s.\n", approver, msg)
-			return cliconfig.Config{}, 1
-		}
-		token = got
+		fmt.Fprintln(io.stdout, "Using the saved agent token.")
 	}
-	if err := verifyAgentToken(ctx, base, token); err != nil {
-		fmt.Fprintln(io.stderr, "partyline setup:", err)
-		return cliconfig.Config{}, 1
+
+	if f.harness == "" && !f.allDetected && f.remove == "" {
+		if !isTerminal(io, 0) || !isTerminal(io, 1) {
+			fmt.Fprintln(io.stderr, "partyline setup: no terminal: pass --harness a,b, --all-detected or --remove a,b")
+			return 2
+		}
+		return setupMenu(ctx, harnessStates(ctx, regs), f.keepBackup, io)
 	}
-	return cliconfig.Config{URL: base, Token: token}, 0
+	return applyHarnessFlags(ctx, regs, register, remove, f.keepBackup, io)
 }
 
 func firstNonEmpty(vals ...string) string {
@@ -227,12 +186,6 @@ func normalizeURL(raw string) (string, error) {
 		return "", fmt.Errorf("invalid instance URL %q: want http(s)://host", raw)
 	}
 	return strings.TrimRight(u.String(), "/"), nil
-}
-
-func sameURL(a, b string) bool {
-	na, errA := normalizeURL(a)
-	nb, errB := normalizeURL(b)
-	return errA == nil && errB == nil && na == nb
 }
 
 // checkReachable requires GET /healthz to answer 200.
@@ -279,26 +232,10 @@ func decodeError(resp *http.Response) dto.Error {
 }
 
 // verifyAgentToken asks the server whether token is an active agent token with GET
-// /agent/whoami, which needs no folder and no AI: 200 for a valid agent token, 401 for an
-// unknown or revoked one and 403 "agent token required" for a user token.
+// /agent/whoami, which needs no folder and no AI.
 func verifyAgentToken(ctx context.Context, base, token string) error {
-	h := http.Header{}
-	h.Set("Authorization", "Bearer "+token)
-	resp, err := request(ctx, http.MethodGet, base+"/api/v1/agent/whoami", nil, h)
-	if err != nil {
-		return fmt.Errorf("cannot reach %s: %w", base, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	switch resp.StatusCode {
-	case http.StatusOK:
-		return nil
-	case http.StatusUnauthorized:
-		return errors.New("the server rejected the token (mistyped, revoked or expired); nothing was saved")
-	case http.StatusForbidden:
-		return errors.New("this is not an agent token: create an agent token in the web app (Tokens) or use --browser; nothing was saved")
-	default:
-		return fmt.Errorf("unexpected answer %d while checking the token; nothing was saved", resp.StatusCode)
-	}
+	_, err := agentWhoAmI(ctx, base, token)
+	return err
 }
 
 // approveInBrowser runs the device flow (DEV-01..03, DEV-06): it creates a request named after
