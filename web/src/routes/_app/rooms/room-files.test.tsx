@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message, RoomFile } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
-import { makeMe, makeMessage, makeRoom } from "@/test/fixtures";
+import { makeIntelligence, makeMe, makeMessage, makeRoom } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { renderRoute } from "@/test/render";
 
@@ -32,6 +32,7 @@ const contract: RoomFile = {
   message_seq: 30,
   author_kind: "user",
   author_name: "Ana",
+  author: makeIntelligence({ display_name: "Ana", handle: "ana" }),
   created_at: "2026-10-19T12:00:00Z",
 };
 

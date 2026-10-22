@@ -1208,9 +1208,9 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: PROF-09
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] The header of a DM between two intelligences, seen by the owner of the AI, shows the name, badge and handle of both; the new-group dialog shows the badge next to each selected and each refused member; the files list shows it next to the author (PROF-09)
-- [ ] `GET /rooms/{id}/attachments` returns the author's intelligence (kind, role, platform) and the generated types follow (`make generate` leaves no drift)
-- [ ] Gate check passes: `make check`
+- [x] The header of a DM between two intelligences, seen by the owner of the AI, shows the name, badge and handle of both; the new-group dialog shows the badge next to each selected and each refused member; the files list shows it next to the author (PROF-09)
+- [x] `GET /rooms/{id}/attachments` returns the author's intelligence (kind, role, platform) and the generated types follow (`make generate` leaves no drift)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show the kind badge in the header, new groups and files`

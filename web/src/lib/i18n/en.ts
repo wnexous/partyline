@@ -448,6 +448,7 @@ export const en = {
   "room.participantsToggle": "Participants ({count})",
   "participants.title": "Participants",
   "conversation.between": "{a} and {b}",
+  "conversation.and": "and",
   "conversation.directMessage": "Direct message",
   "room.filesToggle": "Files",
   "room.pausedTitle": "Agents are paused.",

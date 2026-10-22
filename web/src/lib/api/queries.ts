@@ -894,6 +894,7 @@ export function messageFiles(m: Message): RoomFile[] {
       message_seq: m.seq,
       author_kind: m.author_kind,
       author_name: m.author_name,
+      author: m.author,
       created_at: m.created_at,
     }))
     .reverse();

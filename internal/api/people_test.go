@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -265,6 +266,23 @@ func TestPersonProfileIsVisibleThroughAConversation(t *testing.T) {
 	shareRoom(f.alice, f.roomB.ID, dto.SharingUser{UserID: f.erin.User.ID, Level: dto.LevelView})
 	require.Equal(t, "Customer", profileOf(t, f.erin, f.person).DisplayName)
 	getProfile(f.env.NewUser("frank"), f.person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+}
+
+// PROF-09: the room's files name a person that wrote one with its platform, so the list shows the
+// platform badge next to the name.
+func TestRoomFilesNameAPersonWithItsPlatform(t *testing.T) {
+	f := newPeopleFixture(t)
+	_, err := f.env.App.Rooms.PostFromChat(context.Background(), f.roomA.ID, rooms.ChatMessage{
+		ChatID: f.chatX, SenderID: peopleSender, SenderName: "Customer", AuthorIID: f.person, Text: "the invoice",
+		Files: []rooms.File{{Name: "invoice.pdf", Mime: "application/pdf", Status: dto.AttachmentStatusUnavailable}},
+	})
+	require.NoError(t, err)
+
+	files := testkit.Decode[dto.Page[dto.RoomFile]](f.dave.Get("/api/v1/rooms/" + f.roomA.ID + "/attachments").RequireStatus(http.StatusOK)).Items
+	require.Len(t, files, 1)
+	require.Equal(t, dto.IntelligenceRef{
+		ID: f.person, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRolePerson, DisplayName: "Customer", Handle: "customer", Platform: connectortest.KindName,
+	}, files[0].Author)
 }
 
 // PROF-07: an avatar a user of the connector set for a person is stored as a 256x256 PNG and

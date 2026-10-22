@@ -2636,3 +2636,40 @@ passed every test because each used a position at or past the unread messages.
   position with one unread stays one; three unread read up to the message before the last is one; a
   position at the last message clears the count. Scratch copy: W1 fails the first only; the live-handler
   tests passed under it.
+
+## T65 - The kind badge next to every name (PROF-09)
+
+`validation.md` gap 8: three places showed a bare display name where PROF-09 wants the badge next to
+it. `IntelligenceName`/`KindBadge` now render in each.
+
+- **Conversation header** (`web/src/components/conversation-header.tsx`). A DM the viewer reads only
+  through an AI (the owner or a grantee: no counterpart) names both participants, each as an
+  `IntelligenceName` (name with handle tooltip, AI or platform badge, "You" for the viewer), joined by the
+  new `conversation.and` word ("and"/"e") inside the `<h1>`. A DM with a counterpart and a group are
+  unchanged (title text, the counterpart's badge and @handle). `conversationTitle` still returns plain text
+  for the document title and keeps `conversation.between`. The heading's accessible name is now
+  "Atlas AI and Bob Lima" (the old assertion said "Atlas and Bob Lima" and changed outcome).
+- **New group dialog** (`web/src/components/new-group-dialog.tsx`). The chips of the picked members and
+  the list of refused members render the member as an `IntelligenceName`; a refused id the contacts do not
+  show still prints the bare id.
+- **Room files** (`web/src/components/room-files.tsx`). A file's author is shown with its badge when it
+  resolved to an intelligence; the displayed name stays `author_name` (the name the timeline shows, as
+  `message-item` does). This needs the author on the wire:
+  - `dto.RoomFile.Author` (`IntelligenceRef`, required): `GET /rooms/{id}/attachments` renders it with
+    `convert.FileAuthor`, which fills a message-view row from the files query and calls the function that
+    renders a message's author, so a file and its message always agree. `ListRoomFiles` also selects
+    `author_id`, `author_user_id`, `author_iid`, `author_handle`, `author_ikind`, `author_avatar` and the
+    platform of the author chat (`LEFT JOIN chats, connectors`). A chat account that resolved to nobody
+    has no id and only the name. sqlc and tygo regenerated (`internal/store/db/files.sql.go`,
+    `web/src/lib/api/types.gen.ts`); no migration.
+  - `messageFiles` (the live `room.message` path) copies the message's `author`.
+- **Existing tests that changed outcome:** `TestRoomFilesList` expects the author of the file; the
+  heading name above; the room-file fixtures of `room-files.test.tsx`, `rooms/room-files.test.tsx` and
+  `a11y.test.tsx` now carry `author` (the API always sends it).
+- **Tests.** Go: `TestRoomFilesCarryTheirAuthor` (user, AI, unresolved chat sender),
+  `TestRoomFilesNameAPersonWithItsPlatform` (person with platform). Vitest: header with an AI and a
+  WhatsApp person, picked and refused members in the new group dialog, the files list (AI, person, user,
+  unresolved sender) and a live file's AI badge. Each failed before the change.
+- **Not changed:** other places that print a name (the command menu, the route-chat dialog, the member
+  picker's row text, the sidebar header) were not in the Verifier's list; the member picker and the
+  contacts rows already use `IntelligenceName`.

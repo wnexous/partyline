@@ -109,6 +109,20 @@ func messageAuthor(m rooms.Message) dto.IntelligenceRef {
 	return ref
 }
 
+// FileAuthor renders the intelligence that wrote the message of a room file, as Message renders
+// its author (PROF-09): the same columns of the message view, and the platform of the chat that
+// wrote it for a person.
+func FileAuthor(f db.ListRoomFilesRow) dto.IntelligenceRef {
+	m := rooms.Message{MessageView: db.MessageView{
+		AuthorKind: f.AuthorKind, AuthorID: f.AuthorID, AuthorUserID: f.AuthorUserID, AuthorIid: f.AuthorIid,
+		AuthorName: f.AuthorName, AuthorHandle: f.AuthorHandle, AuthorIkind: f.AuthorIkind, AuthorAvatar: f.AuthorAvatar,
+	}}
+	if f.ChatPlatform != "" {
+		m.Chat = &db.ListChatRefsRow{ID: f.AuthorID, Platform: f.ChatPlatform}
+	}
+	return messageAuthor(m)
+}
+
 // OutboxItem renders one outbound delivery.
 func OutboxItem(o db.Outbox) dto.OutboxItem {
 	item := dto.OutboxItem{

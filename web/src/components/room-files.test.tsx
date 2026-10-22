@@ -6,7 +6,7 @@ import type { RoomFile } from "@/lib/api/types.gen";
 import { catchUp, handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeMessage } from "@/test/fixtures";
+import { makeAI, makeIntelligence, makeMessage, makePerson } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
 
 function makeFile(over: Partial<RoomFile> = {}): RoomFile {
@@ -21,6 +21,7 @@ function makeFile(over: Partial<RoomFile> = {}): RoomFile {
     message_seq: 4,
     author_kind: "user",
     author_name: "Ana",
+    author: makeIntelligence({ display_name: "Ana", handle: "ana" }),
     created_at: "2026-10-19T12:00:00Z",
     ...over,
   };
@@ -36,6 +37,8 @@ const photo = makeFile({
   message_seq: 9,
   author_kind: "chat",
   author_name: "Customer",
+  // A chat sender that resolved to nobody: no id, only the name that shows.
+  author: { id: "", kind: "", role: "", display_name: "Customer", handle: "" } as never,
 });
 const report = makeFile();
 
@@ -152,6 +155,44 @@ describe("room files (FILES-04)", () => {
   });
 });
 
+describe("kind badges next to authors (PROF-09)", () => {
+  it("marks an AI's file as AI and a person's with its platform; a user and an unresolved sender get none", async () => {
+    mockApi({
+      "GET /rooms/r1/attachments": page([
+        makeFile({
+          id: "f5",
+          name: "build.log",
+          author_kind: "agent",
+          author_name: "release-bot",
+          author: makeAI({ id: "a9", display_name: "release-bot", handle: "release-bot" }),
+        }),
+        makeFile({
+          id: "f6",
+          name: "invoice.pdf",
+          author_kind: "chat",
+          author_name: "Lia Costa",
+          author: makePerson(),
+        }),
+        photo,
+        report,
+      ]),
+    });
+    renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+
+    const ai = within(await screen.findByTestId("file-f5"));
+    expect(ai.getByText("release-bot")).toBeInTheDocument();
+    expect(ai.getByTestId("kind-badge")).toHaveTextContent("AI");
+    const person = within(screen.getByTestId("file-f6"));
+    expect(person.getByText("Lia Costa")).toBeInTheDocument();
+    expect(person.getByTestId("kind-badge")).toHaveTextContent("WhatsApp");
+    expect(within(screen.getByTestId("file-f1")).getByText("Ana")).toBeInTheDocument();
+    expect(within(screen.getByTestId("file-f1")).queryByTestId("kind-badge")).toBeNull();
+    // A chat account nobody resolved keeps only the name it shows.
+    expect(within(screen.getByTestId("file-f3")).getByText("Customer")).toBeInTheDocument();
+    expect(within(screen.getByTestId("file-f3")).queryByTestId("kind-badge")).toBeNull();
+  });
+});
+
 describe("unavailable files (FILES-06)", () => {
   it("lists files that were not stored as unavailable, without a download link", async () => {
     mockApi({
@@ -196,6 +237,7 @@ describe("live files (FILES-05)", () => {
     seq: 12,
     author_kind: "agent",
     author_name: "release-bot",
+    author: makeAI({ id: "a9", display_name: "release-bot", handle: "release-bot" }),
     created_at: "2026-10-19T12:30:00Z",
     attachments: [
       { id: "f20", name: "build.log", mime: "text/plain", size: 100, status: "stored" },
@@ -226,6 +268,9 @@ describe("live files (FILES-05)", () => {
       "file-f1",
     ]);
     expect(screen.getByTestId("file-f21")).toHaveTextContent("release-bot");
+    expect(within(screen.getByTestId("file-f21")).getByTestId("kind-badge")).toHaveTextContent(
+      "AI",
+    );
     expect(screen.getByTestId("file-f21").querySelector("img")?.getAttribute("src")).toBe(
       "/api/v1/attachments/f21",
     );

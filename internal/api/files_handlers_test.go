@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -25,6 +26,41 @@ func fileNames(files []dto.RoomFile) []string {
 		out[i] = f.Name
 	}
 	return out
+}
+
+// PROF-09: a file names its author as a message does, so the list can put the kind badge next
+// to the name: a user, the AI that wrote it, and a chat sender that resolved to nobody has no
+// intelligence, only the name that shows.
+func TestRoomFilesCarryTheirAuthor(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	atlas := env.NewAI(alice, "atlas")
+	r := createRoom(alice, "ops")
+	alice.Post("/api/v1/rooms/"+r.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: atlas}).RequireStatus(http.StatusCreated)
+	ctx := context.Background()
+
+	postMultipart(alice, r.ID, dto.PostMessageRequest{Text: "from alice"}, upload{"alice.pdf", "application/pdf", "pdf"}).RequireStatus(http.StatusCreated)
+	_, err := env.App.Rooms.Post(ctx, authn.Principal{Kind: authn.KindAgent, UserID: alice.User.ID, AgentID: atlas}, r.ID, rooms.PostInput{
+		Text: "from atlas", Files: []rooms.File{{Name: "atlas.log", Mime: "text/plain", Status: dto.AttachmentStatusUnavailable}},
+	})
+	require.NoError(t, err)
+	_, chat := storeChat(t, env, alice.User.ID, "Customers")
+	alice.Post("/api/v1/rooms/"+r.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated)
+	_, err = env.App.Rooms.PostFromChat(ctx, r.ID, rooms.ChatMessage{
+		ChatID: chat, SenderID: "100000001", SenderName: "Customer", Text: "photo",
+		Files: []rooms.File{{Name: "lost.jpg", Mime: "image/jpeg", Status: dto.AttachmentStatusUnavailable}},
+	})
+	require.NoError(t, err)
+
+	authors := map[string]dto.IntelligenceRef{}
+	for _, f := range roomFiles(alice, r.ID, "").Items {
+		authors[f.Name] = f.Author
+	}
+	require.Equal(t, map[string]dto.IntelligenceRef{
+		"alice.pdf": {ID: alice.User.ID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "alice", Handle: "alice"},
+		"atlas.log": {ID: atlas, Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: "atlas", Handle: "atlas"},
+		"lost.jpg":  {DisplayName: "Customer"},
+	}, authors)
 }
 
 // FILES-01, FILES-03, FILES-06: a viewer gets every file of the room newest first with its
@@ -65,6 +101,7 @@ func TestRoomFilesList(t *testing.T) {
 		ID: pdf.ID, Name: "report.pdf", Mime: "application/pdf", Size: int64(len("pdf-bytes")), Status: dto.AttachmentStatusStored,
 		Kind: dto.FileKindDocument, MessageID: second.ID, MessageSeq: second.Seq, AuthorKind: dto.AuthorKindUser,
 		AuthorName: "alice", CreatedAt: pdf.CreatedAt,
+		Author: dto.IntelligenceRef{ID: alice.User.ID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "alice", Handle: "alice"},
 	}, pdf)
 	require.WithinDuration(t, second.CreatedAt, pdf.CreatedAt, time.Second)
 	require.Equal(t, first.ID, page.Items[7].MessageID)

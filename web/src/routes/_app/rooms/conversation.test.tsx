@@ -204,8 +204,38 @@ describe("conversation header", () => {
     renderRoute("/rooms/d1");
     const bar = within(await header());
     expect(
-      await bar.findByRole("heading", { name: "Atlas and Bob Lima", level: 1 }),
+      await bar.findByRole("heading", { name: "Atlas AI and Bob Lima", level: 1 }),
     ).toBeInTheDocument();
+  });
+
+  it("puts each participant's kind badge next to its name when the user only views the DM (PROF-09)", async () => {
+    const dana = makeIntelligence({
+      id: "p1",
+      role: "person",
+      platform: "whatsapp",
+      display_name: "Dana",
+      handle: "dana",
+    });
+    api({
+      "GET /rooms/d1": json(
+        200,
+        makeRoom({
+          id: "d1",
+          kind: "dm",
+          name: "",
+          participants: [atlas, dana],
+          my_level: "view",
+          member_count: 2,
+        }),
+      ),
+    });
+    renderRoute("/rooms/d1");
+    const title = within(await header()).getByRole("heading", { level: 1 });
+    const [first, second] = await within(title).findAllByTestId("intelligence-name");
+    expect(within(first as HTMLElement).getByText("Atlas")).toBeInTheDocument();
+    expect(within(first as HTMLElement).getByTestId("kind-badge")).toHaveTextContent("AI");
+    expect(within(second as HTMLElement).getByText("Dana")).toBeInTheDocument();
+    expect(within(second as HTMLElement).getByTestId("kind-badge")).toHaveTextContent("WhatsApp");
   });
 
   it("titles a group by its name with its visibility and no AI details", async () => {
