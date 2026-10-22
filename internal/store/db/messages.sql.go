@@ -58,9 +58,9 @@ func (q *Queries) CreateAttachment(ctx context.Context, arg CreateAttachmentPara
 }
 
 const createMessage = `-- name: CreateMessage :exec
-INSERT INTO messages (id, room_id, seq, author_kind, author_id, author_user_id, sender_id, sender_alt_id,
+INSERT INTO messages (id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id,
                       sender_name, kind, text, reply_to, recipients_json, external_id, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateMessageParams struct {
@@ -70,6 +70,7 @@ type CreateMessageParams struct {
 	AuthorKind     string
 	AuthorID       string
 	AuthorUserID   string
+	AuthorIid      string
 	SenderID       string
 	SenderAltID    string
 	SenderName     string
@@ -89,6 +90,7 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.AuthorKind,
 		arg.AuthorID,
 		arg.AuthorUserID,
+		arg.AuthorIid,
 		arg.SenderID,
 		arg.SenderAltID,
 		arg.SenderName,

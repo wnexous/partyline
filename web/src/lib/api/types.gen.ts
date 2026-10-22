@@ -1181,6 +1181,11 @@ export interface RoomMember {
   member_id: string; // agent, chat, user or project id
   name: string; // agent display name, chat title, user display name or project name
   /**
+   * Intelligence is the profile summary of an agent or user member: handle, kind and avatar
+   * next to the name (PROF-03, PROF-09). Absent for chat and project members.
+   */
+  intelligence?: IntelligenceRef;
+  /**
    * Outbound tells whether agent and user posts without explicit recipients reach this chat (DLV-03).
    */
   outbound: boolean;
@@ -1291,6 +1296,13 @@ export interface Message {
   author_kind: AuthorKind;
   author_id?: string; // agent id, chat id or user id; empty for system
   author_name: string;
+  /**
+   * Author is the author's intelligence (PROF-03, GRP-03): the user, the AI, the person of a
+   * chat or the user a chat sender is linked to. Its display name is AuthorName, so a name
+   * set for an AI in the room wins. For system messages and chat senders without an
+   * intelligence the id, kind, role and handle are empty.
+   */
+  author: IntelligenceRef;
   /**
    * AuthorUserID is the user the author resolves to (DLV-06): the user, the agent's owner or
    * the owner of a verified chat identity. Empty for unverified chat senders and system messages.

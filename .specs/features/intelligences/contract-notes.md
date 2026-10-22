@@ -272,3 +272,31 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
 - Retention: `rooms.Service.Cleanup` and the room-delete blob cleanup count a blob as used when
   an attachment **or** an avatar references it (`blobReferenced`), so a replaced or removed
   avatar is swept after the one-hour grace period and the current one never is.
+
+## T11 - Message and member authors as intelligences (AID-06, PROF-03, GRP-03)
+
+- `rooms.insert` stores `messages.author_iid`: the user's id for user posts, the agent's id for
+  agent posts (users and agents share their id with their intelligence); `''` for system
+  messages and, **until T26 sets it (linked user, else person)**, for chat messages.
+  `CreateMessage` takes `AuthorIid`; `rooms.draft.authorIID` is the field to fill.
+- `dto.Message.author` (`IntelligenceRef`, always present) is built by `convert.Message` from the
+  `message_views` author columns: user and agent authors are their own intelligence (an
+  `author_iid`-less row of those kinds falls back to `author_id`); a chat message has an author
+  only when `author_iid` is set: the person (`role person`, `platform` = the chat's connector
+  kind) or, when it equals `author_user_id`, the linked user (`role user`, no platform). System
+  messages and chat senders without an intelligence give `author = {display_name: <shown name>}`
+  with an empty `id`, `kind`, `role` and `handle`. `author.display_name` is the name the
+  timeline shows (`author_name`): a name set for an AI in the room (GRP-04) wins there, while
+  `author.handle` and `author.avatar_url` are the profile's. `author_id`, `author_name`,
+  `author_user_id` and the `sender_*` fields are unchanged.
+- `dto.RoomMember.intelligence` (optional) is set for agent and user members: the profile's
+  `IntelligenceRef` (`role` ai/user). `RoomMember.name` is the profile display name for them
+  (the v0.3 names are the fallback); `RoomMember.display_name` stays the per-room agent setting.
+  Chat and project members have none. The same `toMember` serves the agent tools
+  (`list_rooms`, `room_info`).
+- `dto.Room.owner.intelligence` (optional `IntelligenceRef` of the owner) in `GET /rooms/{id}`,
+  `GET /rooms` and `room.changed` frames; `rooms.Room.OwnerIntelligence` is the data
+  (`ID == ''` when the owner has none). `rooms.Member.Intelligence` likewise.
+- sqlc: `ListRoomMembers` returns `intelligence_*` columns; `GetRoomWithOwner` and
+  `ListRoomsForUser` return `owner_ikind/iname/handle/avatar`.
+- Web fixtures `makeMessage`/`makeMe` carry the new required fields (`author`, `intelligence`).

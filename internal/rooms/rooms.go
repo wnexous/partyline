@@ -80,6 +80,8 @@ type Room struct {
 	CatchAll bool
 	// InstructionsByName is the username of InstructionsBy; empty when unknown (INS-04).
 	InstructionsByName string
+	// OwnerIntelligence is the owner's profile (ID empty when the owner has none).
+	OwnerIntelligence db.Intelligence
 }
 
 // LastSeq is the sequence number of the room's latest message (0 when empty).
@@ -195,10 +197,20 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, roomID string) (Ro
 	if err != nil {
 		return Room{}, err
 	}
-	return s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, row.MemberCount, l)
+	owner := ownerIntelligence(row.Room.OwnerID, row.OwnerIkind, row.OwnerIname, row.OwnerHandle, row.OwnerAvatar)
+	return s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, owner, row.MemberCount, l)
 }
 
-func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDisplay string, members int64, l access.Level) (Room, error) {
+// ownerIntelligence rebuilds an owner's profile from the columns a room query joins; the zero
+// value when the owner has no intelligence.
+func ownerIntelligence(id, kind, name, handle, avatar string) db.Intelligence {
+	if handle == "" {
+		return db.Intelligence{}
+	}
+	return db.Intelligence{ID: id, Kind: kind, DisplayName: name, Handle: handle, AvatarSha256: avatar}
+}
+
+func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDisplay string, owner db.Intelligence, members int64, l access.Level) (Room, error) {
 	v, err := s.az.Sharing(ctx, access.KindRoom, r.ID)
 	if err != nil {
 		return Room{}, err
@@ -217,7 +229,7 @@ func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDispl
 	}
 	return Room{
 		Room: r, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Visibility: v.Mode,
-		MemberCount: members, CatchAll: catchAll > 0, InstructionsByName: by,
+		MemberCount: members, CatchAll: catchAll > 0, InstructionsByName: by, OwnerIntelligence: owner,
 	}, nil
 }
 
@@ -243,7 +255,8 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 		if l == access.None {
 			continue
 		}
-		r, err := s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, row.MemberCount, l)
+		owner := ownerIntelligence(row.Room.OwnerID, row.OwnerIkind, row.OwnerIname, row.OwnerHandle, row.OwnerAvatar)
+		r, err := s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, owner, row.MemberCount, l)
 		if err != nil {
 			return nil, err
 		}

@@ -19,7 +19,7 @@ func Time(ms int64) time.Time { return time.UnixMilli(ms).UTC() }
 func Room(r rooms.Room) dto.Room {
 	return dto.Room{
 		ID: r.ID, Name: r.Name, Description: r.Description, Instructions: r.Instructions,
-		Owner:      dto.User{ID: r.OwnerID, Username: r.OwnerUsername, DisplayName: r.OwnerDisplayName},
+		Owner:      dto.User{ID: r.OwnerID, Username: r.OwnerUsername, DisplayName: r.OwnerDisplayName, Intelligence: ownerRef(r)},
 		Visibility: r.Visibility, MyLevel: r.Level, BridgeChats: r.BridgeChats, Broadcast: r.Broadcast,
 		CatchAll: r.CatchAll, RetentionDays: int(r.RetentionDays), AgentsPaused: r.AgentsPaused, LastSeq: r.LastSeq(),
 		MemberCount: int(r.MemberCount),
@@ -31,7 +31,7 @@ func Room(r rooms.Room) dto.Room {
 func Message(m rooms.Message) dto.Message {
 	out := dto.Message{
 		ID: m.ID, RoomID: m.RoomID, Seq: m.Seq, AuthorKind: dto.AuthorKind(m.AuthorKind), AuthorID: m.AuthorID,
-		AuthorName: m.AuthorName, AuthorUserID: m.AuthorUserID, SenderID: m.SenderID, SenderAltID: m.SenderAltID,
+		AuthorName: m.AuthorName, Author: messageAuthor(m), AuthorUserID: m.AuthorUserID, SenderID: m.SenderID, SenderAltID: m.SenderAltID,
 		SenderName: m.SenderName, Kind: dto.MessageKind(m.Kind), Text: m.Text, ReplyTo: m.ReplyTo,
 		Recipients: m.Recipients(), ExternalID: m.ExternalID.String,
 		Attachments: make([]dto.Attachment, len(m.Attachments)), CreatedAt: Time(m.CreatedAt), Warning: m.Warning,
@@ -46,6 +46,58 @@ func Message(m rooms.Message) dto.Message {
 		out.Chat = &dto.ChatRef{ID: m.Chat.ID, Title: m.Chat.Title, Kind: dto.ChatKind(m.Chat.Kind), Platform: m.Chat.Platform}
 	}
 	return out
+}
+
+// ownerRef renders the room owner's intelligence; nil when the owner has none.
+func ownerRef(r rooms.Room) *dto.IntelligenceRef {
+	if r.OwnerIntelligence.ID == "" {
+		return nil
+	}
+	ref := IntelligenceRef(r.OwnerIntelligence, dto.IntelligenceRoleUser, "")
+	return &ref
+}
+
+// messageAuthor renders the intelligence that wrote a message from the author columns of the
+// message view. A user or agent author without author_iid (written before it was recorded) is
+// its own intelligence; a chat message has one only when author_iid is set, the linked user or
+// the person of the sender. The display name is the name the timeline shows (AuthorName).
+func messageAuthor(m rooms.Message) dto.IntelligenceRef {
+	ref := dto.IntelligenceRef{DisplayName: m.AuthorName}
+	id := m.AuthorIid
+	var role dto.IntelligenceRole
+	switch dto.AuthorKind(m.AuthorKind) {
+	case dto.AuthorKindUser:
+		role = dto.IntelligenceRoleUser
+		if id == "" {
+			id = m.AuthorID
+		}
+	case dto.AuthorKindAgent:
+		role = dto.IntelligenceRoleAI
+		if id == "" {
+			id = m.AuthorID
+		}
+	case dto.AuthorKindChat:
+		role = dto.IntelligenceRolePerson
+		if id != "" && id == m.AuthorUserID {
+			role = dto.IntelligenceRoleUser // a sender linked to a user is that user (PEOP-02)
+		}
+	}
+	if id == "" {
+		return ref
+	}
+	ref.ID, ref.Role, ref.Handle = id, role, m.AuthorHandle
+	ref.Kind = dto.IntelligenceKind(m.AuthorIkind)
+	if ref.Kind == "" { // no intelligence row: the role tells
+		ref.Kind = dto.IntelligenceKindHuman
+		if role == dto.IntelligenceRoleAI {
+			ref.Kind = dto.IntelligenceKindAI
+		}
+	}
+	ref.AvatarURL = AvatarURL(id, m.AuthorAvatar)
+	if role == dto.IntelligenceRolePerson && m.Chat != nil {
+		ref.Platform = m.Chat.Platform
+	}
+	return ref
 }
 
 // OutboxItem renders one outbound delivery.

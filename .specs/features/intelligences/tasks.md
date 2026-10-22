@@ -286,9 +286,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-06, PROF-03, GRP-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] After renaming a user and an AI, old and new messages in the timeline and the member list show the new display name, handle and avatar (AID-06, PROF-03); the per-room agent display name still wins in its room (GRP-04)
-- [ ] Chat-authored messages expose `author` when `author_iid` is set (GRP-03 display path)
-- [ ] Gate check passes: `make check`
+- [x] After renaming a user and an AI, old and new messages in the timeline and the member list show the new display name, handle and avatar (AID-06, PROF-03); the per-room agent display name still wins in its room (GRP-04)
+- [x] Chat-authored messages expose `author` when `author_iid` is set (GRP-03 display path)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): name message authors and members by intelligence`

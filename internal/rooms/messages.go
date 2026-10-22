@@ -84,15 +84,18 @@ type draft struct {
 	authorKind   dto.AuthorKind
 	authorID     string
 	authorUserID string
-	senderID     string
-	senderAltID  string
-	senderName   string
-	kind         dto.MessageKind
-	text         string
-	replyTo      string
-	recipients   []string
-	externalID   string
-	files        []File
+	// authorIID is the author's intelligence: the user's or the agent's own id. It is empty
+	// for system messages and, until their person is known, for chat messages.
+	authorIID   string
+	senderID    string
+	senderAltID string
+	senderName  string
+	kind        dto.MessageKind
+	text        string
+	replyTo     string
+	recipients  []string
+	externalID  string
+	files       []File
 }
 
 // Post stores a message from the calling user (needs post, ACL-04) or agent (needs
@@ -106,12 +109,12 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 		kind = dto.MessageKindText
 	}
 	d := draft{
-		authorKind: dto.AuthorKindUser, authorID: p.UserID, authorUserID: p.UserID,
+		authorKind: dto.AuthorKindUser, authorID: p.UserID, authorUserID: p.UserID, authorIID: p.UserID,
 		kind: kind, text: in.Text, replyTo: in.ReplyTo, recipients: in.Recipients, files: in.Files,
 	}
 	if p.Kind == authn.KindAgent {
 		// An agent's messages resolve to its owner (DLV-06).
-		d.authorKind, d.authorID = dto.AuthorKindAgent, p.AgentID
+		d.authorKind, d.authorID, d.authorIID = dto.AuthorKindAgent, p.AgentID, p.AgentID
 	}
 	return s.post(ctx, roomID, d)
 }
@@ -311,7 +314,7 @@ func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, memb
 	id := store.NewID()
 	err = q.CreateMessage(ctx, db.CreateMessageParams{
 		ID: id, RoomID: roomID, Seq: seq, AuthorKind: string(d.authorKind), AuthorID: d.authorID,
-		AuthorUserID: d.authorUserID, SenderID: d.senderID, SenderAltID: d.senderAltID, SenderName: d.senderName,
+		AuthorUserID: d.authorUserID, AuthorIid: d.authorIID, SenderID: d.senderID, SenderAltID: d.senderAltID, SenderName: d.senderName,
 		Kind: string(d.kind), Text: d.text, ReplyTo: d.replyTo, RecipientsJson: string(rcptJSON),
 		ExternalID: sql.NullString{String: d.externalID, Valid: d.externalID != ""}, CreatedAt: now,
 	})
