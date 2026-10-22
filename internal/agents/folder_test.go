@@ -332,6 +332,7 @@ func TestResolveFolderAdoptsTheIdentityNamedByAdopt(t *testing.T) {
 		{"handle in another case", "ATLAS-Prime"},
 		{"handle with spaces around", "  atlas-prime  "},
 		{"v0.3 name", "builder"},
+		{"v0.3 name as the user typed it", " Builder! "},
 	}
 	for _, c := range cases {
 		f := newFixture(t)

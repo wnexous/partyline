@@ -25,7 +25,7 @@ Commands:
   admin reset-password   set a new password and end the user's sessions; reads stdin
   setup                  save the instance URL and an agent token (or approve this machine in the
                          browser) and register Partyline in the installed harnesses; --uninstall undoes it
-  channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN, PARTYLINE_AGENT or the config file);
+  channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN or the config file);
                          --tools-only serves the tools without receiving messages;
                          --harness omp describes the omp extension's message framing;
                          with --tools-only, --harness codex|gemini|opencode|pi names the harness
@@ -44,8 +44,8 @@ Start a session with Partyline (the arguments go to the harness unchanged):
   omp [args...]          oh-my-pi
   codex [args...]        Codex CLI
   gemini [args...]       Gemini CLI
-Put --name <agent> (a fixed agent) and --project <name> before the arguments to choose the
-session's agent and project; otherwise it is a temporary agent of the folder's project.
+A session is the AI of the folder it starts in. Put --as <handle> before the arguments to adopt
+an AI that has no folder yet (one from before folders).
 `
 
 // stdio holds what a command reads and writes; tests replace each part.
@@ -69,8 +69,6 @@ type stdio struct {
 	// launcherEnv returns the launcher variables of the nearest launched ancestor process
 	// (withLauncherEnv); nil means none (Run sets procLauncherEnv).
 	launcherEnv func() map[string]string
-	// getpid is this process id (nil: os.Getpid); a launcher passes it on as the session key.
-	getpid func() int
 	// rawTerm offers raw terminal mode for the checklist menu; tests inject a fake.
 	rawTerm rawTerminal
 }

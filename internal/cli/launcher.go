@@ -2,15 +2,11 @@ package cli
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 
-	"github.com/wnexous/partyline/internal/channel"
 	"github.com/wnexous/partyline/internal/harness"
 )
 
@@ -53,41 +49,13 @@ func findLauncher(name string) (launcher, bool) {
 	return launcher{}, false
 }
 
-// sessionEnvVar is the session key listen and the tools-only channel share (see
-// channel.ListenOptions.SessionKey).
-const sessionEnvVar = "PARTYLINE_SESSION"
-
-// newSessionID returns a fresh session key: "pl-" and 16 random hex digits, a safe file name.
-func newSessionID() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", err
-	}
-	return "pl-" + hex.EncodeToString(b[:]), nil
-}
-
-// launchSessionID is the session key a launch passes on. Where the launcher execs the
-// harness (execKeepsPID) it is this process id, which the harness keeps: a tools-only server
-// that the harness starts with a filtered environment (Codex passes it no PARTYLINE_* variable)
-// falls back to its parent process id, the same key, so the session's hook and tools share
-// one agent. Elsewhere it is a fresh random id.
-func launchSessionID(io stdio) (string, error) {
-	if !execKeepsPID {
-		return newSessionID()
-	}
-	getpid := io.getpid
-	if getpid == nil {
-		getpid = os.Getpid
-	}
-	return strconv.Itoa(getpid()), nil
-}
-
-// launcherFlags takes the leading --name and --project flags (also --name=<v>) off args
-// (CLI-01); the rest goes to the harness unchanged.
-func launcherFlags(args []string) (name, project string, rest []string, err error) {
+// launcherFlags takes the leading --as (also --name, its older spelling) and --project flags
+// (also --as=<v>) off args (CLI-01); the rest goes to the harness unchanged. as is the identity
+// to adopt; project is accepted and ignored, since AIs no longer belong to projects.
+func launcherFlags(args []string) (as, project string, rest []string, err error) {
 	for len(args) > 0 {
 		flag, value, inline := strings.Cut(args[0], "=")
-		if flag != "--name" && flag != "--project" {
+		if flag != "--as" && flag != "--name" && flag != "--project" {
 			break
 		}
 		if !inline {
@@ -97,26 +65,25 @@ func launcherFlags(args []string) (name, project string, rest []string, err erro
 			value, args = args[1], args[1:]
 		}
 		args = args[1:]
-		if flag == "--name" {
-			name = value
-		} else {
+		if flag == "--project" {
 			project = value
+		} else {
+			as = value
 		}
 	}
-	return name, project, args, nil
+	return as, project, args, nil
 }
 
-// launch runs `partyline <harness> [--name <agent>] [--project <project>] [args…]`: it
-// replaces this process with the harness binary found on PATH, the launcher's own arguments
-// and then args unchanged, in this environment with PARTYLINE_SESSION set to a fresh id, so
-// the listen and tools-only processes of this session share their agent name and no other
-// session does (HAR-03), PARTYLINE_HARNESS set to the harness id and PARTYLINE_AGENT and
-// PARTYLINE_PROJECT set from --name and --project, which the session's partyline processes
-// read (CLI-01). Started in the home folder without a project or name it prints the home
-// warning (ID-03). Without the binary it exits 127; when Partyline is not registered in the
-// harness it warns once and starts anyway.
+// launch runs `partyline <harness> [--as <identity>] [args…]`: it replaces this process with
+// the harness binary found on PATH, the launcher's own arguments and then args unchanged, in
+// this environment with PARTYLINE_FOLDER set to the canonical folder it runs in and
+// PARTYLINE_HARNESS to the harness id, which the session's partyline processes read so that
+// the channel, listen, the tools-only server and the hooks of one session act as the same AI
+// (HAR-03, AID-07), and PARTYLINE_AGENT set from --as to adopt that identity (MIG-02). Without
+// the binary it exits 127; when Partyline is not registered in the harness it warns once and
+// starts anyway.
 func launch(ctx context.Context, l launcher, args []string, io stdio) int {
-	name, project, args, err := launcherFlags(args)
+	as, project, args, err := launcherFlags(args)
 	if err != nil {
 		fmt.Fprintf(io.stderr, "partyline %s: %v\n", l.id, err)
 		return 2
@@ -132,22 +99,20 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 		return 127
 	}
 	warnUnregistered(ctx, l.id, title, io)
-
-	session, err := launchSessionID(io)
-	if err != nil {
-		fmt.Fprintf(io.stderr, "partyline %s: session id: %v\n", l.id, err)
-		return 1
+	if project != "" {
+		fmt.Fprintln(io.stderr, projectIgnored(l.id))
 	}
+
 	environ := io.environ
 	if environ == nil {
 		environ = os.Environ
 	}
-	set := map[string]string{sessionEnvVar: session, "PARTYLINE_HARNESS": l.id}
-	if name != "" {
-		set["PARTYLINE_AGENT"] = name
+	set := map[string]string{"PARTYLINE_HARNESS": l.id}
+	if folder := sessionFolder(stdio{getenv: func(string) string { return "" }, getwd: io.getwd}); folder != "" {
+		set["PARTYLINE_FOLDER"] = folder
 	}
-	if project != "" {
-		set["PARTYLINE_PROJECT"] = project
+	if as != "" {
+		set["PARTYLINE_AGENT"] = as
 	}
 	var env []string
 	for _, kv := range environ() {
@@ -156,26 +121,9 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 			env = append(env, kv)
 		}
 	}
-	for _, k := range []string{sessionEnvVar, "PARTYLINE_HARNESS", "PARTYLINE_AGENT", "PARTYLINE_PROJECT"} {
+	for _, k := range []string{"PARTYLINE_FOLDER", "PARTYLINE_HARNESS", "PARTYLINE_AGENT"} {
 		if v, ok := set[k]; ok {
 			env = append(env, k+"="+v)
-		}
-	}
-	envOf := func(k string) string {
-		for _, kv := range env {
-			if v, ok := strings.CutPrefix(kv, k+"="); ok {
-				return v
-			}
-		}
-		return ""
-	}
-	if envOf("PARTYLINE_AGENT") == "" && envOf("PARTYLINE_PROJECT") == "" {
-		getwd := io.getwd
-		if getwd == nil {
-			getwd = os.Getwd
-		}
-		if wd, err := getwd(); err == nil && channel.IsHomeDir(wd, envOf("HOME")) {
-			fmt.Fprintln(io.stderr, homeWarning(l.id))
 		}
 	}
 

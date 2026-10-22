@@ -353,9 +353,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-07, MIG-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A symlinked working directory and a trailing-slash `PARTYLINE_FOLDER` send the resolved absolute path; headers are percent-encoded (spaces, non-ASCII) and decode server-side to the same folder (AID-07)
-- [ ] Channel + tools-only + listen + hook started in one folder act as one identity (the v0.3 OpenCode split is gone); `--as old` adopts the unlinked `old` (MIG-02)
-- [ ] Gate check passes: `make check`
+- [x] A symlinked working directory and a trailing-slash `PARTYLINE_FOLDER` send the resolved absolute path; headers are percent-encoded (spaces, non-ASCII) and decode server-side to the same folder (AID-07)
+- [x] Channel + tools-only + listen + hook started in one folder act as one identity (the v0.3 OpenCode split is gone); `--as old` adopts the unlinked `old` (MIG-02)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): send the canonical folder with every connection`

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/wnexous/partyline/internal/channel"
@@ -16,77 +15,91 @@ import (
 
 // agentFlags are the connection flags of channel and listen.
 type agentFlags struct {
-	url, token, name, agent, project *string
+	url, token, as, name, agent, project *string
 }
 
 func addAgentFlags(fs *flag.FlagSet) agentFlags {
 	return agentFlags{
 		url:     fs.String("url", "", "Partyline base URL (default $PARTYLINE_URL)"),
 		token:   fs.String("token", "", "agent token (default $PARTYLINE_TOKEN; prefer the variable, flags show up in ps)"),
-		name:    fs.String("name", "", "fixed agent name (default $PARTYLINE_AGENT; without one the session is temporary, named after project and harness)"),
-		agent:   fs.String("agent", "", "same as --name"),
-		project: fs.String("project", "", "project of the session (default $PARTYLINE_PROJECT, else the git repository or working directory name)"),
+		as:      fs.String("as", "", "handle or v0.3 name of an AI without a folder to adopt for this folder (default $PARTYLINE_AGENT)"),
+		name:    fs.String("name", "", "same as --as"),
+		agent:   fs.String("agent", "", "same as --as"),
+		project: fs.String("project", "", "ignored: an AI is identified by its folder"),
 	}
 }
 
-// agentConn is what channel and listen connect with.
+// agentConn is what channel and listen connect with: the instance, the token and who the
+// process is (channel.Identity).
 type agentConn struct {
 	url, token string
-	// agent is the explicit agent name; empty makes a temporary session (ID-01, ID-02).
-	agent                     string
-	project, harness, machine string
-	sessionKey                string
+	id         channel.Identity
 }
 
-// homeWarning is the line printed when a session starts in the home folder or / without
-// --project or --name (ID-03).
-func homeWarning(cmd string) string {
-	return fmt.Sprintf("partyline %s: started in the home folder; using project %q (pass --project <name> or --name <agent> to choose)", cmd, channel.HomeProject)
+// projectIgnored is the line printed when --project is given: AIs no longer belong to projects.
+func projectIgnored(cmd string) string {
+	return fmt.Sprintf("partyline %s: --project is ignored: an AI is identified by its folder", cmd)
 }
 
-// sessionIdentity resolves a session's agent name, project, harness and machine:
-// --name/--agent > PARTYLINE_AGENT; --project > PARTYLINE_PROJECT > the git repository root,
-// else the working directory, or "home" (with one warning line on stderr when neither a
-// project nor a name was given) in the home folder or / (ID-01..03, CLI-01);
-// PARTYLINE_HARNESS (set by the launchers); the hostname.
-func sessionIdentity(cmd string, name, agent, project string, io stdio) (channel.Identity, bool) {
-	id := channel.Identity{Name: strings.TrimSpace(name), Project: strings.TrimSpace(project)}
-	if id.Name == "" {
-		id.Name = strings.TrimSpace(agent)
-	}
-	if id.Name == "" {
-		id.Name = strings.TrimSpace(io.getenv("PARTYLINE_AGENT"))
-	}
-	if id.Project == "" {
-		id.Project = strings.TrimSpace(io.getenv("PARTYLINE_PROJECT"))
-	}
-	warned := false
-	if id.Project == "" {
+// sessionFolder is the canonical folder a process works in (AID-07): PARTYLINE_FOLDER (set by
+// the launcher) else the working directory, made absolute with symlinks resolved. It is empty
+// when neither is known, which the server refuses with folder_required.
+func sessionFolder(io stdio) string {
+	dir := strings.TrimSpace(io.getenv("PARTYLINE_FOLDER"))
+	if dir == "" {
 		getwd := io.getwd
 		if getwd == nil {
 			getwd = os.Getwd
 		}
-		if wd, err := getwd(); err == nil {
-			if channel.IsHomeDir(wd, io.getenv("HOME")) {
-				id.Project = channel.HomeProject
-				if id.Name == "" {
-					fmt.Fprintln(io.stderr, homeWarning(cmd))
-					warned = true
-				}
-			} else {
-				id.Project = channel.DeriveProject(wd)
-			}
+		wd, err := getwd()
+		if err != nil {
+			return ""
 		}
+		dir = wd
 	}
-	id.Harness = strings.TrimSpace(io.getenv("PARTYLINE_HARNESS"))
+	folder, err := channel.CanonicalFolder(dir)
+	if err != nil {
+		return ""
+	}
+	return folder
+}
+
+// homeFolder is the canonical home folder of the user, empty when unknown.
+func homeFolder(io stdio) string {
+	home := strings.TrimSpace(io.getenv("HOME"))
+	if home == "" {
+		home = strings.TrimSpace(io.getenv("USERPROFILE"))
+	}
+	if home == "" {
+		return ""
+	}
+	folder, err := channel.CanonicalFolder(home)
+	if err != nil {
+		return ""
+	}
+	return folder
+}
+
+// sessionIdentity gathers what a process tells the server about itself (AID-07): the
+// hostname, the canonical folder (sessionFolder), the canonical home folder, the harness
+// (PARTYLINE_HARNESS, set by the launchers) and the identity to adopt (adopt, else
+// PARTYLINE_AGENT) (MIG-02).
+func sessionIdentity(adopt string, io stdio) channel.Identity {
+	id := channel.Identity{
+		Folder: sessionFolder(io), Home: homeFolder(io),
+		Harness: strings.TrimSpace(io.getenv("PARTYLINE_HARNESS")), Adopt: strings.TrimSpace(adopt),
+	}
+	if id.Adopt == "" {
+		id.Adopt = strings.TrimSpace(io.getenv("PARTYLINE_AGENT"))
+	}
 	hostname := io.hostname
 	if hostname == nil {
 		hostname = os.Hostname
 	}
 	if h, err := hostname(); err == nil {
-		id.Machine = h
+		id.Machine = strings.TrimSpace(h)
 	}
-	return id, warned
+	return id
 }
 
 // resolveAgent applies flags > PARTYLINE_URL, PARTYLINE_TOKEN > the config file written by
@@ -103,16 +116,14 @@ func resolveAgent(cmd string, f agentFlags, io stdio) (agentConn, int) {
 		fmt.Fprintf(io.stderr, "partyline %s: set PARTYLINE_URL and PARTYLINE_TOKEN (or --url and --token), or run partyline setup\n", cmd)
 		return agentConn{}, 2
 	}
-	id, _ := sessionIdentity(cmd, *f.name, *f.agent, *f.project, io)
-	c := agentConn{url: creds.URL, token: creds.Token, agent: id.Name, project: id.Project, harness: id.Harness, machine: id.Machine}
-	// listen and a tools-only channel spawned by the same harness process share the session
-	// key: PARTYLINE_SESSION (this process's, else the nearest launched ancestor's), else the
-	// parent process id.
-	c.sessionKey = strings.TrimSpace(io.getenv("PARTYLINE_SESSION"))
-	if c.sessionKey == "" {
-		c.sessionKey = strconv.Itoa(os.Getppid())
+	if strings.TrimSpace(*f.project) != "" {
+		fmt.Fprintln(io.stderr, projectIgnored(cmd))
 	}
-	return c, 0
+	adopt := slices.DeleteFunc([]string{*f.as, *f.name, *f.agent}, func(v string) bool { return strings.TrimSpace(v) == "" })
+	if len(adopt) == 0 {
+		adopt = []string{""}
+	}
+	return agentConn{url: creds.URL, token: creds.Token, id: sessionIdentity(adopt[0], io)}, 0
 }
 
 // toolsOnlyHarnesses are the --harness values of `channel --tools-only`: the harnesses that
@@ -152,11 +163,11 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 		return code
 	}
 	if *harness != "" {
-		c.harness = *harness
+		c.id.Harness = *harness
 	}
 	err := channel.Run(ctx, channel.Options{
-		URL: c.url, Token: c.token, Agent: c.agent, Project: c.project, Machine: c.machine, Version: buildVersion(),
-		ToolsOnly: *toolsOnly, SessionKey: c.sessionKey, Harness: c.harness,
+		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, Home: c.id.Home, Adopt: c.id.Adopt,
+		Harness: c.id.Harness, Version: buildVersion(), ToolsOnly: *toolsOnly,
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {
@@ -180,9 +191,8 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 		return code
 	}
 	err := channel.Listen(ctx, channel.ListenOptions{
-		URL: c.url, Token: c.token, Agent: c.agent, Project: c.project, Harness: c.harness, Machine: c.machine,
-		SessionKey: c.sessionKey,
-		Stdin:      io.stdin, Stdout: io.stdout, Stderr: io.stderr,
+		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt,
+		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	if err != nil {
 		fmt.Fprintln(io.stderr, "partyline listen:", err)

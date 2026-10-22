@@ -290,8 +290,12 @@ func adoptionCandidate(ctx context.Context, q *db.Queries, ownerID string, id Fo
 		return orNone(q.GetUnlinkedAgentByName(ctx, db.GetUnlinkedAgentByNameParams{OwnerID: ownerID, Name: name}))
 	}
 	if id.Adopt != "" {
-		for _, find := range []func(string) (db.Agent, bool, error){byHandle, byName} {
-			if a, found, err = find(id.Adopt); found || err != nil {
+		// v0.3 agent names were slugs of what the user typed (--name "Billing API!").
+		for _, find := range []func() (db.Agent, bool, error){
+			func() (db.Agent, bool, error) { return byHandle(id.Adopt) },
+			func() (db.Agent, bool, error) { return byName(Slug(id.Adopt)) },
+		} {
+			if a, found, err = find(); found || err != nil {
 				return a, "as", found, err
 			}
 		}

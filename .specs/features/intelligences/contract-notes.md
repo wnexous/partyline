@@ -408,3 +408,44 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
   the CLI sends them), `Client.AsFolder(f)` (a copy that sends them on every request) and
   `Client.DialFolder(f)`.
 
+## T15 - CLI sends the canonical folder (AID-07, MIG-02)
+
+- `channel.Identity{Machine, Folder, Home, Harness, Adopt}` is what every process of a session
+  sends: `setHeaders` always sets `X-Partyline-Machine` (`unknown` when the hostname is unknown) and
+  `X-Partyline-Folder` (`url.PathEscape`, so spaces, non-ASCII characters and `/` are escaped; an
+  unknown folder is an *empty* header, which the server refuses with `folder_required`), and sets
+  `X-Partyline-Home` (same encoding), `-Harness` and `-Adopt` when they are not empty. No process
+  sends `X-Partyline-Agent`, `-Agent-Mode`, `-Project` or `-Session` any more. A WebSocket dial adds
+  `X-Partyline-Live`, the process's `channel.NewLiveID()` (22 characters of `[A-Za-z0-9_-]`), the
+  same on every reconnect of that process; REST calls carry none. `X-Partyline-Takeover` is not
+  sent yet (T17/T36).
+- `channel.CanonicalFolder(dir)`: `filepath.Abs` → `EvalSymlinks` → `Clean`; a directory that cannot
+  be resolved (it does not exist) is returned absolute and cleaned, never an error.
+- The CLI (`cli.sessionIdentity(adopt, io)`) gathers: folder = `PARTYLINE_FOLDER` (the launcher's)
+  else the working directory (the hook: `PARTYLINE_FOLDER`, else the `cwd` of its stdin payload, else
+  its own); home = `HOME`, else `USERPROFILE`, canonical; machine = the hostname (trimmed);
+  harness = `PARTYLINE_HARNESS` (a `--harness` flag wins); adopt = `--as` (aliases `--name`,
+  `--agent`), else `PARTYLINE_AGENT`. `--project` is accepted by `channel`, `listen` and the
+  launchers and ignored with one stderr line ("--project is ignored: an AI is identified by its
+  folder"). The v0.3 home-folder warning is gone (a home folder or `/` is an ordinary folder).
+- `procenv`: the launcher variables recovered from the nearest launched ancestor are now
+  `PARTYLINE_FOLDER`, `PARTYLINE_HARNESS`, `PARTYLINE_TAKEOVER` and `PARTYLINE_AGENT`; an ancestor
+  counts as launched when its environment has `PARTYLINE_FOLDER`, and a process that has
+  `PARTYLINE_FOLDER` itself takes nothing from an ancestor.
+- Launcher (`partyline <harness>`): passes `PARTYLINE_FOLDER` (the canonical working directory) and
+  `PARTYLINE_HARNESS`, replacing inherited values, and `PARTYLINE_AGENT` from a leading `--as` /
+  `--name`; no `PARTYLINE_SESSION` or `PARTYLINE_PROJECT`.
+- Removed on the client: session files (`<tmp>/partyline/.sessions`), the tools-only registration at
+  start (a tools-only process creates its AI with its first call, AID-04), `DeriveProject`,
+  `IsHomeDir`, the temporary-name state of the link. Processes started in one folder are one AI
+  whatever their harness: `listen` + the tools-only server (pi, OpenCode), the tools-only server + the
+  turn-end hook (Codex, Gemini) and the full channel (Claude Code, omp).
+- Download directory: `<TempDir>/partyline/<handles.Slug of the folder's name>` (`agent` when the name
+  has no letter or digit), so a hostile folder name cannot leave `<TempDir>/partyline/`.
+- Link messages no longer name the agent: `partyline: replaced by another session of this agent`,
+  `partyline: this agent was deleted; restart the session to register it again` (T17 and T18 replace
+  the replaced state with the busy and taken-over ones).
+- Server side of the same task: the name `Adopt` gives is also tried as a v0.3 name after
+  `agents.Slug` (v0.3 stored slugs: `--name "Billing API!"` adopts `billing-api`), after the
+  handle lookup (`handle` lower-cased) that comes first.
+

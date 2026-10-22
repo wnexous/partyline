@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
@@ -341,8 +342,8 @@ func TestToolListRooms(t *testing.T) {
 	require.Equal(t, dto.MemberKindAgent, byName["helper"].Kind)
 	require.NotNil(t, byName["helper"].Online)
 	require.False(t, *byName["helper"].Online)
-	require.NotNil(t, byName["builder"].Online)
-	require.True(t, *byName["builder"].Online)
+	require.NotNil(t, byName["Builder"].Online)
+	require.True(t, *byName["Builder"].Online)
 	require.Equal(t, dto.MemberKindChat, byName["Family"].Kind)
 	require.Equal(t, family, byName["Family"].MemberID)
 
@@ -381,19 +382,19 @@ func TestToolsWithInvalidToken(t *testing.T) {
 	}
 }
 
-// Contract (close 4000): after another session takes the agent name, tools report it.
+// Contract (close 4000): after another session takes the AI, tools report it.
 func TestToolsReportReplaced(t *testing.T) {
 	e := newChanEnv(t)
 	o := e.options()
 	o.timing.replacedPause = time.Minute
 	s := e.connected(o)
-	other, resp := e.alice.WithBearer(e.secret).DialAgent("builder")
+	other, resp := e.alice.WithBearer(e.secret).DialFolder(testkit.Folder{Machine: "testbox", Path: "/work/builder", Harness: "claude"})
 	require.NotNil(t, other, "upgrade refused: %d", resp.Status)
 	other.Welcome(wait)
 
 	require.Eventually(t, func() bool {
 		text, isErr := s.call("list_rooms", map[string]any{})
-		return isErr && text == "partyline: replaced by another session using agent name builder"
+		return isErr && text == "partyline: replaced by another session of this agent"
 	}, wait, 50*time.Millisecond)
 }
 
@@ -412,15 +413,16 @@ func TestToolsServerUnreachable(t *testing.T) {
 	}, wait, 50*time.Millisecond)
 }
 
-// AGT-01, TOOL-06: the channel uses the agent name's slug everywhere, so a hostile --agent
-// cannot point the download directory outside <TempDir>/partyline/.
-func TestToolDownloadDirUsesAgentSlug(t *testing.T) {
+// TOOL-06: downloads go to a directory named after the folder's name, so a hostile folder
+// name cannot point the download directory outside <TempDir>/partyline/.
+func TestToolDownloadDirUsesTheFolderName(t *testing.T) {
 	e := newChanEnv(t)
-	a, err := e.env.App.Agents.Upsert(context.Background(), e.alice.User.ID, "night-shift")
+	night := agents.FolderID{Machine: "testbox", Folder: "/work/Night Shift", Harness: "claude"}
+	a, err := e.env.App.Agents.ResolveFolder(context.Background(), e.alice.User.ID, night, false)
 	require.NoError(t, err)
 	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: a.ID}).RequireStatus(http.StatusCreated)
 	o := e.options()
-	o.Agent = "../Night Shift"
+	o.Machine, o.Folder = night.Machine, night.Folder
 	s := startSession(t, o)
 	s.handshake()
 	require.Eventually(t, func() bool { return e.env.App.Gateway.Online(a.ID) }, wait, 10*time.Millisecond)

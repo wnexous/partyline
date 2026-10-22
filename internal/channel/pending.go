@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/channel/mcp"
 )
@@ -70,9 +69,8 @@ func (t *tools) waitForMessages(ctx context.Context, args json.RawMessage) (stri
 // PendingOptions configure Pending.
 type PendingOptions struct {
 	URL, Token string
-	// Agent is the explicit agent name; empty registers the session (Identity) first and uses
-	// the temporary agent the server returns, as a tools-only channel of the session does.
-	Agent      string
+	// Identity is the session's machine and folder: the AI whose undelivered messages are
+	// returned (created on first sight, like for any call of its folder).
 	Identity   Identity
 	HTTPClient *http.Client
 }
@@ -87,17 +85,6 @@ func Pending(ctx context.Context, o PendingOptions) ([]dto.AgentMessage, error) 
 	if o.HTTPClient == nil {
 		o.HTTPClient = &http.Client{}
 	}
-	name := ""
-	if o.Agent != "" {
-		name = agents.Slug(o.Agent)
-	}
-	c := &client{base: base, token: o.Token, agent: func() string { return name }, identity: o.Identity, http: o.HTTPClient}
-	if name == "" {
-		info, err := c.register(ctx, "", "")
-		if err != nil {
-			return nil, err
-		}
-		name = info.Name
-	}
+	c := &client{base: base, token: o.Token, identity: o.Identity, http: o.HTTPClient}
 	return c.pending(ctx, 0)
 }

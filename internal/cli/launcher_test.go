@@ -4,40 +4,32 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/harness"
-	"github.com/wnexous/partyline/internal/testkit"
 )
 
 // launchMachine is a machine for `partyline <harness>`: a fake HOME, the programs on PATH, the
-// harnesses Partyline is registered in and the environment the launcher passes on.
+// harnesses Partyline is registered in, the folder the launcher runs in and the environment it
+// passes on.
 type launchMachine struct {
 	home    string
+	cwd     string
 	onPath  map[string]bool
 	codex   bool // `codex mcp get partyline` finds the server
 	environ []string
 }
 
-// launchPIDs hands every fake launch its own process id, as real launches have.
-var launchPIDs atomic.Int64
-
 func newLaunchMachine(t *testing.T) *launchMachine {
 	t.Helper()
 	home := t.TempDir()
-	return &launchMachine{home: home, onPath: map[string]bool{}, environ: []string{
-		"HOME=" + home, "PATH=/usr/local/bin:/usr/bin", "PARTYLINE_SESSION=inherited", "LANG=C.UTF-8",
+	return &launchMachine{home: home, cwd: "/work/acme", onPath: map[string]bool{}, environ: []string{
+		"HOME=" + home, "PATH=/usr/local/bin:/usr/bin", "PARTYLINE_FOLDER=/inherited/folder", "LANG=C.UTF-8",
 	}}
 }
 
@@ -75,7 +67,6 @@ type launchRun struct {
 	path   string
 	argv   []string
 	env    []string
-	pid    int // the process id the launcher ran as
 }
 
 func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
@@ -83,11 +74,10 @@ func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
 	var r launchRun
 	var errOut bytes.Buffer
 	vars := map[string]string{"HOME": m.home}
-	pid := int(4100 + launchPIDs.Add(1))
-	r.pid = pid
 	r.code = execute(context.Background(), append([]string{"partyline"}, args...), stdio{
 		stdin: bytes.NewReader(nil), stdout: &bytes.Buffer{}, stderr: &errOut,
 		getenv:     func(k string) string { return vars[k] },
+		getwd:      func() (string, error) { return m.cwd, nil },
 		executable: func() (string, error) { return launchBinary, nil },
 		lookPath: func(name string) (string, error) {
 			if m.onPath[name] {
@@ -107,7 +97,6 @@ func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
 			return []byte("Error: No MCP server named 'partyline' found."), errors.New("exit status 1")
 		},
 		environ: func() []string { return append([]string(nil), m.environ...) },
-		getpid:  func() int { return pid },
 		exec: func(path string, argv, env []string) (int, error) {
 			r.execed, r.path, r.argv, r.env = true, path, argv, env
 			return 7, nil
@@ -117,26 +106,11 @@ func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
 	return r
 }
 
-// sessionID is the PARTYLINE_SESSION a launcher passed on; it fails unless there is exactly one.
-func (r launchRun) sessionID(t *testing.T) string {
-	t.Helper()
-	var ids []string
-	for _, kv := range r.env {
-		if v, ok := strings.CutPrefix(kv, "PARTYLINE_SESSION="); ok {
-			ids = append(ids, v)
-		}
-	}
-	require.Len(t, ids, 1, "env: %v", r.env)
-	return ids[0]
-}
-
-// A session key that listen and the tools-only channel accept as a file name.
-var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
-
 // HAR-03: every launcher (and Claude's aliases) execs the harness binary found on PATH with
 // the user's arguments unchanged (Claude first gets the development-channels flag), returns
-// its exit code, and passes this environment on with a fresh PARTYLINE_SESSION in place of
-// the inherited one and PARTYLINE_HARNESS set to the harness id (CLI-01). A registered harness starts without a warning.
+// its exit code, and passes this environment on with PARTYLINE_FOLDER set to the folder it runs
+// in in place of the inherited one and PARTYLINE_HARNESS set to the harness id (CLI-01,
+// AID-07). A registered harness starts without a warning.
 func TestLaunchersExecTheHarness(t *testing.T) {
 	user := []string{"--resume", "abc", "-p", "hi there", "--", "--help"}
 	cases := []struct {
@@ -152,7 +126,6 @@ func TestLaunchersExecTheHarness(t *testing.T) {
 		{"codex", "codex", []string{"codex", "--resume", "abc", "-p", "hi there", "--", "--help"}},
 		{"gemini", "gemini", []string{"gemini", "--resume", "abc", "-p", "hi there", "--", "--help"}},
 	}
-	seen := map[string]bool{}
 	for _, c := range cases {
 		t.Run(c.command, func(t *testing.T) {
 			m := newLaunchMachine(t)
@@ -166,18 +139,7 @@ func TestLaunchersExecTheHarness(t *testing.T) {
 			require.Equal(t, "/usr/local/bin/"+c.binary, r.path)
 			require.Equal(t, c.argv, r.argv)
 
-			id := r.sessionID(t)
-			require.Regexp(t, sessionIDPattern, id)
-			require.NotEqual(t, "inherited", id)
-			if execKeepsPID {
-				// The harness keeps the launcher's pid, so a tools-only server it starts
-				// with a filtered environment derives this key from its parent pid.
-				require.Equal(t, strconv.Itoa(r.pid), id)
-			}
-			require.False(t, seen[id], "every launch gets a fresh session id")
-			seen[id] = true
-			harnessID := c.binary
-			require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8", "PARTYLINE_SESSION=" + id, "PARTYLINE_HARNESS=" + harnessID}, r.env)
+			require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8", "PARTYLINE_FOLDER=/work/acme", "PARTYLINE_HARNESS=" + c.binary}, r.env)
 		})
 	}
 }
@@ -229,96 +191,79 @@ func TestLauncherWarnsWhenNotRegistered(t *testing.T) {
 	}
 }
 
-// HAR-03: the session id of one launch lets that session's listen and tools-only channel
-// share the derived name, and two launches in the same folder never share it: the second
-// session is proj-2 and its tools act as proj-2, the first stays proj.
-func TestLaunchedSessionsInOneFolderKeepTheirNames(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+// AID-07: the launcher passes on the canonical folder it runs in: absolute, symlinks resolved,
+// no trailing separator, whatever the working directory looked like.
+func TestLauncherPassesTheCanonicalFolder(t *testing.T) {
 	m := newLaunchMachine(t)
-	m.onPath["pi"] = true
-	m.register(t, "pi")
-	first, second := m.run(t, "pi").sessionID(t), m.run(t, "pi").sessionID(t)
-	require.NotEqual(t, first, second)
+	m.onPath["claude"] = true
+	m.register(t, "claude")
+	target := filepath.Join(t.TempDir(), "the lab", "Café")
+	require.NoError(t, os.MkdirAll(target, 0o755))
+	resolved, err := filepath.EvalSymlinks(target)
+	require.NoError(t, err)
+	link := filepath.Join(t.TempDir(), "link")
+	require.NoError(t, os.Symlink(target, link))
 
-	e := newChannelEnv(t)
-	wd := "/tmp/src/proj"
-	listen1 := startListen(t, e.vars("PARTYLINE_SESSION", first, "PARTYLINE_HARNESS", "pi"), wd, nil)
-	proj := e.agent(t, "proj-pi")
-	listen2 := startListen(t, e.vars("PARTYLINE_SESSION", second, "PARTYLINE_HARNESS", "pi"), wd, nil)
-	proj2 := e.agent(t, "proj-pi-2")
-	for _, id := range []string{first, second} {
-		path := filepath.Join(os.TempDir(), "partyline", ".sessions", id)
-		require.Eventually(t, func() bool { _, err := os.Stat(path); return err == nil }, chanWait, 20*time.Millisecond, "session file %s", path)
+	for _, cwd := range []string{link, link + "/", target + "/."} {
+		m.cwd = cwd
+		r := m.run(t, "claude")
+		require.Equal(t, 7, r.code, r.stderr)
+		require.Contains(t, r.env, "PARTYLINE_FOLDER="+resolved, "working directory %s", cwd)
+		require.NotContains(t, r.env, "PARTYLINE_FOLDER=/inherited/folder")
 	}
-	room := e.room(t, dto.CreateRoomRequest{Name: "Shared"}, proj.ID, proj2.ID)
-
-	post := func(session string, id int, text string) {
-		t.Helper()
-		c := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_SESSION", session, "PARTYLINE_HARNESS", "pi"), wd)
-		initialize(c)
-		c.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{
-			"name": "send_message", "arguments": map[string]any{"room": "Shared", "text": text},
-		}})
-		r := c.next()
-		require.Equal(t, false, r["result"].(map[string]any)["isError"], "result: %v", r)
-	}
-	post(first, 7, "from the first session")
-	post(second, 8, "from the second session")
-
-	page := testkit.Decode[dto.Page[dto.Message]](e.alice.Get("/api/v1/rooms/" + room.ID + "/messages").RequireStatus(http.StatusOK))
-	authors := map[string]string{}
-	for _, msg := range page.Items {
-		authors[msg.Text] = msg.AuthorID
-	}
-	require.Equal(t, proj.ID, authors["from the first session"])
-	require.Equal(t, proj2.ID, authors["from the second session"])
-
-	require.NoError(t, listen1.in.Close())
-	require.NoError(t, listen2.in.Close())
-	require.Equal(t, 0, listen1.exit())
-	require.Equal(t, 0, listen2.exit())
 }
 
-// CLI-01: leading --name and --project (also --name=<v>) are taken off the harness's
-// arguments and passed on as PARTYLINE_AGENT and PARTYLINE_PROJECT, replacing inherited
-// values; later arguments that look the same go to the harness unchanged. A flag without a
-// value exits 2 and runs nothing.
-func TestLauncherPassesNameAndProject(t *testing.T) {
+// MIG-02, CLI-01: leading --as (also --name, the older spelling, and --as=<v>) is taken off
+// the harness's arguments and passed on as PARTYLINE_AGENT, replacing an inherited value; later
+// arguments that look the same go to the harness unchanged. --project is accepted and ignored
+// with one line on stderr. A flag without a value exits 2 and runs nothing.
+func TestLauncherPassesTheIdentityToAdopt(t *testing.T) {
 	m := newLaunchMachine(t)
 	m.environ = append(m.environ, "PARTYLINE_AGENT=inherited", "PARTYLINE_HARNESS=pi")
 	m.onPath["claude"] = true
 	m.register(t, "claude")
+	base := []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8", "PARTYLINE_FOLDER=/work/acme", "PARTYLINE_HARNESS=claude"}
 
-	r := m.run(t, "claude", "--name", "atlas-bot", "--project=Atlas", "--resume", "--name", "x")
+	for _, flags := range [][]string{{"--as", "atlas-bot"}, {"--name", "atlas-bot"}, {"--as=atlas-bot"}} {
+		r := m.run(t, append(append([]string{"claude"}, flags...), "--resume", "--as", "x")...)
+		require.Equal(t, 7, r.code, r.stderr)
+		require.Empty(t, r.stderr, "%v", flags)
+		require.Equal(t, []string{"claude", "--dangerously-load-development-channels", "server:partyline", "--resume", "--as", "x"}, r.argv, "%v", flags)
+		require.Equal(t, append(append([]string(nil), base...), "PARTYLINE_AGENT=atlas-bot"), r.env, "%v", flags)
+	}
+
+	r := m.run(t, "claude", "--project=Atlas", "--resume")
 	require.Equal(t, 7, r.code, r.stderr)
-	require.Equal(t, []string{"claude", "--dangerously-load-development-channels", "server:partyline", "--resume", "--name", "x"}, r.argv)
-	id := r.sessionID(t)
-	require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8",
-		"PARTYLINE_SESSION=" + id, "PARTYLINE_HARNESS=claude", "PARTYLINE_AGENT=atlas-bot", "PARTYLINE_PROJECT=Atlas"}, r.env)
+	require.Equal(t, "partyline claude: --project is ignored: an AI is identified by its folder\n", r.stderr)
+	require.Equal(t, []string{"claude", "--dangerously-load-development-channels", "server:partyline", "--resume"}, r.argv)
+	require.Equal(t, []string{"HOME=" + m.home, "PATH=/usr/local/bin:/usr/bin", "LANG=C.UTF-8", "PARTYLINE_AGENT=inherited", "PARTYLINE_FOLDER=/work/acme", "PARTYLINE_HARNESS=claude"}, r.env,
+		"an inherited PARTYLINE_AGENT stays and no project is passed on")
 
-	r = m.run(t, "claude", "--project")
-	require.Equal(t, 2, r.code)
-	require.False(t, r.execed)
-	require.Equal(t, "partyline claude: --project needs a value\n", r.stderr)
+	for _, flag := range []string{"--as", "--name", "--project"} {
+		r = m.run(t, "claude", flag)
+		require.Equal(t, 2, r.code, flag)
+		require.False(t, r.execed, flag)
+		require.Equal(t, "partyline claude: "+flag+" needs a value\n", r.stderr)
+	}
 }
 
-// ID-03: a launch from the home folder without --project or --name warns once on stderr and
-// starts; with either flag it does not warn.
-func TestLauncherWarnsInTheHomeFolder(t *testing.T) {
+// Assumption "Home folder or /": a launch from the home folder is an ordinary launch, with no
+// warning and the home folder as its folder.
+func TestLauncherDoesNotWarnInTheHomeFolder(t *testing.T) {
 	m := newLaunchMachine(t)
 	m.onPath["claude"] = true
 	m.register(t, "claude")
-	t.Chdir(m.home)
-
-	r := m.run(t, "claude")
-	require.Equal(t, 7, r.code)
-	require.True(t, r.execed)
-	require.Equal(t, "partyline claude: started in the home folder; using project \"home\" (pass --project <name> or --name <agent> to choose)\n", r.stderr)
-	for _, args := range [][]string{{"claude", "--project", "notes"}, {"claude", "--name", "helper"}} {
-		r = m.run(t, args...)
+	home, err := filepath.EvalSymlinks(m.home)
+	require.NoError(t, err)
+	for _, cwd := range []string{m.home, "/"} {
+		m.cwd = cwd
+		r := m.run(t, "claude")
 		require.Equal(t, 7, r.code)
-		require.Empty(t, r.stderr, "%v", args)
+		require.True(t, r.execed)
+		require.Empty(t, r.stderr, "working directory %s", cwd)
 	}
+	m.cwd = m.home
+	require.Contains(t, m.run(t, "claude").env, "PARTYLINE_FOLDER="+home)
 }
 
 // HAR-03: `partyline --help` (and -h, help) prints the usage with every launcher on stdout.

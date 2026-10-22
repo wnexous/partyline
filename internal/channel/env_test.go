@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -28,8 +29,14 @@ const wait = time.Minute
 // fastTiming keeps reconnect tests short.
 var fastTiming = timing{minBackoff: 50 * time.Millisecond, maxBackoff: 400 * time.Millisecond, invalidRetry: 150 * time.Millisecond, replacedPause: 700 * time.Millisecond}
 
-// chanEnv is a Partyline server with alice, her agent token and a room "Support" that has
-// her agent "builder" as a member.
+// builderFolder is the folder of alice's AI "builder" in the tests: the machine "testbox".
+var builderFolder = agents.FolderID{Machine: "testbox", Folder: "/work/builder", Harness: "claude"}
+
+// builderIdentity is what a channel in builderFolder sends about itself.
+var builderIdentity = Identity{Machine: builderFolder.Machine, Folder: builderFolder.Folder, Harness: builderFolder.Harness}
+
+// chanEnv is a Partyline server with alice, her agent token and a room "Support" that has the
+// AI of her folder /work/builder (display name "Builder") as a member.
 type chanEnv struct {
 	t       *testing.T
 	env     *testkit.Env
@@ -45,7 +52,7 @@ func newChanEnv(t *testing.T) *chanEnv {
 	alice := env.NewUser("alice")
 	_, secret, err := env.App.Users.CreateToken(context.Background(), alice.User.ID, users.TokenInput{Kind: dto.TokenKindAgent, Name: "laptop"})
 	require.NoError(t, err)
-	a, err := env.App.Agents.Upsert(context.Background(), alice.User.ID, "builder")
+	a, err := env.App.Agents.ResolveFolder(context.Background(), alice.User.ID, builderFolder, false)
 	require.NoError(t, err)
 	room := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
 	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: a.ID}).RequireStatus(http.StatusCreated)
@@ -67,8 +74,12 @@ func (e *chanEnv) cursor() int64 {
 
 func (e *chanEnv) online() bool { return e.env.App.Gateway.Online(e.agentID) }
 
+// options start a channel in the folder of the AI "builder".
 func (e *chanEnv) options() Options {
-	return Options{URL: e.env.URL, Token: e.secret, Agent: "builder", TempDir: e.t.TempDir(), Version: "test", timing: fastTiming}
+	return Options{
+		URL: e.env.URL, Token: e.secret, Machine: builderFolder.Machine, Folder: builderFolder.Folder,
+		TempDir: e.t.TempDir(), Version: "test", timing: fastTiming,
+	}
 }
 
 // syncBuffer is a goroutine-safe bytes.Buffer for stderr.

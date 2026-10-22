@@ -97,7 +97,6 @@ const (
 type link struct {
 	base   *url.URL
 	token  string
-	agent  string
 	http   *http.Client
 	notify notifier
 	stderr io.Writer
@@ -112,72 +111,21 @@ type link struct {
 	queueCap  int
 	readLimit int64
 
-	// identity is sent on every connection (project, harness, machine). Without an explicit
-	// agent name the session is temporary: the first connection sends no name and the server
-	// names a temporary agent (ID-01); assigned is the name the welcome frame gave, sent from
-	// then on with mode temporary so reconnects keep that agent.
-	identity  Identity
-	temporary bool
-	// onName, when set, receives the agent name in use after each welcome frame (listen
-	// records it for the tools-only channel, PUSH-02).
-	onName func(name string)
+	// identity is sent on every connection: machine, folder, home, harness and the name to adopt
+	// (AID-07). The server resolves the AI from it; no name is sent.
+	identity Identity
+	// liveID is the random id of this process, sent on every connection: a reconnect of the same
+	// process is not another session of the AI (SES-02).
+	liveID string
 
-	mu       sync.Mutex
-	state    linkState
-	seen     *idRing
-	assigned string
+	mu    sync.Mutex
+	state linkState
+	seen  *idRing
 }
 
-func newLink(base *url.URL, token, agent string, hc *http.Client, n notifier, stderr io.Writer, t timing) *link {
-	return &link{base: base, token: token, agent: agent, http: hc, notify: n, stderr: stderr, t: t.withDefaults(), sleep: sleepCtx, seen: newIDRing(dedupeSize),
+func newLink(base *url.URL, token string, id Identity, hc *http.Client, n notifier, stderr io.Writer, t timing) *link {
+	return &link{base: base, token: token, identity: id, liveID: NewLiveID(), http: hc, notify: n, stderr: stderr, t: t.withDefaults(), sleep: sleepCtx, seen: newIDRing(dedupeSize),
 		queueCap: maxQueuedFrames, readLimit: maxFrameBytes}
-}
-
-// name is the agent name in use: the one the server assigned, else the configured one.
-func (l *link) name() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.nameLocked()
-}
-
-func (l *link) nameLocked() string {
-	if l.assigned != "" {
-		return l.assigned
-	}
-	return l.agent
-}
-
-// dialName is the agent name and mode the next connection sends: an explicit name alone
-// (fixed agent, newest wins); for a temporary session no name until the server assigned one,
-// then that name with mode temporary.
-func (l *link) dialName() (name, mode string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	switch {
-	case !l.temporary:
-		return l.agent, ""
-	case l.assigned == "":
-		return "", ""
-	default:
-		return l.assigned, dto.AgentModeTemporary
-	}
-}
-
-// welcome records the name of a welcome frame for a temporary session and reports the name
-// in use to onName.
-func (l *link) welcome(data []byte) {
-	var f dto.AgentWelcomeFrame
-	if json.Unmarshal(data, &f) != nil || f.Type != dto.AgentFrameTypeWelcome || f.Agent.Name == "" {
-		return
-	}
-	if l.temporary {
-		l.mu.Lock()
-		l.assigned = f.Agent.Name
-		l.mu.Unlock()
-	}
-	if l.onName != nil {
-		l.onName(l.name())
-	}
 }
 
 // sleepCtx waits d or until ctx ends; it reports whether the full wait passed.
@@ -203,9 +151,9 @@ func (l *link) Err() error {
 	case stateInvalidToken:
 		return errInvalidToken
 	case stateReplaced:
-		return fmt.Errorf("partyline: replaced by another session using agent name %s", l.nameLocked())
+		return errReplaced
 	case stateDeleted:
-		return fmt.Errorf("partyline: agent %s was deleted; restart Claude Code to register it again", l.nameLocked())
+		return errDeleted
 	case stateAgentLimit:
 		return errAgentLimit
 	default:
@@ -216,6 +164,10 @@ func (l *link) Err() error {
 var errInvalidToken = errors.New("partyline: not connected (invalid token)")
 
 var errAgentLimit = errors.New("partyline: agent limit reached for this account; delete unused agents in the web app")
+
+var errReplaced = errors.New("partyline: replaced by another session of this agent")
+
+var errDeleted = errors.New("partyline: this agent was deleted; restart the session to register it again")
 
 // setState records s and reports whether it changed.
 func (l *link) setState(s linkState) bool {
@@ -268,19 +220,16 @@ func (l *link) run(ctx context.Context) error {
 			wait, backoff = 0, l.t.minBackoff
 		case outReplaced:
 			l.setState(stateReplaced)
-			fmt.Fprintf(l.stderr, "partyline: another session connected as agent %s; pausing for %s\n", l.name(), l.t.replacedPause)
-			l.mu.Lock()
-			l.assigned = "" // a temporary session asks for a new name instead of fighting
-			l.mu.Unlock()
+			fmt.Fprintf(l.stderr, "partyline: another session of this agent connected; pausing for %s\n", l.t.replacedPause)
 			wait, backoff = l.t.replacedPause, l.t.minBackoff
 		case outAgentLimit:
 			if l.setState(stateAgentLimit) {
-				fmt.Fprintf(l.stderr, "partyline: the server refused agent %s: agent limit reached; retrying every %s\n", l.name(), l.t.replacedPause)
+				fmt.Fprintf(l.stderr, "partyline: the server refused this agent: agent limit reached; retrying every %s\n", l.t.replacedPause)
 			}
 			wait, backoff = l.t.replacedPause, l.t.minBackoff
 		case outDeleted:
 			l.setState(stateDeleted)
-			fmt.Fprintf(l.stderr, "partyline: agent %s was deleted; not reconnecting until restart\n", l.name())
+			fmt.Fprintln(l.stderr, "partyline: this agent was deleted; not reconnecting until restart")
 			<-ctx.Done()
 			return nil
 		}
@@ -300,14 +249,8 @@ func (l *link) wsURL() string {
 func (l *link) session(ctx context.Context) (outcome, error) {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+l.token)
-	name, mode := l.dialName()
-	if name != "" {
-		h.Set(dto.HeaderAgent, name)
-	}
-	if mode != "" {
-		h.Set(dto.HeaderAgentMode, mode)
-	}
 	l.identity.setHeaders(h)
+	h.Set(dto.HeaderLive, l.liveID)
 	ws, resp, err := websocket.Dial(ctx, l.wsURL(), &websocket.DialOptions{HTTPClient: l.http, HTTPHeader: h})
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
@@ -348,7 +291,6 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 		}
 	}()
 
-	first := true
 	for {
 		_, data, err := ws.Read(readCtx)
 		if err != nil {
@@ -367,10 +309,6 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 				return outLagged, nil
 			}
 			return outDropped, nil // dropped, shutting down (ctx ends next) or a failed ack
-		}
-		if first {
-			l.welcome(data) // the first frame is the welcome; tools use its name at once
-			first = false
 		}
 		if !q.push(data) {
 			// Claude Code stopped reading: drop the connection instead of growing without

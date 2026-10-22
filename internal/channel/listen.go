@@ -7,28 +7,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
-	"sync"
-
-	"github.com/wnexous/partyline/internal/agents"
 )
 
 // ListenOptions configure Listen.
 type ListenOptions struct {
-	// URL, Token, Agent, Project, Harness and Machine mean what they mean for Run; an empty
+	// URL, Token, Machine, Folder, Home, Harness and Adopt mean what they mean for Run; an empty
 	// Harness is sent as unknown ("agent").
 	URL     string
 	Token   string
-	Agent   string
-	Project string
-	Harness string
 	Machine string
-	// SessionKey names the session file where the agent name in use is recorded for a
-	// tools-only channel of the same harness process; empty records nothing.
-	SessionKey string
-	// TempDir holds the session file (<TempDir>/partyline/.sessions); empty means os.TempDir().
-	TempDir string
+	Folder  string
+	Home    string
+	Harness string
+	Adopt   string
 
 	// Stdin ending (the harness that spawned listen went away) stops Listen; nil never does.
 	Stdin  io.Reader
@@ -52,13 +43,6 @@ func Listen(ctx context.Context, o ListenOptions) error {
 	if o.HTTPClient == nil {
 		o.HTTPClient = &http.Client{}
 	}
-	if o.TempDir == "" {
-		o.TempDir = os.TempDir()
-	}
-	tmp, err := filepath.Abs(o.TempDir)
-	if err != nil {
-		return fmt.Errorf("temp dir: %w", err)
-	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if o.Stdin != nil {
@@ -68,29 +52,9 @@ func Listen(ctx context.Context, o ListenOptions) error {
 		}()
 	}
 
-	agent := ""
-	if o.Agent != "" {
-		agent = agents.Slug(o.Agent)
-	}
-	l := newLink(base, o.Token, agent, o.HTTPClient, &lineWriter{w: o.Stdout}, o.Stderr, o.timing)
-	l.identity = Identity{Name: agent, Project: o.Project, Harness: o.Harness, Machine: o.Machine, SessionKey: o.SessionKey}
-	l.temporary = agent == ""
-	var recorded string
-	path := sessionFile(tmp, o.SessionKey)
-	if path != "" {
-		var once sync.Once
-		l.onName = func(name string) {
-			if err := writeSessionName(path, name); err != nil {
-				once.Do(func() { fmt.Fprintln(o.Stderr, "partyline listen: cannot record the agent name for the tools:", err) })
-				return
-			}
-			recorded = name
-		}
-	}
+	id := Identity{Machine: o.Machine, Folder: o.Folder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt}
+	l := newLink(base, o.Token, id, o.HTTPClient, &lineWriter{w: o.Stdout}, o.Stderr, o.timing)
 	err = l.run(ctx)
-	if recorded != "" {
-		removeSessionName(path, recorded)
-	}
 	if errors.Is(err, context.Canceled) {
 		return nil
 	}

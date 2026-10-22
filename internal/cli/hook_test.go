@@ -4,17 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/testkit"
 )
 
 func runHook(name, stdin string, env map[string]string) (code int, stdout, stderr string) {
@@ -27,8 +23,9 @@ func runHookWith(name, stdin string, env, ancestor map[string]string) (code int,
 	var out, errOut bytes.Buffer
 	std := stdio{
 		stdin: strings.NewReader(stdin), stdout: &out, stderr: &errOut,
-		getenv: func(k string) string { return env[k] },
-		getwd:  func() (string, error) { return "/somewhere/else", nil },
+		getenv:   func(k string) string { return env[k] },
+		getwd:    func() (string, error) { return "/somewhere/else", nil },
+		hostname: func() (string, error) { return testMachine, nil },
 	}
 	if ancestor != nil {
 		std.launcherEnv = func() map[string]string { return ancestor }
@@ -37,21 +34,11 @@ func runHookWith(name, stdin string, env, ancestor map[string]string) (code int,
 	return code, out.String(), errOut.String()
 }
 
-// hookRoom registers an agent over REST as a session would, adds it to a room and returns the
-// room: the agent named name, or with an empty name the temporary agent of project "proj"
-// and harness (as a tools-only channel started in /work/proj registers it).
-func (e *channelEnv) hookRoom(t *testing.T, name string, harness ...string) dto.Room {
+// hookRoom creates the AI of the folder, as a session there would, adds it to a room and
+// returns the room.
+func (e *channelEnv) hookRoom(t *testing.T, folder string) dto.Room {
 	t.Helper()
-	id := agents.Identity{Name: name}
-	if name == "" {
-		id.Project = "proj"
-		if len(harness) > 0 {
-			id.Harness = harness[0]
-		}
-	}
-	a, err := e.env.App.Agents.Register(context.Background(), e.alice.User.ID, id)
-	require.NoError(t, err)
-	return e.room(t, dto.CreateRoomRequest{Name: "Builds"}, a.Agent.ID)
+	return e.room(t, dto.CreateRoomRequest{Name: "Builds"}, e.aiAt(t, folder).ID)
 }
 
 // ownerLine follows a framed message from the agent's owner (PUSH-06, amended): the hook
@@ -59,14 +46,14 @@ func (e *channelEnv) hookRoom(t *testing.T, name string, harness ...string) dto.
 const ownerLine = "This message comes from your owner (verified identity or the owner's own agent). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
 
 // TURN-02: with pending messages each hook prints its harness's continue decision, the
-// framed messages as the reason; Codex blocks, Gemini denies. The agent is the temporary
-// agent of the project of the session's cwd in the hook input, the one the session's
-// tools-only channel registered (ID-01).
+// framed messages as the reason; Codex blocks, Gemini denies. The AI is the one of the folder
+// the hook input names as the session's cwd, the one the session's tools-only channel acts as
+// (AID-01).
 func TestHookContinuesWithPendingMessages(t *testing.T) {
 	for hook, decision := range map[string]string{"codex-stop": "block", "gemini-after-agent": "deny"} {
 		t.Run(hook, func(t *testing.T) {
 			e := newChannelEnv(t)
-			room := e.hookRoom(t, "")
+			room := e.hookRoom(t, "/work/proj")
 			m1 := e.post(t, room.ID, "build <red> & failing")
 			m2 := e.post(t, room.ID, "now green")
 
@@ -89,7 +76,7 @@ func TestHookContinuesWithPendingMessages(t *testing.T) {
 // TURN-02: without pending messages the hook allows the stop with an empty JSON object.
 func TestHookAllowsStopWithoutMessages(t *testing.T) {
 	e := newChannelEnv(t)
-	e.hookRoom(t, "")
+	e.hookRoom(t, "/work/proj")
 	for _, hook := range []string{"codex-stop", "gemini-after-agent"} {
 		code, out, errOut := runHook(hook, `{"cwd":"/work/proj"}`, e.vars())
 		require.Equal(t, 0, code)
@@ -98,35 +85,53 @@ func TestHookAllowsStopWithoutMessages(t *testing.T) {
 	}
 }
 
-// PARTYLINE_AGENT names the agent like it does for the tools-only channel.
-func TestHookUsesTheExplicitAgentName(t *testing.T) {
+// AID-07: the folder the launcher passed on (PARTYLINE_FOLDER) wins over the cwd the harness
+// reports, like it does for every other process of the session.
+func TestHookUsesTheLaunchersFolder(t *testing.T) {
 	e := newChannelEnv(t)
-	room := e.hookRoom(t, "gemini-box")
-	msg := e.post(t, room.ID, "hi")
-	_, out, _ := runHook("gemini-after-agent", `{"cwd":"/work/proj"}`, e.vars("PARTYLINE_AGENT", "gemini-box"))
-	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`)
+	launched := e.hookRoom(t, "/work/launched")
+	e.hookRoom(t, "/work/reported")
+	msg := e.post(t, launched.ID, "for the launched folder")
+	_, out, errOut := runHook("gemini-after-agent", `{"cwd":"/work/reported"}`, e.vars("PARTYLINE_FOLDER", "/work/launched/"))
+	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`, errOut)
 }
 
-// ID-01: the hook acts as the temporary agent of the session's project and harness
-// (PARTYLINE_HARNESS from the launcher), like the session's tools-only channel.
-func TestHookUsesTheSessionsHarness(t *testing.T) {
+// AID-02: the hook is a tools-only call: it names the app of the folder's AI while nobody is
+// connected, and a folder has one AI whatever harness asks.
+func TestHookNamesTheAppOfTheFoldersAI(t *testing.T) {
 	e := newChannelEnv(t)
-	other := e.hookRoom(t, "")
-	e.post(t, other.ID, "for the agent harness")
-	room := e.hookRoom(t, "", "codex")
+	room := e.hookRoom(t, "/work/proj")
 	msg := e.post(t, room.ID, "for codex")
 	_, out, errOut := runHook("codex-stop", `{"cwd":"/work/proj"}`, e.vars("PARTYLINE_HARNESS", "codex"))
 	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`, errOut)
-	require.NotContains(t, out, "for the agent harness")
+	require.Equal(t, "codex", e.registered(t, "/work/proj").AI.App)
+	require.Equal(t, []string{"/work/proj"}, e.folders(t))
+}
+
+// A folder the hook has not seen has no messages: the hook creates its AI (like any tool call)
+// and allows the stop.
+func TestHookInAnUnseenFolderAllowsTheStop(t *testing.T) {
+	e := newChannelEnv(t)
+	code, out, errOut := runHook("codex-stop", `{"cwd":"/work/new"}`, e.vars())
+	require.Equal(t, 0, code)
+	require.Equal(t, "{}\n", out)
+	require.Empty(t, errOut)
+	e.registered(t, "/work/new")
 }
 
 // Problems never block the harness: they go to stderr and the stop is allowed.
 func TestHookFailuresAllowTheStop(t *testing.T) {
 	e := newChannelEnv(t)
-	code, out, errOut := runHook("codex-stop", `{"cwd":"/work/proj"}`, e.vars("PARTYLINE_AGENT", "ghost"))
+	code, out, errOut := runHook("codex-stop", `{"cwd":"/work/proj"}`, map[string]string{"PARTYLINE_URL": "http://127.0.0.1:1", "PARTYLINE_TOKEN": e.secret})
 	require.Equal(t, 0, code)
 	require.Equal(t, "{}\n", out)
-	require.Contains(t, errOut, "partyline hook: agent not registered")
+	require.Contains(t, errOut, "partyline hook: partyline: server unreachable")
+
+	code, out, errOut = runHook("codex-stop", `{"cwd":"/work/a\u0000b"}`, e.vars())
+	require.Equal(t, 0, code)
+	require.Equal(t, "{}\n", out)
+	require.Contains(t, errOut, "partyline hook: the folder must not contain a NUL character")
+	require.Empty(t, e.folders(t))
 
 	code, out, errOut = runHook("codex-stop", `{}`, map[string]string{})
 	require.Equal(t, 0, code)
@@ -145,7 +150,7 @@ func TestHookRequiresAKnownHarness(t *testing.T) {
 // messages, or says none arrived after timeout_seconds. The full channel does not offer it.
 func TestWaitForMessagesTool(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_AGENT", "codex-box"), "/tmp/wd")
+	c := startChannel(t, []string{"--tools-only"}, e.vars(), "/work/codex-box")
 	initialize(c)
 	c.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	var names []string
@@ -159,30 +164,19 @@ func TestWaitForMessagesTool(t *testing.T) {
 		r := c.next()["result"].(map[string]any)
 		return r["content"].([]any)[0].(map[string]any)["text"].(string), r["isError"].(bool)
 	}
-	var room dto.Room
-	require.Eventually(t, func() bool {
-		list := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK))
-		for _, a := range list.Items {
-			if a.Name == "codex-box" {
-				room = e.room(t, dto.CreateRoomRequest{Name: "Builds"}, a.ID)
-				return true
-			}
-		}
-		return false
-	}, chanWait, 20*time.Millisecond)
-
 	start := time.Now()
 	text, isErr := call(2, map[string]any{"timeout_seconds": 1})
 	require.False(t, isErr, text)
 	require.Equal(t, "no new messages in 1 seconds", text)
 	require.GreaterOrEqual(t, time.Since(start), time.Second)
+	room := e.room(t, dto.CreateRoomRequest{Name: "Builds"}, e.registered(t, "/work/codex-box").ID)
 
 	msg := e.post(t, room.ID, "ship it")
 	text, isErr = call(3, map[string]any{"timeout_seconds": 5})
 	require.False(t, isErr, text)
 	require.Equal(t, `<partyline room="Builds" from="`+msg.AuthorName+`" trusted="true" message_id="`+msg.ID+`">ship it</partyline>`+"\n"+ownerLine, text)
 
-	full := startChannel(t, nil, e.vars("PARTYLINE_AGENT", "claude-box"), "/tmp/wd")
+	full := startChannel(t, nil, e.vars(), "/work/claude-box")
 	initialize(full)
 	full.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	for _, tool := range full.next()["result"].(map[string]any)["tools"].([]any) {
@@ -194,9 +188,9 @@ func TestWaitForMessagesTool(t *testing.T) {
 // are pushed instead of taking them.
 func TestWaitForMessagesWithListen(t *testing.T) {
 	e := newChannelEnv(t)
-	startListen(t, e.vars("PARTYLINE_AGENT", "pi-box"), "/tmp/wd", nil)
-	e.agent(t, "pi-box")
-	c := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_AGENT", "pi-box"), "/tmp/wd")
+	startListen(t, e.vars(), "/work/pi-box", nil)
+	e.ai(t, "/work/pi-box")
+	c := startChannel(t, []string{"--tools-only"}, e.vars(), "/work/pi-box")
 	initialize(c)
 	c.send(map[string]any{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": map[string]any{"name": "wait_for_messages", "arguments": map[string]any{"timeout_seconds": 1}}})
 	r := c.next()["result"].(map[string]any)
@@ -204,51 +198,31 @@ func TestWaitForMessagesWithListen(t *testing.T) {
 	require.Equal(t, "messages are pushed to this agent's session; there is nothing to wait for", r["content"].([]any)[0].(map[string]any)["text"])
 }
 
-// ID-01 (fix iteration 1): two tools-only sessions of one project (Codex, never online) send
-// their session keys (PARTYLINE_SESSION) and get their own temporary agents; each session's
-// turn-end hook acts as its own agent, and a listen process of a session joins that session's
-// agent instead of adding one.
-func TestToolsOnlySessionsAndTheirHooksKeepTheirOwnAgents(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir()) // listen's session files
+// AID-01, AID-04: the tools-only channel and the turn-end hook of a Codex session in one
+// folder are the same AI: the hook delivers what was posted to the AI the tools created; a
+// session in another folder is another AI with its own messages.
+func TestToolsOnlyAndItsHookAreOneIdentity(t *testing.T) {
 	e := newChannelEnv(t)
-	session := func(key string) map[string]string {
-		return e.vars("PARTYLINE_PROJECT", "Notes", "PARTYLINE_HARNESS", "codex", "PARTYLINE_SESSION", key)
+	session := func(folder string) *mcpClient {
+		c := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_FOLDER", folder, "PARTYLINE_HARNESS", "codex"), "/tmp/src/anywhere")
+		initialize(c)
+		c.send(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": map[string]any{"name": "list_rooms", "arguments": map[string]any{}}})
+		require.Equal(t, false, c.next()["result"].(map[string]any)["isError"])
+		return c
 	}
-	registered := func(name string) {
-		t.Helper()
-		require.Eventually(t, func() bool { _, ok := e.onlineNames(t)[name]; return ok }, chanWait, 20*time.Millisecond, name)
-	}
-	one := startChannel(t, []string{"--tools-only"}, session("pl-one"), "/tmp/src/other")
-	initialize(one)
-	registered("notes-codex")
-	two := startChannel(t, []string{"--tools-only"}, session("pl-two"), "/tmp/src/other")
-	initialize(two)
-	registered("notes-codex-2")
+	session("/work/notes")
+	session("/work/lab")
+	notes, lab := e.registered(t, "/work/notes"), e.registered(t, "/work/lab")
+	require.NotEqual(t, notes.ID, lab.ID)
+	require.Equal(t, "codex", notes.AI.App)
+	room := e.room(t, dto.CreateRoomRequest{Name: "Builds"}, notes.ID, lab.ID)
+	msg := e.post(t, room.ID, "for everyone")
+	require.Equal(t, []string{"/work/lab", "/work/notes"}, e.folders(t))
 
-	second := e.agentNamed(t, "notes-codex-2")
-	require.Equal(t, "Notes · Codex #2", second.DisplayName)
-	room := e.room(t, dto.CreateRoomRequest{Name: "Builds"}, second.ID)
-	msg := e.post(t, room.ID, "for the second session")
-
-	_, out, errOut := runHook("codex-stop", `{"cwd":"/work/notes"}`, session("pl-one"))
-	require.Equal(t, "{}\n", out, "the first session's hook acts as notes-codex: %s", errOut)
-	_, out, errOut = runHook("codex-stop", `{"cwd":"/work/notes"}`, session("pl-two"))
-	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`, "the second session's hook acts as notes-codex-2: %s", errOut)
-
-	startListen(t, session("pl-two"), "/tmp/src/other", io.Discard)
-	e.agent(t, "notes-codex-2")
-	names := e.onlineNames(t)
-	require.Equal(t, map[string]bool{"notes-codex": false, "notes-codex-2": true}, names, "listen joined its session's agent")
-}
-
-// agentNamed returns alice's agent named name, online or not.
-func (e *channelEnv) agentNamed(t *testing.T, name string) dto.Agent {
-	t.Helper()
-	for _, a := range testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items {
-		if a.Name == name {
-			return a
-		}
-	}
-	require.FailNow(t, "agent not listed", name)
-	return dto.Agent{}
+	_, out, errOut := runHook("codex-stop", `{"cwd":"/tmp/src/anywhere"}`, e.vars("PARTYLINE_FOLDER", "/work/notes"))
+	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`, "the hook acts as the AI of its session's folder: %s", errOut)
+	_, out, _ = runHook("codex-stop", `{"cwd":"/work/notes"}`, e.vars())
+	require.Equal(t, "{}\n", out, "what the hook delivered to the folder's AI is not delivered again")
+	_, out, errOut = runHook("codex-stop", `{"cwd":"/work/lab"}`, e.vars())
+	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`, "the other folder's AI has its own copy: %s", errOut)
 }

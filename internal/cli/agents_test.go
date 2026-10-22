@@ -24,6 +24,34 @@ func runAgents(env map[string]string, args ...string) (code int, stdout, stderr 
 	return code, out.String(), errOut.String()
 }
 
+// onlineNames maps the names of alice's agents to their online state.
+func (e *channelEnv) onlineNames(t *testing.T) map[string]bool {
+	t.Helper()
+	list := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK))
+	names := map[string]bool{}
+	for _, a := range list.Items {
+		names[a.Name] = a.Online
+	}
+	return names
+}
+
+// agent waits until alice's agent named name is listed online and returns it.
+func (e *channelEnv) agent(t *testing.T, name string) dto.Agent {
+	t.Helper()
+	var found dto.Agent
+	require.Eventually(t, func() bool {
+		list := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK))
+		for _, a := range list.Items {
+			if a.Name == name && a.Online {
+				found = a
+				return true
+			}
+		}
+		return false
+	}, chanWait, 20*time.Millisecond)
+	return found
+}
+
 // dialAs connects a session of alice with the identity headers project, harness and machine.
 func (e *channelEnv) dialAs(t *testing.T, project, harness, machine string, name ...string) *testkit.AgentConn {
 	t.Helper()
