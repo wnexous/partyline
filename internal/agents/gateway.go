@@ -71,6 +71,9 @@ type GatewayDeps struct {
 	Logger   *slog.Logger
 	// PingInterval defaults to DefaultPingInterval.
 	PingInterval time.Duration
+	// PingTimeout bounds the wait for a pong; a connection that does not answer in time is
+	// closed and the AI goes offline (SES-06). Defaults to writeTimeout.
+	PingTimeout time.Duration
 }
 
 // Gateway serves the agent WebSocket (GET /api/v1/agent/ws): it registers the agent, sends
@@ -99,6 +102,9 @@ type Gateway struct {
 func NewGateway(d GatewayDeps) *Gateway {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
+	}
+	if d.PingTimeout <= 0 {
+		d.PingTimeout = writeTimeout
 	}
 	if d.PingInterval <= 0 {
 		d.PingInterval = DefaultPingInterval
@@ -432,7 +438,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 		case <-ctx.Done():
 			return nil
 		case <-ping.C:
-			pctx, cancel := context.WithTimeout(ctx, writeTimeout)
+			pctx, cancel := context.WithTimeout(ctx, g.d.PingTimeout)
 			err := c.ws.Ping(pctx)
 			cancel()
 			if err != nil {

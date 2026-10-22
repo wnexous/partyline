@@ -133,3 +133,19 @@ func TestTakeoverDropsALatePushOfAnAcknowledgedMessage(t *testing.T) {
 	after := post("after the takeover")
 	require.Equal(t, after.ID, taker.Message(time.Minute).Message.ID, "the next message arrives")
 }
+
+// SES-06: a connection that stops answering pings (a dead network, no close frame) is closed
+// after the ping interval plus the ping timeout, and the AI goes offline.
+func TestSilentConnectionGoesOffline(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	id := env.NewAI(alice, "builder")
+	agents.SetPingTimings(env.App.Gateway, 50*time.Millisecond, 200*time.Millisecond)
+
+	conn := alice.Token(dto.TokenKindAgent, "laptop").DialFolderSilent(testkit.FolderOf("builder"))
+	defer func() { _ = conn.CloseNow() }()
+	require.Eventually(t, func() bool { return env.App.Presence.Online(id) }, 5*time.Second, 5*time.Millisecond,
+		"the session attaches")
+	require.Eventually(t, func() bool { return !env.App.Presence.Online(id) }, 5*time.Second, 10*time.Millisecond,
+		"a session that stops answering pings goes offline")
+}

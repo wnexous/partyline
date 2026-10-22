@@ -195,6 +195,18 @@ func (c *Client) AsFolder(f Folder) *Client {
 
 // DialFolder opens the agent WebSocket as the AI of the folder. A dial without a Live id is a
 // process of its own.
+// DialFolderSilent opens the agent WebSocket for f and never reads from it, like a client whose
+// network went silent: the pings it receives are never answered.
+func (c *Client) DialFolderSilent(f Folder) *websocket.Conn {
+	c.T.Helper()
+	if f.Live == "" {
+		f.Live = NewLiveID()
+	}
+	conn, resp := c.dialWS("/api/v1/agent/ws", f.Headers())
+	require.NotNil(c.T, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	return conn
+}
+
 func (c *Client) DialFolder(f Folder) (*AgentConn, *Response) {
 	c.T.Helper()
 	if f.Live == "" {

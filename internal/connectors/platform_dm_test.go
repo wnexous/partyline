@@ -272,9 +272,9 @@ func (l *logSink) String() string {
 
 // ACC-02 (contract-notes T30, L-019): a DM chat message whose sender has no id has nobody to make a
 // DM with, so it is not routed: the chat is recorded, no DM, person or message is made, the
-// operator AI receives nothing and nothing fails (a DM with an empty participant would be refused
-// by the database and logged as a failed message). A later message of the chat that names its
-// sender is routed as usual.
+// operator AI receives nothing and nothing fails. Two guards refuse it: the auto-route check and
+// EnsurePlatformDM (internal/conversations/platform.go), which refuses an empty sender before a
+// DM is made. A later message of the chat that names its sender is routed as usual.
 func TestPlatformDMWithoutASenderIsNotRouted(t *testing.T) {
 	logs := &logSink{}
 	pc := newPerChat(t, testkit.WithLogger(slog.New(slog.NewTextHandler(logs, nil))))
