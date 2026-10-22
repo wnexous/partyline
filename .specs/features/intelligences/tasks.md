@@ -1178,8 +1178,8 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: ACC-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A message from a DM chat with an empty sender id leaves no DM room, no message, nothing delivered to the operator AI, and the chat recorded in no room
-- [ ] Gate check passes: `make check`
+- [x] A message from a DM chat with an empty sender id leaves no DM room, no message, nothing delivered to the operator AI, and the chat recorded in no room
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `test(connectors): pin that a platform DM without a sender is not routed`

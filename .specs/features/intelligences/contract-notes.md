@@ -2605,3 +2605,21 @@ Tests only; no code changes (`validation.md` gap 7, mutant M23, L-046).
   was seen get a 256×256 PNG (the centre crop, `image/png`) and the same `avatar_url` in the profile;
   carol and the admin get 404 for the avatar and the profile. Scratch copy: never serving persons'
   avatars, and serving them without the visibility check, each fail it.
+
+## T63 - A platform DM without a sender is not routed (ACC-02)
+
+Test only; no code changes (`validation.md` gap 10, mutant M30, L-019). contract-notes T30 says "a sender
+without any id has nobody to make a DM with: not routed" and no test said it.
+
+- `TestPlatformDMWithoutASenderIsNotRouted` (`internal/connectors/platform_dm_test.go`): a DM chat message
+  with an empty sender id and sender name records the chat and nothing else: the chat is in no room, there
+  is no DM, no person, no stored message, the operator AI receives nothing, and the app logs no failed
+  message; the next message of the chat that names its sender is routed to a DM as usual.
+- **M30 is equivalent as the Verifier defined it.** Two guards refuse a senderless author: the pipeline's
+  (`platformDM`: `who.iid() == ""` returns an unrouted chat) and `EnsurePlatformDM`'s (`in.Author.ID == ""`
+  returns `ErrDMSelf`, which the pipeline also treats as unrouted). Removing either one alone changes no
+  outcome, so the scratch copy passes the test; that is defence in depth, not a gap. Removing **both**
+  routes the message into a DM with an empty participant, which the database refuses (foreign key on
+  `rooms.dm_a`), and the pipeline logs "inbound message failed": the test fails on that log line, so it
+  kills the fault the mutant stood for. The log assertion is what makes it discriminate; the other
+  outcomes (no room, DM, person, message) hold under the foreign-key failure as well.
