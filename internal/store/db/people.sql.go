@@ -8,7 +8,59 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
+
+const countConnectorPeople = `-- name: CountConnectorPeople :many
+SELECT p.connector_id, COUNT(*) AS people FROM people p
+WHERE p.connector_id IN (/*SLICE:connector_ids*/?)
+  AND NOT EXISTS (
+      SELECT 1 FROM identities x JOIN users xu ON xu.id = x.user_id
+      WHERE x.connector_id = p.connector_id AND xu.disabled_at IS NULL
+        AND (x.external_id IN (p.external_id, CASE WHEN p.alt_external_id <> '' THEN p.alt_external_id ELSE p.external_id END)
+             OR (x.alt_external_id <> '' AND x.alt_external_id IN (p.external_id, CASE WHEN p.alt_external_id <> '' THEN p.alt_external_id ELSE p.external_id END))))
+GROUP BY p.connector_id
+`
+
+type CountConnectorPeopleRow struct {
+	ConnectorID string
+	People      int64
+}
+
+// The people of each connector, leaving out those whose account an enabled user verified (the
+// same match as ResolveIdentityUser): they are an app of that user (PEOP-02).
+func (q *Queries) CountConnectorPeople(ctx context.Context, connectorIds []string) ([]CountConnectorPeopleRow, error) {
+	query := countConnectorPeople
+	var queryParams []interface{}
+	if len(connectorIds) > 0 {
+		for _, v := range connectorIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:connector_ids*/?", strings.Repeat(",?", len(connectorIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:connector_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountConnectorPeopleRow
+	for rows.Next() {
+		var i CountConnectorPeopleRow
+		if err := rows.Scan(&i.ConnectorID, &i.People); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const createPerson = `-- name: CreatePerson :exec
 INSERT INTO people (id, connector_id, external_id, alt_external_id, platform_name, name_locked, last_seen_at, created_at)
@@ -63,6 +115,26 @@ func (q *Queries) GetChatPerson(ctx context.Context, arg GetChatPersonParams) (C
 	var i ChatPerson
 	err := row.Scan(&i.ChatID, &i.PersonID, &i.LastSeenAt)
 	return i, err
+}
+
+const getConnectorContactSortName = `-- name: GetConnectorContactSortName :one
+SELECT CAST(lower(i.display_name) AS TEXT) AS sort_name
+FROM people p JOIN intelligences i ON i.id = p.id
+WHERE p.connector_id = ? AND p.id = ?
+`
+
+type GetConnectorContactSortNameParams struct {
+	ConnectorID string
+	ID          string
+}
+
+// The sort key of a person of the connector, for the cursor of ListConnectorContacts; no row when
+// the id is not a person of the connector.
+func (q *Queries) GetConnectorContactSortName(ctx context.Context, arg GetConnectorContactSortNameParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getConnectorContactSortName, arg.ConnectorID, arg.ID)
+	var sort_name string
+	err := row.Scan(&sort_name)
+	return sort_name, err
 }
 
 const getPerson = `-- name: GetPerson :one
@@ -191,6 +263,76 @@ func (q *Queries) ListChatPeopleRecent(ctx context.Context, arg ListChatPeopleRe
 			&i.Intelligence.CreatedAt,
 			&i.Intelligence.UpdatedAt,
 			&i.Platform,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listConnectorContacts = `-- name: ListConnectorContacts :many
+SELECT i.id, i.kind, i.display_name, i.handle, i.avatar_sha256, i.bio, i.created_at, i.updated_at FROM people p JOIN intelligences i ON i.id = p.id
+WHERE p.connector_id = ?1
+  AND NOT EXISTS (
+      SELECT 1 FROM identities x JOIN users xu ON xu.id = x.user_id
+      WHERE x.connector_id = p.connector_id AND xu.disabled_at IS NULL
+        AND (x.external_id IN (p.external_id, CASE WHEN p.alt_external_id <> '' THEN p.alt_external_id ELSE p.external_id END)
+             OR (x.alt_external_id <> '' AND x.alt_external_id IN (p.external_id, CASE WHEN p.alt_external_id <> '' THEN p.alt_external_id ELSE p.external_id END))))
+  AND (CAST(?2 AS TEXT) = '' OR instr(lower(i.display_name), CAST(?2 AS TEXT)) > 0
+       OR instr(i.handle, CAST(?2 AS TEXT)) > 0 OR instr(lower(p.external_id), CAST(?2 AS TEXT)) > 0)
+  AND (CAST(?3 AS TEXT) = '' OR lower(i.display_name) > CAST(?4 AS TEXT)
+       OR (lower(i.display_name) = CAST(?4 AS TEXT) AND i.id > CAST(?3 AS TEXT)))
+ORDER BY lower(i.display_name), i.id
+LIMIT ?5
+`
+
+type ListConnectorContactsParams struct {
+	ConnectorID string
+	Q           string
+	AfterID     string
+	AfterName   string
+	RowLimit    int64
+}
+
+type ListConnectorContactsRow struct {
+	Intelligence Intelligence
+}
+
+// The people of a connector (leaving out those verified as a user, see CountConnectorPeople) in
+// name order, case-insensitively for ASCII, after the person named by after_id/after_name (both
+// empty for the first page), matching q (lower-case, may be empty) in the name, the handle or the
+// account id.
+func (q *Queries) ListConnectorContacts(ctx context.Context, arg ListConnectorContactsParams) ([]ListConnectorContactsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listConnectorContacts,
+		arg.ConnectorID,
+		arg.Q,
+		arg.AfterID,
+		arg.AfterName,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListConnectorContactsRow
+	for rows.Next() {
+		var i ListConnectorContactsRow
+		if err := rows.Scan(
+			&i.Intelligence.ID,
+			&i.Intelligence.Kind,
+			&i.Intelligence.DisplayName,
+			&i.Intelligence.Handle,
+			&i.Intelligence.AvatarSha256,
+			&i.Intelligence.Bio,
+			&i.Intelligence.CreatedAt,
+			&i.Intelligence.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

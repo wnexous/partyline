@@ -157,3 +157,42 @@ func (s *Service) ChatPeople(ctx context.Context, chatIDs []string) (map[string]
 	}
 	return out, nil
 }
+
+// LinkedAccount is a chat account a user verified (AD-008) and the connector it was linked
+// through.
+type LinkedAccount struct {
+	Identity  db.Identity
+	Connector db.Connector
+}
+
+// linkedAccounts lists the accounts of a user that the viewer may see: the user's own, or those
+// linked through a connector the viewer owns or may use (who can already see which user an
+// account is, PersonDetail.LinkedUser). They are the user's apps (PEOP-02).
+func (s *Service) linkedAccounts(ctx context.Context, viewerID, userID string) ([]LinkedAccount, error) {
+	q := s.store.R()
+	idents, err := q.ListIdentities(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	var out []LinkedAccount
+	for _, ident := range idents {
+		if viewerID != userID {
+			ok, err := s.az.CanUseConnector(ctx, viewerID, ident.ConnectorID)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+		}
+		c, err := q.GetConnector(ctx, ident.ConnectorID)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, LinkedAccount{Identity: ident, Connector: c})
+	}
+	return out, nil
+}

@@ -77,6 +77,11 @@ func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 	switch prof.Role {
 	case intelligences.RoleUser:
 		out.Apps = append(out.Apps, dto.App{Kind: "web", Label: "Web app"})
+		for _, a := range prof.Accounts { // the verified chat accounts are apps of the user (PEOP-02)
+			out.Apps = append(out.Apps, dto.App{
+				Kind: a.Connector.Kind, Label: connectors.PlatformLabel(a.Connector.Kind) + ": " + a.Identity.ExternalID, ConnectorID: a.Connector.ID,
+			})
+		}
 	case intelligences.RoleAI:
 		a := prof.Agent
 		out.AI = &dto.AIDetail{

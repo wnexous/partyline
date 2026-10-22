@@ -102,6 +102,49 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 	return i, err
 }
 
+const listContactUsers = `-- name: ListContactUsers :many
+SELECT i.id, i.kind, i.display_name, i.handle, i.avatar_sha256, i.bio, i.created_at, i.updated_at FROM users u JOIN intelligences i ON i.id = u.id
+WHERE u.disabled_at IS NULL AND u.id <> ?
+ORDER BY lower(i.display_name), i.id
+`
+
+type ListContactUsersRow struct {
+	Intelligence Intelligence
+}
+
+// The enabled users other than the given one, with their intelligence, by name (CONT-01).
+func (q *Queries) ListContactUsers(ctx context.Context, id string) ([]ListContactUsersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listContactUsers, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListContactUsersRow
+	for rows.Next() {
+		var i ListContactUsersRow
+		if err := rows.Scan(
+			&i.Intelligence.ID,
+			&i.Intelligence.Kind,
+			&i.Intelligence.DisplayName,
+			&i.Intelligence.Handle,
+			&i.Intelligence.AvatarSha256,
+			&i.Intelligence.Bio,
+			&i.Intelligence.CreatedAt,
+			&i.Intelligence.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsers = `-- name: ListUsers :many
 SELECT id, username, display_name, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users ORDER BY username
 `

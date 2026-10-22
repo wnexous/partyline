@@ -58,3 +58,41 @@ SELECT rm.room_id FROM room_members rm JOIN chat_people cp ON cp.chat_id = rm.me
 WHERE rm.kind = 'chat' AND cp.person_id = sqlc.arg(id)
 UNION
 SELECT room_id FROM messages WHERE author_iid = sqlc.arg(id) AND author_iid <> '';
+
+-- name: CountConnectorPeople :many
+-- The people of each connector, leaving out those whose account an enabled user verified (the
+-- same match as ResolveIdentityUser): they are an app of that user (PEOP-02).
+SELECT p.connector_id, COUNT(*) AS people FROM people p
+WHERE p.connector_id IN (sqlc.slice('connector_ids'))
+  AND NOT EXISTS (
+      SELECT 1 FROM identities x JOIN users xu ON xu.id = x.user_id
+      WHERE x.connector_id = p.connector_id AND xu.disabled_at IS NULL
+        AND (x.external_id IN (p.external_id, CASE WHEN p.alt_external_id <> '' THEN p.alt_external_id ELSE p.external_id END)
+             OR (x.alt_external_id <> '' AND x.alt_external_id IN (p.external_id, CASE WHEN p.alt_external_id <> '' THEN p.alt_external_id ELSE p.external_id END))))
+GROUP BY p.connector_id;
+
+-- name: GetConnectorContactSortName :one
+-- The sort key of a person of the connector, for the cursor of ListConnectorContacts; no row when
+-- the id is not a person of the connector.
+SELECT CAST(lower(i.display_name) AS TEXT) AS sort_name
+FROM people p JOIN intelligences i ON i.id = p.id
+WHERE p.connector_id = ? AND p.id = ?;
+
+-- name: ListConnectorContacts :many
+-- The people of a connector (leaving out those verified as a user, see CountConnectorPeople) in
+-- name order, case-insensitively for ASCII, after the person named by after_id/after_name (both
+-- empty for the first page), matching q (lower-case, may be empty) in the name, the handle or the
+-- account id.
+SELECT sqlc.embed(i) FROM people p JOIN intelligences i ON i.id = p.id
+WHERE p.connector_id = sqlc.arg(connector_id)
+  AND NOT EXISTS (
+      SELECT 1 FROM identities x JOIN users xu ON xu.id = x.user_id
+      WHERE x.connector_id = p.connector_id AND xu.disabled_at IS NULL
+        AND (x.external_id IN (p.external_id, CASE WHEN p.alt_external_id <> '' THEN p.alt_external_id ELSE p.external_id END)
+             OR (x.alt_external_id <> '' AND x.alt_external_id IN (p.external_id, CASE WHEN p.alt_external_id <> '' THEN p.alt_external_id ELSE p.external_id END))))
+  AND (CAST(sqlc.arg(q) AS TEXT) = '' OR instr(lower(i.display_name), CAST(sqlc.arg(q) AS TEXT)) > 0
+       OR instr(i.handle, CAST(sqlc.arg(q) AS TEXT)) > 0 OR instr(lower(p.external_id), CAST(sqlc.arg(q) AS TEXT)) > 0)
+  AND (CAST(sqlc.arg(after_id) AS TEXT) = '' OR lower(i.display_name) > CAST(sqlc.arg(after_name) AS TEXT)
+       OR (lower(i.display_name) = CAST(sqlc.arg(after_name) AS TEXT) AND i.id > CAST(sqlc.arg(after_id) AS TEXT)))
+ORDER BY lower(i.display_name), i.id
+LIMIT sqlc.arg(row_limit);

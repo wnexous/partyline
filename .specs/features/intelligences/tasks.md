@@ -573,9 +573,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: CONT-01, TREE-03, TREE-04, TREE-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Contacts lists own AIs as trees per machine, AIs shared with the caller, other users and people per usable connector (CONT-01); rows carry online, app and last seen (TREE-03)
-- [ ] Machine label 1-64 replaces the hostname, `''` resets, other owner's machine 404 (TREE-04); legacy AIs appear under `unlinked` (TREE-06)
-- [ ] Gate check passes: `make check`
+- [x] Contacts lists own AIs as trees per machine, AIs shared with the caller, other users and people per usable connector (CONT-01); rows carry online, app and last seen (TREE-03)
+- [x] Machine label 1-64 replaces the hostname, `''` resets, other owner's machine 404 (TREE-04); legacy AIs appear under `unlinked` (TREE-06)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): list contacts and the machine tree`

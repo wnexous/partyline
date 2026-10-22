@@ -749,6 +749,137 @@ export interface HookAttachment {
 }
 
 //////////
+// source: contacts.go
+
+/**
+ * Contacts is GET /contacts: everyone the caller can reach, grouped as the contacts page shows
+ * them (CONT-01).
+ */
+export interface Contacts {
+  me: IntelligenceRef;
+  /**
+   * Machines are the caller's own AIs that live in a folder, per machine and as a folder tree
+   * (TREE-01..03): machines with an online AI first, then by label.
+   */
+  machines: MachineTree[];
+  /**
+   * Unlinked are the caller's AIs without a folder, the identities v0.3 left (TREE-06), the
+   * most recently seen first.
+   */
+  unlinked: AIContact[];
+  /**
+   * Shared are the AIs of other users that the caller may use, by name.
+   */
+  shared: AIContact[];
+  /**
+   * Users are the other enabled users of the instance, by name.
+   */
+  users: IntelligenceRef[];
+  /**
+   * People has one group for each connector the caller owns or may use, by connector name;
+   * GET /contacts/people lists the people of one.
+   */
+  people: PeopleGroup[];
+}
+/**
+ * AgentContactsTree is GET /agent/contacts/tree, the data of `partyline agents` (TREE-07): the
+ * token owner's own AIs.
+ */
+export interface AgentContactsTree {
+  machines: MachineTree[];
+  unlinked: AIContact[];
+}
+/**
+ * MachineTree is one machine with the AIs that live on it (TREE-01).
+ */
+export interface MachineTree {
+  hostname: string;
+  /**
+   * Label is the owner's name for the machine (TREE-04), else the hostname.
+   */
+  label: string;
+  /**
+   * Online tells whether any AI of the machine is online.
+   */
+  online: boolean;
+  nodes: TreeNode[];
+}
+/**
+ * TreeNode is one AI in a machine's folder tree. An AI whose folder is inside another AI's
+ * folder is that AI's child; folders between two AIs that hold no AI collapse into Path
+ * (TREE-02). Render "Path › Name" when Path is not empty, else Name.
+ */
+export interface TreeNode {
+  ai: AIContact;
+  /**
+   * Path is the collapsed chain of folders before the node ("c/d"), empty when there is none;
+   * a top-level node outside the home folder starts with "/".
+   */
+  path: string;
+  /**
+   * Name is the folder's own label: its last element, "~" for the home folder, "/" for the root.
+   */
+  name: string;
+  children: TreeNode[];
+}
+/**
+ * AIContact is an AI as the contacts page and `partyline agents` list it (TREE-03).
+ */
+export interface AIContact {
+  intelligence: IntelligenceRef;
+  /**
+   * Owner is set for the AIs of other users (Contacts.Shared).
+   */
+  owner?: IntelligenceRef;
+  machine: string;
+  folder: string;
+  folder_label: string;
+  /**
+   * App is the id of the harness the AI currently runs in.
+   */
+  app: string;
+  online: boolean;
+  last_seen_at?: string /* RFC 3339 */;
+}
+/**
+ * PeopleGroup is the people one connector has seen. They are listed by GET /contacts/people;
+ * people whose account is linked to a user are not counted: they are an app of that user.
+ */
+export interface PeopleGroup {
+  connector: ConnectorRef;
+  count: number /* int */;
+}
+/**
+ * DefaultPeoplePage is the page size when limit is absent.
+ */
+export const DefaultPeoplePage = 50;
+/**
+ * MaxPeoplePage is the largest page size.
+ */
+export const MaxPeoplePage = 200;
+/**
+ * MaxPeopleSearch is the longest search text in code points.
+ */
+export const MaxPeopleSearch = 100;
+/**
+ * Machine is a machine of the caller after its label changed.
+ */
+export interface Machine {
+  hostname: string;
+  /**
+   * Label is the owner's name for the machine; empty shows the hostname (TREE-04).
+   */
+  label: string;
+}
+/**
+ * SetMachineLabelRequest is the body of PUT /machines/{hostname}: a label of 1 to 64 characters,
+ * or an empty one to show the hostname again (TREE-04).
+ */
+export interface SetMachineLabelRequest {
+  label: string;
+}
+
+//////////
 // source: conversations.go
 
 /**

@@ -173,6 +173,8 @@ type Deps struct {
 	Bus    *events.Bus
 	// Blobs stores the avatars.
 	Blobs *attachments.Store
+	// Online tells whether an AI has a live session; nil counts every AI as offline.
+	Online func(agentID string) bool
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
 }
@@ -183,7 +185,9 @@ type Service struct {
 	az    *access.Authorizer
 	bus   *events.Bus
 	blobs *attachments.Store
-	now   func() time.Time
+	// online tells whether an AI has a live session; may be nil.
+	online func(agentID string) bool
+	now    func() time.Time
 }
 
 // New returns a Service.
@@ -191,7 +195,7 @@ func New(d Deps) *Service {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Service{store: d.Store, az: d.Access, bus: d.Bus, blobs: d.Blobs, now: d.Now}
+	return &Service{store: d.Store, az: d.Access, bus: d.Bus, blobs: d.Blobs, online: d.Online, now: d.Now}
 }
 
 // Profile is an intelligence as one caller reads it.
@@ -206,6 +210,9 @@ type Profile struct {
 	Agent *AgentInfo
 	// Person is set for a person.
 	Person *PersonInfo
+	// Accounts are the chat accounts a user verified (PEOP-02) that the caller may see: the
+	// user's own, and those linked through a connector the caller owns or may use.
+	Accounts []LinkedAccount
 }
 
 // AgentInfo is what a profile shows about an AI.
@@ -227,6 +234,12 @@ func (s *Service) profile(ctx context.Context, p authn.Principal, d db.GetIntell
 	out := Profile{Intelligence: d.Intelligence, Role: Role(d.Role), CanEdit: canEdit}
 	q := s.store.R()
 	switch out.Role {
+	case RoleUser:
+		accounts, err := s.linkedAccounts(ctx, p.UserID, d.Intelligence.ID)
+		if err != nil {
+			return Profile{}, err
+		}
+		out.Accounts = accounts
 	case RoleAI:
 		a, err := q.GetAgent(ctx, d.Intelligence.ID)
 		if err != nil {

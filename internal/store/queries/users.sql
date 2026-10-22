@@ -35,3 +35,9 @@ UPDATE users SET notify_chat_id = ? WHERE id = ?;
 -- name: SetUserDisplayName :exec
 -- Mirrors intelligences.display_name until the legacy column is dropped.
 UPDATE users SET display_name = ? WHERE id = ?;
+
+-- name: ListContactUsers :many
+-- The enabled users other than the given one, with their intelligence, by name (CONT-01).
+SELECT sqlc.embed(i) FROM users u JOIN intelligences i ON i.id = u.id
+WHERE u.disabled_at IS NULL AND u.id <> ?
+ORDER BY lower(i.display_name), i.id;

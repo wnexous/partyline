@@ -92,6 +92,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.roomRoutes(mux)
 	s.conversationRoutes(mux)
 	s.intelligenceRoutes(mux)
+	s.contactRoutes(mux)
 	s.avatarRoutes(mux)
 	s.agentRoutes(mux)
 	s.agentAPIRoutes(mux)

@@ -286,6 +286,32 @@ func TestPersonPageShowsTheUserItIsLinkedTo(t *testing.T) {
 	require.Nil(t, profileOf(t, f.dave, f.person).Person, "the viewer of a room does not get the account")
 }
 
+// PEOP-02: the chat accounts a user verified are the user's apps, for the user and for the users
+// of the connector they were linked through, and for nobody else.
+func TestLinkedAccountsAreAppsOfTheUser(t *testing.T) {
+	f := newPeopleFixture(t)
+	web := dto.App{Kind: "web", Label: "Web app"}
+	require.Equal(t, []dto.App{web}, profileOf(t, f.alice, f.alice.User.ID).Apps)
+
+	code := testkit.Decode[dto.PairingCode](f.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: f.conn.ID}).RequireStatus(http.StatusCreated))
+	f.clock.Advance(time.Minute)
+	f.inst.Emit(context.Background(), connectors.Inbound{
+		ChatID: peopleGroupX, ChatKind: "group", MessageID: "link", SenderID: peopleSender, SenderName: "Customer", Text: "!link " + code.Code, At: f.clock.Now(),
+	})
+
+	account := dto.App{Kind: connectortest.KindName, Label: "Fake: " + peopleSender, ConnectorID: f.conn.ID}
+	require.Equal(t, []dto.App{web, account}, profileOf(t, f.alice, f.alice.User.ID).Apps, "the user's own accounts")
+	require.Equal(t, []dto.App{web, account}, profileOf(t, f.bob, f.alice.User.ID).Apps, "bob may use the connector it was linked through")
+	for _, c := range []*testkit.Client{f.carol, f.dave} {
+		require.Equal(t, []dto.App{web}, profileOf(t, c, f.alice.User.ID).Apps, "no access to the connector, no account")
+	}
+	require.Equal(t, []dto.App{web}, profileOf(t, f.alice, f.bob.User.ID).Apps, "another user's accounts are theirs")
+
+	idents := testkit.Decode[dto.List[dto.Identity]](f.alice.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items
+	f.alice.Delete("/api/v1/identities/" + idents[0].ID).RequireStatus(http.StatusNoContent)
+	require.Equal(t, []dto.App{web}, profileOf(t, f.alice, f.alice.User.ID).Apps)
+}
+
 // GRP-02: a room's members list shows, for each bridged chat, the people seen in it with their
 // platform, the most recently seen first and at most 200 of them; a person seen in two chats of
 // the room is listed under both; agent and user members carry none.

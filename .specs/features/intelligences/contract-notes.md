@@ -1106,3 +1106,62 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   whose chat saw it), the person page (account, conversations by caller, order, the 100 cap), the rename
   lock through a grantee, the linked user, and the members list (order, two chats, the 200 cap, other
   member kinds).
+
+## T28 - Contacts API (CONT-01, TREE-03, TREE-04, TREE-06)
+
+- **`GET /api/v1/contacts`** (sessions and user tokens; an agent token is 403, anonymous 401) →
+  `dto.Contacts{me, machines, unlinked, shared, users, people}`, every list always an array:
+  - `machines`: the caller's own AIs that have a folder, grouped by `agents.machine` into
+    `MachineTree{hostname, label, online, nodes}` built by `intelligences.BuildMachines` (T25): machines with
+    an online AI first, then by label (the owner's label, else the hostname) case-insensitively. Only
+    machines with at least one such AI appear. `TreeNode{ai, path, name, children}` as the design's tree
+    section; `AIContact{intelligence, owner?, machine, folder, folder_label, app, online, last_seen_at?}`.
+    `folder_label` is `~`/`~/x`/absolute by the machine's reported home; `app` is the harness id;
+    `last_seen_at` is `agents.last_seen_at` (when the AI last went offline; none for an AI never
+    connected). Own AIs carry no `owner`.
+  - `unlinked`: the caller's own AIs with no folder (TREE-06), the most recently seen first (never seen
+    last), then by name.
+  - `shared`: the AIs of other users that the caller may use (a `use` grant to the user or to everyone),
+    by name, each with its `owner` and its folder labelled with the **owner's** home for that machine.
+  - `users`: the other enabled users, by name (case-insensitively), as `IntelligenceRef` role `user`.
+  - `people`: one `PeopleGroup{connector: ConnectorRef, count}` for **each connector the caller owns or may
+    use** (also with a count of 0), in the connectors list order (name). The count leaves out people whose
+    account an enabled user verified (PEOP-02: that account is an app of the user, see below); an account of
+    a disabled user counts as a person again. Same match as `ResolveSender`.
+- **`GET /api/v1/contacts/people?connector_id=&q=&after=&limit=`** → `dto.Page[IntelligenceRef]` (role
+  `person`, `platform` = the connector kind), in name order (`lower(display_name)`, then id), without the
+  accounts verified as a user. `limit` 1..200 (default 50, `dto.DefaultPeoplePage`/`MaxPeoplePage`);
+  `has_more` tells whether a further person exists; `after` is the id of the last person of the previous
+  page (a keyset cursor: no gaps or repeats across equal names, and a person renamed meanwhile only moves
+  itself); `q` (at most 100 code points, trimmed, blank = no search) matches a substring of the display
+  name, the handle or the account id, **case-insensitively for ASCII only** (SQLite's `lower()`; `%` and
+  `_` are ordinary characters). Errors: **404 `not_found`** for a connector the caller neither owns nor may
+  use (also an unknown id), **422 `invalid`** with the field `connector_id` (missing), `limit` (not a
+  number, <1 or >200), `q` (>100) or `after` (not a person of that connector, e.g. a user). Owner and use
+  grantee may read; strangers, other members and admins get 404.
+- **`PUT /api/v1/machines/{hostname}`** `dto.SetMachineLabelRequest{label}` → `dto.Machine{hostname, label}`
+  (TREE-04). The machine is the caller's own `machines` row; another owner's machine, a hostname the
+  caller has no machine of and a hostname nobody has are all **404**. The label is trimmed and stripped of
+  control characters; at most 64 code points (**422 `invalid`**, field `label`, nothing changed); empty or
+  blank resets it to the hostname. Two owners may have a machine of the same hostname and label their
+  own. It shows as `MachineTree.label` and as `AIDetail.machine_label`. No event is published.
+- **`GET /api/v1/agent/contacts/tree`** (agent token, no folder, no AI needed; a session or user token is
+  403 "agent token required") → `dto.AgentContactsTree{machines, unlinked}`: the token owner's own AIs
+  only, built like `contacts` (T41 prints it).
+- **Linked accounts are apps (PEOP-02)**: `IntelligenceProfile.apps` of a **user** is the web app plus
+  `{kind: <connector kind>, label: "<Platform>: <external id>", connector_id}` for each chat account the
+  user verified, shown to the user and to the users who own or may use the connector it was linked
+  through (they can already read `person.linked_user`); nobody else sees them.
+- Service: `intelligences.Service.OwnAIs(ctx, userID)`, `Contacts(ctx, userID)`, `People(ctx, userID,
+  PeopleQuery)`, `SetMachineLabel(ctx, userID, hostname, label)`; `intelligences.Deps.Online` (the
+  presence, wired in `app.go`) says which AIs are online. sqlc added: `ListAgentsByOwner`,
+  `ListContactUsers`, `CountConnectorPeople`, `GetConnectorContactSortName`, `ListConnectorContacts`.
+  DTOs in `dto/contacts.go` (`Contacts`, `AgentContactsTree`, `MachineTree`, `TreeNode`, `AIContact`,
+  `PeopleGroup`, `Machine`, `SetMachineLabelRequest`, the paging constants).
+- Tests (`internal/api/contacts_test.go`, `people_test.go`): the whole contacts of a user with two machines
+  (tree shape, online, apps, last seen, unlinked, shared with a public AI, users, people), each user's own
+  data and the agent/anonymous refusals, disabled users and emptied machines, machine and unlinked order,
+  the machine label (trim, 64 boundary, reset, 404s, same hostname for two owners, refusals), the agent
+  tree, people paging (page sizes 1-8 walk the same list, exact-end `has_more`, search by name, handle and
+  account id, wildcard characters), the default and largest page, the people refusals field by field, the
+  linked-account exclusion (link, second user, disabled user, unlink) and the linked accounts as apps.
