@@ -161,6 +161,9 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	c.mu.Lock()
 	c.selfID = me.ID
 	c.mu.Unlock()
+	if me.Username != "" {
+		h.Account("@" + me.Username) // ACC-07
+	}
 	h.Status(connectors.StatusConnected, "")
 	for {
 		c.mu.Lock()
@@ -339,7 +342,7 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 			first = strconv.FormatInt(id, 10)
 		}
 	}
-	for _, part := range connectors.SplitText(connectors.AuthorLine(m.AuthorName, "", ": ", m.Text), MaxText) {
+	for _, part := range connectors.SplitText(connectors.AuthorLine(m.Signature(), "", ": ", m.Text), MaxText) {
 		body := map[string]any{"chat_id": m.ChatID, "text": part}
 		if reply != nil {
 			body["reply_parameters"] = reply

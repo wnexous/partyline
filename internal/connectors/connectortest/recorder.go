@@ -16,13 +16,14 @@ type Recorder struct {
 	inbound    chan connectors.Inbound
 	statuses   chan connectors.Status
 	migrations chan Migration
+	accounts   chan string
 }
 
 // NewRecorder returns an empty Recorder.
 func NewRecorder() *Recorder {
 	return &Recorder{
 		inbound: make(chan connectors.Inbound, 64), statuses: make(chan connectors.Status, 64),
-		migrations: make(chan Migration, 64),
+		migrations: make(chan Migration, 64), accounts: make(chan string, 64),
 	}
 }
 
@@ -38,6 +39,18 @@ func (r *Recorder) Status(s connectors.Status, _ string) { r.statuses <- s }
 func (r *Recorder) MigrateChat(_ context.Context, oldID, newID string) {
 	r.migrations <- Migration{OldID: oldID, NewID: newID}
 }
+
+// Account implements connectors.Handler.
+func (r *Recorder) Account(label string) { r.accounts <- label }
+
+// NextAccount waits for the next reported account label.
+func (r *Recorder) NextAccount(t testing.TB) string {
+	t.Helper()
+	return next(t, r.accounts, "account label")
+}
+
+// NoAccount reports whether no account label is waiting.
+func (r *Recorder) NoAccount() bool { return len(r.accounts) == 0 }
 
 // NextInbound waits for the next inbound message.
 func (r *Recorder) NextInbound(t testing.TB) connectors.Inbound {

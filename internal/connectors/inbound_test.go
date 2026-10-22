@@ -156,18 +156,19 @@ func TestInboundFromRoutedChatIsStoredOncePerRoom(t *testing.T) {
 	}
 }
 
-// CON-12: messages of the connector's own account are dropped.
-func TestInboundDropsOwnMessages(t *testing.T) {
+// CON-12, as refined by ACC-05: a message of the connector's own account is not a message of a
+// chat: it is dropped unless its chat is in rooms, where it is the operator's (selfmsg_test.go),
+// and it never creates a chat.
+func TestInboundDropsOwnMessagesOfChatsInNoRoom(t *testing.T) {
 	e := newInboundEnv(t)
 	e.emit(text(groupID, "M1", "first"))
-	e.routedRoom(t, "A", e.chatID(t, groupID))
 	before := e.messageCount(t)
 
-	own := text(groupID, "M2", "sent from the phone")
-	own.FromSelf = true
-	e.emit(own)
-	own.ChatID, own.MessageID = otherID, "M3"
-	e.emit(own)
+	typed := text(groupID, "M2", "sent from the phone")
+	typed.FromSelf = true
+	e.emit(typed)
+	typed.ChatID, typed.MessageID = otherID, "M3"
+	e.emit(typed)
 	require.Equal(t, before, e.messageCount(t))
 	require.Len(t, e.chats(t), 1, "no chat is created from own messages")
 }

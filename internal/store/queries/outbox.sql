@@ -1,12 +1,14 @@
 -- name: ListDueOutbox :many
-SELECT o.id, o.message_id, o.chat_id, o.attempts, m.room_id
+SELECT o.id, o.message_id, o.chat_id, o.attempts, o.purpose, m.room_id
 FROM outbox o JOIN messages m ON m.id = o.message_id
 WHERE o.status = 'pending' AND o.next_attempt_at <= sqlc.arg(now)
-  -- ROOM-01 defense in depth: never send to a chat that left the room.
-  AND EXISTS (
+  -- ROOM-01 defense in depth: never send to a chat that left the room. A notify copy (NOTI-02)
+  -- goes to the user's own app, which is no member of the room: the sender checks that the user
+  -- still has the chat as a target.
+  AND (o.purpose = 'notify' OR EXISTS (
     SELECT 1 FROM room_members rm
     WHERE rm.room_id = m.room_id AND rm.kind = 'chat' AND rm.member_id = o.chat_id
-  )
+  ))
 ORDER BY o.next_attempt_at, o.id
 LIMIT sqlc.arg(limit);
 
@@ -29,8 +31,10 @@ RETURNING id;
 SELECT * FROM outbox WHERE id = ?;
 
 -- name: DeletePendingRoomChatOutbox :execrows
+-- A chat that leaves a room stops receiving its messages (ROOM-01); the copies of a DM that go to
+-- a user's chosen app (notify) do not depend on membership.
 DELETE FROM outbox
-WHERE chat_id = sqlc.arg(chat_id) AND status = 'pending'
+WHERE chat_id = sqlc.arg(chat_id) AND status = 'pending' AND purpose = 'room'
   AND message_id IN (SELECT id FROM messages WHERE room_id = sqlc.arg(room_id));
 
 -- name: GetSentExternalID :one
@@ -41,3 +45,12 @@ LIMIT 1;
 -- name: CreateNotifyOutbox :exec
 INSERT INTO outbox (id, message_id, chat_id, purpose, next_attempt_at, updated_at)
 VALUES (?, ?, ?, 'notify', ?, ?);
+
+-- name: CountSendingOutboxForChat :one
+-- Sends to the chat that are in flight: an echo of one of them can reach the pipeline before the
+-- row is marked sent (ACC-05).
+SELECT COUNT(*) FROM outbox WHERE chat_id = ? AND status = 'sending';
+
+-- name: CountChatOutboxExternalID :one
+-- Messages Partyline sent to the chat that the platform knows by this id (ACC-05).
+SELECT COUNT(*) FROM outbox WHERE chat_id = ? AND status = 'sent' AND external_id = ?;

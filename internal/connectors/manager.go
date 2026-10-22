@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/events"
@@ -382,6 +384,37 @@ func (h handler) MigrateChat(ctx context.Context, oldID, newID string) {
 		return
 	}
 	h.m.d.MigrateChat(ctx, h.source(), oldID, newID)
+}
+
+// Account stores how the platform names the connector's account (ACC-07): trimmed, without
+// control characters, at most MaxAccountLabel code points.
+func (h handler) Account(label string) {
+	if h.m.current(h.s.id) != h.s {
+		return
+	}
+	label = cleanAccountLabel(label)
+	err := h.m.d.Store.WithTx(context.Background(), func(q *db.Queries) error {
+		return q.SetConnectorAccountLabel(context.Background(), db.SetConnectorAccountLabelParams{AccountLabel: label, ID: h.s.id})
+	})
+	if err != nil {
+		h.m.d.Logger.Error("connectors: store account label", "connector_id", h.s.id, "err", err)
+	}
+}
+
+// MaxAccountLabel is the longest account label in code points.
+const MaxAccountLabel = 100
+
+func cleanAccountLabel(s string) string {
+	s = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r == utf8.RuneError || unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s))
+	if r := []rune(s); len(r) > MaxAccountLabel {
+		s = strings.TrimSpace(string(r[:MaxAccountLabel]))
+	}
+	return s
 }
 
 func (h handler) source() Source {

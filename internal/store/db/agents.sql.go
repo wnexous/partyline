@@ -762,6 +762,51 @@ func (q *Queries) ListAgentRoomStates(ctx context.Context, memberID string) ([]L
 	return items, nil
 }
 
+const listAgentsByOwner = `-- name: ListAgentsByOwner :many
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key, folder FROM agents WHERE owner_id = ?
+`
+
+func (q *Queries) ListAgentsByOwner(ctx context.Context, ownerID string) ([]Agent, error) {
+	rows, err := q.db.QueryContext(ctx, listAgentsByOwner, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Agent
+	for rows.Next() {
+		var i Agent
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.ProjectID,
+			&i.Harness,
+			&i.Machine,
+			&i.Kind,
+			&i.DisplayName,
+			&i.AutoName,
+			&i.SessionNo,
+			&i.ArchivedAt,
+			&i.ConnectedAt,
+			&i.SessionKey,
+			&i.Folder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAgentsForUser = `-- name: ListAgentsForUser :many
 SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, a.session_key, a.folder, u.username AS owner_username, u.display_name AS owner_display_name,
        CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name,

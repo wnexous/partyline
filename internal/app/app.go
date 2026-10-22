@@ -61,6 +61,9 @@ type Options struct {
 	ConnectorKinds []connectors.Kind
 	// Version is the build version, sent by connectors as User-Agent "partyline/<version>".
 	Version string
+	// InboundWait sleeps while the inbound pipeline holds an own-account message back until a
+	// send to its chat finishes (ACC-05); nil sleeps for real. Tests advance their clock with it.
+	InboundWait func(ctx context.Context, d time.Duration) error
 }
 
 // BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
@@ -157,14 +160,18 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Access:        az,
 		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
 		Blobs:         blobs,
-		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Blobs: blobs, Now: opts.Now}),
+		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Blobs: blobs, Online: presence.Online, Now: opts.Now}),
 		now:           opts.Now,
 	}
 	a.Presence = presence
 	auditLog := audit.New(st, opts.Now)
 	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Audit: auditLog, Now: opts.Now})
 	a.Conversations = conversations.New(conversations.Deps{
-		Store: st, Rooms: a.Rooms, Intelligences: a.Intelligences, Bus: bus, AllowCreate: a.Agents.AllowCreate, Now: opts.Now,
+		Store: st, Rooms: a.Rooms, Intelligences: a.Intelligences, Bus: bus, Access: az, AllowCreate: a.Agents.AllowCreate,
+		Online: a.Presence.Online, Now: opts.Now,
+		Kick: func(ctx context.Context, agentID string) {
+			a.Presence.Kick(ctx, agentID, agents.CloseDeleted, agents.ReasonDeleted)
+		},
 	})
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
 		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Logger: opts.Logger,
@@ -180,9 +187,10 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	if version == "" {
 		version = "dev"
 	}
+	sentIDs := connectors.NewSentIDs(opts.Now)
 	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
-		Store: st, Bus: bus, Rooms: a.Rooms, Blobs: blobs, Identities: a.Identities,
-		MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
+		Store: st, Bus: bus, Rooms: a.Rooms, Blobs: blobs, Identities: a.Identities, Conversations: a.Conversations,
+		Sent: sentIDs, Wait: opts.InboundWait, MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
 	})
 	fileLinks := connectors.NewFileLinks(box, st, cfg.PublicURL, opts.Now)
 	a.ConnectorManager = connectors.NewManager(connectors.ManagerDeps{
@@ -193,7 +201,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	})
 	a.sender = opts.Sender
 	if a.sender == nil && !opts.DisableOutbox {
-		a.sender = connectors.NewSender(st, a.Rooms, blobs, a.ConnectorManager)
+		a.sender = connectors.NewSender(st, a.Rooms, blobs, a.ConnectorManager, sentIDs, cfg.PublicURL)
 	}
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
 		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Rooms: a.Rooms, Runner: a.ConnectorManager, Now: opts.Now,

@@ -65,6 +65,10 @@ type Handler interface {
 	// supergroup), keeping its rooms. It does nothing when the old id is unknown or the new
 	// id is already a chat.
 	MigrateChat(ctx context.Context, oldID, newID string)
+	// Account reports how the platform names the connector's own account ("@bot",
+	// "+•••• 1234"), which the operator's contact page shows (ACC-07). Connectors call it once
+	// connected and again when the name changes; an empty label clears it.
+	Account(label string)
 }
 
 // Status is the runtime state of a connector; the values match dto.ConnectorStatus.
@@ -127,6 +131,23 @@ type Outbound struct {
 	RoomID     string
 	AuthorName string
 	CreatedAt  time.Time
+	// Created, when set, is called with the platform id of each message the send created: the
+	// parts of a long text and every file, not only the first. A platform that reports the
+	// account's own messages echoes them all back (ACC-05).
+	Created func(platformID string)
+	// Unsigned tells that the author operates the connector's account, so a platform that
+	// puts the author in the text leaves the author line out (ACC-03, ACC-04). AuthorName still
+	// names the author for platforms that carry it as data.
+	Unsigned bool
+}
+
+// Signature is the author line to put in the text: the author's name, unless the author is the
+// account's operator.
+func (o Outbound) Signature() string {
+	if o.Unsigned {
+		return ""
+	}
+	return o.AuthorName
 }
 
 // OutFile is an attachment of an outbound message; Open returns its content.

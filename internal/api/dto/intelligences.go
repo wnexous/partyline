@@ -59,12 +59,29 @@ type IntelligenceProfile struct {
 	CanEdit bool `json:"can_edit"`
 	// AI is set for AIs.
 	AI *AIDetail `json:"ai,omitempty"`
+	// Person is set for a person, for the users who own or may use its connector (PEOP-03,
+	// PEOP-04); a user who sees the person through a conversation only gets the summary.
+	Person *PersonDetail `json:"person,omitempty"`
 	// Apps lists where the intelligence speaks: the web app for users, the current harness
-	// for AIs.
+	// for AIs, the platform account for a person.
 	Apps []App `json:"apps"`
-	// Conversations lists the conversations the caller can view that involve the
-	// intelligence; empty until conversations exist.
+	// Conversations lists the conversations the caller can view that involve a person (the
+	// rooms with a chat where it was seen, or where it wrote), the most recently active first
+	// (PEOP-03); empty for the other kinds.
 	Conversations []RoomRef `json:"conversations"`
+}
+
+// PersonDetail describes the platform account behind a person (PEOP-03).
+type PersonDetail struct {
+	Connector ConnectorRef `json:"connector"`
+	// ExternalID is the account's id on the platform.
+	ExternalID string `json:"external_id"`
+	// LinkedUser is the user whose verified account it is (AD-008, PEOP-02); messages of the
+	// account are authored by that user.
+	LinkedUser *IntelligenceRef `json:"linked_user,omitempty"`
+	// NameLocked tells that a user chose the name, which platform name changes no longer
+	// replace (PEOP-05, PROF-11).
+	NameLocked bool `json:"name_locked"`
 }
 
 // AIDetail describes where an AI lives and who may use it.

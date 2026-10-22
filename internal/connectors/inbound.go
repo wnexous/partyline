@@ -14,8 +14,8 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/attachments"
-	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
+	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/rooms"
@@ -37,6 +37,17 @@ type PipelineDeps struct {
 	Rooms      *rooms.Service
 	Blobs      *attachments.Store
 	Identities *identities.Service
+	// People records who writes (PEOP-01); the pipeline builds one from Store, Bus and Now
+	// when nil.
+	People *People
+	// Conversations makes the DMs of platform DM chats (ACC-02); without it new DM chats are
+	// routed to the catch-all room only.
+	Conversations *conversations.Service
+	// Sent remembers what Partyline sent, to tell its echoes from the operator's own messages
+	// (ACC-05); nil remembers nothing, and only the outbox's ids then tell them apart.
+	Sent *SentIDs
+	// Wait sleeps for d or until ctx is done; defaults to a timer. Tests pass a fake clock's.
+	Wait func(ctx context.Context, d time.Duration) error
 	// MaxUploadBytes bounds stored media (CON-11).
 	MaxUploadBytes int64
 	Logger         *slog.Logger
@@ -64,6 +75,12 @@ func NewPipeline(d PipelineDeps) *Pipeline {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
+	if d.Wait == nil {
+		d.Wait = sleep
+	}
+	if d.People == nil {
+		d.People = NewPeople(PeopleDeps{Store: d.Store, Bus: d.Bus, Now: d.Now})
+	}
 	return &Pipeline{d: d, routes: map[string]*routeState{}}
 }
 
@@ -87,12 +104,12 @@ func (p *Pipeline) routeState(connectorID string) *routeState {
 	return st
 }
 
-// Handle processes one received message: own messages are dropped (CON-12), pairing
-// commands link the sender on this connector and stop (IDN-02, IDN-03, IDN-05), the chat is
-// recorded (CON-07) unless a catch-all cap refuses it (ROUTE-11), a chat in no room may join
-// the connector's catch-all room (ROUTE-01)
-// and, when the chat belongs to rooms, the message is stored once per room with its media
-// (CON-08, CON-10, CON-11). Failures are logged without message content.
+// Handle processes one received message: messages of the connector's own account are the
+// operator's (CON-12, ACC-05; see handleSelf), pairing commands link the sender on this
+// connector and stop (IDN-02, IDN-03, IDN-05), the chat is recorded (CON-07) unless a catch-all
+// cap refuses it (ROUTE-11), a chat in no room may join the connector's catch-all room
+// (ROUTE-01) and, when the chat belongs to rooms, the message is stored once per room with its
+// media (CON-08, CON-10, CON-11). Failures are logged without message content.
 func (p *Pipeline) Handle(ctx context.Context, src Source, m Inbound) {
 	if err := p.handle(ctx, src, m); err != nil && ctx.Err() == nil {
 		p.d.Logger.Error("connectors: inbound message failed", "connector_id", src.ConnectorID, "err", err)
@@ -100,8 +117,11 @@ func (p *Pipeline) Handle(ctx context.Context, src Source, m Inbound) {
 }
 
 func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
-	if m.FromSelf || m.ChatID == "" {
+	if m.ChatID == "" {
 		return nil
+	}
+	if m.FromSelf {
+		return p.handleSelf(ctx, src, m)
 	}
 	if match := pairingCommand.FindStringSubmatch(m.Text); match != nil {
 		onlyUser := ""
@@ -128,48 +148,54 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 	if err != nil {
 		return err
 	}
-	var roomIDs []string
+	var roomIDs, dms []string // the chat's rooms, and those that are DMs
 	if found {
-		if roomIDs, err = p.d.Store.R().ListChatRoomIDs(ctx, known.ID); err != nil {
+		chatRooms, err := p.d.Store.R().ListChatRooms(ctx, known.ID)
+		if err != nil {
 			return err
+		}
+		for _, r := range chatRooms {
+			roomIDs = append(roomIDs, r.ID)
+			if r.Kind == string(dto.ConversationKindDM) {
+				dms = append(dms, r.ID)
+			}
 		}
 	}
-	var chat db.Chat
-	switch {
-	case strings.TrimSpace(m.Text) == "" && len(m.Media) == 0:
+	if strings.TrimSpace(m.Text) == "" && len(m.Media) == 0 {
 		_, err := upsert()
 		return err
-	case len(roomIDs) > 0:
-		if chat, err = upsert(); err != nil {
-			return err
-		}
-	default:
-		kind := info.Kind
-		if kind == "" {
-			kind = known.Kind
-		}
-		var roomID string
-		chat, roomID, err = p.autoRoute(ctx, src, m.ChatID, kind, upsert)
-		if err != nil || roomID == "" {
-			return err // CON-07: unrouted chats keep no message
-		}
-		roomIDs = []string{roomID}
+	}
+	kind := info.Kind
+	if kind == "" {
+		kind = known.Kind
+	}
+	who := &authorship{}
+	chat, roomIDs, err := p.route(ctx, src, m, routing{known: known, found: found, kind: kind, roomIDs: roomIDs, dms: dms, at: at}, upsert, who)
+	if err != nil || len(roomIDs) == 0 {
+		return err // CON-07: unrouted chats keep no message
 	}
 	if roomIDs, err = p.pending(ctx, chat.ID, m.MessageID, roomIDs); err != nil || len(roomIDs) == 0 {
 		return err
 	}
-	senderUser, err := p.d.Identities.ResolveSender(ctx, src.ConnectorID, m.SenderID, m.SenderAltID)
-	if err != nil {
+	if err := p.author(ctx, src, chat, m, at, who); err != nil {
 		return err
 	}
+	// A verified sender is the user (PEOP-02), any other the person (GRP-03).
+	return p.post(ctx, src, chat, m, roomIDs, who.senderUser, who.iid())
+}
+
+// post stores the message once in each room with its media (CON-08, CON-10, CON-11), as written
+// by the intelligence author, and by the user senderUser when it resolves to one (DLV-06).
+func (p *Pipeline) post(ctx context.Context, src Source, chat db.Chat, m Inbound, roomIDs []string, senderUser, author string) error {
 	files := p.saveMedia(ctx, src, m.Media)
-	kind := dto.MessageKind(m.Kind)
-	if kind == "" {
-		kind = dto.MessageKindText
+	msgKind := dto.MessageKind(m.Kind)
+	if msgKind == "" {
+		msgKind = dto.MessageKindText
 	}
 	for _, roomID := range roomIDs {
 		replyTo := ""
 		if m.ReplyToID != "" {
+			var err error
 			replyTo, err = p.d.Store.R().FindChatMessageRef(ctx, db.FindChatMessageRefParams{
 				RoomID: roomID, ChatID: chat.ID, ExternalID: sql.NullString{String: m.ReplyToID, Valid: true},
 			})
@@ -179,7 +205,7 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 		}
 		_, err := p.d.Rooms.PostFromChat(ctx, roomID, rooms.ChatMessage{
 			ChatID: chat.ID, SenderID: m.SenderID, SenderAltID: m.SenderAltID, SenderName: m.SenderName,
-			SenderUserID: senderUser, ExternalID: m.MessageID, Kind: kind, Text: truncate(m.Text), ReplyTo: replyTo, Files: files,
+			SenderUserID: senderUser, AuthorIID: author, ExternalID: m.MessageID, Kind: msgKind, Text: truncate(m.Text), ReplyTo: replyTo, Files: files,
 		})
 		var verr *validation.Error
 		switch {
@@ -193,176 +219,54 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 	return nil
 }
 
-// AutoRouteUnavailable is the connector status detail when its catch-all room is gone or its
-// owner lost manage on it (ROUTE-03).
-const AutoRouteUnavailable = "auto-route room unavailable"
-
-// Catch-all caps (ROUTE-08): a connector auto-adds at most AutoRoutePerHour chats in any hour,
-// and a catch-all room takes auto-added chats while it has fewer than AutoRouteRoomMax chats.
-// Beyond them the connector status detail is AutoRouteLimited.
-const (
-	AutoRoutePerHour = 60
-	AutoRouteRoomMax = 1000
-	AutoRouteLimited = "auto-route limit reached"
-)
-
-// autoRoute handles a message with content from a chat that belongs to no room. It records
-// the chat with upsert (CON-07) and, when its kind matches the connector's catch-all scope and
-// no skip holds it out, adds it to the catch-all room with the connector owner's rights
-// (ROUTE-01, ROUTE-02) and returns the room id; it returns "" when the chat is not routed. A
-// missing room or an owner without manage sets the status detail AutoRouteUnavailable
-// (ROUTE-03). A chat refused by a cap is not recorded at all: only the status detail
-// AutoRouteLimited says so (ROUTE-08, ROUTE-11). Additions of one connector are serialized,
-// so concurrent first messages add a chat once and the caps hold.
-func (p *Pipeline) autoRoute(ctx context.Context, src Source, externalID, kind string, upsert func() (db.Chat, error)) (db.Chat, string, error) {
-	c, err := p.d.Store.R().GetConnector(ctx, src.ConnectorID)
-	if err != nil {
-		return db.Chat{}, "", err
-	}
-	if !scopeMatches(dto.AutoRouteScope(c.AutoRouteScope), kind) {
-		chat, err := upsert()
-		return chat, "", err
-	}
-	st := p.routeState(c.ID)
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	known, found, err := p.findChat(ctx, c.ID, externalID)
-	if err != nil {
-		return db.Chat{}, "", err
-	}
-	if found {
-		until, err := p.d.Store.R().GetAutoRouteSkip(ctx, db.GetAutoRouteSkipParams{ConnectorID: c.ID, ChatID: known.ID})
-		switch {
-		case err == nil && until > p.d.Now().UnixMilli():
-			chat, err := upsert()
-			return chat, "", err
-		case err != nil && !errors.Is(err, sql.ErrNoRows):
-			return db.Chat{}, "", err
-		}
-	}
-	if !c.AutoRouteRoomID.Valid {
-		chat, err := upsert()
-		if err != nil {
-			return db.Chat{}, "", err
-		}
-		return chat, "", p.setDetail(ctx, c, AutoRouteUnavailable)
-	}
-	roomID := c.AutoRouteRoomID.String
-	if found {
-		n, err := p.d.Store.R().CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: roomID, Kind: string(dto.MemberKindChat), MemberID: known.ID})
-		if err != nil {
-			return db.Chat{}, "", err
-		}
-		if n > 0 { // a concurrent first message added it
-			chat, err := upsert()
-			return chat, roomID, err
-		}
-	}
-	now := p.d.Now()
-	full, err := p.d.Store.R().CountRoomChatMembers(ctx, roomID)
-	if err != nil {
-		return db.Chat{}, "", err
-	}
-	if full >= AutoRouteRoomMax || st.recent(now) >= AutoRoutePerHour {
-		return db.Chat{}, "", p.setDetail(ctx, c, AutoRouteLimited)
-	}
-	if p.routeHook != nil {
-		p.routeHook(c.ID)
-	}
-	chat, err := upsert()
-	if err != nil {
-		return db.Chat{}, "", err
-	}
-	owner := authn.Principal{Kind: authn.KindUser, UserID: c.OwnerID}
-	on := true
-	_, err = p.d.Rooms.AddMember(ctx, owner, roomID, rooms.MemberInput{Kind: dto.MemberKindChat, MemberID: chat.ID, Outbound: &on})
-	switch {
-	case err == nil:
-		st.routed = append(st.routed, now)
-		return chat, roomID, p.clearDetail(ctx, c)
-	case errors.Is(err, rooms.ErrAlreadyMember):
-		return chat, roomID, p.clearDetail(ctx, c)
-	case errors.Is(err, access.ErrNotFound), errors.Is(err, access.ErrForbidden):
-		return chat, "", p.setDetail(ctx, c, AutoRouteUnavailable)
-	default:
-		return db.Chat{}, "", err
-	}
+// authorship is who wrote a message, resolved once per message: the user the sender is verified
+// as and the sender's person, recorded only for a message that reaches rooms.
+type authorship struct {
+	senderUser string
+	userDone   bool
+	person     db.Person
+	seen       bool
 }
 
-// findChat returns the connector's chat with the platform id, if it is recorded.
-func (p *Pipeline) findChat(ctx context.Context, connectorID, externalID string) (db.Chat, bool, error) {
-	chat, err := p.d.Store.R().GetChatByExternalID(ctx, db.GetChatByExternalIDParams{ConnectorID: connectorID, ExternalID: externalID})
-	switch {
-	case err == nil:
-		return chat, true, nil
-	case errors.Is(err, sql.ErrNoRows):
-		return db.Chat{}, false, nil
-	default:
-		return db.Chat{}, false, err
+// iid is the intelligence that wrote the message: the verified user (PEOP-02), else the person
+// (GRP-03); empty for a sender without an id.
+func (a *authorship) iid() string {
+	if a.senderUser != "" {
+		return a.senderUser
 	}
+	return a.person.ID
 }
 
-// recent drops the connector's auto-routes older than an hour and counts the rest. Callers
-// hold mu.
-func (st *routeState) recent(now time.Time) int {
-	i := 0
-	for i < len(st.routed) && !st.routed[i].After(now.Add(-time.Hour)) {
-		i++
-	}
-	st.routed = st.routed[i:]
-	return len(st.routed)
-}
-
-// scopeMatches tells whether a catch-all scope takes a chat kind.
-func scopeMatches(scope dto.AutoRouteScope, kind string) bool {
-	switch scope {
-	case dto.AutoRouteScopeAll:
-		return true
-	case dto.AutoRouteScopeDMs:
-		return kind == string(dto.ChatKindDM)
-	case dto.AutoRouteScopeGroups:
-		return kind == string(dto.ChatKindGroup) || kind == string(dto.ChatKindChannel)
-	default:
-		return false
-	}
-}
-
-// setDetail sets the connector's status detail to an auto-route problem (ROUTE-03,
-// ROUTE-08) and publishes it once.
-func (p *Pipeline) setDetail(ctx context.Context, c db.Connector, detail string) error {
-	if c.LastError == detail {
+// verified resolves the user the sender is verified as through this connector (AD-008).
+func (p *Pipeline) verified(ctx context.Context, src Source, m Inbound, a *authorship) error {
+	if a.userDone {
 		return nil
 	}
-	err := p.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		return q.SetConnectorLastError(ctx, db.SetConnectorLastErrorParams{LastError: detail, ID: c.ID})
+	user, err := p.d.Identities.ResolveSender(ctx, src.ConnectorID, m.SenderID, m.SenderAltID)
+	if err != nil {
+		return err
+	}
+	a.senderUser, a.userDone = user, true
+	return nil
+}
+
+// author resolves who wrote the message and records the sender as a person (PEOP-01).
+func (p *Pipeline) author(ctx context.Context, src Source, chat db.Chat, m Inbound, at time.Time, a *authorship) error {
+	if err := p.verified(ctx, src, m, a); err != nil {
+		return err
+	}
+	if a.seen {
+		return nil
+	}
+	person, err := p.d.People.Seen(ctx, Sighting{
+		ConnectorID: src.ConnectorID, ConnectorKind: src.Kind, Chat: chat,
+		SenderID: m.SenderID, AltID: m.SenderAltID, Name: m.SenderName, At: at,
 	})
 	if err != nil {
 		return err
 	}
-	p.d.Logger.Warn("connectors: "+detail, "connector_id", c.ID)
-	p.d.Bus.Publish(events.ConnectorStatus{ConnectorID: c.ID, Status: c.Status, Detail: detail})
+	a.person, a.seen = person, true
 	return nil
-}
-
-// clearDetail removes an auto-route status detail once a chat is routed again (ROUTE-08,
-// ROUTE-09); other details are left to the connector's status reports.
-func (p *Pipeline) clearDetail(ctx context.Context, c db.Connector) error {
-	if !IsAutoRouteDetail(c.LastError) {
-		return nil
-	}
-	err := p.d.Store.WithTx(ctx, func(q *db.Queries) error {
-		return q.SetConnectorLastError(ctx, db.SetConnectorLastErrorParams{LastError: "", ID: c.ID})
-	})
-	if err != nil {
-		return err
-	}
-	p.d.Bus.Publish(events.ConnectorStatus{ConnectorID: c.ID, Status: c.Status})
-	return nil
-}
-
-// IsAutoRouteDetail tells whether a status detail was set by catch-all routing.
-func IsAutoRouteDetail(detail string) bool {
-	return detail == AutoRouteUnavailable || detail == AutoRouteLimited
 }
 
 // truncate cuts text longer than the message limit (dto.MaxTextLength code points) to that

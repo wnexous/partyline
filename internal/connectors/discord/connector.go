@@ -68,6 +68,7 @@ type Connector struct {
 	mu     sync.Mutex
 	run    *running
 	titles map[string]string // channel id → title
+	self   string            // the bot's user id, once the gateway said it (READY)
 }
 
 // running is the handler and context of the current Run.
@@ -101,6 +102,7 @@ func newWithSession(s session, d connectors.Deps) *Connector {
 	}
 	c := &Connector{s: s, userAgent: d.UserAgent, log: log, client: d.MediaClient(60 * time.Second), titles: map[string]string{}}
 	s.AddHandler(c.onMessage)
+	s.AddHandler(c.onReady)
 	return c
 }
 
@@ -123,23 +125,45 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	return ctx.Err()
 }
 
-// onMessage emits messages of non-bot users (DC-01): the chat is the channel.
-func (c *Connector) onMessage(_ *discordgo.Session, m *discordgo.MessageCreate) {
-	if m == nil || m.Message == nil || m.Author == nil || m.Author.Bot {
+// onReady remembers the bot's user id, to tell its own messages (ACC-05), and reports its
+// @username as the connector's account (ACC-07); the gateway sends READY again after a reconnect.
+func (c *Connector) onReady(_ *discordgo.Session, r *discordgo.Ready) {
+	if r == nil || r.User == nil {
 		return
 	}
 	c.mu.Lock()
+	if r.User.ID != "" {
+		c.self = r.User.ID
+	}
 	run := c.run
 	c.mu.Unlock()
-	if run == nil {
+	if run != nil && r.User.Username != "" {
+		run.h.Account("@" + r.User.Username)
+	}
+}
+
+// onMessage emits messages of users (DC-01) and of the bot itself (ACC-05); messages of other
+// bots are ignored. The chat is the channel.
+func (c *Connector) onMessage(_ *discordgo.Session, m *discordgo.MessageCreate) {
+	if m == nil || m.Message == nil || m.Author == nil {
+		return
+	}
+	c.mu.Lock()
+	run, self := c.run, c.self
+	c.mu.Unlock()
+	fromSelf := self != "" && m.Author.ID == self
+	if run == nil || (m.Author.Bot && !fromSelf) {
 		return
 	}
 	in := connectors.Inbound{
-		ChatID: m.ChannelID, ChatKind: "channel", MessageID: m.ID,
+		ChatID: m.ChannelID, ChatKind: "channel", MessageID: m.ID, FromSelf: fromSelf,
 		SenderID: m.Author.ID, SenderName: displayName(m), Kind: string(dto.MessageKindText), Text: m.Content, At: m.Timestamp,
 	}
 	if m.GuildID == "" {
-		in.ChatKind, in.ChatTitle = "dm", in.SenderName
+		in.ChatKind = "dm"
+		if !fromSelf { // the title of a DM is the other party's name, which the bot's own message does not carry
+			in.ChatTitle = in.SenderName
+		}
 	} else {
 		in.ChatTitle = c.title(m.GuildID, m.ChannelID)
 	}
@@ -229,9 +253,10 @@ func (c *Connector) opener(rawURL string) func(ctx context.Context) (io.ReadClos
 
 // Send posts the text in parts of at most 2,000 characters, the first referencing the
 // replied message (DC-02), and attaches the files to the last part. Mentions in the text
-// are not resolved, so a bridged message cannot ping anyone. It returns the first part's id.
+// are not resolved, so a bridged message cannot ping anyone. It returns the first part's id and
+// tells m.Created the id of every part, as the gateway echoes each of them (ACC-05).
 func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, error) {
-	parts := connectors.SplitText(connectors.AuthorLine(m.AuthorName, "**", "**: ", m.Text), MaxText)
+	parts := connectors.SplitText(connectors.AuthorLine(m.Signature(), "**", "**: ", m.Text), MaxText)
 	if len(parts) == 0 && len(m.Files) > 0 {
 		parts = []string{""}
 	}
@@ -259,8 +284,14 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 		if err != nil {
 			return "", fmt.Errorf("send: %w", err)
 		}
-		if first == "" && sent != nil {
+		if sent == nil {
+			continue
+		}
+		if first == "" {
 			first = sent.ID
+		}
+		if m.Created != nil {
+			m.Created(sent.ID)
 		}
 	}
 	return first, nil

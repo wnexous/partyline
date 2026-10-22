@@ -101,6 +101,10 @@ type RoomMember struct {
 	// Intelligence is the profile summary of an agent or user member: handle, kind and avatar
 	// next to the name (PROF-03, PROF-09). Absent for chat and project members.
 	Intelligence *IntelligenceRef `json:"intelligence,omitempty"`
+	// People are the people seen in a chat member, the most recently seen first and at most
+	// MaxChatPeople, each with its platform (GRP-02). Only GET /rooms/{id}/members fills it;
+	// absent for other members and for a chat nobody was seen in.
+	People []IntelligenceRef `json:"people,omitempty"`
 	// Outbound tells whether agent and user posts without explicit recipients reach this chat (DLV-03).
 	Outbound bool `json:"outbound"`
 	// Online is set for agent members, and for project members: whether the project has an
@@ -126,6 +130,9 @@ type RoomMember struct {
 	Keywords  []string  `json:"keywords"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// MaxChatPeople is the most people listed for one chat member of a room (GRP-02).
+const MaxChatPeople = 200
 
 // MemberSession names the active session of a project member.
 type MemberSession struct {
@@ -261,14 +268,29 @@ const (
 	OutboxStatusFailed  OutboxStatus = "failed"
 )
 
+// OutboxPurpose says why a message is delivered to a chat.
+type OutboxPurpose string
+
+// Outbox purposes. A delivery to a chat that is a member of the room is the default and carries
+// no purpose in OutboxItem.
+const (
+	// OutboxPurposeRoom is the delivery of a room message to a chat member of the room.
+	OutboxPurposeRoom OutboxPurpose = "room"
+	// OutboxPurposeNotify is the copy of an AI's DM sent to the app its user chose (NOTI-02).
+	OutboxPurposeNotify OutboxPurpose = "notify"
+)
+
 // OutboxItem is the delivery of a message to one chat.
 type OutboxItem struct {
-	ID        string       `json:"id"`
-	ChatID    string       `json:"chat_id"`
-	Status    OutboxStatus `json:"status"`
-	Attempts  int          `json:"attempts"`
-	LastError string       `json:"last_error,omitempty"`
-	UpdatedAt time.Time    `json:"updated_at"`
+	ID     string       `json:"id"`
+	ChatID string       `json:"chat_id"`
+	Status OutboxStatus `json:"status"`
+	// Purpose is notify for the copy of an AI's DM sent to the user's chosen app (that chat is
+	// no member of the room); absent for an ordinary delivery.
+	Purpose   OutboxPurpose `json:"purpose,omitempty"`
+	Attempts  int           `json:"attempts"`
+	LastError string        `json:"last_error,omitempty"`
+	UpdatedAt time.Time     `json:"updated_at"`
 }
 
 // RoomRef names a room inside agent frames and events. In the frames an AI receives, a DM is

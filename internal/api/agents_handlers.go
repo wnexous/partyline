@@ -15,6 +15,7 @@ func (s *server) agentRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agents", authed(s.listAgents))
 	s.handle(mux, "PATCH /api/v1/agents/{id}", authed(s.updateAgent))
 	s.handle(mux, "DELETE /api/v1/agents/{id}", authed(s.deleteAgent))
+	s.handle(mux, "POST /api/v1/agents/{id}/merge", authed(s.mergeAgent))
 	s.handle(mux, "GET /api/v1/agents/{id}/sharing", authed(s.getAgentSharing))
 	s.handle(mux, "PUT /api/v1/agents/{id}/sharing", authed(s.putAgentSharing))
 	s.handle(mux, "GET /api/v1/projects", authed(s.listProjects))
@@ -70,6 +71,25 @@ func (s *server) deleteAgent(w http.ResponseWriter, r *http.Request, p authn.Pri
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// mergeAgent merges the AI in the path into another AI of the caller: its groups, DMs, history,
+// cursors, grants and connectors move to it and it is deleted. The answer is the AI that remains
+// (MRG-01).
+func (s *server) mergeAgent(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.MergeAgentRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	if err := s.Conversations.Merge(r.Context(), p, r.PathValue("id"), req.Into); err != nil {
+		return err
+	}
+	a, err := s.Agents.Get(r.Context(), p, req.Into)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, toAgent(a))
 	return nil
 }
 

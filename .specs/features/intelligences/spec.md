@@ -388,17 +388,17 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | SES-08 | P1: One live session | Execute | Implementing |
 | TREE-01 | P1: Tree | Tasks | Pending |
 | TREE-02 | P1: Tree | Tasks | Pending |
-| TREE-03 | P1: Tree | Tasks | Pending |
-| TREE-04 | P1: Tree | Tasks | Pending |
+| TREE-03 | P1: Tree | Execute | Implementing |
+| TREE-04 | P1: Tree | Execute | Implementing |
 | TREE-05 | P1: Tree | Tasks | Pending |
-| TREE-06 | P1: Tree | Tasks | Pending |
+| TREE-06 | P1: Tree | Execute | Implementing |
 | TREE-07 | P1: Tree | Tasks | Pending |
-| CONT-01 | P1: Contacts and DMs | Tasks | Pending |
+| CONT-01 | P1: Contacts and DMs | Execute | Implementing |
 | DM-01 | P1: Contacts and DMs | Execute | Implementing |
 | DM-02 | P1: Contacts and DMs | Execute | Implementing |
 | DM-03 | P1: Contacts and DMs | Execute | Implementing |
 | DM-04 | P1: Contacts and DMs | Execute | Implementing |
-| DM-05 | P1: Contacts and DMs | Tasks | Pending |
+| DM-05 | P1: Contacts and DMs | Execute | Implementing |
 | DM-06 | P1: Contacts and DMs | Execute | Implementing |
 | DM-07 | P1: Contacts and DMs | Execute | Implementing |
 | DM-08 | P1: Contacts and DMs | Execute | Implementing |
@@ -406,19 +406,19 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | GRP-02 | P1: Groups | Execute | Implementing |
 | GRP-03 | P1: Groups | Execute | Implementing |
 | GRP-04 | P1: Groups | Execute | Implementing |
-| PEOP-01 | P1: People | Tasks | Pending |
-| PEOP-02 | P1: People | Tasks | Pending |
-| PEOP-03 | P1: People | Tasks | Pending |
-| PEOP-04 | P1: People | Tasks | Pending |
-| PEOP-05 | P1: People | Tasks | Pending |
-| PEOP-06 | P1: People | Tasks | Pending |
-| ACC-01 | P1: Accounts | Tasks | Pending |
-| ACC-02 | P1: Accounts | Tasks | Pending |
-| ACC-03 | P1: Accounts | Tasks | Pending |
-| ACC-04 | P1: Accounts | Tasks | Pending |
-| ACC-05 | P1: Accounts | Tasks | Pending |
-| ACC-06 | P1: Accounts | Tasks | Pending |
-| ACC-07 | P1: Accounts | Tasks | Pending |
+| PEOP-01 | P1: People | Execute | Implementing |
+| PEOP-02 | P1: People | Execute | Implementing |
+| PEOP-03 | P1: People | Execute | Implementing |
+| PEOP-04 | P1: People | Execute | Implementing |
+| PEOP-05 | P1: People | Execute | Implementing |
+| PEOP-06 | P1: People | Execute | Implementing |
+| ACC-01 | P1: Accounts | Execute | Implementing |
+| ACC-02 | P1: Accounts | Execute | Implementing |
+| ACC-03 | P1: Accounts | Execute | Implementing |
+| ACC-04 | P1: Accounts | Execute | Implementing |
+| ACC-05 | P1: Accounts | Execute | Implementing |
+| ACC-06 | P1: Accounts | Execute | Implementing |
+| ACC-07 | P1: Accounts | Execute | Implementing |
 | PROF-01 | P1: Profiles | Execute | Implementing |
 | PROF-02 | P1: Profiles | Execute | Implementing |
 | PROF-03 | P1: Profiles | Execute | Implementing |
@@ -429,7 +429,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | PROF-08 | P1: Profiles | Execute | Implementing |
 | PROF-09 | P1: Profiles | Execute | Implementing |
 | PROF-10 | P1: Profiles | Execute | Implementing |
-| PROF-11 | P1: Profiles | Tasks | Pending |
+| PROF-11 | P1: Profiles | Execute | Implementing |
 | LAY-01 | P1: Messenger layout | Execute | Implementing |
 | LAY-02 | P1: Messenger layout | Execute | Implementing |
 | LAY-03 | P1: Messenger layout | Tasks | Pending |
@@ -450,11 +450,11 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | MIG-03 | P1: Migration | Execute | Implementing |
 | MIG-04 | P1: Migration | Execute | Implementing |
 | MIG-05 | P1: Migration | Execute | Implementing |
-| MRG-01 | P2: Merge | Tasks | Pending |
-| MRG-02 | P2: Merge | Tasks | Pending |
-| NOTI-01 | P2: Notify on apps | Tasks | Pending |
-| NOTI-02 | P2: Notify on apps | Tasks | Pending |
-| NOTI-03 | P2: Notify on apps | Tasks | Pending |
+| MRG-01 | P2: Merge | Execute | Implementing |
+| MRG-02 | P2: Merge | Execute | Implementing |
+| NOTI-01 | P2: Notify on apps | Execute | Implementing |
+| NOTI-02 | P2: Notify on apps | Execute | Implementing |
+| NOTI-03 | P2: Notify on apps | Execute | Implementing |
 
 **Coverage:** 84 total, 84 mapped to tasks (see `tasks.md` Requirement Coverage)
 

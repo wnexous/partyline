@@ -173,6 +173,8 @@ type Deps struct {
 	Bus    *events.Bus
 	// Blobs stores the avatars.
 	Blobs *attachments.Store
+	// Online tells whether an AI has a live session; nil counts every AI as offline.
+	Online func(agentID string) bool
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
 }
@@ -183,7 +185,9 @@ type Service struct {
 	az    *access.Authorizer
 	bus   *events.Bus
 	blobs *attachments.Store
-	now   func() time.Time
+	// online tells whether an AI has a live session; may be nil.
+	online func(agentID string) bool
+	now    func() time.Time
 }
 
 // New returns a Service.
@@ -191,7 +195,7 @@ func New(d Deps) *Service {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Service{store: d.Store, az: d.Access, bus: d.Bus, blobs: d.Blobs, now: d.Now}
+	return &Service{store: d.Store, az: d.Access, bus: d.Bus, blobs: d.Blobs, online: d.Online, now: d.Now}
 }
 
 // Profile is an intelligence as one caller reads it.
@@ -204,6 +208,14 @@ type Profile struct {
 	Platform string
 	// Agent is set for an AI.
 	Agent *AgentInfo
+	// Person is set for a person.
+	Person *PersonInfo
+	// Accounts are the chat accounts a user verified (PEOP-02) that the caller may see: the
+	// user's own, and those linked through a connector the caller owns or may use.
+	Accounts []LinkedAccount
+	// Operated are the connectors the user or AI operates (ACC-01) that the caller owns or may
+	// use: their platform accounts are apps of the operator (ACC-07).
+	Operated []db.Connector
 }
 
 // AgentInfo is what a profile shows about an AI.
@@ -225,7 +237,21 @@ func (s *Service) profile(ctx context.Context, p authn.Principal, d db.GetIntell
 	out := Profile{Intelligence: d.Intelligence, Role: Role(d.Role), CanEdit: canEdit}
 	q := s.store.R()
 	switch out.Role {
+	case RoleUser:
+		accounts, err := s.linkedAccounts(ctx, p.UserID, d.Intelligence.ID)
+		if err != nil {
+			return Profile{}, err
+		}
+		out.Accounts = accounts
+		if out.Operated, err = s.operatedConnectors(ctx, p.UserID, d.Intelligence.ID, true); err != nil {
+			return Profile{}, err
+		}
 	case RoleAI:
+		operated, err := s.operatedConnectors(ctx, p.UserID, d.Intelligence.ID, false)
+		if err != nil {
+			return Profile{}, err
+		}
+		out.Operated = operated
 		a, err := q.GetAgent(ctx, d.Intelligence.ID)
 		if err != nil {
 			return Profile{}, err
@@ -248,11 +274,11 @@ func (s *Service) profile(ctx context.Context, p authn.Principal, d db.GetIntell
 		}
 		out.Agent = &AgentInfo{Agent: a, Owner: owner, MachineLabel: label, Home: m.Home, Level: level}
 	case RolePerson:
-		c, err := q.GetConnector(ctx, d.PersonConnectorID)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		info, err := s.personInfo(ctx, p.UserID, d.Intelligence.ID)
+		if err != nil {
 			return Profile{}, err
 		}
-		out.Platform = c.Kind
+		out.Person, out.Platform = info, info.Connector.Kind
 	}
 	return out, nil
 }
@@ -365,8 +391,14 @@ func (s *Service) rights(ctx context.Context, p authn.Principal, d db.GetIntelli
 		shared, err := s.sharesConversation(ctx, p.UserID, id)
 		return shared, false, err
 	case RolePerson:
+		// The users of the connector see and edit its people (PEOP-04); a user who can view a
+		// conversation where the person was seen or wrote reads the profile only.
 		ok, err := s.az.CanUseConnector(ctx, p.UserID, d.PersonConnectorID)
-		return ok, ok && user, err
+		if err != nil || ok {
+			return ok, ok && user, err
+		}
+		shared, err := s.sharesPersonConversation(ctx, p.UserID, id)
+		return shared, false, err
 	}
 	return false, false, nil
 }
@@ -500,10 +532,16 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in P
 			}
 			return err
 		}
-		if next.DisplayName != cur.DisplayName {
-			return mirrorDisplayName(ctx, q, Role(d.Role), id, next.DisplayName)
+		if next.DisplayName == cur.DisplayName {
+			return nil
 		}
-		return nil
+		if Role(d.Role) == RolePerson {
+			// PEOP-05, PROF-11: a name chosen here is not replaced by platform name changes.
+			if err := q.SetPersonNameLocked(ctx, db.SetPersonNameLockedParams{NameLocked: true, ID: id}); err != nil {
+				return err
+			}
+		}
+		return mirrorDisplayName(ctx, q, Role(d.Role), id, next.DisplayName)
 	})
 	if err != nil {
 		return Profile{}, err

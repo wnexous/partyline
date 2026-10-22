@@ -23,16 +23,17 @@ import (
 
 type outboundEnv struct {
 	*inboundEnv
-	chat  string
-	room  dto.Room
-	agent *testkit.Client // agent REST client ("helper")
+	chat   string
+	room   dto.Room
+	agent  *testkit.Client    // agent REST client ("helper")
+	helper *testkit.AgentConn // helper's live connection
 }
 
 // newOutboundEnv runs the outbox worker with a fake connector whose group chat is routed to
 // alice's agent "helper" (connected).
-func newOutboundEnv(t *testing.T) *outboundEnv {
+func newOutboundEnv(t *testing.T, opts ...testkit.Option) *outboundEnv {
 	t.Helper()
-	e := newInboundEnv(t, testkit.WithOutbox())
+	e := newInboundEnv(t, append([]testkit.Option{testkit.WithOutbox()}, opts...)...)
 	e.emit(text(groupID, "M0", "hello"))
 	chat := e.chatID(t, groupID)
 
@@ -44,7 +45,7 @@ func newOutboundEnv(t *testing.T) *outboundEnv {
 	e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK).Decode(&agents)
 	require.Len(t, agents.Items, 1)
 	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: agents.Items[0].ID}).RequireStatus(http.StatusCreated))
-	return &outboundEnv{inboundEnv: e, chat: chat, room: room, agent: token.AsAgent("helper")}
+	return &outboundEnv{inboundEnv: e, chat: chat, room: room, agent: token.AsAgent("helper"), helper: conn}
 }
 
 // outbox returns the message's delivery to the chat once it satisfies done.
@@ -197,7 +198,7 @@ func (e *outboundEnv) authorName(t *testing.T, roomID, messageID string) string 
 // MEM-01, MEM-02: the connector gets the agent name as author by default, the member's
 // display name when set (also shown in the room timeline), and no author when the member's
 // signature is off. Settings are per room: the same agent in another room keeps its name.
-// Users keep their own display name.
+// Users keep their own display name; the connector's operator is not signed.
 func TestOutboundAuthorFollowsMemberSettings(t *testing.T) {
 	e := newOutboundEnv(t)
 
@@ -235,10 +236,14 @@ func TestOutboundAuthorFollowsMemberSettings(t *testing.T) {
 	require.Equal(t, "helper", sent.AuthorName)
 	require.Equal(t, "helper", e.authorName(t, other.ID, m.ID))
 
+	// alice operates the connector: her own account sends her messages without an author line
+	// (ACC-04; TestUsersAreSignedUnlessTheyOperateTheAccount covers the users who are named),
+	// though the connector still learns who wrote it.
 	u := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: "from alice"}).RequireStatus(http.StatusCreated))
 	sent = e.inst.WaitSend(t)
 	require.Equal(t, u.ID, sent.MessageID)
 	require.Equal(t, "alice", sent.AuthorName)
+	require.Empty(t, sent.Signature())
 }
 
 func ptr[T any](v T) *T { return &v }

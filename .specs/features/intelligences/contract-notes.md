@@ -1130,3 +1130,524 @@ T47-T49 pages.
 - Tests: `routes/_app/rooms/conversation.test.tsx` (header, participants, authors, read state),
   `components/message-timeline.test.tsx` (the author block), `components/intelligence/intelligence.test.tsx`
   (`decorative`).
+
+## T26 - People from inbound messages (PEOP-01, PEOP-02, PEOP-05, PEOP-06, GRP-03)
+
+- **`connectors.People`** (`people.go`; `Pipeline` builds one from its deps unless
+  `PipelineDeps.People` is set). `Seen(ctx, Sighting{ConnectorID, ConnectorKind, Chat, SenderID, AltID,
+  Name, At}) (db.Person, error)` runs for every inbound message **that reaches at least one room**:
+  after the chat is recorded and routed (the catch-all may route it) and the repeats are dropped,
+  before the message is posted. An unrouted chat, a chat refused by a catch-all cap (ROUTE-11), a
+  pairing command, an empty message and a repeat record nobody: CON-07 keeps nothing of unrouted
+  chats, and a sender id is a phone number or an account id. A message with neither a sender id nor an
+  alternative id has no person (the zero `db.Person`, `author_iid` empty). T30 will call it earlier
+  for the platform DMs it routes.
+- **Who is a person**: the person of (connector, id) found by `GetPersonByExternalID` for the sender id
+  and then the alternative id (a match on `external_id` before one on `alt_external_id`), so the same
+  account seen under its phone or its LID is one person, in either order; a person of another connector
+  never matches (AD-008). Concurrent first messages of one sender create one person: the write
+  transaction decides again under the single-writer lock. A sender id of `""` with an alternative id
+  uses the alternative id, as `ResolveSender` does.
+- **Creation (PEOP-01)**: `intelligences.Create` (`handles.Person`, kind `human`) with the platform name
+  cleaned by `CleanDisplayName`, else `"<Platform> contact"` (`connectors.PlatformLabel`: `WhatsApp
+  contact`); the handle derives from that name across the instance's one namespace (`customer`,
+  `customer-2`, `alice-2` when the user has `@alice`). `people`: `external_id` = the sender id,
+  `alt_external_id` = the other id (or ''), `platform_name` = the cleaned platform name ('' when it gave
+  none), `created_at` = now, `last_seen_at` = the message time.
+- **Alternative id**: `external_id` never changes; `alt_external_id` is the id of the message that is not
+  the external id, kept while the message still reports it and replaced by the latest other id otherwise
+  (a person first seen without an alt learns it from a later sighting; a message without ids keeps it).
+- **Name (PEOP-05)**: a non-empty cleaned platform name that differs from `platform_name` is stored in
+  `platform_name`; the intelligence's display name follows it unless `name_locked` (then only
+  `platform_name` moves). The handle never changes by itself. An empty or blank name changes nothing,
+  and a person first seen without a name takes the first name it shows. A display-name change publishes
+  `events.IntelligenceChanged` (live `intelligence.changed` to the users who can see the person);
+  creating a person publishes nothing.
+- **Lock (PROF-11, brought forward from T27)**: `intelligences.Service.Update` sets
+  `people.name_locked` in the same transaction when the display name of a **person** changes (not for a
+  bio or handle edit, nor for a rename to the name it already has), so PEOP-05's "unless the user
+  renamed the contact" holds end to end. T27 adds visibility and the profile on top of it.
+- **Chat links**: `chat_people` gets a row for (chat, person) on first sight, and `chats.person_id` names
+  the person for chats of kind `dm` (the counterpart; the latest person to write in the chat wins; a
+  person known from a group becomes the counterpart of a DM chat it later writes in). Group and channel
+  chats keep `person_id` NULL.
+- **Throttle**: `people.last_seen_at` and `chat_people.last_seen_at` are written when missing or when the
+  message time is at least `connectors.SeenInterval` (10 minutes) after the stored one, so they follow
+  the message's time, never move back, and a message that changes nothing is answered from the read pool
+  without a write. A message time in the future (a phone with a wrong clock) or zero counts as now.
+- **Author (PEOP-02, GRP-03, PEOP-06)**: `rooms.ChatMessage.AuthorIID` is stored as `messages.author_iid`:
+  the user a verified sender is linked to (`ResolveSender`, AD-008 unchanged), else the person.
+  `author_kind` stays `chat` and `author_id` the chat; `author_user_id` and therefore `trusted` are
+  exactly what they were (a person, a sender named like the owner, a senderless message and a sender
+  verified as another user are never trusted). The timeline, the live frame and `author_name` show the
+  person's current display name, with `author.platform` = the connector kind; a chat message without
+  any sender id still shows the chat's title and has no author id. History keeps the person after a
+  sender is linked, and the person row stays (T27 shows it as an app of the user).
+- sqlc added: `GetChatPerson`.
+- Tests (`internal/connectors/people_test.go`): a new sender (profile, live frame, unrouted chat), a
+  nameless sender, `PlatformLabel`, people keyed by sender (two chats, same name twice, handle namespace),
+  per connector, phone/LID folding in both orders and learning the alt id, a linked sender, trust for six
+  author cases through a live agent, platform rename (+ live `intelligence.changed`, blank names, first
+  name later), the user's rename lock (bio and handle edits do not lock), senderless messages, DM
+  counterparts (new and known person), the 10-minute throttle and the future clamp, concurrent first
+  messages.
+
+## T27 - People visibility, person profiles and group participants (PEOP-03, PEOP-04, PROF-11, GRP-02)
+
+- **Visibility** (`Service.rights`, so `CanSee`, `CanEdit`, `Get`, `Update`, avatars and the live
+  `intelligence.changed` filter): a person is seen **and edited** by the users who own or may `use` its
+  connector, whatever else they can view (a user principal edits; an agent principal never does). A user
+  without that access still **sees** it (read-only: PATCH and avatar writes are 403) when they can view,
+  at `access.UserRoomLevel` view or more, a room that involves it: one with a chat member where the person
+  was seen (`chat_people`) or where it wrote a message (`messages.author_iid`, so it still counts after
+  the chat left the room). Everybody else gets 404, admins included (AD-005). **Reconciliation:** PEOP-04
+  ("nobody else does") is the rule of the contacts and of editing (T28 lists a connector's people for its
+  users only); the design's security section lets a viewer of a conversation open the profile of the
+  people they read in its timeline, so the profile link of a message author never 404s. Their profile
+  carries the summary only (no `person`, apps without the account).
+- **`dto.IntelligenceProfile.person`** (`PersonDetail{connector: ConnectorRef{id, kind, name},
+  external_id, linked_user?, name_locked}`) is set for the users who own or may use the connector
+  (`PersonInfo.CanUse`). `linked_user` is the user whose verified identity (AD-008, `ResolveIdentityUser`,
+  enabled users only) is the account (PEOP-02). `apps` is `[{kind: <connector kind>, label: "<Platform>:
+  <external id>", connector_id}]` for them and `[{kind, label: "<Platform>"}]` (no account, no connector)
+  for a viewer of a conversation. `intelligences.Profile.Person *PersonInfo{db.Person, Connector, CanUse,
+  LinkedUser}` carries it; `Profile.Platform` is the connector kind as before.
+- **`conversations`** of a person (`Service.Conversations`, rendered by `writeProfile`, also on the PATCH
+  and avatar answers): the rooms of `ListPersonRoomIDs` that the caller can view, most recently active
+  first (the newest existing message, else the room's creation; ties by name, then id), at most
+  `intelligences.MaxConversations` = 100 of the viewable ones. `RoomRef{id, name}` (no `kind` for groups;
+  `kind: dm` is reserved for the platform DMs of T30). The other kinds list none (the AI DMs of Spec issue
+  5 are not filled by this task).
+- **Name lock** (PROF-11): the lock itself landed with T26 (`Service.Update` sets `people.name_locked`
+  when a person's display name changes); `PersonDetail.name_locked` shows it to the connector's users.
+- **Group participants** (GRP-02): `GET /rooms/{id}/members` adds `people` (`[]IntelligenceRef`, role
+  `person`, `platform` = the connector kind) to each **chat** member: the people of `chat_people`, most
+  recently seen first (ties by person id), at most `dto.MaxChatPeople` = 200 per chat. Omitted for agent
+  and user members and for a chat nobody was seen in. A person seen in two chats is listed under both;
+  a sender linked to a user stays a person here (the timeline names the user, the profile's `linked_user`
+  names the link). View on the room is enough. Only this endpoint fills it: the add/update member answers
+  and the agent tools (`list_rooms`, `room_info`) are unchanged, so an AI's context does not carry up to
+  200 people per chat. `Service.ChatPeople(ctx, chatIDs)` does not authorize; the handler already did.
+- sqlc added: `ListChatPeopleRecent` (one query per chat member: sqlc cannot express the per-chat window
+  as a single query), `ListPersonRoomIDs`, `ListRoomActivity`. DTOs: `ConnectorRef`, `PersonDetail`,
+  `IntelligenceProfile.person`, `RoomMember.people`, `MaxChatPeople`; tygo regenerated.
+- Tests (`internal/api/people_test.go`): the profile matrix (owner, use grantee with no room, viewer of a
+  room, stranger, admin, anonymous, agent token; PATCH, avatar PUT/DELETE/GET and the live frame), the
+  conversation rules one by one (room view toggled, a room where it wrote after the chat left, a room
+  whose chat saw it), the person page (account, conversations by caller, order, the 100 cap), the rename
+  lock through a grantee, the linked user, and the members list (order, two chats, the 200 cap, other
+  member kinds).
+
+## T28 - Contacts API (CONT-01, TREE-03, TREE-04, TREE-06)
+
+- **`GET /api/v1/contacts`** (sessions and user tokens; an agent token is 403, anonymous 401) →
+  `dto.Contacts{me, machines, unlinked, shared, users, people}`, every list always an array:
+  - `machines`: the caller's own AIs that have a folder, grouped by `agents.machine` into
+    `MachineTree{hostname, label, online, nodes}` built by `intelligences.BuildMachines` (T25): machines with
+    an online AI first, then by label (the owner's label, else the hostname) case-insensitively. Only
+    machines with at least one such AI appear. `TreeNode{ai, path, name, children}` as the design's tree
+    section; `AIContact{intelligence, owner?, machine, folder, folder_label, app, online, last_seen_at?}`.
+    `folder_label` is `~`/`~/x`/absolute by the machine's reported home; `app` is the harness id;
+    `last_seen_at` is `agents.last_seen_at` (when the AI last went offline; none for an AI never
+    connected). Own AIs carry no `owner`.
+  - `unlinked`: the caller's own AIs with no folder (TREE-06), the most recently seen first (never seen
+    last), then by name.
+  - `shared`: the AIs of other users that the caller may use (a `use` grant to the user or to everyone),
+    by name, each with its `owner` and its folder labelled with the **owner's** home for that machine.
+  - `users`: the other enabled users, by name (case-insensitively), as `IntelligenceRef` role `user`.
+  - `people`: one `PeopleGroup{connector: ConnectorRef, count}` for **each connector the caller owns or may
+    use** (also with a count of 0), in the connectors list order (name). The count leaves out people whose
+    account an enabled user verified (PEOP-02: that account is an app of the user, see below); an account of
+    a disabled user counts as a person again. Same match as `ResolveSender`.
+- **`GET /api/v1/contacts/people?connector_id=&q=&after=&limit=`** → `dto.Page[IntelligenceRef]` (role
+  `person`, `platform` = the connector kind), in name order (`lower(display_name)`, then id), without the
+  accounts verified as a user. `limit` 1..200 (default 50, `dto.DefaultPeoplePage`/`MaxPeoplePage`);
+  `has_more` tells whether a further person exists; `after` is the id of the last person of the previous
+  page (a keyset cursor: no gaps or repeats across equal names, and a person renamed meanwhile only moves
+  itself); `q` (at most 100 code points, trimmed, blank = no search) matches a substring of the display
+  name, the handle or the account id, **case-insensitively for ASCII only** (SQLite's `lower()`; `%` and
+  `_` are ordinary characters). Errors: **404 `not_found`** for a connector the caller neither owns nor may
+  use (also an unknown id), **422 `invalid`** with the field `connector_id` (missing), `limit` (not a
+  number, <1 or >200), `q` (>100) or `after` (not a person of that connector, e.g. a user). Owner and use
+  grantee may read; strangers, other members and admins get 404.
+- **`PUT /api/v1/machines/{hostname}`** `dto.SetMachineLabelRequest{label}` → `dto.Machine{hostname, label}`
+  (TREE-04). The machine is the caller's own `machines` row; another owner's machine, a hostname the
+  caller has no machine of and a hostname nobody has are all **404**. The label is trimmed and stripped of
+  control characters; at most 64 code points (**422 `invalid`**, field `label`, nothing changed); empty or
+  blank resets it to the hostname. Two owners may have a machine of the same hostname and label their
+  own. It shows as `MachineTree.label` and as `AIDetail.machine_label`. No event is published.
+- **`GET /api/v1/agent/contacts/tree`** (agent token, no folder, no AI needed; a session or user token is
+  403 "agent token required") → `dto.AgentContactsTree{machines, unlinked}`: the token owner's own AIs
+  only, built like `contacts` (T41 prints it).
+- **Linked accounts are apps (PEOP-02)**: `IntelligenceProfile.apps` of a **user** is the web app plus
+  `{kind: <connector kind>, label: "<Platform>: <external id>", connector_id}` for each chat account the
+  user verified, shown to the user and to the users who own or may use the connector it was linked
+  through (they can already read `person.linked_user`); nobody else sees them.
+- Service: `intelligences.Service.OwnAIs(ctx, userID)`, `Contacts(ctx, userID)`, `People(ctx, userID,
+  PeopleQuery)`, `SetMachineLabel(ctx, userID, hostname, label)`; `intelligences.Deps.Online` (the
+  presence, wired in `app.go`) says which AIs are online. sqlc added: `ListAgentsByOwner`,
+  `ListContactUsers`, `CountConnectorPeople`, `GetConnectorContactSortName`, `ListConnectorContacts`.
+  DTOs in `dto/contacts.go` (`Contacts`, `AgentContactsTree`, `MachineTree`, `TreeNode`, `AIContact`,
+  `PeopleGroup`, `Machine`, `SetMachineLabelRequest`, the paging constants).
+- Tests (`internal/api/contacts_test.go`, `people_test.go`): the whole contacts of a user with two machines
+  (tree shape, online, apps, last seen, unlinked, shared with a public AI, users, people), each user's own
+  data and the agent/anonymous refusals, disabled users and emptied machines, machine and unlinked order,
+  the machine label (trim, 64 boundary, reset, 404s, same hostname for two owners, refusals), the agent
+  tree, people paging (page sizes 1-8 walk the same list, exact-end `has_more`, search by name, handle and
+  account id, wildcard characters), the default and largest page, the people refusals field by field, the
+  linked-account exclusion (link, second user, disabled user, unlink) and the linked accounts as apps.
+
+## T29 - Connector operators and account labels (ACC-01, ACC-07)
+
+- **Operator** (`connectors.operator_iid`, NULL = the owner): every connector view (`GET /connectors`,
+  `GET /connectors/{id}`, create/update answers) carries `dto.Connector.operator` (`IntelligenceRef`, role
+  `user` for the owner, `ai` for an AI) and `account_label`. Both are optional in the TypeScript type
+  (`operator?`, `account_label?`: pointer / `omitempty`) because the web fixtures predate them; the server
+  always sets `operator` and omits an empty label. `connectors.View.Operator`/`OperatorAI` is the data,
+  filled in one query for lists.
+- **`PATCH /connectors/{id}` `operator_id`** (`UpdateConnectorRequest.OperatorID`, `UpdateInput.OperatorID`):
+  absent leaves it; `""` or the owner's own user id sets the owner (NULL); an agent id sets that AI **when
+  the owner owns it**. Anything else - an AI of another owner (also one only shared with the owner), another
+  user, a person, an unknown id - is **422 `invalid`** with field `operator_id` ("must be you or an AI you
+  own"), before anything is written, so a request that also renames the connector changes nothing. Rights
+  are those of the whole PATCH: manage = the owner; a `use` grantee gets 403, a stranger or an admin 404,
+  an agent token 403, anonymous 401. A change of the effective operator (the owner's id when NULL) writes
+  `audit.ActionConnectorOperator` = **`connector.operator`** in the same transaction with detail `{kind,
+  name, from, to}` (`from`/`to` are intelligence ids, the owner's own id for the owner); setting what is
+  already set, or the owner's id for the owner, changes and audits nothing. The generic `connector.update`
+  entry is not written for an operator-only request, and the connector is not restarted. Deleting the
+  operator AI sets the column NULL (foreign key) so the owner operates again; no event is published.
+- **Account label** (`Handler.Account(label string)`, new on `connectors.Handler`; `connectortest.Recorder`
+  has `NextAccount`/`NoAccount`, `connectortest.Instance.Account(label)` reports one from a test):
+  the manager stores it in `connectors.account_label` when the reporting run is still the current one,
+  trimmed, without control characters and cut to `connectors.MaxAccountLabel` = 100 code points; an
+  empty label clears it. Adapters call it once connected, before they report `connected`:
+  - Telegram: `@<username>` of `getMe` (nothing for a bot without a username);
+  - Discord: `@<username>` of the gateway's READY event (`onReady`; reported again after a reconnect, nothing
+    when the event names no bot);
+  - WhatsApp: the masked phone number (`+•••• 1234`, `maskNumber`) of each instance the connector uses
+    (the allowlist, else those with WebSocket events), from the `jid` evolution-go 0.7.2 reports
+    (`<number>:<device>@s.whatsapp.net`, device suffix removed), each number once, joined by `, ` in the
+    order of `/instance/all`; a jid that is no phone number (a LID, none) adds nothing, so an older
+    evolution-go reports an empty label;
+  - the webhook reports none.
+  No live frame carries the label: clients read it with the connector.
+- **Apps of the operator (ACC-07)**: `IntelligenceProfile.apps` of a **user** (after the web app and the
+  verified chat accounts) and of an **AI** (after its harness) ends with one `{kind: <connector kind>,
+  label: "<Platform>: <account label>", connector_id}` for each connector it operates; the connector's
+  name replaces the label until the platform names the account (`Fake: wa`, `Discord: @bot`). A user
+  operates the connectors they own that no AI operates. Only the viewers who own or may use the connector
+  see its app (`Profile.Operated`, `Service.operatedConnectors`): a user who can use the AI but not the
+  connector, and anyone who sees a user's profile, do not learn that the connector exists. Moving the
+  operator moves the app.
+- sqlc added: `ListConnectorsOperatedBy`, `ListConnectorsOperatedByOwner`.
+- Tests: `internal/api/connector_operator_test.go` (default operator, set/reset/repeat with the audit
+  entries, every refusal with its status and nothing changed, deleting the AI, the account label cleaned
+  and cut, the apps by viewer), and per adapter `TestRunReportsTheBotAccount` (telegram),
+  `TestReadyReportsTheBotAccount` (discord) and `TestRunReportsTheMaskedNumbersOfItsInstances` (whatsapp,
+  fixtures in the evolution-go 0.7.2 shape with `jid`).
+
+## T30 - Platform DMs reach the operator (ACC-02, ACC-06, DM-05)
+
+- **Per-chat conversations mode** = `auto_route_scope` other than `off` **and no catch-all room**
+  (`auto_route_room_id` empty). A connector with a catch-all room keeps the v0.3 behaviour whatever its
+  operator is (spec issue 2). The owner switches by clearing the room (`PATCH {auto_route_room_id: ""}`);
+  the scope is kept. **Deviation from ROUTE-04's old rule:** "a scope other than off needs a room" (422
+  `auto_route_room_id`) is gone, because a cleared room with a scope on is how per-chat mode is chosen;
+  `TestCatchAllSettings` asserts the new rule (clearing keeps the scope and answers 200). The scope is
+  still validated, the room still needs manage.
+- **Deviation (ROUTE-03, deleted catch-all room):** with an empty room now meaning per-chat mode, a room
+  that is deleted must not silently turn its connectors into per-chat ones. `rooms.Service.Delete` therefore
+  stops the connectors whose catch-all it is, in its own transaction (`StopCatchAllConnectors`): scope `off`
+  and `last_error` = `auto-route room unavailable` (`dto.AutoRouteUnavailable`; `dto.AutoRouteLimited` is
+  the other detail, `connectors.AutoRouteUnavailable`/`Limited` alias them), and publishes
+  `connector.status` with that detail. v0.3 reported it lazily at the next unrouted message; it is now
+  immediate, and the scope goes off with it. Losing manage on the room is unchanged (reported at the
+  next message). The no-room branch of the catch-all path no longer sets a detail: it only records the chat.
+- **DM chats** (`Chat.Kind` dm, scope `dms` or `all`, no catch-all room), `Pipeline.route` → `platformDM`:
+  the message goes to the DM between its author and the connector's operator
+  (`conversations.Service.EnsurePlatformDM`, `PlatformDM{OwnerID, ChatID, Author, Operator}`).
+  - *Which chats*: those in no room, or only in DM rooms (the routing keeps them); a chat the owner put
+    in any other room stays there and gets no DM (ROUTE-02's spirit).
+  - *Author*: the user the sender is verified as (AD-008), else its person (recorded by `People.Seen`
+    only once the message is routed). *Operator*: the connector's `operator_iid` (an `agent` member), else
+    the owner (a `user` member). The sender **is** the operator (the owner's own verified account writing
+    to the owner-operated account) → no DM with oneself: the chat is recorded, nothing is stored and no
+    person is created. A sender without any id has nobody to make a DM with: not routed.
+  - *The DM*: one per pair of intelligences (`rooms_dm_pair`), `owner_id` = the connector's owner,
+    members: the operator, the author when it is a user (not a person: it takes part through the chat) and
+    the chat with **outbound on**. The pair is shared with the web: a user who writes from their phone to
+    the AI that operates the account joins the DM they already have with it on the web (their chat is added
+    to that room), and the AI's replies in that DM then reach the phone too. Access is the DM rules of T19:
+    a person-AI DM is read-only for the AI's owner; with the owner as operator the owner posts in it (the
+    post goes out through the chat). Created rooms publish `room.changed` and `room.members`.
+  - *Re-homing*: when the operator changed, the chat's next message makes `EnsurePlatformDM` take the chat
+    out of its other DMs (cancelling what was queued for it there, ROOM-01; the history stays, no event
+    but `room.members`) and into the DM with the current operator, reusing an existing one; deleting the
+    operator AI deletes its DMs, so the next message makes the DM with the owner (spec edge case).
+  - *Cap*: a route that makes the chat a member of a DM (new DM, joined DM, move) counts for the 60 per
+    hour per connector of the catch-all (`routeState`), serialized per connector; at the cap the message
+    is not stored, the connector's detail is `auto-route limit reached` (cleared by the next successful
+    route), a **new** chat is not recorded and a known one is. A chat already in the right DM is
+    never counted nor blocked (`placed`).
+  - *Concurrency*: first messages of one new chat at once create one DM and lose no message; the chat's
+    rooms and their kinds are read in one query (`ListChatRooms`), because two reads could disagree about
+    a DM made in between.
+  - sqlc: `ListChatRooms`, `ListChatDMRoomIDs`, `ListRoomChatConnectors`, `StopCatchAllConnectors`.
+    `conversations.Service.PlatformDMRoom(authorID, operatorID)` finds the pair's DM; `People.Find` looks a
+    sender's person up without recording it. `PipelineDeps.Conversations` (wired in `app.go`) enables it.
+- **DM-05**: `conversations.OpenDM` with a person target (users and AIs): after the visibility check
+  (404 `contact_not_found`) it returns the existing DM between the caller and the person **only when a
+  connector whose chat is in that DM names the caller as operator now** (the owner counts when no AI is
+  named), with `created` false; otherwise 422 `no_route_to_person`. It never creates a DM with a person, so
+  nobody is written to who did not write first. `send_message to:` (`POST /agent/dms`) and
+  `POST /conversations/dm` use it; the message posted in that DM is queued for the chat. After the operator
+  changes the old operator has no route, the new one has.
+- Tests (`internal/connectors/platform_dm_test.go`, `internal/api/catch_all_settings_test.go`): a DM to
+  the operator AI (frame, room, members, the owner's view, stranger 404, more messages), the concurrent
+  burst, scopes and hand-routed chats, a connector with a catch-all room, following the operator
+  (owner, back to the AI, deleted AI) with the cancelled outbox, no DM with oneself and the linked owner
+  trusted by her AI, the 60-per-hour cap, DM-05 for the operator AI, another AI, another owner's AI with
+  and without connector access, a never-routed person, strangers and the owner before/after the change;
+  clearing the room keeps the scope; deleting the catch-all room stops routing at once with a live
+  status.
+
+## T31 - New group chats become groups (ACC-06)
+
+- **Group and channel chats** of a connector in per-chat mode (scope `groups` or `all`, no catch-all
+  room, see T30) that belong to no room get **a group of their own** on their first message
+  (`Pipeline.autoGroup`, `route`): `rooms.CreateWithMembers(owner = the connector's owner, name =
+  roomName(chat, kind))` (the chat title cut to 100 characters, else "<Platform> chat"), broadcast on,
+  chat bridging off, 90 days of retention, no instructions, with the **operator** as a member (the owner's
+  AI as an `agent` member with delivery `all`, or the owner as a `user` member) and the **chat** with
+  outbound on. The operator therefore receives the chat's messages (trusted only when the sender is
+  verified as the AI's owner) and an AI's reply is queued for the chat (broadcast); the owner manages the
+  group by ownership. Members are checked with the owner's add-member rules first; if the owner can no
+  longer add one of them the connector reports `auto-route room unavailable` and the message is not
+  stored. `room.changed`/`room.members` are published by `CreateWithMembers`.
+- A chat that already belongs to **any** room is left as it is (the owner routed it, or it has its
+  group). The operator is a member of the group **as of its creation**: changing the operator later does
+  not edit existing groups (DMs follow the operator, T30; groups are the owner's to manage).
+- **Cap and serialization**: groups and DMs share the connector's 60 new routes per hour
+  (`routeState`); at the cap the message is not stored, the detail is `auto-route limit reached`, a new
+  chat is not recorded, a known one is, and the next successful route clears the detail. The connector's
+  routes are serialized and the chat and its rooms are read again under the lock (`ListChatRooms`), so
+  concurrent first messages make one group. The `routeHook` test seam runs before the chat is recorded.
+- **Waiting after a removal (ROUTE-02's edge case, extended)**: a chat taken out of a room of a
+  per-chat connector (`rooms.skipAutoRoute`: the catch-all room as before, or any room when the connector
+  has a scope on and no catch-all room) is not given a group for 24 hours (`auto_route_skips`); a manager
+  may add it back at once. Without it the next message would have made another group immediately. DMs
+  cannot lose their chat (members are fixed) and re-homing deletes the member row directly, so they are
+  never skipped. `GetChatAutoRoute` also returns the scope.
+- Code layout: the whole automatic routing (catch-all, per-chat DMs and groups, the status details and
+  the caps) now lives in `internal/connectors/autoroute.go`; `inbound.go` keeps the pipeline and the
+  author resolution. Nothing else moved.
+- Tests (`internal/connectors/auto_groups_test.go`): a group chat becomes a group (name, owner, members,
+  broadcast, the AI's frame and reply), channel chats, owner as operator, untitled and over-long titles,
+  scopes dms/off, a chat in a room by hand, a catch-all connector, the concurrent burst, the cap shared
+  with DMs (30 + 30), and the 24-hour wait after a removal with a manager adding the chat back.
+
+## T32 - Operator signatures (ACC-03, ACC-04)
+
+- `Sender.Send` marks a message **`Outbound.Unsigned`** when its author intelligence (`messages.author_iid`)
+  is the chat's connector's operator (`operator_iid`, else the owner): an AI that operates the account
+  writes through its own account, and so does the owner from the web when no AI operates it. Every other
+  author is named as before: an AI per its member setting (`sign_outbound`, the name set for it in the
+  room: MEM-01, MEM-02), a user who is not the operator, and bridged chat messages (their author is the
+  person, or the linked user). The operator rule wins over `sign_outbound`: an operator AI with its
+  signature on is not signed, and as soon as it stops being the operator it signs again.
+- **`connectors.Outbound.Signature()`** is the author line to put in the text: `AuthorName`, or "" when
+  `Unsigned`. The Telegram, Discord and WhatsApp adapters build their text with it. **`AuthorName` still
+  names the author**, because the webhook carries it as data in its payload (`message.author_name`, HOOK-03)
+  and its signed requests would otherwise lose who wrote an operator's message; reactions keep it too. A
+  member with its signature off still has an empty `AuthorName` (MEM-01, unchanged), so a webhook payload
+  of such an agent has none, as before.
+- **Visible change:** the owner's own posts from the web, which used to reach her chats as "alice: text",
+  now go out as plain text from her account unless an AI is the operator; every other poster is still
+  named. `TestOutboundAuthorFollowsMemberSettings` keeps its `AuthorName` assertion for her post and
+  adds that its signature is empty.
+- Tests (`internal/connectors/operator_signature_test.go`, adapter tests): an operator AI unsigned with
+  the signature on and a name set, signed again once not the operator; an AI through the owner's account
+  signs on, with its room name, off; a user operator unsigned, a poster named, the owner named while an
+  AI operates; and each adapter leaving the line out.
+
+## T33 - Messages from the operator's own account (ACC-05)
+
+- **`Inbound.FromSelf` is no longer dropped** (it was, by CON-12, for every chat). `Pipeline.handle` hands
+  such a message to `handleSelf` (`internal/connectors/selfmsg.go`). It **creates nothing**: no chat
+  (`UpsertChat` is not called), no conversation, no person, no route; a chat that is unknown to the
+  connector, or sits in no room, drops it. In a chat that is a member of rooms it is stored once per room
+  (`Pipeline.post`, the loop `handle` already had, now shared; a repeat is stored once and downloads no media
+  again), with its replied message, text and media, **authored by the connector's operator**:
+  `author_kind chat`, `author_id` the chat, `author_iid` the operator (`operator_iid`, else the owner, read
+  from the connector when the message is handled, so a change applies at once), `author_user_id` the
+  connector's **owner**. The owner's own account is the owner's, so the owner's AIs get it **trusted**
+  whoever the operator is (AD-006); AIs of other users do not. `sender_id`, `sender_alt_id` and
+  `sender_name` stay what the platform gave (the account), which replies need for quoting.
+- **Rendering:** a chat message authored by an AI (`author_iid` of kind `ai`, i.e. an AI operating the
+  account) now has `author.role = ai` (`convert.messageAuthor`); before, a chat message was only a `user`
+  (linked sender) or a `person`. The timeline name is the operator's display name (the message view takes
+  it from `author_iid`).
+- **Its own echoes are dropped.** Partyline's sends come back from WhatsApp and Discord as messages of the
+  account, three layers decide that one is an echo and not typed by the operator:
+  1. **Hold:** the message waits while the outbox has a `sending` row for its chat (`CountSendingOutboxForChat`),
+     polling every 50 ms, **at most `connectors.SelfHold` = 10 s** on the pipeline's clock; the platform can
+     report a message before the call that created it returns, when no id is recorded yet. After the limit
+     the message is handled as it is: an echo of a send stuck for more than 10 s is stored as typed by the
+     operator (accepted: the alternative is to lose the operator's real messages behind a stuck send).
+  2. **Sent ids** (`connectors.SentIDs`, in memory, 5 minutes, per chat): every adapter tells
+     **`Outbound.Created(id)`** the id of each message a send created, text parts and files, also when the
+     send fails afterwards (the parts that exist will echo, and a retry sends them again). `Sender` records
+     them. The outbox keeps the first id only.
+  3. **Outbox id** (`CountChatOutboxExternalID`): the id of a `sent` row of that chat. It survives a restart
+     and the five minutes. It reads the `sent` rows through the `outbox_due` prefix (status) and filters
+     them; self messages are rare and the memory registry answers first for the ids it knows, so no index
+     was added (none could be, 0016 is reserved).
+  An id belongs to its chat: the same id in another chat is another message.
+- **A pairing command from the account is ignored** (not executed, not stored): `!link CODE` typed from the
+  account's own phone would link the account and keep the code in a room's history. The code stays
+  usable.
+- **Delivery is the usual one:** the message is a chat message of the room, so it is bridged to the room's
+  other outbound chats like any other (signed per the operator rule of T32 for the target chat), delivered
+  to the room's AIs per their delivery mode, and an AI that is the operator and a member of the room
+  receives it as a message of its account (delivery excludes only the origin chat and an agent's own posts).
+- **Adapters:** Discord keeps the bot's user id from READY and emits the bot's own messages with
+  `FromSelf` (a DM's title is not set from it); other bots stay ignored, and so does any bot message
+  before READY. WhatsApp already set `FromSelf` and now reports every created id. Telegram bots never
+  receive their own messages and are unchanged. The webhook kind has no account of its own.
+- **CON-12 is refined, not repealed:** "drop messages sent by the connector's own account" still holds for
+  chats in no room and for echoes. `TestInboundDropsOwnMessages` is now `TestInboundDropsOwnMessagesOfChatsInNoRoom`
+  and no longer asserts that a routed chat drops a phone-typed message (ACC-05 says it is stored).
+- **Test seams:** `PipelineDeps.Sent` and `.Wait`, `app.Options.InboundWait` / `testkit.WithInboundWait`
+  (the sleep of the hold, to advance a manual clock), and on the fake connector `HoldSends` /
+  `ReleaseSends` / `WaitSending` (a platform call that is still running), `SetSendParts` (a send that
+  creates several messages) and `QuietSends` (a connector that reports no ids).
+- Tests (`internal/connectors/selfmsg_test.go`, `discord` and `whatsapp` adapter tests): operator owner and
+  operator AI as author, trusted, reply kept, stored once; media; echo dropped after the send, from the
+  outbox alone, in its own chat only, before the send returned (held, then dropped), for every part;
+  a typed message during a send stored after it; the 10 s limit with a stuck send on a manual clock;
+  no hold without a send; nothing created in unknown or unrouted chats; a pairing command ignored; the
+  registry's memory and pruning; Discord own/other bot/early messages; reported ids with a failure midway.
+
+## T34 - Notify me on another app (NOTI-01, NOTI-02, NOTI-03)
+
+- **`GET /api/v1/me/notify-options`** (sessions and user tokens; an agent token is 403, anonymous 401) →
+  `dto.List[dto.NotifyOption]{chat_id, title, connector: ConnectorRef, account}`, always an array: the **DM
+  chats** (`chats.kind = dm`) of the **accounts the caller linked** (an `identities` row of theirs on the
+  chat's connector matching the chat's person, `chats.person_id`, by external id or alternative id like
+  `ResolveIdentityUser`), on the connectors the caller **owns or may `use`** (a grant to them or to everyone).
+  `account` is the identity's display, else its external id. A group or channel chat, an account nobody
+  linked, an account linked through another connector (AD-008) and another user's account are no options.
+  Ordered by connector name, chat title, id. `conversations.Service.NotifyOptions(ctx, userID)`; sqlc
+  `ListNotifyOptions`.
+- **`PUT /api/v1/me/notify`** `dto.SetNotifyRequest{chat_id}` (`string | null`) → 200 `dto.Me`.
+  `chat_id` must be the id of one of the caller's options; null (or absent) clears. Any other value (an
+  unknown id, `""`, a chat of a group, of a DM nobody linked, of another user, a room id) is **422
+  `invalid`** with the field `chat_id` and changes nothing; choosing the chat already chosen is a no-op 200.
+  The check and the write are one transaction (`Service.SetNotify`). `dto.Me.notify_chat_id` (optional, absent
+  when none) is set by `GET/PATCH /me` and the answer of `PUT /me/notify`; it is the stored choice, whether
+  or not the chat is still an option (the list is the authority).
+- **The copy** (`rooms.Service.insert` → `notifyChat`, same transaction as the message): an **AI's text post
+  in a DM whose other participant is an enabled user with `notify_chat_id` set** queues one outbox row
+  `purpose notify` (`CreateNotifyOutbox`) for that chat. No copy for: a user's own posts, another user's
+  (user-to-user DMs included), system messages, **reactions**, groups, DMs with another AI or a person, a
+  disabled user, nothing chosen. **A chat that already receives the message as an outbound member of the
+  room is not sent it twice** (a user who writes to the AI that operates the account from that very phone
+  has the chat in the DM): the ordinary delivery stands and no copy is queued. A DM to a disabled user is
+  refused before (`counterpart_disabled`).
+- **Worker**: `ListDueOutbox` returns `purpose` and no longer filters notify rows by room membership (the
+  user's app is no member); `delivery.Delivery.Purpose` (`dto.OutboxPurpose`, `room` or `notify`) tells the
+  sender. Retries, backoff (2, 4, 8, 16 s), `failed` after 5 attempts, `outbox.status` frames and the
+  startup requeue are the ones of every outbox row. **`delivery.Permanent(err)`** (new, `IsPermanent`) marks
+  an error retrying cannot fix: the worker marks the entry `failed` at once (attempts = that attempt) with
+  the error's text. `DeletePendingRoomChatOutbox` (ROOM-01: a chat leaving a room cancels what waits for it)
+  now deletes only `purpose = room` rows: a notify copy does not depend on membership.
+- **Sender** (`connectors.Sender.Send` → `sendNotify`): text = `"<AI display name>: <text>"` (the name the
+  timeline shows, the profile's in a DM), a blank text gives `"<AI display name>:"`, then **one line per
+  stored attachment** `<public URL>/api/v1/attachments/<id>` (`connectors.AttachmentLinkPath`; the link opens
+  for the user once logged in; no files are uploaded); no author line (`AuthorName` empty), no quote.
+  `NewSender` takes the instance's public URL (`cfg.PublicURL`). Reported ids go to `SentIDs` like any send,
+  so the echo of a copy is not mistaken for a message typed on the account (ACC-05). **Usability check at
+  send time** (`Sender.notifyTarget`): the room is a DM, the user exists and is enabled, **still has this
+  chat as `notify_chat_id`** and the chat **still is one of their options** (`conversations.NotifyUsable`);
+  otherwise the send fails **permanently** with `notify target no longer available` before touching the
+  connector (the user cleared or changed the choice, unlinked the account, lost the connector, was
+  disabled). A connector that is down (`connector is not running`) or a platform error is retried (NOTI-03).
+- **`dto.OutboxItem.purpose`** (`notify`; omitted for ordinary deliveries, `dto.OutboxPurpose`) is in
+  `Message.outbox` and in the live `outbox.status` frame, so everyone who can view the DM (the AI's owner and
+  `use` grantees included) sees the copy's delivery and its failure; the chat id is opaque to them (the chat
+  is no member of the room). Web types regenerated.
+- Tests: `internal/connectors/notify_test.go` (the options by caller / group / unlinked / second connector /
+  alternative ids / connector access, choosing and its 422s and null, the authorization of both routes, the
+  copy with name prefix / no signature / live frame / rename, what is not copied, attachment links, no
+  duplicate for a member chat, the retry schedule to `failed` after 5, a platform error then success, a
+  target taken away by clearing / another choice / unlinking / losing the connector / being disabled, ROOM-01
+  leaving notify rows alone) and `internal/delivery/outbox_test.go` (notify rows outside the room, permanent
+  errors).
+
+## T35 - Merge identities (MRG-01, MRG-02)
+
+- **`POST /api/v1/agents/{id}/merge`** `dto.MergeAgentRequest{into}` (sessions and user tokens; agent tokens
+  are 403, anonymous 401) → **200 `dto.Agent` of the AI that remains** (`into`, as `PATCH /agents/{id}` shows an
+  agent). `{id}` is the AI that is merged away (`from`). Order of the checks: the right to `from` (**404**
+  when the caller can neither own nor use it, also for an unknown id and for an admin, AD-005; **403** when
+  they may only `use` it) → `into` (**422 `invalid`**, field `into`: `required` when blank, `must be a
+  different AI` when equal to `from`; both before `into` is looked up and after `from` was authorized, so a
+  stranger learns nothing) → the right to `into` (404 / 403 as for `from`) → `from` online (**409
+  `identity_online`**, `dto.ErrorCodeIdentityOnline`, `conversations.ErrIdentityOnline`) → the merge.
+  Both AIs must be owned by the caller (manage); a malformed body is 400. Every refusal changes nothing.
+  `into` may be online (its session simply gets the new rooms); `from` must be offline.
+- **`conversations.Service.Merge(ctx, p, fromID, intoID)`**, one write transaction (a failure anywhere leaves
+  the database as it was; `TestMergeIsAllOrNothing`):
+  1. **Group memberships** (`rooms.kind = group`): where both are members, `from`'s row is deleted and the
+     survivor's row and settings stay; otherwise `from`'s row becomes the survivor's (same row id, per-room
+     display name, delivery mode, keywords, signature and `outbound` come along).
+  2. **Delivery cursors in those groups**: the survivor's cursor becomes `MAX(own, from's)` for every group it is
+     a member of.
+  3. **DMs** of `from`, one by one, with the other participant X:
+     - X is the survivor: the DM goes away with its history (the two are one AI now, a DM with oneself cannot
+       exist); this is the only data a merge discards.
+     - the survivor has no DM with X: the DM becomes theirs, **kept as it is** (same room id, messages,
+       member rows, read cursors): the pair key and the agent member are rewritten and `from`'s cursor in it
+       becomes the survivor's. A person's platform DM keeps its chat member.
+     - the survivor has a DM with X: a **system message `History merged from @<from handle>`**
+       (`conversations.MergeNotice`) is added to the end of the survivor's DM, then **`from`'s messages are moved
+       there** (`messages.room_id`/`seq` updated, so ids, attachments, outbox rows, replies and external ids
+       stay) **in the order they were written (their old `seq`)**, with new numbers after the notice. The
+       chats that were members of the old DM become members of the survivor's, so what waits in the outbox can
+       still be sent; **cursors are renumbered**: a cursor that had read/received
+       up to old `seq` c becomes the new number of the last moved message at or before c (0 when none, nothing
+       is written), and the larger of that and the existing cursor holds, for the agent cursors of both sides
+       (`from`'s is applied to the survivor) and the users' read cursors; the old DM is deleted. The design's
+       "in `created_at` order" is the same order: a room's `seq` follows time; ordering by `seq` keeps
+       the cursor renumbering exact.
+  4. **Grants** on `from` become the survivor's per subject (the higher level wins, `view` < `post` < `use` <
+     `manage`; agent grants are `use` in practice); `from`'s grants are deleted. Anybody who could use `from`
+     can use the survivor, which is what lets the rooms those users own keep the member that moved in.
+  5. **Messages**: `author_id` of agent messages and `author_iid` of any (the ones typed on the platform account
+     `from` operated) become the survivor's, in every room.
+  6. **Connectors** that `from` operated are operated by the survivor (`operator_iid`).
+  7. `from` is deleted (its remaining memberships, its grants, the agent row; the intelligence, cursors and
+     any DM left cascade) and **`agent.merge` is audited** (`audit.ActionAgentMerge`, actor the caller, target
+     kind `agent`, target id the survivor, detail `{from, into, from_handle, into_handle, connectors: [ids]}`).
+- **Events after the commit**: `room.members` for every group whose members changed and for the re-keyed and
+  appended DMs; `room.changed` for those DMs (their participants changed); `room.deleted` for the deleted DMs
+  (only sockets that had the DM in their set hear it, so not the owner who merely views the DM between two of
+  their AIs); `access.changed` for the survivor (who may use it changed) and `intelligence.changed` for both
+  AIs. The appended history and the notice are not announced as new messages: AIs get what is undelivered
+  by the renumbered cursors, as backlog on their next connection and through `pending`.
+- **Race with a session**: after the commit `Deps.Kick` closes a live session of `from` that attached between the
+  check and the commit (wired to `Presence.Kick` with `CloseDeleted`, as `Registry.Delete` does), so no socket
+  holds a deleted AI. `Deps.Online` is `Presence.Online`; `Deps.Access` is the authorizer.
+- sqlc added: `ListAgentDMRooms`, `DeleteDuplicateAgentGroupMemberships`, `MoveAgentGroupMemberships`,
+  `MergeAgentGroupCursors`, `MergeAgentGrants`, `ListRoomMessageOrder`, `MoveMessage`, `ListRoomChatMemberRows`,
+  `MoveRoomMember`, `ListRoomAgentCursors`, `ListRoomReadCursors`, `SetDMRoomPair`, `ReplaceAgentMember`,
+  `ReplaceAgentCursor`, `ReassignAgentMessages`, `ReassignAuthorIntelligence`, `ReassignConnectorOperator`.
+- Tests: `internal/api/merge_test.go` (groups with both settings cases, cursors, grants, messages and the
+  audit entry for an unlinked AI merged into a folder AI, the grant-level rule, DMs: appended with notice and
+  renumbered cursors, re-keyed with its cursor, the DM between the two, live frames, the connector operator, an
+  online AI refused and merged once offline into an online one, the authorization and validation matrix, the
+  all-or-nothing rollback with a forced failure, the kick and online seams) and
+  `internal/connectors/merge_test.go` (a platform DM keeps running after its operator AI is merged; an appended
+  platform DM moves its chat and keeps what waits in the outbox sendable).
+

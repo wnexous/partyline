@@ -64,8 +64,9 @@ func ownerRef(r rooms.Room) *dto.IntelligenceRef {
 
 // messageAuthor renders the intelligence that wrote a message from the author columns of the
 // message view. A user or agent author without author_iid (written before it was recorded) is
-// its own intelligence; a chat message has one only when author_iid is set, the linked user or
-// the person of the sender. The display name is the name the timeline shows (AuthorName).
+// its own intelligence; a chat message has one only when author_iid is set, the linked user, the
+// person of the sender, or the operator of the connector for a message of its own account
+// (ACC-05). The display name is the name the timeline shows (AuthorName).
 func messageAuthor(m rooms.Message) dto.IntelligenceRef {
 	ref := dto.IntelligenceRef{DisplayName: m.AuthorName}
 	id := m.AuthorIid
@@ -83,8 +84,11 @@ func messageAuthor(m rooms.Message) dto.IntelligenceRef {
 		}
 	case dto.AuthorKindChat:
 		role = dto.IntelligenceRolePerson
-		if id != "" && id == m.AuthorUserID {
+		switch {
+		case id != "" && id == m.AuthorUserID:
 			role = dto.IntelligenceRoleUser // a sender linked to a user is that user (PEOP-02)
+		case dto.IntelligenceKind(m.AuthorIkind) == dto.IntelligenceKindAI:
+			role = dto.IntelligenceRoleAI // the AI operating the connector's account wrote it (ACC-05)
 		}
 	}
 	if id == "" {
@@ -107,10 +111,14 @@ func messageAuthor(m rooms.Message) dto.IntelligenceRef {
 
 // OutboxItem renders one outbound delivery.
 func OutboxItem(o db.Outbox) dto.OutboxItem {
-	return dto.OutboxItem{
+	item := dto.OutboxItem{
 		ID: o.ID, ChatID: o.ChatID, Status: dto.OutboxStatus(o.Status), Attempts: int(o.Attempts),
 		LastError: o.LastError, UpdatedAt: Time(o.UpdatedAt),
 	}
+	if o.Purpose == string(dto.OutboxPurposeNotify) { // an ordinary delivery carries none
+		item.Purpose = dto.OutboxPurposeNotify
+	}
+	return item
 }
 
 // OptTime converts a nullable unix-milliseconds column to a time pointer.

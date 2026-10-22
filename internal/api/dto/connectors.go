@@ -48,6 +48,14 @@ const (
 	ConnectorStatusError      ConnectorStatus = "error"
 )
 
+// ConnectorRef names a connector where only its identity is needed: the account behind a
+// person.
+type ConnectorRef struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
 // Connector is a configured platform account (GET /connectors). Secret config values are
 // returned as SecretMask when set.
 type Connector struct {
@@ -59,7 +67,15 @@ type Connector struct {
 	Enabled   bool            `json:"enabled"`
 	Status    ConnectorStatus `json:"status"`
 	LastError string          `json:"last_error,omitempty"`
-	Config    map[string]any  `json:"config" tstype:"{ [key: string]: unknown }"`
+	// Operator is the intelligence the platform account belongs to: the owner (the default) or
+	// one of the owner's AIs. Talking to the account is talking to the operator (ACC-01). The
+	// server always sets it; the field is optional so that clients written before it keep
+	// compiling.
+	Operator *IntelligenceRef `json:"operator,omitempty"`
+	// AccountLabel is how the platform names the account once connected: "@bot",
+	// "+•••• 1234" (ACC-07); absent until then.
+	AccountLabel string         `json:"account_label,omitempty"`
+	Config       map[string]any `json:"config" tstype:"{ [key: string]: unknown }"`
 	// AutoRouteScope and AutoRouteRoomID are the catch-all settings (ROUTE-01): new chats of
 	// the matching kind that belong to no room join AutoRouteRoomID.
 	AutoRouteScope  AutoRouteScope `json:"auto_route_scope"`
@@ -93,6 +109,9 @@ type UpdateConnectorRequest struct {
 	// manage on the room (ROUTE-04). An empty AutoRouteRoomID clears it.
 	AutoRouteScope  *AutoRouteScope `json:"auto_route_scope,omitempty"`
 	AutoRouteRoomID *string         `json:"auto_route_room_id,omitempty"`
+	// OperatorID changes the operator (ACC-01): the owner's own id or an empty string for the
+	// owner, or the id of an AI the owner owns; only the owner may change it. Absent leaves it.
+	OperatorID *string `json:"operator_id,omitempty"`
 }
 
 // AutoRouteScope selects which new chats a connector routes to its catch-all room: none
@@ -105,6 +124,14 @@ const (
 	AutoRouteScopeDMs    AutoRouteScope = "dms"
 	AutoRouteScopeGroups AutoRouteScope = "groups"
 	AutoRouteScopeAll    AutoRouteScope = "all"
+)
+
+// Status details catch-all routing sets on a connector (ROUTE-03, ROUTE-08).
+const (
+	// AutoRouteUnavailable says the catch-all room is gone or its owner lost manage on it.
+	AutoRouteUnavailable = "auto-route room unavailable"
+	// AutoRouteLimited says a cap on new chats was reached.
+	AutoRouteLimited = "auto-route limit reached"
 )
 
 // ChatKind is the kind of an external chat.

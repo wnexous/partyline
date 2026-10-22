@@ -197,3 +197,6 @@ UPDATE agents SET project_id = ? WHERE id = ?;
 -- name: CreateProject :exec
 -- Same purpose as SetAgentProject: a project for the tests until the projects are removed.
 INSERT INTO projects (id, owner_id, slug, name, created_at) VALUES (?, ?, ?, ?, ?);
+
+-- name: ListAgentsByOwner :many
+SELECT * FROM agents WHERE owner_id = ?;

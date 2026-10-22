@@ -182,6 +182,42 @@ func (q *Queries) ListChatRoomIDs(ctx context.Context, memberID string) ([]strin
 	return items, nil
 }
 
+const listChatRooms = `-- name: ListChatRooms :many
+SELECT r.id, r.kind FROM room_members m JOIN rooms r ON r.id = m.room_id
+WHERE m.kind = 'chat' AND m.member_id = ?
+ORDER BY r.id
+`
+
+type ListChatRoomsRow struct {
+	ID   string
+	Kind string
+}
+
+// The rooms a chat is a member of with their kind, in one read: a platform DM chat belongs to a
+// DM (ACC-02).
+func (q *Queries) ListChatRooms(ctx context.Context, memberID string) ([]ListChatRoomsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listChatRooms, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListChatRoomsRow
+	for rows.Next() {
+		var i ListChatRoomsRow
+		if err := rows.Scan(&i.ID, &i.Kind); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listConnectorChats = `-- name: ListConnectorChats :many
 SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at, person_id FROM chats WHERE connector_id = ? ORDER BY title, external_id, id
 `

@@ -538,10 +538,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PEOP-01, PEOP-02, PEOP-05, PEOP-06, GRP-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] New sender → one person intelligence per (connector, external id) with the platform name; the same sender in two chats is one person (PEOP-01)
-- [ ] Linked sender's messages are authored by the user's intelligence (PEOP-02); trusted flags unchanged for every author case (PEOP-06)
-- [ ] Platform rename updates the person on the next message; after a user rename it does not (PEOP-05); timeline shows the person's name with the platform (GRP-03)
-- [ ] Gate check passes: `make check`
+- [x] New sender → one person intelligence per (connector, external id) with the platform name; the same sender in two chats is one person (PEOP-01)
+- [x] Linked sender's messages are authored by the user's intelligence (PEOP-02); trusted flags unchanged for every author case (PEOP-06)
+- [x] Platform rename updates the person on the next message; after a user rename it does not (PEOP-05); timeline shows the person's name with the platform (GRP-03)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): record people who write through connectors`
@@ -555,11 +555,11 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PEOP-03, PEOP-04, PROF-11, GRP-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Connector owner and `use` grantee see and edit the person; a user without connector access gets 404 (PEOP-04)
-- [ ] Person page lists name, platform account and only the conversations the caller can view (PEOP-03)
-- [ ] A user's rename survives later platform name changes (PROF-11)
-- [ ] Group members list shows each chat with its people and platform (GRP-02)
-- [ ] Gate check passes: `make check`
+- [x] Connector owner and `use` grantee see and edit the person; a user without connector access gets 404 (PEOP-04)
+- [x] Person page lists name, platform account and only the conversations the caller can view (PEOP-03)
+- [x] A user's rename survives later platform name changes (PROF-11)
+- [x] Group members list shows each chat with its people and platform (GRP-02)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(intelligences): show people and their conversations`
@@ -573,9 +573,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: CONT-01, TREE-03, TREE-04, TREE-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Contacts lists own AIs as trees per machine, AIs shared with the caller, other users and people per usable connector (CONT-01); rows carry online, app and last seen (TREE-03)
-- [ ] Machine label 1-64 replaces the hostname, `''` resets, other owner's machine 404 (TREE-04); legacy AIs appear under `unlinked` (TREE-06)
-- [ ] Gate check passes: `make check`
+- [x] Contacts lists own AIs as trees per machine, AIs shared with the caller, other users and people per usable connector (CONT-01); rows carry online, app and last seen (TREE-03)
+- [x] Machine label 1-64 replaces the hostname, `''` resets, other owner's machine 404 (TREE-04); legacy AIs appear under `unlinked` (TREE-06)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): list contacts and the machine tree`
@@ -589,9 +589,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: ACC-01, ACC-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Owner sets an owned AI as operator → audit entry with from/to (ACC-01); grantee 403; another owner's AI 422; deleting the AI falls back to the owner
-- [ ] Adapter tests (fakes from captured responses) report the account label; the operator's profile shows `Discord: @bot` (ACC-07)
-- [ ] Gate check passes: `make check`
+- [x] Owner sets an owned AI as operator → audit entry with from/to (ACC-01); grantee 403; another owner's AI 422; deleting the AI falls back to the owner
+- [x] Adapter tests (fakes from captured responses) report the account label; the operator's profile shows `Discord: @bot` (ACC-07)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): give each connector an operator`
@@ -605,10 +605,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: ACC-02, ACC-06, DM-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A person's platform DM to a connector operated by an AI arrives in the DM between the person and the AI, created once (ACC-02); scope `off` routes nothing; a catch-all connector keeps the v0.3 behaviour
-- [ ] After an operator change, the next message goes to the new operator's DM; a deleted operator AI → the owner (spec edge case)
-- [ ] The operator AI `send_message to:` the person goes out through that chat; another AI gets 422 `no_route_to_person` (DM-05)
-- [ ] Gate check passes: `make check`
+- [x] A person's platform DM to a connector operated by an AI arrives in the DM between the person and the AI, created once (ACC-02); scope `off` routes nothing; a catch-all connector keeps the v0.3 behaviour
+- [x] After an operator change, the next message goes to the new operator's DM; a deleted operator AI → the owner (spec edge case)
+- [x] The operator AI `send_message to:` the person goes out through that chat; another AI gets 422 `no_route_to_person` (DM-05)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors): route platform DMs to the operator`
@@ -622,9 +622,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: ACC-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Scope `groups`/`all`: first message of a new group chat creates one group with the operator (AI member or user) and the bridged chat; the operator AI receives it and its reply goes back (ACC-06)
-- [ ] Scope `dms` leaves group chats unrouted; the 60/hour cap still applies
-- [ ] Gate check passes: `make check`
+- [x] Scope `groups`/`all`: first message of a new group chat creates one group with the operator (AI member or user) and the bridged chat; the operator AI receives it and its reply goes back (ACC-06)
+- [x] Scope `dms` leaves group chats unrouted; the 60/hour cap still applies
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): turn new group chats into groups`
@@ -640,8 +640,8 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: ACC-03, ACC-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] AI operator replying through its own account → no signature (ACC-03); an AI through a user-operated connector → signature per `sign_outbound` (on and off cases) (ACC-04); a user operator from the web through their own account → no author line
-- [ ] Gate check passes: `make check`
+- [x] AI operator replying through its own account → no signature (ACC-03); an AI through a user-operated connector → signature per `sign_outbound` (on and off cases) (ACC-04); a user operator from the web through their own account → no author line
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): sign only messages written through someone else's account`
@@ -655,9 +655,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: ACC-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A phone-typed message (FromSelf, unknown id) in a routed chat is authored by the operator and trusted for the owner's AIs (ACC-05)
-- [ ] The echo of a Partyline send, also when it arrives before the outbox row is marked sent, is dropped; FromSelf in an unrouted chat creates nothing
-- [ ] Gate check passes: `make check`
+- [x] A phone-typed message (FromSelf, unknown id) in a routed chat is authored by the operator and trusted for the owner's AIs (ACC-05)
+- [x] The echo of a Partyline send, also when it arrives before the outbox row is marked sent, is dropped; FromSelf in an unrouted chat creates nothing
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): author own-account messages as the operator`
@@ -671,10 +671,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: NOTI-01, NOTI-02, NOTI-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Options list only the caller's linked accounts with a DM chat on usable connectors; choosing another chat → 422; `null` clears (NOTI-01)
-- [ ] AI DM to the user → `<AI name>: <text>` (plus attachment links) sent to that chat, outbox marked sent (NOTI-02); a user's own DM posts are not copied
-- [ ] Connector down → retries with backoff, `failed` after 5, the DM still readable (NOTI-03)
-- [ ] Gate check passes: `make check`
+- [x] Options list only the caller's linked accounts with a DM chat on usable connectors; choosing another chat → 422; `null` clears (NOTI-01)
+- [x] AI DM to the user → `<AI name>: <text>` (plus attachment links) sent to that chat, outbox marked sent (NOTI-02); a user's own DM posts are not copied
+- [x] Connector down → retries with backoff, `failed` after 5, the DM still readable (NOTI-03)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): copy AI DMs to the user's chosen app`
@@ -688,9 +688,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: MRG-01, MRG-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Unlinked A merged into folder AI B: groups (B's settings win), cursors (max), grants, DMs (re-keyed or appended after the notice), authored messages and operators move to B; A is gone; audit written (MRG-01)
-- [ ] A online → 409 `identity_online`, nothing changed (MRG-02); another owner's AI 404; A = B 422
-- [ ] Gate check passes: `make check`
+- [x] Unlinked A merged into folder AI B: groups (B's settings win), cursors (max), grants, DMs (re-keyed or appended after the notice), authored messages and operators move to B; A is gone; audit written (MRG-01)
+- [x] A online → 409 `identity_online`, nothing changed (MRG-02); another owner's AI 404; A = B 422
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): merge one AI identity into another`

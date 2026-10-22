@@ -42,6 +42,7 @@ type sent struct {
 type fakeSession struct {
 	mu       sync.Mutex
 	handlers []func(*discordgo.Session, *discordgo.MessageCreate)
+	readies  []func(*discordgo.Session, *discordgo.Ready)
 	openErr  error
 	opened   chan struct{}
 	closed   chan struct{}
@@ -72,7 +73,20 @@ func (f *fakeSession) AddHandler(h any) func() {
 	if mh, ok := h.(func(*discordgo.Session, *discordgo.MessageCreate)); ok {
 		f.handlers = append(f.handlers, mh)
 	}
+	if rh, ok := h.(func(*discordgo.Session, *discordgo.Ready)); ok {
+		f.readies = append(f.readies, rh)
+	}
 	return func() {}
+}
+
+// emitReady delivers the gateway's READY event naming the bot user.
+func (f *fakeSession) emitReady(bot *discordgo.User) {
+	f.mu.Lock()
+	hs := append([]func(*discordgo.Session, *discordgo.Ready){}, f.readies...)
+	f.mu.Unlock()
+	for _, h := range hs {
+		h(nil, &discordgo.Ready{Version: 10, SessionID: "synthetic-session", User: bot})
+	}
 }
 
 func (f *fakeSession) emit(m *discordgo.Message) {
@@ -176,6 +190,86 @@ func userMessage(id, content string) *discordgo.Message {
 		Author:    &discordgo.User{ID: userID, Username: "testperson", GlobalName: "Test Person"},
 		Timestamp: time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC),
 	}
+}
+
+// ACC-07: the gateway's READY event names the bot; its @username is the account label, a
+// READY after a reconnect reports it again, and a READY without a username reports nothing.
+func TestReadyReportsTheBotAccount(t *testing.T) {
+	f := newFakeSession()
+	_, rec := start(t, f)
+	require.True(t, rec.NoAccount(), "nothing before the gateway says who the bot is")
+
+	f.emitReady(&discordgo.User{ID: "300000000000000077", Username: "atlas-bot", Discriminator: "0", Bot: true})
+	require.Equal(t, "@atlas-bot", rec.NextAccount(t))
+	f.emitReady(&discordgo.User{ID: "300000000000000077", Username: "atlas-helper", Discriminator: "0", Bot: true})
+	require.Equal(t, "@atlas-helper", rec.NextAccount(t), "a renamed bot is reported again")
+
+	f.emitReady(nil)
+	f.emitReady(&discordgo.User{ID: "300000000000000077", Bot: true})
+	require.True(t, rec.NoAccount(), "a READY without a bot username reports nothing")
+}
+
+const botID = "300000000000000077"
+
+// ACC-05: once the gateway has said who the bot is, its own messages (another tool writing with
+// the same token, or the echo of what Partyline sent) are emitted as messages of the account; the
+// messages of other bots stay ignored, and so do bot messages before the bot is known.
+func TestOwnBotMessagesAreFromSelf(t *testing.T) {
+	f := newFakeSession()
+	_, rec := start(t, f)
+	bot := &discordgo.User{ID: botID, Username: "atlas-bot", Discriminator: "0", Bot: true}
+	from := func(id, content string, author *discordgo.User) *discordgo.Message {
+		m := userMessage(id, content)
+		m.Author = author
+		return m
+	}
+
+	f.emit(from("M0", "before READY", bot))
+	f.emitReady(bot)
+	require.Equal(t, "@atlas-bot", rec.NextAccount(t))
+	f.emit(from("M1", "beep", &discordgo.User{ID: "300000000000000009", Username: "somebot", Bot: true}))
+	f.emit(from("M2", "typed with the bot's token", bot))
+	f.emit(userMessage("M3", "hello"))
+	dm := from("M4", "in the bot's DM channel", bot)
+	dm.GuildID, dm.ChannelID = "", "200000000000000099"
+	f.emit(dm)
+
+	in := rec.NextInbound(t)
+	require.Equal(t, "M2", in.MessageID, "neither the early bot message nor another bot's was emitted")
+	require.True(t, in.FromSelf)
+	require.Equal(t, botID, in.SenderID)
+	require.Equal(t, "typed with the bot's token", in.Text)
+	require.Equal(t, channelID, in.ChatID)
+	in = rec.NextInbound(t)
+	require.Equal(t, "M3", in.MessageID)
+	require.False(t, in.FromSelf, "a person is not the account")
+	in = rec.NextInbound(t)
+	require.Equal(t, "M4", in.MessageID)
+	require.True(t, in.FromSelf)
+	require.Equal(t, "dm", in.ChatKind)
+	require.Empty(t, in.ChatTitle, "the bot's name is not the title of its DM channel")
+}
+
+// ACC-05: a send reports the id of every message it created, as the gateway echoes each.
+func TestSendReportsEveryCreatedMessage(t *testing.T) {
+	f := newFakeSession()
+	c := newWithSession(f, connectors.Deps{})
+	var created []string
+	id, err := c.Send(context.Background(), connectors.Outbound{
+		ChatID: channelID, Text: strings.Repeat("y", 4500), Created: func(id string) { created = append(created, id) },
+	})
+	require.NoError(t, err)
+	require.Equal(t, "MSG1", id)
+	require.Equal(t, []string{"MSG1", "MSG2", "MSG3"}, created)
+
+	// A send that fails after some parts reported the parts that exist.
+	created = nil
+	_, err = c.Send(context.Background(), connectors.Outbound{
+		ChatID: channelID, Text: strings.Repeat("y", 4500), Created: func(id string) { created = append(created, id) },
+		Files: []connectors.OutFile{{Name: "a.bin", Open: func() (io.ReadCloser, error) { return nil, errors.New("gone") }}},
+	})
+	require.ErrorContains(t, err, "open attachment")
+	require.Equal(t, []string{"MSG4", "MSG5"}, created, "the parts before the failure were created")
 }
 
 // DC-01: messages of non-bot users are emitted with the channel id as chat id; bots are ignored.
@@ -291,6 +385,15 @@ func TestSendPrefixesAuthorAndSendsFilesAlone(t *testing.T) {
 	require.Equal(t, "**Agent**: hi", sends[0].Msg.Content)
 	require.Nil(t, sends[0].Msg.Reference)
 	require.Equal(t, map[string]string{"a.png": "png"}, sends[1].Files)
+}
+
+// ACC-03, ACC-04: a message of the account's operator carries no author line.
+func TestSendLeavesTheAuthorOutForTheOperator(t *testing.T) {
+	f := newFakeSession()
+	c := newWithSession(f, connectors.Deps{})
+	_, err := c.Send(context.Background(), connectors.Outbound{ChatID: channelID, Text: "hi", AuthorName: "Agent", Unsigned: true})
+	require.NoError(t, err)
+	require.Equal(t, "hi", f.sent()[0].Msg.Content)
 }
 
 // DC-03: the text channels of every guild are listed; DC-01: an inbound message of a

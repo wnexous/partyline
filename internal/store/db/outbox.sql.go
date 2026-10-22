@@ -9,6 +9,36 @@ import (
 	"context"
 )
 
+const countChatOutboxExternalID = `-- name: CountChatOutboxExternalID :one
+SELECT COUNT(*) FROM outbox WHERE chat_id = ? AND status = 'sent' AND external_id = ?
+`
+
+type CountChatOutboxExternalIDParams struct {
+	ChatID     string
+	ExternalID string
+}
+
+// Messages Partyline sent to the chat that the platform knows by this id (ACC-05).
+func (q *Queries) CountChatOutboxExternalID(ctx context.Context, arg CountChatOutboxExternalIDParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countChatOutboxExternalID, arg.ChatID, arg.ExternalID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countSendingOutboxForChat = `-- name: CountSendingOutboxForChat :one
+SELECT COUNT(*) FROM outbox WHERE chat_id = ? AND status = 'sending'
+`
+
+// Sends to the chat that are in flight: an echo of one of them can reach the pipeline before the
+// row is marked sent (ACC-05).
+func (q *Queries) CountSendingOutboxForChat(ctx context.Context, chatID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSendingOutboxForChat, chatID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createNotifyOutbox = `-- name: CreateNotifyOutbox :exec
 INSERT INTO outbox (id, message_id, chat_id, purpose, next_attempt_at, updated_at)
 VALUES (?, ?, ?, 'notify', ?, ?)
@@ -35,7 +65,7 @@ func (q *Queries) CreateNotifyOutbox(ctx context.Context, arg CreateNotifyOutbox
 
 const deletePendingRoomChatOutbox = `-- name: DeletePendingRoomChatOutbox :execrows
 DELETE FROM outbox
-WHERE chat_id = ?1 AND status = 'pending'
+WHERE chat_id = ?1 AND status = 'pending' AND purpose = 'room'
   AND message_id IN (SELECT id FROM messages WHERE room_id = ?2)
 `
 
@@ -44,6 +74,8 @@ type DeletePendingRoomChatOutboxParams struct {
 	RoomID string
 }
 
+// A chat that leaves a room stops receiving its messages (ROOM-01); the copies of a DM that go to
+// a user's chosen app (notify) do not depend on membership.
 func (q *Queries) DeletePendingRoomChatOutbox(ctx context.Context, arg DeletePendingRoomChatOutboxParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deletePendingRoomChatOutbox, arg.ChatID, arg.RoomID)
 	if err != nil {
@@ -93,14 +125,16 @@ func (q *Queries) GetSentExternalID(ctx context.Context, arg GetSentExternalIDPa
 }
 
 const listDueOutbox = `-- name: ListDueOutbox :many
-SELECT o.id, o.message_id, o.chat_id, o.attempts, m.room_id
+SELECT o.id, o.message_id, o.chat_id, o.attempts, o.purpose, m.room_id
 FROM outbox o JOIN messages m ON m.id = o.message_id
 WHERE o.status = 'pending' AND o.next_attempt_at <= ?1
-  -- ROOM-01 defense in depth: never send to a chat that left the room.
-  AND EXISTS (
+  -- ROOM-01 defense in depth: never send to a chat that left the room. A notify copy (NOTI-02)
+  -- goes to the user's own app, which is no member of the room: the sender checks that the user
+  -- still has the chat as a target.
+  AND (o.purpose = 'notify' OR EXISTS (
     SELECT 1 FROM room_members rm
     WHERE rm.room_id = m.room_id AND rm.kind = 'chat' AND rm.member_id = o.chat_id
-  )
+  ))
 ORDER BY o.next_attempt_at, o.id
 LIMIT ?2
 `
@@ -115,6 +149,7 @@ type ListDueOutboxRow struct {
 	MessageID string
 	ChatID    string
 	Attempts  int64
+	Purpose   string
 	RoomID    string
 }
 
@@ -132,6 +167,7 @@ func (q *Queries) ListDueOutbox(ctx context.Context, arg ListDueOutboxParams) ([
 			&i.MessageID,
 			&i.ChatID,
 			&i.Attempts,
+			&i.Purpose,
 			&i.RoomID,
 		); err != nil {
 			return nil, err

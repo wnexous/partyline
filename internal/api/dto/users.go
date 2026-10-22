@@ -40,6 +40,9 @@ type Me struct {
 	Role         Role            `json:"role"`
 	Locale       string          `json:"locale"`
 	CreatedAt    time.Time       `json:"created_at"`
+	// NotifyChatID is the chat of one of the user's linked apps that receives a copy of the DMs
+	// AIs write to them (PUT /me/notify); absent when they chose none (NOTI-01).
+	NotifyChatID string `json:"notify_chat_id,omitempty"`
 }
 
 // UpdateMeRequest is the body of PATCH /me; absent fields are unchanged.

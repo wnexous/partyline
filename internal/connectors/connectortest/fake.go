@@ -78,7 +78,7 @@ func (f *Fake) newInstance(cfg connectors.Config, d connectors.Deps) (connectors
 	inst := &Instance{
 		ID: d.ID, Config: cfg, Deps: d,
 		runs: make(chan struct{}, 64), stops: make(chan struct{}, 64), fail: make(chan error, 64),
-		sends: make(chan connectors.Outbound, 64), reacts: make(chan connectors.Reaction, 64),
+		sends: make(chan connectors.Outbound, 64), sending: make(chan struct{}, 64), reacts: make(chan connectors.Reaction, 64),
 	}
 	f.mu.Lock()
 	f.instances[d.ID] = inst
@@ -134,12 +134,19 @@ type Instance struct {
 	chats   []connectors.ChatInfo
 	sent    []connectors.Outbound
 	nextID  int
+	// gate, when set, holds every Send until it is closed (HoldSends); parts is how many
+	// messages beyond the first a send creates (SetSendParts).
+	gate  chan struct{}
+	parts int
+	// quiet makes sends skip Created (QuietSends).
+	quiet bool
 
-	runs   chan struct{}
-	stops  chan struct{}
-	fail   chan error
-	sends  chan connectors.Outbound
-	reacts chan connectors.Reaction
+	runs    chan struct{}
+	stops   chan struct{}
+	fail    chan error
+	sends   chan connectors.Outbound
+	sending chan struct{}
+	reacts  chan connectors.Reaction
 }
 
 // Run implements connectors.Connector.
@@ -158,20 +165,82 @@ func (i *Instance) Run(ctx context.Context, h connectors.Handler) error {
 }
 
 // Send implements connectors.Connector; it records m and returns "ext-<n>" or SetSendError's error.
-func (i *Instance) Send(_ context.Context, m connectors.Outbound) (string, error) {
+// A send that SetSendParts made multi-part also creates "ext-<n>.p1", "ext-<n>.p2", ...; Created
+// is told every id, as a real connector does. While HoldSends is on it waits before it creates
+// anything, as a platform call that is still running does.
+func (i *Instance) Send(ctx context.Context, m connectors.Outbound) (string, error) {
 	i.mu.Lock()
 	err := i.sendErr
 	i.nextID++
 	id := "ext-" + strconv.Itoa(i.nextID)
-	if err == nil {
-		i.sent = append(i.sent, m)
-	}
+	gate, parts, quiet := i.gate, i.parts, i.quiet
 	i.mu.Unlock()
 	if err != nil {
 		return "", err
 	}
+	if gate != nil {
+		i.sending <- struct{}{}
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	i.mu.Lock()
+	i.sent = append(i.sent, m)
+	i.mu.Unlock()
+	if m.Created != nil && !quiet {
+		m.Created(id)
+		for p := 1; p <= parts; p++ {
+			m.Created(id + ".p" + strconv.Itoa(p))
+		}
+	}
 	i.sends <- m
 	return id, nil
+}
+
+// HoldSends makes every later send wait, before it creates anything, until ReleaseSends (see
+// WaitSending): a platform call that is still running.
+func (i *Instance) HoldSends() {
+	i.mu.Lock()
+	i.gate = make(chan struct{})
+	i.mu.Unlock()
+}
+
+// ReleaseSends lets the sends held by HoldSends, and later ones, go on.
+func (i *Instance) ReleaseSends() {
+	i.mu.Lock()
+	if i.gate != nil {
+		close(i.gate)
+		i.gate = nil
+	}
+	i.mu.Unlock()
+}
+
+// WaitSending waits until a send is held by HoldSends.
+func (i *Instance) WaitSending(t testing.TB) {
+	t.Helper()
+	select {
+	case <-i.sending:
+	case <-time.After(Timeout):
+		t.Fatalf("connector %s: no send is in flight", i.ID)
+	}
+}
+
+// QuietSends makes later sends not tell Outbound.Created the ids they create, like a connector
+// that only returns the first one: the outbox is then the only record of it.
+func (i *Instance) QuietSends() {
+	i.mu.Lock()
+	i.quiet = true
+	i.mu.Unlock()
+}
+
+// SetSendParts makes later sends create n more messages besides the first, with the ids
+// "ext-<n>.p1" ...: the parts of a long text, or its files.
+func (i *Instance) SetSendParts(n int) {
+	i.mu.Lock()
+	i.parts = n
+	i.mu.Unlock()
 }
 
 // React implements connectors.Reactor; it records r (see WaitReact).
@@ -249,6 +318,9 @@ func (i *Instance) Fail(err error) { i.fail <- err }
 
 // Connected reports StatusConnected through the handler of the current Run.
 func (i *Instance) Connected() { i.handler().Status(connectors.StatusConnected, "") }
+
+// Account reports the connector's account label through the handler of the current Run.
+func (i *Instance) Account(label string) { i.handler().Account(label) }
 
 // Emit hands a received message to the handler of the current Run.
 func (i *Instance) Emit(ctx context.Context, m connectors.Inbound) { i.handler().Inbound(ctx, m) }

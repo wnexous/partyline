@@ -425,8 +425,16 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) 
 		return err
 	}
 	var shas []string
+	var stopped []db.StopCatchAllConnectorsRow
 	err := s.store.WithTx(ctx, func(q *db.Queries) (err error) {
 		if shas, err = q.ListRoomAttachmentSHAs(ctx, roomID); err != nil {
+			return err
+		}
+		// ROUTE-03: a connector whose catch-all room goes stops auto-routing and says so. The
+		// foreign key empties its room, which with a scope on would read as per-chat routing.
+		if stopped, err = q.StopCatchAllConnectors(ctx, db.StopCatchAllConnectorsParams{
+			Detail: dto.AutoRouteUnavailable, RoomID: sql.NullString{String: roomID, Valid: true},
+		}); err != nil {
 			return err
 		}
 		if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(access.KindRoom), ResourceID: roomID}); err != nil {
@@ -439,6 +447,9 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) 
 		return err
 	}
 	s.removeRoomBlobs(ctx, shas)
+	for _, c := range stopped {
+		s.bus.Publish(events.ConnectorStatus{ConnectorID: c.ID, Status: c.Status, Detail: dto.AutoRouteUnavailable})
+	}
 	s.bus.Publish(events.RoomChanged{RoomID: roomID, Deleted: true})
 	return nil
 }

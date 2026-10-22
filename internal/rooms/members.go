@@ -324,14 +324,18 @@ func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, m
 // it (ROUTE-02 edge case); a manager may add it back meanwhile.
 const AutoRouteSkip = 24 * time.Hour
 
-// skipAutoRoute keeps a chat removed from its connector's catch-all room out of it for
-// AutoRouteSkip.
+// skipAutoRoute keeps a chat removed from its connector's catch-all room, or from a group made
+// for it, out of automatic routing for AutoRouteSkip.
 func (s *Service) skipAutoRoute(ctx context.Context, q *db.Queries, roomID, chatID string) error {
 	r, err := q.GetChatAutoRoute(ctx, chatID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
-	if err != nil || r.AutoRouteRoomID.String != roomID {
+	// The catch-all room, or any room of a connector that gives each new chat a group of its own
+	// (a scope on, no catch-all room): taking the chat out of one is a decision not to undo with
+	// the next message.
+	perChat := !r.AutoRouteRoomID.Valid && r.AutoRouteScope != string(dto.AutoRouteScopeOff)
+	if err != nil || (r.AutoRouteRoomID.String != roomID && !perChat) {
 		return err
 	}
 	return q.UpsertAutoRouteSkip(ctx, db.UpsertAutoRouteSkipParams{

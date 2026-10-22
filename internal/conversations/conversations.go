@@ -1,14 +1,18 @@
 // Package conversations opens direct messages and creates groups with members, the two kinds of
 // conversation of the messenger (AD-011). Both are rooms (AD-002): this package decides who may
-// start one with whom and writes its rows; package rooms owns what happens inside a room.
+// start one with whom and writes its rows; package rooms owns what happens inside a room. It also
+// routes platform chats to the DMs of a connector's operator and merges one AI identity into
+// another, the two operations that move whole conversations.
 package conversations
 
 import (
+	"context"
 	"errors"
 	"time"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/intelligences"
@@ -36,6 +40,13 @@ type Deps struct {
 	Rooms         *rooms.Service
 	Intelligences *intelligences.Service
 	Bus           *events.Bus
+	// Access decides who owns an AI (merge). Required for Merge.
+	Access *access.Authorizer
+	// Online says whether an AI has a live session (merge refuses one that has); nil says none has.
+	Online func(agentID string) bool
+	// Kick closes the live session of an AI that was just merged away, if one attached after the
+	// check; nil does nothing.
+	Kick func(ctx context.Context, agentID string)
 	// AllowCreate says whether an AI may create one more conversation now (and counts it); the
 	// API wires the registry's limit of 10 per hour. Nil allows everything. It is asked only
 	// when a conversation is about to be created, never for an existing DM.
@@ -50,6 +61,10 @@ type Service struct {
 	rooms       *rooms.Service
 	ints        *intelligences.Service
 	bus         *events.Bus
+	az          *access.Authorizer
+	audit       *audit.Log
+	online      func(agentID string) bool
+	kick        func(ctx context.Context, agentID string)
 	allowCreate func(agentID string) bool
 	now         func() time.Time
 }
@@ -59,7 +74,10 @@ func New(d Deps) *Service {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &Service{store: d.Store, rooms: d.Rooms, ints: d.Intelligences, bus: d.Bus, allowCreate: d.AllowCreate, now: d.Now}
+	return &Service{
+		store: d.Store, rooms: d.Rooms, ints: d.Intelligences, bus: d.Bus, az: d.Access, audit: audit.New(d.Store, d.Now),
+		online: d.Online, kick: d.Kick, allowCreate: d.AllowCreate, now: d.Now,
+	}
 }
 
 // self is the intelligence a principal acts as: the user, or the AI of an agent principal.

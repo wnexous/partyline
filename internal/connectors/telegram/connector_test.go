@@ -48,13 +48,15 @@ type fakeBotAPI struct {
 	updates []map[string]any
 	nextID  int
 	failing map[string]int // method → HTTP status
+	// username is the bot username getMe answers; empty leaves the field out.
+	username string
 
 	calls  chan call
 	queued chan struct{}
 }
 
 func newFakeBotAPI(t *testing.T) *fakeBotAPI {
-	f := &fakeBotAPI{t: t, calls: make(chan call, 256), queued: make(chan struct{}, 1), failing: map[string]int{}}
+	f := &fakeBotAPI{t: t, calls: make(chan call, 256), queued: make(chan struct{}, 1), failing: map[string]int{}, username: "test_bot"}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -97,7 +99,13 @@ func (f *fakeBotAPI) serve(w http.ResponseWriter, r *http.Request) {
 	var result any = true
 	switch method {
 	case "getMe":
-		result = map[string]any{"id": botID, "is_bot": true, "first_name": "Test Bot", "username": "test_bot"}
+		me := map[string]any{"id": botID, "is_bot": true, "first_name": "Test Bot"}
+		f.mu.Lock()
+		if f.username != "" {
+			me["username"] = f.username
+		}
+		f.mu.Unlock()
+		result = me
 	case "getUpdates":
 		result = f.pending(r.Context(), int64(c.JSON["offset"].(float64)))
 	case "getFile":
@@ -251,6 +259,21 @@ func TestRunPollsWithIncreasingOffset(t *testing.T) {
 	require.True(t, rec.NoInbound(), "acknowledged updates are not delivered again")
 }
 
+// ACC-07: Run reports the bot's @username from getMe as the account label, once, before it
+// reports connected; a bot without a username reports none.
+func TestRunReportsTheBotAccount(t *testing.T) {
+	f := newFakeBotAPI(t)
+	rec := start(t, newConnector(t, f))
+	require.Equal(t, "@test_bot", rec.NextAccount(t))
+	require.True(t, rec.NoAccount(), "reported once")
+
+	f.mu.Lock()
+	f.username = ""
+	f.mu.Unlock()
+	rec = start(t, newConnector(t, f))
+	require.True(t, rec.NoAccount(), "no username, no label")
+}
+
 // CON-12 input: the bot's own messages are flagged.
 func TestRunFlagsOwnMessages(t *testing.T) {
 	f := newFakeBotAPI(t)
@@ -346,6 +369,18 @@ func TestSendPrefixesAuthor(t *testing.T) {
 	sent := f.next("sendMessage")
 	require.Equal(t, "Agent: hi", sent.JSON["text"])
 	require.NotContains(t, sent.JSON, "reply_parameters")
+}
+
+// ACC-03, ACC-04: a message of the account's operator carries no author line; it still names
+// its author to platforms that carry that as data.
+func TestSendLeavesTheAuthorOutForTheOperator(t *testing.T) {
+	f := newFakeBotAPI(t)
+	out := connectors.Outbound{ChatID: "5550001", Text: "hi", AuthorName: "Agent", Unsigned: true}
+	require.Equal(t, "Agent", out.AuthorName)
+	require.Empty(t, out.Signature())
+	_, err := newConnector(t, f).Send(context.Background(), out)
+	require.NoError(t, err)
+	require.Equal(t, "hi", f.next("sendMessage").JSON["text"])
 }
 
 // TG-03: images go with sendPhoto, everything else (and images over 10 MiB) with sendDocument.

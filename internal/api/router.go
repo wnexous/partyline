@@ -92,6 +92,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.roomRoutes(mux)
 	s.conversationRoutes(mux)
 	s.intelligenceRoutes(mux)
+	s.contactRoutes(mux)
 	s.avatarRoutes(mux)
 	s.agentRoutes(mux)
 	s.agentAPIRoutes(mux)
@@ -216,6 +217,8 @@ func mapError(err error) error {
 		he := httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused, "some members cannot be added to the group")
 		he.Refused = refused.Refused
 		return he
+	case errors.Is(err, conversations.ErrIdentityOnline):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeIdentityOnline, "the AI is online: end its session before merging it")
 	case errors.Is(err, conversations.ErrRateLimited):
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many new conversations, try again later")
 	case errors.Is(err, rooms.ErrAlreadyMember):

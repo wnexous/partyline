@@ -27,8 +27,7 @@ func (s *server) putAvatar(w http.ResponseWriter, r *http.Request, p authn.Princ
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, s.toProfile(prof))
-	return nil
+	return s.writeProfile(w, r, p, prof)
 }
 
 // deleteAvatar removes the avatar, so the UI shows initials again (PROF-08).
@@ -68,8 +67,7 @@ func (s *server) agentUpdateProfile(w http.ResponseWriter, r *http.Request, p au
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, s.toProfile(prof))
-	return nil
+	return s.writeProfile(w, r, p, prof)
 }
 
 // agentPutAvatar replaces the calling agent's own avatar with the image in the body.
@@ -78,6 +76,5 @@ func (s *server) agentPutAvatar(w http.ResponseWriter, r *http.Request, p authn.
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, s.toProfile(prof))
-	return nil
+	return s.writeProfile(w, r, p, prof)
 }

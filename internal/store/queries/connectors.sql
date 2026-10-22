@@ -50,7 +50,7 @@ INSERT INTO auto_route_skips (connector_id, chat_id, until) VALUES (?, ?, ?)
 ON CONFLICT (connector_id, chat_id) DO UPDATE SET until = excluded.until;
 
 -- name: GetChatAutoRoute :one
-SELECT k.id AS connector_id, k.auto_route_room_id
+SELECT k.id AS connector_id, k.auto_route_room_id, k.auto_route_scope
 FROM chats c JOIN connectors k ON k.id = c.connector_id
 WHERE c.id = ?;
 
@@ -59,3 +59,19 @@ UPDATE connectors SET operator_iid = ? WHERE id = ?;
 
 -- name: SetConnectorAccountLabel :exec
 UPDATE connectors SET account_label = ? WHERE id = ?;
+
+-- name: ListConnectorsOperatedBy :many
+-- The connectors an AI operates (ACC-01, ACC-07).
+SELECT * FROM connectors WHERE operator_iid = ? ORDER BY name, id;
+
+-- name: ListConnectorsOperatedByOwner :many
+-- The connectors a user operates: those they own and no AI operates.
+SELECT * FROM connectors WHERE owner_id = ? AND operator_iid IS NULL ORDER BY name, id;
+
+-- name: StopCatchAllConnectors :many
+-- ROUTE-03: the connectors whose catch-all room is going to be deleted stop auto-routing and say
+-- so. The foreign key empties their room on deletion, and an empty room with a scope on reads as
+-- per-chat conversations (ACC-02), so the scope goes off with it.
+UPDATE connectors SET auto_route_scope = 'off', last_error = sqlc.arg(detail)
+WHERE auto_route_room_id = sqlc.arg(room_id)
+RETURNING id, status;
