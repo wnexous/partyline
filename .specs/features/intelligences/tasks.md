@@ -1146,9 +1146,9 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: SES-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Two attaches without a process id: the second is `ErrBusy`, and `Busy` reports the holder (the Attach-only variant of M10b)
-- [ ] Two WebSocket connections of one folder without the live header: the second is refused with 409 `identity_busy` and the first stays live (M10b)
-- [ ] Gate check passes: `make check`
+- [x] Two attaches without a process id: the second is `ErrBusy`, and `Busy` reports the holder (the Attach-only variant of M10b)
+- [x] Two WebSocket connections of one folder without the live header: the second is refused with 409 `identity_busy` and the first stays live (M10b)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(agents): refuse a second live connection without a process id`

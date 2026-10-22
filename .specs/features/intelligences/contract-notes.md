@@ -2570,3 +2570,21 @@ never ran.
   the post works once the user is enabled.
 - Scratch copy: M17 (`other` is always `dm_a`) fails the first, M18 (the counterpart check uses the
   owner's id for an AI's post) fails the second; the older tests passed under both.
+
+## T61 - A second live connection without a process id is busy (SES-04)
+
+Tests only; no code changes (`validation.md` gap 5, mutant M10b, L-042). `Presence.Attach` and
+`Presence.Busy` both guard the process-id comparison with `liveID != ""`: an empty id never matches, so
+two connections that send no `X-Partyline-Live` header (an old client, or an id that fails
+`liveIDPattern`) are two processes. Every earlier test sent an id from the holder or only from the
+newcomer, which an unguarded comparison also passes.
+
+- `TestPresenceTreatsTwoConnectionsWithoutAProcessIDAsTwoProcesses` (`internal/agents/presence_test.go`):
+  a holder attached with no id refuses a second attach with no id (`ErrBusy`, holder untouched, `Busy`
+  reports it), and with takeover the second replaces it as `taken_over`, not as the silent `reconnected`.
+- `TestTwoConnectionsWithoutAProcessIDAreTwoProcesses` (`internal/api/agent_live_test.go`): the second
+  WebSocket of one folder without the header gets 409 `identity_busy`, the first stays open and keeps
+  receiving.
+- Scratch copy: removing the guard in both places fails both tests; in `Attach` alone only the unit test
+  fails (the gateway checks `Busy` first, so the Attach-only variant is unreachable through it); in `Busy`
+  alone both fail.
