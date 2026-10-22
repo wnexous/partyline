@@ -402,10 +402,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: SES-04, SES-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Busy channel: `reply`, `send_message`, `history` … answer the exact busy text with the harness name and HH:MM (SES-04)
-- [ ] Taken over: exactly one `This intelligence was opened in another session; Partyline is disconnected here.` notification, no further deliveries, tools answer the taken-over text (SES-05)
-- [ ] `listen` exit code 3 + notice line; bun tests: adapters do not restart on 3 and still restart on other codes
-- [ ] Gate check passes: `make check`
+- [x] Busy channel: `reply`, `send_message`, `history` … answer the exact busy text with the harness name and HH:MM (SES-04)
+- [x] Taken over: exactly one `This intelligence was opened in another session; Partyline is disconnected here.` notification, no further deliveries, tools answer the taken-over text (SES-05)
+- [x] `listen` exit code 3 + notice line; bun tests: adapters do not restart on 3 and still restart on other codes
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): report busy and taken-over sessions`

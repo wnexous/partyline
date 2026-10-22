@@ -541,3 +541,39 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
   (a dial is a process of its own) unless `Live` is set; `testkit.NewLiveID`. Removed with the
   superseded behavior: `TestAgentWSSecondConnectionReplacesFirst` (AGT-04),
   `TestPresenceReplaceAndOffline`, `TestLinkPausesAfterReplaced` and `TestToolsReportReplaced`.
+
+## T18 - Busy and taken-over sessions explain themselves (SES-04, SES-05)
+
+- **Busy text** (every tool, `link.Err()` while `stateBusy`): `<name> is open in another session
+  (<app label>, since HH:MM). Partyline is not connected here. To take over, restart with
+  "partyline <harness> --take-over" or set PARTYLINE_TAKEOVER=1.` Name, app label and time come from
+  the 409's details (`BusyDetail*`) and follow the latest refusal, so a retry that finds another
+  session names that one; HH:MM is 24-hour in the channel process's local zone. `<harness>` is the
+  channel's own harness id (the launcher id). A socket the server only closed `4003 identity_busy`
+  tells nothing: the text then reads `This intelligence is open in another session. Partyline is not
+  connected here. …`. The `--take-over` launcher flag arrives with T36; `PARTYLINE_TAKEOVER=1` works
+  from T17.
+- **Taken-over text** is the SES-05 sentence, exactly: `This intelligence was opened in another
+  session; Partyline is disconnected here.` Every tool answers it, and `channel.Run` sends it once
+  as a channel notification when the link enters `stateTakenOver` (the link never reconnects, so it
+  is once). Frames queued but not yet delivered when the close arrives are dropped and stay
+  unacknowledged for the new session's backlog: nothing is delivered after the notice.
+- **Connection notice** (`connectionNotice`): a `Notification` whose meta is `type=notice`,
+  `reason=busy|taken_over`, `author=Partyline`, `author_kind=system`, `sender_name=""`,
+  `trusted=false`, `kind=system` and no room keys. `type` is how adapters tell it from a room
+  message; server notices (skipped backlog, room instructions) keep their shape and stay messages.
+- **Link**: `link.onLost(reason, text)` is called once from `run` when the link gives up for
+  another session: for busy after the last retry, for taken over at once. The link itself prints
+  nothing for these two states. `Run`'s handler writes the text to stderr and notifies for taken
+  over (the busy channel stays silent and keeps answering its tools). `Listen`'s handler writes the
+  notice as one JSON line (the notification's meta plus `content`), cancels the link and `Listen`
+  returns `channel.ErrSessionLost`; `partyline listen` turns that into exit code **3** with nothing
+  more on stderr (`exitSessionLost`). Busy waits for the 2 s, 4 s, 4 s retries first, so `listen`
+  of a busy AI ends about 10 s after it starts. `Options.zone` / `ListenOptions.zone` are test seams
+  for the person's zone.
+- **Adapters**: the pi and OpenCode supervision block (identical in both) has
+  `EXIT_SESSION_LOST = 3` and does not restart after it, whatever else it was doing (every other
+  code, `null` included, still restarts with the backoff). A `type: "notice"` line is shown through
+  the harness's notification path (`ctx.ui.notify`/stderr in pi, the OpenCode log) and never framed
+  or sent to the model. The omp extension does the same for a `mcp_notification` whose meta says
+  `type: "notice"`, via `ui.notify`. Shared fixtures: `integrations/testdata/framing.ts` `notices`.

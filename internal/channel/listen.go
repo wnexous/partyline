@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 // ListenOptions configure Listen.
@@ -31,12 +32,21 @@ type ListenOptions struct {
 	HTTPClient *http.Client
 
 	timing timing
+	// zone is where the busy text shows times; tests set it, nil is the local zone.
+	zone *time.Location
 }
+
+// ErrSessionLost is what Listen returns when another session holds the AI (and did not let go
+// during the retries) or took it over from this one. The notice has been written; the command
+// exits with code 3 and the adapters do not start it again.
+var ErrSessionLost = errors.New("the AI's live session is in another process")
 
 // Listen holds the agent WebSocket like the channel and writes one JSON line per pushed
 // message or notice to Stdout: the fields of the channel notification's meta plus "content"
 // (PUSH-01). A message is acknowledged after its line is written. Listen returns nil when ctx
-// ends or Stdin closes, and an error when writing to Stdout fails.
+// ends or Stdin closes, ErrSessionLost after writing the notice line (type "notice") when another
+// session holds the AI or took it over (SES-04, SES-05), and an error when writing to Stdout
+// fails.
 func Listen(ctx context.Context, o ListenOptions) error {
 	base, err := parseBase(o.URL)
 	if err != nil {
@@ -55,10 +65,22 @@ func Listen(ctx context.Context, o ListenOptions) error {
 	}
 
 	id := Identity{Machine: o.Machine, Folder: o.Folder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt}
-	l := newLink(base, o.Token, id, o.HTTPClient, &lineWriter{w: o.Stdout}, o.Stderr, o.timing)
-	l.takeover = o.Takeover
+	out := &lineWriter{w: o.Stdout}
+	l := newLink(base, o.Token, id, o.HTTPClient, out, o.Stderr, o.timing)
+	l.takeover, l.zone = o.Takeover, o.zone
+	var lost bool
+	var noticeErr error
+	l.onLost = func(reason lostReason, text string) {
+		lost, noticeErr = true, out.Notify(NotificationMethod, connectionNotice(reason, text))
+		cancel() // nothing more to do: end the command
+	}
 	err = l.run(ctx)
-	if errors.Is(err, context.Canceled) {
+	switch {
+	case lost && noticeErr != nil:
+		return noticeErr
+	case lost:
+		return ErrSessionLost
+	case errors.Is(err, context.Canceled):
 		return nil
 	}
 	return err

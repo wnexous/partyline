@@ -132,11 +132,37 @@ type link struct {
 	// takeover makes the connection take over the AI's live session (SES-02). The first
 	// connection that succeeds clears it: a reconnect after a drop never takes over.
 	takeover bool
+	// zone is where the busy text shows the time the other session connected; nil is the local zone.
+	zone *time.Location
+	// onLost is called once, from run, when the link gives up because another session holds the
+	// AI: after the retries when it is busy, at once when it was taken over. The text is what
+	// the person is told (SES-04, SES-05). The channel then keeps answering its tools; listen
+	// prints it and ends. Nil does nothing.
+	onLost func(reason lostReason, text string)
 
 	mu     sync.Mutex
 	state  linkState
-	reason string // what the server said about a refusal (stateInvalid)
+	reason string   // what the server said about a refusal (stateInvalid)
+	busy   busyInfo // what the server said about the session that holds the AI (stateBusy)
 	seen   *idRing
+}
+
+// lostReason says why a link gave up on its connection.
+type lostReason string
+
+const (
+	// lostBusy: another session holds the AI and did not let go during the retries.
+	lostBusy lostReason = "busy"
+	// lostTakenOver: another session took the AI over from this one.
+	lostTakenOver lostReason = "taken_over"
+)
+
+// busyInfo is what a refusal says about the session that holds the AI; the zero value when the
+// server only closed the socket.
+type busyInfo struct {
+	name     string    // the AI's display name
+	appLabel string    // readable name of the app of the live session
+	since    time.Time // when the live session connected
 }
 
 func newLink(base *url.URL, token string, id Identity, hc *http.Client, n notifier, stderr io.Writer, t timing) *link {
@@ -167,7 +193,7 @@ func (l *link) Err() error {
 	case stateInvalidToken:
 		return errInvalidToken
 	case stateBusy:
-		return errBusy
+		return sentence(l.busyTextLocked())
 	case stateTakenOver:
 		return errTakenOver
 	case stateInvalid:
@@ -185,8 +211,6 @@ var errInvalidToken = errors.New("partyline: not connected (invalid token)")
 
 var errAgentLimit = errors.New("partyline: agent limit reached for this account; delete unused agents in the web app")
 
-var errBusy = errors.New("partyline: this intelligence is open in another session; Partyline is not connected here")
-
 // takenOverText is what the harness is told, once, when another session takes the AI over, and
 // what every tool answers from then on (SES-05).
 const takenOverText = "This intelligence was opened in another session; Partyline is disconnected here."
@@ -198,6 +222,38 @@ var errTakenOver error = sentence(takenOverText)
 type sentence string
 
 func (s sentence) Error() string { return string(s) }
+
+// busyText is what a channel that cannot connect because another session holds the AI tells the
+// person (SES-04): who is open where and since when (local time), and how to take over.
+func (l *link) busyText() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.busyTextLocked()
+}
+
+// busyTextLocked is busyText for a caller that holds l.mu.
+func (l *link) busyTextLocked() string {
+	b := l.busy
+	where := ""
+	switch {
+	case b.appLabel != "" && !b.since.IsZero():
+		where = " (" + b.appLabel + ", since " + b.since.In(cmp.Or(l.zone, time.Local)).Format("15:04") + ")"
+	case b.appLabel != "":
+		where = " (" + b.appLabel + ")"
+	}
+	command := "partyline " + cmp.Or(l.identity.Harness, "<harness>") + " --take-over"
+	return cmp.Or(b.name, "This intelligence") + " is open in another session" + where +
+		`. Partyline is not connected here. To take over, restart with "` + command + `" or set PARTYLINE_TAKEOVER=1.`
+}
+
+// connectionNotice is the notification that tells the harness why Partyline is not (or no
+// longer) connected here; adapters tell it from a room message by its type.
+func connectionNotice(reason lostReason, text string) Notification {
+	return Notification{Content: text, Meta: map[string]string{
+		"type": "notice", "reason": string(reason), "author": "Partyline", "author_kind": string(dto.AuthorKindSystem),
+		"sender_name": "", "trusted": "false", "kind": string(dto.MessageKindSystem),
+	}}
+}
 
 var errDeleted = errors.New("partyline: this agent was deleted; restart the session to register it again")
 
@@ -254,18 +310,18 @@ func (l *link) run(ctx context.Context) error {
 			l.setState(stateConnecting)
 			wait, backoff, busyTries = 0, l.t.minBackoff, 0
 		case outBusy:
-			if l.setState(stateBusy) {
-				fmt.Fprintln(l.stderr, "partyline: this intelligence is open in another session; Partyline is not connected here")
-			}
+			l.setState(stateBusy)
 			if busyTries >= len(l.t.busyRetries) {
-				<-ctx.Done() // the session that holds the AI did not end: stop trying
+				// The session that holds the AI did not end: stop trying.
+				l.lost(lostBusy, l.busyText())
+				<-ctx.Done()
 				return nil
 			}
 			wait, backoff = l.t.busyRetries[busyTries], l.t.minBackoff
 			busyTries++
 		case outTakenOver:
 			l.setState(stateTakenOver)
-			fmt.Fprintln(l.stderr, "partyline: this intelligence was opened in another session; not reconnecting")
+			l.lost(lostTakenOver, takenOverText)
 			<-ctx.Done()
 			return nil
 		case outInvalid:
@@ -296,6 +352,13 @@ func (l *link) wsURL() string {
 	return u.String()
 }
 
+// lost reports to onLost that the link gave up.
+func (l *link) lost(reason lostReason, text string) {
+	if l.onLost != nil {
+		l.onLost(reason, text)
+	}
+}
+
 // refused tells how the server refused a connection from its response; a nil response is a
 // dial that did not reach the server.
 func (l *link) refused(resp *http.Response) outcome {
@@ -309,7 +372,9 @@ func (l *link) refused(resp *http.Response) outcome {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return outInvalidToken // a bad, revoked or non-agent token
 	case http.StatusConflict:
-		if refusalBody(resp).Code == dto.ErrorCodeIdentityBusy {
+		e := refusalBody(resp)
+		if e.Code == dto.ErrorCodeIdentityBusy {
+			l.rememberBusy(e.Details)
 			return outBusy
 		}
 		return outAgentLimit // the owner already has the maximum number of agents
@@ -320,6 +385,17 @@ func (l *link) refused(resp *http.Response) outcome {
 		return outInvalid
 	}
 	return outDialFailed
+}
+
+// rememberBusy keeps what a refusal says about the session that holds the AI.
+func (l *link) rememberBusy(details map[string]string) {
+	b := busyInfo{name: details[dto.BusyDetailDisplayName], appLabel: details[dto.BusyDetailAppLabel]}
+	if at, err := time.Parse(time.RFC3339, details[dto.BusyDetailConnectedAt]); err == nil {
+		b.since = at
+	}
+	l.mu.Lock()
+	l.busy = b
+	l.mu.Unlock()
 }
 
 // refusal is what the server said about the machine or folder it refused.

@@ -294,3 +294,26 @@ func TestListenRequiresURLAndToken(t *testing.T) {
 	require.Equal(t, 2, p.exit())
 	require.Contains(t, p.stderr.String(), "partyline listen: set PARTYLINE_URL and PARTYLINE_TOKEN")
 }
+
+// SES-05: when another session takes the AI over, listen prints the notice as one JSON line and
+// exits with code 3, which the pi and OpenCode adapters read as "do not start me again"; the
+// message it had delivered before stays delivered.
+func TestListenExitsWith3AfterATakeover(t *testing.T) {
+	e := newChannelEnv(t)
+	p := startListen(t, e.vars("PARTYLINE_HARNESS", "pi"), "/work/pi-box", nil)
+	agent := e.ai(t, "/work/pi-box")
+	room := e.room(t, dto.CreateRoomRequest{Name: "Support"}, agent.ID)
+	e.post(t, room.ID, "before")
+	require.Equal(t, "before", p.line()["content"])
+
+	taker, resp := e.alice.WithBearer(e.secret).DialFolder(testkit.Folder{Machine: testMachine, Path: "/work/pi-box", Harness: "opencode", Takeover: true})
+	require.NotNil(t, taker, "upgrade refused: %d %s", resp.Status, resp.Body)
+	taker.Welcome(chanWait)
+
+	require.Equal(t, map[string]string{
+		"type": "notice", "reason": "taken_over", "author": "Partyline", "author_kind": "system", "sender_name": "", "trusted": "false", "kind": "system",
+		"content": "This intelligence was opened in another session; Partyline is disconnected here.",
+	}, p.line())
+	require.Equal(t, 3, p.exit(), "stderr: %s", p.stderr.String())
+	require.NoError(t, taker.Closed(100*time.Millisecond), "the new session is left alone")
+}

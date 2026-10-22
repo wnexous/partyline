@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { FakeTime, fakeSpawn, spawned } from "../testdata/fakes.ts";
-import { framingCases } from "../testdata/framing.ts";
+import { framingCases, notices } from "../testdata/framing.ts";
 
 mock.module("node:child_process", () => ({ spawn: fakeSpawn }));
 const { default: partyline } = await import("./partyline.ts");
@@ -165,6 +165,36 @@ describe("pi extension", () => {
 			"partyline: listen is not configured; run partyline setup, then restart the session",
 		]);
 	});
+
+	test("SES-05: exit code 3 (another session holds the AI) is not restarted, other codes are", () => {
+		const pi = fakePi();
+		pi.start();
+		spawned[0].exit(3);
+		expect(time.delays()).toEqual([]);
+		expect(spawned.length).toBe(1);
+		expect(pi.notices).toEqual([]);
+
+		for (const code of [1, 4, 127, null]) {
+			const other = fakePi();
+			other.start();
+			spawned[spawned.length - 1].exit(code);
+			expect(time.delays()).toEqual([1000]);
+			time.fire();
+		}
+	});
+
+	for (const c of notices) {
+		test(`SES-04/SES-05: the ${c.reason} notice is shown to the person, not sent to the model`, () => {
+			const pi = fakePi();
+			pi.start();
+			spawned[0].out(`${JSON.stringify(c.record)}\n`);
+			expect(pi.sent).toEqual([]);
+			expect(pi.notices).toEqual([{ message: c.record.content, level: "warning" }]);
+			spawned[0].exit(3);
+			expect(time.delays()).toEqual([]);
+			expect(pi.notices.length).toBe(1);
+		});
+	}
 
 	test("session_shutdown stops listen and its restarts", () => {
 		const pi = fakePi();

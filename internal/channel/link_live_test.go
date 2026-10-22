@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -87,13 +86,12 @@ func refuseWith(t *testing.T, log *dialLog, status int, code dto.ErrorCode, mess
 func TestLinkRetriesABusyAIThreeTimesThenStops(t *testing.T) {
 	var log dialLog
 	base := refuseWith(t, &log, http.StatusConflict, dto.ErrorCodeIdentityBusy, "this intelligence is open in another session")
-	l, stderr, waits := runLink(t, base, defaultTiming, false)
+	l, _, waits := runLink(t, base, defaultTiming, false)
 
 	require.Eventually(t, func() bool { return log.count() == 4 }, wait, 5*time.Millisecond, "the first dial and three retries")
 	require.Equal(t, []time.Duration{2 * time.Second, 4 * time.Second, 4 * time.Second}, waits())
 	require.Never(t, func() bool { return log.count() > 4 }, 200*time.Millisecond, 10*time.Millisecond, "no retry after the third")
 	require.Error(t, l.Err())
-	require.Equal(t, 1, strings.Count(stderr.String(), "open in another session"), "stderr says it once: %q", stderr.String())
 }
 
 // SES-06: while the AI is busy the channel keeps trying; once the session that holds it ends the

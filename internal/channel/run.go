@@ -55,6 +55,8 @@ type Options struct {
 	HTTPClient *http.Client
 
 	timing timing
+	// zone is where the busy text shows times; tests set it, nil is the local zone.
+	zone *time.Location
 }
 
 // parseBase checks the instance URL.
@@ -110,7 +112,14 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 	l := newLink(base, o.Token, id, o.HTTPClient, srv, o.Stderr, o.timing)
-	l.takeover = o.Takeover
+	l.takeover, l.zone = o.Takeover, o.zone
+	l.onLost = func(reason lostReason, text string) {
+		fmt.Fprintf(o.Stderr, "partyline: %s\n", text)
+		if reason == lostTakenOver {
+			// Tell the harness once; the tools answer the same sentence from now on (SES-05).
+			_ = srv.Notify(NotificationMethod, connectionNotice(reason, text))
+		}
+	}
 	t.link = l
 	t.register(srv)
 

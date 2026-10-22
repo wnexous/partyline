@@ -46,9 +46,9 @@ type chanEnv struct {
 	room    dto.Room
 }
 
-func newChanEnv(t *testing.T) *chanEnv {
+func newChanEnv(t *testing.T, opts ...testkit.Option) *chanEnv {
 	t.Helper()
-	env := testkit.New(t)
+	env := testkit.New(t, opts...)
 	alice := env.NewUser("alice")
 	_, secret, err := env.App.Users.CreateToken(context.Background(), alice.User.ID, users.TokenInput{Kind: dto.TokenKindAgent, Name: "laptop"})
 	require.NoError(t, err)

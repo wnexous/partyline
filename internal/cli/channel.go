@@ -182,6 +182,10 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	return 0
 }
 
+// exitSessionLost is the exit code of `partyline listen` when another session holds the AI or
+// took it over: the adapters must not start it again (SES-04, SES-05).
+const exitSessionLost = 3
+
 // listenCmd runs `partyline listen`: it holds the agent WebSocket and prints one JSON line per
 // incoming message (PUSH-01) for the pi and OpenCode adapters. It ends when stdin closes.
 func listenCmd(ctx context.Context, args []string, io stdio) int {
@@ -199,7 +203,10 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt,
 		Takeover: c.takeover, Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
-	if err != nil {
+	switch {
+	case errors.Is(err, channel.ErrSessionLost):
+		return exitSessionLost // the notice is on stdout
+	case err != nil:
 		fmt.Fprintln(io.stderr, "partyline listen:", err)
 		return 1
 	}

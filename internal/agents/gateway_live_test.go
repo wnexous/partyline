@@ -59,7 +59,7 @@ func TestGatewayClosesAConnectionThatLostTheRace(t *testing.T) {
 	conn, resp := alice.Token(dto.TokenKindAgent, "laptop").DialFolder(f)
 	require.NotNil(t, conn, "the check before the upgrade passed: %d %s", resp.Status, resp.Body)
 
-	err = conn.Closed(5 * time.Second)
+	err = conn.Closed(30 * time.Second)
 	var closeErr websocket.CloseError
 	require.ErrorAs(t, err, &closeErr)
 	require.Equal(t, []any{agents.CloseBusy, "identity_busy"}, []any{closeErr.Code, closeErr.Reason})

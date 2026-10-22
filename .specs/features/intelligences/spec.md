@@ -382,7 +382,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | SES-02 | P1: One live session | Execute | Implementing |
 | SES-03 | P1: One live session | Tasks | Pending |
 | SES-04 | P1: One live session | Execute | Implementing |
-| SES-05 | P1: One live session | Tasks | Pending |
+| SES-05 | P1: One live session | Execute | Implementing |
 | SES-06 | P1: One live session | Execute | Implementing |
 | SES-07 | P1: One live session | Tasks | Pending |
 | SES-08 | P1: One live session | Execute | Implementing |
