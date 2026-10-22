@@ -1,4 +1,6 @@
 import { SearchIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { cn } from "@/lib/utils";
@@ -9,26 +11,31 @@ export function isApplePlatform(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 }
 
-/** Opens the palette; shows the keyboard shortcut next to its label. */
+/** Opens the palette; the tooltip shows the keyboard shortcut next to its label. */
 export function SearchButton({ className }: { className?: string }) {
   const t = useT();
   const setOpen = useLiveStore((s) => s.setPaletteOpen);
-  const shortcut = isApplePlatform() ? "⌘K" : "Ctrl K";
+  const apple = isApplePlatform();
   return (
-    <button
-      type="button"
-      onClick={() => setOpen(true)}
-      aria-keyshortcuts={isApplePlatform() ? "Meta+K" : "Control+K"}
-      className={cn(
-        "flex h-9 w-full items-center gap-2 rounded-md border border-sidebar-border bg-background/70 px-2.5 text-sm text-muted-foreground shadow-xs outline-none transition-colors hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-        className,
-      )}
-    >
-      <SearchIcon className="size-4 shrink-0" aria-hidden="true" />
-      <span className="flex-1 text-left">{t("palette.open")}</span>
-      <kbd className="hidden rounded-[3px] border bg-muted px-1.5 py-px font-mono text-[0.68rem] text-muted-foreground md:inline">
-        {shortcut}
-      </kbd>
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={t("palette.open")}
+          aria-keyshortcuts={apple ? "Meta+K" : "Control+K"}
+          onClick={() => setOpen(true)}
+          className={cn("size-11 shrink-0 md:size-9", className)}
+        >
+          <SearchIcon aria-hidden="true" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {t("palette.open")}{" "}
+        <kbd className="ml-1 rounded-[3px] border border-background/30 px-1 font-mono text-[0.68rem]">
+          {apple ? "⌘K" : "Ctrl\u00a0K"}
+        </kbd>
+      </TooltipContent>
+    </Tooltip>
   );
 }

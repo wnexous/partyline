@@ -172,7 +172,7 @@ function TokensPage() {
         {revealed?.token.kind === TokenKindAgent ? (
           <p className="text-sm text-muted-foreground">
             {t("tokens.agentHint")}{" "}
-            <Link to="/agents" className="font-medium text-foreground underline">
+            <Link to="/contacts" className="font-medium text-foreground underline">
               {t("connect.open")}
             </Link>
           </p>

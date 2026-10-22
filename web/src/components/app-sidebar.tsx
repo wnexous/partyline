@@ -7,21 +7,25 @@ import {
   LogOutIcon,
   type LucideIcon,
   MailPlusIcon,
+  MessageSquarePlusIcon,
   MessagesSquareIcon,
   MonitorSmartphoneIcon,
   PaletteIcon,
   PlugZapIcon,
-  PlusIcon,
   ScrollTextIcon,
   SettingsIcon,
   UsersIcon,
+  UsersRoundIcon,
 } from "lucide-react";
+import { useState } from "react";
 import { Wordmark } from "@/components/brand";
 import { ConversationList } from "@/components/conversation-list";
-import { CreateRoomDialog } from "@/components/create-room-dialog";
+import { ConversationSearch } from "@/components/conversation-search";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { LanguageRadioGroup } from "@/components/language-switch";
 import { LiveIndicator } from "@/components/live-status";
+import { NewConversationDialog } from "@/components/new-conversation-dialog";
+import { NewGroupDialog } from "@/components/new-group-dialog";
 import { SearchButton } from "@/components/search-button";
 import { ThemeRadioGroup } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -46,7 +50,7 @@ import { cn } from "@/lib/utils";
 interface NavItem {
   to:
     | "/"
-    | "/agents"
+    | "/contacts"
     | "/connectors"
     | "/identities"
     | "/devices"
@@ -75,9 +79,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "nav.groupConnections",
     items: [
-      // SPEC_DEVIATION (T44, LAY-06): Contacts opens the agents page until T47 adds /contacts.
-      // Reason: the contacts page and its API arrive in later tasks; the entry must exist now.
-      { to: "/agents", label: "nav.contacts", icon: ContactRoundIcon },
+      { to: "/contacts", label: "nav.contacts", icon: ContactRoundIcon },
       { to: "/connectors", label: "nav.connectors", icon: PlugZapIcon },
       { to: "/identities", label: "nav.identities", icon: FingerprintIcon },
       { to: "/devices", label: "nav.devices", icon: MonitorSmartphoneIcon },
@@ -115,11 +117,13 @@ export function AppSidebar({ me }: { me: Me }) {
 }
 
 /**
- * Brand, account menu and search, the conversation list, and the live line. On a phone it is
- * the home screen itself (`screen`): the page heading, filling the window.
+ * Brand and menus, the search box and the two ways to start talking, the conversation list, and
+ * the live line. On a phone it is the home screen itself (`screen`): the page heading, filling
+ * the window.
  */
 export function MessengerPanel({ me, screen = false }: { me: Me; screen?: boolean }) {
   const t = useT();
+  const [query, setQuery] = useState("");
   return (
     <div
       data-fill={screen ? "" : undefined}
@@ -136,34 +140,52 @@ export function MessengerPanel({ me, screen = false }: { me: Me; screen?: boolea
           >
             <Wordmark />
           </Link>
-          <AccountMenu me={me} />
+          <div className="flex items-center">
+            <SearchButton />
+            <AccountMenu me={me} />
+          </div>
         </div>
-        <div className="flex gap-2">
-          <SearchButton className="h-11 min-w-0 flex-1 md:h-9" />
-          {/* The room dialog until the sidebar gets "New conversation" and "New group" (T45). */}
-          <CreateRoomDialog
-            trigger={
-              <Button
-                variant="outline"
-                size="icon"
-                className="size-11 shrink-0 border-sidebar-border bg-background/70 md:size-9"
-                aria-label={t("rooms.new")}
-              >
-                <PlusIcon aria-hidden="true" />
-              </Button>
-            }
-          />
-        </div>
+        <ConversationSearch value={query} onChange={setQuery} />
+        <StartButtons />
         {screen ? <h1 className="sr-only">{t("conversations.label")}</h1> : null}
       </SidebarHeader>
 
       <SidebarContent className="min-h-0 flex-1 gap-0 overscroll-contain border-t border-sidebar-border">
-        <ConversationList />
+        <ConversationList query={query} onClearQuery={() => setQuery("")} />
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border px-4 py-2.5">
         <LiveIndicator className="text-sidebar-foreground/80" />
       </SidebarFooter>
+    </div>
+  );
+}
+
+// flex-auto: each button first takes the width of its label, then they share what is left.
+const START_BUTTON =
+  "h-11 min-w-0 flex-auto border-sidebar-border bg-background/70 px-2 md:h-9 [&>span]:truncate";
+
+/** "New conversation" and "New group" (LAY-03): the two ways to start talking. */
+function StartButtons() {
+  const t = useT();
+  return (
+    <div className="flex gap-2">
+      <NewConversationDialog
+        trigger={
+          <Button variant="outline" className={START_BUTTON}>
+            <MessageSquarePlusIcon aria-hidden="true" />
+            <span>{t("conversations.new")}</span>
+          </Button>
+        }
+      />
+      <NewGroupDialog
+        trigger={
+          <Button variant="outline" className={START_BUTTON}>
+            <UsersRoundIcon aria-hidden="true" />
+            <span>{t("conversations.newGroup")}</span>
+          </Button>
+        }
+      />
     </div>
   );
 }

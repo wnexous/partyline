@@ -1,0 +1,307 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { apiError, json, mockApi } from "@/test/fetch";
+import {
+  makeAI,
+  makeAIContact,
+  makeContacts,
+  makeIntelligence,
+  makeMachineTree,
+  makePerson,
+  makeProfile,
+  makeTreeNode,
+} from "@/test/fixtures";
+import { ApiError } from "./client";
+import {
+  queryKeys,
+  useContacts,
+  useDeleteAgent,
+  useIntelligence,
+  usePeople,
+  useSetMachineLabel,
+} from "./queries";
+import type { Contacts, IntelligenceProfile, IntelligenceRef } from "./types.gen";
+
+/*
+ * The hooks behind the contacts and profile pages (T42 part 2): what each one asks of the server
+ * and what it leaves in the cache for the pages to read.
+ */
+
+let qc: QueryClient;
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+);
+const stale = (key: readonly unknown[]) => qc.getQueryState(key)?.isInvalidated;
+
+beforeEach(() => {
+  qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+});
+afterEach(() => {
+  qc.clear();
+  vi.unstubAllGlobals();
+});
+
+describe("contacts (CONT-01)", () => {
+  it("loads GET /contacts with every section as the server sent it", async () => {
+    const contacts = makeContacts({
+      machines: [
+        makeMachineTree({ nodes: [makeTreeNode({ children: [makeTreeNode({ name: "notes" })] })] }),
+      ],
+      unlinked: [makeAIContact({ folder: "", folder_label: "" })],
+      shared: [makeAIContact({ owner: makeIntelligence({ id: "u2", handle: "bob" }) })],
+      users: [makeIntelligence({ id: "u2", handle: "bob", display_name: "Bob Lima" })],
+      people: [{ connector: { id: "k1", kind: "whatsapp", name: "ops-line" }, count: 3 }],
+    });
+    const { calls } = mockApi({ "GET /contacts": json(200, contacts) });
+    const { result } = renderHook(() => useContacts(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /contacts"]);
+    expect(result.current.data).toEqual(contacts);
+  });
+
+  it("is cached under the contacts key, where the live handlers patch it", async () => {
+    mockApi({ "GET /contacts": json(200, makeContacts()) });
+    const { result } = renderHook(() => useContacts(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(qc.getQueryData<Contacts>(queryKeys.contacts)).toEqual(result.current.data);
+  });
+});
+
+describe("the people of a connector (CONT-01)", () => {
+  const person = (n: number): IntelligenceRef =>
+    makePerson({ id: `p${n}`, display_name: `Person ${n}`, handle: `person-${n}` });
+  const page = (from: number, to: number, hasMore: boolean) => ({
+    items: Array.from({ length: to - from + 1 }, (_, i) => person(from + i)),
+    has_more: hasMore,
+  });
+
+  it("asks for the first page of the connector, with no search and no cursor", async () => {
+    const { calls } = mockApi({ "GET /contacts/people": json(200, page(1, 2, false)) });
+    const { result } = renderHook(() => usePeople("k1"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(calls).toHaveLength(1);
+    expect(Object.fromEntries(calls[0]?.url.searchParams ?? [])).toEqual({
+      connector_id: "k1",
+      limit: "50",
+    });
+    expect(result.current.data?.pages[0]?.items.map((p) => p.id)).toEqual(["p1", "p2"]);
+    expect(result.current.hasNextPage).toBe(false);
+  });
+
+  it("sends the search text, and the same text again for every later page", async () => {
+    const { calls } = mockApi({
+      "GET /contacts/people": (url) =>
+        json(200, url.searchParams.has("after") ? page(3, 3, false) : page(1, 2, true)),
+    });
+    const { result } = renderHook(() => usePeople("k1", "lia"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(calls[0]?.url.searchParams.get("q")).toBe("lia");
+    expect(result.current.hasNextPage).toBe(true);
+
+    await act(async () => {
+      await result.current.fetchNextPage();
+    });
+    // The cursor is the id of the last person of the page before; no gaps, no repeats.
+    expect(Object.fromEntries(calls[1]?.url.searchParams ?? [])).toEqual({
+      connector_id: "k1",
+      q: "lia",
+      after: "p2",
+      limit: "50",
+    });
+    await waitFor(() =>
+      expect(result.current.data?.pages.flatMap((p) => p.items.map((i) => i.id))).toEqual([
+        "p1",
+        "p2",
+        "p3",
+      ]),
+    );
+    expect(result.current.hasNextPage).toBe(false);
+  });
+
+  it("keeps one cache entry per connector and search, so a new search never shows another's pages", async () => {
+    mockApi({ "GET /contacts/people": json(200, page(1, 1, false)) });
+    const a = renderHook(() => usePeople("k1", ""), { wrapper });
+    const b = renderHook(() => usePeople("k2", ""), { wrapper });
+    const c = renderHook(() => usePeople("k1", "lia"), { wrapper });
+    await waitFor(() => {
+      expect(a.result.current.isSuccess).toBe(true);
+      expect(b.result.current.isSuccess).toBe(true);
+      expect(c.result.current.isSuccess).toBe(true);
+    });
+    expect(qc.getQueryData(queryKeys.people("k1", ""))).toBeDefined();
+    expect(qc.getQueryData(queryKeys.people("k2", ""))).toBeDefined();
+    expect(qc.getQueryData(queryKeys.people("k1", "lia"))).toBeDefined();
+  });
+
+  it("does not ask while disabled", async () => {
+    const { calls } = mockApi({ "GET /contacts/people": json(200, page(1, 1, false)) });
+    renderHook(() => usePeople("k1", "", false), { wrapper });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects with the server's reason for a connector the user cannot read", async () => {
+    mockApi({ "GET /contacts/people": apiError(404, "not_found") });
+    const { result } = renderHook(() => usePeople("k9"), { wrapper });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(ApiError);
+    expect(result.current.error).toMatchObject({ status: 404 });
+  });
+});
+
+describe("renaming a machine (TREE-04)", () => {
+  const seeded = () =>
+    makeContacts({
+      machines: [
+        makeMachineTree({ hostname: "devbox", label: "devbox", online: true }),
+        makeMachineTree({ hostname: "notebook", label: "Laptop" }),
+      ],
+    });
+
+  it("puts the label on the machine's hostname and shows it in the cached tree", async () => {
+    const { calls } = mockApi({
+      "PUT /machines/devbox": json(200, { hostname: "devbox", label: "Build box" }),
+    });
+    qc.setQueryData(queryKeys.contacts, seeded());
+    const { result } = renderHook(() => useSetMachineLabel(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ hostname: "devbox", label: "Build box" });
+    });
+
+    expect(calls[0]).toMatchObject({
+      method: "PUT",
+      path: "/machines/devbox",
+      body: { label: "Build box" },
+    });
+    expect(qc.getQueryData<Contacts>(queryKeys.contacts)?.machines.map((m) => m.label)).toEqual([
+      "Build box",
+      "Laptop",
+    ]);
+  });
+
+  it("falls back to the hostname when the label is cleared", async () => {
+    mockApi({ "PUT /machines/notebook": json(200, { hostname: "notebook", label: "" }) });
+    qc.setQueryData(queryKeys.contacts, seeded());
+    const { result } = renderHook(() => useSetMachineLabel(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ hostname: "notebook", label: "" });
+    });
+    expect(qc.getQueryData<Contacts>(queryKeys.contacts)?.machines.map((m) => m.label)).toEqual([
+      "devbox",
+      "notebook",
+    ]);
+  });
+
+  it("encodes the hostname in the path", async () => {
+    const { calls } = mockApi({
+      "PUT /machines/ana's%20box": json(200, { hostname: "ana's box", label: "x" }),
+    });
+    const { result } = renderHook(() => useSetMachineLabel(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ hostname: "ana's box", label: "x" });
+    });
+    expect(calls[0]?.url.pathname).toBe("/api/v1/machines/ana's%20box");
+  });
+
+  it("refreshes the cached AI profiles, which show the label of their machine", async () => {
+    mockApi({ "PUT /machines/devbox": json(200, { hostname: "devbox", label: "Build box" }) });
+    qc.setQueryData(queryKeys.intelligence("a1"), makeProfile());
+    const { result } = renderHook(() => useSetMachineLabel(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ hostname: "devbox", label: "Build box" });
+    });
+    expect(stale(queryKeys.intelligence("a1"))).toBe(true);
+  });
+
+  it("rejects with the field reason and leaves the cached label alone", async () => {
+    mockApi({
+      "PUT /machines/devbox": apiError(422, "invalid", "invalid", {
+        label: "must have at most 64 characters",
+      }),
+    });
+    qc.setQueryData(queryKeys.contacts, seeded());
+    const { result } = renderHook(() => useSetMachineLabel(), { wrapper });
+    const failure = await act(() =>
+      result.current.mutateAsync({ hostname: "devbox", label: "x".repeat(65) }).catch((e) => e),
+    );
+    expect(failure).toMatchObject({
+      status: 422,
+      fields: { label: "must have at most 64 characters" },
+    });
+    expect(qc.getQueryData<Contacts>(queryKeys.contacts)?.machines[0]?.label).toBe("devbox");
+  });
+});
+
+describe("another intelligence's profile (PROF-05, PROF-11, PEOP-03)", () => {
+  it("loads a profile by id with what the caller may do with it", async () => {
+    const profile: IntelligenceProfile = {
+      ...makeProfile(),
+      ...makePerson(),
+      can_edit: true,
+      person: {
+        connector: { id: "k1", kind: "whatsapp", name: "ops-line" },
+        external_id: "5511999990000",
+        name_locked: false,
+      },
+      apps: [{ kind: "whatsapp", label: "WhatsApp: 5511999990000", connector_id: "k1" }],
+      conversations: [{ id: "r1", name: "support" }],
+    };
+    const { calls } = mockApi({ "GET /intelligences/p1": json(200, profile) });
+    const { result } = renderHook(() => useIntelligence("p1"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(calls[0]?.path).toBe("/intelligences/p1");
+    expect(result.current.data).toEqual(profile);
+  });
+
+  it("reports a profile the caller cannot see as a 404", async () => {
+    mockApi({ "GET /intelligences/zz": apiError(404, "not_found") });
+    const { result } = renderHook(() => useIntelligence("zz"), { wrapper });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toMatchObject({ status: 404 });
+  });
+});
+
+describe("deleting an AI from the contacts (TREE-06)", () => {
+  it("sends DELETE, drops the AI from the unlinked and shared lists, and refreshes the rest", async () => {
+    const old = makeAIContact({
+      intelligence: makeAI({ id: "a7", display_name: "Old helper", handle: "old-helper" }),
+      folder: "",
+      folder_label: "",
+    });
+    const keep = makeAIContact({ intelligence: makeAI({ id: "a8", handle: "keeper" }) });
+    const { calls } = mockApi({ "DELETE /agents/a7": new Response(null, { status: 204 }) });
+    qc.setQueryData(queryKeys.contacts, makeContacts({ unlinked: [old, keep], shared: [old] }));
+    qc.setQueryData(queryKeys.intelligence("a7"), makeProfile({ id: "a7" }));
+    const { result } = renderHook(() => useDeleteAgent(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync("a7");
+    });
+
+    expect(calls[0]).toMatchObject({ method: "DELETE", path: "/agents/a7" });
+    const contacts = qc.getQueryData<Contacts>(queryKeys.contacts);
+    expect(contacts?.unlinked.map((c) => c.intelligence.id)).toEqual(["a8"]);
+    expect(contacts?.shared).toEqual([]);
+    // The machine tree is rebuilt by the server (folders collapse differently without the AI).
+    expect(stale(queryKeys.contacts)).toBe(true);
+    // The deleted AI's profile is stale but not refetched into a 404 under the page that shows it.
+    expect(stale(queryKeys.intelligence("a7"))).toBe(true);
+  });
+
+  it("changes nothing when the server refuses", async () => {
+    mockApi({ "DELETE /agents/a7": apiError(403, "forbidden") });
+    const contacts = makeContacts({
+      unlinked: [makeAIContact({ intelligence: makeAI({ id: "a7" }) })],
+    });
+    qc.setQueryData(queryKeys.contacts, contacts);
+    const { result } = renderHook(() => useDeleteAgent(), { wrapper });
+    await act(() => result.current.mutateAsync("a7").catch(() => undefined));
+    expect(qc.getQueryData(queryKeys.contacts)).toEqual(contacts);
+    expect(stale(queryKeys.contacts)).toBe(false);
+  });
+});

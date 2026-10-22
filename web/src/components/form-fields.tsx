@@ -11,6 +11,7 @@ import {
   useFormField,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useAutoFocus } from "@/hooks/use-auto-focus";
 import { errorText } from "@/lib/forms";
 import { useT } from "@/lib/i18n";
@@ -117,6 +118,56 @@ export function TextField<T extends FieldValues>({
           </FormControl>
           {description ? (
             <FormDescription className="text-xs">{description}</FormDescription>
+          ) : null}
+          <FieldError />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+/**
+ * A multi-line text field. `max` shows a running count in code points (what the server counts)
+ * beside the hint; going over it is the schema's error, not this component's.
+ */
+export function TextAreaField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  description,
+  max,
+  rows = 3,
+  className,
+}: {
+  control: Control<T>;
+  name: FieldPath<T>;
+  label: ReactNode;
+  description?: ReactNode;
+  max?: number;
+  rows?: number;
+  className?: string;
+}) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem className={className}>
+          <FormLabel>{label}</FormLabel>
+          <FormControl>
+            <Textarea {...field} value={field.value ?? ""} rows={rows} autoComplete="off" />
+          </FormControl>
+          {description || max ? (
+            <div className="flex items-start justify-between gap-3">
+              {description ? (
+                <FormDescription className="text-xs">{description}</FormDescription>
+              ) : null}
+              {max ? (
+                <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground tabular">
+                  {[...String(field.value ?? "")].length}/{max}
+                </span>
+              ) : null}
+            </div>
           ) : null}
           <FieldError />
         </FormItem>

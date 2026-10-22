@@ -99,10 +99,10 @@ test("a message posted in a room reaches another user's open room live (UI-04)",
     const admin = await adminCtx.newPage();
     await admin.goto("/");
     // The sidebar's button; the empty list offers the same action too.
-    await admin.getByRole("button", { name: "New room" }).first().click();
-    const dialog = admin.getByRole("dialog", { name: "New room" });
+    await admin.getByRole("button", { name: "New group" }).first().click();
+    const dialog = admin.getByRole("dialog", { name: "New group" });
     await dialog.getByLabel("Name", { exact: true }).fill("e2e-wire");
-    await dialog.getByRole("button", { name: "Create room" }).click();
+    await dialog.getByRole("button", { name: "Create group" }).click();
     await expect(admin).toHaveURL(new RegExp(`^${instance.url}/rooms/[^/]+$`));
     const roomId = new URL(admin.url()).pathname.split("/").pop();
     await apiCall(adminCtx.request, instance, "PUT", `/rooms/${roomId}/sharing`, {
@@ -151,7 +151,7 @@ test("connect an agent shows the install and setup commands and each harness's s
 }) => {
   await loginAs(context, instance, ADMIN);
   const before = await apiCall<List<Token>>(context.request, instance, "GET", "/tokens");
-  await page.goto("/agents");
+  await page.goto("/contacts");
   await page.getByRole("button", { name: "Connect an agent" }).click();
   const dialog = page.getByRole("dialog", { name: "Connect an agent" });
   const code = (label: string) => dialog.getByRole("figure", { name: label }).locator("pre");
@@ -308,6 +308,7 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24)", async
   instance,
 }, testInfo) => {
   await loginAs(context, instance, ADMIN);
+  const me = await apiCall<Me>(context.request, instance, "GET", "/me");
   const room = await apiCall<Room>(context.request, instance, "POST", "/rooms", {
     name: "e2e-narrow",
   });
@@ -321,7 +322,8 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24)", async
   const pages: [string, string][] = [
     ["/", homeHeading(testInfo)],
     [`/rooms/${room.id}`, "e2e-narrow"],
-    ["/agents", "Agents"],
+    ["/contacts", "Contacts"],
+    [`/contacts/${me.intelligence.id}`, me.intelligence.display_name],
     ["/connectors", "Connectors"],
     ["/settings", "Settings"],
   ];

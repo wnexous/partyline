@@ -75,11 +75,11 @@ describe("login page (UI-02)", () => {
   it("logs in and returns to the redirect target", async () => {
     const { calls } = mockApi(routes(json(200, me)));
     const user = userEvent.setup();
-    const { router } = renderRoute("/login?redirect=%2Fagents%3Ftab%3Dmine");
+    const { router } = renderRoute("/login?redirect=%2Ftokens%3Ftab%3Dmine");
     await user.type(await screen.findByLabelText("Username"), "ana");
     await user.type(screen.getByLabelText("Password"), "correct horse battery");
     await user.click(screen.getByRole("button", { name: "Log in" }));
-    await waitFor(() => expect(router.state.location.pathname).toBe("/agents"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/tokens"));
     expect(router.state.location.search).toEqual({ tab: "mine" });
     expect(calls.find((c) => c.path === "/auth/login")?.body).toEqual({
       username: "ana",

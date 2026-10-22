@@ -96,7 +96,7 @@ describe("command palette (UI-22)", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Go to" })).toBeNull());
   });
 
-  it("jumps to connectors, agents and admin pages", async () => {
+  it("jumps to connectors, an AI's profile and admin pages", async () => {
     api("admin");
     const user = userEvent.setup();
     const { router } = renderRoute("/");
@@ -114,7 +114,7 @@ describe("command palette (UI-22)", () => {
     };
 
     await jump("ops-bot", "/connectors/k1");
-    await jump("release-bot", "/agents");
+    await jump("release-bot", "/contacts/a1");
     await jump("audit", "/admin/audit");
   });
 

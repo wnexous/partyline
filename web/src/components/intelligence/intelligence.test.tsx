@@ -1,7 +1,7 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
+import { IntelligenceAvatar, initials } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { KindBadge } from "@/components/intelligence/kind-badge";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
@@ -54,6 +54,23 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("initials (PROF-08)", () => {
+  it.each([
+    ["Ana Souza", "AS"],
+    ["Ana Maria Souza", "AS"],
+    ["  ana   souza  ", "AS"],
+    ["Atlas", "A"],
+    ["atlas", "A"],
+    ["x", "X"],
+    ["", "?"],
+    ["   ", "?"],
+    ["😀 Smile", "😀S"],
+    ["Åsa Öberg", "ÅÖ"],
+  ])("shows %j as %j", (name, expected) => {
+    expect(initials(name)).toBe(expected);
+  });
+});
+
 describe("IntelligenceAvatar (PROF-08)", () => {
   it("shows initials on a colour stable per id and different from another id's", () => {
     const { container } = renderWithProviders(
@@ -70,6 +87,31 @@ describe("IntelligenceAvatar (PROF-08)", () => {
     expect(first).toHaveTextContent(/^AS$/);
     expect(first.className).toBe(second.className);
     expect(first.className).not.toBe(third.className);
+  });
+
+  it("has a 96 px size for the profile page, with its initials larger", () => {
+    const { container } = renderWithProviders(
+      <>
+        <IntelligenceAvatar intelligence={ana} size="xl" />
+        <IntelligenceAvatar intelligence={ana} />
+      </>,
+    );
+    const [xl, normal] = [...container.querySelectorAll('[data-slot="avatar"]')];
+    expect(xl?.className).toContain("size-24");
+    expect(normal?.className).not.toContain("size-24");
+    expect(xl?.querySelector('[data-slot="avatar-fallback"]')?.className).toContain("text-2xl");
+  });
+
+  it("asks for an image of the size it shows", () => {
+    vi.stubGlobal("Image", LoadedImage);
+    const { container } = renderWithProviders(
+      <IntelligenceAvatar
+        intelligence={makeIntelligence({ avatar_url: "/api/v1/intelligences/u1/avatar?v=abc" })}
+        size="xl"
+      />,
+    );
+    expect(container.querySelector("img")).toHaveAttribute("width", "96");
+    expect(container.querySelector("img")).toHaveAttribute("height", "96");
   });
 
   it("shows the avatar image with the display name as alt text", () => {

@@ -1,13 +1,16 @@
 import {
   type InfiniteData,
   infiniteQueryOptions,
+  keepPreviousData,
   type QueryClient,
   queryOptions,
   useInfiniteQuery,
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { withIntelligence, withMachineLabel, withoutAI } from "@/lib/contacts";
 import { api } from "./client";
 import {
   type AcceptInviteRequest,
@@ -20,6 +23,7 @@ import {
   type Chat,
   type Connector,
   type ConnectorKind,
+  type Contacts,
   type Conversation,
   type ConversationKind,
   type CreateConnectorRequest,
@@ -31,6 +35,7 @@ import {
   type CreateTokenRequest,
   DefaultActivityLimit,
   DefaultPageSize,
+  DefaultPeoplePage,
   type DeviceRequest,
   type FileKind,
   FileKindDocument,
@@ -41,6 +46,7 @@ import {
   type InviteInfo,
   type List,
   type LoginRequest,
+  type Machine,
   type MarkReadRequest,
   MaxPreviewLength,
   type Me,
@@ -59,6 +65,7 @@ import {
   type RoomFile,
   type RoomMember,
   type Session,
+  type SetMachineLabelRequest,
   type SetupRequest,
   type SetupStatus,
   type Sharing,
@@ -91,6 +98,9 @@ export const queryKeys = {
   tokens: ["tokens"] as const,
   rooms: ["rooms"] as const,
   conversations: ["conversations"] as const,
+  contacts: ["contacts"] as const,
+  /** The people one connector has seen, filtered by a search text ("" = all of them). */
+  people: (connectorId: string, q: string) => ["contacts", "people", connectorId, q] as const,
   intelligence: (id: string) => ["intelligences", id] as const,
   room: (id: string) => ["rooms", id] as const,
   roomMembers: (id: string) => ["rooms", id, "members"] as const,
@@ -671,6 +681,34 @@ export function patchIntelligence(qc: QueryClient, ref: IntelligenceRef) {
     }
   }
   qc.setQueryData<Room[]>(queryKeys.rooms, (old) => old?.map((r) => withParticipant(r, ref)));
+
+  // The contacts page, the pickers and the connectors that name this intelligence as operator.
+  qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withIntelligence(old, ref));
+  for (const [key, data] of qc.getQueriesData<PeoplePages>({ queryKey: ["contacts", "people"] })) {
+    if (!data?.pages.some((page) => page.items.some((p) => p.id === ref.id))) continue;
+    qc.setQueryData<PeoplePages>(key, {
+      ...data,
+      pages: data.pages.map((page) => ({
+        ...page,
+        items: page.items.map((p) => (p.id === ref.id ? ref : p)),
+      })),
+    });
+  }
+  patchOperator(qc, ref);
+}
+
+/** Shows the operator's new summary on the cached connectors that name it (ACC-01). */
+function patchOperator(qc: QueryClient, ref: IntelligenceRef) {
+  qc.setQueryData<Connector[]>(queryKeys.connectors, (old) =>
+    old?.some((c) => c.operator?.id === ref.id)
+      ? old.map((c) => (c.operator?.id === ref.id ? { ...c, operator: ref } : c))
+      : old,
+  );
+  for (const [key, c] of qc.getQueriesData<Connector>({ queryKey: queryKeys.connectors })) {
+    if (key.length === 2 && c?.operator?.id === ref.id) {
+      qc.setQueryData<Connector>(key, { ...c, operator: ref });
+    }
+  }
 }
 
 /** The room with `ref` in place of the DM participant that has its id. */
@@ -717,6 +755,98 @@ export function useRemoveAvatar(id: string) {
         storeProfile(qc, rest);
       }
       qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), exact: true });
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Contacts: the machine tree, shared AIs, users and the people of the user's connectors
+// (CONT-01, TREE-01..06)
+
+/** Everyone the caller can reach, grouped as the contacts page shows them (GET /contacts). */
+export const contactsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.contacts,
+    queryFn: ({ signal }) => api<Contacts>("GET", "/contacts", undefined, { signal }),
+  });
+
+export const useContacts = () => useQuery(contactsQuery());
+
+export type PeoplePages = InfiniteData<Page<IntelligenceRef>, string | undefined>;
+
+/**
+ * The people of one connector in name order, a page at a time; the cursor is the id of the last
+ * person of the page before. `q` searches names, handles and account ids on the server, and the
+ * previous search stays on screen while the next one loads.
+ */
+export const peopleQuery = (connectorId: string, q = "") =>
+  infiniteQueryOptions({
+    queryKey: queryKeys.people(connectorId, q),
+    queryFn: ({ pageParam, signal }) =>
+      api<Page<IntelligenceRef>>("GET", "/contacts/people", undefined, {
+        query: {
+          connector_id: connectorId,
+          q: q || undefined,
+          after: pageParam,
+          limit: DefaultPeoplePage,
+        },
+        signal,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page: Page<IntelligenceRef>) =>
+      page.has_more ? page.items.at(-1)?.id : undefined,
+  });
+
+export const usePeople = (connectorId: string, q = "", enabled = true) =>
+  useInfiniteQuery({ ...peopleQuery(connectorId, q), enabled, placeholderData: keepPreviousData });
+
+/** How many people one connector contributes to a search box (the pickers show a few, not a page). */
+export const PEOPLE_SEARCH_SIZE = 8;
+
+/** The first few people of a connector matching `q`: what a picker shows while the user types. */
+export const peopleSearchQuery = (connectorId: string, q: string) =>
+  queryOptions({
+    queryKey: ["contacts", "people-search", connectorId, q] as const,
+    queryFn: ({ signal }) =>
+      api<Page<IntelligenceRef>>("GET", "/contacts/people", undefined, {
+        query: { connector_id: connectorId, q, limit: PEOPLE_SEARCH_SIZE },
+        signal,
+      }),
+  });
+
+/**
+ * Searches the people of several connectors at once, in the order of `connectorIds`. While `enabled`
+ * is false nothing is asked; the previous results stay until the next ones arrive.
+ */
+export function usePeopleSearch(connectorIds: string[], q: string, enabled: boolean) {
+  return useQueries({
+    queries: connectorIds.map((id) => ({
+      ...peopleSearchQuery(id, q),
+      enabled,
+      placeholderData: keepPreviousData,
+    })),
+    combine: (results) => ({
+      people: results.flatMap((r) => r.data?.items ?? []),
+      searching: results.some((r) => r.isFetching),
+      failed: results.some((r) => r.isError),
+    }),
+  });
+}
+
+/**
+ * Names a machine (TREE-04): the label replaces the hostname in the tree; an empty one brings the
+ * hostname back. Cached AI profiles show the label of their machine, so they are refetched.
+ */
+export function useSetMachineLabel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ hostname, label }: { hostname: string; label: string }) =>
+      api<Machine>("PUT", `/machines/${encodeURIComponent(hostname)}`, {
+        label,
+      } satisfies SetMachineLabelRequest),
+    onSuccess: (machine) => {
+      qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withMachineLabel(old, machine));
+      qc.invalidateQueries({ queryKey: ["intelligences"] });
     },
   });
 }
@@ -890,7 +1020,14 @@ export function useDeleteAgent() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api<void>("DELETE", `/agents/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.agents }),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: queryKeys.agents });
+      // Gone from the flat lists at once; the server rebuilds the tree (TREE-06). The profile is
+      // marked stale without a refetch: the page showing it is about to leave.
+      qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withoutAI(old, id));
+      qc.invalidateQueries({ queryKey: queryKeys.contacts, exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), refetchType: "none" });
+    },
   });
 }
 

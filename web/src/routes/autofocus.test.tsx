@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
-import { makeMe } from "@/test/fixtures";
+import { makeContacts, makeMe } from "@/test/fixtures";
 import { stubPointer } from "@/test/media";
 import { renderRoute } from "@/test/render";
 
@@ -21,13 +21,17 @@ const loginApi = () =>
     "GET /setup/status": json(200, { needs_setup: false }),
   });
 
-const roomsApi = () =>
-  mockApi({ "GET /me": json(200, makeMe()), "GET /rooms": json(200, { items: [] }) });
+const sidebarApi = () =>
+  mockApi({
+    "GET /me": json(200, makeMe()),
+    "GET /conversations": json(200, { items: [] }),
+    "GET /contacts": json(200, makeContacts()),
+  });
 
-async function openNewRoom() {
+async function openDialog(name: "New group" | "New conversation") {
   const user = userEvent.setup();
-  await user.click((await screen.findAllByRole("button", { name: "New room" }))[0] as HTMLElement);
-  return screen.findByRole("dialog", { name: "New room" });
+  await user.click((await screen.findAllByRole("button", { name }))[0] as HTMLElement);
+  return screen.findByRole("dialog", { name });
 }
 
 describe("autofocus by pointer (UI-24)", () => {
@@ -50,18 +54,37 @@ describe("autofocus by pointer (UI-24)", () => {
 
   it("focuses the first dialog field with a fine pointer", async () => {
     stubPointer("fine");
-    roomsApi();
-    renderRoute("/rooms");
-    const dialog = await openNewRoom();
+    sidebarApi();
+    renderRoute("/");
+    const dialog = await openDialog("New group");
     await waitFor(() => expect(within(dialog).getByLabelText("Name")).toHaveFocus());
   });
 
   it("focuses the dialog itself, not its first field, on a coarse pointer", async () => {
     stubPointer("coarse");
-    roomsApi();
-    renderRoute("/rooms");
-    const dialog = await openNewRoom();
+    sidebarApi();
+    renderRoute("/");
+    const dialog = await openDialog("New group");
     await waitFor(() => expect(dialog).toHaveFocus());
     expect(within(dialog).getByLabelText("Name")).not.toHaveFocus();
+  });
+
+  it("focuses the contact search with a fine pointer", async () => {
+    stubPointer("fine");
+    sidebarApi();
+    renderRoute("/");
+    const dialog = await openDialog("New conversation");
+    await waitFor(() =>
+      expect(within(dialog).getByRole("combobox", { name: "Search contacts" })).toHaveFocus(),
+    );
+  });
+
+  it("focuses the new conversation dialog itself, not its search, on a coarse pointer", async () => {
+    stubPointer("coarse");
+    sidebarApi();
+    renderRoute("/");
+    const dialog = await openDialog("New conversation");
+    await waitFor(() => expect(dialog).toHaveFocus());
+    expect(within(dialog).getByRole("combobox", { name: "Search contacts" })).not.toHaveFocus();
   });
 });

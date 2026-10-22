@@ -8,6 +8,7 @@ import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
+  makeContacts,
   makeConversation,
   makeIntelligence,
   makeMe,
@@ -17,6 +18,7 @@ import {
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { renderRoute } from "@/test/render";
+import { sampleContacts } from "@/test/sample-contacts";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
@@ -215,12 +217,28 @@ describe("conversation list (LAY-01, DM-06)", () => {
 });
 
 describe("empty and failed list", () => {
-  it("offers to create the first room when there is no conversation", async () => {
+  it("offers to start a conversation or a group when there is none", async () => {
     api([]);
     renderRoute("/");
     expect(await screen.findByText("No conversations yet")).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Conversations" })).toBeNull();
-    expect(screen.getAllByRole("button", { name: "New room" }).length).toBeGreaterThan(0);
+    // The header's buttons and the empty state's own: the same two actions twice.
+    expect(screen.getAllByRole("button", { name: "New conversation" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "New group" })).toHaveLength(2);
+    expect(screen.queryByRole("searchbox", { name: "Search conversations" })).toBeInTheDocument();
+  });
+
+  it("opens the dialog of the action chosen in the empty state", async () => {
+    mockApi({
+      "GET /me": json(200, makeMe()),
+      "GET /conversations": json(200, { items: [] }),
+      "GET /contacts": json(200, makeContacts()),
+    });
+    const user = userEvent.setup();
+    renderRoute("/");
+    const empty = (await screen.findByText("No conversations yet")).closest("section");
+    await user.click(within(empty as HTMLElement).getByRole("button", { name: "New group" }));
+    expect(await screen.findByRole("dialog", { name: "New group" })).toBeInTheDocument();
   });
 
   it("says the list failed and tries again on request", async () => {
@@ -260,6 +278,191 @@ describe("a refresh that fails", () => {
     );
     expect(screen.queryByRole("alert")).toBeNull();
     expect(hrefs(list)).toHaveLength(4);
+  });
+});
+
+describe("search (LAY-03)", () => {
+  // Names and members decide what matches; the order stays the one served.
+  const conversations: Conversation[] = [
+    makeConversation({
+      id: "r1",
+      title: "deploys",
+      member_names: ["Ana Souza @ana", "Bob Lima @bob", "Atlas @atlas"],
+    }),
+    makeConversation({
+      id: "r2",
+      kind: "dm",
+      title: "Atlas",
+      counterpart: atlas,
+      member_names: ["Atlas @atlas"],
+    }),
+    makeConversation({ id: "r3", title: "support-bridge", member_names: ["Cora Dias @cora"] }),
+    makeConversation({
+      id: "r4",
+      kind: "dm",
+      title: "João Pereira",
+      counterpart: makeIntelligence({ id: "u9", display_name: "João Pereira", handle: "joao" }),
+      member_names: ["João Pereira @joao"],
+    }),
+  ];
+  const searchbox = () => screen.findByRole("searchbox", { name: "Search conversations" });
+  const rows = (list: HTMLElement) =>
+    within(list)
+      .getAllByRole("link")
+      .map((a) => a.getAttribute("href"));
+
+  it("filters the list by conversation name as the user types", async () => {
+    api(conversations);
+    const user = userEvent.setup();
+    renderRoute("/");
+    const list = await sidebar();
+    await user.type(await searchbox(), "SUPPORT");
+    await waitFor(() => expect(rows(list)).toEqual(["/rooms/r3"]));
+  });
+
+  it("filters by the name or the handle of a member", async () => {
+    api(conversations);
+    const user = userEvent.setup();
+    renderRoute("/");
+    const list = await sidebar();
+    const box = await searchbox();
+    await user.type(box, "bob");
+    await waitFor(() => expect(rows(list)).toEqual(["/rooms/r1"]));
+    await user.clear(box);
+    await user.type(box, "@atlas");
+    await waitFor(() => expect(rows(list)).toEqual(["/rooms/r1", "/rooms/r2"]));
+  });
+
+  it("ignores case and accents", async () => {
+    api(conversations);
+    const user = userEvent.setup();
+    renderRoute("/");
+    const list = await sidebar();
+    await user.type(await searchbox(), "JOAO");
+    await waitFor(() => expect(rows(list)).toEqual(["/rooms/r4"]));
+  });
+
+  it("needs every word of the search, each found in the name or the members", async () => {
+    api(conversations);
+    const user = userEvent.setup();
+    renderRoute("/");
+    const list = await sidebar();
+    const box = await searchbox();
+    await user.type(box, "deploys atlas");
+    await waitFor(() => expect(rows(list)).toEqual(["/rooms/r1"]));
+    await user.type(box, " zed");
+    expect(
+      await screen.findByText("No conversation matches “deploys atlas zed”."),
+    ).toBeInTheDocument();
+  });
+
+  it("brings the whole list back when the box is cleared, with its button or with Escape", async () => {
+    api(conversations);
+    const user = userEvent.setup();
+    renderRoute("/");
+    const list = await sidebar();
+    const box = await searchbox();
+    await user.type(box, "bob");
+    await waitFor(() => expect(rows(list)).toHaveLength(1));
+
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    await waitFor(() => expect(rows(list)).toHaveLength(4));
+    expect(box).toHaveValue("");
+    expect(box).toHaveFocus();
+
+    await user.type(box, "bob");
+    await waitFor(() => expect(rows(list)).toHaveLength(1));
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(rows(list)).toHaveLength(4));
+    expect(box).toHaveValue("");
+  });
+
+  it("shows no clear button while the box is empty", async () => {
+    api(conversations);
+    renderRoute("/");
+    await searchbox();
+    expect(screen.queryByRole("button", { name: "Clear search" })).toBeNull();
+  });
+
+  it("says when nothing matches and offers the whole list back", async () => {
+    api(conversations);
+    const user = userEvent.setup();
+    renderRoute("/");
+    await sidebar();
+    await user.type(await searchbox(), "zed");
+    const status = await screen.findByText("No conversation matches “zed”.");
+    expect(status.closest("[role=status]")).not.toBeNull();
+    expect(screen.queryByRole("list", { name: "Conversations" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Show all conversations" }));
+    expect(await sidebar()).toBeInTheDocument();
+    expect(await searchbox()).toHaveValue("");
+  });
+
+  it("offers to look for the text among the contacts, so someone with no conversation yet can be reached", async () => {
+    mockApi({
+      "GET /me": json(200, makeMe()),
+      "GET /conversations": json(200, { items: conversations }),
+      "GET /contacts": json(200, sampleContacts),
+      "GET /contacts/people": json(200, { items: [lia], has_more: false }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/");
+    await sidebar();
+    await user.type(await searchbox(), "lia");
+    await user.click(await screen.findByRole("button", { name: "Find “lia” in contacts" }));
+    const dialog = await screen.findByRole("dialog", { name: "New conversation" });
+    expect(within(dialog).getByRole("combobox", { name: "Search contacts" })).toHaveValue("lia");
+    expect(await within(dialog).findByTestId("contact-p1")).toHaveTextContent("Lia Costa");
+  });
+
+  it("tells screen readers how many conversations match", async () => {
+    api(conversations);
+    const user = userEvent.setup();
+    renderRoute("/");
+    await sidebar();
+    const box = await searchbox();
+    expect(screen.queryByText(/conversations? found/)).toBeNull();
+    await user.type(box, "atlas");
+    expect(await screen.findByText("2 conversations found")).toBeInTheDocument();
+    await user.clear(box);
+    await user.type(box, "support");
+    expect(await screen.findByText("1 conversation found")).toBeInTheDocument();
+  });
+
+  it("keeps filtering when a conversation changes: a hidden one stays hidden, a matching one moves up", async () => {
+    api(conversations);
+    const user = userEvent.setup();
+    const { queryClient } = renderRoute("/");
+    const list = await sidebar();
+    await user.type(await searchbox(), "atlas");
+    await waitFor(() => expect(rows(list)).toEqual(["/rooms/r1", "/rooms/r2"]));
+
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message",
+        data: makeMessage({
+          room_id: "r3",
+          seq: 1,
+          author_id: "u2",
+          author: bob,
+          created_at: today(14, 45),
+        }),
+      }),
+    );
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.message",
+        data: makeMessage({
+          room_id: "r2",
+          seq: 1,
+          author_kind: "agent",
+          author_id: "a1",
+          author: atlas,
+          created_at: today(14, 50),
+        }),
+      }),
+    );
+    await waitFor(() => expect(rows(list)).toEqual(["/rooms/r2", "/rooms/r1"]));
   });
 });
 

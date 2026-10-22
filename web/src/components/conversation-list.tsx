@@ -1,15 +1,21 @@
 import { Link } from "@tanstack/react-router";
-import { MessagesSquareIcon, PlusIcon } from "lucide-react";
-import { memo, useRef } from "react";
-import { CreateRoomDialog } from "@/components/create-room-dialog";
+import {
+  MessageSquarePlusIcon,
+  MessagesSquareIcon,
+  SearchIcon,
+  UsersRoundIcon,
+} from "lucide-react";
+import { memo, useMemo, useRef } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { KindBadge } from "@/components/intelligence/kind-badge";
+import { NewConversationDialog } from "@/components/new-conversation-dialog";
+import { NewGroupDialog } from "@/components/new-group-dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConversations } from "@/lib/api/queries";
 import type { Conversation } from "@/lib/api/types.gen";
-import { groupFace } from "@/lib/conversations";
+import { conversationMatches, groupFace } from "@/lib/conversations";
 import { useI18n, useT } from "@/lib/i18n";
 import { formatAbsolute, formatListTime } from "@/lib/time";
 
@@ -44,10 +50,23 @@ function useFreshConversations(list: Conversation[] | undefined): Set<string> {
   return fresh;
 }
 
-export function ConversationList() {
+export function ConversationList({
+  query = "",
+  onClearQuery,
+}: {
+  /** What the sidebar search box holds: only the conversations it finds are listed (LAY-03). */
+  query?: string;
+  onClearQuery?: () => void;
+}) {
   const t = useT();
   const conversations = useConversations();
+  // Tracked on the whole list, so a hidden conversation that gets a message settles when shown.
   const fresh = useFreshConversations(conversations.data);
+  const text = query.trim();
+  const shown = useMemo(
+    () => (text ? (conversations.data ?? []).filter((c) => conversationMatches(c, text)) : null),
+    [conversations.data, text],
+  );
 
   if (conversations.isPending) return <ListSkeleton />;
 
@@ -77,14 +96,24 @@ export function ConversationList() {
         headingLevel="p"
         className="py-8 md:py-8"
         action={
-          <CreateRoomDialog
-            trigger={
-              <Button>
-                <PlusIcon aria-hidden="true" />
-                {t("rooms.new")}
-              </Button>
-            }
-          />
+          <>
+            <NewConversationDialog
+              trigger={
+                <Button>
+                  <MessageSquarePlusIcon aria-hidden="true" />
+                  {t("conversations.new")}
+                </Button>
+              }
+            />
+            <NewGroupDialog
+              trigger={
+                <Button variant="outline">
+                  <UsersRoundIcon aria-hidden="true" />
+                  {t("conversations.newGroup")}
+                </Button>
+              }
+            />
+          </>
         }
       >
         <p>{t("conversations.emptyBody")}</p>
@@ -92,15 +121,50 @@ export function ConversationList() {
     );
   }
 
+  const rows = shown ?? conversations.data;
   return (
-    <ul aria-label={t("conversations.label")} className="pb-2">
-      {conversations.data.map((c) => (
-        // Rows far off screen skip layout and paint; a live message re-renders only its own row.
-        <li key={c.id} className="[contain-intrinsic-size:auto_4rem] [content-visibility:auto]">
-          <ConversationRow conversation={c} fresh={fresh.has(c.id)} />
-        </li>
-      ))}
-    </ul>
+    <>
+      {/* Heard by screen readers as the search narrows the list; the nothing-found case speaks for itself. */}
+      <p role="status" className="sr-only">
+        {text && rows.length > 0
+          ? t(rows.length === 1 ? "conversations.foundOne" : "conversations.foundMany", {
+              count: rows.length,
+            })
+          : ""}
+      </p>
+      {rows.length > 0 ? (
+        <ul aria-label={t("conversations.label")} className="pb-2">
+          {rows.map((c) => (
+            // Rows far off screen skip layout and paint; a live message re-renders only its own row.
+            <li key={c.id} className="[contain-intrinsic-size:auto_4rem] [content-visibility:auto]">
+              <ConversationRow conversation={c} fresh={fresh.has(c.id)} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p role="status" className="px-4 pt-6 pb-2 text-sm text-muted-foreground">
+          {t("conversations.noMatch", { query: text })}
+        </p>
+      )}
+      {text ? (
+        <div className="flex flex-col items-start gap-1 px-1 pt-1 pb-3">
+          {rows.length === 0 && onClearQuery ? (
+            <Button variant="ghost" size="sm" onClick={onClearQuery}>
+              {t("conversations.showAll")}
+            </Button>
+          ) : null}
+          <NewConversationDialog
+            initialQuery={text}
+            trigger={
+              <Button variant="ghost" size="sm">
+                <SearchIcon aria-hidden="true" />
+                {t("conversations.findContact", { query: text })}
+              </Button>
+            }
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 

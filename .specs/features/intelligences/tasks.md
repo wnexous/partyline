@@ -815,8 +815,10 @@ T50 → T51 → T52 → T53 → T54
 (conversations, DM open, groups, read state, profile read/update, avatar upload/remove, the room hooks refreshing the
 sidebar) and the live handlers `room.message`, `room.read`, `room.changed`, `room.deleted`, `room.members`,
 `access.changed`, `intelligence.changed` (conversations, timelines, members, participants, own account, profile).
-Part 2 stays open: contacts, people, machine label, merge, notify and operator hooks, the `makeContacts` fixture and the
-contacts patch of `intelligence.changed`, each with the task whose server API it calls (T47-T49).
+Part 2 (commit `feat(web): add the contacts and profile data layer`) added the hooks the contacts and profile pages read:
+contacts, people (paged, searchable), machine label, deleting an unlinked AI, the contacts and operator patches of
+`intelligence.changed`, presence-driven contact refreshes and the `makeContacts` family of fixtures. Still open, each with
+the task whose server API it calls: the merge hook (T35), the notify hooks (T34, T49) and the operator write (T49).
 
 #### T43: Avatar, kind badge and name components
 
@@ -859,9 +861,9 @@ contacts patch of `intelligence.changed`, each with the task whose server API it
 **Requirement**: LAY-03, LAY-04, DM-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Search filters by conversation name and member (LAY-03); picking a contact opens its existing DM or a new one (DM-01)
-- [ ] Creating a group navigates to it; a refused member is listed in the dialog (LAY-04)
-- [ ] Gate check passes: `make check`
+- [x] Search filters by conversation name and member (LAY-03); picking a contact opens its existing DM or a new one (DM-01)
+- [x] Creating a group navigates to it; a refused member is listed in the dialog (LAY-04)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): start DMs and groups from the sidebar`
@@ -894,10 +896,13 @@ panel lists AIs, users and chats; the people rows under each chat arrive with T2
 **Requirement**: CONT-01, TREE-01, TREE-02, TREE-03, TREE-04, TREE-05, TREE-06, MRG-01
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Two machines render as two groups with `b` nested under `a` and `c/d › e` collapsed, `~` for home (TREE-01, TREE-02); rows show name, online, app, last seen; online machines first (TREE-03)
-- [ ] Machine rename replaces the hostname (TREE-04); filter by name/handle/folder/machine keeps ancestors (TREE-05); Unlinked offers merge and delete (TREE-06, MRG-01)
-- [ ] Shared AIs, users and people sections render from the contacts data (CONT-01)
-- [ ] Gate check passes: `make check`
+- [x] Two machines render as two groups with `b` nested under `a` and `c/d › e` collapsed, `~` for home (TREE-01, TREE-02); rows show name, online, app, last seen; online machines first (TREE-03)
+- [x] Machine rename replaces the hostname (TREE-04); filter by name/handle/folder/machine keeps ancestors (TREE-05); Unlinked offers merge and delete (TREE-06, MRG-01)
+- [x] Shared AIs, users and people sections render from the contacts data (CONT-01)
+- [x] Gate check passes: `make check`
+
+**Open (MRG-01):** the merge API (T35, `POST /agents/{id}/merge`) does not exist yet, so Unlinked offers **delete only**
+(and Message); the "merge into…" action arrives with T35 (see `contract-notes.md`, T47). MRG-01 stays Pending.
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add the contacts page with the machine tree`
@@ -911,9 +916,13 @@ panel lists AIs, users and chats; the people rows under each chat arrive with T2
 **Requirement**: PROF-03, PROF-05, PROF-11, PEOP-03, ACC-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Owner edits an AI (PROF-05) and connector users edit a person (PROF-11); `handle_taken` and `avatar_invalid` show as field errors; non-editors see no editor
-- [ ] Person page shows name, platform account and visible conversations (PEOP-03); an operator AI lists `Discord: @bot` (ACC-07)
-- [ ] Gate check passes: `make check`
+- [x] Owner edits an AI (PROF-05) and connector users edit a person (PROF-11); `handle_taken` and `avatar_invalid` show as field errors; non-editors see no editor
+- [x] Person page shows name, platform account and visible conversations (PEOP-03); an operator AI lists `Discord: @bot` (ACC-07)
+- [x] Gate check passes: `make check`
+
+**Open (conversations of AIs and users):** the profile API fills `conversations` for **persons** only (T27), so the page lists
+conversations for them; an AI's or a user's profile offers **Message** instead of a list (the "AI DMs read-only" list of the
+design needs the API to return them). See `contract-notes.md`, T48.
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): view and edit intelligence profiles`

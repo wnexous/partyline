@@ -1131,6 +1131,7 @@ T47-T49 pages.
   `components/message-timeline.test.tsx` (the author block), `components/intelligence/intelligence.test.tsx`
   (`decorative`).
 
+
 ## T26 - People from inbound messages (PEOP-01, PEOP-02, PEOP-05, PEOP-06, GRP-03)
 
 - **`connectors.People`** (`people.go`; `Pipeline` builds one from its deps unless
@@ -1675,3 +1676,359 @@ T47-T49 pages.
 - Tests (`internal/cli/agents_test.go`): the golden output of two machines (a labelled one, nested
   `~/atlas/notes`, collapsed `c/d › Lab`, Atlas online, Notes/Lab/Dev last seen), the Unlinked
   section, the empty-list message and the relative-time boundaries; the credential/401 cases stay.
+
+## T42 - Conversations and profile data layer, part 1 (LAY-02, DM-06)
+
+Web only: `web/src/lib/api/{client,queries}.ts`, `web/src/lib/live/{handlers,store}.ts`. Part 2 (contacts,
+people, machine label, merge, notify and operator hooks, `makeContacts`) waits for its server tasks and the
+T47-T49 pages.
+
+- **Keys**: `queryKeys.conversations` (`["conversations"]`, a plain `Conversation[]`, newest activity first) and
+  `queryKeys.intelligence(id)` (`["intelligences", id]`, an `IntelligenceProfile`).
+- **Hooks**: `useConversations`; `useOpenDM()` (`POST /conversations/dm`, 200 and 201 alike, resolves with the
+  `Room`); `useCreateGroup()` (`POST /groups`; a 422 `members_refused` rejects with `ApiError.refused`);
+  `useMarkRead()` (`mutate({roomId, seq?})` → `PUT /rooms/{id}/read`, an absent `seq` sends `{}`);
+  `useIntelligence(id)`, `useUpdateIntelligence(id)` (`PATCH`), `useUploadAvatar(id)` (`PUT`, the `File` is the raw
+  body), `useRemoveAvatar(id)` (`DELETE`). A new room (`useOpenDM`, `useCreateGroup`, `useCreateRoom`,
+  `useRouteChat`) or a changed one (`useUpdateRoom`) refreshes the rooms list and the conversation list;
+  `useDeleteRoom` drops the row at once.
+- **Client**: `api()` sends a `Blob` body untouched with `Content-Type` = the blob's type (`application/octet-stream`
+  without one). `ApiError.refused` is `error.refused` of the answer (`[]` on any other error).
+- **Live store**: `openRoomId` / `setOpenRoom(id | null)` is the conversation the user is looking at (T46 sets it
+  while the page is open **and** the tab is visible); `LiveActions` carries it to the handlers.
+- **`room.message`**: when the list is cached, the message's conversation gets `last_message` = the preview (first
+  80 code points of the text; `[first file name]` when the text is blank and there is a file; `author_name` only
+  in a group), `activity_at` = the message time, and moves to its place (`newestActivityFirst`: `activity_at`
+  desc, title case-insensitive, id). `unread` + 1 unless the room is `openRoomId` or the message is the user's own
+  (`message.author.id` = the cached `me.intelligence.id`, which also covers messages typed on a linked platform
+  account). A message whose seq is not past the preview's is ignored (delivered twice, or older). A list that was
+  never loaded is left alone (its first fetch has the message); a **conversation the list lacks** invalidates the
+  list, **once per room** (`askedFor`): an AI's owner or grantee gets live messages of DMs `GET /conversations`
+  never lists (T19), and each of them must not cost a request. A message that lands while the list is being
+  fetched is patched like any other; if the fetch answered before the message was stored it is repaired by the
+  next refetch (reconnect, member or sharing change).
+- **`room.read`**: `unread = min(unread, last_message.seq - seq)` (0 without a preview), never raising it; the
+  `PUT` answer lowers the count the same way. A read at the newest seq is therefore 0 and one behind it keeps what
+  lies after.
+- **`room.changed`**: a listed group takes the new name and `my_level`; a listed DM keeps its counterpart as title;
+  a room the list lacks invalidates it (every time, these are rare). **`room.deleted`** removes the row.
+  **`room.members`**, **`access.changed`** (`resource_kind` room) and **`catchUp`** invalidate the list (its member
+  names feed the search).
+- **`intelligence.changed`** (and the profile mutations, through `patchIntelligence`): a cached profile, the account
+  (`me.intelligence` and `me.display_name`), a DM's `counterpart` and `title`, the `participants` of cached rooms,
+  the member rows (`RoomMember.name` and `.intelligence`, never the per-room `display_name`) and every cached
+  message whose `author.id` is that intelligence (`author` whole, `author_name` too) take the new summary, an absent
+  `avatar_url` clearing the old one. A name an owner set for an AI in a room (GRP-04) is kept in that room's
+  messages (the room's cached members tell); its handle and avatar still update. The conversation list is also
+  invalidated, since group previews and member names carry the old name.
+- Not changed: the dashboard feed code (`useActivity`, `prependActivity`) stays although T44 removes its page.
+- Tests: `lib/live/handlers.test.ts` (conversation list and `intelligence.changed` blocks), `lib/api/conversations.test.tsx`
+  (every hook and the room hooks' effect on the list), `lib/api/client.test.ts` (Blob bodies, `refused`).
+
+## T44 - Messenger shell and conversation list (LAY-01, LAY-02, LAY-05, LAY-06, DM-06)
+
+- **Shell** (`routes/_app.tsx`): from 768 px up (`useIsMobile` false) a 320 px `AppSidebar`
+  (`<aside aria-label="Conversations">`, sticky, window high) sits beside `SidebarInset#main`. Below 768 px
+  there is no sidebar: `/` renders the list as the page (`MessengerPanel screen`, `data-fill`, the page's `h1`
+  "Conversations") and every other route renders full screen under `MobileBar` (back link
+  `BackToConversations`, wordmark, palette button). Conversations (`/rooms/…`) have no bar: their header carries the
+  back link. `useIsMobile` now reads the width on the first render, so a phone never flashes the wide layout.
+  `SidebarProvider` is gone (no collapsible sidebar, no Ctrl+B); `useLiveStore.openRoomId` and the live
+  banner are unchanged.
+- **Panel** (`components/app-sidebar.tsx`): header with the wordmark (link to `/`), the account menu (the avatar
+  button, name `Account menu`), the palette button and an interim **New room** button (`CreateRoomDialog`; T45
+  replaces it with "New conversation" and "New group"); the conversation list; the live line in the footer.
+- **Account menu** = `NAV_GROUPS`: Conversations (`/`), Contacts, Connectors, Identities, Devices, API tokens,
+  Settings, and for admins Users, Invites, Audit log; then theme, language and log out. The palette keeps listing
+  `NAV_GROUPS` as pages and now lists `useConversations` (DMs by their counterpart, with the `@handle`) instead of
+  rooms.
+- **SPEC_DEVIATION (LAY-06): Contacts opens `/agents`**, and `/agents` is **not** redirected yet. `/contacts` and
+  its API arrive with T47, which must retarget this entry (`NAV_GROUPS`, `app-sidebar.tsx`), redirect `/agents` and
+  update `messenger-shell.test.tsx` (the `["Contacts", "/agents"]` row).
+- **Conversation list** (`components/conversation-list.tsx`): a row links to `/rooms/{id}` and shows the avatar
+  (a DM's counterpart; a group's initials on a rounded square), the title (+ the counterpart's `KindBadge`), the
+  time (`formatListTime`), the preview (`Sender: text` when the preview names an author, which the server does in
+  groups only; "No messages yet" with no message) and an unread pill (`99+` from 100; screen readers read
+  "N unread messages"). The open conversation is `aria-current="page"` and tape-tinted. A row whose last seq
+  grows lands on tape that settles in 1.5 s. A refresh that fails keeps the list; a list that never loaded shows an
+  alert with "Try again"; an empty list shows the empty state with "New room".
+- **Time rule** (LAY-01 only says "time"): the clock for today, "Yesterday", the weekday for 2-6 days ago, the
+  date from 7 days ago (with the year when it is another one); `title` carries the absolute time.
+- **`useOpenConversation(roomId)`** (`hooks/`) sets `openRoomId` while the conversation page is mounted and the tab
+  is visible, so messages that arrive in it add no unread; a hidden tab counts them.
+- **Home**: beside the sidebar "Pick a conversation" (`h1`); on a phone the list. `/rooms` redirects to `/`, and
+  the room page links that went to `/rooms` (delete, not found) go to `/`.
+- **Removed**: the overview and rooms list pages with their tests (`overview.test.tsx`, the four rooms-list tests of
+  `rooms.test.tsx`; the order, empty state and live behaviour live in `conversation-list.test.tsx`), the i18n keys
+  they orphaned and `nav.agents`. The sidebar does not show the "Agents paused" badge of the old list
+  (`Conversation` has no such flag; the room page keeps its banner). `useActivity` and the activity handlers stay,
+  unused by any page.
+- **Existing tests adapted** to the new surfaces, assertions unchanged where the behaviour survives: `app-shell`
+  and `admin` (destinations now live in the account menu), `command-menu` (conversations), `a11y` (home, phone
+  home, full-screen page, open menu), `devices` (the sidebar's list request is stubbed), `rooms` (the create-room
+  dialog opens from the sidebar), `room` (deleting a room returns to `/` and the sidebar drops it).
+- **e2e**: the smoke page lists follow the shell (home heading by viewport, no `/rooms` page, no sidebar toggle,
+  the first-run test returns to `/settings`).
+- Tests: `components/conversation-list.test.tsx`, `routes/messenger-shell.test.tsx`,
+  `hooks/use-open-conversation.test.tsx`, `hooks/use-mobile.test.tsx`, `lib/time.test.ts`.
+
+## T46 - Conversation page (DM-07, DM-02, GRP-02, PROF-09)
+
+- **Header** (`components/conversation-header.tsx`): the avatar (a DM's counterpart; a group's initials on a rounded
+  square), the `h1` title, the counterpart's kind badge; for a DM its `@handle` and, for an AI, `AiStatusLine`
+  (online or offline from `useIntelligence` and the live `agent.presence` frames, plus the app name from the profile's
+  `apps[0].label`, hidden below 640 px); for a group its visibility and description; the back button on a phone and the
+  page's buttons on the right. `conversationTitle` is a group's name, a DM's other participant, or "A and B" for a DM the
+  user only views through an AI (neither participant is the viewer; its subtitle then reads "Direct message"). The
+  composer is named after that title.
+- **Participants**: a DM lists its two `Room.participants` (`ParticipantList`: avatar, name, kind badge, inline `@handle`,
+  "You" for the viewer, an AI's status) under the tab **Participants (2)** and shows no add, remove, outbound, settings,
+  share or room-settings control **whatever level the caller holds** (`canManage` is false for a DM, DM-02). A group keeps
+  `MemberList`: AI and user members (`RoomMember.intelligence`) show avatar, `IntelligenceName` with badge and inline
+  `@handle`; AIs keep live presence and show "by @owner" (it was a bare `@owner` that read like a second handle); the
+  user section is now **Users** (`members.users`: "People" means external people from now on). Members without a profile
+  (project and chat members, older fixtures) render as before.
+- **Gap (GRP-02): the people of a bridged chat are not listed.** `RoomMember` has no `people` field yet (T27 adds
+  it), so a group's panel shows AIs, users and chats (title, platform, kind, outbound switch). The people rows under each
+  chat, with their platform badges, are the follow-up when the field exists.
+- **Timeline authors** (`MessageItem`): a user or AI author shows `IntelligenceAvatar` + `IntelligenceName` (kind badge,
+  "You" for the viewer, `@handle` in the tooltip that opens on hover and keyboard focus), named with the row's
+  `author_name`, so a name set for an AI in the room (GRP-04) wins. A chat message does the same only when its author is a
+  person (`author.role === "person"`) or the viewer's linked account (`author.id === author_user_id`); its "via chat"
+  line, platform pill and trust badge stay, and the person's own platform badge is left out so the platform shows once. A
+  chat sender without a profile keeps the chat tile and the sender's name. Avatars beside a name are `decorative`
+  (`aria-hidden`, empty `alt`).
+- **Read state** (`hooks/use-mark-room-read.ts`): while the page is mounted and the tab visible, `PUT /rooms/{id}/read`
+  with the newest seq of the timeline's newest page (`useNewestSeq`, a `select` that re-renders only when the number
+  changes): once on open and once for each higher seq (the user's own posts included), never twice for one seq, nothing
+  for an empty conversation, nothing while the tab is hidden; showing the tab sends what arrived meanwhile and only that.
+  The answer and the `room.read` event lower the sidebar badge (T42). `useOpenConversation` (T44) keeps messages of the
+  open conversation from adding unread.
+- Tests: `routes/_app/rooms/conversation.test.tsx` (header, participants, authors, read state),
+  `components/message-timeline.test.tsx` (the author block), `components/intelligence/intelligence.test.tsx`
+  (`decorative`).
+
+## T42 - Contacts and profile data layer, part 2 (CONT-01, TREE-04, TREE-06, PEOP-03, ACC-01)
+
+Web only: `web/src/lib/{api/queries,contacts,live/handlers}.ts` and `web/src/test/fixtures.ts`. The merge (T35), notify
+(T34, T49) and operator write (T49) hooks wait for their server APIs.
+
+- **Keys**: `queryKeys.contacts` (`["contacts"]`, the `Contacts` object as the server sent it, machines in the server's
+  order) and `queryKeys.people(connectorId, q)` (`["contacts", "people", connectorId, q]`, `PeoplePages`).
+- **Hooks**: `useContacts` (`GET /contacts`); `usePeople(connectorId, q = "", enabled = true)` (infinite
+  `GET /contacts/people`: `limit` 50, `q` only when not empty, `after` = the id of the last person of the page before,
+  `placeholderData: keepPreviousData` so the previous search stays on screen while the next one loads);
+  `useSetMachineLabel()` (`mutate({hostname, label})` → `PUT /machines/{hostname}` with the hostname URI-encoded; the
+  cached tree takes the answer's label, the hostname when it is empty, and every cached profile is invalidated because an
+  AI's profile carries `machine_label`; the cache is **not** re-sorted, the page orders machines). `useDeleteAgent`
+  (`DELETE /agents/{id}`) also takes the AI out of the cached unlinked and shared lists at once, invalidates the contacts
+  (the server rebuilds the tree: folders collapse differently without it) and marks the AI's profile stale **without
+  refetching** (`refetchType: "none"`), since the page showing it is about to leave. "Profile of others" is
+  `useIntelligence(id)` from part 1: `can_edit`, `ai`, `person` and `apps` decide what its page shows.
+- **Pure helpers** (`lib/contacts.ts`): `withIntelligence`, `withoutAI`, `withMachineLabel`, `flattenTree`, `allAIs`,
+  `knowsAI`. A patch that changes nothing returns its argument, so the cache write that follows is not seen.
+- **Live**: `intelligence.changed` (and the profile mutations, through `patchIntelligence`) also patches the cached
+  contacts (the caller's `me`, the machine tree at any depth, the unlinked and shared AIs and the owner of a shared one,
+  the users), the cached people pages and the `operator` of the cached connectors (the list and each connector), an
+  absent `avatar_url` clearing the old one. `agent.presence` refetches the contacts only when the cached ones lack that
+  AI (its first session created it); presence itself is **not** written into the contacts: pages overlay
+  `useLiveStore.presence` on `AIContact.online` and `last_seen_at`, as the old agents page did. `access.changed` for an
+  `agent` or a `connector` and a reconnect (`catchUp`) invalidate `["contacts"]` and, being its prefix, the people lists.
+- **Fixtures**: `makeAI`, `makePerson`, `makeAIContact`, `makeTreeNode`, `makeMachineTree`, `makeContacts`,
+  `makeProfile`.
+- Tests: `lib/api/contacts.test.tsx` (what each hook sends and leaves in the cache) and `lib/live/handlers.test.ts`
+  (block "contacts and operators").
+
+## T45 - New conversation, new group and search (LAY-03, LAY-04, DM-01)
+
+Web only. No API changed.
+
+- **Sidebar header** (`components/app-sidebar.tsx`): the wordmark, then the palette button (`SearchButton` is an icon
+  button now; its label and the `⌘K` / `Ctrl K` hint are in its tooltip) and the account menu; the conversation search
+  (`ConversationSearch`); **New conversation** and **New group**. The two start buttons are `flex-auto`: each first takes the
+  width of its label, so "New conversation" is not cut in the 320 px column. The interim **New room** button,
+  `CreateRoomDialog`, its tests (`rooms.test.tsx`: name trimmed, name required, a 422 reason under the field, all
+  covered again by `new-group-dialog.test.tsx`) and `createRoomSchema` are gone; `createGroupSchema` (a name) replaces
+  the schema. `useCreateRoom` (`POST /rooms`) stays in the data layer, tested, with no page using it.
+- **Search** (`ConversationList query`, `lib/conversations.conversationMatches`): every word of the text has to be found, each in
+  the conversation's title or in its `member_names` ("Name @handle" of its users and AIs: a bridged chat is not one, so
+  its people are not searched), ignoring case and accents (`foldText`: NFD without the marks, so "joao" finds "João").
+  The served and live order is kept, and a conversation that changes while hidden stays hidden. Escape and the clear
+  button empty the box (the browser's own clear button is hidden so there is one). A polite `sr-only` status says "N
+  conversations found" while something matches; nothing matching shows "No conversation matches “…”" and "Show all
+  conversations". While there is text, **Find “…” in contacts** opens New conversation with it typed, so someone with no
+  conversation yet can be reached. The empty list (no conversation at all) offers New conversation and New group, next to the
+  header's two; the search box stays.
+- **Dialogs are local state, not a store**: each trigger wraps its own dialog (`NewConversationDialog trigger initialQuery`,
+  `NewGroupDialog trigger`), whose body mounts only while open, so every opening starts empty and an old error is gone.
+  Nothing leaks between tests or between openings.
+- **New conversation** (`components/new-conversation-dialog.tsx`): a cmdk list with `shouldFilter={false}` (the app's matcher
+  filters, so accents and several words work) over `useContacts` → `pickables` (`lib/contacts.ts`): **AIs** (the user's own
+  in tree order, parents first, then the unlinked, then the shared ones), **Users** and **People**. Each row: avatar, name,
+  kind badge and `@handle`, and for an AI online state, app, the owner's label of its machine (the hostname for a shared AI),
+  folder and "by @owner". A search finds an AI by name, handle, hostname, machine label, folder and app, a user by name and
+  handle; the owner of a shared AI is not searched. Enter opens the highlighted (first) match.
+  **People** are looked up on the server (`usePeopleSearch`: `GET /contacts/people?connector_id&q&limit=8` for each
+  connector with `count > 0` only), once the text has settled for 250 ms (`useDebouncedValue`) and has at least two
+  characters after a leading `@` (cut at `MaxPeopleSearch`); the previous results stay until the next arrive, and are not shown when the
+  text falls below two. With fewer letters the dialog says "Type at least 2 letters to search people.". A search that
+  fails says so. Picking opens the DM (`useStartConversation` → `POST /conversations/dm`, 200 and 201 alike), closes the dialog and goes to
+  `/rooms/{id}`; a failure stays in the dialog: `contact_not_found` ("X isn’t available anymore."), `no_route_to_person`
+  (a person can be answered only in conversations they started with an account the user operates), anything else a generic
+  line; the rows are disabled while the request runs.
+- **New group** (`components/new-group-dialog.tsx`): a name (`createGroupSchema`, trimmed; a 422 `fields.name` shows under
+  it) and members picked from the same contacts: **AIs and Users only**, because people join a group through a bridged chat
+  (the server refuses them as `person`). Picked members are a removable summary (`ul` "Selected members"), sent in the
+  order they were picked, at most `MaxGroupMembers` = 50 (the unticked boxes are disabled at the limit, a picked one can
+  still be taken out). A filter (the same matcher) narrows the list and keeps what was picked while hidden; Enter in it
+  does not create the group. The contacts load with a retry on failure. `POST /groups` → 201: the dialog closes and the
+  group opens. **`members_refused`** (422, `ApiError.refused`): an alert names each refused member with its reason
+  (`not_found`: "not available: unknown, disabled, or not shared with you"; `person`: "people join through a bridged chat, not as
+  members"), says nothing was created, flags those rows (`aria-invalid`), and keeps the name and the picks. The alert
+  follows the picks: a refused member taken out of the list leaves it, and it is gone once none is left (an id the contacts
+  do not show cannot be taken out and stays until the next try).
+- **Member picker of a group** (`components/member-picker.tsx`, UI-10): lists **AIs** (own, then shared), **Users** and **Chats**
+  from `useContacts` and `useChats` (no `GET /agents`, no projects), minus the members already there, filtered by the
+  same matcher (a chat by its title, connector name and kind). An AI is added as `agent`, a user as `user`, a chat as `chat`.
+  When nothing is left it offers "Connect an agent" (the agents page until T47 moves it to `/contacts`) and "Add a connector".
+- **Presence**: `withContactPresence(contact, presence)` (`lib/presence.ts`) folds the live `agent.presence` of the store over an
+  AI of the contacts (the store wins); the pickers use it, so an AI that connects while a dialog is open turns online.
+- **Group labels are not uppercase**: the headings of the three lists are sentence case on purpose; the app's uppercase label
+  voice would turn "AIs" into "AIS".
+- **Fix (T43), initials of a one-word name**: `initials("Atlas")` returned "AA" although its own comment says "the single letter
+  for a one-word name"; it returns "A" now (`initials("Ana Souza")` is still "AS"), with a test of the rule.
+- Tests: `components/new-conversation-dialog.test.tsx`, `components/new-group-dialog.test.tsx`,
+  `components/conversation-list.test.tsx` (search block, empty state), `lib/conversations.test.ts`, `lib/contacts.test.ts`,
+  `lib/presence.test.ts`, `hooks/use-debounced-value.test.tsx`, `routes/_app/rooms/room.test.tsx` (member picker),
+  `routes/autofocus.test.tsx` (both dialogs), `routes/a11y.test.tsx` (axe on both dialogs, en and pt-BR),
+  `components/intelligence/intelligence.test.tsx` (`initials`). The e2e smoke test creates its room through "New group".
+
+## T47 - Contacts page (CONT-01, TREE-01..TREE-06)
+
+Web only. No API changed.
+
+- **Routes**: `/contacts` (`routes/_app/contacts.index.tsx`). `/agents` is a redirect route under `_app` (`replace`), so old
+  links and bookmarks land on `/contacts`, and a visitor without a session still goes to login first, remembering the address
+  they asked for. The header menu's **Contacts** entry opens `/contacts` (it is active on the profile pages below it too): the
+  SPEC_DEVIATION of T44 is closed. The member picker, API tokens, devices ("Go to contacts") and route-chat links to the agents
+  page point to it. The palette's AI entries open `/contacts` (T48 sends them to the profile).
+- **Page**: header (Contacts, and "Connect an agent" once there is anything to show), a filter box (`<search>`, "Filter
+  contacts", clear button and Escape), then the sections in this order, each an `h2`: **My AIs**, **Unlinked**, **Shared with
+  me**, **People**, **Users**; a section with nothing to show is left out (My AIs stays, with a hint that points at the header's
+  connect button, while the filter is empty: there is one connect button on the page, so a user with no AI yet does not see two). No contact at all (no AI, unlinked, shared, user or connector): the empty state "No contacts yet" with the
+  connect action. A failed load shows an alert with "Try again". `ConnectAgentDialog` is the page's, as it was the agents
+  page's: it survives the empty state turning into the list when the first AI registers.
+- **Machines** (`components/machine-group.tsx`, TREE-01..04): one group per machine (`section` named by its heading), ordered by
+  `sortMachines` (an AI **online now** first - the live presence folded over the cached tree, not the `online` flag the server
+  sent - then by the owner's label, the hostname when it has none, ignoring case; the cached tree is never re-sorted), headed by the
+  label with the hostname beside it when they differ, `N of M online` (live; counted over what the filter leaves) and a rename
+  pencil. **Rename** (`InlineRename`, extracted from the agents page): the field starts from the label shown, Enter or Save sends
+  `PUT /machines/{hostname}` (`useSetMachineLabel`), Escape or Cancel closes, the same text closes without a request, more than
+  64 characters is refused before asking (the hostname is the placeholder: an empty label brings it back), a 422 `fields.label` shows
+  under the field, any other failure a toast, and the field stays open on both. The label replaces the hostname in the tree and is
+  what the filter matches (with the hostname). The heading stays (`sr-only`) while renaming, so the group keeps its name.
+- **Tree** (TREE-01, TREE-02): nested lists. A node's children hang from a line under its avatar; an AI whose folder is inside
+  another's is nested under it at any depth (the server builds the tree, T25/T28). A row is the AI's **display name** with
+  `Path ›` before it when the server collapsed folders that hold no AI (`c/d ›`, `projects/acme/agents ›`), the kind badge, the
+  `@handle`, and a line of: online or offline, **last seen** (relative, absolute in the tooltip; "Never connected" without one;
+  only while offline), the app, and the folder as the server labels it (`~` for the home folder, `~/x`). The folder's own `name` (the
+  tree node's) is not shown separately: its label is in the line. The line wraps and a path may break anywhere, so a narrow screen
+  does not scroll sideways. Each row has **Message**.
+- **Filter** (`lib/contacts.filterMachines`, TREE-05): every word has to be found, each in the AI's name, @handle, folder (both
+  forms), app, hostname or machine label; a node that matches stays with every ancestor it hangs from and **not** with its other
+  children; a machine whose label or hostname matches the whole text stays whole. Case and accents are ignored. The same
+  matcher narrows Unlinked, Shared with me (their own text: name, handle, app, machine, folder; not the owner) and Users (name,
+  handle); a section without a match disappears, and with nothing left (and no connector to search) the page says "Nothing matches
+  “…”" with **Show all contacts**.
+- **Unlinked** (TREE-06): the AIs with no folder: name, handle, last seen or never, **Message** and **Delete** (an alert dialog:
+  "Delete X?", it leaves every group, its DMs are deleted, it loses its sharing; `DELETE /agents/{id}`, `DeleteAIDialog`, a toast
+  and the AI leaves the list at once; a failure toasts and keeps it). **Merge is not offered**: its API (T35, `POST
+  /agents/{id}/merge`) does not exist yet (MRG-01 stays Pending); the action joins the row with T35.
+- **Shared with me** and **Users**: the AIs of other users the caller may use (with "by @owner", the owner's machine and folder, and
+  the same state line) and the other enabled users, each with **Message**.
+- **People** (CONT-01, `components/people-group.tsx`): one row per connector the user owns or may use - its name, the platform and
+  how many people it has seen - **closed until asked**: opening one lists its people, a page of 50 at a time (`usePeople`,
+  `GET /contacts/people?connector_id&limit=50`), with **Show more** (cursor = the id of the last person shown); a connector that
+  saw no one is a plain row. With a filter the connectors that saw someone open by themselves and the **server** searches their
+  people (`q` = the text once it settled for 250 ms; the previous search stays on screen until the next arrives): a connector whose
+  search finds no one says "No one found."; one that saw no one leaves the list. A person row shows the platform badge and
+  **Message** (a person can be answered only in a conversation they started with an account the user operates: otherwise the
+  toast says so, `no_route_to_person`, DM-05).
+- **Message** (`components/message-button.tsx`, DM-01): `useStartConversation({ onError })` opens the DM and goes to it; a failure is
+  a toast (`contact_not_found`, `no_route_to_person`, anything else). The text of the button hides below 640 px; its label always
+  names the contact.
+- **Removed with the agents page**: the project grouping, the archive toggle, "keep" (temporary → fixed), the machine and harness
+  selects (the tree and the filter replace them) and the in-place rename of an agent and of a project. The page's other features
+  moved: the wizard (header and empty state; its tests are `components/connect-agent-dialog.test.tsx`), deleting (`DeleteAIDialog`),
+  renaming (the profile editor, T48) and sharing an AI (T48 carries the dialog to the profile of an AI the user manages).
+  `groupByProject`, `distinct`, `AgentGroup`, `withPresence`, `byLiveness` and `AgentView` went with it; the `agents.*` and
+  `page.agents*` i18n keys too. The v0.3 hooks the live handlers and the project members still use (`useProjects`,
+  `useAgentsWithArchived`, `useUpdateAgent`, `useRenameProject`) stay until T50.
+- **e2e**: the connect-an-agent smoke test and the no-horizontal-scroll page list use `/contacts`. The two v0.3 smoke tests that
+  drive the agents page by project (PROJ-04/05) still target the old page and fail until T52 replaces them.
+- Tests: `routes/_app/contacts.test.tsx` (every block above, with the live presence, the rename and the paging),
+  `lib/contacts.test.ts` (`filterMachines`, `sortMachines`, `machineOnlineCount`), `components/connect-agent-dialog.test.tsx`
+  (the wizard, moved), `routes/a11y.test.tsx` (axe on the page, desktop and phone, with a connector open and a rename field
+  showing), `routes/messenger-shell.test.tsx` (the menu entry), `routes/_app/rooms/room.test.tsx` (the picker's link),
+  `components/command-menu.test.tsx`, `routes/auth.test.tsx`, `routes/app-shell.test.tsx` and `routes/live-session.test.tsx` (they
+  used `/agents` as an example route).
+
+## T48 - Profile page and editor (PROF-03, PROF-05, PROF-11, PEOP-03, ACC-07)
+
+Web only. No API changed.
+
+- **Route** `/contacts/$id` (`routes/_app/contacts.$id.tsx`), `GET /intelligences/{id}` through `useIntelligence`. A 404 (unknown or not
+  visible, the same answer) shows "This contact is not on your line" with "Back to contacts"; another failure an alert with "Try
+  again"; the first load a skeleton. The page opens from the contacts (the name of every row, of the people too, is a link that
+  **stretches over the row**, named by the contact alone; the Message and Delete buttons sit above it), from the palette (its AI
+  entries, now named by display name with the `@handle`, open the profile) and from the owner and "verified as" links below.
+  The "Contacts" menu entry stays active on it.
+- **Header**: a 96 px avatar (`IntelligenceAvatar size="xl"`, decorative: the `h1` carries the name), the `h1` display name, the kind
+  badge ("You" on one's own profile) with the `@handle`, the bio (line breaks kept) and the actions: **Message** (DM-01; not on
+  one's own profile; a person with no route says so in a toast) and, for an AI the viewer manages (`ai.my_level` = manage),
+  **Share** and **Delete**. Those two are **carried over from the agents page** that T47 removed, which was the only place to share
+  or delete an AI: `SharingDialog kind="agents"` (its `owner` is the AI's owner as `{id, username: handle, display_name}`) and
+  `DeleteAIDialog`, after which the page returns to `/contacts`. A user who only may use an AI sees neither.
+- **Editor** (`components/profile-editor.tsx`, for `can_edit`; the T49 settings page reuses it for the user's own profile): "Edit
+  profile" with the photo on the left and, on the right, **Display name**, **Handle** and **Bio** (`TextAreaField`, a running
+  `n/280` in code points), and **Save profile**, enabled only while something differs from what is stored. Rules from the contract
+  (`profileEditSchema`): name 1-64 after trimming (`MaxProfileDisplayName`), handle `HandlePattern` after dropping a leading `@`
+  and lower-casing (`normalizeHandle`), bio 0-280 (`MaxProfileBio`); a field that breaks one is refused before any request, under
+  the field. **Only what changed is sent** (`PATCH /intelligences/{id}`, so a bio emptied sends `bio: ""` and nothing else). The
+  answer replaces the cached profile and everywhere the intelligence shows (T42), and the form takes the stored values. Refusals:
+  409 `handle_taken` → "That handle is already taken." under Handle (cleared when it is edited); 422 `fields` → the server's text
+  under display_name, handle or bio; 403 → "You can’t edit this profile."; no network → the network message, above the form. A
+  change that arrives live (`intelligence.changed`: another tab, the AI renaming itself) reaches the fields the user has **not
+  touched**; an edited field keeps what was typed (`reset(stored, { keepDirtyValues: true })`, run only when the stored profile
+  differs from the one the form last saw: never on mount, and not when the same profile is fetched again). An earlier version reset
+  from an effect that read a stale `isDirty` and could wipe a just-typed edit under load (a flaky test caught it); two tests pin it.
+- **Photo**: the picker offers PNG, JPEG and WebP (`accept`; a label styled as a button wraps the file input, so it is named "Upload
+  photo" and reachable by keyboard). A chosen file is **previewed first** (round, as it will show; an object URL revoked when the
+  preview goes) and sent only on **Use this photo**, as the raw body with its own content type (`PUT .../avatar`, T10); Cancel
+  drops it. The web does **not** re-check the type or the size (the contract has no constant for them, AD-003): the server's
+  answer decides, as a field error under the photo with the preview and the old photo kept: 422 `avatar_invalid` → "That image can’t be
+  used. Use a PNG, JPEG or WebP of up to 2 MB.", 413 → "That file is too large.", anything else "Couldn’t upload the photo. Try
+  again."; the button reads "Sending…" and is disabled meanwhile, so it is sent once. **Remove photo** (`DELETE .../avatar`,
+  shown only with a photo) brings the initials back; a failure says so.
+- **Details** (AI or person with details): an AI shows its **owner** (linked), its **app** with the live online state (the store's
+  `agent.presence` over the profile's) and, offline, when it was last seen (or "Never connected"), its **machine** (the owner's
+  label, the hostname beside it when it differs), its **folder** (`~/…`, or "No folder yet" while it has none) and **your access**
+  (manage / use). A person shows its **connector** (linked to it), the **account** it writes from and, when the account is verified
+  as a user (PEOP-02), **verified as** (linked to that user), plus "Renamed here: the platform’s name no longer replaces it." once
+  its name is locked (PROF-11, PEOP-05). A viewer who sees a person only through a conversation gets neither (the API omits `person`
+  for them), and no editor.
+- **Apps** (ACC-07): one row per `apps` entry: the web app, the harness, the chat accounts verified as a user's, and the connectors an
+  AI or user **operates** (`Discord: @bot`); a row with a `connector_id` links to that connector. The section is left out when
+  there is none.
+- **Conversations** (PEOP-03): for a **person**, the list the API returns (the rooms the viewer can see, newest first, at most 100),
+  each opening its conversation, a DM without a name as "Direct message"; none says so. **Open:** the API fills `conversations`
+  for persons only (T27), so an AI's or a user's profile has no list (the design's "AI DMs, read-only" needs the API to return
+  them): Message stands in.
+- **Components**: `TextAreaField` (`form-fields.tsx`), `IntelligenceAvatar size="xl"`, `MessageButton compact={false}` (keeps its text
+  on a phone), `ProfileEditor`, `profileEditSchema`/`normalizeHandle`/`ProfileEditForm` (`lib/schemas.ts`), `validation.handle` and
+  `validation.bio`.
+- **e2e**: the no-horizontal-scroll list has the user's own profile page next to `/contacts`.
+- Tests: `routes/_app/profile.test.tsx` (reading, messaging, editing and its refusals, the form following live changes, the photo,
+  persons, apps, managing an AI), `routes/_app/contacts.test.tsx` (the links to profiles), `components/command-menu.test.tsx`
+  (an AI opens its profile), `routes/a11y.test.tsx` (axe on an AI's profile with a preview showing, on a person's, and on a phone,
+  in both languages).

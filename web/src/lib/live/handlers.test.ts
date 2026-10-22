@@ -1,10 +1,17 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ACTIVITY_PER_ROOM, ACTIVITY_SIZE, type MessagePages, queryKeys } from "@/lib/api/queries";
+import {
+  ACTIVITY_PER_ROOM,
+  ACTIVITY_SIZE,
+  type MessagePages,
+  type PeoplePages,
+  queryKeys,
+} from "@/lib/api/queries";
 import type {
   ActivityItem,
   Agent,
   Connector,
+  Contacts,
   Conversation,
   Identity,
   IntelligenceProfile,
@@ -16,12 +23,19 @@ import type {
   RoomMember,
 } from "@/lib/api/types.gen";
 import {
+  makeAI,
+  makeAIContact,
+  makeConnector,
+  makeContacts,
   makeConversation,
   makeIntelligence,
+  makeMachineTree,
   makeMe,
   makeMember,
   makeMessage,
+  makePerson,
   makeRoom,
+  makeTreeNode,
 } from "@/test/fixtures";
 import { catchUp, handleLiveEvent, type LiveActions } from "./handlers";
 import { useLiveStore } from "./store";
@@ -794,6 +808,190 @@ describe("live handlers", () => {
       expect(
         qc.getQueryData<IntelligenceProfile>(queryKeys.intelligence("a1"))?.avatar_url,
       ).toBeUndefined();
+    });
+  });
+  describe("contacts and operators (T42 part 2)", () => {
+    const atlas = makeAI({ avatar_url: "/api/v1/intelligences/a1/avatar?v=1" });
+    const renamed = makeAI({
+      display_name: "Atlas Prime",
+      handle: "atlas-prime",
+      avatar_url: "/api/v1/intelligences/a1/avatar?v=2",
+    });
+    const change = (data: IntelligenceRef = renamed) =>
+      handleLiveEvent(qc, actions(), { type: "intelligence.changed", data });
+    const contacts = () => qc.getQueryData<Contacts>(queryKeys.contacts);
+    const stale = (key: readonly unknown[]) => qc.getQueryState(key)?.isInvalidated;
+    const notes = makeAI({ id: "a2", display_name: "Notes", handle: "notes" });
+
+    it("renames an AI everywhere the cached contacts show it: the tree at any depth, unlinked, shared and its owner", () => {
+      qc.setQueryData<Contacts>(
+        queryKeys.contacts,
+        makeContacts({
+          machines: [
+            makeMachineTree({
+              nodes: [
+                makeTreeNode({
+                  ai: makeAIContact({ intelligence: notes }),
+                  children: [
+                    makeTreeNode({
+                      ai: makeAIContact({ intelligence: atlas }),
+                      children: [],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          ],
+          unlinked: [makeAIContact({ intelligence: atlas, folder: "", folder_label: "" })],
+          shared: [makeAIContact({ intelligence: notes, owner: atlas })],
+        }),
+      );
+      change();
+      const c = contacts();
+      expect(c?.machines[0]?.nodes[0]?.ai.intelligence).toEqual(notes);
+      expect(c?.machines[0]?.nodes[0]?.children[0]?.ai.intelligence).toEqual(renamed);
+      expect(c?.unlinked[0]?.intelligence).toEqual(renamed);
+      expect(c?.shared[0]?.owner).toEqual(renamed);
+      expect(c?.shared[0]?.intelligence).toEqual(notes);
+      // A name change leaves where the AI lives and whether it is online alone.
+      expect(c?.machines[0]?.nodes[0]?.children[0]?.ai).toMatchObject({
+        machine: "devbox",
+        folder_label: "~/atlas",
+        online: false,
+      });
+    });
+
+    it("renames a user and the account itself in the cached contacts", () => {
+      const bob = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
+      qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts({ users: [bob] }));
+      change(makeIntelligence({ id: "u2", display_name: "Bob L.", handle: "bob-l" }));
+      expect(contacts()?.users[0]).toMatchObject({ display_name: "Bob L.", handle: "bob-l" });
+
+      change(makeIntelligence({ display_name: "Ana S.", handle: "ana-s" }));
+      expect(contacts()?.me).toMatchObject({ display_name: "Ana S.", handle: "ana-s" });
+      expect(contacts()?.users[0]?.display_name).toBe("Bob L.");
+    });
+
+    it("drops the avatar of a contact when the change carries none", () => {
+      qc.setQueryData<Contacts>(
+        queryKeys.contacts,
+        makeContacts({ users: [makeIntelligence({ ...atlas, role: "user" })] }),
+      );
+      const { avatar_url: _gone, ...withoutAvatar } = renamed;
+      change(withoutAvatar);
+      expect(contacts()?.users[0]?.avatar_url).toBeUndefined();
+    });
+
+    it("renames a person in the cached pages of its connector, and in no other person's row", () => {
+      const lia = makePerson();
+      const tom = makePerson({ id: "p2", display_name: "Tom Reis", handle: "tom" });
+      const pages = (): PeoplePages => ({
+        pages: [{ items: [lia, tom], has_more: false }],
+        pageParams: [undefined],
+      });
+      qc.setQueryData(queryKeys.people("k1", ""), pages());
+      qc.setQueryData(queryKeys.people("k1", "li"), pages());
+      change(makePerson({ display_name: "Lia C.", handle: "lia-c" }));
+      for (const key of [queryKeys.people("k1", ""), queryKeys.people("k1", "li")]) {
+        const items = qc.getQueryData<PeoplePages>(key)?.pages[0]?.items;
+        expect(items?.[0]).toMatchObject({ display_name: "Lia C.", handle: "lia-c" });
+        expect(items?.[1]).toEqual(tom);
+      }
+    });
+
+    it("leaves the contacts alone when nobody in them changed, and creates none that was never loaded", () => {
+      const seeded = makeContacts({ users: [makeIntelligence({ id: "u2", handle: "bob" })] });
+      qc.setQueryData<Contacts>(queryKeys.contacts, seeded);
+      change();
+      expect(contacts()).toBe(seeded);
+
+      qc.clear();
+      change();
+      expect(contacts()).toBeUndefined();
+    });
+
+    it("shows the operator's new name on the cached connectors (ACC-01)", () => {
+      const operated = makeConnector({ id: "k1", operator: atlas });
+      const owned = makeConnector({ id: "k2", operator: makeMe().intelligence });
+      qc.setQueryData<Connector[]>(queryKeys.connectors, [operated, owned]);
+      qc.setQueryData<Connector>(queryKeys.connector("k1"), operated);
+      qc.setQueryData<Connector>(queryKeys.connector("k2"), owned);
+      change();
+      const list = qc.getQueryData<Connector[]>(queryKeys.connectors);
+      expect(list?.[0]?.operator).toEqual(renamed);
+      expect(list?.[1]).toBe(owned);
+      expect(qc.getQueryData<Connector>(queryKeys.connector("k1"))?.operator).toEqual(renamed);
+      expect(qc.getQueryData<Connector>(queryKeys.connector("k2"))).toBe(owned);
+    });
+
+    it("refetches the contacts when an AI the cache does not know goes online: it was created by its first session", () => {
+      qc.setQueryData<Contacts>(
+        queryKeys.contacts,
+        makeContacts({
+          machines: [makeMachineTree({ nodes: [makeTreeNode({ ai: makeAIContact() })] })],
+        }),
+      );
+      handleLiveEvent(qc, actions(), {
+        type: "agent.presence",
+        data: { agent_id: "a1", online: true },
+      });
+      expect(stale(queryKeys.contacts)).toBe(false);
+      expect(useLiveStore.getState().presence.a1?.online).toBe(true);
+
+      handleLiveEvent(qc, actions(), {
+        type: "agent.presence",
+        data: { agent_id: "a-new", online: true },
+      });
+      expect(stale(queryKeys.contacts)).toBe(true);
+    });
+
+    it("knows the AIs of the unlinked and shared lists too, and does not refetch for them", () => {
+      qc.setQueryData<Contacts>(
+        queryKeys.contacts,
+        makeContacts({
+          unlinked: [makeAIContact({ intelligence: notes, folder: "", folder_label: "" })],
+          shared: [makeAIContact({ intelligence: makeAI({ id: "a3" }) })],
+        }),
+      );
+      for (const id of ["a2", "a3"]) {
+        handleLiveEvent(qc, actions(), {
+          type: "agent.presence",
+          data: { agent_id: id, online: false },
+        });
+      }
+      expect(stale(queryKeys.contacts)).toBe(false);
+    });
+
+    it.each(["agent", "connector"])(
+      "refreshes the contacts and their people lists when access to a %s changes",
+      (kind) => {
+        qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
+        qc.setQueryData<PeoplePages>(queryKeys.people("k1", ""), {
+          pages: [{ items: [], has_more: false }],
+          pageParams: [undefined],
+        });
+        handleLiveEvent(qc, actions(), {
+          type: "access.changed",
+          data: { resource_kind: kind, resource_id: "x1" },
+        });
+        expect(stale(queryKeys.contacts)).toBe(true);
+        expect(stale(queryKeys.people("k1", ""))).toBe(true);
+      },
+    );
+
+    it("leaves the contacts alone when access to a room changes", () => {
+      qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
+      handleLiveEvent(qc, actions(), {
+        type: "access.changed",
+        data: { resource_kind: "room", resource_id: "r1" },
+      });
+      expect(stale(queryKeys.contacts)).toBe(false);
+    });
+
+    it("refreshes the contacts after a reconnect", async () => {
+      qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
+      await catchUp(qc);
+      expect(stale(queryKeys.contacts)).toBe(true);
     });
   });
 });

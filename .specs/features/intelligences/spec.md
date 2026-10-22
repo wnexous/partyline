@@ -386,11 +386,11 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | SES-06 | P1: One live session | Execute | Implementing |
 | SES-07 | P1: One live session | Execute | Implementing |
 | SES-08 | P1: One live session | Execute | Implementing |
-| TREE-01 | P1: Tree | Tasks | Pending |
-| TREE-02 | P1: Tree | Tasks | Pending |
+| TREE-01 | P1: Tree | Execute | Implementing |
+| TREE-02 | P1: Tree | Execute | Implementing |
 | TREE-03 | P1: Tree | Execute | Implementing |
 | TREE-04 | P1: Tree | Execute | Implementing |
-| TREE-05 | P1: Tree | Tasks | Pending |
+| TREE-05 | P1: Tree | Execute | Implementing |
 | TREE-06 | P1: Tree | Execute | Implementing |
 | TREE-07 | P1: Tree | Execute | Implementing |
 | CONT-01 | P1: Contacts and DMs | Execute | Implementing |
@@ -432,7 +432,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | PROF-11 | P1: Profiles | Execute | Implementing |
 | LAY-01 | P1: Messenger layout | Execute | Implementing |
 | LAY-02 | P1: Messenger layout | Execute | Implementing |
-| LAY-03 | P1: Messenger layout | Tasks | Pending |
+| LAY-03 | P1: Messenger layout | Execute | Implementing |
 | LAY-04 | P1: Messenger layout | Execute | Implementing |
 | LAY-05 | P1: Messenger layout | Execute | Implementing |
 | LAY-06 | P1: Messenger layout | Execute | Implementing |

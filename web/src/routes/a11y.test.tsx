@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
@@ -7,17 +7,21 @@ import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import {
   makeAgent,
+  makeAI,
   makeConnector,
   makeConversation,
   makeIntelligence,
   makeMe,
   makeMember,
   makeMessage,
+  makePerson,
+  makeProfile,
   makeRoom,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { stubViewport } from "@/test/media";
 import { renderRoute } from "@/test/render";
+import { lia, sampleContacts } from "@/test/sample-contacts";
 
 expect.extend(matchers);
 
@@ -33,6 +37,41 @@ const AXE_OPTIONS = { rules: { "color-contrast": { enabled: false } } };
 stubLayout();
 beforeEach(() => useLiveStore.setState({ locale: "en", presence: {}, connectors: {} }));
 afterEach(() => vi.unstubAllGlobals());
+
+// A profile of an AI its owner edits, and of a person a connector's user edits.
+const aiProfile = makeProfile({
+  ...makeAI(),
+  bio: "Release captain.",
+  can_edit: true,
+  ai: {
+    owner: makeIntelligence(),
+    machine: "devbox",
+    machine_label: "Build box",
+    folder: "/home/dev/atlas",
+    folder_label: "~/atlas",
+    app: "claude",
+    online: true,
+    my_level: "manage",
+  },
+  apps: [
+    { kind: "claude", label: "Claude Code" },
+    { kind: "discord", label: "Discord: @atlasbot", connector_id: "k9" },
+  ],
+});
+const personProfile = makeProfile({
+  ...makePerson(),
+  can_edit: true,
+  person: {
+    connector: { id: "k1", kind: "whatsapp", name: "ops-line" },
+    external_id: "5511999990000",
+    name_locked: true,
+  },
+  apps: [{ kind: "whatsapp", label: "WhatsApp: 5511999990000", connector_id: "k1" }],
+  conversations: [
+    { id: "r1", name: "support-bridge" },
+    { id: "d9", name: "", kind: "dm" },
+  ],
+});
 
 function appApi(locale: "en" | "pt-BR") {
   return mockApi({
@@ -193,6 +232,10 @@ function appApi(locale: "en" | "pt-BR") {
     }),
     "PUT /rooms/d1/read": json(200, { room_id: "d1", seq: 1, unread: 0 }),
     "GET /agents": json(200, { items: [makeAgent({ online: true })] }),
+    "GET /contacts": json(200, sampleContacts),
+    "GET /contacts/people": json(200, { items: [lia], has_more: false }),
+    "GET /intelligences/a1": json(200, aiProfile),
+    "GET /intelligences/p1": json(200, personProfile),
     "GET /connectors": json(200, {
       items: [makeConnector({ status: "error", last_error: "invalid token" })],
     }),
@@ -240,6 +283,87 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     );
     const menu = await screen.findByRole("menu");
     expect(await axe(menu, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the new conversation dialog has no axe violations", async () => {
+    appApi(locale);
+    const user = userEvent.setup();
+    renderRoute("/");
+    await user.click(
+      await screen.findByRole("button", {
+        name: locale === "en" ? "New conversation" : "Nova conversa",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByTestId("contact-a1");
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the new group dialog has no axe violations", async () => {
+    appApi(locale);
+    const user = userEvent.setup();
+    renderRoute("/");
+    await user.click(
+      await screen.findByRole("button", { name: locale === "en" ? "New group" : "Novo grupo" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("checkbox", { name: "Atlas" });
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the contacts page, with its tree, a connector's people and a machine being renamed, has no axe violations", async () => {
+    appApi(locale);
+    const user = userEvent.setup();
+    const { container } = renderRoute("/contacts");
+    await screen.findByRole("region", { name: "devbox" });
+    await user.click(screen.getByRole("button", { name: /ops-line/ }));
+    await screen.findByTestId("contact-p1");
+    await user.click(
+      screen.getByRole("button", {
+        name: locale === "en" ? "Rename machine devbox" : "Renomear a máquina devbox",
+      }),
+    );
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the contacts page on a phone has no axe violations", async () => {
+    stubViewport(360);
+    appApi(locale);
+    const { container } = renderRoute("/contacts");
+    await screen.findByRole("region", { name: "devbox" });
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("an AI's profile, with its editor, a photo being previewed, details and apps, has no axe violations", async () => {
+    URL.createObjectURL = vi.fn(() => "blob:preview-1");
+    URL.revokeObjectURL = vi.fn();
+    appApi(locale);
+    const user = userEvent.setup();
+    const { container } = renderRoute("/contacts/a1");
+    await screen.findByRole("heading", { name: "Atlas", level: 1 });
+    await user.upload(
+      screen.getByLabelText(locale === "en" ? "Upload photo" : "Enviar foto"),
+      new File([new Uint8Array([137, 80, 78, 71])], "me.png", { type: "image/png" }),
+    );
+    await screen.findByAltText(
+      locale === "en" ? "Preview of the new photo" : "Prévia da nova foto",
+    );
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("a person's profile, with its account and conversations, has no axe violations", async () => {
+    appApi(locale);
+    const { container } = renderRoute("/contacts/p1");
+    await screen.findByRole("heading", { name: "Lia Costa", level: 1 });
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("a profile on a phone has no axe violations", async () => {
+    stubViewport(360);
+    appApi(locale);
+    const { container } = renderRoute("/contacts/a1");
+    await screen.findByRole("heading", { name: "Atlas", level: 1 });
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
   it("the shell offers a skip link to the main content", async () => {

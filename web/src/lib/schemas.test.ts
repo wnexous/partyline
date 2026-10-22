@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   acceptInviteSchema,
   loginSchema,
+  normalizeHandle,
   passwordSchema,
+  profileEditSchema,
   setupSchema,
   usernameSchema,
 } from "./schemas";
@@ -56,5 +58,75 @@ describe("form schemas", () => {
     expect(firstMessage(loginSchema.safeParse({ username: "", password: "x" }))).toBe(
       "validation.required",
     );
+  });
+});
+
+describe("profile rules (PROF-02, PROF-03, same as API)", () => {
+  const parse = (over: Partial<Record<"display_name" | "handle" | "bio", string>> = {}) =>
+    profileEditSchema.safeParse({ display_name: "Atlas", handle: "atlas", bio: "", ...over });
+  const issues = (r: ReturnType<typeof parse>) =>
+    r.success ? [] : r.error.issues.map((i) => [i.path[0], i.message]);
+
+  it("accepts a plain profile and trims the name and the bio", () => {
+    const r = parse({ display_name: "  Atlas Prime  ", bio: "  Ships.  " });
+    expect(r.success && r.data).toEqual({
+      display_name: "Atlas Prime",
+      handle: "atlas",
+      bio: "Ships.",
+    });
+  });
+
+  it("needs a name, counted after trimming", () => {
+    expect(issues(parse({ display_name: "" }))).toEqual([["display_name", "validation.required"]]);
+    expect(issues(parse({ display_name: "   " }))).toEqual([
+      ["display_name", "validation.required"],
+    ]);
+  });
+
+  it("allows 64 characters of name and refuses 65, counting code points", () => {
+    expect(parse({ display_name: "n".repeat(64) }).success).toBe(true);
+    expect(issues(parse({ display_name: "n".repeat(65) }))).toEqual([
+      ["display_name", "validation.displayName"],
+    ]);
+    // An emoji is one character, however many UTF-16 units it takes.
+    expect(parse({ display_name: "😀".repeat(64) }).success).toBe(true);
+    expect(parse({ display_name: "😀".repeat(65) }).success).toBe(false);
+  });
+
+  it("allows 280 characters of bio and refuses 281, counting code points", () => {
+    expect(parse({ bio: "x".repeat(280) }).success).toBe(true);
+    expect(issues(parse({ bio: "x".repeat(281) }))).toEqual([["bio", "validation.bio"]]);
+    expect(parse({ bio: "😀".repeat(280) }).success).toBe(true);
+    expect(parse({ bio: "😀".repeat(281) }).success).toBe(false);
+  });
+
+  it("accepts the bio empty", () => {
+    expect(parse({ bio: "" }).success).toBe(true);
+  });
+
+  it.each(["a", "atlas-2", "a1", `a${"b".repeat(39)}`])("accepts the handle %j", (handle) => {
+    expect(parse({ handle }).success).toBe(true);
+  });
+
+  it.each(["", "1abc", "-abc", "ab c", "ab_c", "ab.c", "ábc", `a${"b".repeat(40)}`, "@"])(
+    "refuses the handle %j",
+    (handle) => {
+      expect(issues(parse({ handle }))).toEqual([["handle", "validation.handle"]]);
+    },
+  );
+
+  it("reads the handle as the server does: without a leading @, trimmed, in lower case", () => {
+    expect(normalizeHandle("  @Atlas-Two ")).toBe("atlas-two");
+    expect(normalizeHandle("@@x")).toBe("x");
+    const r = parse({ handle: " @Atlas " });
+    expect(r.success && r.data.handle).toBe("atlas");
+  });
+
+  it("reports every broken field at once", () => {
+    expect(issues(parse({ display_name: "", handle: "1", bio: "x".repeat(281) }))).toEqual([
+      ["display_name", "validation.required"],
+      ["handle", "validation.handle"],
+      ["bio", "validation.bio"],
+    ]);
   });
 });

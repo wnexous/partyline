@@ -17,6 +17,7 @@ import type {
   ActivityItem,
   Agent,
   Connector,
+  Contacts,
   Conversation,
   LiveEvent,
   Me,
@@ -26,6 +27,7 @@ import type {
   RoomMember,
   RoomRef,
 } from "@/lib/api/types.gen";
+import { knowsAI } from "@/lib/contacts";
 import type { LiveState } from "./store";
 
 /*
@@ -266,6 +268,8 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       qc.invalidateQueries({ queryKey: [kind, event.data.resource_id] });
       if (kind === "agents" || kind === "connectors") {
         qc.invalidateQueries({ queryKey: queryKeys.chats });
+        // Sharing decides the shared AIs and the connectors whose people the user sees.
+        qc.invalidateQueries({ queryKey: queryKeys.contacts });
       }
       // Sharing, membership and DM access decide which conversations the user has.
       if (kind === "rooms")
@@ -289,6 +293,11 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
         if (cached && !cached.some((a) => a.id === agent_id)) {
           qc.invalidateQueries({ queryKey: key, exact: true });
         }
+      }
+      // The contacts overlay the live state themselves; one that lacks the AI is out of date.
+      const contacts = qc.getQueryData<Contacts>(queryKeys.contacts);
+      if (contacts && !knowsAI(contacts, agent_id)) {
+        qc.invalidateQueries({ queryKey: queryKeys.contacts, exact: true });
       }
       for (const [key, members] of qc.getQueriesData<RoomMember[]>({ queryKey: ["rooms"] })) {
         if (key[2] !== "members" || !members) continue;
@@ -373,6 +382,7 @@ export async function catchUp(qc: QueryClient): Promise<void> {
   qc.invalidateQueries({ queryKey: queryKeys.rooms, exact: true });
   qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
   qc.invalidateQueries({ queryKey: queryKeys.agents });
+  qc.invalidateQueries({ queryKey: queryKeys.contacts });
   qc.invalidateQueries({ queryKey: queryKeys.connectors });
   qc.invalidateQueries({ queryKey: queryKeys.activity });
   // Files lists refetch: messages missed while offline may have carried files.

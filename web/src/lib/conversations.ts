@@ -1,4 +1,4 @@
-import type { IntelligenceRef, Room } from "@/lib/api/types.gen";
+import type { Conversation, IntelligenceRef, Room } from "@/lib/api/types.gen";
 import { ConversationKindDM } from "@/lib/api/types.gen";
 
 /** A group has no profile: its initials and colour come from its name and room id. */
@@ -11,4 +11,25 @@ export function counterpartOf(room: Room, viewerId: string): IntelligenceRef | u
   if (room.kind !== ConversationKindDM) return undefined;
   if (!room.participants.some((p) => p.id === viewerId)) return undefined;
   return room.participants.find((p) => p.id !== viewerId);
+}
+
+/** Lower case without accents, so "joao" finds "João" and "ACAO" finds "ação". */
+export function foldText(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
+/** Whether every word of `query` appears somewhere in `haystack` (case and accents ignored); a blank query matches. */
+export function matchesTerms(haystack: string, query: string): boolean {
+  const terms = foldText(query).split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const folded = foldText(haystack);
+  return terms.every((term) => folded.includes(term));
+}
+
+/**
+ * Whether the sidebar search finds the conversation (LAY-03): its name, or the display name or
+ * @handle of one of its users and AIs. Every word has to be found, each in either place.
+ */
+export function conversationMatches(c: Conversation, query: string): boolean {
+  return matchesTerms([c.title, ...c.member_names].join("\n"), query);
 }
