@@ -371,90 +371,90 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AID-01 | P1: Folder identity | Execute | Implementing |
-| AID-02 | P1: Folder identity | Execute | Implementing |
-| AID-03 | P1: Folder identity | Execute | Implementing |
-| AID-04 | P1: Folder identity | Execute | Implementing |
-| AID-05 | P1: Folder identity | Execute | Implementing |
-| AID-06 | P1: Folder identity | Execute | Implementing |
-| AID-07 | P1: Folder identity | Execute | Implementing |
-| SES-01 | P1: One live session | Execute | Implementing |
-| SES-02 | P1: One live session | Execute | Implementing |
-| SES-03 | P1: One live session | Execute | Implementing |
-| SES-04 | P1: One live session | Execute | Implementing |
-| SES-05 | P1: One live session | Execute | Implementing |
-| SES-06 | P1: One live session | Execute | Implementing |
-| SES-07 | P1: One live session | Execute | Implementing |
-| SES-08 | P1: One live session | Execute | Implementing |
-| TREE-01 | P1: Tree | Execute | Implementing |
-| TREE-02 | P1: Tree | Execute | Implementing |
-| TREE-03 | P1: Tree | Execute | Implementing |
-| TREE-04 | P1: Tree | Execute | Implementing |
-| TREE-05 | P1: Tree | Execute | Implementing |
-| TREE-06 | P1: Tree | Execute | Implementing |
-| TREE-07 | P1: Tree | Execute | Implementing |
-| CONT-01 | P1: Contacts and DMs | Execute | Implementing |
-| DM-01 | P1: Contacts and DMs | Execute | Implementing |
-| DM-02 | P1: Contacts and DMs | Execute | Implementing |
-| DM-03 | P1: Contacts and DMs | Execute | Implementing |
-| DM-04 | P1: Contacts and DMs | Execute | Implementing |
-| DM-05 | P1: Contacts and DMs | Execute | Implementing |
-| DM-06 | P1: Contacts and DMs | Execute | Implementing |
-| DM-07 | P1: Contacts and DMs | Execute | Implementing |
-| DM-08 | P1: Contacts and DMs | Execute | Implementing |
-| GRP-01 | P1: Groups | Execute | Implementing |
-| GRP-02 | P1: Groups | Execute | Implementing |
-| GRP-03 | P1: Groups | Execute | Implementing |
-| GRP-04 | P1: Groups | Execute | Implementing |
-| PEOP-01 | P1: People | Execute | Implementing |
-| PEOP-02 | P1: People | Execute | Implementing |
-| PEOP-03 | P1: People | Execute | Implementing |
-| PEOP-04 | P1: People | Execute | Implementing |
-| PEOP-05 | P1: People | Execute | Implementing |
-| PEOP-06 | P1: People | Execute | Implementing |
-| ACC-01 | P1: Accounts | Execute | Implementing |
-| ACC-02 | P1: Accounts | Execute | Implementing |
-| ACC-03 | P1: Accounts | Execute | Implementing |
-| ACC-04 | P1: Accounts | Execute | Implementing |
-| ACC-05 | P1: Accounts | Execute | Implementing |
-| ACC-06 | P1: Accounts | Execute | Implementing |
-| ACC-07 | P1: Accounts | Execute | Implementing |
-| PROF-01 | P1: Profiles | Execute | Implementing |
-| PROF-02 | P1: Profiles | Execute | Implementing |
-| PROF-03 | P1: Profiles | Execute | Implementing |
-| PROF-04 | P1: Profiles | Execute | Implementing |
-| PROF-05 | P1: Profiles | Execute | Implementing |
-| PROF-06 | P1: Profiles | Execute | Implementing |
-| PROF-07 | P1: Profiles | Execute | Implementing |
-| PROF-08 | P1: Profiles | Execute | Implementing |
-| PROF-09 | P1: Profiles | Execute | Implementing |
-| PROF-10 | P1: Profiles | Execute | Implementing |
-| PROF-11 | P1: Profiles | Execute | Implementing |
-| LAY-01 | P1: Messenger layout | Execute | Implementing |
-| LAY-02 | P1: Messenger layout | Execute | Implementing |
-| LAY-03 | P1: Messenger layout | Execute | Implementing |
-| LAY-04 | P1: Messenger layout | Execute | Implementing |
-| LAY-05 | P1: Messenger layout | Execute | Implementing |
-| LAY-06 | P1: Messenger layout | Execute | Implementing |
-| AGRP-01 | P2: AIs create groups | Execute | Implementing |
-| AGRP-02 | P2: AIs create groups | Execute | Implementing |
-| CLI-01 | P1: Login and setup | Execute | Implementing |
-| CLI-02 | P1: Login and setup | Execute | Implementing |
-| CLI-03 | P1: Login and setup | Execute | Implementing |
-| CLI-04 | P1: Login and setup | Execute | Implementing |
-| CLI-05 | P1: Login and setup | Execute | Implementing |
-| CLI-06 | P1: Login and setup | Execute | Implementing |
-| CLI-07 | P1: Login and setup | Execute | Implementing |
-| MIG-01 | P1: Migration | Execute | Implementing |
-| MIG-02 | P1: Migration | Execute | Implementing |
-| MIG-03 | P1: Migration | Execute | Implementing |
-| MIG-04 | P1: Migration | Execute | Implementing |
-| MIG-05 | P1: Migration | Execute | Implementing |
-| MRG-01 | P2: Merge | Execute | Implementing |
-| MRG-02 | P2: Merge | Execute | Implementing |
-| NOTI-01 | P2: Notify on apps | Execute | Implementing |
-| NOTI-02 | P2: Notify on apps | Execute | Implementing |
-| NOTI-03 | P2: Notify on apps | Execute | Implementing |
+| AID-01 | P1: Folder identity | Execute | Verified |
+| AID-02 | P1: Folder identity | Execute | Verified |
+| AID-03 | P1: Folder identity | Execute | Verified |
+| AID-04 | P1: Folder identity | Execute | Verified |
+| AID-05 | P1: Folder identity | Execute | Verified |
+| AID-06 | P1: Folder identity | Execute | Verified |
+| AID-07 | P1: Folder identity | Execute | Verified |
+| SES-01 | P1: One live session | Execute | Verified |
+| SES-02 | P1: One live session | Execute | Verified |
+| SES-03 | P1: One live session | Execute | Verified |
+| SES-04 | P1: One live session | Execute | Verified |
+| SES-05 | P1: One live session | Execute | Verified |
+| SES-06 | P1: One live session | Execute | Verified |
+| SES-07 | P1: One live session | Execute | Verified |
+| SES-08 | P1: One live session | Execute | Verified |
+| TREE-01 | P1: Tree | Execute | Verified |
+| TREE-02 | P1: Tree | Execute | Verified |
+| TREE-03 | P1: Tree | Execute | Verified |
+| TREE-04 | P1: Tree | Execute | Verified |
+| TREE-05 | P1: Tree | Execute | Verified |
+| TREE-06 | P1: Tree | Execute | Verified |
+| TREE-07 | P1: Tree | Execute | Verified |
+| CONT-01 | P1: Contacts and DMs | Execute | Verified |
+| DM-01 | P1: Contacts and DMs | Execute | Verified |
+| DM-02 | P1: Contacts and DMs | Execute | Verified |
+| DM-03 | P1: Contacts and DMs | Execute | Verified |
+| DM-04 | P1: Contacts and DMs | Execute | Verified |
+| DM-05 | P1: Contacts and DMs | Execute | Verified |
+| DM-06 | P1: Contacts and DMs | Execute | Verified |
+| DM-07 | P1: Contacts and DMs | Execute | Verified |
+| DM-08 | P1: Contacts and DMs | Execute | Verified |
+| GRP-01 | P1: Groups | Execute | Verified |
+| GRP-02 | P1: Groups | Execute | Verified |
+| GRP-03 | P1: Groups | Execute | Verified |
+| GRP-04 | P1: Groups | Execute | Verified |
+| PEOP-01 | P1: People | Execute | Verified |
+| PEOP-02 | P1: People | Execute | Verified |
+| PEOP-03 | P1: People | Execute | Verified |
+| PEOP-04 | P1: People | Execute | Verified |
+| PEOP-05 | P1: People | Execute | Verified |
+| PEOP-06 | P1: People | Execute | Verified |
+| ACC-01 | P1: Accounts | Execute | Verified |
+| ACC-02 | P1: Accounts | Execute | Verified |
+| ACC-03 | P1: Accounts | Execute | Verified |
+| ACC-04 | P1: Accounts | Execute | Verified |
+| ACC-05 | P1: Accounts | Execute | Verified |
+| ACC-06 | P1: Accounts | Execute | Verified |
+| ACC-07 | P1: Accounts | Execute | Verified |
+| PROF-01 | P1: Profiles | Execute | Verified |
+| PROF-02 | P1: Profiles | Execute | Verified |
+| PROF-03 | P1: Profiles | Execute | Verified |
+| PROF-04 | P1: Profiles | Execute | Verified |
+| PROF-05 | P1: Profiles | Execute | Verified |
+| PROF-06 | P1: Profiles | Execute | Verified |
+| PROF-07 | P1: Profiles | Execute | Verified |
+| PROF-08 | P1: Profiles | Execute | Verified |
+| PROF-09 | P1: Profiles | Execute | Verified |
+| PROF-10 | P1: Profiles | Execute | Verified |
+| PROF-11 | P1: Profiles | Execute | Verified |
+| LAY-01 | P1: Messenger layout | Execute | Verified |
+| LAY-02 | P1: Messenger layout | Execute | Verified |
+| LAY-03 | P1: Messenger layout | Execute | Verified |
+| LAY-04 | P1: Messenger layout | Execute | Verified |
+| LAY-05 | P1: Messenger layout | Execute | Verified |
+| LAY-06 | P1: Messenger layout | Execute | Verified |
+| AGRP-01 | P2: AIs create groups | Execute | Verified |
+| AGRP-02 | P2: AIs create groups | Execute | Verified |
+| CLI-01 | P1: Login and setup | Execute | Verified |
+| CLI-02 | P1: Login and setup | Execute | Verified |
+| CLI-03 | P1: Login and setup | Execute | Verified |
+| CLI-04 | P1: Login and setup | Execute | Verified |
+| CLI-05 | P1: Login and setup | Execute | Verified |
+| CLI-06 | P1: Login and setup | Execute | Verified |
+| CLI-07 | P1: Login and setup | Execute | Verified |
+| MIG-01 | P1: Migration | Execute | Verified |
+| MIG-02 | P1: Migration | Execute | Verified |
+| MIG-03 | P1: Migration | Execute | Verified |
+| MIG-04 | P1: Migration | Execute | Verified |
+| MIG-05 | P1: Migration | Execute | Verified |
+| MRG-01 | P2: Merge | Execute | Verified |
+| MRG-02 | P2: Merge | Execute | Verified |
+| NOTI-01 | P2: Notify on apps | Execute | Verified |
+| NOTI-02 | P2: Notify on apps | Execute | Verified |
+| NOTI-03 | P2: Notify on apps | Execute | Verified |
 
 **Coverage:** 84 total, 84 mapped to tasks (see `tasks.md` Requirement Coverage)
 

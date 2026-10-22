@@ -1,8 +1,102 @@
 # Intelligences Validation
 
-## Validation (iteration 3, closure check): intelligences - FAIL ❌
+## Validation (iteration 4, closure check): intelligences - PASS ✅
 
-**Result**: FAIL - both iteration-2 survivors are now killed: N18 by `TestSilentConnectionGoesOffline` and W8 by `route-chat-dialog.test.tsx`. Every gate passes. Two new mutants on the ping code survive. X2 removes the new `PingTimeout` default, so production pings run with a zero timeout. X2b closes the connection after a ping that succeeds. Under either one, every healthy agent session is dropped at its first ping, 25 s after connecting, and no test notices. The new test covers only the silent half of SES-06. Nothing exercises the other half, "answered within a 10-second write timeout", which means a session that answers pings stays live on the production default. The production code is correct today (`internal/agents/gateway.go:106-108` → `writeTimeout` = 10 s, `:37`). A scratch probe confirmed that a reading client stays online across about 12 pings with that default. This is iteration 3 of 3, so the fix→re-verify loop escalates to André. Closing the gap takes one test.
+**Result**: PASS - the one iteration-3 gap is closed. `TestHealthyConnectionStaysOnlineAcrossPings` keeps a client that answers pings online through about 25 pings on the production pong timeout, and it kills X2 and X2b plus two new ping-path mutants (X6, X7). N18 is still killed by the silent-half test. `make check` and `make e2e` pass, and `go test -race -count=3 ./internal/agents/` passes. All 84 ACs match their spec outcome: SES-06 on the evidence below, the other 83 on the iteration 1-3 evidence, which this test-only diff does not touch. André approved this fourth round past the usual 3-iteration bound.
+
+**Date**: 2026-10-22
+**Spec**: `.specs/features/intelligences/spec.md` (84 requirements, text unchanged since iteration 2)
+**Diff range**: `f6a4aa9..6652232`. `df19728` and `d5c7443` add the iteration-3 report and lesson L-053. `6652232` adds `agents.SetPingInterval` (`internal/agents/export_test.go:16-18`) and `TestHealthyConnectionStaysOnlineAcrossPings` (`internal/agents/gateway_live_test.go:153-171`). The diff touches no production code: 2 test files, +24.
+**Verifier**: independent sub-agent (author ≠ verifier), worktree `partyline-verify-intel` on `verify/intelligences-4` at `6652232`.
+
+### Iteration-3 gap re-checked
+
+| Gap | Fix | Evidence (asserts the spec outcome) | Closed? |
+| --- | --- | --- | --- |
+| 1 SES-06 / X2, X2b: a healthy session on the production pong timeout | `internal/agents/export_test.go:16-18` `SetPingInterval` changes only `PingInterval`, so `PingTimeout` keeps the value `NewGateway` set: the `writeTimeout` default (10 s, `internal/agents/gateway.go:37,106-108`). The ticker reads the interval when each session starts (`gateway.go:434`), and the hook runs before the dial (`gateway_live_test.go:159`). | `internal/agents/gateway_live_test.go:163-170`: the session attaches (`Presence.Online(id)`), then `require.True(t, env.App.Presence.Online(id), …)` holds every 10 ms for 500 ms with 20 ms pings, about 25 pings. Finally `conn.Closed(10ms)` returns no error. This is SES-06's "answered within a 10-second write timeout", meaning an answering session is not dropped. | ✅ (X2, X2b, X6, X7 killed) |
+
+Two non-blocking notes on the new test:
+- The doc comment (`gateway_live_test.go:154`) says the client "keeps receiving messages". The test posts no message, so the comment claims more than the test checks. SES-06 does not require message delivery, and AGT/DM tests cover live delivery elsewhere.
+- `conn.Closed` (`internal/testkit/live.go:173-183`) returns the stream's stored error, which is nil after a clean close. The `Presence.Online` loop is the discriminating assertion.
+
+### Gate Check
+
+| Gate | Command | Outcome |
+| --- | --- | --- |
+| Build | `make check` | ✅ exit 0: lint 0 issues, no drift. Go: every package `ok` (agents 33→34, api 338, channel 112, cli 137, connectors 128 …). Web: 49 files / 779 tests. Integrations: 70 pass / 0 fail. Build OK. |
+| Race (agents) | `go test -race -count=3 ./internal/agents/` | ✅ `ok` (261 s). The new test alone under `-race -count=3 -v` passed 3 of 3 (2.2-2.4 s each). `make check-race` passed in iteration 3 on code that differs only by this test-only commit. |
+| E2E | `make e2e` (Chromium headless shell 1248) | ✅ 20 passed (10 × desktop-1280 + mobile-360), 13.6 s. |
+
+- **Test count**: Go +1 (`TestHealthyConnectionStaysOnlineAcrossPings`). Web is unchanged. No test was deleted or weakened.
+- **Skipped tests**: none. `git status --porcelain` of the verify worktree was empty before and after every gate.
+
+### Spec-Anchored Acceptance Criteria (all 84)
+
+This diff changes only SES-06's evidence. The other 83 ACs stand on the iteration-1 tables (bottom of this file) as amended by iterations 2 and 3. No code or test behind them changed.
+
+| AC | Spec-defined outcome | Evidence | Outcome |
+| --- | --- | --- | --- |
+| SES-06 | offline ≤5 s on close or drop; a silent connection is dropped by the ping (every 25 s, answered within a 10-s write timeout), offline ≤35 s | 5 s: `internal/api/agent_live_test.go:245`. Silent drop: `internal/agents/gateway_live_test.go:139-151` (N18 killed). A session that answers pings is kept on the production 10-s timeout: `internal/agents/gateway_live_test.go:163-170` (X2, X2b, X6, X7 killed). The 25 s interval and 10 s timeout constants are confirmed by code read (`internal/agents/gateway.go:36-37,106-111`); the tests use a scaled interval. | ✅ |
+
+**Status**: 84 ✅ / 0 ⚠️ / 0 ❌.
+
+### Discrimination Sensor
+
+The sensor ran in the detached scratch worktree `/home/dev/orca/projects/partyline-verify-intel-mut` at `6652232`, one mutant at a time. Each Go mutant ran `go test -count=1` on the whole `./internal/agents/` package. Each was restored with `git checkout` inside the scratch, and the scratch was confirmed clean before the next. The scratch was then removed with `git worktree remove --force` and pruned. `git status --porcelain` of the verify worktree was empty before and after.
+
+| # | File:line | Mutation | Killed? |
+| --- | --- | --- | --- |
+| X2 (re-run) | `internal/agents/gateway.go:106-108` | `PingTimeout` default removed (zero): every ping fails at once | ✅ `TestHealthyConnectionStaysOnlineAcrossPings` ("a client that answers pings stays online", 0.17 s) |
+| X2b (re-run) | `internal/agents/gateway.go:444-446` | `if err != nil { return err }` → `return err`: the session ends after a successful ping | ✅ same test (0.17 s) |
+| X6 | `internal/agents/gateway.go:441-443` | `cancel()` moved before `c.ws.Ping(pctx)`: every ping runs on a cancelled context | ✅ same test (0.26 s) |
+| X7 | `internal/agents/gateway.go:107` | default pong timeout `writeTimeout` → `time.Microsecond` | ✅ same test (0.17 s) |
+| N18 (regression) | `internal/agents/gateway.go:444-446` | failed ping ignored (`_ = err`) | ✅ `TestSilentConnectionGoesOffline` (5.4 s). The healthy test passes under N18, as expected. |
+
+**Sensor depth**: P0-full on the ping path: 5 mutants (2 re-runs, 2 new, 1 regression).
+**Sensor outcome**: 5/5 killed.
+
+### Code Quality
+
+| Principle | Status |
+| --- | --- |
+| Minimum code / surgical | ✅ One 1-line test hook and one test; no production change. |
+| No scope creep | ✅ |
+| Matches patterns | ✅ `SetPingInterval` sits beside `SetPingTimings` in `export_test.go`; the test mirrors `TestSilentConnectionGoesOffline`. |
+| Spec-anchored outcome check | ✅ SES-06 is now asserted on both halves. |
+| Every test maps to a requirement | ✅ The new test cites SES-06. |
+| Documented guidelines (`AGENTS.md`, `.specs/LESSONS.md` L-051, L-053) | ✅ L-053 applied: the healthy-peer test runs on the production default timeout. |
+
+### Follow-ups (non-blocking, not AC failures)
+
+1. **Iteration-1 gap 14 (Minor)**: the unread baseline for late group members; operator validation racing deletion (500, not 422); `settle` holding the inbound loop for up to 10 s; people squatting AI handles; the tools half of a refused pi/OpenCode session; attachment blobs of a deleted AI's DMs; hostname truncation and `unknown`.
+2. **UAT Finding 1**: repeat UAT step 4 with fresh real Claude Code sessions to confirm that the T69 text makes models answer greetings with `reply`. It needs a real harness, which this check does not run.
+3. **Cosmetic**: the `gateway_live_test.go:154` comment mentions message delivery that the test does not assert.
+
+### Requirement Traceability Update
+
+All 84 requirements change from `Implementing` to `Verified` in `spec.md`.
+
+### Summary
+
+**Overall**: ✅ Ready. Over all four iterations, all 84 ACs are covered with `file:line` evidence that asserts the spec outcome, every non-equivalent survivor from iterations 1-3 is killed (M30 is equivalent; its double-guard variant is killed), and every gate passes.
+
+**Spec-anchored check**: 84/84 matched; 0 spec-precision gaps.
+**Sensor**: 5/5 killed this iteration (X2, X2b, X6, X7, N18).
+**Gate**: `make check` ✅, `go test -race -count=3 ./internal/agents/` ✅, `make e2e` ✅ 20/20.
+
+**What works**: an agent session that answers pings stays online on the production pong timeout, and one that goes silent is dropped and goes offline. Each half has its own discriminating test. Every iteration 1-3 fix still holds.
+
+### Lessons distilled (iteration 4)
+
+None. This is a clean PASS with no surviving mutant, spec-precision gap or failed AC. L-053 (candidate) was applied and held.
+
+---
+
+# Iteration 3 (2026-10-22, diff `e597bec..f6a4aa9`)
+
+## Iteration 3 report (closure check): intelligences - FAIL ❌
+
+**Iteration 3 verdict**: FAIL - both iteration-2 survivors are now killed: N18 by `TestSilentConnectionGoesOffline` and W8 by `route-chat-dialog.test.tsx`. Every gate passes. Two new mutants on the ping code survive. X2 removes the new `PingTimeout` default, so production pings run with a zero timeout. X2b closes the connection after a ping that succeeds. Under either one, every healthy agent session is dropped at its first ping, 25 s after connecting, and no test notices. The new test covers only the silent half of SES-06. Nothing exercises the other half, "answered within a 10-second write timeout", which means a session that answers pings stays live on the production default. The production code is correct today (`internal/agents/gateway.go:106-108` → `writeTimeout` = 10 s, `:37`). A scratch probe confirmed that a reading client stays online across about 12 pings with that default. This is iteration 3 of 3, so the fix→re-verify loop escalates to André. Closing the gap takes one test.
 
 **Date**: 2026-10-22
 **Spec**: `.specs/features/intelligences/spec.md` (84 requirements, unchanged since iteration 2)
