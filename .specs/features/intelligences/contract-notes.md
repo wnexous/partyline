@@ -1651,3 +1651,27 @@ T47-T49 pages.
   `internal/connectors/merge_test.go` (a platform DM keeps running after its operator AI is merged; an appended
   platform DM moves its chat and keeps what waits in the outbox sendable).
 
+
+## T41 - `partyline agents` prints the tree (TREE-07)
+
+- `partyline agents` calls `GET /api/v1/agent/contacts/tree` with the same credential resolution
+  (`--url`/`--token`, `PARTYLINE_URL`/`PARTYLINE_TOKEN`, the saved config), timeout and error wording
+  as before; the v0.3 project grouping and `GET /agent/agents` are gone. When `machines` and
+  `unlinked` are both empty it prints `No AIs yet: start a session with partyline claude`.
+- Output (`printAgentTree`, one `tabwriter` with padding 2): one line per machine in the server's
+  TREE-03 order, then `Unlinked` last. A machine line is its label; when the label differs from the
+  hostname it reads `<label> (<hostname>)`. A tree row is `  ` per level plus a base indent, `●`
+  online / `○` offline, then the columns display name (prefixed `Path › ` when `TreeNode.Path` is
+  set), `@handle`, the app label (`agents.HarnessLabel`; empty when the AI never named a harness),
+  the state and the folder label. The state is `online`, the relative last seen (`now`, `Nm ago`,
+  `Nh ago`, `Nd ago`), or empty when never seen. Unlinked rows show only the marker, name and handle:
+  they have no folder and no tree columns (as in the design's example).
+- Relative thresholds (the design fixes the labels, not their boundaries): under one minute `now`;
+  under one hour whole minutes; under 24 hours whole hours; else whole days; a negative age (clock
+  skew) reads `now`. The golden test pins values well inside the hour/day windows.
+- `MachineTree` carries `label` already falling back to the hostname, so a label equal to the
+  hostname renders once; the design's "hostname in parentheses when a label is set" cannot
+  distinguish that case on the wire.
+- Tests (`internal/cli/agents_test.go`): the golden output of two machines (a labelled one, nested
+  `~/atlas/notes`, collapsed `c/d › Lab`, Atlas online, Notes/Lab/Dev last seen), the Unlinked
+  section, the empty-list message and the relative-time boundaries; the credential/401 cases stay.
