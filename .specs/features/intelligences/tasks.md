@@ -337,9 +337,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-02, AID-04, SES-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A tools-only REST call with machine+folder acts as that folder's AI (posts authored by it) and creates it on first sight (AID-04); WebSocket connect with the same folder resolves the same id and sets the app (AID-02)
-- [ ] `/agent/session` reports exists/online/app/connected_at and creates nothing (SES-01 lookup); `/agent/whoami` returns the owner's intelligence
-- [ ] Gate check passes: `make check`
+- [x] A tools-only REST call with machine+folder acts as that folder's AI (posts authored by it) and creates it on first sight (AID-04); WebSocket connect with the same folder resolves the same id and sets the app (AID-02)
+- [x] `/agent/session` reports exists/online/app/connected_at and creates nothing (SES-01 lookup); `/agent/whoami` returns the owner's intelligence
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): identify agent sessions by folder headers`

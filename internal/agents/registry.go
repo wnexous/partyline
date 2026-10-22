@@ -200,6 +200,16 @@ func (r *Registry) Lookup(ctx context.Context, ownerID, name string) (db.Agent, 
 	return a, err
 }
 
+// ByID returns the agent with the id the server resolved for a request (Principal.AgentID);
+// ErrNotRegistered when it is gone.
+func (r *Registry) ByID(ctx context.Context, id string) (db.Agent, error) {
+	a, err := r.store.R().GetAgent(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return db.Agent{}, ErrNotRegistered
+	}
+	return a, err
+}
+
 // Rooms lists the rooms the agent is a member of, with its cursor and the pause flag.
 func (r *Registry) Rooms(ctx context.Context, agentID string) ([]db.ListAgentRoomStatesRow, error) {
 	return r.store.R().ListAgentRoomStates(ctx, agentID)

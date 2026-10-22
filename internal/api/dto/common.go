@@ -50,6 +50,24 @@ const (
 	HeaderHarness = "X-Partyline-Harness"
 	// HeaderMachine is the session's hostname.
 	HeaderMachine = "X-Partyline-Machine"
+	// HeaderFolder is the canonical folder an AI session works in (absolute, symlinks resolved,
+	// no trailing separator), percent-encoded with url.PathEscape. Together with the machine and
+	// the token's owner it identifies the AI; the agent WebSocket and every agent route that acts
+	// as an AI take it (AID-07).
+	HeaderFolder = "X-Partyline-Folder"
+	// HeaderHome is the canonical home folder of the session's user, percent-encoded like
+	// HeaderFolder; the machine tree shows folders under it as "~" (TREE-02).
+	HeaderHome = "X-Partyline-Home"
+	// HeaderLive is a random id of the process that holds the agent WebSocket
+	// ([A-Za-z0-9_-], 16 to 64 characters): the same process reconnecting is not another
+	// session of the AI (SES-02).
+	HeaderLive = "X-Partyline-Live"
+	// HeaderTakeover set to "1" on the agent WebSocket takes over the AI's live session from
+	// another process instead of being refused with identity_busy (SES-02).
+	HeaderTakeover = "X-Partyline-Takeover"
+	// HeaderAdopt names a handle or a v0.3 agent name (--as, PARTYLINE_AGENT): the unlinked AI to
+	// link to the session's folder when the folder has no AI yet (MIG-02).
+	HeaderAdopt = "X-Partyline-Adopt"
 	// HeaderSession is the session key (PARTYLINE_SESSION; 1 to 64 of A-Z a-z 0-9 . _ -) that
 	// the channel, listen and the turn-end hook of one harness session share. A session that
 	// names no agent gets its own temporary agent back by this key, and a tools-only session

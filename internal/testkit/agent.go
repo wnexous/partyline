@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -144,4 +145,54 @@ func (c *Client) DialAgentHeaders(h http.Header) (*AgentConn, *Response) {
 		return nil, resp
 	}
 	return &AgentConn{T: c.T, Conn: conn, s: newFrameStream[AgentFrame](conn)}, resp
+}
+
+// Folder is the identity an AI session sends with every connection and tool call: the machine
+// and canonical folder it works in and, optionally, the home folder, the harness and the
+// handle or v0.3 name of an unlinked AI to adopt (AID-07, MIG-02).
+type Folder struct {
+	Machine string
+	Path    string
+	Home    string
+	Harness string
+	Adopt   string
+}
+
+// Headers returns the folder headers the way the CLI sends them: the folder and the home
+// folder percent-encoded, the others as they are; empty fields are left out.
+func (f Folder) Headers() http.Header {
+	h := http.Header{}
+	for k, v := range map[string]string{
+		dto.HeaderMachine: f.Machine, dto.HeaderHarness: f.Harness, dto.HeaderAdopt: f.Adopt,
+		dto.HeaderFolder: escapePath(f.Path), dto.HeaderHome: escapePath(f.Home),
+	} {
+		if v != "" {
+			h.Set(k, v)
+		}
+	}
+	return h
+}
+
+func escapePath(p string) string {
+	if p == "" {
+		return ""
+	}
+	return url.PathEscape(p)
+}
+
+// AsFolder returns a copy of the client (sharing its cookies and token) that sends the folder
+// headers with every request: an agent token then acts as the AI of the folder.
+func (c *Client) AsFolder(f Folder) *Client {
+	cp := *c
+	cp.header = c.header.Clone()
+	for k, v := range f.Headers() {
+		cp.header[k] = v
+	}
+	return &cp
+}
+
+// DialFolder opens the agent WebSocket as the AI of the folder.
+func (c *Client) DialFolder(f Folder) (*AgentConn, *Response) {
+	c.T.Helper()
+	return c.DialAgentHeaders(f.Headers())
 }

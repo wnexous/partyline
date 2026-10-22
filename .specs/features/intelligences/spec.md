@@ -374,11 +374,11 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | AID-01 | P1: Folder identity | Execute | Implementing |
 | AID-02 | P1: Folder identity | Execute | Implementing |
 | AID-03 | P1: Folder identity | Execute | Implementing |
-| AID-04 | P1: Folder identity | Tasks | Pending |
+| AID-04 | P1: Folder identity | Execute | Implementing |
 | AID-05 | P1: Folder identity | Execute | Implementing |
 | AID-06 | P1: Folder identity | Execute | Implementing |
 | AID-07 | P1: Folder identity | Tasks | Pending |
-| SES-01 | P1: One live session | Tasks | Pending |
+| SES-01 | P1: One live session | Execute | Implementing |
 | SES-02 | P1: One live session | Tasks | Pending |
 | SES-03 | P1: One live session | Tasks | Pending |
 | SES-04 | P1: One live session | Tasks | Pending |

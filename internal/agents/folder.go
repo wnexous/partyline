@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -42,6 +43,32 @@ type FolderID struct {
 	// Adopt is a handle or a v0.3 agent name (--as, PARTYLINE_AGENT): the owner's unlinked
 	// identity to link to this folder when the folder has none yet (MIG-02).
 	Adopt string
+}
+
+// HasFolder reports whether a request names a folder: the folder header is present, even when
+// it is empty (which ValidateFolder then refuses).
+func HasFolder(h http.Header) bool {
+	_, ok := h[http.CanonicalHeaderKey(dto.HeaderFolder)]
+	return ok
+}
+
+// FolderIDFromHeader reads the folder headers of a session (AID-07): the folder and the home
+// folder are percent-encoded (url.PathEscape), the machine, harness and the name to adopt are
+// plain. A folder that is not valid percent-encoding is 422 folder_invalid; a home folder that
+// is not is ignored. The result is not validated: ResolveFolder and LookupFolder do that.
+func FolderIDFromHeader(h http.Header) (FolderID, error) {
+	folder, err := url.PathUnescape(h.Get(dto.HeaderFolder))
+	if err != nil {
+		return FolderID{}, folderError(dto.ErrorCodeFolderInvalid, "folder", "the folder is not valid percent-encoding")
+	}
+	home, err := url.PathUnescape(h.Get(dto.HeaderHome))
+	if err != nil {
+		home = ""
+	}
+	return FolderID{
+		Machine: h.Get(dto.HeaderMachine), Folder: folder, Home: home,
+		Harness: h.Get(dto.HeaderHarness), Adopt: h.Get(dto.HeaderAdopt),
+	}, nil
 }
 
 // folderError is a 422 for a session whose machine or folder the server cannot use.
@@ -190,6 +217,32 @@ func (r *Registry) ResolveFolder(ctx context.Context, ownerID string, id FolderI
 		return db.Agent{}, err
 	}
 	return r.relabel(ctx, a, id.Harness, live)
+}
+
+// RegisterFolder resolves the AI of the machine and folder like a tools-only call would
+// (ResolveFolder without a live session) and returns it with its owner; the AI stays offline.
+// `partyline channel --tools-only` registers this way (PUSH-02).
+func (r *Registry) RegisterFolder(ctx context.Context, ownerID string, id FolderID) (db.GetAgentWithOwnerRow, error) {
+	a, err := r.ResolveFolder(ctx, ownerID, id, false)
+	if err != nil {
+		return db.GetAgentWithOwnerRow{}, err
+	}
+	return r.store.R().GetAgentWithOwner(ctx, a.ID)
+}
+
+// LookupFolder returns the owner's AI of the machine and folder, if there is one, and changes
+// nothing: no identity is created, no unlinked one adopted, no machine recorded and no app
+// relabeled (SES-01). An invalid machine or folder is a 422 like for ResolveFolder.
+func (r *Registry) LookupFolder(ctx context.Context, ownerID string, id FolderID) (db.Agent, bool, error) {
+	machine := cleanText(id.Machine, MaxMachineLength)
+	if err := ValidateFolder(machine, id.Folder); err != nil {
+		return db.Agent{}, false, err
+	}
+	a, err := r.store.R().GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: machine, Folder: id.Folder})
+	if errors.Is(err, sql.ErrNoRows) {
+		return db.Agent{}, false, nil
+	}
+	return a, err == nil, err
 }
 
 // linkOrCreate gives a folder without an identity one: the owner's unlinked identity it adopts,

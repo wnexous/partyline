@@ -148,6 +148,24 @@ type AgentInfo struct {
 type AgentWelcomeFrame struct {
 	Type  AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeWelcome"`
 	Agent AgentInfo      `json:"agent"`
+	// Intelligence is the AI the session is, and Owner its owner: the channel tells the harness
+	// who it is and who it works for.
+	Intelligence IntelligenceRef `json:"intelligence"`
+	Owner        IntelligenceRef `json:"owner"`
+}
+
+// SessionState is GET /agent/session: what the server knows about the AI of the machine and
+// folder named in the headers, without creating anything (SES-01). Online tells whether the AI
+// has a live session; the launcher asks before taking it over.
+type SessionState struct {
+	Exists bool `json:"exists"`
+	Online bool `json:"online"`
+	// Intelligence is the AI; absent when Exists is false.
+	Intelligence *IntelligenceRef `json:"intelligence,omitempty"`
+	// App is the id of the harness the AI currently runs in; empty when Exists is false.
+	App string `json:"app"`
+	// ConnectedAt is when the live session connected; absent while the AI is offline.
+	ConnectedAt *time.Time `json:"connected_at,omitempty"`
 }
 
 // AgentMessageFrame pushes one room message (backlog first, then live).

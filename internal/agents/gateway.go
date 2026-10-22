@@ -163,21 +163,33 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "invalid or expired credentials"))
 		return
 	}
-	// A name the server picks (temporary or unique mode) is chosen and attached under one
-	// lock, so two sessions connecting at once never pick the same name (ID-01).
+	// A session that names its folder is the AI of that folder; the others are v0.3 clients
+	// that name their agent. A name the server picks (temporary or unique mode) is chosen and
+	// attached under one lock, so two sessions connecting at once never pick the same name
+	// (ID-01).
 	release := func() {}
-	id := IdentityFromHeader(r.Header)
-	id.Name = p.AgentName
-	if id.Allocates() {
-		g.d.Registry.allocMu.Lock()
-		release = sync.OnceFunc(g.d.Registry.allocMu.Unlock)
-		defer release()
+	var row db.GetAgentWithOwnerRow
+	var err error
+	if HasFolder(r.Header) {
+		row, err = g.registerFolder(r.Context(), p, r.Header)
+	} else {
+		id := IdentityFromHeader(r.Header)
+		id.Name = p.AgentName
+		if id.Allocates() {
+			g.d.Registry.allocMu.Lock()
+			release = sync.OnceFunc(g.d.Registry.allocMu.Unlock)
+			defer release()
+		}
+		row, err = g.register(r.Context(), p, id)
 	}
-	row, err := g.register(r.Context(), p, id)
 	if err != nil {
-		if errors.Is(err, ErrAgentLimit) {
+		var refused *httpx.Error
+		switch {
+		case errors.Is(err, ErrAgentLimit):
 			g.d.Logger.WarnContext(r.Context(), "agent: limit reached", "owner_id", p.UserID, "request_id", httpx.RequestID(r.Context()))
-		} else {
+		case errors.As(err, &refused):
+			g.d.Logger.DebugContext(r.Context(), "agent: connection refused", "code", refused.Code, "owner_id", p.UserID, "request_id", httpx.RequestID(r.Context()))
+		default:
 			g.d.Logger.ErrorContext(r.Context(), "agent: register failed", "err", err, "request_id", httpx.RequestID(r.Context()))
 		}
 		httpx.WriteError(w, err)
@@ -270,10 +282,51 @@ func (g *Gateway) register(ctx context.Context, p authn.Principal, id Identity) 
 	if err != nil {
 		return db.GetAgentWithOwnerRow{}, err
 	}
+	return g.connected(ctx, a)
+}
+
+// registerFolder resolves the AI of the machine and folder the session sent (AID-02), creating
+// it on first sight, and stamps its connect time.
+func (g *Gateway) registerFolder(ctx context.Context, p authn.Principal, h http.Header) (db.GetAgentWithOwnerRow, error) {
+	id, err := FolderIDFromHeader(h)
+	if err != nil {
+		return db.GetAgentWithOwnerRow{}, err
+	}
+	a, err := g.d.Registry.ResolveFolder(ctx, p.UserID, id, true)
+	if err != nil {
+		return db.GetAgentWithOwnerRow{}, err
+	}
+	return g.connected(ctx, a)
+}
+
+// connected stamps the agent's connect time and returns it with its owner's name.
+func (g *Gateway) connected(ctx context.Context, a db.Agent) (db.GetAgentWithOwnerRow, error) {
 	if err := g.d.Registry.MarkConnected(ctx, a.ID); err != nil {
 		return db.GetAgentWithOwnerRow{}, err
 	}
 	return g.d.Store.R().GetAgentWithOwner(ctx, a.ID)
+}
+
+// welcomeRefs loads the AI's and its owner's profiles for the welcome frame. A row without an
+// intelligence (an account or agent created before they existed and never migrated) is
+// described by what the registry knows.
+func (g *Gateway) welcomeRefs(ctx context.Context, row db.GetAgentWithOwnerRow) (ai, owner dto.IntelligenceRef, err error) {
+	a := row.Agent
+	ai = dto.IntelligenceRef{ID: a.ID, Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: DisplayName(a)}
+	owner = dto.IntelligenceRef{ID: a.OwnerID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: row.OwnerUsername}
+	rows, err := g.d.Store.R().ListIntelligencesByIDs(ctx, []string{a.ID, a.OwnerID})
+	if err != nil {
+		return ai, owner, err
+	}
+	for _, i := range rows {
+		switch i.ID {
+		case a.ID:
+			ai = convert.IntelligenceRef(i, dto.IntelligenceRoleAI, "")
+		case a.OwnerID:
+			owner = convert.IntelligenceRef(i, dto.IntelligenceRoleUser, "")
+		}
+	}
+	return ai, owner, nil
 }
 
 // conn is one agent connection; it is the agent's Session in Presence.
@@ -330,8 +383,14 @@ func (c *conn) write(ctx context.Context, v any) error {
 // run sends the welcome frame and the backlog, then live pushes and pings until ctx ends.
 func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow) error {
 	a := row.Agent
+	ai, owner, err := g.welcomeRefs(ctx, row)
+	if err != nil {
+		return err
+	}
 	if err := c.write(ctx, dto.AgentWelcomeFrame{
-		Type: dto.AgentFrameTypeWelcome, Agent: dto.AgentInfo{ID: a.ID, Name: a.Name, DisplayName: DisplayName(a), Owner: row.OwnerUsername},
+		Type:         dto.AgentFrameTypeWelcome,
+		Agent:        dto.AgentInfo{ID: a.ID, Name: a.Name, DisplayName: DisplayName(a), Owner: row.OwnerUsername},
+		Intelligence: ai, Owner: owner,
 	}); err != nil {
 		return err
 	}

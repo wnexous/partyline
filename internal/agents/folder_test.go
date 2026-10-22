@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -546,4 +547,72 @@ func TestResolveFolderRecordsTheMachine(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, strings.Repeat("m", MaxMachineLength), f.machine(t, alice, long[:MaxMachineLength]).Hostname)
 	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM agents WHERE machine = ?", long[:MaxMachineLength]))
+}
+
+// AID-07: the folder and home headers are percent-encoded; the others are plain. A folder that
+// is not valid percent-encoding is refused, a home that is not is ignored.
+func TestFolderIDFromHeader(t *testing.T) {
+	header := func(kv ...string) http.Header {
+		h := http.Header{}
+		for i := 0; i+1 < len(kv); i += 2 {
+			h.Set(kv[i], kv[i+1])
+		}
+		return h
+	}
+	id, err := FolderIDFromHeader(header(
+		dto.HeaderMachine, "dev box", dto.HeaderFolder, url.PathEscape("/home/alice/my project/Café"),
+		dto.HeaderHome, url.PathEscape("/home/alice"), dto.HeaderHarness, "opencode", dto.HeaderAdopt, "Old-Helper",
+	))
+	require.NoError(t, err)
+	require.Equal(t, FolderID{Machine: "dev box", Folder: "/home/alice/my project/Café", Home: "/home/alice", Harness: "opencode", Adopt: "Old-Helper"}, id)
+
+	id, err = FolderIDFromHeader(header(dto.HeaderMachine, "devbox", dto.HeaderFolder, "/work/plain"))
+	require.NoError(t, err)
+	require.Equal(t, FolderID{Machine: "devbox", Folder: "/work/plain"}, id, "a folder with nothing to decode reads as it is")
+
+	id, err = FolderIDFromHeader(header(dto.HeaderMachine, "devbox", dto.HeaderFolder, "%2Fwork%2F100%25", dto.HeaderHome, "%zz"))
+	require.NoError(t, err)
+	require.Equal(t, FolderID{Machine: "devbox", Folder: "/work/100%", Home: ""}, id, "a literal percent sign is escaped; a broken home is ignored")
+
+	_, err = FolderIDFromHeader(header(dto.HeaderMachine, "devbox", dto.HeaderFolder, "%zz"))
+	requireAPIError(t, err, http.StatusUnprocessableEntity, dto.ErrorCodeFolderInvalid)
+
+	require.False(t, HasFolder(header(dto.HeaderMachine, "devbox")))
+	require.True(t, HasFolder(header(dto.HeaderFolder, "")), "an empty folder header is still a folder header")
+	require.True(t, HasFolder(header(dto.HeaderFolder, "/work")))
+}
+
+// SES-01: LookupFolder finds the AI of a folder and changes nothing: it creates no identity,
+// adopts no unlinked one, records no machine and relabels nothing.
+func TestLookupFolderChangesNothing(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	alice := f.user(t, "alice")
+	legacy := f.legacy(t, alice, "acme", "acme")
+	id := FolderID{Machine: "devbox", Folder: "/work/acme", Home: "/home/alice", Harness: "opencode", Adopt: "acme"}
+
+	_, ok, err := f.reg.LookupFolder(ctx, alice.UserID, id)
+	require.NoError(t, err)
+	require.False(t, ok, "an unlinked identity is not the AI of the folder until a session adopts it")
+	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM agents"))
+	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM machines"))
+	require.Equal(t, "", f.storedAgent(t, legacy).Folder)
+	require.Equal(t, 0, f.adoptions(t, legacy))
+
+	adopted, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/acme", Harness: "claude"}, true)
+	require.NoError(t, err)
+	require.Equal(t, legacy, adopted.ID)
+	got, ok, err := f.reg.LookupFolder(ctx, alice.UserID, id)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, legacy, got.ID)
+	require.Equal(t, "claude", f.storedAgent(t, legacy).Harness, "a lookup does not relabel")
+
+	_, ok, err = f.reg.LookupFolder(ctx, f.user(t, "bobby").UserID, id)
+	require.NoError(t, err)
+	require.False(t, ok, "the lookup is scoped to the owner")
+	_, _, err = f.reg.LookupFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "work/acme"})
+	requireAPIError(t, err, http.StatusUnprocessableEntity, dto.ErrorCodeFolderInvalid)
+	_, _, err = f.reg.LookupFolder(ctx, alice.UserID, FolderID{Folder: "/work/acme"})
+	requireAPIError(t, err, http.StatusUnprocessableEntity, dto.ErrorCodeFolderRequired)
 }

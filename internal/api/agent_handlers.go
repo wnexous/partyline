@@ -51,6 +51,89 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agent/pending", s.agentOnly(s.agentPending))
 	s.handle(mux, "DELETE /api/v1/agent/token", s.revokeOwnAgentToken)
 	s.handle(mux, "GET /api/v1/agent/agents", s.ownerAgents)
+	s.handle(mux, "GET /api/v1/agent/session", s.agentSession)
+	s.handle(mux, "GET /api/v1/agent/whoami", s.agentWhoAmI)
+}
+
+// agentToken returns the principal of a request made with an agent token; no registered agent
+// is needed.
+func agentToken(r *http.Request) (authn.Principal, error) {
+	p, ok := authn.PrincipalFrom(r.Context())
+	if !ok {
+		return authn.Principal{}, errNotLoggedIn
+	}
+	if p.Kind != authn.KindAgent {
+		return authn.Principal{}, agents.ErrAgentTokenRequired
+	}
+	return p, nil
+}
+
+// agentSession reports whether the machine and folder named in the headers have an AI, whether
+// it is online, its app and when its live session connected, and changes nothing (SES-01): the
+// launcher asks before taking over a live session.
+func (s *server) agentSession(w http.ResponseWriter, r *http.Request) error {
+	p, err := agentToken(r)
+	if err != nil {
+		return err
+	}
+	id, err := agents.FolderIDFromHeader(r.Header)
+	if err != nil {
+		return err
+	}
+	a, found, err := s.Agents.LookupFolder(r.Context(), p.UserID, id)
+	if err != nil {
+		return err
+	}
+	out := dto.SessionState{}
+	if found {
+		ref := dto.IntelligenceRef{ID: a.ID, Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: agents.DisplayName(a)}
+		rows, err := s.Intelligences.Rows(r.Context(), []string{a.ID})
+		if err != nil {
+			return err
+		}
+		if row, ok := rows[a.ID]; ok {
+			ref = convert.IntelligenceRef(row, dto.IntelligenceRoleAI, "")
+		}
+		out = dto.SessionState{Exists: true, Online: s.Agents.Online(a.ID), Intelligence: &ref, App: a.Harness}
+		if out.Online {
+			out.ConnectedAt = convert.OptTime(a.ConnectedAt)
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// agentWhoAmI returns the intelligence of the token's owner, for `partyline login`; it needs no
+// folder and no registered AI.
+func (s *server) agentWhoAmI(w http.ResponseWriter, r *http.Request) error {
+	p, err := agentToken(r)
+	if err != nil {
+		return err
+	}
+	ref := dto.IntelligenceRef{ID: p.UserID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser}
+	rows, err := s.Intelligences.Rows(r.Context(), []string{p.UserID})
+	if err != nil {
+		return err
+	}
+	if row, ok := rows[p.UserID]; ok {
+		ref = convert.IntelligenceRef(row, dto.IntelligenceRoleUser, "")
+	}
+	httpx.WriteJSON(w, http.StatusOK, ref)
+	return nil
+}
+
+// agentOf finds the AI a request acts as: the one of the machine and folder named in the
+// headers, created on first sight (AID-04); a request without a folder is a v0.3 client that
+// names its agent.
+func (s *server) agentOf(r *http.Request, p authn.Principal) (db.Agent, error) {
+	if agents.HasFolder(r.Header) {
+		id, err := agents.FolderIDFromHeader(r.Header)
+		if err != nil {
+			return db.Agent{}, err
+		}
+		return s.Agents.ResolveFolder(r.Context(), p.UserID, id, false)
+	}
+	return s.Agents.Lookup(r.Context(), p.UserID, p.AgentName)
 }
 
 // ownerAgents lists the agents the token's owner owns, like GET /agents
@@ -127,7 +210,7 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 		}
 		wait = n
 	}
-	a, err := s.Agents.Lookup(r.Context(), p.UserID, p.AgentName)
+	a, err := s.Agents.ByID(r.Context(), p.AgentID) // agentOnly resolved it
 	if err != nil {
 		return err
 	}
@@ -156,16 +239,22 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 // agentRegister registers the session's agent (identity headers, as on the WebSocket) without a WebSocket, for
 // `partyline channel --tools-only` (PUSH-02); the agent stays offline. Agent tokens only.
 func (s *server) agentRegister(w http.ResponseWriter, r *http.Request) error {
-	p, ok := authn.PrincipalFrom(r.Context())
-	if !ok {
-		return errNotLoggedIn
+	p, err := agentToken(r)
+	if err != nil {
+		return err
 	}
-	if p.Kind != authn.KindAgent {
-		return agents.ErrAgentTokenRequired
+	var row db.GetAgentWithOwnerRow
+	if agents.HasFolder(r.Header) {
+		var id agents.FolderID
+		if id, err = agents.FolderIDFromHeader(r.Header); err != nil {
+			return err
+		}
+		row, err = s.Agents.RegisterFolder(r.Context(), p.UserID, id)
+	} else {
+		id := agents.IdentityFromHeader(r.Header)
+		id.Name = p.AgentName
+		row, err = s.Agents.Register(r.Context(), p.UserID, id)
 	}
-	id := agents.IdentityFromHeader(r.Header)
-	id.Name = p.AgentName
-	row, err := s.Agents.Register(r.Context(), p.UserID, id)
 	if err != nil {
 		return err
 	}
@@ -187,7 +276,7 @@ func (s *server) agentOnly(h principalFunc) apiFunc {
 		if p.Kind != authn.KindAgent {
 			return agents.ErrAgentTokenRequired
 		}
-		a, err := s.Agents.Lookup(r.Context(), p.UserID, p.AgentName)
+		a, err := s.agentOf(r, p)
 		if err != nil {
 			return err
 		}

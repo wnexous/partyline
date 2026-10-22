@@ -373,3 +373,38 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
 - sqlc added: `InsertFolderAgent`, `SetAgentHarness`, `GetUnlinkedAgentByHandle`,
   `GetUnlinkedAgentByName`, `AdoptAgent` (`:execrows`).
 
+## T14 - Server accepts folder headers (AID-02, AID-04, SES-01)
+
+- New headers (`dto/common.go`): `X-Partyline-Folder` (the canonical folder, `url.PathEscape`d, so
+  `/` is `%2F`), `X-Partyline-Home` (same encoding), `X-Partyline-Adopt` (handle or v0.3 name),
+  `X-Partyline-Live` and `X-Partyline-Takeover` (declared now, read by T17). `X-Partyline-Machine`
+  and `-Harness` are the existing ones. A request **names a folder** when the folder header is
+  present, even when empty (`agents.HasFolder`); `agents.FolderIDFromHeader(h)` decodes it: a folder
+  that is not valid percent-encoding is 422 `folder_invalid`, a home that is not is ignored. The
+  decoded `FolderID` is validated by `ResolveFolder` / `LookupFolder` (T13 rules).
+- A request without the folder header still takes the **v0.3 path** (`X-Partyline-Agent`, named or
+  temporary agents) until T16 makes the folder required; the new routes below have no v0.3 path.
+- Routes that act as an AI resolve it with `ResolveFolder(live=false)` (`server.agentOf`): every
+  `agentOnly` route (`/agent/rooms…`, `messages`, `attachments`), `POST /agent/register` (through
+  `Registry.RegisterFolder`, which also returns the owner) and `GET /agent/pending`
+  (`agentOnly` resolves; the handler reads the agent by `Principal.AgentID`, `Registry.ByID`). A call
+  by a folder that has no AI creates it (AID-04); what it posts is authored by that AI. The agent
+  WebSocket resolves with `live=true` and stamps `connected_at`; its app follows the harness.
+- `GET /api/v1/agent/session` (agent token + folder headers, no AI created, no machine recorded,
+  no app changed; missing folder → 422 `folder_required`) → `dto.SessionState{exists, online,
+  intelligence?, app, connected_at?}`: `intelligence` is the AI's `IntelligenceRef`, `app` the
+  stored harness id, `connected_at` the AI's `agents.connected_at` and **only while it is online**.
+  Another owner's AI, another machine and another folder read `exists: false` (zero value).
+  `Registry.LookupFolder` is the read-only lookup behind it (an unlinked v0.3 identity is not
+  "the AI of the folder" until a session adopts it).
+- `GET /api/v1/agent/whoami` (agent token, no folder, no AI needed) → the token owner's
+  `dto.IntelligenceRef` (role `user`).
+- `dto.AgentWelcomeFrame` gains `intelligence` (the AI's `IntelligenceRef`) and `owner` (its
+  owner's); `agent.display_name` is the profile's display name. The refs come from the
+  intelligences table; a row without one falls back to what the registry knows.
+- `agents.Gateway` logs a refused connection that is a 4xx API error (a bad folder) at debug level
+  with its code only, not as a registration failure; folder paths and hostnames are never logged.
+- Testkit: `testkit.Folder{Machine, Path, Home, Harness, Adopt}` with `Headers()` (percent-encoded as
+  the CLI sends them), `Client.AsFolder(f)` (a copy that sends them on every request) and
+  `Client.DialFolder(f)`.
+
