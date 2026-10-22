@@ -192,30 +192,31 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Rooms: a.Rooms, Runner: a.ConnectorManager, Now: opts.Now,
 	})
 	a.Live = live.New(live.Deps{
-		Bus: bus, Access: az, Rooms: a.Rooms, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
+		Bus: bus, Access: az, Rooms: a.Rooms, Intelligences: a.Intelligences, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
 		Sessions: usersSvc, SessionCheckInterval: opts.LiveSessionCheck,
 	})
 	auditLog := audit.New(st, opts.Now)
 	a.Devices = devices.New(devices.Deps{Store: st, Users: usersSvc, Box: box, Audit: auditLog, Now: opts.Now})
 	a.handler = api.New(api.Deps{
-		Config:     cfg,
-		Users:      usersSvc,
-		Rooms:      a.Rooms,
-		Agents:     a.Agents,
-		Connectors: a.Connectors,
-		Identities: a.Identities,
-		Devices:    a.Devices,
-		Hooks:      a.ConnectorManager,
-		FileLinks:  fileLinks,
-		Blobs:      blobs,
-		Audit:      auditLog,
-		Live:       a.Live,
-		AgentWS:    a.Gateway,
-		Inbox:      a.Gateway,
-		WebUI:      webui.Handler(cfg.PublicURL),
-		Logger:     opts.Logger,
-		Ready:      a.ready.Load,
-		Version:    version,
+		Config:        cfg,
+		Users:         usersSvc,
+		Rooms:         a.Rooms,
+		Agents:        a.Agents,
+		Intelligences: a.Intelligences,
+		Connectors:    a.Connectors,
+		Identities:    a.Identities,
+		Devices:       a.Devices,
+		Hooks:         a.ConnectorManager,
+		FileLinks:     fileLinks,
+		Blobs:         blobs,
+		Audit:         auditLog,
+		Live:          a.Live,
+		AgentWS:       a.Gateway,
+		Inbox:         a.Gateway,
+		WebUI:         webui.Handler(cfg.PublicURL),
+		Logger:        opts.Logger,
+		Ready:         a.ready.Load,
+		Version:       version,
 	})
 	return a, nil
 }

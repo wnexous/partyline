@@ -32,6 +32,13 @@ export function makeMe(over: Partial<Me> = {}): Me {
     id: "u1",
     username: "ana",
     display_name: "Ana Souza",
+    intelligence: {
+      id: "u1",
+      kind: "human",
+      role: "user",
+      display_name: "Ana Souza",
+      handle: "ana",
+    },
     role: "member",
     locale: "en",
     created_at: "2026-10-01T12:00:00Z",

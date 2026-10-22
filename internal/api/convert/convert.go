@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -79,4 +80,27 @@ func Identity(i db.Identity) dto.Identity {
 		ID: i.ID, ConnectorID: i.ConnectorID, ConnectorKind: i.ConnectorKind, ExternalID: i.ExternalID, AltExternalID: i.AltExternalID,
 		Display: i.Display, CreatedAt: Time(i.CreatedAt),
 	}
+}
+
+// IntelligenceRef renders an intelligence as the public summary shown next to every name;
+// platform is the connector kind of a person.
+func IntelligenceRef(i db.Intelligence, role dto.IntelligenceRole, platform string) dto.IntelligenceRef {
+	return dto.IntelligenceRef{
+		ID: i.ID, Kind: dto.IntelligenceKind(i.Kind), Role: role, DisplayName: i.DisplayName, Handle: i.Handle,
+		AvatarURL: AvatarURL(i.ID, i.AvatarSha256), Platform: platform,
+	}
+}
+
+// ProfileRef renders the summary of a profile.
+func ProfileRef(p intelligences.Profile) dto.IntelligenceRef {
+	return IntelligenceRef(p.Intelligence, dto.IntelligenceRole(p.Role), p.Platform)
+}
+
+// AvatarURL is the URL of an intelligence's avatar, empty without one. The content hash is a
+// cache key: a new avatar has a new URL.
+func AvatarURL(id, sha string) string {
+	if sha == "" {
+		return ""
+	}
+	return "/api/v1/intelligences/" + id + "/avatar?v=" + sha
 }

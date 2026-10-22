@@ -209,3 +209,37 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
   `ListIntelligenceRoomIDs` (member rooms ∪ authored rooms), `SetUserDisplayName`.
 - Not in T7: a person edit does not set `people.name_locked` and person visibility has no
   shared-conversation rule yet (T27); avatars (T10); `Message.author` (T11).
+
+## T9 - Profile API (PROF-03, PROF-05, PROF-10, AID-06)
+
+- `GET /api/v1/intelligences/{id}` → `dto.IntelligenceProfile`: the `IntelligenceRef` fields
+  (`id`, `kind` human|ai, `role` user|ai|person, `display_name`, `handle`, `avatar_url?`,
+  `platform?`) flattened, plus `bio`, `can_edit`, `ai?` (`AIDetail`), `apps` and
+  `conversations` (both always arrays; `conversations` stays empty until the conversation
+  tasks fill it, `apps` is `[{kind:"web"}]` for users and `[{kind:<harness id>,label}]` for
+  AIs). 404 `not_found` for what the caller cannot see (`Service.CanSee`), also for an unknown
+  id.
+- `PATCH /api/v1/intelligences/{id}` with `UpdateProfileRequest{display_name?, handle?, bio?}`
+  → 200 with the stored profile. 404 not visible, 403 `forbidden` visible but not editable (an
+  AI's use grantee, another user, an admin), 422 `invalid` with `fields` `display_name`,
+  `handle` and/or `bio` and nothing applied, 409 **`handle_taken`**
+  (`dto.ErrorCodeHandleTaken`, from `intelligences.ErrHandleTaken`), 400 for a malformed body.
+  Sessions and user tokens may call it; agent tokens only reach `/agent/*` (403 elsewhere).
+- `AIDetail`: `owner` (the owner's `IntelligenceRef`), `machine`, `machine_label` (the owner's
+  label from `machines`, else the hostname), `folder` and `folder_label` (`''` while the AI is
+  unlinked; `intelligences.FolderLabel(home, folder)` gives `~`, `~/x` or the absolute path),
+  `app` (the harness id), `online`, `last_seen_at`, `connected_at`, `my_level` (`manage` owner,
+  `use` grantee, absent when the AI is only visible through a shared conversation).
+  `intelligences.Profile` carries the same data: `Platform` (a person's connector kind) and
+  `Agent *AgentInfo`. `Service.Rows(ctx, ids)` returns intelligence rows by id without
+  authorizing (for ids a handler took from data the caller can see).
+- `dto.Me.intelligence` (always set) is returned by `GET/PATCH /me`, `POST /setup`,
+  `POST /auth/login` and the invite accept; `dto.User.intelligence` (optional) is set by the
+  `GET /users` directory (active accounts) and, from T11, by room owners. `PATCH /me` keeps
+  its v0.3 behaviour (an empty display name shows the username) and writes the account's
+  intelligence (T7).
+- Live: `intelligence.changed` (`dto.LiveIntelligenceChanged`, data = `IntelligenceRef`) goes
+  to the sockets of every user who can see the intelligence, for each
+  `events.IntelligenceChanged`.
+- Not in T9: `PersonDetail` and the person's apps/conversations (T27), conversations of an AI
+  (T22+), avatars (T10).

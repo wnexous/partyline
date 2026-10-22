@@ -253,8 +253,8 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PROF-03, PROF-05, PROF-10, AID-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A user edits their own profile; an AI's owner edits the AI's profile (rename shows in the AI's profile and the agents list, AID-06); grantee 403, stranger 404; 409 `handle_taken`; 422 per invalid field with nothing applied (L-017 for each status)
-- [ ] Gate check passes: `make check`
+- [x] A user edits their own profile; an AI's owner edits the AI's profile (rename shows in the AI's profile and the agents list, AID-06); grantee 403, stranger 404; 409 `handle_taken`; 422 per invalid field with nothing applied (L-017 for each status)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): read and edit intelligence profiles`

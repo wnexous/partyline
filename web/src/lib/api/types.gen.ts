@@ -323,10 +323,11 @@ export const ErrorCodeTooLarge = "too_large"; // 413
 export const ErrorCodeRateLimited = "rate_limited"; // 429
 export const ErrorCodeInternal = "internal"; // 500
 export const ErrorCodeUnavailable = "unavailable"; // 503, or 502 when a connector's platform failed
+export const ErrorCodeHandleTaken = "handle_taken"; // 409, the @handle belongs to another intelligence
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -737,6 +738,153 @@ export interface RoomFile {
 }
 
 //////////
+// source: intelligences.go
+
+/**
+ * IntelligenceKind tells whether an intelligence is a human or an AI (PROF-01).
+ */
+export const IntelligenceKindHuman = "human";
+export const IntelligenceKindAI = "ai";
+/**
+ * Intelligence kinds.
+ */
+export type IntelligenceKind = typeof IntelligenceKindHuman | typeof IntelligenceKindAI;
+/**
+ * IntelligenceRole tells which account an intelligence is: a user of the instance, an AI, or
+ * a person seen by a connector.
+ */
+export const IntelligenceRoleUser = "user";
+export const IntelligenceRoleAI = "ai";
+export const IntelligenceRolePerson = "person";
+/**
+ * Intelligence roles.
+ */
+export type IntelligenceRole = typeof IntelligenceRoleUser | typeof IntelligenceRoleAI | typeof IntelligenceRolePerson;
+/**
+ * MaxProfileDisplayName is the longest display name in code points (the shortest is 1).
+ */
+export const MaxProfileDisplayName = 64;
+/**
+ * MaxProfileBio is the longest bio in code points.
+ */
+export const MaxProfileBio = 280;
+/**
+ * HandlePattern is the regular expression every handle matches: 1 to 40 characters of
+ * a-z, 0-9 and "-", starting with a letter. Handles are lower-cased and unique across the
+ * instance; a few words such as "partyline" are reserved.
+ */
+export const HandlePattern = "^[a-z][a-z0-9-]{0,39}$";
+/**
+ * IntelligenceRef is the public summary shown next to every name (PROF-09): who a user, an AI
+ * or a person is, with the handle and the badge data that tell an AI from a human.
+ */
+export interface IntelligenceRef {
+  id: string;
+  kind: IntelligenceKind;
+  role: IntelligenceRole;
+  /**
+   * DisplayName is free text and not unique; the handle is.
+   */
+  display_name: string;
+  handle: string;
+  /**
+   * AvatarURL is /api/v1/intelligences/{id}/avatar?v=<sha>; absent without an avatar, when
+   * the UI shows initials (PROF-08).
+   */
+  avatar_url?: string;
+  /**
+   * Platform is the connector kind (whatsapp, telegram, …) of a person.
+   */
+  platform?: string;
+}
+/**
+ * IntelligenceProfile is GET /intelligences/{id}: the summary plus the bio, what the caller
+ * may do, and the details of the kind of intelligence.
+ */
+export interface IntelligenceProfile extends IntelligenceRef {
+  bio: string;
+  /**
+   * CanEdit tells whether the caller may PATCH the profile.
+   */
+  can_edit: boolean;
+  /**
+   * AI is set for AIs.
+   */
+  ai?: AIDetail;
+  /**
+   * Apps lists where the intelligence speaks: the web app for users, the current harness
+   * for AIs.
+   */
+  apps: App[];
+  /**
+   * Conversations lists the conversations the caller can view that involve the
+   * intelligence; empty until conversations exist.
+   */
+  conversations: RoomRef[];
+}
+/**
+ * AIDetail describes where an AI lives and who may use it.
+ */
+export interface AIDetail {
+  owner: IntelligenceRef;
+  /**
+   * Machine is the hostname of the AI's machine and MachineLabel the owner's label for it
+   * (the hostname when there is none).
+   */
+  machine: string;
+  machine_label: string;
+  /**
+   * Folder is the AI's canonical folder; empty for an AI that is not linked to one yet.
+   */
+  folder: string;
+  folder_label: string;
+  /**
+   * App is the id of the harness the AI currently runs in (claude, opencode, …).
+   */
+  app: string;
+  online: boolean;
+  last_seen_at?: string /* RFC 3339 */;
+  connected_at?: string /* RFC 3339 */;
+  /**
+   * MyLevel is manage for the owner and use for a grantee; empty for a caller who sees the
+   * AI through a conversation they share.
+   */
+  my_level?: Level;
+}
+/**
+ * App is one place an intelligence speaks from.
+ */
+export interface App {
+  /**
+   * Kind is "web", a connector kind or a harness id.
+   */
+  kind: string;
+  label: string;
+  /**
+   * ConnectorID is set for apps that are a connector's account.
+   */
+  connector_id?: string;
+}
+/**
+ * UpdateProfileRequest is the body of PATCH /intelligences/{id} and of an AI's own profile
+ * update; absent fields are unchanged (PROF-03, PROF-05).
+ */
+export interface UpdateProfileRequest {
+  /**
+   * DisplayName has 1 to MaxProfileDisplayName code points after trimming.
+   */
+  display_name?: string;
+  /**
+   * Handle matches HandlePattern after lower-casing; a handle in use is 409 handle_taken.
+   */
+  handle?: string;
+  /**
+   * Bio has at most MaxProfileBio code points.
+   */
+  bio?: string;
+}
+
+//////////
 // source: live.go
 
 /**
@@ -754,11 +902,16 @@ export const LiveEventTypeConnectorStatus = "connector.status";
 export const LiveEventTypeChatDiscovered = "chat.discovered";
 export const LiveEventTypeOutboxStatus = "outbox.status";
 export const LiveEventTypeIdentityLinked = "identity.linked";
+/**
+ * LiveEventTypeIntelligenceChanged carries the new summary of an intelligence whose
+ * profile changed.
+ */
+export const LiveEventTypeIntelligenceChanged = "intelligence.changed";
 export const LiveEventTypeLagged = "lagged";
 /**
  * Live event types.
  */
-export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeOutboxStatus | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeLagged;
+export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeOutboxStatus | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged;
 export type LiveEvent =
   | LiveHello
   | LiveRoomMessage
@@ -771,6 +924,7 @@ export type LiveEvent =
   | LiveChatDiscovered
   | LiveOutboxStatus
   | LiveIdentityLinked
+  | LiveIntelligenceChanged
   | LiveLagged;
 
 /**
@@ -891,6 +1045,14 @@ export interface OutboxUpdate extends OutboxItem {
 export interface LiveIdentityLinked {
   type: typeof LiveEventTypeIdentityLinked;
   data: Identity;
+}
+/**
+ * LiveIntelligenceChanged reports that an intelligence the user can see changed its profile
+ * (name, handle, bio or avatar); Data is its new summary.
+ */
+export interface LiveIntelligenceChanged {
+  type: typeof LiveEventTypeIntelligenceChanged;
+  data: IntelligenceRef;
 }
 /**
  * LiveLagged reports that the server dropped events for this connection; refetch visible data.
@@ -1277,6 +1439,10 @@ export interface Me {
   id: string;
   username: string;
   display_name: string;
+  /**
+   * Intelligence is the user's profile summary: display name, @handle and avatar (PROF-01).
+   */
+  intelligence: IntelligenceRef;
   role: Role;
   locale: string;
   created_at: string /* RFC 3339 */;
@@ -1314,6 +1480,10 @@ export interface User {
   id: string;
   username: string;
   display_name: string;
+  /**
+   * Intelligence is the account's profile summary; set by the directory and by room owners.
+   */
+  intelligence?: IntelligenceRef;
 }
 /**
  * AdminUser is an account as seen by admins (GET /admin/users).

@@ -32,12 +32,14 @@ type LoginRequest struct {
 
 // Me is the logged-in user (GET /me, response of setup and login).
 type Me struct {
-	ID          string    `json:"id"`
-	Username    string    `json:"username"`
-	DisplayName string    `json:"display_name"`
-	Role        Role      `json:"role"`
-	Locale      string    `json:"locale"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"display_name"`
+	// Intelligence is the user's profile summary: display name, @handle and avatar (PROF-01).
+	Intelligence IntelligenceRef `json:"intelligence"`
+	Role         Role            `json:"role"`
+	Locale       string          `json:"locale"`
+	CreatedAt    time.Time       `json:"created_at"`
 }
 
 // UpdateMeRequest is the body of PATCH /me; absent fields are unchanged.
@@ -68,6 +70,8 @@ type User struct {
 	ID          string `json:"id"`
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name"`
+	// Intelligence is the account's profile summary; set by the directory and by room owners.
+	Intelligence *IntelligenceRef `json:"intelligence,omitempty"`
 }
 
 // AdminUser is an account as seen by admins (GET /admin/users).

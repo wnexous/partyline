@@ -19,7 +19,10 @@ const (
 	LiveEventTypeChatDiscovered  LiveEventType = "chat.discovered"
 	LiveEventTypeOutboxStatus    LiveEventType = "outbox.status"
 	LiveEventTypeIdentityLinked  LiveEventType = "identity.linked"
-	LiveEventTypeLagged          LiveEventType = "lagged"
+	// LiveEventTypeIntelligenceChanged carries the new summary of an intelligence whose
+	// profile changed.
+	LiveEventTypeIntelligenceChanged LiveEventType = "intelligence.changed"
+	LiveEventTypeLagged              LiveEventType = "lagged"
 )
 
 //tygo:emit
@@ -35,6 +38,7 @@ var _ = `export type LiveEvent =
   | LiveChatDiscovered
   | LiveOutboxStatus
   | LiveIdentityLinked
+  | LiveIntelligenceChanged
   | LiveLagged;
 `
 
@@ -139,6 +143,13 @@ type OutboxUpdate struct {
 type LiveIdentityLinked struct {
 	Type LiveEventType `json:"type" tstype:"typeof LiveEventTypeIdentityLinked"`
 	Data Identity      `json:"data"`
+}
+
+// LiveIntelligenceChanged reports that an intelligence the user can see changed its profile
+// (name, handle, bio or avatar); Data is its new summary.
+type LiveIntelligenceChanged struct {
+	Type LiveEventType   `json:"type" tstype:"typeof LiveEventTypeIntelligenceChanged"`
+	Data IntelligenceRef `json:"data"`
 }
 
 // LiveLagged reports that the server dropped events for this connection; refetch visible data.

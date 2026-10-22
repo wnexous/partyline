@@ -81,6 +81,7 @@ const (
 	ErrorCodeRateLimited  ErrorCode = "rate_limited" // 429
 	ErrorCodeInternal     ErrorCode = "internal"     // 500
 	ErrorCodeUnavailable  ErrorCode = "unavailable"  // 503, or 502 when a connector's platform failed
+	ErrorCodeHandleTaken  ErrorCode = "handle_taken" // 409, the @handle belongs to another intelligence
 )
 
 // ErrorBody is the envelope of every error response.

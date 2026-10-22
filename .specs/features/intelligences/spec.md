@@ -376,7 +376,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | AID-03 | P1: Folder identity | Execute | Implementing |
 | AID-04 | P1: Folder identity | Tasks | Pending |
 | AID-05 | P1: Folder identity | Tasks | Pending |
-| AID-06 | P1: Folder identity | Tasks | Pending |
+| AID-06 | P1: Folder identity | Execute | Implementing |
 | AID-07 | P1: Folder identity | Tasks | Pending |
 | SES-01 | P1: One live session | Tasks | Pending |
 | SES-02 | P1: One live session | Tasks | Pending |
@@ -421,9 +421,9 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | ACC-07 | P1: Accounts | Tasks | Pending |
 | PROF-01 | P1: Profiles | Execute | Implementing |
 | PROF-02 | P1: Profiles | Execute | Implementing |
-| PROF-03 | P1: Profiles | Tasks | Pending |
+| PROF-03 | P1: Profiles | Execute | Implementing |
 | PROF-04 | P1: Profiles | Tasks | Pending |
-| PROF-05 | P1: Profiles | Tasks | Pending |
+| PROF-05 | P1: Profiles | Execute | Implementing |
 | PROF-06 | P1: Profiles | Tasks | Pending |
 | PROF-07 | P1: Profiles | Tasks | Pending |
 | PROF-08 | P1: Profiles | Tasks | Pending |

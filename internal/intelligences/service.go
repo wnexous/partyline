@@ -192,10 +192,79 @@ type Profile struct {
 	Role Role
 	// CanEdit tells whether the caller may change the profile (PROF-03, PROF-04, PROF-05).
 	CanEdit bool
+	// Platform is the connector kind of a person (whatsapp, telegram, …); empty otherwise.
+	Platform string
+	// Agent is set for an AI.
+	Agent *AgentInfo
 }
 
-func profile(d db.GetIntelligenceWithRoleRow, canEdit bool) Profile {
-	return Profile{Intelligence: d.Intelligence, Role: Role(d.Role), CanEdit: canEdit}
+// AgentInfo is what a profile shows about an AI.
+type AgentInfo struct {
+	db.Agent
+	// Owner is the owner's own intelligence.
+	Owner db.Intelligence
+	// MachineLabel is the owner's label for the AI's machine, else its hostname; Home is the
+	// machine's canonical home folder, empty when unknown.
+	MachineLabel string
+	Home         string
+	// Level is the caller's level on the AI: manage for the owner, use for a grantee, none for
+	// a caller who sees it through a conversation they share.
+	Level access.Level
+}
+
+// profile builds the profile of d as the caller reads it.
+func (s *Service) profile(ctx context.Context, p authn.Principal, d db.GetIntelligenceWithRoleRow, canEdit bool) (Profile, error) {
+	out := Profile{Intelligence: d.Intelligence, Role: Role(d.Role), CanEdit: canEdit}
+	q := s.store.R()
+	switch out.Role {
+	case RoleAI:
+		a, err := q.GetAgent(ctx, d.Intelligence.ID)
+		if err != nil {
+			return Profile{}, err
+		}
+		owner, err := q.GetIntelligence(ctx, a.OwnerID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return Profile{}, err
+		}
+		m, err := q.GetMachine(ctx, db.GetMachineParams{OwnerID: a.OwnerID, Hostname: a.Machine})
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return Profile{}, err
+		}
+		label := m.Label
+		if label == "" {
+			label = a.Machine
+		}
+		level, err := s.az.AgentLevel(ctx, p.UserID, a.ID)
+		if err != nil {
+			return Profile{}, err
+		}
+		out.Agent = &AgentInfo{Agent: a, Owner: owner, MachineLabel: label, Home: m.Home, Level: level}
+	case RolePerson:
+		c, err := q.GetConnector(ctx, d.PersonConnectorID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return Profile{}, err
+		}
+		out.Platform = c.Kind
+	}
+	return out, nil
+}
+
+// Rows returns the intelligences with the given ids by id; unknown ids are left out. It does
+// not authorize: callers are server components that render ids they took from data the caller
+// can already see (the account's own, the users directory).
+func (s *Service) Rows(ctx context.Context, ids []string) (map[string]db.Intelligence, error) {
+	out := make(map[string]db.Intelligence, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := s.store.R().ListIntelligencesByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[r.ID] = r
+	}
+	return out, nil
 }
 
 // Get returns the profile of an intelligence the caller can see; for any other id it answers
@@ -212,7 +281,7 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, id string) (Profil
 	if !see {
 		return Profile{}, access.ErrNotFound
 	}
-	return profile(d, edit), nil
+	return s.profile(ctx, p, d, edit)
 }
 
 // CanSee reports whether the caller can see the intelligence: itself; any user of the
@@ -429,7 +498,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in P
 	if err != nil {
 		return Profile{}, err
 	}
-	return profile(d, true), nil
+	return s.profile(ctx, p, d, true)
 }
 
 // mirrorDisplayName copies a new display name into the v0.3 columns that code not yet

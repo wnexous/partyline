@@ -79,8 +79,7 @@ func (s *server) setup(w http.ResponseWriter, r *http.Request) error {
 	if err := s.startSession(w, r, u.ID); err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, toMe(u))
-	return nil
+	return s.writeMe(w, r, http.StatusCreated, u)
 }
 
 func (s *server) login(w http.ResponseWriter, r *http.Request) error {
@@ -96,8 +95,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	s.setSessionCookie(w, sess)
-	httpx.WriteJSON(w, http.StatusOK, toMe(u))
-	return nil
+	return s.writeMe(w, r, http.StatusOK, u)
 }
 
 // logout revokes the current session (AUTH-09). Token callers have no session to end.
@@ -117,8 +115,7 @@ func (s *server) getMe(w http.ResponseWriter, r *http.Request, p authn.Principal
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, toMe(u))
-	return nil
+	return s.writeMe(w, r, http.StatusOK, u)
 }
 
 func (s *server) updateMe(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
@@ -130,8 +127,7 @@ func (s *server) updateMe(w http.ResponseWriter, r *http.Request, p authn.Princi
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, toMe(u))
-	return nil
+	return s.writeMe(w, r, http.StatusOK, u)
 }
 
 func (s *server) changePassword(w http.ResponseWriter, r *http.Request, p authn.Principal) error {

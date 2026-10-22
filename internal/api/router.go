@@ -16,6 +16,7 @@ import (
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/identities"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/validation"
@@ -27,6 +28,8 @@ type Deps struct {
 	Users  *users.Service
 	Rooms  *rooms.Service
 	Agents *agents.Registry
+	// Intelligences serves profiles of users, AIs and people.
+	Intelligences *intelligences.Service
 	// Connectors manages connectors and their chats.
 	Connectors *connectors.Service
 	// Hooks finds the running connector of POST /api/v1/hooks/{id}; FileLinks resolves the
@@ -83,6 +86,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.authRoutes(mux)
 	s.adminRoutes(mux)
 	s.roomRoutes(mux)
+	s.intelligenceRoutes(mux)
 	s.agentRoutes(mux)
 	s.agentAPIRoutes(mux)
 	s.connectorRoutes(mux)
@@ -184,6 +188,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent not registered: connect the channel first")
 	case errors.Is(err, access.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
+	case errors.Is(err, intelligences.ErrHandleTaken):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHandleTaken, "handle already taken")
 	case errors.Is(err, rooms.ErrAlreadyMember):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "already a member of the room")
 	case errors.Is(err, access.ErrForbidden):

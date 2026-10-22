@@ -89,8 +89,7 @@ func (s *server) acceptInvite(w http.ResponseWriter, r *http.Request) error {
 	if err := s.startSession(w, r, u.ID); err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, toMe(u))
-	return nil
+	return s.writeMe(w, r, http.StatusCreated, u)
 }
 
 func (s *server) listInvites(w http.ResponseWriter, r *http.Request, _ authn.Principal) error {
@@ -195,11 +194,27 @@ func (s *server) listDirectory(w http.ResponseWriter, r *http.Request, _ authn.P
 	if err != nil {
 		return err
 	}
-	out := dto.List[dto.User]{Items: make([]dto.User, 0, len(list))}
+	ids := make([]string, 0, len(list))
 	for _, u := range list {
 		if !u.DisabledAt.Valid {
-			out.Items = append(out.Items, toUser(u))
+			ids = append(ids, u.ID)
 		}
+	}
+	rows, err := s.Intelligences.Rows(r.Context(), ids)
+	if err != nil {
+		return err
+	}
+	out := dto.List[dto.User]{Items: make([]dto.User, 0, len(ids))}
+	for _, u := range list {
+		if u.DisabledAt.Valid {
+			continue
+		}
+		user := toUser(u)
+		if row, ok := rows[u.ID]; ok {
+			ref := convert.IntelligenceRef(row, dto.IntelligenceRoleUser, "")
+			user.Intelligence = &ref
+		}
+		out.Items = append(out.Items, user)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
