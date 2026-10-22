@@ -2032,3 +2032,51 @@ Web only. No API changed.
   persons, apps, managing an AI), `routes/_app/contacts.test.tsx` (the links to profiles), `components/command-menu.test.tsx`
   (an AI opens its profile), `routes/a11y.test.tsx` (axe on an AI's profile with a preview showing, on a person's, and on a phone,
   in both languages).
+
+## T49 - Own profile, notifications and connector operator (PROF-03, NOTI-01, ACC-01)
+
+Web only. No API changed.
+
+- **Settings, own profile** (`routes/_app/settings.tsx`): the display-name-only form is replaced by `ProfileEditor`
+  (T48) for the caller's own intelligence, loaded with `GET /intelligences/{me.intelligence.id}` (`useIntelligence`).
+  Display name, @handle, bio and photo are saved through `PATCH /intelligences/{id}` (and its avatar routes), the same
+  rules every profile follows; `PATCH /me` is still the locale's route and no longer the profile's. A failed load shows
+  "Couldn’t load this profile." with Try again; the first load a skeleton. The answer goes through `storeProfile` →
+  `patchIntelligence`, so the account menu (the sidebar header) shows the new name, handle and avatar at once, as does
+  every cached timeline, member list and contact row (PROF-03). The section keeps the page's `Section` layout and the
+  editor's own "Edit profile" heading.
+- **"Notify me here"** (`account.notify*`): a section after Profile with a native select. Options are `GET
+  /me/notify-options` (`useNotifyOptions`, key `["me","notify-options"]`), labelled `"{connector} · {account} · {title}"`
+  in the server's order; the first option (`""`) is "Don’t notify me anywhere". Save (`PUT /me/notify {chat_id}`; the
+  empty choice sends `{"chat_id": null}`) waits for a change and stores the answer's `dto.Me` under `["me"]`, so
+  `me.notify_chat_id` is the selection. A stored chat that is not an option (unlinked since) shows as "An account that
+  is no longer linked", so it can be cleared. A 422 `fields.chat_id` shows under the picker; other refusals above the
+  form. With no option and nothing stored the section replaces the form with a hint and a link to `/identities`. (NOTI-01)
+- **Connector operator** (`routes/_app/connectors/$connectorId.tsx`): the page header names the operator for every
+  viewer (`Operated by {name}`, the owner when `operator` is absent, as old fixtures have it). The connector settings
+  sheet (`ConnectorSettingsSheet`, shown to the owner only — `canManage`) gains an **Operator** block: a native select with the
+  owner (`{name} (you)`, the owner's own user id) and the caller's own AIs from `GET /contacts` (the machine tree in
+  order, then the unlinked; AIs shared with the caller are not options), an AI that is the stored operator but missing
+  from the list shown as its own option, and a Save that waits for a change and sends **only** `PATCH /connectors/{id}
+  {operator_id}` (no name/config, so the connector is not restarted or renamed). A 422 `fields.operator_id` shows under
+  the picker; a 403 "Only the connector’s owner can change its operator."; a success toasts. A `use` grantee has no
+  settings sheet and therefore reads the operator only in the header: read-only (ACC-01).
+- **Legacy catch-all notice** (`components/connector-catch-all.tsx`, Spec issue 2): a connector whose stored
+  `auto_route_room_id` is set keeps the v0.3 catch-all routing (T30), so its Catch-all card adds, inside the existing
+  warning note, "That is the old catch-all routing…" and **Switch to per-chat conversations**, a button that sends
+  `PATCH {auto_route_room_id: ""}` alone (the scope is kept) and syncs the card's state with the answer. After it the
+  card is in per-chat mode: the warning says "Each new chat becomes its own conversation with the operator.", the empty
+  room picker hints "Leave it empty: each new chat opens its own conversation with the operator." and a scope change
+  saves with an empty room (the server's rule since T30). A connector already in per-chat mode (scope other than off, no
+  room) renders that state from the start; saving a scope with an empty room from Off still asks for a room (turning a
+  v0.3 catch-all on), which the old ROUTE-04 rule and its test keep. The switch's failures show above the card
+  (403 "You need manage access…", anything else "Couldn’t switch. Try again."). The room picker uses the shared
+  `NativeSelect` (the same styles as before).
+- **Components**: `NativeSelect` (`components/native-select.tsx`, a styled native `<select>`: the platform's picker on a
+  phone, UI-24) is now also the catch-all room picker; no new dependency.
+- Tests: `routes/_app/settings.test.tsx` (the profile editor sends only what changed to `/intelligences/{id}` and the
+  account menu shows the new name; handle editing; notify options, save, clear, a stored choice that is no longer an
+  option and the no-option hint), `lib/api/notify.test.tsx` (the options hook and the choice's cache write, a 422
+  leaving it), `routes/_app/connectors/connectors.test.tsx` (the operator options and save, a grantee's read-only
+  header, a 422 under the picker, the legacy notice and switch keeping the scope, no switch without a legacy room,
+  both languages), `routes/a11y.test.tsx` (the settings page with the editor and the notify choice, en and pt-BR).

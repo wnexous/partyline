@@ -202,7 +202,6 @@ export const en = {
   "ai.deleteConfirm": "Delete AI",
   "ai.deleted": "{name} deleted",
   "ai.deleteFailed": "Couldn’t delete {name}.",
-
   "validation.handle": "Start with a letter; then letters, digits or hyphens, up to 40.",
   "validation.bio": "At most {max} characters",
 
@@ -599,6 +598,18 @@ export const en = {
   "connector.enabled": "Enabled",
   "connector.enabledHint": "When off, partyline disconnects the account and stops its chats.",
   "connector.updateFailed": "Couldn’t update the connector.",
+  "connector.operatedBy": "Operated by {name}",
+  "connector.operator": "Operator",
+  "connector.operatorBody":
+    "Whoever writes to this account talks to the operator: you, or one of your AIs.",
+  "connector.operatorPick": "Operator",
+  "connector.operatorOwner": "{name} (you)",
+  "connector.operatorHint":
+    "The operator answers the platform’s direct messages; the account is its app.",
+  "connector.operatorSave": "Save operator",
+  "connector.operatorSaved": "Operator saved",
+  "connector.operatorFailed": "Couldn’t change the operator.",
+  "connector.operatorForbidden": "Only the connector’s owner can change its operator.",
   "connector.inboundTitle": "Inbound webhook",
   "connector.inboundBody":
     "POST chat messages here, signed with the connector secret in the X-Partyline-Signature and X-Partyline-Timestamp headers.",
@@ -722,8 +733,22 @@ export const en = {
   "tokens.agentHint": "Setting up a Claude Code session? The wizard prints the whole config:",
 
   "account.profile": "Profile",
+  "account.profileBody": "Your name, photo, @handle and bio: how you appear in every conversation.",
   "account.saveProfile": "Save profile",
   "account.profileSaved": "Profile saved",
+  "account.notify": "Notifications",
+  "account.notifyBody":
+    "Get a copy of the direct messages AIs send you on one of your linked chat accounts.",
+  "account.notifyWhere": "Send them to",
+  "account.notifyOff": "Don’t notify me anywhere",
+  "account.notifyOption": "{connector} · {account} · {title}",
+  "account.notifyUnavailable": "An account that is no longer linked",
+  "account.notifyHint": "Only direct chats of accounts you linked yourself appear here.",
+  "account.notifySave": "Save notifications",
+  "account.notifySaved": "Notifications saved",
+  "account.notifyNone": "No linked account can receive messages yet.",
+  "account.notifyLink": "Link a chat account",
+  "account.notifyLoadError": "Couldn’t load your linked accounts.",
   "account.appearance": "Appearance",
   "account.appearanceBody": "Remembered in this browser. The language also goes with your account.",
   "account.passwordBody": "Other people never see it. Admins can’t read it either.",
@@ -868,6 +893,14 @@ export const en = {
   "catchAll.warningNoRoom": "Anyone who writes to this account will reach the agents of that room.",
   "catchAll.warningTrust":
     "Their messages arrive untrusted unless they come from your verified identities.",
+  "catchAll.perChatWarning": "Each new chat becomes its own conversation with the operator.",
+  "catchAll.perChatHint":
+    "Leave it empty: each new chat opens its own conversation with the operator.",
+  "catchAll.legacyBody":
+    "That is the old catch-all routing. Switch to per-chat conversations to let each new chat become its own conversation with the operator.",
+  "catchAll.switchToPerChat": "Switch to per-chat conversations",
+  "catchAll.perChatSaved": "New chats now open their own conversations.",
+  "catchAll.switchFailed": "Couldn’t switch. Try again.",
   "catchAll.save": "Save catch-all",
   "catchAll.noChanges": "No changes to save.",
   "catchAll.saved": "Catch-all saved",

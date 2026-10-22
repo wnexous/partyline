@@ -7,13 +7,16 @@ import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
   makeAgent,
+  makeAI,
   makeChat,
   makeConnector,
   makeConnectorKind,
+  makeIntelligence,
   makeMe,
   makeRoom,
 } from "@/test/fixtures";
 import { renderRoute } from "@/test/render";
+import { sampleContacts } from "@/test/sample-contacts";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
@@ -585,6 +588,45 @@ describe("catch-all routing (ROUTE-01, ROUTE-04)", () => {
     expect(await within(region).findByText("Couldn’t load your rooms.")).toBeInTheDocument();
   });
 
+  it("offers to switch a legacy catch-all room to per-chat conversations", async () => {
+    const { calls } = api({ auto_route_scope: "dms", auto_route_room_id: "r1" });
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const region = await card();
+    expect(await within(region).findByRole("combobox", { name: "Room" })).toHaveValue("r1");
+    expect(within(region).getByRole("note")).toHaveTextContent(
+      "Anyone who writes to this account reaches the agents in deploys.",
+    );
+    await user.click(
+      within(region).getByRole("button", { name: "Switch to per-chat conversations" }),
+    );
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    // The scope is kept: an empty room is how per-chat conversations are chosen.
+    expect(patches(calls)[0]?.body).toEqual({ auto_route_room_id: "" });
+    await waitFor(() =>
+      expect(
+        within(region).queryByRole("button", { name: "Switch to per-chat conversations" }),
+      ).toBeNull(),
+    );
+    expect(within(region).getByRole("note")).toHaveTextContent(
+      "Each new chat becomes its own conversation with the operator.",
+    );
+    expect(
+      within(region).getByText(
+        "Leave it empty: each new chat opens its own conversation with the operator.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("has no switch action without a legacy catch-all room", async () => {
+    api({ auto_route_scope: "dms" });
+    renderRoute("/connectors/k1");
+    const region = await card();
+    expect(
+      within(region).queryByRole("button", { name: "Switch to per-chat conversations" }),
+    ).toBeNull();
+  });
+
   it("is not shown for a connector shared for use", async () => {
     api({ my_level: "use" });
     renderRoute("/connectors/k1");
@@ -602,5 +644,106 @@ describe("catch-all routing (ROUTE-01, ROUTE-04)", () => {
     renderRoute("/connectors/k1");
     const region = await screen.findByRole("region", { name: "Encaminhar tudo" });
     expect(within(region).getByRole("radio", { name: "Chats diretos" })).toBeChecked();
+  });
+});
+
+describe("connector operator (ACC-01)", () => {
+  const base = makeConnector({
+    id: "k1",
+    name: "support-line",
+    operator: makeIntelligence(),
+  });
+  const atlas = makeAI();
+  const api = (over: Partial<Connector> = {}, patch?: Response) =>
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /connector-kinds": kinds,
+      "GET /connectors/k1": json(200, { ...base, ...over }),
+      "GET /connectors/k1/chats": json(200, { items: [] }),
+      "GET /contacts": json(200, sampleContacts),
+      "PATCH /connectors/k1":
+        patch ??
+        ((_url, init) => {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          const operator = body.operator_id === me.id ? me.intelligence : atlas;
+          return json(200, { ...base, ...over, ...body, operator });
+        }),
+    });
+  const patches = (calls: ReturnType<typeof mockApi>["calls"]) =>
+    calls.filter((c) => c.method === "PATCH");
+  const openSettings = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(await screen.findByRole("button", { name: "Connector settings" }));
+    return screen.findByRole("dialog", { name: "Connector settings" });
+  };
+
+  it("lets the owner pick one of their AIs as the operator and saves it", async () => {
+    const { calls } = api();
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const sheet = await openSettings(user);
+    const picker = await within(sheet).findByRole("combobox", { name: "Operator" });
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual([
+      "Ana Souza (you)",
+      "Atlas (@atlas)",
+      "Notes (@notes)",
+      "Lab (@lab)",
+      "Old helper (@old-helper)",
+    ]);
+    expect(picker).toHaveValue(me.id);
+    await user.selectOptions(picker, "a1");
+    await user.click(within(sheet).getByRole("button", { name: "Save operator" }));
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({ operator_id: "a1" });
+    expect(await screen.findByText("Operator saved")).toBeInTheDocument();
+  });
+
+  it("shows the operator read-only to someone the connector is shared with", async () => {
+    api({ my_level: "use", operator: atlas });
+    renderRoute("/connectors/k1");
+    expect(await screen.findByText("Operated by Atlas")).toBeInTheDocument();
+    // No settings sheet, so no way to change it.
+    expect(screen.queryByRole("button", { name: "Connector settings" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Operator" })).toBeNull();
+  });
+
+  it("shows the server's reason under the operator pick and keeps the old one", async () => {
+    api(
+      {},
+      apiError(422, "invalid", "invalid", {
+        operator_id: "must be you or an AI you own",
+      }),
+    );
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const sheet = await openSettings(user);
+    const picker = await within(sheet).findByRole("combobox", { name: "Operator" });
+    await user.selectOptions(picker, "a1");
+    await user.click(within(sheet).getByRole("button", { name: "Save operator" }));
+    expect(await within(sheet).findByRole("alert")).toHaveTextContent(
+      "must be you or an AI you own",
+    );
+    expect(picker).toHaveAttribute("aria-invalid", "true");
+    expect(picker).toHaveValue("a1");
+  });
+
+  it("speaks Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mockApi({
+      "GET /me": json(200, makeMe({ locale: "pt-BR" })),
+      "GET /connector-kinds": kinds,
+      "GET /connectors/k1": json(200, base),
+      "GET /connectors/k1/chats": json(200, { items: [] }),
+      "GET /contacts": json(200, sampleContacts),
+    });
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    await user.click(await screen.findByRole("button", { name: "Configurações do conector" }));
+    const sheet = await screen.findByRole("dialog", { name: "Configurações do conector" });
+    expect(await within(sheet).findByRole("combobox", { name: "Operador" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Salvar operador" })).toBeDisabled();
   });
 });

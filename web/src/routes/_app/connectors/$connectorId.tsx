@@ -15,7 +15,9 @@ import { ConnectorCatchAll } from "@/components/connector-catch-all";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { CodeBlock } from "@/components/copy-field";
 import { EmptyState } from "@/components/empty-state";
+import { FormAlert } from "@/components/form-fields";
 import { chatTitle, platformLabel } from "@/components/message-item";
+import { NativeSelect } from "@/components/native-select";
 import { RouteChatDialog } from "@/components/route-chat-dialog";
 import { ConnectorForm } from "@/components/schema-form";
 import { SharingDialog } from "@/components/sharing-dialog";
@@ -46,12 +48,14 @@ import {
   useConnector,
   useConnectorChats,
   useConnectorKinds,
+  useContacts,
   useDeleteConnector,
   useMe,
   useRefreshChats,
   useUpdateConnector,
 } from "@/lib/api/queries";
 import { type Chat, type Connector, type ConnectorKind, LevelManage } from "@/lib/api/types.gen";
+import { flattenTree } from "@/lib/contacts";
 import { type MessageKey, useI18n, useT } from "@/lib/i18n";
 import { formatAbsolute, formatRelative } from "@/lib/time";
 
@@ -126,6 +130,11 @@ function ConnectorView({ connector: c, kind }: { connector: Connector; kind?: Co
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
               <span>{kind?.label ?? platformLabel(c.kind)}</span>
               <ConnectorStatusBadge status={status} enabled={c.enabled} />
+              <span>
+                {t("connector.operatedBy", {
+                  name: c.operator?.display_name ?? c.owner.display_name,
+                })}
+              </span>
               {foreign ? (
                 <span className="text-xs">
                   {t("rooms.ownedBy", { username: c.owner.username })}
@@ -365,11 +374,117 @@ function ConnectorSettingsSheet({
                 })
               }
             />
+            <OperatorSettings connector={c} />
             <DeleteConnector connector={c} />
           </div>
         ) : null}
       </SheetContent>
     </Sheet>
+  );
+}
+
+/**
+ * Who the account is (ACC-01): its owner (the default) or one of the owner's AIs. Only the owner
+ * reaches this sheet; a grantee reads the operator in the page header.
+ */
+function OperatorSettings({ connector: c }: { connector: Connector }) {
+  const t = useT();
+  const update = useUpdateConnector(c.id);
+  const contacts = useContacts();
+  const id = useId();
+  const current = c.operator?.id ?? c.owner.id;
+  const [operatorId, setOperatorId] = useState(current);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const own = contacts.data
+    ? [...contacts.data.machines.flatMap((m) => flattenTree(m.nodes)), ...contacts.data.unlinked]
+    : [];
+  const missing = current !== c.owner.id && !own.some((a) => a.intelligence.id === current);
+  const dirty = operatorId !== current;
+  const fieldId = `${id}-operator`;
+  const fieldErrorId = `${id}-operator-error`;
+
+  const save = () => {
+    if (!dirty || update.isPending) return;
+    setError(null);
+    setFieldError(null);
+    update.mutate(
+      { operator_id: operatorId },
+      {
+        onSuccess: () => toast.success(t("connector.operatorSaved")),
+        onError: (err) => {
+          if (isApiError(err) && err.status === 422 && err.fields.operator_id) {
+            setFieldError(err.fields.operator_id);
+            return;
+          }
+          setError(
+            isApiError(err) && err.status === 403
+              ? t("connector.operatorForbidden")
+              : t("connector.operatorFailed"),
+          );
+        },
+      },
+    );
+  };
+
+  return (
+    <section aria-labelledby={id} className="space-y-3 border-t pt-5">
+      <div className="space-y-1">
+        <h3 id={id} className="text-sm font-medium">
+          {t("connector.operator")}
+        </h3>
+        <p className="text-sm text-muted-foreground">{t("connector.operatorBody")}</p>
+      </div>
+      <FormAlert>{error}</FormAlert>
+      <div className="space-y-1">
+        <label htmlFor={fieldId} className="block text-sm font-medium">
+          {t("connector.operatorPick")}
+        </label>
+        {contacts.isPending ? (
+          <Skeleton className="h-9 w-full" />
+        ) : (
+          <NativeSelect
+            id={fieldId}
+            value={operatorId}
+            onChange={(e) => {
+              setOperatorId(e.target.value);
+              setFieldError(null);
+            }}
+            aria-invalid={fieldError ? true : undefined}
+            aria-describedby={fieldError ? fieldErrorId : `${id}-operator-hint`}
+          >
+            <option value={c.owner.id}>
+              {t("connector.operatorOwner", { name: c.owner.display_name })}
+            </option>
+            {missing ? (
+              <option value={current}>{c.operator?.display_name ?? c.owner.display_name}</option>
+            ) : null}
+            {own
+              .filter((a) => a.intelligence.id !== c.owner.id)
+              .map((a) => (
+                <option key={a.intelligence.id} value={a.intelligence.id}>
+                  {a.intelligence.display_name} (@{a.intelligence.handle})
+                </option>
+              ))}
+          </NativeSelect>
+        )}
+        {fieldError ? (
+          <p id={fieldErrorId} role="alert" className="text-sm text-destructive">
+            {fieldError}
+          </p>
+        ) : (
+          <p id={`${id}-operator-hint`} className="text-xs text-muted-foreground">
+            {t("connector.operatorHint")}
+          </p>
+        )}
+      </div>
+      <div className="flex justify-end">
+        {/* A11Y-04: the button waits for a change. */}
+        <Button size="sm" disabled={!dirty || update.isPending} onClick={save}>
+          {t("connector.operatorSave")}
+        </Button>
+      </div>
+    </section>
   );
 }
 

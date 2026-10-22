@@ -54,6 +54,7 @@ import {
   type MessagePreview,
   MultipartFileField,
   MultipartMessageField,
+  type NotifyOption,
   type OpenDMRequest,
   type Page,
   type PairingCode,
@@ -66,6 +67,7 @@ import {
   type RoomMember,
   type Session,
   type SetMachineLabelRequest,
+  type SetNotifyRequest,
   type SetupRequest,
   type SetupStatus,
   type Sharing,
@@ -91,6 +93,7 @@ export type SharingResource = "rooms" | "agents" | "connectors";
 
 export const queryKeys = {
   me: ["me"] as const,
+  notifyOptions: ["me", "notify-options"] as const,
   setupStatus: ["setup-status"] as const,
   invite: (token: string) => ["invite", token] as const,
   users: ["users"] as const,
@@ -756,6 +759,28 @@ export function useRemoveAvatar(id: string) {
       }
       qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), exact: true });
     },
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Notify me on another app (NOTI-01)
+
+/** The chats of the caller's linked accounts that can receive a copy of AIs' DMs (NOTI-01). */
+export const notifyOptionsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.notifyOptions,
+    queryFn: () => api<List<NotifyOption>>("GET", "/me/notify-options").then(items),
+  });
+
+export const useNotifyOptions = () => useQuery(notifyOptionsQuery());
+
+/** Chooses where AIs' direct messages reach the caller; null clears the choice (NOTI-01). */
+export function useSetNotify() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (chatId: string | null) =>
+      api<Me>("PUT", "/me/notify", { chat_id: chatId } satisfies SetNotifyRequest),
+    onSuccess: (me) => qc.setQueryData(queryKeys.me, me),
   });
 }
 

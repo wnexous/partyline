@@ -936,9 +936,9 @@ design needs the API to return them). See `contract-notes.md`, T48.
 **Requirement**: PROF-03, NOTI-01, ACC-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Own profile changes show in the sidebar header right away (PROF-03); notify select lists the options and saves/clears (NOTI-01)
-- [ ] Connector owner picks an operator; grantees see it read-only (ACC-01)
-- [ ] Gate check passes: `make check`
+- [x] Own profile changes show in the sidebar header right away (PROF-03); notify select lists the options and saves/clears (NOTI-01)
+- [x] Connector owner picks an operator; grantees see it read-only (ACC-01)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): edit your profile, notifications and connector operators`
