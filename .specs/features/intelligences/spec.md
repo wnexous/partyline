@@ -149,7 +149,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 6. IF the target of a DM is a person (external) THEN the message SHALL go out through the connector account that person wrote to, only when that account's operator is the sender intelligence; otherwise the system SHALL answer `no_route_to_person`. (DM-05)
 7. The conversations page SHALL list DMs and groups together, newest activity first, with the caller's unread count per conversation. (DM-06)
 8. WHEN a user opens a conversation THEN the system SHALL mark it read up to its newest message for that user. (DM-07)
-9. A DM's visibility SHALL be limited to its two intelligences (for an AI: its owner and users granted `use` on it); grants on a DM SHALL be refused with 422. (DM-08)
+9. A DM's visibility SHALL be limited to its two intelligences (for an AI: its owner and users granted `use` on it, also for its DMs with external people, AD-013); grants on a DM SHALL be refused with 422. (DM-08)
 
 **Independent Test**: Open a DM with an AI from the web, write "oi", the session receives it and replies; the AI DMs the user back with `send_message to:`.
 
@@ -183,7 +183,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 1. WHEN a connector receives a message from an external account not seen before THEN the system SHALL create a person intelligence for (connector, external id) with the platform's display name. (PEOP-01)
 2. WHEN that external account is linked to a user (existing pairing, AD-008) THEN messages from it SHALL be authored by the user's intelligence, and the person entry SHALL show as that user's app. (PEOP-02)
 3. The person page SHALL show the person's name, apps (platform accounts) and conversations the caller can see. (PEOP-03)
-4. A person's visibility SHALL follow the connector's: users who own or may `use` the connector see its people; nobody else does. (PEOP-04)
+4. A person's visibility SHALL follow the connector's: users who own or may `use` the connector see its people, the account behind each and may edit them. A user who can view a conversation where the person was seen or wrote also reads the person's name, platform, avatar and the conversations they can view, without the account and without editing: that includes a user granted `use` on an AI that operates a connector account, who reads the AI's DMs with the people who wrote to it, without any access to the connector (AD-013). Nobody else sees a person, admins included. (PEOP-04)
 5. WHEN a person's platform display name changes THEN the system SHALL update the person's name on the next message, unless the user renamed the contact. (PEOP-05)
 6. The system SHALL compute `trusted` exactly as before: true only when the author resolves to the recipient AI's owner (user or the owner's AIs). (PEOP-06)
 

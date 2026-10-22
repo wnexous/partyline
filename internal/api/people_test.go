@@ -173,6 +173,72 @@ func TestPersonProfileFollowsTheConnector(t *testing.T) {
 	liveCarol.ExpectNone(300*time.Millisecond, dto.LiveEventTypeHello)
 }
 
+// DM-08, PEOP-04 (AD-013): a user granted use on the AI that operates a connector account reads
+// the AI's platform DMs with external people and those people's profiles and avatars, without any
+// access to the connector; a user with neither the AI grant nor the connector finds neither the DM
+// nor the person, an admin included, and the users of the connector see the person but not the
+// AI's DM.
+func TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople(t *testing.T) {
+	f := newPeopleFixture(t)
+	ctx := context.Background()
+	atlas := f.env.NewAI(f.alice, "atlas")
+	shareAI(f.alice, atlas, f.dave) // dave: use on atlas and nothing on the connector
+	noRoom, dms := "", dto.AutoRouteScopeDMs
+	f.alice.Patch("/api/v1/connectors/"+f.conn.ID, dto.UpdateConnectorRequest{AutoRouteScope: &dms, AutoRouteRoomID: &noRoom, OperatorID: &atlas}).RequireStatus(http.StatusOK)
+
+	const dana = "5511999990003@s.whatsapp.net"
+	f.clock.Advance(time.Minute)
+	f.inst.Emit(ctx, connectors.Inbound{ChatID: dana, ChatTitle: "Dana", ChatKind: "dm", MessageID: "d1", SenderID: dana, SenderName: "Dana", Text: "hello Atlas", At: f.clock.Now()})
+	var chat string
+	for _, c := range testkit.Decode[dto.List[dto.Chat]](f.alice.Get("/api/v1/connectors/" + f.conn.ID + "/chats").RequireStatus(http.StatusOK)).Items {
+		if c.ExternalID == dana {
+			chat = c.ID
+		}
+	}
+	require.NotEmpty(t, chat)
+	roomIDs, err := f.env.App.Store.R().ListChatRoomIDs(ctx, chat)
+	require.NoError(t, err)
+	require.Len(t, roomIDs, 1, "the platform DM between Dana and Atlas")
+	dm := roomIDs[0]
+	var person string
+	for _, p := range testkit.Decode[dto.Room](f.alice.Get("/api/v1/rooms/" + dm).RequireStatus(http.StatusOK)).Participants {
+		if p.Role == dto.IntelligenceRolePerson {
+			person = p.ID
+		}
+	}
+	require.NotEmpty(t, person)
+	putAvatar(f.alice, person, pngBytes(t, bands(300, 300))).RequireStatus(http.StatusOK)
+
+	// alice owns Atlas and dave may use it: both read the DM and the person, neither as a participant.
+	for _, c := range []*testkit.Client{f.alice, f.dave} {
+		room := testkit.Decode[dto.Room](c.Get("/api/v1/rooms/" + dm).RequireStatus(http.StatusOK))
+		require.Equal(t, []any{dto.ConversationKindDM, dto.LevelView}, []any{room.Kind, room.MyLevel}, c.User.Username)
+		msgs := testkit.Decode[dto.Page[dto.Message]](c.Get("/api/v1/rooms/" + dm + "/messages").RequireStatus(http.StatusOK)).Items
+		require.Len(t, msgs, 1, c.User.Username)
+		require.Equal(t, []any{"hello Atlas", person}, []any{msgs[0].Text, msgs[0].Author.ID}, c.User.Username)
+		getAvatar(c, person).RequireStatus(http.StatusOK)
+	}
+	seen := profileOf(t, f.dave, person)
+	require.Equal(t, []any{"Dana", connectortest.KindName, false}, []any{seen.DisplayName, seen.Platform, seen.CanEdit})
+	require.Nil(t, seen.Person, "the account behind the person stays with the users of the connector")
+	require.Equal(t, []dto.RoomRef{{ID: dm, Kind: dto.ConversationKindDM}}, seen.Conversations, "the DM with Atlas is the one conversation dave can view")
+	patchProfile(f.dave, person, dto.UpdateProfileRequest{Bio: ptr("Hijacked")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+
+	// bob may use the connector: he sees and edits the person, but the DM is Atlas's, not his.
+	require.True(t, profileOf(t, f.bob, person).CanEdit)
+	f.bob.Get("/api/v1/rooms/"+dm).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	f.bob.Get("/api/v1/rooms/"+dm+"/messages").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+
+	// carol has neither the AI nor the connector, and the admin is no exception (AD-005).
+	for _, c := range []*testkit.Client{f.carol, f.admin} {
+		f.env.T.Helper()
+		c.Get("/api/v1/rooms/"+dm).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+		c.Get("/api/v1/rooms/"+dm+"/messages").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+		getProfile(c, person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+		getAvatar(c, person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	}
+}
+
 // A person is visible through the conversations that involve it: a chat where it was seen, or a
 // room where it wrote; the access follows the viewer's access to the room (design, security).
 func TestPersonProfileIsVisibleThroughAConversation(t *testing.T) {

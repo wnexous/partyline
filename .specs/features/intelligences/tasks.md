@@ -1097,9 +1097,9 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: PEOP-04, DM-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A `use` grantee of the operator AI reads the platform DM between the AI and a person, the person's profile and its avatar; the AI's owner too; a user with neither the grant nor the connector, and an admin, get 404 on each (PEOP-04, DM-08)
-- [ ] `spec.md` PEOP-04 and DM-08 say exactly that and `STATE.md` has AD-013 (decided by André 2026-10-22)
-- [ ] Gate check passes: `make check`
+- [x] A `use` grantee of the operator AI reads the platform DM between the AI and a person, the person's profile and its avatar; the AI's owner too; a user with neither the grant nor the connector, and an admin, get 404 on each (PEOP-04, DM-08)
+- [x] `spec.md` PEOP-04 and DM-08 say exactly that and `STATE.md` has AD-013 (decided by André 2026-10-22)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `docs(specs): record AD-013 for use grantees of an AI's DMs`

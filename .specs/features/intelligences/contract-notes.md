@@ -2506,3 +2506,26 @@ so the survivor's undelivered messages and the counterpart's unread ones were sk
   pushes the message again through `Gateway.Push` as the dispatcher would and expects no frame, then a
   new message arrives. It fails on the previous code (the late push is delivered). The channel test
   passed `go test -race -count=100` and `-count=30`.
+
+## T58 - Record AD-013: use grantees of an AI see its DMs with people (PEOP-04, DM-08)
+
+`validation.md` gap 3. PEOP-04 said "nobody else" sees a connector's people; DM-08 gives the users
+granted `use` on an AI `view` on all of its DMs, and a platform DM has the person as a participant, so a
+grantee read the DM, the person's profile and its avatar without any access to the connector. André
+decided on 2026-10-22 to keep the behaviour: **AD-013** in `STATE.md`, PEOP-04 and DM-08 in `spec.md`
+say it. No code changes.
+
+- **Who sees a person** (unchanged, now written down): the users who own or may `use` the connector
+  (profile, account, edit); a user who can view a conversation where the person was seen or wrote
+  (profile without account, no edit): a group that bridges the person's chat, or, through DM-08, the DM
+  of an AI the user may use; nobody else, admins included.
+- **Who sees the AI's platform DM:** the person (through its chat), the AI, the AI's owner and the users
+  granted `use` on it by name (`access.dmLevel`, `viewsAIOf`; the `*` grant does not count, T19). The
+  connector's users see the person and not the AI's DM unless they hold one of those roles.
+- **Test:** `TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople` (`internal/api/people_test.go`): a
+  platform DM between a person and the operator AI; the owner and a `use` grantee without connector
+  access read the room (level `view`), its message, the person's profile (no account, no edit, 403 on
+  edit) and avatar and list the DM among the person's conversations; a connector user edits the person
+  and gets 404 on the DM; a stranger and the admin get 404 on the DM, its messages, the profile and the
+  avatar. Scratch copy: ignoring `use` grants for DMs, giving every user view of the DM and hiding the
+  person from a conversation's viewers each fail it.
