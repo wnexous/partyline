@@ -44,6 +44,9 @@ type Options struct {
 	// instructions to OmpInstructions. Empty means Claude Code for the full channel and an
 	// unknown harness ("agent") for a tools-only one.
 	Harness string
+	// Takeover makes the first connection take over the AI's live session when another
+	// session has it (SES-02); later connections, after a drop, never do.
+	Takeover bool
 
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -107,6 +110,7 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 	l := newLink(base, o.Token, id, o.HTTPClient, srv, o.Stderr, o.timing)
+	l.takeover = o.Takeover
 	t.link = l
 	t.register(srv)
 

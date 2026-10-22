@@ -20,6 +20,8 @@ type ListenOptions struct {
 	Home    string
 	Harness string
 	Adopt   string
+	// Takeover means what it means for Run.
+	Takeover bool
 
 	// Stdin ending (the harness that spawned listen went away) stops Listen; nil never does.
 	Stdin  io.Reader
@@ -54,6 +56,7 @@ func Listen(ctx context.Context, o ListenOptions) error {
 
 	id := Identity{Machine: o.Machine, Folder: o.Folder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt}
 	l := newLink(base, o.Token, id, o.HTTPClient, &lineWriter{w: o.Stdout}, o.Stderr, o.timing)
+	l.takeover = o.Takeover
 	err = l.run(ctx)
 	if errors.Is(err, context.Canceled) {
 		return nil

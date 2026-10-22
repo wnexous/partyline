@@ -94,9 +94,10 @@ func (s *server) agentSession(w http.ResponseWriter, r *http.Request) error {
 		if row, ok := rows[a.ID]; ok {
 			ref = convert.IntelligenceRef(row, dto.IntelligenceRoleAI, "")
 		}
-		out = dto.SessionState{Exists: true, Online: s.Agents.Online(a.ID), Intelligence: &ref, App: a.Harness}
-		if out.Online {
-			out.ConnectedAt = convert.OptTime(a.ConnectedAt)
+		out = dto.SessionState{Exists: true, Intelligence: &ref, App: a.Harness}
+		if live, ok := s.Agents.Live(a.ID); ok {
+			since := live.Since.UTC()
+			out.Online, out.ConnectedAt = true, &since
 		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)

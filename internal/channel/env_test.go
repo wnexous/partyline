@@ -27,7 +27,7 @@ import (
 const wait = time.Minute
 
 // fastTiming keeps reconnect tests short.
-var fastTiming = timing{minBackoff: 50 * time.Millisecond, maxBackoff: 400 * time.Millisecond, invalidRetry: 150 * time.Millisecond, replacedPause: 700 * time.Millisecond}
+var fastTiming = timing{minBackoff: 50 * time.Millisecond, maxBackoff: 400 * time.Millisecond, invalidRetry: 150 * time.Millisecond, limitPause: 700 * time.Millisecond}
 
 // builderFolder is the folder of alice's AI "builder" in the tests: the machine "testbox".
 var builderFolder = agents.FolderID{Machine: "testbox", Folder: "/work/builder", Harness: "claude"}

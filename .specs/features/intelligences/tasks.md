@@ -385,10 +385,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: SES-02, SES-04, SES-06, SES-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Second connection without takeover → 409 `identity_busy` with name/app/since, first stays live (SES-04); with takeover → old closed `taken_over`, new live (SES-02); same live id reconnecting is accepted silently
-- [ ] Two simultaneous takeovers → exactly one live, the other closed `taken_over` (spec edge case)
-- [ ] Closing the live socket → offline event within 5 s and the next connection needs no takeover (SES-06); messages posted while offline arrive as backlog with the 50 cap and notice (SES-08)
-- [ ] Gate check passes: `make check`
+- [x] Second connection without takeover → 409 `identity_busy` with name/app/since, first stays live (SES-04); with takeover → old closed `taken_over`, new live (SES-02); same live id reconnecting is accepted silently
+- [x] Two simultaneous takeovers → exactly one live, the other closed `taken_over` (spec edge case)
+- [x] Closing the live socket → offline event within 5 s and the next connection needs no takeover (SES-06); messages posted while offline arrive as backlog with the 50 cap and notice (SES-08)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): keep one live session per AI with explicit takeover`

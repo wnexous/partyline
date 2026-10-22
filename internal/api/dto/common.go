@@ -83,6 +83,9 @@ const (
 	// (not absolute or canonical, a NUL, longer than 1024 bytes) (AID-05).
 	ErrorCodeFolderRequired ErrorCode = "folder_required" // 422
 	ErrorCodeFolderInvalid  ErrorCode = "folder_invalid"  // 422
+	// ErrorCodeIdentityBusy is a connection for an AI that has a live session in another
+	// process (409); Details say who, in which app and since when (SES-04).
+	ErrorCodeIdentityBusy ErrorCode = "identity_busy" // 409
 )
 
 // ErrorBody is the envelope of every error response.
@@ -95,7 +98,19 @@ type Error struct {
 	Code    ErrorCode         `json:"code"`
 	Message string            `json:"message"`
 	Fields  map[string]string `json:"fields,omitempty"`
+	// Details carries facts about the refusal that are not request fields: for identity_busy the
+	// BusyDetail keys.
+	Details map[string]string `json:"details,omitempty"`
 }
+
+// Keys of Error.Details for identity_busy: the AI's display name, the id and the readable name of
+// the app of its live session and when that session connected (RFC 3339, UTC).
+const (
+	BusyDetailDisplayName = "display_name"
+	BusyDetailApp         = "app"
+	BusyDetailAppLabel    = "app_label"
+	BusyDetailConnectedAt = "connected_at"
+)
 
 // List wraps an unpaginated collection.
 type List[T any] struct {

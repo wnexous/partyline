@@ -10,6 +10,7 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -381,20 +382,59 @@ func TestToolsWithInvalidToken(t *testing.T) {
 	}
 }
 
-// Contract (close 4000): after another session takes the AI, tools report it.
-func TestToolsReportReplaced(t *testing.T) {
+// SES-05: after another session takes the AI over, every tool reports it.
+func TestToolsReportTakenOver(t *testing.T) {
 	e := newChanEnv(t)
-	o := e.options()
-	o.timing.replacedPause = time.Minute
-	s := e.connected(o)
-	other, resp := e.alice.WithBearer(e.secret).DialFolder(testkit.Folder{Machine: "testbox", Path: "/work/builder", Harness: "claude"})
-	require.NotNil(t, other, "upgrade refused: %d", resp.Status)
-	other.Welcome(wait)
+	s := e.connected(e.options())
+	f := testkit.Folder{Machine: "testbox", Path: "/work/builder", Harness: "opencode", Takeover: true}
+	taker, resp := e.alice.WithBearer(e.secret).DialFolder(f)
+	require.NotNil(t, taker, "upgrade refused: %d %s", resp.Status, resp.Body)
+	taker.Welcome(wait)
 
-	require.Eventually(t, func() bool {
+	require.Eventually(t, func() bool { // the channel has seen the takeover
 		text, isErr := s.call("list_rooms", map[string]any{})
-		return isErr && text == "partyline: replaced by another session of this agent"
-	}, wait, 50*time.Millisecond)
+		return isErr && text == wantTakenOver
+	}, wait, 20*time.Millisecond)
+
+	for tool, args := range map[string]map[string]any{
+		"send_message": toolArgs("room", "Support", "text", "x"),
+		"reply":        toolArgs("message_id", "m", "text", "x"),
+		"list_rooms":   {},
+		"history":      toolArgs("room", "Support"),
+	} {
+		text, isErr := s.call(tool, args)
+		require.True(t, isErr, tool)
+		require.Equal(t, wantTakenOver, text, tool)
+	}
+	require.Empty(t, e.messages(e.room.ID), "the taken-over channel posted nothing as the AI")
+}
+
+// SES-04: while another session holds the AI, tools report that this channel is not connected
+// and nothing is posted as the AI.
+func TestToolsReportBusy(t *testing.T) {
+	e := newChanEnv(t)
+	holder, resp := e.alice.WithBearer(e.secret).DialFolder(testkit.Folder{Machine: "testbox", Path: "/work/builder", Harness: "opencode"})
+	require.NotNil(t, holder, "upgrade refused: %d %s", resp.Status, resp.Body)
+	holder.Welcome(wait)
+	o := e.options()
+	o.timing.busyRetries = []time.Duration{} // no retry: the state stays busy
+	s := startSession(t, o)
+	s.handshake()
+	require.Eventually(t, func() bool { // the first connection attempt has been refused
+		text, isErr := s.call("list_rooms", map[string]any{})
+		return isErr && strings.Contains(text, "open in another session")
+	}, wait, 20*time.Millisecond)
+
+	for tool, args := range map[string]map[string]any{
+		"send_message": toolArgs("room", "Support", "text", "x"),
+		"list_rooms":   {},
+		"history":      toolArgs("room", "Support"),
+	} {
+		text, isErr := s.call(tool, args)
+		require.True(t, isErr, tool)
+		require.Contains(t, text, "open in another session", tool)
+	}
+	require.Empty(t, e.messages(e.room.ID), "the busy channel posted nothing as the AI")
 }
 
 // Design (error handling): an unreachable server → "partyline: server unreachable".

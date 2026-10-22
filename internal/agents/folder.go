@@ -194,11 +194,7 @@ func (r *Registry) ResolveFolder(ctx context.Context, ownerID string, id FolderI
 	if err := ValidateFolder(id.Machine, id.Folder); err != nil {
 		return db.Agent{}, err
 	}
-	if h := strings.TrimSpace(id.Harness); h != "" {
-		id.Harness = HarnessID(h)
-	} else {
-		id.Harness = ""
-	}
+	id.Harness = cleanHarness(id.Harness)
 	id.Adopt = strings.ToLower(strings.TrimSpace(id.Adopt))
 	if err := r.touchMachine(ctx, ownerID, id.Machine, id.Home); err != nil {
 		return db.Agent{}, err
@@ -355,18 +351,61 @@ func (r *Registry) createFolderAgent(ctx context.Context, q *db.Queries, ownerID
 	return q.GetAgent(ctx, agentID)
 }
 
+// cleanHarness is the harness id a header value stands for; a missing one stays empty (it
+// leaves the app alone), an unknown one is "agent".
+func cleanHarness(v string) string {
+	if strings.TrimSpace(v) == "" {
+		return ""
+	}
+	return HarnessID(v)
+}
+
 // relabel makes harness the agent's app (AID-02). An empty harness changes nothing, and a
-// tools-only call (live false) leaves the app of an agent that has a live session.
+// tools-only call (live false) leaves the app of an agent that has a live session: the check and
+// the write cannot interleave with a session attaching (appMu).
 func (r *Registry) relabel(ctx context.Context, a db.Agent, harness string, live bool) (db.Agent, error) {
-	if harness == "" || harness == a.Harness || (!live && r.presence.Online(a.ID)) {
+	if harness == "" || harness == a.Harness {
 		return a, nil
 	}
-	err := r.store.WithTx(ctx, func(q *db.Queries) error {
-		return q.SetAgentHarness(ctx, db.SetAgentHarnessParams{Harness: harness, ID: a.ID})
-	})
-	if err != nil {
+	r.appMu.Lock()
+	defer r.appMu.Unlock()
+	if !live && r.presence.Online(a.ID) {
+		return a, nil
+	}
+	if r.afterAppCheck != nil {
+		r.afterAppCheck()
+	}
+	if err := r.setApp(ctx, a.ID, harness); err != nil {
 		return db.Agent{}, err
 	}
 	a.Harness = harness
 	return a, nil
 }
+
+func (r *Registry) setApp(ctx context.Context, agentID, harness string) error {
+	return r.store.WithTx(ctx, func(q *db.Queries) error {
+		return q.SetAgentHarness(ctx, db.SetAgentHarnessParams{Harness: harness, ID: agentID})
+	})
+}
+
+// Attach makes s the live session of the agent (Presence.Attach) and, once it is, stamps its
+// connect time and makes harness its app (AID-02). A refused attach (ErrBusy) changes nothing,
+// not even the app, so the session that holds the AI keeps its label (SES-04). A session that
+// replaces an older socket of the same process is not a new session: it keeps both.
+func (r *Registry) Attach(ctx context.Context, a db.Agent, s Session, harness, liveID string, takeover bool) error {
+	r.appMu.Lock()
+	defer r.appMu.Unlock()
+	fresh, err := r.presence.Attach(ctx, a, s, liveID, takeover)
+	if err != nil || !fresh {
+		return err
+	}
+	if harness = cleanHarness(harness); harness != "" {
+		if err := r.setApp(ctx, a.ID, harness); err != nil {
+			return err
+		}
+	}
+	return r.MarkConnected(ctx, a.ID)
+}
+
+// Live returns the agent's live session, if any.
+func (r *Registry) Live(agentID string) (Live, bool) { return r.presence.Live(agentID) }

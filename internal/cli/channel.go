@@ -34,6 +34,8 @@ func addAgentFlags(fs *flag.FlagSet) agentFlags {
 type agentConn struct {
 	url, token string
 	id         channel.Identity
+	// takeover is PARTYLINE_TAKEOVER=1: the person agreed to take the AI's live session over.
+	takeover bool
 }
 
 // projectIgnored is the line printed when --project is given: AIs no longer belong to projects.
@@ -123,7 +125,10 @@ func resolveAgent(cmd string, f agentFlags, io stdio) (agentConn, int) {
 	if len(adopt) == 0 {
 		adopt = []string{""}
 	}
-	return agentConn{url: creds.URL, token: creds.Token, id: sessionIdentity(adopt[0], io)}, 0
+	return agentConn{
+		url: creds.URL, token: creds.Token, id: sessionIdentity(adopt[0], io),
+		takeover: strings.TrimSpace(io.getenv("PARTYLINE_TAKEOVER")) == "1",
+	}, 0
 }
 
 // toolsOnlyHarnesses are the --harness values of `channel --tools-only`: the harnesses that
@@ -167,7 +172,7 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	}
 	err := channel.Run(ctx, channel.Options{
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, Home: c.id.Home, Adopt: c.id.Adopt,
-		Harness: c.id.Harness, Version: buildVersion(), ToolsOnly: *toolsOnly,
+		Harness: c.id.Harness, Version: buildVersion(), ToolsOnly: *toolsOnly, Takeover: c.takeover,
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {
@@ -192,7 +197,7 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 	}
 	err := channel.Listen(ctx, channel.ListenOptions{
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt,
-		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
+		Takeover: c.takeover, Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	if err != nil {
 		fmt.Fprintln(io.stderr, "partyline listen:", err)

@@ -111,21 +111,6 @@ func TestAgentWSRequiresAgentToken(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, resp.Status)
 }
 
-// AGT-04: a second connection as the same agent closes the first with reason "replaced".
-func TestAgentWSSecondConnectionReplacesFirst(t *testing.T) {
-	f := newAgentRoom(t)
-	first := f.dial(t)
-	first.Welcome(wsWait)
-	second := f.dial(t)
-	second.Welcome(wsWait)
-
-	ce := closeError(t, first.Closed(wsWait))
-	require.Equal(t, websocket.StatusCode(4000), ce.Code)
-	require.Equal(t, "replaced", ce.Reason)
-	require.NoError(t, second.Closed(300*time.Millisecond), "the newer connection stays open")
-	require.True(t, f.env.App.Presence.Online(f.agentID))
-}
-
 // AGT-08: messages posted while offline arrive after connecting, oldest first; the agent's
 // own messages are not delivered back to it (DLV-02).
 func TestAgentWSDeliversBacklogInOrder(t *testing.T) {

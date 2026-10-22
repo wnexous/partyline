@@ -2,6 +2,8 @@ package testkit
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -141,13 +143,18 @@ func (c *Client) DialAgentHeaders(h http.Header) (*AgentConn, *Response) {
 
 // Folder is the identity an AI session sends with every connection and tool call: the machine
 // and canonical folder it works in and, optionally, the home folder, the harness and the
-// handle or v0.3 name of an unlinked AI to adopt (AID-07, MIG-02).
+// handle or v0.3 name of an unlinked AI to adopt (AID-07, MIG-02). Live is the id of the
+// process that holds the WebSocket (DialFolder gives every dial its own when it is empty, as
+// every process has its own: pass one to reconnect as the same process) and Takeover asks to
+// take over the AI's live session (SES-02).
 type Folder struct {
-	Machine string
-	Path    string
-	Home    string
-	Harness string
-	Adopt   string
+	Machine  string
+	Path     string
+	Home     string
+	Harness  string
+	Adopt    string
+	Live     string
+	Takeover bool
 }
 
 // Headers returns the folder headers the way the CLI sends them: the folder and the home
@@ -156,11 +163,14 @@ func (f Folder) Headers() http.Header {
 	h := http.Header{}
 	for k, v := range map[string]string{
 		dto.HeaderMachine: f.Machine, dto.HeaderHarness: f.Harness, dto.HeaderAdopt: f.Adopt,
-		dto.HeaderFolder: escapePath(f.Path), dto.HeaderHome: escapePath(f.Home),
+		dto.HeaderFolder: escapePath(f.Path), dto.HeaderHome: escapePath(f.Home), dto.HeaderLive: f.Live,
 	} {
 		if v != "" {
 			h.Set(k, v)
 		}
+	}
+	if f.Takeover {
+		h.Set(dto.HeaderTakeover, "1")
 	}
 	return h
 }
@@ -183,8 +193,19 @@ func (c *Client) AsFolder(f Folder) *Client {
 	return &cp
 }
 
-// DialFolder opens the agent WebSocket as the AI of the folder.
+// DialFolder opens the agent WebSocket as the AI of the folder. A dial without a Live id is a
+// process of its own.
 func (c *Client) DialFolder(f Folder) (*AgentConn, *Response) {
 	c.T.Helper()
+	if f.Live == "" {
+		f.Live = NewLiveID()
+	}
 	return c.DialAgentHeaders(f.Headers())
+}
+
+// NewLiveID returns a random live id, the way a process makes its own.
+func NewLiveID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return base64.RawURLEncoding.EncodeToString(b[:])
 }

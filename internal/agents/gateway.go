@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"slices"
 	"sync"
 	"time"
@@ -89,6 +90,9 @@ type Gateway struct {
 	// afterBacklogCount runs between the backlog count and list reads; tests use it to post
 	// a message in between. Nil in production.
 	afterBacklogCount func()
+	// beforeAttach runs after the upgrade and before the session attaches; tests use it to let
+	// another process win the race. Nil in production.
+	beforeAttach func()
 }
 
 // NewGateway returns a Gateway.
@@ -165,7 +169,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// The session is the AI of the machine and folder it names (AID-02); a client that names
 	// none is refused (AID-05).
-	row, err := g.register(r.Context(), p, r.Header)
+	row, hs, err := g.register(r.Context(), p, r.Header)
 	if err != nil {
 		var refused *httpx.Error
 		switch {
@@ -179,6 +183,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, err)
 		return
 	}
+	// A live session of another process keeps the AI unless this connection takes it over
+	// (SES-02, SES-04); the refusal is told before the upgrade, with who holds it.
+	if !hs.takeover {
+		if live, busy := g.d.Presence.Busy(row.Agent.ID, hs.liveID); busy {
+			g.d.Logger.DebugContext(r.Context(), "agent: connection refused", "code", dto.ErrorCodeIdentityBusy, "agent_id", row.Agent.ID, "request_id", httpx.RequestID(r.Context()))
+			httpx.WriteError(w, busyError(row, live))
+			return
+		}
+	}
 	ws, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return // Accept already wrote the response
@@ -190,10 +203,22 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer stopReq()
 
 	c := &conn{ws: ws, queue: make(chan dto.AgentMessage, QueueSize), cancel: cancel}
-	if err := g.d.Presence.Attach(ctx, row.Agent, c); err != nil {
-		g.d.Logger.ErrorContext(ctx, "agent: attach failed", "agent_id", row.Agent.ID, "err", err)
+	if g.beforeAttach != nil {
+		g.beforeAttach()
 	}
-	defer g.d.Presence.Detach(ctx, row.Agent.ID, c)
+	err = g.d.Registry.Attach(ctx, row.Agent, c, hs.harness, hs.liveID, hs.takeover)
+	defer g.d.Presence.Detach(ctx, row.Agent.ID, c) // does nothing for a connection that never attached
+	switch {
+	case errors.Is(err, ErrBusy):
+		// Another process attached between the check above and now: the new socket loses.
+		g.d.Logger.DebugContext(ctx, "agent: connection refused", "code", dto.ErrorCodeIdentityBusy, "agent_id", row.Agent.ID)
+		_ = ws.Close(CloseBusy, ReasonBusy)
+		return
+	case err != nil:
+		g.d.Logger.ErrorContext(ctx, "agent: attach failed", "agent_id", row.Agent.ID, "err", err)
+		_ = ws.Close(websocket.StatusInternalError, "attach failed")
+		return
+	}
 	go g.readAcks(ctx, c, row.Agent.ID)
 	if revocations != nil {
 		go g.watchRevocations(ctx, c, p, revocations)
@@ -258,26 +283,55 @@ func (g *Gateway) watchRevocations(ctx context.Context, c *conn, p authn.Princip
 	}
 }
 
-// register resolves the AI of the machine and folder the session sent (AID-02), creating it on
-// first sight, and stamps its connect time.
-func (g *Gateway) register(ctx context.Context, p authn.Principal, h http.Header) (db.GetAgentWithOwnerRow, error) {
-	id, err := FolderIDFromHeader(h)
-	if err != nil {
-		return db.GetAgentWithOwnerRow{}, err
-	}
-	a, err := g.d.Registry.ResolveFolder(ctx, p.UserID, id, true)
-	if err != nil {
-		return db.GetAgentWithOwnerRow{}, err
-	}
-	return g.connected(ctx, a)
+// handshake is what a connection to the agent WebSocket says about itself besides its folder.
+type handshake struct {
+	// harness is the harness id the session runs in; empty leaves the AI's app alone.
+	harness string
+	// liveID is the id of the process that holds the connection (SES-02); empty when it sent none.
+	liveID string
+	// takeover asks to take the AI's live session over (SES-02).
+	takeover bool
 }
 
-// connected stamps the agent's connect time and returns it with its owner's name.
-func (g *Gateway) connected(ctx context.Context, a db.Agent) (db.GetAgentWithOwnerRow, error) {
-	if err := g.d.Registry.MarkConnected(ctx, a.ID); err != nil {
-		return db.GetAgentWithOwnerRow{}, err
+// liveIDPattern is the shape of a process id (dto.HeaderLive).
+var liveIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
+
+// register resolves the AI of the machine and folder the session sent (AID-02), creating it on
+// first sight, and reads the rest of what the connection says. The AI's app is not touched
+// here: it follows the session once the session is live (Registry.Attach), so a refused
+// connection changes nothing (SES-04).
+func (g *Gateway) register(ctx context.Context, p authn.Principal, h http.Header) (db.GetAgentWithOwnerRow, handshake, error) {
+	id, err := FolderIDFromHeader(h)
+	if err != nil {
+		return db.GetAgentWithOwnerRow{}, handshake{}, err
 	}
-	return g.d.Store.R().GetAgentWithOwner(ctx, a.ID)
+	d := handshake{harness: cleanHarness(id.Harness), takeover: h.Get(dto.HeaderTakeover) == "1"}
+	if v := h.Get(dto.HeaderLive); liveIDPattern.MatchString(v) {
+		d.liveID = v
+	}
+	id.Harness = ""
+	a, err := g.d.Registry.ResolveFolder(ctx, p.UserID, id, true)
+	if err != nil {
+		return db.GetAgentWithOwnerRow{}, handshake{}, err
+	}
+	row, err := g.d.Store.R().GetAgentWithOwner(ctx, a.ID)
+	return row, d, err
+}
+
+// busyError is the refusal of a connection for an AI whose live session is in another process
+// (SES-04): it says who, in which app and since when, so the channel can tell the person how to
+// take over.
+func busyError(row db.GetAgentWithOwnerRow, live Live) *httpx.Error {
+	app := row.Agent.Harness
+	return &httpx.Error{
+		Status: http.StatusConflict, Code: dto.ErrorCodeIdentityBusy, Message: "this intelligence is open in another session",
+		Details: map[string]string{
+			dto.BusyDetailDisplayName: NameOf(row.ProfileName, row.Agent),
+			dto.BusyDetailApp:         app,
+			dto.BusyDetailAppLabel:    HarnessLabel(app),
+			dto.BusyDetailConnectedAt: live.Since.UTC().Format(time.RFC3339),
+		},
+	}
 }
 
 // welcomeRefs loads the AI's and its owner's profiles for the welcome frame. A row without an

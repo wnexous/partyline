@@ -346,9 +346,14 @@ export const ErrorCodeAvatarInvalid = "avatar_invalid"; // 422, the avatar is no
 export const ErrorCodeFolderRequired = "folder_required"; // 422
 export const ErrorCodeFolderInvalid = "folder_invalid"; // 422
 /**
+ * ErrorCodeIdentityBusy is a connection for an AI that has a live session in another
+ * process (409); Details say who, in which app and since when (SES-04).
+ */
+export const ErrorCodeIdentityBusy = "identity_busy"; // 409
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -362,7 +367,21 @@ export interface Error {
   code: ErrorCode;
   message: string;
   fields?: { [key: string]: string};
+  /**
+   * Details carries facts about the refusal that are not request fields: for identity_busy the
+   * BusyDetail keys.
+   */
+  details?: { [key: string]: string};
 }
+export const BusyDetailDisplayName = "display_name";
+export const BusyDetailApp = "app";
+export const BusyDetailAppLabel = "app_label";
+export const BusyDetailConnectedAt = "connected_at";
+/**
+ * Keys of Error.Details for identity_busy: the AI's display name, the id and the readable name of
+ * the app of its live session and when that session connected (RFC 3339, UTC).
+ */
+export type BusyDetail = typeof BusyDetailDisplayName | typeof BusyDetailApp | typeof BusyDetailAppLabel | typeof BusyDetailConnectedAt;
 /**
  * List wraps an unpaginated collection.
  */

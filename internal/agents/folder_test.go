@@ -132,7 +132,8 @@ func TestResolveFolderHarnessRules(t *testing.T) {
 	require.Equal(t, "claude", live.Harness)
 
 	session := &fakeSession{}
-	require.NoError(t, f.presence.Attach(ctx, live, session))
+	_, err = f.presence.Attach(ctx, live, session, "process-one", false)
+	require.NoError(t, err)
 	id.Harness = "codex"
 	tools, err := f.reg.ResolveFolder(ctx, alice.UserID, id, false)
 	require.NoError(t, err)
@@ -162,6 +163,58 @@ func TestResolveFolderHarnessRules(t *testing.T) {
 	unknown, err := f.reg.ResolveFolder(ctx, alice.UserID, id, true)
 	require.NoError(t, err)
 	require.Equal(t, DefaultHarness, unknown.Harness, "an unknown harness is the generic agent app")
+}
+
+// AID-04, SES-04: the app of a live session is the session's harness. A session that attaches
+// sets it, a tools-only call racing that attach never overwrites it, and a refused session
+// (another process holds the AI) leaves the holder's app alone.
+func TestAttachSetsTheAppAndToolsOnlyCallsNeverOverwriteIt(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	alice := f.user(t, "alice")
+
+	a, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/acme", Harness: "codex"}, false)
+	require.NoError(t, err)
+	holder := &fakeSession{}
+	require.NoError(t, f.reg.Attach(ctx, a, holder, "claude", "process-one-aaaaaaaa", false))
+	require.Equal(t, "claude", f.storedAgent(t, a.ID).Harness, "the session's harness is the app")
+	require.ErrorIs(t, f.reg.Attach(ctx, a, &fakeSession{}, "opencode", "process-two-bbbbbbbb", false), ErrBusy)
+	require.Equal(t, "claude", f.storedAgent(t, a.ID).Harness, "a refused session does not relabel the holder")
+
+	// A tools-only call that has seen nobody connected and is about to write the app while a
+	// session attaches: the live session's app wins, whichever way the two interleave.
+	b, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/race", Harness: "codex"}, false)
+	require.NoError(t, err)
+	paused, resume, attached := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var attachErr error
+	f.reg.afterAppCheck = func() {
+		close(paused)
+		go func() {
+			attachErr = f.reg.Attach(ctx, b, &fakeSession{}, "claude", "process-one-aaaaaaaa", false)
+			close(attached)
+		}()
+		select {
+		case <-attached: // the session attached while the call was paused
+		case <-time.After(50 * time.Millisecond): // or it waits for the call to finish
+		}
+		<-resume
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.reg.ResolveFolder(ctx, alice.UserID, FolderID{Machine: "devbox", Folder: "/work/race", Harness: "gemini"}, false)
+		done <- err
+	}()
+	select {
+	case <-paused:
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "the tools-only call never reached the point between its check and its write")
+	}
+	close(resume)
+	require.NoError(t, <-done)
+	<-attached
+	require.NoError(t, attachErr)
+	f.reg.afterAppCheck = nil
+	require.Equal(t, "claude", f.storedAgent(t, b.ID).Harness, "the tools-only call overwrote the live session's app")
 }
 
 // AID-01: the same folder on two machines, or for two owners, is two identities.

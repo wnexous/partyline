@@ -20,7 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/testkit"
 )
 
 // AGT-01, AGT-05, AGT-07: a pushed message becomes a notification line on stdout, then the
@@ -322,31 +321,6 @@ func TestLinkErrInvalidToken(t *testing.T) {
 	require.EqualError(t, l.Err(), "partyline: not connected (invalid token)")
 }
 
-// Contract (close 4000 replaced): the replaced channel stops reconnecting for the pause,
-// reports the replacement through Err, then connects again.
-func TestLinkPausesAfterReplaced(t *testing.T) {
-	e := newChanEnv(t)
-	tm := fastTiming
-	tm.replacedPause = 3 * time.Second
-	l := linkFor(t, e, tm)
-	require.Eventually(t, func() bool { return e.online() && l.Err() == nil }, wait, 10*time.Millisecond)
-
-	other, resp := e.alice.WithBearer(e.secret).DialFolder(testkit.Folder{Machine: "testbox", Path: "/work/builder", Harness: "claude"})
-	require.NotNil(t, other, "upgrade refused: %d", resp.Status)
-	other.Welcome(wait)
-	require.Eventually(t, func() bool { return l.Err() != nil }, wait, 10*time.Millisecond)
-	require.EqualError(t, l.Err(), "partyline: replaced by another session of this agent")
-
-	// No fight during the pause: the newer connection stays open.
-	require.NoError(t, other.Closed(time.Second))
-
-	// After the pause the channel connects again and replaces it.
-	err := other.Closed(wait)
-	require.Error(t, err)
-	require.Equal(t, closeReplaced, websocket.CloseStatus(err))
-	require.Eventually(t, func() bool { return l.Err() == nil }, wait, 10*time.Millisecond)
-}
-
 // Contract (close 4001 deleted): after the agent is deleted the channel stops reconnecting.
 func TestLinkStopsAfterDeleted(t *testing.T) {
 	e := newChanEnv(t)
@@ -459,7 +433,7 @@ func TestLinkReportsAgentLimit(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stderr := &syncBuffer{}
 	tm := fastTiming
-	tm.replacedPause = 120 * time.Millisecond // distinct from minBackoff (50 ms)
+	tm.limitPause = 120 * time.Millisecond // distinct from minBackoff (50 ms)
 	l := newLink(mustURL(t, srv.URL), "pl_agent_x", builderIdentity, http.DefaultClient, discard{}, stderr, tm)
 	var waitsMu sync.Mutex
 	var waits []time.Duration
@@ -476,13 +450,13 @@ func TestLinkReportsAgentLimit(t *testing.T) {
 
 	require.Eventually(t, func() bool { return l.Err() != nil }, wait, 10*time.Millisecond)
 	require.EqualError(t, l.Err(), "partyline: agent limit reached for this account; delete unused agents in the web app")
-	time.Sleep(4 * tm.replacedPause) // several retries
+	time.Sleep(4 * tm.limitPause) // several retries
 	require.Equal(t, 1, strings.Count(stderr.String(), "agent limit reached"), "stderr: %q", stderr.String())
 	waitsMu.Lock()
 	defer waitsMu.Unlock()
 	require.NotEmpty(t, waits)
 	for _, d := range waits {
-		require.Equal(t, tm.replacedPause, d, "retries after a refusal wait the long pause, not the backoff")
+		require.Equal(t, tm.limitPause, d, "retries after a refusal wait the long pause, not the backoff")
 	}
 }
 

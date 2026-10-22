@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,9 +21,10 @@ import (
 
 // Close codes the agent gateway uses (agent-channel contract notes).
 const (
-	closeReplaced websocket.StatusCode = 4000
-	closeDeleted  websocket.StatusCode = 4001
-	closeLagged                        = websocket.StatusTryAgainLater // 1013
+	closeDeleted   websocket.StatusCode = 4001
+	closeTakenOver websocket.StatusCode = 4002
+	closeBusy      websocket.StatusCode = 4003
+	closeLagged                         = websocket.StatusTryAgainLater // 1013
 )
 
 const (
@@ -34,17 +36,22 @@ const (
 
 // timing holds the link's waits; tests shorten them.
 type timing struct {
-	minBackoff    time.Duration // first reconnect delay (AGT-03)
-	maxBackoff    time.Duration // reconnect delay cap (AGT-03)
-	invalidRetry  time.Duration // retry interval while the token is rejected
-	replacedPause time.Duration // quiet period after another session took the agent name
+	minBackoff   time.Duration // first reconnect delay (AGT-03)
+	maxBackoff   time.Duration // reconnect delay cap (AGT-03)
+	invalidRetry time.Duration // retry interval while the token is rejected
+	limitPause   time.Duration // retry interval while the owner is at the agent limit
+	// busyRetries are the waits before the retries of a connection refused because the AI is
+	// live in another session: that session may be ending (SES-06). Empty means no retry; nil
+	// means the default.
+	busyRetries []time.Duration
 }
 
 var defaultTiming = timing{
-	minBackoff:    time.Second,
-	maxBackoff:    30 * time.Second,
-	invalidRetry:  60 * time.Second,
-	replacedPause: 5 * time.Minute,
+	minBackoff:   time.Second,
+	maxBackoff:   30 * time.Second,
+	invalidRetry: 60 * time.Second,
+	limitPause:   5 * time.Minute,
+	busyRetries:  []time.Duration{2 * time.Second, 4 * time.Second, 4 * time.Second},
 }
 
 func (t timing) withDefaults() timing {
@@ -57,8 +64,11 @@ func (t timing) withDefaults() timing {
 	if t.invalidRetry <= 0 {
 		t.invalidRetry = defaultTiming.invalidRetry
 	}
-	if t.replacedPause <= 0 {
-		t.replacedPause = defaultTiming.replacedPause
+	if t.limitPause <= 0 {
+		t.limitPause = defaultTiming.limitPause
+	}
+	if t.busyRetries == nil {
+		t.busyRetries = defaultTiming.busyRetries
 	}
 	return t
 }
@@ -87,7 +97,9 @@ const (
 	stateConnected
 	stateUnreachable
 	stateInvalidToken
-	stateReplaced
+	stateBusy
+	stateTakenOver
+	stateInvalid
 	stateDeleted
 	stateAgentLimit
 )
@@ -117,10 +129,14 @@ type link struct {
 	// liveID is the random id of this process, sent on every connection: a reconnect of the same
 	// process is not another session of the AI (SES-02).
 	liveID string
+	// takeover makes the connection take over the AI's live session (SES-02). The first
+	// connection that succeeds clears it: a reconnect after a drop never takes over.
+	takeover bool
 
-	mu    sync.Mutex
-	state linkState
-	seen  *idRing
+	mu     sync.Mutex
+	state  linkState
+	reason string // what the server said about a refusal (stateInvalid)
+	seen   *idRing
 }
 
 func newLink(base *url.URL, token string, id Identity, hc *http.Client, n notifier, stderr io.Writer, t timing) *link {
@@ -150,8 +166,12 @@ func (l *link) Err() error {
 		return errors.New("partyline: server unreachable")
 	case stateInvalidToken:
 		return errInvalidToken
-	case stateReplaced:
-		return errReplaced
+	case stateBusy:
+		return errBusy
+	case stateTakenOver:
+		return errTakenOver
+	case stateInvalid:
+		return fmt.Errorf("partyline: the server refused this session: %s", cmp.Or(l.reason, unusableSession))
 	case stateDeleted:
 		return errDeleted
 	case stateAgentLimit:
@@ -165,7 +185,19 @@ var errInvalidToken = errors.New("partyline: not connected (invalid token)")
 
 var errAgentLimit = errors.New("partyline: agent limit reached for this account; delete unused agents in the web app")
 
-var errReplaced = errors.New("partyline: replaced by another session of this agent")
+var errBusy = errors.New("partyline: this intelligence is open in another session; Partyline is not connected here")
+
+// takenOverText is what the harness is told, once, when another session takes the AI over, and
+// what every tool answers from then on (SES-05).
+const takenOverText = "This intelligence was opened in another session; Partyline is disconnected here."
+
+var errTakenOver error = sentence(takenOverText)
+
+// sentence is an error whose text is a full sentence told to the person as it is, so it ends with
+// a full stop, which Go error strings do not.
+type sentence string
+
+func (s sentence) Error() string { return string(s) }
 
 var errDeleted = errors.New("partyline: this agent was deleted; restart the session to register it again")
 
@@ -186,7 +218,9 @@ const (
 	outInvalidToken
 	outDropped // was connected, then the connection ended
 	outLagged
-	outReplaced
+	outBusy      // the AI is live in another session and this connection did not take over
+	outTakenOver // another session took the AI over from this one
+	outInvalid   // the server cannot use the machine or folder
 	outDeleted
 	outAgentLimit
 )
@@ -194,6 +228,7 @@ const (
 // run connects and reconnects until ctx ends (nil) or writing a notification fails.
 func (l *link) run(ctx context.Context) error {
 	backoff := l.t.minBackoff
+	busyTries := 0 // consecutive refusals because the AI is live elsewhere
 	for {
 		out, err := l.session(ctx)
 		if err != nil {
@@ -214,19 +249,35 @@ func (l *link) run(ctx context.Context) error {
 			wait = l.t.invalidRetry
 		case outDropped:
 			l.setState(stateConnecting)
-			wait, backoff = l.t.minBackoff, nextBackoff(l.t.minBackoff, l.t.maxBackoff)
+			wait, backoff, busyTries = l.t.minBackoff, nextBackoff(l.t.minBackoff, l.t.maxBackoff), 0
 		case outLagged:
 			l.setState(stateConnecting)
-			wait, backoff = 0, l.t.minBackoff
-		case outReplaced:
-			l.setState(stateReplaced)
-			fmt.Fprintf(l.stderr, "partyline: another session of this agent connected; pausing for %s\n", l.t.replacedPause)
-			wait, backoff = l.t.replacedPause, l.t.minBackoff
+			wait, backoff, busyTries = 0, l.t.minBackoff, 0
+		case outBusy:
+			if l.setState(stateBusy) {
+				fmt.Fprintln(l.stderr, "partyline: this intelligence is open in another session; Partyline is not connected here")
+			}
+			if busyTries >= len(l.t.busyRetries) {
+				<-ctx.Done() // the session that holds the AI did not end: stop trying
+				return nil
+			}
+			wait, backoff = l.t.busyRetries[busyTries], l.t.minBackoff
+			busyTries++
+		case outTakenOver:
+			l.setState(stateTakenOver)
+			fmt.Fprintln(l.stderr, "partyline: this intelligence was opened in another session; not reconnecting")
+			<-ctx.Done()
+			return nil
+		case outInvalid:
+			l.setState(stateInvalid)
+			fmt.Fprintf(l.stderr, "partyline: the server refused this session: %s\n", l.refusal())
+			<-ctx.Done()
+			return nil
 		case outAgentLimit:
 			if l.setState(stateAgentLimit) {
-				fmt.Fprintf(l.stderr, "partyline: the server refused this agent: agent limit reached; retrying every %s\n", l.t.replacedPause)
+				fmt.Fprintf(l.stderr, "partyline: the server refused this agent: agent limit reached; retrying every %s\n", l.t.limitPause)
 			}
-			wait, backoff = l.t.replacedPause, l.t.minBackoff
+			wait, backoff = l.t.limitPause, l.t.minBackoff
 		case outDeleted:
 			l.setState(stateDeleted)
 			fmt.Fprintln(l.stderr, "partyline: this agent was deleted; not reconnecting until restart")
@@ -245,25 +296,68 @@ func (l *link) wsURL() string {
 	return u.String()
 }
 
+// refused tells how the server refused a connection from its response; a nil response is a
+// dial that did not reach the server.
+func (l *link) refused(resp *http.Response) outcome {
+	if resp == nil {
+		return outDialFailed
+	}
+	if resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return outInvalidToken // a bad, revoked or non-agent token
+	case http.StatusConflict:
+		if refusalBody(resp).Code == dto.ErrorCodeIdentityBusy {
+			return outBusy
+		}
+		return outAgentLimit // the owner already has the maximum number of agents
+	case http.StatusUnprocessableEntity:
+		l.mu.Lock()
+		l.reason = refusalBody(resp).Message
+		l.mu.Unlock()
+		return outInvalid
+	}
+	return outDialFailed
+}
+
+// refusal is what the server said about the machine or folder it refused.
+func (l *link) refusal() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return cmp.Or(l.reason, unusableSession)
+}
+
+// unusableSession stands for a refusal that came without a reason.
+const unusableSession = "it cannot use the machine or folder"
+
+// refusalBody reads the error of a refused connection; the zero value when the body is not one.
+func refusalBody(resp *http.Response) dto.Error {
+	var body dto.ErrorBody
+	if resp.Body != nil {
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&body)
+	}
+	return body.Error
+}
+
 // session runs one connection. A non-nil error is fatal (the notification output failed).
 func (l *link) session(ctx context.Context) (outcome, error) {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+l.token)
 	l.identity.setHeaders(h)
 	h.Set(dto.HeaderLive, l.liveID)
+	if l.takeover {
+		h.Set(dto.HeaderTakeover, "1")
+	}
 	ws, resp, err := websocket.Dial(ctx, l.wsURL(), &websocket.DialOptions{HTTPClient: l.http, HTTPHeader: h})
+	if err != nil {
+		return l.refused(resp), nil
+	}
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
 	}
-	if err != nil {
-		if resp != nil && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
-			return outInvalidToken, nil // a bad, revoked or non-agent token
-		}
-		if resp != nil && resp.StatusCode == http.StatusConflict {
-			return outAgentLimit, nil // the owner already has the maximum number of agents
-		}
-		return outDialFailed, nil
-	}
+	l.takeover = false // only the first connection that succeeds takes over (SES-02)
 	ws.SetReadLimit(l.readLimit)
 	l.setState(stateConnected)
 
@@ -301,8 +395,10 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 				return outDropped, deliverErr // the notification output failed
 			}
 			switch websocket.CloseStatus(err) {
-			case closeReplaced:
-				return outReplaced, nil
+			case closeTakenOver:
+				return outTakenOver, nil
+			case closeBusy:
+				return outBusy, nil // lost the race to another session between the check and the attach
 			case closeDeleted:
 				return outDeleted, nil
 			case closeLagged:

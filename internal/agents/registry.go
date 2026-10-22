@@ -97,11 +97,17 @@ type Registry struct {
 	now      func() time.Time
 	posts    *postLimiter
 
-	// allocMu serializes the sessions whose agent name the server picks (Identity.Allocates),
-	// from the name choice until the agent is online (WebSocket) or held (registration), so
-	// two sessions never pick the same name (ID-01). It also serializes the creation and
-	// adoption of folder identities (ResolveFolder).
+	// allocMu serializes the creation and adoption of folder identities (ResolveFolder), so
+	// concurrent sessions of one new folder end up with the same identity.
 	allocMu sync.Mutex
+
+	// appMu serializes the app of an AI: a live session sets it when it attaches, a tools-only
+	// call only while nobody is connected, and the check and the write of the latter must not
+	// interleave with an attach (AID-04).
+	appMu sync.Mutex
+	// afterAppCheck runs after a tools-only call found nobody connected and before it writes the
+	// app; tests use it to attach a session in between. Nil in production.
+	afterAppCheck func()
 
 	// machines is the last sighting written per machine (touchMachine), guarded by machinesMu.
 	machinesMu sync.Mutex

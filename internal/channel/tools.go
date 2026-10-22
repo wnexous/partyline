@@ -84,8 +84,8 @@ func (t *tools) register(srv *mcp.Server) {
 
 type toolFunc func(ctx context.Context, args json.RawMessage) (string, error)
 
-// guard reports the link's state (invalid token, replaced, deleted, unreachable) instead of
-// calling the server, bounds the call and turns errors into isError results.
+// guard reports the link's state (invalid token, busy, taken over, deleted, unreachable) instead
+// of calling the server, bounds the call and turns errors into isError results.
 func (t *tools) guard(fn toolFunc) mcp.ToolFunc { return t.guardFor(toolTimeout, fn) }
 
 // guardFor is guard with its own time bound.

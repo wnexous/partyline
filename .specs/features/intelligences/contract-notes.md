@@ -490,3 +490,54 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
 - `delivery.AgentDisplayName` is the mirrored `display_name`, else the row's name (no
   `auto_name`); the DTO builders read the profile's display name first (`Agent.ProfileName`).
 
+
+## T17 - One live session per AI with explicit takeover (SES-02, SES-04, SES-06, SES-08)
+
+- **Headers on the agent WebSocket only**: `X-Partyline-Live` (the process id, `[A-Za-z0-9_-]{16,64}`;
+  a missing or malformed one names no process) and `X-Partyline-Takeover: 1`. REST tool calls
+  send neither and never take part in the live session.
+- **`Presence.Attach(ctx, agent, session, liveID, takeover) (fresh bool, err error)`** swaps under
+  Presence's mutex: nobody holds the AI → attach and publish `AgentPresence{Online:true}`; the same
+  `liveID` holds it → the new socket replaces the old one silently (old closed `1000 reconnected`,
+  no event, the session keeps its start time, `fresh` false); another process holds it → `ErrBusy`
+  and nothing changes, unless `takeover`: the old session is closed `4002 taken_over`, the AI stays
+  online (no offline/online events) and the session's start time is the new one's. `Presence.Busy(
+  agentID, liveID)` answers the pre-upgrade check, `Presence.Live(agentID)` the live session
+  (`Live.Since`). `Detach` of a replaced or taken-over socket does nothing, so only the live
+  session's end announces the AI offline (SES-06, immediate on socket close). The `last_seen_at`
+  stamp in `Attach` is best effort.
+- **`Registry.Attach(ctx, agent, session, harness, liveID, takeover)`** is what the gateway calls:
+  `Presence.Attach`, then for a fresh session the app (`harness`, normalized by `cleanHarness`) and
+  `connected_at`. A refused attach changes nothing, not even the app. `appMu` serializes it with the
+  check-and-write of a tools-only relabel (`relabel`), so a tools-only call never overwrites the
+  app of a session attaching at that moment (AID-04).
+- **Gateway order** (deviates from design.md, which resolved with `live=true` before the check and
+  so relabeled a refused connection): authenticate → `ResolveFolder` with **no harness** (creates or
+  adopts, relabels nothing) → unless takeover, `Presence.Busy` → **409 `identity_busy`** before the
+  upgrade → `Accept` → `Registry.Attach` → welcome and backlog. `error.details` of the 409:
+  `display_name`, `app` (harness id), `app_label` (readable, "Claude Code") and `connected_at`
+  (RFC 3339, UTC) of the live session (`dto.BusyDetail*`; `app_label` is an addition to the design's
+  list so the channel needs no label table). Losing the race between the check and the attach closes
+  the new socket `4003 identity_busy` before any frame. `Gateway` has a `beforeAttach` seam for the
+  test of that race. Close codes: 4001 `deleted`, 4002 `taken_over`, 4003 `identity_busy`; 4000
+  `replaced`, `CloseReplaced` and `ReasonReplaced` are gone (AGT-04 is superseded).
+- `dto.Error.Details` / `httpx.Error.Details` (`map[string]string`, omitted when empty) carry facts
+  of a refusal that are not request fields. `GET /agent/session` reads `online` and `connected_at`
+  (UTC) from the live session, so the launcher prompt and the busy answer agree on "since".
+- **Channel link** (`internal/channel/link.go`): `stateBusy` (409 `identity_busy` or close 4003)
+  retries after 2 s, 4 s and 4 s (`timing.busyRetries`; empty means none) and then stops; the retry
+  counter restarts once a connection has been made. `stateTakenOver` (close 4002) never reconnects
+  and prints one stderr line. `stateInvalid` (422) never retries and shows the server's reason in
+  tool errors. A 409 with another code is still the agent limit; `replacedPause` became `limitPause`.
+  `Options.Takeover` / `ListenOptions.Takeover` (from `PARTYLINE_TAKEOVER=1`, read by
+  `resolveAgent`) make every dial carry `X-Partyline-Takeover: 1` until one succeeds, so a
+  reconnect after a drop never takes over. The live id (`channel.NewLiveID`) is the same on every
+  dial of a process.
+- Tools answer `partyline: this intelligence is open in another session; Partyline is not connected
+  here` while busy (T18 replaces it with the exact SES-04 text) and the SES-05 sentence once taken
+  over. A tool call made before the first connection attempt has been answered goes through, as for
+  any link that is still connecting.
+- Testkit: `Folder.Live` and `Folder.Takeover`; `DialFolder` gives every dial its own live id
+  (a dial is a process of its own) unless `Live` is set; `testkit.NewLiveID`. Removed with the
+  superseded behavior: `TestAgentWSSecondConnectionReplacesFirst` (AGT-04),
+  `TestPresenceReplaceAndOffline`, `TestLinkPausesAfterReplaced` and `TestToolsReportReplaced`.

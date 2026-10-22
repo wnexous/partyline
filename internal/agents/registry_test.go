@@ -216,7 +216,8 @@ func TestDeleteRemovesMembershipsAndCursors(t *testing.T) {
 	require.ErrorIs(t, f.reg.Delete(ctx, stranger, agent), access.ErrNotFound)
 
 	session := &fakeSession{}
-	require.NoError(t, f.presence.Attach(ctx, mustAgent(t, f, agent).Agent, session))
+	_, err := f.presence.Attach(ctx, mustAgent(t, f, agent).Agent, session, "process-one", false)
+	require.NoError(t, err)
 	ch, cancel := f.bus.Subscribe(16)
 	defer cancel()
 
@@ -265,38 +266,6 @@ func TestUpdateDescription(t *testing.T) {
 	var verr *validation.Error
 	require.ErrorAs(t, err, &verr)
 	require.Contains(t, verr.Fields, "description")
-}
-
-// Presence: online on attach, a second session replaces the first with "replaced" (AGT-04),
-// offline when the current session detaches (AGT-03).
-func TestPresenceReplaceAndOffline(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	alice := f.user(t, "alice")
-	agent := mustAgent(t, f, f.upsert(t, alice, "builder"))
-	ch, cancel := f.bus.Subscribe(16)
-	defer cancel()
-
-	first, second := &fakeSession{}, &fakeSession{}
-	require.NoError(t, f.presence.Attach(ctx, agent.Agent, first))
-	require.True(t, f.presence.Online(agent.ID))
-	require.Equal(t, t0.UnixMilli(), mustAgent(t, f, agent.ID).LastSeenAt.Int64)
-	require.Equal(t, []events.Event{events.AgentPresence{AgentID: agent.ID, OwnerID: alice.UserID, Online: true}}, drain(ch))
-
-	require.NoError(t, f.presence.Attach(ctx, agent.Agent, second))
-	code, reason, closed := first.state()
-	require.Equal(t, 1, closed)
-	require.Equal(t, CloseReplaced, code)
-	require.Equal(t, "replaced", reason)
-	_, _, closed = second.state()
-	require.Equal(t, 0, closed)
-	require.Empty(t, drain(ch), "replacement keeps the agent online")
-
-	require.False(t, f.presence.Detach(ctx, agent.ID, first), "the replaced session no longer counts")
-	require.True(t, f.presence.Online(agent.ID))
-	require.True(t, f.presence.Detach(ctx, agent.ID, second))
-	require.False(t, f.presence.Online(agent.ID))
-	require.Equal(t, []events.Event{events.AgentPresence{AgentID: agent.ID, OwnerID: alice.UserID, Online: false}}, drain(ch))
 }
 
 func ptr[T any](v T) *T { return &v }
