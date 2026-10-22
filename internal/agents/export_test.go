@@ -12,3 +12,7 @@ func SetBeforeAttach(g *Gateway, f func()) { g.beforeAttach = f }
 func SetPingTimings(g *Gateway, interval, timeout time.Duration) {
 	g.d.PingInterval, g.d.PingTimeout = interval, timeout
 }
+
+// SetPingInterval makes g ping every interval and keeps its pong timeout (the production default
+// unless SetPingTimings changed it).
+func SetPingInterval(g *Gateway, interval time.Duration) { g.d.PingInterval = interval }

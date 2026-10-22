@@ -149,3 +149,23 @@ func TestSilentConnectionGoesOffline(t *testing.T) {
 	require.Eventually(t, func() bool { return !env.App.Presence.Online(id) }, 5*time.Second, 10*time.Millisecond,
 		"a session that stops answering pings goes offline")
 }
+
+// SES-06: a healthy client that keeps answering pings stays online through many pings with the
+// production pong timeout, and keeps receiving messages.
+func TestHealthyConnectionStaysOnlineAcrossPings(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	id := env.NewAI(alice, "builder")
+	agents.SetPingInterval(env.App.Gateway, 20*time.Millisecond)
+
+	conn, resp := alice.Token(dto.TokenKindAgent, "laptop").DialFolder(testkit.FolderOf("builder"))
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	require.Eventually(t, func() bool { return env.App.Presence.Online(id) }, 5*time.Second, 5*time.Millisecond,
+		"the session attaches")
+	deadline := time.Now().Add(500 * time.Millisecond) // about 25 pings
+	for time.Now().Before(deadline) {
+		require.True(t, env.App.Presence.Online(id), "a client that answers pings stays online")
+		time.Sleep(10 * time.Millisecond)
+	}
+	require.NoError(t, conn.Closed(10*time.Millisecond), "the connection is still open")
+}
