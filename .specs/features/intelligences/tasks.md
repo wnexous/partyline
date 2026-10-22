@@ -421,9 +421,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Matrix: participant post; AI owner and `use` grantee view; another user, an admin and a `*` grant none; group user member post; disabled user none (DM-08)
-- [ ] Sharing a DM → 422 `dm_no_sharing` with nothing written (DM-08)
-- [ ] Gate check passes: `make check`
+- [x] Matrix: participant post; AI owner and `use` grantee view; another user, an admin and a `*` grant none; group user member post; disabled user none (DM-08)
+- [x] Sharing a DM → 422 `dm_no_sharing` with nothing written (DM-08)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(access): give DM participants and group members access`

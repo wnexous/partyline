@@ -86,6 +86,9 @@ const (
 	// ErrorCodeIdentityBusy is a connection for an AI that has a live session in another
 	// process (409); Details say who, in which app and since when (SES-04).
 	ErrorCodeIdentityBusy ErrorCode = "identity_busy" // 409
+	// ErrorCodeDMNoSharing is an attempt to share a direct message: a DM is visible to its two
+	// intelligences only (422, DM-08).
+	ErrorCodeDMNoSharing ErrorCode = "dm_no_sharing"
 )
 
 // ErrorBody is the envelope of every error response.

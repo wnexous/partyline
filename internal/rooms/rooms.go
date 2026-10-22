@@ -233,7 +233,9 @@ func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDispl
 	}, nil
 }
 
-// List returns the rooms the calling user can view, by name.
+// List returns the conversations the calling user lists, by name: the groups they own, were
+// granted or are a member of, and the DMs they take part in. A DM the user only views through
+// an AI is not listed (it is reachable by id).
 func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 	if p.Kind != authn.KindUser {
 		return nil, access.ErrForbidden
@@ -249,8 +251,8 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 	out := make([]Room, 0, len(rows))
 	for _, row := range rows {
 		l := granted[row.Room.ID]
-		if row.Room.OwnerID == p.UserID {
-			l = dto.LevelManage
+		if row.Room.OwnerID == p.UserID && row.Room.Kind == string(dto.ConversationKindGroup) {
+			l = dto.LevelManage // a DM has no owner to manage it (DM-02)
 		}
 		if l == access.None {
 			continue
@@ -378,14 +380,22 @@ func (s *Service) Sharing(ctx context.Context, p authn.Principal, roomID string)
 	return s.az.Sharing(ctx, access.KindRoom, roomID)
 }
 
-// SetSharing replaces the room's grants with a visibility preset (ACL-07); requires manage.
+// SetSharing replaces the room's grants with a visibility preset (ACL-07); requires manage. A
+// DM cannot be shared: whoever can view it gets access.ErrDMNoSharing (DM-08).
 func (s *Service) SetSharing(ctx context.Context, p authn.Principal, roomID string, v access.Visibility) (access.Visibility, error) {
-	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
+	l, err := s.authorize(ctx, p, roomID, dto.LevelView)
+	if err != nil {
 		return access.Visibility{}, err
 	}
 	r, err := s.store.R().GetRoom(ctx, roomID)
 	if err != nil {
 		return access.Visibility{}, err
+	}
+	if r.Kind == string(dto.ConversationKindDM) {
+		return access.Visibility{}, access.ErrDMNoSharing // whoever views it is told so (DM-08)
+	}
+	if !access.AtLeast(l, dto.LevelManage) {
+		return access.Visibility{}, access.ErrForbidden
 	}
 	if err := s.az.SetVisibility(ctx, p.UserID, access.KindRoom, roomID, r.OwnerID, v); err != nil {
 		return access.Visibility{}, err

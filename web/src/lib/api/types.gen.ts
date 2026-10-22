@@ -351,9 +351,14 @@ export const ErrorCodeFolderInvalid = "folder_invalid"; // 422
  */
 export const ErrorCodeIdentityBusy = "identity_busy"; // 409
 /**
+ * ErrorCodeDMNoSharing is an attempt to share a direct message: a DM is visible to its two
+ * intelligences only (422, DM-08).
+ */
+export const ErrorCodeDMNoSharing = "dm_no_sharing";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -674,6 +679,20 @@ export interface HookAttachment {
   size: number /* int64 */;
   url: string;
 }
+
+//////////
+// source: conversations.go
+
+/**
+ * ConversationKind tells a group from a direct message. Both are rooms (AD-002, AD-011): a DM
+ * has exactly two intelligences, keyed by their ids on the room row, and nobody manages it (DM-02).
+ */
+export const ConversationKindGroup = "group";
+export const ConversationKindDM = "dm";
+/**
+ * Conversation kinds.
+ */
+export type ConversationKind = typeof ConversationKindGroup | typeof ConversationKindDM;
 
 //////////
 // source: devices.go

@@ -194,6 +194,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeAvatarInvalid, "the avatar must be a PNG, JPEG or WebP image up to 2 MB")
 	case errors.Is(err, intelligences.ErrHandleTaken):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHandleTaken, "handle already taken")
+	case errors.Is(err, access.ErrDMNoSharing):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeDMNoSharing, "a direct message cannot be shared")
 	case errors.Is(err, rooms.ErrAlreadyMember):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "already a member of the room")
 	case errors.Is(err, access.ErrForbidden):

@@ -601,3 +601,50 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   handle inline for detail rows instead. An empty handle renders no tooltip and no inline text.
 - Tests: `intelligence.test.tsx` renders the three components from synthetic intelligences and
   stubs the image loader (happy-dom never loads images) for the avatar-image case.
+
+## T19 - Access for DMs and group members (DM-08, AD-011)
+
+- **`access.UserRoomLevel`** (and `RoomLevel` for user principals), after the active-user check
+  (AUTH-10: disabled and unknown users resolve to none):
+  - *group*: the highest of ownership (manage), the user's and everyone's grants and, as a `user`
+    member, **post**. A `post` or `manage` from grants/ownership short-circuits the membership
+    lookup.
+  - *DM*: **post** for a participant (`rooms.dm_a`/`dm_b` equals the user); **view** when a
+    participant is an AI the user owns or was granted `use` on **by name**; none otherwise. Only
+    the two participant columns are read: member rows, the row's `owner_id` and grants are not.
+    A grant row on a DM (only possible by writing around the API) gives nothing, and admins get
+    nothing (AD-005).
+  - **Clarification of DM-08 / Spec issue 5:** the everyone grant (`*`, "public use") on an AI does
+    **not** make its DMs viewable by everyone. "Users granted `use`" reads as users named in a
+    grant; otherwise sharing an AI with the whole instance would let every user read every other
+    user's DM with it. The AI's owner and named `use` grantees view (`access.CountSubjectGrants`).
+  - A DM between two AIs is viewed by both owners and both AIs' named grantees; nobody posts
+    through the web (only the AIs, through `AgentRoomLevel`: an agent member posts).
+- **`AgentRoomLevel`** is unchanged (an agent member posts), which covers the AI side of a DM.
+- **`GrantedRoomLevels`** now reads `ListUserRoomLevels` (it replaces `ListGrantLevelsByKind`):
+  grants on **groups** (own or everyone), `user` membership of a group (post) and DMs the user
+  takes part in (post), highest wins. Ownership stays out, and so do DMs viewed only through an
+  AI and grants on DMs. `ListRoomsForUser` selects the same candidates (owned, granted and member
+  groups, own DMs) and **`rooms.Service.List` no longer turns `owner_id` into manage for a DM**
+  (a DM has no owner to manage it, DM-02). So `GET /rooms`, `/activity` and the live hub's
+  initial visible set include a user's DMs and member groups; the DMs an AI owner only views are
+  reachable by id and are not listed (Spec issue 5).
+- **Sharing**: `Authorizer.SetVisibility` on a DM returns `access.ErrDMNoSharing` before it
+  validates or writes anything (no grant, no audit entry, no `GrantsChanged`). `rooms.Service.
+  SetSharing` checks view first (stranger: 404), then the DM (**422 `dm_no_sharing`**,
+  `dto.ErrorCodeDMNoSharing`, for anyone who can view the DM), then manage (403): so a DM
+  participant gets 422, not 403, on `PUT /rooms/{id}/sharing`.
+- **Live**: adding or removing a `user` member publishes `events.GrantsChanged{room}` after
+  `MembersChanged`, so the hub sends the new member `room.changed` (with their level) plus
+  `access.changed`, and the removed member `room.deleted` (membership is an access source next
+  to grants). Message frames follow `view`: the owner of an AI and its named grantees receive
+  `room.message` for the AI's DMs, strangers nothing.
+- **`CanSee` consequence**: a user member of a group now "shares a viewable conversation" with
+  the AIs in it, so they can read those AIs' profiles (not edit).
+- `dto.ConversationKind` (`group` | `dm`, `ConversationKindGroup`/`DM`) is the room kind type;
+  `Room.kind` itself arrives with T20.
+- Tests: `internal/access/access_test.go` (DM matrix, owner column and grants ignored, public AI,
+  AI-to-AI and user-to-user DMs, disabled users, group membership, `GrantedRoomLevels`,
+  `SetVisibility` on a DM) and `internal/api/room_membership_access_test.go` (the DM auth matrix
+  over every room route, 422 `dm_no_sharing`, the room list, member posting over HTTP, live
+  frames). DMs are stored by the test helper `storeDM` until T20 adds `OpenDM`.

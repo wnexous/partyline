@@ -111,7 +111,16 @@ func (s *Service) AddMember(ctx context.Context, p authn.Principal, roomID strin
 		return Member{}, err
 	}
 	s.bus.Publish(events.MembersChanged{RoomID: roomID})
+	if in.Kind == dto.MemberKindUser {
+		s.accessChanged(roomID) // a user member gains access to the group (AD-011)
+	}
 	return s.member(ctx, roomID, id)
+}
+
+// accessChanged tells live clients that who may access the room changed through membership,
+// as sharing does: new members learn the room, removed ones lose it.
+func (s *Service) accessChanged(roomID string) {
+	s.bus.Publish(events.GrantsChanged{ResourceKind: string(access.KindRoom), ResourceID: roomID})
 }
 
 // checkUse verifies the caller may put the agent or chat in a room.
@@ -298,6 +307,7 @@ func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, m
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
 		return err
 	}
+	var removedKind string
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		m, err := q.GetRoomMember(ctx, db.GetRoomMemberParams{ID: memberRowID, RoomID: roomID})
 		if err != nil {
@@ -306,6 +316,7 @@ func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, m
 			}
 			return err
 		}
+		removedKind = m.Kind
 		if m.Kind == string(dto.MemberKindChat) {
 			// Cancel what was queued for this chat in this room but not sent yet (ROOM-01).
 			if _, err := q.DeletePendingRoomChatOutbox(ctx, db.DeletePendingRoomChatOutboxParams{ChatID: m.MemberID, RoomID: roomID}); err != nil {
@@ -321,5 +332,8 @@ func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, m
 		return err
 	}
 	s.bus.Publish(events.MembersChanged{RoomID: roomID})
+	if removedKind == string(dto.MemberKindUser) {
+		s.accessChanged(roomID) // the user loses the access membership gave
+	}
 	return nil
 }

@@ -401,7 +401,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | DM-05 | P1: Contacts and DMs | Tasks | Pending |
 | DM-06 | P1: Contacts and DMs | Tasks | Pending |
 | DM-07 | P1: Contacts and DMs | Tasks | Pending |
-| DM-08 | P1: Contacts and DMs | Tasks | Pending |
+| DM-08 | P1: Contacts and DMs | Execute | Implementing |
 | GRP-01 | P1: Groups | Execute | Implementing |
 | GRP-02 | P1: Groups | Tasks | Pending |
 | GRP-03 | P1: Groups | Execute | Implementing |

@@ -30,7 +30,8 @@ type MembersChanged struct{ RoomID string }
 // changed. ID is the intelligence id, shared with its user, agent or person row.
 type IntelligenceChanged struct{ ID string }
 
-// GrantsChanged reports that the grants of a room, agent or connector changed.
+// GrantsChanged reports that who may access a room, agent or connector changed: its grants, or,
+// for a room, its user members (membership is an access source next to grants).
 type GrantsChanged struct{ ResourceKind, ResourceID string }
 
 // AgentPresence reports that an agent connected or disconnected.
