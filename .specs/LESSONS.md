@@ -20,17 +20,17 @@ Corroborated across multiple features. Safe to apply as guidance.
 - evidence: N17 internal/users/tokens_test.go:235 (tests) (+1 more)
 - last seen: 2026-10-21T12:56:38Z
 
-### L-019 - Every behavior written into contract notes needs a test or it is unverified
-- signal: `surviving_mutant` · recurrence: 2 feature(s) · scope: `tests` · harmful: 1
-- features: core-platform, routing-context
-- evidence: N18 internal/live/hub.go:244-245 (tests) (+1 more)
-- last seen: 2026-10-21T10:38:00Z
-
 ### L-029 - Run the full make check (lint included) before committing even a test-only or orchestrator edit
 - signal: `gate_fail` · recurrence: 2 feature(s) · scope: `process` · harmful: 0
 - features: agent-channel, connectors
 - evidence: internal/live/hub.go:101 (f4147c9), internal/channel/link.go:348 (c9083be) (process) (+1 more)
 - last seen: 2026-10-20T10:11:20Z
+
+### L-042 - Give every condition of a lookup's match predicate a test where only that condition excludes a candidate
+- signal: `surviving_mutant` · recurrence: 2 feature(s) · scope: `tests` · harmful: 0
+- features: agent-identity, intelligences
+- evidence: validation.md iteration 3 M33 internal/agents/identity.go:378 (tests) (+1 more)
+- last seen: 2026-10-22T18:03:33Z
 
 ## Candidates (under observation - do NOT load as guidance yet)
 
@@ -258,14 +258,60 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: validation.md iteration 2 M17a internal/agents/identity.go:372 (tests)
 - last seen: 2026-10-21T12:56:38Z
 
-### L-042 - Give every condition of a lookup's match predicate a test where only that condition excludes a candidate
+### L-043 - When history is renumbered or merged into another sequence, move a cursor forward only past positions its owner had already reached
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `delivery` · harmful: 0
+- features: intelligences
+- evidence: MRG-01 internal/conversations/merge.go:288-312 (delivery)
+- last seen: 2026-10-22T18:03:33Z
+
+### L-044 - Test rules keyed on an ordered pair with both orderings of the pair so each side-swapping branch runs
 - signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
-- features: agent-identity
-- evidence: validation.md iteration 3 M33 internal/agents/identity.go:378 (tests)
-- last seen: 2026-10-21T13:36:36Z
+- features: intelligences
+- evidence: M17 internal/rooms/notify.go:23; M18 internal/rooms/messages.go:111; M19 internal/conversations/merge.go:293 (tests)
+- last seen: 2026-10-22T18:03:33Z
+
+### L-045 - Test the failure exit code and the non-default starting state of every interactive CLI flow, not only the success path
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `cli` · harmful: 0
+- features: intelligences
+- evidence: M15 internal/cli/setup_harness.go:144; M16 internal/cli/setup_harness.go:162 (cli)
+- last seen: 2026-10-22T18:03:33Z
+
+### L-046 - Test every min or max clamp with an input that crosses the bound
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web-lib` · harmful: 0
+- features: intelligences
+- evidence: W1 web/src/lib/api/queries.ts:540 (web-lib)
+- last seen: 2026-10-22T18:03:33Z
+
+### L-047 - When two ACs grant and restrict visibility of the same data, the spec must state which one wins
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `specs` · harmful: 0
+- features: intelligences
+- evidence: PEOP-04 vs DM-08 internal/access/access.go:138-176 (specs)
+- last seen: 2026-10-22T18:03:33Z
+
+### L-048 - When design or contract notes change an AC's observable outcome, amend the spec text in the same change
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `specs` · harmful: 0
+- features: intelligences
+- evidence: PEOP-04 service.go:396-401, DM-02 direct_messages_test.go:304, CLI-04 setup_harness.go:233, PEOP-01 contract-notes T26 (specs)
+- last seen: 2026-10-22T18:03:33Z
+
+### L-049 - Timing ACs about disconnects must state the bound for unclean network loss, not only for clean closes
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `specs` · harmful: 0
+- features: intelligences
+- evidence: SES-06 internal/agents/gateway.go:36-37 (specs)
+- last seen: 2026-10-22T18:03:33Z
+
+### L-050 - Drop live pushes at or below the recipient's acknowledged cursor, not only those the reconnect backlog just sent
+- signal: `gate_fail` · recurrence: 1 feature(s) · scope: `delivery` · harmful: 0
+- features: intelligences
+- evidence: make check-race TestTakenOverChannelNotifiesOnceAndDeliversNothingMore internal/agents/gateway.go:442,528 (delivery)
+- last seen: 2026-10-22T18:03:33Z
 
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
 
-_none_
+### L-019 - Every behavior written into contract notes needs a test or it is unverified
+- signal: `surviving_mutant` · recurrence: 2 feature(s) · scope: `tests` · harmful: 2
+- features: core-platform, routing-context
+- evidence: N18 internal/live/hub.go:244-245 (tests) (+1 more)
+- last seen: 2026-10-22T18:03:33Z

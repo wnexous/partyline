@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 43,
+  "next_id": 51,
   "lessons": [
     {
       "id": "L-001",
@@ -340,19 +340,19 @@
       "text": "Every behavior written into contract notes needs a test or it is unverified",
       "signal": "surviving_mutant",
       "scope": "tests",
-      "status": "confirmed",
+      "status": "quarantined",
       "features": [
         "core-platform",
         "routing-context"
       ],
       "recurrence": 2,
-      "harmful": 1,
+      "harmful": 2,
       "evidence": [
         "N18 internal/live/hub.go:244-245 (tests)",
         "validation.md G26 internal/agents/gateway.go:358 (tests)"
       ],
       "created": "2026-10-20T04:47:07Z",
-      "last_seen": "2026-10-21T10:38:00Z"
+      "last_seen": "2026-10-22T18:03:33Z"
     },
     {
       "id": "L-020",
@@ -758,17 +758,163 @@
       "text": "Give every condition of a lookup's match predicate a test where only that condition excludes a candidate",
       "signal": "surviving_mutant",
       "scope": "tests",
+      "status": "confirmed",
+      "features": [
+        "agent-identity",
+        "intelligences"
+      ],
+      "recurrence": 2,
+      "harmful": 0,
+      "evidence": [
+        "validation.md iteration 3 M33 internal/agents/identity.go:378 (tests)",
+        "M10b internal/agents/presence.go:93,124; M23 internal/avatars/avatars.go:52 (tests)"
+      ],
+      "created": "2026-10-21T13:36:36Z",
+      "last_seen": "2026-10-22T18:03:33Z"
+    },
+    {
+      "id": "L-043",
+      "key": "ac_gap::when history is renumbered or merged into another sequence move a cursor forward only past positions its owner had already reached",
+      "text": "When history is renumbered or merged into another sequence, move a cursor forward only past positions its owner had already reached",
+      "signal": "ac_gap",
+      "scope": "delivery",
       "status": "candidate",
       "features": [
-        "agent-identity"
+        "intelligences"
       ],
       "recurrence": 1,
       "harmful": 0,
       "evidence": [
-        "validation.md iteration 3 M33 internal/agents/identity.go:378 (tests)"
+        "MRG-01 internal/conversations/merge.go:288-312 (delivery)"
       ],
-      "created": "2026-10-21T13:36:36Z",
-      "last_seen": "2026-10-21T13:36:36Z"
+      "created": "2026-10-22T18:03:33Z",
+      "last_seen": "2026-10-22T18:03:33Z"
+    },
+    {
+      "id": "L-044",
+      "key": "surviving_mutant::test rules keyed on an ordered pair with both orderings of the pair so each side swapping branch runs",
+      "text": "Test rules keyed on an ordered pair with both orderings of the pair so each side-swapping branch runs",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "intelligences"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M17 internal/rooms/notify.go:23; M18 internal/rooms/messages.go:111; M19 internal/conversations/merge.go:293 (tests)"
+      ],
+      "created": "2026-10-22T18:03:33Z",
+      "last_seen": "2026-10-22T18:03:33Z"
+    },
+    {
+      "id": "L-045",
+      "key": "surviving_mutant::test the failure exit code and the non default starting state of every interactive cli flow not only the success path",
+      "text": "Test the failure exit code and the non-default starting state of every interactive CLI flow, not only the success path",
+      "signal": "surviving_mutant",
+      "scope": "cli",
+      "status": "candidate",
+      "features": [
+        "intelligences"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M15 internal/cli/setup_harness.go:144; M16 internal/cli/setup_harness.go:162 (cli)"
+      ],
+      "created": "2026-10-22T18:03:33Z",
+      "last_seen": "2026-10-22T18:03:33Z"
+    },
+    {
+      "id": "L-046",
+      "key": "surviving_mutant::test every min or max clamp with an input that crosses the bound",
+      "text": "Test every min or max clamp with an input that crosses the bound",
+      "signal": "surviving_mutant",
+      "scope": "web-lib",
+      "status": "candidate",
+      "features": [
+        "intelligences"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "W1 web/src/lib/api/queries.ts:540 (web-lib)"
+      ],
+      "created": "2026-10-22T18:03:33Z",
+      "last_seen": "2026-10-22T18:03:33Z"
+    },
+    {
+      "id": "L-047",
+      "key": "spec_precision_gap::when two acs grant and restrict visibility of the same data the spec must state which one wins",
+      "text": "When two ACs grant and restrict visibility of the same data, the spec must state which one wins",
+      "signal": "spec_precision_gap",
+      "scope": "specs",
+      "status": "candidate",
+      "features": [
+        "intelligences"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "PEOP-04 vs DM-08 internal/access/access.go:138-176 (specs)"
+      ],
+      "created": "2026-10-22T18:03:33Z",
+      "last_seen": "2026-10-22T18:03:33Z"
+    },
+    {
+      "id": "L-048",
+      "key": "spec_deviation::when design or contract notes change an ac s observable outcome amend the spec text in the same change",
+      "text": "When design or contract notes change an AC's observable outcome, amend the spec text in the same change",
+      "signal": "spec_deviation",
+      "scope": "specs",
+      "status": "candidate",
+      "features": [
+        "intelligences"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "PEOP-04 service.go:396-401, DM-02 direct_messages_test.go:304, CLI-04 setup_harness.go:233, PEOP-01 contract-notes T26 (specs)"
+      ],
+      "created": "2026-10-22T18:03:33Z",
+      "last_seen": "2026-10-22T18:03:33Z"
+    },
+    {
+      "id": "L-049",
+      "key": "spec_precision_gap::timing acs about disconnects must state the bound for unclean network loss not only for clean closes",
+      "text": "Timing ACs about disconnects must state the bound for unclean network loss, not only for clean closes",
+      "signal": "spec_precision_gap",
+      "scope": "specs",
+      "status": "candidate",
+      "features": [
+        "intelligences"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "SES-06 internal/agents/gateway.go:36-37 (specs)"
+      ],
+      "created": "2026-10-22T18:03:33Z",
+      "last_seen": "2026-10-22T18:03:33Z"
+    },
+    {
+      "id": "L-050",
+      "key": "gate_fail::drop live pushes at or below the recipient s acknowledged cursor not only those the reconnect backlog just sent",
+      "text": "Drop live pushes at or below the recipient's acknowledged cursor, not only those the reconnect backlog just sent",
+      "signal": "gate_fail",
+      "scope": "delivery",
+      "status": "candidate",
+      "features": [
+        "intelligences"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "make check-race TestTakenOverChannelNotifiesOnceAndDeliversNothingMore internal/agents/gateway.go:442,528 (delivery)"
+      ],
+      "created": "2026-10-22T18:03:33Z",
+      "last_seen": "2026-10-22T18:03:33Z"
     }
   ]
 }
