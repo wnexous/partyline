@@ -652,6 +652,18 @@ export const AutoRouteScopeAll = "all";
  */
 export type AutoRouteScope = typeof AutoRouteScopeOff | typeof AutoRouteScopeDMs | typeof AutoRouteScopeGroups | typeof AutoRouteScopeAll;
 /**
+ * AutoRouteUnavailable says the catch-all room is gone or its owner lost manage on it.
+ */
+export const AutoRouteUnavailable = "auto-route room unavailable";
+/**
+ * AutoRouteLimited says a cap on new chats was reached.
+ */
+export const AutoRouteLimited = "auto-route limit reached";
+/**
+ * Status details catch-all routing sets on a connector (ROUTE-03, ROUTE-08).
+ */
+export type AutoRoute = typeof AutoRouteUnavailable | typeof AutoRouteLimited;
+/**
  * ChatKind is the kind of an external chat.
  */
 export const ChatKindGroup = "group";

@@ -391,6 +391,48 @@ func (q *Queries) SetConnectorOperator(ctx context.Context, arg SetConnectorOper
 	return err
 }
 
+const stopCatchAllConnectors = `-- name: StopCatchAllConnectors :many
+UPDATE connectors SET auto_route_scope = 'off', last_error = ?1
+WHERE auto_route_room_id = ?2
+RETURNING id, status
+`
+
+type StopCatchAllConnectorsParams struct {
+	Detail string
+	RoomID sql.NullString
+}
+
+type StopCatchAllConnectorsRow struct {
+	ID     string
+	Status string
+}
+
+// ROUTE-03: the connectors whose catch-all room is going to be deleted stop auto-routing and say
+// so. The foreign key empties their room on deletion, and an empty room with a scope on reads as
+// per-chat conversations (ACC-02), so the scope goes off with it.
+func (q *Queries) StopCatchAllConnectors(ctx context.Context, arg StopCatchAllConnectorsParams) ([]StopCatchAllConnectorsRow, error) {
+	rows, err := q.db.QueryContext(ctx, stopCatchAllConnectors, arg.Detail, arg.RoomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StopCatchAllConnectorsRow
+	for rows.Next() {
+		var i StopCatchAllConnectorsRow
+		if err := rows.Scan(&i.ID, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateConnector = `-- name: UpdateConnector :exec
 UPDATE connectors SET name = ?, config_json = ?, secrets_enc = ?, enabled = ?, updated_at = ?
 WHERE id = ?

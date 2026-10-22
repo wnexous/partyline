@@ -88,10 +88,12 @@ func TestCatchAllSettings(t *testing.T) {
 	fields := e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteScope: ptr(dto.AutoRouteScope("everyone"))}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid).Fields
 	require.Contains(t, fields, "auto_route_scope")
 	unchanged()
-	// A scope other than off needs a room.
-	fields = e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteRoomID: ptr("")}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid).Fields
-	require.Contains(t, fields, "auto_route_room_id")
-	unchanged()
+	// Clearing the room keeps the scope: the connector then gives each new chat a conversation of
+	// its own with its operator instead of adding it to a catch-all room (ACC-02, spec issue 2).
+	got = testkit.Decode[dto.Connector](e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteRoomID: ptr("")}).RequireStatus(http.StatusOK))
+	require.Equal(t, dto.AutoRouteScopeAll, got.AutoRouteScope)
+	require.Empty(t, got.AutoRouteRoomID)
+	require.Equal(t, dto.AutoRouteScopeAll, testkit.Decode[dto.Connector](e.alice.Get(path).RequireStatus(http.StatusOK)).AutoRouteScope)
 
 	got = testkit.Decode[dto.Connector](e.alice.Patch(path, dto.UpdateConnectorRequest{
 		AutoRouteScope: ptr(dto.AutoRouteScopeOff), AutoRouteRoomID: ptr(""),
@@ -117,4 +119,39 @@ func TestCatchAllSettingsSecondOwner(t *testing.T) {
 	e.bob.Put(path+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: e.alice.User.ID}}}).RequireStatus(http.StatusOK)
 	e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteScope: ptr(dto.AutoRouteScopeOff)}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	require.Equal(t, dto.AutoRouteScopeAll, testkit.Decode[dto.Connector](e.bob.Get(path).RequireStatus(http.StatusOK)).AutoRouteScope)
+}
+
+// ROUTE-03 with per-chat conversations (ACC-02): deleting a connector's catch-all room stops its
+// routing at once and says so, rather than leaving the connector with a scope and no room, which
+// now means "a conversation for each new chat": the scope goes off and the status detail is the
+// literal "auto-route room unavailable", published live. Choosing a new room or scope starts
+// routing again and clears the detail.
+func TestDeletingTheCatchAllRoomStopsRouting(t *testing.T) {
+	e := newCatchAllEnv(t)
+	path := connectorPath(e.aliceConn)
+	room := createRoom(e.alice, "catch-all")
+	e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteScope: ptr(dto.AutoRouteScopeAll), AutoRouteRoomID: &room.ID}).RequireStatus(http.StatusOK)
+	other := createRoom(e.alice, "unrelated")
+	live, _ := e.alice.DialLive("")
+
+	e.alice.Delete("/api/v1/rooms/" + other.ID).RequireStatus(http.StatusNoContent)
+	got := testkit.Decode[dto.Connector](e.alice.Get(path).RequireStatus(http.StatusOK))
+	require.Equal(t, dto.AutoRouteScopeAll, got.AutoRouteScope, "another room's deletion changes nothing")
+	require.Empty(t, got.LastError)
+
+	e.alice.Delete("/api/v1/rooms/" + room.ID).RequireStatus(http.StatusNoContent)
+	got = testkit.Decode[dto.Connector](e.alice.Get(path).RequireStatus(http.StatusOK))
+	require.Equal(t, dto.AutoRouteScopeOff, got.AutoRouteScope)
+	require.Empty(t, got.AutoRouteRoomID)
+	require.Equal(t, "auto-route room unavailable", got.LastError)
+	var status dto.ConnectorStatusData
+	for status.ConnectorID != e.aliceConn.ID || status.LastError == "" {
+		live.Expect(dto.LiveEventTypeConnectorStatus, &status, connectortest.Timeout)
+	}
+	require.Equal(t, "auto-route room unavailable", status.LastError)
+	require.Empty(t, testkit.Decode[dto.Connector](e.bob.Get(connectorPath(e.bobConn)).RequireStatus(http.StatusOK)).LastError, "bob's connector is not touched")
+
+	fresh := createRoom(e.alice, "new catch-all")
+	got = testkit.Decode[dto.Connector](e.alice.Patch(path, dto.UpdateConnectorRequest{AutoRouteScope: ptr(dto.AutoRouteScopeDMs), AutoRouteRoomID: &fresh.ID}).RequireStatus(http.StatusOK))
+	require.Empty(t, got.LastError, "saving the settings clears the detail (ROUTE-09)")
 }

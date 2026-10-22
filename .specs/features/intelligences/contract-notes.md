@@ -1215,3 +1215,68 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   and cut, the apps by viewer), and per adapter `TestRunReportsTheBotAccount` (telegram),
   `TestReadyReportsTheBotAccount` (discord) and `TestRunReportsTheMaskedNumbersOfItsInstances` (whatsapp,
   fixtures in the evolution-go 0.7.2 shape with `jid`).
+
+## T30 - Platform DMs reach the operator (ACC-02, ACC-06, DM-05)
+
+- **Per-chat conversations mode** = `auto_route_scope` other than `off` **and no catch-all room**
+  (`auto_route_room_id` empty). A connector with a catch-all room keeps the v0.3 behaviour whatever its
+  operator is (spec issue 2). The owner switches by clearing the room (`PATCH {auto_route_room_id: ""}`);
+  the scope is kept. **Deviation from ROUTE-04's old rule:** "a scope other than off needs a room" (422
+  `auto_route_room_id`) is gone, because a cleared room with a scope on is how per-chat mode is chosen;
+  `TestCatchAllSettings` asserts the new rule (clearing keeps the scope and answers 200). The scope is
+  still validated, the room still needs manage.
+- **Deviation (ROUTE-03, deleted catch-all room):** with an empty room now meaning per-chat mode, a room
+  that is deleted must not silently turn its connectors into per-chat ones. `rooms.Service.Delete` therefore
+  stops the connectors whose catch-all it is, in its own transaction (`StopCatchAllConnectors`): scope `off`
+  and `last_error` = `auto-route room unavailable` (`dto.AutoRouteUnavailable`; `dto.AutoRouteLimited` is
+  the other detail, `connectors.AutoRouteUnavailable`/`Limited` alias them), and publishes
+  `connector.status` with that detail. v0.3 reported it lazily at the next unrouted message; it is now
+  immediate, and the scope goes off with it. Losing manage on the room is unchanged (reported at the
+  next message). The no-room branch of the catch-all path no longer sets a detail: it only records the chat.
+- **DM chats** (`Chat.Kind` dm, scope `dms` or `all`, no catch-all room), `Pipeline.route` → `platformDM`:
+  the message goes to the DM between its author and the connector's operator
+  (`conversations.Service.EnsurePlatformDM`, `PlatformDM{OwnerID, ChatID, Author, Operator}`).
+  - *Which chats*: those in no room, or only in DM rooms (the routing keeps them); a chat the owner put
+    in any other room stays there and gets no DM (ROUTE-02's spirit).
+  - *Author*: the user the sender is verified as (AD-008), else its person (recorded by `People.Seen`
+    only once the message is routed). *Operator*: the connector's `operator_iid` (an `agent` member), else
+    the owner (a `user` member). The sender **is** the operator (the owner's own verified account writing
+    to the owner-operated account) → no DM with oneself: the chat is recorded, nothing is stored and no
+    person is created. A sender without any id has nobody to make a DM with: not routed.
+  - *The DM*: one per pair of intelligences (`rooms_dm_pair`), `owner_id` = the connector's owner,
+    members: the operator, the author when it is a user (not a person: it takes part through the chat) and
+    the chat with **outbound on**. The pair is shared with the web: a user who writes from their phone to
+    the AI that operates the account joins the DM they already have with it on the web (their chat is added
+    to that room), and the AI's replies in that DM then reach the phone too. Access is the DM rules of T19:
+    a person-AI DM is read-only for the AI's owner; with the owner as operator the owner posts in it (the
+    post goes out through the chat). Created rooms publish `room.changed` and `room.members`.
+  - *Re-homing*: when the operator changed, the chat's next message makes `EnsurePlatformDM` take the chat
+    out of its other DMs (cancelling what was queued for it there, ROOM-01; the history stays, no event
+    but `room.members`) and into the DM with the current operator, reusing an existing one; deleting the
+    operator AI deletes its DMs, so the next message makes the DM with the owner (spec edge case).
+  - *Cap*: a route that makes the chat a member of a DM (new DM, joined DM, move) counts for the 60 per
+    hour per connector of the catch-all (`routeState`), serialized per connector; at the cap the message
+    is not stored, the connector's detail is `auto-route limit reached` (cleared by the next successful
+    route), a **new** chat is not recorded and a known one is. A chat already in the right DM is
+    never counted nor blocked (`placed`).
+  - *Concurrency*: first messages of one new chat at once create one DM and lose no message; the chat's
+    rooms and their kinds are read in one query (`ListChatRooms`), because two reads could disagree about
+    a DM made in between.
+  - sqlc: `ListChatRooms`, `ListChatDMRoomIDs`, `ListRoomChatConnectors`, `StopCatchAllConnectors`.
+    `conversations.Service.PlatformDMRoom(authorID, operatorID)` finds the pair's DM; `People.Find` looks a
+    sender's person up without recording it. `PipelineDeps.Conversations` (wired in `app.go`) enables it.
+- **DM-05**: `conversations.OpenDM` with a person target (users and AIs): after the visibility check
+  (404 `contact_not_found`) it returns the existing DM between the caller and the person **only when a
+  connector whose chat is in that DM names the caller as operator now** (the owner counts when no AI is
+  named), with `created` false; otherwise 422 `no_route_to_person`. It never creates a DM with a person, so
+  nobody is written to who did not write first. `send_message to:` (`POST /agent/dms`) and
+  `POST /conversations/dm` use it; the message posted in that DM is queued for the chat. After the operator
+  changes the old operator has no route, the new one has.
+- Tests (`internal/connectors/platform_dm_test.go`, `internal/api/catch_all_settings_test.go`): a DM to
+  the operator AI (frame, room, members, the owner's view, stranger 404, more messages), the concurrent
+  burst, scopes and hand-routed chats, a connector with a catch-all room, following the operator
+  (owner, back to the AI, deleted AI) with the cancelled outbox, no DM with oneself and the linked owner
+  trusted by her AI, the 60-per-hour cap, DM-05 for the operator AI, another AI, another owner's AI with
+  and without connector access, a never-routed person, strangers and the owner before/after the change;
+  clearing the room keeps the scope; deleting the catch-all room stops routing at once with a live
+  status.

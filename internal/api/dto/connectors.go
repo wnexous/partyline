@@ -126,6 +126,14 @@ const (
 	AutoRouteScopeAll    AutoRouteScope = "all"
 )
 
+// Status details catch-all routing sets on a connector (ROUTE-03, ROUTE-08).
+const (
+	// AutoRouteUnavailable says the catch-all room is gone or its owner lost manage on it.
+	AutoRouteUnavailable = "auto-route room unavailable"
+	// AutoRouteLimited says a cap on new chats was reached.
+	AutoRouteLimited = "auto-route limit reached"
+)
+
 // ChatKind is the kind of an external chat.
 type ChatKind string
 

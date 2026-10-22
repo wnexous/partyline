@@ -181,7 +181,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		version = "dev"
 	}
 	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
-		Store: st, Bus: bus, Rooms: a.Rooms, Blobs: blobs, Identities: a.Identities,
+		Store: st, Bus: bus, Rooms: a.Rooms, Blobs: blobs, Identities: a.Identities, Conversations: a.Conversations,
 		MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
 	})
 	fileLinks := connectors.NewFileLinks(box, st, cfg.PublicURL, opts.Now)

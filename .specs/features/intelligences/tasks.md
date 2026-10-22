@@ -605,10 +605,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: ACC-02, ACC-06, DM-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A person's platform DM to a connector operated by an AI arrives in the DM between the person and the AI, created once (ACC-02); scope `off` routes nothing; a catch-all connector keeps the v0.3 behaviour
-- [ ] After an operator change, the next message goes to the new operator's DM; a deleted operator AI → the owner (spec edge case)
-- [ ] The operator AI `send_message to:` the person goes out through that chat; another AI gets 422 `no_route_to_person` (DM-05)
-- [ ] Gate check passes: `make check`
+- [x] A person's platform DM to a connector operated by an AI arrives in the DM between the person and the AI, created once (ACC-02); scope `off` routes nothing; a catch-all connector keeps the v0.3 behaviour
+- [x] After an operator change, the next message goes to the new operator's DM; a deleted operator AI → the owner (spec edge case)
+- [x] The operator AI `send_message to:` the person goes out through that chat; another AI gets 422 `no_route_to_person` (DM-05)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors): route platform DMs to the operator`

@@ -110,6 +110,23 @@ func (p *People) Seen(ctx context.Context, s Sighting) (db.Person, error) {
 	return person, nil
 }
 
+// Find returns the id of the person of the sender on the connector, by either of its ids, without
+// recording anything; empty when the sender has no person yet.
+func (p *People) Find(ctx context.Context, connectorID, senderID, altID string) (string, error) {
+	s := Sighting{ConnectorID: connectorID, SenderID: senderID, AltID: altID}
+	if s.SenderID == "" {
+		s.SenderID, s.AltID = s.AltID, ""
+	}
+	if s.SenderID == "" {
+		return "", nil
+	}
+	st, err := p.state(ctx, p.d.Store.R(), s)
+	if err != nil || !st.found {
+		return "", err
+	}
+	return st.person.ID, nil
+}
+
 // seenState is what is stored about a sender before a sighting.
 type seenState struct {
 	person db.Person

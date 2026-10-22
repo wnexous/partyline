@@ -16,6 +16,7 @@ import (
 	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
+	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/rooms"
@@ -40,6 +41,9 @@ type PipelineDeps struct {
 	// People records who writes (PEOP-01); the pipeline builds one from Store, Bus and Now
 	// when nil.
 	People *People
+	// Conversations makes the DMs of platform DM chats (ACC-02); without it new DM chats are
+	// routed to the catch-all room only.
+	Conversations *conversations.Service
 	// MaxUploadBytes bounds stored media (CON-11).
 	MaxUploadBytes int64
 	Logger         *slog.Logger
@@ -134,55 +138,43 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 	if err != nil {
 		return err
 	}
-	var roomIDs []string
+	var roomIDs, dms []string // the chat's rooms, and those that are DMs
 	if found {
-		if roomIDs, err = p.d.Store.R().ListChatRoomIDs(ctx, known.ID); err != nil {
+		chatRooms, err := p.d.Store.R().ListChatRooms(ctx, known.ID)
+		if err != nil {
 			return err
+		}
+		for _, r := range chatRooms {
+			roomIDs = append(roomIDs, r.ID)
+			if r.Kind == string(dto.ConversationKindDM) {
+				dms = append(dms, r.ID)
+			}
 		}
 	}
-	var chat db.Chat
-	switch {
-	case strings.TrimSpace(m.Text) == "" && len(m.Media) == 0:
+	if strings.TrimSpace(m.Text) == "" && len(m.Media) == 0 {
 		_, err := upsert()
 		return err
-	case len(roomIDs) > 0:
-		if chat, err = upsert(); err != nil {
-			return err
-		}
-	default:
-		kind := info.Kind
-		if kind == "" {
-			kind = known.Kind
-		}
-		var roomID string
-		chat, roomID, err = p.autoRoute(ctx, src, m.ChatID, kind, upsert)
-		if err != nil || roomID == "" {
-			return err // CON-07: unrouted chats keep no message
-		}
-		roomIDs = []string{roomID}
+	}
+	kind := info.Kind
+	if kind == "" {
+		kind = known.Kind
+	}
+	who := &authorship{}
+	chat, roomIDs, err := p.route(ctx, src, m, routing{known: known, found: found, kind: kind, roomIDs: roomIDs, dms: dms, at: at}, upsert, who)
+	if err != nil || len(roomIDs) == 0 {
+		return err // CON-07: unrouted chats keep no message
 	}
 	if roomIDs, err = p.pending(ctx, chat.ID, m.MessageID, roomIDs); err != nil || len(roomIDs) == 0 {
 		return err
 	}
-	senderUser, err := p.d.Identities.ResolveSender(ctx, src.ConnectorID, m.SenderID, m.SenderAltID)
-	if err != nil {
+	if err := p.author(ctx, src, chat, m, at, who); err != nil {
 		return err
 	}
-	person, err := p.d.People.Seen(ctx, Sighting{
-		ConnectorID: src.ConnectorID, ConnectorKind: src.Kind, Chat: chat,
-		SenderID: m.SenderID, AltID: m.SenderAltID, Name: m.SenderName, At: at,
-	})
-	if err != nil {
-		return err
-	}
-	author := senderUser // a verified sender is the user (PEOP-02), any other the person (GRP-03)
-	if author == "" {
-		author = person.ID
-	}
+	senderUser, author := who.senderUser, who.iid() // a verified sender is the user (PEOP-02), any other the person (GRP-03)
 	files := p.saveMedia(ctx, src, m.Media)
-	kind := dto.MessageKind(m.Kind)
-	if kind == "" {
-		kind = dto.MessageKindText
+	msgKind := dto.MessageKind(m.Kind)
+	if msgKind == "" {
+		msgKind = dto.MessageKindText
 	}
 	for _, roomID := range roomIDs {
 		replyTo := ""
@@ -196,7 +188,7 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 		}
 		_, err := p.d.Rooms.PostFromChat(ctx, roomID, rooms.ChatMessage{
 			ChatID: chat.ID, SenderID: m.SenderID, SenderAltID: m.SenderAltID, SenderName: m.SenderName,
-			SenderUserID: senderUser, AuthorIID: author, ExternalID: m.MessageID, Kind: kind, Text: truncate(m.Text), ReplyTo: replyTo, Files: files,
+			SenderUserID: senderUser, AuthorIID: author, ExternalID: m.MessageID, Kind: msgKind, Text: truncate(m.Text), ReplyTo: replyTo, Files: files,
 		})
 		var verr *validation.Error
 		switch {
@@ -210,9 +202,176 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 	return nil
 }
 
+// routing is what the pipeline knows of a chat before it routes a message from it.
+type routing struct {
+	known   db.Chat
+	found   bool
+	kind    string
+	roomIDs []string // the rooms the chat belongs to
+	dms     []string // those that are DMs
+	at      time.Time
+}
+
+// authorship is who wrote a message, resolved once per message: the user the sender is verified
+// as and the sender's person, recorded only for a message that reaches rooms.
+type authorship struct {
+	senderUser string
+	userDone   bool
+	person     db.Person
+	seen       bool
+}
+
+// iid is the intelligence that wrote the message: the verified user (PEOP-02), else the person
+// (GRP-03); empty for a sender without an id.
+func (a *authorship) iid() string {
+	if a.senderUser != "" {
+		return a.senderUser
+	}
+	return a.person.ID
+}
+
+// verified resolves the user the sender is verified as through this connector (AD-008).
+func (p *Pipeline) verified(ctx context.Context, src Source, m Inbound, a *authorship) error {
+	if a.userDone {
+		return nil
+	}
+	user, err := p.d.Identities.ResolveSender(ctx, src.ConnectorID, m.SenderID, m.SenderAltID)
+	if err != nil {
+		return err
+	}
+	a.senderUser, a.userDone = user, true
+	return nil
+}
+
+// author resolves who wrote the message and records the sender as a person (PEOP-01).
+func (p *Pipeline) author(ctx context.Context, src Source, chat db.Chat, m Inbound, at time.Time, a *authorship) error {
+	if err := p.verified(ctx, src, m, a); err != nil {
+		return err
+	}
+	if a.seen {
+		return nil
+	}
+	person, err := p.d.People.Seen(ctx, Sighting{
+		ConnectorID: src.ConnectorID, ConnectorKind: src.Kind, Chat: chat,
+		SenderID: m.SenderID, AltID: m.SenderAltID, Name: m.SenderName, At: at,
+	})
+	if err != nil {
+		return err
+	}
+	a.person, a.seen = person, true
+	return nil
+}
+
+// route records the chat (unless a cap refuses it) and returns the rooms the message belongs to:
+// the chat's own rooms, or the conversation made for it when the connector routes new chats and
+// the chat belongs to none. A connector without a catch-all room gives a DM chat the DM with its
+// operator (ACC-02); one with a catch-all room keeps adding chats to it (ROUTE-01).
+func (p *Pipeline) route(ctx context.Context, src Source, m Inbound, r routing, upsert func() (db.Chat, error), who *authorship) (db.Chat, []string, error) {
+	if r.kind == string(dto.ChatKindDM) && p.d.Conversations != nil {
+		c, err := p.d.Store.R().GetConnector(ctx, src.ConnectorID)
+		if err != nil {
+			return db.Chat{}, nil, err
+		}
+		if scopeMatches(dto.AutoRouteScope(c.AutoRouteScope), r.kind) && !c.AutoRouteRoomID.Valid {
+			if len(r.dms) == len(r.roomIDs) { // in no room, or only in the DMs this routing keeps
+				return p.platformDM(ctx, src, c, m, r, upsert, who)
+			}
+		}
+	}
+	if len(r.roomIDs) > 0 {
+		chat, err := upsert()
+		return chat, r.roomIDs, err
+	}
+	chat, roomID, err := p.autoRoute(ctx, src, m.ChatID, r.kind, upsert)
+	if err != nil || roomID == "" {
+		return chat, nil, err
+	}
+	return chat, []string{roomID}, nil
+}
+
+// platformDM puts a DM chat in the DM between its sender and the connector's operator (ACC-02),
+// creating the DM, and follows the operator when it changed: the chat leaves its DM with the old
+// one. The chat is not routed, and its sender not recorded, when the sender is the operator (no DM
+// with oneself) or has no id, and when the connector already added 60 chats this hour (ROUTE-08);
+// a capped new chat is not even recorded (ROUTE-11). Additions of one connector are serialized,
+// so concurrent first messages make one DM and the cap holds.
+func (p *Pipeline) platformDM(ctx context.Context, src Source, c db.Connector, m Inbound, r routing, upsert func() (db.Chat, error), who *authorship) (db.Chat, []string, error) {
+	operator := conversations.Party{ID: c.OwnerID, Kind: dto.MemberKindUser}
+	if c.OperatorIid.Valid {
+		operator = conversations.Party{ID: c.OperatorIid.String, Kind: dto.MemberKindAgent}
+	}
+	if err := p.verified(ctx, src, m, who); err != nil {
+		return db.Chat{}, nil, err
+	}
+	if who.senderUser != "" && who.senderUser == operator.ID { // the operator writing to their own account
+		chat, err := upsert()
+		return chat, nil, err
+	}
+	// Is the chat where it should be already? Then nothing is added and nothing is counted.
+	known := who.senderUser
+	if known == "" {
+		var err error
+		if known, err = p.d.People.Find(ctx, src.ConnectorID, m.SenderID, m.SenderAltID); err != nil {
+			return db.Chat{}, nil, err
+		}
+	}
+	placed := false
+	if r.found && known != "" && len(r.dms) == 1 {
+		room, ok, err := p.d.Conversations.PlatformDMRoom(ctx, known, operator.ID)
+		if err != nil {
+			return db.Chat{}, nil, err
+		}
+		placed = ok && room == r.dms[0]
+	}
+	st := p.routeState(c.ID)
+	if !placed {
+		st.mu.Lock()
+		defer st.mu.Unlock()
+		if st.recent(p.d.Now()) >= AutoRoutePerHour {
+			var chat db.Chat
+			if r.found { // a known chat stays recorded; a new one is not
+				var err error
+				if chat, err = upsert(); err != nil {
+					return db.Chat{}, nil, err
+				}
+			}
+			return chat, nil, p.setDetail(ctx, c, AutoRouteLimited)
+		}
+	}
+	chat, err := upsert()
+	if err != nil {
+		return db.Chat{}, nil, err
+	}
+	if placed {
+		return chat, r.roomIDs, nil
+	}
+	if err := p.author(ctx, src, chat, m, r.at, who); err != nil {
+		return db.Chat{}, nil, err
+	}
+	if who.iid() == "" { // a sender without an id: nobody to make a DM with
+		return chat, nil, nil
+	}
+	author := conversations.Party{ID: who.person.ID}
+	if who.senderUser != "" {
+		author = conversations.Party{ID: who.senderUser, Kind: dto.MemberKindUser}
+	}
+	route, err := p.d.Conversations.EnsurePlatformDM(ctx, conversations.PlatformDM{OwnerID: c.OwnerID, ChatID: chat.ID, Author: author, Operator: operator})
+	switch {
+	case errors.Is(err, conversations.ErrDMSelf):
+		return chat, nil, nil
+	case err != nil:
+		return db.Chat{}, nil, err
+	}
+	if route.Changed() {
+		st.routed = append(st.routed, p.d.Now())
+		return chat, []string{route.RoomID}, p.clearDetail(ctx, c)
+	}
+	return chat, []string{route.RoomID}, nil
+}
+
 // AutoRouteUnavailable is the connector status detail when its catch-all room is gone or its
 // owner lost manage on it (ROUTE-03).
-const AutoRouteUnavailable = "auto-route room unavailable"
+const AutoRouteUnavailable = dto.AutoRouteUnavailable
 
 // Catch-all caps (ROUTE-08): a connector auto-adds at most AutoRoutePerHour chats in any hour,
 // and a catch-all room takes auto-added chats while it has fewer than AutoRouteRoomMax chats.
@@ -220,7 +379,7 @@ const AutoRouteUnavailable = "auto-route room unavailable"
 const (
 	AutoRoutePerHour = 60
 	AutoRouteRoomMax = 1000
-	AutoRouteLimited = "auto-route limit reached"
+	AutoRouteLimited = dto.AutoRouteLimited
 )
 
 // autoRoute handles a message with content from a chat that belongs to no room. It records
@@ -257,12 +416,9 @@ func (p *Pipeline) autoRoute(ctx context.Context, src Source, externalID, kind s
 			return db.Chat{}, "", err
 		}
 	}
-	if !c.AutoRouteRoomID.Valid {
+	if !c.AutoRouteRoomID.Valid { // no catch-all room: chats get a conversation of their own
 		chat, err := upsert()
-		if err != nil {
-			return db.Chat{}, "", err
-		}
-		return chat, "", p.setDetail(ctx, c, AutoRouteUnavailable)
+		return chat, "", err
 	}
 	roomID := c.AutoRouteRoomID.String
 	if found {

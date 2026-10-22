@@ -398,7 +398,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | DM-02 | P1: Contacts and DMs | Execute | Implementing |
 | DM-03 | P1: Contacts and DMs | Execute | Implementing |
 | DM-04 | P1: Contacts and DMs | Execute | Implementing |
-| DM-05 | P1: Contacts and DMs | Tasks | Pending |
+| DM-05 | P1: Contacts and DMs | Execute | Implementing |
 | DM-06 | P1: Contacts and DMs | Execute | Implementing |
 | DM-07 | P1: Contacts and DMs | Execute | Implementing |
 | DM-08 | P1: Contacts and DMs | Execute | Implementing |
@@ -413,11 +413,11 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | PEOP-05 | P1: People | Execute | Implementing |
 | PEOP-06 | P1: People | Execute | Implementing |
 | ACC-01 | P1: Accounts | Execute | Implementing |
-| ACC-02 | P1: Accounts | Tasks | Pending |
+| ACC-02 | P1: Accounts | Execute | Implementing |
 | ACC-03 | P1: Accounts | Tasks | Pending |
 | ACC-04 | P1: Accounts | Tasks | Pending |
 | ACC-05 | P1: Accounts | Tasks | Pending |
-| ACC-06 | P1: Accounts | Tasks | Pending |
+| ACC-06 | P1: Accounts | Execute | Implementing |
 | ACC-07 | P1: Accounts | Execute | Implementing |
 | PROF-01 | P1: Profiles | Execute | Implementing |
 | PROF-02 | P1: Profiles | Execute | Implementing |

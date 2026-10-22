@@ -77,7 +77,7 @@ func (c *catchAll) chatMembers(t *testing.T, roomID string) map[string]dto.RoomM
 	return out
 }
 
-func (c *catchAll) connector(t *testing.T) dto.Connector {
+func (c *inboundEnv) connector(t *testing.T) dto.Connector {
 	t.Helper()
 	return testkit.Decode[dto.Connector](c.alice.Get("/api/v1/connectors/" + c.conn.ID).RequireStatus(http.StatusOK))
 }
@@ -477,7 +477,7 @@ func TestCatchAllClearedDetailIsAnnounced(t *testing.T) {
 }
 
 // hasChat tells whether the connector recorded a chat with the platform id.
-func (c *catchAll) hasChat(t *testing.T, external string) bool {
+func (c *inboundEnv) hasChat(t *testing.T, external string) bool {
 	t.Helper()
 	for _, chat := range c.chats(t) {
 		if chat.ExternalID == external {

@@ -490,7 +490,9 @@ func (s *Service) operator(ctx context.Context, c db.Connector, requested *strin
 
 // autoRoute returns the catch-all settings after in (ROUTE-04): the scope must be one of
 // off, dms, groups, all; the caller must hold manage on the room, and an unknown room answers
-// the same 403; a scope other than off needs a room.
+// the same 403. A scope other than off without a room routes each new chat to a conversation of
+// its own with the connector's operator (ACC-02, ACC-06): clearing the room switches a v0.3
+// catch-all connector to it.
 func (s *Service) autoRoute(ctx context.Context, p authn.Principal, c db.Connector, in UpdateInput) (dto.AutoRouteScope, sql.NullString, error) {
 	scope, room := dto.AutoRouteScope(c.AutoRouteScope), c.AutoRouteRoomID
 	if in.AutoRouteScope != nil {
@@ -519,9 +521,6 @@ func (s *Service) autoRoute(ctx context.Context, p authn.Principal, c db.Connect
 				return "", room, access.ErrForbidden
 			}
 		}
-	}
-	if scope != dto.AutoRouteScopeOff && !room.Valid {
-		return "", room, &validation.Error{Fields: map[string]string{"auto_route_room_id": "required when the scope is not off"}}
 	}
 	return scope, room, nil
 }

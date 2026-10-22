@@ -209,6 +209,37 @@ func (q *Queries) InsertDMRoom(ctx context.Context, arg InsertDMRoomParams) (int
 	return result.RowsAffected()
 }
 
+const listChatDMRoomIDs = `-- name: ListChatDMRoomIDs :many
+SELECT r.id FROM room_members m JOIN rooms r ON r.id = m.room_id
+WHERE m.kind = 'chat' AND m.member_id = ? AND r.kind = 'dm'
+ORDER BY r.id
+`
+
+// The DMs a chat is a member of: a platform DM chat sits in the DM with its connector's operator
+// (ACC-02).
+func (q *Queries) ListChatDMRoomIDs(ctx context.Context, memberID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listChatDMRoomIDs, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLastMessages = `-- name: ListLastMessages :many
 SELECT v.id, v.room_id, v.seq, v.author_kind, v.author_id, v.author_user_id, v.author_iid, v.sender_id, v.sender_alt_id, v.sender_name, v.kind, v.text, v.reply_to, v.recipients_json, v.external_id, v.created_at, v.author_name, v.author_handle, v.author_ikind, v.author_avatar FROM message_views v
 JOIN (SELECT m.room_id, MAX(m.seq) AS seq FROM messages m
@@ -359,6 +390,42 @@ func (q *Queries) ListRoomActivity(ctx context.Context, ids []string) ([]ListRoo
 			&i.Kind,
 			&i.ActivityAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRoomChatConnectors = `-- name: ListRoomChatConnectors :many
+SELECT k.id, k.owner_id, k.operator_iid
+FROM room_members m JOIN chats c ON c.id = m.member_id JOIN connectors k ON k.id = c.connector_id
+WHERE m.room_id = ? AND m.kind = 'chat'
+`
+
+type ListRoomChatConnectorsRow struct {
+	ID          string
+	OwnerID     string
+	OperatorIid sql.NullString
+}
+
+// The connectors of the chats that are members of a room, with who operates each (DM-05).
+func (q *Queries) ListRoomChatConnectors(ctx context.Context, roomID string) ([]ListRoomChatConnectorsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRoomChatConnectors, roomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoomChatConnectorsRow
+	for rows.Next() {
+		var i ListRoomChatConnectorsRow
+		if err := rows.Scan(&i.ID, &i.OwnerID, &i.OperatorIid); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -49,3 +49,10 @@ WHERE chats.connector_id = sqlc.arg(connector_id) AND chats.external_id = sqlc.a
 SELECT c.id, c.title, c.kind, k.kind AS platform
 FROM chats c JOIN connectors k ON k.id = c.connector_id
 WHERE c.id IN (sqlc.slice(chat_ids));
+
+-- name: ListChatRooms :many
+-- The rooms a chat is a member of with their kind, in one read: a platform DM chat belongs to a
+-- DM (ACC-02).
+SELECT r.id, r.kind FROM room_members m JOIN rooms r ON r.id = m.room_id
+WHERE m.kind = 'chat' AND m.member_id = ?
+ORDER BY r.id;

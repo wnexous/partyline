@@ -81,3 +81,16 @@ SELECT r.id, r.name, r.kind,
        CAST(COALESCE((SELECT m.created_at FROM messages m WHERE m.room_id = r.id ORDER BY m.seq DESC LIMIT 1), r.created_at) AS INTEGER) AS activity_at
 FROM rooms r
 WHERE r.id IN (sqlc.slice('ids'));
+
+-- name: ListChatDMRoomIDs :many
+-- The DMs a chat is a member of: a platform DM chat sits in the DM with its connector's operator
+-- (ACC-02).
+SELECT r.id FROM room_members m JOIN rooms r ON r.id = m.room_id
+WHERE m.kind = 'chat' AND m.member_id = ? AND r.kind = 'dm'
+ORDER BY r.id;
+
+-- name: ListRoomChatConnectors :many
+-- The connectors of the chats that are members of a room, with who operates each (DM-05).
+SELECT k.id, k.owner_id, k.operator_iid
+FROM room_members m JOIN chats c ON c.id = m.member_id JOIN connectors k ON k.id = c.connector_id
+WHERE m.room_id = ? AND m.kind = 'chat';
