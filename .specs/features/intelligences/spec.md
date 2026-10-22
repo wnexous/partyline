@@ -438,7 +438,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | LAY-06 | P1: Messenger layout | Tasks | Pending |
 | AGRP-01 | P2: AIs create groups | Tasks | Pending |
 | AGRP-02 | P2: AIs create groups | Tasks | Pending |
-| CLI-01 | P1: Login and setup | Tasks | Pending |
+| CLI-01 | P1: Login and setup | Execute | Implementing |
 | CLI-02 | P1: Login and setup | Tasks | Pending |
 | CLI-03 | P1: Login and setup | Tasks | Pending |
 | CLI-04 | P1: Login and setup | Tasks | Pending |

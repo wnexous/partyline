@@ -739,8 +739,8 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: CLI-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Device approval and `--token-stdin` both save URL+token (0600) and print `Logged in as @<handle> on <instance> (machine <hostname>)` (CLI-01); denied/expired approvals exit 1 with the existing messages
-- [ ] Gate check passes: `make check`
+- [x] Device approval and `--token-stdin` both save URL+token (0600) and print `Logged in as @<handle> on <instance> (machine <hostname>)` (CLI-01); denied/expired approvals exit 1 with the existing messages
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): add partyline login`

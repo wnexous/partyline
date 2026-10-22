@@ -541,3 +541,20 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
   (a dial is a process of its own) unless `Live` is set; `testkit.NewLiveID`. Removed with the
   superseded behavior: `TestAgentWSSecondConnectionReplacesFirst` (AGT-04),
   `TestPresenceReplaceAndOffline`, `TestLinkPausesAfterReplaced` and `TestToolsReportReplaced`.
+
+## T38 - `partyline login` (CLI-01)
+
+- `loginCmd` (`internal/cli/login.go`, `partyline login [--url] [--token-stdin]`): instance URL
+  from `--url` → `PARTYLINE_URL` → the saved config → the prompt; normalized (no trailing
+  slash) and checked with `GET /healthz`. The agent token comes from the first stdin line with
+  `--token-stdin` (empty → exit 2), else from the unchanged browser approval flow
+  (`approveInBrowser`: page + code, polls every 2 s, DEV-01..03/DEV-06 texts, the
+  "Save this agent token of @…" confirmation and the `--yes` warning for setup). Denied and
+  expired approvals print the existing messages on stderr and exit 1; nothing is saved.
+- The token is verified with `GET /api/v1/agent/whoami` (`agentWhoAmI`, `dto.IntelligenceRef`)
+  **before** `cliconfig.Save` writes `{url, token}` with mode 0600, and login prints
+  `Logged in as @<handle> on <instance> (machine <hostname>)` from the whoami handle, not from
+  the approver name. Exit codes: 0 saved, 1 denied/expired/rejected/unreachable, 2 usage.
+- `loginFlags{token, yes, name}` is the seam setup reuses in T40: `name` prefixes messages
+  (`partyline login:`/`partyline setup:`) and `yes` keeps setup's DEV-06 behaviour.
+- Not in T38: opening the setup menu after login (CLI-02, wired in T40).

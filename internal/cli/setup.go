@@ -279,26 +279,10 @@ func decodeError(resp *http.Response) dto.Error {
 }
 
 // verifyAgentToken asks the server whether token is an active agent token with GET
-// /agent/whoami, which needs no folder and no AI: 200 for a valid agent token, 401 for an
-// unknown or revoked one and 403 "agent token required" for a user token.
+// /agent/whoami, which needs no folder and no AI.
 func verifyAgentToken(ctx context.Context, base, token string) error {
-	h := http.Header{}
-	h.Set("Authorization", "Bearer "+token)
-	resp, err := request(ctx, http.MethodGet, base+"/api/v1/agent/whoami", nil, h)
-	if err != nil {
-		return fmt.Errorf("cannot reach %s: %w", base, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	switch resp.StatusCode {
-	case http.StatusOK:
-		return nil
-	case http.StatusUnauthorized:
-		return errors.New("the server rejected the token (mistyped, revoked or expired); nothing was saved")
-	case http.StatusForbidden:
-		return errors.New("this is not an agent token: create an agent token in the web app (Tokens) or use --browser; nothing was saved")
-	default:
-		return fmt.Errorf("unexpected answer %d while checking the token; nothing was saved", resp.StatusCode)
-	}
+	_, err := agentWhoAmI(ctx, base, token)
+	return err
 }
 
 // approveInBrowser runs the device flow (DEV-01..03, DEV-06): it creates a request named after

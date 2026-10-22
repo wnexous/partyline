@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -47,9 +48,47 @@ const testBinary = "/opt/partyline/bin/partyline"
 
 func runSetup(t *testing.T, o setupOpts, args ...string) setupRun {
 	t.Helper()
+	return runCommand(t, o, append([]string{"setup"}, args...)...)
+}
+
+// runLogin is one `partyline login` invocation with the same fakes as setup.
+func runLogin(t *testing.T, o setupOpts, args ...string) setupRun {
+	t.Helper()
+	return runCommand(t, o, append([]string{"login"}, args...)...)
+}
+
+// lineReader hands out at most one line per Read, like a terminal in canonical mode, so a
+// prompt cannot read ahead the answers meant for the next prompt.
+type lineReader struct{ r io.Reader }
+
+func (l lineReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	n := 0
+	for n < len(p) {
+		var b [1]byte
+		m, err := l.r.Read(b[:])
+		if m > 0 {
+			p[n] = b[0]
+			n++
+			if b[0] == '\n' {
+				return n, nil
+			}
+		}
+		if err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
+// runCommand runs one CLI command with a fake HOME and scripted stdin.
+func runCommand(t *testing.T, o setupOpts, args ...string) setupRun {
+	t.Helper()
 	var out, errOut lockedBuffer
 	std := stdio{
-		stdin: strings.NewReader(o.stdin), stdout: &out, stderr: &errOut,
+		stdin: lineReader{strings.NewReader(o.stdin)}, stdout: &out, stderr: &errOut,
 		getenv:     func(k string) string { return o.env[k] },
 		hostname:   func() (string, error) { return o.hostname, nil },
 		executable: func() (string, error) { return testBinary, nil },
@@ -79,7 +118,7 @@ func runSetup(t *testing.T, o setupOpts, args ...string) setupRun {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), chanWait)
 	defer cancel()
-	code := execute(ctx, append([]string{"partyline", "setup"}, args...), std)
+	code := execute(ctx, append([]string{"partyline"}, args...), std)
 	return setupRun{code: code, stdout: out.String(), stderr: errOut.String()}
 }
 

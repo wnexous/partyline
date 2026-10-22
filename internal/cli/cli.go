@@ -23,6 +23,8 @@ Commands:
   serve                  run the server (configured with PARTYLINE_* environment variables)
   admin create-user      create an account; the password is read from stdin
   admin reset-password   set a new password and end the user's sessions; reads stdin
+  login                  approve this machine in the browser (or read the agent token from
+                         stdin) and save the instance URL and token
   setup                  save the instance URL and an agent token (or approve this machine in the
                          browser) and register Partyline in the installed harnesses; --uninstall undoes it
   channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN or the config file);
@@ -102,6 +104,8 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return admin(ctx, args[2:], io)
 	case "setup":
 		return setupCmd(ctx, args[2:], io)
+	case "login":
+		return loginCmd(ctx, args[2:], io)
 	case "channel":
 		return channelCmd(ctx, args[2:], io)
 	case "listen":
