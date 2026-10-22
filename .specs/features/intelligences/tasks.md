@@ -1130,9 +1130,9 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: NOTI-02, DM-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] An AI that sorts before the user writes to the user's DM and the text arrives on the user's chosen app, as "<AI name>: <text>" (M17)
-- [ ] A post by an AI that sorts before a disabled user is refused with `counterpart_disabled` and stores nothing (M18)
-- [ ] Gate check passes: `make check`
+- [x] An AI that sorts before the user writes to the user's DM and the text arrives on the user's chosen app, as "<AI name>: <text>" (M17)
+- [x] A post by an AI that sorts before a disabled user is refused with `counterpart_disabled` and stores nothing (M18)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test: cover DMs where the AI is the first participant`

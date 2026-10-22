@@ -286,6 +286,27 @@ func TestNotifyRoutesAuthorization(t *testing.T) {
 	require.Equal(t, n.phone, me(t, n.alice).NotifyChatID)
 }
 
+// NOTI-02 (L-044): the copy goes to the user of the DM whichever of the two sorts first. Here the
+// AI was created before the user, so it is the first participant (dm_a) of their DM.
+func TestAIDMIsCopiedToTheAppOfAUserThatSortsAfterTheAI(t *testing.T) {
+	n := newNotifyEnv(t)
+	bob := n.env.NewUser("bob") // created after Atlas: Atlas sorts first
+	require.Less(t, n.atlasID, bob.User.ID, "Atlas is the first participant of the DM")
+	n.alice.Put("/api/v1/connectors/"+n.conn.ID+"/sharing", dto.Sharing{
+		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: bob.User.ID, Level: dto.LevelUse}},
+	}).RequireStatus(http.StatusOK)
+	phone := n.linkPhone(t, n.inst, n.conn.ID, bob, dmB, "Bob phone")
+	choose(t, bob, phone)
+
+	msg := testkit.Decode[dto.Message](n.atlas.Post("/api/v1/agent/dms", dto.AgentDMRequest{To: "@bob", Text: "your report is ready"}).RequireStatus(http.StatusCreated))
+
+	sent := n.inst.WaitSend(t)
+	require.Equal(t, []string{dmB, "Atlas: your report is ready"}, []string{sent.ChatID, sent.Text}, "bob's app, not alice's")
+	require.Len(t, msg.Outbox, 1)
+	require.Equal(t, []any{phone, dto.OutboxPurposeNotify}, []any{msg.Outbox[0].ChatID, msg.Outbox[0].Purpose})
+	require.Equal(t, 1, n.notifyRows(t), "one copy, for bob's app only")
+}
+
 // NOTI-02 (independent test): once alice chose her phone, what Atlas writes to her in their DM
 // also reaches the phone as "<AI name>: <text>", with no author line, no quote and no files, from
 // the chat that is no member of the DM; the copy's outbox row is marked like any other and the

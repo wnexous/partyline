@@ -2553,3 +2553,20 @@ say it. No code changes.
   pins both halves and the way back (owner operator: trusted, authored by the owner; AI operator: not
   trusted, no user, authored by the AI; the owner operates again: trusted). It and the first test fail on
   the previous code.
+
+## T60 - Cover DMs where the AI is the first participant (NOTI-02, DM-02)
+
+Tests only; no code changes (`validation.md` gap 4, mutants M17 and M18, L-044). The ids of a DM's
+participants are sorted (`dm_a < dm_b`) and ids are UUIDv7 from one process, so the intelligence created
+first sorts first. Every earlier fixture created the user first, so the branch that swaps the two sides
+never ran.
+
+- `TestAIDMIsCopiedToTheAppOfAUserThatSortsAfterTheAI` (`internal/connectors/notify_test.go`): bob is
+  created after Atlas, links a phone through a connector alice shared with him and chooses it; what
+  Atlas writes to `@bob` is copied to bob's phone as "Atlas: <text>", with one notify row and none for
+  alice's phone. The test asserts the order of the ids first, so it cannot silently stop covering it.
+- `TestPostByAnAIThatSortsBeforeTheDisabledUserIsRefused` (`internal/api/direct_messages_test.go`): an
+  AI that sorts before a disabled user gets `ErrCounterpartDisabled` for its post, nothing is stored and
+  the post works once the user is enabled.
+- Scratch copy: M17 (`other` is always `dm_a`) fails the first, M18 (the counterpart check uses the
+  owner's id for an AI's post) fails the second; the older tests passed under both.
