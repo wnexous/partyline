@@ -1,8 +1,106 @@
 # Intelligences Validation
 
-## Validation (iteration 2): intelligences - FAIL ❌
+## Validation (iteration 3, closure check): intelligences - FAIL ❌
 
-**Result**: FAIL - every iteration-1 gap that had a fix task is closed, and all 8 non-equivalent iteration-1 survivors are now killed. M30 is equivalent; its double-guard variant is killed. All gates pass: `make check-race`, and the formerly flaky takeover test passed 30 of 30 under `-race`. 83 of 84 ACs match their spec outcome. Two new mutants survive, both test-only gaps with no product defect. N18: the amended SES-06 promises that a silent connection goes offline within 35 s, and no test drives the ping-failure path. W8: the AI badge added to the route-chat dialog in fed9454 has no test. This is iteration 2 of 3, and fixing both takes two tests.
+**Result**: FAIL - both iteration-2 survivors are now killed: N18 by `TestSilentConnectionGoesOffline` and W8 by `route-chat-dialog.test.tsx`. Every gate passes. Two new mutants on the ping code survive. X2 removes the new `PingTimeout` default, so production pings run with a zero timeout. X2b closes the connection after a ping that succeeds. Under either one, every healthy agent session is dropped at its first ping, 25 s after connecting, and no test notices. The new test covers only the silent half of SES-06. Nothing exercises the other half, "answered within a 10-second write timeout", which means a session that answers pings stays live on the production default. The production code is correct today (`internal/agents/gateway.go:106-108` → `writeTimeout` = 10 s, `:37`). A scratch probe confirmed that a reading client stays online across about 12 pings with that default. This is iteration 3 of 3, so the fix→re-verify loop escalates to André. Closing the gap takes one test.
+
+**Date**: 2026-10-22
+**Spec**: `.specs/features/intelligences/spec.md` (84 requirements, unchanged since iteration 2)
+**Diff range**: `e597bec..f6a4aa9`: `8e5166a` (the ping timeout becomes injectable through `GatewayDeps.PingTimeout`, defaulting to `writeTimeout`; adds `testkit.Client.DialFolderSilent`, `TestSilentConnectionGoesOffline` and `route-chat-dialog.test.tsx`, and rewords the M30 comment) and `f6a4aa9` (doc-comment order). 6 files, +71 / −4.
+**Verifier**: independent sub-agent (author ≠ verifier), worktree `partyline-verify-intel` on `verify/intelligences-3` at `f6a4aa9`.
+
+### Iteration-2 gaps re-checked
+
+| Gap | Fix | Evidence (asserts the spec outcome) | Closed? |
+| --- | --- | --- | --- |
+| 1 SES-06 / N18: the silent connection | `internal/agents/gateway.go:74-76,106-108,441` (`PingTimeout` dep, default `writeTimeout`); `internal/agents/export_test.go:11-14` `SetPingTimings`; `internal/testkit/agent.go:196-206` `DialFolderSilent` dials and never reads, so pongs are never sent | `internal/agents/gateway_live_test.go:139-151`: with a 50 ms interval and a 200 ms timeout, the session attaches (`Presence.Online(id)` true, `:147`), then goes offline (`!Presence.Online(id)` within 5 s, `:149`). This is the spec outcome "a silent connection is dropped by the ping and the identity is offline", at scaled timings. | ✅ for the silent half (N18 killed). The healthy half has no test (X2 and X2b, below). |
+| 2 PROF-09 / W8: the route-chat badge | `web/src/components/route-chat-dialog.test.tsx` (new) | `route-chat-dialog.test.tsx:20-24`: an AI named "Ana Lima" (a human-looking name), in the list labelled "Agents"; its button contains the text `"AI"` (`within(item).getByText("AI")`). This is PROF-09's "an AI named like a human is still marked as an AI". | ✅ (W8 and X4 killed) |
+| 3 M30 comment | `internal/connectors/platform_dm_test.go:275-277` | The comment now names both guards, the autoroute check and `EnsurePlatformDM` (`internal/conversations/platform.go`). | ✅ |
+| Production default | - | `internal/agents/gateway.go:36-37` (`DefaultPingInterval` 25 s, `writeTimeout` 10 s), `:106-111` (both fall back when ≤ 0). `grep` finds no other writer of `PingTimeout` in production code: the app relies on the default, so it is unchanged at 10 s. Only a code read backs this; no test does (X2). | ✅ by code read, ❌ by test |
+
+### Gate Check
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Build | `make check` | ✅ exit 0: lint 0 issues, no drift. Go: every package `ok` (agents 32→33, api 338, channel 112, cli 137, connectors 128 …). Web: 49 files / 779 tests (was 48 / 778). Integrations: 70 pass / 0 fail. Build OK. |
+| Race | `make check-race` | ✅ exit 0: test-go 476 s under `-race`, every package `ok` (agents 33), no data race; web 49 / 779; integrations 70 / 0. |
+| E2E | `make e2e` (Chromium headless shell 1248) | ✅ 20 passed (10 × desktop-1280 + mobile-360), 13.4 s. |
+
+- **Test count**: Go +1 (`TestSilentConnectionGoesOffline`), web +1 file / +1 test. No test was deleted or weakened.
+- **Skipped tests**: none. `git status --porcelain` was empty before and after every gate.
+
+### Spec-Anchored Acceptance Criteria (all 84)
+
+Iterations 1-2 evidence stands for the 83 ACs marked ✅ in iteration 2; the diff touches none of their code or tests except PROF-09, which gains evidence. Changed rows only:
+
+| AC | Spec-defined outcome | Evidence | Result |
+| --- | --- | --- | --- |
+| SES-06 | offline ≤5 s on close or drop; a silent connection is dropped by the ping (every 25 s, answered within a 10-s write timeout), offline ≤35 s | 5 s: `internal/api/agent_live_test.go:245`. Silent drop: `internal/agents/gateway_live_test.go:139-151` (N18 killed). Answered within 10 s, so the session is kept: **no test**. X2 (default removed) and X2b (a successful ping closes the connection) both survive. | ❌ Partial |
+| PROF-09 | kind badge next to every name, an AI named like a human included | iteration-2 evidence + `web/src/components/route-chat-dialog.test.tsx:20-24` | ✅ |
+
+**Status**: 83 ✅ / 0 ⚠️ / 1 ❌ (SES-06: the healthy-session half of the ping has no test).
+
+### Discrimination Sensor
+
+The sensor ran in the detached scratch worktree `/home/dev/orca/projects/partyline-verify-intel-mut` at `f6a4aa9`. One mutant was applied at a time. Go mutants ran `go test -count=1` on `./internal/agents/`; the survivors were also run against `./internal/api/` and `./internal/channel/` as whole packages. Web mutants ran `bun x vitest run` on `src/components` or on the new test file. Each mutant was restored with `git checkout` inside the scratch, and the scratch was confirmed clean before the next one. At the end the scratch was removed with `git worktree remove --force` and pruned. `git status --porcelain` of the verify worktree was empty before and after.
+
+| # | File:line | Mutation | Killed? |
+| --- | --- | --- | --- |
+| N18 (re-run) | `internal/agents/gateway.go:444-446` | failed ping ignored (`_ = err`) | ✅ `TestSilentConnectionGoesOffline` ("Condition never satisfied", 5.1 s) |
+| W8 (re-run) | `web/src/components/route-chat-dialog.tsx:134` | `<KindBadge>` removed | ✅ `route-chat-dialog.test.tsx` "marks every AI in the list with the AI badge" (1 of 201 in `src/components` fails) |
+| X1 | `internal/agents/gateway.go:441` | the injected `PingTimeout` is ignored: the ping waits `writeTimeout` (10 s) | ✅ `TestSilentConnectionGoesOffline` (offline only after 10 s, beyond the 5 s window) |
+| X2 | `internal/agents/gateway.go:106-108` | `PingTimeout` default removed (zero): every ping fails at once | ❌ **Survived** (agents, api, channel whole packages). Not equivalent: a scratch probe with a reading client and `PingTimeout` 0 drops the session at the first ping (`a session that answers pings stays online` fails), and the same probe with 10 s passes. `make e2e` opens no agent WebSocket. |
+| X2b | `internal/agents/gateway.go:444-446` | `if err != nil { return err }` → `return err`: the session ends after a successful ping | ❌ **Survived** (agents, api, channel whole packages). The same probe kills it. |
+| X4 | `web/src/components/route-chat-dialog.tsx:134` | badge hidden when the display name contains a space (a "looks human" heuristic) | ✅ `route-chat-dialog.test.tsx` |
+| X5 | `internal/testkit/agent.go:205` | `DialFolderSilent` reads in the background, so pongs are answered | ✅ `TestSilentConnectionGoesOffline` (the helper really is silent; the test does not pass by accident) |
+
+**Sensor depth**: P0-full on the touched code: 7 mutants, 2 re-runs and 5 new.
+**Sensor outcome**: 5/7 killed. X2 and X2b are genuine survivors that one test kills (see the fix plan), so the sensor fails.
+
+### Code Quality
+
+| Principle | Status |
+| --- | --- |
+| Minimum code / surgical | ✅ One dep field with a default, one test hook, one testkit helper, two tests, one comment. |
+| No scope creep | ✅ |
+| Matches patterns | ✅ `PingTimeout` mirrors `PingInterval` (doc comment, `<= 0` default); `SetPingTimings` follows `SetAfterBacklogCount`/`SetBeforeAttach`; the web test follows `command-menu.test.tsx`. |
+| Spec-anchored outcome check | ⚠️ SES-06: only the silent half is asserted. |
+| Every test maps to a requirement | ✅ Both new tests cite their AC (SES-06, PROF-09). |
+| Documented guidelines (`AGENTS.md`, `.specs/LESSONS.md` L-051, L-052) | ✅ L-051 and L-052 were applied. L-051's "drive the failure branch" was applied literally; its success branch was missed (new lesson below). |
+
+### Gaps and Fix Plans (ranked)
+
+1. **Minor - SES-06 / X2, X2b: no test shows that a session answering pings stays live on the production ping timeout.** `internal/agents/gateway.go:106-108,441-446`. Fix task: in `internal/agents/gateway_live_test.go`, shorten only the ping interval (for example 50 ms) and leave `PingTimeout` to `NewGateway`'s default. `SetPingTimings(g, 50ms, 0)` writes the zero directly and bypasses the default, so either add an interval-only hook or a testkit option that sets `GatewayDeps.PingInterval` before `NewGateway`. Then dial a client that keeps reading (for example `DialFolderSilent` plus a read loop, or the real channel client), wait for at least 10 intervals, and assert that `Presence.Online(id)` is still true and that a message posted afterwards is delivered. The test must fail under X2 and under X2b. Re-verify with both mutants and N18.
+2. **Carried over (Minor, not AC failures; iteration-1 gap 14)**: the unread baseline for late group members; operator validation racing deletion (500, not 422); `settle` holding the inbound loop for up to 10 s; people squatting AI handles; the tools half of a refused pi/OpenCode session; attachment blobs of a deleted AI's DMs; hostname truncation and `unknown`.
+3. **Open UAT follow-up (UAT Finding 1)**: repeat UAT step 4 with fresh real Claude Code sessions to confirm that the T69 text makes models answer greetings with `reply`. It needs a real harness, which this check does not run.
+
+### Requirement Traceability Update
+
+The verdict is FAIL, so `spec.md` stays at `Implementing` for all 84. After gap 1 is fixed and re-verified, set all 84 to `Verified`. SES-06 is the only one that needs the fix.
+
+### Summary
+
+**Overall**: ❌ Not Ready by the gate: one test-only gap, and the product has no known defect. This was iteration 3 of 3, so the decision goes to André: approve a fourth round for the one test in gap 1, or accept the gap as a documented risk.
+
+**Spec-anchored check**: 83/84 matched; 0 spec-precision gaps; 1 partial (SES-06, healthy-session half).
+**Sensor**: 5/7 killed (N18, W8, X1, X4, X5); X2 and X2b survive.
+**Gate**: `make check` ✅, `make check-race` ✅, `make e2e` ✅ 20/20.
+**Completion gate**: `validate_state.py --root . intelligences` exits 1 with "validation.md verdict is FAIL - route the ranked gaps to fix tasks, then re-verify (feature is not done)". This is expected for a FAIL.
+
+**What works**: a silent agent connection is now dropped by the ping and the AI goes offline. The test drives the real failure branch with a client that truly never reads (X5), and it depends on the injected timeout (X1). The route-chat picker marks an AI with a human-looking name as an AI, and the test catches both removing the badge and hiding it by name. Every iteration-1 and iteration-2 fix still holds.
+
+### Lessons distilled (iteration 3)
+
+- **Added (candidate)**: L-053 "Pair every heartbeat failure test with a healthy-peer test that runs on the production default timeout" (scope `delivery`) from X2/X2b (SES-06).
+- **Not penalized**: L-051 is a candidate, not confirmed, and was applied; the new signal is the opposite branch, not a repeat.
+
+---
+
+# Iteration 2 (2026-10-22, diff `cf5440f^..fed9454`)
+
+## Iteration 2 report: intelligences - FAIL ❌
+
+**Iteration 2 verdict** - FAIL - every iteration-1 gap that had a fix task is closed, and all 8 non-equivalent iteration-1 survivors are now killed. M30 is equivalent; its double-guard variant is killed. All gates pass: `make check-race`, and the formerly flaky takeover test passed 30 of 30 under `-race`. 83 of 84 ACs match their spec outcome. Two new mutants survive, both test-only gaps with no product defect. N18: the amended SES-06 promises that a silent connection goes offline within 35 s, and no test drives the ping-failure path. W8: the AI badge added to the route-chat dialog in fed9454 has no test. This is iteration 2 of 3, and fixing both takes two tests.
 
 **Date**: 2026-10-22
 **Spec**: `.specs/features/intelligences/spec.md` (84 requirements; amended by T58, T66 and T68; AD-013, AD-014)

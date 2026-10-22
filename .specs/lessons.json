@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 53,
+  "next_id": 54,
   "lessons": [
     {
       "id": "L-001",
@@ -951,6 +951,24 @@
       ],
       "created": "2026-10-22T21:14:05Z",
       "last_seen": "2026-10-22T21:14:05Z"
+    },
+    {
+      "id": "L-053",
+      "key": "surviving_mutant::pair every heartbeat failure test with a healthy peer test that runs on the production default timeout",
+      "text": "Pair every heartbeat failure test with a healthy-peer test that runs on the production default timeout",
+      "signal": "surviving_mutant",
+      "scope": "delivery",
+      "status": "candidate",
+      "features": [
+        "intelligences"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "X2/X2b internal/agents/gateway.go:106-108,444-446 (SES-06) (delivery)"
+      ],
+      "created": "2026-10-22T21:32:45Z",
+      "last_seen": "2026-10-22T21:32:45Z"
     }
   ]
 }

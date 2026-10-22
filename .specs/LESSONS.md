@@ -318,6 +318,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: W8 web/src/components/route-chat-dialog.tsx:134 (PROF-09) (web)
 - last seen: 2026-10-22T21:14:05Z
 
+### L-053 - Pair every heartbeat failure test with a healthy-peer test that runs on the production default timeout
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `delivery` · harmful: 0
+- features: intelligences
+- evidence: X2/X2b internal/agents/gateway.go:106-108,444-446 (SES-06) (delivery)
+- last seen: 2026-10-22T21:32:45Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
