@@ -98,10 +98,10 @@ After v0.4.0, André asked for three things while testing (2026-10-22): mention 
 | MEN-04 | P1: Mentions | Execute | Implementing |
 | MEN-05 | P1: Mentions | Execute | Implementing |
 | MEN-06 | P1: Mentions | Execute | Implementing |
-| PDM-01 | P1: DM from participant | Execute | Pending |
-| PDM-02 | P1: DM from participant | Execute | Pending |
-| PDM-03 | P1: DM from participant | Execute | Pending |
-| PDM-04 | P1: DM from participant | Execute | Pending |
+| PDM-01 | P1: DM from participant | Execute | Implementing |
+| PDM-02 | P1: DM from participant | Execute | Implementing |
+| PDM-03 | P1: DM from participant | Execute | Implementing |
+| PDM-04 | P1: DM from participant | Execute | Implementing |
 | UPD-01 | P1: Update | Execute | Pending |
 | UPD-02 | P1: Update | Execute | Pending |
 | UPD-03 | P1: Update | Execute | Pending |

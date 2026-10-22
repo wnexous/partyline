@@ -340,7 +340,8 @@ describe("authors in the timeline (PROF-09)", () => {
     expect(row.getByTestId("intelligence-avatar")).toHaveTextContent("A");
     expect(row.getByText("AI")).toBeInTheDocument();
     expect(row.queryByText("@atlas")).toBeNull();
-    act(() => row.getByRole("button", { name: "Atlas" }).focus());
+    // The author's name is a link to its profile (PDM-03); the handle stays in its tooltip.
+    act(() => row.getByRole("link", { name: "Atlas" }).focus());
     expect(await screen.findByRole("tooltip")).toHaveTextContent("@atlas");
   });
 });

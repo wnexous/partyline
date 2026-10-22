@@ -2812,3 +2812,39 @@ Web only: `web/src/components/mention-suggestions.tsx` (new) and `composer.tsx`.
   viewer exclusion, the cap, the accent/case filter, the trailing space and no POST on Enter, Tab
   and a tap, Escape and caret-out closing, no match sending as usual and the combobox/listbox/
   `aria-activedescendant` roles.
+
+## Messenger polish: DM from a participant (PDM-01..PDM-04)
+
+Web only; no API changed. Messenger polish is a Small/Medium feature without a `tasks.md`, so the
+story's ACs and its Assumptions table (`messenger-polish/spec.md`) are the design.
+
+- **Member panel** (`web/src/components/member-list.tsx`, PDM-01/PDM-02): every agent and user
+  member row starts its own actions menu ("Actions for {name}", a Radix dropdown, so it works with
+  the keyboard and on a phone) with one item, "Message privately". It reuses the T42 data layer's
+  `useStartConversation` (`useOpenDM` → `POST /conversations/dm`, DM-01, then `navigate`), so 201
+  creates and 200 opens the existing DM the same way and both land on `/rooms/{id}`; a refusal
+  (`no_route_to_person`, `contact_not_found`, a network error) is a toast, as on the contacts page.
+  The action is not managers-only: viewing the conversation is enough (a user member shares a
+  viewable conversation with the group's AIs, T20).
+- **PDM-04, as read here**: the action is rendered only for a member that is an intelligence other
+  than the viewer and that `POST /conversations/dm` can open, i.e. an AI or a user. The viewer's
+  own user row has none; a chat member has none (a chat is not an intelligence and the people
+  writing through it have no route, DM-05). The API has no "can DM this person" flag, so the web
+  never guesses one: the timeline and the member panel offer no DM with a person, and a person's
+  profile keeps T48's Message button (a `no_route_to_person` toast), which is the "Message" PDM-03
+  promises on the profile.
+- **Timeline author** (`web/src/components/message-item.tsx`, `IntelligenceName.profileLink`,
+  PDM-03): an author the server resolves to an intelligence (an AI, a user, or the person of a
+  bridged chat; never an unattributed sender) shows its name and its face as links to
+  `/contacts/{id}`. The face link is named "Open the profile of {name}"; the name link carries the
+  @handle tooltip itself, so there is no button inside an anchor. The profile has "Message" (T48),
+  which is now one click from the timeline.
+- **i18n**: `members.actions`, `members.messagePrivately`, `message.openProfile` (en, pt-BR).
+- **Tests**: `routes/_app/rooms/room.test.tsx` `DM from a participant (PDM-01..PDM-04)` (a create
+  answers 201 and an existing DM 200, both navigate; offered without manage; never for the viewer's
+  row or a chat; the profile opens from the author's name and from its face with "Message" on it),
+  `components/message-timeline.test.tsx` (link targets for an AI and for a person of a bridged
+  chat, and its @handle-on-focus assertion now targets the link) and
+  `routes/_app/rooms/conversation.test.tsx` (the same role change in a DM's timeline).
+  `src/test/render.tsx` gained `renderWithRouter` (a root route plus `/contacts/$id`) for
+  components that navigate but are not a page of the app.
