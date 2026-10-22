@@ -22,6 +22,7 @@ type Error struct {
 	Message string
 	Fields  map[string]string
 	Details map[string]string
+	Refused []dto.RefusedMember
 }
 
 func (e *Error) Error() string { return string(e.Code) + ": " + e.Message }
@@ -50,7 +51,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	if !errors.As(err, &he) {
 		he = NewError(http.StatusInternalServerError, dto.ErrorCodeInternal, "internal error")
 	}
-	WriteJSON(w, he.Status, dto.ErrorBody{Error: dto.Error{Code: he.Code, Message: he.Message, Fields: he.Fields, Details: he.Details}})
+	WriteJSON(w, he.Status, dto.ErrorBody{Error: dto.Error{Code: he.Code, Message: he.Message, Fields: he.Fields, Details: he.Details, Refused: he.Refused}})
 }
 
 // DecodeJSON decodes a single JSON value from the request body into dst. Bodies over

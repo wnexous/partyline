@@ -713,3 +713,48 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   stranger / admin / agent token / anonymous, members fixed for participant and AI owner,
   counterpart disabled and re-enabled, AI deletion with live `room.deleted`, live announcement) and
   `internal/conversations/dm_test.go` (the agent-principal rules and the `AllowCreate` hook).
+
+## T21 - Groups with members (LAY-04)
+
+- **`POST /api/v1/groups`** `dto.CreateGroupRequest{name, description?, members[]}` → **201** `dto.Room`
+  (kind `group`, `my_level manage`). `members` are intelligence ids (users and AIs; the web sends the
+  ones it picked, T24's tool resolves handles first). Sessions and user tokens, any user of the
+  instance (an agent token is 403 on this path, an anonymous caller 401). The group has the defaults
+  of `POST /rooms`: broadcast on, bridge off, 90 days of retention, no instructions. The room's
+  `updated_by` is the owner (INS-06).
+- **`conversations.Service.CreateGroup(ctx, p, GroupInput{Name, Description, Members})`** serves
+  both principals: the owner is `p.UserID` (the AI's owner for an AI, whose own id is added as the
+  **first** `agent` member and counts towards the limit). Order: principal → name and description
+  (`rooms.ValidateCreate`, 1-100 / 0-1000 code points) → member ids (a blank id, or more than
+  `dto.MaxGroupMembers` = **50** distinct ids → 422 `invalid`, field `members`) → every member →
+  `AllowCreate` (AIs only) → creation. Validation errors therefore win over refused members, and a
+  request that creates nothing never uses an AI's allowance. Repeated ids count once. The owner is a
+  member **only when listed** (as `POST /rooms`; an AI's group lists the owner explicitly, AGRP-01).
+  The result is `Rooms.Get` for the caller (an AI sees it at `post`).
+- **Member rules** are the owner's add-member rules: id → `GetIntelligenceWithRole`; a **user** becomes a
+  `user` member when `rooms.CheckMember` accepts it (exists and enabled; a user may list
+  themselves), an **AI** an `agent` member when the owner owns it or may use it (a public `*` use grant
+  counts); an external **person** is refused (`person`: people join groups through bridged chats,
+  never as members) to a caller who can see them (`Intelligences.CanSee`, which follows the
+  connector), and as `not_found` to anyone else, so that no caller learns which handles or ids are
+  people of connectors they cannot reach; anything else is not found. New in `rooms`: `Service.CheckMember(ctx, ownerID,
+  MemberInput) (ok, err)` (the rules of `AddMember`, as a question), `Service.CreateWithMembers(ctx,
+  ownerID, CreateInput, []MemberInput) (id, err)` (the one transaction `Create` now uses too;
+  callers check the members first) and `rooms.ValidateCreate`. Members get `outbound` on and AIs
+  `delivery all`, like `AddMember`; `added_by` is the owner. After the commit: `RoomChanged` (the
+  members' sockets learn the group at their level) and `MembersChanged`.
+- **All-or-nothing refusal (AGRP-02):** any member the owner cannot add makes the whole request
+  **422 `members_refused`** (`dto.ErrorCodeMembersRefused`) and creates nothing: `error.refused` is
+  the new list `[{id, reason}]` (`dto.Error.Refused`, `httpx.Error.Refused`, `conversations.
+  MembersRefusedError`), **every** refused member in the order asked, valid ones not listed.
+  Reasons (`dto.RefusedReason`): `not_found` for an unknown id, a disabled user and an AI the owner
+  may not use (it must not be told apart from an id that does not exist — the answers are
+  identical) and, for a caller who cannot see them, an external person; `person` for an external
+  person the caller can see.
+- Rate limit: the hook of T20 is asked once per group an AI actually creates (design: "10 new
+  conversations per hour per AI" covers DMs and groups); T24 wires the registry limiter and the
+  HTTP route.
+- Tests: `internal/api/groups_test.go` (members and what they see, the AI's own room list, owners of
+  member AIs and strangers excluded, each refusal reason alone and all together, validation order and
+  the 50-member boundary with repeated ids, authorization of the route, live announcement) and
+  `internal/conversations/groups_test.go` (an AI's group, its refusals, the allowance).

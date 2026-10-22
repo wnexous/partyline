@@ -21,7 +21,7 @@ type fixture struct {
 	alice, bob   *testkit.Client
 	atlas, orion string
 	svc          *conversations.Service
-	asked        []string
+	askedIDs     []string
 	allowed      int
 }
 
@@ -33,7 +33,7 @@ func newFixture(t *testing.T) *fixture {
 	f.svc = conversations.New(conversations.Deps{
 		Store: env.App.Store, Rooms: env.App.Rooms, Intelligences: env.App.Intelligences, Bus: env.App.Bus,
 		AllowCreate: func(agentID string) bool {
-			f.asked = append(f.asked, agentID)
+			f.askedIDs = append(f.askedIDs, agentID)
 			if f.allowed == 0 {
 				return false
 			}
@@ -119,7 +119,7 @@ func TestOnlyNewDMsOfAnAICountAgainstTheLimit(t *testing.T) {
 
 	_, _, err := f.svc.OpenDM(ctx, atlas, f.bob.User.ID)
 	require.ErrorIs(t, err, conversations.ErrRateLimited)
-	require.Equal(t, []string{f.atlas}, f.asked)
+	require.Equal(t, []string{f.atlas}, f.askedIDs)
 	rooms, err := f.env.App.Rooms.List(ctx, f.user(f.bob))
 	require.NoError(t, err)
 	require.Empty(t, rooms, "nothing was created")
@@ -128,7 +128,7 @@ func TestOnlyNewDMsOfAnAICountAgainstTheLimit(t *testing.T) {
 	room, created, err := f.svc.OpenDM(ctx, atlas, f.bob.User.ID)
 	require.NoError(t, err)
 	require.True(t, created)
-	require.Len(t, f.asked, 2)
+	require.Len(t, f.askedIDs, 2)
 
 	// The limit is exhausted, yet the existing DM opens (from either side) without asking.
 	again, created, err := f.svc.OpenDM(ctx, atlas, f.bob.User.ID)
@@ -138,11 +138,11 @@ func TestOnlyNewDMsOfAnAICountAgainstTheLimit(t *testing.T) {
 	_, created, err = f.svc.OpenDM(ctx, f.user(f.bob), f.atlas)
 	require.NoError(t, err)
 	require.False(t, created)
-	require.Len(t, f.asked, 2, "reopening is not counted")
+	require.Len(t, f.askedIDs, 2, "reopening is not counted")
 
 	// A user creating a DM never asks: the limit is for AIs.
 	_, created, err = f.svc.OpenDM(ctx, f.user(f.alice), f.bob.User.ID)
 	require.NoError(t, err)
 	require.True(t, created)
-	require.Len(t, f.asked, 2)
+	require.Len(t, f.askedIDs, 2)
 }

@@ -167,6 +167,7 @@ func (s *server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 // mapError translates service errors into API errors with their status code.
 func mapError(err error) error {
 	var verr *validation.Error
+	var refused *conversations.MembersRefusedError
 	switch {
 	case errors.As(err, &verr):
 		return httpx.Invalid(verr.Fields)
@@ -210,6 +211,10 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeContactNotFound, "contact not found")
 	case errors.Is(err, conversations.ErrNoRouteToPerson):
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeNoRouteToPerson, "no conversation of yours reaches this person")
+	case errors.As(err, &refused):
+		he := httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused, "some members cannot be added to the group")
+		he.Refused = refused.Refused
+		return he
 	case errors.Is(err, conversations.ErrRateLimited):
 		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many new conversations, try again later")
 	case errors.Is(err, rooms.ErrAlreadyMember):

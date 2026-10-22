@@ -147,6 +147,21 @@ func (s *Service) accessChanged(roomID string) {
 	s.bus.Publish(events.GrantsChanged{ResourceKind: string(access.KindRoom), ResourceID: roomID})
 }
 
+// CheckMember reports whether ownerID may put the member in a group they own, by the rules of
+// AddMember: an AI needs ownership or use, a user must exist and be enabled. False means the
+// member is refused; an unknown AI and one the owner may not use are the same answer.
+func (s *Service) CheckMember(ctx context.Context, ownerID string, in MemberInput) (bool, error) {
+	err := s.checkUse(ctx, ownerID, in)
+	var invalid *validation.Error
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, access.ErrForbidden), errors.As(err, &invalid):
+		return false, nil
+	}
+	return false, err
+}
+
 // checkUse verifies the caller may put the agent or chat in a room.
 func (s *Service) checkUse(ctx context.Context, userID string, in MemberInput) error {
 	switch in.Kind {

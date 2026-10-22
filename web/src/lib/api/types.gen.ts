@@ -380,9 +380,14 @@ export const ErrorCodeNoRouteToPerson = "no_route_to_person";
  */
 export const ErrorCodeCounterpartDisabled = "counterpart_disabled";
 /**
+ * ErrorCodeMembersRefused is a new group with a member its owner may not add; Refused lists
+ * them and nothing was created (422, LAY-04, AGRP-02).
+ */
+export const ErrorCodeMembersRefused = "members_refused";
+/**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeMembersRefused;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -401,6 +406,10 @@ export interface Error {
    * BusyDetail keys.
    */
   details?: { [key: string]: string};
+  /**
+   * Refused lists the members of members_refused, in the order they were asked for.
+   */
+  refused?: RefusedMember[];
 }
 export const BusyDetailDisplayName = "display_name";
 export const BusyDetailApp = "app";
@@ -723,6 +732,45 @@ export type ConversationKind = typeof ConversationKindGroup | typeof Conversatio
  */
 export interface OpenDMRequest {
   with: string;
+}
+/**
+ * MaxGroupMembers is the most members a new group is created with (LAY-04); the AI that creates
+ * a group counts as one.
+ */
+export const MaxGroupMembers = 50;
+/**
+ * CreateGroupRequest is the body of POST /groups (LAY-04) and of an AI's group creation (AGRP-01).
+ * Members are the ids of the users and AIs to put in the group, each checked with the add-member
+ * rules of the group's owner before anything is created; the owner is a member only when listed.
+ * Repeated ids count once.
+ */
+export interface CreateGroupRequest {
+  name: string;
+  description?: string;
+  members: string[];
+}
+/**
+ * RefusedReason says why a member could not be added to a new group.
+ */
+/**
+ * RefusedReasonNotFound is an id that is no enabled user and no AI the owner may use.
+ */
+export const RefusedReasonNotFound = "not_found";
+/**
+ * RefusedReasonPerson is an external person, who joins a group through a bridged chat only.
+ */
+export const RefusedReasonPerson = "person";
+/**
+ * Reasons a member is refused. An AI the owner may not use is not_found as well: it must not be
+ * told apart from an id that does not exist.
+ */
+export type RefusedReason = typeof RefusedReasonNotFound | typeof RefusedReasonPerson;
+/**
+ * RefusedMember is a member of a new group that was refused (422 members_refused).
+ */
+export interface RefusedMember {
+  id: string;
+  reason: RefusedReason;
 }
 
 //////////

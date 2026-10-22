@@ -177,29 +177,71 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	if p.Kind != authn.KindUser {
 		return Room{}, access.ErrForbidden
 	}
+	id, err := s.CreateWithMembers(ctx, p.UserID, in, nil)
+	if err != nil {
+		return Room{}, err
+	}
+	return s.Get(ctx, p, id)
+}
+
+// ValidateCreate checks the fields of a new room the way Create does and writes nothing; callers
+// that have more to check before they create validate first, so that a bad name is reported
+// before anything else.
+func ValidateCreate(in CreateInput) error {
+	retention := DefaultRetentionDays
+	if in.RetentionDays != nil {
+		retention = *in.RetentionDays
+	}
+	return validateRoom(roomText(in.Name), roomText(in.Description), roomText(in.Instructions), retention)
+}
+
+// CreateWithMembers makes a group owned by ownerID with the members in one transaction and
+// returns its id (LAY-04, AGRP-01). The owner gets manage by ownership and is a member only when
+// listed. The members are not checked here: callers check each one with CheckMember first, so
+// that a refused member creates nothing.
+func (s *Service) CreateWithMembers(ctx context.Context, ownerID string, in CreateInput, members []MemberInput) (string, error) {
 	retention := DefaultRetentionDays
 	if in.RetentionDays != nil {
 		retention = *in.RetentionDays
 	}
 	name, description, instructions := roomText(in.Name), roomText(in.Description), roomText(in.Instructions)
 	if err := validateRoom(name, description, instructions, retention); err != nil {
-		return Room{}, err
+		return "", err
+	}
+	author := ""
+	if instructions != "" {
+		author = ownerID
 	}
 	now := s.now().UnixMilli()
 	id := store.NewID()
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		return q.CreateRoom(ctx, db.CreateRoomParams{
-			ID: id, OwnerID: p.UserID, Name: name, Description: description, Instructions: instructions,
-			InstructionsBy: instructionsBy(p, instructions),
+		if err := q.CreateRoom(ctx, db.CreateRoomParams{
+			ID: id, OwnerID: ownerID, Name: name, Description: description, Instructions: instructions,
+			InstructionsBy: author,
 			BridgeChats:    in.BridgeChats, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
-			UpdatedBy: p.UserID, // INS-06: the creator wrote the name and description
-		})
+			UpdatedBy: ownerID, // INS-06: the creator wrote the name and description
+		}); err != nil {
+			return err
+		}
+		for _, m := range members {
+			outbound := m.Outbound == nil || *m.Outbound
+			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
+				ID: store.NewID(), RoomID: id, Kind: string(m.Kind), MemberID: m.MemberID,
+				Outbound: outbound, AddedBy: ownerID, CreatedAt: now,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
-		return Room{}, err
+		return "", err
 	}
 	s.bus.Publish(events.RoomChanged{RoomID: id})
-	return s.Get(ctx, p, id)
+	if len(members) > 0 {
+		s.bus.Publish(events.MembersChanged{RoomID: id})
+	}
+	return id, nil
 }
 
 // Get returns a room the caller can view.

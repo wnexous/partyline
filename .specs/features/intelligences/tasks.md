@@ -454,9 +454,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: LAY-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Group created with the user as owner and every chosen user and AI as member; the members see it (LAY-04)
-- [ ] One AI the user may not use → 422 `members_refused` listing it, nothing created
-- [ ] Gate check passes: `make check`
+- [x] Group created with the user as owner and every chosen user and AI as member; the members see it (LAY-04)
+- [x] One AI the user may not use → 422 `members_refused` listing it, nothing created
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): create groups with members`
