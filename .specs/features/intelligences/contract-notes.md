@@ -999,3 +999,51 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   posting in it, refusals echoed as named, the 10-per-hour window on a manual clock with reopen /
   refusal / other-AI / one hour later, authorization of both routes) and the `AllowCreate` tests of
   T20 and T21 in `internal/conversations`.
+
+## T42 - Conversations and profile data layer, part 1 (LAY-02, DM-06)
+
+Web only: `web/src/lib/api/{client,queries}.ts`, `web/src/lib/live/{handlers,store}.ts`. Part 2 (contacts,
+people, machine label, merge, notify and operator hooks, `makeContacts`) waits for its server tasks and the
+T47-T49 pages.
+
+- **Keys**: `queryKeys.conversations` (`["conversations"]`, a plain `Conversation[]`, newest activity first) and
+  `queryKeys.intelligence(id)` (`["intelligences", id]`, an `IntelligenceProfile`).
+- **Hooks**: `useConversations`; `useOpenDM()` (`POST /conversations/dm`, 200 and 201 alike, resolves with the
+  `Room`); `useCreateGroup()` (`POST /groups`; a 422 `members_refused` rejects with `ApiError.refused`);
+  `useMarkRead()` (`mutate({roomId, seq?})` → `PUT /rooms/{id}/read`, an absent `seq` sends `{}`);
+  `useIntelligence(id)`, `useUpdateIntelligence(id)` (`PATCH`), `useUploadAvatar(id)` (`PUT`, the `File` is the raw
+  body), `useRemoveAvatar(id)` (`DELETE`). A new room (`useOpenDM`, `useCreateGroup`, `useCreateRoom`,
+  `useRouteChat`) or a changed one (`useUpdateRoom`) refreshes the rooms list and the conversation list;
+  `useDeleteRoom` drops the row at once.
+- **Client**: `api()` sends a `Blob` body untouched with `Content-Type` = the blob's type (`application/octet-stream`
+  without one). `ApiError.refused` is `error.refused` of the answer (`[]` on any other error).
+- **Live store**: `openRoomId` / `setOpenRoom(id | null)` is the conversation the user is looking at (T46 sets it
+  while the page is open **and** the tab is visible); `LiveActions` carries it to the handlers.
+- **`room.message`**: when the list is cached, the message's conversation gets `last_message` = the preview (first
+  80 code points of the text; `[first file name]` when the text is blank and there is a file; `author_name` only
+  in a group), `activity_at` = the message time, and moves to its place (`newestActivityFirst`: `activity_at`
+  desc, title case-insensitive, id). `unread` + 1 unless the room is `openRoomId` or the message is the user's own
+  (`message.author.id` = the cached `me.intelligence.id`, which also covers messages typed on a linked platform
+  account). A message whose seq is not past the preview's is ignored (delivered twice, or older). A list that was
+  never loaded is left alone (its first fetch has the message); a **conversation the list lacks** invalidates the
+  list, **once per room** (`askedFor`): an AI's owner or grantee gets live messages of DMs `GET /conversations`
+  never lists (T19), and each of them must not cost a request. A message that lands while the list is being
+  fetched is patched like any other; if the fetch answered before the message was stored it is repaired by the
+  next refetch (reconnect, member or sharing change).
+- **`room.read`**: `unread = min(unread, last_message.seq - seq)` (0 without a preview), never raising it; the
+  `PUT` answer lowers the count the same way. A read at the newest seq is therefore 0 and one behind it keeps what
+  lies after.
+- **`room.changed`**: a listed group takes the new name and `my_level`; a listed DM keeps its counterpart as title;
+  a room the list lacks invalidates it (every time, these are rare). **`room.deleted`** removes the row.
+  **`room.members`**, **`access.changed`** (`resource_kind` room) and **`catchUp`** invalidate the list (its member
+  names feed the search).
+- **`intelligence.changed`** (and the profile mutations, through `patchIntelligence`): a cached profile, the account
+  (`me.intelligence` and `me.display_name`), a DM's `counterpart` and `title`, the `participants` of cached rooms,
+  the member rows (`RoomMember.name` and `.intelligence`, never the per-room `display_name`) and every cached
+  message whose `author.id` is that intelligence (`author` whole, `author_name` too) take the new summary, an absent
+  `avatar_url` clearing the old one. A name an owner set for an AI in a room (GRP-04) is kept in that room's
+  messages (the room's cached members tell); its handle and avatar still update. The conversation list is also
+  invalidated, since group previews and member names carry the old name.
+- Not changed: the dashboard feed code (`useActivity`, `prependActivity`) stays although T44 removes its page.
+- Tests: `lib/live/handlers.test.ts` (conversation list and `intelligence.changed` blocks), `lib/api/conversations.test.tsx`
+  (every hook and the room hooks' effect on the list), `lib/api/client.test.ts` (Blob bodies, `refused`).

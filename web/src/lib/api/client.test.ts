@@ -95,6 +95,56 @@ describe("api client", () => {
     expect(new Headers(init?.headers).get("Content-Type")).toBeNull();
   });
 
+  it("sends a Blob body as it is, with its own content type (avatar upload, PROF-07)", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { id: "i1" }));
+    const image = new Blob(["\u0089PNG"], { type: "image/png" });
+    await api("PUT", "/intelligences/i1/avatar", image);
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(init?.body).toBe(image);
+    expect(new Headers(init?.headers).get("Content-Type")).toBe("image/png");
+  });
+
+  it("sends a Blob without a type as an opaque binary", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { id: "i1" }));
+    await api("PUT", "/intelligences/i1/avatar", new Blob(["x"]));
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("Content-Type")).toBe(
+      "application/octet-stream",
+    );
+  });
+
+  it("keeps the refused members of a members_refused answer, in the order sent (LAY-04)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(422, {
+        error: {
+          code: "members_refused",
+          message: "some members cannot be added",
+          refused: [
+            { id: "i7", reason: "not_found" },
+            { id: "i3", reason: "person" },
+          ],
+        },
+      }),
+    );
+    const err = await api("POST", "/groups", { name: "ops", members: [] }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({
+      status: 422,
+      code: "members_refused",
+      refused: [
+        { id: "i7", reason: "not_found" },
+        { id: "i3", reason: "person" },
+      ],
+    });
+  });
+
+  it("has no refused members on other errors", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(404, { error: { code: "not_found", message: "x" } }),
+    );
+    const err = await api("GET", "/rooms/x").catch((e: unknown) => e);
+    expect(err).toMatchObject({ refused: [] });
+  });
+
   it("maps a network failure to an unavailable ApiError", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     const err = await api("GET", "/me").catch((e: unknown) => e);

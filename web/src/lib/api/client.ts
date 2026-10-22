@@ -1,25 +1,31 @@
-import type { ErrorBody, ErrorCode } from "./types.gen";
+import type { ErrorBody, ErrorCode, RefusedMember } from "./types.gen";
 
 /** Every API path is relative to this prefix (see internal/api/dto). */
 export const API_BASE = "/api/v1";
 
-/** An API failure. `fields` maps request field names to validation reasons (422). */
+/**
+ * An API failure. `fields` maps request field names to validation reasons (422); `refused` lists
+ * the members a new group could not take (422 members_refused), in the order they were asked for.
+ */
 export class ApiError extends Error {
   readonly status: number;
   readonly code: ErrorCode;
   readonly fields: Record<string, string>;
+  readonly refused: RefusedMember[];
 
   constructor(
     status: number,
     code: ErrorCode,
     message: string,
     fields: Record<string, string> = {},
+    refused: RefusedMember[] = [],
   ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.fields = fields;
+    this.refused = refused;
   }
 }
 
@@ -100,12 +106,14 @@ async function toApiError(res: Response): Promise<ApiError> {
     e?.code ?? fallback,
     e?.message || res.statusText || fallback,
     e?.fields ?? {},
+    e?.refused ?? [],
   );
 }
 
 /**
- * Calls the partyline API. JSON bodies are serialized; FormData is sent as multipart.
- * Resolves with the decoded JSON (undefined for empty responses) or throws ApiError.
+ * Calls the partyline API. JSON bodies are serialized; FormData is sent as multipart; a Blob (a
+ * File) goes as it is with its own content type (avatar upload). Resolves with the decoded JSON
+ * (undefined for empty responses) or throws ApiError.
  */
 export async function api<T>(
   method: HttpMethod,
@@ -117,6 +125,9 @@ export async function api<T>(
   let payload: BodyInit | undefined;
   if (body instanceof FormData) {
     payload = body;
+  } else if (body instanceof Blob) {
+    payload = body;
+    headers["Content-Type"] = body.type || "application/octet-stream";
   } else if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     payload = JSON.stringify(body);

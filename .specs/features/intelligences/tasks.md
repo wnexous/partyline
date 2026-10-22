@@ -805,11 +805,18 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: LAY-02, DM-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Handler tests: a live message moves its conversation to the top and increments unread unless open or own; `room.read` zeroes it; unknown room triggers a refetch (LAY-02, DM-06)
-- [ ] Gate check passes: `make check`
+- [x] Handler tests: a live message moves its conversation to the top and increments unread unless open or own; `room.read` zeroes it; unknown room triggers a refetch (LAY-02, DM-06)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add the conversations and contacts data layer`
+
+**Delivered in two parts.** Part 1 (commit `feat(web): add the conversations data layer`): the hooks whose APIs existed
+(conversations, DM open, groups, read state, profile read/update, avatar upload/remove, the room hooks refreshing the
+sidebar) and the live handlers `room.message`, `room.read`, `room.changed`, `room.deleted`, `room.members`,
+`access.changed`, `intelligence.changed` (conversations, timelines, members, participants, own account, profile).
+Part 2 stays open: contacts, people, machine label, merge, notify and operator hooks, the `makeContacts` fixture and the
+contacts patch of `intelligence.changed`, each with the task whose server API it calls (T47-T49).
 
 #### T43: Avatar, kind badge and name components
 

@@ -35,6 +35,11 @@ export interface LiveState {
   connectors: Record<string, ConnectorState>;
   /** The most recent identity.linked event, for the pairing dialog (UI-18). */
   lastLinkedIdentity: Identity | null;
+  /**
+   * The conversation the user is looking at: its page is open and the tab is visible. Messages
+   * that arrive in it are read at once, so they add no unread (LAY-02).
+   */
+  openRoomId: string | null;
   theme: ThemePreference;
   locale: Locale;
   paletteOpen: boolean;
@@ -43,6 +48,7 @@ export interface LiveState {
   setPresence: (agentId: string, presence: Presence) => void;
   setConnectorState: (connectorId: string, state: ConnectorState) => void;
   setLastLinkedIdentity: (identity: Identity | null) => void;
+  setOpenRoom: (roomId: string | null) => void;
   setTheme: (theme: ThemePreference) => void;
   setLocale: (locale: Locale) => void;
   setPaletteOpen: (open: boolean) => void;
@@ -61,6 +67,7 @@ export const useLiveStore = create<LiveState>()((set) => ({
   presence: {},
   connectors: {},
   lastLinkedIdentity: null,
+  openRoomId: null,
   theme: readThemePreference(),
   locale: initialLocale(),
   paletteOpen: false,
@@ -77,6 +84,7 @@ export const useLiveStore = create<LiveState>()((set) => ({
   setConnectorState: (connectorId, state) =>
     set((s) => ({ connectors: { ...s.connectors, [connectorId]: state } })),
   setLastLinkedIdentity: (identity) => set({ lastLinkedIdentity: identity }),
+  setOpenRoom: (openRoomId) => set({ openRoomId }),
   setTheme: (theme) => {
     writeStorage(THEME_KEY, theme === "system" ? null : theme);
     set({ theme });
@@ -93,5 +101,6 @@ export const useLiveStore = create<LiveState>()((set) => ({
       presence: {},
       connectors: {},
       lastLinkedIdentity: null,
+      openRoomId: null,
     }),
 }));
