@@ -1,14 +1,19 @@
 import type {
   Agent,
+  AIContact,
   Chat,
   Connector,
   ConnectorKind,
+  Contacts,
   Conversation,
+  IntelligenceProfile,
   IntelligenceRef,
+  MachineTree,
   Me,
   Message,
   Room,
   RoomMember,
+  TreeNode,
 } from "@/lib/api/types.gen";
 
 /** Synthetic fixtures; never real names, numbers or chat ids. */
@@ -23,6 +28,30 @@ export function makeIntelligence(over: Partial<IntelligenceRef> = {}): Intellige
     handle: "ana",
     ...over,
   };
+}
+
+/** An AI's summary: "Atlas" (@atlas) unless overridden. */
+export function makeAI(over: Partial<IntelligenceRef> = {}): IntelligenceRef {
+  return makeIntelligence({
+    id: "a1",
+    kind: "ai",
+    role: "ai",
+    display_name: "Atlas",
+    handle: "atlas",
+    ...over,
+  });
+}
+
+/** An external person: "Lia Costa" (@lia) on WhatsApp unless overridden. */
+export function makePerson(over: Partial<IntelligenceRef> = {}): IntelligenceRef {
+  return makeIntelligence({
+    id: "p1",
+    role: "person",
+    platform: "whatsapp",
+    display_name: "Lia Costa",
+    handle: "lia",
+    ...over,
+  });
 }
 
 /** A conversation list row: a quiet group with no messages unless overridden. */
@@ -195,6 +224,54 @@ export function makeConnectorKind(over: Partial<ConnectorKind> = {}): ConnectorK
         secret: false,
       },
     ],
+    ...over,
+  };
+}
+
+/** An AI as the contacts page lists it: Atlas, offline, in ~/atlas on devbox unless overridden. */
+export function makeAIContact(over: Partial<AIContact> = {}): AIContact {
+  return {
+    intelligence: makeAI(),
+    machine: "devbox",
+    folder: "/home/dev/atlas",
+    folder_label: "~/atlas",
+    app: "claude",
+    online: false,
+    ...over,
+  };
+}
+
+/** One AI in a machine's tree; `path` is the collapsed chain before it, `name` its own folder. */
+export function makeTreeNode(over: Partial<TreeNode> = {}): TreeNode {
+  return { ai: makeAIContact(), path: "", name: "atlas", children: [], ...over };
+}
+
+/** A machine of the contacts tree: devbox, offline, without AIs unless overridden. */
+export function makeMachineTree(over: Partial<MachineTree> = {}): MachineTree {
+  return { hostname: "devbox", label: "devbox", online: false, nodes: [], ...over };
+}
+
+/** GET /contacts for the default user: nothing to show until a test adds it. */
+export function makeContacts(over: Partial<Contacts> = {}): Contacts {
+  return {
+    me: makeMe().intelligence,
+    machines: [],
+    unlinked: [],
+    shared: [],
+    users: [],
+    people: [],
+    ...over,
+  };
+}
+
+/** GET /intelligences/{id} of a user, read-only; spread an AI or a person summary over it. */
+export function makeProfile(over: Partial<IntelligenceProfile> = {}): IntelligenceProfile {
+  return {
+    ...makeIntelligence(),
+    bio: "",
+    can_edit: false,
+    apps: [],
+    conversations: [],
     ...over,
   };
 }

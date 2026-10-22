@@ -815,8 +815,10 @@ T50 → T51 → T52 → T53 → T54
 (conversations, DM open, groups, read state, profile read/update, avatar upload/remove, the room hooks refreshing the
 sidebar) and the live handlers `room.message`, `room.read`, `room.changed`, `room.deleted`, `room.members`,
 `access.changed`, `intelligence.changed` (conversations, timelines, members, participants, own account, profile).
-Part 2 stays open: contacts, people, machine label, merge, notify and operator hooks, the `makeContacts` fixture and the
-contacts patch of `intelligence.changed`, each with the task whose server API it calls (T47-T49).
+Part 2 (commit `feat(web): add the contacts and profile data layer`) added the hooks the contacts and profile pages read:
+contacts, people (paged, searchable), machine label, deleting an unlinked AI, the contacts and operator patches of
+`intelligence.changed`, presence-driven contact refreshes and the `makeContacts` family of fixtures. Still open, each with
+the task whose server API it calls: the merge hook (T35), the notify hooks (T34, T49) and the operator write (T49).
 
 #### T43: Avatar, kind badge and name components
 

@@ -1446,3 +1446,34 @@ T47-T49 pages.
 - Tests: `routes/_app/rooms/conversation.test.tsx` (header, participants, authors, read state),
   `components/message-timeline.test.tsx` (the author block), `components/intelligence/intelligence.test.tsx`
   (`decorative`).
+
+## T42 - Contacts and profile data layer, part 2 (CONT-01, TREE-04, TREE-06, PEOP-03, ACC-01)
+
+Web only: `web/src/lib/{api/queries,contacts,live/handlers}.ts` and `web/src/test/fixtures.ts`. The merge (T35), notify
+(T34, T49) and operator write (T49) hooks wait for their server APIs.
+
+- **Keys**: `queryKeys.contacts` (`["contacts"]`, the `Contacts` object as the server sent it, machines in the server's
+  order) and `queryKeys.people(connectorId, q)` (`["contacts", "people", connectorId, q]`, `PeoplePages`).
+- **Hooks**: `useContacts` (`GET /contacts`); `usePeople(connectorId, q = "", enabled = true)` (infinite
+  `GET /contacts/people`: `limit` 50, `q` only when not empty, `after` = the id of the last person of the page before,
+  `placeholderData: keepPreviousData` so the previous search stays on screen while the next one loads);
+  `useSetMachineLabel()` (`mutate({hostname, label})` → `PUT /machines/{hostname}` with the hostname URI-encoded; the
+  cached tree takes the answer's label, the hostname when it is empty, and every cached profile is invalidated because an
+  AI's profile carries `machine_label`; the cache is **not** re-sorted, the page orders machines). `useDeleteAgent`
+  (`DELETE /agents/{id}`) also takes the AI out of the cached unlinked and shared lists at once, invalidates the contacts
+  (the server rebuilds the tree: folders collapse differently without it) and marks the AI's profile stale **without
+  refetching** (`refetchType: "none"`), since the page showing it is about to leave. "Profile of others" is
+  `useIntelligence(id)` from part 1: `can_edit`, `ai`, `person` and `apps` decide what its page shows.
+- **Pure helpers** (`lib/contacts.ts`): `withIntelligence`, `withoutAI`, `withMachineLabel`, `flattenTree`, `allAIs`,
+  `knowsAI`. A patch that changes nothing returns its argument, so the cache write that follows is not seen.
+- **Live**: `intelligence.changed` (and the profile mutations, through `patchIntelligence`) also patches the cached
+  contacts (the caller's `me`, the machine tree at any depth, the unlinked and shared AIs and the owner of a shared one,
+  the users), the cached people pages and the `operator` of the cached connectors (the list and each connector), an
+  absent `avatar_url` clearing the old one. `agent.presence` refetches the contacts only when the cached ones lack that
+  AI (its first session created it); presence itself is **not** written into the contacts: pages overlay
+  `useLiveStore.presence` on `AIContact.online` and `last_seen_at`, as the old agents page did. `access.changed` for an
+  `agent` or a `connector` and a reconnect (`catchUp`) invalidate `["contacts"]` and, being its prefix, the people lists.
+- **Fixtures**: `makeAI`, `makePerson`, `makeAIContact`, `makeTreeNode`, `makeMachineTree`, `makeContacts`,
+  `makeProfile`.
+- Tests: `lib/api/contacts.test.tsx` (what each hook sends and leaves in the cache) and `lib/live/handlers.test.ts`
+  (block "contacts and operators").
