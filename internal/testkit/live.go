@@ -32,6 +32,8 @@ type LiveConn struct {
 	T    testing.TB
 	Conn *websocket.Conn
 	s    *frameStream[Frame]
+	// pending holds frames read before the test asked for them (the hello DialLive waits for).
+	pending []Frame
 }
 
 // DialLive opens the live WebSocket as the client, sending origin as the Origin header
@@ -46,7 +48,23 @@ func (c *Client) DialLive(origin string) (*LiveConn, *Response) {
 	if conn == nil {
 		return nil, resp
 	}
-	return &LiveConn{T: c.T, Conn: conn, s: newFrameStream[Frame](conn)}, resp
+	l := &LiveConn{T: c.T, Conn: conn, s: newFrameStream[Frame](conn)}
+	// The server subscribes the connection to events before it sends hello, so waiting for hello
+	// makes the connection ready: an event a test triggers next is never missed. The hello frame
+	// stays readable for tests that check it.
+	hello := l.Next(IOTimeout)
+	l.pending = append(l.pending, hello)
+	return l, resp
+}
+
+// read returns a pending frame first, then the next frame from the connection.
+func (l *LiveConn) read(timeout time.Duration) (Frame, error) {
+	if len(l.pending) > 0 {
+		f := l.pending[0]
+		l.pending = l.pending[1:]
+		return f, nil
+	}
+	return l.s.read(timeout)
 }
 
 // dialWS opens a WebSocket on path with the client's cookies, bearer token and header h. A
@@ -76,7 +94,7 @@ func (c *Client) dialWS(path string, h http.Header) (*websocket.Conn, *Response)
 // Next returns the next frame, failing the test when none arrives within timeout.
 func (l *LiveConn) Next(timeout time.Duration) Frame {
 	l.T.Helper()
-	f, err := l.s.read(timeout)
+	f, err := l.read(timeout)
 	require.NoError(l.T, err, "no live frame within %s", timeout)
 	return f
 }
@@ -86,7 +104,7 @@ func (l *LiveConn) Expect(typ dto.LiveEventType, v any, timeout time.Duration) F
 	l.T.Helper()
 	deadline := time.Now().Add(timeout)
 	for {
-		f, err := l.s.read(time.Until(deadline))
+		f, err := l.read(time.Until(deadline))
 		require.NoError(l.T, err, "no %q frame within %s", typ, timeout)
 		if f.Type != typ {
 			continue
@@ -103,7 +121,7 @@ func (l *LiveConn) ExpectNone(d time.Duration, ignore ...dto.LiveEventType) {
 	l.T.Helper()
 	deadline := time.Now().Add(d)
 	for {
-		f, err := l.s.read(time.Until(deadline))
+		f, err := l.read(time.Until(deadline))
 		if err != nil {
 			require.True(l.T, errors.Is(err, context.DeadlineExceeded), "read: %v", err)
 			return
