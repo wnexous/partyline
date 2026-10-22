@@ -302,9 +302,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-06, PROF-03, GRP-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A mentions-mode AI receives `@newhandle` and `@New Name` after a rename and not `@oldhandle`; `@atlas` does not reach `@atlas-2` (AID-06)
-- [ ] Outbound to a chat carries the AI's new display name as signature; delivery modes, keywords, broadcast unchanged (GRP-04)
-- [ ] Gate check passes: `make check`
+- [x] A mentions-mode AI receives `@newhandle` and `@New Name` after a rename and not `@oldhandle`; `@atlas` does not reach `@atlas-2` (AID-06)
+- [x] Outbound to a chat carries the AI's new display name as signature; delivery modes, keywords, broadcast unchanged (GRP-04)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(delivery): match mentions by handle and profile name`

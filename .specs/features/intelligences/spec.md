@@ -405,7 +405,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | GRP-01 | P1: Groups | Execute | Implementing |
 | GRP-02 | P1: Groups | Tasks | Pending |
 | GRP-03 | P1: Groups | Execute | Implementing |
-| GRP-04 | P1: Groups | Tasks | Pending |
+| GRP-04 | P1: Groups | Execute | Implementing |
 | PEOP-01 | P1: People | Tasks | Pending |
 | PEOP-02 | P1: People | Tasks | Pending |
 | PEOP-03 | P1: People | Tasks | Pending |

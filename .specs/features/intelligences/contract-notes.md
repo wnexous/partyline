@@ -300,3 +300,26 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
 - sqlc: `ListRoomMembers` returns `intelligence_*` columns; `GetRoomWithOwner` and
   `ListRoomsForUser` return `owner_ikind/iname/handle/avatar`.
 - Web fixtures `makeMessage`/`makeMe` carry the new required fields (`author`, `intelligence`).
+
+## T12 - Mentions and signatures follow the profile (AID-06, PROF-03, GRP-04)
+
+- `delivery.MemberPrefs` has `Names` (the name set for the member in the room and the AI's
+  profile display name) and `Handle` (the profile handle). `delivery.Prefs(profile db.Intelligence,
+  memberDisplayName, delivery, keywordsJSON)` builds it; `ProjectPrefs(profile, projectName, …)`
+  adds the project's name (project members stay until T50); `AgentPrefs` is gone.
+  `delivery.IntelligenceOf(ctx, q, agentID)` loads the profile (zero value for an agent without
+  one, which then answers to its room name only). The internal agent `name` and `auto_name` are
+  no mention any more. Callers: the dispatcher (live push), the gateway backlog and
+  `GET /agent/pending`.
+- Matching, case-insensitive: a name is mentioned as `@<name>` with no letter, digit or
+  underscore right before the `@` and none of letter, digit, underscore or `-` right after the
+  name (`@Atlas-2` is no mention of "Atlas"); the handle as `@<handle>` with the same rule
+  before and no `[a-z0-9-]` right after it, so `@atlas` never reaches `@atlas-2`, an address such
+  as `joe@atlas.example` mentions nobody, and after a rename the old handle stops matching.
+  Keywords keep the word rule they had (a `-` after a keyword is still a boundary). Delivery
+  modes, keywords and broadcast are unchanged. Two AIs that share a display name are both
+  reached by `@<that name>`; handles are what tells them apart.
+- Outbound signatures already read the view's author name (the profile display name, or the name
+  set in the room), so they follow profile renames made by the owner (`PATCH
+  /intelligences/{id}`) or by the AI (`PATCH /agent/profile`): covered by
+  `TestOutboundAuthorFollowsProfileRename`.

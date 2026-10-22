@@ -24,6 +24,10 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, limit int) ([]dto.Age
 	if err != nil {
 		return nil, err
 	}
+	profile, err := delivery.IntelligenceOf(ctx, g.d.Store.R(), a.ID)
+	if err != nil {
+		return nil, err
+	}
 	for _, st := range states {
 		if len(out) >= limit {
 			break
@@ -45,7 +49,7 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, limit int) ([]dto.Age
 			return nil, err
 		}
 		ref := dto.RoomRef{ID: st.ID, Name: st.Name}
-		prefs := delivery.AgentPrefs(a, st.DisplayName, st.Delivery, st.KeywordsJson)
+		prefs := delivery.Prefs(profile, st.DisplayName, st.Delivery, st.KeywordsJson)
 		for _, m := range msgs {
 			facts, err := delivery.LoadFacts(ctx, g.d.Store.R(), m.MessageView)
 			if err != nil {

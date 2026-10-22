@@ -29,3 +29,29 @@ func TestOutboundAuthorFollowsAgentRename(t *testing.T) {
 	require.Equal(t, m.ID, sent.MessageID)
 	require.Equal(t, "Lolo", sent.AuthorName)
 }
+
+// AID-06, GRP-04: renamed through its profile, by its owner or by the AI itself, an AI signs
+// its outbound messages with the new display name; the name set for it in the room still wins.
+func TestOutboundAuthorFollowsProfileRename(t *testing.T) {
+	e := newOutboundEnv(t)
+	agents := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items
+	require.Len(t, agents, 1)
+	e.alice.Patch("/api/v1/intelligences/"+agents[0].ID, dto.UpdateProfileRequest{DisplayName: ptr("Orion Bot")}).RequireStatus(http.StatusOK)
+
+	m := e.agentPost(t, e.room.ID, "renamed by the owner")
+	sent := e.inst.WaitSend(t)
+	require.Equal(t, m.ID, sent.MessageID)
+	require.Equal(t, "Orion Bot", sent.AuthorName)
+
+	e.agent.Patch("/api/v1/agent/profile", dto.UpdateProfileRequest{DisplayName: ptr("Orion Prime")}).RequireStatus(http.StatusOK)
+	m = e.agentPost(t, e.room.ID, "renamed by the AI itself")
+	sent = e.inst.WaitSend(t)
+	require.Equal(t, m.ID, sent.MessageID)
+	require.Equal(t, "Orion Prime", sent.AuthorName)
+
+	e.patchAgentMember(t, e.room.ID, dto.UpdateMemberRequest{DisplayName: ptr("Lolo")})
+	m = e.agentPost(t, e.room.ID, "member name")
+	sent = e.inst.WaitSend(t)
+	require.Equal(t, m.ID, sent.MessageID)
+	require.Equal(t, "Lolo", sent.AuthorName)
+}

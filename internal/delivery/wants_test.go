@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/store/db"
 )
 
 // MEM-03, MEM-04 and the spec's mention definition: all delivers everything; trusted only
@@ -45,6 +46,8 @@ func TestWantsTable(t *testing.T) {
 		{"mentions: @name inside a longer word", dto.DeliveryModeMentions, Delivered{Text: "ask @builders"}, false},
 		{"mentions: @name after a word character", dto.DeliveryModeMentions, Delivered{Text: "mail x@builder now"}, false},
 		{"mentions: @name with a digit after", dto.DeliveryModeMentions, Delivered{Text: "@builder2 go"}, false},
+		{"mentions: @name continued by a hyphen", dto.DeliveryModeMentions, Delivered{Text: "@builder-2 go"}, false},
+		{"mentions: @name before a spaced hyphen", dto.DeliveryModeMentions, Delivered{Text: "@builder - go"}, true},
 		{"mentions: second occurrence matches", dto.DeliveryModeMentions, Delivered{Text: "@builders and @builder"}, true},
 		{"mentions: keyword", dto.DeliveryModeMentions, Delivered{Text: "please deploy now"}, true},
 		{"mentions: keyword, other case and punctuation", dto.DeliveryModeMentions, Delivered{Text: "DEPLOY!"}, true},
@@ -70,12 +73,25 @@ func TestWantsIgnoresEmptyNames(t *testing.T) {
 	require.True(t, Wants(p, Delivered{Text: "@builder"}))
 }
 
-// Prefs decodes a member row's settings: the display name and the agent name are both
-// mention names, and the keywords come from the stored JSON.
+// Prefs decodes a member row's settings: the name set in the room and the profile's display
+// name are mention names, the profile's handle is the handle, and the keywords come from the
+// stored JSON. The internal agent name is no mention (AID-06).
 func TestPrefsFromMember(t *testing.T) {
-	p := Prefs("builder", "Lolo", "mentions", `["deploy"]`)
-	require.Equal(t, MemberPrefs{Delivery: dto.DeliveryModeMentions, Names: []string{"Lolo", "builder"}, Keywords: []string{"deploy"}}, p)
-	require.True(t, Wants(p, Delivered{Text: "@lolo"}))
-	require.True(t, Wants(p, Delivered{Text: "@builder"}))
-	require.True(t, Wants(p, Delivered{Text: "deploy"}))
+	profile := db.Intelligence{ID: "i1", Kind: "ai", DisplayName: "Orion Bot", Handle: "nova"}
+	p := Prefs(profile, "Lolo", "mentions", `["deploy"]`)
+	require.Equal(t, MemberPrefs{Delivery: dto.DeliveryModeMentions, Names: []string{"Lolo", "Orion Bot"}, Handle: "nova", Keywords: []string{"deploy"}}, p)
+	require.True(t, Wants(p, Delivered{Text: "@lolo"}), "the name set in the room")
+	require.True(t, Wants(p, Delivered{Text: "@orion bot"}), "the profile name")
+	require.True(t, Wants(p, Delivered{Text: "@nova"}), "the handle")
+	require.True(t, Wants(p, Delivered{Text: "deploy"}), "the keywords")
+	require.False(t, Wants(p, Delivered{Text: "@builder"}), "the internal agent name")
+}
+
+// A project member still answers to its project's name, next to the active session's profile.
+func TestProjectPrefsKeepTheProjectName(t *testing.T) {
+	profile := db.Intelligence{DisplayName: "Orion Bot", Handle: "nova"}
+	p := ProjectPrefs(profile, "Proj", "", "mentions", "[]")
+	require.True(t, Wants(p, Delivered{Text: "@proj"}))
+	require.True(t, Wants(p, Delivered{Text: "@nova"}))
+	require.True(t, Wants(p, Delivered{Text: "@orion bot"}))
 }
