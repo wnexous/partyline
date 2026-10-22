@@ -1,11 +1,29 @@
 import { EyeIcon, PaperclipIcon, SendHorizontalIcon, UsersRoundIcon, XIcon } from "lucide-react";
-import { type KeyboardEvent, type RefObject, useId, useMemo, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type KeyboardEvent,
+  type RefObject,
+  type SyntheticEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  MentionSuggestions,
+  matchMentions,
+  mentionAt,
+  mentionCandidates,
+  mentionOptionId,
+} from "@/components/mention-suggestions";
 import { platformLabel } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { isApiError } from "@/lib/api/client";
-import { usePostMessage } from "@/lib/api/queries";
+import { useMe, usePostMessage } from "@/lib/api/queries";
 import {
+  type IntelligenceRef,
   type Level,
   LevelManage,
   LevelPost,
@@ -28,6 +46,11 @@ import { cn } from "@/lib/utils";
  * picked chat; Send without one moves focus to the chat picker (A11Y-05). With no chat to pick,
  * the post goes to the room's agents only. The picker stops at MaxMessageRecipients chats, the
  * server's cap per post (ROUTE-10).
+ *
+ * Typing `@` at the start of a word suggests the conversation's participants (MEN-01..MEN-06):
+ * the filtered list opens above the box, Up/Down move, Enter, Tab or a tap complete `@handle `
+ * and never send, Escape or leaving the `@word` closes it, and Enter sends as usual when nothing
+ * matches.
  */
 
 /** 422 reason for an explicit recipient whose chat member has outbound off. */
@@ -94,12 +117,21 @@ function ComposerForm({
   const [recipients, setRecipients] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [recipientsInvalid, setRecipientsInvalid] = useState(false);
+  // The caret is part of the mention state: the list follows the `@word` it is in (MEN-04).
+  const [caret, setCaret] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(0);
+  // The `@word` the user closed with Escape; leaving it reopens the list on the next one.
+  const [dismissedStart, setDismissedStart] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
+  // Where the caret goes once a completion re-renders the controlled textarea.
+  const pendingCaret = useRef<number | null>(null);
   const counterId = useId();
   const errorId = useId();
   const explicitId = useId();
+  const mentionListId = useId();
+  const viewerId = useMe().data?.id;
 
   const chats = useMemo(() => (members ?? []).filter((m) => m.kind === "chat"), [members]);
   // Only chats with outbound on can be explicit recipients (DLV-05).
@@ -112,6 +144,41 @@ function ComposerForm({
   const trimmed = text.trim();
   const canSend = !tooLong && (trimmed.length > 0 || files.length > 0) && !post.isPending;
   const fmt = (n: number) => new Intl.NumberFormat(locale).format(n);
+
+  // The mention list follows the caret: it is open while the caret sits in an `@word` that has
+  // matching participants and that the user did not just close (MEN-01, MEN-04, MEN-05).
+  const mention = mentionAt(text, caret);
+  const query = mention?.query ?? null;
+  const mentionCandidatesShown = useMemo(
+    () => mentionCandidates(members ?? [], viewerId),
+    [members, viewerId],
+  );
+  const candidates = useMemo(
+    () => (query === null ? [] : matchMentions(mentionCandidatesShown, query)),
+    [mentionCandidatesShown, query],
+  );
+  const open = mention !== null && candidates.length > 0 && mention.start !== dismissedStart;
+  // A shorter match set keeps the highlight inside it.
+  const active = candidates.length > 0 ? Math.min(activeIndex, candidates.length - 1) : 0;
+  const activeCandidate = candidates[active];
+  const mentionStart = mention?.start ?? null;
+
+  // Leaving the `@word` (or sending) resets the Escape dismissal; the next mention opens again.
+  useEffect(() => {
+    if (mentionStart === null) setDismissedStart(null);
+  }, [mentionStart]);
+
+  // A completion rewrites the text; put the caret after the inserted `@handle `.
+  useEffect(() => {
+    const position = pendingCaret.current;
+    if (position === null || textRef.current?.value !== text) return;
+    pendingCaret.current = null;
+    const box = textRef.current;
+    if (!box) return;
+    box.focus();
+    box.setSelectionRange(position, position);
+    setCaret(position);
+  }, [text]);
 
   // fromButton: Send moves focus to the chat picker when a chat is missing; Enter keeps it in
   // the message box so typing is not cut off (A11Y-05).
@@ -146,8 +213,56 @@ function ComposerForm({
     );
   };
 
+  // Replaces the `@word` with `@handle ` (MEN-03); it never sends the message itself.
+  const completeMention = (candidate: IntelligenceRef) => {
+    if (!mention) return;
+    const inserted = `@${candidate.handle} `;
+    const position = mention.start + inserted.length;
+    pendingCaret.current = position;
+    setText(`${text.slice(0, mention.start)}${inserted}${text.slice(mention.end)}`);
+    setCaret(position);
+    setActiveIndex(0);
+    setDismissedStart(null);
+  };
+
+  // The caret is read from every event that can move it, so the list closes as soon as it leaves
+  // the `@word` (MEN-04); `select` alone does not cover every browser's arrow keys.
+  const syncCaret = (e: SyntheticEvent<HTMLTextAreaElement>) =>
+    setCaret(e.currentTarget.selectionStart ?? 0);
+
+  const onChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value);
+    setCaret(e.target.selectionStart ?? e.target.value.length);
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+    if (e.nativeEvent.isComposing) return;
+    if (open && mention) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        setActiveIndex(
+          (current) =>
+            (Math.min(current, candidates.length - 1) + step + candidates.length) %
+            candidates.length,
+        );
+        return;
+      }
+      if (e.key === "Escape") {
+        // MEN-04: close it, keeping the text untouched.
+        e.preventDefault();
+        setDismissedStart(mention.start);
+        return;
+      }
+      if ((e.key === "Enter" && !e.shiftKey) || (e.key === "Tab" && !e.shiftKey)) {
+        // MEN-03: the first candidate is active unless the user moved with Up/Down.
+        if (!activeCandidate) return;
+        e.preventDefault();
+        completeMention(activeCandidate);
+        return;
+      }
+    }
+    if (e.key !== "Enter" || e.shiftKey) return;
     e.preventDefault();
     send();
   };
@@ -179,11 +294,20 @@ function ComposerForm({
       ) : null}
       <div
         className={cn(
-          "rounded-lg border border-input bg-card shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25",
+          "relative rounded-lg border border-input bg-card shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/25",
           tooLong &&
             "border-destructive focus-within:border-destructive focus-within:ring-destructive/20",
         )}
       >
+        {open ? (
+          <MentionSuggestions
+            id={mentionListId}
+            candidates={candidates}
+            activeIndex={active}
+            viewerId={viewerId}
+            onPick={completeMention}
+          />
+        ) : null}
         {files.length > 0 ? (
           <ul className="flex flex-wrap gap-1.5 px-3 pt-2.5">
             {files.map((f) => (
@@ -205,14 +329,29 @@ function ComposerForm({
             ))}
           </ul>
         ) : null}
+        {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: while the mention list is open the box has role combobox */}
         <textarea
           ref={textRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={onChange}
           onKeyDown={onKeyDown}
+          onSelect={syncCaret}
+          onKeyUp={syncCaret}
+          onClick={syncCaret}
+          onFocus={syncCaret}
           rows={1}
           aria-label={t("composer.label", { room: roomName })}
           aria-invalid={tooLong || undefined}
+          /* MEN-06: with the list open the box is the popup's combobox and names the active
+             option; closed it stays the plain textarea the rest of the app looks for. */
+          role={open ? "combobox" : undefined}
+          aria-expanded={open ? true : undefined}
+          aria-controls={open ? mentionListId : undefined}
+          aria-autocomplete={open ? "list" : undefined}
+          aria-haspopup={open ? "listbox" : undefined}
+          aria-activedescendant={
+            open && activeCandidate ? mentionOptionId(mentionListId, activeCandidate.id) : undefined
+          }
           aria-describedby={
             [needsChat ? explicitId : "", length >= COUNTER_FROM ? counterId : ""]
               .filter(Boolean)

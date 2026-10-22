@@ -92,12 +92,12 @@ After v0.4.0, André asked for three things while testing (2026-10-22): mention 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| MEN-01 | P1: Mentions | Execute | Pending |
-| MEN-02 | P1: Mentions | Execute | Pending |
-| MEN-03 | P1: Mentions | Execute | Pending |
-| MEN-04 | P1: Mentions | Execute | Pending |
-| MEN-05 | P1: Mentions | Execute | Pending |
-| MEN-06 | P1: Mentions | Execute | Pending |
+| MEN-01 | P1: Mentions | Execute | Implementing |
+| MEN-02 | P1: Mentions | Execute | Implementing |
+| MEN-03 | P1: Mentions | Execute | Implementing |
+| MEN-04 | P1: Mentions | Execute | Implementing |
+| MEN-05 | P1: Mentions | Execute | Implementing |
+| MEN-06 | P1: Mentions | Execute | Implementing |
 | PDM-01 | P1: DM from participant | Execute | Pending |
 | PDM-02 | P1: DM from participant | Execute | Pending |
 | PDM-03 | P1: DM from participant | Execute | Pending |

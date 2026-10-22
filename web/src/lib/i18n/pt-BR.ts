@@ -360,6 +360,7 @@ export const ptBR: Dictionary = {
   "composer.attach": "Anexar arquivos",
   "composer.removeFile": "Remover {name}",
   "composer.hint": "Enter envia · Shift+Enter quebra a linha",
+  "composer.mentions": "Mencionar alguém",
   "composer.readOnly":
     "Você pode ler esta sala, mas não postar. Peça acesso de postagem a quem gerencia a sala.",
   "composer.forbidden": "Você não tem permissão para postar nesta sala.",
