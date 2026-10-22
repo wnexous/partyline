@@ -1193,8 +1193,8 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: LAY-02, DM-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A conversation with 1 unread and its last message at seq 10, marked read up to seq 5, keeps 1 unread (the clamp), and one with 3 unread read up to seq 9 shows 1
-- [ ] Gate check passes: `make check`
+- [x] A conversation with 1 unread and its last message at seq 10, marked read up to seq 5, keeps 1 unread (the clamp), and one with 3 unread read up to seq 9 shows 1
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `test(web): never raise the unread count when a room is marked read`

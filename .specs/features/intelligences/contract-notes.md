@@ -2623,3 +2623,16 @@ without any id has nobody to make a DM with: not routed" and no test said it.
   `rooms.dm_a`), and the pipeline logs "inbound message failed": the test fails on that log line, so it
   kills the fault the mutant stood for. The log assertion is what makes it discriminate; the other
   outcomes (no room, DM, person, message) hold under the foreign-key failure as well.
+
+## T64 - The unread count never rises when a room is marked read (LAY-02, DM-07)
+
+Test only; no code changes (`validation.md` gap 11, mutant W1, L-046). `markConversationRead`
+(`web/src/lib/api/queries.ts`) sets a conversation's unread count to `min(unread, last seq - read seq)`:
+what lies after the read position can still be unread, and the count never goes up here, so a read answer
+that arrives late cannot undo a newer count. Dropping the `min` (count = messages after the position)
+passed every test because each used a position at or past the unread messages.
+
+- `markConversationRead (DM-07, LAY-02)` in `web/src/lib/api/queries.test.ts`: five messages after the
+  position with one unread stays one; three unread read up to the message before the last is one; a
+  position at the last message clears the count. Scratch copy: W1 fails the first only; the live-handler
+  tests passed under it.
