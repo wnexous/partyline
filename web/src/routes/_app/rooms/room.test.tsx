@@ -6,7 +6,14 @@ import type { Level, Room, RoomMember } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeAgent, makeChat, makeMe, makeMember, makeRoom } from "@/test/fixtures";
+import {
+  makeAgent,
+  makeChat,
+  makeConversation,
+  makeMe,
+  makeMember,
+  makeRoom,
+} from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { makeQueryClient, renderRoute } from "@/test/render";
 
@@ -581,6 +588,10 @@ describe("delete room (ROOMDEL-01, ROOMDEL-02)", () => {
       makeRoom({ id: "r1", name: "deploys" }),
       makeRoom({ id: "r2", name: "support" }),
     ]);
+    queryClient.setQueryData(queryKeys.conversations, [
+      makeConversation({ id: "r1", title: "deploys" }),
+      makeConversation({ id: "r2", title: "support" }),
+    ]);
     const user = userEvent.setup();
     const { router } = renderRoute("/rooms/r1", queryClient);
     await user.click(await screen.findByRole("button", { name: "Room settings" }));
@@ -591,11 +602,12 @@ describe("delete room (ROOMDEL-01, ROOMDEL-02)", () => {
     return { user, router, queryClient, alert, deletes };
   }
 
-  it("confirms, deletes, returns to /rooms and drops the room from the list", async () => {
+  it("confirms, deletes, returns to the conversation list and drops the room from it", async () => {
     const { user, router, queryClient, alert, deletes } = await openDelete({
       "DELETE /rooms/r1": new Response(null, { status: 204 }),
-      // The list refetch never answers: only the cache update can drop the room.
+      // The list refetches never answer: only the cache update can drop the room.
       "GET /rooms": () => new Promise<Response>(() => {}),
+      "GET /conversations": () => new Promise<Response>(() => {}),
     });
     expect(alert).toHaveTextContent(
       "Its messages, attachments and pending deliveries are removed. This can’t be undone.",
@@ -603,12 +615,13 @@ describe("delete room (ROOMDEL-01, ROOMDEL-02)", () => {
     expect(deletes()).toHaveLength(0);
     await user.click(within(alert).getByRole("button", { name: "Delete room" }));
 
-    await waitFor(() => expect(router.state.location.pathname).toBe("/rooms"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
     expect(deletes()).toHaveLength(1);
     expect(await screen.findByText("deploys deleted")).toBeInTheDocument();
     expect(queryClient.getQueryData<Room[]>(queryKeys.rooms)?.map((r) => r.id)).toEqual(["r2"]);
-    expect(await screen.findByRole("link", { name: /support/ })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /deploys/ })).toBeNull();
+    const sidebar = await screen.findByRole("list", { name: "Conversations" });
+    expect(within(sidebar).getByRole("link", { name: /support/ })).toBeInTheDocument();
+    expect(within(sidebar).queryByRole("link", { name: /deploys/ })).toBeNull();
   });
 
   it("keeps the room when the confirmation is cancelled", async () => {

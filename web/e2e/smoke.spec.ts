@@ -22,6 +22,11 @@ function isMobile(testInfo: TestInfo) {
   return (testInfo.project.use.viewport?.width ?? 1280) <= MOBILE_MAX_WIDTH;
 }
 
+/** The home page's heading: beside the sidebar it asks to pick one; on a phone it is the list. */
+function homeHeading(testInfo: TestInfo) {
+  return isMobile(testInfo) ? "Conversations" : "Pick a conversation";
+}
+
 /** Logs a context in through the API; the session cookie lands in the browser context. */
 async function loginAs(context: BrowserContext, instance: Instance, who: typeof ADMIN) {
   await apiCall<Me>(context.request, instance, "POST", "/auth/login", who);
@@ -42,7 +47,7 @@ test("first run: setup, log out, log back in to a protected route (UI-01, UI-02)
   page,
   instance,
 }, testInfo) => {
-  await page.goto("/rooms");
+  await page.goto("/settings");
   await expect(page).toHaveURL(`${instance.url}/setup`);
   await expect(page.getByRole("heading", { name: "Set up partyline" })).toBeVisible();
 
@@ -51,21 +56,20 @@ test("first run: setup, log out, log back in to a protected route (UI-01, UI-02)
   await page.getByLabel("Password", { exact: true }).fill(ADMIN.password);
   await page.getByRole("button", { name: "Create admin account" }).click();
   await expect(page).toHaveURL(`${instance.url}/`);
-  await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: homeHeading(testInfo), level: 1 })).toBeVisible();
 
-  if (isMobile(testInfo)) await page.getByRole("button", { name: "Toggle sidebar" }).click();
   await page.getByRole("button", { name: "Account menu" }).click();
   await page.getByRole("menuitem", { name: "Log out" }).click();
   await expect(page).toHaveURL(`${instance.url}/login`);
 
   // The session is gone: a protected route goes back to login and remembers where it was.
-  await page.goto("/rooms");
-  await expect(page).toHaveURL(`${instance.url}/login?redirect=%2Frooms`);
+  await page.goto("/settings");
+  await expect(page).toHaveURL(`${instance.url}/login?redirect=%2Fsettings`);
   await page.getByLabel("Username", { exact: true }).fill(ADMIN.username);
   await page.getByLabel("Password", { exact: true }).fill(ADMIN.password);
   await page.getByRole("button", { name: "Log in" }).click();
-  await expect(page).toHaveURL(`${instance.url}/rooms`);
-  await expect(page.getByRole("heading", { name: "Rooms", level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(`${instance.url}/settings`);
+  await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible();
 });
 
 test("a message posted in a room reaches another user's open room live (UI-04)", async ({
@@ -93,8 +97,9 @@ test("a message posted in a room reaches another user's open room live (UI-04)",
     );
 
     const admin = await adminCtx.newPage();
-    await admin.goto("/rooms");
-    await admin.getByRole("button", { name: "New room" }).click();
+    await admin.goto("/");
+    // The sidebar's button; the empty list offers the same action too.
+    await admin.getByRole("button", { name: "New room" }).first().click();
     const dialog = admin.getByRole("dialog", { name: "New room" });
     await dialog.getByLabel("Name", { exact: true }).fill("e2e-wire");
     await dialog.getByRole("button", { name: "Create room" }).click();
@@ -301,7 +306,7 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24)", async
   context,
   page,
   instance,
-}) => {
+}, testInfo) => {
   await loginAs(context, instance, ADMIN);
   const room = await apiCall<Room>(context.request, instance, "POST", "/rooms", {
     name: "e2e-narrow",
@@ -312,9 +317,9 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24)", async
     text: `See ${"averylongunbrokentoken".repeat(12)} for details`,
   });
 
+  // The sidebar row of that room previews the same unbroken line: it must be cut, not widen.
   const pages: [string, string][] = [
-    ["/", "Overview"],
-    ["/rooms", "Rooms"],
+    ["/", homeHeading(testInfo)],
     [`/rooms/${room.id}`, "e2e-narrow"],
     ["/agents", "Agents"],
     ["/connectors", "Connectors"],
@@ -325,7 +330,8 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24)", async
     await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
     if (path === `/rooms/${room.id}`) {
       // The room page scrolls inside its timeline, so also check the long line wraps on screen.
-      const line = page.getByText(/averylongunbrokentoken/);
+      // The sidebar row of the room previews the same text: look in the timeline.
+      const line = page.getByRole("log").getByText(/averylongunbrokentoken/);
       await expect(line).toBeVisible();
       const right = await line.evaluate((el) => {
         const range = document.createRange();

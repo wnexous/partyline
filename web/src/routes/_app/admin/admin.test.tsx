@@ -68,14 +68,23 @@ describe("admin access (UI-21)", () => {
     });
   }
 
-  it("lists the admin pages in the sidebar for admins", async () => {
-    mockApi({ "GET /me": json(200, admin), "GET /admin/users": json(200, { items: users }) });
+  it("lists the admin pages in the account menu for admins", async () => {
+    mockApi({
+      "GET /me": json(200, admin),
+      "GET /admin/users": json(200, { items: users }),
+      "GET /conversations": json(200, { items: [] }),
+    });
+    const user = userEvent.setup();
     renderRoute("/admin/users");
-    expect(await screen.findByRole("link", { name: "Invites" })).toHaveAttribute(
+    await user.click(await screen.findByRole("button", { name: "Account menu" }));
+    expect(await screen.findByRole("menuitem", { name: "Invites" })).toHaveAttribute(
       "href",
       "/admin/invites",
     );
-    expect(screen.getByRole("link", { name: "Audit log" })).toHaveAttribute("href", "/admin/audit");
+    expect(screen.getByRole("menuitem", { name: "Audit log" })).toHaveAttribute(
+      "href",
+      "/admin/audit",
+    );
   });
 });
 

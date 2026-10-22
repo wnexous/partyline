@@ -805,11 +805,18 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: LAY-02, DM-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Handler tests: a live message moves its conversation to the top and increments unread unless open or own; `room.read` zeroes it; unknown room triggers a refetch (LAY-02, DM-06)
-- [ ] Gate check passes: `make check`
+- [x] Handler tests: a live message moves its conversation to the top and increments unread unless open or own; `room.read` zeroes it; unknown room triggers a refetch (LAY-02, DM-06)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add the conversations and contacts data layer`
+
+**Delivered in two parts.** Part 1 (commit `feat(web): add the conversations data layer`): the hooks whose APIs existed
+(conversations, DM open, groups, read state, profile read/update, avatar upload/remove, the room hooks refreshing the
+sidebar) and the live handlers `room.message`, `room.read`, `room.changed`, `room.deleted`, `room.members`,
+`access.changed`, `intelligence.changed` (conversations, timelines, members, participants, own account, profile).
+Part 2 stays open: contacts, people, machine label, merge, notify and operator hooks, the `makeContacts` fixture and the
+contacts patch of `intelligence.changed`, each with the task whose server API it calls (T47-T49).
 
 #### T43: Avatar, kind badge and name components
 
@@ -836,9 +843,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: LAY-01, LAY-02, LAY-05, LAY-06, DM-06
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Sidebar lists DMs and groups with avatar, name, 80-char preview (sender prefix in groups), time and unread, newest first (LAY-01, DM-06); a live message reorders and badges it (LAY-02)
-- [ ] Below 768 px the list is the first screen and a conversation opens full screen with a back button (LAY-05); Contacts, Connections, Settings and admin pages are reachable from the header menu (LAY-06)
-- [ ] Gate check passes: `make check`
+- [x] Sidebar lists DMs and groups with avatar, name, 80-char preview (sender prefix in groups), time and unread, newest first (LAY-01, DM-06); a live message reorders and badges it (LAY-02)
+- [x] Below 768 px the list is the first screen and a conversation opens full screen with a back button (LAY-05); Contacts, Connections, Settings and admin pages are reachable from the header menu (LAY-06)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): switch to the messenger layout`
@@ -868,9 +875,12 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-07, GRP-02, PROF-09, DM-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Opening a conversation sends the read call with the newest seq (DM-07); authors show avatar, badge and handle (PROF-09)
-- [ ] Group participants show AIs, users and each chat's people with platform badges (GRP-02); a DM shows its two participants and no add/remove controls (DM-02)
-- [ ] Gate check passes: `make check`
+- [x] Opening a conversation sends the read call with the newest seq (DM-07); authors show avatar, badge and handle (PROF-09)
+- [x] Group participants show AIs, users and each chat's people with platform badges (GRP-02); a DM shows its two participants and no add/remove controls (DM-02)
+- [x] Gate check passes: `make check`
+
+**Open (GRP-02):** the members API (`RoomMember.people`, T27) does not return the people of a bridged chat yet, so the
+panel lists AIs, users and chats; the people rows under each chat arrive with T27 (see `contract-notes.md`, T46).
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show conversations with participants and read state`

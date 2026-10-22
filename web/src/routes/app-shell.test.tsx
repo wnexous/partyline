@@ -26,29 +26,42 @@ describe("authenticated shell", () => {
     expect(router.state.location.search).toEqual({ redirect: "/rooms" });
   });
 
-  it("shows the navigation without the admin section for members", async () => {
-    mockApi({ "GET /me": json(200, makeMe({ role: "member" })) });
-    renderRoute("/rooms");
-    const nav = await screen.findByRole("link", { name: "Rooms" });
-    expect(nav).toHaveAttribute("aria-current", "page");
+  it("lists the destinations in the account menu, without the admin section for members, and marks the current page", async () => {
+    mockApi({
+      "GET /me": json(200, makeMe({ role: "member" })),
+      "GET /conversations": json(200, { items: [] }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(await screen.findByRole("button", { name: "Account menu" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: "Settings" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     for (const name of [
-      "Overview",
-      "Agents",
+      "Conversations",
+      "Contacts",
       "Connectors",
       "Identities",
       "API tokens",
       "Settings",
     ]) {
-      expect(screen.getByRole("link", { name })).toBeInTheDocument();
+      expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument();
     }
-    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Admin", { selector: "[data-sidebar=group-label]" })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "Users" })).toBeNull();
+    expect(within(menu).queryByText("Admin")).toBeNull();
   });
 
   it("shows the admin section to admins", async () => {
-    mockApi({ "GET /me": json(200, makeMe({ role: "admin" })) });
+    mockApi({
+      "GET /me": json(200, makeMe({ role: "admin" })),
+      "GET /conversations": json(200, { items: [] }),
+    });
+    const user = userEvent.setup();
     renderRoute("/");
-    expect(await screen.findByRole("link", { name: "Users" })).toHaveAttribute(
+    await user.click(await screen.findByRole("button", { name: "Account menu" }));
+    expect(await screen.findByRole("menuitem", { name: "Users" })).toHaveAttribute(
       "href",
       "/admin/users",
     );
@@ -75,7 +88,10 @@ describe("authenticated shell", () => {
   });
 
   it("switches theme and language from the account menu (UI-23, UI-25)", async () => {
-    mockApi({ "GET /me": json(200, makeMe()) });
+    mockApi({
+      "GET /me": json(200, makeMe()),
+      "GET /conversations": json(200, { items: [] }),
+    });
     const user = userEvent.setup();
     renderRoute("/");
     // Submenus are driven by keyboard here: happy-dom has no layout for pointer grace areas.
@@ -92,8 +108,8 @@ describe("authenticated shell", () => {
     expect(localStorage.getItem("partyline.theme")).toBe("dark");
 
     await pick("Language", "Português (Brasil)");
-    const nav = await screen.findByRole("link", { name: "Salas" });
-    expect(within(nav).getByText("Salas")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Menu da conta" }));
+    expect(await screen.findByRole("menuitem", { name: "Conversas" })).toBeInTheDocument();
     expect(localStorage.getItem("partyline.locale")).toBe("pt-BR");
   });
 });

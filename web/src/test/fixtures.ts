@@ -3,6 +3,8 @@ import type {
   Chat,
   Connector,
   ConnectorKind,
+  Conversation,
+  IntelligenceRef,
   Me,
   Message,
   Room,
@@ -10,6 +12,33 @@ import type {
 } from "@/lib/api/types.gen";
 
 /** Synthetic fixtures; never real names, numbers or chat ids. */
+
+/** An intelligence summary; a user ("Ana Souza") unless overridden (`kind: "ai"`, `role: "ai"`…). */
+export function makeIntelligence(over: Partial<IntelligenceRef> = {}): IntelligenceRef {
+  return {
+    id: "u1",
+    kind: "human",
+    role: "user",
+    display_name: "Ana Souza",
+    handle: "ana",
+    ...over,
+  };
+}
+
+/** A conversation list row: a quiet group with no messages unless overridden. */
+export function makeConversation(over: Partial<Conversation> = {}): Conversation {
+  return {
+    id: "r1",
+    kind: "group",
+    title: "general",
+    my_level: "manage",
+    unread: 0,
+    activity_at: "2026-10-19T12:00:00Z",
+    member_names: [],
+    ...over,
+  };
+}
+
 export function makeMessage(over: Partial<Message> = {}): Message {
   const seq = over.seq ?? 1;
   return {

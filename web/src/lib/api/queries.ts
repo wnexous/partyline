@@ -20,9 +20,12 @@ import {
   type Chat,
   type Connector,
   type ConnectorKind,
+  type Conversation,
+  type ConversationKind,
   type CreateConnectorRequest,
   type CreatedInvite,
   type CreatedToken,
+  type CreateGroupRequest,
   type CreateInviteRequest,
   type CreateRoomRequest,
   type CreateTokenRequest,
@@ -32,19 +35,26 @@ import {
   type FileKind,
   FileKindDocument,
   type Identity,
+  type IntelligenceProfile,
+  type IntelligenceRef,
   type Invite,
   type InviteInfo,
   type List,
   type LoginRequest,
+  type MarkReadRequest,
+  MaxPreviewLength,
   type Me,
   type Message,
+  type MessagePreview,
   MultipartFileField,
   MultipartMessageField,
+  type OpenDMRequest,
   type Page,
   type PairingCode,
   type PairingRequest,
   type PostMessageRequest,
   type Project,
+  type ReadState,
   type Room,
   type RoomFile,
   type RoomMember,
@@ -57,6 +67,7 @@ import {
   type UpdateConnectorRequest,
   type UpdateMemberRequest,
   type UpdateMeRequest,
+  type UpdateProfileRequest,
   type UpdateProjectRequest,
   type UpdateRoomRequest,
   type UpdateUserRequest,
@@ -79,6 +90,8 @@ export const queryKeys = {
   sessions: ["me", "sessions"] as const,
   tokens: ["tokens"] as const,
   rooms: ["rooms"] as const,
+  conversations: ["conversations"] as const,
+  intelligence: (id: string) => ["intelligences", id] as const,
   room: (id: string) => ["rooms", id] as const,
   roomMembers: (id: string) => ["rooms", id, "members"] as const,
   roomMessages: (id: string) => ["rooms", id, "messages"] as const,
@@ -290,14 +303,18 @@ export const roomQuery = (id: string) =>
 export const useRooms = () => useQuery(roomsQuery());
 export const useRoom = (id: string) => useQuery(roomQuery(id));
 
+/** A room the user just made, opened or changed: cached, and refreshed in the rooms list and the sidebar. */
+function storeRoom(qc: QueryClient, room: Room) {
+  qc.setQueryData(queryKeys.room(room.id), room);
+  qc.invalidateQueries({ queryKey: queryKeys.rooms, exact: true });
+  qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
+}
+
 export function useCreateRoom() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: CreateRoomRequest) => api<Room>("POST", "/rooms", req),
-    onSuccess: (room) => {
-      qc.setQueryData(queryKeys.room(room.id), room);
-      qc.invalidateQueries({ queryKey: queryKeys.rooms, exact: true });
-    },
+    onSuccess: (room) => storeRoom(qc, room),
   });
 }
 
@@ -305,10 +322,7 @@ export function useUpdateRoom(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: UpdateRoomRequest) => api<Room>("PATCH", `/rooms/${id}`, req),
-    onSuccess: (room) => {
-      qc.setQueryData(queryKeys.room(id), room);
-      qc.invalidateQueries({ queryKey: queryKeys.rooms, exact: true });
-    },
+    onSuccess: (room) => storeRoom(qc, room),
   });
 }
 
@@ -320,6 +334,9 @@ export function useDeleteRoom() {
       // Same cache effect as the live room.deleted event (ROOMDEL-02): gone from every list now.
       qc.removeQueries({ queryKey: queryKeys.room(id) });
       qc.setQueryData<Room[]>(queryKeys.rooms, (old) => old?.filter((r) => r.id !== id));
+      qc.setQueryData<Conversation[]>(queryKeys.conversations, (old) =>
+        old?.filter((c) => c.id !== id),
+      );
       qc.setQueryData<ActivityItem[]>(queryKeys.activity, (old) =>
         old?.filter((a) => a.room.id !== id),
       );
@@ -408,6 +425,19 @@ export const roomMessagesQuery = (roomId: string) =>
 
 export const useRoomMessages = (roomId: string) => useInfiniteQuery(roomMessagesQuery(roomId));
 
+/** The highest seq of the newest cached page; undefined while the timeline is empty or not loaded. */
+function newestSeqOf(data: MessagePages): number | undefined {
+  let newest: number | undefined;
+  for (const m of data.pages[0]?.items ?? []) {
+    if (newest === undefined || m.seq > newest) newest = m.seq;
+  }
+  return newest;
+}
+
+/** The newest message seq of a room's timeline; re-renders only when that number changes. */
+export const useNewestSeq = (roomId: string) =>
+  useInfiniteQuery({ ...roomMessagesQuery(roomId), select: newestSeqOf }).data;
+
 export interface PostMessageInput extends PostMessageRequest {
   files?: File[];
 }
@@ -427,6 +457,269 @@ export function usePostMessage(roomId: string) {
 }
 
 export const attachmentUrl = (id: string) => `/api/v1/attachments/${id}`;
+
+// ---------------------------------------------------------------------------------------------
+// Conversations: the sidebar list, direct messages, groups and read state (LAY-01, DM-01, DM-06,
+// DM-07, LAY-04)
+
+/** The caller's DMs and groups, newest activity first, with unread counts (GET /conversations). */
+export const conversationsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.conversations,
+    queryFn: ({ signal }) =>
+      api<List<Conversation>>("GET", "/conversations", undefined, { signal }).then(items),
+  });
+
+export const useConversations = () => useQuery(conversationsQuery());
+
+/** Newest activity first; ties by title (case-insensitive), then id: the server's own order. */
+export function newestActivityFirst(a: Conversation, b: Conversation): number {
+  const diff = Date.parse(b.activity_at) - Date.parse(a.activity_at);
+  if (diff !== 0) return diff;
+  const [ta, tb] = [a.title.toLowerCase(), b.title.toLowerCase()];
+  if (ta !== tb) return ta < tb ? -1 : 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/** The first `max` code points of `text`: an emoji counts once, whatever its UTF-16 length. */
+function firstCodePoints(text: string, max: number): string {
+  let end = 0;
+  let count = 0;
+  for (const point of text) {
+    if (count === max) break;
+    end += point.length;
+    count += 1;
+  }
+  return text.slice(0, end);
+}
+
+/**
+ * The sidebar preview of a message (LAY-01), built as the server builds the list's: the first
+ * MaxPreviewLength code points; "[first file name]" when the text is blank and there is a file;
+ * the sender's name in groups only.
+ */
+export function previewOf(m: Message, kind: ConversationKind): MessagePreview {
+  const file = m.attachments[0]?.name;
+  const blank = m.text.trim() === "";
+  return {
+    seq: m.seq,
+    author_id: m.author.id,
+    author_name: kind === "group" ? m.author_name : "",
+    text: blank ? (file ? `[${file}]` : "") : firstCodePoints(m.text, MaxPreviewLength),
+    created_at: m.created_at,
+  };
+}
+
+/** Replaces one conversation of the cached list; a list that is not cached stays absent. */
+export function patchConversation(
+  qc: QueryClient,
+  roomId: string,
+  patch: (c: Conversation) => Conversation,
+) {
+  qc.setQueryData<Conversation[]>(queryKeys.conversations, (old) =>
+    old?.map((c) => (c.id === roomId ? patch(c) : c)),
+  );
+}
+
+/**
+ * The user read a room up to `seq`: only what lies after it can still be unread. The count never
+ * goes up here, so an answer that arrives late cannot undo a newer one.
+ */
+export function markConversationRead(qc: QueryClient, roomId: string, seq: number) {
+  patchConversation(qc, roomId, (c) => {
+    const after = c.last_message ? Math.max(0, c.last_message.seq - seq) : 0;
+    const unread = Math.min(c.unread, after);
+    return unread === c.unread ? c : { ...c, unread };
+  });
+}
+
+/** Opens the DM with an intelligence (id): the existing one, or a new one (DM-01). */
+export function useOpenDM() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (withId: string) =>
+      api<Room>("POST", "/conversations/dm", { with: withId } satisfies OpenDMRequest),
+    onSuccess: (room) => storeRoom(qc, room),
+  });
+}
+
+/**
+ * Creates a group with members (LAY-04). A 422 `members_refused` carries every refused member in
+ * `ApiError.refused`; nothing is created then.
+ */
+export function useCreateGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: CreateGroupRequest) => api<Room>("POST", "/groups", req),
+    onSuccess: (room) => storeRoom(qc, room),
+  });
+}
+
+/** Marks a room read up to `seq` (the newest message when absent) for this user (DM-07). */
+export function useMarkRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ roomId, seq }: { roomId: string; seq?: number }) =>
+      api<ReadState>(
+        "PUT",
+        `/rooms/${roomId}/read`,
+        seq === undefined ? {} : ({ seq } satisfies MarkReadRequest),
+      ),
+    onSuccess: (state) =>
+      patchConversation(qc, state.room_id, (c) =>
+        state.unread < c.unread ? { ...c, unread: state.unread } : c,
+      ),
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Intelligence profiles (PROF-03, PROF-05, PROF-07)
+
+export const intelligenceQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.intelligence(id),
+    queryFn: () => api<IntelligenceProfile>("GET", `/intelligences/${id}`),
+  });
+
+export const useIntelligence = (id: string) => useQuery(intelligenceQuery(id));
+
+/** The summary every list shows, taken from a full profile. */
+function refOfProfile(p: IntelligenceProfile): IntelligenceRef {
+  return {
+    id: p.id,
+    kind: p.kind,
+    role: p.role,
+    display_name: p.display_name,
+    handle: p.handle,
+    avatar_url: p.avatar_url,
+    platform: p.platform,
+  };
+}
+
+/** Applies `fn` to every cached message; a page or timeline it changes nothing in stays as it is. */
+function mapCachedMessages(qc: QueryClient, fn: (roomId: string, m: Message) => Message) {
+  for (const [key, data] of qc.getQueriesData<MessagePages>({ queryKey: ["rooms"] })) {
+    if (key.length !== 3 || key[2] !== "messages" || !data) continue;
+    const roomId = String(key[1]);
+    const pages = data.pages.map((page) => {
+      const items = page.items.map((m) => fn(roomId, m));
+      return items.some((m, i) => m !== page.items[i]) ? { ...page, items } : page;
+    });
+    if (pages.some((page, i) => page !== data.pages[i])) {
+      qc.setQueryData<MessagePages>(key, { ...data, pages });
+    }
+  }
+}
+
+/**
+ * Shows an intelligence's new summary (name, handle, avatar) in every cached place it appears:
+ * the sidebar, timelines, member lists, DM headers, the profile page and the account's own data
+ * (PROF-03). The live `intelligence.changed` event and the profile mutations both call it.
+ */
+export function patchIntelligence(qc: QueryClient, ref: IntelligenceRef) {
+  qc.setQueryData<IntelligenceProfile>(queryKeys.intelligence(ref.id), (old) =>
+    old
+      ? {
+          ...old,
+          kind: ref.kind,
+          role: ref.role,
+          display_name: ref.display_name,
+          handle: ref.handle,
+          avatar_url: ref.avatar_url,
+          platform: ref.platform,
+        }
+      : old,
+  );
+  qc.setQueryData<Me>(queryKeys.me, (old) =>
+    old?.intelligence?.id === ref.id
+      ? { ...old, display_name: ref.display_name, intelligence: ref }
+      : old,
+  );
+  // A DM is titled by its counterpart. Group previews and member names hold the old name too:
+  // the server's list is the source for them.
+  qc.setQueryData<Conversation[]>(queryKeys.conversations, (old) =>
+    old?.map((c) =>
+      c.counterpart?.id === ref.id ? { ...c, title: ref.display_name, counterpart: ref } : c,
+    ),
+  );
+  qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
+
+  // A name an owner set for an AI in a room (GRP-04) keeps showing there: the message carries
+  // the shown name, so the room's members tell which rows must keep it.
+  mapCachedMessages(qc, (roomId, m) => {
+    if (m.author.id !== ref.id) return m;
+    const members = qc.getQueryData<RoomMember[]>(queryKeys.roomMembers(roomId));
+    const inRoomName = members?.some((mb) => mb.intelligence?.id === ref.id && mb.display_name);
+    return inRoomName
+      ? { ...m, author: { ...ref, display_name: m.author.display_name } }
+      : { ...m, author_name: ref.display_name, author: ref };
+  });
+
+  for (const [key, data] of qc.getQueriesData<RoomMember[] | Room>({ queryKey: ["rooms"] })) {
+    if (key.length === 3 && key[2] === "members" && Array.isArray(data)) {
+      if (!data.some((mb) => mb.intelligence?.id === ref.id)) continue;
+      qc.setQueryData<RoomMember[]>(
+        key,
+        data.map((mb) =>
+          mb.intelligence?.id === ref.id
+            ? { ...mb, name: ref.display_name, intelligence: ref }
+            : mb,
+        ),
+      );
+    } else if (key.length === 2 && data && !Array.isArray(data)) {
+      qc.setQueryData<Room>(key, withParticipant(data, ref));
+    }
+  }
+  qc.setQueryData<Room[]>(queryKeys.rooms, (old) => old?.map((r) => withParticipant(r, ref)));
+}
+
+/** The room with `ref` in place of the DM participant that has its id. */
+function withParticipant(room: Room, ref: IntelligenceRef): Room {
+  if (!room.participants?.some((p) => p.id === ref.id)) return room;
+  return { ...room, participants: room.participants.map((p) => (p.id === ref.id ? ref : p)) };
+}
+
+/** A profile the server answered with: cached, and shown everywhere the intelligence appears. */
+function storeProfile(qc: QueryClient, profile: IntelligenceProfile) {
+  qc.setQueryData(queryKeys.intelligence(profile.id), profile);
+  patchIntelligence(qc, refOfProfile(profile));
+}
+
+/** Edits display name, handle and bio (PROF-03, PROF-05); 409 `handle_taken` on a taken handle. */
+export function useUpdateIntelligence(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: UpdateProfileRequest) =>
+      api<IntelligenceProfile>("PATCH", `/intelligences/${id}`, req),
+    onSuccess: (profile) => storeProfile(qc, profile),
+  });
+}
+
+/** Uploads an avatar: the image file goes as the raw body (PROF-07); 422 `avatar_invalid`. */
+export function useUploadAvatar(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (image: Blob) =>
+      api<IntelligenceProfile>("PUT", `/intelligences/${id}/avatar`, image),
+    onSuccess: (profile) => storeProfile(qc, profile),
+  });
+}
+
+/** Removes the avatar: the initials show again everywhere. */
+export function useRemoveAvatar(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<void>("DELETE", `/intelligences/${id}/avatar`),
+    onSuccess: () => {
+      const cached = qc.getQueryData<IntelligenceProfile>(queryKeys.intelligence(id));
+      if (cached) {
+        const { avatar_url: _removed, ...rest } = cached;
+        storeProfile(qc, rest);
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), exact: true });
+    },
+  });
+}
 
 // ---------------------------------------------------------------------------------------------
 // Room files (FILES-01, FILES-04)
@@ -689,10 +982,7 @@ export function useRouteChat() {
   return useMutation({
     mutationFn: ({ chatId, agentId }: { chatId: string; agentId: string }) =>
       api<Room>("POST", `/chats/${chatId}/route`, { agent_id: agentId }),
-    onSuccess: (room) => {
-      qc.setQueryData(queryKeys.room(room.id), room);
-      qc.invalidateQueries({ queryKey: queryKeys.rooms, exact: true });
-    },
+    onSuccess: (room) => storeRoom(qc, room),
   });
 }
 

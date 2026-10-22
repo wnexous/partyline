@@ -26,7 +26,7 @@ export function SearchButton({ className }: { className?: string }) {
     >
       <SearchIcon className="size-4 shrink-0" aria-hidden="true" />
       <span className="flex-1 text-left">{t("palette.open")}</span>
-      <kbd className="rounded-[3px] border bg-muted px-1.5 py-px font-mono text-[0.68rem] text-muted-foreground">
+      <kbd className="hidden rounded-[3px] border bg-muted px-1.5 py-px font-mono text-[0.68rem] text-muted-foreground md:inline">
         {shortcut}
       </kbd>
     </button>
