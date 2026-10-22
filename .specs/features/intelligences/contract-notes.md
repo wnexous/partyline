@@ -1047,3 +1047,50 @@ T47-T49 pages.
 - Not changed: the dashboard feed code (`useActivity`, `prependActivity`) stays although T44 removes its page.
 - Tests: `lib/live/handlers.test.ts` (conversation list and `intelligence.changed` blocks), `lib/api/conversations.test.tsx`
   (every hook and the room hooks' effect on the list), `lib/api/client.test.ts` (Blob bodies, `refused`).
+
+## T44 - Messenger shell and conversation list (LAY-01, LAY-02, LAY-05, LAY-06, DM-06)
+
+- **Shell** (`routes/_app.tsx`): from 768 px up (`useIsMobile` false) a 320 px `AppSidebar`
+  (`<aside aria-label="Conversations">`, sticky, window high) sits beside `SidebarInset#main`. Below 768 px
+  there is no sidebar: `/` renders the list as the page (`MessengerPanel screen`, `data-fill`, the page's `h1`
+  "Conversations") and every other route renders full screen under `MobileBar` (back link
+  `BackToConversations`, wordmark, palette button). Conversations (`/rooms/…`) have no bar: their header carries the
+  back link. `useIsMobile` now reads the width on the first render, so a phone never flashes the wide layout.
+  `SidebarProvider` is gone (no collapsible sidebar, no Ctrl+B); `useLiveStore.openRoomId` and the live
+  banner are unchanged.
+- **Panel** (`components/app-sidebar.tsx`): header with the wordmark (link to `/`), the account menu (the avatar
+  button, name `Account menu`), the palette button and an interim **New room** button (`CreateRoomDialog`; T45
+  replaces it with "New conversation" and "New group"); the conversation list; the live line in the footer.
+- **Account menu** = `NAV_GROUPS`: Conversations (`/`), Contacts, Connectors, Identities, Devices, API tokens,
+  Settings, and for admins Users, Invites, Audit log; then theme, language and log out. The palette keeps listing
+  `NAV_GROUPS` as pages and now lists `useConversations` (DMs by their counterpart, with the `@handle`) instead of
+  rooms.
+- **SPEC_DEVIATION (LAY-06): Contacts opens `/agents`**, and `/agents` is **not** redirected yet. `/contacts` and
+  its API arrive with T47, which must retarget this entry (`NAV_GROUPS`, `app-sidebar.tsx`), redirect `/agents` and
+  update `messenger-shell.test.tsx` (the `["Contacts", "/agents"]` row).
+- **Conversation list** (`components/conversation-list.tsx`): a row links to `/rooms/{id}` and shows the avatar
+  (a DM's counterpart; a group's initials on a rounded square), the title (+ the counterpart's `KindBadge`), the
+  time (`formatListTime`), the preview (`Sender: text` when the preview names an author, which the server does in
+  groups only; "No messages yet" with no message) and an unread pill (`99+` from 100; screen readers read
+  "N unread messages"). The open conversation is `aria-current="page"` and tape-tinted. A row whose last seq
+  grows lands on tape that settles in 1.5 s. A refresh that fails keeps the list; a list that never loaded shows an
+  alert with "Try again"; an empty list shows the empty state with "New room".
+- **Time rule** (LAY-01 only says "time"): the clock for today, "Yesterday", the weekday for 2-6 days ago, the
+  date from 7 days ago (with the year when it is another one); `title` carries the absolute time.
+- **`useOpenConversation(roomId)`** (`hooks/`) sets `openRoomId` while the conversation page is mounted and the tab
+  is visible, so messages that arrive in it add no unread; a hidden tab counts them.
+- **Home**: beside the sidebar "Pick a conversation" (`h1`); on a phone the list. `/rooms` redirects to `/`, and
+  the room page links that went to `/rooms` (delete, not found) go to `/`.
+- **Removed**: the overview and rooms list pages with their tests (`overview.test.tsx`, the four rooms-list tests of
+  `rooms.test.tsx`; the order, empty state and live behaviour live in `conversation-list.test.tsx`), the i18n keys
+  they orphaned and `nav.agents`. The sidebar does not show the "Agents paused" badge of the old list
+  (`Conversation` has no such flag; the room page keeps its banner). `useActivity` and the activity handlers stay,
+  unused by any page.
+- **Existing tests adapted** to the new surfaces, assertions unchanged where the behaviour survives: `app-shell`
+  and `admin` (destinations now live in the account menu), `command-menu` (conversations), `a11y` (home, phone
+  home, full-screen page, open menu), `devices` (the sidebar's list request is stubbed), `rooms` (the create-room
+  dialog opens from the sidebar), `room` (deleting a room returns to `/` and the sidebar drops it).
+- **e2e**: the smoke page lists follow the shell (home heading by viewport, no `/rooms` page, no sidebar toggle,
+  the first-run test returns to `/settings`).
+- Tests: `components/conversation-list.test.tsx`, `routes/messenger-shell.test.tsx`,
+  `hooks/use-open-conversation.test.tsx`, `hooks/use-mobile.test.tsx`, `lib/time.test.ts`.

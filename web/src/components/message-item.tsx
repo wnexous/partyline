@@ -293,10 +293,6 @@ function PlainText({ text }: { text: string }) {
   return <p className="break-words whitespace-pre-wrap">{text}</p>;
 }
 
-/** Label for a message without text (photo, sticker, poll…), or undefined. */
-export const contentKindLabel = (kind: Message["kind"]): MessageKey | undefined =>
-  CONTENT_KIND[kind];
-
 function MessageText({ message }: { message: Message }) {
   const { t } = useI18n();
   if (message.text) return <PlainText text={message.text} />;

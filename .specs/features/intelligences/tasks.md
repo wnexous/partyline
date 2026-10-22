@@ -843,9 +843,9 @@ contacts patch of `intelligence.changed`, each with the task whose server API it
 **Requirement**: LAY-01, LAY-02, LAY-05, LAY-06, DM-06
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Sidebar lists DMs and groups with avatar, name, 80-char preview (sender prefix in groups), time and unread, newest first (LAY-01, DM-06); a live message reorders and badges it (LAY-02)
-- [ ] Below 768 px the list is the first screen and a conversation opens full screen with a back button (LAY-05); Contacts, Connections, Settings and admin pages are reachable from the header menu (LAY-06)
-- [ ] Gate check passes: `make check`
+- [x] Sidebar lists DMs and groups with avatar, name, 80-char preview (sender prefix in groups), time and unread, newest first (LAY-01, DM-06); a live message reorders and badges it (LAY-02)
+- [x] Below 768 px the list is the first screen and a conversation opens full screen with a back button (LAY-05); Contacts, Connections, Settings and admin pages are reachable from the header menu (LAY-06)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): switch to the messenger layout`

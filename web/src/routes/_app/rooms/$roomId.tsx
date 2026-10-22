@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { BackToConversations } from "@/components/back-link";
 import { Composer } from "@/components/composer";
 import { EmptyState } from "@/components/empty-state";
 import { MemberList } from "@/components/member-list";
@@ -30,6 +31,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useOpenConversation } from "@/hooks/use-open-conversation";
 import { isApiError } from "@/lib/api/client";
 import { useMe, useResumeRoom, useRoom, useRoomMembers } from "@/lib/api/queries";
 import { LevelManage, type Room, type RoomMember } from "@/lib/api/types.gen";
@@ -46,6 +48,7 @@ function RoomPage() {
   const members = useRoomMembers(roomId);
   const me = useMe().data;
   const isMobile = useIsMobile();
+  useOpenConversation(roomId);
   const [panelOpen, setPanelOpen] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<PanelTab>("members");
@@ -54,7 +57,7 @@ function RoomPage() {
   if (room.isError && isApiError(room.error) && room.error.status === 404) {
     return <RoomNotFound />;
   }
-  if (!room.data || !me) return <RoomSkeleton />;
+  if (!room.data || !me) return <RoomSkeleton back={isMobile} />;
 
   const r = room.data;
   const canManage = r.my_level === LevelManage;
@@ -93,6 +96,7 @@ function RoomPage() {
     <div data-fill className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-2 border-b px-4 py-2.5 md:px-6">
+          {isMobile ? <BackToConversations className="-ml-3" /> : null}
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-lg font-semibold tracking-[-0.015em]">{r.name}</h1>
             <p className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
@@ -305,12 +309,15 @@ function PausedBanner({ room, canManage }: { room: Room; canManage: boolean }) {
   );
 }
 
-function RoomSkeleton() {
+function RoomSkeleton({ back }: { back: boolean }) {
   return (
-    <div data-fill className="flex min-h-0 flex-1 flex-col" aria-hidden="true">
-      <div className="space-y-2 border-b px-4 py-3 md:px-6">
-        <Skeleton className="h-5 w-40" />
-        <Skeleton className="h-3.5 w-64 max-w-full" />
+    <div data-fill className="flex min-h-0 flex-1 flex-col">
+      <div className="flex items-center gap-2 border-b px-4 py-3 md:px-6">
+        {back ? <BackToConversations className="-ml-3" /> : null}
+        <div aria-hidden="true" className="space-y-2">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-3.5 w-64 max-w-full" />
+        </div>
       </div>
     </div>
   );
@@ -324,7 +331,7 @@ function RoomNotFound() {
       title={t("room.notFoundTitle")}
       action={
         <Button asChild variant="outline">
-          <Link to="/rooms">{t("room.backToRooms")}</Link>
+          <Link to="/">{t("nav.back")}</Link>
         </Button>
       }
     >

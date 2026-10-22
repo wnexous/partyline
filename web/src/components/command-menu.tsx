@@ -14,15 +14,15 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { useAgents, useConnectors, useRooms } from "@/lib/api/queries";
+import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
 import { type Connector, type Me, RoleAdmin } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { cn } from "@/lib/utils";
 
 /*
- * Command palette (UI-22): Ctrl/Cmd+K from anywhere in the app jumps to a room, an agent, a
- * connector or a page. The open flag lives in the live store so any trigger can open it.
+ * Command palette (UI-22): Ctrl/Cmd+K from anywhere in the app jumps to a conversation, an agent,
+ * a connector or a page. The open flag lives in the live store so any trigger can open it.
  */
 
 export function CommandMenu({ me }: { me: Me }) {
@@ -60,7 +60,7 @@ export function CommandMenu({ me }: { me: Me }) {
 function PaletteBody({ me, onDone }: { me: Me; onDone: () => void }) {
   const t = useT();
   const navigate = useNavigate();
-  const rooms = useRooms();
+  const conversations = useConversations();
   const agents = useAgents();
   const connectors = useConnectors();
   const presence = useLiveStore((s) => s.presence);
@@ -90,17 +90,17 @@ function PaletteBody({ me, onDone }: { me: Me; onDone: () => void }) {
           {t("palette.empty")}
         </CommandEmpty>
 
-        {rooms.data?.length ? (
+        {conversations.data?.length ? (
           <CommandGroup heading={t("palette.rooms")}>
-            {rooms.data.map((room) => (
+            {conversations.data.map((c) => (
               <PaletteItem
-                key={room.id}
-                value={`room:${room.id}`}
-                keywords={[room.name, room.description]}
-                onSelect={() => go("/rooms/$roomId", { roomId: room.id })}
+                key={c.id}
+                value={`room:${c.id}`}
+                keywords={[c.title, ...c.member_names]}
+                onSelect={() => go("/rooms/$roomId", { roomId: c.id })}
                 icon={<MessagesSquareIcon aria-hidden="true" />}
-                label={room.name}
-                hint={room.description}
+                label={c.title}
+                hint={c.counterpart ? `@${c.counterpart.handle}` : undefined}
               />
             ))}
           </CommandGroup>

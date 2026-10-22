@@ -270,7 +270,7 @@ function DeleteRoom({ room }: { room: Room }) {
                 remove.mutate(room.id, {
                   onSuccess: () => {
                     toast(t("room.deleted", { name: room.name }));
-                    void navigate({ to: "/rooms" });
+                    void navigate({ to: "/" });
                   },
                   onError: () => toast.error(t("room.deleteFailed")),
                 });
