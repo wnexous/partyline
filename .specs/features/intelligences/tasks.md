@@ -819,9 +819,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PROF-08, PROF-09
 **Tools**: MCP: NONE; Skill: `web-design-guidelines`
 **Done when**:
-- [ ] No avatar → initials with a colour stable per id (PROF-08); avatar → image with alt text
-- [ ] An AI named like a human still shows the AI badge and @handle; people show their platform (PROF-09)
-- [ ] Gate check passes: `make check`
+- [x] No avatar → initials with a colour stable per id (PROF-08); avatar → image with alt text
+- [x] An AI named like a human still shows the AI badge and @handle; people show their platform (PROF-09)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show avatars, kind badges and handles`

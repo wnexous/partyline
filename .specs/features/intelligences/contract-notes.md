@@ -323,3 +323,27 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
   set in the room), so they follow profile renames made by the owner (`PATCH
   /intelligences/{id}`) or by the AI (`PATCH /agent/profile`): covered by
   `TestOutboundAuthorFollowsProfileRename`.
+
+## T43 - Avatar, kind badge and name components (PROF-08, PROF-09)
+
+`web/src/components/intelligence/` holds the profile pieces every later page reuses. They take
+the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data layer.
+
+- `IntelligenceAvatar({ intelligence, size?, className? })`: `ui/avatar` with `AvatarImage` when
+  `avatar_url` is set (alt = display name, 24/32/40 px by `size`), else `AvatarFallback` with the
+  initials of the first and last word of the display name (one-word name → one letter, empty →
+  `?`). The fallback background is one of eight token utilities (`primary`, `tape`, `secondary`,
+  `accent`, `success`, `warning`, `info`, `destructive`) picked by a hash of the intelligence
+  id: the same id always gets the same colour (also after a rename) and different ids spread
+  over the palette. `initials()` and `avatarTone()` are exported for the conversation list.
+- `KindBadge({ intelligence, viewerId?, className? })`: "You" when `viewerId` is the
+  intelligence id, else "AI" for kind `ai` regardless of the display name, else the platform
+  label (`WhatsApp`, `Telegram`, …) for a `person`, else nothing for a user. Text comes from
+  `intelligence.you` / `intelligence.ai` (pt-BR "Você" / "IA"); platform names stay untranslated
+  brand labels.
+- `IntelligenceName({ intelligence, viewerId?, showHandle?, className? })`: display name +
+  `KindBadge`; in the default form the name is a button whose tooltip shows `@handle` on hover
+  and on keyboard focus (it is in the tab order and has a focus ring). `showHandle` renders the
+  handle inline for detail rows instead. An empty handle renders no tooltip and no inline text.
+- Tests: `intelligence.test.tsx` renders the three components from synthetic intelligences and
+  stubs the image loader (happy-dom never loads images) for the avatar-image case.
