@@ -956,8 +956,8 @@ design needs the API to return them). See `contract-notes.md`, T48.
 **Requirement**: MIG-03
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `/api/v1/projects` 404; adding a `project` member → 422 `kind`; no project code paths remain (grep in the commit body) (MIG-03)
-- [ ] Gate check passes: `make check`
+- [x] `/api/v1/projects` 404; adding a `project` member → 422 `kind`; no project code paths remain (grep in the commit body) (MIG-03)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `refactor: remove v0.3 projects`

@@ -337,8 +337,6 @@ func (c *conn) render(ctx context.Context, e events.Event) ([]frame, error) {
 			return c.ifLevel(d.Access.AgentLevel(ctx, c.p.UserID, e.ResourceID))(changed)
 		case access.KindConnector:
 			return c.ifLevel(d.Access.ConnectorLevel(ctx, c.p.UserID, e.ResourceID))(changed)
-		case access.KindProject:
-			return c.ifLevel(d.Access.ProjectLevel(ctx, c.p.UserID, e.ResourceID))(changed)
 		}
 		return nil, nil
 

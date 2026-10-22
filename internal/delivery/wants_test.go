@@ -86,12 +86,3 @@ func TestPrefsFromMember(t *testing.T) {
 	require.True(t, Wants(p, Delivered{Text: "deploy"}), "the keywords")
 	require.False(t, Wants(p, Delivered{Text: "@builder"}), "the internal agent name")
 }
-
-// A project member still answers to its project's name, next to the active session's profile.
-func TestProjectPrefsKeepTheProjectName(t *testing.T) {
-	profile := db.Intelligence{DisplayName: "Orion Bot", Handle: "nova"}
-	p := ProjectPrefs(profile, "Proj", "", "mentions", "[]")
-	require.True(t, Wants(p, Delivered{Text: "@proj"}))
-	require.True(t, Wants(p, Delivered{Text: "@nova"}))
-	require.True(t, Wants(p, Delivered{Text: "@orion bot"}))
-}

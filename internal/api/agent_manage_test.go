@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -85,48 +84,11 @@ func TestPromotingAnAgentIsAHarmlessNoOp(t *testing.T) {
 	require.Contains(t, e.Fields, "fixed")
 }
 
-// PROJ-05: renaming a project changes its name in the project list and keeps the slug; the
-// names of its AIs do not follow it. A name has 1 to 64 characters after trimming.
-func TestProjectRename(t *testing.T) {
-	env := testkit.New(t)
-	alice := env.NewUser("alice")
-	agentID, projectID := sessionProject(t, env, alice, "proj")
-
-	projects := testkit.Decode[dto.List[dto.Project]](alice.Get("/api/v1/projects").RequireStatus(http.StatusOK)).Items
-	require.Len(t, projects, 1)
-	p := projects[0]
-	require.Equal(t, []any{projectID, "proj", "Proj", dto.LevelManage, "alice"}, []any{p.ID, p.Slug, p.Name, p.MyLevel, p.Owner.Username})
-
-	got := testkit.Decode[dto.Project](alice.Patch("/api/v1/projects/"+p.ID, dto.UpdateProjectRequest{Name: "  Atlas  "}).RequireStatus(http.StatusOK))
-	require.Equal(t, []string{p.ID, "proj", "Atlas"}, []string{got.ID, got.Slug, got.Name})
-	a := listedAgent(t, alice, agentID)
-	require.Equal(t, dto.ProjectRef{ID: p.ID, Slug: "proj", Name: "Atlas"}, *a.Project)
-	require.Equal(t, "proj-claude", a.DisplayName, "the AI keeps its own name")
-
-	for _, bad := range []string{"", "  ", strings.Repeat("x", 65)} {
-		e := alice.Patch("/api/v1/projects/"+p.ID, dto.UpdateProjectRequest{Name: bad}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-		require.Equal(t, "must have 1 to 64 characters", e.Fields["name"], "%q", bad)
-	}
-	require.Equal(t, "Atlas", testkit.Decode[dto.List[dto.Project]](alice.Get("/api/v1/projects").RequireStatus(http.StatusOK)).Items[0].Name)
-}
-
-// projectSetup creates a project of the owner shared with the viewer (use grant).
-func projectSetup(t *testing.T, m *matrix) matrixResource {
-	owner := m.as(t, roleOwner)
-	id := createProject(t, m.env, owner, "proj-"+store.NewID(), "Proj")
-	owner.Put("/api/v1/projects/"+id+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: []dto.SharingUser{
-		{UserID: m.clients[roleViewer].User.ID, Level: dto.LevelUse},
-	}}).RequireStatus(http.StatusOK)
-	return matrixResource{"project": id}
-}
-
-// Auth matrix for the agent PATCH fields (ID-04, ID-05) and the project routes (PROJ-05):
-// only the owner renames, promotes and shares; the use grantee reads the project and its
-// sharing; everyone else gets 404.
+// Auth matrix for the agent PATCH fields (ID-04, ID-05): only the owner renames and promotes;
+// everyone else gets 403 or 404.
 func TestAgentIdentityRoutesAuthMatrix(t *testing.T) {
 	m := newMatrix(t)
 	agent := func(res matrixResource) string { return "/api/v1/agents/" + res["agent"] }
-	project := func(res matrixResource, suffix string) string { return "/api/v1/projects/" + res["project"] + suffix }
 	m.run(t, agentSetup, []matrixRoute{
 		{"rename agent", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
 			return c.Patch(agent(res), dto.UpdateAgentRequest{DisplayName: ptr("Renamed")})
@@ -135,38 +97,9 @@ func TestAgentIdentityRoutesAuthMatrix(t *testing.T) {
 			return c.Patch(agent(res), dto.UpdateAgentRequest{Fixed: ptr(true)})
 		}, statuses(200, 403, 404, 404, 404)},
 	})
-	m.run(t, projectSetup, []matrixRoute{
-		{"rename project", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Patch(project(res, ""), dto.UpdateProjectRequest{Name: "Renamed"})
-		}, statuses(200, 403, 404, 404, 404)},
-		{"get project sharing", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Get(project(res, "/sharing"))
-		}, statuses(200, 200, 404, 404, 404)},
-		{"put project sharing", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Put(project(res, "/sharing"), dto.Sharing{Mode: dto.VisibilityPrivate})
-		}, statuses(200, 403, 404, 404, 404)},
-	})
-
-	// Listing: only owner and grantee see the project, with their level.
-	res := projectSetup(t, m)
-	wantLevel := map[matrixRole]dto.Level{roleOwner: dto.LevelManage, roleViewer: dto.LevelUse}
-	for _, role := range matrixRoles {
-		list := testkit.Decode[dto.List[dto.Project]](m.as(t, role).Get("/api/v1/projects").RequireStatus(http.StatusOK))
-		var levels []dto.Level
-		for _, p := range list.Items {
-			if p.ID == res["project"] {
-				levels = append(levels, p.MyLevel)
-			}
-		}
-		if want, ok := wantLevel[role]; ok {
-			require.Equal(t, []dto.Level{want}, levels, string(role))
-		} else {
-			require.Empty(t, levels, string(role))
-		}
-	}
 }
 
-// ID-04, PROJ-05: renaming an agent tells live clients that the members of the agent's rooms
+// ID-04: renaming an agent tells live clients that the members of the agent's rooms
 // changed (their names did).
 func TestRenamesAnnounceMemberChanges(t *testing.T) {
 	env := testkit.New(t)
@@ -181,34 +114,4 @@ func TestRenamesAnnounceMemberChanges(t *testing.T) {
 	alice.Patch("/api/v1/agents/"+id, dto.UpdateAgentRequest{DisplayName: ptr("Bot")}).RequireStatus(http.StatusOK)
 	live.Expect(dto.LiveEventTypeMembersChanged, &ref, liveWait)
 	require.Equal(t, room.ID, ref.RoomID)
-}
-
-// PROJ-05: renaming a project tells the live viewers of every room that has the project as a
-// member (kind project) that the room's members changed, so they show the new name; users who
-// cannot view the room hear nothing.
-func TestProjectRenameRefreshesItsRoomsLive(t *testing.T) {
-	env := testkit.New(t)
-	alice, bob, carol := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol")
-	_, projectID := sessionProject(t, env, alice, "proj")
-	room := createRoom(alice, "Ops")
-	addProject(alice, room.ID, projectID).RequireStatus(http.StatusCreated)
-	shareRoom(alice, room.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelPost})
-	aliceLive, bobLive, carolLive := dialLive(t, alice), dialLive(t, bob), dialLive(t, carol)
-	bobLive.ExpectNone(quiet, dto.LiveEventTypeAgentPresence)
-
-	alice.Patch("/api/v1/projects/"+projectID, dto.UpdateProjectRequest{Name: "Atlas"}).RequireStatus(http.StatusOK)
-	var ref dto.RoomIDData
-	bobLive.Expect(dto.LiveEventTypeMembersChanged, &ref, liveWait)
-	require.Equal(t, room.ID, ref.RoomID)
-	aliceLive.Expect(dto.LiveEventTypeMembersChanged, &ref, liveWait)
-	require.Equal(t, room.ID, ref.RoomID)
-	carolLive.ExpectNone(quiet)
-
-	var names []string
-	for _, m := range testkit.Decode[dto.List[dto.RoomMember]](bob.Get("/api/v1/rooms/" + room.ID + "/members").RequireStatus(http.StatusOK)).Items {
-		if m.Kind == dto.MemberKindProject {
-			names = append(names, m.Name)
-		}
-	}
-	require.Equal(t, []string{"Atlas"}, names)
 }

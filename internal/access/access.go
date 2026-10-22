@@ -1,5 +1,5 @@
 // Package access authorizes every resource through one grants table (AD-005): it resolves a
-// caller's level on rooms, agents, connectors and projects and replaces grants from visibility presets.
+// caller's level on rooms, agents and connectors and replaces grants from visibility presets.
 // Membership is a second source of room access (AD-011): a user member of a group and a
 // participant of a DM post in it. Instance admins get no implicit access (ACL-08).
 package access
@@ -14,7 +14,6 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
-	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -40,11 +39,10 @@ const (
 	KindRoom      Kind = "room"
 	KindAgent     Kind = "agent"
 	KindConnector Kind = "connector"
-	KindProject   Kind = "project"
 )
 
 // Level is an access level; None ("") means no access. Rooms order view < post < manage;
-// agents, connectors and projects order use < manage, where manage means ownership.
+// agents and connectors order use < manage, where manage means ownership.
 type Level = dto.Level
 
 // None is the absence of access.
@@ -70,18 +68,14 @@ func maxLevel(a, b Level) Level {
 type Options struct {
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
-	// Online reports whether an agent has a live session; it picks a project's active
-	// session. Nil counts every agent offline.
-	Online func(agentID string) bool
 }
 
 // Authorizer resolves access levels and manages grants.
 type Authorizer struct {
-	store  *store.Store
-	bus    *events.Bus
-	now    func() time.Time
-	audit  *audit.Log
-	online func(agentID string) bool
+	store *store.Store
+	bus   *events.Bus
+	now   func() time.Time
+	audit *audit.Log
 }
 
 // New returns an Authorizer. GrantsChanged events are published on bus.
@@ -89,7 +83,7 @@ func New(st *store.Store, bus *events.Bus, opts Options) *Authorizer {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &Authorizer{store: st, bus: bus, now: opts.Now, audit: audit.New(st, opts.Now), online: opts.Online}
+	return &Authorizer{store: st, bus: bus, now: opts.Now, audit: audit.New(st, opts.Now)}
 }
 
 // RoomLevel resolves the caller's level on a room (ACL-02). A user gets the highest of
@@ -179,45 +173,17 @@ func (a *Authorizer) viewsAIOf(ctx context.Context, userID, participantID string
 	return n > 0, err
 }
 
-// AgentRoomLevel is post when the agent is a member of the room, or when it is the active
-// session of a project that is a member of the room (the agent then uses the room's tools as
-// a member would: post, reply, react, history, attachments), else None.
+// AgentRoomLevel is post when the agent is a member of the room (it then uses the room's tools
+// as a member would: post, reply, react, history, attachments), else None.
 func (a *Authorizer) AgentRoomLevel(ctx context.Context, agentID, roomID string) (Level, error) {
 	if agentID == "" {
 		return None, nil
 	}
-	q := a.store.R()
-	n, err := q.CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: roomID, Kind: string(dto.MemberKindAgent), MemberID: agentID})
-	if err != nil {
-		return None, err
-	}
-	if n > 0 {
-		return dto.LevelPost, nil
-	}
-	ok, err := a.ActiveInProjectRoom(ctx, agentID, roomID)
-	if err != nil || !ok {
+	n, err := a.store.R().CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: roomID, Kind: string(dto.MemberKindAgent), MemberID: agentID})
+	if err != nil || n == 0 {
 		return None, err
 	}
 	return dto.LevelPost, nil
-}
-
-// ActiveInProjectRoom reports whether the agent is the active session of a project that is a
-// member of the room (PROJ-07).
-func (a *Authorizer) ActiveInProjectRoom(ctx context.Context, agentID, roomID string) (bool, error) {
-	q := a.store.R()
-	agent, err := q.GetAgent(ctx, agentID)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !agent.ProjectID.Valid) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	n, err := q.CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: roomID, Kind: string(dto.MemberKindProject), MemberID: agent.ProjectID.String})
-	if err != nil || n == 0 {
-		return false, err
-	}
-	active, ok, err := delivery.ActiveSession(ctx, q, a.online, agent.ProjectID.String)
-	return ok && active.ID == agentID, err
 }
 
 // GrantedRoomLevels returns, per room id, the highest level the user holds next to owning the
@@ -262,24 +228,6 @@ func (a *Authorizer) ConnectorLevel(ctx context.Context, userID, connectorID str
 		return None, err
 	}
 	return a.level(ctx, KindConnector, connectorID, c.OwnerID, userID)
-}
-
-// ProjectLevel is manage for the project's owner, use for grantees, else None.
-func (a *Authorizer) ProjectLevel(ctx context.Context, userID, projectID string) (Level, error) {
-	p, err := a.store.R().GetProject(ctx, projectID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return None, nil
-	}
-	if err != nil {
-		return None, err
-	}
-	return a.level(ctx, KindProject, projectID, p.OwnerID, userID)
-}
-
-// CanUseProject reports whether the user owns the project or holds a use grant on it (PROJ-06).
-func (a *Authorizer) CanUseProject(ctx context.Context, userID, projectID string) (bool, error) {
-	l, err := a.ProjectLevel(ctx, userID, projectID)
-	return AtLeast(l, dto.LevelUse), err
 }
 
 // CanUseAgent reports whether the user owns the agent or holds a use grant on it (ACL-05).

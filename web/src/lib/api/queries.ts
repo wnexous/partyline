@@ -61,7 +61,6 @@ import {
   type PairingCode,
   type PairingRequest,
   type PostMessageRequest,
-  type Project,
   type ReadState,
   type Room,
   type RoomFile,
@@ -73,12 +72,10 @@ import {
   type SetupStatus,
   type Sharing,
   type Token,
-  type UpdateAgentRequest,
   type UpdateConnectorRequest,
   type UpdateMemberRequest,
   type UpdateMeRequest,
   type UpdateProfileRequest,
-  type UpdateProjectRequest,
   type UpdateRoomRequest,
   type UpdateUserRequest,
   type User,
@@ -112,8 +109,6 @@ export const queryKeys = {
   roomFiles: (id: string, kind: FileFilter) => ["rooms", id, "files", kind] as const,
   sharing: (kind: SharingResource, id: string) => [kind, id, "sharing"] as const,
   agents: ["agents"] as const,
-  agentsWithArchived: ["agents", "with-archived"] as const,
-  projects: ["projects"] as const,
   connectorKinds: ["connector-kinds"] as const,
   connectors: ["connectors"] as const,
   connector: (id: string) => ["connectors", id] as const,
@@ -988,59 +983,6 @@ export const agentsQuery = () =>
   });
 
 export const useAgents = () => useQuery(agentsQuery());
-
-/** Every agent including archived ones (PROJ-03), for the agents page's archived toggle. */
-export const agentsWithArchivedQuery = () =>
-  queryOptions({
-    queryKey: queryKeys.agentsWithArchived,
-    queryFn: () =>
-      api<List<Agent>>("GET", "/agents", undefined, { query: { include_archived: "true" } }).then(
-        items,
-      ),
-  });
-
-export const useAgentsWithArchived = () => useQuery(agentsWithArchivedQuery());
-
-/** Replaces agent in both cached agent lists. */
-function storeAgent(qc: QueryClient, agent: Agent) {
-  for (const key of [queryKeys.agents, queryKeys.agentsWithArchived]) {
-    qc.setQueryData<Agent[]>(key, (old) => old?.map((a) => (a.id === agent.id ? agent : a)));
-  }
-}
-
-/** Renames an agent (display_name, ID-04) or promotes it to fixed (ID-05). */
-export function useUpdateAgent() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...req }: UpdateAgentRequest & { id: string }) =>
-      api<Agent>("PATCH", `/agents/${id}`, req),
-    onSuccess: (agent) => storeAgent(qc, agent),
-  });
-}
-
-/** Projects the user owns or may use (GET /projects), for adding a project to a room (PROJ-06). */
-export const projectsQuery = () =>
-  queryOptions({
-    queryKey: queryKeys.projects,
-    queryFn: () => api<List<Project>>("GET", "/projects").then(items),
-  });
-
-export const useProjects = () => useQuery(projectsQuery());
-
-/** Renames a project (PROJ-05); its temporary agents' readable names change with it. */
-export function useRenameProject() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
-      api<Project>("PATCH", `/projects/${id}`, { name } satisfies UpdateProjectRequest),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.agents, exact: true });
-      qc.invalidateQueries({ queryKey: queryKeys.agentsWithArchived, exact: true });
-      qc.invalidateQueries({ queryKey: queryKeys.projects });
-      qc.invalidateQueries({ queryKey: queryKeys.rooms });
-    },
-  });
-}
 
 /**
  * Merges an AI into another one of the caller's (MRG-01): the survivor keeps its groups, DMs,

@@ -52,22 +52,6 @@ func (q *Queries) AdvanceAgentCursor(ctx context.Context, arg AdvanceAgentCursor
 	return err
 }
 
-const advanceProjectCursor = `-- name: AdvanceProjectCursor :exec
-INSERT INTO project_cursors (project_id, room_id, seq) VALUES (?, ?, ?)
-ON CONFLICT (project_id, room_id) DO UPDATE SET seq = MAX(project_cursors.seq, excluded.seq)
-`
-
-type AdvanceProjectCursorParams struct {
-	ProjectID string
-	RoomID    string
-	Seq       int64
-}
-
-func (q *Queries) AdvanceProjectCursor(ctx context.Context, arg AdvanceProjectCursorParams) error {
-	_, err := q.db.ExecContext(ctx, advanceProjectCursor, arg.ProjectID, arg.RoomID, arg.Seq)
-	return err
-}
-
 const countAgentBacklog = `-- name: CountAgentBacklog :one
 SELECT COUNT(*) FROM messages
 WHERE room_id = ?1 AND seq > ?2
@@ -98,26 +82,6 @@ func (q *Queries) CountAgentsByOwner(ctx context.Context, ownerID string) (int64
 	return count, err
 }
 
-const countProjectBacklog = `-- name: CountProjectBacklog :one
-SELECT COUNT(*) FROM messages
-WHERE room_id = ?1 AND seq > ?2
-  AND NOT (author_kind = 'agent' AND author_id IN (SELECT id FROM agents WHERE project_id = ?3))
-`
-
-type CountProjectBacklogParams struct {
-	RoomID    string
-	AfterSeq  int64
-	ProjectID sql.NullString
-}
-
-// A project's undelivered messages in a room, leaving out those of its own agents (PROJ-09).
-func (q *Queries) CountProjectBacklog(ctx context.Context, arg CountProjectBacklogParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countProjectBacklog, arg.RoomID, arg.AfterSeq, arg.ProjectID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createAgent = `-- name: CreateAgent :exec
 INSERT INTO agents (id, owner_id, name, description, created_at) VALUES (?, ?, ?, ?, ?)
 `
@@ -136,30 +100,6 @@ func (q *Queries) CreateAgent(ctx context.Context, arg CreateAgentParams) error 
 		arg.OwnerID,
 		arg.Name,
 		arg.Description,
-		arg.CreatedAt,
-	)
-	return err
-}
-
-const createProject = `-- name: CreateProject :exec
-INSERT INTO projects (id, owner_id, slug, name, created_at) VALUES (?, ?, ?, ?, ?)
-`
-
-type CreateProjectParams struct {
-	ID        string
-	OwnerID   string
-	Slug      string
-	Name      string
-	CreatedAt int64
-}
-
-// Same purpose as SetAgentProject: a project for the tests until the projects are removed.
-func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) error {
-	_, err := q.db.ExecContext(ctx, createProject,
-		arg.ID,
-		arg.OwnerID,
-		arg.Slug,
-		arg.Name,
 		arg.CreatedAt,
 	)
 	return err
@@ -284,11 +224,9 @@ func (q *Queries) GetAgentCursor(ctx context.Context, arg GetAgentCursorParams) 
 
 const getAgentWithOwner = `-- name: GetAgentWithOwner :one
 SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, a.session_key, a.folder, u.username AS owner_username, u.display_name AS owner_display_name,
-       CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
        CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name
 FROM agents a JOIN users u ON u.id = a.owner_id
-LEFT JOIN projects p ON p.id = a.project_id
 LEFT JOIN intelligences i ON i.id = a.id
 WHERE a.id = ?
 `
@@ -297,8 +235,6 @@ type GetAgentWithOwnerRow struct {
 	Agent            Agent
 	OwnerUsername    string
 	OwnerDisplayName string
-	ProjectSlug      string
-	ProjectName      string
 	Handle           string
 	ProfileName      string
 }
@@ -326,8 +262,6 @@ func (q *Queries) GetAgentWithOwner(ctx context.Context, id string) (GetAgentWit
 		&i.Agent.Folder,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
-		&i.ProjectSlug,
-		&i.ProjectName,
 		&i.Handle,
 		&i.ProfileName,
 	)
@@ -347,66 +281,6 @@ func (q *Queries) GetMessageRoomSeq(ctx context.Context, id string) (GetMessageR
 	row := q.db.QueryRowContext(ctx, getMessageRoomSeq, id)
 	var i GetMessageRoomSeqRow
 	err := row.Scan(&i.RoomID, &i.Seq)
-	return i, err
-}
-
-const getProject = `-- name: GetProject :one
-SELECT id, owner_id, slug, name, created_at FROM projects WHERE id = ?
-`
-
-func (q *Queries) GetProject(ctx context.Context, id string) (Project, error) {
-	row := q.db.QueryRowContext(ctx, getProject, id)
-	var i Project
-	err := row.Scan(
-		&i.ID,
-		&i.OwnerID,
-		&i.Slug,
-		&i.Name,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const getProjectCursor = `-- name: GetProjectCursor :one
-SELECT seq FROM project_cursors WHERE project_id = ? AND room_id = ?
-`
-
-type GetProjectCursorParams struct {
-	ProjectID string
-	RoomID    string
-}
-
-func (q *Queries) GetProjectCursor(ctx context.Context, arg GetProjectCursorParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, getProjectCursor, arg.ProjectID, arg.RoomID)
-	var seq int64
-	err := row.Scan(&seq)
-	return seq, err
-}
-
-const getProjectWithOwner = `-- name: GetProjectWithOwner :one
-SELECT p.id, p.owner_id, p.slug, p.name, p.created_at, u.username AS owner_username, u.display_name AS owner_display_name
-FROM projects p JOIN users u ON u.id = p.owner_id
-WHERE p.id = ?
-`
-
-type GetProjectWithOwnerRow struct {
-	Project          Project
-	OwnerUsername    string
-	OwnerDisplayName string
-}
-
-func (q *Queries) GetProjectWithOwner(ctx context.Context, id string) (GetProjectWithOwnerRow, error) {
-	row := q.db.QueryRowContext(ctx, getProjectWithOwner, id)
-	var i GetProjectWithOwnerRow
-	err := row.Scan(
-		&i.Project.ID,
-		&i.Project.OwnerID,
-		&i.Project.Slug,
-		&i.Project.Name,
-		&i.Project.CreatedAt,
-		&i.OwnerUsername,
-		&i.OwnerDisplayName,
-	)
 	return i, err
 }
 
@@ -639,36 +513,6 @@ func (q *Queries) ListAgentPending(ctx context.Context, arg ListAgentPendingPara
 	return items, nil
 }
 
-const listAgentProjectRoomIDs = `-- name: ListAgentProjectRoomIDs :many
-SELECT m.room_id FROM room_members m
-JOIN agents a ON a.project_id = m.member_id
-WHERE m.kind = 'project' AND a.id = ?
-`
-
-// The rooms the agent's project is a member of.
-func (q *Queries) ListAgentProjectRoomIDs(ctx context.Context, id string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listAgentProjectRoomIDs, id)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var room_id string
-		if err := rows.Scan(&room_id); err != nil {
-			return nil, err
-		}
-		items = append(items, room_id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listAgentRoomIDs = `-- name: ListAgentRoomIDs :many
 SELECT room_id FROM room_members WHERE kind = 'agent' AND member_id = ?
 `
@@ -809,11 +653,9 @@ func (q *Queries) ListAgentsByOwner(ctx context.Context, ownerID string) ([]Agen
 
 const listAgentsForUser = `-- name: ListAgentsForUser :many
 SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, a.session_key, a.folder, u.username AS owner_username, u.display_name AS owner_display_name,
-       CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
        CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name
 FROM agents a JOIN users u ON u.id = a.owner_id
-LEFT JOIN projects p ON p.id = a.project_id
 LEFT JOIN intelligences i ON i.id = a.id
 WHERE (a.owner_id = ?1
        OR a.id IN (SELECT g.resource_id FROM grants g
@@ -825,8 +667,6 @@ type ListAgentsForUserRow struct {
 	Agent            Agent
 	OwnerUsername    string
 	OwnerDisplayName string
-	ProjectSlug      string
-	ProjectName      string
 	Handle           string
 	ProfileName      string
 }
@@ -860,266 +700,8 @@ func (q *Queries) ListAgentsForUser(ctx context.Context, userID string) ([]ListA
 			&i.Agent.Folder,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
-			&i.ProjectSlug,
-			&i.ProjectName,
 			&i.Handle,
 			&i.ProfileName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listProjectBacklog = `-- name: ListProjectBacklog :many
-SELECT id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_alt_id, sender_name, kind, text, reply_to, recipients_json, external_id, created_at, author_name, author_handle, author_ikind, author_avatar FROM message_views
-WHERE room_id = ?1 AND seq > ?2
-  AND NOT (author_kind = 'agent' AND author_id IN (SELECT id FROM agents WHERE project_id = ?3))
-ORDER BY seq DESC
-LIMIT ?4
-`
-
-type ListProjectBacklogParams struct {
-	RoomID    string
-	AfterSeq  int64
-	ProjectID sql.NullString
-	Limit     int64
-}
-
-func (q *Queries) ListProjectBacklog(ctx context.Context, arg ListProjectBacklogParams) ([]MessageView, error) {
-	rows, err := q.db.QueryContext(ctx, listProjectBacklog,
-		arg.RoomID,
-		arg.AfterSeq,
-		arg.ProjectID,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []MessageView
-	for rows.Next() {
-		var i MessageView
-		if err := rows.Scan(
-			&i.ID,
-			&i.RoomID,
-			&i.Seq,
-			&i.AuthorKind,
-			&i.AuthorID,
-			&i.AuthorUserID,
-			&i.AuthorIid,
-			&i.SenderID,
-			&i.SenderAltID,
-			&i.SenderName,
-			&i.Kind,
-			&i.Text,
-			&i.ReplyTo,
-			&i.RecipientsJson,
-			&i.ExternalID,
-			&i.CreatedAt,
-			&i.AuthorName,
-			&i.AuthorHandle,
-			&i.AuthorIkind,
-			&i.AuthorAvatar,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listProjectRoomIDs = `-- name: ListProjectRoomIDs :many
-SELECT room_id FROM room_members WHERE kind = 'project' AND member_id = ?
-`
-
-// The rooms that have the project as a member (kind project).
-func (q *Queries) ListProjectRoomIDs(ctx context.Context, memberID string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listProjectRoomIDs, memberID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var room_id string
-		if err := rows.Scan(&room_id); err != nil {
-			return nil, err
-		}
-		items = append(items, room_id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listProjectRoomStates = `-- name: ListProjectRoomStates :many
-SELECT r.id, r.name, r.kind, r.agents_paused, CAST(COALESCE(c.seq, 0) AS INTEGER) AS cursor,
-       m.display_name, m.delivery, m.keywords_json, r.instructions, r.instructions_by,
-       CAST('' AS TEXT) AS with_id, CAST('' AS TEXT) AS with_handle
-FROM room_members m
-JOIN rooms r ON r.id = m.room_id
-LEFT JOIN project_cursors c ON c.project_id = m.member_id AND c.room_id = m.room_id
-WHERE m.kind = 'project' AND m.member_id = ?1
-  AND NOT EXISTS (SELECT 1 FROM room_members d
-                  WHERE d.room_id = m.room_id AND d.kind = 'agent' AND d.member_id = ?2)
-ORDER BY r.name, r.id
-`
-
-type ListProjectRoomStatesParams struct {
-	ProjectID string
-	AgentID   string
-}
-
-type ListProjectRoomStatesRow struct {
-	ID             string
-	Name           string
-	Kind           string
-	AgentsPaused   bool
-	Cursor         int64
-	DisplayName    string
-	Delivery       string
-	KeywordsJson   string
-	Instructions   string
-	InstructionsBy string
-	WithID         string
-	WithHandle     string
-}
-
-// The rooms of a project member with the project's cursor and member settings (PROJ-07,
-// PROJ-08), leaving out rooms where the agent is a member itself.
-func (q *Queries) ListProjectRoomStates(ctx context.Context, arg ListProjectRoomStatesParams) ([]ListProjectRoomStatesRow, error) {
-	rows, err := q.db.QueryContext(ctx, listProjectRoomStates, arg.ProjectID, arg.AgentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListProjectRoomStatesRow
-	for rows.Next() {
-		var i ListProjectRoomStatesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Kind,
-			&i.AgentsPaused,
-			&i.Cursor,
-			&i.DisplayName,
-			&i.Delivery,
-			&i.KeywordsJson,
-			&i.Instructions,
-			&i.InstructionsBy,
-			&i.WithID,
-			&i.WithHandle,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listProjectSessions = `-- name: ListProjectSessions :many
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key, folder FROM agents WHERE project_id = ?
-ORDER BY connected_at IS NULL, connected_at DESC, id
-`
-
-// A project's agents, most recently connected first (PROJ-07 picks the first one online).
-func (q *Queries) ListProjectSessions(ctx context.Context, projectID sql.NullString) ([]Agent, error) {
-	rows, err := q.db.QueryContext(ctx, listProjectSessions, projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Agent
-	for rows.Next() {
-		var i Agent
-		if err := rows.Scan(
-			&i.ID,
-			&i.OwnerID,
-			&i.Name,
-			&i.Description,
-			&i.CreatedAt,
-			&i.LastSeenAt,
-			&i.ProjectID,
-			&i.Harness,
-			&i.Machine,
-			&i.Kind,
-			&i.DisplayName,
-			&i.AutoName,
-			&i.SessionNo,
-			&i.ArchivedAt,
-			&i.ConnectedAt,
-			&i.SessionKey,
-			&i.Folder,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listProjectsForUser = `-- name: ListProjectsForUser :many
-SELECT p.id, p.owner_id, p.slug, p.name, p.created_at, u.username AS owner_username, u.display_name AS owner_display_name
-FROM projects p JOIN users u ON u.id = p.owner_id
-WHERE p.owner_id = ?1
-   OR p.id IN (SELECT g.resource_id FROM grants g
-               WHERE g.resource_kind = 'project' AND g.subject IN (?1, '*'))
-ORDER BY p.name, u.username, p.id
-`
-
-type ListProjectsForUserRow struct {
-	Project          Project
-	OwnerUsername    string
-	OwnerDisplayName string
-}
-
-func (q *Queries) ListProjectsForUser(ctx context.Context, userID string) ([]ListProjectsForUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, listProjectsForUser, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListProjectsForUserRow
-	for rows.Next() {
-		var i ListProjectsForUserRow
-		if err := rows.Scan(
-			&i.Project.ID,
-			&i.Project.OwnerID,
-			&i.Project.Slug,
-			&i.Project.Name,
-			&i.Project.CreatedAt,
-			&i.OwnerUsername,
-			&i.OwnerDisplayName,
 		); err != nil {
 			return nil, err
 		}
@@ -1176,22 +758,6 @@ func (q *Queries) SetAgentHarness(ctx context.Context, arg SetAgentHarnessParams
 	return err
 }
 
-const setAgentProject = `-- name: SetAgentProject :exec
-UPDATE agents SET project_id = ? WHERE id = ?
-`
-
-type SetAgentProjectParams struct {
-	ProjectID sql.NullString
-	ID        string
-}
-
-// Puts an agent in a project. New sessions never join projects; this only prepares the v0.3
-// projects that the tests keep exercising until they are removed.
-func (q *Queries) SetAgentProject(ctx context.Context, arg SetAgentProjectParams) error {
-	_, err := q.db.ExecContext(ctx, setAgentProject, arg.ProjectID, arg.ID)
-	return err
-}
-
 const touchAgent = `-- name: TouchAgent :exec
 UPDATE agents SET last_seen_at = ? WHERE id = ?
 `
@@ -1217,19 +783,5 @@ type UpdateAgentDescriptionParams struct {
 
 func (q *Queries) UpdateAgentDescription(ctx context.Context, arg UpdateAgentDescriptionParams) error {
 	_, err := q.db.ExecContext(ctx, updateAgentDescription, arg.Description, arg.ID)
-	return err
-}
-
-const updateProjectName = `-- name: UpdateProjectName :exec
-UPDATE projects SET name = ? WHERE id = ?
-`
-
-type UpdateProjectNameParams struct {
-	Name string
-	ID   string
-}
-
-func (q *Queries) UpdateProjectName(ctx context.Context, arg UpdateProjectNameParams) error {
-	_, err := q.db.ExecContext(ctx, updateProjectName, arg.Name, arg.ID)
 	return err
 }

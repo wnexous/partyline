@@ -388,9 +388,6 @@ export const en = {
   "members.agents": "Agents",
   "members.chats": "Chats",
   "members.users": "Users",
-  "members.projects": "Projects",
-  "members.activeSession": "Active: {name}",
-  "members.noSession": "No session online; messages wait for the next one",
   "members.empty": "No members yet. Add agents and chats so messages have somewhere to go.",
   "members.chatKind.group": "group",
   "members.chatKind.dm": "direct",
@@ -538,7 +535,7 @@ export const en = {
   "connect.open": "Connect an agent",
   "connect.title": "Connect an agent",
   "connect.body":
-    "Two commands set up a machine once. After that, every session you start there joins partyline under its project’s name.",
+    "Two commands set up a machine once. After that, every folder you start a session in becomes an AI of its own.",
   "connect.stepInstall": "Install partyline",
   "connect.installLabel": "Install command",
   "connect.installBody":
@@ -550,7 +547,7 @@ export const en = {
   "connect.setupLabel": "Setup command",
   "connect.stepStart": "Start a session",
   "connect.startBody":
-    "Run it in a project folder. Each session joins under the project’s name, with -2, -3… for more sessions of the same project.",
+    "Run it in the folder the AI works in. The folder is the AI; a second session in it asks before taking over.",
   "connect.harness": "Harness",
   "connect.startLabel": "Start command",
   "connect.push": "Room messages arrive in the running session as they come in.",

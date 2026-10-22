@@ -274,8 +274,7 @@ func (s *server) agentOnly(h principalFunc) apiFunc {
 	}
 }
 
-// agentRooms lists the agent's rooms with their members (TOOL-09), including its project's
-// rooms while it is the project's active session (PROJ-07).
+// agentRooms lists the agent's rooms with their members (TOOL-09).
 func (s *server) agentRooms(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	states, err := s.Agents.SessionRooms(r.Context(), p.AgentID)
 	if err != nil {
@@ -302,7 +301,7 @@ func (s *server) agentRooms(w http.ResponseWriter, r *http.Request, p authn.Prin
 			}
 		}
 		for i, m := range members {
-			ar.Members[i] = s.toMember(r.Context(), m)
+			ar.Members[i] = s.toMember(m)
 		}
 		out.Items = append(out.Items, ar)
 	}
@@ -335,10 +334,9 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 		Members:         make([]dto.RoomMember, len(members)),
 	}
 	for i, m := range members {
-		out.Members[i] = s.toMember(r.Context(), m)
-		if (out.Members[i].Kind == dto.MemberKindAgent && m.MemberID == p.AgentID) ||
-			(st.ProjectID != "" && out.Members[i].Kind == dto.MemberKindProject && m.MemberID == st.ProjectID) {
-			out.Me = out.Members[i] // a session in the room through its project: the project member
+		out.Members[i] = s.toMember(m)
+		if out.Members[i].Kind == dto.MemberKindAgent && m.MemberID == p.AgentID {
+			out.Me = out.Members[i]
 		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
@@ -346,8 +344,8 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 }
 
 // resolveRoom finds the agent's room by id, by "@handle" of the other participant of one of its
-// DMs, else by name (case-insensitive) among its groups (SessionRooms: its project's rooms count
-// while it is the active session). A DM is never found by a name, its title being the other
+// DMs, else by name (case-insensitive) among its groups. A DM is never found by a name, its
+// title being the other
 // participant's display name, which is not unique (DM-03). Unknown rooms and rooms without the
 // agent are 403 "not a member of room <room>" (TOOL-04); a name shared by several of its groups
 // is 409.

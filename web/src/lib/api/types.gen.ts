@@ -1644,14 +1644,9 @@ export const MemberKindAgent = "agent";
 export const MemberKindChat = "chat";
 export const MemberKindUser = "user";
 /**
- * MemberKindProject is a project of agents: its active session receives the room's
- * messages (PROJ-06, PROJ-07).
- */
-export const MemberKindProject = "project";
-/**
  * Room member kinds.
  */
-export type MemberKind = typeof MemberKindAgent | typeof MemberKindChat | typeof MemberKindUser | typeof MemberKindProject;
+export type MemberKind = typeof MemberKindAgent | typeof MemberKindChat | typeof MemberKindUser;
 /**
  * MaxRoomInstructions is the longest room instructions text in characters (INS-01).
  */
@@ -1687,11 +1682,11 @@ export const MaxMemberKeyword = 64;
 export interface RoomMember {
   id: string;
   kind: MemberKind;
-  member_id: string; // agent, chat, user or project id
-  name: string; // agent display name, chat title, user display name or project name
+  member_id: string; // agent, chat or user id
+  name: string; // agent display name, chat title or user display name
   /**
    * Intelligence is the profile summary of an agent or user member: handle, kind and avatar
-   * next to the name (PROF-03, PROF-09). Absent for chat and project members.
+   * next to the name (PROF-03, PROF-09). Absent for chat members.
    */
   intelligence?: IntelligenceRef;
   /**
@@ -1705,18 +1700,11 @@ export interface RoomMember {
    */
   outbound: boolean;
   /**
-   * Online is set for agent members, and for project members: whether the project has an
-   * active session.
+   * Online is set for agent members: whether the AI has a live session.
    */
   online?: boolean;
   /**
-   * ActiveSession is the session that receives a project member's messages (the project's
-   * most recently connected online agent, PROJ-07); absent while none is online.
-   */
-  active_session?: MemberSession;
-  /**
-   * Owner is set for agent and project members: the username of the agent's or project's
-   * owner.
+   * Owner is set for agent members: the username of the agent's owner.
    */
   owner?: string;
   /**
@@ -1725,8 +1713,8 @@ export interface RoomMember {
   connector_kind?: string;
   chat_kind?: ChatKind;
   /**
-   * DisplayName, SignOutbound, Delivery and Keywords are per-room settings of agent and
-   * project members (MEM-01..05); other kinds carry the defaults ("", true, all, []).
+   * DisplayName, SignOutbound, Delivery and Keywords are per-room settings of agent members
+   * (MEM-01..05); other kinds carry the defaults ("", true, all, []).
    * DisplayName replaces the agent name in outbound headers and the timeline when set.
    */
   display_name: string;
@@ -1745,14 +1733,6 @@ export interface RoomMember {
  * MaxChatPeople is the most people listed for one chat member of a room (GRP-02).
  */
 export const MaxChatPeople = 200;
-/**
- * MemberSession names the active session of a project member.
- */
-export interface MemberSession {
-  id: string;
-  name: string;
-  display_name: string;
-}
 /**
  * AddMemberRequest is the body of POST /rooms/{id}/members. Outbound defaults to true.
  */

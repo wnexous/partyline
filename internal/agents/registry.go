@@ -3,12 +3,10 @@
 package agents
 
 import (
-	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -132,9 +130,6 @@ type Agent struct {
 	db.Agent
 	OwnerUsername    string
 	OwnerDisplayName string
-	// ProjectSlug and ProjectName describe the agent's project; empty without one.
-	ProjectSlug string
-	ProjectName string
 	// Handle and ProfileName are the @handle and the display name of the agent's intelligence;
 	// empty for an agent without one.
 	Handle      string
@@ -161,19 +156,14 @@ func (r *Registry) Rooms(ctx context.Context, agentID string) ([]db.ListAgentRoo
 }
 
 // RoomState is a room an agent receives messages from, with its cursor, settings and pause
-// flag: as a member, or through its project (ProjectID set; the cursor and settings are the
-// project member's).
+// flag.
 type RoomState struct {
 	db.ListAgentRoomStatesRow
-	ProjectID string
 }
 
-// SessionRooms lists the agent's rooms by name: those it is a member of and, while it is its
-// project's active session, the rooms its project is a member of (PROJ-07). A room it is in
-// both ways counts as a member room.
+// SessionRooms lists the agent's rooms by name: those it is a member of.
 func (r *Registry) SessionRooms(ctx context.Context, agentID string) ([]RoomState, error) {
-	q := r.store.R()
-	direct, err := q.ListAgentRoomStates(ctx, agentID)
+	direct, err := r.store.R().ListAgentRoomStates(ctx, agentID)
 	if err != nil {
 		return nil, err
 	}
@@ -181,34 +171,7 @@ func (r *Registry) SessionRooms(ctx context.Context, agentID string) ([]RoomStat
 	for _, st := range direct {
 		out = append(out, RoomState{ListAgentRoomStatesRow: st})
 	}
-	a, err := q.GetAgent(ctx, agentID)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !a.ProjectID.Valid) {
-		return out, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	active, ok, err := delivery.ActiveSession(ctx, q, r.presence.Online, a.ProjectID.String)
-	if err != nil || !ok || active.ID != agentID {
-		return out, err
-	}
-	viaProject, err := q.ListProjectRoomStates(ctx, db.ListProjectRoomStatesParams{ProjectID: a.ProjectID.String, AgentID: agentID})
-	if err != nil {
-		return nil, err
-	}
-	for _, st := range viaProject {
-		out = append(out, RoomState{ListAgentRoomStatesRow: db.ListAgentRoomStatesRow(st), ProjectID: a.ProjectID.String})
-	}
-	slices.SortStableFunc(out, func(x, y RoomState) int {
-		return cmp.Or(strings.Compare(x.Name, y.Name), strings.Compare(x.ID, y.ID))
-	})
 	return out, nil
-}
-
-// ActiveSession returns the project's active session (PROJ-07); ok is false when none of its
-// agents is online.
-func (r *Registry) ActiveSession(ctx context.Context, projectID string) (db.Agent, bool, error) {
-	return delivery.ActiveSession(ctx, r.store.R(), r.presence.Online, projectID)
 }
 
 // Online reports whether the agent has a live connection.
@@ -254,13 +217,13 @@ func (r *Registry) Get(ctx context.Context, p authn.Principal, agentID string) (
 	if err != nil {
 		return Agent{}, err
 	}
-	return r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.ProjectSlug, row.ProjectName, row.Handle, row.ProfileName, l), nil
+	return r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, l), nil
 }
 
-func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, projectSlug, projectName, handle, profileName string, l access.Level) Agent {
+func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, handle, profileName string, l access.Level) Agent {
 	return Agent{
 		Agent: a, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay,
-		ProjectSlug: projectSlug, ProjectName: projectName, Handle: handle, ProfileName: profileName,
+		Handle: handle, ProfileName: profileName,
 		Level: l, Online: r.presence.Online(a.ID),
 	}
 }
@@ -301,7 +264,7 @@ func (r *Registry) ListVisible(ctx context.Context, p authn.Principal) ([]Agent,
 		if row.Agent.OwnerID == p.UserID {
 			l = dto.LevelManage
 		}
-		out = append(out, r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.ProjectSlug, row.ProjectName, row.Handle, row.ProfileName, l))
+		out = append(out, r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, l))
 	}
 	return out, nil
 }

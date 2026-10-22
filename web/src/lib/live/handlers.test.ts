@@ -149,32 +149,6 @@ describe("live handlers", () => {
     expect(qc.getQueryState(queryKeys.agents)?.isInvalidated).toBe(false);
   });
 
-  it("agent.presence unarchives a reconnecting agent in the list with archived agents (PROJ-02)", () => {
-    qc.setQueryData<Agent[]>(queryKeys.agentsWithArchived, [
-      { id: "a1", online: false, archived: true } as Agent,
-      { id: "a2", online: false, archived: true } as Agent,
-    ]);
-    handleLiveEvent(qc, actions(), {
-      type: "agent.presence",
-      data: { agent_id: "a1", online: true },
-    });
-    handleLiveEvent(qc, actions(), {
-      type: "agent.presence",
-      data: { agent_id: "a2", online: false },
-    });
-    expect(
-      qc.getQueryData<Agent[]>(queryKeys.agentsWithArchived)?.map((a) => [a.online, a.archived]),
-    ).toEqual([
-      [true, false],
-      [false, true],
-    ]);
-    handleLiveEvent(qc, actions(), {
-      type: "agent.presence",
-      data: { agent_id: "a9", online: true },
-    });
-    expect(qc.getQueryState(queryKeys.agentsWithArchived)?.isInvalidated).toBe(true);
-  });
-
   it("connector.status updates the store and the cached connector (UI-17)", () => {
     qc.setQueryData<Connector>(queryKeys.connector("c1"), {
       id: "c1",

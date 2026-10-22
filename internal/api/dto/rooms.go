@@ -62,9 +62,6 @@ const (
 	MemberKindAgent MemberKind = "agent"
 	MemberKindChat  MemberKind = "chat"
 	MemberKindUser  MemberKind = "user"
-	// MemberKindProject is a project of agents: its active session receives the room's
-	// messages (PROJ-06, PROJ-07).
-	MemberKindProject MemberKind = "project"
 )
 
 // MaxRoomInstructions is the longest room instructions text in characters (INS-01).
@@ -96,10 +93,10 @@ const MaxMemberKeyword = 64
 type RoomMember struct {
 	ID       string     `json:"id"`
 	Kind     MemberKind `json:"kind"`
-	MemberID string     `json:"member_id"` // agent, chat, user or project id
-	Name     string     `json:"name"`      // agent display name, chat title, user display name or project name
+	MemberID string     `json:"member_id"` // agent, chat or user id
+	Name     string     `json:"name"`      // agent display name, chat title or user display name
 	// Intelligence is the profile summary of an agent or user member: handle, kind and avatar
-	// next to the name (PROF-03, PROF-09). Absent for chat and project members.
+	// next to the name (PROF-03, PROF-09). Absent for chat members.
 	Intelligence *IntelligenceRef `json:"intelligence,omitempty"`
 	// People are the people seen in a chat member, the most recently seen first and at most
 	// MaxChatPeople, each with its platform (GRP-02). Only GET /rooms/{id}/members fills it;
@@ -107,20 +104,15 @@ type RoomMember struct {
 	People []IntelligenceRef `json:"people,omitempty"`
 	// Outbound tells whether agent and user posts without explicit recipients reach this chat (DLV-03).
 	Outbound bool `json:"outbound"`
-	// Online is set for agent members, and for project members: whether the project has an
-	// active session.
+	// Online is set for agent members: whether the AI has a live session.
 	Online *bool `json:"online,omitempty"`
-	// ActiveSession is the session that receives a project member's messages (the project's
-	// most recently connected online agent, PROJ-07); absent while none is online.
-	ActiveSession *MemberSession `json:"active_session,omitempty"`
-	// Owner is set for agent and project members: the username of the agent's or project's
-	// owner.
+	// Owner is set for agent members: the username of the agent's owner.
 	Owner string `json:"owner,omitempty"`
 	// ConnectorKind and ChatKind are set for chat members.
 	ConnectorKind string   `json:"connector_kind,omitempty"`
 	ChatKind      ChatKind `json:"chat_kind,omitempty"`
-	// DisplayName, SignOutbound, Delivery and Keywords are per-room settings of agent and
-	// project members (MEM-01..05); other kinds carry the defaults ("", true, all, []).
+	// DisplayName, SignOutbound, Delivery and Keywords are per-room settings of agent members
+	// (MEM-01..05); other kinds carry the defaults ("", true, all, []).
 	// DisplayName replaces the agent name in outbound headers and the timeline when set.
 	DisplayName string `json:"display_name"`
 	// SignOutbound adds the author header to the agent's messages sent to chats.
@@ -133,13 +125,6 @@ type RoomMember struct {
 
 // MaxChatPeople is the most people listed for one chat member of a room (GRP-02).
 const MaxChatPeople = 200
-
-// MemberSession names the active session of a project member.
-type MemberSession struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-}
 
 // AddMemberRequest is the body of POST /rooms/{id}/members. Outbound defaults to true.
 type AddMemberRequest struct {

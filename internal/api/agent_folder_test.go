@@ -411,7 +411,6 @@ func TestAgentRoutesRequireTheFolder(t *testing.T) {
 		require.Contains(t, e.Message, "update partyline", name)
 	}
 	require.Empty(t, ownedAIs(t, alice), "refused requests create no AI")
-	require.Empty(t, testkit.Decode[dto.List[dto.Project]](alice.Get("/api/v1/projects").RequireStatus(http.StatusOK)).Items, "and no project")
 
 	// The routes that do not act as an AI need no folder.
 	tok.Get("/api/v1/agent/whoami").RequireStatus(http.StatusOK)
@@ -453,5 +452,4 @@ func TestRemovedNamingHeadersAreIgnored(t *testing.T) {
 	a := list[0]
 	require.Equal(t, []any{"acme", dto.AgentKindFixed, false}, []any{a.Name, a.Kind, a.Archived}, "named after its folder, not after the header")
 	require.Nil(t, a.Project)
-	require.Empty(t, testkit.Decode[dto.List[dto.Project]](alice.Get("/api/v1/projects").RequireStatus(http.StatusOK)).Items)
 }
