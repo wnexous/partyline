@@ -2673,3 +2673,30 @@ it. `IntelligenceName`/`KindBadge` now render in each.
 - **Not changed:** other places that print a name (the command menu, the route-chat dialog, the member
   picker's row text, the sidebar header) were not in the Verifier's list; the member picker and the
   contacts rows already use `IntelligenceName`.
+
+## T66 - Setup prints a result per harness and `a` selects installed harnesses (CLI-03, CLI-04)
+
+`validation.md` gap 9 and the surviving mutants M15 and M16 (L-045).
+
+- **One line for every harness of the menu (CLI-04).** `applyHarnessSelection` reports each harness:
+  `✓ <title>: registered` / `✓ <title>: removed` when it changed, `✓ <title>: already registered` when it
+  was selected and registered, `- <title>: not registered` when it was neither, and `✗ <title>: <error>`
+  on stderr when the change failed. The menu path only: `--harness`, `--all-detected` and `--remove` still
+  report the harnesses they name (CLI-05) and nothing else. The old assertion that an untouched harness
+  gets no line (`TestSetupMenuAppliesTheChecklist`) changed outcome; the spec said "one result line per
+  harness" and that was the right reading. The exit code is non-zero (1) when any change failed; the other
+  harnesses are still applied and reported, and the backups are kept as the failed run left them.
+- **`a` (CLI-03).** It acts on the installed items only: when every installed item is checked it clears
+  them, otherwise it checks them; an item that is not installed is never checked by it (it would fail to
+  register) and a registered, not installed one keeps its state (so `a` never removes it); with nothing
+  installed it does nothing. The spec said "selects all", which also checked harnesses that then failed to
+  apply. CLI-03 and CLI-04 in `spec.md`, `README.md`, `README.pt-BR.md` and `docs/agents.md` say it.
+- **Registered but not installed (M15).** It already started checked (`Selected: installed || registered`,
+  so a plain Enter changes nothing); no test covered it. `TestSetupMenuKeepsARegisteredHarnessThatIsNotInstalled`
+  seeds a user-scope entry in the test HOME's `.claude.json` with no CLI installed: the row reads
+  `not installed · registered`, starts checked, Enter reports "already registered" and calls nothing, and
+  unchecking it runs `claude mcp remove`.
+- **Tests:** `TestMenuKeys` (the `a` cases changed outcome), `TestMenuAllLeavesItemsThatAreNotInstalledAsTheyWere`,
+  `TestSetupMenuAllChecksOnlyInstalledHarnesses`, `TestSetupMenuExitsNonZeroWhenAHarnessFails` (exit 1,
+  `✗ Claude Code:` on stderr, Gemini still registered). Scratch copy: M15 fails the registered-not-installed
+  test, M16 (exit 0 on a failed apply) fails the failure test, and the unrestricted `a` fails the two `a` tests.

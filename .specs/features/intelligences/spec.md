@@ -279,8 +279,8 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 
 1. `partyline login` SHALL run the device approval flow (code + `<instance>/devices`), save the instance and token, and print "Logged in as @<user> on <instance> (machine <hostname>)". (CLI-01)
 2. WHEN `partyline login` finishes on a terminal and no harness is registered THEN it SHALL open the setup menu. (CLI-02)
-3. `partyline setup` on a terminal SHALL show a checklist of all supported harnesses with state (installed on the machine or not, registered or not); detected unregistered ones pre-selected; arrows/j/k move, space toggles, `a` selects all, enter applies, q/esc cancels without changes. (CLI-03)
-4. WHEN the user applies THEN setup SHALL register the selected harnesses, remove Partyline from deselected registered ones, show one result line per harness, and change nothing else. (CLI-04)
+3. `partyline setup` on a terminal SHALL show a checklist of all supported harnesses with state (installed on the machine or not, registered or not); installed or registered ones pre-selected, so enter changes nothing for them; arrows/j/k move, space toggles, `a` selects every installed harness (and clears them when all are selected), enter applies, q/esc cancels without changes. (CLI-03)
+4. WHEN the user applies THEN setup SHALL register the selected harnesses, remove Partyline from deselected registered ones, show one result line per harness of the menu (changed or not) and exit non-zero when a change failed, and change nothing else. (CLI-04)
 5. IF setup runs without a terminal THEN it SHALL not show the menu and SHALL use `--harness a,b` / `--all-detected` / `--remove a,b`, failing with exit 2 and a hint when none is given. (CLI-05)
 6. IF the machine is not logged in THEN setup SHALL print "Run partyline login first" and exit 1. (CLI-06)
 7. `partyline setup --browser` SHALL keep working (login, then the menu). (CLI-07)

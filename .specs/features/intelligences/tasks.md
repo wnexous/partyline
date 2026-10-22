@@ -1224,10 +1224,10 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: CLI-03, CLI-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Every harness of the menu gets a line, changed or not; the old assertion "the untouched harness gets no result line" follows CLI-04's "one result line per harness"
-- [ ] `a` never checks a harness that is not installed; a registered, not installed harness starts checked and Enter leaves it registered (M15)
-- [ ] A harness whose apply fails prints `✗ <name>: <error>` on stderr and setup exits 1 while the other harnesses are still applied (M16)
-- [ ] Gate check passes: `make check`
+- [x] Every harness of the menu gets a line, changed or not; the old assertion "the untouched harness gets no result line" follows CLI-04's "one result line per harness"
+- [x] `a` never checks a harness that is not installed; a registered, not installed harness starts checked and Enter leaves it registered (M15)
+- [x] A harness whose apply fails prints `✗ <name>: <error>` on stderr and setup exits 1 while the other harnesses are still applied (M16)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(cli): print a result line per harness and limit a to installed`

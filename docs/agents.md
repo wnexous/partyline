@@ -62,13 +62,15 @@ Setup shows a checklist of every supported harness, with its state on this machi
   [ ] pi           not installed · not registered
 ```
 
-Arrows or `j`/`k` move, space toggles, `a` selects every harness (and deselects every one when
-all are selected), enter applies and `q`, Esc or Ctrl+C cancels without changing anything. A
-harness that is installed or already registered starts checked, so a plain enter changes
-nothing. Applying registers the selected harnesses Partyline is not in yet, removes Partyline
-from the registered ones you deselected, and leaves everything else alone. It prints one line
-per changed harness (`✓ Claude Code: registered`, `✓ Codex CLI: removed`, `✗ pi: <error>`) and
-ends with `Start a session with partyline <id>`.
+Arrows or `j`/`k` move, space toggles, `a` selects every installed harness (and deselects them
+when all are selected; a harness that is not installed is left as it is), enter applies and `q`,
+Esc or Ctrl+C cancels without changing anything. A harness that is installed or already
+registered starts checked, so a plain enter changes nothing. Applying registers the selected
+harnesses Partyline is not in yet, removes Partyline from the registered ones you deselected, and
+leaves everything else alone. It prints one line for every harness of the menu
+(`✓ Claude Code: registered`, `✓ Codex CLI: removed`, `✓ pi: already registered`,
+`- Gemini CLI: not registered`, `✗ omp: <error>`), ends with `Start a session with partyline <id>`
+and exits 1 when a change failed.
 
 Without a terminal, setup takes flags instead:
 
