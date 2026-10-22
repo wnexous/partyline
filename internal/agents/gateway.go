@@ -163,25 +163,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "invalid or expired credentials"))
 		return
 	}
-	// A session that names its folder is the AI of that folder; the others are v0.3 clients
-	// that name their agent. A name the server picks (temporary or unique mode) is chosen and
-	// attached under one lock, so two sessions connecting at once never pick the same name
-	// (ID-01).
-	release := func() {}
-	var row db.GetAgentWithOwnerRow
-	var err error
-	if HasFolder(r.Header) {
-		row, err = g.registerFolder(r.Context(), p, r.Header)
-	} else {
-		id := IdentityFromHeader(r.Header)
-		id.Name = p.AgentName
-		if id.Allocates() {
-			g.d.Registry.allocMu.Lock()
-			release = sync.OnceFunc(g.d.Registry.allocMu.Unlock)
-			defer release()
-		}
-		row, err = g.register(r.Context(), p, id)
-	}
+	// The session is the AI of the machine and folder it names (AID-02); a client that names
+	// none is refused (AID-05).
+	row, err := g.register(r.Context(), p, r.Header)
 	if err != nil {
 		var refused *httpx.Error
 		switch {
@@ -210,7 +194,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.d.Logger.ErrorContext(ctx, "agent: attach failed", "agent_id", row.Agent.ID, "err", err)
 	}
 	defer g.d.Presence.Detach(ctx, row.Agent.ID, c)
-	release()
 	go g.readAcks(ctx, c, row.Agent.ID)
 	if revocations != nil {
 		go g.watchRevocations(ctx, c, p, revocations)
@@ -275,19 +258,9 @@ func (g *Gateway) watchRevocations(ctx context.Context, c *conn, p authn.Princip
 	}
 }
 
-// register resolves the connecting session's agent from its identity headers (ID-01, ID-02)
-// and stamps its connect time, then returns it with its owner's name.
-func (g *Gateway) register(ctx context.Context, p authn.Principal, id Identity) (db.GetAgentWithOwnerRow, error) {
-	a, err := g.d.Registry.Resolve(ctx, p.UserID, id)
-	if err != nil {
-		return db.GetAgentWithOwnerRow{}, err
-	}
-	return g.connected(ctx, a)
-}
-
-// registerFolder resolves the AI of the machine and folder the session sent (AID-02), creating
-// it on first sight, and stamps its connect time.
-func (g *Gateway) registerFolder(ctx context.Context, p authn.Principal, h http.Header) (db.GetAgentWithOwnerRow, error) {
+// register resolves the AI of the machine and folder the session sent (AID-02), creating it on
+// first sight, and stamps its connect time.
+func (g *Gateway) register(ctx context.Context, p authn.Principal, h http.Header) (db.GetAgentWithOwnerRow, error) {
 	id, err := FolderIDFromHeader(h)
 	if err != nil {
 		return db.GetAgentWithOwnerRow{}, err
@@ -389,7 +362,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 	}
 	if err := c.write(ctx, dto.AgentWelcomeFrame{
 		Type:         dto.AgentFrameTypeWelcome,
-		Agent:        dto.AgentInfo{ID: a.ID, Name: a.Name, DisplayName: DisplayName(a), Owner: row.OwnerUsername},
+		Agent:        dto.AgentInfo{ID: a.ID, Name: GoesBy(row.Handle, a.Name), DisplayName: NameOf(row.ProfileName, a), Owner: row.OwnerUsername},
 		Intelligence: ai, Owner: owner,
 	}); err != nil {
 		return err

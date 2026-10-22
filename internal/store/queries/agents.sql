@@ -4,32 +4,30 @@ INSERT INTO agents (id, owner_id, name, description, created_at) VALUES (?, ?, ?
 -- name: GetAgent :one
 SELECT * FROM agents WHERE id = ?;
 
--- name: InsertAgentIfMissing :exec
-INSERT INTO agents (id, owner_id, name, description, created_at) VALUES (?, ?, ?, '', ?)
-ON CONFLICT (owner_id, name) DO NOTHING;
-
--- name: GetAgentByName :one
-SELECT * FROM agents WHERE owner_id = ? AND name = ?;
-
 -- name: CountAgentsByOwner :one
 SELECT COUNT(*) FROM agents WHERE owner_id = ?;
 
 -- name: GetAgentWithOwner :one
 SELECT sqlc.embed(a), u.username AS owner_username, u.display_name AS owner_display_name,
-       CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
+       CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name,
+       CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
+       CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN projects p ON p.id = a.project_id
+LEFT JOIN intelligences i ON i.id = a.id
 WHERE a.id = ?;
 
 -- name: ListAgentsForUser :many
 SELECT sqlc.embed(a), u.username AS owner_username, u.display_name AS owner_display_name,
-       CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name
+       CAST(COALESCE(p.slug, '') AS TEXT) AS project_slug, CAST(COALESCE(p.name, '') AS TEXT) AS project_name,
+       CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
+       CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN projects p ON p.id = a.project_id
+LEFT JOIN intelligences i ON i.id = a.id
 WHERE (a.owner_id = sqlc.arg(user_id)
        OR a.id IN (SELECT g.resource_id FROM grants g
                    WHERE g.resource_kind = 'agent' AND g.subject IN (sqlc.arg(user_id), '*')))
-  AND (CAST(sqlc.arg(include_archived) AS BOOLEAN) OR a.archived_at IS NULL)
 ORDER BY a.name, u.username, a.id;
 
 -- name: UpdateAgentDescription :exec
@@ -83,50 +81,14 @@ ON CONFLICT (agent_id, room_id) DO UPDATE SET seq = MAX(agent_cursors.seq, exclu
 -- name: GetAgentCursor :one
 SELECT seq FROM agent_cursors WHERE agent_id = ? AND room_id = ?;
 
--- name: CreateProjectIfMissing :exec
-INSERT INTO projects (id, owner_id, slug, name, created_at) VALUES (?, ?, ?, ?, ?)
-ON CONFLICT (owner_id, slug) DO NOTHING;
-
--- name: GetProjectBySlug :one
-SELECT * FROM projects WHERE owner_id = ? AND slug = ?;
-
--- name: UpdateAgentIdentity :exec
-UPDATE agents
-SET project_id = ?, harness = ?, machine = ?, kind = ?, auto_name = ?, session_no = ?, archived_at = NULL
-WHERE id = ?;
-
 -- name: MarkAgentConnected :exec
-UPDATE agents SET connected_at = ?, archived_at = NULL WHERE id = ?;
-
--- name: ListSessionAgents :many
--- The owner's temporary agents held by a tools-only session key (ID-01).
-SELECT * FROM agents
-WHERE owner_id = ? AND session_key = ? AND kind = 'temporary'
-ORDER BY session_no, name;
-
--- name: HoldAgentForSession :exec
--- A tools-only session registered the agent: it holds it, and the registration counts as
--- activity for archiving.
-UPDATE agents SET session_key = ?, last_seen_at = ? WHERE id = ?;
-
--- name: ReleaseAgentSession :exec
-UPDATE agents SET session_key = '' WHERE id = ?;
+UPDATE agents SET connected_at = ? WHERE id = ?;
 
 -- name: GetProject :one
 SELECT * FROM projects WHERE id = ?;
 
 -- name: SetAgentDisplayName :exec
 UPDATE agents SET display_name = ? WHERE id = ?;
-
--- name: PromoteAgent :exec
-UPDATE agents SET kind = 'fixed', archived_at = NULL WHERE id = ?;
-
--- name: ListArchiveCandidates :many
-SELECT id FROM agents
-WHERE kind = 'temporary' AND archived_at IS NULL AND COALESCE(last_seen_at, created_at) < sqlc.arg(before);
-
--- name: ArchiveAgent :exec
-UPDATE agents SET archived_at = ? WHERE id = ? AND kind = 'temporary' AND archived_at IS NULL;
 
 -- name: ListAgentRoomIDs :many
 SELECT room_id FROM room_members WHERE kind = 'agent' AND member_id = ?;
@@ -146,12 +108,6 @@ WHERE p.id = ?;
 
 -- name: UpdateProjectName :exec
 UPDATE projects SET name = ? WHERE id = ?;
-
--- name: ListTemporaryProjectAgents :many
-SELECT * FROM agents WHERE project_id = ? AND kind = 'temporary';
-
--- name: SetAgentAutoName :exec
-UPDATE agents SET auto_name = ? WHERE id = ?;
 
 -- name: ListProjectSessions :many
 -- A project's agents, most recently connected first (PROJ-07 picks the first one online).
@@ -201,9 +157,6 @@ SELECT m.room_id FROM room_members m
 JOIN agents a ON a.project_id = m.member_id
 WHERE m.kind = 'project' AND a.id = ?;
 
--- name: SetAgentFolder :exec
-UPDATE agents SET machine = ?, folder = ? WHERE id = ?;
-
 -- name: GetAgentByFolder :one
 SELECT * FROM agents WHERE owner_id = ? AND machine = ? AND folder = ? AND folder <> '';
 
@@ -229,3 +182,12 @@ SELECT * FROM agents WHERE owner_id = ? AND folder = '' AND name = ?;
 -- Links an unlinked agent to a machine and folder; the folder = '' guard makes the link happen
 -- once (MIG-02).
 UPDATE agents SET machine = ?, folder = ?, harness = ? WHERE id = ? AND folder = '';
+
+-- name: SetAgentProject :exec
+-- Puts an agent in a project. New sessions never join projects; this only prepares the v0.3
+-- projects that the tests keep exercising until they are removed.
+UPDATE agents SET project_id = ? WHERE id = ?;
+
+-- name: CreateProject :exec
+-- Same purpose as SetAgentProject: a project for the tests until the projects are removed.
+INSERT INTO projects (id, owner_id, slug, name, created_at) VALUES (?, ?, ?, ?, ?);

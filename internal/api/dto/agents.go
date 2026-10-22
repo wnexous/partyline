@@ -5,13 +5,10 @@ import "time"
 // AgentKind tells whether an agent was named by its owner or by the server.
 type AgentKind string
 
-// Agent kinds (ID-01, ID-02).
+// Agent kinds. Every AI is permanent now: the API always answers fixed, and the field goes away
+// with the pages that read it.
 const (
-	// AgentKindFixed is an agent named with --name (or registered before projects existed); it
-	// is never archived.
-	AgentKindFixed AgentKind = "fixed"
-	// AgentKindTemporary is a session named after its project and harness; it is archived after
-	// 24 hours offline.
+	AgentKindFixed     AgentKind = "fixed"
 	AgentKindTemporary AgentKind = "temporary"
 )
 
@@ -35,18 +32,17 @@ type Project struct {
 // Agent is a coding-agent session registered by an agent token (GET /agents).
 type Agent struct {
 	ID string `json:"id"`
-	// Name is the internal name the agent uses in X-Partyline-Agent.
+	// Name is the name the agent goes by: its @handle. It goes away with the legacy fields.
 	Name string `json:"name"`
-	// DisplayName is the owner's rename, else "<Project> · <Harness>[ #N]" for temporary
-	// agents, else Name (ID-01, ID-04).
+	// DisplayName is the name people read: the AI's profile display name (ID-04).
 	DisplayName string `json:"display_name"`
 	Description string `json:"description"`
 	// Project is absent for agents that belong to no project.
 	Project    *ProjectRef `json:"project,omitempty"`
-	Harness    string      `json:"harness"` // claude, opencode, pi, omp, codex, gemini or agent
-	Machine    string      `json:"machine"` // the session's hostname; empty when unknown
-	Kind       AgentKind   `json:"kind"`
-	Archived   bool        `json:"archived"`
+	Harness    string      `json:"harness"`  // claude, opencode, pi, omp, codex, gemini or agent
+	Machine    string      `json:"machine"`  // the session's hostname; empty when unknown
+	Kind       AgentKind   `json:"kind"`     // always fixed
+	Archived   bool        `json:"archived"` // always false
 	Owner      User        `json:"owner"`
 	MyLevel    Level       `json:"my_level"` // manage for the owner, use for grantees
 	Online     bool        `json:"online"`
@@ -66,7 +62,8 @@ type UpdateAgentRequest struct {
 	Description *string `json:"description,omitempty"`
 	// DisplayName renames the agent everywhere: 1 to MaxAgentDisplayName characters (ID-04).
 	DisplayName *string `json:"display_name,omitempty"`
-	// Fixed set to true promotes a temporary agent to fixed, so it is never archived (ID-05).
+	// Fixed is accepted for clients from before folders: every AI is permanent, so true changes
+	// nothing and false is refused (ID-05).
 	Fixed *bool `json:"fixed,omitempty"`
 }
 
@@ -137,7 +134,7 @@ const (
 // AgentInfo identifies the connected agent in the welcome frame.
 type AgentInfo struct {
 	ID string `json:"id"`
-	// Name is the agent name to send in X-Partyline-Agent from now on.
+	// Name is the name the agent goes by (Agent.Name).
 	Name string `json:"name"`
 	// DisplayName is the name people read (Agent.DisplayName).
 	DisplayName string `json:"display_name"`

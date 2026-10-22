@@ -1,8 +1,6 @@
 package api_test
 
 import (
-	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"testing"
@@ -11,65 +9,66 @@ import (
 
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// PUSH-02: POST /agent/register registers the agent named by X-Partyline-Agent without a
-// WebSocket (tools-only channel): it answers the agent, REST tools work from then on and the
-// agent stays offline. Registering again returns the same agent.
+// PUSH-02, AID-04: POST /agent/register resolves the AI of the folder named in the headers
+// without a WebSocket (tools-only channel): it answers the AI, REST tools work as it from then
+// on and it stays offline. Registering again returns the same AI.
 func TestAgentRegisterWithoutSocket(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
-	tok := alice.Token(dto.TokenKindAgent, "laptop").WithHeader(dto.HeaderAgent, "Codex Box")
+	tok := alice.Token(dto.TokenKindAgent, "laptop").AsFolder(testkit.Folder{Machine: "devbox", Path: "/work/Codex Box", Harness: "codex"})
 
-	tok.Get("/api/v1/agent/rooms").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	info := testkit.Decode[dto.AgentInfo](tok.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
-	require.Equal(t, "codex-box", info.Name, "the name is slugified")
+	require.Equal(t, "Codex Box", info.DisplayName, "the folder's name")
 	require.Equal(t, "alice", info.Owner)
 	require.NotEmpty(t, info.ID)
 
 	again := testkit.Decode[dto.AgentInfo](tok.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
 	require.Equal(t, info, again)
 	tok.Get("/api/v1/agent/rooms").RequireStatus(http.StatusOK)
-	require.Equal(t, map[string]bool{"codex-box": false}, agentNames(t, alice), "registered and offline")
+	list := ownedAIs(t, alice)
+	require.Len(t, list, 1, "registered once")
+	require.Equal(t, []any{info.ID, false, "codex"}, []any{list[0].ID, list[0].Online, list[0].Harness}, "and offline")
 }
 
 // PUSH-02: only agent tokens register agents.
 func TestAgentRegisterAuth(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
-	env.Anon().WithHeader(dto.HeaderAgent, "x").Post("/api/v1/agent/register", nil).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
-	alice.Token(dto.TokenKindUser, "cli").WithHeader(dto.HeaderAgent, "x").Post("/api/v1/agent/register", nil).
+	env.Anon().AsAgent("x").Post("/api/v1/agent/register", nil).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	alice.Token(dto.TokenKindUser, "cli").AsAgent("x").Post("/api/v1/agent/register", nil).
 		RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	require.Empty(t, agentNames(t, alice))
+	require.Empty(t, ownedAIs(t, alice))
 }
 
-// PUSH-02 with the agent cap: registering an agent beyond agents.MaxAgentsPerOwner answers 409
-// "agent limit reached".
+// PUSH-02 with the cap: registering an AI beyond agents.MaxAgentsPerOwner answers 409 "agent
+// limit reached"; the folders that have an AI still register.
 func TestAgentRegisterLimit(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
 	for i := 1; i <= agents.MaxAgentsPerOwner; i++ {
-		tok.WithHeader(dto.HeaderAgent, fmt.Sprintf("a%d", i)).Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)
+		tok.AsAgent(fmt.Sprintf("a%d", i)).Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)
 	}
-	e := tok.WithHeader(dto.HeaderAgent, "one-too-many").Post("/api/v1/agent/register", nil).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+	e := tok.AsAgent("one-too-many").Post("/api/v1/agent/register", nil).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 	require.Equal(t, "agent limit reached", e.Message)
-	tok.WithHeader(dto.HeaderAgent, "a7").Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)
+	tok.AsAgent("a7").Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)
+	require.Len(t, ownedAIs(t, alice), agents.MaxAgentsPerOwner)
 }
 
 // ONB-09: an agent token revokes itself with DELETE /agent/token (setup --uninstall), without
-// a registered agent; it is refused from then on. Other tokens of the owner keep working.
+// an AI; it is refused from then on. Other tokens of the owner keep working.
 func TestAgentRevokesOwnToken(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	other := alice.Token(dto.TokenKindAgent, "desktop").WithHeader(dto.HeaderAgent, "desk")
+	other := alice.Token(dto.TokenKindAgent, "desktop").AsAgent("desk")
 	other.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)
 
 	tok.Delete("/api/v1/agent/token").RequireStatus(http.StatusNoContent)
-	tok.WithHeader(dto.HeaderAgent, "x").Post("/api/v1/agent/register", nil).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	tok.AsAgent("x").Post("/api/v1/agent/register", nil).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	tok.Delete("/api/v1/agent/token").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	other.Get("/api/v1/agent/rooms").RequireStatus(http.StatusOK)
 
@@ -95,34 +94,33 @@ func TestAgentRevokeOwnTokenAuth(t *testing.T) {
 }
 
 // CLI-02: GET /agent/agents lists the agents the token's owner owns, as GET /agents shows them
-// (archived ones only with include_archived=true; agents shared by others left out). Agent
-// tokens only, no registered agent needed.
+// (agents shared by others left out). Agent tokens only, no folder needed.
 func TestOwnerAgentsForAgentTokens(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	conn, info := dialSession(t, tok, sessionHeaders("atlas", "claude", "laptop", "", ""))
+	conn, resp := tok.DialAgent("atlas")
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
 	defer conn.Close()
-	builder := registerAgent(t, env, alice, "builder")
-	shared := registerAgent(t, env, bob, "helper")
+	info := conn.Welcome(wsWait).Agent
+	env.NewAI(alice, "builder")
+	shared := env.NewAI(bob, "helper")
 	shareAgent(bob, shared, alice.User.ID)
-	require.NoError(t, env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
-		if err := q.UpdateAgentIdentity(context.Background(), db.UpdateAgentIdentityParams{Kind: string(dto.AgentKindTemporary), Harness: "agent", ID: builder}); err != nil {
-			return err
-		}
-		return q.ArchiveAgent(context.Background(), db.ArchiveAgentParams{ArchivedAt: sql.NullInt64{Int64: 1, Valid: true}, ID: builder})
-	}))
 
 	list := testkit.Decode[dto.List[dto.Agent]](tok.Get("/api/v1/agent/agents").RequireStatus(http.StatusOK)).Items
-	require.Len(t, list, 1)
-	require.Equal(t, listedAgent(t, alice, info.ID), list[0])
-
-	all := testkit.Decode[dto.List[dto.Agent]](tok.Get("/api/v1/agent/agents?include_archived=true").RequireStatus(http.StatusOK)).Items
 	names := map[string]bool{}
-	for _, a := range all {
-		names[a.Name] = a.Archived
+	for _, a := range list {
+		names[a.DisplayName] = a.Online
 	}
-	require.Equal(t, map[string]bool{info.Name: false, "builder": true}, names)
+	require.Equal(t, map[string]bool{info.DisplayName: true, "builder": false}, names, "alice's own agents, not the one shared with her")
+	require.Equal(t, listedAgent(t, alice, info.ID), func() dto.Agent {
+		for _, a := range list {
+			if a.ID == info.ID {
+				return a
+			}
+		}
+		return dto.Agent{}
+	}())
 
 	alice.Token(dto.TokenKindUser, "cli").Get("/api/v1/agent/agents").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	env.Anon().Get("/api/v1/agent/agents").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)

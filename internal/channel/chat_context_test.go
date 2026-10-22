@@ -46,9 +46,8 @@ func TestPushCarriesChatContext(t *testing.T) {
 	e := newChanEnv(t)
 	group := e.chatIn("whatsapp", "Lollerie", dto.ChatKindGroup)
 	dm := e.chatIn("telegram", "Bob Smith", dto.ChatKindDM)
-	helper, err := e.env.App.Agents.Upsert(context.Background(), e.alice.User.ID, "helper")
-	require.NoError(t, err)
-	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: helper.ID}).RequireStatus(http.StatusCreated)
+	helper := e.env.NewAI(e.alice, "helper")
+	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: helper}).RequireStatus(http.StatusCreated)
 
 	backlog := e.fromChat(group, "5511999990000@s.whatsapp.net", "Grandma", "from the group")
 	s := e.connected(e.options())
@@ -76,7 +75,7 @@ func TestPushCarriesChatContext(t *testing.T) {
 		"author_kind": "user", "sender_name": "", "trusted": "true", "kind": "text",
 	}, n.Meta)
 
-	agent := testkit.Decode[dto.Message](e.alice.WithBearer(e.secret).WithHeader("X-Partyline-Agent", "helper").
+	agent := testkit.Decode[dto.Message](e.alice.WithBearer(e.secret).AsAgent("helper").
 		Post("/api/v1/agent/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: "from helper"}).RequireStatus(http.StatusCreated))
 	n = s.notification()
 	require.Equal(t, map[string]string{

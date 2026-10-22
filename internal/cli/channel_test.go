@@ -17,9 +17,6 @@ import (
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/channel"
-	"github.com/wnexous/partyline/internal/handles"
-	"github.com/wnexous/partyline/internal/intelligences"
-	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 	"github.com/wnexous/partyline/internal/users"
@@ -144,16 +141,7 @@ func (e *channelEnv) aiAt(t *testing.T, folder string) db.Agent {
 // id (MIG-02).
 func (e *channelEnv) legacy(t *testing.T, name string) string {
 	t.Helper()
-	ctx := context.Background()
-	id := store.NewID()
-	require.NoError(t, e.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
-		if err := q.CreateAgent(ctx, db.CreateAgentParams{ID: id, OwnerID: e.alice.User.ID, Name: name, CreatedAt: time.Now().UnixMilli()}); err != nil {
-			return err
-		}
-		_, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: id, Kind: handles.AI, DisplayName: name, HandleBase: name, Now: time.Now()})
-		return err
-	}))
-	return id
+	return e.env.NewLegacyAI(e.alice, name)
 }
 
 // aiOf returns the profile of alice's AI of the folder (any machine), and whether it is online.

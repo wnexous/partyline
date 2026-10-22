@@ -6,18 +6,11 @@
 /**
  * AgentKind tells whether an agent was named by its owner or by the server.
  */
-/**
- * AgentKindFixed is an agent named with --name (or registered before projects existed); it
- * is never archived.
- */
 export const AgentKindFixed = "fixed";
-/**
- * AgentKindTemporary is a session named after its project and harness; it is archived after
- * 24 hours offline.
- */
 export const AgentKindTemporary = "temporary";
 /**
- * Agent kinds (ID-01, ID-02).
+ * Agent kinds. Every AI is permanent now: the API always answers fixed, and the field goes away
+ * with the pages that read it.
  */
 export type AgentKind = typeof AgentKindFixed | typeof AgentKindTemporary;
 /**
@@ -45,12 +38,11 @@ export interface Project {
 export interface Agent {
   id: string;
   /**
-   * Name is the internal name the agent uses in X-Partyline-Agent.
+   * Name is the name the agent goes by: its @handle. It goes away with the legacy fields.
    */
   name: string;
   /**
-   * DisplayName is the owner's rename, else "<Project> · <Harness>[ #N]" for temporary
-   * agents, else Name (ID-01, ID-04).
+   * DisplayName is the name people read: the AI's profile display name (ID-04).
    */
   display_name: string;
   description: string;
@@ -60,8 +52,8 @@ export interface Agent {
   project?: ProjectRef;
   harness: string; // claude, opencode, pi, omp, codex, gemini or agent
   machine: string; // the session's hostname; empty when unknown
-  kind: AgentKind;
-  archived: boolean;
+  kind: AgentKind; // always fixed
+  archived: boolean; // always false
   owner: User;
   my_level: Level; // manage for the owner, use for grantees
   online: boolean;
@@ -87,7 +79,8 @@ export interface UpdateAgentRequest {
    */
   display_name?: string;
   /**
-   * Fixed set to true promotes a temporary agent to fixed, so it is never archived (ID-05).
+   * Fixed is accepted for clients from before folders: every AI is permanent, so true changes
+   * nothing and false is refused (ID-05).
    */
   fixed?: boolean;
 }
@@ -169,7 +162,7 @@ export type AgentFrameType = typeof AgentFrameTypeWelcome | typeof AgentFrameTyp
 export interface AgentInfo {
   id: string;
   /**
-   * Name is the agent name to send in X-Partyline-Agent from now on.
+   * Name is the name the agent goes by (Agent.Name).
    */
   name: string;
   /**
@@ -279,33 +272,6 @@ export const MaxPageSize = 100;
  */
 export const SecretMask = "********";
 /**
- * HeaderAgent names the agent (within the token owner's agents) on agent-token requests.
- */
-export const HeaderAgent = "X-Partyline-Agent";
-/**
- * HeaderAgentMode set to AgentModeUnique on the agent WebSocket asks for a free name: when
- * the named agent is online in another session, the server registers the next free
- * "<name>-N" (N ≥ 2) and the welcome frame carries it (NAME-02). Without it the newest
- * connection replaces the older one (NAME-03).
- */
-export const HeaderAgentMode = "X-Partyline-Agent-Mode";
-/**
- * AgentModeUnique is the HeaderAgentMode value for derived agent names (clients from before
- * projects; current clients send HeaderProject instead).
- */
-export const AgentModeUnique = "unique";
-/**
- * AgentModeTemporary is the HeaderAgentMode value of a session that reconnects under the
- * temporary name the server assigned it: the same temporary agent, newest wins (ID-01).
- */
-export const AgentModeTemporary = "temporary";
-/**
- * HeaderProject names the session's project (git root or working directory basename, or
- * --project). With it, a session without HeaderAgent gets a temporary agent named after
- * project and harness, and HeaderAgent names a fixed agent (ID-01, ID-02).
- */
-export const HeaderProject = "X-Partyline-Project";
-/**
  * HeaderHarness is the launcher's harness id (claude, opencode, pi, omp, codex, gemini).
  */
 export const HeaderHarness = "X-Partyline-Harness";
@@ -341,14 +307,6 @@ export const HeaderTakeover = "X-Partyline-Takeover";
  * link to the session's folder when the folder has no AI yet (MIG-02).
  */
 export const HeaderAdopt = "X-Partyline-Adopt";
-/**
- * HeaderSession is the session key (PARTYLINE_SESSION; 1 to 64 of A-Z a-z 0-9 . _ -) that
- * the channel, listen and the turn-end hook of one harness session share. A session that
- * names no agent gets its own temporary agent back by this key, and a tools-only session
- * (never online) holds its agent against other sessions until it is archived (ID-01).
- * Other values are ignored; without it the server keeps the rule of older clients.
- */
-export const HeaderSession = "X-Partyline-Session";
 /**
  * HeaderSignature carries "sha256=<hex HMAC>" on webhook requests in both directions.
  */

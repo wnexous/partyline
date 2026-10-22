@@ -45,17 +45,11 @@ type FolderID struct {
 	Adopt string
 }
 
-// HasFolder reports whether a request names a folder: the folder header is present, even when
-// it is empty (which ValidateFolder then refuses).
-func HasFolder(h http.Header) bool {
-	_, ok := h[http.CanonicalHeaderKey(dto.HeaderFolder)]
-	return ok
-}
-
 // FolderIDFromHeader reads the folder headers of a session (AID-07): the folder and the home
 // folder are percent-encoded (url.PathEscape), the machine, harness and the name to adopt are
 // plain. A folder that is not valid percent-encoding is 422 folder_invalid; a home folder that
-// is not is ignored. The result is not validated: ResolveFolder and LookupFolder do that.
+// is not is ignored. A missing header reads as empty. The result is not validated:
+// ResolveFolder and LookupFolder do that (an empty folder is 422 folder_required).
 func FolderIDFromHeader(h http.Header) (FolderID, error) {
 	folder, err := url.PathUnescape(h.Get(dto.HeaderFolder))
 	if err != nil {

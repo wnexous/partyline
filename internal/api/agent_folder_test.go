@@ -126,7 +126,7 @@ func TestAgentRegisterByFolderAdoptsTheNamedLegacyIdentity(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	legacy := registerAgent(t, env, alice, "old-helper")
+	legacy := env.NewLegacyAI(alice, "old-helper")
 	require.Empty(t, profileOf(t, alice, legacy).AI.Folder, "a v0.3 identity starts unlinked")
 
 	adopting := acme
@@ -344,4 +344,114 @@ func agentIDs(list []dto.Agent) []string {
 		ids[i] = a.ID
 	}
 	return ids
+}
+
+// agentCalls are the agent routes that act as an AI and so need the folder, one request each.
+func agentCalls(room, message string) map[string]func(c *testkit.Client) *testkit.Response {
+	return map[string]func(c *testkit.Client) *testkit.Response{
+		"list rooms": func(c *testkit.Client) *testkit.Response { return c.Get("/api/v1/agent/rooms") },
+		"room info":  func(c *testkit.Client) *testkit.Response { return c.Get(agentRoomPath(room, "/info")) },
+		"history":    func(c *testkit.Client) *testkit.Response { return c.Get(agentRoomPath(room, "/messages")) },
+		"post": func(c *testkit.Client) *testkit.Response {
+			return c.Post(agentRoomPath(room, "/messages"), dto.PostMessageRequest{Text: "x"})
+		},
+		"reply": func(c *testkit.Client) *testkit.Response {
+			return c.Post("/api/v1/agent/messages/"+message+"/reply", dto.ReplyRequest{Text: "x"})
+		},
+		"react": func(c *testkit.Client) *testkit.Response {
+			return c.Post("/api/v1/agent/messages/"+message+"/react", dto.ReactRequest{Emoji: "👍"})
+		},
+		"attachment": func(c *testkit.Client) *testkit.Response { return c.Get("/api/v1/agent/attachments/" + message) },
+		"pending":    func(c *testkit.Client) *testkit.Response { return c.Get("/api/v1/agent/pending") },
+		"register":   func(c *testkit.Client) *testkit.Response { return c.Post("/api/v1/agent/register", nil) },
+		"session":    func(c *testkit.Client) *testkit.Response { return c.Get("/api/v1/agent/session") },
+		"update profile": func(c *testkit.Client) *testkit.Response {
+			return c.Patch("/api/v1/agent/profile", dto.UpdateProfileRequest{Bio: ptr("x")})
+		},
+		"profile picture": func(c *testkit.Client) *testkit.Response {
+			return c.DoRaw(http.MethodPut, "/api/v1/agent/profile/avatar", "image/png", strings.NewReader("x"))
+		},
+	}
+}
+
+// AID-05 (L-017): a request that names no folder, like every request of a CLI from before
+// folders, is 422 folder_required with the hint to update partyline, on the WebSocket and on every
+// route that acts as an AI; the v0.3 naming headers do not stand in for the folder. Nothing is
+// created.
+func TestAgentRoutesRequireTheFolder(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	room := createRoom(alice, "Support")
+	msg := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "hello"}).RequireStatus(http.StatusCreated))
+
+	old := http.Header{}
+	for k, v := range map[string]string{
+		"X-Partyline-Agent": "builder", "X-Partyline-Agent-Mode": "unique", "X-Partyline-Project": "atlas",
+		"X-Partyline-Session": "pl-0123456789abcdef", dto.HeaderHarness: "claude", dto.HeaderMachine: "laptop",
+	} {
+		old.Set(k, v)
+	}
+	for name, headers := range map[string]http.Header{
+		"no headers at all":         {},
+		"a CLI from before folders": old,
+		"a machine and no folder":   {dto.HeaderMachine: {"laptop"}},
+	} {
+		for route, call := range agentCalls(room.ID, msg.ID) {
+			c := tok
+			for k, v := range headers {
+				c = c.WithHeader(k, v[0])
+			}
+			e := call(c).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeFolderRequired)
+			require.Contains(t, e.Message, "update partyline", "%s: %s", name, route)
+		}
+		conn, resp := tok.DialAgentHeaders(headers.Clone())
+		require.Nil(t, conn, name)
+		e := resp.RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeFolderRequired)
+		require.Contains(t, e.Message, "update partyline", name)
+	}
+	require.Empty(t, ownedAIs(t, alice), "refused requests create no AI")
+	require.Empty(t, testkit.Decode[dto.List[dto.Project]](alice.Get("/api/v1/projects").RequireStatus(http.StatusOK)).Items, "and no project")
+
+	// The routes that do not act as an AI need no folder.
+	tok.Get("/api/v1/agent/whoami").RequireStatus(http.StatusOK)
+	tok.Get("/api/v1/agent/agents").RequireStatus(http.StatusOK)
+	tok.Delete("/api/v1/agent/token").RequireStatus(http.StatusNoContent)
+}
+
+// AID-05 (L-017): a folder the server cannot use is 422 folder_invalid on every route that acts
+// as an AI.
+func TestAgentRoutesRefuseAnInvalidFolder(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	room := createRoom(alice, "Support")
+	msg := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "hello"}).RequireStatus(http.StatusCreated))
+
+	bad := tok.WithHeader(dto.HeaderMachine, "laptop").WithHeader(dto.HeaderFolder, "relative%2Fdir")
+	for route, call := range agentCalls(room.ID, msg.ID) {
+		call(bad).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeFolderInvalid)
+		_ = route
+	}
+	require.Empty(t, ownedAIs(t, alice))
+}
+
+// The v0.3 naming headers are ignored: the AI is the folder's, whatever name, mode, project or
+// session key a client from before folders also sends, and nothing named after them is created.
+func TestRemovedNamingHeadersAreIgnored(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	tok := alice.Token(dto.TokenKindAgent, "laptop")
+	named := tok.AsFolder(acme).
+		WithHeader("X-Partyline-Agent", "ghost").WithHeader("X-Partyline-Agent-Mode", "temporary").
+		WithHeader("X-Partyline-Project", "atlas").WithHeader("X-Partyline-Session", "pl-0123456789abcdef")
+
+	reg := testkit.Decode[dto.AgentInfo](named.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
+	require.Equal(t, reg.ID, testkit.Decode[dto.AgentInfo](tok.AsFolder(acme).Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)).ID)
+	list := ownedAIs(t, alice)
+	require.Len(t, list, 1)
+	a := list[0]
+	require.Equal(t, []any{"acme", dto.AgentKindFixed, false}, []any{a.Name, a.Kind, a.Archived}, "named after its folder, not after the header")
+	require.Nil(t, a.Project)
+	require.Empty(t, testkit.Decode[dto.List[dto.Project]](alice.Get("/api/v1/projects").RequireStatus(http.StatusOK)).Items)
 }

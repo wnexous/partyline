@@ -10,15 +10,6 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// sessionProject connects a temporary session of project slug for c's owner and returns the
-// agent and its project id.
-func sessionProject(t *testing.T, c *testkit.Client, slug string) (dto.AgentInfo, string) {
-	t.Helper()
-	tok := c.Token(dto.TokenKindAgent, "laptop-"+slug)
-	_, info := dialSession(t, tok, sessionHeaders(slug, "claude", "laptop", "", ""))
-	return info, listedAgent(t, c, info.ID).Project.ID
-}
-
 func addProject(c *testkit.Client, roomID, projectID string) *testkit.Response {
 	return c.Post("/api/v1/rooms/"+roomID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindProject, MemberID: projectID})
 }
@@ -29,7 +20,7 @@ func addProject(c *testkit.Client, roomID, projectID string) *testkit.Response {
 func TestAddProjectMember(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob, carol := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol")
-	_, own := sessionProject(t, alice, "atlas")
+	_, own := sessionProject(t, env, alice, "atlas")
 	room := createRoom(alice, "Ops")
 
 	m := testkit.Decode[dto.RoomMember](addProject(alice, room.ID, own).RequireStatus(http.StatusCreated))
@@ -37,8 +28,8 @@ func TestAddProjectMember(t *testing.T) {
 		[]any{m.Kind, m.MemberID, m.Name, m.Owner, m.Outbound, m.Delivery})
 	addProject(alice, room.ID, own).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 
-	_, bobs := sessionProject(t, bob, "web")
-	_, carols := sessionProject(t, carol, "secret")
+	_, bobs := sessionProject(t, env, bob, "web")
+	_, carols := sessionProject(t, env, carol, "secret")
 	bob.Put("/api/v1/projects/"+bobs+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: []dto.SharingUser{
 		{UserID: alice.User.ID, Level: dto.LevelUse},
 	}}).RequireStatus(http.StatusOK)
@@ -56,7 +47,7 @@ func TestAddProjectMember(t *testing.T) {
 func TestAddProjectMemberNeedsUseOnTheProject(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
-	_, alices := sessionProject(t, alice, "atlas")
+	_, alices := sessionProject(t, env, alice, "atlas")
 	room := createRoom(bob, "Bob's room")
 	shareRoom(bob, room.ID, dto.SharingUser{UserID: alice.User.ID, Level: dto.LevelView})
 	addProject(bob, room.ID, alices).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
@@ -66,7 +57,7 @@ func TestAddProjectMemberNeedsUseOnTheProject(t *testing.T) {
 func TestProjectMemberSettings(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
-	_, project := sessionProject(t, alice, "atlas")
+	_, project := sessionProject(t, env, alice, "atlas")
 	room := createRoom(alice, "Ops")
 	m := testkit.Decode[dto.RoomMember](addProject(alice, room.ID, project).RequireStatus(http.StatusCreated))
 
@@ -85,11 +76,11 @@ func TestProjectMemberSettings(t *testing.T) {
 // PROJ-06: agents see project members in list_rooms (GET /agent/rooms) and room_info.
 func TestAgentsSeeProjectMembers(t *testing.T) {
 	f := newAgentRoom(t)
-	_, project := sessionProject(t, f.alice, "atlas")
+	_, project := sessionProject(t, f.env, f.alice, "atlas")
 	addProject(f.alice, f.room.ID, project).RequireStatus(http.StatusCreated)
 	conn := f.dial(t)
 	conn.Welcome(wsWait)
-	agent := f.agent.WithHeader(dto.HeaderAgent, "builder")
+	agent := f.agent.AsAgent("builder")
 
 	want := func(members []dto.RoomMember) {
 		t.Helper()

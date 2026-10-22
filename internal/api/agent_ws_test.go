@@ -54,7 +54,7 @@ func (f *agentRoom) post(c *testkit.Client, text string) dto.Message {
 // postAsAgent stores a message authored by the agent itself.
 func (f *agentRoom) postAsAgent(t *testing.T, text string) rooms.Message {
 	t.Helper()
-	p := authn.Principal{Kind: authn.KindAgent, UserID: f.alice.User.ID, AgentID: f.agentID, AgentName: "builder"}
+	p := authn.Principal{Kind: authn.KindAgent, UserID: f.alice.User.ID, AgentID: f.agentID}
 	m, err := f.env.App.Rooms.Post(context.Background(), p, f.room.ID, rooms.PostInput{Text: text})
 	require.NoError(t, err)
 	return m

@@ -578,9 +578,10 @@ func TestFolderIDFromHeader(t *testing.T) {
 	_, err = FolderIDFromHeader(header(dto.HeaderMachine, "devbox", dto.HeaderFolder, "%zz"))
 	requireAPIError(t, err, http.StatusUnprocessableEntity, dto.ErrorCodeFolderInvalid)
 
-	require.False(t, HasFolder(header(dto.HeaderMachine, "devbox")))
-	require.True(t, HasFolder(header(dto.HeaderFolder, "")), "an empty folder header is still a folder header")
-	require.True(t, HasFolder(header(dto.HeaderFolder, "/work")))
+	id, err = FolderIDFromHeader(header(dto.HeaderMachine, "devbox"))
+	require.NoError(t, err)
+	require.Equal(t, FolderID{Machine: "devbox"}, id, "a missing folder reads as an empty one, which ResolveFolder refuses")
+
 }
 
 // SES-01: LookupFolder finds the AI of a folder and changes nothing: it creates no identity,

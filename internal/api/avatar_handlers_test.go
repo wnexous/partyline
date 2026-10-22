@@ -237,7 +237,7 @@ func TestAvatarRoutesAuthMatrix(t *testing.T) {
 
 // agentAs is the agent token client of owner acting as the agent named name.
 func agentAs(owner *testkit.Client, name string) *testkit.Client {
-	return owner.Token(dto.TokenKindAgent, "laptop-"+name).WithHeader(dto.HeaderAgent, name)
+	return owner.Token(dto.TokenKindAgent, "laptop-"+name).AsAgent(name)
 }
 
 // PROF-04 (server side): an agent token updates its own AI's display name, handle, bio and
@@ -275,30 +275,32 @@ func TestAgentUpdatesItsOwnProfile(t *testing.T) {
 	require.Equal(t, withAvatar.AvatarURL, profileOf(t, alice, builder).AvatarURL, "the refused image changed nothing")
 }
 
-// The agent profile routes are for agent tokens naming a registered agent of the token's
-// owner: sessions and user tokens get 403, an unknown agent 403, anonymous 401.
+// The agent profile routes are for agent tokens: sessions and user tokens get 403, anonymous 401,
+// and a token only ever edits the AI of its own owner and folder: another owner's token with the
+// same machine and folder gets (and edits) an AI of its own, never alice's.
 func TestAgentProfileRoutesRequireAnAgentToken(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
-	registerAgent(t, env, alice, "builder")
+	builder := registerAgent(t, env, alice, "builder")
 	body := dto.UpdateProfileRequest{Bio: ptr("hijack")}
 	png := pngBytes(t, bands(100, 100))
 
 	for name, c := range map[string]*testkit.Client{
-		"session":    alice.WithHeader(dto.HeaderAgent, "builder"),
-		"user token": alice.Token(dto.TokenKindUser, "script").WithHeader(dto.HeaderAgent, "builder"),
+		"session":    alice.AsAgent("builder"),
+		"user token": alice.Token(dto.TokenKindUser, "script").AsAgent("builder"),
 	} {
 		c.Patch("/api/v1/agent/profile", body).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 		c.DoRaw(http.MethodPut, "/api/v1/agent/profile/avatar", "image/png", bytes.NewReader(png)).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 		_ = name
 	}
-	bobsAgent := agentAs(bob, "builder") // bob has no agent of that name: it is not alice's
-	bobsAgent.Patch("/api/v1/agent/profile", body).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	agentAs(alice, "ghost").Patch("/api/v1/agent/profile", body).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	bobs := testkit.Decode[dto.IntelligenceProfile](agentAs(bob, "builder").Patch("/api/v1/agent/profile", body).RequireStatus(http.StatusOK))
+	require.NotEqual(t, builder, bobs.ID, "bob's token reaches bob's own AI of that folder")
+	require.Equal(t, "hijack", bobs.Bio)
+	require.Equal(t, "", profileOf(t, alice, builder).Bio, "and never alice's")
 	env.Anon().Patch("/api/v1/agent/profile", body).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	env.Anon().DoRaw(http.MethodPut, "/api/v1/agent/profile/avatar", "image/png", bytes.NewReader(png)).
 		RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
-	require.Equal(t, "", profileOf(t, alice, registerAgent(t, env, alice, "builder")).Bio)
+	require.Equal(t, "", profileOf(t, alice, builder).Bio)
 }
 
 // A replaced avatar's blob is swept by the retention job after the grace period; the current

@@ -123,22 +123,18 @@ func (s *server) agentWhoAmI(w http.ResponseWriter, r *http.Request) error {
 }
 
 // agentOf finds the AI a request acts as: the one of the machine and folder named in the
-// headers, created on first sight (AID-04); a request without a folder is a v0.3 client that
-// names its agent.
+// headers, created on first sight (AID-04). A request that names no folder, or one the server
+// cannot use, is refused (AID-05).
 func (s *server) agentOf(r *http.Request, p authn.Principal) (db.Agent, error) {
-	if agents.HasFolder(r.Header) {
-		id, err := agents.FolderIDFromHeader(r.Header)
-		if err != nil {
-			return db.Agent{}, err
-		}
-		return s.Agents.ResolveFolder(r.Context(), p.UserID, id, false)
+	id, err := agents.FolderIDFromHeader(r.Header)
+	if err != nil {
+		return db.Agent{}, err
 	}
-	return s.Agents.Lookup(r.Context(), p.UserID, p.AgentName)
+	return s.Agents.ResolveFolder(r.Context(), p.UserID, id, false)
 }
 
-// ownerAgents lists the agents the token's owner owns, like GET /agents
-// (include_archived=true adds archived ones), for `partyline agents` (CLI-02). Agent tokens
-// only; no registered agent is needed.
+// ownerAgents lists the agents the token's owner owns, like GET /agents, for
+// `partyline agents` (CLI-02). Agent tokens only; no AI is needed.
 func (s *server) ownerAgents(w http.ResponseWriter, r *http.Request) error {
 	p, ok := authn.PrincipalFrom(r.Context())
 	if !ok {
@@ -147,8 +143,7 @@ func (s *server) ownerAgents(w http.ResponseWriter, r *http.Request) error {
 	if p.Kind != authn.KindAgent {
 		return agents.ErrAgentTokenRequired
 	}
-	includeArchived, _ := strconv.ParseBool(r.URL.Query().Get("include_archived"))
-	list, err := s.Agents.ListVisible(r.Context(), authn.Principal{Kind: authn.KindUser, UserID: p.UserID}, includeArchived)
+	list, err := s.Agents.ListVisible(r.Context(), authn.Principal{Kind: authn.KindUser, UserID: p.UserID})
 	if err != nil {
 		return err
 	}
@@ -236,37 +231,30 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 	}
 }
 
-// agentRegister registers the session's agent (identity headers, as on the WebSocket) without a WebSocket, for
-// `partyline channel --tools-only` (PUSH-02); the agent stays offline. Agent tokens only.
+// agentRegister resolves the AI of the machine and folder named in the headers, as the
+// WebSocket does, without opening one: the AI stays offline. A session that names no folder is
+// refused (AID-05). Agent tokens only.
 func (s *server) agentRegister(w http.ResponseWriter, r *http.Request) error {
 	p, err := agentToken(r)
 	if err != nil {
 		return err
 	}
-	var row db.GetAgentWithOwnerRow
-	if agents.HasFolder(r.Header) {
-		var id agents.FolderID
-		if id, err = agents.FolderIDFromHeader(r.Header); err != nil {
-			return err
-		}
-		row, err = s.Agents.RegisterFolder(r.Context(), p.UserID, id)
-	} else {
-		id := agents.IdentityFromHeader(r.Header)
-		id.Name = p.AgentName
-		row, err = s.Agents.Register(r.Context(), p.UserID, id)
+	id, err := agents.FolderIDFromHeader(r.Header)
+	if err != nil {
+		return err
 	}
+	row, err := s.Agents.RegisterFolder(r.Context(), p.UserID, id)
 	if err != nil {
 		return err
 	}
 	httpx.WriteJSON(w, http.StatusOK, dto.AgentInfo{
-		ID: row.Agent.ID, Name: row.Agent.Name, DisplayName: agents.DisplayName(row.Agent), Owner: row.OwnerUsername,
+		ID: row.Agent.ID, Name: agents.GoesBy(row.Handle, row.Agent.Name), DisplayName: agents.NameOf(row.ProfileName, row.Agent), Owner: row.OwnerUsername,
 	})
 	return nil
 }
 
-// agentOnly requires an agent token and resolves the agent from the token's owner and the
-// X-Partyline-Agent name, never from client-supplied ids. Agents register on their first
-// WebSocket connection; before that the REST endpoints answer 403.
+// agentOnly requires an agent token and resolves the AI from the token's owner and the machine
+// and folder named in the headers (agentOf), never from client-supplied ids.
 func (s *server) agentOnly(h principalFunc) apiFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		p, ok := authn.PrincipalFrom(r.Context())
@@ -280,7 +268,7 @@ func (s *server) agentOnly(h principalFunc) apiFunc {
 		if err != nil {
 			return err
 		}
-		p.AgentID, p.AgentName = a.ID, a.Name
+		p.AgentID = a.ID
 		return h(w, r.WithContext(authn.WithPrincipal(r.Context(), p)), p)
 	}
 }

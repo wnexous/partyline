@@ -132,11 +132,11 @@ func resolveAgent(cmd string, f agentFlags, io stdio) (agentConn, int) {
 var toolsOnlyHarnesses = []string{"codex", "gemini", "opencode", "pi"}
 
 // channelCmd runs `partyline channel`: the MCP stdio server Claude Code loads as a channel.
-// Without --name the session is temporary: the server names it after its project and harness
-// (ID-01). With --tools-only it serves the tools without the push socket
-// (PUSH-02), acting as the agent `partyline listen` of the same harness recorded. With
-// --harness omp the MCP instructions describe the omp extension's <partyline …> framing; with
-// --tools-only, --harness names the session's harness and wins over PARTYLINE_HARNESS.
+// The session is the AI of the machine and folder it runs in (AID-01); --as adopts an AI
+// without a folder (MIG-02). With --tools-only it serves the tools without the push socket
+// (PUSH-02), acting as the same AI as `partyline listen` of the folder. With --harness omp
+// the MCP instructions describe the omp extension's <partyline …> framing; with --tools-only,
+// --harness names the session's harness and wins over PARTYLINE_HARNESS.
 func channelCmd(ctx context.Context, args []string, io stdio) int {
 	fs := flag.NewFlagSet("channel", flag.ContinueOnError)
 	fs.SetOutput(io.stderr)

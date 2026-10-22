@@ -149,7 +149,7 @@ func TestOwnerEditsAIProfile(t *testing.T) {
 	}).RequireStatus(http.StatusOK))
 	require.Equal(t, []any{"Atlas", "atlas", "Runs the builds"}, []any{got.DisplayName, got.Handle, got.Bio})
 	require.Equal(t, "Atlas", listedAgent(t, alice, id).DisplayName, "the agents list shows the rename (AID-06)")
-	require.Equal(t, "builder", listedAgent(t, alice, id).Name, "the internal name stays")
+	require.Equal(t, "atlas", listedAgent(t, alice, id).Name, "the legacy name field is the handle")
 
 	grantee := profileOf(t, bob, id)
 	require.Equal(t, []any{"Atlas", false, dto.LevelUse}, []any{grantee.DisplayName, grantee.CanEdit, grantee.AI.MyLevel})
@@ -165,11 +165,13 @@ func TestAIProfileShowsItsSession(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	conn, info := dialSession(t, tok, sessionHeaders("proj", "claude", "laptop", "", ""))
+	conn, resp := tok.DialFolder(testkit.Folder{Machine: "laptop", Path: "/home/alice/proj", Home: "/home/alice", Harness: "claude"})
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	info := conn.Welcome(wsWait).Agent
 
 	p := profileOf(t, alice, info.ID)
-	require.Equal(t, []any{"Proj · Claude Code", "proj-claude", true, "laptop", "laptop", "claude", ""},
-		[]any{p.DisplayName, p.Handle, p.AI.Online, p.AI.Machine, p.AI.MachineLabel, p.AI.App, p.AI.Folder})
+	require.Equal(t, []any{"Proj", "proj", true, "laptop", "laptop", "claude", "/home/alice/proj", "~/proj"},
+		[]any{p.DisplayName, p.Handle, p.AI.Online, p.AI.Machine, p.AI.MachineLabel, p.AI.App, p.AI.Folder, p.AI.FolderLabel})
 	require.Equal(t, []dto.App{{Kind: "claude", Label: "Claude Code"}}, p.Apps)
 	require.NotNil(t, p.AI.ConnectedAt)
 

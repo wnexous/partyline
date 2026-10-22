@@ -106,9 +106,11 @@ func (f *fixture) room(t *testing.T, owner authn.Principal) string {
 	return id
 }
 
+// upsert creates the owner's AI of the folder /work/<name> on the machine "devbox" and returns
+// its id.
 func (f *fixture) upsert(t *testing.T, owner authn.Principal, name string) string {
 	t.Helper()
-	a, err := f.reg.Upsert(context.Background(), owner.UserID, name)
+	a, err := f.reg.ResolveFolder(context.Background(), owner.UserID, FolderID{Machine: "devbox", Folder: "/work/" + name}, false)
 	require.NoError(t, err)
 	return a.ID
 }
@@ -167,38 +169,6 @@ func TestSlug(t *testing.T) {
 	}
 }
 
-// AGT-01: Upsert is idempotent per (owner, name) and stores the slug.
-func TestUpsertIdempotentPerOwnerAndName(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	alice, bob := f.user(t, "alice"), f.user(t, "bobby")
-
-	first, err := f.reg.Upsert(ctx, alice.UserID, "Billing API!")
-	require.NoError(t, err)
-	require.Equal(t, "billing-api", first.Name)
-	require.Equal(t, alice.UserID, first.OwnerID)
-
-	again, err := f.reg.Upsert(ctx, alice.UserID, "billing-api")
-	require.NoError(t, err)
-	require.Equal(t, first.ID, again.ID)
-
-	other, err := f.reg.Upsert(ctx, bob.UserID, "Billing API!")
-	require.NoError(t, err)
-	require.NotEqual(t, first.ID, other.ID)
-
-	empty, err := f.reg.Upsert(ctx, alice.UserID, "")
-	require.NoError(t, err)
-	require.Equal(t, "agent", empty.Name)
-
-	require.Equal(t, 3, f.count(t, "SELECT COUNT(*) FROM agents"))
-
-	got, err := f.reg.Lookup(ctx, alice.UserID, "Billing API!")
-	require.NoError(t, err)
-	require.Equal(t, first.ID, got.ID)
-	_, err = f.reg.Lookup(ctx, alice.UserID, "never-connected")
-	require.ErrorIs(t, err, ErrNotRegistered)
-}
-
 // Visible list = owned + use grants (own or everyone).
 func TestListVisibleOwnedAndUseGrants(t *testing.T) {
 	f := newFixture(t)
@@ -211,7 +181,7 @@ func TestListVisibleOwnedAndUseGrants(t *testing.T) {
 	f.grant(t, shared, alice.UserID)
 	f.grant(t, public, access.Everyone)
 
-	list, err := f.reg.ListVisible(ctx, alice, false)
+	list, err := f.reg.ListVisible(ctx, alice)
 	require.NoError(t, err)
 	got := map[string]access.Level{}
 	for _, a := range list {
@@ -219,7 +189,7 @@ func TestListVisibleOwnedAndUseGrants(t *testing.T) {
 	}
 	require.Equal(t, map[string]access.Level{own: dto.LevelManage, shared: dto.LevelUse, public: dto.LevelUse}, got)
 
-	list, err = f.reg.ListVisible(ctx, bob, false)
+	list, err = f.reg.ListVisible(ctx, bob)
 	require.NoError(t, err)
 	ids := []string{}
 	for _, a := range list {

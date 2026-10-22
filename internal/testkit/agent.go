@@ -40,20 +40,26 @@ type AgentConn struct {
 	s    *frameStream[AgentFrame]
 }
 
-// DialAgent opens the agent WebSocket with the client's bearer token, naming the agent in
-// X-Partyline-Agent (omitted when empty). A refused upgrade returns a nil conn and the response.
+// Machine is the hostname of the AI sessions the kit starts.
+const Machine = "testbox"
+
+// FolderOf is the session of the AI called name in the tests: Claude Code in the folder
+// /work/<name> on the machine Machine. Its display name is name with an upper-case first letter
+// and its handle is name (when no other intelligence has it).
+func FolderOf(name string) Folder {
+	return Folder{Machine: Machine, Path: "/work/" + name, Harness: "claude"}
+}
+
+// DialAgent opens the agent WebSocket with the client's bearer token as the AI of FolderOf(name).
+// A refused upgrade returns a nil conn and the response.
 func (c *Client) DialAgent(name string) (*AgentConn, *Response) {
 	c.T.Helper()
-	h := http.Header{}
-	if name != "" {
-		h.Set(dto.HeaderAgent, name)
-	}
-	conn, resp := c.dialWS("/api/v1/agent/ws", h)
-	if conn == nil {
-		return nil, resp
-	}
-	return &AgentConn{T: c.T, Conn: conn, s: newFrameStream[AgentFrame](conn)}, resp
+	return c.DialFolder(FolderOf(name))
 }
+
+// AsAgent returns a copy of the client that sends the folder headers of FolderOf(name) with
+// every request: an agent token then acts as that AI.
+func (c *Client) AsAgent(name string) *Client { return c.AsFolder(FolderOf(name)) }
 
 // Next returns the next frame, failing the test when none arrives within timeout.
 func (a *AgentConn) Next(timeout time.Duration) AgentFrame {
@@ -122,22 +128,8 @@ func (a *AgentConn) Closed(timeout time.Duration) error { return a.s.closed(time
 // Close closes the connection normally from the agent side.
 func (a *AgentConn) Close() { _ = a.Conn.Close(websocket.StatusNormalClosure, "bye") }
 
-// DialAgentUnique opens the agent WebSocket in unique mode (X-Partyline-Agent-Mode: unique),
-// the way the channel connects under a derived name.
-func (c *Client) DialAgentUnique(name string) (*AgentConn, *Response) {
-	c.T.Helper()
-	h := http.Header{}
-	h.Set(dto.HeaderAgent, name)
-	h.Set(dto.HeaderAgentMode, dto.AgentModeUnique)
-	conn, resp := c.dialWS("/api/v1/agent/ws", h)
-	if conn == nil {
-		return nil, resp
-	}
-	return &AgentConn{T: c.T, Conn: conn, s: newFrameStream[AgentFrame](conn)}, resp
-}
-
 // DialAgentHeaders opens the agent WebSocket with the client's bearer token and the given
-// identity headers (X-Partyline-Agent, -Agent-Mode, -Project, -Harness, -Machine).
+// headers (the folder headers, see Folder.Headers).
 func (c *Client) DialAgentHeaders(h http.Header) (*AgentConn, *Response) {
 	c.T.Helper()
 	conn, resp := c.dialWS("/api/v1/agent/ws", h)

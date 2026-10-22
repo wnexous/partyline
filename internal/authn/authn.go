@@ -32,8 +32,7 @@ type Principal struct {
 	Kind      PrincipalKind
 	UserID    string
 	Role      string
-	AgentID   string // set for agent principals
-	AgentName string // set for agent principals
+	AgentID   string // set for agent principals on the routes that act as an AI
 	TokenID   string // set when authenticated by an API token
 	SessionID string // set when authenticated by a session cookie
 }

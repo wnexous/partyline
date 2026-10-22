@@ -58,7 +58,8 @@ describe("pi extension", () => {
 		expect(spawned[0].command).toBe("partyline");
 		expect(spawned[0].args).toEqual(["listen"]);
 		expect(spawned[0].options.cwd).toBe("/work/proj");
-		expect(spawned[0].options.env?.PARTYLINE_SESSION).toBe(String(process.pid));
+		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("pi");
+		expect(spawned[0].options.env?.PARTYLINE_SESSION).toBeUndefined();
 		expect(spawned[0].options.env?.PATH).toBe(process.env.PATH);
 	});
 

@@ -369,9 +369,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] WebSocket, REST tool, register and pending without a folder → 422 `folder_required`; each invalid folder case → 422 `folder_invalid` (AID-05, L-017)
-- [ ] No reference to session keys, temporary names, archiving or the removed headers remains outside migrations and specs (grep in the commit body)
-- [ ] Gate check passes: `make check`
+- [x] WebSocket, REST tool, register and pending without a folder → 422 `folder_required`; each invalid folder case → 422 `folder_invalid` (AID-05, L-017)
+- [x] No reference to session keys, temporary names, archiving or the removed headers remains outside migrations and specs (grep in the commit body)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `refactor(agents): require a folder and drop session-named agents`

@@ -49,17 +49,13 @@ func IntelligenceOf(ctx context.Context, q *db.Queries, agentID string) (db.Inte
 	return i, err
 }
 
-// AgentDisplayName is the name people read for an agent: the owner's rename, else the
-// readable name of a temporary agent, else the agent name (ID-01, ID-04).
+// AgentDisplayName is the name people read for an agent whose profile cannot be read: the
+// display name its row mirrors, else the row's name (ID-04).
 func AgentDisplayName(a db.Agent) string {
-	switch {
-	case a.DisplayName != "":
+	if a.DisplayName != "" {
 		return a.DisplayName
-	case a.AutoName != "":
-		return a.AutoName
-	default:
-		return a.Name
 	}
+	return a.Name
 }
 
 // ProjectPrefs builds the prefs of a project membership as its active session receives

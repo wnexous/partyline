@@ -65,7 +65,8 @@ describe("OpenCode plugin", () => {
 		expect(spawned[0].command).toBe("partyline");
 		expect(spawned[0].args).toEqual(["listen"]);
 		expect(spawned[0].options.cwd).toBe("/work/proj");
-		expect(spawned[0].options.env?.PARTYLINE_SESSION).toBe(String(process.pid));
+		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("opencode");
+		expect(spawned[0].options.env?.PARTYLINE_SESSION).toBeUndefined();
 	});
 
 	test("PUSH-05: each line goes to the active session with promptAsync", async () => {

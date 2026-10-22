@@ -26,10 +26,9 @@ func TestBacklogSkippedCountIgnoresConcurrentPost(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	ctx := context.Background()
-	agent, err := env.App.Agents.Upsert(ctx, alice.User.ID, "builder")
-	require.NoError(t, err)
+	agentID := env.NewAI(alice, "builder")
 	room := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agent.ID}).RequireStatus(http.StatusCreated)
+	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agentID}).RequireStatus(http.StatusCreated)
 
 	p := authn.Principal{Kind: authn.KindUser, UserID: alice.User.ID, Role: string(dto.RoleMember)}
 	post := func(text string) rooms.Message {
@@ -54,7 +53,7 @@ func TestBacklogSkippedCountIgnoresConcurrentPost(t *testing.T) {
 	}
 	require.NotEmpty(t, late.ID, "the hook posted between the count and the list")
 	require.Equal(t, late.ID, conn.Message(time.Minute).Message.ID, "the concurrent post arrives live after the backlog")
-	seq, err := env.App.Store.R().GetAgentCursor(ctx, db.GetAgentCursorParams{AgentID: agent.ID, RoomID: room.ID})
+	seq, err := env.App.Store.R().GetAgentCursor(ctx, db.GetAgentCursorParams{AgentID: agentID, RoomID: room.ID})
 	require.NoError(t, err)
 	require.Equal(t, posted[9].Seq, seq)
 }

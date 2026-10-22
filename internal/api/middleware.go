@@ -211,9 +211,6 @@ func principal(cfg MiddlewareConfig, next http.Handler) http.Handler {
 				httpx.WriteError(w, errUnauthorized)
 				return
 			}
-			if p.Kind == authn.KindAgent {
-				p.AgentName = r.Header.Get(dto.HeaderAgent)
-			}
 			next.ServeHTTP(w, r.WithContext(authn.WithPrincipal(ctx, p)))
 			return
 		}

@@ -319,9 +319,8 @@ func TestToolRateLimited(t *testing.T) {
 // TOOL-09: list_rooms shows each room of the agent with its members; agents show presence.
 func TestToolListRooms(t *testing.T) {
 	e := newChanEnv(t)
-	helper, err := e.env.App.Agents.Upsert(context.Background(), e.alice.User.ID, "helper")
-	require.NoError(t, err)
-	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: helper.ID}).RequireStatus(http.StatusCreated)
+	helper := e.env.NewAI(e.alice, "helper")
+	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: helper}).RequireStatus(http.StatusCreated)
 	family := e.chatMember("Family")
 	s := e.connected(e.options())
 

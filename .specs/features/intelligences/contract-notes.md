@@ -449,3 +449,44 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
   `agents.Slug` (v0.3 stored slugs: `--name "Billing API!"` adopts `billing-api`), after the
   handle lookup (`handle` lower-cased) that comes first.
 
+## T16 - Require the folder, drop the v0.3 naming (AID-05)
+
+- **Every agent route that acts as an AI requires the folder.** The agent WebSocket and
+  `agentOnly` routes (`rooms`, room `info`/`messages`/post, `reply`, `react`, `attachments`,
+  `pending`, `profile`) plus `POST /agent/register` and `GET /agent/session` resolve the AI from the
+  token's owner, `X-Partyline-Machine` and `X-Partyline-Folder`. No folder (header absent or empty)
+  or no machine → 422 `folder_required` with "… update partyline" (fields `folder` / `machine`); a
+  folder the server cannot use → 422 `folder_invalid`. A CLI from before folders (it sends
+  `X-Partyline-Agent`, `-Project`, `-Session`, `-Agent-Mode` and no folder) therefore gets
+  `folder_required` everywhere. `DELETE /agent/token`, `GET /agent/whoami` and `GET /agent/agents`
+  need no folder. A first call from an unseen folder creates its AI instead of failing (AID-04).
+- **Removed**: `dto.HeaderAgent`, `HeaderAgentMode`, `AgentModeUnique`/`Temporary`, `HeaderProject`,
+  `HeaderSession` and `authn.Principal.AgentName` (the headers are ignored when sent); the
+  temporary/fixed allocation (`Identity`, `Resolve`, `freeName`, `identityPlan`, `AutoName`,
+  `ProjectFromName`, session holds), `Registry.Upsert`/`Register`/`Lookup`, `archive.go` and the
+  `agent-archive` job in `app.go`; the sqlc queries `InsertAgentIfMissing`, `GetAgentByName`,
+  `GetProjectBySlug`, `UpdateAgentIdentity`, `ListSessionAgents`, `HoldAgentForSession`,
+  `ReleaseAgentSession`, `PromoteAgent`, `ListArchiveCandidates`, `ArchiveAgent`, `SetAgentAutoName`,
+  `ListTemporaryProjectAgents` and `SetAgentFolder`; the `partyline agents --all` flag
+  (`include_archived`). `MarkAgentConnected` only stamps `connected_at`.
+- **Legacy DTO fields keep constant values until T51**: `Agent.kind` is always `fixed`,
+  `Agent.archived` always `false`, `Agent.project` is set only for an agent a (test) fixture put in a
+  project. `UpdateAgentRequest.fixed` stays: `true` is a no-op, `false` is 422. `Agent.name`
+  (and `AgentInfo.name` in the welcome frame and the register answer) is now the AI's **@handle**
+  (its row's name when it has no profile), and `display_name` is the profile's display name, so the
+  pages and the CLI that still read them show readable names for AIs whose row is named by its id.
+  `ListVisible` no longer filters archived agents: an agent v0.3 archived is listed.
+- **Projects stay until T50**, but no session joins one any more. `RenameProject` only renames the
+  project and refreshes the rooms that have it as a member. New queries `CreateProject` and
+  `SetAgentProject` exist only so the tests can keep exercising project members; T50 deletes them
+  with the rest. Testkit: `Env.NewAI(owner, name)` (the AI of `FolderOf(name)`, named `name`),
+  `Env.NewLegacyAI` (unlinked, for adoption), `FolderOf`, `Client.AsAgent(name)` and
+  `Client.DialAgent(name)` (a session of `FolderOf(name)`); `DialAgentUnique` is gone.
+- `partyline setup` verifies a token with `GET /agent/whoami` (200 valid agent token, 401 rejected,
+  403 not an agent token) instead of the v0.3 name probe on `/agent/rooms`.
+- The pi and OpenCode adapters start `partyline listen` with `PARTYLINE_HARNESS` set to `pi` /
+  `opencode` (the app label of a session started without the launcher) and no longer set
+  `PARTYLINE_SESSION`.
+- `delivery.AgentDisplayName` is the mirrored `display_name`, else the row's name (no
+  `auto_name`); the DTO builders read the profile's display name first (`Agent.ProfileName`).
+

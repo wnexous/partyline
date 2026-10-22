@@ -22,15 +22,14 @@ const agentsTimeout = 15 * time.Second
 // noProject heads the agents of no project in `partyline agents`.
 const noProject = "No project"
 
-// agentsCmd runs `partyline agents [--all]`: it lists the agents of the token's owner grouped
-// by project, projects with an online session first, each agent with its online state,
-// readable and internal name, harness, machine and kind (CLI-02). --all adds archived agents.
+// agentsCmd runs `partyline agents`: it lists the agents of the token's owner grouped by
+// project, projects with an online session first, each agent with its online state, readable
+// and internal name, harness and machine (CLI-02).
 func agentsCmd(ctx context.Context, args []string, io stdio) int {
 	fs := flag.NewFlagSet("agents", flag.ContinueOnError)
 	fs.SetOutput(io.stderr)
 	url := fs.String("url", "", "Partyline base URL (default $PARTYLINE_URL)")
 	token := fs.String("token", "", "agent token (default $PARTYLINE_TOKEN)")
-	all := fs.Bool("all", false, "include archived agents")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -43,7 +42,7 @@ func agentsCmd(ctx context.Context, args []string, io stdio) int {
 		fmt.Fprintln(io.stderr, "partyline agents: set PARTYLINE_URL and PARTYLINE_TOKEN (or --url and --token), or run partyline setup")
 		return 2
 	}
-	list, err := fetchAgents(ctx, creds, *all)
+	list, err := fetchAgents(ctx, creds)
 	if err != nil {
 		fmt.Fprintln(io.stderr, "partyline agents:", err)
 		return 1
@@ -56,13 +55,10 @@ func agentsCmd(ctx context.Context, args []string, io stdio) int {
 	return 0
 }
 
-func fetchAgents(ctx context.Context, creds cliconfig.Config, all bool) ([]dto.Agent, error) {
+func fetchAgents(ctx context.Context, creds cliconfig.Config) ([]dto.Agent, error) {
 	ctx, cancel := context.WithTimeout(ctx, agentsTimeout)
 	defer cancel()
 	u := strings.TrimRight(creds.URL, "/") + "/api/v1/agent/agents"
-	if all {
-		u += "?include_archived=true"
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
@@ -130,11 +126,7 @@ func printAgents(io stdio, list []dto.Agent) {
 			if a.Online {
 				state = "online"
 			}
-			notes := []string{string(a.Kind)}
-			if a.Archived {
-				notes = append(notes, "archived")
-			}
-			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\t%s\n", state, a.DisplayName, a.Name, a.Harness, a.Machine, strings.Join(notes, ", "))
+			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t%s\n", state, a.DisplayName, a.Name, a.Harness, a.Machine)
 		}
 		_ = w.Flush()
 	}

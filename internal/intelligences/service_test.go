@@ -65,9 +65,11 @@ func (w *world) intelligence(id string) db.Intelligence {
 	return i
 }
 
+// agent creates owner's AI of the folder /work/<name> on the machine "laptop", as its first
+// session would, and returns its id: its profile has the default names of a folder.
 func (w *world) agent(owner *testkit.Client, name string) string {
 	w.t.Helper()
-	a, err := w.env.App.Agents.Upsert(w.ctx, owner.User.ID, name)
+	a, err := w.env.App.Agents.ResolveFolder(w.ctx, owner.User.ID, agents.FolderID{Machine: "laptop", Folder: "/work/" + name, Harness: "claude"}, false)
 	require.NoError(w.t, err)
 	return a.ID
 }
@@ -204,60 +206,45 @@ func TestNewUserDisplayNameIsCleaned(t *testing.T) {
 	require.Equal(t, "Anne "+strings.Repeat("é", 59), got, "trimmed, control characters dropped, 64 code points")
 }
 
-// PROF-01: every agent, however it registers, has exactly one intelligence of kind ai, and
-// registering it again keeps that intelligence.
+// PROF-01: every AI, however it first shows up, has exactly one intelligence of kind ai, and
+// meeting it again keeps that intelligence.
 func TestEveryNewAgentGetsOneIntelligence(t *testing.T) {
 	w := newWorld(t)
 	reg := w.env.App.Agents
 
 	id := w.agent(w.alice, "Billing API!")
 	got := w.intelligence(id)
-	require.Equal(t, []string{"ai", "billing-api", "billing-api"}, []string{got.Kind, got.DisplayName, got.Handle})
+	require.Equal(t, []string{"ai", "Billing API!", "billing-api"}, []string{got.Kind, got.DisplayName, got.Handle})
 
 	_, err := w.svc.Update(w.ctx, asUser(w.alice), id, intelligences.ProfileUpdate{DisplayName: ptr("Biller")})
 	require.NoError(t, err)
-	require.Equal(t, id, w.agent(w.alice, "billing-api"), "the same agent")
-	require.Equal(t, "Biller", w.intelligence(id).DisplayName, "registering again keeps the profile")
+	require.Equal(t, id, w.agent(w.alice, "Billing API!"), "the same agent")
+	require.Equal(t, "Biller", w.intelligence(id).DisplayName, "meeting it again keeps the profile")
 
-	other := w.agent(w.bob, "billing-api")
+	other := w.agent(w.bob, "Billing API!")
 	require.NotEqual(t, id, other, "another owner, another agent")
 	require.Equal(t, "billing-api-2", w.intelligence(other).Handle, "handles are unique across owners")
 
-	fixed, err := reg.Resolve(w.ctx, w.alice.User.ID, agents.Identity{Name: "atlas", Harness: "claude", Machine: "laptop"})
+	live, err := reg.ResolveFolder(w.ctx, w.alice.User.ID, agents.FolderID{Machine: "laptop", Folder: "/work/atlas", Harness: "claude"}, true)
 	require.NoError(t, err)
-	require.Equal(t, []string{"ai", "atlas"}, []string{w.intelligence(fixed.ID).Kind, w.intelligence(fixed.ID).Handle})
+	require.Equal(t, []string{"ai", "atlas"}, []string{w.intelligence(live.ID).Kind, w.intelligence(live.ID).Handle})
 
-	temp, err := reg.Resolve(w.ctx, w.alice.User.ID, agents.Identity{Project: "Acme", Harness: "claude", Machine: "laptop"})
-	require.NoError(t, err)
-	got = w.intelligence(temp.ID)
-	require.Equal(t, []string{"acme-claude", "Acme · Claude Code"}, []string{got.Handle, got.DisplayName},
-		"a session agent keeps its readable v0.3 name until folders replace it")
-
-	tools, err := reg.Register(w.ctx, w.carol.User.ID, agents.Identity{Name: "scribe", Harness: "codex"})
+	tools, err := reg.RegisterFolder(w.ctx, w.carol.User.ID, agents.FolderID{Machine: "laptop", Folder: "/work/scribe", Harness: "codex"})
 	require.NoError(t, err)
 	require.Equal(t, "scribe", w.intelligence(tools.Agent.ID).Handle, "a tools-only registration creates it too")
 }
 
 // The v0.3 rename paths still in use write the intelligence, which names authors everywhere:
-// the owner's agent rename, a project rename (readable temporary names) and the account's
-// own display name.
+// the owner's agent rename and the account's own display name.
 func TestLegacyRenamePathsWriteTheIntelligence(t *testing.T) {
 	w := newWorld(t)
 	reg := w.env.App.Agents
-	claude, err := reg.Resolve(w.ctx, w.alice.User.ID, agents.Identity{Project: "Proj", Harness: "claude", Machine: "laptop"})
-	require.NoError(t, err)
-	codex, err := reg.Resolve(w.ctx, w.alice.User.ID, agents.Identity{Project: "Proj", Harness: "codex", Machine: "laptop"})
-	require.NoError(t, err)
-	require.Equal(t, "Proj · Claude Code", w.intelligence(claude.ID).DisplayName)
+	codex := w.agent(w.alice, "codex-box")
+	require.Equal(t, "Codex-box", w.intelligence(codex).DisplayName)
 
-	_, err = reg.Update(w.ctx, asUser(w.alice), codex.ID, agents.AgentUpdate{DisplayName: ptr("Codex helper")})
+	_, err := reg.Update(w.ctx, asUser(w.alice), codex, agents.AgentUpdate{DisplayName: ptr("Codex helper")})
 	require.NoError(t, err)
-	require.Equal(t, "Codex helper", w.intelligence(codex.ID).DisplayName, "the owner's agent rename")
-
-	_, err = reg.RenameProject(w.ctx, asUser(w.alice), claude.ProjectID.String, "Renamed")
-	require.NoError(t, err)
-	require.Equal(t, "Renamed · Claude Code", w.intelligence(claude.ID).DisplayName, "a temporary agent follows its project name")
-	require.Equal(t, "Codex helper", w.intelligence(codex.ID).DisplayName, "an explicit rename wins over the project name")
+	require.Equal(t, "Codex helper", w.intelligence(codex).DisplayName, "the owner's agent rename")
 
 	usersSvc := w.env.App.Users
 	_, err = usersSvc.UpdateProfile(w.ctx, w.bob.User.ID, users.ProfileUpdate{DisplayName: ptr("  Bobby ")})

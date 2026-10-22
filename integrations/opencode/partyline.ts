@@ -80,11 +80,13 @@ const EXIT_NOT_CONFIGURED = 2;
 
 type Listener = { stop(): void };
 
-// superviseListen runs `<binary> listen` in cwd, hands each JSON line to onLine and restarts
-// the process with backoff when it exits; stderr lines and failures go to log.
+// superviseListen runs `<binary> listen` in cwd as the app harness, hands each JSON line to
+// onLine and restarts the process with backoff when it exits; stderr lines and failures go to
+// log.
 function superviseListen(opts: {
 	binary: string;
 	cwd?: string;
+	harness: string;
 	onLine: (record: Record<string, string>) => void;
 	log: (message: string) => void;
 }): Listener {
@@ -113,9 +115,8 @@ function superviseListen(opts: {
 		let ended = false;
 		const proc = spawn(opts.binary, ["listen"], {
 			cwd: opts.cwd,
-			// listen records its agent name under this key for the tools-only MCP server, which
-			// runs as another child of this process.
-			env: { ...process.env, PARTYLINE_SESSION: String(process.pid) },
+			// listen is the AI of this folder, running in this harness.
+			env: { ...process.env, PARTYLINE_HARNESS: opts.harness },
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 		child = proc;
@@ -199,6 +200,7 @@ export const PartylinePlugin = async ({ client, directory }: { client: Client; d
 	const listener = superviseListen({
 		binary: PARTYLINE_BINARY,
 		cwd: directory,
+		harness: "opencode",
 		log,
 		onLine: (record) => {
 			const text = frame(record);

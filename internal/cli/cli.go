@@ -30,7 +30,7 @@ Commands:
                          --harness omp describes the omp extension's message framing;
                          with --tools-only, --harness codex|gemini|opencode|pi names the harness
   listen                 print incoming messages as JSON lines (used by the pi and OpenCode adapters)
-  agents                 list your agents by project with their online state; --all adds archived ones
+  agents                 list your agents by project with their online state
   hook codex-stop|gemini-after-agent
                          turn-end hook: continue the session with undelivered room messages
   doctor                 check this machine: binary, config file, server, token, harnesses, versions

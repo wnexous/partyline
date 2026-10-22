@@ -1,7 +1,6 @@
 package api_test
 
 import (
-	"context"
 	"net/http"
 	"testing"
 
@@ -11,12 +10,11 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// registerAgent creates (or returns) the owner's agent as its first WebSocket connection would.
+// registerAgent creates (or returns) the owner's AI of the folder /work/<name>, named name, as
+// its first session would.
 func registerAgent(t *testing.T, env *testkit.Env, owner *testkit.Client, name string) string {
 	t.Helper()
-	a, err := env.App.Agents.Upsert(context.Background(), owner.User.ID, name)
-	require.NoError(t, err)
-	return a.ID
+	return env.NewAI(owner, name)
 }
 
 func shareAgent(c *testkit.Client, agentID string, userIDs ...string) {

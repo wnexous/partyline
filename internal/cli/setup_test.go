@@ -102,8 +102,7 @@ func requireSavedConfig(t *testing.T, home string, want cliconfig.Config) {
 // requireAgentToken asserts secret authenticates as an agent token of the server.
 func requireAgentToken(t *testing.T, env *testkit.Env, secret string) {
 	t.Helper()
-	er := env.Anon().WithBearer(secret).WithHeader(dto.HeaderAgent, "probe").Get("/api/v1/agent/rooms").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	require.Equal(t, "agent not registered: connect the channel first", er.Message)
+	env.Anon().WithBearer(secret).Get("/api/v1/agent/whoami").RequireStatus(http.StatusOK)
 }
 
 // ONB-04 (token path): flags give the URL and an agent token; setup verifies them and writes
