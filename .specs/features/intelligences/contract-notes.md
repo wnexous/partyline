@@ -2417,3 +2417,33 @@ folder" assumption promises the owner a merge, and the UI offered it only on **U
   none without another own AI, and the 409 message with the page kept), `lib/contacts.test.ts`
   (`ownAIs` order and `mergeTargets` leaving out the AI itself and the shared one),
   `routes/a11y.test.tsx` (axe on the open dialog, en and pt-BR).
+
+## T54 - Real Claude Code UAT (AID-01, AID-02, SES-01..03, SES-05, DM-03, DM-04, PROF-04, AGRP-01, TREE-07, CLI-01, CLI-04)
+
+Recorded in `uat.md`; no code changed. Every checklist item passed against Claude Code 2.1.306.
+
+- **Method kept for the next UAT.** The raw `<channel …>` tag a session received is in Claude
+  Code's own transcript (`<HOME>/.claude/projects/<folder slug>/<session>.jsonl`), so attributes
+  such as `conversation="dm"`, `trusted` and `reason="taken_over"` are checked without a wrapper
+  around the MCP command. Folders live inside the temporary HOME so `partyline agents` prints `~`
+  paths. Orca terminals: text with `--enter`, an arrow key as `--text $'\e[B'`, `read --screen`;
+  the embedded browser pane paints blank screenshots in the background, so the web side is read
+  through `snapshot`.
+- **Claude Code 2.1.306 facts.** Auto mode is the default permission mode (no prompts for the
+  partyline tools); a subfolder of a trusted folder asks no trust question; the development
+  channels screen appears at every start; every channel notice (identity, taken over) makes the
+  model answer once, and the terminal line of a notice is cut at the window width while the model
+  gets the whole text.
+- **Contract points confirmed live.** The launcher prompt, `n`/Enter exit 1, `y` and `--take-over`
+  (T36); the exact SES-05 sentence once as a `type="notice"` event, nothing delivered afterwards
+  and the old session's tools answering it, exiting the old session leaving the AI online (T17,
+  T18); offline within 2 s of `/exit`, no prompt on the next start, backlog delivered (T17, SES-08);
+  `update_profile`, `create_group` and `send_message to` through the real channel, including the
+  `members_refused` text (T37); the tree, the login and setup lines and the setup menu (T38, T40,
+  T41).
+- **Open (Finding 1).** A bare "oi" in a DM is answered by the model in its terminal, not with
+  `reply`: the channel instructions never say that terminal text does not reach the sender, and the
+  Claude Code event has no trailing reply line (the framed harnesses do, `OwnerLine`/`DataLine`).
+  Not fixed here: it is a change to what the model is told with an effect only a real model can
+  show, so the proposal (a sentence in `conversationNote`, a test on the text, several fresh-session
+  repeats) stays in `uat.md` for the coordinator to schedule.
