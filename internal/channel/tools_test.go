@@ -70,7 +70,7 @@ func TestToolsList(t *testing.T) {
 	s.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	list := s.response()["result"].(map[string]any)["tools"].([]any)
 	required := map[string][]any{
-		"send_message":        {"room", "text"},
+		"send_message":        {"text"}, // room or to, exactly one: the schema cannot say so
 		"reply":               {"message_id", "text"},
 		"list_rooms":          nil,
 		"history":             {"room"},
@@ -78,6 +78,8 @@ func TestToolsList(t *testing.T) {
 		"send_file":           {"room", "path"},
 		"room_info":           {"room"},
 		"react":               {"message_id", "emoji"},
+		"create_group":        {"name", "members"},
+		"update_profile":      nil, // at least one field, checked by the tool
 	}
 	got := map[string]bool{}
 	for _, item := range list {
@@ -375,6 +377,8 @@ func TestToolsWithInvalidToken(t *testing.T) {
 		"history":             toolArgs("room", "Support"),
 		"download_attachment": toolArgs("attachment_id", "a"),
 		"send_file":           toolArgs("room", "Support", "path", "/etc/hostname"),
+		"create_group":        toolArgs("name", "Ops", "members", []string{"@alice"}),
+		"update_profile":      toolArgs("bio", "x"),
 	} {
 		text, isErr := s.call(tool, args)
 		require.True(t, isErr, tool)

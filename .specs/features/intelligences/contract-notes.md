@@ -2032,3 +2032,86 @@ Web only. No API changed.
   persons, apps, managing an AI), `routes/_app/contacts.test.tsx` (the links to profiles), `components/command-menu.test.tsx`
   (an AI opens its profile), `routes/a11y.test.tsx` (axe on an AI's profile with a preview showing, on a person's, and on a phone,
   in both languages).
+
+## T37 - Conversation and profile tools for AIs (DM-04, PROF-04, AGRP-01, AGRP-02)
+
+`internal/channel/tools.go`; the tools call the T24 and T10 agent routes and add no server code.
+
+- **`send_message`** takes `room` **or** `to`. A blank value counts as not given (some models send
+  every parameter). Both → tool error `give either room or to, not both: …`; neither → `room or to
+  is required: …`; then `text is required`. `to` is `"@handle"`, a handle in any case or an
+  intelligence id: `POST /agent/dms {to, text, chat_ids}` with `chat_ids` and the older `recipients`
+  joined as for `room`; the answer is the same `sent (message_id …)`. The DM it opens, the
+  owner-visibility rule, the 30 posts a minute (shared with `room` posts) and the 10 new
+  conversations an hour are the server's (T20, T24). The schema's `required` is `["text"]`: the
+  Claude API takes no top-level `oneOf`, so "exactly one of room and to" is said in the tool and
+  parameter descriptions and enforced by the tool.
+- **`create_group`**: `name` and `members` (non-empty list of `"@handle"`, handles or ids) required,
+  `description` optional → `POST /agent/groups`; the answer is the JSON `{"room": "<room id>",
+  "name": "<name>"}` (`dto.CreatedGroup`). The AI is added by the server; its owner is a member
+  only when listed. A refused member is the tool error
+  `members_refused: some members cannot be added to the group; nothing was created (refused: @sage
+  (not_found), @bob (person))`: every refused reference **as the AI wrote it**, in order, each with
+  its reason; the members that could be added are not named. Nothing exists afterwards.
+- **`update_profile`**: `display_name`, `handle` (without the `@`), `bio` (an empty string clears
+  it, an absent one leaves it) and `avatar_path`; at least one is required, else `give at least one
+  of display_name, handle, bio or avatar_path` (a blank `avatar_path` is absent). The file is read
+  **first**: it must be a regular file (a directory or a pipe is never opened) of at most
+  `avatars.MaxBytes` (2 MiB), else the tool errors `read <path>: …` or `avatar_invalid: <path> is
+  larger than 2 MiB`, nothing is sent and nothing changes, the other fields included. Then the text
+  fields go in one `PATCH /agent/profile` (all or nothing on the server) and the bytes in a
+  `PUT /agent/profile/avatar` (content type sniffed by the channel, the server sniffs again). The
+  answer is `{"id", "display_name", "handle", "bio", "avatar_url"?}` of the last response, the
+  profile after the change. When the PUT is refused after the PATCH was applied, the error says
+  so: `avatar_invalid: …; already applied: display_name, bio` (design deviation, see below). There
+  is no way to name another intelligence: an `id` in the arguments is ignored and the AI of the
+  session is the one edited.
+- **Error codes in tool errors.** `apiError` prefixes the server's message with its code as
+  `code: message` for `namedCodes`: `contact_not_found`, `no_route_to_person`, `dm_self`,
+  `counterpart_disabled`, `members_refused`, `handle_taken`, `avatar_invalid` and `rate_limited`.
+  Every other error keeps showing the server's message alone (existing tests assert those texts),
+  and a message that already leads with its code in words is left as it is: the post limit stays
+  `rate limited: at most 30 messages per minute`, the new-conversation limit reads `rate_limited:
+  too many new conversations, try again later`. A refused group also appends the refused list and
+  `nothing was created`; field errors keep their `(field: reason)` suffix.
+- **Notice that says who the AI is.** The full channel (`Run`, not tools-only) turns the first
+  welcome frame that names the AI into one channel notification: `You are <display name>
+  (@handle). Your owner is <display name> (@handle).` (the second sentence only when the welcome
+  names the owner; nothing when it names no AI, as an older server). Meta: `type=notice`,
+  `reason=identity`, `author=Partyline`, `author_kind=system`, `sender_name=""`, `trusted=false`,
+  `kind=system`, no room keys (`systemNotice`, which `connectionNotice` now builds too). It is sent
+  once per process: the welcome of a reconnect says nothing. Because it is a `type=notice`, the omp
+  extension shows it to the person and never to the model; Claude Code hands it to the model, which
+  is where the owner's `@handle` is useful for `send_message to`. `partyline listen` (pi, OpenCode)
+  and the tools-only servers (Codex, Gemini, the tools half of pi and OpenCode) do not send it:
+  `listen`'s output stays message lines and the busy and taken-over notices, so the adapters and
+  their tests are unchanged.
+- **Instructions.** A new paragraph (`conversationTools`) follows `toolUse` in the channel, the
+  tools-only and the omp instructions: `to` instead of `room`, create_group and its all-or-nothing
+  refusal, update_profile and the avatar limits. The channel's alone also says (`identityNote`)
+  that a connect notice tells who the session is and who its owner is. No existing sentence changed.
+- **Docs**: `docs/agents.md` (tools table, the connect notice, the conversation limit).
+- **Test infrastructure.** `session` (channel tests) and `mcpClient` (cli tests) keep the identity
+  notice apart from the other notifications (`identityNotice`, `expectNoIdentityNotice`), so every
+  test that reads the first message still does. `TestRunFailsWhenOutputCloses` lets two writes
+  through (the initialize answer and the identity notice) before the one that must fail.
+  `TestToolsList` expects the new tool set and `send_message`'s new `required`; `allTools` and the
+  invalid-token loop gained the new tools.
+- **Deviations and choices.** (1) The design lists `update_profile` as PATCH then PUT and says
+  nothing about a failure between them; the tool reports what was applied rather than adding a
+  server transaction (no new route or migration). (2) The identity notice is the full channel's
+  only (above). (3) `members` must not be empty in the tool although the server accepts a group of
+  the AI alone: the schema marks it required.
+- Tests: `internal/channel/conversation_tools_test.go` (the three tools through the real channel
+  and server; the authorization matrix: the owner as target, a use grantee's AI reachable after
+  sharing and not before, a stranger's AI and a ghost answering alike, any user reachable, the DM
+  visible to both owners and not to a stranger, a person without a route, a disabled user, the AI
+  itself; `chat_ids`/`recipients` forwarded with `to`; the post limit shared by DMs and keeping its
+  words; the 10 conversations an hour; create_group's refusal of an unshared AI, a person and an
+  unknown handle with the exact text and nothing created, the owner a member only when listed;
+  update_profile's validation, the three image formats, the 2 MiB boundary, a missing file and a
+  directory, the owner, a grantee and a stranger reading the profile, and an `id` argument naming
+  nothing; the tools-only server; the link states; the instructions; the identity notice with
+  renamed names, across a reconnect, for incomplete welcomes and not on `listen`),
+  `internal/channel/tools_unix_test.go` (a named pipe as the avatar) and
+  `internal/cli/channel_test.go` (the notice through the real `partyline channel`).

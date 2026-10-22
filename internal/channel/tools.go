@@ -21,13 +21,15 @@ import (
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/avatars"
 	"github.com/wnexous/partyline/internal/channel/mcp"
 )
 
 // toolTimeout bounds one tool call, file transfers included.
 const toolTimeout = 2 * time.Minute
 
-// tools implements the room tools (TOOL-01..09) over the agent REST API.
+// tools implements the room tools (TOOL-01..09) and the conversation and profile tools of an AI
+// (DM-04, AGRP-01, PROF-04) over the agent REST API.
 type tools struct {
 	api *client
 	// link is the agent WebSocket; nil for a tools-only channel.
@@ -52,8 +54,8 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.react))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_message",
-		Description: "Post a message to a room or DM you belong to, optionally only to some of its chats.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"text":{"type":"string","description":"message text"},"chat_ids":{"type":"array","items":{"type":"string"},"description":"optional chat ids (the chat_id of a chat message, or member_id of chat members from list_rooms) to answer only those chats, at most 10 chats per message; empty sends to every chat of the room"},"recipients":{"type":"array","items":{"type":"string"},"description":"older name of chat_ids; still accepted"}},"required":["room","text"]}`),
+		Description: "Post a message to a room or DM you belong to (room), or message an intelligence directly (to): the DM is created the first time, for any intelligence your owner can see. Give exactly one of room and to; chat_ids limits a post to some of the room's chats.",
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"to":{"type":"string","description":"instead of room: the @handle, handle or id of an intelligence to message directly; the DM is created if you never talked"},"text":{"type":"string","description":"message text"},"chat_ids":{"type":"array","items":{"type":"string"},"description":"optional chat ids (the chat_id of a chat message, or member_id of chat members from list_rooms) to answer only those chats, at most 10 chats per message; empty sends to every chat of the room"},"recipients":{"type":"array","items":{"type":"string"},"description":"older name of chat_ids; still accepted"}},"required":["text"]}`),
 	}, t.guard(t.sendMessage))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "room_info",
@@ -80,6 +82,16 @@ func (t *tools) register(srv *mcp.Server) {
 		Description: "Upload a local file to a room, with an optional caption and reply_to.",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"path":{"type":"string","description":"local file path"},"caption":{"type":"string","description":"optional text sent with the file"},"reply_to":{"type":"string","description":"optional message_id this file answers"}},"required":["room","path"]}`),
 	}, t.guard(t.sendFile))
+	srv.HandleTool(mcp.ToolDef{
+		Name:        "create_group",
+		Description: "Create a group owned by your owner, with you and the given members. You are added automatically; your owner is a member only when listed. If any member cannot be added nothing is created and the error lists the refused ones with the reason (not_found: unknown, disabled or not yours to add; person: people from chats cannot be members).",
+		InputSchema: schema(`{"type":"object","properties":{"name":{"type":"string","description":"group name, 1 to 100 characters"},"members":{"type":"array","items":{"type":"string"},"description":"@handle, handle or id of each user or AI to add, at most 50"},"description":{"type":"string","description":"optional description, up to 1000 characters"}},"required":["name","members"]}`),
+	}, t.guard(t.createGroup))
+	srv.HandleTool(mcp.ToolDef{
+		Name:        "update_profile",
+		Description: "Change your own profile: display name, @handle, bio and avatar. Give at least one field; the ones you leave out stay as they are. Returns your updated profile.",
+		InputSchema: schema(`{"type":"object","properties":{"display_name":{"type":"string","description":"your display name, 1 to 64 characters"},"handle":{"type":"string","description":"your @handle without the @: 1 to 40 characters of a-z, 0-9 and -, starting with a letter, unique on this instance"},"bio":{"type":"string","description":"your bio, up to 280 characters; an empty bio clears it"},"avatar_path":{"type":"string","description":"path of a local PNG, JPEG or WebP image of at most 2 MiB; it is cropped to a square and resized to 256x256"}}}`),
+	}, t.guard(t.updateProfile))
 }
 
 type toolFunc func(ctx context.Context, args json.RawMessage) (string, error)
@@ -175,6 +187,7 @@ func (t *tools) react(ctx context.Context, args json.RawMessage) (string, error)
 func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
 		Room       string   `json:"room"`
+		To         string   `json:"to"`
 		Text       string   `json:"text"`
 		ChatIDs    []string `json:"chat_ids"`
 		Recipients []string `json:"recipients"`
@@ -182,7 +195,16 @@ func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, 
 	if err := decode(args, &a); err != nil {
 		return "", err
 	}
-	if err := required("room", a.Room, "text", a.Text); err != nil {
+	// Exactly one of room and to says where the message goes; an empty value is not given, as
+	// some models send every parameter (DM-04).
+	hasRoom, hasTo := strings.TrimSpace(a.Room) != "", strings.TrimSpace(a.To) != ""
+	switch {
+	case hasRoom && hasTo:
+		return "", errors.New("give either room or to, not both: room posts in a room or DM you belong to, to messages an intelligence directly")
+	case !hasRoom && !hasTo:
+		return "", errors.New("room or to is required: name the room to post in, or the @handle of the intelligence to message")
+	}
+	if err := required("text", a.Text); err != nil {
 		return "", err
 	}
 	// chat_ids is the documented name; recipients (the older one) still works, and both
@@ -194,10 +216,142 @@ func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, 
 		}
 	}
 	var m dto.Message
-	if err := t.api.json(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil, dto.PostMessageRequest{Text: a.Text, Recipients: recipients}, &m); err != nil {
+	var err error
+	if hasTo {
+		err = t.api.json(ctx, http.MethodPost, "agent/dms", nil, dto.AgentDMRequest{To: a.To, Text: a.Text, ChatIDs: recipients}, &m)
+	} else {
+		err = t.api.json(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil, dto.PostMessageRequest{Text: a.Text, Recipients: recipients}, &m)
+	}
+	if err != nil {
 		return "", err
 	}
 	return sent(m), nil
+}
+
+// createGroup makes a group of the AI's owner with the AI and the named members (AGRP-01); a
+// member the owner cannot add makes the server refuse the whole group, and the error lists them
+// (AGRP-02).
+func (t *tools) createGroup(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Members     []string `json:"members"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	if err := required("name", a.Name); err != nil {
+		return "", err
+	}
+	if len(a.Members) == 0 {
+		return "", errors.New("members is required: list the @handles or ids of the users and AIs to add")
+	}
+	var g dto.CreatedGroup
+	if err := t.api.json(ctx, http.MethodPost, "agent/groups", nil, dto.CreateGroupRequest{Name: a.Name, Description: a.Description, Members: a.Members}, &g); err != nil {
+		return "", err
+	}
+	return marshal(g)
+}
+
+// profileListing is the update_profile answer: the AI's profile after the change.
+type profileListing struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Handle      string `json:"handle"`
+	Bio         string `json:"bio"`
+	AvatarURL   string `json:"avatar_url,omitempty"`
+}
+
+// updateProfile changes the profile of the AI that calls, never another one (PROF-04): the text
+// fields in one request, then the avatar from a local file. The file is read first, so one that
+// cannot be read or is too big changes nothing; when the server refuses the image after the text
+// fields were applied, the error says which were.
+func (t *tools) updateProfile(ctx context.Context, args json.RawMessage) (string, error) {
+	var a struct {
+		DisplayName *string `json:"display_name"`
+		Handle      *string `json:"handle"`
+		Bio         *string `json:"bio"`
+		AvatarPath  string  `json:"avatar_path"`
+	}
+	if err := decode(args, &a); err != nil {
+		return "", err
+	}
+	var fields []string
+	for _, f := range []struct {
+		name  string
+		value *string
+	}{{"display_name", a.DisplayName}, {"handle", a.Handle}, {"bio", a.Bio}} {
+		if f.value != nil {
+			fields = append(fields, f.name)
+		}
+	}
+	hasAvatar := strings.TrimSpace(a.AvatarPath) != ""
+	if len(fields) == 0 && !hasAvatar {
+		return "", errors.New("give at least one of display_name, handle, bio or avatar_path")
+	}
+	var avatar []byte
+	if hasAvatar {
+		var err error
+		if avatar, err = readAvatar(a.AvatarPath); err != nil {
+			return "", err
+		}
+	}
+
+	var prof dto.IntelligenceProfile
+	if len(fields) > 0 {
+		if err := t.api.json(ctx, http.MethodPatch, "agent/profile", nil, dto.UpdateProfileRequest{DisplayName: a.DisplayName, Handle: a.Handle, Bio: a.Bio}, &prof); err != nil {
+			return "", err
+		}
+	}
+	if hasAvatar {
+		resp, err := t.api.do(ctx, http.MethodPut, "agent/profile/avatar", nil, http.DetectContentType(avatar), bytes.NewReader(avatar))
+		if err != nil {
+			if len(fields) > 0 {
+				err = fmt.Errorf("%w; already applied: %s", err, strings.Join(fields, ", "))
+			}
+			return "", err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := json.NewDecoder(resp.Body).Decode(&prof); err != nil {
+			return "", fmt.Errorf("partyline: unexpected answer: %w", err)
+		}
+	}
+	return marshal(profileListing{ID: prof.ID, DisplayName: prof.DisplayName, Handle: prof.Handle, Bio: prof.Bio, AvatarURL: prof.AvatarURL})
+}
+
+// readAvatar reads the avatar file an AI names, a regular file: a directory or a pipe is never
+// opened. The server takes at most avatars.MaxBytes (2 MiB), so a bigger file is avatar_invalid
+// here, before anything is sent.
+func readAvatar(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, unreadable(path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("read %s: not a regular file", path)
+	}
+	f, err := os.Open(path) // #nosec G304 -- the session asks to use this local file as its avatar
+	if err != nil {
+		return nil, unreadable(path, err)
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, avatars.MaxBytes+1))
+	if err != nil {
+		return nil, unreadable(path, err)
+	}
+	if len(data) > avatars.MaxBytes {
+		return nil, fmt.Errorf("%s: %s is larger than %d MiB", dto.ErrorCodeAvatarInvalid, path, avatars.MaxBytes>>20)
+	}
+	return data, nil
+}
+
+// unreadable is the error for a file that cannot be read, with the path once.
+func unreadable(path string, err error) error {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		err = pe.Err
+	}
+	return fmt.Errorf("read %s: %w", path, err)
 }
 
 // roomListing is one room in the list_rooms answer (TOOL-09). A DM has kind "dm", is named by the

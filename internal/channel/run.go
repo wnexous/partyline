@@ -112,7 +112,7 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 	l := newLink(base, o.Token, id, o.HTTPClient, srv, o.Stderr, o.timing)
-	l.takeover, l.zone = o.Takeover, o.zone
+	l.takeover, l.zone, l.announce = o.Takeover, o.zone, true
 	l.onLost = func(reason lostReason, text string) {
 		fmt.Fprintf(o.Stderr, "partyline: %s\n", text)
 		if reason == lostTakenOver {

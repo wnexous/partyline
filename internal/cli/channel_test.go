@@ -42,13 +42,35 @@ func (l *lockedBuffer) String() string {
 	return l.b.String()
 }
 
-// mcpClient drives `partyline channel` over pipes the way Claude Code does.
+// mcpClient drives `partyline channel` over pipes the way Claude Code does. The notice the channel
+// sends when it first connects, which says who the AI is and who its owner is, is kept apart from
+// lines, so the tests of the tools and the messages read their output in the order they always had.
 type mcpClient struct {
-	t      *testing.T
-	in     *io.PipeWriter
-	lines  chan map[string]any
-	stderr *lockedBuffer
-	code   chan int
+	t        *testing.T
+	in       *io.PipeWriter
+	lines    chan map[string]any
+	identity chan map[string]any
+	stderr   *lockedBuffer
+	code     chan int
+}
+
+// isIdentityNotice tells the channel notification that says who the AI is.
+func isIdentityNotice(m map[string]any) bool {
+	params, _ := m["params"].(map[string]any)
+	meta, _ := params["meta"].(map[string]any)
+	return m["method"] == "notifications/claude/channel" && meta["reason"] == "identity"
+}
+
+// identityNotice returns the notification that says who the AI is, waiting for it.
+func (c *mcpClient) identityNotice() map[string]any {
+	c.t.Helper()
+	select {
+	case m := <-c.identity:
+		return m
+	case <-time.After(chanWait):
+		require.FailNow(c.t, "no identity notice from the channel", "stderr: %s", c.stderr.String())
+		return nil
+	}
 }
 
 func startChannel(t *testing.T, args []string, env map[string]string, wd string) *mcpClient {
@@ -62,15 +84,20 @@ func startChannelWith(t *testing.T, args []string, env map[string]string, wd str
 	t.Helper()
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
-	c := &mcpClient{t: t, in: inW, lines: make(chan map[string]any, 64), stderr: &lockedBuffer{}, code: make(chan int, 1)}
+	c := &mcpClient{t: t, in: inW, lines: make(chan map[string]any, 64), identity: make(chan map[string]any, 16), stderr: &lockedBuffer{}, code: make(chan int, 1)}
 	go func() {
 		sc := bufio.NewScanner(outR)
 		sc.Buffer(make([]byte, 1<<20), 4<<20)
 		for sc.Scan() {
 			var m map[string]any
-			if json.Unmarshal(sc.Bytes(), &m) == nil {
-				c.lines <- m
+			if json.Unmarshal(sc.Bytes(), &m) != nil {
+				continue
 			}
+			if isIdentityNotice(m) {
+				c.identity <- m
+				continue
+			}
+			c.lines <- m
 		}
 	}()
 	std := stdio{
@@ -218,6 +245,9 @@ func TestChannelEndToEnd(t *testing.T) {
 	require.Equal(t, []any{"My Project", "my-project", "claude", testMachine, "~/src/My Project"},
 		[]any{prof.DisplayName, prof.Handle, agent.App, agent.Machine, agent.FolderLabel},
 		"AID-01: the session's machine, folder and harness reach the server")
+	who := c.identityNotice()["params"].(map[string]any)
+	require.Equal(t, "You are My Project (@my-project). Your owner is alice (@alice).", who["content"],
+		"the first welcome tells the session who it is and who its owner is")
 	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
 	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: prof.ID}).RequireStatus(http.StatusCreated)
 	question := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "reply with pong"}).RequireStatus(http.StatusCreated))

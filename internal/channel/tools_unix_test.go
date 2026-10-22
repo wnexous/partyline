@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -100,4 +101,20 @@ func TestToolDownloadReplacesPlantedSymlink(t *testing.T) {
 	data, err = os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, "the real report", string(data))
+}
+
+// PROF-04 hardening: update_profile reads a regular file only. A named pipe that nobody writes
+// to would block the open for ever, so the tool refuses it before opening and answers at once;
+// nothing changes.
+func TestToolUpdateProfileRefusesAPipeAsAvatar(t *testing.T) {
+	c := newCast(t)
+	s := c.connected(c.options())
+	pipe := filepath.Join(t.TempDir(), "avatar.fifo")
+	require.NoError(t, syscall.Mkfifo(pipe, 0o600))
+
+	text, isErr := s.call("update_profile", toolArgs("display_name", "Piped", "avatar_path", pipe))
+	require.True(t, isErr, text)
+	require.Contains(t, text, pipe)
+	require.Contains(t, text, "not a regular file")
+	require.Equal(t, "Builder", c.profile(c.alice, c.agentID).DisplayName, "nothing changed")
 }
