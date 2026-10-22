@@ -130,7 +130,7 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
             <p>{query ? t("picker.noMatch") : t("picker.nothing")}</p>
             {!query ? (
               <p className="mt-3 flex justify-center gap-4">
-                <Link to="/agents" className="font-medium text-foreground underline">
+                <Link to="/contacts" className="font-medium text-foreground underline">
                   {t("picker.connectAgent")}
                 </Link>
                 <Link to="/connectors" className="font-medium text-foreground underline">

@@ -151,7 +151,7 @@ test("connect an agent shows the install and setup commands and each harness's s
 }) => {
   await loginAs(context, instance, ADMIN);
   const before = await apiCall<List<Token>>(context.request, instance, "GET", "/tokens");
-  await page.goto("/agents");
+  await page.goto("/contacts");
   await page.getByRole("button", { name: "Connect an agent" }).click();
   const dialog = page.getByRole("dialog", { name: "Connect an agent" });
   const code = (label: string) => dialog.getByRole("figure", { name: label }).locator("pre");
@@ -321,7 +321,7 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24)", async
   const pages: [string, string][] = [
     ["/", homeHeading(testInfo)],
     [`/rooms/${room.id}`, "e2e-narrow"],
-    ["/agents", "Agents"],
+    ["/contacts", "Contacts"],
     ["/connectors", "Connectors"],
     ["/settings", "Settings"],
   ];

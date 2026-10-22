@@ -138,8 +138,7 @@ describe("header menu (LAY-06)", () => {
     const menu = await openMenu();
     expect(destinations(menu)).toEqual([
       ["Conversations", "/"],
-      // SPEC_DEVIATION (T44): Contacts opens the agents page until T47 adds /contacts.
-      ["Contacts", "/agents"],
+      ["Contacts", "/contacts"],
       ["Connectors", "/connectors"],
       ["Identities", "/identities"],
       ["Devices", "/devices"],

@@ -1541,3 +1541,73 @@ Web only. No API changed.
   `lib/presence.test.ts`, `hooks/use-debounced-value.test.tsx`, `routes/_app/rooms/room.test.tsx` (member picker),
   `routes/autofocus.test.tsx` (both dialogs), `routes/a11y.test.tsx` (axe on both dialogs, en and pt-BR),
   `components/intelligence/intelligence.test.tsx` (`initials`). The e2e smoke test creates its room through "New group".
+
+## T47 - Contacts page (CONT-01, TREE-01..TREE-06)
+
+Web only. No API changed.
+
+- **Routes**: `/contacts` (`routes/_app/contacts.index.tsx`). `/agents` is a redirect route under `_app` (`replace`), so old
+  links and bookmarks land on `/contacts`, and a visitor without a session still goes to login first, remembering the address
+  they asked for. The header menu's **Contacts** entry opens `/contacts` (it is active on the profile pages below it too): the
+  SPEC_DEVIATION of T44 is closed. The member picker, API tokens, devices ("Go to contacts") and route-chat links to the agents
+  page point to it. The palette's AI entries open `/contacts` (T48 sends them to the profile).
+- **Page**: header (Contacts, and "Connect an agent" once there is anything to show), a filter box (`<search>`, "Filter
+  contacts", clear button and Escape), then the sections in this order, each an `h2`: **My AIs**, **Unlinked**, **Shared with
+  me**, **People**, **Users**; a section with nothing to show is left out (My AIs stays, with a hint and a connect button, while
+  the filter is empty). No contact at all (no AI, unlinked, shared, user or connector): the empty state "No contacts yet" with the
+  connect action. A failed load shows an alert with "Try again". `ConnectAgentDialog` is the page's, as it was the agents
+  page's: it survives the empty state turning into the list when the first AI registers.
+- **Machines** (`components/machine-group.tsx`, TREE-01..04): one group per machine (`section` named by its heading), ordered by
+  `sortMachines` (an AI **online now** first - the live presence folded over the cached tree, not the `online` flag the server
+  sent - then by the owner's label, the hostname when it has none, ignoring case; the cached tree is never re-sorted), headed by the
+  label with the hostname beside it when they differ, `N of M online` (live; counted over what the filter leaves) and a rename
+  pencil. **Rename** (`InlineRename`, extracted from the agents page): the field starts from the label shown, Enter or Save sends
+  `PUT /machines/{hostname}` (`useSetMachineLabel`), Escape or Cancel closes, the same text closes without a request, more than
+  64 characters is refused before asking (the hostname is the placeholder: an empty label brings it back), a 422 `fields.label` shows
+  under the field, any other failure a toast, and the field stays open on both. The label replaces the hostname in the tree and is
+  what the filter matches (with the hostname). The heading stays (`sr-only`) while renaming, so the group keeps its name.
+- **Tree** (TREE-01, TREE-02): nested lists. A node's children hang from a line under its avatar; an AI whose folder is inside
+  another's is nested under it at any depth (the server builds the tree, T25/T28). A row is the AI's **display name** with
+  `Path ›` before it when the server collapsed folders that hold no AI (`c/d ›`, `projects/acme/agents ›`), the kind badge, the
+  `@handle`, and a line of: online or offline, **last seen** (relative, absolute in the tooltip; "Never connected" without one;
+  only while offline), the app, and the folder as the server labels it (`~` for the home folder, `~/x`). The folder's own `name` (the
+  tree node's) is not shown separately: its label is in the line. The line wraps and a path may break anywhere, so a narrow screen
+  does not scroll sideways. Each row has **Message**.
+- **Filter** (`lib/contacts.filterMachines`, TREE-05): every word has to be found, each in the AI's name, @handle, folder (both
+  forms), app, hostname or machine label; a node that matches stays with every ancestor it hangs from and **not** with its other
+  children; a machine whose label or hostname matches the whole text stays whole. Case and accents are ignored. The same
+  matcher narrows Unlinked, Shared with me (their own text: name, handle, app, machine, folder; not the owner) and Users (name,
+  handle); a section without a match disappears, and with nothing left (and no connector to search) the page says "Nothing matches
+  “…”" with **Show all contacts**.
+- **Unlinked** (TREE-06): the AIs with no folder: name, handle, last seen or never, **Message** and **Delete** (an alert dialog:
+  "Delete X?", it leaves every group, its DMs are deleted, it loses its sharing; `DELETE /agents/{id}`, `DeleteAIDialog`, a toast
+  and the AI leaves the list at once; a failure toasts and keeps it). **Merge is not offered**: its API (T35, `POST
+  /agents/{id}/merge`) does not exist yet (MRG-01 stays Pending); the action joins the row with T35.
+- **Shared with me** and **Users**: the AIs of other users the caller may use (with "by @owner", the owner's machine and folder, and
+  the same state line) and the other enabled users, each with **Message**.
+- **People** (CONT-01, `components/people-group.tsx`): one row per connector the user owns or may use - its name, the platform and
+  how many people it has seen - **closed until asked**: opening one lists its people, a page of 50 at a time (`usePeople`,
+  `GET /contacts/people?connector_id&limit=50`), with **Show more** (cursor = the id of the last person shown); a connector that
+  saw no one is a plain row. With a filter the connectors that saw someone open by themselves and the **server** searches their
+  people (`q` = the text once it settled for 250 ms; the previous search stays on screen until the next arrives): a connector whose
+  search finds no one says "No one found."; one that saw no one leaves the list. A person row shows the platform badge and
+  **Message** (a person can be answered only in a conversation they started with an account the user operates: otherwise the
+  toast says so, `no_route_to_person`, DM-05).
+- **Message** (`components/message-button.tsx`, DM-01): `useStartConversation({ onError })` opens the DM and goes to it; a failure is
+  a toast (`contact_not_found`, `no_route_to_person`, anything else). The text of the button hides below 640 px; its label always
+  names the contact.
+- **Removed with the agents page**: the project grouping, the archive toggle, "keep" (temporary → fixed), the machine and harness
+  selects (the tree and the filter replace them) and the in-place rename of an agent and of a project. The page's other features
+  moved: the wizard (header and empty state; its tests are `components/connect-agent-dialog.test.tsx`), deleting (`DeleteAIDialog`),
+  renaming (the profile editor, T48) and sharing an AI (T48 carries the dialog to the profile of an AI the user manages).
+  `groupByProject`, `distinct`, `AgentGroup`, `withPresence`, `byLiveness` and `AgentView` went with it; the `agents.*` and
+  `page.agents*` i18n keys too. The v0.3 hooks the live handlers and the project members still use (`useProjects`,
+  `useAgentsWithArchived`, `useUpdateAgent`, `useRenameProject`) stay until T50.
+- **e2e**: the connect-an-agent smoke test and the no-horizontal-scroll page list use `/contacts`. The two v0.3 smoke tests that
+  drive the agents page by project (PROJ-04/05) still target the old page and fail until T52 replaces them.
+- Tests: `routes/_app/contacts.test.tsx` (every block above, with the live presence, the rename and the paging),
+  `lib/contacts.test.ts` (`filterMachines`, `sortMachines`, `machineOnlineCount`), `components/connect-agent-dialog.test.tsx`
+  (the wizard, moved), `routes/a11y.test.tsx` (axe on the page, desktop and phone, with a connector open and a rename field
+  showing), `routes/messenger-shell.test.tsx` (the menu entry), `routes/_app/rooms/room.test.tsx` (the picker's link),
+  `components/command-menu.test.tsx`, `routes/auth.test.tsx`, `routes/app-shell.test.tsx` and `routes/live-session.test.tsx` (they
+  used `/agents` as an example route).

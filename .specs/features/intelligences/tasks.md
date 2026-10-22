@@ -896,10 +896,13 @@ panel lists AIs, users and chats; the people rows under each chat arrive with T2
 **Requirement**: CONT-01, TREE-01, TREE-02, TREE-03, TREE-04, TREE-05, TREE-06, MRG-01
 **Tools**: MCP: NONE; Skill: `impeccable`
 **Done when**:
-- [ ] Two machines render as two groups with `b` nested under `a` and `c/d › e` collapsed, `~` for home (TREE-01, TREE-02); rows show name, online, app, last seen; online machines first (TREE-03)
-- [ ] Machine rename replaces the hostname (TREE-04); filter by name/handle/folder/machine keeps ancestors (TREE-05); Unlinked offers merge and delete (TREE-06, MRG-01)
-- [ ] Shared AIs, users and people sections render from the contacts data (CONT-01)
-- [ ] Gate check passes: `make check`
+- [x] Two machines render as two groups with `b` nested under `a` and `c/d › e` collapsed, `~` for home (TREE-01, TREE-02); rows show name, online, app, last seen; online machines first (TREE-03)
+- [x] Machine rename replaces the hostname (TREE-04); filter by name/handle/folder/machine keeps ancestors (TREE-05); Unlinked offers merge and delete (TREE-06, MRG-01)
+- [x] Shared AIs, users and people sections render from the contacts data (CONT-01)
+- [x] Gate check passes: `make check`
+
+**Open (MRG-01):** the merge API (T35, `POST /agents/{id}/merge`) does not exist yet, so Unlinked offers **delete only**
+(and Message); the "merge into…" action arrives with T35 (see `contract-notes.md`, T47). MRG-01 stays Pending.
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add the contacts page with the machine tree`

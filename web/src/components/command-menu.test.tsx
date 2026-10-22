@@ -114,7 +114,7 @@ describe("command palette (UI-22)", () => {
     };
 
     await jump("ops-bot", "/connectors/k1");
-    await jump("release-bot", "/agents");
+    await jump("release-bot", "/contacts");
     await jump("audit", "/admin/audit");
   });
 

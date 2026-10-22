@@ -113,7 +113,7 @@ function PaletteBody({ me, onDone }: { me: Me; onDone: () => void }) {
                 key={agent.id}
                 value={`agent:${agent.id}`}
                 keywords={[agent.name, agent.description]}
-                onSelect={() => go("/agents")}
+                onSelect={() => go("/contacts")}
                 icon={<BotIcon aria-hidden="true" />}
                 label={agent.name}
                 trailing={<StatusDot online={presence[agent.id]?.online ?? agent.online} />}

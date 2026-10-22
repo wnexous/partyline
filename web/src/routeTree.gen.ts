@@ -24,6 +24,7 @@ import { Route as AppAdminInvitesRouteImport } from './routes/_app/admin/invites
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppConnectorsIndexRouteImport } from './routes/_app/connectors/index'
 import { Route as AppConnectorsConnectorIdRouteImport } from './routes/_app/connectors/$connectorId'
+import { Route as AppContactsIndexRouteImport } from './routes/_app/contacts.index'
 import { Route as AppDevicesIndexRouteImport } from './routes/_app/devices.index'
 import { Route as AppDevicesCodeRouteImport } from './routes/_app/devices.$code'
 import { Route as AppRoomsIndexRouteImport } from './routes/_app/rooms/index'
@@ -104,6 +105,11 @@ const AppConnectorsConnectorIdRoute =
     path: '/connectors/$connectorId',
     getParentRoute: () => AppRoute,
   } as any)
+const AppContactsIndexRoute = AppContactsIndexRouteImport.update({
+  id: '/contacts/',
+  path: '/contacts/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDevicesIndexRoute = AppDevicesIndexRouteImport.update({
   id: '/devices/',
   path: '/devices/',
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/devices/$code': typeof AppDevicesCodeRoute
   '/rooms/$roomId': typeof AppRoomsRoomIdRoute
   '/connectors/': typeof AppConnectorsIndexRoute
+  '/contacts/': typeof AppContactsIndexRoute
   '/devices/': typeof AppDevicesIndexRoute
   '/rooms/': typeof AppRoomsIndexRoute
 }
@@ -162,6 +169,7 @@ export interface FileRoutesByTo {
   '/devices/$code': typeof AppDevicesCodeRoute
   '/rooms/$roomId': typeof AppRoomsRoomIdRoute
   '/connectors': typeof AppConnectorsIndexRoute
+  '/contacts': typeof AppContactsIndexRoute
   '/devices': typeof AppDevicesIndexRoute
   '/rooms': typeof AppRoomsIndexRoute
 }
@@ -184,6 +192,7 @@ export interface FileRoutesById {
   '/_app/devices/$code': typeof AppDevicesCodeRoute
   '/_app/rooms/$roomId': typeof AppRoomsRoomIdRoute
   '/_app/connectors/': typeof AppConnectorsIndexRoute
+  '/_app/contacts/': typeof AppContactsIndexRoute
   '/_app/devices/': typeof AppDevicesIndexRoute
   '/_app/rooms/': typeof AppRoomsIndexRoute
 }
@@ -206,6 +215,7 @@ export interface FileRouteTypes {
     | '/devices/$code'
     | '/rooms/$roomId'
     | '/connectors/'
+    | '/contacts/'
     | '/devices/'
     | '/rooms/'
   fileRoutesByTo: FileRoutesByTo
@@ -226,6 +236,7 @@ export interface FileRouteTypes {
     | '/devices/$code'
     | '/rooms/$roomId'
     | '/connectors'
+    | '/contacts'
     | '/devices'
     | '/rooms'
   id:
@@ -247,6 +258,7 @@ export interface FileRouteTypes {
     | '/_app/devices/$code'
     | '/_app/rooms/$roomId'
     | '/_app/connectors/'
+    | '/_app/contacts/'
     | '/_app/devices/'
     | '/_app/rooms/'
   fileRoutesById: FileRoutesById
@@ -365,6 +377,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConnectorsConnectorIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/contacts/': {
+      id: '/_app/contacts/'
+      path: '/contacts'
+      fullPath: '/contacts/'
+      preLoaderRoute: typeof AppContactsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/devices/': {
       id: '/_app/devices/'
       path: '/devices'
@@ -423,6 +442,7 @@ interface AppRouteChildren {
   AppDevicesCodeRoute: typeof AppDevicesCodeRoute
   AppRoomsRoomIdRoute: typeof AppRoomsRoomIdRoute
   AppConnectorsIndexRoute: typeof AppConnectorsIndexRoute
+  AppContactsIndexRoute: typeof AppContactsIndexRoute
   AppDevicesIndexRoute: typeof AppDevicesIndexRoute
   AppRoomsIndexRoute: typeof AppRoomsIndexRoute
 }
@@ -438,6 +458,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDevicesCodeRoute: AppDevicesCodeRoute,
   AppRoomsRoomIdRoute: AppRoomsRoomIdRoute,
   AppConnectorsIndexRoute: AppConnectorsIndexRoute,
+  AppContactsIndexRoute: AppContactsIndexRoute,
   AppDevicesIndexRoute: AppDevicesIndexRoute,
   AppRoomsIndexRoute: AppRoomsIndexRoute,
 }

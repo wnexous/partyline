@@ -206,7 +206,7 @@ function Request({
         title={t("devices.approvedTitle", { machine: request.machine })}
         action={
           <Button asChild variant="outline">
-            <Link to="/agents">{t("devices.toAgents")}</Link>
+            <Link to="/contacts">{t("devices.toContacts")}</Link>
           </Button>
         }
       >

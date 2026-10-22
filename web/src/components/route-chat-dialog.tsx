@@ -101,7 +101,7 @@ function AgentChoice({ chat, onClose }: { chat: Chat; onClose: () => void }) {
             <p>{q ? t("picker.noMatch") : t("route.noAgents")}</p>
             {q ? null : (
               <Link
-                to="/agents"
+                to="/contacts"
                 className="mt-3 inline-block font-medium text-foreground underline"
               >
                 {t("picker.connectAgent")}

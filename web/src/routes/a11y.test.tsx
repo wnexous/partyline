@@ -18,7 +18,7 @@ import {
 import { stubLayout } from "@/test/layout";
 import { stubViewport } from "@/test/media";
 import { renderRoute } from "@/test/render";
-import { sampleContacts } from "@/test/sample-contacts";
+import { lia, sampleContacts } from "@/test/sample-contacts";
 
 expect.extend(matchers);
 
@@ -195,6 +195,7 @@ function appApi(locale: "en" | "pt-BR") {
     "PUT /rooms/d1/read": json(200, { room_id: "d1", seq: 1, unread: 0 }),
     "GET /agents": json(200, { items: [makeAgent({ online: true })] }),
     "GET /contacts": json(200, sampleContacts),
+    "GET /contacts/people": json(200, { items: [lia], has_more: false }),
     "GET /connectors": json(200, {
       items: [makeConnector({ status: "error", last_error: "invalid token" })],
     }),
@@ -268,6 +269,29 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByRole("checkbox", { name: "Atlas" });
     expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the contacts page, with its tree, a connector's people and a machine being renamed, has no axe violations", async () => {
+    appApi(locale);
+    const user = userEvent.setup();
+    const { container } = renderRoute("/contacts");
+    await screen.findByRole("region", { name: "devbox" });
+    await user.click(screen.getByRole("button", { name: /ops-line/ }));
+    await screen.findByTestId("contact-p1");
+    await user.click(
+      screen.getByRole("button", {
+        name: locale === "en" ? "Rename machine devbox" : "Renomear a máquina devbox",
+      }),
+    );
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the contacts page on a phone has no axe violations", async () => {
+    stubViewport(360);
+    appApi(locale);
+    const { container } = renderRoute("/contacts");
+    await screen.findByRole("region", { name: "devbox" });
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
   it("the shell offers a skip link to the main content", async () => {

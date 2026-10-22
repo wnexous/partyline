@@ -79,11 +79,11 @@ describe("authenticated shell", () => {
       "GET /me": json(200, makeMe()),
       "GET /rooms": apiError(401, "unauthorized"),
     });
-    const { router } = renderRoute("/agents?tab=mine");
-    await screen.findByRole("heading", { name: "Agents" });
+    const { router } = renderRoute("/tokens?tab=mine");
+    await screen.findByRole("heading", { name: "API tokens" });
     await act(() => api("GET", "/rooms").catch(() => undefined));
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
-    expect(router.state.location.search).toEqual({ redirect: "/agents?tab=mine" });
+    expect(router.state.location.search).toEqual({ redirect: "/tokens?tab=mine" });
     expect(calls.some((c) => c.path === "/rooms")).toBe(true);
   });
 

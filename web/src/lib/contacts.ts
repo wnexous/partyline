@@ -1,5 +1,13 @@
 import { harnessLabel } from "@/lib/agents";
-import type { AIContact, Contacts, IntelligenceRef, Machine, TreeNode } from "@/lib/api/types.gen";
+import type {
+  AIContact,
+  Contacts,
+  IntelligenceRef,
+  Machine,
+  MachineTree,
+  TreeNode,
+} from "@/lib/api/types.gen";
+import { matchesTerms } from "@/lib/conversations";
 
 /*
  * Pure functions of the contacts data (GET /contacts): what the live handlers and the mutations
@@ -93,18 +101,28 @@ export interface Pickable {
   haystack: string;
 }
 
+/**
+ * What a search of the contacts looks in for an AI: its name and @handle, the hostname of its
+ * machine and the owner's label for it, its folder (as the machine has it and as `~/…`) and the
+ * app it is open in.
+ */
+export function aiText(ai: AIContact, machineLabel: string): string {
+  return [
+    ai.intelligence.display_name,
+    `@${ai.intelligence.handle}`,
+    ai.machine,
+    machineLabel,
+    ai.folder,
+    ai.folder_label,
+    harnessLabel(ai.app) ?? ai.app,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function pickable(ref: IntelligenceRef, ai?: AIContact, machineLabel = ""): Pickable {
-  const parts = [ref.display_name, `@${ref.handle}`];
-  if (ai) {
-    parts.push(
-      ai.machine,
-      machineLabel,
-      ai.folder,
-      ai.folder_label,
-      harnessLabel(ai.app) ?? ai.app,
-    );
-  }
-  return { ref, ai, machineLabel, haystack: parts.filter(Boolean).join("\n") };
+  const haystack = ai ? aiText(ai, machineLabel) : `${ref.display_name}\n@${ref.handle}`;
+  return { ref, ai, machineLabel, haystack };
 }
 
 /**
@@ -122,4 +140,54 @@ export function pickables(contacts: Contacts): { ais: Pickable[]; users: Pickabl
     ],
     users: contacts.users.map((ref) => pickable(ref)),
   };
+}
+
+function filterNodes(nodes: TreeNode[], keep: (ai: AIContact) => boolean): TreeNode[] {
+  return nodes.flatMap((n) => {
+    const children = filterNodes(n.children, keep);
+    return keep(n.ai) || children.length > 0 ? [{ ...n, children }] : [];
+  });
+}
+
+/**
+ * The contacts page's filter over the machine trees (TREE-05): a node stays when the text is
+ * found in its name, handle, folder, app or machine, with every ancestor it hangs from (and none
+ * of its other children); a machine whose own label or hostname matches stays whole. Every word
+ * of the text has to be found, each in either place; case and accents are ignored.
+ */
+export function filterMachines(machines: MachineTree[], query: string): MachineTree[] {
+  const text = query.trim();
+  if (!text) return machines;
+  return machines.flatMap((m) => {
+    if (matchesTerms(`${m.label}\n${m.hostname}`, text)) return [m];
+    const nodes = filterNodes(m.nodes, (ai) => matchesTerms(aiText(ai, m.label), text));
+    return nodes.length > 0 ? [{ ...m, nodes }] : [];
+  });
+}
+
+/** How many of the machine's AIs are online now (`online` says who is), at any depth, of how many. */
+export function machineOnlineCount(
+  machine: MachineTree,
+  online: (ai: AIContact) => boolean,
+): { online: number; total: number } {
+  const ais = flattenTree(machine.nodes);
+  return { online: ais.filter(online).length, total: ais.length };
+}
+
+/**
+ * The machines in the order of TREE-03: those with an AI online now first, then by the owner's
+ * label (the hostname when it has none), ignoring case. `online` is the live answer, so the order
+ * follows presence frames that arrived after the contacts were fetched.
+ */
+export function sortMachines(
+  machines: MachineTree[],
+  online: (ai: AIContact) => boolean,
+): MachineTree[] {
+  const live = new Map(machines.map((m) => [m, machineOnlineCount(m, online).online > 0]));
+  const name = (m: MachineTree) => m.label || m.hostname;
+  return [...machines].sort(
+    (a, b) =>
+      Number(live.get(b)) - Number(live.get(a)) ||
+      name(a).localeCompare(name(b), undefined, { sensitivity: "base" }),
+  );
 }

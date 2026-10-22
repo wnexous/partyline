@@ -349,7 +349,7 @@ describe("member picker (UI-10)", () => {
     expect(calls.some((c) => c.path === "/agents")).toBe(false);
   });
 
-  it("points to where AIs are connected when there is nothing left to add", async () => {
+  it("points to the contacts page when there is nothing left to add", async () => {
     roomApi(
       {},
       {
@@ -364,10 +364,9 @@ describe("member picker (UI-10)", () => {
     expect(
       await within(dialog).findByText("Everything you can use is already here."),
     ).toBeInTheDocument();
-    // The agents page until the contacts page exists (T47 points this at /contacts).
     expect(within(dialog).getByRole("link", { name: "Connect an agent" })).toHaveAttribute(
       "href",
-      "/agents",
+      "/contacts",
     );
   });
 

@@ -50,7 +50,7 @@ import { cn } from "@/lib/utils";
 interface NavItem {
   to:
     | "/"
-    | "/agents"
+    | "/contacts"
     | "/connectors"
     | "/identities"
     | "/devices"
@@ -79,9 +79,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "nav.groupConnections",
     items: [
-      // SPEC_DEVIATION (T44, LAY-06): Contacts opens the agents page until T47 adds /contacts.
-      // Reason: the contacts page and its API arrive in later tasks; the entry must exist now.
-      { to: "/agents", label: "nav.contacts", icon: ContactRoundIcon },
+      { to: "/contacts", label: "nav.contacts", icon: ContactRoundIcon },
       { to: "/connectors", label: "nav.connectors", icon: PlugZapIcon },
       { to: "/identities", label: "nav.identities", icon: FingerprintIcon },
       { to: "/devices", label: "nav.devices", icon: MonitorSmartphoneIcon },
