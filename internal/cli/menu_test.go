@@ -65,13 +65,27 @@ func TestMenuKeys(t *testing.T) {
 }
 
 func TestMenuCancelKeepsSelection(t *testing.T) {
-	for _, keys := range []string{"q", "\x1b"} {
+	for _, keys := range []string{"q", "\x1b", "\x03"} {
 		selected, ok, out := runMenu(t, testItems(), keys, 80)
 		require.False(t, ok)
 		require.Nil(t, selected)
 		require.True(t, strings.HasPrefix(out, cursorHide))
 		require.True(t, strings.HasSuffix(out, cursorShow))
 	}
+}
+
+// Ctrl+C in raw mode arrives as byte 0x03 and cancels like q, with the terminal restored.
+func TestMenuCtrlCCancelsAndRestoresTheTerminal(t *testing.T) {
+	fake := &fakeRawTerminal{terminal: true}
+	var out bytes.Buffer
+	m := Menu{Items: testItems(), In: strings.NewReader(" \x03"), Out: &out, Width: func() int { return 80 }, raw: fake}
+	selected, ok, err := m.Run()
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Nil(t, selected)
+	require.True(t, fake.madeRaw)
+	require.True(t, fake.restored)
+	require.True(t, strings.HasSuffix(out.String(), cursorShow))
 }
 
 func TestMenuCancelAfterChangesKeepsOriginal(t *testing.T) {

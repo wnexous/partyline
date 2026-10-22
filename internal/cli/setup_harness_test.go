@@ -33,6 +33,17 @@ func (h *harnessCalls) run(line string) ([]byte, error) {
 	return nil, nil
 }
 
+// mutationCalls drops the read-only `mcp get` probes setup uses to learn the current state.
+func mutationCalls(lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		if !strings.Contains(l, " mcp get ") {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 func (h *harnessCalls) calls() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -57,29 +68,26 @@ const (
 	geminiAdd = "gemini mcp add -s user partyline " + testBinary + " channel --tools-only --harness gemini"
 )
 
-// HAR-01: setup offers each detected harness, shows the exact change before asking, and
-// registers only what the user confirms (Enter = yes, "n" = no).
-func TestSetupRegistersConfirmedHarnesses(t *testing.T) {
+// HAR-01, CLI-05: --harness registers exactly the named harness without a per-harness
+// confirmation and leaves the other installed harnesses alone.
+func TestSetupRegistersTheSelectedHarness(t *testing.T) {
 	e := newChannelEnv(t)
 	home := t.TempDir()
 	calls := &harnessCalls{}
 	r := runSetup(t, setupOpts{
-		env: map[string]string{"HOME": home}, stdin: "\nn\n",
+		env:      map[string]string{"HOME": home},
 		lookPath: installed("claude", "codex"), run: calls.run,
-	}, "--url", e.env.URL, "--token", e.secret)
+	}, "--url", e.env.URL, "--token", e.secret, "--harness", "claude", "--yes")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 
-	require.Equal(t, []string{claudeAdd}, calls.calls(), "claude confirmed, codex declined, gemini not installed")
-	claudeAt := strings.Index(r.stdout, "Claude Code:\n  run: "+claudeAdd+"\nRegister Partyline in Claude Code? [Y/n]: ")
-	require.GreaterOrEqual(t, claudeAt, 0, r.stdout)
-	require.Contains(t, r.stdout, "Registered Partyline in Claude Code.")
-	require.Contains(t, r.stdout, "Codex CLI:\n  run: "+codexAdd+"\n")
-	require.Contains(t, r.stdout, "Skipped Codex CLI.")
-	require.NotContains(t, r.stdout, "Gemini CLI:")
+	require.Equal(t, []string{claudeAdd}, calls.calls())
+	require.NotContains(t, r.stdout, "[Y/n]", "no per-harness confirmation")
+	require.Contains(t, r.stdout, "✓ Claude Code: registered")
+	require.NotContains(t, r.stdout, "Codex CLI")
+	require.NotContains(t, r.stdout, "Gemini CLI")
+	require.True(t, strings.HasSuffix(r.stdout, "\nStart a session with partyline claude.\n"), r.stdout)
 	_, err := os.Stat(filepath.Join(home, ".codex", "hooks.json"))
-	require.ErrorIs(t, err, os.ErrNotExist, "declined: no hook written")
-	// WIZ-01: setup ends with the launcher of the harness it registered, not of the skipped one.
-	require.True(t, strings.HasSuffix(r.stdout, "Skipped Codex CLI.\n\nStart a session with partyline claude.\n"), r.stdout)
+	require.ErrorIs(t, err, os.ErrNotExist, "an unselected installed harness is untouched")
 }
 
 // WIZ-01: after registering several harnesses setup names each one's launcher.
@@ -88,10 +96,10 @@ func TestSetupEndsWithTheLaunchers(t *testing.T) {
 	calls := &harnessCalls{}
 	r := runSetup(t, setupOpts{
 		env: map[string]string{"HOME": t.TempDir()}, lookPath: installed("claude", "codex", "gemini"), run: calls.run,
-	}, "--url", e.env.URL, "--token", e.secret, "--yes")
+	}, "--url", e.env.URL, "--token", e.secret, "--yes", "--all-detected")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
-	require.True(t, strings.HasSuffix(r.stdout, "Registered Partyline in Gemini CLI.\n\n"+
-		"Start a session with partyline claude, partyline codex or partyline gemini.\n"), r.stdout)
+	require.Contains(t, r.stdout, "✓ Gemini CLI: registered")
+	require.True(t, strings.HasSuffix(r.stdout, "\nStart a session with partyline claude.\n"), "the first registered harness: %s", r.stdout)
 }
 
 // HAR-01: --harness picks the harnesses and --yes applies without asking.
@@ -105,7 +113,7 @@ func TestSetupHarnessFlagAndYes(t *testing.T) {
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 	require.Equal(t, []string{geminiAdd}, calls.calls())
 	require.NotContains(t, r.stdout, "[Y/n]")
-	require.Contains(t, r.stdout, "Registered Partyline in Gemini CLI.")
+	require.Contains(t, r.stdout, "✓ Gemini CLI: registered")
 	require.True(t, strings.HasSuffix(r.stdout, "\nStart a session with partyline gemini.\n"), r.stdout)
 	require.FileExists(t, filepath.Join(home, ".gemini", "settings.json"))
 
@@ -131,7 +139,7 @@ func TestSetupUnknownHarness(t *testing.T) {
 // Without any installed harness setup says how to register one later.
 func TestSetupNoHarnessFound(t *testing.T) {
 	e := newChannelEnv(t)
-	r := runSetup(t, setupOpts{env: map[string]string{"HOME": t.TempDir()}}, "--url", e.env.URL, "--token", e.secret)
+	r := runSetup(t, setupOpts{env: map[string]string{"HOME": t.TempDir()}}, "--url", e.env.URL, "--token", e.secret, "--all-detected")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 	require.Contains(t, r.stdout, "No supported harness found")
 	require.Contains(t, r.stdout, "Register one later with: partyline setup --harness <name>, then start it with partyline <name>\n")
@@ -146,7 +154,7 @@ func TestSetupHarnessFailure(t *testing.T) {
 		return []byte("permission denied"), errors.New("exit status 1")
 	}}
 	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}, lookPath: installed("claude"), run: calls.run},
-		"--url", e.env.URL, "--token", e.secret, "--yes")
+		"--url", e.env.URL, "--token", e.secret, "--yes", "--all-detected")
 	require.Equal(t, 1, r.code)
 	require.Contains(t, r.stderr, "Claude Code: claude mcp add")
 	require.Contains(t, r.stderr, "permission denied")
@@ -161,7 +169,7 @@ func TestSetupUninstall(t *testing.T) {
 	home := t.TempDir()
 	calls := &harnessCalls{}
 	r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}, lookPath: installed("codex"), run: calls.run},
-		"--url", e.env.URL, "--token", e.secret, "--yes")
+		"--url", e.env.URL, "--token", e.secret, "--yes", "--harness", "codex")
 	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 	hooks := filepath.Join(home, ".codex", "hooks.json")
 	require.FileExists(t, hooks)
@@ -232,9 +240,9 @@ func TestSetupRemovesItsBackups(t *testing.T) {
 
 	t.Run("removed after success", func(t *testing.T) {
 		home := newHome(t)
-		r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL, "--token", e.secret, "--yes")
+		r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL, "--token", e.secret, "--yes", "--all-detected")
 		require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
-		require.Contains(t, r.stdout, "Registered Partyline in pi.")
+		require.Contains(t, r.stdout, "✓ pi: registered")
 		_, err := os.Lstat(piConfig(home) + ".partyline.bak")
 		require.ErrorIs(t, err, os.ErrNotExist)
 		require.NotContains(t, r.stdout, "backup")
@@ -242,7 +250,7 @@ func TestSetupRemovesItsBackups(t *testing.T) {
 
 	t.Run("kept with --keep-backups", func(t *testing.T) {
 		home := newHome(t)
-		r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL, "--token", e.secret, "--yes", "--keep-backups")
+		r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL, "--token", e.secret, "--yes", "--keep-backups", "--all-detected")
 		require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 		bak := piConfig(home) + ".partyline.bak"
 		data, err := os.ReadFile(bak)
@@ -258,7 +266,7 @@ func TestSetupRemovesItsBackups(t *testing.T) {
 		home := newHome(t)
 		calls := &harnessCalls{answer: func(string) ([]byte, error) { return []byte("boom"), errors.New("exit status 1") }}
 		r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}, lookPath: installed("claude"), run: calls.run},
-			"--url", e.env.URL, "--token", e.secret, "--yes")
+			"--url", e.env.URL, "--token", e.secret, "--yes", "--all-detected")
 		require.Equal(t, 1, r.code)
 		data, err := os.ReadFile(piConfig(home) + ".partyline.bak")
 		require.NoError(t, err)
@@ -269,7 +277,7 @@ func TestSetupRemovesItsBackups(t *testing.T) {
 		home := newHome(t)
 		bak := piConfig(home) + ".partyline.bak"
 		require.NoError(t, os.WriteFile(bak, []byte("earlier\n"), 0o600))
-		r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL, "--token", e.secret, "--yes")
+		r := runSetup(t, setupOpts{env: map[string]string{"HOME": home}}, "--url", e.env.URL, "--token", e.secret, "--yes", "--all-detected")
 		require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
 		data, err := os.ReadFile(bak)
 		require.NoError(t, err)

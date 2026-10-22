@@ -39,8 +39,10 @@ func loginCmd(ctx context.Context, args []string, io stdio) int {
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	_, code := loginFlow(ctx, f, io)
-	return code
+	if _, code := loginFlow(ctx, f, io); code != 0 {
+		return code
+	}
+	return maybeSetupMenu(ctx, io)
 }
 
 // login resolves the instance URL, gets an agent token (stdin or device approval), verifies

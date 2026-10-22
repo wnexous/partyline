@@ -35,6 +35,16 @@ func harnessEnv(io stdio) (harness.Env, error) {
 	}, nil
 }
 
+// namedHarnesses returns the registrars named in list ("claude,codex"); an empty list and
+// "none" select nothing. setup uses this for --harness and --remove, where an unset flag must
+// not fall back to the detected harnesses.
+func namedHarnesses(env harness.Env, list string) ([]harness.Registrar, error) {
+	if strings.TrimSpace(list) == "" {
+		return nil, nil
+	}
+	return selectHarnesses(env, list)
+}
+
 // selectHarnesses returns the registrars named in list ("claude,codex"), or every detected
 // one when list is empty; "none" selects nothing.
 func selectHarnesses(env harness.Env, list string) ([]harness.Registrar, error) {
@@ -84,47 +94,221 @@ func (p *prompter) confirm(question string) bool {
 	return false
 }
 
-// registerHarnesses shows each selected harness's changes and applies them after
-// confirmation (HAR-01), then names the launcher of each harness it registered (WIZ-01).
-// When every registration succeeded it deletes the config backups it created, unless
-// --keep-backups (HAR-05). It returns false when a registration failed.
-func registerHarnesses(ctx context.Context, regs []harness.Registrar, f setupFlags, p *prompter, io stdio) bool {
-	if len(regs) == 0 {
-		fmt.Fprintln(io.stdout, "\nNo supported harness found (Claude Code, Codex CLI, Gemini CLI, OpenCode, pi, omp).\nRegister one later with: partyline setup --harness <name>, then start it with partyline <name>")
-		return true
+// harnessState is one row of the setup menu: the registrar and what it is now.
+type harnessState struct {
+	reg                   harness.Registrar
+	installed, registered bool
+}
+
+// harnessStates reads the state of every harness on this machine. A harness whose entries
+// cannot be read counts as not registered; applying updates in place and removing is
+// idempotent, so a stale answer costs nothing.
+func harnessStates(ctx context.Context, regs []harness.Registrar) []harnessState {
+	states := make([]harnessState, len(regs))
+	for i, r := range regs {
+		entries, err := r.Entries(ctx)
+		states[i] = harnessState{reg: r, installed: r.Detected(), registered: err == nil && len(entries) > 0}
 	}
-	ok := true
-	var started []string
+	return states
+}
+
+// maybeSetupMenu opens the checklist right after login when this is a terminal and no
+// harness is registered yet (CLI-02).
+func maybeSetupMenu(ctx context.Context, io stdio) int {
+	if !isTerminal(io, 0) || !isTerminal(io, 1) {
+		return 0
+	}
+	env, err := harnessEnv(io)
+	if err != nil {
+		return 0
+	}
+	states := harnessStates(ctx, harness.All(env))
+	for _, s := range states {
+		if s.registered {
+			return 0
+		}
+	}
+	return setupMenu(ctx, states, false, io)
+}
+
+// setupMenu shows the checklist (CLI-03) and applies the confirmed selection (CLI-04).
+func setupMenu(ctx context.Context, states []harnessState, keepBackups bool, io stdio) int {
+	items := make([]MenuItem, len(states))
+	for i, s := range states {
+		items[i] = MenuItem{
+			Title:      s.reg.Title(),
+			Installed:  s.installed,
+			Registered: s.registered,
+			// Registered and installed harnesses start checked, so a plain Enter changes
+			// nothing; deselecting one is what removes Partyline from it.
+			Selected: s.installed || s.registered,
+		}
+	}
+	menu := Menu{Items: items, In: io.stdin, Out: io.stdout, Width: func() int { return terminalWidth(io) }, raw: io.rawTerm}
+	selected, ok, err := menu.Run()
+	if err != nil {
+		fmt.Fprintln(io.stderr, "partyline setup:", err)
+		return 1
+	}
+	if !ok {
+		return 0
+	}
+	earlier := backupsBefore(states)
+	applied, final := applyHarnessSelection(ctx, states, selected, io)
+	if applied {
+		settleBackups(registrarsOf(states), earlier, keepBackups, io)
+	}
+	nameFirstLauncher(states, final, io)
+	if !applied {
+		return 1
+	}
+	return 0
+}
+
+// applyHarnessFlags applies `--harness`/`--all-detected` (register) and `--remove` without a
+// menu (CLI-05). Registered harnesses that are not named stay as they are.
+func applyHarnessFlags(ctx context.Context, regs []harness.Registrar, register, remove []harness.Registrar, keepBackups bool, io stdio) int {
+	if len(register) == 0 && len(remove) == 0 {
+		fmt.Fprintln(io.stdout, "No supported harness found (Claude Code, Codex CLI, Gemini CLI, OpenCode, pi, omp).")
+		fmt.Fprintln(io.stdout, "Register one later with: partyline setup --harness <name>, then start it with partyline <name>")
+		return 0
+	}
 	earlier := map[string]bool{}
 	for _, r := range regs {
 		for _, b := range r.Backups() {
 			earlier[b] = exists(b)
 		}
 	}
+	ok := true
+	first := ""
 	for _, r := range regs {
-		fmt.Fprintf(io.stdout, "\n%s:\n", r.Title())
-		for _, step := range r.Plan() {
-			fmt.Fprintf(io.stdout, "  %s\n", step)
-		}
-		if !f.yes && !p.confirm(fmt.Sprintf("Register Partyline in %s?", r.Title())) {
-			fmt.Fprintf(io.stdout, "Skipped %s.\n", r.Title())
+		inRegister, inRemove := containsRegistrar(register, r), containsRegistrar(remove, r)
+		if !inRegister && !inRemove {
 			continue
 		}
-		if err := r.Apply(ctx); err != nil {
-			fmt.Fprintf(io.stderr, "partyline setup: %s: %v\n", r.Title(), err)
+		entries, err := r.Entries(ctx)
+		registered := err == nil && len(entries) > 0
+		if inRegister {
+			if registered {
+				if first == "" {
+					first = r.ID()
+				}
+				continue
+			}
+			if err := r.Apply(ctx); err != nil {
+				fmt.Fprintf(io.stderr, "✗ %s: %v\n", r.Title(), err)
+				ok = false
+				continue
+			}
+			if first == "" {
+				first = r.ID()
+			}
+			fmt.Fprintf(io.stdout, "✓ %s: registered\n", r.Title())
+			continue
+		}
+		if err == nil && !registered {
+			continue
+		}
+		if err := r.Remove(ctx); err != nil {
+			fmt.Fprintf(io.stderr, "✗ %s: %v\n", r.Title(), err)
 			ok = false
 			continue
 		}
-		fmt.Fprintf(io.stdout, "Registered Partyline in %s.\n", r.Title())
-		started = append(started, "partyline "+r.ID())
+		fmt.Fprintf(io.stdout, "✓ %s: removed\n", r.Title())
 	}
 	if ok {
-		settleBackups(regs, earlier, f.keepBackup, io)
+		settleBackups(regs, earlier, keepBackups, io)
 	}
-	if len(started) > 0 {
-		fmt.Fprintf(io.stdout, "\nStart a session with %s.\n", orList(started))
+	if first != "" {
+		fmt.Fprintf(io.stdout, "\nStart a session with partyline %s.\n", first)
 	}
-	return ok
+	if !ok {
+		return 1
+	}
+	return 0
+}
+
+// applyHarnessSelection registers what is selected and not registered yet and removes
+// Partyline from what is registered and no longer selected, one result line per changed or
+// failed harness (CLI-04). It returns whether every change succeeded and the resulting state.
+func applyHarnessSelection(ctx context.Context, states []harnessState, selected []bool, io stdio) (bool, []bool) {
+	ok := true
+	final := make([]bool, len(states))
+	for i, s := range states {
+		final[i] = s.registered
+		want := i < len(selected) && selected[i]
+		switch {
+		case want && !s.registered:
+			if err := s.reg.Apply(ctx); err != nil {
+				fmt.Fprintf(io.stderr, "✗ %s: %v\n", s.reg.Title(), err)
+				ok = false
+				continue
+			}
+			final[i] = true
+			fmt.Fprintf(io.stdout, "✓ %s: registered\n", s.reg.Title())
+		case !want && s.registered:
+			if err := s.reg.Remove(ctx); err != nil {
+				fmt.Fprintf(io.stderr, "✗ %s: %v\n", s.reg.Title(), err)
+				ok = false
+				continue
+			}
+			final[i] = false
+			fmt.Fprintf(io.stdout, "✓ %s: removed\n", s.reg.Title())
+		}
+	}
+	return ok, final
+}
+
+// nameFirstLauncher names the launcher of the first harness that is registered now.
+func nameFirstLauncher(states []harnessState, registered []bool, io stdio) {
+	for i, s := range states {
+		if i < len(registered) && registered[i] {
+			fmt.Fprintf(io.stdout, "\nStart a session with partyline %s.\n", s.reg.ID())
+			return
+		}
+	}
+}
+
+func backupsBefore(states []harnessState) map[string]bool {
+	earlier := map[string]bool{}
+	for _, s := range states {
+		for _, b := range s.reg.Backups() {
+			earlier[b] = exists(b)
+		}
+	}
+	return earlier
+}
+
+func registrarsOf(states []harnessState) []harness.Registrar {
+	regs := make([]harness.Registrar, len(states))
+	for i, s := range states {
+		regs[i] = s.reg
+	}
+	return regs
+}
+
+func containsRegistrar(list []harness.Registrar, want harness.Registrar) bool {
+	for _, r := range list {
+		if r.ID() == want.ID() {
+			return true
+		}
+	}
+	return false
+}
+
+// isTerminal reports whether fd is a terminal; tests inject stdio.isTerminal.
+func isTerminal(io stdio, fd int) bool {
+	return io.isTerminal != nil && io.isTerminal(fd)
+}
+
+// terminalWidth is the terminal's width for the menu, 80 when it cannot be read.
+func terminalWidth(io stdio) int {
+	if io.termSize != nil {
+		if w, _, err := io.termSize(1); err == nil && w > 0 {
+			return w
+		}
+	}
+	return 80
 }
 
 // settleBackups deletes the backups this run created (earlier[b] false), or names them when
@@ -150,14 +334,6 @@ func settleBackups(regs []harness.Registrar, earlier map[string]bool, keep bool,
 func exists(path string) bool {
 	_, err := os.Lstat(path)
 	return err == nil
-}
-
-// orList joins items as "a", "a or b", "a, b or c".
-func orList(items []string) string {
-	if len(items) == 1 {
-		return items[0]
-	}
-	return strings.Join(items[:len(items)-1], ", ") + " or " + items[len(items)-1]
 }
 
 // uninstall removes what setup added (HAR-04): each harness's entries and files and, when

@@ -770,10 +770,11 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: CLI-02, CLI-04, CLI-05, CLI-06, CLI-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Menu apply: selected registered, deselected registered removed, untouched ones unchanged (fake runner records exactly those calls), one result line each (CLI-04)
-- [ ] No terminal without flags → exit 2 + hint; with each flag → the expected registrar calls (CLI-05); not logged in → message + exit 1 (CLI-06)
-- [ ] `login` on a terminal with nothing registered opens the menu (CLI-02); `setup --browser` approves then shows the menu; `--token-stdin --harness claude --yes` still works (CLI-07)
-- [ ] Gate check passes: `make check`
+- [x] Menu apply: selected registered, deselected registered removed, untouched ones unchanged (fake runner records exactly those calls), one result line each (CLI-04)
+- [x] No terminal without flags → exit 2 + hint; with each flag → the expected registrar calls (CLI-05); not logged in → message + exit 1 (CLI-06)
+- [x] `login` on a terminal with nothing registered opens the menu (CLI-02); `setup --browser` approves then shows the menu; `--token-stdin --harness claude --yes` still works (CLI-07)
+- [x] Ctrl+C in the menu cancels like `q` with the terminal restored
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): pick harnesses from a checklist in setup`
