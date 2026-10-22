@@ -22,7 +22,7 @@ func (s *server) listActivity(w http.ResponseWriter, r *http.Request, p authn.Pr
 	}
 	out := dto.List[dto.ActivityItem]{Items: make([]dto.ActivityItem, len(items))}
 	for i, it := range items {
-		out.Items[i] = dto.ActivityItem{Room: dto.RoomRef{ID: it.Room.ID, Name: it.Room.Name}, Message: convert.Message(it.Message)}
+		out.Items[i] = dto.ActivityItem{Room: dto.RoomRef{ID: it.Room.ID, Name: it.Room.Name}, Message: convert.MessageFor(it.Message, convert.Viewer(p))}
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil

@@ -1241,8 +1241,8 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: NOTI-02, NOTI-03, DM-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] The DM's user sees the copy's status in the timeline and in the live status event; the AI's owner and a `use` grantee, who can read the DM, see neither, and the AI's own answers carry no notify row (NOTI-02, NOTI-03)
-- [ ] Gate check passes: `make check`
+- [x] The DM's user sees the copy's status in the timeline and in the live status event; the AI's owner and a `use` grantee, who can read the DM, see neither, and the AI's own answers carry no notify row (NOTI-02, NOTI-03)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(api): show the notify copy's delivery only to the DM's user`

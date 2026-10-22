@@ -361,7 +361,9 @@ In **Settings → Notifications** you can choose one of your linked app accounts
 `<AI name>: <text>`, with each attachment as a link to the instance. The DM stays readable on
 the web; a connector that is down is retried like any outbound message, and an account you
 unlink or a choice you clear simply stops the copies. Only direct chats of accounts you linked
-yourself can be chosen, and only one at a time.
+yourself can be chosen, and only one at a time. The delivery status of a copy (queued, sent,
+failed, with its error) is shown to you only: the AI's owner and the users who may use the AI
+can read the DM but do not see how your copy went.
 
 ## Tools
 

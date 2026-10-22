@@ -286,25 +286,112 @@ func TestNotifyRoutesAuthorization(t *testing.T) {
 	require.Equal(t, n.phone, me(t, n.alice).NotifyChatID)
 }
 
-// NOTI-02 (L-044): the copy goes to the user of the DM whichever of the two sorts first. Here the
-// AI was created before the user, so it is the first participant (dm_a) of their DM.
+// notifiedUser creates a user after Atlas, lets them use alice's connector, links their phone (a DM
+// chat of the account) through it and chooses it to be notified there.
+func (n *notifyEnv) notifiedUser(t *testing.T, name, chat string) (*testkit.Client, string) {
+	t.Helper()
+	user := n.env.NewUser(name)
+	n.alice.Put("/api/v1/connectors/"+n.conn.ID+"/sharing", dto.Sharing{
+		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: user.User.ID, Level: dto.LevelUse}},
+	}).RequireStatus(http.StatusOK)
+	phone := n.linkPhone(t, n.inst, n.conn.ID, user, chat, name+" phone")
+	choose(t, user, phone)
+	return user, phone
+}
+
+// NOTI-02 (L-044): the copy goes to the user of the DM whichever of the two sorts first. Here the AI
+// was created before the user, so it is the first participant (dm_a) of their DM.
 func TestAIDMIsCopiedToTheAppOfAUserThatSortsAfterTheAI(t *testing.T) {
 	n := newNotifyEnv(t)
-	bob := n.env.NewUser("bob") // created after Atlas: Atlas sorts first
+	bob, phone := n.notifiedUser(t, "bob", dmB) // created after Atlas: Atlas sorts first
 	require.Less(t, n.atlasID, bob.User.ID, "Atlas is the first participant of the DM")
-	n.alice.Put("/api/v1/connectors/"+n.conn.ID+"/sharing", dto.Sharing{
-		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: bob.User.ID, Level: dto.LevelUse}},
-	}).RequireStatus(http.StatusOK)
-	phone := n.linkPhone(t, n.inst, n.conn.ID, bob, dmB, "Bob phone")
-	choose(t, bob, phone)
 
 	msg := testkit.Decode[dto.Message](n.atlas.Post("/api/v1/agent/dms", dto.AgentDMRequest{To: "@bob", Text: "your report is ready"}).RequireStatus(http.StatusCreated))
 
 	sent := n.inst.WaitSend(t)
 	require.Equal(t, []string{dmB, "Atlas: your report is ready"}, []string{sent.ChatID, sent.Text}, "bob's app, not alice's")
-	require.Len(t, msg.Outbox, 1)
-	require.Equal(t, []any{phone, dto.OutboxPurposeNotify}, []any{msg.Outbox[0].ChatID, msg.Outbox[0].Purpose})
+	item := n.copyOf(t, bob, msg.RoomID, msg.ID, status(dto.OutboxStatusSent))
+	require.Equal(t, []any{phone, dto.OutboxPurposeNotify}, []any{item.ChatID, item.Purpose})
 	require.Equal(t, 1, n.notifyRows(t), "one copy, for bob's app only")
+}
+
+// benignLive are the frames a viewer of the DM may get while a copy is delivered: everything but
+// the status of the copy.
+var benignLive = []dto.LiveEventType{
+	dto.LiveEventTypeHello, dto.LiveEventTypeRoomMessage, dto.LiveEventTypeRoomChanged, dto.LiveEventTypeMembersChanged,
+	dto.LiveEventTypeRoomRead, dto.LiveEventTypeAgentPresence, dto.LiveEventTypeConnectorStatus,
+	dto.LiveEventTypeChatDiscovered, dto.LiveEventTypeIntelligenceChanged, dto.LiveEventTypeAccessChanged,
+}
+
+// NOTI-02, NOTI-03, DM-08: the delivery of the copy (the id of the user's chat and its errors) is for
+// the user the DM is with. The AI's owner and a user granted use on the AI read the DM, and the AI wrote
+// the message, but none of them gets the copy's row, in a timeline, in the AI's answers and history or
+// in live frames and status events; the user gets all of it.
+func TestTheCopysDeliveryIsVisibleOnlyToTheUserOfTheDM(t *testing.T) {
+	n := newNotifyEnv(t)
+	bob, phone := n.notifiedUser(t, "bob", dmB)
+	carol := n.env.NewUser("carol")
+	n.alice.Put("/api/v1/agents/"+n.atlasID+"/sharing", dto.Sharing{
+		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: carol.User.ID, Level: dto.LevelUse}},
+	}).RequireStatus(http.StatusOK)
+	live := map[string]*testkit.LiveConn{}
+	for name, c := range map[string]*testkit.Client{"bob": bob, "alice": n.alice, "carol": carol} {
+		live[name], _ = c.DialLive("")
+	}
+
+	msg := testkit.Decode[dto.Message](n.atlas.Post("/api/v1/agent/dms", dto.AgentDMRequest{To: "@bob", Text: "your report is ready"}).RequireStatus(http.StatusCreated))
+	require.Empty(t, msg.Outbox, "not even the AI that wrote the message gets the copy's delivery")
+	n.inst.WaitSend(t)
+
+	// bob's timeline shows the copy and its delivery, and his socket hears of both.
+	item := n.copyOf(t, bob, msg.RoomID, msg.ID, status(dto.OutboxStatusSent))
+	require.Equal(t, []any{phone, dto.OutboxPurposeNotify}, []any{item.ChatID, item.Purpose})
+	var posted dto.Message
+	live["bob"].Expect(dto.LiveEventTypeRoomMessage, &posted, connectortest.Timeout)
+	require.Len(t, posted.Outbox, 1, "the live message carries the copy")
+	var update dto.OutboxUpdate
+	for update.Status != dto.OutboxStatusSent {
+		live["bob"].Expect(dto.LiveEventTypeOutboxStatus, &update, connectortest.Timeout)
+	}
+	require.Equal(t, []any{msg.RoomID, msg.ID, phone}, []any{update.RoomID, update.MessageID, update.ChatID})
+
+	// Everyone else who reads the DM sees the message and nothing of the copy.
+	for name, viewer := range map[string]*testkit.Client{"the AI's owner": n.alice, "a use grantee": carol} {
+		items := testkit.Decode[dto.Page[dto.Message]](viewer.Get("/api/v1/rooms/" + msg.RoomID + "/messages").RequireStatus(http.StatusOK)).Items
+		require.Len(t, items, 1, name)
+		require.Equal(t, "your report is ready", items[0].Text, name)
+		require.Empty(t, items[0].Outbox, name)
+	}
+	history := testkit.Decode[dto.Page[dto.AgentMessage]](n.atlas.Get("/api/v1/agent/rooms/" + msg.RoomID + "/messages").RequireStatus(http.StatusOK)).Items
+	require.Len(t, history, 1)
+	require.Empty(t, history[0].Message.Outbox, "nor the AI's history")
+	for _, who := range []string{"alice", "carol"} {
+		var seen dto.Message
+		live[who].Expect(dto.LiveEventTypeRoomMessage, &seen, connectortest.Timeout)
+		require.Empty(t, seen.Outbox, "%s: the live message", who)
+		live[who].ExpectNone(300*time.Millisecond, benignLive...) // no outbox.status for them
+	}
+}
+
+// NOTI-02, DM-08: an AI that acts with its owner's user id is not the user of its DM either. Here the
+// owner is the user the copy is for, and what Atlas gets back for its own posts (the answer of the room
+// route and its history) still carries no row of the copy, while alice's own timeline does.
+func TestTheCopysDeliveryIsNotShownToTheAIEvenForItsOwnersDM(t *testing.T) {
+	n := newNotifyEnv(t)
+	choose(t, n.alice, n.phone)
+	opened := n.dm(t, "first")
+	n.inst.WaitSend(t)
+
+	reply := testkit.Decode[dto.Message](n.atlas.Post("/api/v1/agent/rooms/"+opened.RoomID+"/messages", dto.PostMessageRequest{Text: "second"}).RequireStatus(http.StatusCreated))
+	require.Empty(t, reply.Outbox, "the answer of the room route")
+	n.inst.WaitSend(t)
+	history := testkit.Decode[dto.Page[dto.AgentMessage]](n.atlas.Get("/api/v1/agent/rooms/" + opened.RoomID + "/messages").RequireStatus(http.StatusOK)).Items
+	require.Len(t, history, 2)
+	for _, m := range history {
+		require.Empty(t, m.Message.Outbox, m.Message.Text)
+	}
+
+	n.copyOf(t, n.alice, opened.RoomID, reply.ID, status(dto.OutboxStatusSent)) // alice sees it
 }
 
 // NOTI-02 (independent test): once alice chose her phone, what Atlas writes to her in their DM
@@ -317,8 +404,7 @@ func TestAIDMIsCopiedToTheChosenApp(t *testing.T) {
 	live, _ := n.alice.DialLive("")
 
 	msg := n.dm(t, "the build is green")
-	require.Len(t, msg.Outbox, 1)
-	require.Equal(t, []any{n.phone, dto.OutboxPurposeNotify}, []any{msg.Outbox[0].ChatID, msg.Outbox[0].Purpose})
+	require.Empty(t, msg.Outbox, "the copy's delivery is for alice, the user of the DM, not for the AI that wrote it")
 
 	sent := n.inst.WaitSend(t)
 	require.Equal(t, dmA, sent.ChatID, "the platform id of the chat")

@@ -28,6 +28,10 @@ type Message struct {
 	db.MessageView
 	Attachments []db.Attachment
 	Outbox      []db.Outbox
+	// NotifyUserID is the user a notify copy of the message was sent for: the user the DM of an
+	// AI's message is with. Only that user is shown the copy's delivery (NOTI-02). Empty when the
+	// message has no notify copy.
+	NotifyUserID string
 	// Chat is the chat a chat-authored message came from (CTX-01): its title, kind and
 	// connector kind (platform). Nil for other authors and for chats deleted since.
 	Chat *db.ListChatRefsRow // Warning is set by Post when the message reached no chat because the room does not
@@ -488,8 +492,42 @@ func (s *Service) withDetails(ctx context.Context, views []db.MessageView) ([]Me
 	for _, o := range outbox {
 		m := &out[index[o.MessageID]]
 		m.Outbox = append(m.Outbox, o)
+		if o.Purpose == string(dto.OutboxPurposeNotify) && m.NotifyUserID == "" {
+			if m.NotifyUserID, err = s.notifiedUser(ctx, m.RoomID, m.AuthorID); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return out, nil
+}
+
+// notifiedUser is the user a notify copy of the AI's message in the DM was made for: the DM's
+// participant that is not the AI. It is empty for a room that is gone.
+func (s *Service) notifiedUser(ctx context.Context, roomID, aiID string) (string, error) {
+	r, err := s.store.R().GetRoom(ctx, roomID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if r.DmA.String == aiID {
+		return r.DmB.String, nil
+	}
+	return r.DmA.String, nil
+}
+
+// NotifiedUser is the user the notify copy of a message was made for (empty when the message is
+// gone). It does not authorize: the live hub asks it to decide who hears of the copy's delivery.
+func (s *Service) NotifiedUser(ctx context.Context, messageID string) (string, error) {
+	v, err := s.store.R().GetMessageView(ctx, messageID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return s.notifiedUser(ctx, v.RoomID, v.AuthorID)
 }
 
 // Page selects messages: before BeforeSeq newest first (the default, from the latest), or

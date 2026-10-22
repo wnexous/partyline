@@ -241,7 +241,7 @@ func (s *server) listMessages(w http.ResponseWriter, r *http.Request, p authn.Pr
 	}
 	out := dto.Page[dto.Message]{Items: make([]dto.Message, len(list)), HasMore: more}
 	for i, m := range list {
-		out.Items[i] = convert.Message(m)
+		out.Items[i] = convert.MessageFor(m, convert.Viewer(p))
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
@@ -274,7 +274,7 @@ func (s *server) postTo(w http.ResponseWriter, r *http.Request, p authn.Principa
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
+	httpx.WriteJSON(w, http.StatusCreated, convert.MessageFor(m, convert.Viewer(p)))
 	return nil
 }
 

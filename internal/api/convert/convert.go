@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -32,8 +33,24 @@ func Room(r rooms.Room) dto.Room {
 	}
 }
 
-// Message renders a message with its attachments and outbound deliveries.
-func Message(m rooms.Message) dto.Message {
+// Viewer is the user MessageFor renders for: the id of a user's own session or token, "" for an
+// agent, whose user id is its owner's.
+func Viewer(p authn.Principal) string {
+	if p.Kind == authn.KindUser {
+		return p.UserID
+	}
+	return ""
+}
+
+// Message renders a message with its attachments and outbound deliveries, without the delivery
+// of a notify copy: that is shown to one user (MessageFor).
+func Message(m rooms.Message) dto.Message { return MessageFor(m, "") }
+
+// MessageFor renders a message for the user viewer ("" for none: an AI, a connector). The delivery
+// of the copy of an AI's DM that went to the app the DM's user chose (purpose notify: the id of
+// their chat and its errors) is part of it only for that user, not for the AI's owner or the users
+// granted use on the AI, who can read the DM, nor for the AI that wrote it (NOTI-02, DM-08).
+func MessageFor(m rooms.Message, viewer string) dto.Message {
 	out := dto.Message{
 		ID: m.ID, RoomID: m.RoomID, Seq: m.Seq, AuthorKind: dto.AuthorKind(m.AuthorKind), AuthorID: m.AuthorID,
 		AuthorName: m.AuthorName, Author: messageAuthor(m), AuthorUserID: m.AuthorUserID, SenderID: m.SenderID, SenderAltID: m.SenderAltID,
@@ -45,6 +62,9 @@ func Message(m rooms.Message) dto.Message {
 		out.Attachments[i] = dto.Attachment{ID: a.ID, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: dto.AttachmentStatus(a.Status)}
 	}
 	for _, o := range m.Outbox {
+		if o.Purpose == string(dto.OutboxPurposeNotify) && (viewer == "" || viewer != m.NotifyUserID) {
+			continue
+		}
 		out.Outbox = append(out.Outbox, OutboxItem(o))
 	}
 	if m.Chat != nil {

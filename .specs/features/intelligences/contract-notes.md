@@ -2700,3 +2700,31 @@ it. `IntelligenceName`/`KindBadge` now render in each.
   `TestSetupMenuAllChecksOnlyInstalledHarnesses`, `TestSetupMenuExitsNonZeroWhenAHarnessFails` (exit 1,
   `✗ Claude Code:` on stderr, Gemini still registered). Scratch copy: M15 fails the registered-not-installed
   test, M16 (exit 0 on a failed apply) fails the failure test, and the unrestricted `a` fails the two `a` tests.
+
+## T67 - The notify copy's delivery is visible only to the DM's user (NOTI-02, NOTI-03, DM-08)
+
+`validation.md` gap 12 (`convert.go:113`, `live/hub.go:370-379`). The outbox row of a notify copy
+(purpose `notify`: the id of the user's chat and the platform's errors) was rendered with the message to
+everyone who could read the DM: the AI's owner, the users granted `use` on the AI and the AI itself.
+
+- **Rule.** The row is part of a message only for the user the DM is with, and the user's `outbox.status`
+  events reach only that user. Everyone else gets the message without it. An ordinary delivery (a chat that
+  is a member of the room) is unchanged and shown as before.
+- **Who is "the DM's user".** `rooms.Message.NotifyUserID`, set by `withDetails` when a notify row is
+  loaded: the DM's participant that is not the AI that wrote the message (the room's `dm_a`/`dm_b`).
+  `Rooms.NotifiedUser(messageID)` answers the same for the live hub's status events.
+- **Rendering.** `convert.Message` renders without notify rows, so every AI-facing path (frames, pending,
+  history, the AI's own answers) never carries one; `convert.MessageFor(m, viewer)` adds them when `viewer`
+  is the notified user. `convert.Viewer(p)` is the principal's user id for a user session or token and ""
+  for an agent, whose `UserID` is its owner's: an AI is not the user of its owner's DM even when its owner
+  is. REST list and post (`rooms_handlers.go`), the activity feed and the live `room.message` frame use
+  `MessageFor`; the hub drops a notify `outbox.status` for every connection but the DM's user's.
+- **Existing assertions that changed outcome:** `TestAIDMIsCopiedToTheChosenApp` read the notify row in
+  the AI's own answer and now expects none (alice sees it through her timeline and live event, as before);
+  my `TestAIDMIsCopiedToTheAppOfAUserThatSortsAfterTheAI` (T60) uses the same view.
+- **Docs.** `docs/agents.md` ("Notify me on another app") says the copy's status is the user's alone.
+- **Tests** (`internal/connectors/notify_test.go`): `TestTheCopysDeliveryIsVisibleOnlyToTheUserOfTheDM`
+  (a use grantee, the AI's owner, the AI's answer and history, live message frames and status events: the
+  DM's user gets the row, the others none), `TestTheCopysDeliveryIsNotShownToTheAIEvenForItsOwnersDM` (the
+  AI with its owner's id, through the room route and the history). Scratch copy: rendering the row for
+  everyone, sending status events to everyone and treating an agent as its owner each fail them.
