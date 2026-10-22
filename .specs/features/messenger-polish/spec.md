@@ -82,7 +82,7 @@ After v0.4.0, André asked for three things while testing (2026-10-22): mention 
 3. WHEN the CLI is already the latest version THEN it SHALL print "partyline <version> is up to date" and exit 0. (UPD-03)
 4. WHEN the user runs `partyline update --check` THEN the CLI SHALL print the current and latest versions, exit 0 when up to date and 1 when an update exists, and change nothing. (UPD-04)
 5. IF the executable's directory is not writable THEN the CLI SHALL print the install command to run instead and exit 1 without changes. (UPD-05)
-6. The release lookup SHALL use HTTPS only and SHALL refuse redirects to other hosts than the release host. (UPD-06)
+6. The release lookup SHALL use HTTPS only and SHALL refuse redirects to other hosts than the release host (GitHub's release downloads always redirect to GitHub's release-asset hosts: from `github.com` only, those hosts are accepted). (UPD-06)
 
 **Independent Test**: With a fake release server serving v9.9.9 and its checksums, `partyline update` replaces a copy of the binary and prints the new version; a wrong checksum leaves it unchanged.
 
@@ -102,12 +102,12 @@ After v0.4.0, André asked for three things while testing (2026-10-22): mention 
 | PDM-02 | P1: DM from participant | Execute | Pending |
 | PDM-03 | P1: DM from participant | Execute | Pending |
 | PDM-04 | P1: DM from participant | Execute | Pending |
-| UPD-01 | P1: Update | Execute | Pending |
-| UPD-02 | P1: Update | Execute | Pending |
-| UPD-03 | P1: Update | Execute | Pending |
-| UPD-04 | P1: Update | Execute | Pending |
-| UPD-05 | P1: Update | Execute | Pending |
-| UPD-06 | P1: Update | Execute | Pending |
+| UPD-01 | P1: Update | Execute | Implementing |
+| UPD-02 | P1: Update | Execute | Implementing |
+| UPD-03 | P1: Update | Execute | Implementing |
+| UPD-04 | P1: Update | Execute | Implementing |
+| UPD-05 | P1: Update | Execute | Implementing |
+| UPD-06 | P1: Update | Execute | Implementing |
 
 **Coverage:** 16 total
 

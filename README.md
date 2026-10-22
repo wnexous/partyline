@@ -167,6 +167,7 @@ machine › folder tree, and `--as <handle>` adopts an AI created before folders
 | `partyline agents [--url URL] [--token TOKEN]` | Print the machine › folder tree with online markers. |
 | `partyline <harness> [--take-over] [--as handle]` | Start a session in the current folder; `--as` adopts an AI that has no folder yet. |
 | `partyline doctor` | Check the machine: binary, config, server, token, harness registrations and versions. |
+| `partyline update [--check]` | Replace this binary with the latest release after checking the archive's SHA-256 against the release's `checksums.txt`; `--check` only prints the current and latest versions and exits 1 when a newer release exists. |
 
 The session replies with the `reply`, `send_message`, `history`, `list_rooms`,
 `download_attachment` and `send_file` tools. `send_message` also takes `to` to DM any
@@ -201,7 +202,7 @@ troubleshooting: [docs/agents.md](docs/agents.md).
 
 ## Upgrading from v0.3
 
-Update the `partyline` CLI on **every machine together with the server**: both are one binary,
+Update the `partyline` CLI on **every machine together with the server** (`partyline update`): both are one binary,
 and a CLI from before folders is refused with `422 folder_required` (the message says to update
 partyline). Existing rooms become groups and keep their messages, members, bridges and delivery
 settings; DMs start empty.
