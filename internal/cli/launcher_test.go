@@ -3,34 +3,99 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/cliconfig"
 	"github.com/wnexous/partyline/internal/harness"
+	"github.com/wnexous/partyline/internal/testkit"
+	"github.com/wnexous/partyline/internal/users"
 )
 
 // launchMachine is a machine for `partyline <harness>`: a fake HOME, the programs on PATH, the
 // harnesses Partyline is registered in, the folder the launcher runs in and the environment it
-// passes on.
+// passes on. getenv holds the variables the launcher process reads (HOME always, otherwise
+// m.environ is only what the harness inherits).
 type launchMachine struct {
-	home    string
-	cwd     string
-	onPath  map[string]bool
-	codex   bool // `codex mcp get partyline` finds the server
-	environ []string
+	home     string
+	hostname string
+	cwd      string
+	onPath   map[string]bool
+	codex    bool // `codex mcp get partyline` finds the server
+	environ  []string
+	getenv   map[string]string
+	// input is what the person types at the takeover prompt; terminals lists the file
+	// descriptors that are terminals (stdin is 0, stderr is 2).
+	input     string
+	terminals map[int]bool
+	// now is the launcher's clock (nil: time.Now); its location formats the session's time.
+	now func() time.Time
+	// sessionHTTP reaches GET /agent/session (nil: the launcher's own client).
+	sessionHTTP *http.Client
+	// afterExec runs inside the exec hook, before it returns (the takeover test dials as the
+	// harness's channel from there).
+	afterExec func(env []string)
 }
 
 func newLaunchMachine(t *testing.T) *launchMachine {
 	t.Helper()
 	home := t.TempDir()
-	return &launchMachine{home: home, cwd: "/work/acme", onPath: map[string]bool{}, environ: []string{
+	return &launchMachine{home: home, hostname: "testbox", cwd: "/work/acme", onPath: map[string]bool{}, environ: []string{
 		"HOME=" + home, "PATH=/usr/local/bin:/usr/bin", "PARTYLINE_FOLDER=/inherited/folder", "LANG=C.UTF-8",
 	}}
+}
+
+// saveConfig writes the credentials `partyline <harness>` resolves when no variable names an
+// instance.
+func (m *launchMachine) saveConfig(t *testing.T, url, token string) {
+	t.Helper()
+	path, err := cliconfig.Path(func(k string) string {
+		if k == "HOME" {
+			return m.home
+		}
+		return ""
+	})
+	require.NoError(t, err)
+	require.NoError(t, cliconfig.Save(path, cliconfig.Config{URL: url, Token: token}))
+}
+
+const launchToken = "pl_agent_launcher_test"
+
+// answerSession asks GET /agent/session from the launcher with the given state and returns the
+// client to reach it; ask asserts the request, when it is not nil.
+func (m *launchMachine) answerSession(t *testing.T, state dto.SessionState, ask func(r *http.Request)) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/v1/agent/session", r.URL.Path)
+		require.Equal(t, "Bearer "+launchToken, r.Header.Get("Authorization"))
+		if ask != nil {
+			ask(r)
+		}
+		require.NoError(t, json.NewEncoder(w).Encode(state))
+	}))
+	t.Cleanup(srv.Close)
+	m.saveConfig(t, srv.URL, launchToken)
+	m.sessionHTTP = srv.Client()
+}
+
+// sessionState is an online AI of the folder.
+func sessionState(name, app string, since time.Time) dto.SessionState {
+	return dto.SessionState{
+		Exists: true, Online: true, App: app, ConnectedAt: &since,
+		Intelligence: &dto.IntelligenceRef{Kind: dto.IntelligenceKindAI, DisplayName: name},
+	}
 }
 
 const launchBinary = "/opt/bin/partyline"
@@ -74,10 +139,21 @@ func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
 	var r launchRun
 	var errOut bytes.Buffer
 	vars := map[string]string{"HOME": m.home}
+	input := io.Reader(bytes.NewReader(nil))
+	if m.input != "" {
+		input = strings.NewReader(m.input)
+	}
+	hostname := m.hostname
 	r.code = execute(context.Background(), append([]string{"partyline"}, args...), stdio{
-		stdin: bytes.NewReader(nil), stdout: &bytes.Buffer{}, stderr: &errOut,
-		getenv:     func(k string) string { return vars[k] },
+		stdin: input, stdout: &bytes.Buffer{}, stderr: &errOut,
+		getenv: func(k string) string {
+			if v, ok := m.getenv[k]; ok {
+				return v
+			}
+			return vars[k]
+		},
 		getwd:      func() (string, error) { return m.cwd, nil },
+		hostname:   func() (string, error) { return hostname, nil },
 		executable: func() (string, error) { return launchBinary, nil },
 		lookPath: func(name string) (string, error) {
 			if m.onPath[name] {
@@ -96,9 +172,15 @@ func (m *launchMachine) run(t *testing.T, args ...string) launchRun {
 			}
 			return []byte("Error: No MCP server named 'partyline' found."), errors.New("exit status 1")
 		},
-		environ: func() []string { return append([]string(nil), m.environ...) },
+		environ:     func() []string { return append([]string(nil), m.environ...) },
+		isTerminal:  func(fd int) bool { return m.terminals[fd] },
+		now:         m.now,
+		sessionHTTP: m.sessionHTTP,
 		exec: func(path string, argv, env []string) (int, error) {
 			r.execed, r.path, r.argv, r.env = true, path, argv, env
+			if m.afterExec != nil {
+				m.afterExec(env)
+			}
 			return 7, nil
 		},
 	})
@@ -283,4 +365,241 @@ func TestHelpListsTheLaunchers(t *testing.T) {
 				"  gemini [args...]       Gemini CLI\n")
 		})
 	}
+}
+
+// SES-01, SES-02: a live AI and a terminal make the launcher print the exact prompt (display
+// name, app and the session's start in local time); yes starts the harness with
+// PARTYLINE_TAKEOVER=1 and sends the folder headers the channel sends.
+func TestLauncherAsksBeforeTakingOverALiveSession(t *testing.T) {
+	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
+	for _, answer := range []string{"y\n", "Y\n", "yes\n", "YES\n"} {
+		t.Run(strings.TrimSpace(answer), func(t *testing.T) {
+			m := newLaunchMachine(t)
+			m.onPath["claude"] = true
+			m.register(t, "claude")
+			m.input = answer
+			m.terminals = map[int]bool{0: true, 2: true}
+			m.now = func() time.Time { return since.In(time.FixedZone("-03", -3*3600)) }
+			m.answerSession(t, sessionState("Atlas", "claude", since), func(req *http.Request) {
+				require.Equal(t, []any{"testbox", "%2Fwork%2Facme", "claude", ""},
+					[]any{req.Header.Get(dto.HeaderMachine), req.Header.Get(dto.HeaderFolder), req.Header.Get(dto.HeaderHarness), req.Header.Get(dto.HeaderAdopt)})
+			})
+
+			r := m.run(t, "claude")
+			require.Equal(t, 7, r.code)
+			require.Equal(t, "Atlas is open in another session (Claude Code, since 09:30). Take over? [y/N] ", r.stderr)
+			require.True(t, r.execed, "the harness starts after yes")
+			require.Contains(t, r.env, "PARTYLINE_TAKEOVER=1")
+			require.Contains(t, r.env, "PARTYLINE_FOLDER=/work/acme")
+			require.NotContains(t, r.env, "PARTYLINE_FOLDER=/inherited/folder")
+		})
+	}
+}
+
+// SES-03: no, enter, EOF and any other answer exit 1 without starting the harness (each cancel
+// input is its own case).
+func TestLauncherStopsWhenThePersonDeclines(t *testing.T) {
+	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
+	cases := map[string]string{
+		"no": "n\n", "no word": "no\n", "enter": "\n", "eof": "", "other": "sure\n",
+	}
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := newLaunchMachine(t)
+			m.onPath["claude"] = true
+			m.register(t, "claude")
+			m.input = input
+			m.terminals = map[int]bool{0: true, 2: true}
+			m.answerSession(t, sessionState("Atlas", "claude", since), nil)
+
+			r := m.run(t, "claude")
+			require.Equal(t, 1, r.code)
+			require.False(t, r.execed, "the harness is not started")
+			require.Equal(t, "Atlas is open in another session (Claude Code, since "+
+				since.In(time.Local).Format("15:04")+"). Take over? [y/N] ", r.stderr)
+		})
+	}
+}
+
+// SES-07: without a terminal on stdin and stderr the launcher does not prompt and starts
+// without takeover; the channel reports busy.
+func TestLauncherDoesNotAskWithoutATerminal(t *testing.T) {
+	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
+	for name, terminals := range map[string]map[int]bool{
+		"none": nil, "stdin only": {0: true}, "stderr only": {2: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := newLaunchMachine(t)
+			m.onPath["claude"] = true
+			m.register(t, "claude")
+			m.terminals = terminals
+			m.answerSession(t, sessionState("Atlas", "claude", since), func(_ *http.Request) {
+				t.Error("the launcher asked without a terminal")
+			})
+
+			r := m.run(t, "claude")
+			require.Equal(t, 7, r.code, r.stderr)
+			require.Empty(t, r.stderr)
+			require.True(t, r.execed)
+			require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
+		})
+	}
+}
+
+// SES-01: an identity without a live session starts without a prompt, even on a terminal.
+func TestLauncherDoesNotAskWhenTheIdentityIsFree(t *testing.T) {
+	m := newLaunchMachine(t)
+	m.onPath["claude"] = true
+	m.register(t, "claude")
+	m.terminals = map[int]bool{0: true, 2: true}
+	m.answerSession(t, dto.SessionState{}, nil)
+
+	r := m.run(t, "claude")
+	require.Equal(t, 7, r.code, r.stderr)
+	require.Empty(t, r.stderr, "no prompt for a free identity")
+	require.True(t, r.execed)
+	require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
+}
+
+// SES-07, SES-02: --take-over (anywhere among the leading flags) and PARTYLINE_TAKEOVER=1 are
+// consent: the launcher takes over without asking or contacting the server and strips the flag
+// from the harness's arguments.
+func TestLauncherTakesOverWithoutAsking(t *testing.T) {
+	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
+	for name, setup := range map[string]func(m *launchMachine){
+		"flag": func(m *launchMachine) { m.getenv = map[string]string{} },
+		"env":  func(m *launchMachine) { m.getenv = map[string]string{"PARTYLINE_TAKEOVER": "1"} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := newLaunchMachine(t)
+			setup(m)
+			m.onPath["claude"] = true
+			m.register(t, "claude")
+			m.terminals = map[int]bool{0: true, 2: true}
+			m.answerSession(t, sessionState("Atlas", "claude", since), func(_ *http.Request) {
+				t.Error("the launcher asked although takeover was given")
+			})
+			args := []string{"claude", "--as", "atlas-bot", "--resume"}
+			if name == "flag" {
+				args = []string{"claude", "--as", "atlas-bot", "--take-over", "--resume"}
+			}
+			r := m.run(t, args...)
+			require.Equal(t, 7, r.code, r.stderr)
+			require.Empty(t, r.stderr, "no prompt")
+			require.Equal(t, []string{"claude", "--dangerously-load-development-channels", "server:partyline", "--resume"}, r.argv)
+			require.Contains(t, r.env, "PARTYLINE_TAKEOVER=1")
+			require.Contains(t, r.env, "PARTYLINE_AGENT=atlas-bot")
+		})
+	}
+}
+
+// SES-01: an unreachable server makes the launcher start the harness without asking.
+func TestLauncherStartsWithoutAskingWhenTheServerIsUnreachable(t *testing.T) {
+	m := newLaunchMachine(t)
+	m.onPath["claude"] = true
+	m.register(t, "claude")
+	m.terminals = map[int]bool{0: true, 2: true}
+	m.input = "y\n"
+	m.saveConfig(t, "http://127.0.0.1:1", launchToken)
+
+	r := m.run(t, "claude")
+	require.Equal(t, 7, r.code, r.stderr)
+	require.Empty(t, r.stderr)
+	require.True(t, r.execed)
+	require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
+}
+
+// SES-01: a server that does not answer within 2 seconds makes the launcher start the harness
+// without asking.
+func TestLauncherGivesUpOnASlowServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done() // the launcher gave up
+	}))
+	t.Cleanup(srv.Close)
+	m := newLaunchMachine(t)
+	m.onPath["claude"] = true
+	m.register(t, "claude")
+	m.terminals = map[int]bool{0: true, 2: true}
+	m.input = "y\n"
+	m.saveConfig(t, srv.URL, launchToken)
+
+	started := time.Now()
+	r := m.run(t, "claude")
+	elapsed := time.Since(started)
+	require.Equal(t, 7, r.code, r.stderr)
+	require.Empty(t, r.stderr)
+	require.True(t, r.execed)
+	require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1")
+	require.GreaterOrEqual(t, elapsed, 1900*time.Millisecond, "the launcher waited for the 2 s timeout")
+	require.Less(t, elapsed, 10*time.Second, "the launcher did not wait much longer than 2 s")
+}
+
+// Spec issue 6: Codex and Gemini open no live session, so their launchers never take over; they
+// print one informational line when the AI is live elsewhere and start.
+func TestToolsOnlyLaunchersAnnounceTheLiveSession(t *testing.T) {
+	since := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
+	const want = "Atlas is also open in another session (Claude Code, since "
+	for _, command := range []string{"codex", "gemini"} {
+		for _, takeOver := range []bool{false, true} {
+			name := command
+			if takeOver {
+				name += " with --take-over"
+			}
+			t.Run(name, func(t *testing.T) {
+				m := newLaunchMachine(t)
+				m.onPath[command] = true
+				m.register(t, command)
+				m.terminals = map[int]bool{0: true, 2: true}
+				m.answerSession(t, sessionState("Atlas", "claude", since), nil)
+				args := []string{command}
+				if takeOver {
+					args = append(args, "--take-over")
+				}
+
+				r := m.run(t, args...)
+				require.Equal(t, 7, r.code, r.stderr)
+				require.True(t, r.execed, "the tools-only session starts")
+				require.Equal(t, want+since.In(time.Local).Format("15:04")+"); this session uses tools only\n", r.stderr)
+				require.NotContains(t, r.env, "PARTYLINE_TAKEOVER=1", "a tools-only session takes nothing over")
+			})
+		}
+	}
+}
+
+// SES-02: the launcher's yes sets PARTYLINE_TAKEOVER=1, and the harness's channel (simulated
+// here) then takes the AI over: the old session is closed 4002 taken_over and the new one holds
+// the identity.
+func TestLauncherTakesOverTheLiveSessionEndToEnd(t *testing.T) {
+	start := time.Date(2026, 10, 21, 12, 30, 0, 0, time.UTC)
+	env := testkit.New(t, testkit.WithClock(func() time.Time { return start }))
+	alice := env.NewUser("alice")
+	_, secret, err := env.App.Users.CreateToken(context.Background(), alice.User.ID, users.TokenInput{Kind: dto.TokenKindAgent, Name: "laptop"})
+	require.NoError(t, err)
+	folder := testkit.Folder{Machine: "testbox", Path: "/work/acme", Harness: "claude"}
+	holder, resp := alice.WithBearer(secret).DialFolder(folder)
+	require.NotNil(t, holder, "upgrade refused: %d %s", resp.Status, resp.Body)
+	require.Equal(t, "Acme", holder.Welcome(chanWait).Intelligence.DisplayName)
+
+	m := newLaunchMachine(t)
+	m.onPath["claude"] = true
+	m.register(t, "claude")
+	m.input = "y\n"
+	m.terminals = map[int]bool{0: true, 2: true}
+	m.now = func() time.Time { return start.In(time.FixedZone("-03", -3*3600)) }
+	m.saveConfig(t, env.URL, secret)
+	var taker *testkit.AgentConn
+	m.afterExec = func(environ []string) {
+		require.Contains(t, environ, "PARTYLINE_TAKEOVER=1")
+		conn, resp := alice.WithBearer(secret).DialFolder(testkit.Folder{Machine: "testbox", Path: "/work/acme", Harness: "claude", Takeover: true})
+		require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+		conn.Welcome(chanWait)
+		taker = conn
+	}
+
+	r := m.run(t, "claude")
+	require.Equal(t, 7, r.code, r.stderr)
+	require.Equal(t, "Acme is open in another session (Claude Code, since 09:30). Take over? [y/N] ", r.stderr)
+	require.NotNil(t, taker)
+	require.Equal(t, websocket.StatusCode(4002), websocket.CloseStatus(holder.Closed(chanWait)), "the old session is closed taken_over")
+	require.NoError(t, taker.Closed(100*time.Millisecond), "the new session is left alone")
 }

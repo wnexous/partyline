@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -50,8 +51,9 @@ Start a session with Partyline (the arguments go to the harness unchanged):
   omp [args...]          oh-my-pi
   codex [args...]        Codex CLI
   gemini [args...]       Gemini CLI
-A session is the AI of the folder it starts in. Put --as <handle> before the arguments to adopt
-an AI that has no folder yet (one from before folders).
+A session is the AI of the folder it starts in. Put --take-over before the arguments to take the
+AI's live session over from another one, and --as <handle> to adopt an AI that has no folder yet
+(one from before folders).
 `
 
 // stdio holds what a command reads and writes; tests replace each part.
@@ -81,6 +83,11 @@ type stdio struct {
 	// termSize returns its width and height (nil: golang.org/x/term.GetSize).
 	isTerminal func(fd int) bool
 	termSize   func(fd int) (width, height int, err error)
+	// now is the launcher's clock (nil: time.Now); its location formats a live session's start.
+	now func() time.Time
+	// sessionHTTP asks GET /agent/session before a launch (nil: a client with
+	// launcherSessionTimeout).
+	sessionHTTP *http.Client
 }
 
 // Run executes the command named in args[1] and returns the process exit code. SIGINT and
