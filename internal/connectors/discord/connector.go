@@ -101,6 +101,7 @@ func newWithSession(s session, d connectors.Deps) *Connector {
 	}
 	c := &Connector{s: s, userAgent: d.UserAgent, log: log, client: d.MediaClient(60 * time.Second), titles: map[string]string{}}
 	s.AddHandler(c.onMessage)
+	s.AddHandler(c.onReady)
 	return c
 }
 
@@ -121,6 +122,20 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	<-ctx.Done()
 	_ = c.s.Close()
 	return ctx.Err()
+}
+
+// onReady reports the bot's @username as the connector's account (ACC-07); the gateway sends
+// READY again after a reconnect.
+func (c *Connector) onReady(_ *discordgo.Session, r *discordgo.Ready) {
+	if r == nil || r.User == nil || r.User.Username == "" {
+		return
+	}
+	c.mu.Lock()
+	run := c.run
+	c.mu.Unlock()
+	if run != nil {
+		run.h.Account("@" + r.User.Username)
+	}
 }
 
 // onMessage emits messages of non-bot users (DC-01): the chat is the channel.

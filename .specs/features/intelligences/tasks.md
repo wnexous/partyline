@@ -589,9 +589,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: ACC-01, ACC-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Owner sets an owned AI as operator → audit entry with from/to (ACC-01); grantee 403; another owner's AI 422; deleting the AI falls back to the owner
-- [ ] Adapter tests (fakes from captured responses) report the account label; the operator's profile shows `Discord: @bot` (ACC-07)
-- [ ] Gate check passes: `make check`
+- [x] Owner sets an owned AI as operator → audit entry with from/to (ACC-01); grantee 403; another owner's AI 422; deleting the AI falls back to the owner
+- [x] Adapter tests (fakes from captured responses) report the account label; the operator's profile shows `Discord: @bot` (ACC-07)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): give each connector an operator`

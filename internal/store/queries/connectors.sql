@@ -59,3 +59,11 @@ UPDATE connectors SET operator_iid = ? WHERE id = ?;
 
 -- name: SetConnectorAccountLabel :exec
 UPDATE connectors SET account_label = ? WHERE id = ?;
+
+-- name: ListConnectorsOperatedBy :many
+-- The connectors an AI operates (ACC-01, ACC-07).
+SELECT * FROM connectors WHERE operator_iid = ? ORDER BY name, id;
+
+-- name: ListConnectorsOperatedByOwner :many
+-- The connectors a user operates: those they own and no AI operates.
+SELECT * FROM connectors WHERE owner_id = ? AND operator_iid IS NULL ORDER BY name, id;

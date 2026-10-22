@@ -213,6 +213,9 @@ type Profile struct {
 	// Accounts are the chat accounts a user verified (PEOP-02) that the caller may see: the
 	// user's own, and those linked through a connector the caller owns or may use.
 	Accounts []LinkedAccount
+	// Operated are the connectors the user or AI operates (ACC-01) that the caller owns or may
+	// use: their platform accounts are apps of the operator (ACC-07).
+	Operated []db.Connector
 }
 
 // AgentInfo is what a profile shows about an AI.
@@ -240,7 +243,15 @@ func (s *Service) profile(ctx context.Context, p authn.Principal, d db.GetIntell
 			return Profile{}, err
 		}
 		out.Accounts = accounts
+		if out.Operated, err = s.operatedConnectors(ctx, p.UserID, d.Intelligence.ID, true); err != nil {
+			return Profile{}, err
+		}
 	case RoleAI:
+		operated, err := s.operatedConnectors(ctx, p.UserID, d.Intelligence.ID, false)
+		if err != nil {
+			return Profile{}, err
+		}
+		out.Operated = operated
 		a, err := q.GetAgent(ctx, d.Intelligence.ID)
 		if err != nil {
 			return Profile{}, err

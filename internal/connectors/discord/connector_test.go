@@ -42,6 +42,7 @@ type sent struct {
 type fakeSession struct {
 	mu       sync.Mutex
 	handlers []func(*discordgo.Session, *discordgo.MessageCreate)
+	readies  []func(*discordgo.Session, *discordgo.Ready)
 	openErr  error
 	opened   chan struct{}
 	closed   chan struct{}
@@ -72,7 +73,20 @@ func (f *fakeSession) AddHandler(h any) func() {
 	if mh, ok := h.(func(*discordgo.Session, *discordgo.MessageCreate)); ok {
 		f.handlers = append(f.handlers, mh)
 	}
+	if rh, ok := h.(func(*discordgo.Session, *discordgo.Ready)); ok {
+		f.readies = append(f.readies, rh)
+	}
 	return func() {}
+}
+
+// emitReady delivers the gateway's READY event naming the bot user.
+func (f *fakeSession) emitReady(bot *discordgo.User) {
+	f.mu.Lock()
+	hs := append([]func(*discordgo.Session, *discordgo.Ready){}, f.readies...)
+	f.mu.Unlock()
+	for _, h := range hs {
+		h(nil, &discordgo.Ready{Version: 10, SessionID: "synthetic-session", User: bot})
+	}
 }
 
 func (f *fakeSession) emit(m *discordgo.Message) {
@@ -176,6 +190,23 @@ func userMessage(id, content string) *discordgo.Message {
 		Author:    &discordgo.User{ID: userID, Username: "testperson", GlobalName: "Test Person"},
 		Timestamp: time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC),
 	}
+}
+
+// ACC-07: the gateway's READY event names the bot; its @username is the account label, a
+// READY after a reconnect reports it again, and a READY without a username reports nothing.
+func TestReadyReportsTheBotAccount(t *testing.T) {
+	f := newFakeSession()
+	_, rec := start(t, f)
+	require.True(t, rec.NoAccount(), "nothing before the gateway says who the bot is")
+
+	f.emitReady(&discordgo.User{ID: "300000000000000077", Username: "atlas-bot", Discriminator: "0", Bot: true})
+	require.Equal(t, "@atlas-bot", rec.NextAccount(t))
+	f.emitReady(&discordgo.User{ID: "300000000000000077", Username: "atlas-helper", Discriminator: "0", Bot: true})
+	require.Equal(t, "@atlas-helper", rec.NextAccount(t), "a renamed bot is reported again")
+
+	f.emitReady(nil)
+	f.emitReady(&discordgo.User{ID: "300000000000000077", Bot: true})
+	require.True(t, rec.NoAccount(), "a READY without a bot username reports nothing")
 }
 
 // DC-01: messages of non-bot users are emitted with the channel id as chat id; bots are ignored.

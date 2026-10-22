@@ -250,6 +250,9 @@ func (i *Instance) Fail(err error) { i.fail <- err }
 // Connected reports StatusConnected through the handler of the current Run.
 func (i *Instance) Connected() { i.handler().Status(connectors.StatusConnected, "") }
 
+// Account reports the connector's account label through the handler of the current Run.
+func (i *Instance) Account(label string) { i.handler().Account(label) }
+
 // Emit hands a received message to the handler of the current Run.
 func (i *Instance) Emit(ctx context.Context, m connectors.Inbound) { i.handler().Inbound(ctx, m) }
 

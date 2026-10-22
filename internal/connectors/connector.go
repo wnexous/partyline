@@ -65,6 +65,10 @@ type Handler interface {
 	// supergroup), keeping its rooms. It does nothing when the old id is unknown or the new
 	// id is already a chat.
 	MigrateChat(ctx context.Context, oldID, newID string)
+	// Account reports how the platform names the connector's own account ("@bot",
+	// "+•••• 1234"), which the operator's contact page shows (ACC-07). Connectors call it once
+	// connected and again when the name changes; an empty label clears it.
+	Account(label string)
 }
 
 // Status is the runtime state of a connector; the values match dto.ConnectorStatus.

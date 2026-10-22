@@ -67,7 +67,15 @@ type Connector struct {
 	Enabled   bool            `json:"enabled"`
 	Status    ConnectorStatus `json:"status"`
 	LastError string          `json:"last_error,omitempty"`
-	Config    map[string]any  `json:"config" tstype:"{ [key: string]: unknown }"`
+	// Operator is the intelligence the platform account belongs to: the owner (the default) or
+	// one of the owner's AIs. Talking to the account is talking to the operator (ACC-01). The
+	// server always sets it; the field is optional so that clients written before it keep
+	// compiling.
+	Operator *IntelligenceRef `json:"operator,omitempty"`
+	// AccountLabel is how the platform names the account once connected: "@bot",
+	// "+•••• 1234" (ACC-07); absent until then.
+	AccountLabel string         `json:"account_label,omitempty"`
+	Config       map[string]any `json:"config" tstype:"{ [key: string]: unknown }"`
 	// AutoRouteScope and AutoRouteRoomID are the catch-all settings (ROUTE-01): new chats of
 	// the matching kind that belong to no room join AutoRouteRoomID.
 	AutoRouteScope  AutoRouteScope `json:"auto_route_scope"`
@@ -101,6 +109,9 @@ type UpdateConnectorRequest struct {
 	// manage on the room (ROUTE-04). An empty AutoRouteRoomID clears it.
 	AutoRouteScope  *AutoRouteScope `json:"auto_route_scope,omitempty"`
 	AutoRouteRoomID *string         `json:"auto_route_room_id,omitempty"`
+	// OperatorID changes the operator (ACC-01): the owner's own id or an empty string for the
+	// owner, or the id of an AI the owner owns; only the owner may change it. Absent leaves it.
+	OperatorID *string `json:"operator_id,omitempty"`
 }
 
 // AutoRouteScope selects which new chats a connector routes to its catch-all room: none

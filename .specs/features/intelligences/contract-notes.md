@@ -1165,3 +1165,53 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   tree, people paging (page sizes 1-8 walk the same list, exact-end `has_more`, search by name, handle and
   account id, wildcard characters), the default and largest page, the people refusals field by field, the
   linked-account exclusion (link, second user, disabled user, unlink) and the linked accounts as apps.
+
+## T29 - Connector operators and account labels (ACC-01, ACC-07)
+
+- **Operator** (`connectors.operator_iid`, NULL = the owner): every connector view (`GET /connectors`,
+  `GET /connectors/{id}`, create/update answers) carries `dto.Connector.operator` (`IntelligenceRef`, role
+  `user` for the owner, `ai` for an AI) and `account_label`. Both are optional in the TypeScript type
+  (`operator?`, `account_label?`: pointer / `omitempty`) because the web fixtures predate them; the server
+  always sets `operator` and omits an empty label. `connectors.View.Operator`/`OperatorAI` is the data,
+  filled in one query for lists.
+- **`PATCH /connectors/{id}` `operator_id`** (`UpdateConnectorRequest.OperatorID`, `UpdateInput.OperatorID`):
+  absent leaves it; `""` or the owner's own user id sets the owner (NULL); an agent id sets that AI **when
+  the owner owns it**. Anything else - an AI of another owner (also one only shared with the owner), another
+  user, a person, an unknown id - is **422 `invalid`** with field `operator_id` ("must be you or an AI you
+  own"), before anything is written, so a request that also renames the connector changes nothing. Rights
+  are those of the whole PATCH: manage = the owner; a `use` grantee gets 403, a stranger or an admin 404,
+  an agent token 403, anonymous 401. A change of the effective operator (the owner's id when NULL) writes
+  `audit.ActionConnectorOperator` = **`connector.operator`** in the same transaction with detail `{kind,
+  name, from, to}` (`from`/`to` are intelligence ids, the owner's own id for the owner); setting what is
+  already set, or the owner's id for the owner, changes and audits nothing. The generic `connector.update`
+  entry is not written for an operator-only request, and the connector is not restarted. Deleting the
+  operator AI sets the column NULL (foreign key) so the owner operates again; no event is published.
+- **Account label** (`Handler.Account(label string)`, new on `connectors.Handler`; `connectortest.Recorder`
+  has `NextAccount`/`NoAccount`, `connectortest.Instance.Account(label)` reports one from a test):
+  the manager stores it in `connectors.account_label` when the reporting run is still the current one,
+  trimmed, without control characters and cut to `connectors.MaxAccountLabel` = 100 code points; an
+  empty label clears it. Adapters call it once connected, before they report `connected`:
+  - Telegram: `@<username>` of `getMe` (nothing for a bot without a username);
+  - Discord: `@<username>` of the gateway's READY event (`onReady`; reported again after a reconnect, nothing
+    when the event names no bot);
+  - WhatsApp: the masked phone number (`+•••• 1234`, `maskNumber`) of each instance the connector uses
+    (the allowlist, else those with WebSocket events), from the `jid` evolution-go 0.7.2 reports
+    (`<number>:<device>@s.whatsapp.net`, device suffix removed), each number once, joined by `, ` in the
+    order of `/instance/all`; a jid that is no phone number (a LID, none) adds nothing, so an older
+    evolution-go reports an empty label;
+  - the webhook reports none.
+  No live frame carries the label: clients read it with the connector.
+- **Apps of the operator (ACC-07)**: `IntelligenceProfile.apps` of a **user** (after the web app and the
+  verified chat accounts) and of an **AI** (after its harness) ends with one `{kind: <connector kind>,
+  label: "<Platform>: <account label>", connector_id}` for each connector it operates; the connector's
+  name replaces the label until the platform names the account (`Fake: wa`, `Discord: @bot`). A user
+  operates the connectors they own that no AI operates. Only the viewers who own or may use the connector
+  see its app (`Profile.Operated`, `Service.operatedConnectors`): a user who can use the AI but not the
+  connector, and anyone who sees a user's profile, do not learn that the connector exists. Moving the
+  operator moves the app.
+- sqlc added: `ListConnectorsOperatedBy`, `ListConnectorsOperatedByOwner`.
+- Tests: `internal/api/connector_operator_test.go` (default operator, set/reset/repeat with the audit
+  entries, every refusal with its status and nothing changed, deleting the AI, the account label cleaned
+  and cut, the apps by viewer), and per adapter `TestRunReportsTheBotAccount` (telegram),
+  `TestReadyReportsTheBotAccount` (discord) and `TestRunReportsTheMaskedNumbersOfItsInstances` (whatsapp,
+  fixtures in the evolution-go 0.7.2 shape with `jid`).

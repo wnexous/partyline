@@ -110,6 +110,13 @@ func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 			out.Person.LinkedUser = &ref
 		}
 	}
+	for _, c := range prof.Operated { // the connectors it operates are its apps too (ACC-07)
+		label := c.AccountLabel
+		if label == "" {
+			label = c.Name
+		}
+		out.Apps = append(out.Apps, dto.App{Kind: c.Kind, Label: connectors.PlatformLabel(c.Kind) + ": " + label, ConnectorID: c.ID})
+	}
 	return out
 }
 

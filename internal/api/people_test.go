@@ -291,7 +291,8 @@ func TestPersonPageShowsTheUserItIsLinkedTo(t *testing.T) {
 func TestLinkedAccountsAreAppsOfTheUser(t *testing.T) {
 	f := newPeopleFixture(t)
 	web := dto.App{Kind: "web", Label: "Web app"}
-	require.Equal(t, []dto.App{web}, profileOf(t, f.alice, f.alice.User.ID).Apps)
+	operated := dto.App{Kind: connectortest.KindName, Label: "Fake: wa", ConnectorID: f.conn.ID} // alice operates her connector
+	require.Equal(t, []dto.App{web, operated}, profileOf(t, f.alice, f.alice.User.ID).Apps)
 
 	code := testkit.Decode[dto.PairingCode](f.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: f.conn.ID}).RequireStatus(http.StatusCreated))
 	f.clock.Advance(time.Minute)
@@ -300,8 +301,8 @@ func TestLinkedAccountsAreAppsOfTheUser(t *testing.T) {
 	})
 
 	account := dto.App{Kind: connectortest.KindName, Label: "Fake: " + peopleSender, ConnectorID: f.conn.ID}
-	require.Equal(t, []dto.App{web, account}, profileOf(t, f.alice, f.alice.User.ID).Apps, "the user's own accounts")
-	require.Equal(t, []dto.App{web, account}, profileOf(t, f.bob, f.alice.User.ID).Apps, "bob may use the connector it was linked through")
+	require.Equal(t, []dto.App{web, account, operated}, profileOf(t, f.alice, f.alice.User.ID).Apps, "the user's own accounts")
+	require.Equal(t, []dto.App{web, account, operated}, profileOf(t, f.bob, f.alice.User.ID).Apps, "bob may use the connector it was linked through")
 	for _, c := range []*testkit.Client{f.carol, f.dave} {
 		require.Equal(t, []dto.App{web}, profileOf(t, c, f.alice.User.ID).Apps, "no access to the connector, no account")
 	}
@@ -309,7 +310,7 @@ func TestLinkedAccountsAreAppsOfTheUser(t *testing.T) {
 
 	idents := testkit.Decode[dto.List[dto.Identity]](f.alice.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items
 	f.alice.Delete("/api/v1/identities/" + idents[0].ID).RequireStatus(http.StatusNoContent)
-	require.Equal(t, []dto.App{web}, profileOf(t, f.alice, f.alice.User.ID).Apps)
+	require.Equal(t, []dto.App{web, operated}, profileOf(t, f.alice, f.alice.User.ID).Apps)
 }
 
 // GRP-02: a room's members list shows, for each bridged chat, the people seen in it with their

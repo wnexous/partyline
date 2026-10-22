@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -83,6 +84,9 @@ type instance struct {
 	Token           string `json:"token"`
 	WebsocketEnable flag   `json:"websocketEnable"`
 	Connected       flag   `json:"connected"`
+	// JID is the WhatsApp account of a connected instance, "<number>:<device>@s.whatsapp.net";
+	// empty for an instance that is not connected and for versions that do not report it.
+	JID string `json:"jid"`
 }
 
 // flag reads an evolution-go switch. evolution-go 0.7.2 sends websocketEnable as a string
@@ -128,7 +132,8 @@ func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
 // Run checks the API key, subscribes to the broadcast WebSocket and hands every Message
 // event of an allowed instance to h (WA-01). It returns when ctx ends or the socket fails.
 func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
-	if _, err := c.refreshInstances(ctx); err != nil {
+	insts, err := c.refreshInstances(ctx)
+	if err != nil {
 		return err
 	}
 	conn, resp, err := websocket.Dial(ctx, c.wsURL(), &websocket.DialOptions{
@@ -148,6 +153,7 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	}
 	defer func() { _ = conn.CloseNow() }()
 	conn.SetReadLimit(c.maxFrame)
+	h.Account(c.accountLabel(insts))
 	h.Status(connectors.StatusConnected, "")
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -163,6 +169,40 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 		}
 		c.handle(ctx, h, data)
 	}
+}
+
+// accountLabel is how WhatsApp names the connector's account (ACC-07): the masked phone number
+// of each instance it uses, as evolution-go reports it, in the order of /instance/all, each
+// number once. An instance whose jid is no phone number (not connected, a LID) adds nothing.
+func (c *Connector) accountLabel(insts []instance) string {
+	var labels []string
+	for _, inst := range insts {
+		if !c.listed(inst) {
+			continue
+		}
+		if n := instanceNumber(inst.JID); n != "" {
+			if l := maskNumber(n); !slices.Contains(labels, l) {
+				labels = append(labels, l)
+			}
+		}
+	}
+	return strings.Join(labels, ", ")
+}
+
+// instanceNumber is the phone number of an instance jid ("5511999990000:7@s.whatsapp.net" is
+// "5511999990000"); empty for any other jid.
+func instanceNumber(jid string) string {
+	user, ok := strings.CutSuffix(jid, "@s.whatsapp.net")
+	if !ok {
+		return ""
+	}
+	user, _, _ = strings.Cut(user, ":")
+	for _, r := range user {
+		if r < '0' || r > '9' {
+			return ""
+		}
+	}
+	return user
 }
 
 // ping keeps the socket alive; a failed ping ends Run.

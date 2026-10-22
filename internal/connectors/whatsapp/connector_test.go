@@ -50,19 +50,25 @@ type fakeEvolution struct {
 	groupName    string
 	groupInfoErr int
 
+	// instances is what GET /instance/all answers: the shape evolution-go 0.7.2 reports, where a
+	// connected instance carries the jid of its account (device suffix included).
+	instances []map[string]any
+
 	conns    chan *websocket.Conn
 	received chan request
 }
 
 func newFakeEvolution(t *testing.T) *fakeEvolution {
-	f := &fakeEvolution{t: t, conns: make(chan *websocket.Conn, 4), received: make(chan request, 64)}
+	f := &fakeEvolution{t: t, conns: make(chan *websocket.Conn, 4), received: make(chan request, 64), instances: []map[string]any{
+		{"name": "acme", "token": acmeToken, "websocketEnable": true, "connected": true, "jid": "5511999990000:7@s.whatsapp.net"},
+		{"name": "other", "token": otherToken, "websocketEnable": true, "connected": true, "jid": "5511999991234@s.whatsapp.net"},
+		{"name": "quiet", "token": "quiet-token", "websocketEnable": false, "connected": true, "jid": "5511999995678:2@s.whatsapp.net"},
+	}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /instance/all", f.rest(globalKey, func(request) any {
-		return map[string]any{"data": []map[string]any{
-			{"name": "acme", "token": acmeToken, "websocketEnable": true, "connected": true},
-			{"name": "other", "token": otherToken, "websocketEnable": true, "connected": true},
-			{"name": "quiet", "token": "quiet-token", "websocketEnable": false, "connected": true},
-		}}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return map[string]any{"data": f.instances}
 	}))
 	mux.HandleFunc("GET /group/list", f.rest("", func(r request) any {
 		name := map[string]string{acmeToken: "Acme Team", otherToken: "Other Team"}[r.APIKey]
@@ -231,6 +237,45 @@ func TestRunDeliversMessagesOfAllowedInstances(t *testing.T) {
 	require.Equal(t, "ALLOWED", in.MessageID, "the instance outside the allowlist was ignored")
 	require.Equal(t, "acme|120363000000000001@g.us", in.ChatID)
 	require.Equal(t, "hello", in.Text)
+}
+
+// ACC-07: the account label is the masked phone number of each instance the connector uses,
+// from the jid evolution-go reports for it (device suffix removed), in the order of
+// /instance/all: the instances with WebSocket events enabled, or the allowlist. Only the last 4
+// digits are shown, and a jid that is no phone number (a LID, none) adds nothing.
+func TestRunReportsTheMaskedNumbersOfItsInstances(t *testing.T) {
+	f := newFakeEvolution(t)
+	rec := connectortest.NewRecorder()
+	start(t, newConnector(t, f), f, rec)
+	require.Equal(t, "+•••• 0000, +•••• 1234", rec.NextAccount(t), "acme and other; quiet has no WebSocket events")
+	require.True(t, rec.NoAccount())
+
+	rec = connectortest.NewRecorder()
+	start(t, newConnector(t, f, "acme"), f, rec)
+	require.Equal(t, "+•••• 0000", rec.NextAccount(t), "the allowlist picks the instances")
+
+	rec = connectortest.NewRecorder()
+	start(t, newConnector(t, f, "quiet"), f, rec)
+	require.Equal(t, "+•••• 5678", rec.NextAccount(t), "an allowlisted instance counts even without WebSocket events")
+
+	f.mu.Lock()
+	f.instances = []map[string]any{
+		{"name": "acme", "token": acmeToken, "websocketEnable": true, "connected": false, "jid": ""},
+		{"name": "other", "token": otherToken, "websocketEnable": true, "connected": true, "jid": "100000000000001@lid"},
+		{"name": "third", "token": "third-token", "websocketEnable": true, "connected": true, "jid": "5511999991234:9@s.whatsapp.net"},
+		{"name": "fourth", "token": "fourth-token", "websocketEnable": true, "connected": true, "jid": "5511999991234:5@s.whatsapp.net"},
+	}
+	f.mu.Unlock()
+	rec = connectortest.NewRecorder()
+	start(t, newConnector(t, f), f, rec)
+	require.Equal(t, "+•••• 1234", rec.NextAccount(t), "one number once, however many devices")
+
+	f.mu.Lock()
+	f.instances = []map[string]any{{"name": "acme", "token": acmeToken, "websocketEnable": true, "connected": true}}
+	f.mu.Unlock()
+	rec = connectortest.NewRecorder()
+	start(t, newConnector(t, f), f, rec)
+	require.Empty(t, rec.NextAccount(t), "no jid (an older evolution-go): an empty label clears it")
 }
 
 // WA-01: an empty allowlist accepts every instance the broadcast socket delivers.

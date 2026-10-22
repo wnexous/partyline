@@ -37,6 +37,9 @@ const (
 	ActionConnectorDelete  = "connector.delete"
 	ActionConnectorEnable  = "connector.enable"
 	ActionConnectorDisable = "connector.disable"
+	// ActionConnectorOperator records a change of the intelligence that operates a connector's
+	// platform account (ACC-01).
+	ActionConnectorOperator = "connector.operator"
 	// ActionConnectorIdentitiesReset records the identities deleted because an endpoint
 	// field of the connector changed (S5).
 	ActionConnectorIdentitiesReset = "connector.identities_reset"

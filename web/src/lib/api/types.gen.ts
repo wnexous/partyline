@@ -577,6 +577,18 @@ export interface Connector {
   enabled: boolean;
   status: ConnectorStatus;
   last_error?: string;
+  /**
+   * Operator is the intelligence the platform account belongs to: the owner (the default) or
+   * one of the owner's AIs. Talking to the account is talking to the operator (ACC-01). The
+   * server always sets it; the field is optional so that clients written before it keep
+   * compiling.
+   */
+  operator?: IntelligenceRef;
+  /**
+   * AccountLabel is how the platform names the account once connected: "@bot",
+   * "+•••• 1234" (ACC-07); absent until then.
+   */
+  account_label?: string;
   config: { [key: string]: unknown };
   /**
    * AutoRouteScope and AutoRouteRoomID are the catch-all settings (ROUTE-01): new chats of
@@ -621,6 +633,11 @@ export interface UpdateConnectorRequest {
    */
   auto_route_scope?: AutoRouteScope;
   auto_route_room_id?: string;
+  /**
+   * OperatorID changes the operator (ACC-01): the owner's own id or an empty string for the
+   * owner, or the id of an AI the owner owns; only the owner may change it. Absent leaves it.
+   */
+  operator_id?: string;
 }
 /**
  * AutoRouteScope selects which new chats a connector routes to its catch-all room: none

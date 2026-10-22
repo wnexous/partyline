@@ -161,6 +161,9 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	c.mu.Lock()
 	c.selfID = me.ID
 	c.mu.Unlock()
+	if me.Username != "" {
+		h.Account("@" + me.Username) // ACC-07
+	}
 	h.Status(connectors.StatusConnected, "")
 	for {
 		c.mu.Lock()

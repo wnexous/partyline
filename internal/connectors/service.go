@@ -88,6 +88,10 @@ type View struct {
 	InboundHook bool
 	// Generated holds the values Kind.Prepare generated, set only by Create (shown once).
 	Generated map[string]string
+	// Operator is the intelligence the platform account belongs to (ACC-01): the owner's own
+	// intelligence, or the owner's AI when OperatorAI.
+	Operator   db.Intelligence
+	OperatorAI bool
 }
 
 // CreateInput is a new connector.
@@ -107,6 +111,9 @@ type UpdateInput struct {
 	// room id clears the room.
 	AutoRouteScope  *dto.AutoRouteScope
 	AutoRouteRoomID *string
+	// OperatorID names the connector's operator (ACC-01): the owner's id or "" for the owner,
+	// else an AI the owner owns.
+	OperatorID *string
 }
 
 // authorize requires the user to hold want on the connector: no access is
@@ -227,7 +234,48 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, id string) (View, 
 	if err != nil {
 		return View{}, err
 	}
-	return s.view(row.Connector, row.OwnerUsername, row.OwnerDisplayName, l)
+	v, err := s.view(row.Connector, row.OwnerUsername, row.OwnerDisplayName, l)
+	if err != nil {
+		return View{}, err
+	}
+	views := []View{v}
+	if err := s.attachOperators(ctx, views); err != nil {
+		return View{}, err
+	}
+	return views[0], nil
+}
+
+// attachOperators fills the operator of each view: the intelligence of its operator_iid, else
+// of its owner.
+func (s *Service) attachOperators(ctx context.Context, views []View) error {
+	ids := make([]string, 0, len(views))
+	for _, v := range views {
+		ids = append(ids, operatorID(v.Connector))
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := s.d.Store.R().ListIntelligencesByIDs(ctx, ids)
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]db.Intelligence, len(rows))
+	for _, r := range rows {
+		byID[r.ID] = r
+	}
+	for i := range views {
+		id := operatorID(views[i].Connector)
+		views[i].Operator, views[i].OperatorAI = byID[id], views[i].OperatorIid.Valid
+	}
+	return nil
+}
+
+// operatorID is the intelligence that operates the connector: its operator, else its owner.
+func operatorID(c db.Connector) string {
+	if c.OperatorIid.Valid {
+		return c.OperatorIid.String
+	}
+	return c.OwnerID
 }
 
 func (s *Service) view(c db.Connector, ownerUsername, ownerDisplay string, l access.Level) (View, error) {
@@ -270,6 +318,9 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]View, error) {
 			return nil, err
 		}
 		out = append(out, v)
+	}
+	if err := s.attachOperators(ctx, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -320,6 +371,10 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	if err != nil {
 		return View{}, err
 	}
+	operator, err := s.operator(ctx, c, in.OperatorID)
+	if err != nil {
+		return View{}, err
+	}
 	if string(scope) != c.AutoRouteScope || routeRoom != c.AutoRouteRoomID {
 		changed = append(changed, "auto_route")
 	}
@@ -339,6 +394,17 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 		}
 		if clearDetail {
 			if err := q.SetConnectorLastError(ctx, db.SetConnectorLastErrorParams{LastError: "", ID: id}); err != nil {
+				return err
+			}
+		}
+		if from, to := operatorID(c), operatorID(db.Connector{OwnerID: c.OwnerID, OperatorIid: operator}); from != to {
+			if err := q.SetConnectorOperator(ctx, db.SetConnectorOperatorParams{OperatorIid: operator, ID: id}); err != nil {
+				return err
+			}
+			if err := s.audit.Record(ctx, q, audit.Entry{
+				ActorID: p.UserID, Action: audit.ActionConnectorOperator, TargetKind: audit.TargetConnector, TargetID: id,
+				Detail: map[string]any{"kind": c.Kind, "name": name, "from": from, "to": to},
+			}); err != nil {
 				return err
 			}
 		}
@@ -399,6 +465,27 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 		}
 	}
 	return s.Get(ctx, p, id)
+}
+
+// operator returns the connector's operator_iid after the request (ACC-01): unchanged when none
+// is given, NULL for the owner (an empty id or the owner's own), else an AI the owner owns. Any
+// other id, also one that does not exist, is a validation error on operator_id.
+func (s *Service) operator(ctx context.Context, c db.Connector, requested *string) (sql.NullString, error) {
+	if requested == nil {
+		return c.OperatorIid, nil
+	}
+	id := strings.TrimSpace(*requested)
+	if id == "" || id == c.OwnerID {
+		return sql.NullString{}, nil
+	}
+	a, err := s.d.Store.R().GetAgent(ctx, id)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return sql.NullString{}, err
+	}
+	if err != nil || a.OwnerID != c.OwnerID {
+		return sql.NullString{}, &validation.Error{Fields: map[string]string{"operator_id": "must be you or an AI you own"}}
+	}
+	return sql.NullString{String: id, Valid: true}, nil
 }
 
 // autoRoute returns the catch-all settings after in (ROUTE-04): the scope must be one of
