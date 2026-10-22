@@ -23,9 +23,9 @@ export function initials(displayName: string): string {
   const words = displayName.trim().split(/\s+/).filter(Boolean);
   const firstWord = words[0];
   if (!firstWord) return "?";
-  const lastWord = words.length > 1 ? (words[words.length - 1] ?? firstWord) : firstWord;
+  const lastWord = words.length > 1 ? words[words.length - 1] : undefined;
   const first = Array.from(firstWord)[0] ?? "";
-  const last = Array.from(lastWord)[0] ?? "";
+  const last = lastWord ? (Array.from(lastWord)[0] ?? "") : "";
   return `${first}${last}`.toUpperCase();
 }
 

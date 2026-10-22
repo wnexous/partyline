@@ -53,10 +53,9 @@ export const acceptInviteSchema = z.object({
   display_name: optionalText,
 });
 
-/** POST /rooms: a name is required; the description is optional. */
-export const createRoomSchema = z.object({
+/** POST /groups: a name is required; the members are picked apart from the form (LAY-04). */
+export const createGroupSchema = z.object({
   name: z.string().trim().min(1, msg("validation.required")),
-  description: optionalText,
 });
 
 /** PATCH /rooms/{id}: retention in whole days, 0 keeps messages forever (OPS-02). */
@@ -137,7 +136,7 @@ export function keywordError(keyword: string): MessageKey | null {
 export type SetupForm = z.input<typeof setupSchema>;
 export type LoginForm = z.input<typeof loginSchema>;
 export type AcceptInviteForm = z.input<typeof acceptInviteSchema>;
-export type CreateRoomForm = z.input<typeof createRoomSchema>;
+export type CreateGroupForm = z.input<typeof createGroupSchema>;
 export type CreateTokenForm = z.input<typeof createTokenSchema>;
 export type ProfileForm = z.input<typeof profileSchema>;
 export type ChangePasswordForm = z.input<typeof changePasswordSchema>;

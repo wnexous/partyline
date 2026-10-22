@@ -1477,3 +1477,67 @@ Web only: `web/src/lib/{api/queries,contacts,live/handlers}.ts` and `web/src/tes
   `makeProfile`.
 - Tests: `lib/api/contacts.test.tsx` (what each hook sends and leaves in the cache) and `lib/live/handlers.test.ts`
   (block "contacts and operators").
+
+## T45 - New conversation, new group and search (LAY-03, LAY-04, DM-01)
+
+Web only. No API changed.
+
+- **Sidebar header** (`components/app-sidebar.tsx`): the wordmark, then the palette button (`SearchButton` is an icon
+  button now; its label and the `⌘K` / `Ctrl K` hint are in its tooltip) and the account menu; the conversation search
+  (`ConversationSearch`); **New conversation** and **New group**. The two start buttons are `flex-auto`: each first takes the
+  width of its label, so "New conversation" is not cut in the 320 px column. The interim **New room** button,
+  `CreateRoomDialog`, its tests (`rooms.test.tsx`: name trimmed, name required, a 422 reason under the field, all
+  covered again by `new-group-dialog.test.tsx`) and `createRoomSchema` are gone; `createGroupSchema` (a name) replaces
+  the schema. `useCreateRoom` (`POST /rooms`) stays in the data layer, tested, with no page using it.
+- **Search** (`ConversationList query`, `lib/conversations.conversationMatches`): every word of the text has to be found, each in
+  the conversation's title or in its `member_names` ("Name @handle" of its users and AIs: a bridged chat is not one, so
+  its people are not searched), ignoring case and accents (`foldText`: NFD without the marks, so "joao" finds "João").
+  The served and live order is kept, and a conversation that changes while hidden stays hidden. Escape and the clear
+  button empty the box (the browser's own clear button is hidden so there is one). A polite `sr-only` status says "N
+  conversations found" while something matches; nothing matching shows "No conversation matches “…”" and "Show all
+  conversations". While there is text, **Find “…” in contacts** opens New conversation with it typed, so someone with no
+  conversation yet can be reached. The empty list (no conversation at all) offers New conversation and New group, next to the
+  header's two; the search box stays.
+- **Dialogs are local state, not a store**: each trigger wraps its own dialog (`NewConversationDialog trigger initialQuery`,
+  `NewGroupDialog trigger`), whose body mounts only while open, so every opening starts empty and an old error is gone.
+  Nothing leaks between tests or between openings.
+- **New conversation** (`components/new-conversation-dialog.tsx`): a cmdk list with `shouldFilter={false}` (the app's matcher
+  filters, so accents and several words work) over `useContacts` → `pickables` (`lib/contacts.ts`): **AIs** (the user's own
+  in tree order, parents first, then the unlinked, then the shared ones), **Users** and **People**. Each row: avatar, name,
+  kind badge and `@handle`, and for an AI online state, app, the owner's label of its machine (the hostname for a shared AI),
+  folder and "by @owner". A search finds an AI by name, handle, hostname, machine label, folder and app, a user by name and
+  handle; the owner of a shared AI is not searched. Enter opens the highlighted (first) match.
+  **People** are looked up on the server (`usePeopleSearch`: `GET /contacts/people?connector_id&q&limit=8` for each
+  connector with `count > 0` only), once the text has settled for 250 ms (`useDebouncedValue`) and has at least two
+  characters after a leading `@` (cut at `MaxPeopleSearch`); the previous results stay until the next arrive, and are not shown when the
+  text falls below two. With fewer letters the dialog says "Type at least 2 letters to search people.". A search that
+  fails says so. Picking opens the DM (`useStartConversation` → `POST /conversations/dm`, 200 and 201 alike), closes the dialog and goes to
+  `/rooms/{id}`; a failure stays in the dialog: `contact_not_found` ("X isn’t available anymore."), `no_route_to_person`
+  (a person can be answered only in conversations they started with an account the user operates), anything else a generic
+  line; the rows are disabled while the request runs.
+- **New group** (`components/new-group-dialog.tsx`): a name (`createGroupSchema`, trimmed; a 422 `fields.name` shows under
+  it) and members picked from the same contacts: **AIs and Users only**, because people join a group through a bridged chat
+  (the server refuses them as `person`). Picked members are a removable summary (`ul` "Selected members"), sent in the
+  order they were picked, at most `MaxGroupMembers` = 50 (the unticked boxes are disabled at the limit, a picked one can
+  still be taken out). A filter (the same matcher) narrows the list and keeps what was picked while hidden; Enter in it
+  does not create the group. The contacts load with a retry on failure. `POST /groups` → 201: the dialog closes and the
+  group opens. **`members_refused`** (422, `ApiError.refused`): an alert names each refused member with its reason
+  (`not_found`: "not available: unknown, disabled, or not shared with you"; `person`: "people join through a bridged chat, not as
+  members"), says nothing was created, flags those rows (`aria-invalid`), and keeps the name and the picks. The alert
+  follows the picks: a refused member taken out of the list leaves it, and it is gone once none is left (an id the contacts
+  do not show cannot be taken out and stays until the next try).
+- **Member picker of a group** (`components/member-picker.tsx`, UI-10): lists **AIs** (own, then shared), **Users** and **Chats**
+  from `useContacts` and `useChats` (no `GET /agents`, no projects), minus the members already there, filtered by the
+  same matcher (a chat by its title, connector name and kind). An AI is added as `agent`, a user as `user`, a chat as `chat`.
+  When nothing is left it offers "Connect an agent" (the agents page until T47 moves it to `/contacts`) and "Add a connector".
+- **Presence**: `withContactPresence(contact, presence)` (`lib/presence.ts`) folds the live `agent.presence` of the store over an
+  AI of the contacts (the store wins); the pickers use it, so an AI that connects while a dialog is open turns online.
+- **Group labels are not uppercase**: the headings of the three lists are sentence case on purpose; the app's uppercase label
+  voice would turn "AIs" into "AIS".
+- **Fix (T43), initials of a one-word name**: `initials("Atlas")` returned "AA" although its own comment says "the single letter
+  for a one-word name"; it returns "A" now (`initials("Ana Souza")` is still "AS"), with a test of the rule.
+- Tests: `components/new-conversation-dialog.test.tsx`, `components/new-group-dialog.test.tsx`,
+  `components/conversation-list.test.tsx` (search block, empty state), `lib/conversations.test.ts`, `lib/contacts.test.ts`,
+  `lib/presence.test.ts`, `hooks/use-debounced-value.test.tsx`, `routes/_app/rooms/room.test.tsx` (member picker),
+  `routes/autofocus.test.tsx` (both dialogs), `routes/a11y.test.tsx` (axe on both dialogs, en and pt-BR),
+  `components/intelligence/intelligence.test.tsx` (`initials`). The e2e smoke test creates its room through "New group".

@@ -1,7 +1,7 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
+import { IntelligenceAvatar, initials } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { KindBadge } from "@/components/intelligence/kind-badge";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
@@ -52,6 +52,23 @@ beforeEach(() => useLiveStore.setState({ locale: "en" }));
 afterEach(() => {
   useLiveStore.setState({ locale: "en" });
   vi.unstubAllGlobals();
+});
+
+describe("initials (PROF-08)", () => {
+  it.each([
+    ["Ana Souza", "AS"],
+    ["Ana Maria Souza", "AS"],
+    ["  ana   souza  ", "AS"],
+    ["Atlas", "A"],
+    ["atlas", "A"],
+    ["x", "X"],
+    ["", "?"],
+    ["   ", "?"],
+    ["😀 Smile", "😀S"],
+    ["Åsa Öberg", "ÅÖ"],
+  ])("shows %j as %j", (name, expected) => {
+    expect(initials(name)).toBe(expected);
+  });
 });
 
 describe("IntelligenceAvatar (PROF-08)", () => {

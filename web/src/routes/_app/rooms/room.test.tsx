@@ -2,17 +2,22 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "@/lib/api/queries";
-import type { Level, Room, RoomMember } from "@/lib/api/types.gen";
+import type { Room, RoomMember } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
-  makeAgent,
+  makeAI,
+  makeAIContact,
   makeChat,
+  makeContacts,
   makeConversation,
+  makeIntelligence,
+  makeMachineTree,
   makeMe,
   makeMember,
   makeRoom,
+  makeTreeNode,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { makeQueryClient, renderRoute } from "@/test/render";
@@ -33,21 +38,38 @@ const members: RoomMember[] = [
   }),
 ];
 
+// What the user may add to a room (UI-10): their own AIs, AIs shared with them and other users.
+const releaseBot = makeAI({ id: "a1", display_name: "release-bot", handle: "release-bot" });
+const triage = makeAI({ id: "a2", display_name: "triage", handle: "triage" });
+const docsWriter = makeAI({ id: "a3", display_name: "docs-writer", handle: "docs-writer" });
+const bob = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
+const cora = makeIntelligence({ id: "u3", display_name: "Cora Dias", handle: "cora" });
+const contacts = makeContacts({
+  machines: [
+    makeMachineTree({
+      nodes: [
+        makeTreeNode({ ai: makeAIContact({ intelligence: releaseBot, online: true }) }),
+        makeTreeNode({
+          ai: makeAIContact({
+            intelligence: triage,
+            folder: "/home/dev/triage",
+            folder_label: "~/triage",
+          }),
+        }),
+      ],
+    }),
+  ],
+  shared: [makeAIContact({ intelligence: docsWriter, owner: bob, online: true, machine: "cloud" })],
+  users: [bob, cora],
+});
+
 function roomApi(room: Partial<Room> = {}, extra: Parameters<typeof mockApi>[0] = {}) {
   return mockApi({
     "GET /me": json(200, makeMe()),
     "GET /rooms/r1": json(200, makeRoom({ id: "r1", name: "deploys", ...room })),
     "GET /rooms/r1/members": json(200, { items: members }),
     "GET /rooms/r1/messages": json(200, { items: [], has_more: false }),
-    "GET /agents": json(200, {
-      items: [
-        makeAgent({ id: "a1", name: "release-bot", online: true }),
-        makeAgent({ id: "a2", name: "triage", online: false }),
-        makeAgent({ id: "a3", name: "docs-writer", my_level: "use", online: true }),
-        // Not usable: never offered.
-        makeAgent({ id: "a9", name: "someone-elses", my_level: "view" as Level }),
-      ],
-    }),
+    "GET /contacts": json(200, contacts),
     "GET /chats": json(200, {
       items: [
         makeChat({ id: "c1", title: "Ops on call" }),
@@ -232,28 +254,121 @@ describe("chat titles (CTX-07)", () => {
 });
 
 describe("member picker (UI-10)", () => {
-  it("offers only usable agents and chats that are not members yet, filterable by text", async () => {
-    roomApi();
+  async function openPicker(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole("button", { name: "Add members" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add members" });
+    await within(dialog).findByTestId("candidate-agent-a2");
+    return dialog;
+  }
+  const testIds = (el: HTMLElement) =>
+    within(el)
+      .getAllByRole("listitem")
+      .map((li) => li.getAttribute("data-testid"));
+
+  it("offers the AIs, users and chats the user can add that are not members yet, filterable by text", async () => {
+    roomApi(
+      {},
+      {
+        "GET /rooms/r1/members": json(200, {
+          items: [
+            ...members,
+            makeMember({ id: "mb-cora", kind: "user", member_id: "u3", name: "Cora Dias" }),
+          ],
+        }),
+      },
+    );
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    const dialog = await openPicker(user);
+
+    const triageRow = within(dialog).getByTestId("candidate-agent-a2");
+    expect(triageRow).toHaveTextContent("triage");
+    expect(triageRow).toHaveTextContent("Offline");
+    expect(triageRow).toHaveTextContent("~/triage");
+    expect(within(dialog).getByTestId("candidate-agent-a3")).toHaveTextContent("docs-writer");
+    expect(within(dialog).getByTestId("candidate-agent-a3")).toHaveTextContent("Online");
+    expect(within(dialog).getByTestId("candidate-agent-a3")).toHaveTextContent("by @bob");
+    expect(within(dialog).getByTestId("candidate-user-u2")).toHaveTextContent("Bob Lima");
+    expect(within(dialog).getByTestId("candidate-chat-c3")).toHaveTextContent("Release notes");
+    expect(within(dialog).getByTestId("candidate-chat-c4")).toHaveTextContent("Support team");
+    // Already members, whatever their kind.
+    expect(within(dialog).queryByTestId("candidate-agent-a1")).toBeNull();
+    expect(within(dialog).queryByTestId("candidate-user-u3")).toBeNull();
+    expect(within(dialog).queryByTestId("candidate-chat-c1")).toBeNull();
+
+    const sections = within(dialog).getAllByRole("region");
+    expect(sections.map((r) => r.getAttribute("aria-label"))).toEqual(["AIs", "Users", "Chats"]);
+    expect(testIds(sections[0] as HTMLElement)).toEqual([
+      "candidate-agent-a2",
+      "candidate-agent-a3",
+    ]);
+
+    const filter = within(dialog).getByRole("searchbox", { name: "Filter" });
+    await user.type(filter, "SUPP");
+    expect(within(dialog).getByTestId("candidate-chat-c4")).toBeInTheDocument();
+    expect(within(dialog).queryByTestId("candidate-chat-c3")).toBeNull();
+    expect(within(dialog).queryByTestId("candidate-agent-a2")).toBeNull();
+    await user.clear(filter);
+    await user.type(filter, "bob");
+    expect(testIds(within(dialog).getByRole("region", { name: "Users" }))).toEqual([
+      "candidate-user-u2",
+    ]);
+  });
+
+  it.each([
+    ["an AI", "candidate-agent-a2", "Add triage", { kind: "agent", member_id: "a2" }],
+    ["a shared AI", "candidate-agent-a3", "Add docs-writer", { kind: "agent", member_id: "a3" }],
+    ["a user", "candidate-user-u2", "Add Bob Lima", { kind: "user", member_id: "u2" }],
+    ["a chat", "candidate-chat-c3", "Add Release notes", { kind: "chat", member_id: "c3" }],
+  ])("adds %s as the right kind of member", async (_what, testId, button, body) => {
+    const { calls } = roomApi(
+      {},
+      { "POST /rooms/r1/members": json(201, makeMember({ id: "mb-new" })) },
+    );
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    const dialog = await openPicker(user);
+    await user.click(
+      within(within(dialog).getByTestId(testId)).getByRole("button", { name: button }),
+    );
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.method === "POST" && c.path === "/rooms/r1/members")?.body,
+      ).toEqual(body),
+    );
+  });
+
+  it("does not offer projects, and does not ask for them", async () => {
+    const { calls } = roomApi();
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    const dialog = await openPicker(user);
+    expect(within(dialog).queryByRole("region", { name: "Projects" })).toBeNull();
+    expect(within(dialog).queryByText(/any session/)).toBeNull();
+    expect(calls.some((c) => c.path.startsWith("/projects"))).toBe(false);
+    expect(calls.some((c) => c.path === "/agents")).toBe(false);
+  });
+
+  it("points to where AIs are connected when there is nothing left to add", async () => {
+    roomApi(
+      {},
+      {
+        "GET /contacts": json(200, makeContacts()),
+        "GET /chats": json(200, { items: [] }),
+      },
+    );
     const user = userEvent.setup();
     renderRoute("/rooms/r1");
     await user.click(await screen.findByRole("button", { name: "Add members" }));
     const dialog = await screen.findByRole("dialog", { name: "Add members" });
-
-    const triage = await within(dialog).findByTestId("candidate-agent-a2");
-    expect(triage).toHaveTextContent("triage");
-    expect(triage).toHaveTextContent("Offline");
-    expect(within(dialog).getByTestId("candidate-agent-a3")).toHaveTextContent("Online");
-    expect(within(dialog).getByTestId("candidate-chat-c3")).toHaveTextContent("Release notes");
-    expect(within(dialog).getByTestId("candidate-chat-c4")).toHaveTextContent("Support team");
-    // Already members, or not usable.
-    expect(within(dialog).queryByTestId("candidate-agent-a1")).toBeNull();
-    expect(within(dialog).queryByTestId("candidate-chat-c1")).toBeNull();
-    expect(within(dialog).queryByTestId("candidate-agent-a9")).toBeNull();
-
-    await user.type(within(dialog).getByRole("searchbox", { name: "Filter" }), "SUPP");
-    expect(within(dialog).getByTestId("candidate-chat-c4")).toBeInTheDocument();
-    expect(within(dialog).queryByTestId("candidate-chat-c3")).toBeNull();
-    expect(within(dialog).queryByTestId("candidate-agent-a2")).toBeNull();
+    expect(
+      await within(dialog).findByText("Everything you can use is already here."),
+    ).toBeInTheDocument();
+    // The agents page until the contacts page exists (T47 points this at /contacts).
+    expect(within(dialog).getByRole("link", { name: "Connect an agent" })).toHaveAttribute(
+      "href",
+      "/agents",
+    );
   });
 
   it("adds the picked chat as a member", async () => {
@@ -300,86 +415,6 @@ describe("projects in rooms (PROJ-06, PROJ-07)", () => {
       },
     ],
   };
-  const agents = {
-    items: [
-      makeAgent({ id: "a1", name: "release-bot", online: true }),
-      makeAgent({
-        id: "t1",
-        name: "atlas-claude",
-        display_name: "Atlas · Claude Code",
-        kind: "temporary",
-        project: atlas,
-        online: true,
-      }),
-      makeAgent({ id: "f1", name: "zeta-bot", display_name: "zeta-bot" }),
-      makeAgent({ id: "a2", name: "triage", online: false }),
-    ],
-  };
-
-  it("offers projects first as any-session members, then fixed agents before temporary ones", async () => {
-    const { calls } = roomApi(
-      {},
-      {
-        "GET /projects": json(200, projects),
-        "GET /agents": json(200, agents),
-        "POST /rooms/r1/members": json(
-          201,
-          makeMember({ id: "mb-p", kind: "project", member_id: "p1", name: "Atlas" }),
-        ),
-      },
-    );
-    const user = userEvent.setup();
-    renderRoute("/rooms/r1");
-    await user.click(await screen.findByRole("button", { name: "Add members" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add members" });
-
-    const sections = await within(dialog).findAllByRole("region");
-    expect(sections.map((r) => r.getAttribute("aria-label"))).toEqual([
-      "Projects",
-      "Agents",
-      "Chats",
-    ]);
-    const project = within(dialog).getByTestId("candidate-project-p1");
-    expect(project).toHaveTextContent("Atlas (any session)");
-    expect(project).toHaveTextContent("1 online");
-    expect(within(dialog).getByTestId("candidate-project-p2")).toHaveTextContent(
-      "No session online",
-    );
-    const agentIds = within(within(dialog).getByRole("region", { name: "Agents" }))
-      .getAllByRole("listitem")
-      .map((li) => li.getAttribute("data-testid"));
-    expect(agentIds).toEqual(["candidate-agent-a2", "candidate-agent-f1", "candidate-agent-t1"]);
-    expect(within(dialog).getByTestId("candidate-agent-t1")).toHaveTextContent(
-      "Atlas · Claude Code",
-    );
-    expect(within(dialog).getByTestId("candidate-agent-t1")).toHaveTextContent("Temporary");
-
-    await user.click(within(project).getByRole("button", { name: "Add Atlas (any session)" }));
-    await waitFor(() =>
-      expect(
-        calls.find((c) => c.method === "POST" && c.path === "/rooms/r1/members")?.body,
-      ).toEqual({ kind: "project", member_id: "p1" }),
-    );
-  });
-
-  it("does not offer a project that is already a member", async () => {
-    roomApi(
-      {},
-      {
-        "GET /projects": json(200, projects),
-        "GET /rooms/r1/members": json(200, {
-          items: [...members, makeMember({ id: "mb-p", kind: "project", member_id: "p1" })],
-        }),
-      },
-    );
-    const user = userEvent.setup();
-    renderRoute("/rooms/r1");
-    await user.click(await screen.findByRole("button", { name: "Add members" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add members" });
-    expect(await within(dialog).findByTestId("candidate-project-p2")).toBeInTheDocument();
-    expect(within(dialog).queryByTestId("candidate-project-p1")).toBeNull();
-  });
-
   it("shows a project member's active session and refreshes it on members.changed", async () => {
     let projectMember = makeMember({
       id: "mb-p",

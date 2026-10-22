@@ -99,10 +99,10 @@ test("a message posted in a room reaches another user's open room live (UI-04)",
     const admin = await adminCtx.newPage();
     await admin.goto("/");
     // The sidebar's button; the empty list offers the same action too.
-    await admin.getByRole("button", { name: "New room" }).first().click();
-    const dialog = admin.getByRole("dialog", { name: "New room" });
+    await admin.getByRole("button", { name: "New group" }).first().click();
+    const dialog = admin.getByRole("dialog", { name: "New group" });
     await dialog.getByLabel("Name", { exact: true }).fill("e2e-wire");
-    await dialog.getByRole("button", { name: "Create room" }).click();
+    await dialog.getByRole("button", { name: "Create group" }).click();
     await expect(admin).toHaveURL(new RegExp(`^${instance.url}/rooms/[^/]+$`));
     const roomId = new URL(admin.url()).pathname.split("/").pop();
     await apiCall(adminCtx.request, instance, "PUT", `/rooms/${roomId}/sharing`, {

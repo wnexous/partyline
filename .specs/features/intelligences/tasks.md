@@ -861,9 +861,9 @@ the task whose server API it calls: the merge hook (T35), the notify hooks (T34,
 **Requirement**: LAY-03, LAY-04, DM-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Search filters by conversation name and member (LAY-03); picking a contact opens its existing DM or a new one (DM-01)
-- [ ] Creating a group navigates to it; a refused member is listed in the dialog (LAY-04)
-- [ ] Gate check passes: `make check`
+- [x] Search filters by conversation name and member (LAY-03); picking a contact opens its existing DM or a new one (DM-01)
+- [x] Creating a group navigates to it; a refused member is listed in the dialog (LAY-04)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): start DMs and groups from the sidebar`

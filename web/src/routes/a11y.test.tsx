@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
@@ -18,6 +18,7 @@ import {
 import { stubLayout } from "@/test/layout";
 import { stubViewport } from "@/test/media";
 import { renderRoute } from "@/test/render";
+import { sampleContacts } from "@/test/sample-contacts";
 
 expect.extend(matchers);
 
@@ -193,6 +194,7 @@ function appApi(locale: "en" | "pt-BR") {
     }),
     "PUT /rooms/d1/read": json(200, { room_id: "d1", seq: 1, unread: 0 }),
     "GET /agents": json(200, { items: [makeAgent({ online: true })] }),
+    "GET /contacts": json(200, sampleContacts),
     "GET /connectors": json(200, {
       items: [makeConnector({ status: "error", last_error: "invalid token" })],
     }),
@@ -240,6 +242,32 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     );
     const menu = await screen.findByRole("menu");
     expect(await axe(menu, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the new conversation dialog has no axe violations", async () => {
+    appApi(locale);
+    const user = userEvent.setup();
+    renderRoute("/");
+    await user.click(
+      await screen.findByRole("button", {
+        name: locale === "en" ? "New conversation" : "Nova conversa",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByTestId("contact-a1");
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the new group dialog has no axe violations", async () => {
+    appApi(locale);
+    const user = userEvent.setup();
+    renderRoute("/");
+    await user.click(
+      await screen.findByRole("button", { name: locale === "en" ? "New group" : "Novo grupo" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("checkbox", { name: "Atlas" });
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
   });
 
   it("the shell offers a skip link to the main content", async () => {

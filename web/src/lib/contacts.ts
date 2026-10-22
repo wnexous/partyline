@@ -1,3 +1,4 @@
+import { harnessLabel } from "@/lib/agents";
 import type { AIContact, Contacts, IntelligenceRef, Machine, TreeNode } from "@/lib/api/types.gen";
 
 /*
@@ -75,4 +76,50 @@ export function allAIs(contacts: Contacts): AIContact[] {
 /** Whether the contacts list the AI: an AI they lack was created by a session that just connected. */
 export function knowsAI(contacts: Contacts, id: string): boolean {
   return allAIs(contacts).some((c) => c.intelligence.id === id);
+}
+
+/** What the owner calls each of their machines, by hostname. Other owners' machines are not in it. */
+export function machineLabels(contacts: Contacts): Map<string, string> {
+  return new Map(contacts.machines.map((m) => [m.hostname, m.label]));
+}
+
+/** An intelligence the user can pick (a new conversation, a group member), with the text a search looks in. */
+export interface Pickable {
+  ref: IntelligenceRef;
+  /** Set for AIs: where they live and whether they are online. */
+  ai?: AIContact;
+  /** The owner's label for the AI's machine; the hostname when it has none or the AI is shared. */
+  machineLabel: string;
+  haystack: string;
+}
+
+function pickable(ref: IntelligenceRef, ai?: AIContact, machineLabel = ""): Pickable {
+  const parts = [ref.display_name, `@${ref.handle}`];
+  if (ai) {
+    parts.push(
+      ai.machine,
+      machineLabel,
+      ai.folder,
+      ai.folder_label,
+      harnessLabel(ai.app) ?? ai.app,
+    );
+  }
+  return { ref, ai, machineLabel, haystack: parts.filter(Boolean).join("\n") };
+}
+
+/**
+ * Everyone the user can message or add to a group, as the contacts list them: their own AIs (the
+ * tree parents first, then the unlinked), AIs shared with them, and the other users. People are
+ * left out: they are reached through a platform account, not picked from this list.
+ */
+export function pickables(contacts: Contacts): { ais: Pickable[]; users: Pickable[] } {
+  const labels = machineLabels(contacts);
+  const own = [...contacts.machines.flatMap((m) => flattenTree(m.nodes)), ...contacts.unlinked];
+  return {
+    ais: [
+      ...own.map((ai) => pickable(ai.intelligence, ai, labels.get(ai.machine) ?? ai.machine)),
+      ...contacts.shared.map((ai) => pickable(ai.intelligence, ai, ai.machine)),
+    ],
+    users: contacts.users.map((ref) => pickable(ref)),
+  };
 }
