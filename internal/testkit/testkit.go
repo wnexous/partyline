@@ -75,6 +75,7 @@ type options struct {
 	outbox           bool
 	version          string
 	database         string
+	inboundWait      func(ctx context.Context, d time.Duration) error
 }
 
 // Option customizes New.
@@ -113,6 +114,12 @@ func WithConnectorKinds(kinds ...connectors.Kind) Option {
 // of an older schema, which the app migrates on start).
 func WithDatabase(path string) Option { return func(o *options) { o.database = path } }
 
+// WithInboundWait replaces the sleep with which the inbound pipeline holds an own-account message
+// back while a send to its chat is in flight (ACC-05); with WithClock a test advances its clock in it.
+func WithInboundWait(wait func(ctx context.Context, d time.Duration) error) Option {
+	return func(o *options) { o.inboundWait = wait }
+}
+
 // WithVersion sets the server build version (default "dev").
 func WithVersion(v string) Option { return func(o *options) { o.version = v } }
 
@@ -137,7 +144,7 @@ func New(t testing.TB, opts ...Option) *Env {
 
 	e := &Env{
 		T: t, Server: srv, URL: base, Origin: cfg.PublicURL.Scheme + "://" + cfg.PublicURL.Host, cfg: cfg,
-		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, Version: o.version},
+		appOpts: app.Options{Logger: o.logger, Now: o.now, LiveSessionCheck: o.liveSessionCheck, ConnectorKinds: o.kinds, DisableOutbox: !o.outbox, Version: o.version, InboundWait: o.inboundWait},
 	}
 	e.startApp()
 	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { (*e.handler.Load()).ServeHTTP(w, r) })

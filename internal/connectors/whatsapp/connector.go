@@ -336,7 +336,8 @@ func (c *Connector) download(ctx context.Context, inst string, message json.RawM
 }
 
 // Send sends the text with /send/text, quoting the replied message (WA-03), and every
-// file with /send/media (WA-04). It returns the id of the first sent message.
+// file with /send/media (WA-04). It returns the id of the first sent message and tells m.Created
+// the id of each, as the platform reports every one as a message of the account (ACC-05).
 func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, error) {
 	inst, jid, ok := SplitChatID(m.ChatID)
 	if !ok {
@@ -356,6 +357,7 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 		if err != nil {
 			return "", err
 		}
+		created(m, id)
 		first = id
 	}
 	for _, f := range m.Files {
@@ -370,11 +372,19 @@ func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, er
 		if err != nil {
 			return "", err
 		}
+		created(m, id)
 		if first == "" {
 			first = id
 		}
 	}
 	return first, nil
+}
+
+// created tells m.Created the id of a message the send created.
+func created(m connectors.Outbound, id string) {
+	if m.Created != nil {
+		m.Created(id)
+	}
 }
 
 // formatText prefixes the author's name in bold (WhatsApp markup).

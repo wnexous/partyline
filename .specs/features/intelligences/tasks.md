@@ -655,9 +655,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: ACC-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A phone-typed message (FromSelf, unknown id) in a routed chat is authored by the operator and trusted for the owner's AIs (ACC-05)
-- [ ] The echo of a Partyline send, also when it arrives before the outbox row is marked sent, is dropped; FromSelf in an unrouted chat creates nothing
-- [ ] Gate check passes: `make check`
+- [x] A phone-typed message (FromSelf, unknown id) in a routed chat is authored by the operator and trusted for the owner's AIs (ACC-05)
+- [x] The echo of a Partyline send, also when it arrives before the outbox row is marked sent, is dropped; FromSelf in an unrouted chat creates nothing
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): author own-account messages as the operator`

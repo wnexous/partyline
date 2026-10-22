@@ -9,6 +9,36 @@ import (
 	"context"
 )
 
+const countChatOutboxExternalID = `-- name: CountChatOutboxExternalID :one
+SELECT COUNT(*) FROM outbox WHERE chat_id = ? AND status = 'sent' AND external_id = ?
+`
+
+type CountChatOutboxExternalIDParams struct {
+	ChatID     string
+	ExternalID string
+}
+
+// Messages Partyline sent to the chat that the platform knows by this id (ACC-05).
+func (q *Queries) CountChatOutboxExternalID(ctx context.Context, arg CountChatOutboxExternalIDParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countChatOutboxExternalID, arg.ChatID, arg.ExternalID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countSendingOutboxForChat = `-- name: CountSendingOutboxForChat :one
+SELECT COUNT(*) FROM outbox WHERE chat_id = ? AND status = 'sending'
+`
+
+// Sends to the chat that are in flight: an echo of one of them can reach the pipeline before the
+// row is marked sent (ACC-05).
+func (q *Queries) CountSendingOutboxForChat(ctx context.Context, chatID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSendingOutboxForChat, chatID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createNotifyOutbox = `-- name: CreateNotifyOutbox :exec
 INSERT INTO outbox (id, message_id, chat_id, purpose, next_attempt_at, updated_at)
 VALUES (?, ?, ?, 'notify', ?, ?)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -410,6 +411,33 @@ func TestSendMediaTypes(t *testing.T) {
 		require.Equal(t, want.name, req.Body["filename"])
 		require.Equal(t, base64.StdEncoding.EncodeToString([]byte(want.content)), req.Body["url"])
 	}
+}
+
+// ACC-05: a send reports the id of every message it created, the text and each file, as the
+// platform reports each as a message of the account; a send that fails midway reports what exists.
+func TestSendReportsEveryCreatedMessage(t *testing.T) {
+	f := newFakeEvolution(t)
+	c := newConnector(t, f)
+	file := func(name string) connectors.OutFile {
+		return connectors.OutFile{Name: name, Mime: "application/pdf", Open: func() (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader("pdf")), nil
+		}}
+	}
+	var created []string
+	report := func(id string) { created = append(created, id) }
+	_, err := c.Send(context.Background(), connectors.Outbound{
+		ChatID: ChatID(testInstance, groupJID), Text: "the report", Files: []connectors.OutFile{file("a.pdf"), file("b.pdf")}, Created: report,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"SENT-TEXT", "SENT-MEDIA", "SENT-MEDIA"}, created)
+
+	created = nil
+	_, err = c.Send(context.Background(), connectors.Outbound{
+		ChatID: ChatID(testInstance, groupJID), Text: "the report", Created: report,
+		Files: []connectors.OutFile{{Name: "gone.pdf", Open: func() (io.ReadCloser, error) { return nil, errors.New("gone") }}},
+	})
+	require.Error(t, err)
+	require.Equal(t, []string{"SENT-TEXT"}, created, "the text exists on the platform although the send failed")
 }
 
 // CON-06 / edge case: a failed send is an error without the token or the response body.

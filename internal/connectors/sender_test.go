@@ -23,16 +23,17 @@ import (
 
 type outboundEnv struct {
 	*inboundEnv
-	chat  string
-	room  dto.Room
-	agent *testkit.Client // agent REST client ("helper")
+	chat   string
+	room   dto.Room
+	agent  *testkit.Client    // agent REST client ("helper")
+	helper *testkit.AgentConn // helper's live connection
 }
 
 // newOutboundEnv runs the outbox worker with a fake connector whose group chat is routed to
 // alice's agent "helper" (connected).
-func newOutboundEnv(t *testing.T) *outboundEnv {
+func newOutboundEnv(t *testing.T, opts ...testkit.Option) *outboundEnv {
 	t.Helper()
-	e := newInboundEnv(t, testkit.WithOutbox())
+	e := newInboundEnv(t, append([]testkit.Option{testkit.WithOutbox()}, opts...)...)
 	e.emit(text(groupID, "M0", "hello"))
 	chat := e.chatID(t, groupID)
 
@@ -44,7 +45,7 @@ func newOutboundEnv(t *testing.T) *outboundEnv {
 	e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK).Decode(&agents)
 	require.Len(t, agents.Items, 1)
 	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: agents.Items[0].ID}).RequireStatus(http.StatusCreated))
-	return &outboundEnv{inboundEnv: e, chat: chat, room: room, agent: token.AsAgent("helper")}
+	return &outboundEnv{inboundEnv: e, chat: chat, room: room, agent: token.AsAgent("helper"), helper: conn}
 }
 
 // outbox returns the message's delivery to the chat once it satisfies done.

@@ -61,6 +61,9 @@ type Options struct {
 	ConnectorKinds []connectors.Kind
 	// Version is the build version, sent by connectors as User-Agent "partyline/<version>".
 	Version string
+	// InboundWait sleeps while the inbound pipeline holds an own-account message back until a
+	// send to its chat finishes (ACC-05); nil sleeps for real. Tests advance their clock with it.
+	InboundWait func(ctx context.Context, d time.Duration) error
 }
 
 // BuiltinKinds returns the connector kinds shipped with Partyline. A new platform adds its
@@ -180,9 +183,10 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	if version == "" {
 		version = "dev"
 	}
+	sentIDs := connectors.NewSentIDs(opts.Now)
 	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
 		Store: st, Bus: bus, Rooms: a.Rooms, Blobs: blobs, Identities: a.Identities, Conversations: a.Conversations,
-		MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
+		Sent: sentIDs, Wait: opts.InboundWait, MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
 	})
 	fileLinks := connectors.NewFileLinks(box, st, cfg.PublicURL, opts.Now)
 	a.ConnectorManager = connectors.NewManager(connectors.ManagerDeps{
@@ -193,7 +197,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	})
 	a.sender = opts.Sender
 	if a.sender == nil && !opts.DisableOutbox {
-		a.sender = connectors.NewSender(st, a.Rooms, blobs, a.ConnectorManager)
+		a.sender = connectors.NewSender(st, a.Rooms, blobs, a.ConnectorManager, sentIDs)
 	}
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
 		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Rooms: a.Rooms, Runner: a.ConnectorManager, Now: opts.Now,

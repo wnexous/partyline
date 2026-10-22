@@ -131,6 +131,10 @@ type Outbound struct {
 	RoomID     string
 	AuthorName string
 	CreatedAt  time.Time
+	// Created, when set, is called with the platform id of each message the send created: the
+	// parts of a long text and every file, not only the first. A platform that reports the
+	// account's own messages echoes them all back (ACC-05).
+	Created func(platformID string)
 	// Unsigned tells that the author operates the connector's account, so a platform that
 	// puts the author in the text leaves the author line out (ACC-03, ACC-04). AuthorName still
 	// names the author for platforms that carry it as data.

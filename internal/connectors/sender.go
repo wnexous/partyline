@@ -23,11 +23,13 @@ type Sender struct {
 	rooms   *rooms.Service
 	blobs   *attachments.Store
 	manager *Manager
+	sent    *SentIDs
 }
 
-// NewSender returns a Sender.
-func NewSender(st *store.Store, rs *rooms.Service, blobs *attachments.Store, m *Manager) *Sender {
-	return &Sender{store: st, rooms: rs, blobs: blobs, manager: m}
+// NewSender returns a Sender. sent, when given, remembers the platform ids of what it sends, so
+// that the inbound pipeline can tell an echo of it from the operator's own message (ACC-05).
+func NewSender(st *store.Store, rs *rooms.Service, blobs *attachments.Store, m *Manager, sent *SentIDs) *Sender {
+	return &Sender{store: st, rooms: rs, blobs: blobs, manager: m, sent: sent}
 }
 
 var _ delivery.Sender = (*Sender)(nil)
@@ -58,6 +60,7 @@ func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) 
 	out := Outbound{
 		ChatID: chat.ExternalID, Text: msg.Text, MessageID: msg.ID, RoomID: msg.RoomID,
 		AuthorName: msg.AuthorName, CreatedAt: time.UnixMilli(msg.CreatedAt).UTC(),
+		Created: func(id string) { s.sent.Add(chat.ID, id) },
 	}
 	if msg.AuthorKind == string(dto.AuthorKindAgent) {
 		// MEM-01: an agent member with its signature off sends without the author header;

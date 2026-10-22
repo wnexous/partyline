@@ -41,3 +41,12 @@ LIMIT 1;
 -- name: CreateNotifyOutbox :exec
 INSERT INTO outbox (id, message_id, chat_id, purpose, next_attempt_at, updated_at)
 VALUES (?, ?, ?, 'notify', ?, ?);
+
+-- name: CountSendingOutboxForChat :one
+-- Sends to the chat that are in flight: an echo of one of them can reach the pipeline before the
+-- row is marked sent (ACC-05).
+SELECT COUNT(*) FROM outbox WHERE chat_id = ? AND status = 'sending';
+
+-- name: CountChatOutboxExternalID :one
+-- Messages Partyline sent to the chat that the platform knows by this id (ACC-05).
+SELECT COUNT(*) FROM outbox WHERE chat_id = ? AND status = 'sent' AND external_id = ?;

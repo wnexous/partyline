@@ -43,6 +43,11 @@ type PipelineDeps struct {
 	// Conversations makes the DMs of platform DM chats (ACC-02); without it new DM chats are
 	// routed to the catch-all room only.
 	Conversations *conversations.Service
+	// Sent remembers what Partyline sent, to tell its echoes from the operator's own messages
+	// (ACC-05); nil remembers nothing, and only the outbox's ids then tell them apart.
+	Sent *SentIDs
+	// Wait sleeps for d or until ctx is done; defaults to a timer. Tests pass a fake clock's.
+	Wait func(ctx context.Context, d time.Duration) error
 	// MaxUploadBytes bounds stored media (CON-11).
 	MaxUploadBytes int64
 	Logger         *slog.Logger
@@ -70,6 +75,9 @@ func NewPipeline(d PipelineDeps) *Pipeline {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
+	if d.Wait == nil {
+		d.Wait = sleep
+	}
 	if d.People == nil {
 		d.People = NewPeople(PeopleDeps{Store: d.Store, Bus: d.Bus, Now: d.Now})
 	}
@@ -96,12 +104,12 @@ func (p *Pipeline) routeState(connectorID string) *routeState {
 	return st
 }
 
-// Handle processes one received message: own messages are dropped (CON-12), pairing
-// commands link the sender on this connector and stop (IDN-02, IDN-03, IDN-05), the chat is
-// recorded (CON-07) unless a catch-all cap refuses it (ROUTE-11), a chat in no room may join
-// the connector's catch-all room (ROUTE-01)
-// and, when the chat belongs to rooms, the message is stored once per room with its media
-// (CON-08, CON-10, CON-11). Failures are logged without message content.
+// Handle processes one received message: messages of the connector's own account are the
+// operator's (CON-12, ACC-05; see handleSelf), pairing commands link the sender on this
+// connector and stop (IDN-02, IDN-03, IDN-05), the chat is recorded (CON-07) unless a catch-all
+// cap refuses it (ROUTE-11), a chat in no room may join the connector's catch-all room
+// (ROUTE-01) and, when the chat belongs to rooms, the message is stored once per room with its
+// media (CON-08, CON-10, CON-11). Failures are logged without message content.
 func (p *Pipeline) Handle(ctx context.Context, src Source, m Inbound) {
 	if err := p.handle(ctx, src, m); err != nil && ctx.Err() == nil {
 		p.d.Logger.Error("connectors: inbound message failed", "connector_id", src.ConnectorID, "err", err)
@@ -109,8 +117,11 @@ func (p *Pipeline) Handle(ctx context.Context, src Source, m Inbound) {
 }
 
 func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
-	if m.FromSelf || m.ChatID == "" {
+	if m.ChatID == "" {
 		return nil
+	}
+	if m.FromSelf {
+		return p.handleSelf(ctx, src, m)
 	}
 	if match := pairingCommand.FindStringSubmatch(m.Text); match != nil {
 		onlyUser := ""
@@ -169,7 +180,13 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 	if err := p.author(ctx, src, chat, m, at, who); err != nil {
 		return err
 	}
-	senderUser, author := who.senderUser, who.iid() // a verified sender is the user (PEOP-02), any other the person (GRP-03)
+	// A verified sender is the user (PEOP-02), any other the person (GRP-03).
+	return p.post(ctx, src, chat, m, roomIDs, who.senderUser, who.iid())
+}
+
+// post stores the message once in each room with its media (CON-08, CON-10, CON-11), as written
+// by the intelligence author, and by the user senderUser when it resolves to one (DLV-06).
+func (p *Pipeline) post(ctx context.Context, src Source, chat db.Chat, m Inbound, roomIDs []string, senderUser, author string) error {
 	files := p.saveMedia(ctx, src, m.Media)
 	msgKind := dto.MessageKind(m.Kind)
 	if msgKind == "" {
@@ -178,6 +195,7 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 	for _, roomID := range roomIDs {
 		replyTo := ""
 		if m.ReplyToID != "" {
+			var err error
 			replyTo, err = p.d.Store.R().FindChatMessageRef(ctx, db.FindChatMessageRefParams{
 				RoomID: roomID, ChatID: chat.ID, ExternalID: sql.NullString{String: m.ReplyToID, Valid: true},
 			})

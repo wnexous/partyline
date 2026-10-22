@@ -1339,3 +1339,61 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   the signature on and a name set, signed again once not the operator; an AI through the owner's account
   signs on, with its room name, off; a user operator unsigned, a poster named, the owner named while an
   AI operates; and each adapter leaving the line out.
+
+## T33 - Messages from the operator's own account (ACC-05)
+
+- **`Inbound.FromSelf` is no longer dropped** (it was, by CON-12, for every chat). `Pipeline.handle` hands
+  such a message to `handleSelf` (`internal/connectors/selfmsg.go`). It **creates nothing**: no chat
+  (`UpsertChat` is not called), no conversation, no person, no route; a chat that is unknown to the
+  connector, or sits in no room, drops it. In a chat that is a member of rooms it is stored once per room
+  (`Pipeline.post`, the loop `handle` already had, now shared; a repeat is stored once and downloads no media
+  again), with its replied message, text and media, **authored by the connector's operator**:
+  `author_kind chat`, `author_id` the chat, `author_iid` the operator (`operator_iid`, else the owner, read
+  from the connector when the message is handled, so a change applies at once), `author_user_id` the
+  connector's **owner**. The owner's own account is the owner's, so the owner's AIs get it **trusted**
+  whoever the operator is (AD-006); AIs of other users do not. `sender_id`, `sender_alt_id` and
+  `sender_name` stay what the platform gave (the account), which replies need for quoting.
+- **Rendering:** a chat message authored by an AI (`author_iid` of kind `ai`, i.e. an AI operating the
+  account) now has `author.role = ai` (`convert.messageAuthor`); before, a chat message was only a `user`
+  (linked sender) or a `person`. The timeline name is the operator's display name (the message view takes
+  it from `author_iid`).
+- **Its own echoes are dropped.** Partyline's sends come back from WhatsApp and Discord as messages of the
+  account, three layers decide that one is an echo and not typed by the operator:
+  1. **Hold:** the message waits while the outbox has a `sending` row for its chat (`CountSendingOutboxForChat`),
+     polling every 50 ms, **at most `connectors.SelfHold` = 10 s** on the pipeline's clock; the platform can
+     report a message before the call that created it returns, when no id is recorded yet. After the limit
+     the message is handled as it is: an echo of a send stuck for more than 10 s is stored as typed by the
+     operator (accepted: the alternative is to lose the operator's real messages behind a stuck send).
+  2. **Sent ids** (`connectors.SentIDs`, in memory, 5 minutes, per chat): every adapter tells
+     **`Outbound.Created(id)`** the id of each message a send created, text parts and files, also when the
+     send fails afterwards (the parts that exist will echo, and a retry sends them again). `Sender` records
+     them. The outbox keeps the first id only.
+  3. **Outbox id** (`CountChatOutboxExternalID`): the id of a `sent` row of that chat. It survives a restart
+     and the five minutes. It reads the `sent` rows through the `outbox_due` prefix (status) and filters
+     them; self messages are rare and the memory registry answers first for the ids it knows, so no index
+     was added (none could be, 0016 is reserved).
+  An id belongs to its chat: the same id in another chat is another message.
+- **A pairing command from the account is ignored** (not executed, not stored): `!link CODE` typed from the
+  account's own phone would link the account and keep the code in a room's history. The code stays
+  usable.
+- **Delivery is the usual one:** the message is a chat message of the room, so it is bridged to the room's
+  other outbound chats like any other (signed per the operator rule of T32 for the target chat), delivered
+  to the room's AIs per their delivery mode, and an AI that is the operator and a member of the room
+  receives it as a message of its account (delivery excludes only the origin chat and an agent's own posts).
+- **Adapters:** Discord keeps the bot's user id from READY and emits the bot's own messages with
+  `FromSelf` (a DM's title is not set from it); other bots stay ignored, and so does any bot message
+  before READY. WhatsApp already set `FromSelf` and now reports every created id. Telegram bots never
+  receive their own messages and are unchanged. The webhook kind has no account of its own.
+- **CON-12 is refined, not repealed:** "drop messages sent by the connector's own account" still holds for
+  chats in no room and for echoes. `TestInboundDropsOwnMessages` is now `TestInboundDropsOwnMessagesOfChatsInNoRoom`
+  and no longer asserts that a routed chat drops a phone-typed message (ACC-05 says it is stored).
+- **Test seams:** `PipelineDeps.Sent` and `.Wait`, `app.Options.InboundWait` / `testkit.WithInboundWait`
+  (the sleep of the hold, to advance a manual clock), and on the fake connector `HoldSends` /
+  `ReleaseSends` / `WaitSending` (a platform call that is still running), `SetSendParts` (a send that
+  creates several messages) and `QuietSends` (a connector that reports no ids).
+- Tests (`internal/connectors/selfmsg_test.go`, `discord` and `whatsapp` adapter tests): operator owner and
+  operator AI as author, trusted, reply kept, stored once; media; echo dropped after the send, from the
+  outbox alone, in its own chat only, before the send returned (held, then dropped), for every part;
+  a typed message during a send stored after it; the 10 s limit with a stuck send on a manual clock;
+  no hold without a send; nothing created in unknown or unrouted chats; a pairing command ignored; the
+  registry's memory and pruning; Discord own/other bot/early messages; reported ids with a failure midway.
