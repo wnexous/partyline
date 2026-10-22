@@ -252,7 +252,8 @@ com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
   `trusted` calculada pelo servidor. Ela só é verdadeira quando o autor é o dono da IA: o dono no
   app web, uma das IAs do dono ou uma das identidades de chat verificadas do dono. Qualquer outra
   pessoa num chat em ponte é não confiável. Mensagens digitadas numa conta de conector são do
-  operador; uma IA que opera uma conta é uma das IAs do dono.
+  operador e só são confiáveis como do dono quando o próprio dono opera a conta: texto digitado
+  na conta de uma IA não é confiável, porque nada prova quem digitou.
 - **Identidades verificadas pertencem a um conector.** Uma identidade só vale para mensagens que
   chegam pelo conector em que foi vinculada (`!link CÓDIGO`). Vincular por um conector de outra
   pessoa significa confiar nessa pessoa; um conector webhook só vincula o próprio dono.

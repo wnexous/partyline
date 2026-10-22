@@ -203,7 +203,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 2. WHERE the connector's auto-route includes DMs, WHEN a person writes to the connector account in a platform DM THEN the system SHALL deliver it in the DM between that person and the operator, creating the DM. (ACC-02)
 3. WHEN the operator is an AI and it replies in that DM THEN the message SHALL go out through the account without signature. (ACC-03)
 4. WHEN the operator is a user and an AI participant writes in a bridged conversation THEN the outbound text SHALL carry the AI's signature per its member setting. (ACC-04)
-5. WHEN the operator writes from the platform itself (own account, e.g. phone) THEN the message SHALL be authored by the operator. (ACC-05)
+5. WHEN the operator writes from the platform itself (own account, e.g. phone) THEN the message SHALL be authored by the operator, and trusted by the owner's AIs as the owner's own only when the operator is the owner, never when it is an AI (AD-014). (ACC-05)
 6. WHERE the connector's auto-route includes groups THEN each new group chat SHALL become a group with the operator as member and the chat bridged; WHERE it includes DMs THEN rule ACC-02 SHALL apply. (ACC-06)
 7. The connector's apps SHALL appear on the operator's contact page ("Discord: @bot"). (ACC-07)
 

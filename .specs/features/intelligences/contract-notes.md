@@ -1483,7 +1483,8 @@ T47-T49 pages.
   `author_kind chat`, `author_id` the chat, `author_iid` the operator (`operator_iid`, else the owner, read
   from the connector when the message is handled, so a change applies at once), `author_user_id` the
   connector's **owner**. The owner's own account is the owner's, so the owner's AIs get it **trusted**
-  whoever the operator is (AD-006); AIs of other users do not. `sender_id`, `sender_alt_id` and
+  whoever the operator is (AD-006); AIs of other users do not. **Superseded by T59 / AD-014:** only
+  when the owner operates the account; an AI operator's messages carry no user. `sender_id`, `sender_alt_id` and
   `sender_name` stay what the platform gave (the account), which replies need for quoting.
 - **Rendering:** a chat message authored by an AI (`author_iid` of kind `ai`, i.e. an AI operating the
   account) now has `author.role = ai` (`convert.messageAuthor`); before, a chat message was only a `user`
@@ -2529,3 +2530,26 @@ say it. No code changes.
   and gets 404 on the DM; a stranger and the admin get 404 on the DM, its messages, the profile and the
   avatar. Scratch copy: ignoring `use` grants for DMs, giving every user view of the DM and hiding the
   person from a conversation's viewers each fail it.
+
+## T59 - Own-account messages are trusted as the owner only when the owner operates the account (ACC-05)
+
+`validation.md` gap 6 and André's decision of 2026-10-22, recorded as **AD-014** in `STATE.md`
+(an amendment of AD-006).
+
+- **Change.** `handleSelf` (`internal/connectors/selfmsg.go`) stores the message with
+  `author_user_id` = the connector's owner only when the owner operates the account
+  (`operator_iid` NULL). When an AI operates it (`operator_iid` set) the message keeps `author_iid` =
+  that AI (rendered with `author.role = ai`, as before) but has no `author_user_id`, so
+  `delivery.Trusted` is false for every AI. T33 trusted it for the owner's AIs whoever the operator was;
+  the code and `TestOwnAccountMessageIsAuthoredByTheOperator` said so (that assertion changed outcome
+  and now says `Trusted == false` and an empty `AuthorUserID` for the AI half). The message is still
+  stored once per room, bridged and delivered like any chat message; AIs with delivery mode `trusted`
+  no longer receive it when an AI operates the account.
+- **CON-12.** The connectors spec dropped every message of the connector's own account; ACC-05 already
+  stores the ones that are not the echo of a Partyline send. AD-014 says so in one place.
+- **Docs.** `README.md`, `README.pt-BR.md` (security model) and `docs/agents.md` (who signs what) say
+  that typed text is trusted as the owner's only on an account the owner operates.
+- **Tests** (`internal/connectors/selfmsg_test.go`): `TestOwnAccountMessageIsTrustedOnlyWhenTheOwnerOperatesTheAccount`
+  pins both halves and the way back (owner operator: trusted, authored by the owner; AI operator: not
+  trusted, no user, authored by the AI; the owner operates again: trusted). It and the first test fail on
+  the previous code.

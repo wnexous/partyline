@@ -1113,10 +1113,10 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: ACC-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Operator = the owner: the message typed on the account is authored by the owner and trusted by the owner's AI (ACC-05)
-- [ ] Operator = an AI: it is authored by that AI, carries no `author_user_id` and is not trusted by the owner's AIs (the assertion of `TestOwnAccountMessageIsAuthoredByTheOperator` that said "trusted" follows the decision)
-- [ ] `STATE.md` has AD-014 (amends AD-006, decided by André 2026-10-22)
-- [ ] Gate check passes: `make check`
+- [x] Operator = the owner: the message typed on the account is authored by the owner and trusted by the owner's AI (ACC-05)
+- [x] Operator = an AI: it is authored by that AI, carries no `author_user_id` and is not trusted by the owner's AIs (the assertion of `TestOwnAccountMessageIsAuthoredByTheOperator` that said "trusted" follows the decision)
+- [x] `STATE.md` has AD-014 (amends AD-006, decided by André 2026-10-22)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `fix(connectors): trust own-account messages only when the owner operates`

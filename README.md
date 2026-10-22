@@ -244,7 +244,8 @@ Run it behind a TLS-terminating reverse proxy for internet exposure, set
   server-computed `trusted` flag. It is true only when the author is the AI's owner: the owner in
   the web app, one of the owner's AIs, or one of the owner's verified chat identities. Anyone
   else in a bridged chat is untrusted. Messages typed on a connector account are the operator's
-  own; an AI operating an account is one of its owner's AIs.
+  own and are trusted as the owner's only when the owner operates the account: text typed on an
+  AI's account is untrusted, because nothing proves who typed it.
 - **Verified identities belong to one connector.** An identity counts only for messages that
   arrive through the connector it was linked through (`!link CODE`). Linking through a
   connector someone else owns means trusting that owner; a webhook connector links only its
