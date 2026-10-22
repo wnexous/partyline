@@ -41,11 +41,11 @@ tmp=$(mktemp -d 2>/dev/null || mktemp -d -t partyline-gotest) || exit 1
 ramtmp=
 trap 'rm -rf "$tmp" ${ramtmp:+"$ramtmp"}' EXIT INT TERM
 
-# Every test opens its own SQLite database, which syncs to disk on each commit. With many test
-# processes at once a slow disk becomes the bottleneck (processes wait on the journal while the
-# CPU idles), so on Linux the tests' temporary files and build output go to the RAM disk.
-# GOTEST_TMPDIR=disk keeps the normal temporary directory.
-if [ "${GOTEST_TMPDIR:-}" != disk ] && [ -d /dev/shm ] && [ -w /dev/shm ]; then
+# GOTEST_TMPDIR=ram puts the tests' temporary files and build output on the RAM disk
+# (/dev/shm). It is opt-in: systemd-logind removes a user's /dev/shm files when that user's last
+# login session ends (RemoveIPC), which can break a run in the middle. Test databases already skip
+# fsync (store.testPragmas), so the disk is not the bottleneck by default.
+if [ "${GOTEST_TMPDIR:-}" = ram ] && [ -d /dev/shm ] && [ -w /dev/shm ]; then
 	if ramtmp=$(mktemp -d /dev/shm/partyline-test.XXXXXX 2>/dev/null); then
 		export TMPDIR="$ramtmp"
 	else
