@@ -119,6 +119,31 @@ func (w *mergeWorld) cursor(t *testing.T, ai, room string) int64 {
 	return seq
 }
 
+// readCursor reads the read position of the user in a room (0: none).
+func (w *mergeWorld) readCursor(t *testing.T, user *testkit.Client, room string) int64 {
+	t.Helper()
+	seq, err := w.env.App.Store.R().GetReadCursor(context.Background(), db.GetReadCursorParams{UserID: user.User.ID, RoomID: room})
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0
+	}
+	require.NoError(t, err)
+	return seq
+}
+
+// pending returns the texts of the messages an AI was not delivered in a room, oldest first.
+func (w *mergeWorld) pending(t *testing.T, ai, room string) []string {
+	t.Helper()
+	views, err := w.env.App.Store.R().ListAgentPending(context.Background(), db.ListAgentPendingParams{
+		RoomID: room, AfterSeq: max(w.cursor(t, ai, room), 0), AgentID: ai, Limit: 100,
+	})
+	require.NoError(t, err)
+	out := make([]string, len(views))
+	for i, v := range views {
+		out[i] = v.Text
+	}
+	return out
+}
+
 // merge merges the AI from into the AI into as c.
 func merge(c *testkit.Client, from, into string) *testkit.Response {
 	c.T.Helper()
@@ -373,6 +398,110 @@ func TestMergeCarriesDirectMessages(t *testing.T) {
 			break
 		}
 	}
+}
+
+// MRG-01: a cursor moves into the surviving DM only for a party that had received or read all of
+// it, so nothing a party has not seen is skipped. Here the survivor was not delivered two
+// messages of the user and the user had not read what the survivor wrote, while the merged AI's
+// DM was received and read up to its end: both cursors stay where they were.
+func TestMergeKeepsWhatTheSurvivorHasNotReceivedOrRead(t *testing.T) {
+	w := newMergeWorld(t)
+	atlasWithAlice := dmWith(w.alice, w.atlas, http.StatusCreated)
+	oldWithAlice := dmWith(w.alice, w.old, http.StatusCreated)
+
+	write(t, w.alice, atlasWithAlice.ID, "to atlas 1")
+	write(t, w.alice, atlasWithAlice.ID, "to atlas 2")
+	w.say(t, w.atlas, atlasWithAlice.ID, "atlas speaks")
+	w.setCursor(t, w.atlas, atlasWithAlice.ID, 0) // connected, nothing delivered yet
+
+	write(t, w.alice, oldWithAlice.ID, "to old")
+	w.say(t, w.old, oldWithAlice.ID, "old answers")
+	w.setCursor(t, w.old, oldWithAlice.ID, 1) // old received the one message of its DM
+	w.alice.Put("/api/v1/rooms/"+oldWithAlice.ID+"/read", dto.MarkReadRequest{}).RequireStatus(http.StatusOK)
+
+	merge(w.alice, w.old, w.atlas).RequireStatus(http.StatusOK)
+
+	require.Equal(t, []string{"to atlas 1", "to atlas 2", "atlas speaks", "History merged from @old", "to old", "old answers"},
+		texts(timeline(t, w.alice, atlasWithAlice.ID)))
+	require.Equal(t, int64(0), w.cursor(t, w.atlas, atlasWithAlice.ID), "the survivor was not delivered its first messages")
+	require.Equal(t, []string{"to atlas 1", "to atlas 2", "History merged from @old", "to old"}, w.pending(t, w.atlas, atlasWithAlice.ID),
+		"its two messages are still pending, then what came with the merge")
+	require.Equal(t, int64(0), w.readCursor(t, w.alice, atlasWithAlice.ID), "alice had not read what atlas wrote")
+	require.Equal(t, 3, conversation(t, w.alice, atlasWithAlice.ID).Unread, "atlas's message, the notice and what old answered")
+}
+
+// MRG-01: a party that had received or read everything of the surviving DM takes the renumbered
+// position of its cursor in the merged DM, also when its own message was the last one there: the
+// AI is not delivered again what it received and the user does not read it again.
+func TestMergeMovesTheCursorsOfPartiesThatWereUpToDate(t *testing.T) {
+	w := newMergeWorld(t)
+	shareAI(w.alice, w.old, w.bob)
+	shareAI(w.alice, w.atlas, w.bob)
+	read := func(c *testkit.Client, room string, seq *int64) {
+		t.Helper()
+		c.Put("/api/v1/rooms/"+room+"/read", dto.MarkReadRequest{Seq: seq}).RequireStatus(http.StatusOK)
+	}
+
+	// alice: the survivor wrote the last message of its DM with her, so its cursor is below it.
+	atlasAlice, oldAlice := dmWith(w.alice, w.atlas, http.StatusCreated), dmWith(w.alice, w.old, http.StatusCreated)
+	write(t, w.alice, atlasAlice.ID, "q1")
+	w.say(t, w.atlas, atlasAlice.ID, "a1")
+	w.setCursor(t, w.atlas, atlasAlice.ID, 1)
+	read(w.alice, atlasAlice.ID, nil)
+	write(t, w.alice, oldAlice.ID, "o1")
+	w.say(t, w.old, oldAlice.ID, "o2")
+	w.setCursor(t, w.old, oldAlice.ID, 1)
+	read(w.alice, oldAlice.ID, nil)
+
+	// bob: he wrote the last message of his DM with the survivor, so his read position is below it.
+	atlasBob, oldBob := dmWith(w.bob, w.atlas, http.StatusCreated), dmWith(w.bob, w.old, http.StatusCreated)
+	w.say(t, w.atlas, atlasBob.ID, "hi bob")
+	write(t, w.bob, atlasBob.ID, "hello")
+	w.setCursor(t, w.atlas, atlasBob.ID, 2)
+	read(w.bob, atlasBob.ID, ptr(int64(1)))
+	w.say(t, w.old, oldBob.ID, "hey bob")
+	write(t, w.bob, oldBob.ID, "hey")
+	w.setCursor(t, w.old, oldBob.ID, 2)
+	read(w.bob, oldBob.ID, ptr(int64(1)))
+
+	merge(w.alice, w.old, w.atlas).RequireStatus(http.StatusOK)
+
+	// alice's DM is now q1 a1 | notice | o1 o2 (1-2, 3, 4-5): atlas received o1 and wrote o2, alice read both.
+	require.Equal(t, int64(4), w.cursor(t, w.atlas, atlasAlice.ID))
+	require.Empty(t, w.pending(t, w.atlas, atlasAlice.ID), "nothing is delivered again")
+	require.Equal(t, int64(5), w.readCursor(t, w.alice, atlasAlice.ID))
+	require.Zero(t, conversation(t, w.alice, atlasAlice.ID).Unread)
+	// bob's is hi hello | notice | hey-bob hey (1-2, 3, 4-5): bob read the greeting and wrote the other.
+	require.Equal(t, int64(5), w.cursor(t, w.atlas, atlasBob.ID))
+	require.Empty(t, w.pending(t, w.atlas, atlasBob.ID))
+	require.Equal(t, int64(4), w.readCursor(t, w.bob, atlasBob.ID))
+	require.Zero(t, conversation(t, w.bob, atlasBob.ID).Unread, "he does not read the merged history again")
+}
+
+// MRG-01: in a merged DM whose counterpart is an AI, each AI's cursor is credited to itself: the
+// merged AI's to the survivor, the counterpart's to the counterpart (M19).
+func TestMergeCreditsEachAICursorToItself(t *testing.T) {
+	w := newMergeWorld(t)
+	orion := w.env.NewAI(w.alice, "orion")
+	target := dmByService(t, w.env, w.by(orion), w.atlas)
+	oldDM := dmByService(t, w.env, w.by(orion), w.old)
+	w.say(t, orion, target, "t1")
+	w.say(t, w.atlas, target, "t2")
+	w.setCursor(t, w.atlas, target, 1) // received t1; t2 is its own
+	w.setCursor(t, orion, target, 2)   // received t2; t1 is its own
+	w.say(t, orion, oldDM, "o1")
+	w.say(t, w.old, oldDM, "o2")
+	w.say(t, orion, oldDM, "o3")
+	w.setCursor(t, w.old, oldDM, 3) // received o1 and o3
+	w.setCursor(t, orion, oldDM, 2) // received o2; o3 is its own
+
+	merge(w.alice, w.old, w.atlas).RequireStatus(http.StatusOK)
+
+	require.Equal(t, []string{"t1", "t2", "History merged from @old", "o1", "o2", "o3"}, texts(timeline(t, w.alice, target)))
+	require.Equal(t, int64(6), w.cursor(t, w.atlas, target), "the survivor received what the merged AI received: up to o3")
+	require.Equal(t, int64(5), w.cursor(t, orion, target), "orion received o2 and wrote o3: its own cursor moved, not the survivor's")
+	require.Empty(t, w.pending(t, w.atlas, target))
+	require.Empty(t, w.pending(t, orion, target))
 }
 
 func conversation(t *testing.T, c *testkit.Client, room string) dto.Conversation {

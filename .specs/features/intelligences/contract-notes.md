@@ -2447,3 +2447,38 @@ Recorded in `uat.md`; no code changed. Every checklist item passed against Claud
   Not fixed here: it is a change to what the model is told with an effect only a real model can
   show, so the proposal (a sentence in `conversationNote`, a test on the text, several fresh-session
   repeats) stays in `uat.md` for the coordinator to schedule.
+
+## T56 - Merge keeps what the surviving AI and the counterpart have not received or read (MRG-01)
+
+Phase 10 (Verifier fixes, iteration 1) repairs the defect of `validation.md` gap 1: appending a
+merged DM to the survivor's DM with the same counterpart credited the merged AI's cursor, renumbered
+past the survivor's own history, to the survivor (and the counterpart's read cursor the same way),
+so the survivor's undelivered messages and the counterpart's unread ones were skipped for good.
+
+- **Rule.** `appendDM` moves a party's cursor of the merged DM into the surviving DM, to the
+  renumbered position and with the larger of the two cursors winning, **only when that party was up
+  to date in the surviving DM before the merge**. Otherwise its cursor stays. The check runs before
+  the history is appended, once per holder: the merged AI's cursor belongs to the survivor, a
+  counterpart AI's to itself (M19), a read cursor to its user (the counterpart or the owner who
+  viewed the DM).
+- **Up to date means nothing pending, not cursor at the last number.** An AI is up to date when no
+  message after its cursor was written by someone else (`CountAgentBacklog`, the backlog's own
+  predicate; an AI that never received anything is at 0); a user when `CountUnreadByRoom` has no row
+  for the room (the same count as the sidebar, read baseline included). An AI that answered last has
+  its cursor below its own message and a user whose own message is the newest has a read cursor below
+  it, so "cursor at the last number" would leave both behind and the merge would deliver the whole
+  history of the merged AI again and mark it unread. `TestMergeMovesTheCursorsOfPartiesThatWereUpToDate`
+  asserts that.
+- **At-least-once for the rest.** A party that was not up to date keeps its cursor and so receives
+  (or sees as unread) everything after it in the merged DM: its own pending messages, the notice and
+  the merged history, including what the merged AI had already received. That is a duplicate at worst;
+  the old rule lost messages. The unread count of such a user therefore includes the merged history.
+- **Unchanged.** Re-keyed DMs (the survivor had none with that counterpart) keep their rows and
+  cursors as they are; group cursors still take the larger of the two (`MergeAgentGroupCursors`).
+- **Tests** (`internal/api/merge_test.go`): `TestMergeKeepsWhatTheSurvivorHasNotReceivedOrRead` (the
+  Verifier's reproduction: two undelivered messages, cursor 0 before and after, the user's read cursor
+  stays 0), `TestMergeMovesTheCursorsOfPartiesThatWereUpToDate` (own message last for an AI and for a
+  user), `TestMergeCreditsEachAICursorToItself` (counterpart AI, M19); the old
+  `TestMergeCarriesDirectMessages` passes unchanged. Scratch copy: the old behaviour (always advance)
+  fails the first, M19 fails the third, a variant that counts the party's own trailing message as
+  pending fails the second for AIs and for users.

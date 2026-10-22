@@ -35,8 +35,10 @@ func MergeNotice(handle string) string { return "History merged from @" + handle
 //   - A DM of the first with someone the second has no DM with becomes the second's DM, kept as it
 //     is. Where the second has a DM with that someone too, the first's messages (with their files
 //     and deliveries) are appended to it after a system message naming the first, its chats join
-//     it, the cursors of both sides move to the new numbers (the larger wins) and the old DM is
-//     deleted. A DM between the two goes away with its history: they are one AI now.
+//     it, the cursors of both sides move to the new numbers (the larger wins) when their holder
+//     had received or read all of the surviving DM, else they stay, so nothing undelivered or
+//     unread is skipped, and the old DM is deleted. A DM between the two goes away with its
+//     history: they are one AI now.
 //   - Their messages, and the connectors they operated, are the second's.
 //
 // It is one write transaction and is audited as agent.merge. The first AI must be offline
@@ -235,9 +237,34 @@ func (s *Service) mergeDM(ctx context.Context, q *db.Queries, dm db.Room, fromID
 type movedMessage struct{ oldSeq, newSeq int64 }
 
 // appendDM moves the history of dm to the end of target, after a system message that names the AI
-// it came from, and then deletes dm. Chats that were members of dm join target; cursors move to
-// the numbers the messages now have, and the larger of the two cursors holds.
+// it came from, and then deletes dm. Chats that were members of dm join target; the cursors of dm
+// move to the numbers the messages now have, the larger of the two cursors holding, but only for a
+// party that had received (an AI) or read (a user) everything target held before the merge: a
+// cursor that jumped over the appended history would skip what its holder has not seen.
 func (s *Service) appendDM(ctx context.Context, q *db.Queries, dm, target db.Room, fromID, intoID, fromHandle string, now time.Time) error {
+	agentCursors, err := q.ListRoomAgentCursors(ctx, dm.ID)
+	if err != nil {
+		return err
+	}
+	readCursors, err := q.ListRoomReadCursors(ctx, dm.ID)
+	if err != nil {
+		return err
+	}
+	// Asked before the history is appended, while target holds nothing but its own messages.
+	agentsUpToDate := make(map[string]bool, len(agentCursors))
+	for _, c := range agentCursors {
+		who := cursorHolder(c.AgentID, fromID, intoID)
+		if agentsUpToDate[who], err = agentUpToDate(ctx, q, target.ID, who); err != nil {
+			return err
+		}
+	}
+	usersUpToDate := make(map[string]bool, len(readCursors))
+	for _, c := range readCursors {
+		if usersUpToDate[c.UserID], err = userUpToDate(ctx, q, target.ID, c.UserID); err != nil {
+			return err
+		}
+	}
+
 	ms := now.UnixMilli()
 	next := func() (int64, error) {
 		r, err := q.NextRoomSeq(ctx, db.NextRoomSeqParams{UpdatedAt: ms, ID: target.ID})
@@ -285,14 +312,10 @@ func (s *Service) appendDM(ctx context.Context, q *db.Queries, dm, target db.Roo
 		}
 	}
 
-	agentCursors, err := q.ListRoomAgentCursors(ctx, dm.ID)
-	if err != nil {
-		return err
-	}
 	for _, c := range agentCursors {
-		who := c.AgentID
-		if who == fromID {
-			who = intoID
+		who := cursorHolder(c.AgentID, fromID, intoID)
+		if !agentsUpToDate[who] {
+			continue
 		}
 		if at := renumber(moved, c.Seq); at > 0 {
 			if err := q.AdvanceAgentCursor(ctx, db.AdvanceAgentCursorParams{AgentID: who, RoomID: target.ID, Seq: at}); err != nil {
@@ -300,11 +323,10 @@ func (s *Service) appendDM(ctx context.Context, q *db.Queries, dm, target db.Roo
 			}
 		}
 	}
-	readCursors, err := q.ListRoomReadCursors(ctx, dm.ID)
-	if err != nil {
-		return err
-	}
 	for _, c := range readCursors {
+		if !usersUpToDate[c.UserID] {
+			continue
+		}
 		if at := renumber(moved, c.Seq); at > 0 {
 			if err := q.UpsertReadCursor(ctx, db.UpsertReadCursorParams{UserID: c.UserID, RoomID: target.ID, Seq: at}); err != nil {
 				return err
@@ -312,6 +334,33 @@ func (s *Service) appendDM(ctx context.Context, q *db.Queries, dm, target db.Roo
 		}
 	}
 	return q.DeleteRoom(ctx, dm.ID)
+}
+
+// cursorHolder is who holds in the surviving DM the cursor an AI held in the merged one: the
+// merged AI's is the surviving AI's, the counterpart's stays its own.
+func cursorHolder(agentID, fromID, intoID string) string {
+	if agentID == fromID {
+		return intoID
+	}
+	return agentID
+}
+
+// agentUpToDate reports whether the AI was delivered every message of the room that it did not
+// write itself: none lies after its cursor (an AI that never received anything is at 0).
+func agentUpToDate(ctx context.Context, q *db.Queries, roomID, agentID string) (bool, error) {
+	cursor, err := q.GetAgentCursor(ctx, db.GetAgentCursorParams{AgentID: agentID, RoomID: roomID})
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	pending, err := q.CountAgentBacklog(ctx, db.CountAgentBacklogParams{RoomID: roomID, AfterSeq: cursor, AgentID: agentID})
+	return pending == 0, err
+}
+
+// userUpToDate reports whether the user has no unread message in the room (DM-06): everything
+// after their read cursor, if any, they wrote themselves.
+func userUpToDate(ctx context.Context, q *db.Queries, roomID, userID string) (bool, error) {
+	unread, err := q.CountUnreadByRoom(ctx, db.CountUnreadByRoomParams{UserID: userID, RoomIds: []string{roomID}})
+	return len(unread) == 0, err
 }
 
 // renumber returns the number, in the surviving DM, of the last moved message that was at or

@@ -1064,10 +1064,10 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: MRG-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] The survivor had two undelivered messages in its DM with X and the merged AI's DM with X had one received message: after the merge the survivor's cursor is still 0 and its two messages are still pending; a counterpart user's read cursor stays behind the messages the user had not read, so they still count as unread (MRG-01, validation gap 1)
-- [ ] A party that had received or read everything of the surviving DM, also when it wrote the last message itself, moves to the renumbered position of its cursor in the merged DM (the larger wins, as before; `TestMergeCarriesDirectMessages` still passes)
-- [ ] When the counterpart of a merged DM is an AI, its cursor stays its own, renumbered, and the survivor's cursor comes from the merged AI's alone (M19)
-- [ ] Gate check passes: `make check`
+- [x] The survivor had two undelivered messages in its DM with X and the merged AI's DM with X had one received message: after the merge the survivor's cursor is still 0 and its two messages are still pending; a counterpart user's read cursor stays behind the messages the user had not read, so they still count as unread (MRG-01, validation gap 1)
+- [x] A party that had received or read everything of the surviving DM, also when it wrote the last message itself, moves to the renumbered position of its cursor in the merged DM (the larger wins, as before; `TestMergeCarriesDirectMessages` still passes)
+- [x] When the counterpart of a merged DM is an AI, its cursor stays its own, renumbered, and the survivor's cursor comes from the merged AI's alone (M19)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(conversations): keep undelivered messages when merging DMs`
