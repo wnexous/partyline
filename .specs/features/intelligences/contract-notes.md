@@ -2234,6 +2234,41 @@ Web only. No API changed; it closes T47's open MRG-01 note.
   tests deleted: the four `internal/api/project_*_test.go`, the project delivery/room tests, the
   sender project-signature test and the project cases of the delivery/agent/API tests.
 
+## T52 - Messenger smoke tests (LAY-01, LAY-05, DM-01, PROF-03, TREE-01)
+
+`web/e2e/smoke.spec.ts`; no app code changed. The two v0.3 project/agents specs (PROJ-04/PROJ-05)
+are gone with the page they drove; the rest of the suite is unchanged.
+
+- **A fake AI client** is an agent token (`POST /tokens`) plus the folder headers the CLI sends
+  (`X-Partyline-Machine`, `X-Partyline-Folder` percent-encoded) on `POST /agent/register` and on
+  every later call (the file's `connectAI` and `agentCall` helpers). The AI is the folder's
+  (AID-01), so reconnecting a folder in a later test is the same AI, and no harness runs.
+- **Messenger (LAY-01, LAY-05)**: a group created through `POST /groups` shows as a row of the
+  Conversations list and clicking it opens it. Beside the sidebar the list stays and the open row
+  is `aria-current="page"`; in the 360 px project the phone shows only the conversation and its
+  "Back to conversations" link returns to the list. The project-dependent branch is chosen by
+  `isMobile(testInfo)`; no test is skipped.
+- **DM with an AI (DM-01)**: "Message Atlas" on `/contacts` opens the DM; the fake client sees the
+  same conversation in `GET /agent/rooms` and posts in it, which reaches the open page live (no
+  timeline refetch; the document is not reloaded), and the web's post is read back through
+  `GET /agent/rooms/{room}/messages` with `trusted: true` and the owner's name. "Message" again
+  opens the same room, and the list holds exactly one Atlas row with the last-message preview.
+- **Group creation**: "New group" in the sidebar header, a name and the Crew AI ticked in the
+  dialog; the created conversation opens, the panel lists Crew (the creator reaches the room as its
+  owner, not as a member) and the group is a row of the list.
+- **Contacts tree (TREE-01)**: the AIs of `e2e-box` (`/work/atlas` and `/work/atlas/notes`) and of
+  `e2e-laptop` (`/opt/scribe`) are two machine regions; Notes hangs from Atlas's row, Scribe does
+  not.
+- **Profile photo (PROF-03)**: a 1x1 synthetic PNG (`Buffer` fixture, `setInputFiles`) is
+  previewed, confirmed with "Use this photo", replaces the initials on the profile before and
+  after a reload, and the account menu's avatar shows the same image.
+- **No horizontal scroll (UI-24, LAY-05)**: the page list covers `/` (by viewport), the group
+  conversation with an unbroken long token, `/contacts`, the user's own profile, the connectors
+  and settings; each asserts `documentElement.scrollWidth <= innerWidth`, and the timeline line's
+  right edge stays on screen.
+- **Fixtures are synthetic**: machines `e2e-box`/`e2e-laptop`, folders under `/work` and `/opt`,
+  names Atlas/Notes/Crew/Scribe, groups `e2e-messenger`/`e2e-crew`/`e2e-narrow`.
+
 ## T53 - Docs (CLI-01, SES-01, AID-01)
 
 - **Rewritten around the intelligences model**: `README.md`, `README.pt-BR.md` (same content,
