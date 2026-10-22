@@ -2265,3 +2265,46 @@ Web only. No API changed; it closes T47's open MRG-01 note.
 - **Order**: T53 ran on top of T50 with T51/T52 still pending; nothing it documents changes with
   migration 0016 (internal dead columns) or the e2e smoke suite. Gate: `make check` (the task's
   commit gate).
+
+## T55 - Merge any of your AIs from its profile (MRG-01, MRG-02)
+
+Web and docs only. No API changed; it closes the gap T53 recorded: the spec's "renamed or moved
+folder" assumption promises the owner a merge, and the UI offered it only on **Unlinked** rows.
+
+- **Where**: the profile page `/contacts/$id` (`routes/_app/contacts.$id.tsx`). The owner of an AI
+  (`profile.ai.my_level === "manage"`, the same check that shows Share and Delete) gets
+  **Merge into…** in the header, next to Message, Share and Delete: an outline button with the
+  git-merge icon whose text hides below 640 px, labelled `ai.mergeAction` ("Merge {name} into
+  another AI"). It is absent on a user's profile, on a person's, and for a grantee
+  (`my_level: "use"`), who can still message the AI. It is absent when the owner has no other own
+  AI to merge into.
+- **Targets**: the caller's own AIs, in contacts order - the machine trees parents first, then the
+  unlinked - with the AI being merged away left out. `ownAIs` and `mergeTargets` in
+  `lib/contacts.ts` are now the one definition of that list; the contacts page (T47 follow-up) and
+  this page both use them. A shared AI is never a target, and the filter of the contacts page is
+  irrelevant here (a profile lists every target).
+- **Contacts only when needed**: the page reads the contacts cache with
+  `useQuery({ ...contactsQuery(), enabled: manages })`, so an owner's profile asks for `GET
+  /contacts` (once per cache lifetime; the merge refreshes it) and a grantee's, a user's or a
+  person's page asks for nothing extra.
+- **Dialog**: the same `MergeAIDialog` (T47 follow-up) with the same select, body, 409/403/422
+  handling and toast. It gained an optional `onMerged(survivor)` callback, called after the
+  success toast and close; the profile page uses it to navigate to `/contacts/{survivor.id}`.
+  Cancelling sends nothing and leaves the page where it is.
+- **Refresh**: `useMergeAgent` already drops the merged AI from the flat contacts lists, refetches
+  `["contacts"]` and invalidates `["conversations"]` and `["rooms"]`; on this page those queries
+  are active, so the sidebar and the contacts reload while the survivor opens. The survivor's
+  profile has no `staleTime` (default 0), so opening it fetches it fresh.
+- **Refusals**: 409 `identity_online` shows "End its session first: {name} is online." in the
+  dialog's alert; the dialog stays open and the page does not navigate (MRG-02). 403, a 422 under
+  the picker, anything else and the network are the dialog's messages (T47 follow-up).
+- **Docs**: `docs/agents.md` now says any AI you own can be merged into another one, names
+  **Merge into…** on the profile (and the Unlinked row) and repeats that the old AI must be
+  offline; the profile paragraph lists Merge into… beside Share and Delete; `README.md` and
+  `README.pt-BR.md` say the same in their folder-move sentence and their merge bullet.
+- Tests: `routes/_app/profile.test.tsx` (the action on an offline AI of the owner, the candidate
+  list and the POST body, the navigation to the survivor, contacts and conversations refreshed
+  after the merge, no action and no contacts request for a grantee, none on a user or a person,
+  none without another own AI, and the 409 message with the page kept), `lib/contacts.test.ts`
+  (`ownAIs` order and `mergeTargets` leaving out the AI itself and the shared one),
+  `routes/a11y.test.tsx` (axe on the open dialog, en and pt-BR).

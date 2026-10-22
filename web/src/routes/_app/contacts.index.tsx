@@ -24,7 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useContacts } from "@/lib/api/queries";
 import type { AIContact, Contacts, IntelligenceRef } from "@/lib/api/types.gen";
-import { aiText, filterMachines, flattenTree, sortMachines } from "@/lib/contacts";
+import { aiText, filterMachines, mergeTargets, ownAIs, sortMachines } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { useI18n } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
@@ -58,13 +58,8 @@ function ContactsPage() {
 
   const data = contacts.data;
   // Merge targets are the owner's AIs, whatever the filter shows (MRG-01).
-  const own = useMemo(
-    () => (data ? [...data.machines.flatMap((m) => flattenTree(m.nodes)), ...data.unlinked] : []),
-    [data],
-  );
-  const mergeCandidates = own
-    .filter((ai) => ai.intelligence.id !== merging?.id)
-    .map((ai) => ai.intelligence);
+  const own = useMemo(() => (data ? ownAIs(data) : []), [data]);
+  const mergeCandidates = data ? mergeTargets(data, merging?.id ?? "") : [];
   const canMerge = own.length > 1;
   const live = useMemo(
     () => (ai: AIContact) => withContactPresence(ai, presence[ai.intelligence.id]),
