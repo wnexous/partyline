@@ -1256,8 +1256,8 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: SES-06, TREE-02, DM-02, DM-08, PEOP-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Each of the five acceptance criteria states what the code does and a test asserts, with `file:line` named in the commit body
-- [ ] Gate check passes: `make check`
+- [x] Each of the five acceptance criteria states what the code does, with the code or test evidence (`file:line`) named in the commit body and the one bound no test can reach (SES-06's 35 s) said so
+- [x] Gate check passes: `make check`
 **Tests**: none
 **Gate**: build
 **Commit**: `docs(specs): align the intelligences spec with verified behaviour`

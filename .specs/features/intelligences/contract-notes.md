@@ -2728,3 +2728,28 @@ everyone who could read the DM: the AI's owner, the users granted `use` on the A
   DM's user gets the row, the others none), `TestTheCopysDeliveryIsNotShownToTheAIEvenForItsOwnersDM` (the
   AI with its owner's id, through the room route and the history). Scratch copy: rendering the row for
   everyone, sending status events to everyone and treating an agent as its owner each fail them.
+
+## T68 - Align the spec text with the verified behaviour (SES-06, TREE-02, DM-02, DM-08, PEOP-01)
+
+`validation.md` gap 13 (L-048, L-049). Spec text only; the code and the tests are the ones the Verifier
+read. The traceability statuses stay `Implementing` (the Verifier moves them on re-verification), and
+`tasks.md` names T68 for the five requirements.
+
+- **SES-06.** Two bounds: 5 s when the connection closes or is dropped (the server sees EOF or a reset
+  at once: `TestTheLiveSessionEndingFreesTheAI`, graceful close and `CloseNow`), and 35 s when it goes
+  silent without closing (the gateway pings every `DefaultPingInterval` = 25 s and gives the ping the 10 s
+  `writeTimeout`; a failed ping ends the connection and the AI goes offline). No test reaches the 35 s: the
+  kit cannot make a half-open TCP connection and the ping interval is not an option of the app.
+- **TREE-02.** The builder gives each node a `Path` (the chain of folders without an identity, `c/d`,
+  `projects/acme/agents`, `/srv` outside home) and a `Name` (the folder's base name, `~` for home). The web
+  and `partyline agents` print `Path › <display name>`; the `~` shows in the folder column (`~/atlas`,
+  `~`). `internal/intelligences/tree_test.go` (collapse, `~`), `internal/cli/agents_test.go` (golden) and
+  `contacts.test.tsx` (the folder labels) assert it.
+- **DM-02.** 422 `dm_members_fixed` for a caller who can view the DM, 404 for one who cannot, so a stranger
+  learns nothing: `direct_messages_test.go` (the 422s for the participants, the AI's owner and a grantee, the
+  404s for a stranger).
+- **DM-08.** A `*` use grant gives no view, only a grant by name does (`access.viewsAIOf` counts subject
+  grants by user id): `TestDMOfAPublicAIIsNotVisibleToEveryone`.
+- **PEOP-01.** People are made when a message is routed into a conversation; a chat that is routed nowhere
+  records the chat and nobody (CON-07, T26): `TestInboundNewSenderBecomesOnePerson` ("an unrouted chat
+  records no person") and the platform DM scope tests.
