@@ -788,8 +788,8 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: TREE-07
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Golden output for two machines with nested and collapsed folders, online markers, a labelled machine and an unlinked AI (TREE-07); empty list message
-- [ ] Gate check passes: `make check`
+- [x] Golden output for two machines with nested and collapsed folders, online markers, a labelled machine and an unlinked AI (TREE-07); empty list message
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): print AIs as a machine and folder tree`
