@@ -1002,8 +1002,8 @@ design needs the API to return them). See `contract-notes.md`, T48.
 **Requirement**: CLI-01, SES-01, AID-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Every command, flag, header-free behaviour and error code users meet is documented in English and Portuguese READMEs; no private data
-- [ ] Gate check passes: `make check`
+- [x] Every command, flag, header-free behaviour and error code users meet is documented in English and Portuguese READMEs; no private data
+- [x] Gate check passes: `make check`
 **Tests**: none
 **Gate**: build
 **Commit**: `docs: describe intelligences, DMs and the new login and setup`
