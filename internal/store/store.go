@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"sort"
 	"strings"
+	"testing"
 	"time"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
@@ -28,9 +29,18 @@ type Store struct {
 	rq    *db.Queries
 }
 
+// testPragmas are added in test binaries only: every test opens its own short-lived database,
+// and syncing each commit to disk made the disk journal the bottleneck of the whole suite.
+// Durability does not matter for a database that lives for one test; production keeps the
+// default (synchronous FULL in WAL mode).
+const testPragmas = "&_pragma=synchronous(OFF)"
+
 // Open opens the database file at path. Call Migrate before using it.
 func Open(path string) (*Store, error) {
 	dsn := "file:" + path + "?" + pragmas
+	if testing.Testing() {
+		dsn += testPragmas
+	}
 	write, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open write pool: %w", err)
