@@ -320,10 +320,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-01, AID-02, AID-03, AID-05, MIG-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] (O, M, F) creates once and resolves to the same id from any harness, updating the app (AID-01, AID-02); same folder on two machines → two identities; same base name in two folders → `name`, `name-2` with the same display name (AID-03)
-- [ ] Validation table: empty, NUL, 1025 bytes, relative, trailing slash, `..` → the right code (AID-05)
-- [ ] Unlinked identity adopted by handle or by `Adopt`, once; a stale `Adopt` naming a linked or missing identity is ignored (MIG-02); concurrent resolves of one new folder create one identity
-- [ ] Gate check passes: `make check`
+- [x] (O, M, F) creates once and resolves to the same id from any harness, updating the app (AID-01, AID-02); same folder on two machines → two identities; same base name in two folders → `name`, `name-2` with the same display name (AID-03)
+- [x] Validation table: empty, NUL, 1025 bytes, relative, trailing slash, `..` → the right code (AID-05)
+- [x] Unlinked identity adopted by handle or by `Adopt`, once; a stale `Adopt` naming a linked or missing identity is ignored (MIG-02); concurrent resolves of one new folder create one identity
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(agents): resolve AI identities by machine and folder`
@@ -337,9 +337,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-02, AID-04, SES-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A tools-only REST call with machine+folder acts as that folder's AI (posts authored by it) and creates it on first sight (AID-04); WebSocket connect with the same folder resolves the same id and sets the app (AID-02)
-- [ ] `/agent/session` reports exists/online/app/connected_at and creates nothing (SES-01 lookup); `/agent/whoami` returns the owner's intelligence
-- [ ] Gate check passes: `make check`
+- [x] A tools-only REST call with machine+folder acts as that folder's AI (posts authored by it) and creates it on first sight (AID-04); WebSocket connect with the same folder resolves the same id and sets the app (AID-02)
+- [x] `/agent/session` reports exists/online/app/connected_at and creates nothing (SES-01 lookup); `/agent/whoami` returns the owner's intelligence
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): identify agent sessions by folder headers`
@@ -353,9 +353,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-07, MIG-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A symlinked working directory and a trailing-slash `PARTYLINE_FOLDER` send the resolved absolute path; headers are percent-encoded (spaces, non-ASCII) and decode server-side to the same folder (AID-07)
-- [ ] Channel + tools-only + listen + hook started in one folder act as one identity (the v0.3 OpenCode split is gone); `--as old` adopts the unlinked `old` (MIG-02)
-- [ ] Gate check passes: `make check`
+- [x] A symlinked working directory and a trailing-slash `PARTYLINE_FOLDER` send the resolved absolute path; headers are percent-encoded (spaces, non-ASCII) and decode server-side to the same folder (AID-07)
+- [x] Channel + tools-only + listen + hook started in one folder act as one identity (the v0.3 OpenCode split is gone); `--as old` adopts the unlinked `old` (MIG-02)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): send the canonical folder with every connection`
@@ -369,9 +369,9 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] WebSocket, REST tool, register and pending without a folder → 422 `folder_required`; each invalid folder case → 422 `folder_invalid` (AID-05, L-017)
-- [ ] No reference to session keys, temporary names, archiving or the removed headers remains outside migrations and specs (grep in the commit body)
-- [ ] Gate check passes: `make check`
+- [x] WebSocket, REST tool, register and pending without a folder → 422 `folder_required`; each invalid folder case → 422 `folder_invalid` (AID-05, L-017)
+- [x] No reference to session keys, temporary names, archiving or the removed headers remains outside migrations and specs (grep in the commit body)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `refactor(agents): require a folder and drop session-named agents`
@@ -385,10 +385,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: SES-02, SES-04, SES-06, SES-08
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Second connection without takeover → 409 `identity_busy` with name/app/since, first stays live (SES-04); with takeover → old closed `taken_over`, new live (SES-02); same live id reconnecting is accepted silently
-- [ ] Two simultaneous takeovers → exactly one live, the other closed `taken_over` (spec edge case)
-- [ ] Closing the live socket → offline event within 5 s and the next connection needs no takeover (SES-06); messages posted while offline arrive as backlog with the 50 cap and notice (SES-08)
-- [ ] Gate check passes: `make check`
+- [x] Second connection without takeover → 409 `identity_busy` with name/app/since, first stays live (SES-04); with takeover → old closed `taken_over`, new live (SES-02); same live id reconnecting is accepted silently
+- [x] Two simultaneous takeovers → exactly one live, the other closed `taken_over` (spec edge case)
+- [x] Closing the live socket → offline event within 5 s and the next connection needs no takeover (SES-06); messages posted while offline arrive as backlog with the 50 cap and notice (SES-08)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): keep one live session per AI with explicit takeover`
@@ -402,10 +402,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: SES-04, SES-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Busy channel: `reply`, `send_message`, `history` … answer the exact busy text with the harness name and HH:MM (SES-04)
-- [ ] Taken over: exactly one `This intelligence was opened in another session; Partyline is disconnected here.` notification, no further deliveries, tools answer the taken-over text (SES-05)
-- [ ] `listen` exit code 3 + notice line; bun tests: adapters do not restart on 3 and still restart on other codes
-- [ ] Gate check passes: `make check`
+- [x] Busy channel: `reply`, `send_message`, `history` … answer the exact busy text with the harness name and HH:MM (SES-04)
+- [x] Taken over: exactly one `This intelligence was opened in another session; Partyline is disconnected here.` notification, no further deliveries, tools answer the taken-over text (SES-05)
+- [x] `listen` exit code 3 + notice line; bun tests: adapters do not restart on 3 and still restart on other codes
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): report busy and taken-over sessions`

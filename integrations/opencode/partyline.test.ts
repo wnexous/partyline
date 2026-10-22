@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { FakeTime, fakeSpawn, spawned } from "../testdata/fakes.ts";
-import { framingCases } from "../testdata/framing.ts";
+import { framingCases, notices } from "../testdata/framing.ts";
 
 mock.module("node:child_process", () => ({ spawn: fakeSpawn }));
 const plugin = await import("./partyline.ts");
@@ -65,7 +65,8 @@ describe("OpenCode plugin", () => {
 		expect(spawned[0].command).toBe("partyline");
 		expect(spawned[0].args).toEqual(["listen"]);
 		expect(spawned[0].options.cwd).toBe("/work/proj");
-		expect(spawned[0].options.env?.PARTYLINE_SESSION).toBe(String(process.pid));
+		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("opencode");
+		expect(spawned[0].options.env?.PARTYLINE_SESSION).toBeUndefined();
 	});
 
 	test("PUSH-05: each line goes to the active session with promptAsync", async () => {
@@ -137,6 +138,34 @@ describe("OpenCode plugin", () => {
 		]);
 		expect(time.delays()).toEqual([1000]);
 	});
+
+	test("SES-05: exit code 3 (another session holds the AI) is not restarted, other codes are", async () => {
+		await load();
+		spawned[0].exit(3);
+		expect(time.delays()).toEqual([]);
+		expect(spawned.length).toBe(1);
+
+		for (const code of [1, 4, 127, null]) {
+			await load();
+			spawned[spawned.length - 1].exit(code);
+			expect(time.delays()).toEqual([1000]);
+			time.fire();
+		}
+	});
+
+	for (const c of notices) {
+		test(`SES-04/SES-05: the ${c.reason} notice is shown in the log, not sent to the model`, async () => {
+			const oc = await load();
+			await oc.emit("session.idle", { sessionID: "ses_1" });
+			spawned[0].out(`${JSON.stringify(c.record)}\n`);
+			spawned[0].exit(3);
+			await flush();
+			expect(oc.prompts).toEqual([]);
+			expect(oc.syncPrompts).toEqual([]);
+			expect(oc.logs).toEqual([{ service: "partyline", level: "warn", message: c.record.content }]);
+			expect(time.delays()).toEqual([]);
+		});
+	}
 
 	test("a rejected prompt is logged", async () => {
 		const oc = await load({ reject: true });

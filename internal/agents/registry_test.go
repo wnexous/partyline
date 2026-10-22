@@ -15,6 +15,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
@@ -23,6 +24,24 @@ import (
 
 var t0 = time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
 
+// fixtureClock is the registry's clock in the tests: it stands at t0 until a test advances it.
+type fixtureClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *fixtureClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *fixtureClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
 type fixture struct {
 	st       *store.Store
 	raw      *sql.DB // separate connection for inserting fixtures and counting rows
@@ -30,6 +49,7 @@ type fixture struct {
 	az       *access.Authorizer
 	presence *Presence
 	reg      *Registry
+	clock    *fixtureClock
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -42,12 +62,13 @@ func newFixture(t *testing.T) *fixture {
 	raw, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = raw.Close() })
-	now := func() time.Time { return t0 }
+	clock := &fixtureClock{now: t0}
+	now := clock.Now
 	bus := events.NewBus()
 	az := access.New(st, bus, access.Options{Now: now})
 	presence := NewPresence(st, bus, now)
-	reg := NewRegistry(Deps{Store: st, Access: az, Bus: bus, Presence: presence, Now: now})
-	return &fixture{st: st, raw: raw, bus: bus, az: az, presence: presence, reg: reg}
+	reg := NewRegistry(Deps{Store: st, Access: az, Bus: bus, Presence: presence, Audit: audit.New(st, now), Now: now})
+	return &fixture{st: st, raw: raw, bus: bus, az: az, presence: presence, reg: reg, clock: clock}
 }
 
 func (f *fixture) exec(t *testing.T, query string, args ...any) {
@@ -85,9 +106,11 @@ func (f *fixture) room(t *testing.T, owner authn.Principal) string {
 	return id
 }
 
+// upsert creates the owner's AI of the folder /work/<name> on the machine "devbox" and returns
+// its id.
 func (f *fixture) upsert(t *testing.T, owner authn.Principal, name string) string {
 	t.Helper()
-	a, err := f.reg.Upsert(context.Background(), owner.UserID, name)
+	a, err := f.reg.ResolveFolder(context.Background(), owner.UserID, FolderID{Machine: "devbox", Folder: "/work/" + name}, false)
 	require.NoError(t, err)
 	return a.ID
 }
@@ -146,38 +169,6 @@ func TestSlug(t *testing.T) {
 	}
 }
 
-// AGT-01: Upsert is idempotent per (owner, name) and stores the slug.
-func TestUpsertIdempotentPerOwnerAndName(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	alice, bob := f.user(t, "alice"), f.user(t, "bobby")
-
-	first, err := f.reg.Upsert(ctx, alice.UserID, "Billing API!")
-	require.NoError(t, err)
-	require.Equal(t, "billing-api", first.Name)
-	require.Equal(t, alice.UserID, first.OwnerID)
-
-	again, err := f.reg.Upsert(ctx, alice.UserID, "billing-api")
-	require.NoError(t, err)
-	require.Equal(t, first.ID, again.ID)
-
-	other, err := f.reg.Upsert(ctx, bob.UserID, "Billing API!")
-	require.NoError(t, err)
-	require.NotEqual(t, first.ID, other.ID)
-
-	empty, err := f.reg.Upsert(ctx, alice.UserID, "")
-	require.NoError(t, err)
-	require.Equal(t, "agent", empty.Name)
-
-	require.Equal(t, 3, f.count(t, "SELECT COUNT(*) FROM agents"))
-
-	got, err := f.reg.Lookup(ctx, alice.UserID, "Billing API!")
-	require.NoError(t, err)
-	require.Equal(t, first.ID, got.ID)
-	_, err = f.reg.Lookup(ctx, alice.UserID, "never-connected")
-	require.ErrorIs(t, err, ErrNotRegistered)
-}
-
 // Visible list = owned + use grants (own or everyone).
 func TestListVisibleOwnedAndUseGrants(t *testing.T) {
 	f := newFixture(t)
@@ -190,7 +181,7 @@ func TestListVisibleOwnedAndUseGrants(t *testing.T) {
 	f.grant(t, shared, alice.UserID)
 	f.grant(t, public, access.Everyone)
 
-	list, err := f.reg.ListVisible(ctx, alice, false)
+	list, err := f.reg.ListVisible(ctx, alice)
 	require.NoError(t, err)
 	got := map[string]access.Level{}
 	for _, a := range list {
@@ -198,7 +189,7 @@ func TestListVisibleOwnedAndUseGrants(t *testing.T) {
 	}
 	require.Equal(t, map[string]access.Level{own: dto.LevelManage, shared: dto.LevelUse, public: dto.LevelUse}, got)
 
-	list, err = f.reg.ListVisible(ctx, bob, false)
+	list, err = f.reg.ListVisible(ctx, bob)
 	require.NoError(t, err)
 	ids := []string{}
 	for _, a := range list {
@@ -225,7 +216,8 @@ func TestDeleteRemovesMembershipsAndCursors(t *testing.T) {
 	require.ErrorIs(t, f.reg.Delete(ctx, stranger, agent), access.ErrNotFound)
 
 	session := &fakeSession{}
-	require.NoError(t, f.presence.Attach(ctx, mustAgent(t, f, agent).Agent, session))
+	_, err := f.presence.Attach(ctx, mustAgent(t, f, agent).Agent, session, "process-one", false)
+	require.NoError(t, err)
 	ch, cancel := f.bus.Subscribe(16)
 	defer cancel()
 
@@ -274,38 +266,6 @@ func TestUpdateDescription(t *testing.T) {
 	var verr *validation.Error
 	require.ErrorAs(t, err, &verr)
 	require.Contains(t, verr.Fields, "description")
-}
-
-// Presence: online on attach, a second session replaces the first with "replaced" (AGT-04),
-// offline when the current session detaches (AGT-03).
-func TestPresenceReplaceAndOffline(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	alice := f.user(t, "alice")
-	agent := mustAgent(t, f, f.upsert(t, alice, "builder"))
-	ch, cancel := f.bus.Subscribe(16)
-	defer cancel()
-
-	first, second := &fakeSession{}, &fakeSession{}
-	require.NoError(t, f.presence.Attach(ctx, agent.Agent, first))
-	require.True(t, f.presence.Online(agent.ID))
-	require.Equal(t, t0.UnixMilli(), mustAgent(t, f, agent.ID).LastSeenAt.Int64)
-	require.Equal(t, []events.Event{events.AgentPresence{AgentID: agent.ID, OwnerID: alice.UserID, Online: true}}, drain(ch))
-
-	require.NoError(t, f.presence.Attach(ctx, agent.Agent, second))
-	code, reason, closed := first.state()
-	require.Equal(t, 1, closed)
-	require.Equal(t, CloseReplaced, code)
-	require.Equal(t, "replaced", reason)
-	_, _, closed = second.state()
-	require.Equal(t, 0, closed)
-	require.Empty(t, drain(ch), "replacement keeps the agent online")
-
-	require.False(t, f.presence.Detach(ctx, agent.ID, first), "the replaced session no longer counts")
-	require.True(t, f.presence.Online(agent.ID))
-	require.True(t, f.presence.Detach(ctx, agent.ID, second))
-	require.False(t, f.presence.Online(agent.ID))
-	require.Equal(t, []events.Event{events.AgentPresence{AgentID: agent.ID, OwnerID: alice.UserID, Online: false}}, drain(ch))
 }
 
 func ptr[T any](v T) *T { return &v }

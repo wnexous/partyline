@@ -26,18 +26,20 @@ func (s stubChecker) PrincipalActive(context.Context, authn.Principal) (bool, er
 func TestGatewayRefusesInactivePrincipalBeforeUpgrade(t *testing.T) {
 	f := newFixture(t)
 	owner := f.user(t, "alice")
-	p := authn.Principal{Kind: authn.KindAgent, UserID: owner.UserID, AgentName: "builder", TokenID: "tok1"}
+	p := authn.Principal{Kind: authn.KindAgent, UserID: owner.UserID, TokenID: "tok1"}
 	serve := func(active bool) *httptest.ResponseRecorder {
 		g := NewGateway(GatewayDeps{Store: f.st, Registry: f.reg, Presence: f.presence, Sessions: stubChecker(active)})
 		t.Cleanup(g.Close)
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/agent/ws", nil)
+		req.Header.Set(dto.HeaderMachine, "devbox")
+		req.Header.Set(dto.HeaderFolder, "%2Fwork%2Fbuilder")
 		req = req.WithContext(authn.WithPrincipal(req.Context(), p))
 		rec := httptest.NewRecorder()
 		g.ServeHTTP(rec, req)
 		return rec
 	}
 	agents := func() int {
-		return f.count(t, "SELECT COUNT(*) FROM agents WHERE owner_id = ? AND name = 'builder'", owner.UserID)
+		return f.count(t, "SELECT COUNT(*) FROM agents WHERE owner_id = ? AND folder = '/work/builder'", owner.UserID)
 	}
 
 	rec := serve(false)

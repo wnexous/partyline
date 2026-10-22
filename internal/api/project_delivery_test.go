@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -11,16 +12,19 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// projectRoom is alice's room "Ops" with her project "atlas" as a member. Sessions of the
-// project connect one clock second apart, so the last one dialed is the active session.
+// projectRoom is alice's room "Ops" with her project "atlas" as a member. Its sessions are AIs
+// atlas-1, atlas-2 … put in the project and connecting one clock second apart, so the last one
+// dialed is the active session.
 type projectRoom struct {
-	env     *testkit.Env
-	clock   *testkit.Clock
-	alice   *testkit.Client
-	token   *testkit.Client // alice's agent token
-	room    dto.Room
-	project string // project id
-	member  dto.RoomMember
+	env      *testkit.Env
+	clock    *testkit.Clock
+	alice    *testkit.Client
+	token    *testkit.Client // alice's agent token
+	room     dto.Room
+	project  string // project id
+	member   dto.RoomMember
+	sessions int
+	names    map[string]string // agent id → the name its folder is called
 }
 
 func newProjectRoom(t *testing.T) *projectRoom {
@@ -28,27 +32,35 @@ func newProjectRoom(t *testing.T) *projectRoom {
 	clock := testkit.NewClock(time.Now())
 	env := testkit.New(t, testkit.WithClock(clock.Now))
 	alice := env.NewUser("alice")
-	f := &projectRoom{env: env, clock: clock, alice: alice, token: alice.Token(dto.TokenKindAgent, "laptop")}
+	f := &projectRoom{env: env, clock: clock, alice: alice, token: alice.Token(dto.TokenKindAgent, "laptop"), names: map[string]string{}}
 	f.room = createRoom(alice, "Ops")
 	return f
 }
 
-// session connects a new temporary session of project "atlas"; the first one creates the
-// project and puts it in the room.
+// session connects a new session of project "atlas": a new AI atlas-N; the first one creates
+// the project and puts it in the room.
 func (f *projectRoom) session(t *testing.T) (*testkit.AgentConn, dto.AgentInfo) {
 	t.Helper()
 	f.clock.Advance(time.Second)
-	conn, info := dialSession(t, f.token, sessionHeaders("atlas", "claude", "laptop", "", ""))
+	f.sessions++
+	name := fmt.Sprintf("atlas-%d", f.sessions)
+	id := f.env.NewAI(f.alice, name)
 	if f.project == "" {
-		f.project = listedAgent(t, f.alice, info.ID).Project.ID
+		f.project = createProject(t, f.env, f.alice, "atlas", "Atlas")
 		f.member = testkit.Decode[dto.RoomMember](addProject(f.alice, f.room.ID, f.project).RequireStatus(http.StatusCreated))
 	}
+	putInProject(t, f.env, id, f.project)
+	conn, resp := f.token.DialAgent(name)
+	require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+	info := conn.Welcome(wsWait).Agent
+	require.Equal(t, id, info.ID)
+	f.names[id] = name
 	return conn, info
 }
 
 // rest is the session's REST client (the channel's tool calls).
 func (f *projectRoom) rest(info dto.AgentInfo) *testkit.Client {
-	return f.token.WithHeader(dto.HeaderAgent, info.Name)
+	return f.token.AsAgent(f.names[info.ID])
 }
 
 func (f *projectRoom) post(c *testkit.Client, text string) dto.Message {
@@ -72,7 +84,7 @@ func TestProjectMessageGoesToTheActiveSession(t *testing.T) {
 	f := newProjectRoom(t)
 	first, _ := f.session(t)
 	second, two := f.session(t)
-	require.Equal(t, "Atlas · Claude Code #2", two.DisplayName)
+	require.Equal(t, "atlas-2", two.DisplayName)
 
 	one := f.post(f.alice, "first message")
 	got := second.Message(wsWait)
@@ -115,7 +127,7 @@ func TestProjectRepliesDoNotEchoToTheProject(t *testing.T) {
 
 	reply := testkit.Decode[dto.Message](f.rest(info).Post("/api/v1/agent/messages/"+question.ID+"/reply",
 		dto.ReplyRequest{Text: "all green"}).RequireStatus(http.StatusCreated))
-	require.Equal(t, []any{dto.AuthorKindAgent, info.ID, "Atlas · Claude Code #2", question.ID},
+	require.Equal(t, []any{dto.AuthorKindAgent, info.ID, "atlas-2", question.ID},
 		[]any{reply.AuthorKind, reply.AuthorID, reply.AuthorName, reply.ReplyTo})
 	require.Equal(t, reply.ID, memberConn.Message(wsWait).Message.ID, "a member session receives it as a member")
 
@@ -134,9 +146,10 @@ func TestProjectDeliveryTrustFollowsTheProjectOwner(t *testing.T) {
 	alices, _ := f.session(t)
 	bob := f.env.NewUser("bob")
 	shareRoom(f.alice, f.room.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelPost})
-	bobToken := bob.Token(dto.TokenKindAgent, "desk")
-	bobs, bobInfo := dialSession(t, bobToken, sessionHeaders("web", "codex", "desk", "", ""))
-	bobProject := listedAgent(t, bob, bobInfo.ID).Project.ID
+	bobAgent, bobProject := sessionProject(t, f.env, bob, "web")
+	bobs, resp := bob.Token(dto.TokenKindAgent, "desk").DialAgent("web-claude")
+	require.NotNil(t, bobs, "upgrade refused: %d %s", resp.Status, resp.Body)
+	require.Equal(t, bobAgent, bobs.Welcome(wsWait).Agent.ID)
 	bob.Put("/api/v1/projects/"+bobProject+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: []dto.SharingUser{
 		{UserID: f.alice.User.ID, Level: dto.LevelUse},
 	}}).RequireStatus(http.StatusOK)
@@ -241,7 +254,7 @@ func TestProjectMemberShowsTheActiveSession(t *testing.T) {
 	}
 	m := member()
 	require.Equal(t, ptr(true), m.Online)
-	require.Equal(t, &dto.MemberSession{ID: one.ID, Name: "atlas-claude", DisplayName: "Atlas · Claude Code"}, m.ActiveSession)
+	require.Equal(t, &dto.MemberSession{ID: one.ID, Name: one.ID, DisplayName: "atlas-1"}, m.ActiveSession, "the row of an AI of a folder is named by its id")
 
 	second, two := f.session(t)
 	var changed dto.RoomIDData

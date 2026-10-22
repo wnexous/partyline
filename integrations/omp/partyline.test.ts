@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import partyline from "./partyline.ts";
 import { FakeTime } from "../testdata/fakes.ts";
-import { framingCases, notificationParams } from "../testdata/framing.ts";
+import { framingCases, notices, notificationParams } from "../testdata/framing.ts";
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 // What the fake host's sendUserMessage does on a call: deliver, throw, or return a rejected
@@ -76,6 +76,15 @@ describe("omp extension", () => {
 		omp.emit("partyline", CHANNEL, notificationParams(framingCases[1].record));
 		expect(omp.sent).toEqual([{ content: framingCases[1].text, options: { deliverAs: "followUp" } }]);
 	});
+
+	for (const c of notices) {
+		test(`SES-05: the ${c.reason} notice is shown to the person, not sent to the session`, () => {
+			const omp = fakeOmp({ idle: true });
+			omp.emit("partyline", CHANNEL, notificationParams(c.record));
+			expect(omp.attempts).toEqual([]);
+			expect(omp.notices).toEqual([{ message: c.record.content, level: "warning" }]);
+		});
+	}
 
 	test("PUSH-03: other servers and other methods are ignored", () => {
 		const omp = fakeOmp();

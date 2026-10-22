@@ -7,28 +7,22 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
-	"sync"
-
-	"github.com/wnexous/partyline/internal/agents"
+	"time"
 )
 
 // ListenOptions configure Listen.
 type ListenOptions struct {
-	// URL, Token, Agent, Project, Harness and Machine mean what they mean for Run; an empty
+	// URL, Token, Machine, Folder, Home, Harness and Adopt mean what they mean for Run; an empty
 	// Harness is sent as unknown ("agent").
 	URL     string
 	Token   string
-	Agent   string
-	Project string
-	Harness string
 	Machine string
-	// SessionKey names the session file where the agent name in use is recorded for a
-	// tools-only channel of the same harness process; empty records nothing.
-	SessionKey string
-	// TempDir holds the session file (<TempDir>/partyline/.sessions); empty means os.TempDir().
-	TempDir string
+	Folder  string
+	Home    string
+	Harness string
+	Adopt   string
+	// Takeover means what it means for Run.
+	Takeover bool
 
 	// Stdin ending (the harness that spawned listen went away) stops Listen; nil never does.
 	Stdin  io.Reader
@@ -38,12 +32,21 @@ type ListenOptions struct {
 	HTTPClient *http.Client
 
 	timing timing
+	// zone is where the busy text shows times; tests set it, nil is the local zone.
+	zone *time.Location
 }
+
+// ErrSessionLost is what Listen returns when another session holds the AI (and did not let go
+// during the retries) or took it over from this one. The notice has been written; the command
+// exits with code 3 and the adapters do not start it again.
+var ErrSessionLost = errors.New("the AI's live session is in another process")
 
 // Listen holds the agent WebSocket like the channel and writes one JSON line per pushed
 // message or notice to Stdout: the fields of the channel notification's meta plus "content"
 // (PUSH-01). A message is acknowledged after its line is written. Listen returns nil when ctx
-// ends or Stdin closes, and an error when writing to Stdout fails.
+// ends or Stdin closes, ErrSessionLost after writing the notice line (type "notice") when another
+// session holds the AI or took it over (SES-04, SES-05), and an error when writing to Stdout
+// fails.
 func Listen(ctx context.Context, o ListenOptions) error {
 	base, err := parseBase(o.URL)
 	if err != nil {
@@ -51,13 +54,6 @@ func Listen(ctx context.Context, o ListenOptions) error {
 	}
 	if o.HTTPClient == nil {
 		o.HTTPClient = &http.Client{}
-	}
-	if o.TempDir == "" {
-		o.TempDir = os.TempDir()
-	}
-	tmp, err := filepath.Abs(o.TempDir)
-	if err != nil {
-		return fmt.Errorf("temp dir: %w", err)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -68,30 +64,23 @@ func Listen(ctx context.Context, o ListenOptions) error {
 		}()
 	}
 
-	agent := ""
-	if o.Agent != "" {
-		agent = agents.Slug(o.Agent)
-	}
-	l := newLink(base, o.Token, agent, o.HTTPClient, &lineWriter{w: o.Stdout}, o.Stderr, o.timing)
-	l.identity = Identity{Name: agent, Project: o.Project, Harness: o.Harness, Machine: o.Machine, SessionKey: o.SessionKey}
-	l.temporary = agent == ""
-	var recorded string
-	path := sessionFile(tmp, o.SessionKey)
-	if path != "" {
-		var once sync.Once
-		l.onName = func(name string) {
-			if err := writeSessionName(path, name); err != nil {
-				once.Do(func() { fmt.Fprintln(o.Stderr, "partyline listen: cannot record the agent name for the tools:", err) })
-				return
-			}
-			recorded = name
-		}
+	id := Identity{Machine: o.Machine, Folder: o.Folder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt}
+	out := &lineWriter{w: o.Stdout}
+	l := newLink(base, o.Token, id, o.HTTPClient, out, o.Stderr, o.timing)
+	l.takeover, l.zone = o.Takeover, o.zone
+	var lost bool
+	var noticeErr error
+	l.onLost = func(reason lostReason, text string) {
+		lost, noticeErr = true, out.Notify(NotificationMethod, connectionNotice(reason, text))
+		cancel() // nothing more to do: end the command
 	}
 	err = l.run(ctx)
-	if recorded != "" {
-		removeSessionName(path, recorded)
-	}
-	if errors.Is(err, context.Canceled) {
+	switch {
+	case lost && noticeErr != nil:
+		return noticeErr
+	case lost:
+		return ErrSessionLost
+	case errors.Is(err, context.Canceled):
 		return nil
 	}
 	return err

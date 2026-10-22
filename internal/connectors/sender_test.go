@@ -2,6 +2,8 @@ package connectors_test
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -14,6 +16,8 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/store"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -32,6 +36,7 @@ func newOutboundEnv(t *testing.T) *outboundEnv {
 	e.emit(text(groupID, "M0", "hello"))
 	chat := e.chatID(t, groupID)
 
+	e.env.NewAI(e.alice, "helper")
 	token := e.alice.Token(dto.TokenKindAgent, "laptop")
 	conn, _ := token.DialAgent("helper")
 	conn.Welcome(connectortest.Timeout)
@@ -39,7 +44,7 @@ func newOutboundEnv(t *testing.T) *outboundEnv {
 	e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK).Decode(&agents)
 	require.Len(t, agents.Items, 1)
 	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: agents.Items[0].ID}).RequireStatus(http.StatusCreated))
-	return &outboundEnv{inboundEnv: e, chat: chat, room: room, agent: token.WithHeader(dto.HeaderAgent, "helper")}
+	return &outboundEnv{inboundEnv: e, chat: chat, room: room, agent: token.AsAgent("helper")}
 }
 
 // outbox returns the message's delivery to the chat once it satisfies done.
@@ -243,23 +248,22 @@ func ptr[T any](v T) *T { return &v }
 // without an author when the project member's signature is off.
 func TestOutboundAuthorFollowsProjectMemberSettings(t *testing.T) {
 	e := newOutboundEnv(t)
-	h := http.Header{}
-	h.Set(dto.HeaderProject, "atlas")
-	h.Set(dto.HeaderHarness, "claude")
-	session, resp := e.alice.Token(dto.TokenKindAgent, "desk").DialAgentHeaders(h)
+	ctx := context.Background()
+	atlas := e.env.NewAI(e.alice, "atlas-claude")
+	project := store.NewID()
+	require.NoError(t, e.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		if err := q.CreateProject(ctx, db.CreateProjectParams{ID: project, OwnerID: e.alice.User.ID, Slug: "atlas", Name: "Atlas", CreatedAt: 1}); err != nil {
+			return err
+		}
+		return q.SetAgentProject(ctx, db.SetAgentProjectParams{ProjectID: sql.NullString{String: project, Valid: true}, ID: atlas})
+	}))
+	session, resp := e.alice.Token(dto.TokenKindAgent, "desk").DialAgent("atlas-claude")
 	require.NotNil(t, session, "upgrade refused: %d", resp.Status)
 	info := session.Welcome(connectortest.Timeout).Agent
-	var agents dto.List[dto.Agent]
-	e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK).Decode(&agents)
-	var project string
-	for _, a := range agents.Items {
-		if a.ID == info.ID {
-			project = a.Project.ID
-		}
-	}
+	require.Equal(t, atlas, info.ID)
 	member := testkit.Decode[dto.RoomMember](e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members",
 		dto.AddMemberRequest{Kind: dto.MemberKindProject, MemberID: project}).RequireStatus(http.StatusCreated))
-	rest := e.alice.Token(dto.TokenKindAgent, "desk-rest").WithHeader(dto.HeaderAgent, info.Name)
+	rest := e.alice.Token(dto.TokenKindAgent, "desk-rest").AsAgent("atlas-claude")
 	post := func(text string) dto.Message {
 		t.Helper()
 		m := testkit.Decode[dto.Message](rest.Post("/api/v1/agent/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: text}).RequireStatus(http.StatusCreated))
@@ -270,7 +274,7 @@ func TestOutboundAuthorFollowsProjectMemberSettings(t *testing.T) {
 	m := post("default")
 	sent := e.inst.WaitSend(t)
 	require.Equal(t, m.ID, sent.MessageID)
-	require.Equal(t, "Atlas · Claude Code", sent.AuthorName)
+	require.Equal(t, "atlas-claude", sent.AuthorName)
 
 	e.alice.Patch("/api/v1/rooms/"+e.room.ID+"/members/"+member.ID, dto.UpdateMemberRequest{DisplayName: ptr("Atlas bot")}).RequireStatus(http.StatusOK)
 	m = post("named")

@@ -12,6 +12,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
@@ -53,7 +54,7 @@ func (f *agentRoom) post(c *testkit.Client, text string) dto.Message {
 // postAsAgent stores a message authored by the agent itself.
 func (f *agentRoom) postAsAgent(t *testing.T, text string) rooms.Message {
 	t.Helper()
-	p := authn.Principal{Kind: authn.KindAgent, UserID: f.alice.User.ID, AgentID: f.agentID, AgentName: "builder"}
+	p := authn.Principal{Kind: authn.KindAgent, UserID: f.alice.User.ID, AgentID: f.agentID}
 	m, err := f.env.App.Rooms.Post(context.Background(), p, f.room.ID, rooms.PostInput{Text: text})
 	require.NoError(t, err)
 	return m
@@ -108,21 +109,6 @@ func TestAgentWSRequiresAgentToken(t *testing.T) {
 	conn, resp := env.Anon().DialAgent("builder")
 	require.Nil(t, conn)
 	require.Equal(t, http.StatusUnauthorized, resp.Status)
-}
-
-// AGT-04: a second connection as the same agent closes the first with reason "replaced".
-func TestAgentWSSecondConnectionReplacesFirst(t *testing.T) {
-	f := newAgentRoom(t)
-	first := f.dial(t)
-	first.Welcome(wsWait)
-	second := f.dial(t)
-	second.Welcome(wsWait)
-
-	ce := closeError(t, first.Closed(wsWait))
-	require.Equal(t, websocket.StatusCode(4000), ce.Code)
-	require.Equal(t, "replaced", ce.Reason)
-	require.NoError(t, second.Closed(300*time.Millisecond), "the newer connection stays open")
-	require.True(t, f.env.App.Presence.Online(f.agentID))
 }
 
 // AGT-08: messages posted while offline arrive after connecting, oldest first; the agent's
@@ -337,35 +323,35 @@ func TestAgentSocketRechecksTokenAfterLaggedBus(t *testing.T) {
 	require.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(err), "close: %v", err)
 }
 
-// S2: an owner registers at most agents.MaxAgentsPerOwner (50) agents. Connecting under a
-// 51st name answers the upgrade with 409 conflict "agent limit reached" and registers
-// nothing; the existing agents still connect.
+// S2: an owner registers at most agents.MaxAgentsPerOwner agents. Connecting under one more
+// name answers the upgrade with 409 conflict "agent limit reached" and registers nothing; the
+// existing agents still connect.
 func TestAgentWSCapsAgentsPerOwner(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	for i := range 49 {
-		registerAgent(t, env, alice, fmt.Sprintf("agent-%02d", i))
+	for i := range agents.MaxAgentsPerOwner - 1 {
+		registerAgent(t, env, alice, fmt.Sprintf("agent-%03d", i))
 	}
-	fiftieth, resp := tok.DialAgent("fiftieth")
-	require.NotNil(t, fiftieth, "the 50th agent registers: %d %s", resp.Status, resp.Body)
-	fiftieth.Welcome(wsWait)
+	last, resp := tok.DialAgent("last-one")
+	require.NotNil(t, last, "the last agent below the cap registers: %d %s", resp.Status, resp.Body)
+	last.Welcome(wsWait)
 
 	conn, resp := tok.DialAgent("one-too-many")
 	require.Nil(t, conn)
 	e := resp.RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 	require.Equal(t, "agent limit reached", e.Message)
 	list := testkit.Decode[dto.List[dto.Agent]](alice.Get("/api/v1/agents").RequireStatus(http.StatusOK))
-	require.Len(t, list.Items, 50)
+	require.Len(t, list.Items, agents.MaxAgentsPerOwner)
 	for _, a := range list.Items {
 		require.NotEqual(t, "one-too-many", a.Name)
 	}
 
-	existing, resp := tok.DialAgent("agent-07")
+	existing, resp := tok.DialAgent("agent-007")
 	require.NotNil(t, existing, "an existing agent still connects: %d %s", resp.Status, resp.Body)
-	require.Equal(t, "agent-07", existing.Welcome(wsWait).Agent.Name)
+	require.Equal(t, "agent-007", existing.Welcome(wsWait).Agent.Name)
 
-	// The cap is per owner: alice at 50 agents does not block another user.
+	// The cap is per owner: alice at the cap does not block another user.
 	bob := env.NewUser("bob")
 	bobConn, resp := bob.Token(dto.TokenKindAgent, "desktop").DialAgent("first")
 	require.NotNil(t, bobConn, "another owner still registers: %d %s", resp.Status, resp.Body)

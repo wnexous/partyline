@@ -188,7 +188,7 @@ func TestSetupUninstall(t *testing.T) {
 	_, err = os.Stat(configPath(home))
 	require.ErrorIs(t, err, os.ErrNotExist)
 	require.Contains(t, r.stdout, "Revoked the agent token on "+e.env.URL+".\n", "ONB-09")
-	e.env.Anon().WithBearer(e.secret).WithHeader(dto.HeaderAgent, "x").Get("/api/v1/agent/rooms").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	e.env.Anon().WithBearer(e.secret).AsAgent("x").Get("/api/v1/agent/rooms").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 
 	// Nothing left: uninstall says so.
 	nothing := &harnessCalls{answer: func(string) ([]byte, error) {

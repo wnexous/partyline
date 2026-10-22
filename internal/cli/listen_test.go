@@ -8,15 +8,12 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/cliconfig"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -50,8 +47,9 @@ func startListen(t *testing.T, env map[string]string, wd string, stdout io.Write
 	}
 	std := stdio{
 		stdin: inR, stdout: stdout, stderr: p.stderr,
-		getenv: func(k string) string { return env[k] },
-		getwd:  func() (string, error) { return wd, nil },
+		getenv:   func(k string) string { return env[k] },
+		getwd:    func() (string, error) { return wd, nil },
+		hostname: func() (string, error) { return testMachine, nil },
 	}
 	go func() {
 		p.code <- execute(context.Background(), []string{"partyline", "listen"}, std)
@@ -114,8 +112,8 @@ func (e *channelEnv) vars(extra ...string) map[string]string {
 // PUSH-01: each incoming message is one JSON line with the channel meta fields plus content.
 func TestListenPrintsOneLinePerMessage(t *testing.T) {
 	e := newChannelEnv(t)
-	p := startListen(t, e.vars("PARTYLINE_AGENT", "pi-box"), "/tmp/wd", nil)
-	agent := e.agent(t, "pi-box")
+	p := startListen(t, e.vars(), "/work/pi-box", nil)
+	agent := e.ai(t, "/work/pi-box")
 	room := e.room(t, dto.CreateRoomRequest{Name: "Support"}, agent.ID)
 
 	msg := e.post(t, room.ID, "first line\nsecond line")
@@ -138,11 +136,10 @@ func TestListenPrintsOneLinePerMessage(t *testing.T) {
 // PUSH-01: notices (here the instructions notice on connect) are lines of the same shape.
 func TestListenPrintsNotices(t *testing.T) {
 	e := newChannelEnv(t)
-	a, err := e.env.App.Agents.Register(context.Background(), e.alice.User.ID, agents.Identity{Name: "pi-box"})
-	require.NoError(t, err)
-	room := e.room(t, dto.CreateRoomRequest{Name: "Ops", Instructions: "be brief"}, a.Agent.ID)
+	a := e.aiAt(t, "/work/pi-box")
+	room := e.room(t, dto.CreateRoomRequest{Name: "Ops", Instructions: "be brief"}, a.ID)
 
-	p := startListen(t, e.vars("PARTYLINE_AGENT", "pi-box"), "/tmp/wd", nil)
+	p := startListen(t, e.vars(), "/work/pi-box", nil)
 	line := p.line()
 	require.Equal(t, room.ID, line["room"])
 	require.Equal(t, "Ops", line["room_name"])
@@ -157,9 +154,9 @@ func TestListenPrintsNotices(t *testing.T) {
 // it again.
 func TestListenAcksAfterWriting(t *testing.T) {
 	e := newChannelEnv(t)
-	env := e.vars("PARTYLINE_AGENT", "pi-box")
-	first := startListen(t, env, "/tmp/wd", nil)
-	agent := e.agent(t, "pi-box")
+	env := e.vars()
+	first := startListen(t, env, "/work/pi-box", nil)
+	agent := e.ai(t, "/work/pi-box")
 	room := e.room(t, dto.CreateRoomRequest{Name: "Support"}, agent.ID)
 	delivered := e.post(t, room.ID, "one")
 	require.Equal(t, delivered.ID, first.line()["message_id"])
@@ -173,7 +170,7 @@ func TestListenAcksAfterWriting(t *testing.T) {
 	require.Eventually(t, func() bool { return !e.env.App.Gateway.Online(agent.ID) }, chanWait, 20*time.Millisecond)
 
 	later := e.post(t, room.ID, "two")
-	second := startListen(t, env, "/tmp/wd", nil)
+	second := startListen(t, env, "/work/pi-box", nil)
 	require.Equal(t, later.ID, second.line()["message_id"], "the acknowledged message is not repeated")
 }
 
@@ -185,17 +182,16 @@ func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken p
 // the next listen gets the message again.
 func TestListenDoesNotAckUnwrittenLines(t *testing.T) {
 	e := newChannelEnv(t)
-	env := e.vars("PARTYLINE_AGENT", "pi-box")
-	a, err := e.env.App.Agents.Register(context.Background(), e.alice.User.ID, agents.Identity{Name: "pi-box"})
-	require.NoError(t, err)
-	room := e.room(t, dto.CreateRoomRequest{Name: "Support"}, a.Agent.ID)
+	env := e.vars()
+	a := e.aiAt(t, "/work/pi-box")
+	room := e.room(t, dto.CreateRoomRequest{Name: "Support"}, a.ID)
 	msg := e.post(t, room.ID, "lost?")
 
-	broken := startListen(t, env, "/tmp/wd", failingWriter{})
+	broken := startListen(t, env, "/work/pi-box", failingWriter{})
 	require.Equal(t, 1, broken.exit())
 	require.Contains(t, broken.stderr.String(), "partyline listen: write message line: broken pipe")
 
-	again := startListen(t, env, "/tmp/wd", nil)
+	again := startListen(t, env, "/work/pi-box", nil)
 	require.Equal(t, msg.ID, again.line()["message_id"])
 }
 
@@ -212,41 +208,36 @@ func TestListenRefusesConfigFileNot0600(t *testing.T) {
 	require.NoError(t, os.Chmod(path, 0o640)) // group-readable only
 
 	var out lockedBuffer
-	p := startListen(t, map[string]string{"HOME": home, "PARTYLINE_AGENT": "pi-box"}, "/tmp/wd", &out)
+	p := startListen(t, map[string]string{"HOME": home}, "/work/pi-box", &out)
 	require.Equal(t, 1, p.exit())
 	require.Contains(t, p.stderr.String(), "partyline listen: config file "+path+" has mode 0640, want 0600")
 	require.Contains(t, p.stderr.String(), "run chmod 600 "+path)
 	require.NotContains(t, p.stderr.String(), e.secret)
 	require.Empty(t, out.String())
-	require.False(t, e.onlineNames(t)["pi-box"], "listen did not connect")
+	require.Empty(t, e.folders(t), "listen did not connect")
 }
 
-// PUSH-02: a tools-only channel serves the tools without the push socket: the agent is
-// registered over REST, never comes online, and messages are not pushed to it.
+// PUSH-02, AID-04: a tools-only channel serves the tools without the push socket: the AI of its
+// folder is created by its first call, never comes online, and messages are not pushed to it.
 func TestChannelToolsOnlyOpensNoSocket(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_AGENT", "codex-box"), "/tmp/wd")
+	c := startChannel(t, []string{"--tools-only"}, e.vars(), "/work/codex-box")
 	initialize(c)
+	callListRooms := func(id int) string {
+		t.Helper()
+		c.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{"name": "list_rooms", "arguments": map[string]any{}}})
+		r := c.next()
+		require.Equal(t, float64(id), r["id"])
+		result := r["result"].(map[string]any)
+		require.Equal(t, false, result["isError"], "result: %v", result)
+		return result["content"].([]any)[0].(map[string]any)["text"].(string)
+	}
 
-	var agent dto.Agent
-	require.Eventually(t, func() bool {
-		list := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK))
-		for _, a := range list.Items {
-			if a.Name == "codex-box" {
-				agent = a
-				return true
-			}
-		}
-		return false
-	}, chanWait, 20*time.Millisecond, "the agent is registered without a WebSocket")
+	require.Empty(t, e.folders(t), "nothing is created before a tool is called")
+	callListRooms(5)
+	agent := e.registered(t, "/work/codex-box")
 	room := e.room(t, dto.CreateRoomRequest{Name: "Builds"}, agent.ID)
-
-	c.send(map[string]any{"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": map[string]any{"name": "list_rooms", "arguments": map[string]any{}}})
-	r := c.next()
-	require.Equal(t, float64(5), r["id"])
-	result := r["result"].(map[string]any)
-	require.Equal(t, false, result["isError"], "result: %v", result)
-	require.Contains(t, result["content"].([]any)[0].(map[string]any)["text"], "Builds")
+	require.Contains(t, callListRooms(6), "Builds")
 
 	e.post(t, room.ID, "not pushed")
 	select {
@@ -255,24 +246,16 @@ func TestChannelToolsOnlyOpensNoSocket(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 	}
 	require.False(t, e.env.App.Gateway.Online(agent.ID), "no push socket")
-	require.False(t, e.onlineNames(t)["codex-box"])
 }
 
-// PUSH-02, ID-01: listen and a tools-only channel of the same harness process share the
-// agent name: listen gets the temporary name (proj-pi) and the sibling's tools act as it. A
-// tools-only channel without a listen sibling registers a temporary agent of its own
-// (proj-pi-2, since proj-pi is online).
-func TestToolsOnlySharesTheNameWithListen(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+// PUSH-02, AID-01: listen and the tools-only channel of a harness process started in one folder
+// are the same AI (the v0.3 OpenCode split is gone): the tools post as the AI listen is online
+// as. A tools-only channel started in another folder is another AI.
+func TestListenAndToolsOnlyAreOneIdentity(t *testing.T) {
 	e := newChannelEnv(t)
 	wd := "/tmp/src/proj"
-	listen := startListen(t, e.vars("PARTYLINE_SESSION", "harness-1", "PARTYLINE_HARNESS", "pi"), wd, nil)
-	proj := e.agent(t, "proj-pi")
-	sessionPath := filepath.Join(os.TempDir(), "partyline", ".sessions", "harness-1")
-	require.Eventually(t, func() bool {
-		data, err := os.ReadFile(sessionPath)
-		return err == nil && strings.TrimSpace(string(data)) == "proj-pi"
-	}, chanWait, 20*time.Millisecond)
+	listen := startListen(t, e.vars("PARTYLINE_HARNESS", "pi"), wd, nil)
+	proj := e.ai(t, wd)
 
 	post := func(c *mcpClient, id int, text string) {
 		t.Helper()
@@ -282,24 +265,14 @@ func TestToolsOnlySharesTheNameWithListen(t *testing.T) {
 		r := c.next()
 		require.Equal(t, false, r["result"].(map[string]any)["isError"], "result: %v", r)
 	}
-	tools := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_SESSION", "harness-1", "PARTYLINE_HARNESS", "pi"), wd)
+	tools := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_HARNESS", "pi"), wd)
 	initialize(tools)
-	alone := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_SESSION", "harness-2", "PARTYLINE_HARNESS", "pi"), wd)
-	initialize(alone)
-	var proj2 dto.Agent
-	require.Eventually(t, func() bool {
-		list := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK))
-		for _, a := range list.Items {
-			if a.Name == "proj-pi-2" {
-				proj2 = a
-				return true
-			}
-		}
-		return false
-	}, chanWait, 20*time.Millisecond, "the lone tools-only channel registers its own temporary agent")
-	room := e.room(t, dto.CreateRoomRequest{Name: "Shared"}, proj.ID, proj2.ID)
+	elsewhere := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_HARNESS", "pi"), "/tmp/src/other")
+	initialize(elsewhere)
+	other := e.aiAt(t, "/tmp/src/other")
+	room := e.room(t, dto.CreateRoomRequest{Name: "Shared"}, proj.ID, other.ID)
 	post(tools, 7, "from the sibling")
-	post(alone, 8, "from a lone tools-only")
+	post(elsewhere, 8, "from the other folder")
 
 	page := testkit.Decode[dto.Page[dto.Message]](e.alice.Get("/api/v1/rooms/" + room.ID + "/messages").RequireStatus(http.StatusOK))
 	authors := map[string]string{}
@@ -307,12 +280,12 @@ func TestToolsOnlySharesTheNameWithListen(t *testing.T) {
 		authors[m.Text] = m.AuthorID
 	}
 	require.Equal(t, proj.ID, authors["from the sibling"])
-	require.Equal(t, proj2.ID, authors["from a lone tools-only"])
+	require.Equal(t, other.ID, authors["from the other folder"])
+	require.Equal(t, []string{"/tmp/src/other", "/tmp/src/proj"}, e.folders(t), "one AI per folder, whatever the process")
+	require.Equal(t, "pi", e.registered(t, wd).AI.App)
 
 	require.NoError(t, listen.in.Close())
 	require.Equal(t, 0, listen.exit())
-	_, err := os.Stat(sessionPath)
-	require.ErrorIs(t, err, os.ErrNotExist, "listen removes its session file on exit")
 }
 
 // listen needs a URL and a token like the channel.
@@ -320,4 +293,27 @@ func TestListenRequiresURLAndToken(t *testing.T) {
 	p := startListen(t, map[string]string{"PARTYLINE_URL": "http://127.0.0.1:1"}, "/tmp/wd", io.Discard)
 	require.Equal(t, 2, p.exit())
 	require.Contains(t, p.stderr.String(), "partyline listen: set PARTYLINE_URL and PARTYLINE_TOKEN")
+}
+
+// SES-05: when another session takes the AI over, listen prints the notice as one JSON line and
+// exits with code 3, which the pi and OpenCode adapters read as "do not start me again"; the
+// message it had delivered before stays delivered.
+func TestListenExitsWith3AfterATakeover(t *testing.T) {
+	e := newChannelEnv(t)
+	p := startListen(t, e.vars("PARTYLINE_HARNESS", "pi"), "/work/pi-box", nil)
+	agent := e.ai(t, "/work/pi-box")
+	room := e.room(t, dto.CreateRoomRequest{Name: "Support"}, agent.ID)
+	e.post(t, room.ID, "before")
+	require.Equal(t, "before", p.line()["content"])
+
+	taker, resp := e.alice.WithBearer(e.secret).DialFolder(testkit.Folder{Machine: testMachine, Path: "/work/pi-box", Harness: "opencode", Takeover: true})
+	require.NotNil(t, taker, "upgrade refused: %d %s", resp.Status, resp.Body)
+	taker.Welcome(chanWait)
+
+	require.Equal(t, map[string]string{
+		"type": "notice", "reason": "taken_over", "author": "Partyline", "author_kind": "system", "sender_name": "", "trusted": "false", "kind": "system",
+		"content": "This intelligence was opened in another session; Partyline is disconnected here.",
+	}, p.line())
+	require.Equal(t, 3, p.exit(), "stderr: %s", p.stderr.String())
+	require.NoError(t, taker.Closed(100*time.Millisecond), "the new session is left alone")
 }

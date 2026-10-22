@@ -278,14 +278,13 @@ func decodeError(resp *http.Response) dto.Error {
 	return e.Error
 }
 
-// verifyAgentToken asks the server whether token is an active agent token. The agent API
-// answers 401 to unknown or revoked tokens and 403 "agent token required" to user tokens; a
-// valid agent token gets 200, or 403 "agent not registered" for a name that never connected.
+// verifyAgentToken asks the server whether token is an active agent token with GET
+// /agent/whoami, which needs no folder and no AI: 200 for a valid agent token, 401 for an
+// unknown or revoked one and 403 "agent token required" for a user token.
 func verifyAgentToken(ctx context.Context, base, token string) error {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+token)
-	h.Set(dto.HeaderAgent, "partyline-setup")
-	resp, err := request(ctx, http.MethodGet, base+"/api/v1/agent/rooms", nil, h)
+	resp, err := request(ctx, http.MethodGet, base+"/api/v1/agent/whoami", nil, h)
 	if err != nil {
 		return fmt.Errorf("cannot reach %s: %w", base, err)
 	}
@@ -296,10 +295,6 @@ func verifyAgentToken(ctx context.Context, base, token string) error {
 	case http.StatusUnauthorized:
 		return errors.New("the server rejected the token (mistyped, revoked or expired); nothing was saved")
 	case http.StatusForbidden:
-		e := decodeError(resp)
-		if strings.Contains(e.Message, "agent not registered") {
-			return nil
-		}
 		return errors.New("this is not an agent token: create an agent token in the web app (Tokens) or use --browser; nothing was saved")
 	default:
 		return fmt.Errorf("unexpected answer %d while checking the token; nothing was saved", resp.StatusCode)

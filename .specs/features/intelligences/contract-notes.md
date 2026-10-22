@@ -324,6 +324,260 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
   /intelligences/{id}`) or by the AI (`PATCH /agent/profile`): covered by
   `TestOutboundAuthorFollowsProfileRename`.
 
+## T13 - Resolve AIs by folder (AID-01, AID-02, AID-03, AID-05, MIG-02)
+
+`internal/agents/folder.go`; nothing calls it from the API yet (T14).
+
+- `Registry.ResolveFolder(ctx, ownerID, FolderID{Machine, Folder, Home, Harness, Adopt}, live)
+  (db.Agent, error)`. Order: clean the machine (control characters dropped, trimmed, 64 characters)
+  and validate (`ValidateFolder`) **before anything is written** → harness id (`HarnessID`; empty
+  stays empty) and `Adopt` (trimmed, lower-cased) → `touchMachine` → lookup of (owner, machine,
+  folder) → on a miss `linkOrCreate` → `relabel`.
+- `ValidateFolder(machine, folder)`: empty/blank machine → 422 `folder_required` (field `machine`);
+  empty folder → 422 `folder_required` (field `folder`); invalid UTF-8, a NUL, more than
+  `MaxFolderLength` (1024) bytes, not absolute (`/…`, or `X:\…`/`X:/…`; UNC and `C:acme` are
+  relative), a trailing separator other than the root, or a `.`/`..` segment → 422
+  `folder_invalid` (field `folder`). Both are `*httpx.Error` with the new `dto.ErrorCodeFolderRequired`
+  / `ErrorCodeFolderInvalid`; the `folder_required` messages end with "update partyline" (an old
+  CLI sends nothing). On Unix `/` is the only separator (a backslash is a file name character);
+  on a drive path both are. Empty segments (`//`) are not refused.
+- Identity = (owner, machine, folder), the unique index `agents_folder` being the last guard. A
+  hit returns the same agent for any harness. **App (harness)**: a live session sets it; a
+  tools-only call (`live=false`) sets it only while `Presence.Online` is false, so a Codex call
+  never relabels a live Claude Code session; an empty harness never changes it; an unknown one is
+  the generic `agent` app.
+- Adoption (MIG-02), only when the folder has no identity: the owner's **unlinked** agent
+  (`folder = ''`) named by `Adopt` (its intelligence handle, case-insensitive, else its v0.3
+  `agents.name`), else the one whose handle is `handles.Default(AI, base(folder))`. A missing or
+  already linked name is ignored (no error); other owners' agents are never candidates.
+  `AdoptAgent … WHERE folder = ''` sets machine, folder and harness (the stored harness when none
+  was sent) and keeps id, name, profile, groups and history. It writes the audit entry
+  `agent.adopt` (`audit.ActionAgentAdopt`, target kind `agent`, detail `{"by": "as"|"folder"}`,
+  actor = the owner) in the same transaction, so a link is audited exactly once.
+- Creation: `CountAgentsByOwner >= MaxAgentsPerOwner` → `ErrAgentLimit`; row `name = id`,
+  `harness` = the session's, `kind` the column default; intelligence through `intelligences.Create`
+  with `handles.DisplayName(base)` and handle base `base` (`base` = last path element; `/` is
+  `/`, a drive root `C:`); `agents.display_name` is set to the profile's display name (the T7
+  mirror), so `agents.DisplayName(a)` reads the folder's name and never the row's id. All of this runs in one write transaction under `allocMu`, after a
+  re-check of the folder, so concurrent resolves of one new folder create one identity and
+  concurrent adoptions link once.
+- **`MaxAgentsPerOwner` is 200** (was 50) for every creation path; the limit error stays the
+  existing 409 `conflict` "agent limit reached" (`ErrAgentLimit`), not a new `agent_limit` code,
+  because the channel and the docs already know it. The v0.3 cap tests derive from the constant.
+- `touchMachine`: the `machines` row (home, `last_seen_at`) is written at most once per
+  `MachineTouchInterval` (1 minute) per (owner, machine) per process, and at once when the
+  session reports a different home folder. A home that is not a valid folder is ignored. The
+  `UpsertMachine` query now keeps the stored home when it is given an empty one; the owner's
+  label is never touched.
+- `agents.Deps.Audit` (optional) is the audit log; `app.go` builds it before the registry.
+- sqlc added: `InsertFolderAgent`, `SetAgentHarness`, `GetUnlinkedAgentByHandle`,
+  `GetUnlinkedAgentByName`, `AdoptAgent` (`:execrows`).
+
+## T14 - Server accepts folder headers (AID-02, AID-04, SES-01)
+
+- New headers (`dto/common.go`): `X-Partyline-Folder` (the canonical folder, `url.PathEscape`d, so
+  `/` is `%2F`), `X-Partyline-Home` (same encoding), `X-Partyline-Adopt` (handle or v0.3 name),
+  `X-Partyline-Live` and `X-Partyline-Takeover` (declared now, read by T17). `X-Partyline-Machine`
+  and `-Harness` are the existing ones. A request **names a folder** when the folder header is
+  present, even when empty (`agents.HasFolder`); `agents.FolderIDFromHeader(h)` decodes it: a folder
+  that is not valid percent-encoding is 422 `folder_invalid`, a home that is not is ignored. The
+  decoded `FolderID` is validated by `ResolveFolder` / `LookupFolder` (T13 rules).
+- A request without the folder header still takes the **v0.3 path** (`X-Partyline-Agent`, named or
+  temporary agents) until T16 makes the folder required; the new routes below have no v0.3 path.
+- Routes that act as an AI resolve it with `ResolveFolder(live=false)` (`server.agentOf`): every
+  `agentOnly` route (`/agent/rooms…`, `messages`, `attachments`), `POST /agent/register` (through
+  `Registry.RegisterFolder`, which also returns the owner) and `GET /agent/pending`
+  (`agentOnly` resolves; the handler reads the agent by `Principal.AgentID`, `Registry.ByID`). A call
+  by a folder that has no AI creates it (AID-04); what it posts is authored by that AI. The agent
+  WebSocket resolves with `live=true` and stamps `connected_at`; its app follows the harness.
+- `GET /api/v1/agent/session` (agent token + folder headers, no AI created, no machine recorded,
+  no app changed; missing folder → 422 `folder_required`) → `dto.SessionState{exists, online,
+  intelligence?, app, connected_at?}`: `intelligence` is the AI's `IntelligenceRef`, `app` the
+  stored harness id, `connected_at` the AI's `agents.connected_at` and **only while it is online**.
+  Another owner's AI, another machine and another folder read `exists: false` (zero value).
+  `Registry.LookupFolder` is the read-only lookup behind it (an unlinked v0.3 identity is not
+  "the AI of the folder" until a session adopts it).
+- `GET /api/v1/agent/whoami` (agent token, no folder, no AI needed) → the token owner's
+  `dto.IntelligenceRef` (role `user`).
+- `dto.AgentWelcomeFrame` gains `intelligence` (the AI's `IntelligenceRef`) and `owner` (its
+  owner's); `agent.display_name` is the profile's display name. The refs come from the
+  intelligences table; a row without one falls back to what the registry knows.
+- `agents.Gateway` logs a refused connection that is a 4xx API error (a bad folder) at debug level
+  with its code only, not as a registration failure; folder paths and hostnames are never logged.
+- Testkit: `testkit.Folder{Machine, Path, Home, Harness, Adopt}` with `Headers()` (percent-encoded as
+  the CLI sends them), `Client.AsFolder(f)` (a copy that sends them on every request) and
+  `Client.DialFolder(f)`.
+
+## T15 - CLI sends the canonical folder (AID-07, MIG-02)
+
+- `channel.Identity{Machine, Folder, Home, Harness, Adopt}` is what every process of a session
+  sends: `setHeaders` always sets `X-Partyline-Machine` (`unknown` when the hostname is unknown) and
+  `X-Partyline-Folder` (`url.PathEscape`, so spaces, non-ASCII characters and `/` are escaped; an
+  unknown folder is an *empty* header, which the server refuses with `folder_required`), and sets
+  `X-Partyline-Home` (same encoding), `-Harness` and `-Adopt` when they are not empty. No process
+  sends `X-Partyline-Agent`, `-Agent-Mode`, `-Project` or `-Session` any more. A WebSocket dial adds
+  `X-Partyline-Live`, the process's `channel.NewLiveID()` (22 characters of `[A-Za-z0-9_-]`), the
+  same on every reconnect of that process; REST calls carry none. `X-Partyline-Takeover` is not
+  sent yet (T17/T36).
+- `channel.CanonicalFolder(dir)`: `filepath.Abs` → `EvalSymlinks` → `Clean`; a directory that cannot
+  be resolved (it does not exist) is returned absolute and cleaned, never an error.
+- The CLI (`cli.sessionIdentity(adopt, io)`) gathers: folder = `PARTYLINE_FOLDER` (the launcher's)
+  else the working directory (the hook: `PARTYLINE_FOLDER`, else the `cwd` of its stdin payload, else
+  its own); home = `HOME`, else `USERPROFILE`, canonical; machine = the hostname (trimmed);
+  harness = `PARTYLINE_HARNESS` (a `--harness` flag wins); adopt = `--as` (aliases `--name`,
+  `--agent`), else `PARTYLINE_AGENT`. `--project` is accepted by `channel`, `listen` and the
+  launchers and ignored with one stderr line ("--project is ignored: an AI is identified by its
+  folder"). The v0.3 home-folder warning is gone (a home folder or `/` is an ordinary folder).
+- `procenv`: the launcher variables recovered from the nearest launched ancestor are now
+  `PARTYLINE_FOLDER`, `PARTYLINE_HARNESS`, `PARTYLINE_TAKEOVER` and `PARTYLINE_AGENT`; an ancestor
+  counts as launched when its environment has `PARTYLINE_FOLDER`, and a process that has
+  `PARTYLINE_FOLDER` itself takes nothing from an ancestor.
+- Launcher (`partyline <harness>`): passes `PARTYLINE_FOLDER` (the canonical working directory) and
+  `PARTYLINE_HARNESS`, replacing inherited values, and `PARTYLINE_AGENT` from a leading `--as` /
+  `--name`; no `PARTYLINE_SESSION` or `PARTYLINE_PROJECT`.
+- Removed on the client: session files (`<tmp>/partyline/.sessions`), the tools-only registration at
+  start (a tools-only process creates its AI with its first call, AID-04), `DeriveProject`,
+  `IsHomeDir`, the temporary-name state of the link. Processes started in one folder are one AI
+  whatever their harness: `listen` + the tools-only server (pi, OpenCode), the tools-only server + the
+  turn-end hook (Codex, Gemini) and the full channel (Claude Code, omp).
+- Download directory: `<TempDir>/partyline/<handles.Slug of the folder's name>` (`agent` when the name
+  has no letter or digit), so a hostile folder name cannot leave `<TempDir>/partyline/`.
+- Link messages no longer name the agent: `partyline: replaced by another session of this agent`,
+  `partyline: this agent was deleted; restart the session to register it again` (T17 and T18 replace
+  the replaced state with the busy and taken-over ones).
+- Server side of the same task: the name `Adopt` gives is also tried as a v0.3 name after
+  `agents.Slug` (v0.3 stored slugs: `--name "Billing API!"` adopts `billing-api`), after the
+  handle lookup (`handle` lower-cased) that comes first.
+
+## T16 - Require the folder, drop the v0.3 naming (AID-05)
+
+- **Every agent route that acts as an AI requires the folder.** The agent WebSocket and
+  `agentOnly` routes (`rooms`, room `info`/`messages`/post, `reply`, `react`, `attachments`,
+  `pending`, `profile`) plus `POST /agent/register` and `GET /agent/session` resolve the AI from the
+  token's owner, `X-Partyline-Machine` and `X-Partyline-Folder`. No folder (header absent or empty)
+  or no machine → 422 `folder_required` with "… update partyline" (fields `folder` / `machine`); a
+  folder the server cannot use → 422 `folder_invalid`. A CLI from before folders (it sends
+  `X-Partyline-Agent`, `-Project`, `-Session`, `-Agent-Mode` and no folder) therefore gets
+  `folder_required` everywhere. `DELETE /agent/token`, `GET /agent/whoami` and `GET /agent/agents`
+  need no folder. A first call from an unseen folder creates its AI instead of failing (AID-04).
+- **Removed**: `dto.HeaderAgent`, `HeaderAgentMode`, `AgentModeUnique`/`Temporary`, `HeaderProject`,
+  `HeaderSession` and `authn.Principal.AgentName` (the headers are ignored when sent); the
+  temporary/fixed allocation (`Identity`, `Resolve`, `freeName`, `identityPlan`, `AutoName`,
+  `ProjectFromName`, session holds), `Registry.Upsert`/`Register`/`Lookup`, `archive.go` and the
+  `agent-archive` job in `app.go`; the sqlc queries `InsertAgentIfMissing`, `GetAgentByName`,
+  `GetProjectBySlug`, `UpdateAgentIdentity`, `ListSessionAgents`, `HoldAgentForSession`,
+  `ReleaseAgentSession`, `PromoteAgent`, `ListArchiveCandidates`, `ArchiveAgent`, `SetAgentAutoName`,
+  `ListTemporaryProjectAgents` and `SetAgentFolder`; the `partyline agents --all` flag
+  (`include_archived`). `MarkAgentConnected` only stamps `connected_at`.
+- **Legacy DTO fields keep constant values until T51**: `Agent.kind` is always `fixed`,
+  `Agent.archived` always `false`, `Agent.project` is set only for an agent a (test) fixture put in a
+  project. `UpdateAgentRequest.fixed` stays: `true` is a no-op, `false` is 422. `Agent.name`
+  (and `AgentInfo.name` in the welcome frame and the register answer) is now the AI's **@handle**
+  (its row's name when it has no profile), and `display_name` is the profile's display name, so the
+  pages and the CLI that still read them show readable names for AIs whose row is named by its id.
+  `ListVisible` no longer filters archived agents: an agent v0.3 archived is listed.
+- **Projects stay until T50**, but no session joins one any more. `RenameProject` only renames the
+  project and refreshes the rooms that have it as a member. New queries `CreateProject` and
+  `SetAgentProject` exist only so the tests can keep exercising project members; T50 deletes them
+  with the rest. Testkit: `Env.NewAI(owner, name)` (the AI of `FolderOf(name)`, named `name`),
+  `Env.NewLegacyAI` (unlinked, for adoption), `FolderOf`, `Client.AsAgent(name)` and
+  `Client.DialAgent(name)` (a session of `FolderOf(name)`); `DialAgentUnique` is gone.
+- `partyline setup` verifies a token with `GET /agent/whoami` (200 valid agent token, 401 rejected,
+  403 not an agent token) instead of the v0.3 name probe on `/agent/rooms`.
+- The pi and OpenCode adapters start `partyline listen` with `PARTYLINE_HARNESS` set to `pi` /
+  `opencode` (the app label of a session started without the launcher) and no longer set
+  `PARTYLINE_SESSION`.
+- `delivery.AgentDisplayName` is the mirrored `display_name`, else the row's name (no
+  `auto_name`); the DTO builders read the profile's display name first (`Agent.ProfileName`).
+
+
+## T17 - One live session per AI with explicit takeover (SES-02, SES-04, SES-06, SES-08)
+
+- **Headers on the agent WebSocket only**: `X-Partyline-Live` (the process id, `[A-Za-z0-9_-]{16,64}`;
+  a missing or malformed one names no process) and `X-Partyline-Takeover: 1`. REST tool calls
+  send neither and never take part in the live session.
+- **`Presence.Attach(ctx, agent, session, liveID, takeover) (fresh bool, err error)`** swaps under
+  Presence's mutex: nobody holds the AI → attach and publish `AgentPresence{Online:true}`; the same
+  `liveID` holds it → the new socket replaces the old one silently (old closed `1000 reconnected`,
+  no event, the session keeps its start time, `fresh` false); another process holds it → `ErrBusy`
+  and nothing changes, unless `takeover`: the old session is closed `4002 taken_over`, the AI stays
+  online (no offline/online events) and the session's start time is the new one's. `Presence.Busy(
+  agentID, liveID)` answers the pre-upgrade check, `Presence.Live(agentID)` the live session
+  (`Live.Since`). `Detach` of a replaced or taken-over socket does nothing, so only the live
+  session's end announces the AI offline (SES-06, immediate on socket close). The `last_seen_at`
+  stamp in `Attach` is best effort.
+- **`Registry.Attach(ctx, agent, session, harness, liveID, takeover)`** is what the gateway calls:
+  `Presence.Attach`, then for a fresh session the app (`harness`, normalized by `cleanHarness`) and
+  `connected_at`. A refused attach changes nothing, not even the app. `appMu` serializes it with the
+  check-and-write of a tools-only relabel (`relabel`), so a tools-only call never overwrites the
+  app of a session attaching at that moment (AID-04).
+- **Gateway order** (deviates from design.md, which resolved with `live=true` before the check and
+  so relabeled a refused connection): authenticate → `ResolveFolder` with **no harness** (creates or
+  adopts, relabels nothing) → unless takeover, `Presence.Busy` → **409 `identity_busy`** before the
+  upgrade → `Accept` → `Registry.Attach` → welcome and backlog. `error.details` of the 409:
+  `display_name`, `app` (harness id), `app_label` (readable, "Claude Code") and `connected_at`
+  (RFC 3339, UTC) of the live session (`dto.BusyDetail*`; `app_label` is an addition to the design's
+  list so the channel needs no label table). Losing the race between the check and the attach closes
+  the new socket `4003 identity_busy` before any frame. `Gateway` has a `beforeAttach` seam for the
+  test of that race. Close codes: 4001 `deleted`, 4002 `taken_over`, 4003 `identity_busy`; 4000
+  `replaced`, `CloseReplaced` and `ReasonReplaced` are gone (AGT-04 is superseded).
+- `dto.Error.Details` / `httpx.Error.Details` (`map[string]string`, omitted when empty) carry facts
+  of a refusal that are not request fields. `GET /agent/session` reads `online` and `connected_at`
+  (UTC) from the live session, so the launcher prompt and the busy answer agree on "since".
+- **Channel link** (`internal/channel/link.go`): `stateBusy` (409 `identity_busy` or close 4003)
+  retries after 2 s, 4 s and 4 s (`timing.busyRetries`; empty means none) and then stops; the retry
+  counter restarts once a connection has been made. `stateTakenOver` (close 4002) never reconnects
+  and prints one stderr line. `stateInvalid` (422) never retries and shows the server's reason in
+  tool errors. A 409 with another code is still the agent limit; `replacedPause` became `limitPause`.
+  `Options.Takeover` / `ListenOptions.Takeover` (from `PARTYLINE_TAKEOVER=1`, read by
+  `resolveAgent`) make every dial carry `X-Partyline-Takeover: 1` until one succeeds, so a
+  reconnect after a drop never takes over. The live id (`channel.NewLiveID`) is the same on every
+  dial of a process.
+- Tools answer `partyline: this intelligence is open in another session; Partyline is not connected
+  here` while busy (T18 replaces it with the exact SES-04 text) and the SES-05 sentence once taken
+  over. A tool call made before the first connection attempt has been answered goes through, as for
+  any link that is still connecting.
+- Testkit: `Folder.Live` and `Folder.Takeover`; `DialFolder` gives every dial its own live id
+  (a dial is a process of its own) unless `Live` is set; `testkit.NewLiveID`. Removed with the
+  superseded behavior: `TestAgentWSSecondConnectionReplacesFirst` (AGT-04),
+  `TestPresenceReplaceAndOffline`, `TestLinkPausesAfterReplaced` and `TestToolsReportReplaced`.
+
+## T18 - Busy and taken-over sessions explain themselves (SES-04, SES-05)
+
+- **Busy text** (every tool, `link.Err()` while `stateBusy`): `<name> is open in another session
+  (<app label>, since HH:MM). Partyline is not connected here. To take over, restart with
+  "partyline <harness> --take-over" or set PARTYLINE_TAKEOVER=1.` Name, app label and time come from
+  the 409's details (`BusyDetail*`) and follow the latest refusal, so a retry that finds another
+  session names that one; HH:MM is 24-hour in the channel process's local zone. `<harness>` is the
+  channel's own harness id (the launcher id). A socket the server only closed `4003 identity_busy`
+  tells nothing: the text then reads `This intelligence is open in another session. Partyline is not
+  connected here. …`. The `--take-over` launcher flag arrives with T36; `PARTYLINE_TAKEOVER=1` works
+  from T17.
+- **Taken-over text** is the SES-05 sentence, exactly: `This intelligence was opened in another
+  session; Partyline is disconnected here.` Every tool answers it, and `channel.Run` sends it once
+  as a channel notification when the link enters `stateTakenOver` (the link never reconnects, so it
+  is once). Frames queued but not yet delivered when the close arrives are dropped and stay
+  unacknowledged for the new session's backlog: nothing is delivered after the notice.
+- **Connection notice** (`connectionNotice`): a `Notification` whose meta is `type=notice`,
+  `reason=busy|taken_over`, `author=Partyline`, `author_kind=system`, `sender_name=""`,
+  `trusted=false`, `kind=system` and no room keys. `type` is how adapters tell it from a room
+  message; server notices (skipped backlog, room instructions) keep their shape and stay messages.
+- **Link**: `link.onLost(reason, text)` is called once from `run` when the link gives up for
+  another session: for busy after the last retry, for taken over at once. The link itself prints
+  nothing for these two states. `Run`'s handler writes the text to stderr and notifies for taken
+  over (the busy channel stays silent and keeps answering its tools). `Listen`'s handler writes the
+  notice as one JSON line (the notification's meta plus `content`), cancels the link and `Listen`
+  returns `channel.ErrSessionLost`; `partyline listen` turns that into exit code **3** with nothing
+  more on stderr (`exitSessionLost`). Busy waits for the 2 s, 4 s, 4 s retries first, so `listen`
+  of a busy AI ends about 10 s after it starts. `Options.zone` / `ListenOptions.zone` are test seams
+  for the person's zone.
+- **Adapters**: the pi and OpenCode supervision block (identical in both) has
+  `EXIT_SESSION_LOST = 3` and does not restart after it, whatever else it was doing (every other
+  code, `null` included, still restarts with the backoff). A `type: "notice"` line is shown through
+  the harness's notification path (`ctx.ui.notify`/stderr in pi, the OpenCode log) and never framed
+  or sent to the model. The omp extension does the same for a `mcp_notification` whose meta says
+  `type: "notice"`, via `ui.notify`. Shared fixtures: `integrations/testdata/framing.ts` `notices`.
+
 ## T43 - Avatar, kind badge and name components (PROF-08, PROF-09)
 
 `web/src/components/intelligence/` holds the profile pieces every later page reuses. They take

@@ -17,22 +17,22 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
-	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
 )
 
-// ErrNotRegistered means an agent token named an agent that never connected (403).
+// ErrNotRegistered means the agent a request resolved is gone (403): it was deleted meanwhile.
 var ErrNotRegistered = errors.New("agent not registered")
 
-// MaxAgentsPerOwner is the most agents one user can register; a token cannot create agents
-// without bound by connecting under new names.
-const MaxAgentsPerOwner = 50
+// MaxAgentsPerOwner is the most AIs one user can have. Every folder a session starts in is a
+// permanent identity, so a token cannot create identities without bound.
+const MaxAgentsPerOwner = 200
 
 // ErrAgentLimit answers the registration of a new agent beyond MaxAgentsPerOwner (409).
 var ErrAgentLimit = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "agent limit reached")
@@ -80,6 +80,8 @@ type Deps struct {
 	Access   *access.Authorizer
 	Bus      *events.Bus
 	Presence *Presence
+	// Audit records the adoption of a v0.3 identity (MIG-02); optional.
+	Audit *audit.Log
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
 }
@@ -91,13 +93,25 @@ type Registry struct {
 	az       *access.Authorizer
 	bus      *events.Bus
 	presence *Presence
+	audit    *audit.Log
 	now      func() time.Time
 	posts    *postLimiter
 
-	// allocMu serializes the sessions whose agent name the server picks (Identity.Allocates),
-	// from the name choice until the agent is online (WebSocket) or held (registration), so
-	// two sessions never pick the same name (ID-01).
+	// allocMu serializes the creation and adoption of folder identities (ResolveFolder), so
+	// concurrent sessions of one new folder end up with the same identity.
 	allocMu sync.Mutex
+
+	// appMu serializes the app of an AI: a live session sets it when it attaches, a tools-only
+	// call only while nobody is connected, and the check and the write of the latter must not
+	// interleave with an attach (AID-04).
+	appMu sync.Mutex
+	// afterAppCheck runs after a tools-only call found nobody connected and before it writes the
+	// app; tests use it to attach a session in between. Nil in production.
+	afterAppCheck func()
+
+	// machines is the last sighting written per machine (touchMachine), guarded by machinesMu.
+	machinesMu sync.Mutex
+	machines   map[machineKey]machineSeen
 }
 
 // NewRegistry returns a Registry.
@@ -106,8 +120,8 @@ func NewRegistry(d Deps) *Registry {
 		d.Now = time.Now
 	}
 	return &Registry{
-		store: d.Store, az: d.Access, bus: d.Bus, presence: d.Presence, now: d.Now,
-		posts: newPostLimiter(PostLimit, PostWindow, d.Now),
+		store: d.Store, az: d.Access, bus: d.Bus, presence: d.Presence, audit: d.Audit, now: d.Now,
+		posts: newPostLimiter(PostLimit, PostWindow, d.Now), machines: map[machineKey]machineSeen{},
 	}
 }
 
@@ -119,72 +133,20 @@ type Agent struct {
 	// ProjectSlug and ProjectName describe the agent's project; empty without one.
 	ProjectSlug string
 	ProjectName string
+	// Handle and ProfileName are the @handle and the display name of the agent's intelligence;
+	// empty for an agent without one.
+	Handle      string
+	ProfileName string
 	// Level is manage for the owner and use for grantees.
 	Level access.Level
 	// Online tells whether the agent has a live connection.
 	Online bool
 }
 
-// Upsert returns the owner's agent named Slug(name), creating it on first use (AGT-01). It
-// is idempotent per (owner, name).
-func (r *Registry) Upsert(ctx context.Context, ownerID, name string) (db.Agent, error) {
-	name = Slug(name)
-	var out db.Agent
-	err := r.store.WithTx(ctx, func(q *db.Queries) error {
-		var err error
-		out, err = q.GetAgentByName(ctx, db.GetAgentByNameParams{OwnerID: ownerID, Name: name})
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err // an existing agent, or a failure
-		}
-		n, err := q.CountAgentsByOwner(ctx, ownerID)
-		if err != nil {
-			return err
-		}
-		if n >= MaxAgentsPerOwner {
-			return ErrAgentLimit
-		}
-		if err := q.InsertAgentIfMissing(ctx, db.InsertAgentIfMissingParams{
-			ID: store.NewID(), OwnerID: ownerID, Name: name, CreatedAt: r.now().UnixMilli(),
-		}); err != nil {
-			return err
-		}
-		out, err = q.GetAgentByName(ctx, db.GetAgentByNameParams{OwnerID: ownerID, Name: name})
-		if err != nil {
-			return err
-		}
-		return r.createIntelligence(ctx, q, out)
-	})
-	return out, err
-}
-
-// createIntelligence gives a newly inserted agent its intelligence (PROF-01): its name and
-// handle derive from the agent name, which a later rename or readable session name updates.
-func (r *Registry) createIntelligence(ctx context.Context, q *db.Queries, a db.Agent) error {
-	_, err := intelligences.Create(ctx, q, intelligences.NewParams{
-		ID: a.ID, Kind: handles.AI, DisplayName: delivery.AgentDisplayName(a), HandleBase: a.Name, Now: r.now(),
-	})
-	return err
-}
-
-// Register resolves the session's agent like a WebSocket connection would (Resolve: the
-// agent cap applies) without bringing it online, and returns it with its owner. A tools-only
-// channel uses it, since it never opens the WebSocket (PUSH-02).
-func (r *Registry) Register(ctx context.Context, ownerID string, id Identity) (db.GetAgentWithOwnerRow, error) {
-	if id.Allocates() {
-		r.allocMu.Lock()
-		defer r.allocMu.Unlock()
-	}
-	a, err := r.resolve(ctx, ownerID, id, false)
-	if err != nil {
-		return db.GetAgentWithOwnerRow{}, err
-	}
-	return r.store.R().GetAgentWithOwner(ctx, a.ID)
-}
-
-// Lookup returns the owner's agent named Slug(name) without creating it; ErrNotRegistered
-// when it does not exist.
-func (r *Registry) Lookup(ctx context.Context, ownerID, name string) (db.Agent, error) {
-	a, err := r.store.R().GetAgentByName(ctx, db.GetAgentByNameParams{OwnerID: ownerID, Name: Slug(name)})
+// ByID returns the agent with the id the server resolved for a request (Principal.AgentID);
+// ErrNotRegistered when it is gone.
+func (r *Registry) ByID(ctx context.Context, id string) (db.Agent, error) {
+	a, err := r.store.R().GetAgent(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return db.Agent{}, ErrNotRegistered
 	}
@@ -286,26 +248,44 @@ func (r *Registry) Get(ctx context.Context, p authn.Principal, agentID string) (
 	if err != nil {
 		return Agent{}, err
 	}
-	return r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.ProjectSlug, row.ProjectName, l), nil
+	return r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.ProjectSlug, row.ProjectName, row.Handle, row.ProfileName, l), nil
 }
 
-func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, projectSlug, projectName string, l access.Level) Agent {
+func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, projectSlug, projectName, handle, profileName string, l access.Level) Agent {
 	return Agent{
 		Agent: a, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay,
-		ProjectSlug: projectSlug, ProjectName: projectName, Level: l, Online: r.presence.Online(a.ID),
+		ProjectSlug: projectSlug, ProjectName: projectName, Handle: handle, ProfileName: profileName,
+		Level: l, Online: r.presence.Online(a.ID),
 	}
 }
 
 // DisplayName is the name people read for the agent (delivery.AgentDisplayName).
 func DisplayName(a db.Agent) string { return delivery.AgentDisplayName(a) }
 
+// GoesBy is the name an agent goes by in the legacy name fields of the API: its @handle, else
+// the name its row has.
+func GoesBy(handle, name string) string {
+	if handle != "" {
+		return handle
+	}
+	return name
+}
+
+// NameOf is the name people read for an agent: its profile's display name, else DisplayName.
+func NameOf(profileName string, a db.Agent) string {
+	if profileName != "" {
+		return profileName
+	}
+	return DisplayName(a)
+}
+
 // ListVisible returns the agents the user owns plus those shared with the user (use grants,
-// own or everyone), by name. Archived agents are left out unless includeArchived (PROJ-03).
-func (r *Registry) ListVisible(ctx context.Context, p authn.Principal, includeArchived bool) ([]Agent, error) {
+// own or everyone), by name.
+func (r *Registry) ListVisible(ctx context.Context, p authn.Principal) ([]Agent, error) {
 	if p.Kind != authn.KindUser {
 		return nil, access.ErrForbidden
 	}
-	rows, err := r.store.R().ListAgentsForUser(ctx, db.ListAgentsForUserParams{UserID: p.UserID, IncludeArchived: includeArchived})
+	rows, err := r.store.R().ListAgentsForUser(ctx, p.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +295,7 @@ func (r *Registry) ListVisible(ctx context.Context, p authn.Principal, includeAr
 		if row.Agent.OwnerID == p.UserID {
 			l = dto.LevelManage
 		}
-		out = append(out, r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.ProjectSlug, row.ProjectName, l))
+		out = append(out, r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.ProjectSlug, row.ProjectName, row.Handle, row.ProfileName, l))
 	}
 	return out, nil
 }
@@ -325,12 +305,13 @@ type AgentUpdate struct {
 	Description *string
 	// DisplayName renames the agent (ID-04): 1 to 64 characters after trimming.
 	DisplayName *string
-	// Fixed promotes a temporary agent to fixed (ID-05); only true is accepted.
+	// Fixed is accepted for clients from before folders: every AI is permanent, so true changes
+	// nothing and false is refused.
 	Fixed *bool
 }
 
-// Update changes the agent's description, display name or kind; requires ownership
-// (manage). An invalid field changes nothing (422).
+// Update changes the agent's description or display name; requires ownership (manage). An
+// invalid field changes nothing (422).
 func (r *Registry) Update(ctx context.Context, p authn.Principal, agentID string, u AgentUpdate) (Agent, error) {
 	if _, err := r.authorize(ctx, p, agentID, dto.LevelManage); err != nil {
 		return Agent{}, err
@@ -347,7 +328,7 @@ func (r *Registry) Update(ctx context.Context, p authn.Principal, agentID string
 		}
 	}
 	if u.Fixed != nil && !*u.Fixed {
-		check.Add("fixed", "can only be true: a fixed agent stays fixed")
+		check.Add("fixed", "can only be true: an agent is permanent")
 	}
 	if err := check.Err(); err != nil {
 		return Agent{}, err
@@ -371,9 +352,6 @@ func (r *Registry) Update(ctx context.Context, p authn.Principal, agentID string
 			if roomIDs, err = q.ListAgentRoomIDs(ctx, agentID); err != nil {
 				return err
 			}
-		}
-		if u.Fixed != nil {
-			return q.PromoteAgent(ctx, agentID)
 		}
 		return nil
 	})

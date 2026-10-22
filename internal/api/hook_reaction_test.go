@@ -27,7 +27,7 @@ func TestWebhookOutboundReaction(t *testing.T) {
 	target := e.messages(t, room.ID)[0]
 	require.Equal(t, "in-7", target.ExternalID)
 
-	agent := e.alice.Token(dto.TokenKindAgent, "laptop").WithHeader(dto.HeaderAgent, "builder")
+	agent := e.alice.Token(dto.TokenKindAgent, "laptop").AsAgent("builder")
 	r := testkit.Decode[dto.Message](agent.Post("/api/v1/agent/messages/"+target.ID+"/react", dto.ReactRequest{Emoji: "🎉"}).RequireStatus(http.StatusCreated))
 
 	call := e.out.next(t)
@@ -59,7 +59,7 @@ func TestWebhookOutboundReactionUnsigned(t *testing.T) {
 		RequireStatus(http.StatusAccepted)
 	target := e.messages(t, room.ID)[0]
 
-	agent := e.alice.Token(dto.TokenKindAgent, "laptop").WithHeader(dto.HeaderAgent, "builder")
+	agent := e.alice.Token(dto.TokenKindAgent, "laptop").AsAgent("builder")
 	r := testkit.Decode[dto.Message](agent.Post("/api/v1/agent/messages/"+target.ID+"/react", dto.ReactRequest{Emoji: "👍"}).RequireStatus(http.StatusCreated))
 
 	call := e.out.next(t)

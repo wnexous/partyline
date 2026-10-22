@@ -96,7 +96,9 @@ func (q *Queries) SetMachineLabel(ctx context.Context, arg SetMachineLabelParams
 
 const upsertMachine = `-- name: UpsertMachine :exec
 INSERT INTO machines (owner_id, hostname, home, last_seen_at) VALUES (?, ?, ?, ?)
-ON CONFLICT (owner_id, hostname) DO UPDATE SET home = excluded.home, last_seen_at = excluded.last_seen_at
+ON CONFLICT (owner_id, hostname) DO UPDATE SET
+    home = CASE WHEN excluded.home <> '' THEN excluded.home ELSE machines.home END,
+    last_seen_at = excluded.last_seen_at
 `
 
 type UpsertMachineParams struct {
@@ -106,6 +108,8 @@ type UpsertMachineParams struct {
 	LastSeenAt sql.NullInt64
 }
 
+// A sighting of the machine: its home folder when the session sent one (an empty home keeps
+// the stored one) and the time. The owner's label is never touched.
 func (q *Queries) UpsertMachine(ctx context.Context, arg UpsertMachineParams) error {
 	_, err := q.db.ExecContext(ctx, upsertMachine,
 		arg.OwnerID,

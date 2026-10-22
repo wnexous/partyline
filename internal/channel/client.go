@@ -18,12 +18,11 @@ import (
 // errUnreachable is the tool error when the server cannot be reached.
 var errUnreachable = errors.New("partyline: server unreachable")
 
-// client calls the agent REST API (Authorization: Bearer + X-Partyline-Agent, plus the
-// session's project, harness and machine headers).
+// client calls the agent REST API (Authorization: Bearer plus the identity headers: the AI is
+// the one of the token's owner, machine and folder).
 type client struct {
 	base     *url.URL
 	token    string
-	agent    func() string // the agent name in use
 	identity Identity
 	http     *http.Client
 }
@@ -32,11 +31,6 @@ type client struct {
 // response for 2xx statuses. Other statuses become errors whose text the tools show (the
 // server's own message for 4xx, e.g. "not a member of room <room>" or "rate limited: ...").
 func (c *client) do(ctx context.Context, method, path string, q url.Values, contentType string, body io.Reader) (*http.Response, error) {
-	return c.send(ctx, method, path, q, contentType, body, c.agent(), "")
-}
-
-// send is do with the agent name and mode to send (none when empty).
-func (c *client) send(ctx context.Context, method, path string, q url.Values, contentType string, body io.Reader, agent, mode string) (*http.Response, error) {
 	u := c.base.JoinPath("api/v1", path)
 	u.RawQuery = q.Encode()
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
@@ -44,12 +38,6 @@ func (c *client) send(ctx context.Context, method, path string, q url.Values, co
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	if agent != "" {
-		req.Header.Set(dto.HeaderAgent, agent)
-	}
-	if mode != "" {
-		req.Header.Set(dto.HeaderAgentMode, mode)
-	}
 	c.identity.setHeaders(req.Header)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
@@ -114,21 +102,4 @@ func (c *client) json(ctx context.Context, method, path string, q url.Values, v,
 		return fmt.Errorf("partyline: unexpected answer: %w", err)
 	}
 	return nil
-}
-
-// register registers the session's agent without a WebSocket (POST /agent/register, PUSH-02)
-// and returns it: the agent named name in mode (an explicit name with no mode, a temporary
-// agent's name with mode temporary), or a new temporary agent of the session's project and
-// harness when name is empty (ID-01).
-func (c *client) register(ctx context.Context, name, mode string) (dto.AgentInfo, error) {
-	resp, err := c.send(ctx, http.MethodPost, "agent/register", nil, "", nil, name, mode)
-	if err != nil {
-		return dto.AgentInfo{}, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	var info dto.AgentInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
-		return dto.AgentInfo{}, fmt.Errorf("partyline: unexpected answer: %w", err)
-	}
-	return info, nil
 }

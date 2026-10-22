@@ -42,6 +42,9 @@ const (
 	ActionConnectorIdentitiesReset = "connector.identities_reset"
 	// ActionWebhookRejected is a hook request refused for its signature or timestamp.
 	ActionWebhookRejected = "webhook.rejected"
+	// ActionAgentAdopt records a v0.3 identity linked to the folder of its first session
+	// (MIG-02).
+	ActionAgentAdopt = "agent.adopt"
 )
 
 // Target kinds.
@@ -51,6 +54,7 @@ const (
 	TargetInvite    = "invite"
 	TargetToken     = "token"
 	TargetConnector = "connector"
+	TargetAgent     = "agent"
 )
 
 // PageSize is the number of entries per page (AUD-02).

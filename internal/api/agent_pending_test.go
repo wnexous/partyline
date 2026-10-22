@@ -15,7 +15,7 @@ import (
 type pendingEnv struct {
 	env    *testkit.Env
 	alice  *testkit.Client
-	agent  *testkit.Client // agent token, X-Partyline-Agent: codex-box
+	agent  *testkit.Client // agent token acting as the AI of the folder /work/codex-box
 	room   dto.Room
 	id     string // the agent's id
 	member string // its room member id
@@ -26,7 +26,7 @@ func newPendingEnv(t *testing.T) pendingEnv {
 	t.Helper()
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
-	agent := alice.Token(dto.TokenKindAgent, "laptop").WithHeader(dto.HeaderAgent, "codex-box")
+	agent := alice.Token(dto.TokenKindAgent, "laptop").AsAgent("codex-box")
 	info := testkit.Decode[dto.AgentInfo](agent.Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
 	room := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Builds"}).RequireStatus(http.StatusCreated))
 	member := testkit.Decode[dto.RoomMember](alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: info.ID}).RequireStatus(http.StatusCreated))
@@ -134,11 +134,15 @@ func TestAgentPendingRefusesPushedSessions(t *testing.T) {
 	require.Equal(t, "messages are pushed to this agent's session; there is nothing to wait for", err.Message)
 }
 
-// Auth matrix: agent tokens of registered agents only.
+// Auth matrix: agent tokens only. A folder the server has not seen gets its AI on this first
+// call (AID-04) and nothing is pending for it.
 func TestAgentPendingAuth(t *testing.T) {
 	e := newPendingEnv(t)
-	e.alice.Token(dto.TokenKindAgent, "other").WithHeader(dto.HeaderAgent, "never-seen").Get("/api/v1/agent/pending").
-		RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	before := len(ownedAIs(t, e.alice))
+	fresh := testkit.Decode[dto.List[dto.AgentMessage]](e.alice.Token(dto.TokenKindAgent, "other").AsAgent("never-seen").Get("/api/v1/agent/pending").
+		RequireStatus(http.StatusOK))
+	require.Empty(t, fresh.Items)
+	require.Len(t, ownedAIs(t, e.alice), before+1, "the call created the AI of the unseen folder")
 	e.alice.Token(dto.TokenKindUser, "cli").Get("/api/v1/agent/pending").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	e.env.Anon().WithHeader(dto.HeaderAgent, "codex-box").Get("/api/v1/agent/pending").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	e.env.Anon().AsAgent("codex-box").Get("/api/v1/agent/pending").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }

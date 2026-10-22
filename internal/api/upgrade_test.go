@@ -38,8 +38,9 @@ func v03Database(t *testing.T) string {
 	return path
 }
 
-// GRP-01, MIG-01: after the upgrade, the v0.3 catch-all room of the telegram connector still
-// routes both ways: a DM from a chat already in the room and a DM from a new chat reach the
+// GRP-01, MIG-01, MIG-02: after the upgrade, the first session in a folder called atlas adopts
+// the v0.3 agent atlas, and the v0.3 catch-all room of the telegram connector still routes both
+// ways through it: a DM from a chat already in the room and a DM from a new chat reach the
 // agent member, and the agent's reply goes out to the chat through the outbox.
 func TestUpgradedCatchAllRouteDeliversBothWays(t *testing.T) {
 	ctx := context.Background()
@@ -56,7 +57,7 @@ func TestUpgradedCatchAllRouteDeliversBothWays(t *testing.T) {
 	alice := env.Anon().WithBearer(secret)
 	agent, _ := alice.DialAgent("atlas")
 	require.NotNil(t, agent)
-	agent.Welcome(connectortest.Timeout)
+	require.Equal(t, "a-atlas", agent.Welcome(connectortest.Timeout).Agent.ID, "the folder adopted the v0.3 agent")
 	require.Equal(t, "r-ops", agent.Notice(connectortest.Timeout).Room.ID, "ops keeps its instructions")
 
 	inst.Emit(ctx, connectors.Inbound{
@@ -70,7 +71,7 @@ func TestUpgradedCatchAllRouteDeliversBothWays(t *testing.T) {
 	require.Equal(t, "c-tgdm", got.Message.AuthorID)
 	agent.Ack(got.Message.ID)
 
-	reply := testkit.Decode[dto.Message](alice.WithHeader(dto.HeaderAgent, "atlas").
+	reply := testkit.Decode[dto.Message](alice.AsAgent("atlas").
 		Post("/api/v1/agent/messages/"+got.Message.ID+"/reply", dto.ReplyRequest{Text: "tem sim, às 10h"}).
 		RequireStatus(http.StatusCreated))
 	require.Equal(t, "a-atlas", reply.AuthorID)

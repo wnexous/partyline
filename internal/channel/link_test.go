@@ -90,7 +90,7 @@ func TestLinkDedupesRepeatedMessage(t *testing.T) {
 		Message: dto.Message{ID: "m1", RoomID: "r1", Seq: 1, AuthorKind: dto.AuthorKindUser, AuthorName: "Alice", Kind: dto.MessageKindText, Text: "hi"},
 	}}
 	url, acks := fakeGateway(t, frame, frame)
-	o := Options{URL: url, Token: "pl_agent_test", Agent: "builder", TempDir: t.TempDir(), timing: fastTiming}
+	o := Options{URL: url, Token: "pl_agent_test", Machine: "testbox", Folder: "/work/builder", TempDir: t.TempDir(), timing: fastTiming}
 	s := startSession(t, o)
 	s.handshake()
 
@@ -109,7 +109,7 @@ func TestLinkDedupesRepeatedMessage(t *testing.T) {
 // AGT-10 (design: dedupe window of 1,000 ids): the link remembers the last 1,000 delivered
 // message ids; the 1,001st evicts only the oldest, which would then be notified again.
 func TestLinkDedupeWindowHoldsThousandIDs(t *testing.T) {
-	l := newLink(mustURL(t, "http://127.0.0.1"), "pl_agent_test", "builder", http.DefaultClient, discard{}, io.Discard, fastTiming)
+	l := newLink(mustURL(t, "http://127.0.0.1"), "pl_agent_test", builderIdentity, http.DefaultClient, discard{}, io.Discard, fastTiming)
 	id := func(i int) string { return fmt.Sprintf("m%d", i) }
 	for i := range 1000 {
 		l.remember(id(i))
@@ -132,7 +132,7 @@ func TestLinkAcksOnlyAfterNotificationWritten(t *testing.T) {
 		Message: dto.Message{ID: "m1", RoomID: "r1", Seq: 1, AuthorKind: dto.AuthorKindUser, Kind: dto.MessageKindText, Text: "hi"},
 	}}
 	url, acks := fakeGateway(t, frame)
-	s := startSession(t, Options{URL: url, Token: "pl_agent_test", Agent: "builder", TempDir: t.TempDir(), timing: fastTiming})
+	s := startSession(t, Options{URL: url, Token: "pl_agent_test", Machine: "testbox", Folder: "/work/builder", TempDir: t.TempDir(), timing: fastTiming})
 	select {
 	case id := <-acks:
 		require.FailNow(t, "ack before the notification was written", id)
@@ -201,7 +201,7 @@ func TestLinkReadsSocketBeforeInitialized(t *testing.T) {
 		return srv.URL, pinged, acks
 	}
 	options := func(url string) Options {
-		return Options{URL: url, Token: "pl_agent_test", Agent: "builder", TempDir: t.TempDir(), timing: fastTiming}
+		return Options{URL: url, Token: "pl_agent_test", Machine: "testbox", Folder: "/work/builder", TempDir: t.TempDir(), timing: fastTiming}
 	}
 
 	t.Run("ping answered, messages held until initialized", func(t *testing.T) {
@@ -229,7 +229,7 @@ func TestLinkReadsSocketBeforeInitialized(t *testing.T) {
 	t.Run("close seen before initialized", func(t *testing.T) {
 		url, _, _ := gateway(t, closeDeleted)
 		s := startSession(t, options(url))
-		require.Eventually(t, func() bool { return strings.Contains(s.stderr.String(), "agent builder was deleted") }, wait, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return strings.Contains(s.stderr.String(), "this agent was deleted") }, wait, 10*time.Millisecond)
 	})
 }
 
@@ -295,7 +295,7 @@ func mustURL(t *testing.T, raw string) *url.URL {
 
 func linkFor(t *testing.T, e *chanEnv, tm timing) *link {
 	t.Helper()
-	l := newLink(mustURL(t, e.env.URL), e.secret, "builder", http.DefaultClient, discard{}, &syncBuffer{}, tm)
+	l := newLink(mustURL(t, e.env.URL), e.secret, builderIdentity, http.DefaultClient, discard{}, &syncBuffer{}, tm)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { _ = l.run(ctx); close(done) }()
@@ -321,31 +321,6 @@ func TestLinkErrInvalidToken(t *testing.T) {
 	require.EqualError(t, l.Err(), "partyline: not connected (invalid token)")
 }
 
-// Contract (close 4000 replaced): the replaced channel stops reconnecting for the pause,
-// reports the replacement through Err, then connects again.
-func TestLinkPausesAfterReplaced(t *testing.T) {
-	e := newChanEnv(t)
-	tm := fastTiming
-	tm.replacedPause = 3 * time.Second
-	l := linkFor(t, e, tm)
-	require.Eventually(t, func() bool { return e.online() && l.Err() == nil }, wait, 10*time.Millisecond)
-
-	other, resp := e.alice.WithBearer(e.secret).DialAgent("builder")
-	require.NotNil(t, other, "upgrade refused: %d", resp.Status)
-	other.Welcome(wait)
-	require.Eventually(t, func() bool { return l.Err() != nil }, wait, 10*time.Millisecond)
-	require.EqualError(t, l.Err(), "partyline: replaced by another session using agent name builder")
-
-	// No fight during the pause: the newer connection stays open.
-	require.NoError(t, other.Closed(time.Second))
-
-	// After the pause the channel connects again and replaces it.
-	err := other.Closed(wait)
-	require.Error(t, err)
-	require.Equal(t, closeReplaced, websocket.CloseStatus(err))
-	require.Eventually(t, func() bool { return l.Err() == nil }, wait, 10*time.Millisecond)
-}
-
 // Contract (close 4001 deleted): after the agent is deleted the channel stops reconnecting.
 func TestLinkStopsAfterDeleted(t *testing.T) {
 	e := newChanEnv(t)
@@ -354,7 +329,7 @@ func TestLinkStopsAfterDeleted(t *testing.T) {
 
 	e.alice.Delete("/api/v1/agents/" + e.agentID).RequireStatus(http.StatusNoContent)
 	require.Eventually(t, func() bool { return l.Err() != nil }, wait, 10*time.Millisecond)
-	require.EqualError(t, l.Err(), "partyline: agent builder was deleted; restart Claude Code to register it again")
+	require.EqualError(t, l.Err(), "partyline: this agent was deleted; restart the session to register it again")
 
 	time.Sleep(4 * fastTiming.maxBackoff)
 	var list dto.List[dto.Agent]
@@ -430,7 +405,7 @@ func TestLinkBacksOffWhileUnreachable(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ln.Close()) // nothing listens there now: every dial fails at once
 
-	l := newLink(base, "pl_agent_x", "builder", &http.Client{}, discardNotifier{}, io.Discard, defaultTiming)
+	l := newLink(base, "pl_agent_x", builderIdentity, &http.Client{}, discardNotifier{}, io.Discard, defaultTiming)
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 	var waits []time.Duration
@@ -458,8 +433,8 @@ func TestLinkReportsAgentLimit(t *testing.T) {
 	t.Cleanup(srv.Close)
 	stderr := &syncBuffer{}
 	tm := fastTiming
-	tm.replacedPause = 120 * time.Millisecond // distinct from minBackoff (50 ms)
-	l := newLink(mustURL(t, srv.URL), "pl_agent_x", "builder", http.DefaultClient, discard{}, stderr, tm)
+	tm.limitPause = 120 * time.Millisecond // distinct from minBackoff (50 ms)
+	l := newLink(mustURL(t, srv.URL), "pl_agent_x", builderIdentity, http.DefaultClient, discard{}, stderr, tm)
 	var waitsMu sync.Mutex
 	var waits []time.Duration
 	l.sleep = func(ctx context.Context, d time.Duration) bool {
@@ -475,13 +450,13 @@ func TestLinkReportsAgentLimit(t *testing.T) {
 
 	require.Eventually(t, func() bool { return l.Err() != nil }, wait, 10*time.Millisecond)
 	require.EqualError(t, l.Err(), "partyline: agent limit reached for this account; delete unused agents in the web app")
-	time.Sleep(4 * tm.replacedPause) // several retries
+	time.Sleep(4 * tm.limitPause) // several retries
 	require.Equal(t, 1, strings.Count(stderr.String(), "agent limit reached"), "stderr: %q", stderr.String())
 	waitsMu.Lock()
 	defer waitsMu.Unlock()
 	require.NotEmpty(t, waits)
 	for _, d := range waits {
-		require.Equal(t, tm.replacedPause, d, "retries after a refusal wait the long pause, not the backoff")
+		require.Equal(t, tm.limitPause, d, "retries after a refusal wait the long pause, not the backoff")
 	}
 }
 
@@ -540,7 +515,7 @@ func TestLinkDropsConnectionWhenQueueIsFull(t *testing.T) {
 			_ = c.Write(ctx, websocket.MessageText, []byte(fmt.Sprintf(`{"type":"notice","text":"n%d"}`, i)))
 		}
 	})
-	l := newLink(base, "pl_agent_x", "builder", http.DefaultClient, neverReady{}, &syncBuffer{}, fastTiming)
+	l := newLink(base, "pl_agent_x", builderIdentity, http.DefaultClient, neverReady{}, &syncBuffer{}, fastTiming)
 	l.queueCap = 3
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -560,7 +535,7 @@ func TestLinkRefusesOversizedFrame(t *testing.T) {
 	base, closed := fakeAgentServer(t, func(ctx context.Context, c *websocket.Conn) {
 		_ = c.Write(ctx, websocket.MessageText, []byte(`{"type":"notice","text":"`+strings.Repeat("x", 4096)+`"}`))
 	})
-	l := newLink(base, "pl_agent_x", "builder", http.DefaultClient, discard{}, &syncBuffer{}, fastTiming)
+	l := newLink(base, "pl_agent_x", builderIdentity, http.DefaultClient, discard{}, &syncBuffer{}, fastTiming)
 	l.readLimit = 1024
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -577,7 +552,7 @@ func TestLinkRefusesOversizedFrame(t *testing.T) {
 
 // The production limits stay at their documented values.
 func TestLinkDefaultLimits(t *testing.T) {
-	l := newLink(mustURL(t, "http://127.0.0.1:1"), "t", "a", http.DefaultClient, discard{}, &syncBuffer{}, fastTiming)
+	l := newLink(mustURL(t, "http://127.0.0.1:1"), "t", builderIdentity, http.DefaultClient, discard{}, &syncBuffer{}, fastTiming)
 	require.Equal(t, 2000, l.queueCap)
 	require.Equal(t, int64(1<<20), l.readLimit)
 }

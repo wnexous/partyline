@@ -7,15 +7,17 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/channel"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 	"github.com/wnexous/partyline/internal/users"
 )
@@ -73,8 +75,9 @@ func startChannelWith(t *testing.T, args []string, env map[string]string, wd str
 	}()
 	std := stdio{
 		stdin: inR, stdout: outW, stderr: c.stderr,
-		getenv: func(k string) string { return env[k] },
-		getwd:  func() (string, error) { return wd, nil },
+		getenv:   func(k string) string { return env[k] },
+		getwd:    func() (string, error) { return wd, nil },
+		hostname: func() (string, error) { return testMachine, nil },
 	}
 	if ancestor != nil {
 		std.launcherEnv = func() map[string]string { return ancestor }
@@ -122,29 +125,78 @@ func newChannelEnv(t *testing.T) *channelEnv {
 	return &channelEnv{env: env, alice: alice, secret: secret}
 }
 
-// agent waits until alice's agent named name is listed online and returns it.
-func (e *channelEnv) agent(t *testing.T, name string) dto.Agent {
+// testMachine is the hostname every CLI test process reports.
+const testMachine = "testbox"
+
+// aiAt creates alice's AI of the folder on the test machine, as its first session would, and
+// returns it.
+func (e *channelEnv) aiAt(t *testing.T, folder string) db.Agent {
 	t.Helper()
-	var found dto.Agent
-	require.Eventually(t, func() bool {
-		list := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK))
-		for _, a := range list.Items {
-			if a.Name == name && a.Online {
-				found = a
-				return true
-			}
+	a, err := e.env.App.Agents.ResolveFolder(context.Background(), e.alice.User.ID, agents.FolderID{Machine: testMachine, Folder: folder}, false)
+	require.NoError(t, err)
+	return a
+}
+
+// legacy creates an identity of alice the way v0.3 left it, one without a folder, and returns its
+// id (MIG-02).
+func (e *channelEnv) legacy(t *testing.T, name string) string {
+	t.Helper()
+	return e.env.NewLegacyAI(e.alice, name)
+}
+
+// aiOf returns the profile of alice's AI of the folder (any machine), and whether it is online.
+func (e *channelEnv) aiOf(t *testing.T, folder string) (dto.IntelligenceProfile, bool) {
+	t.Helper()
+	for _, a := range testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items {
+		prof := testkit.Decode[dto.IntelligenceProfile](e.alice.Get("/api/v1/intelligences/" + a.ID).RequireStatus(http.StatusOK))
+		if prof.AI != nil && prof.AI.Folder == folder {
+			return prof, a.Online
 		}
-		return false
-	}, chanWait, 20*time.Millisecond)
+	}
+	return dto.IntelligenceProfile{}, false
+}
+
+// ai waits until alice's AI of the folder is online and returns its profile.
+func (e *channelEnv) ai(t *testing.T, folder string) dto.IntelligenceProfile {
+	t.Helper()
+	var found dto.IntelligenceProfile
+	require.Eventually(t, func() bool {
+		prof, online := e.aiOf(t, folder)
+		found = prof
+		return prof.ID != "" && online
+	}, chanWait, 20*time.Millisecond, "no online AI in %s", folder)
 	return found
 }
 
-// AGT-01, MCP-01, TOOL-02 end to end: Claude Code's handshake, the agent comes online under
-// the slug of the working directory name, a room message arrives as a channel notification
-// and the reply tool stores the reply in the room.
+// registered waits until alice has an AI of the folder, online or not, and returns its profile.
+func (e *channelEnv) registered(t *testing.T, folder string) dto.IntelligenceProfile {
+	t.Helper()
+	var found dto.IntelligenceProfile
+	require.Eventually(t, func() bool {
+		found, _ = e.aiOf(t, folder)
+		return found.ID != ""
+	}, chanWait, 20*time.Millisecond, "no AI in %s", folder)
+	return found
+}
+
+// folders lists the folders of alice's AIs.
+func (e *channelEnv) folders(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	for _, a := range testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items {
+		prof := testkit.Decode[dto.IntelligenceProfile](e.alice.Get("/api/v1/intelligences/" + a.ID).RequireStatus(http.StatusOK))
+		out = append(out, prof.AI.Folder)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// AGT-01, MCP-01, TOOL-02, AID-01 end to end: Claude Code's handshake, the AI of the working
+// directory comes online with the directory's name, a room message arrives as a channel
+// notification and the reply tool stores the reply in the room.
 func TestChannelEndToEnd(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret}, "/home/someone/src/My Project")
+	c := startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "HOME": "/home/someone"}, "/home/someone/src/My Project")
 
 	c.send(map[string]any{"jsonrpc": "2.0", "id": "server-discover-probe-1", "method": "server/discover", "params": map[string]any{}})
 	m := c.next()
@@ -161,14 +213,13 @@ func TestChannelEndToEnd(t *testing.T) {
 	require.Equal(t, channel.Instructions, res["instructions"], "MCP-02: the real channel instructions")
 	c.send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
 
-	agent := e.agent(t, "my-project-claude")
-	host, err := os.Hostname()
-	require.NoError(t, err)
-	require.Equal(t, []any{"My Project · Claude Code", "claude", host, dto.AgentKindTemporary, "My Project"},
-		[]any{agent.DisplayName, agent.Harness, agent.Machine, agent.Kind, agent.Project.Name},
-		"ID-01: the session's project, harness and machine reach the server")
+	prof := e.ai(t, "/home/someone/src/My Project")
+	agent := prof.AI
+	require.Equal(t, []any{"My Project", "my-project", "claude", testMachine, "~/src/My Project"},
+		[]any{prof.DisplayName, prof.Handle, agent.App, agent.Machine, agent.FolderLabel},
+		"AID-01: the session's machine, folder and harness reach the server")
 	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
-	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agent.ID}).RequireStatus(http.StatusCreated)
+	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: prof.ID}).RequireStatus(http.StatusCreated)
 	question := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "reply with pong"}).RequireStatus(http.StatusCreated))
 
 	n := c.next()
@@ -194,7 +245,7 @@ func TestChannelEndToEnd(t *testing.T) {
 	require.Equal(t, "pong", reply.Text)
 	require.Equal(t, question.ID, reply.ReplyTo)
 	require.Equal(t, dto.AuthorKindAgent, reply.AuthorKind)
-	require.Equal(t, agent.ID, reply.AuthorID)
+	require.Equal(t, prof.ID, reply.AuthorID)
 
 	// Claude Code exits: stdin closes, the command exits 0 and the agent goes offline.
 	require.NoError(t, c.in.Close())
@@ -204,25 +255,31 @@ func TestChannelEndToEnd(t *testing.T) {
 	case <-time.After(chanWait):
 		require.FailNow(t, "channel did not exit")
 	}
-	require.Eventually(t, func() bool { return !e.env.App.Gateway.Online(agent.ID) }, chanWait, 20*time.Millisecond)
+	require.Eventually(t, func() bool { return !e.env.App.Gateway.Online(prof.ID) }, chanWait, 20*time.Millisecond)
 }
 
-// The --url, --token and --agent flags win over the environment.
+// The --url, --token and --as flags win over the environment: the legacy identity the flag
+// names is adopted, not the one PARTYLINE_AGENT names.
 func TestChannelFlagsOverrideEnvironment(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, []string{"--url", e.env.URL, "--token", e.secret, "--agent", "Night Shift"},
+	flagged := e.legacy(t, "night-shift")
+	ignored := e.legacy(t, "ignored")
+	c := startChannel(t, []string{"--url", e.env.URL, "--token", e.secret, "--as", "Night Shift"},
 		map[string]string{"PARTYLINE_URL": "http://127.0.0.1:1", "PARTYLINE_TOKEN": "pl_agent_wrong", "PARTYLINE_AGENT": "ignored"}, "/tmp/wd")
 	c.send(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": map[string]any{"protocolVersion": "2025-11-25"}})
 	c.next()
 	c.send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
-	e.agent(t, "night-shift")
+	require.Equal(t, flagged, e.ai(t, "/tmp/wd").ID)
+	prof, _ := e.aiOf(t, "")
+	require.Equal(t, ignored, prof.ID, "the other legacy identity stays unlinked")
 }
 
-// PARTYLINE_AGENT names the agent when no flag is given.
+// PARTYLINE_AGENT names the identity to adopt when no flag is given.
 func TestChannelAgentFromEnvironment(t *testing.T) {
 	e := newChannelEnv(t)
+	billing := e.legacy(t, "billing-api")
 	startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_AGENT": "billing-api"}, "/tmp/wd")
-	e.agent(t, "billing-api")
+	require.Equal(t, billing, e.ai(t, "/tmp/wd").ID)
 }
 
 // Without a URL or token the command fails with usage exit code 2.

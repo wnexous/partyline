@@ -4,8 +4,10 @@
 // `partyline listen` for the project and sends each message to the active session with the
 // SDK's client.session.promptAsync (PUSH-05), framed with the trust line (PUSH-06). The active
 // session is the last top-level session that was created or reported its status; messages that arrive before
-// any session exists wait for one. The tools come from `partyline channel --tools-only` in
-// opencode.json, which acts as the same agent as this listen process.
+// any session exists wait for one. A notice line (another session holds the AI or took it over,
+// SES-04, SES-05) goes to the log instead, and listen is not started again. The tools come from
+// `partyline channel --tools-only` in opencode.json, which acts as the same agent as this listen
+// process.
 //
 // OpenCode calls every export of a plugin file as a plugin: export nothing else.
 
@@ -77,14 +79,19 @@ const MAX_RESTART_MS = 30_000;
 const HEALTHY_RUN_MS = 60_000;
 // listen exits 2 when no instance URL or token is configured; restarting cannot fix that.
 const EXIT_NOT_CONFIGURED = 2;
+// listen exits 3 after printing the notice that another session holds the AI or took it over;
+// restarting it would only fight for the AI.
+const EXIT_SESSION_LOST = 3;
 
 type Listener = { stop(): void };
 
-// superviseListen runs `<binary> listen` in cwd, hands each JSON line to onLine and restarts
-// the process with backoff when it exits; stderr lines and failures go to log.
+// superviseListen runs `<binary> listen` in cwd as the app harness, hands each JSON line to
+// onLine and restarts the process with backoff when it exits; stderr lines and failures go to
+// log.
 function superviseListen(opts: {
 	binary: string;
 	cwd?: string;
+	harness: string;
 	onLine: (record: Record<string, string>) => void;
 	log: (message: string) => void;
 }): Listener {
@@ -113,9 +120,8 @@ function superviseListen(opts: {
 		let ended = false;
 		const proc = spawn(opts.binary, ["listen"], {
 			cwd: opts.cwd,
-			// listen records its agent name under this key for the tools-only MCP server, which
-			// runs as another child of this process.
-			env: { ...process.env, PARTYLINE_SESSION: String(process.pid) },
+			// listen is the AI of this folder, running in this harness.
+			env: { ...process.env, PARTYLINE_HARNESS: opts.harness },
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 		child = proc;
@@ -146,6 +152,7 @@ function superviseListen(opts: {
 				opts.log("partyline: listen is not configured; run partyline setup, then restart the session");
 				return;
 			}
+			if (code === EXIT_SESSION_LOST) return; // the notice was shown when its line arrived
 			if (Date.now() - startedAt >= HEALTHY_RUN_MS) delay = MIN_RESTART_MS;
 			opts.log(`partyline: listen exited (code ${code}); restarting in ${delay / 1000}s`);
 			timer = setTimeout(start, delay);
@@ -199,8 +206,14 @@ export const PartylinePlugin = async ({ client, directory }: { client: Client; d
 	const listener = superviseListen({
 		binary: PARTYLINE_BINARY,
 		cwd: directory,
+		harness: "opencode",
 		log,
 		onLine: (record) => {
+			// A notice (another session holds the AI) is for the person, not for the model.
+			if (record.type === "notice") {
+				log(record.content ?? "");
+				return;
+			}
 			const text = frame(record);
 			if (active) prompt(active, text);
 			else waiting.push(text);

@@ -29,11 +29,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/app"
+	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/handles"
+	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/users"
 )
@@ -172,6 +177,37 @@ func (e *Env) Restart() {
 	e.T.Helper()
 	require.NoError(e.T, e.App.Shutdown(context.Background()))
 	e.startApp()
+}
+
+// NewAI creates owner's AI of the folder FolderOf(name), as its first session would, gives it
+// name as display name (its handle derives from the folder's name) and returns its id. It is
+// idempotent per (owner, name).
+func (e *Env) NewAI(owner *Client, name string) string {
+	e.T.Helper()
+	ctx := context.Background()
+	f := FolderOf(name)
+	a, err := e.App.Agents.ResolveFolder(ctx, owner.User.ID, agents.FolderID{Machine: f.Machine, Folder: f.Path, Harness: f.Harness}, false)
+	require.NoError(e.T, err)
+	p := authn.Principal{Kind: authn.KindUser, UserID: owner.User.ID, Role: string(owner.User.Role)}
+	_, err = e.App.Intelligences.Update(ctx, p, a.ID, intelligences.ProfileUpdate{DisplayName: &name})
+	require.NoError(e.T, err)
+	return a.ID
+}
+
+// NewLegacyAI creates an AI of the owner the way v0.3 left it, named name and without a folder:
+// the first session that adopts it (--as name) links it to its folder (MIG-02). It returns its id.
+func (e *Env) NewLegacyAI(owner *Client, name string) string {
+	e.T.Helper()
+	ctx := context.Background()
+	id := store.NewID()
+	require.NoError(e.T, e.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		if err := q.CreateAgent(ctx, db.CreateAgentParams{ID: id, OwnerID: owner.User.ID, Name: name, CreatedAt: time.Now().UnixMilli()}); err != nil {
+			return err
+		}
+		_, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: id, Kind: handles.AI, DisplayName: name, HandleBase: name, Now: time.Now()})
+		return err
+	}))
+	return id
 }
 
 // Anon returns a client without credentials (it keeps cookies it receives).

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"slices"
 	"sync"
 	"time"
@@ -89,6 +90,9 @@ type Gateway struct {
 	// afterBacklogCount runs between the backlog count and list reads; tests use it to post
 	// a message in between. Nil in production.
 	afterBacklogCount func()
+	// beforeAttach runs after the upgrade and before the session attaches; tests use it to let
+	// another process win the race. Nil in production.
+	beforeAttach func()
 }
 
 // NewGateway returns a Gateway.
@@ -163,25 +167,30 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, httpx.NewError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized, "invalid or expired credentials"))
 		return
 	}
-	// A name the server picks (temporary or unique mode) is chosen and attached under one
-	// lock, so two sessions connecting at once never pick the same name (ID-01).
-	release := func() {}
-	id := IdentityFromHeader(r.Header)
-	id.Name = p.AgentName
-	if id.Allocates() {
-		g.d.Registry.allocMu.Lock()
-		release = sync.OnceFunc(g.d.Registry.allocMu.Unlock)
-		defer release()
-	}
-	row, err := g.register(r.Context(), p, id)
+	// The session is the AI of the machine and folder it names (AID-02); a client that names
+	// none is refused (AID-05).
+	row, hs, err := g.register(r.Context(), p, r.Header)
 	if err != nil {
-		if errors.Is(err, ErrAgentLimit) {
+		var refused *httpx.Error
+		switch {
+		case errors.Is(err, ErrAgentLimit):
 			g.d.Logger.WarnContext(r.Context(), "agent: limit reached", "owner_id", p.UserID, "request_id", httpx.RequestID(r.Context()))
-		} else {
+		case errors.As(err, &refused):
+			g.d.Logger.DebugContext(r.Context(), "agent: connection refused", "code", refused.Code, "owner_id", p.UserID, "request_id", httpx.RequestID(r.Context()))
+		default:
 			g.d.Logger.ErrorContext(r.Context(), "agent: register failed", "err", err, "request_id", httpx.RequestID(r.Context()))
 		}
 		httpx.WriteError(w, err)
 		return
+	}
+	// A live session of another process keeps the AI unless this connection takes it over
+	// (SES-02, SES-04); the refusal is told before the upgrade, with who holds it.
+	if !hs.takeover {
+		if live, busy := g.d.Presence.Busy(row.Agent.ID, hs.liveID); busy {
+			g.d.Logger.DebugContext(r.Context(), "agent: connection refused", "code", dto.ErrorCodeIdentityBusy, "agent_id", row.Agent.ID, "request_id", httpx.RequestID(r.Context()))
+			httpx.WriteError(w, busyError(row, live))
+			return
+		}
 	}
 	ws, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -194,11 +203,22 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer stopReq()
 
 	c := &conn{ws: ws, queue: make(chan dto.AgentMessage, QueueSize), cancel: cancel}
-	if err := g.d.Presence.Attach(ctx, row.Agent, c); err != nil {
-		g.d.Logger.ErrorContext(ctx, "agent: attach failed", "agent_id", row.Agent.ID, "err", err)
+	if g.beforeAttach != nil {
+		g.beforeAttach()
 	}
-	defer g.d.Presence.Detach(ctx, row.Agent.ID, c)
-	release()
+	err = g.d.Registry.Attach(ctx, row.Agent, c, hs.harness, hs.liveID, hs.takeover)
+	defer g.d.Presence.Detach(ctx, row.Agent.ID, c) // does nothing for a connection that never attached
+	switch {
+	case errors.Is(err, ErrBusy):
+		// Another process attached between the check above and now: the new socket loses.
+		g.d.Logger.DebugContext(ctx, "agent: connection refused", "code", dto.ErrorCodeIdentityBusy, "agent_id", row.Agent.ID)
+		_ = ws.Close(CloseBusy, ReasonBusy)
+		return
+	case err != nil:
+		g.d.Logger.ErrorContext(ctx, "agent: attach failed", "agent_id", row.Agent.ID, "err", err)
+		_ = ws.Close(websocket.StatusInternalError, "attach failed")
+		return
+	}
 	go g.readAcks(ctx, c, row.Agent.ID)
 	if revocations != nil {
 		go g.watchRevocations(ctx, c, p, revocations)
@@ -263,17 +283,77 @@ func (g *Gateway) watchRevocations(ctx context.Context, c *conn, p authn.Princip
 	}
 }
 
-// register resolves the connecting session's agent from its identity headers (ID-01, ID-02)
-// and stamps its connect time, then returns it with its owner's name.
-func (g *Gateway) register(ctx context.Context, p authn.Principal, id Identity) (db.GetAgentWithOwnerRow, error) {
-	a, err := g.d.Registry.Resolve(ctx, p.UserID, id)
+// handshake is what a connection to the agent WebSocket says about itself besides its folder.
+type handshake struct {
+	// harness is the harness id the session runs in; empty leaves the AI's app alone.
+	harness string
+	// liveID is the id of the process that holds the connection (SES-02); empty when it sent none.
+	liveID string
+	// takeover asks to take the AI's live session over (SES-02).
+	takeover bool
+}
+
+// liveIDPattern is the shape of a process id (dto.HeaderLive).
+var liveIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,64}$`)
+
+// register resolves the AI of the machine and folder the session sent (AID-02), creating it on
+// first sight, and reads the rest of what the connection says. The AI's app is not touched
+// here: it follows the session once the session is live (Registry.Attach), so a refused
+// connection changes nothing (SES-04).
+func (g *Gateway) register(ctx context.Context, p authn.Principal, h http.Header) (db.GetAgentWithOwnerRow, handshake, error) {
+	id, err := FolderIDFromHeader(h)
 	if err != nil {
-		return db.GetAgentWithOwnerRow{}, err
+		return db.GetAgentWithOwnerRow{}, handshake{}, err
 	}
-	if err := g.d.Registry.MarkConnected(ctx, a.ID); err != nil {
-		return db.GetAgentWithOwnerRow{}, err
+	d := handshake{harness: cleanHarness(id.Harness), takeover: h.Get(dto.HeaderTakeover) == "1"}
+	if v := h.Get(dto.HeaderLive); liveIDPattern.MatchString(v) {
+		d.liveID = v
 	}
-	return g.d.Store.R().GetAgentWithOwner(ctx, a.ID)
+	id.Harness = ""
+	a, err := g.d.Registry.ResolveFolder(ctx, p.UserID, id, true)
+	if err != nil {
+		return db.GetAgentWithOwnerRow{}, handshake{}, err
+	}
+	row, err := g.d.Store.R().GetAgentWithOwner(ctx, a.ID)
+	return row, d, err
+}
+
+// busyError is the refusal of a connection for an AI whose live session is in another process
+// (SES-04): it says who, in which app and since when, so the channel can tell the person how to
+// take over.
+func busyError(row db.GetAgentWithOwnerRow, live Live) *httpx.Error {
+	app := row.Agent.Harness
+	return &httpx.Error{
+		Status: http.StatusConflict, Code: dto.ErrorCodeIdentityBusy, Message: "this intelligence is open in another session",
+		Details: map[string]string{
+			dto.BusyDetailDisplayName: NameOf(row.ProfileName, row.Agent),
+			dto.BusyDetailApp:         app,
+			dto.BusyDetailAppLabel:    HarnessLabel(app),
+			dto.BusyDetailConnectedAt: live.Since.UTC().Format(time.RFC3339),
+		},
+	}
+}
+
+// welcomeRefs loads the AI's and its owner's profiles for the welcome frame. A row without an
+// intelligence (an account or agent created before they existed and never migrated) is
+// described by what the registry knows.
+func (g *Gateway) welcomeRefs(ctx context.Context, row db.GetAgentWithOwnerRow) (ai, owner dto.IntelligenceRef, err error) {
+	a := row.Agent
+	ai = dto.IntelligenceRef{ID: a.ID, Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: DisplayName(a)}
+	owner = dto.IntelligenceRef{ID: a.OwnerID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: row.OwnerUsername}
+	rows, err := g.d.Store.R().ListIntelligencesByIDs(ctx, []string{a.ID, a.OwnerID})
+	if err != nil {
+		return ai, owner, err
+	}
+	for _, i := range rows {
+		switch i.ID {
+		case a.ID:
+			ai = convert.IntelligenceRef(i, dto.IntelligenceRoleAI, "")
+		case a.OwnerID:
+			owner = convert.IntelligenceRef(i, dto.IntelligenceRoleUser, "")
+		}
+	}
+	return ai, owner, nil
 }
 
 // conn is one agent connection; it is the agent's Session in Presence.
@@ -330,8 +410,14 @@ func (c *conn) write(ctx context.Context, v any) error {
 // run sends the welcome frame and the backlog, then live pushes and pings until ctx ends.
 func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow) error {
 	a := row.Agent
+	ai, owner, err := g.welcomeRefs(ctx, row)
+	if err != nil {
+		return err
+	}
 	if err := c.write(ctx, dto.AgentWelcomeFrame{
-		Type: dto.AgentFrameTypeWelcome, Agent: dto.AgentInfo{ID: a.ID, Name: a.Name, DisplayName: DisplayName(a), Owner: row.OwnerUsername},
+		Type:         dto.AgentFrameTypeWelcome,
+		Agent:        dto.AgentInfo{ID: a.ID, Name: GoesBy(row.Handle, a.Name), DisplayName: NameOf(row.ProfileName, a), Owner: row.OwnerUsername},
+		Intelligence: ai, Owner: owner,
 	}); err != nil {
 		return err
 	}

@@ -8,6 +8,3 @@ import "syscall"
 func execProgram(path string, argv, env []string) (int, error) {
 	return 1, syscall.Exec(path, argv, env) // #nosec G204 -- the harness binary the user asked for
 }
-
-// execKeepsPID: exec keeps this process id, so the harness runs with the launcher's pid.
-const execKeepsPID = true

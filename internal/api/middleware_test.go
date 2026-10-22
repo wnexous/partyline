@@ -28,7 +28,6 @@ const publicOrigin = "https://partyline.example.test"
 type echo struct {
 	Kind      string `json:"kind"`
 	UserID    string `json:"user_id"`
-	AgentName string `json:"agent_name"`
 	IP        string `json:"ip"`
 	RequestID string `json:"request_id"`
 }
@@ -63,7 +62,7 @@ func newMWFixture(t *testing.T, trusted []netip.Prefix, maxUpload int64) *mwFixt
 	echoHandler := func(w http.ResponseWriter, r *http.Request) {
 		e := echo{Kind: "anonymous", IP: httpx.ClientIP(r.Context()).String(), RequestID: httpx.RequestID(r.Context())}
 		if p, ok := authn.PrincipalFrom(r.Context()); ok {
-			e.Kind, e.UserID, e.AgentName = string(p.Kind), p.UserID, p.AgentName
+			e.Kind, e.UserID = string(p.Kind), p.UserID
 		}
 		httpx.WriteJSON(w, http.StatusOK, e)
 	}
@@ -188,10 +187,9 @@ func TestAgentTokenRestrictedToAgentRoutes(t *testing.T) {
 	requireErrorCode(t, f.do(t, "GET", "/api/v1/rooms", nil, withBearer(f.agent)), http.StatusForbidden, dto.ErrorCodeForbidden)
 	requireErrorCode(t, f.do(t, "POST", "/api/v1/rooms", nil, withBearer(f.agent)), http.StatusForbidden, dto.ErrorCodeForbidden)
 
-	e := readEcho(t, f.do(t, "GET", "/api/v1/agent/rooms", nil, withBearer(f.agent), withHeader(dto.HeaderAgent, "builder")))
+	e := readEcho(t, f.do(t, "GET", "/api/v1/agent/rooms", nil, withBearer(f.agent)))
 	require.Equal(t, "agent", e.Kind)
 	require.Equal(t, f.adminID, e.UserID)
-	require.Equal(t, "builder", e.AgentName)
 	e = readEcho(t, f.do(t, "POST", "/api/v1/agent/rooms", nil, withBearer(f.agent)))
 	require.Equal(t, "agent", e.Kind)
 }

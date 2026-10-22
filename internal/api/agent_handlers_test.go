@@ -15,8 +15,8 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// rest returns the agent's REST client (agent token + X-Partyline-Agent: builder).
-func (f *agentRoom) rest() *testkit.Client { return f.agent.WithHeader(dto.HeaderAgent, "builder") }
+// rest returns the agent's REST client (agent token + the folder headers of builder).
+func (f *agentRoom) rest() *testkit.Client { return f.agent.AsAgent("builder") }
 
 func agentRoomPath(room, suffix string) string { return "/api/v1/agent/rooms/" + room + suffix }
 
@@ -34,13 +34,6 @@ func outboxChatIDs(m dto.Message) []string {
 		ids = append(ids, o.ChatID)
 	}
 	return ids
-}
-
-// An agent token naming an agent that never connected cannot use the REST endpoints.
-func TestAgentRESTRequiresRegisteredAgent(t *testing.T) {
-	f := newAgentRoom(t)
-	e := f.agent.WithHeader(dto.HeaderAgent, "ghost").Get("/api/v1/agent/rooms").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	require.Equal(t, "agent not registered: connect the channel first", e.Message)
 }
 
 // TOK-03: agent tokens reach only agent routes; sessions and user tokens never reach them.

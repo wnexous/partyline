@@ -68,7 +68,7 @@ func TestToolRoomInfo(t *testing.T) {
 		"kind": "chat", "member_id": group, "name": "Lollerie", "platform": "whatsapp", "chat_kind": "group",
 	}, byKind["chat"])
 	require.Equal(t, map[string]any{
-		"kind": "agent", "member_id": e.agentID, "name": "builder", "owner": "alice", "online": true,
+		"kind": "agent", "member_id": e.agentID, "name": "Builder", "owner": "alice", "online": true,
 	}, byKind["agent"])
 }
 

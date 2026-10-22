@@ -51,7 +51,7 @@ DELETE FROM rooms WHERE id = ?;
 -- fallback for rows that have none.
 SELECT sqlc.embed(m),
        CAST(CASE m.kind
-            WHEN 'agent' THEN COALESCE(i.display_name, NULLIF(a.display_name, ''), NULLIF(a.auto_name, ''), a.name, '')
+            WHEN 'agent' THEN COALESCE(i.display_name, NULLIF(a.display_name, ''), a.name, '')
             WHEN 'chat' THEN COALESCE(c.title, '')
             WHEN 'project' THEN COALESCE(p.name, '')
             ELSE COALESCE(i.display_name, NULLIF(u.display_name, ''), u.username, '')

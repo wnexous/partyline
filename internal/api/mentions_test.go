@@ -86,7 +86,7 @@ func TestBacklogAndInboxFollowTheProfile(t *testing.T) {
 	f.post(f.alice, "@builder, the old handle")
 	wanted := f.post(f.alice, "@nova, the new handle")
 
-	inbox := testkit.Decode[dto.List[dto.AgentMessage]](f.agent.WithHeader(dto.HeaderAgent, "builder").
+	inbox := testkit.Decode[dto.List[dto.AgentMessage]](f.agent.AsAgent("builder").
 		Get("/api/v1/agent/pending").RequireStatus(http.StatusOK))
 	require.Len(t, inbox.Items, 1)
 	require.Equal(t, wanted.ID, inbox.Items[0].Message.ID)

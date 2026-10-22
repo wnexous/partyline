@@ -10,11 +10,13 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
@@ -318,9 +320,8 @@ func TestToolRateLimited(t *testing.T) {
 // TOOL-09: list_rooms shows each room of the agent with its members; agents show presence.
 func TestToolListRooms(t *testing.T) {
 	e := newChanEnv(t)
-	helper, err := e.env.App.Agents.Upsert(context.Background(), e.alice.User.ID, "helper")
-	require.NoError(t, err)
-	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: helper.ID}).RequireStatus(http.StatusCreated)
+	helper := e.env.NewAI(e.alice, "helper")
+	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: helper}).RequireStatus(http.StatusCreated)
 	family := e.chatMember("Family")
 	s := e.connected(e.options())
 
@@ -341,8 +342,8 @@ func TestToolListRooms(t *testing.T) {
 	require.Equal(t, dto.MemberKindAgent, byName["helper"].Kind)
 	require.NotNil(t, byName["helper"].Online)
 	require.False(t, *byName["helper"].Online)
-	require.NotNil(t, byName["builder"].Online)
-	require.True(t, *byName["builder"].Online)
+	require.NotNil(t, byName["Builder"].Online)
+	require.True(t, *byName["Builder"].Online)
 	require.Equal(t, dto.MemberKindChat, byName["Family"].Kind)
 	require.Equal(t, family, byName["Family"].MemberID)
 
@@ -381,20 +382,59 @@ func TestToolsWithInvalidToken(t *testing.T) {
 	}
 }
 
-// Contract (close 4000): after another session takes the agent name, tools report it.
-func TestToolsReportReplaced(t *testing.T) {
+// SES-05: after another session takes the AI over, every tool reports it.
+func TestToolsReportTakenOver(t *testing.T) {
 	e := newChanEnv(t)
-	o := e.options()
-	o.timing.replacedPause = time.Minute
-	s := e.connected(o)
-	other, resp := e.alice.WithBearer(e.secret).DialAgent("builder")
-	require.NotNil(t, other, "upgrade refused: %d", resp.Status)
-	other.Welcome(wait)
+	s := e.connected(e.options())
+	f := testkit.Folder{Machine: "testbox", Path: "/work/builder", Harness: "opencode", Takeover: true}
+	taker, resp := e.alice.WithBearer(e.secret).DialFolder(f)
+	require.NotNil(t, taker, "upgrade refused: %d %s", resp.Status, resp.Body)
+	taker.Welcome(wait)
 
-	require.Eventually(t, func() bool {
+	require.Eventually(t, func() bool { // the channel has seen the takeover
 		text, isErr := s.call("list_rooms", map[string]any{})
-		return isErr && text == "partyline: replaced by another session using agent name builder"
-	}, wait, 50*time.Millisecond)
+		return isErr && text == wantTakenOver
+	}, wait, 20*time.Millisecond)
+
+	for tool, args := range map[string]map[string]any{
+		"send_message": toolArgs("room", "Support", "text", "x"),
+		"reply":        toolArgs("message_id", "m", "text", "x"),
+		"list_rooms":   {},
+		"history":      toolArgs("room", "Support"),
+	} {
+		text, isErr := s.call(tool, args)
+		require.True(t, isErr, tool)
+		require.Equal(t, wantTakenOver, text, tool)
+	}
+	require.Empty(t, e.messages(e.room.ID), "the taken-over channel posted nothing as the AI")
+}
+
+// SES-04: while another session holds the AI, tools report that this channel is not connected
+// and nothing is posted as the AI.
+func TestToolsReportBusy(t *testing.T) {
+	e := newChanEnv(t)
+	holder, resp := e.alice.WithBearer(e.secret).DialFolder(testkit.Folder{Machine: "testbox", Path: "/work/builder", Harness: "opencode"})
+	require.NotNil(t, holder, "upgrade refused: %d %s", resp.Status, resp.Body)
+	holder.Welcome(wait)
+	o := e.options()
+	o.timing.busyRetries = []time.Duration{} // no retry: the state stays busy
+	s := startSession(t, o)
+	s.handshake()
+	require.Eventually(t, func() bool { // the first connection attempt has been refused
+		text, isErr := s.call("list_rooms", map[string]any{})
+		return isErr && strings.Contains(text, "open in another session")
+	}, wait, 20*time.Millisecond)
+
+	for tool, args := range map[string]map[string]any{
+		"send_message": toolArgs("room", "Support", "text", "x"),
+		"list_rooms":   {},
+		"history":      toolArgs("room", "Support"),
+	} {
+		text, isErr := s.call(tool, args)
+		require.True(t, isErr, tool)
+		require.Contains(t, text, "open in another session", tool)
+	}
+	require.Empty(t, e.messages(e.room.ID), "the busy channel posted nothing as the AI")
 }
 
 // Design (error handling): an unreachable server → "partyline: server unreachable".
@@ -412,15 +452,16 @@ func TestToolsServerUnreachable(t *testing.T) {
 	}, wait, 50*time.Millisecond)
 }
 
-// AGT-01, TOOL-06: the channel uses the agent name's slug everywhere, so a hostile --agent
-// cannot point the download directory outside <TempDir>/partyline/.
-func TestToolDownloadDirUsesAgentSlug(t *testing.T) {
+// TOOL-06: downloads go to a directory named after the folder's name, so a hostile folder
+// name cannot point the download directory outside <TempDir>/partyline/.
+func TestToolDownloadDirUsesTheFolderName(t *testing.T) {
 	e := newChanEnv(t)
-	a, err := e.env.App.Agents.Upsert(context.Background(), e.alice.User.ID, "night-shift")
+	night := agents.FolderID{Machine: "testbox", Folder: "/work/Night Shift", Harness: "claude"}
+	a, err := e.env.App.Agents.ResolveFolder(context.Background(), e.alice.User.ID, night, false)
 	require.NoError(t, err)
 	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: a.ID}).RequireStatus(http.StatusCreated)
 	o := e.options()
-	o.Agent = "../Night Shift"
+	o.Machine, o.Folder = night.Machine, night.Folder
 	s := startSession(t, o)
 	s.handshake()
 	require.Eventually(t, func() bool { return e.env.App.Gateway.Online(a.ID) }, wait, 10*time.Millisecond)

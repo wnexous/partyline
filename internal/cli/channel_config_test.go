@@ -7,11 +7,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/channel"
 	"github.com/wnexous/partyline/internal/cliconfig"
 )
@@ -36,9 +34,9 @@ func TestChannelReadsConfigFile(t *testing.T) {
 	home := t.TempDir()
 	writeConfig(t, home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
 
-	c := startChannel(t, nil, map[string]string{"HOME": home, "PARTYLINE_AGENT": "from-file"}, "/tmp/wd")
+	c := startChannel(t, nil, map[string]string{"HOME": home}, "/work/from-file")
 	initialize(c)
-	e.agent(t, "from-file")
+	e.ai(t, "/work/from-file")
 }
 
 // ONB-05: environment variables override the file (the file's URL and token here are wrong).
@@ -46,15 +44,15 @@ func TestChannelEnvironmentOverridesConfigFile(t *testing.T) {
 	e := newChannelEnv(t)
 	home := t.TempDir()
 	writeConfig(t, home, cliconfig.Config{URL: "http://127.0.0.1:1", Token: "pl_agent_saved"})
-	c := startChannel(t, nil, map[string]string{"HOME": home, "PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_AGENT": "env-url"}, "/tmp/wd")
+	c := startChannel(t, nil, map[string]string{"HOME": home, "PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret}, "/work/env-url")
 	initialize(c)
-	e.agent(t, "env-url")
+	e.ai(t, "/work/env-url")
 
 	home2 := t.TempDir()
 	writeConfig(t, home2, cliconfig.Config{URL: e.env.URL, Token: "pl_agent_wrong"})
-	c2 := startChannel(t, nil, map[string]string{"HOME": home2, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_AGENT": "env-token"}, "/tmp/wd")
+	c2 := startChannel(t, nil, map[string]string{"HOME": home2, "PARTYLINE_TOKEN": e.secret}, "/work/env-token")
 	initialize(c2)
-	e.agent(t, "env-token")
+	e.ai(t, "/work/env-token")
 }
 
 // ONB-08: the saved token is never sent to another instance: PARTYLINE_URL naming another
@@ -63,7 +61,7 @@ func TestChannelRefusesSavedTokenForOtherURL(t *testing.T) {
 	home := t.TempDir()
 	writeConfig(t, home, cliconfig.Config{URL: "http://saved.example.test", Token: "pl_agent_saved"})
 	var out bytes.Buffer
-	env := map[string]string{"HOME": home, "PARTYLINE_URL": "http://127.0.0.1:1", "PARTYLINE_AGENT": "x"}
+	env := map[string]string{"HOME": home, "PARTYLINE_URL": "http://127.0.0.1:1"}
 	code := execute(context.Background(), []string{"partyline", "channel"}, stdio{
 		stdin: bytes.NewReader(nil), stdout: &out, stderr: &out,
 		getenv: func(k string) string { return env[k] },
@@ -78,9 +76,9 @@ func TestChannelFlagsOverrideConfigFile(t *testing.T) {
 	e := newChannelEnv(t)
 	home := t.TempDir()
 	writeConfig(t, home, cliconfig.Config{URL: "http://127.0.0.1:1", Token: "pl_agent_wrong"})
-	c := startChannel(t, []string{"--url", e.env.URL, "--token", e.secret, "--agent", "flagged"}, map[string]string{"HOME": home}, "/tmp/wd")
+	c := startChannel(t, []string{"--url", e.env.URL, "--token", e.secret}, map[string]string{"HOME": home}, "/work/flagged")
 	initialize(c)
-	e.agent(t, "flagged")
+	e.ai(t, "/work/flagged")
 }
 
 // Edge case (ONB-05): a config file others can read is refused with the chmod fix.
@@ -102,18 +100,18 @@ func TestChannelRefusesConfigFileNot0600(t *testing.T) {
 	require.NotContains(t, out.String(), "pl_agent_x")
 }
 
-// PUSH-03, PUSH-06: `channel --harness omp` runs the full channel (the agent comes online)
-// with the instructions that describe the omp extension's <partyline …> framing.
+// PUSH-03, PUSH-06: `channel --harness omp` runs the full channel (the agent comes online as
+// the omp app) with the instructions that describe the omp extension's <partyline …> framing.
 func TestChannelHarnessOmp(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, []string{"--harness", "omp"}, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_AGENT": "omp-proj"}, "/tmp/wd")
+	c := startChannel(t, []string{"--harness", "omp"}, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret}, "/work/omp-proj")
 	c.send(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": map[string]any{"protocolVersion": "2025-11-25"}})
 	res, _ := c.next()["result"].(map[string]any)
 	text, _ := res["instructions"].(string)
 	require.Equal(t, channel.OmpInstructions, text)
 	require.Contains(t, text, "<partyline room=")
 	c.send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
-	e.agent(t, "omp-proj")
+	require.Equal(t, "omp", e.ai(t, "/work/omp-proj").AI.App)
 }
 
 // An unknown harness, or omp together with --tools-only, exits 2 before anything connects.
@@ -127,27 +125,26 @@ func TestChannelHarnessFlagErrors(t *testing.T) {
 	require.Contains(t, errOut, "partyline channel: --harness omp runs the full channel; drop --tools-only")
 }
 
-// ID-01 (T18): `channel --tools-only --harness <id>` (how setup registers Codex and Gemini)
-// registers the session under that harness without any launcher variable, and the flag wins
-// over PARTYLINE_HARNESS.
+// AID-02 (T18): `channel --tools-only --harness <id>` (how setup registers Codex and Gemini)
+// acts as the AI of the folder under that harness without any launcher variable, and the flag
+// wins over PARTYLINE_HARNESS.
 func TestToolsOnlyChannelHarnessFlag(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
 	e := newChannelEnv(t)
-	registered := func(name string) dto.Agent {
+	call := func(c *mcpClient, id int) {
 		t.Helper()
-		require.Eventually(t, func() bool { _, ok := e.onlineNames(t)[name]; return ok }, chanWait, 20*time.Millisecond, name)
-		return e.agentNamed(t, name)
+		c.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{"name": "list_rooms", "arguments": map[string]any{}}})
+		r := c.next()["result"].(map[string]any)
+		require.Equal(t, false, r["isError"], "result: %v", r)
 	}
 	codex := startChannel(t, []string{"--tools-only", "--harness", "codex"}, e.vars(), "/work/notes")
 	initialize(codex)
-	a := registered("notes-codex")
-	require.Equal(t, []string{"codex", "Notes · Codex"}, []string{a.Harness, a.DisplayName})
+	call(codex, 1)
+	require.Equal(t, "codex", e.registered(t, "/work/notes").AI.App)
 
-	gemini := startChannel(t, []string{"--tools-only", "--harness", "gemini"}, e.vars("PARTYLINE_HARNESS", "pi", "PARTYLINE_SESSION", "pl-g"), "/work/notes")
+	gemini := startChannel(t, []string{"--tools-only", "--harness", "gemini"}, e.vars("PARTYLINE_HARNESS", "pi"), "/work/other")
 	initialize(gemini)
-	a = registered("notes-gemini")
-	require.Equal(t, "gemini", a.Harness, "the flag wins over PARTYLINE_HARNESS")
-	require.NotContains(t, e.onlineNames(t), "notes-pi")
+	call(gemini, 1)
+	require.Equal(t, "gemini", e.registered(t, "/work/other").AI.App, "the flag wins over PARTYLINE_HARNESS")
 }
 
 // ID-01 (T18): with --tools-only, --harness takes the tools-only harnesses; anything else

@@ -10,8 +10,6 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
-	"github.com/wnexous/partyline/internal/delivery"
-	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
 )
@@ -81,8 +79,7 @@ func (r *Registry) GetProject(ctx context.Context, p authn.Principal, projectID 
 }
 
 // RenameProject changes the project's name (1 to 64 characters after trimming; the slug
-// stays) and the readable names of its temporary agents (PROJ-05); requires ownership. It
-// publishes MembersChanged for the rooms of those agents and for the rooms that have the
+// stays) (PROJ-05); requires ownership. It publishes MembersChanged for the rooms that have the
 // project as a member, whose member lists show the project's name.
 func (r *Registry) RenameProject(ctx context.Context, p authn.Principal, projectID, name string) (Project, error) {
 	if _, err := r.authorizeProject(ctx, p, projectID, dto.LevelManage); err != nil {
@@ -92,46 +89,17 @@ func (r *Registry) RenameProject(ctx context.Context, p authn.Principal, project
 	if n := utf8.RuneCountInString(name); n == 0 || n > dto.MaxProjectName {
 		return Project{}, &validation.Error{Fields: map[string]string{"name": "must have 1 to 64 characters"}}
 	}
-	var roomIDs, renamed []string
+	var roomIDs []string
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
 		if err := q.UpdateProjectName(ctx, db.UpdateProjectNameParams{Name: name, ID: projectID}); err != nil {
 			return err
 		}
-		member, err := q.ListProjectRoomIDs(ctx, projectID)
-		if err != nil {
-			return err
-		}
-		roomIDs = append(roomIDs, member...)
-		list, err := q.ListTemporaryProjectAgents(ctx, sql.NullString{String: projectID, Valid: true})
-		if err != nil {
-			return err
-		}
-		for _, a := range list {
-			a.AutoName = AutoName(name, a.Harness, a.SessionNo)
-			if err := q.SetAgentAutoName(ctx, db.SetAgentAutoNameParams{AutoName: a.AutoName, ID: a.ID}); err != nil {
-				return err
-			}
-			// The intelligence names the agent everywhere; an explicit rename still wins.
-			changed, err := intelligences.SetDisplayName(ctx, q, a.ID, delivery.AgentDisplayName(a), r.now())
-			if err != nil {
-				return err
-			}
-			if changed {
-				renamed = append(renamed, a.ID)
-			}
-			ids, err := q.ListAgentRoomIDs(ctx, a.ID)
-			if err != nil {
-				return err
-			}
-			roomIDs = append(roomIDs, ids...)
-		}
-		return nil
+		var err error
+		roomIDs, err = q.ListProjectRoomIDs(ctx, projectID)
+		return err
 	})
 	if err != nil {
 		return Project{}, err
-	}
-	for _, id := range renamed {
-		intelligences.Announce(ctx, r.bus, r.store.R(), id, false)
 	}
 	r.membersChanged(roomIDs)
 	return r.GetProject(ctx, p, projectID)

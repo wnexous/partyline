@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/convert"
@@ -26,8 +25,8 @@ func (s *server) agentRoutes(mux *http.ServeMux) {
 
 func toAgent(a agents.Agent) dto.Agent {
 	out := dto.Agent{
-		ID: a.ID, Name: a.Name, DisplayName: agents.DisplayName(a.Agent), Description: a.Description,
-		Harness: a.Harness, Machine: a.Machine, Kind: dto.AgentKind(a.Kind), Archived: a.ArchivedAt.Valid,
+		ID: a.ID, Name: agents.GoesBy(a.Handle, a.Name), DisplayName: agents.NameOf(a.ProfileName, a.Agent), Description: a.Description,
+		Harness: a.Harness, Machine: a.Machine, Kind: dto.AgentKindFixed, Archived: false,
 		Owner:   dto.User{ID: a.OwnerID, Username: a.OwnerUsername, DisplayName: a.OwnerDisplayName},
 		MyLevel: a.Level, Online: a.Online, LastSeenAt: convert.OptTime(a.LastSeenAt), CreatedAt: convert.Time(a.CreatedAt),
 	}
@@ -38,9 +37,7 @@ func toAgent(a agents.Agent) dto.Agent {
 }
 
 func (s *server) listAgents(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	// PROJ-03: archived agents only with include_archived=true.
-	includeArchived, _ := strconv.ParseBool(r.URL.Query().Get("include_archived"))
-	list, err := s.Agents.ListVisible(r.Context(), p, includeArchived)
+	list, err := s.Agents.ListVisible(r.Context(), p)
 	if err != nil {
 		return err
 	}

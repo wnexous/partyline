@@ -122,7 +122,7 @@ const insNoticeUntrusted = "This room has instructions for its agents, written b
 func TestRoomInfoInstructionsTrust(t *testing.T) {
 	f := newTwoAgents(t)
 	shareRoom(f.alice, f.room.ID, dto.SharingUser{UserID: f.bob.User.ID, Level: dto.LevelManage})
-	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").WithHeader(dto.HeaderAgent, "helper")
+	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").AsAgent("helper")
 	info := func(c *testkit.Client) dto.RoomInfo {
 		return testkit.Decode[dto.RoomInfo](c.Get(agentRoomPath(f.room.ID, "/info")).RequireStatus(http.StatusOK))
 	}
@@ -204,7 +204,7 @@ func TestRoomInfoInstructionsAuthorAtCreate(t *testing.T) {
 	for _, id := range []string{f.agentID, f.helperID} {
 		f.alice.Post("/api/v1/rooms/"+briefed.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: id}).RequireStatus(http.StatusCreated)
 	}
-	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").WithHeader(dto.HeaderAgent, "helper")
+	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").AsAgent("helper")
 
 	got := testkit.Decode[dto.RoomInfo](f.rest().Get(agentRoomPath(briefed.ID, "/info")).RequireStatus(http.StatusOK))
 	require.Equal(t, "Be brief.", got.Instructions)
@@ -222,7 +222,7 @@ func TestRoomInfoInstructionsAuthorAtCreate(t *testing.T) {
 func TestRoomInfoRoomTextTrust(t *testing.T) {
 	f := newTwoAgents(t)
 	shareRoom(f.alice, f.room.ID, dto.SharingUser{UserID: f.bob.User.ID, Level: dto.LevelManage})
-	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").WithHeader(dto.HeaderAgent, "helper")
+	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").AsAgent("helper")
 	trusted := func(c *testkit.Client) bool {
 		return testkit.Decode[dto.RoomInfo](c.Get(agentRoomPath(f.room.ID, "/info")).RequireStatus(http.StatusOK)).RoomTextTrusted
 	}
@@ -292,7 +292,7 @@ func setRoomText(t *testing.T, env *testkit.Env, roomID, name, description, by s
 func TestRoomTextWhitespaceDoesNotMoveTheAuthor(t *testing.T) {
 	f := newTwoAgents(t)
 	shareRoom(f.alice, f.room.ID, dto.SharingUser{UserID: f.bob.User.ID, Level: dto.LevelManage})
-	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").WithHeader(dto.HeaderAgent, "helper")
+	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").AsAgent("helper")
 	trusted := func(c *testkit.Client) bool {
 		return testkit.Decode[dto.RoomInfo](c.Get(agentRoomPath(f.room.ID, "/info")).RequireStatus(http.StatusOK)).RoomTextTrusted
 	}
@@ -382,7 +382,7 @@ func TestInstructionsWhitespaceDoesNotMoveTheAuthor(t *testing.T) {
 func TestRoomTextAuthorKeptByOtherSaves(t *testing.T) {
 	f := newTwoAgents(t)
 	shareRoom(f.alice, f.room.ID, dto.SharingUser{UserID: f.bob.User.ID, Level: dto.LevelManage})
-	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").WithHeader(dto.HeaderAgent, "helper")
+	helperRest := f.bob.Token(dto.TokenKindAgent, "desk").AsAgent("helper")
 	trusted := func(c *testkit.Client) bool {
 		return testkit.Decode[dto.RoomInfo](c.Get(agentRoomPath(f.room.ID, "/info")).RequireStatus(http.StatusOK)).RoomTextTrusted
 	}

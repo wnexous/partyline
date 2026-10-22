@@ -4,6 +4,7 @@
 // notification to extensions as the `mcp_notification` event. This extension turns the
 // partyline server's notifications/claude/channel into a user message: a new turn when the
 // session is idle, a follow-up while it is busy (PUSH-03), framed with the trust line (PUSH-06).
+// A notice (the channel was taken over by another session, SES-05) is shown to the person instead.
 //
 // The channel acks a message once it has sent the notification, so a message this extension
 // cannot hand to the session would be lost. It keeps such messages in memory, in order, and
@@ -162,6 +163,11 @@ export default function partyline(pi: OmpApi): void {
 		const m = record(event.params);
 		if (!m) {
 			report(c, "partyline: ignored a malformed channel notification");
+			return;
+		}
+		// A notice (another session took the AI over) is for the person, not for the model.
+		if (m.type === "notice") {
+			report(c, m.content, "warning");
 			return;
 		}
 		queue.push(frame(m));
