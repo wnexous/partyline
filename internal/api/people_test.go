@@ -267,6 +267,31 @@ func TestPersonProfileIsVisibleThroughAConversation(t *testing.T) {
 	getProfile(f.env.NewUser("frank"), f.person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
 
+// PROF-07: an avatar a user of the connector set for a person is stored as a 256x256 PNG and
+// served to whoever can see the person: the users of the connector and the viewers of a room where
+// it wrote or of a chat where it was seen; carol and the admin get 404.
+func TestPersonAvatarIsServedToWhoCanSeeThePerson(t *testing.T) {
+	f := newPeopleFixture(t)
+	getAvatar(f.alice, f.person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+
+	set := testkit.Decode[dto.IntelligenceProfile](putAvatar(f.bob, f.person, pngBytes(t, bands(400, 200))).RequireStatus(http.StatusOK))
+	require.Regexp(t, avatarURLPattern, set.AvatarURL, "the grantee of the connector sets it")
+	viewers := map[string]*testkit.Client{
+		"the connector's owner": f.alice, "a user of the connector": f.bob,
+		"a viewer of a room it wrote in": f.dave, "a viewer of a chat it was seen in": f.erin,
+	}
+	for name, c := range viewers {
+		resp := getAvatar(c, f.person).RequireStatus(http.StatusOK)
+		require.Equal(t, "image/png", resp.Header.Get("Content-Type"), name)
+		requireGreenSquare(t, resp.Body)
+		require.Equal(t, set.AvatarURL, profileOf(t, c, f.person).AvatarURL, name)
+	}
+	for _, c := range []*testkit.Client{f.carol, f.admin} {
+		getAvatar(c, f.person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+		getProfile(c, f.person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	}
+}
+
 // PEOP-03: the person page shows the name, the platform account and only the conversations the
 // caller can view, the most recently active first. A viewer without access to the connector sees
 // the platform but not the account.

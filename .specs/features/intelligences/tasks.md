@@ -1162,9 +1162,9 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: PROF-07, PROF-06
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] 10×5000 and 1×4097 are `ErrInvalid`; 1×4096 is accepted (M23)
-- [ ] A person's avatar set by a grantee of its connector is served as `image/png` 256×256 to the connector's users and to a viewer of a conversation where the person wrote; carol and the admin get 404 (PROF-07)
-- [ ] Gate check passes: `make check`
+- [x] 10×5000 and 1×4097 are `ErrInvalid`; 1×4096 is accepted (M23)
+- [x] A person's avatar set by a grantee of its connector is served as `image/png` 256×256 to the connector's users and to a viewer of a conversation where the person wrote; carol and the admin get 404 (PROF-07)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `test(avatars): bound the image height and serve a person's avatar`

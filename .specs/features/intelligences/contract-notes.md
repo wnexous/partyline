@@ -2588,3 +2588,20 @@ newcomer, which an unguarded comparison also passes.
 - Scratch copy: removing the guard in both places fails both tests; in `Attach` alone only the unit test
   fails (the gateway checks `Busy` first, so the Attach-only variant is unreachable through it); in `Busy`
   alone both fail.
+
+## T62 - Avatar height bound and a person's avatar served (PROF-06, PROF-07)
+
+Tests only; no code changes (`validation.md` gap 7, mutant M23, L-046).
+
+- **Dimension bound.** `avatars.Process` refuses an image wider or taller than 4096 pixels before
+  decoding it (decompression bombs), checked on the decoded header (`DecodeConfig`). A 10×5000 image
+  has a tiny file and passes every other check, which is how removing the height half survived.
+  `TestProcessRejectsInvalidInputs` now also has 10×5000, 4097×1 and 1×4097 (each side of the bound, both
+  axes), and `TestProcessAcceptsMaximumHeight` accepts 1×4096 next to the existing 4096×1. Scratch copy:
+  dropping the height check fails the two tall cases.
+- **A person's avatar is served (PROF-07).** `TestPersonAvatarIsServedToWhoCanSeeThePerson`
+  (`internal/api/people_test.go`): a user granted `use` on the connector sets the avatar of a person; the
+  connector's owner, that user, a viewer of a room where the person wrote and a viewer of a chat where it
+  was seen get a 256×256 PNG (the centre crop, `image/png`) and the same `avatar_url` in the profile;
+  carol and the admin get 404 for the avatar and the profile. Scratch copy: never serving persons'
+  avatars, and serving them without the visibility check, each fail it.
