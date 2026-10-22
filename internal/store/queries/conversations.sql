@@ -42,3 +42,30 @@ LEFT JOIN people p ON p.id = i.id
 LEFT JOIN connectors c ON c.id = p.connector_id
 WHERE r.id = ? AND r.kind = 'dm'
 ORDER BY i.id;
+
+-- name: ListLastMessages :many
+-- The newest message that still exists of each room (retention may have deleted the latest ones).
+SELECT v.* FROM message_views v
+JOIN (SELECT m.room_id, MAX(m.seq) AS seq FROM messages m
+      WHERE m.room_id IN (sqlc.slice('room_ids')) GROUP BY m.room_id) newest
+  ON newest.room_id = v.room_id AND newest.seq = v.seq;
+
+-- name: CountUnreadByRoom :many
+-- Per room, the messages after the user's read position and after the room's baseline (history
+-- from before the upgrade counts as read) that the user did not write (DM-06). Rooms without
+-- unread messages have no row.
+SELECT m.room_id, COUNT(*) AS unread
+FROM messages m
+JOIN rooms r ON r.id = m.room_id
+LEFT JOIN read_cursors c ON c.room_id = m.room_id AND c.user_id = sqlc.arg(user_id)
+WHERE m.room_id IN (sqlc.slice('room_ids'))
+  AND m.seq > MAX(COALESCE(c.seq, 0), r.read_baseline)
+  AND m.author_iid <> sqlc.arg(user_id)
+GROUP BY m.room_id;
+
+-- name: ListMemberNames :many
+-- The users and AIs that are members of the rooms, in the order they were added.
+SELECT m.room_id, i.display_name, i.handle
+FROM room_members m JOIN intelligences i ON i.id = m.member_id
+WHERE m.kind IN ('agent', 'user') AND m.room_id IN (sqlc.slice('room_ids'))
+ORDER BY m.room_id, m.created_at, m.id;

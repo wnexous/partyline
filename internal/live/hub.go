@@ -315,6 +315,12 @@ func (c *conn) render(ctx context.Context, e events.Event) ([]frame, error) {
 		}
 		return c.room(ctx, e.RoomID, nil)
 
+	case events.ReadChanged:
+		if e.UserID != c.p.UserID {
+			return nil, nil // a read position is the reader's own business
+		}
+		return []frame{{Type: dto.LiveEventTypeRoomRead, Data: dto.ReadData{RoomID: e.RoomID, Seq: e.Seq}}}, nil
+
 	case events.MembersChanged:
 		ok, err := c.canViewRoom(ctx, e.RoomID)
 		if err != nil || !ok {

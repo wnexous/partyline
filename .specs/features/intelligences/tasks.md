@@ -470,10 +470,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-06, DM-07, LAY-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] List orders DMs and groups by newest activity with per-user unread counts that exclude the user's own messages and the pre-upgrade baseline (DM-06)
-- [ ] Marking read sets unread 0 for that user only, never moves backwards, and emits `room.read` to that user's sockets (DM-07)
-- [ ] Preview: 80 code points, sender name in groups, `[file name]` for attachments only (LAY-01 data)
-- [ ] Gate check passes: `make check`
+- [x] List orders DMs and groups by newest activity with per-user unread counts that exclude the user's own messages and the pre-upgrade baseline (DM-06)
+- [x] Marking read sets unread 0 for that user only, never moves backwards, and emits `room.read` to that user's sockets (DM-07)
+- [x] Preview: 80 code points, sender name in groups, `[file name]` for attachments only (LAY-01 data)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): list conversations with unread counts`

@@ -758,3 +758,49 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   member AIs and strangers excluded, each refusal reason alone and all together, validation order and
   the 50-member boundary with repeated ids, authorization of the route, live announcement) and
   `internal/conversations/groups_test.go` (an AI's group, its refusals, the allowance).
+
+## T22 - Read state and the conversation list (DM-06, DM-07, LAY-01)
+
+- **`GET /api/v1/conversations`** → `dto.List[dto.Conversation]`, users only (an agent token is 403,
+  anonymous 401): the caller's groups (owned, granted or user-member, `Rooms.List`) and the DMs they
+  take part in; a DM an AI's owner or grantee only views is **not** listed (T19), a stranger's list
+  is `{"items": []}`. Newest activity first (`activity_at` desc, then title case-insensitive, then
+  id). `Conversation`: `id` (the room id), `kind`, `title` (the group's name; for a DM the other
+  participant's display name), `counterpart` (`IntelligenceRef` with role and platform, DMs only),
+  `my_level`, `last_message?`, `unread`, `activity_at` (the last message's time, else the room's
+  creation), `member_names`.
+- **`last_message`** is the newest message that still exists in the room (retention may have purged the
+  latest ones; with none left the field is absent, `unread` 0 and `activity_at` the creation).
+  `MessagePreview{seq, author_id, author_name, text, created_at}`: `text` is the first
+  `dto.MaxPreviewLength` = **80 code points** of the message (bytes preserved, no ellipsis, no
+  whitespace normalisation); a message whose text is blank and that has files is `"[<first file
+  name>]"` (files in creation order); text wins over files. `author_id` is the author's intelligence
+  (`author_iid`, else the user/AI of an older row; empty for system messages and chat senders
+  without a person). **`author_name` is filled in groups only** (LAY-01: the sender prefix is a group
+  matter) and is empty in a DM; reactions are messages like any other.
+- **`member_names`**: up to `dto.MaxConversationMemberNames` = 20 `"Display name @handle"` of the users
+  and AIs that are members, in the order they were added (a bridged chat is not an intelligence and
+  adds none until T27); for a DM the other participant alone; always an array.
+- **Unread (DM-06)** per user: messages with `seq > MAX(read position, rooms.read_baseline)` whose
+  `author_iid` is not the user (so the user's own messages, also the ones typed on their linked
+  platform account, never count; system messages, AIs, other users and unattributed chat messages
+  do). The baseline is per room (v0.3 history counts as read) and applies to everybody; a read
+  position behind it changes nothing, one ahead of it wins. One grouped query for all rooms
+  (`CountUnreadByRoom`), `ListLastMessages` and `ListMemberNames` likewise.
+- **`PUT /api/v1/rooms/{id}/read`** `dto.MarkReadRequest{seq?}` → **200** `dto.ReadState{room_id, seq,
+  unread}` (the position that holds and what is unread after it). View is enough (404 without it,
+  also for an AI owner marking the DM they view); users only. `seq` absent → up to the newest
+  message; `seq` past the newest → the newest (so a later message is unread); `seq` lower than the
+  held position or 0 → the held position stays; negative → 422 `invalid` (`seq`); a non-number → 400.
+  The position is `read_cursors.seq` (`UpsertReadCursor` keeps the maximum); an empty room stores
+  nothing and answers `seq 0`.
+- **Live (DM-07)**: every `MarkRead` publishes `events.ReadChanged{UserID, RoomID, Seq}` — also when
+  the position did not move, with the position that holds — and the hub sends **`room.read`**
+  (`dto.LiveRoomRead`, data `dto.ReadData{room_id, seq}`) to the sockets of that user only, every
+  tab included. Other users, even in the same room, receive nothing.
+- `conversations.Service.List(ctx, p)` and `MarkRead(ctx, p, roomID, seq *int64)` implement it
+  (`list.go`); `List` reuses `Rooms.List` for the visible set and the levels, so it follows T19.
+- Tests: `internal/api/conversations_list_test.go` (order and fields, whose list holds what, unread per
+  user with own messages / AI messages / baseline / positions, monotonic and clamped marking,
+  authorization of both routes, `room.read` to the reader's tabs only, 79/80/81 code points with
+  multi-byte and emoji text, file previews, member names and the 20 cap, retention).

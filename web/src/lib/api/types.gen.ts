@@ -772,6 +772,92 @@ export interface RefusedMember {
   id: string;
   reason: RefusedReason;
 }
+/**
+ * Conversation is one row of the messenger's conversation list (GET /conversations, DM-06,
+ * LAY-01): a group the caller can view or a DM the caller takes part in. The list is newest
+ * activity first.
+ */
+export interface Conversation {
+  /**
+   * ID is the room id.
+   */
+  id: string;
+  kind: ConversationKind;
+  /**
+   * Title is the group's name, or the display name of the other participant of a DM.
+   */
+  title: string;
+  /**
+   * Counterpart is the other participant of a DM; absent for a group.
+   */
+  counterpart?: IntelligenceRef;
+  my_level: Level;
+  /**
+   * LastMessage is absent while the conversation has no message.
+   */
+  last_message?: MessagePreview;
+  /**
+   * Unread counts the messages after the caller's read position (and after the room's
+   * pre-upgrade baseline) that the caller did not write.
+   */
+  unread: number /* int */;
+  /**
+   * ActivityAt is the time of the last message, else of the room's creation.
+   */
+  activity_at: string /* RFC 3339 */;
+  /**
+   * MemberNames are up to MaxConversationMemberNames "Name @handle" entries of the users and
+   * AIs of a group (the other participant of a DM), for the sidebar search.
+   */
+  member_names: string[];
+}
+/**
+ * MaxConversationMemberNames bounds Conversation.MemberNames.
+ */
+export const MaxConversationMemberNames = 20;
+/**
+ * MaxPreviewLength is the length of a message preview in code points (LAY-01).
+ */
+export const MaxPreviewLength = 80;
+/**
+ * MessagePreview is the last message of a conversation.
+ */
+export interface MessagePreview {
+  seq: number /* int64 */;
+  /**
+   * AuthorID is the intelligence that wrote it; empty for system messages and for chat senders
+   * without one.
+   */
+  author_id: string;
+  /**
+   * AuthorName is the author's display name in a group, where the list prefixes it; empty in a
+   * DM.
+   */
+  author_name: string;
+  /**
+   * Text is the first MaxPreviewLength code points of the message, or "[file name]" for a
+   * message that is only an attachment.
+   */
+  text: string;
+  created_at: string /* RFC 3339 */;
+}
+/**
+ * MarkReadRequest is the body of PUT /rooms/{id}/read: the newest message the caller has seen. An
+ * absent seq reads everything; a seq past the newest message counts as the newest; an earlier one
+ * than the current position changes nothing (DM-07).
+ */
+export interface MarkReadRequest {
+  seq?: number /* int64 */;
+}
+/**
+ * ReadState is the answer of PUT /rooms/{id}/read: the read position that holds and what is
+ * still unread after it.
+ */
+export interface ReadState {
+  room_id: string;
+  seq: number /* int64 */;
+  unread: number /* int */;
+}
 
 //////////
 // source: devices.go
@@ -1033,6 +1119,7 @@ export const LiveEventTypeHello = "hello";
 export const LiveEventTypeRoomMessage = "room.message";
 export const LiveEventTypeRoomChanged = "room.changed";
 export const LiveEventTypeRoomDeleted = "room.deleted";
+export const LiveEventTypeRoomRead = "room.read";
 export const LiveEventTypeMembersChanged = "room.members";
 export const LiveEventTypeAccessChanged = "access.changed";
 export const LiveEventTypeAgentPresence = "agent.presence";
@@ -1049,12 +1136,13 @@ export const LiveEventTypeLagged = "lagged";
 /**
  * Live event types.
  */
-export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeOutboxStatus | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged;
+export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeOutboxStatus | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged;
 export type LiveEvent =
   | LiveHello
   | LiveRoomMessage
   | LiveRoomChanged
   | LiveRoomDeleted
+  | LiveRoomRead
   | LiveMembersChanged
   | LiveAccessChanged
   | LiveAgentPresence
@@ -1098,6 +1186,21 @@ export interface LiveRoomChanged {
 export interface LiveRoomDeleted {
   type: typeof LiveEventTypeRoomDeleted;
   data: RoomIDData;
+}
+/**
+ * LiveRoomRead reports that the user marked a room read, on this socket or another one of
+ * theirs: the unread count of the room is zero up to Seq (DM-07). Only the reader receives it.
+ */
+export interface LiveRoomRead {
+  type: typeof LiveEventTypeRoomRead;
+  data: ReadData;
+}
+/**
+ * ReadData is the read position that holds in a room: the newest message the user has read.
+ */
+export interface ReadData {
+  room_id: string;
+  seq: number /* int64 */;
 }
 /**
  * LiveMembersChanged reports that a room's members changed; refetch GET /rooms/{id}/members.

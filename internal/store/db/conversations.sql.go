@@ -8,7 +8,66 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
+
+const countUnreadByRoom = `-- name: CountUnreadByRoom :many
+SELECT m.room_id, COUNT(*) AS unread
+FROM messages m
+JOIN rooms r ON r.id = m.room_id
+LEFT JOIN read_cursors c ON c.room_id = m.room_id AND c.user_id = ?1
+WHERE m.room_id IN (/*SLICE:room_ids*/?)
+  AND m.seq > MAX(COALESCE(c.seq, 0), r.read_baseline)
+  AND m.author_iid <> ?1
+GROUP BY m.room_id
+`
+
+type CountUnreadByRoomParams struct {
+	UserID  string
+	RoomIds []string
+}
+
+type CountUnreadByRoomRow struct {
+	RoomID string
+	Unread int64
+}
+
+// Per room, the messages after the user's read position and after the room's baseline (history
+// from before the upgrade counts as read) that the user did not write (DM-06). Rooms without
+// unread messages have no row.
+func (q *Queries) CountUnreadByRoom(ctx context.Context, arg CountUnreadByRoomParams) ([]CountUnreadByRoomRow, error) {
+	query := countUnreadByRoom
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.UserID)
+	if len(arg.RoomIds) > 0 {
+		for _, v := range arg.RoomIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:room_ids*/?", strings.Repeat(",?", len(arg.RoomIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:room_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountUnreadByRoomRow
+	for rows.Next() {
+		var i CountUnreadByRoomRow
+		if err := rows.Scan(&i.RoomID, &i.Unread); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const createDMRoom = `-- name: CreateDMRoom :exec
 INSERT INTO rooms (id, owner_id, name, kind, dm_a, dm_b, created_at, updated_at)
@@ -135,6 +194,115 @@ func (q *Queries) InsertDMRoom(ctx context.Context, arg InsertDMRoomParams) (int
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const listLastMessages = `-- name: ListLastMessages :many
+SELECT v.id, v.room_id, v.seq, v.author_kind, v.author_id, v.author_user_id, v.author_iid, v.sender_id, v.sender_alt_id, v.sender_name, v.kind, v.text, v.reply_to, v.recipients_json, v.external_id, v.created_at, v.author_name, v.author_handle, v.author_ikind, v.author_avatar FROM message_views v
+JOIN (SELECT m.room_id, MAX(m.seq) AS seq FROM messages m
+      WHERE m.room_id IN (/*SLICE:room_ids*/?) GROUP BY m.room_id) newest
+  ON newest.room_id = v.room_id AND newest.seq = v.seq
+`
+
+// The newest message that still exists of each room (retention may have deleted the latest ones).
+func (q *Queries) ListLastMessages(ctx context.Context, roomIds []string) ([]MessageView, error) {
+	query := listLastMessages
+	var queryParams []interface{}
+	if len(roomIds) > 0 {
+		for _, v := range roomIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:room_ids*/?", strings.Repeat(",?", len(roomIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:room_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MessageView
+	for rows.Next() {
+		var i MessageView
+		if err := rows.Scan(
+			&i.ID,
+			&i.RoomID,
+			&i.Seq,
+			&i.AuthorKind,
+			&i.AuthorID,
+			&i.AuthorUserID,
+			&i.AuthorIid,
+			&i.SenderID,
+			&i.SenderAltID,
+			&i.SenderName,
+			&i.Kind,
+			&i.Text,
+			&i.ReplyTo,
+			&i.RecipientsJson,
+			&i.ExternalID,
+			&i.CreatedAt,
+			&i.AuthorName,
+			&i.AuthorHandle,
+			&i.AuthorIkind,
+			&i.AuthorAvatar,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMemberNames = `-- name: ListMemberNames :many
+SELECT m.room_id, i.display_name, i.handle
+FROM room_members m JOIN intelligences i ON i.id = m.member_id
+WHERE m.kind IN ('agent', 'user') AND m.room_id IN (/*SLICE:room_ids*/?)
+ORDER BY m.room_id, m.created_at, m.id
+`
+
+type ListMemberNamesRow struct {
+	RoomID      string
+	DisplayName string
+	Handle      string
+}
+
+// The users and AIs that are members of the rooms, in the order they were added.
+func (q *Queries) ListMemberNames(ctx context.Context, roomIds []string) ([]ListMemberNamesRow, error) {
+	query := listMemberNames
+	var queryParams []interface{}
+	if len(roomIds) > 0 {
+		for _, v := range roomIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:room_ids*/?", strings.Repeat(",?", len(roomIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:room_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMemberNamesRow
+	for rows.Next() {
+		var i ListMemberNamesRow
+		if err := rows.Scan(&i.RoomID, &i.DisplayName, &i.Handle); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listRoomParticipants = `-- name: ListRoomParticipants :many

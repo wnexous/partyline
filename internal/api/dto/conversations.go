@@ -1,5 +1,7 @@
 package dto
 
+import "time"
+
 // ConversationKind tells a group from a direct message. Both are rooms (AD-002, AD-011): a DM
 // has exactly two intelligences, keyed by their ids on the room row, and nobody manages it (DM-02).
 type ConversationKind string
@@ -46,4 +48,64 @@ const (
 type RefusedMember struct {
 	ID     string        `json:"id"`
 	Reason RefusedReason `json:"reason"`
+}
+
+// Conversation is one row of the messenger's conversation list (GET /conversations, DM-06,
+// LAY-01): a group the caller can view or a DM the caller takes part in. The list is newest
+// activity first.
+type Conversation struct {
+	// ID is the room id.
+	ID   string           `json:"id"`
+	Kind ConversationKind `json:"kind"`
+	// Title is the group's name, or the display name of the other participant of a DM.
+	Title string `json:"title"`
+	// Counterpart is the other participant of a DM; absent for a group.
+	Counterpart *IntelligenceRef `json:"counterpart,omitempty"`
+	MyLevel     Level            `json:"my_level"`
+	// LastMessage is absent while the conversation has no message.
+	LastMessage *MessagePreview `json:"last_message,omitempty"`
+	// Unread counts the messages after the caller's read position (and after the room's
+	// pre-upgrade baseline) that the caller did not write.
+	Unread int `json:"unread"`
+	// ActivityAt is the time of the last message, else of the room's creation.
+	ActivityAt time.Time `json:"activity_at"`
+	// MemberNames are up to MaxConversationMemberNames "Name @handle" entries of the users and
+	// AIs of a group (the other participant of a DM), for the sidebar search.
+	MemberNames []string `json:"member_names"`
+}
+
+// MaxConversationMemberNames bounds Conversation.MemberNames.
+const MaxConversationMemberNames = 20
+
+// MaxPreviewLength is the length of a message preview in code points (LAY-01).
+const MaxPreviewLength = 80
+
+// MessagePreview is the last message of a conversation.
+type MessagePreview struct {
+	Seq int64 `json:"seq"`
+	// AuthorID is the intelligence that wrote it; empty for system messages and for chat senders
+	// without one.
+	AuthorID string `json:"author_id"`
+	// AuthorName is the author's display name in a group, where the list prefixes it; empty in a
+	// DM.
+	AuthorName string `json:"author_name"`
+	// Text is the first MaxPreviewLength code points of the message, or "[file name]" for a
+	// message that is only an attachment.
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// MarkReadRequest is the body of PUT /rooms/{id}/read: the newest message the caller has seen. An
+// absent seq reads everything; a seq past the newest message counts as the newest; an earlier one
+// than the current position changes nothing (DM-07).
+type MarkReadRequest struct {
+	Seq *int64 `json:"seq,omitempty"`
+}
+
+// ReadState is the answer of PUT /rooms/{id}/read: the read position that holds and what is
+// still unread after it.
+type ReadState struct {
+	RoomID string `json:"room_id"`
+	Seq    int64  `json:"seq"`
+	Unread int    `json:"unread"`
 }
