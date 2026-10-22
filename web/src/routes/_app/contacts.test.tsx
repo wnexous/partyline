@@ -5,6 +5,7 @@ import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
+  makeAgent,
   makeAI,
   makeAIContact,
   makeContacts,
@@ -17,7 +18,7 @@ import {
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { renderRoute } from "@/test/render";
-import { bob, lia, liam, sampleContacts } from "@/test/sample-contacts";
+import { bob, lia, liam, oldHelper, sampleContacts } from "@/test/sample-contacts";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
@@ -639,6 +640,97 @@ describe("unlinked AIs (TREE-06)", () => {
     renderRoute("/contacts");
     await screen.findByRole("region", { name: "devbox" });
     expect(screen.queryByRole("heading", { name: "Unlinked" })).toBeNull();
+  });
+});
+
+describe("merging an unlinked AI (MRG-01, MRG-02)", () => {
+  const mergeButton = () =>
+    screen.findByRole("button", { name: "Merge Old helper into another AI" });
+
+  it("picks one of the owner's AIs, merges into it and refreshes the contacts tree", async () => {
+    let contacts = sampleContacts;
+    const survivor = makeAgent({ id: "a1", name: "atlas", display_name: "Atlas" });
+    const { calls } = api(sampleContacts, {
+      "GET /contacts": () => json(200, contacts),
+      "POST /agents/a4/merge": () => {
+        contacts = { ...sampleContacts, unlinked: [] };
+        return json(200, survivor);
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts");
+    await user.click(await mergeButton());
+    const dialog = await screen.findByRole("dialog", { name: "Merge Old helper into…" });
+    const picker = within(dialog).getByRole("combobox", { name: "AI" });
+    // The owner's AIs only: never the one being merged away, and never one shared with the user.
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Pick an AI", "Atlas (@atlas)", "Notes (@notes)", "Lab (@lab)"]);
+    await user.selectOptions(picker, "a1");
+    await user.click(within(dialog).getByRole("button", { name: "Merge AI" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    expect(calls.find((c) => c.method === "POST")?.path).toBe("/agents/a4/merge");
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ into: "a1" });
+    // The contacts tree is the server's to rebuild: the page asks for it again after the merge.
+    await waitFor(() =>
+      expect(calls.filter((c) => c.method === "GET" && c.path === "/contacts")).toHaveLength(2),
+    );
+    await waitFor(() => expect(screen.queryByTestId("contact-a4")).toBeNull());
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(await screen.findByText("Old helper merged into Atlas")).toBeInTheDocument();
+  });
+
+  it("asks to end the session first when the AI is online (MRG-02)", async () => {
+    api(sampleContacts, {
+      "POST /agents/a4/merge": apiError(409, "identity_online", "identity is online"),
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts");
+    await user.click(await mergeButton());
+    const dialog = await screen.findByRole("dialog", { name: "Merge Old helper into…" });
+    await user.selectOptions(within(dialog).getByRole("combobox", { name: "AI" }), "a1");
+    await user.click(within(dialog).getByRole("button", { name: "Merge AI" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "End its session first: Old helper is online.",
+    );
+    // Nothing changed: the dialog stays open, so the merge can be retried once the session ends.
+    expect(screen.getByTestId("contact-a4")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Merge Old helper into…" })).toBeInTheDocument();
+  });
+
+  it("keeps the AI when the merge is cancelled", async () => {
+    const { calls } = api();
+    const user = userEvent.setup();
+    renderRoute("/contacts");
+    await user.click(await mergeButton());
+    const dialog = await screen.findByRole("dialog", { name: "Merge Old helper into…" });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    expect(screen.getByTestId("contact-a4")).toBeInTheDocument();
+  });
+
+  it("offers it for the owner's unlinked AIs only, never on shared or folder AIs", async () => {
+    api();
+    renderRoute("/contacts");
+    expect(await mergeButton()).toBeInTheDocument();
+    for (const id of ["a1", "a5", "u2"]) {
+      const row = screen.getByTestId(`contact-${id}`);
+      expect(within(row).queryByRole("button", { name: /Merge/ })).toBeNull();
+    }
+  });
+
+  it("offers no merge when there is no other AI of the owner to merge into", async () => {
+    api(
+      makeContacts({
+        unlinked: [makeAIContact({ intelligence: oldHelper, folder: "", folder_label: "" })],
+      }),
+    );
+    renderRoute("/contacts");
+    await screen.findByTestId("contact-a4");
+    expect(screen.queryByRole("button", { name: /Merge/ })).toBeNull();
   });
 });
 

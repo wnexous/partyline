@@ -352,6 +352,21 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
+  it("the merge dialog of an unlinked AI has no axe violations", async () => {
+    appApi(locale);
+    const user = userEvent.setup();
+    renderRoute("/contacts");
+    await user.click(
+      await screen.findByRole("button", {
+        name:
+          locale === "en" ? "Merge Old helper into another AI" : "Mesclar Old helper em outra IA",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("combobox", { name: locale === "en" ? "AI" : "IA" });
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
   it("the contacts page on a phone has no axe violations", async () => {
     stubViewport(360);
     appApi(locale);

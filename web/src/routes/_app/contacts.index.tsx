@@ -1,5 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PlugIcon, SearchIcon, Trash2Icon, UsersRoundIcon, XIcon } from "lucide-react";
+import {
+  GitMergeIcon,
+  PlugIcon,
+  SearchIcon,
+  Trash2Icon,
+  UsersRoundIcon,
+  XIcon,
+} from "lucide-react";
 import { type ReactNode, useId, useMemo, useState } from "react";
 import { ConnectAgentDialog } from "@/components/connect-agent-dialog";
 import { AIMeta } from "@/components/contact-meta";
@@ -7,6 +14,7 @@ import { ContactRow } from "@/components/contact-row";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { MachineGroup } from "@/components/machine-group";
+import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
 import { PageHeader } from "@/components/page-header";
 import { PeopleGroup } from "@/components/people-group";
@@ -16,7 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useContacts } from "@/lib/api/queries";
 import type { AIContact, Contacts, IntelligenceRef } from "@/lib/api/types.gen";
-import { aiText, filterMachines, sortMachines } from "@/lib/contacts";
+import { aiText, filterMachines, flattenTree, sortMachines } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { useI18n } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
@@ -43,11 +51,21 @@ function ContactsPage() {
   const [filter, setFilter] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [deleting, setDeleting] = useState<IntelligenceRef | null>(null);
+  const [merging, setMerging] = useState<IntelligenceRef | null>(null);
   const text = filter.trim();
   // The lists narrow as the user types; the server's people search waits for the text to settle.
   const settled = useDebouncedValue(text);
 
   const data = contacts.data;
+  // Merge targets are the owner's AIs, whatever the filter shows (MRG-01).
+  const own = useMemo(
+    () => (data ? [...data.machines.flatMap((m) => flattenTree(m.nodes)), ...data.unlinked] : []),
+    [data],
+  );
+  const mergeCandidates = own
+    .filter((ai) => ai.intelligence.id !== merging?.id)
+    .map((ai) => ai.intelligence);
+  const canMerge = own.length > 1;
   const live = useMemo(
     () => (ai: AIContact) => withContactPresence(ai, presence[ai.intelligence.id]),
     [presence],
@@ -128,6 +146,19 @@ function ContactsPage() {
                           actions={
                             <>
                               <MessageButton target={item.intelligence} />
+                              {canMerge ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  aria-label={t("ai.mergeAction", {
+                                    name: item.intelligence.display_name,
+                                  })}
+                                  onClick={() => setMerging(item.intelligence)}
+                                >
+                                  <GitMergeIcon aria-hidden="true" />
+                                  <span className="max-sm:hidden">{t("ai.mergeShort")}</span>
+                                </Button>
+                              ) : null}
                               <Button
                                 variant="ghost"
                                 size="icon-sm"
@@ -221,6 +252,7 @@ function ContactsPage() {
         </>
       )}
       <ConnectAgentDialog open={connecting} onOpenChange={setConnecting} />
+      <MergeAIDialog ai={merging} candidates={mergeCandidates} onClose={() => setMerging(null)} />
       <DeleteAIDialog ai={deleting} onClose={() => setDeleting(null)} />
     </>
   );

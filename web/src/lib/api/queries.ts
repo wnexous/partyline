@@ -50,6 +50,7 @@ import {
   type MarkReadRequest,
   MaxPreviewLength,
   type Me,
+  type MergeAgentRequest,
   type Message,
   type MessagePreview,
   MultipartFileField,
@@ -1037,6 +1038,29 @@ export function useRenameProject() {
       qc.invalidateQueries({ queryKey: queryKeys.agentsWithArchived, exact: true });
       qc.invalidateQueries({ queryKey: queryKeys.projects });
       qc.invalidateQueries({ queryKey: queryKeys.rooms });
+    },
+  });
+}
+
+/**
+ * Merges an AI into another one of the caller's (MRG-01): the survivor keeps its groups, DMs,
+ * history, cursors, sharing and connectors, and the AI in `from` is deleted. Refused with 409
+ * `identity_online` while `from` has a live session (MRG-02).
+ */
+export function useMergeAgent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ from, into }: { from: string; into: string }) =>
+      api<Agent>("POST", `/agents/${from}/merge`, { into } satisfies MergeAgentRequest),
+    onSuccess: (_, { from }) => {
+      // The AI is gone from the flat lists at once; the tree, the conversations and the rooms it
+      // was in are the server's to rebuild.
+      qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withoutAI(old, from));
+      qc.invalidateQueries({ queryKey: queryKeys.contacts, exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.rooms });
+      // Its profile is marked stale without a refetch: the row that shows it is about to leave.
+      qc.invalidateQueries({ queryKey: queryKeys.intelligence(from), refetchType: "none" });
     },
   });
 }

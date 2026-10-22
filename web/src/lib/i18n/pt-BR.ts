@@ -204,6 +204,20 @@ export const ptBR: Dictionary = {
   "ai.deleteConfirm": "Apagar IA",
   "ai.deleted": "{name} apagada",
   "ai.deleteFailed": "Não foi possível apagar {name}.",
+  "ai.mergeAction": "Mesclar {name} em outra IA",
+  "ai.mergeShort": "Mesclar em…",
+
+  "merge.title": "Mesclar {name} em…",
+  "merge.body":
+    "Tudo o que {name} tem vai para a IA que você escolher: conversas, histórico e compartilhamento. {name} é apagada; encerre a sessão dela antes, se estiver aberta.",
+  "merge.into": "IA",
+  "merge.pick": "Escolha uma IA",
+  "merge.confirm": "Mesclar IA",
+  "merge.done": "{name} mesclada em {into}",
+  "merge.failed": "Não foi possível mesclar {name}. Tente de novo.",
+  "merge.online": "Encerre a sessão dela antes: {name} está online.",
+  "merge.forbidden": "Você não pode mesclar {name}.",
+
   "validation.handle": "Comece com uma letra; depois letras, dígitos ou hífens, até 40.",
   "validation.bio": "No máximo {max} caracteres",
 

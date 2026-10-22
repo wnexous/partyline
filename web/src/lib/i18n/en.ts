@@ -202,6 +202,20 @@ export const en = {
   "ai.deleteConfirm": "Delete AI",
   "ai.deleted": "{name} deleted",
   "ai.deleteFailed": "Couldn’t delete {name}.",
+  "ai.mergeAction": "Merge {name} into another AI",
+  "ai.mergeShort": "Merge into…",
+
+  "merge.title": "Merge {name} into…",
+  "merge.body":
+    "Everything {name} has moves to the AI you pick: its conversations, history and sharing. {name} is deleted; end its session first if it is open.",
+  "merge.into": "AI",
+  "merge.pick": "Pick an AI",
+  "merge.confirm": "Merge AI",
+  "merge.done": "{name} merged into {into}",
+  "merge.failed": "Couldn’t merge {name}. Try again.",
+  "merge.online": "End its session first: {name} is online.",
+  "merge.forbidden": "You can’t merge {name}.",
+
   "validation.handle": "Start with a letter; then letters, digits or hyphens, up to 40.",
   "validation.bio": "At most {max} characters",
 

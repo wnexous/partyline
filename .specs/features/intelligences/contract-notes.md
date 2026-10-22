@@ -2080,3 +2080,37 @@ Web only. No API changed.
   leaving it), `routes/_app/connectors/connectors.test.tsx` (the operator options and save, a grantee's read-only
   header, a 422 under the picker, the legacy notice and switch keeping the scope, no switch without a legacy room,
   both languages), `routes/a11y.test.tsx` (the settings page with the editor and the notify choice, en and pt-BR).
+
+## T47 follow-up - Merge UI (MRG-01, MRG-02)
+
+Web only. No API changed; it closes T47's open MRG-01 note.
+
+- **Where**: every Unlinked AI row on `/contacts` gains **Merge into…** (`ai.mergeShort`, an outline button with the
+  git-merge icon whose text hides below 640 px; its label names the AI: `ai.mergeAction`, "Merge {name} into another
+  AI"). It sits next to Message and Delete, and only on the unlinked rows: the tree's AIs, a shared AI and the users
+  have no merge action, and the unlinked list holds only the caller's own AIs (T28), so only the owner sees it. With no
+  other AI of the owner there is nothing to merge into and the action is left out. The candidates are the owner's AIs -
+  the machine tree in order, then the unlinked - with the AI being merged away left out; a shared AI is never a target.
+  The list does not follow the page filter: a filtered view cannot hide a target.
+- **Dialog** (`components/merge-ai-dialog.tsx`): a regular dialog (not an alert dialog: it asks a choice, not only a
+  confirmation), named by its title "Merge {name} into…", with the body "Everything {name} has moves to the AI you
+  pick…". A native select (`NativeSelect`, labelled "AI") starts on "Pick an AI" and lists each candidate as
+  "Name (@handle)"; Cancel closes without a request and Merge AI waits for a pick and for the request. The dialog body
+  is keyed by the AI, so a new opening starts with nothing picked and no old error. Merge deletes the AI, so the copy
+  says so (and to end its session first).
+- **Request and refresh** (`useMergeAgent`, `lib/api/queries.ts`): `POST /agents/{from}/merge {into}` (T35). On success
+  the dialog closes and toasts "{name} merged into {into}" (the survivor's display name from the answer); the cached
+  contacts drop the AI from the unlinked and shared lists at once (`withoutAI`) and `["contacts"]` is invalidated, so the
+  server rebuilds the tree and its machine groups (MRG-01). `["conversations"]` and `["rooms"]` (rooms, members and
+  messages) are invalidated too, because its DMs and group memberships moved, and its profile is marked stale without a
+  refetch (`refetchType: "none"`): the row that showed it is gone. The server's live frames (`room.members`,
+  `room.changed`, `room.deleted`, `access.changed`, `intelligence.changed`) patch what the pages already show.
+- **Refusals**: 409 `identity_online` (`ErrorCodeIdentityOnline`) shows "End its session first: {name} is online." in the
+  dialog's alert (MRG-02); the dialog stays open and nothing is refreshed. 403 "You can’t merge {name}.", a 422 with
+  `fields.into` under the picker, anything else (and the network) above it; a refusal changes nothing.
+- **i18n**: `ai.mergeAction`, `ai.mergeShort`, `merge.*` in `en.ts` and `pt-BR.ts`.
+- Tests: `routes/_app/contacts.test.tsx` (the candidates and the POST body, the tree refetched after the merge, the row
+  leaving at once and the toast, the 409 message with the dialog kept, Cancel sending nothing, the action absent on
+  tree/shared/user rows, and no action when there is no other AI), `lib/api/contacts.test.tsx` (the hook's request and
+  cache: the AI dropped from the flat lists, contacts/conversations/rooms stale, the profile stale without refetch; a
+  409 leaves the cached contacts alone), `routes/a11y.test.tsx` (axe on the open dialog, en and pt-BR).
