@@ -101,6 +101,10 @@ type RoomMember struct {
 	// Intelligence is the profile summary of an agent or user member: handle, kind and avatar
 	// next to the name (PROF-03, PROF-09). Absent for chat and project members.
 	Intelligence *IntelligenceRef `json:"intelligence,omitempty"`
+	// People are the people seen in a chat member, the most recently seen first and at most
+	// MaxChatPeople, each with its platform (GRP-02). Only GET /rooms/{id}/members fills it;
+	// absent for other members and for a chat nobody was seen in.
+	People []IntelligenceRef `json:"people,omitempty"`
 	// Outbound tells whether agent and user posts without explicit recipients reach this chat (DLV-03).
 	Outbound bool `json:"outbound"`
 	// Online is set for agent members, and for project members: whether the project has an
@@ -126,6 +130,9 @@ type RoomMember struct {
 	Keywords  []string  `json:"keywords"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+// MaxChatPeople is the most people listed for one chat member of a room (GRP-02).
+const MaxChatPeople = 200
 
 // MemberSession names the active session of a project member.
 type MemberSession struct {

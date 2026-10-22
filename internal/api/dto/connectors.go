@@ -48,6 +48,14 @@ const (
 	ConnectorStatusError      ConnectorStatus = "error"
 )
 
+// ConnectorRef names a connector where only its identity is needed: the account behind a
+// person.
+type ConnectorRef struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
 // Connector is a configured platform account (GET /connectors). Secret config values are
 // returned as SecretMask when set.
 type Connector struct {

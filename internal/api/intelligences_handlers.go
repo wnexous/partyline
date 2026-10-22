@@ -8,6 +8,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -24,8 +25,7 @@ func (s *server) getIntelligence(w http.ResponseWriter, r *http.Request, p authn
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, s.toProfile(prof))
-	return nil
+	return s.writeProfile(w, r, p, prof)
 }
 
 // updateIntelligence changes the profile of a user (their own), an AI (its owner) or a
@@ -40,16 +40,35 @@ func (s *server) updateIntelligence(w http.ResponseWriter, r *http.Request, p au
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, s.toProfile(prof))
-	return nil
+	return s.writeProfile(w, r, p, prof)
 }
 
 func profileUpdate(req dto.UpdateProfileRequest) intelligences.ProfileUpdate {
 	return intelligences.ProfileUpdate{DisplayName: req.DisplayName, Handle: req.Handle, Bio: req.Bio}
 }
 
+// writeProfile answers with the profile as the caller reads it.
+func (s *server) writeProfile(w http.ResponseWriter, r *http.Request, p authn.Principal, prof intelligences.Profile) error {
+	out := s.toProfile(prof)
+	if prof.Role == intelligences.RolePerson {
+		convs, err := s.Intelligences.Conversations(r.Context(), p, prof)
+		if err != nil {
+			return err
+		}
+		for _, c := range convs {
+			ref := dto.RoomRef{ID: c.ID, Name: c.Name}
+			if c.Kind == dto.ConversationKindDM {
+				ref.Kind = c.Kind
+			}
+			out.Conversations = append(out.Conversations, ref)
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+	return nil
+}
+
 // toProfile renders a profile: the summary, the bio, what the caller may do and the details
-// of the kind of intelligence.
+// of the kind of intelligence. The conversations of a person are added by writeProfile.
 func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 	out := dto.IntelligenceProfile{
 		IntelligenceRef: convert.ProfileRef(prof), Bio: prof.Bio, CanEdit: prof.CanEdit,
@@ -68,6 +87,23 @@ func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 			LastSeenAt: convert.OptTime(a.LastSeenAt), ConnectedAt: convert.OptTime(a.ConnectedAt), MyLevel: a.Level,
 		}
 		out.Apps = append(out.Apps, dto.App{Kind: a.Harness, Label: agents.HarnessLabel(a.Harness)})
+	case intelligences.RolePerson:
+		pi := prof.Person
+		if !pi.CanUse { // the platform, not the account behind it
+			out.Apps = append(out.Apps, dto.App{Kind: pi.Connector.Kind, Label: connectors.PlatformLabel(pi.Connector.Kind)})
+			break
+		}
+		out.Apps = append(out.Apps, dto.App{
+			Kind: pi.Connector.Kind, Label: connectors.PlatformLabel(pi.Connector.Kind) + ": " + pi.ExternalID, ConnectorID: pi.Connector.ID,
+		})
+		out.Person = &dto.PersonDetail{
+			Connector:  dto.ConnectorRef{ID: pi.Connector.ID, Kind: pi.Connector.Kind, Name: pi.Connector.Name},
+			ExternalID: pi.ExternalID, NameLocked: pi.NameLocked,
+		}
+		if pi.LinkedUser != nil {
+			ref := convert.IntelligenceRef(*pi.LinkedUser, dto.IntelligenceRoleUser, "")
+			out.Person.LinkedUser = &ref
+		}
 	}
 	return out
 }

@@ -204,6 +204,8 @@ type Profile struct {
 	Platform string
 	// Agent is set for an AI.
 	Agent *AgentInfo
+	// Person is set for a person.
+	Person *PersonInfo
 }
 
 // AgentInfo is what a profile shows about an AI.
@@ -248,11 +250,11 @@ func (s *Service) profile(ctx context.Context, p authn.Principal, d db.GetIntell
 		}
 		out.Agent = &AgentInfo{Agent: a, Owner: owner, MachineLabel: label, Home: m.Home, Level: level}
 	case RolePerson:
-		c, err := q.GetConnector(ctx, d.PersonConnectorID)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		info, err := s.personInfo(ctx, p.UserID, d.Intelligence.ID)
+		if err != nil {
 			return Profile{}, err
 		}
-		out.Platform = c.Kind
+		out.Person, out.Platform = info, info.Connector.Kind
 	}
 	return out, nil
 }
@@ -365,8 +367,14 @@ func (s *Service) rights(ctx context.Context, p authn.Principal, d db.GetIntelli
 		shared, err := s.sharesConversation(ctx, p.UserID, id)
 		return shared, false, err
 	case RolePerson:
+		// The users of the connector see and edit its people (PEOP-04); a user who can view a
+		// conversation where the person was seen or wrote reads the profile only.
 		ok, err := s.az.CanUseConnector(ctx, p.UserID, d.PersonConnectorID)
-		return ok, ok && user, err
+		if err != nil || ok {
+			return ok, ok && user, err
+		}
+		shared, err := s.sharesPersonConversation(ctx, p.UserID, id)
+		return shared, false, err
 	}
 	return false, false, nil
 }

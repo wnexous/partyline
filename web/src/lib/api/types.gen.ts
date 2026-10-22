@@ -556,6 +556,15 @@ export const ConnectorStatusError = "error";
  */
 export type ConnectorStatus = typeof ConnectorStatusStopped | typeof ConnectorStatusConnecting | typeof ConnectorStatusConnected | typeof ConnectorStatusError;
 /**
+ * ConnectorRef names a connector where only its identity is needed: the account behind a
+ * person.
+ */
+export interface ConnectorRef {
+  id: string;
+  kind: string;
+  name: string;
+}
+/**
  * Connector is a configured platform account (GET /connectors). Secret config values are
  * returned as SecretMask when set.
  */
@@ -1062,15 +1071,41 @@ export interface IntelligenceProfile extends IntelligenceRef {
    */
   ai?: AIDetail;
   /**
+   * Person is set for a person, for the users who own or may use its connector (PEOP-03,
+   * PEOP-04); a user who sees the person through a conversation only gets the summary.
+   */
+  person?: PersonDetail;
+  /**
    * Apps lists where the intelligence speaks: the web app for users, the current harness
-   * for AIs.
+   * for AIs, the platform account for a person.
    */
   apps: App[];
   /**
-   * Conversations lists the conversations the caller can view that involve the
-   * intelligence; empty until conversations exist.
+   * Conversations lists the conversations the caller can view that involve a person (the
+   * rooms with a chat where it was seen, or where it wrote), the most recently active first
+   * (PEOP-03); empty for the other kinds.
    */
   conversations: RoomRef[];
+}
+/**
+ * PersonDetail describes the platform account behind a person (PEOP-03).
+ */
+export interface PersonDetail {
+  connector: ConnectorRef;
+  /**
+   * ExternalID is the account's id on the platform.
+   */
+  external_id: string;
+  /**
+   * LinkedUser is the user whose verified account it is (AD-008, PEOP-02); messages of the
+   * account are authored by that user.
+   */
+  linked_user?: IntelligenceRef;
+  /**
+   * NameLocked tells that a user chose the name, which platform name changes no longer
+   * replace (PEOP-05, PROF-11).
+   */
+  name_locked: boolean;
 }
 /**
  * AIDetail describes where an AI lives and who may use it.
@@ -1460,6 +1495,12 @@ export interface RoomMember {
    */
   intelligence?: IntelligenceRef;
   /**
+   * People are the people seen in a chat member, the most recently seen first and at most
+   * MaxChatPeople, each with its platform (GRP-02). Only GET /rooms/{id}/members fills it;
+   * absent for other members and for a chat nobody was seen in.
+   */
+  people?: IntelligenceRef[];
+  /**
    * Outbound tells whether agent and user posts without explicit recipients reach this chat (DLV-03).
    */
   outbound: boolean;
@@ -1500,6 +1541,10 @@ export interface RoomMember {
   keywords: string[];
   created_at: string /* RFC 3339 */;
 }
+/**
+ * MaxChatPeople is the most people listed for one chat member of a room (GRP-02).
+ */
+export const MaxChatPeople = 200;
 /**
  * MemberSession names the active session of a project member.
  */

@@ -318,6 +318,60 @@ func (q *Queries) ListMemberNames(ctx context.Context, roomIds []string) ([]List
 	return items, nil
 }
 
+const listRoomActivity = `-- name: ListRoomActivity :many
+SELECT r.id, r.name, r.kind,
+       CAST(COALESCE((SELECT m.created_at FROM messages m WHERE m.room_id = r.id ORDER BY m.seq DESC LIMIT 1), r.created_at) AS INTEGER) AS activity_at
+FROM rooms r
+WHERE r.id IN (/*SLICE:ids*/?)
+`
+
+type ListRoomActivityRow struct {
+	ID         string
+	Name       string
+	Kind       string
+	ActivityAt int64
+}
+
+// The name, kind and last activity of rooms: the time of the newest message that still exists,
+// else the room's creation (as the conversation list).
+func (q *Queries) ListRoomActivity(ctx context.Context, ids []string) ([]ListRoomActivityRow, error) {
+	query := listRoomActivity
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRoomActivityRow
+	for rows.Next() {
+		var i ListRoomActivityRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Kind,
+			&i.ActivityAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRoomParticipants = `-- name: ListRoomParticipants :many
 SELECT i.id, i.kind, i.display_name, i.handle, i.avatar_sha256, i.bio, i.created_at, i.updated_at,
        CAST(CASE WHEN u.id IS NOT NULL THEN 'user' WHEN a.id IS NOT NULL THEN 'ai'

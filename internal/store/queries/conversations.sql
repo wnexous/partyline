@@ -73,3 +73,11 @@ ORDER BY m.room_id, m.created_at, m.id;
 -- name: DeleteEmptyDMRoom :execrows
 -- Deletes a DM nobody has written in: the one a failed first post leaves behind.
 DELETE FROM rooms WHERE id = ? AND kind = 'dm' AND next_seq = 1;
+
+-- name: ListRoomActivity :many
+-- The name, kind and last activity of rooms: the time of the newest message that still exists,
+-- else the room's creation (as the conversation list).
+SELECT r.id, r.name, r.kind,
+       CAST(COALESCE((SELECT m.created_at FROM messages m WHERE m.room_id = r.id ORDER BY m.seq DESC LIMIT 1), r.created_at) AS INTEGER) AS activity_at
+FROM rooms r
+WHERE r.id IN (sqlc.slice('ids'));

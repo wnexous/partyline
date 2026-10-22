@@ -183,9 +183,22 @@ func (s *server) listMembers(w http.ResponseWriter, r *http.Request, p authn.Pri
 	if err != nil {
 		return err
 	}
+	var chatIDs []string
+	for _, m := range list {
+		if dto.MemberKind(m.Kind) == dto.MemberKindChat {
+			chatIDs = append(chatIDs, m.MemberID)
+		}
+	}
+	people, err := s.Intelligences.ChatPeople(r.Context(), chatIDs)
+	if err != nil {
+		return err
+	}
 	out := dto.List[dto.RoomMember]{Items: make([]dto.RoomMember, len(list))}
 	for i, m := range list {
 		out.Items[i] = s.toMember(r.Context(), m)
+		for _, person := range people[m.MemberID] {
+			out.Items[i].People = append(out.Items[i].People, convert.IntelligenceRef(person.Intelligence, dto.IntelligenceRolePerson, person.Platform))
+		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil

@@ -149,6 +149,62 @@ func (q *Queries) ListChatPeople(ctx context.Context, chatID string) ([]ChatPers
 	return items, nil
 }
 
+const listChatPeopleRecent = `-- name: ListChatPeopleRecent :many
+SELECT i.id, i.kind, i.display_name, i.handle, i.avatar_sha256, i.bio, i.created_at, i.updated_at, k.kind AS platform
+FROM chat_people cp
+JOIN chats c ON c.id = cp.chat_id
+JOIN connectors k ON k.id = c.connector_id
+JOIN intelligences i ON i.id = cp.person_id
+WHERE cp.chat_id = ?
+ORDER BY cp.last_seen_at DESC, cp.person_id
+LIMIT ?
+`
+
+type ListChatPeopleRecentParams struct {
+	ChatID string
+	Limit  int64
+}
+
+type ListChatPeopleRecentRow struct {
+	Intelligence Intelligence
+	Platform     string
+}
+
+// The people most recently seen in a chat, with their intelligence and the connector kind
+// (GRP-02).
+func (q *Queries) ListChatPeopleRecent(ctx context.Context, arg ListChatPeopleRecentParams) ([]ListChatPeopleRecentRow, error) {
+	rows, err := q.db.QueryContext(ctx, listChatPeopleRecent, arg.ChatID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListChatPeopleRecentRow
+	for rows.Next() {
+		var i ListChatPeopleRecentRow
+		if err := rows.Scan(
+			&i.Intelligence.ID,
+			&i.Intelligence.Kind,
+			&i.Intelligence.DisplayName,
+			&i.Intelligence.Handle,
+			&i.Intelligence.AvatarSha256,
+			&i.Intelligence.Bio,
+			&i.Intelligence.CreatedAt,
+			&i.Intelligence.UpdatedAt,
+			&i.Platform,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listConnectorPeople = `-- name: ListConnectorPeople :many
 SELECT id, connector_id, external_id, alt_external_id, platform_name, name_locked, last_seen_at, created_at FROM people WHERE connector_id = ? ORDER BY created_at, id
 `
@@ -175,6 +231,38 @@ func (q *Queries) ListConnectorPeople(ctx context.Context, connectorID string) (
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPersonRoomIDs = `-- name: ListPersonRoomIDs :many
+SELECT rm.room_id FROM room_members rm JOIN chat_people cp ON cp.chat_id = rm.member_id
+WHERE rm.kind = 'chat' AND cp.person_id = ?1
+UNION
+SELECT room_id FROM messages WHERE author_iid = ?1 AND author_iid <> ''
+`
+
+// The rooms that involve a person: those with a chat member where the person was seen, and
+// those where it wrote a message (a chat may have left the room since).
+func (q *Queries) ListPersonRoomIDs(ctx context.Context, id string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listPersonRoomIDs, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

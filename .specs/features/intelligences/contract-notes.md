@@ -1060,3 +1060,49 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   name later), the user's rename lock (bio and handle edits do not lock), senderless messages, DM
   counterparts (new and known person), the 10-minute throttle and the future clamp, concurrent first
   messages.
+
+## T27 - People visibility, person profiles and group participants (PEOP-03, PEOP-04, PROF-11, GRP-02)
+
+- **Visibility** (`Service.rights`, so `CanSee`, `CanEdit`, `Get`, `Update`, avatars and the live
+  `intelligence.changed` filter): a person is seen **and edited** by the users who own or may `use` its
+  connector, whatever else they can view (a user principal edits; an agent principal never does). A user
+  without that access still **sees** it (read-only: PATCH and avatar writes are 403) when they can view,
+  at `access.UserRoomLevel` view or more, a room that involves it: one with a chat member where the person
+  was seen (`chat_people`) or where it wrote a message (`messages.author_iid`, so it still counts after
+  the chat left the room). Everybody else gets 404, admins included (AD-005). **Reconciliation:** PEOP-04
+  ("nobody else does") is the rule of the contacts and of editing (T28 lists a connector's people for its
+  users only); the design's security section lets a viewer of a conversation open the profile of the
+  people they read in its timeline, so the profile link of a message author never 404s. Their profile
+  carries the summary only (no `person`, apps without the account).
+- **`dto.IntelligenceProfile.person`** (`PersonDetail{connector: ConnectorRef{id, kind, name},
+  external_id, linked_user?, name_locked}`) is set for the users who own or may use the connector
+  (`PersonInfo.CanUse`). `linked_user` is the user whose verified identity (AD-008, `ResolveIdentityUser`,
+  enabled users only) is the account (PEOP-02). `apps` is `[{kind: <connector kind>, label: "<Platform>:
+  <external id>", connector_id}]` for them and `[{kind, label: "<Platform>"}]` (no account, no connector)
+  for a viewer of a conversation. `intelligences.Profile.Person *PersonInfo{db.Person, Connector, CanUse,
+  LinkedUser}` carries it; `Profile.Platform` is the connector kind as before.
+- **`conversations`** of a person (`Service.Conversations`, rendered by `writeProfile`, also on the PATCH
+  and avatar answers): the rooms of `ListPersonRoomIDs` that the caller can view, most recently active
+  first (the newest existing message, else the room's creation; ties by name, then id), at most
+  `intelligences.MaxConversations` = 100 of the viewable ones. `RoomRef{id, name}` (no `kind` for groups;
+  `kind: dm` is reserved for the platform DMs of T30). The other kinds list none (the AI DMs of Spec issue
+  5 are not filled by this task).
+- **Name lock** (PROF-11): the lock itself landed with T26 (`Service.Update` sets `people.name_locked`
+  when a person's display name changes); `PersonDetail.name_locked` shows it to the connector's users.
+- **Group participants** (GRP-02): `GET /rooms/{id}/members` adds `people` (`[]IntelligenceRef`, role
+  `person`, `platform` = the connector kind) to each **chat** member: the people of `chat_people`, most
+  recently seen first (ties by person id), at most `dto.MaxChatPeople` = 200 per chat. Omitted for agent
+  and user members and for a chat nobody was seen in. A person seen in two chats is listed under both;
+  a sender linked to a user stays a person here (the timeline names the user, the profile's `linked_user`
+  names the link). View on the room is enough. Only this endpoint fills it: the add/update member answers
+  and the agent tools (`list_rooms`, `room_info`) are unchanged, so an AI's context does not carry up to
+  200 people per chat. `Service.ChatPeople(ctx, chatIDs)` does not authorize; the handler already did.
+- sqlc added: `ListChatPeopleRecent` (one query per chat member: sqlc cannot express the per-chat window
+  as a single query), `ListPersonRoomIDs`, `ListRoomActivity`. DTOs: `ConnectorRef`, `PersonDetail`,
+  `IntelligenceProfile.person`, `RoomMember.people`, `MaxChatPeople`; tygo regenerated.
+- Tests (`internal/api/people_test.go`): the profile matrix (owner, use grantee with no room, viewer of a
+  room, stranger, admin, anonymous, agent token; PATCH, avatar PUT/DELETE/GET and the live frame), the
+  conversation rules one by one (room view toggled, a room where it wrote after the chat left, a room
+  whose chat saw it), the person page (account, conversations by caller, order, the 100 cap), the rename
+  lock through a grantee, the linked user, and the members list (order, two chats, the 200 cap, other
+  member kinds).

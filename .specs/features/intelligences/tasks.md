@@ -555,11 +555,11 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: PEOP-03, PEOP-04, PROF-11, GRP-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Connector owner and `use` grantee see and edit the person; a user without connector access gets 404 (PEOP-04)
-- [ ] Person page lists name, platform account and only the conversations the caller can view (PEOP-03)
-- [ ] A user's rename survives later platform name changes (PROF-11)
-- [ ] Group members list shows each chat with its people and platform (GRP-02)
-- [ ] Gate check passes: `make check`
+- [x] Connector owner and `use` grantee see and edit the person; a user without connector access gets 404 (PEOP-04)
+- [x] Person page lists name, platform account and only the conversations the caller can view (PEOP-03)
+- [x] A user's rename survives later platform name changes (PROF-11)
+- [x] Group members list shows each chat with its people and platform (GRP-02)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(intelligences): show people and their conversations`

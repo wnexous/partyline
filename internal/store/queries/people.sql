@@ -38,3 +38,23 @@ UPDATE chats SET person_id = ? WHERE id = ?;
 
 -- name: GetChatPerson :one
 SELECT * FROM chat_people WHERE chat_id = ? AND person_id = ?;
+
+-- name: ListChatPeopleRecent :many
+-- The people most recently seen in a chat, with their intelligence and the connector kind
+-- (GRP-02).
+SELECT sqlc.embed(i), k.kind AS platform
+FROM chat_people cp
+JOIN chats c ON c.id = cp.chat_id
+JOIN connectors k ON k.id = c.connector_id
+JOIN intelligences i ON i.id = cp.person_id
+WHERE cp.chat_id = ?
+ORDER BY cp.last_seen_at DESC, cp.person_id
+LIMIT ?;
+
+-- name: ListPersonRoomIDs :many
+-- The rooms that involve a person: those with a chat member where the person was seen, and
+-- those where it wrote a message (a chat may have left the room since).
+SELECT rm.room_id FROM room_members rm JOIN chat_people cp ON cp.chat_id = rm.member_id
+WHERE rm.kind = 'chat' AND cp.person_id = sqlc.arg(id)
+UNION
+SELECT room_id FROM messages WHERE author_iid = sqlc.arg(id) AND author_iid <> '';
