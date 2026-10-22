@@ -68,7 +68,9 @@ function MergeForm({
       { from: ai.id, into },
       {
         onSuccess: (survivor) => {
-          toast.success(t("merge.done", { name: ai.display_name, into: survivor.display_name }));
+          toast.success(
+            t("merge.done", { name: ai.display_name, into: survivor.intelligence.display_name }),
+          );
           onClose();
         },
         onError: (err) => {

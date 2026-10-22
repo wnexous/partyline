@@ -2,8 +2,8 @@
 SELECT COUNT(*) FROM users;
 
 -- name: CreateUser :exec
-INSERT INTO users (id, username, display_name, password_hash, role, locale, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO users (id, username, password_hash, role, locale, created_at)
+VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: GetUser :one
 SELECT * FROM users WHERE id = ?;
@@ -20,8 +20,8 @@ UPDATE users SET role = ? WHERE id = ?;
 -- name: SetUserDisabledAt :exec
 UPDATE users SET disabled_at = ? WHERE id = ?;
 
--- name: UpdateUserProfile :exec
-UPDATE users SET display_name = ?, locale = ? WHERE id = ?;
+-- name: SetUserLocale :exec
+UPDATE users SET locale = ? WHERE id = ?;
 
 -- name: UpdateUserPassword :exec
 UPDATE users SET password_hash = ? WHERE id = ?;
@@ -31,10 +31,6 @@ SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled_at IS NULL;
 
 -- name: SetUserNotifyChat :exec
 UPDATE users SET notify_chat_id = ? WHERE id = ?;
-
--- name: SetUserDisplayName :exec
--- Mirrors intelligences.display_name until the legacy column is dropped.
-UPDATE users SET display_name = ? WHERE id = ?;
 
 -- name: ListContactUsers :many
 -- The enabled users other than the given one, with their intelligence, by name (CONT-01).

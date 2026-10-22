@@ -2233,3 +2233,77 @@ Web only. No API changed; it closes T47's open MRG-01 note.
   unknown) member is 422 `kind` = "must be agent, chat or user" with nothing added. Project-only
   tests deleted: the four `internal/api/project_*_test.go`, the project delivery/room tests, the
   sender project-signature test and the project cases of the delivery/agent/API tests.
+
+## T51 - Drop the legacy identity columns (MIG-01, MIG-05, GRP-01)
+
+- **`0016_drop_v03_identity.sql`** runs in the upgrade's single transaction after `0015` and its
+  hook (a v0.3 database applies both atomically; a failure in `0016` rolls `0015` back too):
+  `DROP VIEW message_views`; `ALTER TABLE users DROP COLUMN display_name`; `ALTER TABLE agents
+  DROP COLUMN` `display_name`, `auto_name`, `kind`, `session_no`, `archived_at`, `session_key`;
+  `DROP TABLE project_cursors` (nothing references it); the view recreated. **No table is
+  rebuilt**: with `foreign_keys=ON` the rebuild's `DROP TABLE` cascades into `agent_cursors`,
+  `room_members`, `grants`, `messages`, ... (the mutation of `0016` that rebuilds `agents` fails
+  `TestUpgradeV03KeepsEveryRow` and `TestCleanupAloneKeepsEveryRow` with the cursors gone). Checked
+  before writing it: no index, trigger or CHECK names a dropped column (`agents_project` and
+  `agents_folder` index other columns, the `kind` CHECK is the column's own, the intelligence
+  triggers use `OLD.id`), so SQLite accepts each `DROP COLUMN`; the view was the only reader.
+- **Kept as dead schema** (AD-012, as the design says): `agents.name` (`UNIQUE (owner_id, name)`; new
+  AIs store their id), `agents.project_id` (+ `agents_project`, FK to the empty `projects` table)
+  and the `'project'` values the `room_members`/`grants` CHECKs allow. SQLite could drop the
+  column-level FK `agents.project_id` after its index, but the design keeps it and so does `0016`.
+  `0016` assumes every user and agent has an intelligence (`0015`'s hook, `intelligences.Create`
+  since T7); a row an intermediate build created without one would have no name left.
+- **`message_views`** keeps its columns; `author_name`: system `Partyline`; agent: the room member's
+  `display_name`, else the intelligence's, else `''`; user: the intelligence's, else `''`; chat: the
+  intelligence's, else `sender_name`, else the chat title, else `''`. `author_handle`/`author_ikind`/
+  `author_avatar` come from `i` (`author_iid`) only. No `ia`/`iu`/`a`/`u`/`pm` joins: an author
+  without an intelligence has no name.
+- **Queries read the intelligence**: every `owner_display_name`/`creator_display_name`/
+  `used_by_display_name`/`actor_display_name` and the sharing users' `display_name` come from
+  `LEFT JOIN intelligences` on the account (`''` for an account with none); `ListRoomMembers` names
+  agent and user members by the intelligence (a chat by its title); `GetAgentWithOwner`/
+  `ListAgentsForUser` also return `profile_avatar`. `CreateUser` has no display name,
+  `UpdateUserProfile` became `SetUserLocale`, and `SetUserDisplayName`/`SetAgentDisplayName` (the
+  mirrors) are gone with `intelligences.mirrorDisplayName`, `agents.DisplayName/GoesBy/NameOf` and
+  `delivery.AgentDisplayName`. `db.User` and `db.Agent` lost the dropped fields; `rooms.Room` lost
+  `OwnerDisplayName` (the owner's profile carries the name).
+- **Account names** reach the API through the account's intelligence (`server.userNames`,
+  `writeMe`): `Me.display_name`, the admin user list, the users directory and invite creators. An
+  account that chose no name goes by its **username** (its intelligence's name since 0015), so
+  `display_name` is no longer `''` for it. `users.UpdateProfile` writes the locale and
+  `intelligences.SetDisplayName` (an empty name means the username); `users.insertAccount` takes the
+  display name for the intelligence.
+- **DTOs**: `Agent` is `{id, intelligence: IntelligenceRef, description, harness, machine, owner,
+  my_level, online, last_seen_at, created_at}`. Removed: `Agent.name`, `display_name`, `project`,
+  `kind`, `archived` and the types `AgentKind*`, `Project`, `ProjectRef`, `UpdateProjectRequest`,
+  `MaxProjectName`. `Agent.intelligence` carries what the two name fields did (display name, @handle,
+  avatar). **Kept:** `AgentInfo.name` (the AI's @handle) and `display_name` (its profile's name) in
+  the welcome frame and the `POST /agent/register` answer - the agent protocol's identity summary,
+  now read from the profile with no fallback to the row; `UpdateAgentRequest` (`display_name`,
+  `description`, `fixed`) is unchanged. tygo regenerated `types.gen.ts`.
+- **Web**: the route-chat dialog, the command palette, the connect wizard and the merge dialog read
+  `agent.intelligence.{display_name,handle}` (the route dialog lists AIs by display name and filters
+  by display name, handle or owner). `makeAgent({name})` stays as shorthand for the profile's display
+  name and handle; `makeAgent({intelligence})` overrides it. `web/e2e/smoke.spec.ts` still holds the
+  v0.3 project/agents spec; it was stale already and T52 replaces it.
+- **Design assertion 6, deviation:** "`message_views` returns the same `author_name` values as before
+  the upgrade" holds for 11 of the 13 fixture messages. Two change on purpose: `m-ops3` (a Telegram
+  sender linked to bob) shows "Bob.Smith" instead of the sender name "Bobby" (PEOP-02: it is the user),
+  and `m-in1` shows "Maria Silva" instead of "Maria" (MIG-04: a person has one name, the latest).
+- **Tests** (`internal/store`): `TestUpgradeV03KeepsEveryRow` (every row of every v0.3 table with all
+  its surviving columns through 0015+0016; exactly the legacy columns and `project_cursors` are
+  gone; `agents.name`, `agents.project_id`, `projects` stay; no dangling foreign key, integrity ok),
+  `TestCleanupAloneKeepsEveryRow` (`0016` on top of an earlier `0015`: nothing else changes),
+  `TestUpgradeV03AuthorNamesSurvive` (assertion 6 incl. handle/kind), `TestUpgradeV03KeepsEveryName
+  InTheIntelligence` (the v0.3 name of every user and agent is its intelligence's), `TestUpgradeV03
+  ListsEveryAgent` (what v0.3 archived is listed), `TestUpgradeV03RollsBackWhenTheCleanupFails` (a
+  failing statement after the drops, and a failing step after the file: schema, `schema_migrations`
+  and every row as before; the next start migrates), `TestMessageViewNamesAuthors` (rewritten: no
+  fallbacks), `TestListAgentsForUserReturnsTheHandleOfEachProfile`. The T6 production-route test
+  (`internal/api/upgrade_test.go`) is unchanged and passes. API: `TestAgentListCarriesIdentity`
+  (profile fields present, no `name`/`display_name`/`kind`/`archived`/`project` key),
+  `TestToAgentDescribesTheAIByItsProfile`, `TestToAgentHasNoLegacyIdentityFields`. Web: the route
+  dialog test names an AI "Atlas Prime" (@atlas) by its display name and filters by name or handle.
+  Tests that only existed for the removed fallbacks/mirrors were rewritten to assert the outcome
+  readers see (`TestUpdateRenamesWhatEveryReaderShows`); the rooms and API fixtures give their users
+  and AIs an intelligence, as production does.

@@ -94,3 +94,34 @@ func TestUpgradedCatchAllRouteDeliversBothWays(t *testing.T) {
 	require.Equal(t, "r-inbox", got.Room.ID)
 	require.Equal(t, "oi", got.Message.Text)
 }
+
+// MIG-01, GRP-01: after the upgrade (0015 and 0016 in one transaction, the legacy name columns
+// gone) the timelines of the v0.3 rooms still name every author: users and AIs by their profile,
+// the display name a member had in the room, what a project member called its session, a person
+// by the name the platform reported, and a chat without a sender by its title.
+func TestUpgradedTimelinesNameEveryAuthor(t *testing.T) {
+	ctx := context.Background()
+	// The app's clock stands an hour after the fixture's last message, so that the retention
+	// sweep at start-up (30 days in the catch-all room) keeps its history whatever today is.
+	afterTheFixture := func() time.Time { return time.UnixMilli(1790003600000) }
+	env := testkit.New(t, testkit.WithDatabase(v03Database(t)), testkit.WithClock(afterTheFixture))
+	_, secret, err := env.App.Users.CreateToken(ctx, "u-alice", users.TokenInput{Kind: dto.TokenKindUser, Name: "web"})
+	require.NoError(t, err)
+	alice := env.Anon().WithBearer(secret)
+
+	for room, want := range map[string]map[string]string{
+		"r-ops": {
+			"m-ops1": "Alice A.", "m-ops2": "Atlas Ops", "m-ops3": "Bob.Smith", "m-ops4": "Zé", "m-ops5": "Team",
+			"m-ops6": "Partyline", "m-ops7": "Proj Bot",
+		},
+		"r-inbox": {"m-in1": "Maria Silva", "m-in2": "atlas", "m-in3": "Maria Silva"},
+		"r-dev":   {"m-dev1": "Alice A.", "m-dev2": "Mine"},
+	} {
+		page := testkit.Decode[dto.Page[dto.Message]](alice.Get("/api/v1/rooms/" + room + "/messages").RequireStatus(http.StatusOK))
+		got := map[string]string{}
+		for _, m := range page.Items {
+			got[m.ID] = m.AuthorName
+		}
+		require.Equal(t, want, got, room)
+	}
+}

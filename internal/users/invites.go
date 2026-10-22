@@ -197,24 +197,24 @@ func insertUser(ctx context.Context, q *db.Queries, in AccountInput, hash, role 
 		return db.User{}, err
 	}
 	u := db.User{
-		ID: store.NewID(), Username: in.Username, DisplayName: intelligences.CleanDisplayName(in.DisplayName),
+		ID: store.NewID(), Username: in.Username,
 		PasswordHash: hash, Role: role, CreatedAt: ms(now),
 	}
-	return u, insertAccount(ctx, q, u)
+	return u, insertAccount(ctx, q, u, in.DisplayName)
 }
 
 // insertAccount creates the user row and its intelligence in the caller's transaction, so
 // every account has exactly one (PROF-01). The intelligence is named by the display name,
 // else the username, and its handle derives from the username (PROF-02).
-func insertAccount(ctx context.Context, q *db.Queries, u db.User) error {
+func insertAccount(ctx context.Context, q *db.Queries, u db.User, displayName string) error {
 	if err := q.CreateUser(ctx, db.CreateUserParams{
-		ID: u.ID, Username: u.Username, DisplayName: u.DisplayName,
+		ID: u.ID, Username: u.Username,
 		PasswordHash: u.PasswordHash, Role: u.Role, CreatedAt: u.CreatedAt,
 	}); err != nil {
 		return err
 	}
 	_, err := intelligences.Create(ctx, q, intelligences.NewParams{
-		ID: u.ID, Kind: handles.User, DisplayName: u.DisplayName, HandleBase: u.Username, Now: time.UnixMilli(u.CreatedAt),
+		ID: u.ID, Kind: handles.User, DisplayName: displayName, HandleBase: u.Username, Now: time.UnixMilli(u.CreatedAt),
 	})
 	return err
 }

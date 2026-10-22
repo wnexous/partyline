@@ -17,7 +17,6 @@ import (
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
-	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/store"
@@ -130,10 +129,11 @@ type Agent struct {
 	db.Agent
 	OwnerUsername    string
 	OwnerDisplayName string
-	// Handle and ProfileName are the @handle and the display name of the agent's intelligence;
-	// empty for an agent without one.
-	Handle      string
-	ProfileName string
+	// Handle, ProfileName and ProfileAvatar are the @handle, the display name and the avatar
+	// blob of the agent's intelligence; empty for an agent without one.
+	Handle        string
+	ProfileName   string
+	ProfileAvatar string
 	// Level is manage for the owner and use for grantees.
 	Level access.Level
 	// Online tells whether the agent has a live connection.
@@ -217,35 +217,15 @@ func (r *Registry) Get(ctx context.Context, p authn.Principal, agentID string) (
 	if err != nil {
 		return Agent{}, err
 	}
-	return r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, l), nil
+	return r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, row.ProfileAvatar, l), nil
 }
 
-func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, handle, profileName string, l access.Level) Agent {
+func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, handle, profileName, profileAvatar string, l access.Level) Agent {
 	return Agent{
 		Agent: a, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay,
-		Handle: handle, ProfileName: profileName,
+		Handle: handle, ProfileName: profileName, ProfileAvatar: profileAvatar,
 		Level: l, Online: r.presence.Online(a.ID),
 	}
-}
-
-// DisplayName is the name people read for the agent (delivery.AgentDisplayName).
-func DisplayName(a db.Agent) string { return delivery.AgentDisplayName(a) }
-
-// GoesBy is the name an agent goes by in the legacy name fields of the API: its @handle, else
-// the name its row has.
-func GoesBy(handle, name string) string {
-	if handle != "" {
-		return handle
-	}
-	return name
-}
-
-// NameOf is the name people read for an agent: its profile's display name, else DisplayName.
-func NameOf(profileName string, a db.Agent) string {
-	if profileName != "" {
-		return profileName
-	}
-	return DisplayName(a)
 }
 
 // ListVisible returns the agents the user owns plus those shared with the user (use grants,
@@ -264,7 +244,7 @@ func (r *Registry) ListVisible(ctx context.Context, p authn.Principal) ([]Agent,
 		if row.Agent.OwnerID == p.UserID {
 			l = dto.LevelManage
 		}
-		out = append(out, r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, l))
+		out = append(out, r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, row.ProfileAvatar, l))
 	}
 	return out, nil
 }
@@ -311,9 +291,6 @@ func (r *Registry) Update(ctx context.Context, p authn.Principal, agentID string
 			}
 		}
 		if u.DisplayName != nil {
-			if err := q.SetAgentDisplayName(ctx, db.SetAgentDisplayNameParams{DisplayName: display, ID: agentID}); err != nil {
-				return err
-			}
 			var err error
 			if renamed, err = intelligences.SetDisplayName(ctx, q, agentID, display, r.now()); err != nil {
 				return err

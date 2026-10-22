@@ -109,8 +109,8 @@ describe("live handlers", () => {
 
   it("agent.presence updates the store, the agents list and room members (UI-15)", () => {
     qc.setQueryData<Agent[]>(queryKeys.agents, [
-      { id: "a1", online: false, name: "builder" } as Agent,
-      { id: "a2", online: false, name: "reviewer" } as Agent,
+      { id: "a1", online: false } as Agent,
+      { id: "a2", online: false } as Agent,
     ]);
     qc.setQueryData<RoomMember[]>(queryKeys.roomMembers("r1"), [
       { id: "mb1", kind: "agent", member_id: "a1", online: false } as RoomMember,

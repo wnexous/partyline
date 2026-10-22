@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -34,13 +35,27 @@ func (s *server) adminRoutes(mux *http.ServeMux) {
 // optTime converts an optional unix-ms column to an optional time.
 func optTime(v sql.NullInt64) *time.Time { return convert.OptTime(v) }
 
-func toUser(u db.User) dto.User {
-	return dto.User{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName}
+// userNames returns the display names of the accounts: the names of their intelligences
+// (PROF-03). An account without an intelligence is left out.
+func (s *server) userNames(ctx context.Context, ids ...string) (map[string]string, error) {
+	rows, err := s.Intelligences.Rows(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(rows))
+	for id, row := range rows {
+		names[id] = row.DisplayName
+	}
+	return names, nil
 }
 
-func toAdminUser(u db.User) dto.AdminUser {
+func toUser(u db.User, displayName string) dto.User {
+	return dto.User{ID: u.ID, Username: u.Username, DisplayName: displayName}
+}
+
+func toAdminUser(u db.User, displayName string) dto.AdminUser {
 	return dto.AdminUser{
-		ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, Role: dto.Role(u.Role),
+		ID: u.ID, Username: u.Username, DisplayName: displayName, Role: dto.Role(u.Role),
 		Disabled: u.DisabledAt.Valid, DisabledAt: optTime(u.DisabledAt), CreatedAt: msTime(u.CreatedAt),
 	}
 }
@@ -115,13 +130,17 @@ func (s *server) createInvite(w http.ResponseWriter, r *http.Request, p authn.Pr
 	if err != nil {
 		return err
 	}
+	names, err := s.userNames(r.Context(), creator.ID)
+	if err != nil {
+		return err
+	}
 	inv, secret, err := s.Users.CreateInvite(r.Context(), p.UserID, req.Role)
 	if err != nil {
 		return err
 	}
 	httpx.WriteJSON(w, http.StatusCreated, dto.CreatedInvite{
 		Invite: toInvite(users.Invite{
-			ListInvitesRow: db.ListInvitesRow{Invite: inv, CreatorUsername: creator.Username, CreatorDisplayName: creator.DisplayName},
+			ListInvitesRow: db.ListInvitesRow{Invite: inv, CreatorUsername: creator.Username, CreatorDisplayName: names[creator.ID]},
 			Status:         dto.InviteStatusPending,
 		}),
 		URL: strings.TrimRight(s.Config.PublicURL.String(), "/") + "/invite/" + secret,
@@ -142,9 +161,17 @@ func (s *server) listAdminUsers(w http.ResponseWriter, r *http.Request, _ authn.
 	if err != nil {
 		return err
 	}
+	ids := make([]string, len(list))
+	for i, u := range list {
+		ids[i] = u.ID
+	}
+	names, err := s.userNames(r.Context(), ids...)
+	if err != nil {
+		return err
+	}
 	out := dto.List[dto.AdminUser]{Items: make([]dto.AdminUser, len(list))}
 	for i, u := range list {
-		out.Items[i] = toAdminUser(u)
+		out.Items[i] = toAdminUser(u, names[u.ID])
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
@@ -160,7 +187,11 @@ func (s *server) updateAdminUser(w http.ResponseWriter, r *http.Request, _ authn
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, toAdminUser(u))
+	names, err := s.userNames(r.Context(), u.ID)
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, toAdminUser(u, names[u.ID]))
 	return nil
 }
 
@@ -209,7 +240,7 @@ func (s *server) listDirectory(w http.ResponseWriter, r *http.Request, _ authn.P
 		if u.DisabledAt.Valid {
 			continue
 		}
-		user := toUser(u)
+		user := toUser(u, rows[u.ID].DisplayName)
 		if row, ok := rows[u.ID]; ok {
 			ref := convert.IntelligenceRef(row, dto.IntelligenceRoleUser, "")
 			user.Intelligence = &ref

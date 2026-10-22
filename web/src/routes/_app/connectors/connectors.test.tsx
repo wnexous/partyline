@@ -311,6 +311,46 @@ describe("connector page (UI-13, UI-17)", () => {
     });
   });
 
+  it("names the AIs of the route dialog by their profile and filters by name or handle", async () => {
+    mockApi({
+      ...base,
+      "GET /agents": json(200, {
+        items: [
+          makeAgent({
+            id: "a1",
+            intelligence: makeAI({ id: "a1", display_name: "Atlas Prime", handle: "atlas" }),
+          }),
+          makeAgent({
+            id: "a2",
+            intelligence: makeAI({ id: "a2", display_name: "Reviewer", handle: "rev" }),
+          }),
+        ],
+      }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    await screen.findByRole("listitem", { name: "Ops on call" });
+    await user.click(
+      within(row("Ops on call")).getByRole("button", { name: "Route Ops on call to an agent" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const agents = await within(dialog).findByRole("list", { name: "Agents" });
+    const buttons = within(agents).getAllByRole("button");
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toHaveTextContent("Atlas Prime");
+    expect(buttons[0]).not.toHaveTextContent("atlas");
+    expect(buttons[1]).toHaveTextContent("Reviewer");
+
+    const filter = within(dialog).getByRole("searchbox", { name: "Filter agents" });
+    await user.type(filter, "REV");
+    expect(within(agents).getAllByRole("button")).toHaveLength(1);
+    expect(within(agents).getByRole("button", { name: /Reviewer/ })).toBeInTheDocument();
+    await user.clear(filter);
+    await user.type(filter, "Prime");
+    expect(within(agents).getByRole("button", { name: /Atlas Prime/ })).toBeInTheDocument();
+    expect(within(agents).queryByRole("button", { name: /Reviewer/ })).toBeNull();
+  });
+
   it("edits the connector and keeps untouched secrets masked", async () => {
     const { calls } = mockApi({
       ...base,

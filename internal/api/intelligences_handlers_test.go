@@ -148,8 +148,8 @@ func TestOwnerEditsAIProfile(t *testing.T) {
 		DisplayName: ptr("Atlas"), Handle: ptr("atlas"), Bio: ptr("Runs the builds"),
 	}).RequireStatus(http.StatusOK))
 	require.Equal(t, []any{"Atlas", "atlas", "Runs the builds"}, []any{got.DisplayName, got.Handle, got.Bio})
-	require.Equal(t, "Atlas", listedAgent(t, alice, id).DisplayName, "the agents list shows the rename (AID-06)")
-	require.Equal(t, "atlas", listedAgent(t, alice, id).Name, "the legacy name field is the handle")
+	listed := listedAgent(t, alice, id).Intelligence
+	require.Equal(t, []string{"Atlas", "atlas"}, []string{listed.DisplayName, listed.Handle}, "the agents list shows the rename (AID-06)")
 
 	grantee := profileOf(t, bob, id)
 	require.Equal(t, []any{"Atlas", false, dto.LevelUse}, []any{grantee.DisplayName, grantee.CanEdit, grantee.AI.MyLevel})

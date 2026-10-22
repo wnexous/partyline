@@ -649,7 +649,10 @@ describe("merging an unlinked AI (MRG-01, MRG-02)", () => {
 
   it("picks one of the owner's AIs, merges into it and refreshes the contacts tree", async () => {
     let contacts = sampleContacts;
-    const survivor = makeAgent({ id: "a1", name: "atlas", display_name: "Atlas" });
+    const survivor = makeAgent({
+      id: "a1",
+      intelligence: makeAI({ id: "a1", handle: "atlas", display_name: "Atlas" }),
+    });
     const { calls } = api(sampleContacts, {
       "GET /contacts": () => json(200, contacts),
       "POST /agents/a4/merge": () => {

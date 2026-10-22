@@ -971,9 +971,9 @@ design needs the API to return them). See `contract-notes.md`, T48.
 **Requirement**: MIG-01, MIG-05, GRP-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] v0.3 fixture upgrades through 0015 and 0016 in one transaction; author names equal the pre-upgrade ones; a failure in 0016 leaves the v0.3 database untouched (MIG-05)
-- [ ] The production-route test of T6 still passes (MIG-01)
-- [ ] Gate check passes: `make check`
+- [x] v0.3 fixture upgrades through 0015 and 0016 in one transaction; author names equal the pre-upgrade ones; a failure in 0016 leaves the v0.3 database untouched (MIG-05)
+- [x] The production-route test of T6 still passes (MIG-01)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `refactor(store): drop the v0.3 identity columns`

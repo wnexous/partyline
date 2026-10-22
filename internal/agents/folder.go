@@ -337,15 +337,9 @@ func (r *Registry) createFolderAgent(ctx context.Context, q *db.Queries, ownerID
 		return db.Agent{}, err
 	}
 	base := folderBase(id.Folder)
-	profile, err := intelligences.Create(ctx, q, intelligences.NewParams{
+	if _, err := intelligences.Create(ctx, q, intelligences.NewParams{
 		ID: agentID, Kind: handles.AI, DisplayName: handles.DisplayName(base), HandleBase: base, Now: r.now(),
-	})
-	if err != nil {
-		return db.Agent{}, err
-	}
-	// The v0.3 display name column mirrors the profile until it is dropped (T7), and the row's
-	// own name is its id: without the mirror the name people read would be that id.
-	if err := q.SetAgentDisplayName(ctx, db.SetAgentDisplayNameParams{DisplayName: profile.DisplayName, ID: agentID}); err != nil {
+	}); err != nil {
 		return db.Agent{}, err
 	}
 	return q.GetAgent(ctx, agentID)

@@ -6,13 +6,17 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 SELECT * FROM connectors WHERE id = ?;
 
 -- name: GetConnectorWithOwner :one
-SELECT sqlc.embed(c), u.username AS owner_username, u.display_name AS owner_display_name
+SELECT sqlc.embed(c), u.username AS owner_username,
+       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name
 FROM connectors c JOIN users u ON u.id = c.owner_id
+LEFT JOIN intelligences ui ON ui.id = u.id
 WHERE c.id = ?;
 
 -- name: ListConnectorsForUser :many
-SELECT sqlc.embed(c), u.username AS owner_username, u.display_name AS owner_display_name
+SELECT sqlc.embed(c), u.username AS owner_username,
+       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name
 FROM connectors c JOIN users u ON u.id = c.owner_id
+LEFT JOIN intelligences ui ON ui.id = u.id
 WHERE c.owner_id = sqlc.arg(user_id)
    OR c.id IN (SELECT g.resource_id FROM grants g
                WHERE g.resource_kind = 'connector' AND g.subject IN (sqlc.arg(user_id), '*'))

@@ -147,22 +147,24 @@ export function makeMember(over: Partial<RoomMember> = {}): RoomMember {
   };
 }
 
-export function makeAgent(over: Partial<Agent> = {}): Agent {
-  const name = over.name ?? "release-bot";
+/**
+ * An AI of the agents list. `name` is shorthand for its profile: the display name and the @handle
+ * (an `intelligence` override wins).
+ */
+export function makeAgent(over: Partial<Agent> & { name?: string } = {}): Agent {
+  const { name = "release-bot", ...agent } = over;
+  const id = agent.id ?? "a1";
   return {
-    id: "a1",
-    name,
-    display_name: name,
+    id,
+    intelligence: makeAI({ id, display_name: name, handle: name }),
     description: "",
     harness: "agent",
     machine: "",
-    kind: "fixed",
-    archived: false,
     owner: { id: "u1", username: "ana", display_name: "Ana Souza" },
     my_level: "manage",
     online: false,
     created_at: "2026-10-01T12:00:00Z",
-    ...over,
+    ...agent,
   };
 }
 

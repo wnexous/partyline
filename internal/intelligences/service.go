@@ -123,10 +123,10 @@ func cut(s string, n int) string {
 	return strings.TrimSpace(string([]rune(s)[:n]))
 }
 
-// SetDisplayName writes an intelligence's display name from a v0.3 path that still owns the
-// name (an account's display name, an agent's rename or readable session name), so that
-// authors are named by their intelligence everywhere. It reports whether the stored name
-// changed. A row without an intelligence (created before PROF-01 existed) is left alone.
+// SetDisplayName writes an intelligence's display name for a path that owns the name without
+// going through Update (an account's display name, an agent's rename, a person's platform
+// name), so that authors are named by their intelligence everywhere. It reports whether the
+// stored name changed. A row without an intelligence is left alone.
 func SetDisplayName(ctx context.Context, q *db.Queries, id, name string, now time.Time) (bool, error) {
 	cur, err := q.GetIntelligence(ctx, id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -532,16 +532,11 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in P
 			}
 			return err
 		}
-		if next.DisplayName == cur.DisplayName {
+		if next.DisplayName == cur.DisplayName || Role(d.Role) != RolePerson {
 			return nil
 		}
-		if Role(d.Role) == RolePerson {
-			// PEOP-05, PROF-11: a name chosen here is not replaced by platform name changes.
-			if err := q.SetPersonNameLocked(ctx, db.SetPersonNameLockedParams{NameLocked: true, ID: id}); err != nil {
-				return err
-			}
-		}
-		return mirrorDisplayName(ctx, q, Role(d.Role), id, next.DisplayName)
+		// PEOP-05, PROF-11: a name chosen here is not replaced by platform name changes.
+		return q.SetPersonNameLocked(ctx, db.SetPersonNameLockedParams{NameLocked: true, ID: id})
 	})
 	if err != nil {
 		return Profile{}, err
@@ -554,18 +549,6 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in P
 		return Profile{}, err
 	}
 	return s.profile(ctx, p, d, true)
-}
-
-// mirrorDisplayName copies a new display name into the v0.3 columns that code not yet
-// converted to intelligences still reads. It goes away with those columns.
-func mirrorDisplayName(ctx context.Context, q *db.Queries, role Role, id, name string) error {
-	switch role {
-	case RoleUser:
-		return q.SetUserDisplayName(ctx, db.SetUserDisplayNameParams{DisplayName: name, ID: id})
-	case RoleAI:
-		return q.SetAgentDisplayName(ctx, db.SetAgentDisplayNameParams{DisplayName: name, ID: id})
-	}
-	return nil
 }
 
 // SetAvatar replaces the avatar of an intelligence the caller can edit with the image read from

@@ -84,8 +84,8 @@ func TestAgentEndpoints(t *testing.T) {
 	require.Len(t, list.Items, 1)
 	got := list.Items[0]
 	require.Equal(t, id, got.ID)
-	require.Equal(t, "billing-api", got.Name)
-	require.Equal(t, dto.User{ID: alice.User.ID, Username: "alice", DisplayName: alice.User.DisplayName}, got.Owner)
+	require.Equal(t, "billing-api", got.Intelligence.Handle)
+	require.Equal(t, dto.User{ID: alice.User.ID, Username: "alice", DisplayName: "alice"}, got.Owner, "an account that chose no name goes by its username")
 	require.Equal(t, dto.LevelManage, got.MyLevel)
 	require.False(t, got.Online)
 

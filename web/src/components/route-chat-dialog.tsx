@@ -53,7 +53,13 @@ function AgentChoice({ chat, onClose }: { chat: Chat; onClose: () => void }) {
   const q = query.trim().toLowerCase();
   const list = (agents.data ?? [])
     .filter(usable)
-    .filter((a) => !q || a.name.toLowerCase().includes(q) || a.owner.username.includes(q));
+    .filter(
+      (a) =>
+        !q ||
+        a.intelligence.display_name.toLowerCase().includes(q) ||
+        a.intelligence.handle.includes(q) ||
+        a.owner.username.includes(q),
+    );
 
   const pick = (agent: Agent) =>
     route.mutate(
@@ -63,7 +69,7 @@ function AgentChoice({ chat, onClose }: { chat: Chat; onClose: () => void }) {
           toast.success(
             t("route.done", {
               chat: chatTitle(t, chat.title, chat.connector_kind),
-              agent: agent.name,
+              agent: agent.intelligence.display_name,
             }),
           );
           onClose();
@@ -120,7 +126,9 @@ function AgentChoice({ chat, onClose }: { chat: Chat; onClose: () => void }) {
                 >
                   <BotIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{a.name}</span>
+                    <span className="block truncate text-sm font-medium">
+                      {a.intelligence.display_name}
+                    </span>
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
                       <StatusDot online={presence[a.id]?.online ?? a.online} withLabel />
                       <span>@{a.owner.username}</span>

@@ -5,13 +5,24 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/stretchr/testify/require"
 )
+
+// legacyColumns are the v0.3 identity columns migration 0016 drops (design, "Migration 0016"):
+// names and archiving moved to the intelligence. agents.name and agents.project_id stay as
+// documented dead columns (AD-012), so they are not listed.
+var legacyColumns = map[string][]string{
+	"users":  {"display_name"},
+	"agents": {"display_name", "auto_name", "kind", "session_no", "archived_at", "session_key"},
+}
 
 // v03Fixture builds a database at schema 0014 holding testdata/v03_fixture.sql: users,
 // agents (fixed, temporary, project sessions), projects with members, grants and cursors,
@@ -104,13 +115,23 @@ func without(rows []string, drop func(string) bool) []string {
 	return out
 }
 
-// MIG-01, MIG-03: upgrading the v0.3 fixture keeps every row of every v0.3 table with all its
-// v0.3 columns, except the project rows the conversion replaces: project members become
-// agent members, project grants, projects and their cursors go, agents lose their project.
-// Every room is a group whose history counts as read.
+// MIG-01, MIG-03, MIG-05: upgrading the v0.3 fixture (0015 and 0016 apply in one transaction)
+// keeps every row of every v0.3 table with all its columns, except what the upgrade replaces on
+// purpose: the project rows the conversion replaces (project members become agent members,
+// project grants, projects and their cursors go, agents lose their project) and the legacy
+// identity columns 0016 drops, whose values live in the intelligences
+// (TestUpgradeV03Identities). Every room is a group whose history counts as read.
 func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 	e := v03Fixture(t)
-	tables := e.v03Tables()
+	all := e.v03Tables()
+	for table, legacy := range legacyColumns {
+		require.Subset(t, all[table], legacy, "fixture sanity: %s has its legacy columns before the upgrade", table)
+	}
+	// The columns the upgrade keeps: every v0.3 column but the legacy ones.
+	tables := map[string][]string{}
+	for table, cols := range all {
+		tables[table] = without(cols, func(c string) bool { return slices.Contains(legacyColumns[table], c) })
+	}
 	before := map[string][]string{}
 	for table, cols := range tables {
 		before[table] = e.rowsOf(table, cols)
@@ -119,7 +140,23 @@ func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 	agentCols := without(tables["agents"], func(c string) bool { return c == "project_id" })
 	agentsBefore := e.rowsOf("agents", agentCols)
 
+	require.NotContains(t, versions(t, e.s), "0015_intelligences", "fixture sanity: the database is a v0.3 one")
 	require.NoError(t, e.s.Migrate(context.Background()))
+	require.Subset(t, versions(t, e.s), []string{"0015_intelligences", "0016_drop_v03_identity"}, "the fixture upgrades through 0015 and 0016")
+
+	// 0016 drops the legacy columns and project_cursors and no other column or table of v0.3.
+	for table, cols := range all {
+		if table == "project_cursors" {
+			continue
+		}
+		after := e.columnsOf(table)
+		require.Subset(t, after, tables[table], "table %s keeps its other v0.3 columns", table)
+		dropped := without(cols, func(c string) bool { return slices.Contains(after, c) })
+		require.ElementsMatch(t, legacyColumns[table], dropped, "table %s loses its legacy columns and no other", table)
+	}
+	require.Empty(t, e.columnsOf("project_cursors"), "the project cursor table is dropped")
+	require.NotEmpty(t, e.columnsOf("projects"), "the empty projects table stays (agents.project_id references it, AD-012)")
+	require.Subset(t, e.columnsOf("agents"), []string{"name", "project_id"}, "dead columns SQLite cannot drop stay (AD-012)")
 
 	changed := map[string]bool{"room_members": true, "grants": true, "projects": true, "project_cursors": true, "agents": true, "agent_cursors": true}
 	for table, cols := range tables {
@@ -143,10 +180,12 @@ func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 	require.Equal(t, without(before["grants"], func(r string) bool { return strings.Contains(r, "resource_kind=project") }),
 		e.rowsOf("grants", tables["grants"]))
 	require.Empty(t, e.rowsOf("projects", tables["projects"]))
-	require.Empty(t, e.rowsOf("project_cursors", tables["project_cursors"]))
 
 	require.Equal(t, agentsBefore, e.rowsOf("agents", agentCols), "agents keep every other column")
 	require.Zero(t, e.count(`SELECT COUNT(*) FROM agents WHERE project_id IS NOT NULL OR folder <> ''`), "agents leave their project and stay unlinked")
+
+	require.Zero(t, e.count(`SELECT COUNT(*) FROM pragma_foreign_key_check`), "no foreign key is left dangling")
+	require.Equal(t, "ok", e.str(`SELECT integrity_check FROM pragma_integrity_check`))
 
 	require.Equal(t, []string{
 		"agent_id=a-atlas room_id=r-inbox seq=3",
@@ -250,4 +289,209 @@ func TestUpgradeV03RollsBackOnHookFailure(t *testing.T) {
 	require.NoError(t, e.s.Migrate(ctx))
 	require.Equal(t, 1, e.count(`SELECT COUNT(*) FROM schema_migrations WHERE version = '0015_intelligences'`))
 	require.Equal(t, 12, e.count(`SELECT COUNT(*) FROM intelligences`))
+}
+
+// v03AuthorNames renders message_views.author_name per message id.
+func (e *schemaEnv) v03AuthorNames() map[string]string {
+	e.t.Helper()
+	out := map[string]string{}
+	rows, err := e.s.write.Query(`SELECT id, author_name FROM message_views`)
+	require.NoError(e.t, err)
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id, name string
+		require.NoError(e.t, rows.Scan(&id, &name))
+		out[id] = name
+	}
+	require.NoError(e.t, rows.Err())
+	return out
+}
+
+// Design test-plan assertion 6, MIG-01: after 0016 recreated message_views without its
+// transitional fallbacks, every fixture message is named as the v0.3 view named it. Two
+// authors change on purpose: a chat sender linked to a user is that user (PEOP-02), and a
+// person has one name, the latest the platform reported (MIG-04).
+func TestUpgradeV03AuthorNamesSurvive(t *testing.T) {
+	e := v03Fixture(t)
+	want := map[string]string{
+		"m-ops1": "Alice A.", "m-ops2": "Atlas Ops", "m-ops3": "Bobby", "m-ops4": "Zé", "m-ops5": "Team",
+		"m-ops6": "Partyline", "m-ops7": "Proj Bot", "m-in1": "Maria", "m-in2": "atlas", "m-in3": "Maria Silva",
+		"m-dev1": "Alice A.", "m-dev2": "Mine", "m-bob1": "Bob.Smith",
+	}
+	require.Equal(t, want, e.v03AuthorNames(), "fixture sanity: the v0.3 view names")
+
+	require.NoError(t, e.s.Migrate(context.Background()))
+	want["m-ops3"] = "Bob.Smith"  // the sender linked to bob is bob
+	want["m-in1"] = "Maria Silva" // the person's latest name
+	require.Equal(t, want, e.v03AuthorNames())
+
+	type author struct{ Handle, Kind string }
+	got := map[string]author{}
+	rows, err := e.s.write.Query(`SELECT id, author_handle, author_ikind FROM message_views`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var id string
+		var a author
+		require.NoError(t, rows.Scan(&id, &a.Handle, &a.Kind))
+		got[id] = a
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	require.Equal(t, author{"alice", "human"}, got["m-ops1"])
+	require.Equal(t, author{"atlas", "ai"}, got["m-ops2"])
+	require.Equal(t, author{"proj-claude-2", "ai"}, got["m-ops7"])
+	require.Equal(t, author{"bob-smith", "human"}, got["m-ops3"])
+	require.Equal(t, author{}, got["m-ops5"], "a chat message without a sender has no intelligence")
+	require.Equal(t, author{}, got["m-ops6"], "a system message has none")
+}
+
+// MIG-01: nothing the dropped name columns held is lost; the name every user and agent went by
+// in v0.3 is the display name of its intelligence after the upgrade.
+func TestUpgradeV03KeepsEveryNameInTheIntelligence(t *testing.T) {
+	e := v03Fixture(t)
+	v03Names := map[string]string{}
+	for _, query := range []string{
+		`SELECT id, COALESCE(NULLIF(display_name, ''), username) FROM users`,
+		`SELECT id, COALESCE(NULLIF(display_name, ''), NULLIF(auto_name, ''), name) FROM agents`,
+	} {
+		rows, err := e.s.write.Query(query)
+		require.NoError(t, err)
+		for rows.Next() {
+			var id, name string
+			require.NoError(t, rows.Scan(&id, &name))
+			v03Names[id] = name
+		}
+		require.NoError(t, rows.Err())
+		require.NoError(t, rows.Close())
+	}
+	require.Len(t, v03Names, 3+6, "fixture sanity: every user and agent")
+	require.Equal(t, "Scratch", v03Names["a-agent"], "fixture sanity: a rename wins over the generated name")
+
+	require.NoError(t, e.s.Migrate(context.Background()))
+	got := e.intelligences()
+	for id, name := range v03Names {
+		require.Equal(t, name, got[id].Display, "the v0.3 name of %s", id)
+	}
+}
+
+// MIG-01: an agent that v0.3 archived or named after a project session is listed like any other
+// after the upgrade, with its handle (archiving is gone).
+func TestUpgradeV03ListsEveryAgent(t *testing.T) {
+	e := v03Fixture(t)
+	require.NoError(t, e.s.Migrate(context.Background()))
+	rows, err := e.s.R().ListAgentsForUser(context.Background(), "u-alice")
+	require.NoError(t, err)
+	got := map[string]string{}
+	for _, r := range rows {
+		got[r.Agent.ID] = r.Handle
+	}
+	require.Equal(t, map[string]string{
+		"a-atlas": "atlas", "a-pc": "proj-claude", "a-pc2": "proj-claude-2", "a-pc0": "proj-codex",
+		"a-agent": "agent", // v0.3 archived it (archived_at)
+	}, got)
+}
+
+// overlayMigration returns the embedded migrations with one file's body replaced.
+func overlayMigration(t *testing.T, name string, edit func(body string) string) fs.FS {
+	t.Helper()
+	files, err := migrationFiles(migrations)
+	require.NoError(t, err)
+	out := fstest.MapFS{}
+	for _, f := range files {
+		body, err := fs.ReadFile(migrations, f)
+		require.NoError(t, err)
+		if f == name {
+			body = []byte(edit(string(body)))
+		}
+		out[f] = &fstest.MapFile{Data: body}
+	}
+	require.Contains(t, out, name, "the migration exists")
+	return out
+}
+
+// MIG-05: a failure in 0016 - in its SQL after the columns were dropped, or in a step that runs
+// right after it - leaves the v0.3 database exactly as it was: 0015 and its hook are rolled
+// back too, because the whole upgrade is one transaction. The next start migrates normally.
+func TestUpgradeV03RollsBackWhenTheCleanupFails(t *testing.T) {
+	const cleanup = "0016_drop_v03_identity"
+	boom := errors.New("forced failure")
+	for name, tc := range map[string]struct {
+		files fs.FS
+		hooks func(t *testing.T) map[string]Hook
+	}{
+		"a statement after the drops fails": {
+			files: overlayMigration(t, cleanup+".sql", func(body string) string {
+				return body + "\nINSERT INTO no_such_table (id) VALUES (1);\n"
+			}),
+			hooks: func(*testing.T) map[string]Hook { return hooks },
+		},
+		"a step after the file fails": {
+			files: migrations,
+			hooks: func(t *testing.T) map[string]Hook {
+				failing := map[string]Hook{}
+				for v, h := range hooks {
+					failing[v] = h
+				}
+				failing[cleanup] = func(ctx context.Context, tx *sql.Tx) error {
+					var n int
+					require.NoError(t, tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('agents') WHERE name = 'auto_name'`).Scan(&n))
+					require.Zero(t, n, "the cleanup ran before the failure")
+					return boom
+				}
+				return failing
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			e := v03Fixture(t)
+			before := snapshot(t, e.s)
+
+			err := e.s.migrate(ctx, tc.files, tc.hooks(t))
+			require.Error(t, err)
+			require.Contains(t, err.Error(), cleanup)
+			require.Equal(t, before, snapshot(t, e.s), "schema, schema_migrations and every row are unchanged")
+			require.NotContains(t, versions(t, e.s), "0015_intelligences")
+			require.Positive(t, e.count(`SELECT COUNT(*) FROM pragma_table_info('agents') WHERE name = 'auto_name'`), "the legacy columns are back")
+
+			require.NoError(t, e.s.Migrate(ctx))
+			require.Subset(t, versions(t, e.s), []string{"0015_intelligences", cleanup})
+			require.Zero(t, e.count(`SELECT COUNT(*) FROM pragma_table_info('agents') WHERE name = 'auto_name'`))
+		})
+	}
+}
+
+// MIG-01, MIG-05: 0016 on its own - the database of an earlier build that applied 0015 - drops
+// the legacy columns and the empty project cursor table and changes nothing else: every other
+// column of every table keeps every row (a rebuilt table would lose the rows that reference it,
+// foreign_keys being on), and the database is consistent afterwards.
+func TestCleanupAloneKeepsEveryRow(t *testing.T) {
+	ctx := context.Background()
+	e := v03Fixture(t)
+	require.NoError(t, e.s.MigrateBefore(ctx, "0016"))
+	require.Contains(t, versions(t, e.s), "0015_intelligences")
+	require.NotContains(t, versions(t, e.s), "0016_drop_v03_identity")
+
+	tables := e.v03Tables()
+	kept := map[string][]string{}
+	before := map[string][]string{}
+	for table, cols := range tables {
+		kept[table] = without(cols, func(c string) bool { return slices.Contains(legacyColumns[table], c) })
+		before[table] = e.rowsOf(table, kept[table])
+	}
+	require.Len(t, before["messages"], 13, "fixture sanity")
+	require.Len(t, before["agents"], 6, "fixture sanity")
+	viewBefore := e.v03AuthorNames()
+
+	require.NoError(t, e.s.Migrate(ctx))
+
+	for table := range tables {
+		if table == "project_cursors" {
+			continue
+		}
+		require.Equal(t, before[table], e.rowsOf(table, kept[table]), "table %s keeps every row", table)
+	}
+	require.Equal(t, viewBefore, e.v03AuthorNames(), "the recreated view names every author as before")
+	require.Zero(t, e.count(`SELECT COUNT(*) FROM pragma_foreign_key_check`), "no foreign key is left dangling")
+	require.Equal(t, "ok", e.str(`SELECT integrity_check FROM pragma_integrity_check`))
 }

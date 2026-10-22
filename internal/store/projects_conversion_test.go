@@ -85,7 +85,7 @@ func TestProjectsBecomeAgentMembers(t *testing.T) {
 	require.Equal(t, 2, e.count(`SELECT COUNT(*) FROM agent_cursors`))
 
 	require.Zero(t, e.count(`SELECT COUNT(*) FROM projects`))
-	require.Zero(t, e.count(`SELECT COUNT(*) FROM project_cursors`))
+	require.Empty(t, e.columnsOf("project_cursors"), "the project cursors moved to the agent, and 0016 dropped their table")
 	require.Zero(t, e.count(`SELECT COUNT(*) FROM room_members WHERE kind = 'project'`))
 	require.Zero(t, e.count(`SELECT COUNT(*) FROM grants WHERE resource_kind = 'project'`))
 	require.Equal(t, 1, e.count(`SELECT COUNT(*) FROM grants`), "other grants stay")

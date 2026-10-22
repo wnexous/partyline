@@ -344,7 +344,7 @@ func TestAgentWSCapsAgentsPerOwner(t *testing.T) {
 	list := testkit.Decode[dto.List[dto.Agent]](alice.Get("/api/v1/agents").RequireStatus(http.StatusOK))
 	require.Len(t, list.Items, agents.MaxAgentsPerOwner)
 	for _, a := range list.Items {
-		require.NotEqual(t, "one-too-many", a.Name)
+		require.NotEqual(t, "one-too-many", a.Intelligence.Handle)
 	}
 
 	existing, resp := tok.DialAgent("agent-007")

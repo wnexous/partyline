@@ -49,15 +49,6 @@ func IntelligenceOf(ctx context.Context, q *db.Queries, agentID string) (db.Inte
 	return i, err
 }
 
-// AgentDisplayName is the name people read for an agent whose profile cannot be read: the
-// display name its row mirrors, else the row's name (ID-04).
-func AgentDisplayName(a db.Agent) string {
-	if a.DisplayName != "" {
-		return a.DisplayName
-	}
-	return a.Name
-}
-
 // Delivered describes a message as one agent sees it.
 type Delivered struct {
 	Text string

@@ -76,8 +76,7 @@ func New(d Deps) *Service {
 // Room is a room as seen by one caller.
 type Room struct {
 	db.Room
-	OwnerUsername    string
-	OwnerDisplayName string
+	OwnerUsername string
 	// Level is the caller's level (ACL-02).
 	Level access.Level
 	// Visibility is the sharing preset the room's grants form.
@@ -258,7 +257,7 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, roomID string) (Ro
 		return Room{}, err
 	}
 	owner := ownerIntelligence(row.Room.OwnerID, row.OwnerIkind, row.OwnerIname, row.OwnerHandle, row.OwnerAvatar)
-	return s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, owner, row.MemberCount, l)
+	return s.view(ctx, row.Room, row.OwnerUsername, owner, row.MemberCount, l)
 }
 
 // ownerIntelligence rebuilds an owner's profile from the columns a room query joins; the zero
@@ -270,7 +269,7 @@ func ownerIntelligence(id, kind, name, handle, avatar string) db.Intelligence {
 	return db.Intelligence{ID: id, Kind: kind, DisplayName: name, Handle: handle, AvatarSha256: avatar}
 }
 
-func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDisplay string, owner db.Intelligence, members int64, l access.Level) (Room, error) {
+func (s *Service) view(ctx context.Context, r db.Room, ownerUsername string, owner db.Intelligence, members int64, l access.Level) (Room, error) {
 	v, err := s.az.Sharing(ctx, access.KindRoom, r.ID)
 	if err != nil {
 		return Room{}, err
@@ -298,7 +297,7 @@ func (s *Service) view(ctx context.Context, r db.Room, ownerUsername, ownerDispl
 		}
 	}
 	return Room{
-		Room: r, OwnerUsername: ownerUsername, OwnerDisplayName: ownerDisplay, Level: l, Visibility: v.Mode,
+		Room: r, OwnerUsername: ownerUsername, Level: l, Visibility: v.Mode,
 		MemberCount: members, CatchAll: catchAll > 0, InstructionsByName: by, OwnerIntelligence: owner,
 		Participants: participants,
 	}, nil
@@ -329,7 +328,7 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 			continue
 		}
 		owner := ownerIntelligence(row.Room.OwnerID, row.OwnerIkind, row.OwnerIname, row.OwnerHandle, row.OwnerAvatar)
-		r, err := s.view(ctx, row.Room, row.OwnerUsername, row.OwnerDisplayName, owner, row.MemberCount, l)
+		r, err := s.view(ctx, row.Room, row.OwnerUsername, owner, row.MemberCount, l)
 		if err != nil {
 			return nil, err
 		}

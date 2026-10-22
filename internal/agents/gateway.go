@@ -326,7 +326,7 @@ func busyError(row db.GetAgentWithOwnerRow, live Live) *httpx.Error {
 	return &httpx.Error{
 		Status: http.StatusConflict, Code: dto.ErrorCodeIdentityBusy, Message: "this intelligence is open in another session",
 		Details: map[string]string{
-			dto.BusyDetailDisplayName: NameOf(row.ProfileName, row.Agent),
+			dto.BusyDetailDisplayName: row.ProfileName,
 			dto.BusyDetailApp:         app,
 			dto.BusyDetailAppLabel:    HarnessLabel(app),
 			dto.BusyDetailConnectedAt: live.Since.UTC().Format(time.RFC3339),
@@ -339,7 +339,7 @@ func busyError(row db.GetAgentWithOwnerRow, live Live) *httpx.Error {
 // described by what the registry knows.
 func (g *Gateway) welcomeRefs(ctx context.Context, row db.GetAgentWithOwnerRow) (ai, owner dto.IntelligenceRef, err error) {
 	a := row.Agent
-	ai = dto.IntelligenceRef{ID: a.ID, Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: DisplayName(a)}
+	ai = dto.IntelligenceRef{ID: a.ID, Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: row.ProfileName}
 	owner = dto.IntelligenceRef{ID: a.OwnerID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: row.OwnerUsername}
 	rows, err := g.d.Store.R().ListIntelligencesByIDs(ctx, []string{a.ID, a.OwnerID})
 	if err != nil {
@@ -416,7 +416,7 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 	}
 	if err := c.write(ctx, dto.AgentWelcomeFrame{
 		Type:         dto.AgentFrameTypeWelcome,
-		Agent:        dto.AgentInfo{ID: a.ID, Name: GoesBy(row.Handle, a.Name), DisplayName: NameOf(row.ProfileName, a), Owner: row.OwnerUsername},
+		Agent:        dto.AgentInfo{ID: a.ID, Name: row.Handle, DisplayName: row.ProfileName, Owner: row.OwnerUsername},
 		Intelligence: ai, Owner: owner,
 	}); err != nil {
 		return err

@@ -122,16 +122,16 @@ func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 
 // writeMe answers with the user rendered as Me, with its intelligence (PROF-01).
 func (s *server) writeMe(w http.ResponseWriter, r *http.Request, status int, u db.User) error {
-	me := toMe(u)
 	rows, err := s.Intelligences.Rows(r.Context(), []string{u.ID})
 	if err != nil {
 		return err
 	}
-	if row, ok := rows[u.ID]; ok {
-		me.Intelligence = convert.IntelligenceRef(row, dto.IntelligenceRoleUser, "")
-	} else { // an account that has no intelligence (created before they existed, not migrated)
-		me.Intelligence = dto.IntelligenceRef{ID: u.ID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: me.DisplayName}
+	row, ok := rows[u.ID]
+	if !ok { // an account without an intelligence: it goes by its username
+		row = db.Intelligence{ID: u.ID, Kind: string(dto.IntelligenceKindHuman), DisplayName: u.Username}
 	}
+	me := toMe(u, row.DisplayName)
+	me.Intelligence = convert.IntelligenceRef(row, dto.IntelligenceRoleUser, "")
 	httpx.WriteJSON(w, status, me)
 	return nil
 }

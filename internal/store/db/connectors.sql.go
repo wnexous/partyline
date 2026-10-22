@@ -143,8 +143,10 @@ func (q *Queries) GetConnector(ctx context.Context, id string) (Connector, error
 }
 
 const getConnectorWithOwner = `-- name: GetConnectorWithOwner :one
-SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_scope, c.auto_route_room_id, c.operator_iid, c.account_label, u.username AS owner_username, u.display_name AS owner_display_name
+SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_scope, c.auto_route_room_id, c.operator_iid, c.account_label, u.username AS owner_username,
+       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name
 FROM connectors c JOIN users u ON u.id = c.owner_id
+LEFT JOIN intelligences ui ON ui.id = u.id
 WHERE c.id = ?
 `
 
@@ -180,8 +182,10 @@ func (q *Queries) GetConnectorWithOwner(ctx context.Context, id string) (GetConn
 }
 
 const listConnectorsForUser = `-- name: ListConnectorsForUser :many
-SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_scope, c.auto_route_room_id, c.operator_iid, c.account_label, u.username AS owner_username, u.display_name AS owner_display_name
+SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_scope, c.auto_route_room_id, c.operator_iid, c.account_label, u.username AS owner_username,
+       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name
 FROM connectors c JOIN users u ON u.id = c.owner_id
+LEFT JOIN intelligences ui ON ui.id = u.id
 WHERE c.owner_id = ?1
    OR c.id IN (SELECT g.resource_id FROM grants g
                WHERE g.resource_kind = 'connector' AND g.subject IN (?1, '*'))

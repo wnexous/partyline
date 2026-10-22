@@ -87,8 +87,8 @@ func (f *fixture) count(t *testing.T, query string, args ...any) int {
 func (f *fixture) user(t *testing.T, name string) authn.Principal {
 	t.Helper()
 	id := store.NewID()
-	f.exec(t, "INSERT INTO users (id, username, display_name, password_hash, role, created_at) VALUES (?, ?, ?, 'x', 'member', ?)",
-		id, name, strings.ToUpper(name[:1])+name[1:], t0.UnixMilli())
+	f.exec(t, "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, 'x', 'member', ?)",
+		id, name, t0.UnixMilli())
 	return authn.Principal{Kind: authn.KindUser, UserID: id, Role: string(dto.RoleMember)}
 }
 

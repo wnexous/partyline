@@ -25,9 +25,10 @@ SELECT COUNT(*) FROM grants WHERE resource_kind = ? AND resource_id = ? AND subj
 -- name: ListGrantsWithUsers :many
 SELECT g.subject, g.level,
        CAST(COALESCE(u.username, '') AS TEXT) AS username,
-       CAST(COALESCE(u.display_name, '') AS TEXT) AS display_name
+       CAST(COALESCE(i.display_name, '') AS TEXT) AS display_name
 FROM grants g
 LEFT JOIN users u ON u.id = g.subject
+LEFT JOIN intelligences i ON i.id = u.id
 WHERE g.resource_kind = ? AND g.resource_id = ?
 ORDER BY username, g.subject;
 

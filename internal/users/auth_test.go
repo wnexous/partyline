@@ -60,6 +60,15 @@ func (f *fixture) setupAdmin(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// displayName is the display name of the account's intelligence: the one name an account has
+// (PROF-03).
+func (f *fixture) displayName(t *testing.T, id string) string {
+	t.Helper()
+	i, err := f.store.R().GetIntelligence(context.Background(), id)
+	require.NoError(t, err)
+	return i.DisplayName
+}
+
 func (f *fixture) userCount(t *testing.T) int64 {
 	t.Helper()
 	n, err := f.store.R().CountUsers(context.Background())
@@ -94,7 +103,7 @@ func TestSetupRequiresSetupTokenAndZeroUsers(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "admin", u.Username)
 	require.Equal(t, "admin", u.Role)
-	require.Equal(t, "Admin", u.DisplayName)
+	require.Equal(t, "Admin", f.displayName(t, u.ID))
 	require.EqualValues(t, 1, f.userCount(t))
 
 	needs, err = f.svc.NeedsSetup(ctx)
