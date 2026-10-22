@@ -1,29 +1,34 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
-  BotIcon,
-  ChevronsUpDownIcon,
+  ContactRoundIcon,
   FingerprintIcon,
   KeyRoundIcon,
   LanguagesIcon,
-  LayoutDashboardIcon,
   LogOutIcon,
   type LucideIcon,
   MailPlusIcon,
   MessagesSquareIcon,
+  MonitorSmartphoneIcon,
   PaletteIcon,
   PlugZapIcon,
+  PlusIcon,
   ScrollTextIcon,
   SettingsIcon,
   UsersIcon,
 } from "lucide-react";
 import { Wordmark } from "@/components/brand";
+import { ConversationList } from "@/components/conversation-list";
+import { CreateRoomDialog } from "@/components/create-room-dialog";
+import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { LanguageRadioGroup } from "@/components/language-switch";
 import { LiveIndicator } from "@/components/live-status";
 import { SearchButton } from "@/components/search-button";
 import { ThemeRadioGroup } from "@/components/theme-toggle";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -32,31 +37,19 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarRail,
-  useSidebar,
-} from "@/components/ui/sidebar";
+import { SidebarContent, SidebarFooter, SidebarHeader } from "@/components/ui/sidebar";
 import { useLogout } from "@/lib/api/queries";
 import { type Me, RoleAdmin } from "@/lib/api/types.gen";
 import { type MessageKey, useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 interface NavItem {
   to:
     | "/"
-    | "/rooms"
     | "/agents"
     | "/connectors"
     | "/identities"
+    | "/devices"
     | "/tokens"
     | "/settings"
     | "/admin/users"
@@ -73,20 +66,21 @@ interface NavGroup {
   adminOnly?: boolean;
 }
 
+/** Every destination outside a conversation: the account menu lists them, the palette finds them. */
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: "nav.groupWork",
-    items: [
-      { to: "/", label: "nav.overview", icon: LayoutDashboardIcon, exact: true },
-      { to: "/rooms", label: "nav.rooms", icon: MessagesSquareIcon },
-    ],
+    items: [{ to: "/", label: "nav.conversations", icon: MessagesSquareIcon, exact: true }],
   },
   {
     label: "nav.groupConnections",
     items: [
-      { to: "/agents", label: "nav.agents", icon: BotIcon },
+      // SPEC_DEVIATION (T44, LAY-06): Contacts opens the agents page until T47 adds /contacts.
+      // Reason: the contacts page and its API arrive in later tasks; the entry must exist now.
+      { to: "/agents", label: "nav.contacts", icon: ContactRoundIcon },
       { to: "/connectors", label: "nav.connectors", icon: PlugZapIcon },
       { to: "/identities", label: "nav.identities", icon: FingerprintIcon },
+      { to: "/devices", label: "nav.devices", icon: MonitorSmartphoneIcon },
     ],
   },
   {
@@ -107,79 +101,79 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-const ACTIVE =
-  "data-[active=true]:bg-tape data-[active=true]:font-semibold data-[active=true]:text-tape-foreground dark:data-[active=true]:bg-tape/14 dark:data-[active=true]:text-tape";
-
-function initials(me: Me): string {
-  const source = me.display_name.trim() || me.username;
-  const parts = source.split(/\s+/).filter(Boolean);
-  const letters = parts.length > 1 ? `${parts[0]?.[0]}${parts.at(-1)?.[0]}` : source.slice(0, 2);
-  return letters.toUpperCase();
-}
-
+/** The wide-screen column: the messenger panel beside the page, as tall as the window. */
 export function AppSidebar({ me }: { me: Me }) {
   const t = useT();
-  const { isMobile, setOpenMobile } = useSidebar();
-  const isAdmin = me.role === RoleAdmin;
-  const closeOnMobile = () => {
-    if (isMobile) setOpenMobile(false);
-  };
-
   return (
-    <Sidebar collapsible="offcanvas" aria-label={t("nav.label")}>
-      <SidebarHeader className="px-4 pt-5 pb-3">
-        <Link
-          to="/"
-          onClick={closeOnMobile}
-          className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-        >
-          <Wordmark />
-        </Link>
-        <SearchButton className="mt-4" />
-      </SidebarHeader>
-
-      <SidebarContent className="gap-0 px-1">
-        {NAV_GROUPS.filter((g) => !g.adminOnly || isAdmin).map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel className="label-caps text-[0.68rem] text-sidebar-foreground/60">
-              {t(group.label)}
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {group.items.map((item) => (
-                  <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton asChild className={ACTIVE}>
-                      <Link
-                        to={item.to}
-                        activeOptions={{ exact: item.exact ?? false }}
-                        activeProps={{ "data-active": true }}
-                        onClick={closeOnMobile}
-                      >
-                        <item.icon aria-hidden="true" />
-                        <span>{t(item.label)}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
-      </SidebarContent>
-
-      <SidebarFooter className="gap-3 border-t border-sidebar-border px-3 py-3">
-        <LiveIndicator className="px-2 text-sidebar-foreground/80" />
-        <UserMenu me={me} initials={initials(me)} />
-      </SidebarFooter>
-      <SidebarRail />
-    </Sidebar>
+    <aside
+      aria-label={t("conversations.label")}
+      className="sticky top-0 h-svh w-80 shrink-0 border-r border-sidebar-border"
+    >
+      <MessengerPanel me={me} />
+    </aside>
   );
 }
 
-function UserMenu({ me, initials }: { me: Me; initials: string }) {
+/**
+ * Brand, account menu and search, the conversation list, and the live line. On a phone it is
+ * the home screen itself (`screen`): the page heading, filling the window.
+ */
+export function MessengerPanel({ me, screen = false }: { me: Me; screen?: boolean }) {
+  const t = useT();
+  return (
+    <div
+      data-fill={screen ? "" : undefined}
+      className={cn(
+        "flex h-full min-h-0 flex-col bg-sidebar text-sidebar-foreground",
+        screen && "flex-1",
+      )}
+    >
+      <SidebarHeader className="gap-3 px-3 pt-4 pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            to="/"
+            className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+          >
+            <Wordmark />
+          </Link>
+          <AccountMenu me={me} />
+        </div>
+        <div className="flex gap-2">
+          <SearchButton className="h-11 min-w-0 flex-1 md:h-9" />
+          {/* The room dialog until the sidebar gets "New conversation" and "New group" (T45). */}
+          <CreateRoomDialog
+            trigger={
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-11 shrink-0 border-sidebar-border bg-background/70 md:size-9"
+                aria-label={t("rooms.new")}
+              >
+                <PlusIcon aria-hidden="true" />
+              </Button>
+            }
+          />
+        </div>
+        {screen ? <h1 className="sr-only">{t("conversations.label")}</h1> : null}
+      </SidebarHeader>
+
+      <SidebarContent className="min-h-0 flex-1 gap-0 overscroll-contain border-t border-sidebar-border">
+        <ConversationList />
+      </SidebarContent>
+
+      <SidebarFooter className="border-t border-sidebar-border px-4 py-2.5">
+        <LiveIndicator className="text-sidebar-foreground/80" />
+      </SidebarFooter>
+    </div>
+  );
+}
+
+function AccountMenu({ me }: { me: Me }) {
   const t = useT();
   const navigate = useNavigate();
   const logout = useLogout();
+  const isAdmin = me.role === RoleAdmin;
+  const { display_name: name, handle } = me.intelligence;
 
   const onLogout = () => {
     logout.mutate(undefined, {
@@ -190,35 +184,42 @@ function UserMenu({ me, initials }: { me: Me; initials: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <SidebarMenuButton
-          size="lg"
+        <button
+          type="button"
           aria-label={t("shell.userMenu")}
-          className="data-[state=open]:bg-sidebar-accent"
+          className="grid size-11 shrink-0 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[state=open]:ring-2 data-[state=open]:ring-sidebar-ring/60"
         >
-          <span
-            aria-hidden="true"
-            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground [font-stretch:90%]"
-          >
-            {initials}
-          </span>
-          <span className="grid min-w-0 flex-1 text-left leading-tight">
-            <span className="truncate text-sm font-medium">{me.display_name || me.username}</span>
-            <span className="truncate font-mono text-xs text-sidebar-foreground/65">
-              @{me.username}
-              {me.role === RoleAdmin ? ` · ${t("shell.roleAdmin")}` : ""}
-            </span>
-          </span>
-          <ChevronsUpDownIcon className="ml-auto size-4 opacity-60" aria-hidden="true" />
-        </SidebarMenuButton>
+          <IntelligenceAvatar intelligence={me.intelligence} size="lg" decorative />
+        </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        side="top"
-        align="start"
-        className="w-(--radix-dropdown-menu-trigger-width) min-w-56"
-      >
-        <DropdownMenuLabel className="font-normal text-muted-foreground">
-          @{me.username}
+      <DropdownMenuContent align="end" className="min-w-60">
+        <DropdownMenuLabel className="font-normal">
+          <span className="block truncate font-semibold text-foreground">{name}</span>
+          <span className="block truncate font-mono text-xs text-muted-foreground">
+            @{handle}
+            {isAdmin ? ` · ${t("shell.roleAdmin")}` : ""}
+          </span>
         </DropdownMenuLabel>
+        {NAV_GROUPS.filter((g) => !g.adminOnly || isAdmin).map((group) => (
+          <DropdownMenuGroup key={group.label}>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="label-caps py-1 text-[0.68rem] text-muted-foreground">
+              {t(group.label)}
+            </DropdownMenuLabel>
+            {group.items.map((item) => (
+              <DropdownMenuItem key={item.to} asChild>
+                <Link
+                  to={item.to}
+                  activeOptions={{ exact: item.exact ?? false }}
+                  className="data-[status=active]:font-semibold"
+                >
+                  <item.icon aria-hidden="true" />
+                  {t(item.label)}
+                </Link>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuGroup>
+        ))}
         <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>

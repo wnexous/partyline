@@ -19,8 +19,8 @@ export function EmptyState({
   children?: ReactNode;
   action?: ReactNode;
   className?: string;
-  /** h3 when the empty state sits inside a titled section. */
-  headingLevel?: "h2" | "h3";
+  /** h1 when it is the whole page, h3 inside a titled section, p where a heading would skip levels. */
+  headingLevel?: "h1" | "h2" | "h3" | "p";
 }) {
   return (
     <section

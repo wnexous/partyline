@@ -1315,3 +1315,134 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   broadcast, the AI's frame and reply), channel chats, owner as operator, untitled and over-long titles,
   scopes dms/off, a chat in a room by hand, a catch-all connector, the concurrent burst, the cap shared
   with DMs (30 + 30), and the 24-hour wait after a removal with a manager adding the chat back.
+
+## T42 - Conversations and profile data layer, part 1 (LAY-02, DM-06)
+
+Web only: `web/src/lib/api/{client,queries}.ts`, `web/src/lib/live/{handlers,store}.ts`. Part 2 (contacts,
+people, machine label, merge, notify and operator hooks, `makeContacts`) waits for its server tasks and the
+T47-T49 pages.
+
+- **Keys**: `queryKeys.conversations` (`["conversations"]`, a plain `Conversation[]`, newest activity first) and
+  `queryKeys.intelligence(id)` (`["intelligences", id]`, an `IntelligenceProfile`).
+- **Hooks**: `useConversations`; `useOpenDM()` (`POST /conversations/dm`, 200 and 201 alike, resolves with the
+  `Room`); `useCreateGroup()` (`POST /groups`; a 422 `members_refused` rejects with `ApiError.refused`);
+  `useMarkRead()` (`mutate({roomId, seq?})` → `PUT /rooms/{id}/read`, an absent `seq` sends `{}`);
+  `useIntelligence(id)`, `useUpdateIntelligence(id)` (`PATCH`), `useUploadAvatar(id)` (`PUT`, the `File` is the raw
+  body), `useRemoveAvatar(id)` (`DELETE`). A new room (`useOpenDM`, `useCreateGroup`, `useCreateRoom`,
+  `useRouteChat`) or a changed one (`useUpdateRoom`) refreshes the rooms list and the conversation list;
+  `useDeleteRoom` drops the row at once.
+- **Client**: `api()` sends a `Blob` body untouched with `Content-Type` = the blob's type (`application/octet-stream`
+  without one). `ApiError.refused` is `error.refused` of the answer (`[]` on any other error).
+- **Live store**: `openRoomId` / `setOpenRoom(id | null)` is the conversation the user is looking at (T46 sets it
+  while the page is open **and** the tab is visible); `LiveActions` carries it to the handlers.
+- **`room.message`**: when the list is cached, the message's conversation gets `last_message` = the preview (first
+  80 code points of the text; `[first file name]` when the text is blank and there is a file; `author_name` only
+  in a group), `activity_at` = the message time, and moves to its place (`newestActivityFirst`: `activity_at`
+  desc, title case-insensitive, id). `unread` + 1 unless the room is `openRoomId` or the message is the user's own
+  (`message.author.id` = the cached `me.intelligence.id`, which also covers messages typed on a linked platform
+  account). A message whose seq is not past the preview's is ignored (delivered twice, or older). A list that was
+  never loaded is left alone (its first fetch has the message); a **conversation the list lacks** invalidates the
+  list, **once per room** (`askedFor`): an AI's owner or grantee gets live messages of DMs `GET /conversations`
+  never lists (T19), and each of them must not cost a request. A message that lands while the list is being
+  fetched is patched like any other; if the fetch answered before the message was stored it is repaired by the
+  next refetch (reconnect, member or sharing change).
+- **`room.read`**: `unread = min(unread, last_message.seq - seq)` (0 without a preview), never raising it; the
+  `PUT` answer lowers the count the same way. A read at the newest seq is therefore 0 and one behind it keeps what
+  lies after.
+- **`room.changed`**: a listed group takes the new name and `my_level`; a listed DM keeps its counterpart as title;
+  a room the list lacks invalidates it (every time, these are rare). **`room.deleted`** removes the row.
+  **`room.members`**, **`access.changed`** (`resource_kind` room) and **`catchUp`** invalidate the list (its member
+  names feed the search).
+- **`intelligence.changed`** (and the profile mutations, through `patchIntelligence`): a cached profile, the account
+  (`me.intelligence` and `me.display_name`), a DM's `counterpart` and `title`, the `participants` of cached rooms,
+  the member rows (`RoomMember.name` and `.intelligence`, never the per-room `display_name`) and every cached
+  message whose `author.id` is that intelligence (`author` whole, `author_name` too) take the new summary, an absent
+  `avatar_url` clearing the old one. A name an owner set for an AI in a room (GRP-04) is kept in that room's
+  messages (the room's cached members tell); its handle and avatar still update. The conversation list is also
+  invalidated, since group previews and member names carry the old name.
+- Not changed: the dashboard feed code (`useActivity`, `prependActivity`) stays although T44 removes its page.
+- Tests: `lib/live/handlers.test.ts` (conversation list and `intelligence.changed` blocks), `lib/api/conversations.test.tsx`
+  (every hook and the room hooks' effect on the list), `lib/api/client.test.ts` (Blob bodies, `refused`).
+
+## T44 - Messenger shell and conversation list (LAY-01, LAY-02, LAY-05, LAY-06, DM-06)
+
+- **Shell** (`routes/_app.tsx`): from 768 px up (`useIsMobile` false) a 320 px `AppSidebar`
+  (`<aside aria-label="Conversations">`, sticky, window high) sits beside `SidebarInset#main`. Below 768 px
+  there is no sidebar: `/` renders the list as the page (`MessengerPanel screen`, `data-fill`, the page's `h1`
+  "Conversations") and every other route renders full screen under `MobileBar` (back link
+  `BackToConversations`, wordmark, palette button). Conversations (`/rooms/…`) have no bar: their header carries the
+  back link. `useIsMobile` now reads the width on the first render, so a phone never flashes the wide layout.
+  `SidebarProvider` is gone (no collapsible sidebar, no Ctrl+B); `useLiveStore.openRoomId` and the live
+  banner are unchanged.
+- **Panel** (`components/app-sidebar.tsx`): header with the wordmark (link to `/`), the account menu (the avatar
+  button, name `Account menu`), the palette button and an interim **New room** button (`CreateRoomDialog`; T45
+  replaces it with "New conversation" and "New group"); the conversation list; the live line in the footer.
+- **Account menu** = `NAV_GROUPS`: Conversations (`/`), Contacts, Connectors, Identities, Devices, API tokens,
+  Settings, and for admins Users, Invites, Audit log; then theme, language and log out. The palette keeps listing
+  `NAV_GROUPS` as pages and now lists `useConversations` (DMs by their counterpart, with the `@handle`) instead of
+  rooms.
+- **SPEC_DEVIATION (LAY-06): Contacts opens `/agents`**, and `/agents` is **not** redirected yet. `/contacts` and
+  its API arrive with T47, which must retarget this entry (`NAV_GROUPS`, `app-sidebar.tsx`), redirect `/agents` and
+  update `messenger-shell.test.tsx` (the `["Contacts", "/agents"]` row).
+- **Conversation list** (`components/conversation-list.tsx`): a row links to `/rooms/{id}` and shows the avatar
+  (a DM's counterpart; a group's initials on a rounded square), the title (+ the counterpart's `KindBadge`), the
+  time (`formatListTime`), the preview (`Sender: text` when the preview names an author, which the server does in
+  groups only; "No messages yet" with no message) and an unread pill (`99+` from 100; screen readers read
+  "N unread messages"). The open conversation is `aria-current="page"` and tape-tinted. A row whose last seq
+  grows lands on tape that settles in 1.5 s. A refresh that fails keeps the list; a list that never loaded shows an
+  alert with "Try again"; an empty list shows the empty state with "New room".
+- **Time rule** (LAY-01 only says "time"): the clock for today, "Yesterday", the weekday for 2-6 days ago, the
+  date from 7 days ago (with the year when it is another one); `title` carries the absolute time.
+- **`useOpenConversation(roomId)`** (`hooks/`) sets `openRoomId` while the conversation page is mounted and the tab
+  is visible, so messages that arrive in it add no unread; a hidden tab counts them.
+- **Home**: beside the sidebar "Pick a conversation" (`h1`); on a phone the list. `/rooms` redirects to `/`, and
+  the room page links that went to `/rooms` (delete, not found) go to `/`.
+- **Removed**: the overview and rooms list pages with their tests (`overview.test.tsx`, the four rooms-list tests of
+  `rooms.test.tsx`; the order, empty state and live behaviour live in `conversation-list.test.tsx`), the i18n keys
+  they orphaned and `nav.agents`. The sidebar does not show the "Agents paused" badge of the old list
+  (`Conversation` has no such flag; the room page keeps its banner). `useActivity` and the activity handlers stay,
+  unused by any page.
+- **Existing tests adapted** to the new surfaces, assertions unchanged where the behaviour survives: `app-shell`
+  and `admin` (destinations now live in the account menu), `command-menu` (conversations), `a11y` (home, phone
+  home, full-screen page, open menu), `devices` (the sidebar's list request is stubbed), `rooms` (the create-room
+  dialog opens from the sidebar), `room` (deleting a room returns to `/` and the sidebar drops it).
+- **e2e**: the smoke page lists follow the shell (home heading by viewport, no `/rooms` page, no sidebar toggle,
+  the first-run test returns to `/settings`).
+- Tests: `components/conversation-list.test.tsx`, `routes/messenger-shell.test.tsx`,
+  `hooks/use-open-conversation.test.tsx`, `hooks/use-mobile.test.tsx`, `lib/time.test.ts`.
+
+## T46 - Conversation page (DM-07, DM-02, GRP-02, PROF-09)
+
+- **Header** (`components/conversation-header.tsx`): the avatar (a DM's counterpart; a group's initials on a rounded
+  square), the `h1` title, the counterpart's kind badge; for a DM its `@handle` and, for an AI, `AiStatusLine`
+  (online or offline from `useIntelligence` and the live `agent.presence` frames, plus the app name from the profile's
+  `apps[0].label`, hidden below 640 px); for a group its visibility and description; the back button on a phone and the
+  page's buttons on the right. `conversationTitle` is a group's name, a DM's other participant, or "A and B" for a DM the
+  user only views through an AI (neither participant is the viewer; its subtitle then reads "Direct message"). The
+  composer is named after that title.
+- **Participants**: a DM lists its two `Room.participants` (`ParticipantList`: avatar, name, kind badge, inline `@handle`,
+  "You" for the viewer, an AI's status) under the tab **Participants (2)** and shows no add, remove, outbound, settings,
+  share or room-settings control **whatever level the caller holds** (`canManage` is false for a DM, DM-02). A group keeps
+  `MemberList`: AI and user members (`RoomMember.intelligence`) show avatar, `IntelligenceName` with badge and inline
+  `@handle`; AIs keep live presence and show "by @owner" (it was a bare `@owner` that read like a second handle); the
+  user section is now **Users** (`members.users`: "People" means external people from now on). Members without a profile
+  (project and chat members, older fixtures) render as before.
+- **Gap (GRP-02): the people of a bridged chat are not listed.** `RoomMember` has no `people` field yet (T27 adds
+  it), so a group's panel shows AIs, users and chats (title, platform, kind, outbound switch). The people rows under each
+  chat, with their platform badges, are the follow-up when the field exists.
+- **Timeline authors** (`MessageItem`): a user or AI author shows `IntelligenceAvatar` + `IntelligenceName` (kind badge,
+  "You" for the viewer, `@handle` in the tooltip that opens on hover and keyboard focus), named with the row's
+  `author_name`, so a name set for an AI in the room (GRP-04) wins. A chat message does the same only when its author is a
+  person (`author.role === "person"`) or the viewer's linked account (`author.id === author_user_id`); its "via chat"
+  line, platform pill and trust badge stay, and the person's own platform badge is left out so the platform shows once. A
+  chat sender without a profile keeps the chat tile and the sender's name. Avatars beside a name are `decorative`
+  (`aria-hidden`, empty `alt`).
+- **Read state** (`hooks/use-mark-room-read.ts`): while the page is mounted and the tab visible, `PUT /rooms/{id}/read`
+  with the newest seq of the timeline's newest page (`useNewestSeq`, a `select` that re-renders only when the number
+  changes): once on open and once for each higher seq (the user's own posts included), never twice for one seq, nothing
+  for an empty conversation, nothing while the tab is hidden; showing the tab sends what arrived meanwhile and only that.
+  The answer and the `room.read` event lower the sidebar badge (T42). `useOpenConversation` (T44) keeps messages of the
+  open conversation from adding unread.
+- Tests: `routes/_app/rooms/conversation.test.tsx` (header, participants, authors, read state),
+  `components/message-timeline.test.tsx` (the author block), `components/intelligence/intelligence.test.tsx`
+  (`decorative`).

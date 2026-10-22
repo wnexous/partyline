@@ -1,12 +1,14 @@
-import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
 import { useEffect } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
+import { BackToConversations } from "@/components/back-link";
 import { Wordmark } from "@/components/brand";
 import { CommandMenu } from "@/components/command-menu";
 import { LiveBanner } from "@/components/live-status";
 import { Button } from "@/components/ui/button";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarInset } from "@/components/ui/sidebar";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { isApiError } from "@/lib/api/client";
 import { meQuery, useMe } from "@/lib/api/queries";
 import { isLocale, useT } from "@/lib/i18n";
@@ -30,10 +32,16 @@ export const Route = createFileRoute("/_app")({
   component: AppLayout,
 });
 
+/*
+ * The messenger shell (LAY-01, LAY-05): the conversation list in a column beside the page on wide
+ * screens. Below 768 px there is room for one of them: `/` is the list, every other page opens
+ * full screen with a way back. A conversation brings its own header, back button included.
+ */
 function AppLayout() {
   const t = useT();
   const { queryClient, me: initialMe } = Route.useRouteContext();
   const me = useMe().data ?? initialMe;
+  const isMobile = useIsMobile();
 
   useEffect(() => startLive(queryClient), [queryClient]);
 
@@ -46,37 +54,52 @@ function AppLayout() {
   }, [me.locale]);
 
   return (
-    <SidebarProvider>
+    <div className="flex min-h-svh w-full">
       <a
         href="#main"
         className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2 focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         {t("nav.skip")}
       </a>
-      <AppSidebar me={me} />
-      {/* Full-height pages (a room) mark themselves with data-fill and scroll inside. */}
+      {isMobile ? null : <AppSidebar me={me} />}
+      {/* Full-height pages (a conversation, the phone's list) mark themselves with data-fill and scroll inside. */}
       <SidebarInset
         id="main"
         tabIndex={-1}
         className="min-w-0 outline-none has-[[data-fill]]:h-svh has-[[data-fill]]:overflow-hidden"
       >
-        <div className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur md:hidden">
-          <SidebarTrigger aria-label={t("nav.toggleSidebar")} />
-          <Wordmark />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto"
-            aria-label={t("palette.open")}
-            onClick={() => useLiveStore.getState().setPaletteOpen(true)}
-          >
-            <SearchIcon aria-hidden="true" />
-          </Button>
-        </div>
+        <MobileBar />
         <LiveBanner />
         <Outlet />
       </SidebarInset>
       <CommandMenu me={me} />
-    </SidebarProvider>
+    </div>
+  );
+}
+
+/**
+ * The top bar of a phone's full-screen pages: a way back to the list, the brand and the search.
+ * The list itself (`/`) and a conversation (`/rooms/…`, whose header carries the back button)
+ * have none. It follows the route itself, so the layout does not render again on navigation.
+ */
+function MobileBar() {
+  const t = useT();
+  const isMobile = useIsMobile();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  if (!isMobile || pathname === "/" || pathname.startsWith("/rooms/")) return null;
+  return (
+    <div className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-1 border-b bg-background/95 px-1 backdrop-blur">
+      <BackToConversations />
+      <Wordmark />
+      <Button
+        variant="ghost"
+        size="icon"
+        className="ml-auto size-11"
+        aria-label={t("palette.open")}
+        onClick={() => useLiveStore.getState().setPaletteOpen(true)}
+      >
+        <SearchIcon aria-hidden="true" />
+      </Button>
+    </div>
   );
 }

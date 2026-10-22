@@ -32,3 +32,28 @@ export function formatClock(iso: string, locale: string): string {
   if (Number.isNaN(time)) return "";
   return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(time);
 }
+
+const startOfDay = (time: number) => new Date(time).setHours(0, 0, 0, 0);
+
+/**
+ * The time on a conversation row (LAY-01): the clock for today, "yesterday" for yesterday, the
+ * weekday for the rest of the last week, then the date, with the year when it is not this one.
+ */
+export function formatListTime(iso: string, locale: string, now = Date.now()): string {
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return "";
+  const days = Math.round((startOfDay(now) - startOfDay(time)) / DAY);
+  if (days <= 0) return formatClock(iso, locale);
+  if (days === 1) {
+    const yesterday = new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(-1, "day");
+    return yesterday.charAt(0).toLocaleUpperCase(locale) + yesterday.slice(1);
+  }
+  if (days < 7) return new Intl.DateTimeFormat(locale, { weekday: "short" }).format(time);
+  const thisYear = new Date(time).getFullYear() === new Date(now).getFullYear();
+  return new Intl.DateTimeFormat(
+    locale,
+    thisYear
+      ? { day: "numeric", month: "short" }
+      : { day: "numeric", month: "short", year: "numeric" },
+  ).format(time);
+}

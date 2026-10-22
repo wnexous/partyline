@@ -8,12 +8,15 @@ import { json, mockApi } from "@/test/fetch";
 import {
   makeAgent,
   makeConnector,
+  makeConversation,
+  makeIntelligence,
   makeMe,
   makeMember,
   makeMessage,
   makeRoom,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
+import { stubViewport } from "@/test/media";
 import { renderRoute } from "@/test/render";
 
 expect.extend(matchers);
@@ -21,8 +24,8 @@ expect.extend(matchers);
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
- * Automated accessibility checks (UI-24) on the shell, the room page and the login page, in both
- * locales. happy-dom has no layout or computed colours, so axe's colour-contrast rule cannot run
+ * Automated accessibility checks (UI-24) on the messenger shell (home, phone home, account menu),
+ * the room page and the login page, in both locales. happy-dom has no layout or computed colours, so axe's colour-contrast rule cannot run
  * here; contrast is checked in the browser (Lighthouse, visual pass).
  */
 const AXE_OPTIONS = { rules: { "color-contrast": { enabled: false } } };
@@ -97,14 +100,98 @@ function appApi(locale: "en" | "pt-BR") {
       ],
       has_more: false,
     }),
-    "GET /activity": json(200, {
+    "GET /conversations": json(200, {
       items: [
-        {
-          room: { id: "r1", name: "deploys" },
-          message: makeMessage({ seq: 3, author_kind: "agent", author_name: "release-bot" }),
-        },
+        makeConversation({
+          id: "r1",
+          title: "deploys",
+          unread: 2,
+          last_message: {
+            seq: 3,
+            author_id: "a1",
+            author_name: "release-bot",
+            text: "done",
+            created_at: "2026-10-19T12:00:00Z",
+          },
+        }),
+        makeConversation({
+          id: "r2",
+          kind: "dm",
+          title: "Atlas",
+          counterpart: makeIntelligence({
+            id: "a2",
+            kind: "ai",
+            role: "ai",
+            display_name: "Atlas",
+            handle: "atlas",
+          }),
+        }),
       ],
     }),
+    "GET /rooms/d1": json(
+      200,
+      makeRoom({
+        id: "d1",
+        kind: "dm",
+        name: "",
+        my_level: "post",
+        member_count: 2,
+        participants: [
+          makeMe().intelligence,
+          makeIntelligence({
+            id: "a2",
+            kind: "ai",
+            role: "ai",
+            display_name: "Atlas",
+            handle: "atlas",
+          }),
+        ],
+      }),
+    ),
+    "GET /rooms/d1/members": json(200, { items: [] }),
+    "GET /rooms/d1/messages": json(200, {
+      items: [
+        makeMessage({
+          room_id: "d1",
+          seq: 1,
+          author_kind: "agent",
+          author_id: "a2",
+          author_name: "Atlas",
+          author: makeIntelligence({
+            id: "a2",
+            kind: "ai",
+            role: "ai",
+            display_name: "Atlas",
+            handle: "atlas",
+          }),
+          text: "Staging is on 2.4.1.",
+        }),
+      ],
+      has_more: false,
+    }),
+    "GET /intelligences/a2": json(200, {
+      ...makeIntelligence({
+        id: "a2",
+        kind: "ai",
+        role: "ai",
+        display_name: "Atlas",
+        handle: "atlas",
+      }),
+      bio: "",
+      can_edit: false,
+      apps: [{ kind: "claude", label: "Claude Code" }],
+      conversations: [],
+      ai: {
+        owner: makeMe().intelligence,
+        machine: "devbox",
+        machine_label: "devbox",
+        folder: "/home/dev/atlas",
+        folder_label: "~/atlas",
+        app: "claude",
+        online: true,
+      },
+    }),
+    "PUT /rooms/d1/read": json(200, { room_id: "d1", seq: 1, unread: 0 }),
     "GET /agents": json(200, { items: [makeAgent({ online: true })] }),
     "GET /connectors": json(200, {
       items: [makeConnector({ status: "error", last_error: "invalid token" })],
@@ -115,13 +202,44 @@ function appApi(locale: "en" | "pt-BR") {
 describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
   beforeEach(() => useLiveStore.setState({ locale }));
 
-  it("the app shell with the dashboard has no axe violations", async () => {
+  const conversations = locale === "en" ? "Conversations" : "Conversas";
+
+  it("the home page, with the conversation list beside the empty conversation, has no axe violations", async () => {
     appApi(locale);
     const { container } = renderRoute("/");
-    await screen.findByRole("list", {
-      name: locale === "en" ? "Latest messages" : "Últimas mensagens",
+    await screen.findByRole("list", { name: conversations });
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the home page on a phone, where the list is the page, has no axe violations", async () => {
+    stubViewport(360);
+    appApi(locale);
+    const { container } = renderRoute("/");
+    await screen.findByRole("list", { name: conversations });
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("a full-screen page on a phone, with its back bar, has no axe violations", async () => {
+    stubViewport(360);
+    appApi(locale);
+    const { container } = renderRoute("/connectors");
+    await screen.findByRole("link", {
+      name: locale === "en" ? "Back to conversations" : "Voltar para as conversas",
     });
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the open account menu has no axe violations", async () => {
+    appApi(locale);
+    const user = userEvent.setup();
+    renderRoute("/");
+    await user.click(
+      await screen.findByRole("button", {
+        name: locale === "en" ? "Account menu" : "Menu da conta",
+      }),
+    );
+    const menu = await screen.findByRole("menu");
+    expect(await axe(menu, AXE_OPTIONS)).toHaveNoViolations();
   });
 
   it("the shell offers a skip link to the main content", async () => {
@@ -139,6 +257,15 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     const { container } = renderRoute("/rooms/r1");
     await screen.findByText("deploy 2.4");
     await screen.findByTestId("member-mb2");
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("a direct message page, with its header, participants and authors, has no axe violations", async () => {
+    appApi(locale);
+    const { container } = renderRoute("/rooms/d1");
+    await screen.findByText("Staging is on 2.4.1.");
+    await screen.findByTestId("participant-a2");
+    await screen.findAllByText("Claude Code");
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 

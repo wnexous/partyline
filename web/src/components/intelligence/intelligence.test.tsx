@@ -87,6 +87,31 @@ describe("IntelligenceAvatar (PROF-08)", () => {
   });
 });
 
+describe("IntelligenceAvatar next to a name", () => {
+  it("is hidden from assistive technology when decorative, and heard otherwise", () => {
+    renderWithProviders(
+      <>
+        <IntelligenceAvatar intelligence={ana} decorative />
+        <IntelligenceAvatar intelligence={makeIntelligence({ id: "u2" })} />
+      </>,
+    );
+    const [decorative, heard] = screen.getAllByTestId("intelligence-avatar");
+    expect(decorative).toHaveAttribute("aria-hidden", "true");
+    expect(heard).not.toHaveAttribute("aria-hidden");
+  });
+
+  it("gives its image no alt text when decorative, so the name beside it is not read twice", () => {
+    vi.stubGlobal("Image", LoadedImage);
+    const { container } = renderWithProviders(
+      <IntelligenceAvatar
+        intelligence={makeIntelligence({ avatar_url: "/api/v1/intelligences/u1/avatar?v=abc" })}
+        decorative
+      />,
+    );
+    expect(container.querySelector("img")).toHaveAttribute("alt", "");
+  });
+});
+
 describe("KindBadge (PROF-09)", () => {
   it("marks an AI as AI even when its display name looks like a human's", () => {
     renderWithProviders(<KindBadge intelligence={atlas} />);

@@ -5,7 +5,7 @@ import type { Message, RoomMember } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
-import { makeMessage } from "@/test/fixtures";
+import { makeIntelligence, makeMessage } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { renderWithProviders } from "@/test/render";
 
@@ -225,6 +225,139 @@ describe("message item (UI-05)", () => {
     expect(img).toHaveAttribute("width", "320");
     expect(img).toHaveAttribute("height", "240");
     expect(img.closest("a")).toHaveStyle({ aspectRatio: "4 / 3" });
+  });
+});
+
+describe("message author (PROF-03, PROF-09, GRP-03)", () => {
+  const atlas = makeIntelligence({
+    id: "a1",
+    kind: "ai",
+    role: "ai",
+    display_name: "Atlas",
+    handle: "atlas",
+  });
+  const lia = makeIntelligence({
+    id: "p1",
+    role: "person",
+    platform: "whatsapp",
+    display_name: "Lia Costa",
+    handle: "lia",
+  });
+  const ana = makeIntelligence();
+
+  it("shows an AI's avatar, AI badge and name, and its @handle on focus (PROF-09)", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({
+          seq: 1,
+          author_kind: "agent",
+          author_id: "a1",
+          author_name: "Atlas",
+          author: atlas,
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByTestId("message-1");
+    expect(within(row(1)).getByTestId("intelligence-avatar")).toHaveTextContent("A");
+    expect(within(row(1)).getByText("AI")).toBeInTheDocument();
+    expect(within(row(1)).queryByText("@atlas")).toBeNull();
+    act(() => within(row(1)).getByRole("button", { name: "Atlas" }).focus());
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("@atlas");
+  });
+
+  it("shows a user's avatar and name without a kind badge, and 'You' on the viewer's own (PROF-09)", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({ seq: 1, author: ana, author_name: "Ana Souza", text: "mine" }),
+        makeMessage({
+          seq: 2,
+          author_id: "u2",
+          author_name: "Bob Lima",
+          author: makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" }),
+          text: "theirs",
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByText("theirs");
+    expect(within(row(1)).getByText("You")).toBeInTheDocument();
+    expect(within(row(1)).getByTestId("intelligence-avatar")).toHaveTextContent("AS");
+    expect(within(row(2)).getByTestId("intelligence-avatar")).toHaveTextContent("BL");
+    expect(within(row(2)).queryByTestId("kind-badge")).toBeNull();
+  });
+
+  it("shows the name an owner set for the AI in the room, not its profile name (GRP-04)", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({
+          seq: 1,
+          author_kind: "agent",
+          author_id: "a1",
+          author_name: "Release captain",
+          author: { ...atlas, display_name: "Release captain" },
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByTestId("message-1");
+    expect(within(row(1)).getByRole("button", { name: "Release captain" })).toBeInTheDocument();
+    expect(within(row(1)).getByTestId("intelligence-avatar")).toHaveTextContent("RC");
+  });
+
+  it("shows the person of a bridged chat with their avatar, the chat and the platform once (GRP-03)", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        chat(1, {
+          author_name: "Lia Costa",
+          author: lia,
+          sender_name: "lia",
+          chat: { id: "c1", title: "Front desk", platform: "whatsapp", kind: "group" },
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByTestId("message-1");
+    expect(within(row(1)).getByTestId("intelligence-avatar")).toHaveTextContent("LC");
+    expect(within(row(1)).getByText("Lia Costa")).toBeInTheDocument();
+    expect(within(row(1)).getByText("via Front desk")).toBeInTheDocument();
+    expect(within(row(1)).getAllByText("WhatsApp")).toHaveLength(1);
+    expect(within(row(1)).getByText("Untrusted")).toBeInTheDocument();
+  });
+
+  it("shows the account's own avatar and name for a message typed on a linked platform account (PEOP-02)", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        chat(1, {
+          author_name: "Ana Souza",
+          author: ana,
+          author_user_id: ME,
+          sender_name: "Ana (phone)",
+          chat: { id: "c1", title: "Front desk", platform: "whatsapp", kind: "group" },
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByTestId("message-1");
+    expect(within(row(1)).getByTestId("intelligence-avatar")).toHaveTextContent("AS");
+    expect(within(row(1)).getByText("You")).toBeInTheDocument();
+    expect(within(row(1)).getByText("Trusted")).toBeInTheDocument();
+    expect(within(row(1)).queryByText("Ana (phone)")).toBeNull();
+  });
+
+  it("keeps the chat tile and the sender's name for a chat sender with no profile", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        chat(1, {
+          author: { id: "", kind: "", role: "", display_name: "Ops on call", handle: "" } as never,
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByTestId("message-1");
+    expect(within(row(1)).queryByTestId("intelligence-avatar")).toBeNull();
+    expect(within(row(1)).getByText("Diego")).toBeInTheDocument();
+    expect(within(row(1)).getByText("Chat")).toBeInTheDocument();
   });
 });
 

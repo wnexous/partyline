@@ -1,27 +1,31 @@
 import { BotIcon, FolderIcon, MessageCircleIcon, UserIcon, XIcon } from "lucide-react";
 import { type ReactNode, useId } from "react";
 import { toast } from "sonner";
+import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
+import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { MemberSettings, memberSettingsSummary } from "@/components/member-settings";
 import { chatTitle, platformLabel } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { useAddMember, useRemoveMember, useUpdateMember } from "@/lib/api/queries";
+import { useAddMember, useMe, useRemoveMember, useUpdateMember } from "@/lib/api/queries";
 import type { MemberKind, RoomMember } from "@/lib/api/types.gen";
 import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 
 /*
- * Room members (UI-10, UI-12): everything wired to the room, shown plainly. Agents show live
- * presence; projects show the session that receives their messages (PROJ-07); chats show
- * whether agent and people posts go out to them (outbound, DLV-03).
+ * Room members (UI-10, UI-12, GRP-02): everything wired to the room, shown plainly. AIs and users
+ * show their avatar, kind badge and @handle (PROF-09), AIs also live presence; projects show the
+ * session that receives their messages (PROJ-07); chats show whether agent and people posts go
+ * out to them (outbound, DLV-03). The people seen in a bridged chat are not listed: the members
+ * API does not return them yet.
  */
 
 const GROUPS: { kind: MemberKind; label: MessageKey }[] = [
   { kind: "agent", label: "members.agents" },
   { kind: "project", label: "members.projects" },
   { kind: "chat", label: "members.chats" },
-  { kind: "user", label: "members.people" },
+  { kind: "user", label: "members.users" },
 ];
 
 const CHAT_KIND: Record<string, MessageKey> = {
@@ -124,7 +128,10 @@ function MemberRow({
 }) {
   const { t } = useI18n();
   const switchId = useId();
+  const meId = useMe().data?.id;
   const name = memberName(t, m);
+  // The profile of an AI or user member: avatar, name, badge and @handle instead of an icon.
+  const profile = m.kind === "agent" || m.kind === "user" ? m.intelligence : undefined;
   let icon: ReactNode;
   let meta: ReactNode = null;
   if (m.kind === "agent") {
@@ -132,7 +139,7 @@ function MemberRow({
     meta = (
       <>
         <StatusDot online={online} withLabel />
-        {m.owner ? <span>@{m.owner}</span> : null}
+        {m.owner ? <span>{t("rooms.ownedBy", { username: m.owner })}</span> : null}
         {m.display_name ? (
           <span className="truncate">{t("memberSettings.as", { name: m.display_name })}</span>
         ) : null}
@@ -180,9 +187,15 @@ function MemberRow({
       data-testid={`member-${m.id}`}
       className="group/member flex items-start gap-2.5 px-4 py-2 hover:bg-accent/40"
     >
-      <span className="mt-0.5 shrink-0">{icon}</span>
+      <span className="mt-0.5 shrink-0">
+        {profile ? <IntelligenceAvatar intelligence={profile} decorative /> : icon}
+      </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{name}</p>
+        {profile ? (
+          <IntelligenceName intelligence={profile} viewerId={meId} showHandle className="text-sm" />
+        ) : (
+          <p className="truncate text-sm font-medium">{name}</p>
+        )}
         {meta ? (
           <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
             {meta}

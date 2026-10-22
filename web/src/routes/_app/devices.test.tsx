@@ -46,7 +46,10 @@ async function enterCode(code = "k7p2-qx9m", path = "/devices") {
 
 describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   it("asks for the code before it shows anything about a request", async () => {
-    const { calls } = mockApi({ "GET /me": json(200, me) });
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
+    });
     renderRoute("/devices");
     expect(await screen.findByRole("heading", { name: "Approve a machine" })).toBeInTheDocument();
     expect(screen.getByLabelText("Code from your terminal")).toHaveValue("");
@@ -59,6 +62,7 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   it("looks up the typed code in the request body, then shows the machine, address and age", async () => {
     const { calls } = mockApi({
       "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
       "POST /devices/lookup": json(200, makeRequest()),
     });
     await enterCode();
@@ -75,7 +79,10 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   });
 
   it("refuses a code that is not 8 characters without asking the server", async () => {
-    const { calls } = mockApi({ "GET /me": json(200, me) });
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
+    });
     await enterCode("K7P2");
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Codes have 8 letters and digits, like ABCD-EFGH.",
@@ -86,6 +93,7 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   it("says when no pending request has the code", async () => {
     mockApi({
       "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
       "POST /devices/lookup": apiError(404, "not_found", "device request not found"),
     });
     await enterCode();
@@ -96,6 +104,7 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   it("says to wait after too many wrong codes (429)", async () => {
     mockApi({
       "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
       "POST /devices/lookup": apiError(429, "rate_limited", "too many wrong codes"),
     });
     await enterCode();
@@ -107,6 +116,7 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   it("approves with the typed code and says the terminal continues", async () => {
     const { calls } = mockApi({
       "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
       "POST /devices/lookup": json(200, makeRequest()),
       "POST /devices/approve": json(200, makeRequest({ status: "approved" })),
     });
@@ -126,6 +136,7 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   it("denies the request with the typed code", async () => {
     const { calls } = mockApi({
       "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
       "POST /devices/lookup": json(200, makeRequest()),
       "POST /devices/deny": json(200, makeRequest({ status: "denied" })),
     });
@@ -141,6 +152,7 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   it("goes back to the code field to use another code", async () => {
     mockApi({
       "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
       "POST /devices/lookup": json(200, makeRequest()),
     });
     const { user } = await enterCode();
@@ -152,6 +164,7 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   it("shows an expired request as expired, without the decision buttons", async () => {
     mockApi({
       "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
       "POST /devices/lookup": json(200, makeRequest({ status: "expired" })),
     });
     await enterCode();
@@ -165,6 +178,7 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   it("treats a pending request past its expiry as expired", async () => {
     mockApi({
       "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
       "POST /devices/lookup": json(
         200,
         makeRequest({ expires_at: new Date(Date.now() - 5_000).toISOString() }),
@@ -180,6 +194,7 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   it("turns to expired when the server answers 410 on approve", async () => {
     mockApi({
       "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
       "POST /devices/lookup": json(200, makeRequest()),
       "POST /devices/approve": apiError(410, "gone", "device request expired"),
     });
@@ -194,6 +209,7 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
     let current = makeRequest();
     mockApi({
       "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
       "POST /devices/lookup": () => json(200, current),
       "POST /devices/approve": () => {
         current = makeRequest({ status: "denied" });
@@ -208,7 +224,10 @@ describe("device approval page (WIZ-02, DEV-02, DEV-05)", () => {
   });
 
   it("opens an old /devices/<code> link on the empty code field, without looking the code up", async () => {
-    const { calls } = mockApi({ "GET /me": json(200, me) });
+    const { calls } = mockApi({
+      "GET /me": json(200, me),
+      "GET /conversations": json(200, { items: [] }),
+    });
     const { router } = renderRoute(`/devices/${CODE}`);
     await waitFor(() => expect(router.state.location.pathname).toBe("/devices"));
     expect(await screen.findByLabelText("Code from your terminal")).toHaveValue("");

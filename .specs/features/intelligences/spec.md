@@ -431,11 +431,11 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | PROF-10 | P1: Profiles | Execute | Implementing |
 | PROF-11 | P1: Profiles | Execute | Implementing |
 | LAY-01 | P1: Messenger layout | Execute | Implementing |
-| LAY-02 | P1: Messenger layout | Tasks | Pending |
+| LAY-02 | P1: Messenger layout | Execute | Implementing |
 | LAY-03 | P1: Messenger layout | Tasks | Pending |
 | LAY-04 | P1: Messenger layout | Execute | Implementing |
-| LAY-05 | P1: Messenger layout | Tasks | Pending |
-| LAY-06 | P1: Messenger layout | Tasks | Pending |
+| LAY-05 | P1: Messenger layout | Execute | Implementing |
+| LAY-06 | P1: Messenger layout | Execute | Implementing |
 | AGRP-01 | P2: AIs create groups | Execute | Implementing |
 | AGRP-02 | P2: AIs create groups | Execute | Implementing |
 | CLI-01 | P1: Login and setup | Execute | Implementing |

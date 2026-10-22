@@ -42,20 +42,28 @@ export interface IntelligenceAvatarProps {
   intelligence: IntelligenceRef;
   size?: "default" | "sm" | "lg";
   className?: string;
+  /** Hidden from assistive technology: the name sits right next to the face (rows, headers). */
+  decorative?: boolean;
 }
 
 export function IntelligenceAvatar({
   intelligence,
   size = "default",
   className,
+  decorative = false,
 }: IntelligenceAvatarProps) {
   const name = intelligence.display_name.trim() || intelligence.handle || "?";
   return (
-    <Avatar size={size} data-testid="intelligence-avatar" className={cn("shrink-0", className)}>
+    <Avatar
+      size={size}
+      data-testid="intelligence-avatar"
+      aria-hidden={decorative || undefined}
+      className={cn("shrink-0", className)}
+    >
       {intelligence.avatar_url ? (
         <AvatarImage
           src={intelligence.avatar_url}
-          alt={name}
+          alt={decorative ? "" : name}
           width={size === "sm" ? 24 : size === "lg" ? 40 : 32}
           height={size === "sm" ? 24 : size === "lg" ? 40 : 32}
         />

@@ -21,3 +21,15 @@ export function stubMatchMedia(matches: (query: string) => boolean) {
 export function stubPointer(kind: "coarse" | "fine") {
   stubMatchMedia((query) => query.includes(`pointer: ${kind}`));
 }
+
+/**
+ * A viewport `width` px wide: `window.innerWidth` and the `(max-width: Npx)` media queries
+ * agree with it, which is all the app's mobile switch reads (hooks/use-mobile.ts).
+ */
+export function stubViewport(width: number) {
+  vi.stubGlobal("innerWidth", width);
+  stubMatchMedia((query) => {
+    const max = /max-width:\s*(\d+)px/.exec(query);
+    return max ? width <= Number(max[1]) : false;
+  });
+}
