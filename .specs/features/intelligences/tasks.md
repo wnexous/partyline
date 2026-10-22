@@ -1081,9 +1081,9 @@ bug or on the mutant in a scratch copy of the tree (never `git stash`); the fix 
 **Requirement**: SES-02, SES-05
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] A message pushed late for a message the old session already acknowledged is not delivered to the session that took the AI over, and the next message is (SES-05)
-- [ ] `go test -race -count=30 -run TestTakenOverChannelNotifiesOnceAndDeliversNothingMore ./internal/channel/` passes 30 of 30 (3 of 30 failed before)
-- [ ] Gate check passes: `make check`
+- [x] A message pushed late for a message the old session already acknowledged is not delivered to the session that took the AI over, and the next message is (SES-05)
+- [x] `go test -race -count=30 -run TestTakenOverChannelNotifiesOnceAndDeliversNothingMore ./internal/channel/` passes 30 of 30 (3 of 30 failed before)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `fix(agents): drop live pushes at or below the acked cursor`

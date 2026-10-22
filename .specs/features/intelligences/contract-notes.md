@@ -2482,3 +2482,27 @@ so the survivor's undelivered messages and the counterpart's unread ones were sk
   `TestMergeCarriesDirectMessages` passes unchanged. Scratch copy: the old behaviour (always advance)
   fails the first, M19 fails the third, a variant that counts the party's own trailing message as
   pending fails the second for AIs and for users.
+
+## T57 - A takeover never replays what the old session acknowledged (SES-02, SES-05)
+
+`validation.md` gap 2 and the intermittent `make check-race` failure of
+`TestTakenOverChannelNotifiesOnceAndDeliversNothingMore` (3 of 30 runs under `-race` before this fix).
+
+- **Cause.** `Gateway.run` drops a live push whose number is at or below `sent[room]`, but `sent` held
+  only the messages the reconnect backlog had just sent. When the old session had already acknowledged
+  a message, the new session's backlog sent nothing for that room, `sent[room]` stayed 0 and the
+  dispatcher, still handing the same message on, delivered it to the new session a second time. Under
+  load the dispatcher is slower than the takeover, which is how the test saw the earlier message
+  instead of the later one.
+- **Fix.** `backlog` starts `sent[room]` at the AI's cursor (`RoomState.Cursor`) for every room of the
+  AI, paused ones included. What the cursor covers was received, or skipped on purpose (an unwanted
+  message, the skipped notice), by an earlier connection, so a live push at or below it is dropped.
+  Messages above the cursor are unchanged: the backlog sends them and `sent` follows. The same holds for
+  a plain reconnect of the same process.
+- **Not changed.** Delivery stays at-least-once for an unacknowledged message: it is above the cursor,
+  so the new session receives it from its backlog (and the late push of it is dropped as before).
+- **Test.** `TestTakeoverDropsALatePushOfAnAcknowledgedMessage` (`internal/agents/gateway_live_test.go`):
+  holder session receives and acknowledges a message, a second session takes the AI over, the test
+  pushes the message again through `Gateway.Push` as the dispatcher would and expects no frame, then a
+  new message arrives. It fails on the previous code (the late push is delivered). The channel test
+  passed `go test -race -count=100` and `-count=30`.
