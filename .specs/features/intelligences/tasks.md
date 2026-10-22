@@ -875,9 +875,12 @@ contacts patch of `intelligence.changed`, each with the task whose server API it
 **Requirement**: DM-07, GRP-02, PROF-09, DM-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Opening a conversation sends the read call with the newest seq (DM-07); authors show avatar, badge and handle (PROF-09)
-- [ ] Group participants show AIs, users and each chat's people with platform badges (GRP-02); a DM shows its two participants and no add/remove controls (DM-02)
-- [ ] Gate check passes: `make check`
+- [x] Opening a conversation sends the read call with the newest seq (DM-07); authors show avatar, badge and handle (PROF-09)
+- [x] Group participants show AIs, users and each chat's people with platform badges (GRP-02); a DM shows its two participants and no add/remove controls (DM-02)
+- [x] Gate check passes: `make check`
+
+**Open (GRP-02):** the members API (`RoomMember.people`, T27) does not return the people of a bridged chat yet, so the
+panel lists AIs, users and chats; the people rows under each chat arrive with T27 (see `contract-notes.md`, T46).
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show conversations with participants and read state`

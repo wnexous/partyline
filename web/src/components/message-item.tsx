@@ -14,11 +14,14 @@ import {
   UserIcon,
 } from "lucide-react";
 import { lazy, memo, Suspense } from "react";
+import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
+import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { attachmentUrl } from "@/lib/api/queries";
 import type {
   Attachment,
   AuthorKind,
+  IntelligenceRef,
   Message,
   OutboxItem,
   OutboxStatus,
@@ -98,6 +101,24 @@ export type Trust = "trusted" | "verified" | "untrusted";
 export function chatTrust(message: Message, meId: string): Trust {
   if (!message.author_user_id) return "untrusted";
   return message.author_user_id === meId ? "trusted" : "verified";
+}
+
+/**
+ * The intelligence a row shows as its author (PROF-03, PROF-09): a user or an AI always; a chat
+ * sender only once it resolved to a person or to the viewer's own account (GRP-03, PEOP-02).
+ * Unattributed senders keep the generic chat tile. The name is the one the timeline shows, so a
+ * name an owner set for an AI in the room (GRP-04) wins over its profile name.
+ */
+function authorProfile(message: Message): IntelligenceRef | null {
+  const author = message.author;
+  if (!author?.id) return null;
+  const known =
+    message.author_kind === "user" ||
+    message.author_kind === "agent" ||
+    (message.author_kind === "chat" &&
+      (author.role === "person" || author.id === message.author_user_id));
+  if (!known) return null;
+  return { ...author, display_name: message.author_name || author.display_name };
 }
 
 export function authorDisplayName(message: Message): string {
@@ -195,6 +216,7 @@ export const MessageItem = memo(function MessageItem({
 
   const chatMember = message.author_kind === "chat" ? members?.get(message.author_id ?? "") : null;
   const platform = platformLabel(chatMember?.connector_kind);
+  const profile = authorProfile(message);
 
   return (
     <article
@@ -210,6 +232,8 @@ export const MessageItem = memo(function MessageItem({
           <span className="absolute top-1 right-4 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 md:right-6">
             {time}
           </span>
+        ) : profile ? (
+          <IntelligenceAvatar intelligence={profile} decorative className="mt-0.5" />
         ) : (
           <span
             aria-hidden="true"
@@ -228,9 +252,19 @@ export const MessageItem = memo(function MessageItem({
         ) : (
           <header className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span className="sr-only">{t(kind.label)}</span>
-            <span className="truncate font-semibold tracking-[-0.01em]">
-              {authorDisplayName(message)}
-            </span>
+            {profile ? (
+              <IntelligenceName
+                intelligence={
+                  // A chat row names its platform in its own pill below.
+                  message.author_kind === "chat" ? { ...profile, platform: undefined } : profile
+                }
+                viewerId={meId}
+              />
+            ) : (
+              <span className="truncate font-semibold tracking-[-0.01em]">
+                {authorDisplayName(message)}
+              </span>
+            )}
             {message.author_kind === "chat" && message.chat ? (
               <>
                 <span className="text-xs text-muted-foreground">

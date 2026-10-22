@@ -12,13 +12,14 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { BackToConversations } from "@/components/back-link";
 import { Composer } from "@/components/composer";
+import { ConversationHeader, conversationTitle } from "@/components/conversation-header";
 import { EmptyState } from "@/components/empty-state";
 import { MemberList } from "@/components/member-list";
 import { MemberPicker } from "@/components/member-picker";
 import { type MessageFocus, MessageTimeline } from "@/components/message-timeline";
+import { ParticipantList } from "@/components/participant-list";
 import { RoomFiles } from "@/components/room-files";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
-import { VisibilityLabel } from "@/components/room-visibility";
 import { SharingDialog } from "@/components/sharing-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,11 +31,18 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useMarkRoomRead } from "@/hooks/use-mark-room-read";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useOpenConversation } from "@/hooks/use-open-conversation";
 import { isApiError } from "@/lib/api/client";
 import { useMe, useResumeRoom, useRoom, useRoomMembers } from "@/lib/api/queries";
-import { LevelManage, type Room, type RoomMember } from "@/lib/api/types.gen";
+import {
+  ConversationKindDM,
+  type IntelligenceRef,
+  LevelManage,
+  type Room,
+  type RoomMember,
+} from "@/lib/api/types.gen";
 import { useI18n, useT } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_app/rooms/$roomId")({
@@ -49,6 +57,7 @@ function RoomPage() {
   const me = useMe().data;
   const isMobile = useIsMobile();
   useOpenConversation(roomId);
+  useMarkRoomRead(roomId);
   const [panelOpen, setPanelOpen] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<PanelTab>("members");
@@ -60,8 +69,12 @@ function RoomPage() {
   if (!room.data || !me) return <RoomSkeleton back={isMobile} />;
 
   const r = room.data;
-  const canManage = r.my_level === LevelManage;
+  // Nobody manages a DM: its participants are fixed and it cannot be shared (DM-02).
+  const isDM = r.kind === ConversationKindDM;
+  const canManage = !isDM && r.my_level === LevelManage;
   const memberList = members.data ?? [];
+  const participantCount = isDM ? r.participants.length : memberList.length;
+  const title = conversationTitle(r, me.id, t);
 
   const shown = (tab: PanelTab) => (isMobile ? sheetOpen : panelOpen) && panelTab === tab;
   const togglePanel = (tab: PanelTab) => {
@@ -79,13 +92,17 @@ function RoomPage() {
     setFocus({ ...target });
     if (isMobile) setSheetOpen(false);
   };
-  const panelLabel = t(panelTab === "files" ? "files.title" : "members.title");
+  const membersLabel = t(isDM ? "participants.title" : "members.title");
+  const panelLabel = panelTab === "files" ? t("files.title") : membersLabel;
   const panel = (
     <SidePanel
       tab={panelTab}
       onTabChange={setPanelTab}
       roomId={roomId}
       members={memberList}
+      participants={isDM ? r.participants : undefined}
+      membersLabel={membersLabel}
+      count={participantCount}
       canManage={canManage}
       loading={members.isPending}
       onOpenMessage={openInTimeline}
@@ -95,59 +112,60 @@ function RoomPage() {
   return (
     <div data-fill className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-2 border-b px-4 py-2.5 md:px-6">
-          {isMobile ? <BackToConversations className="-ml-3" /> : null}
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-lg font-semibold tracking-[-0.015em]">{r.name}</h1>
-            <p className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
-              <VisibilityLabel visibility={r.visibility} className="shrink-0" />
-              {r.description ? <span className="truncate">{r.description}</span> : null}
-            </p>
-          </div>
-          <Button
-            variant={!isMobile && shown("members") ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => togglePanel("members")}
-            aria-expanded={shown("members")}
-            aria-label={t("room.membersToggle", { count: memberList.length })}
-          >
-            <UsersRoundIcon aria-hidden="true" />
-            <span className="font-mono text-xs tabular">{memberList.length}</span>
-          </Button>
-          <Button
-            variant={!isMobile && shown("files") ? "secondary" : "ghost"}
-            size="icon-sm"
-            onClick={() => togglePanel("files")}
-            aria-expanded={shown("files")}
-            aria-label={t("room.filesToggle")}
-          >
-            <FilesIcon aria-hidden="true" />
-          </Button>
-          {canManage ? (
-            <SharingDialog
-              kind="rooms"
-              id={r.id}
-              name={r.name}
-              owner={r.owner}
-              trigger={
-                <Button variant="ghost" size="sm" aria-label={t("room.share")}>
-                  <Share2Icon aria-hidden="true" />
-                  <span className="hidden sm:inline">{t("room.share")}</span>
-                </Button>
-              }
-            />
-          ) : null}
-          {canManage ? (
-            <RoomSettingsSheet
-              room={r}
-              trigger={
-                <Button variant="ghost" size="icon-sm" aria-label={t("settings.title")}>
-                  <Settings2Icon aria-hidden="true" />
-                </Button>
-              }
-            />
-          ) : null}
-        </header>
+        <ConversationHeader
+          room={r}
+          viewerId={me.id}
+          back={isMobile}
+          actions={
+            <>
+              <Button
+                variant={!isMobile && shown("members") ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => togglePanel("members")}
+                aria-expanded={shown("members")}
+                aria-label={t(isDM ? "room.participantsToggle" : "room.membersToggle", {
+                  count: participantCount,
+                })}
+              >
+                <UsersRoundIcon aria-hidden="true" />
+                <span className="font-mono text-xs tabular">{participantCount}</span>
+              </Button>
+              <Button
+                variant={!isMobile && shown("files") ? "secondary" : "ghost"}
+                size="icon-sm"
+                onClick={() => togglePanel("files")}
+                aria-expanded={shown("files")}
+                aria-label={t("room.filesToggle")}
+              >
+                <FilesIcon aria-hidden="true" />
+              </Button>
+              {canManage ? (
+                <SharingDialog
+                  kind="rooms"
+                  id={r.id}
+                  name={r.name}
+                  owner={r.owner}
+                  trigger={
+                    <Button variant="ghost" size="sm" aria-label={t("room.share")}>
+                      <Share2Icon aria-hidden="true" />
+                      <span className="hidden sm:inline">{t("room.share")}</span>
+                    </Button>
+                  }
+                />
+              ) : null}
+              {canManage ? (
+                <RoomSettingsSheet
+                  room={r}
+                  trigger={
+                    <Button variant="ghost" size="icon-sm" aria-label={t("settings.title")}>
+                      <Settings2Icon aria-hidden="true" />
+                    </Button>
+                  }
+                />
+              ) : null}
+            </>
+          }
+        />
         {r.agents_paused ? <PausedBanner room={r} canManage={canManage} /> : null}
         <MessageTimeline
           key={roomId}
@@ -159,7 +177,7 @@ function RoomPage() {
         <Composer
           key={`composer-${roomId}`}
           roomId={roomId}
-          roomName={r.name}
+          roomName={title}
           level={r.my_level}
           members={memberList}
           broadcast={r.broadcast}
@@ -179,7 +197,7 @@ function RoomPage() {
           <SheetContent className="w-[min(22rem,100vw)] gap-0 p-0">
             <SheetHeader className="sr-only">
               <SheetTitle>{panelLabel}</SheetTitle>
-              <SheetDescription>{r.name}</SheetDescription>
+              <SheetDescription>{title}</SheetDescription>
             </SheetHeader>
             <aside aria-label={panelLabel} className="flex min-h-0 flex-1 flex-col">
               {panel}
@@ -193,12 +211,18 @@ function RoomPage() {
 
 type PanelTab = "members" | "files";
 
-/** The room side panel: members and files as tabs (FILES-04). */
+/**
+ * The conversation's side panel: its members and files as tabs (FILES-04). A DM lists its two
+ * participants and offers no way to change them (DM-02).
+ */
 function SidePanel({
   tab,
   onTabChange,
   roomId,
   members,
+  participants,
+  membersLabel,
+  count,
   canManage,
   loading,
   onOpenMessage,
@@ -207,6 +231,10 @@ function SidePanel({
   onTabChange: (tab: PanelTab) => void;
   roomId: string;
   members: RoomMember[];
+  /** Set for a DM: its participants replace the member list. */
+  participants?: IntelligenceRef[];
+  membersLabel: string;
+  count: number;
   canManage: boolean;
   loading: boolean;
   onOpenMessage: (target: MessageFocus) => void;
@@ -218,14 +246,12 @@ function SidePanel({
       onValueChange={(v) => onTabChange(v as PanelTab)}
       className="min-h-0 flex-1 gap-0"
     >
-      <h2 className="sr-only">{t(tab === "files" ? "files.title" : "members.title")}</h2>
+      <h2 className="sr-only">{tab === "files" ? t("files.title") : membersLabel}</h2>
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b px-2">
         <TabsList variant="line" className="h-full">
           <TabsTrigger value="members" className="px-2">
-            {t("members.title")}
-            <span className="font-mono text-xs text-muted-foreground tabular">
-              {members.length}
-            </span>
+            {membersLabel}
+            <span className="font-mono text-xs text-muted-foreground tabular">{count}</span>
           </TabsTrigger>
           <TabsTrigger value="files" className="px-2">
             {t("files.title")}
@@ -245,7 +271,13 @@ function SidePanel({
         ) : null}
       </div>
       <TabsContent value="members" className="flex min-h-0 flex-col rounded-none">
-        <MembersPanel roomId={roomId} members={members} canManage={canManage} loading={loading} />
+        {participants ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <ParticipantList participants={participants} />
+          </div>
+        ) : (
+          <MembersPanel roomId={roomId} members={members} canManage={canManage} loading={loading} />
+        )}
       </TabsContent>
       <TabsContent value="files" className="flex min-h-0 flex-col rounded-none">
         <RoomFiles roomId={roomId} onOpenMessage={onOpenMessage} />

@@ -128,6 +128,70 @@ function appApi(locale: "en" | "pt-BR") {
         }),
       ],
     }),
+    "GET /rooms/d1": json(
+      200,
+      makeRoom({
+        id: "d1",
+        kind: "dm",
+        name: "",
+        my_level: "post",
+        member_count: 2,
+        participants: [
+          makeMe().intelligence,
+          makeIntelligence({
+            id: "a2",
+            kind: "ai",
+            role: "ai",
+            display_name: "Atlas",
+            handle: "atlas",
+          }),
+        ],
+      }),
+    ),
+    "GET /rooms/d1/members": json(200, { items: [] }),
+    "GET /rooms/d1/messages": json(200, {
+      items: [
+        makeMessage({
+          room_id: "d1",
+          seq: 1,
+          author_kind: "agent",
+          author_id: "a2",
+          author_name: "Atlas",
+          author: makeIntelligence({
+            id: "a2",
+            kind: "ai",
+            role: "ai",
+            display_name: "Atlas",
+            handle: "atlas",
+          }),
+          text: "Staging is on 2.4.1.",
+        }),
+      ],
+      has_more: false,
+    }),
+    "GET /intelligences/a2": json(200, {
+      ...makeIntelligence({
+        id: "a2",
+        kind: "ai",
+        role: "ai",
+        display_name: "Atlas",
+        handle: "atlas",
+      }),
+      bio: "",
+      can_edit: false,
+      apps: [{ kind: "claude", label: "Claude Code" }],
+      conversations: [],
+      ai: {
+        owner: makeMe().intelligence,
+        machine: "devbox",
+        machine_label: "devbox",
+        folder: "/home/dev/atlas",
+        folder_label: "~/atlas",
+        app: "claude",
+        online: true,
+      },
+    }),
+    "PUT /rooms/d1/read": json(200, { room_id: "d1", seq: 1, unread: 0 }),
     "GET /agents": json(200, { items: [makeAgent({ online: true })] }),
     "GET /connectors": json(200, {
       items: [makeConnector({ status: "error", last_error: "invalid token" })],
@@ -193,6 +257,15 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     const { container } = renderRoute("/rooms/r1");
     await screen.findByText("deploy 2.4");
     await screen.findByTestId("member-mb2");
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("a direct message page, with its header, participants and authors, has no axe violations", async () => {
+    appApi(locale);
+    const { container } = renderRoute("/rooms/d1");
+    await screen.findByText("Staging is on 2.4.1.");
+    await screen.findByTestId("participant-a2");
+    await screen.findAllByText("Claude Code");
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 

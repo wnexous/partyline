@@ -8,7 +8,8 @@ import { KindBadge } from "@/components/intelligence/kind-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useConversations } from "@/lib/api/queries";
-import type { Conversation, IntelligenceRef } from "@/lib/api/types.gen";
+import type { Conversation } from "@/lib/api/types.gen";
+import { groupFace } from "@/lib/conversations";
 import { useI18n, useT } from "@/lib/i18n";
 import { formatAbsolute, formatListTime } from "@/lib/time";
 
@@ -20,11 +21,6 @@ import { formatAbsolute, formatListTime } from "@/lib/time";
  */
 
 const FRESH_MS = 1_500;
-
-/** A group has no profile: its initials and colour come from its name and room id. */
-function groupFace(c: Conversation): IntelligenceRef {
-  return { id: c.id, kind: "human", role: "user", display_name: c.title, handle: "" };
-}
 
 /**
  * Rows whose last message is newer than the one this component showed before, for a moment.
@@ -134,8 +130,9 @@ const ConversationRow = memo(function ConversationRow({
         />
       ) : null}
       <IntelligenceAvatar
-        intelligence={c.counterpart ?? groupFace(c)}
+        intelligence={c.counterpart ?? groupFace(c.id, c.title)}
         size="lg"
+        decorative
         // Groups are squares, people circles: the list reads at a glance.
         className={c.counterpart ? undefined : "rounded-lg *:rounded-lg"}
       />

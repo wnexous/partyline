@@ -189,7 +189,7 @@ function AccountMenu({ me }: { me: Me }) {
           aria-label={t("shell.userMenu")}
           className="grid size-11 shrink-0 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[state=open]:ring-2 data-[state=open]:ring-sidebar-ring/60"
         >
-          <IntelligenceAvatar intelligence={me.intelligence} size="lg" />
+          <IntelligenceAvatar intelligence={me.intelligence} size="lg" decorative />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-60">

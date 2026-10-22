@@ -1094,3 +1094,39 @@ T47-T49 pages.
   the first-run test returns to `/settings`).
 - Tests: `components/conversation-list.test.tsx`, `routes/messenger-shell.test.tsx`,
   `hooks/use-open-conversation.test.tsx`, `hooks/use-mobile.test.tsx`, `lib/time.test.ts`.
+
+## T46 - Conversation page (DM-07, DM-02, GRP-02, PROF-09)
+
+- **Header** (`components/conversation-header.tsx`): the avatar (a DM's counterpart; a group's initials on a rounded
+  square), the `h1` title, the counterpart's kind badge; for a DM its `@handle` and, for an AI, `AiStatusLine`
+  (online or offline from `useIntelligence` and the live `agent.presence` frames, plus the app name from the profile's
+  `apps[0].label`, hidden below 640 px); for a group its visibility and description; the back button on a phone and the
+  page's buttons on the right. `conversationTitle` is a group's name, a DM's other participant, or "A and B" for a DM the
+  user only views through an AI (neither participant is the viewer; its subtitle then reads "Direct message"). The
+  composer is named after that title.
+- **Participants**: a DM lists its two `Room.participants` (`ParticipantList`: avatar, name, kind badge, inline `@handle`,
+  "You" for the viewer, an AI's status) under the tab **Participants (2)** and shows no add, remove, outbound, settings,
+  share or room-settings control **whatever level the caller holds** (`canManage` is false for a DM, DM-02). A group keeps
+  `MemberList`: AI and user members (`RoomMember.intelligence`) show avatar, `IntelligenceName` with badge and inline
+  `@handle`; AIs keep live presence and show "by @owner" (it was a bare `@owner` that read like a second handle); the
+  user section is now **Users** (`members.users`: "People" means external people from now on). Members without a profile
+  (project and chat members, older fixtures) render as before.
+- **Gap (GRP-02): the people of a bridged chat are not listed.** `RoomMember` has no `people` field yet (T27 adds
+  it), so a group's panel shows AIs, users and chats (title, platform, kind, outbound switch). The people rows under each
+  chat, with their platform badges, are the follow-up when the field exists.
+- **Timeline authors** (`MessageItem`): a user or AI author shows `IntelligenceAvatar` + `IntelligenceName` (kind badge,
+  "You" for the viewer, `@handle` in the tooltip that opens on hover and keyboard focus), named with the row's
+  `author_name`, so a name set for an AI in the room (GRP-04) wins. A chat message does the same only when its author is a
+  person (`author.role === "person"`) or the viewer's linked account (`author.id === author_user_id`); its "via chat"
+  line, platform pill and trust badge stay, and the person's own platform badge is left out so the platform shows once. A
+  chat sender without a profile keeps the chat tile and the sender's name. Avatars beside a name are `decorative`
+  (`aria-hidden`, empty `alt`).
+- **Read state** (`hooks/use-mark-room-read.ts`): while the page is mounted and the tab visible, `PUT /rooms/{id}/read`
+  with the newest seq of the timeline's newest page (`useNewestSeq`, a `select` that re-renders only when the number
+  changes): once on open and once for each higher seq (the user's own posts included), never twice for one seq, nothing
+  for an empty conversation, nothing while the tab is hidden; showing the tab sends what arrived meanwhile and only that.
+  The answer and the `room.read` event lower the sidebar badge (T42). `useOpenConversation` (T44) keeps messages of the
+  open conversation from adding unread.
+- Tests: `routes/_app/rooms/conversation.test.tsx` (header, participants, authors, read state),
+  `components/message-timeline.test.tsx` (the author block), `components/intelligence/intelligence.test.tsx`
+  (`decorative`).

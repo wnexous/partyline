@@ -425,6 +425,19 @@ export const roomMessagesQuery = (roomId: string) =>
 
 export const useRoomMessages = (roomId: string) => useInfiniteQuery(roomMessagesQuery(roomId));
 
+/** The highest seq of the newest cached page; undefined while the timeline is empty or not loaded. */
+function newestSeqOf(data: MessagePages): number | undefined {
+  let newest: number | undefined;
+  for (const m of data.pages[0]?.items ?? []) {
+    if (newest === undefined || m.seq > newest) newest = m.seq;
+  }
+  return newest;
+}
+
+/** The newest message seq of a room's timeline; re-renders only when that number changes. */
+export const useNewestSeq = (roomId: string) =>
+  useInfiniteQuery({ ...roomMessagesQuery(roomId), select: newestSeqOf }).data;
+
 export interface PostMessageInput extends PostMessageRequest {
   files?: File[];
 }
