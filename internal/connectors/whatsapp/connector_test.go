@@ -746,3 +746,28 @@ func TestGroupSubjectFromListAndFailure(t *testing.T) {
 	require.Equal(t, "Acme Team", rec.NextInbound(t).ChatTitle)
 	require.Equal(t, 1, f.count("/group/info"), "the list filled the cache")
 }
+
+// A connector that can never receive a message says why next to its connected status: no
+// instance with WebSocket events enabled (and no allowlist), or an allowlisted instance that
+// evolution-go does not have. A connector that can receive gets no detail.
+func TestRunWarnsWhenNoMessageCanArrive(t *testing.T) {
+	f := newFakeEvolution(t)
+	rec := connectortest.NewRecorder()
+	start(t, newConnector(t, f), f, rec)
+	require.Empty(t, rec.NextStatusDetail(t), "acme and other send WebSocket events")
+
+	f.mu.Lock()
+	f.instances = []map[string]any{{"name": "quiet", "token": "quiet-token", "websocketEnable": false, "connected": true}}
+	f.mu.Unlock()
+	rec = connectortest.NewRecorder()
+	start(t, newConnector(t, f), f, rec)
+	require.Contains(t, rec.NextStatusDetail(t), "no evolution-go instance has WebSocket events enabled")
+
+	rec = connectortest.NewRecorder()
+	start(t, newConnector(t, f, "quiet"), f, rec)
+	require.Empty(t, rec.NextStatusDetail(t), "an allowlisted instance is used even without the flag")
+
+	rec = connectortest.NewRecorder()
+	start(t, newConnector(t, f, "gone"), f, rec)
+	require.Contains(t, rec.NextStatusDetail(t), "no instance named gone")
+}

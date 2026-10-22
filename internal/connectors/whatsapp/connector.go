@@ -154,7 +154,7 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	defer func() { _ = conn.CloseNow() }()
 	conn.SetReadLimit(c.maxFrame)
 	h.Account(c.accountLabel(insts))
-	h.Status(connectors.StatusConnected, "")
+	h.Status(connectors.StatusConnected, c.idleWarning(insts))
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -187,6 +187,30 @@ func (c *Connector) accountLabel(insts []instance) string {
 		}
 	}
 	return strings.Join(labels, ", ")
+}
+
+// idleWarning explains a connection that will never deliver a message: no instance has WebSocket
+// events enabled (and no allowlist names one), or an allowlisted instance is missing from
+// evolution-go. It is shown with the connected status so a quiet connector is not mistaken for
+// a working one; empty when messages can arrive.
+func (c *Connector) idleWarning(insts []instance) string {
+	if len(c.allowed) > 0 {
+		var missing []string
+		for name := range c.allowed {
+			if !slices.ContainsFunc(insts, func(i instance) bool { return i.Name == name }) {
+				missing = append(missing, name)
+			}
+		}
+		slices.Sort(missing)
+		if len(missing) > 0 {
+			return "evolution-go has no instance named " + strings.Join(missing, ", ") + ": messages of it cannot arrive"
+		}
+		return ""
+	}
+	if slices.ContainsFunc(insts, func(i instance) bool { return bool(i.WebsocketEnable) }) {
+		return ""
+	}
+	return "no evolution-go instance has WebSocket events enabled, so no message can arrive: enable websocketEnable on the instance or list the instances to use"
 }
 
 // instanceNumber is the phone number of an instance jid ("5511999990000:7@s.whatsapp.net" is

@@ -15,6 +15,7 @@ type Migration struct{ OldID, NewID string }
 type Recorder struct {
 	inbound    chan connectors.Inbound
 	statuses   chan connectors.Status
+	details    chan string
 	migrations chan Migration
 	accounts   chan string
 }
@@ -22,7 +23,7 @@ type Recorder struct {
 // NewRecorder returns an empty Recorder.
 func NewRecorder() *Recorder {
 	return &Recorder{
-		inbound: make(chan connectors.Inbound, 64), statuses: make(chan connectors.Status, 64),
+		inbound: make(chan connectors.Inbound, 64), statuses: make(chan connectors.Status, 64), details: make(chan string, 64),
 		migrations: make(chan Migration, 64), accounts: make(chan string, 64),
 	}
 }
@@ -33,7 +34,10 @@ var _ connectors.Handler = (*Recorder)(nil)
 func (r *Recorder) Inbound(_ context.Context, m connectors.Inbound) { r.inbound <- m }
 
 // Status implements connectors.Handler.
-func (r *Recorder) Status(s connectors.Status, _ string) { r.statuses <- s }
+func (r *Recorder) Status(s connectors.Status, detail string) {
+	r.statuses <- s
+	r.details <- detail
+}
 
 // MigrateChat implements connectors.Handler.
 func (r *Recorder) MigrateChat(_ context.Context, oldID, newID string) {
@@ -56,6 +60,13 @@ func (r *Recorder) NoAccount() bool { return len(r.accounts) == 0 }
 func (r *Recorder) NextInbound(t testing.TB) connectors.Inbound {
 	t.Helper()
 	return next(t, r.inbound, "inbound message")
+}
+
+// NextStatusDetail waits for the detail text of the next reported status (read alongside
+// NextStatus, one per status).
+func (r *Recorder) NextStatusDetail(t testing.TB) string {
+	t.Helper()
+	return next(t, r.details, "status detail")
 }
 
 // NextStatus waits for the next reported status.
