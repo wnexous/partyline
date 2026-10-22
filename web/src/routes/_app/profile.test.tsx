@@ -7,15 +7,21 @@ import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
+  makeAgent,
   makeAI,
+  makeAIContact,
+  makeContacts,
   makeIntelligence,
+  makeMachineTree,
   makeMe,
   makePerson,
   makeProfile,
   makeRoom,
+  makeTreeNode,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { renderRoute } from "@/test/render";
+import { sampleContacts } from "@/test/sample-contacts";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
@@ -90,6 +96,7 @@ function api(profile: IntelligenceProfile, extra: Parameters<typeof mockApi>[0] 
   return mockApi({
     "GET /me": json(200, me),
     "GET /conversations": json(200, { items: [] }),
+    "GET /contacts": json(200, sampleContacts),
     [`GET /intelligences/${profile.id}`]: json(200, profile),
     ...extra,
   });
@@ -896,5 +903,122 @@ describe("managing an AI", () => {
     await name();
     expect(screen.queryByRole("button", { name: /^Share / })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Delete / })).toBeNull();
+  });
+});
+
+describe("merging an AI from its profile (MRG-01, MRG-02)", () => {
+  const notesProfile: IntelligenceProfile = makeProfile({
+    ...makeAI({ id: "a2", display_name: "Notes", handle: "notes" }),
+    can_edit: true,
+    ai: {
+      owner: ana,
+      machine: "devbox",
+      machine_label: "devbox",
+      folder: "/home/dev/atlas/notes",
+      folder_label: "~/atlas/notes",
+      app: "opencode",
+      online: false,
+      my_level: "manage",
+    },
+  });
+
+  it("offers it on an offline AI of the owner, merges into a picked AI and opens the survivor", async () => {
+    const { calls } = api(atlas, {
+      "POST /agents/a1/merge": json(200, makeAgent({ id: "a2", name: "notes" })),
+      "GET /intelligences/a2": json(200, notesProfile),
+    });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/contacts/a1");
+    await name();
+    await user.click(await screen.findByRole("button", { name: "Merge Atlas into another AI" }));
+    const dialog = await screen.findByRole("dialog", { name: "Merge Atlas into…" });
+    const picker = within(dialog).getByRole("combobox", { name: "AI" });
+    // The owner's AIs only: not the one being merged away and never one shared with the user.
+    expect(
+      within(picker)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Pick an AI", "Notes (@notes)", "Lab (@lab)", "Old helper (@old-helper)"]);
+    await user.selectOptions(picker, "a2");
+    await user.click(within(dialog).getByRole("button", { name: "Merge AI" }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/contacts/a2"));
+    expect(calls.find((c) => c.method === "POST")).toMatchObject({
+      path: "/agents/a1/merge",
+      body: { into: "a2" },
+    });
+    // The contacts and the conversations are the server's to rebuild after a merge.
+    await waitFor(() =>
+      expect(
+        calls.filter((c) => c.method === "GET" && c.path === "/contacts").length,
+      ).toBeGreaterThan(1),
+    );
+    expect(
+      calls.filter((c) => c.method === "GET" && c.path === "/conversations").length,
+    ).toBeGreaterThan(1);
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Notes");
+  });
+
+  it("offers no merge to someone who only uses the AI, and asks for no contacts for them", async () => {
+    const { calls } = api({
+      ...atlas,
+      can_edit: false,
+      ai: { ...(atlas.ai as NonNullable<IntelligenceProfile["ai"]>), my_level: "use" },
+    });
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("button", { name: /^Merge / })).toBeNull();
+    expect(calls.some((c) => c.path === "/contacts")).toBe(false);
+  });
+
+  it("offers it neither on a user's profile nor on a person's", async () => {
+    api(makeProfile({ can_edit: true }));
+    const user = renderRoute("/contacts/u1");
+    await name();
+    expect(screen.queryByRole("button", { name: /^Merge / })).toBeNull();
+    user.unmount();
+
+    api(lia);
+    renderRoute("/contacts/p1");
+    await screen.findByRole("heading", { level: 1, name: "Lia Costa" });
+    expect(screen.queryByRole("button", { name: /^Merge / })).toBeNull();
+  });
+
+  it("offers no merge when the owner has no other AI to merge into", async () => {
+    api(atlas, {
+      "GET /contacts": json(
+        200,
+        makeContacts({
+          machines: [
+            makeMachineTree({
+              nodes: [makeTreeNode({ ai: makeAIContact({ intelligence: atlasRef }) })],
+            }),
+          ],
+        }),
+      ),
+    });
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("button", { name: /^Merge / })).toBeNull();
+  });
+
+  it("asks to end the session first when the AI is online (MRG-02)", async () => {
+    api(atlas, {
+      "POST /agents/a1/merge": apiError(409, "identity_online", "identity is online"),
+    });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/contacts/a1");
+    await name();
+    await user.click(await screen.findByRole("button", { name: "Merge Atlas into another AI" }));
+    const dialog = await screen.findByRole("dialog", { name: "Merge Atlas into…" });
+    await user.selectOptions(within(dialog).getByRole("combobox", { name: "AI" }), "a2");
+    await user.click(within(dialog).getByRole("button", { name: "Merge AI" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "End its session first: Atlas is online.",
+    );
+    // Nothing changed: the dialog stays and the page does not leave for a survivor.
+    expect(screen.getByRole("dialog", { name: "Merge Atlas into…" })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/contacts/a1");
   });
 });

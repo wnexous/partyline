@@ -2307,3 +2307,113 @@ Web only. No API changed; it closes T47's open MRG-01 note.
   Tests that only existed for the removed fallbacks/mirrors were rewritten to assert the outcome
   readers see (`TestUpdateRenamesWhatEveryReaderShows`); the rooms and API fixtures give their users
   and AIs an intelligence, as production does.
+
+## T52 - Messenger smoke tests (LAY-01, LAY-05, DM-01, PROF-03, TREE-01)
+
+`web/e2e/smoke.spec.ts`; no app code changed. The two v0.3 project/agents specs (PROJ-04/PROJ-05)
+are gone with the page they drove; the rest of the suite is unchanged.
+
+- **A fake AI client** is an agent token (`POST /tokens`) plus the folder headers the CLI sends
+  (`X-Partyline-Machine`, `X-Partyline-Folder` percent-encoded) on `POST /agent/register` and on
+  every later call (the file's `connectAI` and `agentCall` helpers). The AI is the folder's
+  (AID-01), so reconnecting a folder in a later test is the same AI, and no harness runs.
+- **Messenger (LAY-01, LAY-05)**: a group created through `POST /groups` shows as a row of the
+  Conversations list and clicking it opens it. Beside the sidebar the list stays and the open row
+  is `aria-current="page"`; in the 360 px project the phone shows only the conversation and its
+  "Back to conversations" link returns to the list. The project-dependent branch is chosen by
+  `isMobile(testInfo)`; no test is skipped.
+- **DM with an AI (DM-01)**: "Message Atlas" on `/contacts` opens the DM; the fake client sees the
+  same conversation in `GET /agent/rooms` and posts in it, which reaches the open page live (no
+  timeline refetch; the document is not reloaded), and the web's post is read back through
+  `GET /agent/rooms/{room}/messages` with `trusted: true` and the owner's name. "Message" again
+  opens the same room, and the list holds exactly one Atlas row with the last-message preview.
+- **Group creation**: "New group" in the sidebar header, a name and the Crew AI ticked in the
+  dialog; the created conversation opens, the panel lists Crew (the creator reaches the room as its
+  owner, not as a member) and the group is a row of the list.
+- **Contacts tree (TREE-01)**: the AIs of `e2e-box` (`/work/atlas` and `/work/atlas/notes`) and of
+  `e2e-laptop` (`/opt/scribe`) are two machine regions; Notes hangs from Atlas's row, Scribe does
+  not.
+- **Profile photo (PROF-03)**: a 1x1 synthetic PNG (`Buffer` fixture, `setInputFiles`) is
+  previewed, confirmed with "Use this photo", replaces the initials on the profile before and
+  after a reload, and the account menu's avatar shows the same image.
+- **No horizontal scroll (UI-24, LAY-05)**: the page list covers `/` (by viewport), the group
+  conversation with an unbroken long token, `/contacts`, the user's own profile, the connectors
+  and settings; each asserts `documentElement.scrollWidth <= innerWidth`, and the timeline line's
+  right edge stays on screen.
+- **Fixtures are synthetic**: machines `e2e-box`/`e2e-laptop`, folders under `/work` and `/opt`,
+  names Atlas/Notes/Crew/Scribe, groups `e2e-messenger`/`e2e-crew`/`e2e-narrow`.
+
+## T53 - Docs (CLI-01, SES-01, AID-01)
+
+- **Rewritten around the intelligences model**: `README.md`, `README.pt-BR.md` (same content,
+  pt-BR), `docs/agents.md` and `docs/claude-code.md`. The README keeps its tone and its existing
+  sections (features, architecture, quickstart, configuration, security, development, license);
+  the quickstart now leads with `partyline login` and `partyline setup`, and two sections were
+  added after it: conversations/contacts and upgrading from v0.3.
+- **`docs/agents.md`** now opens with the premise (an AI is its machine + folder; a harness is its
+  app; humans and AIs share one profile) and covers login/setup (checklist keys, non-terminal
+  flags), the launcher and `--as`, one live session and takeover (`--take-over`,
+  `PARTYLINE_TAKEOVER`, the Codex/Gemini tools-only line, the tools-half caveat), `partyline
+  agents`, DMs/groups/unread, contacts and machine labels, profiles, merge, connector operators
+  and who signs what, notify-me, the full tool table, every error code a user meets, trust,
+  connection behaviour, troubleshooting, the v0.3 upgrade note and setup-free operation. The old
+  project/temporary/fixed/`#2`/archiving/`PARTYLINE_SESSION` text is gone; `--browser` is kept
+  only as the login-first compatibility path, not as the main flow.
+- **Verified against the code**: every command and flag named in the docs exists in
+  `internal/cli` (`login`, `setup`, `agents`, the six launchers, `channel`, `listen`, `hook`,
+  `doctor`, `version`; `--url`, `--token`, `--token-stdin`, `--browser`, `--harness`,
+  `--all-detected`, `--remove`, `--yes`, `--uninstall`, `--keep-backups`, `--as`/`--name`/
+  `--agent`, `--take-over`, `--project` as ignored). The examples use only synthetic names
+  (`Atlas`, `notes`, `acme`, `workstation`, `laptop`).
+- **Decision (docs, not code)**: merge is documented where the UI offers it - on the **Unlinked**
+  rows, an AI with no folder moving into another AI of the owner (T47 follow-up). The spec's
+  "renamed or moved folder" assumption says the owner can merge the old identity into the new
+  one, but the Contacts page shows no merge action on a tree AI; the docs therefore say the old
+  folder identity keeps its old path and history, and do not promise a merge it cannot perform.
+  No code changed for this task.
+- **Order**: T53 ran on top of T50 with T51/T52 still pending; nothing it documents changes with
+  migration 0016 (internal dead columns) or the e2e smoke suite. Gate: `make check` (the task's
+  commit gate).
+
+## T55 - Merge any of your AIs from its profile (MRG-01, MRG-02)
+
+Web and docs only. No API changed; it closes the gap T53 recorded: the spec's "renamed or moved
+folder" assumption promises the owner a merge, and the UI offered it only on **Unlinked** rows.
+
+- **Where**: the profile page `/contacts/$id` (`routes/_app/contacts.$id.tsx`). The owner of an AI
+  (`profile.ai.my_level === "manage"`, the same check that shows Share and Delete) gets
+  **Merge into…** in the header, next to Message, Share and Delete: an outline button with the
+  git-merge icon whose text hides below 640 px, labelled `ai.mergeAction` ("Merge {name} into
+  another AI"). It is absent on a user's profile, on a person's, and for a grantee
+  (`my_level: "use"`), who can still message the AI. It is absent when the owner has no other own
+  AI to merge into.
+- **Targets**: the caller's own AIs, in contacts order - the machine trees parents first, then the
+  unlinked - with the AI being merged away left out. `ownAIs` and `mergeTargets` in
+  `lib/contacts.ts` are now the one definition of that list; the contacts page (T47 follow-up) and
+  this page both use them. A shared AI is never a target, and the filter of the contacts page is
+  irrelevant here (a profile lists every target).
+- **Contacts only when needed**: the page reads the contacts cache with
+  `useQuery({ ...contactsQuery(), enabled: manages })`, so an owner's profile asks for `GET
+  /contacts` (once per cache lifetime; the merge refreshes it) and a grantee's, a user's or a
+  person's page asks for nothing extra.
+- **Dialog**: the same `MergeAIDialog` (T47 follow-up) with the same select, body, 409/403/422
+  handling and toast. It gained an optional `onMerged(survivor)` callback, called after the
+  success toast and close; the profile page uses it to navigate to `/contacts/{survivor.id}`.
+  Cancelling sends nothing and leaves the page where it is.
+- **Refresh**: `useMergeAgent` already drops the merged AI from the flat contacts lists, refetches
+  `["contacts"]` and invalidates `["conversations"]` and `["rooms"]`; on this page those queries
+  are active, so the sidebar and the contacts reload while the survivor opens. The survivor's
+  profile has no `staleTime` (default 0), so opening it fetches it fresh.
+- **Refusals**: 409 `identity_online` shows "End its session first: {name} is online." in the
+  dialog's alert; the dialog stays open and the page does not navigate (MRG-02). 403, a 422 under
+  the picker, anything else and the network are the dialog's messages (T47 follow-up).
+- **Docs**: `docs/agents.md` now says any AI you own can be merged into another one, names
+  **Merge into…** on the profile (and the Unlinked row) and repeats that the old AI must be
+  offline; the profile paragraph lists Merge into… beside Share and Delete; `README.md` and
+  `README.pt-BR.md` say the same in their folder-move sentence and their merge bullet.
+- Tests: `routes/_app/profile.test.tsx` (the action on an offline AI of the owner, the candidate
+  list and the POST body, the navigation to the survivor, contacts and conversations refreshed
+  after the merge, no action and no contacts request for a grantee, none on a user or a person,
+  none without another own AI, and the 409 message with the page kept), `lib/contacts.test.ts`
+  (`ownAIs` order and `mergeTargets` leaving out the AI itself and the shared one),
+  `routes/a11y.test.tsx` (axe on the open dialog, en and pt-BR).

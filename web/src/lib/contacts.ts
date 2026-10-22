@@ -72,6 +72,25 @@ export function flattenTree(nodes: TreeNode[]): AIContact[] {
   return nodes.flatMap((n) => [n.ai, ...flattenTree(n.children)]);
 }
 
+/**
+ * The caller's own AIs as the contacts list them: the machine trees in order, parents before their
+ * children, and the unlinked last. An AI shared with the caller is never one of them.
+ */
+export function ownAIs(contacts: Contacts): AIContact[] {
+  return [...contacts.machines.flatMap((m) => flattenTree(m.nodes)), ...contacts.unlinked];
+}
+
+/**
+ * The AIs the caller may merge an AI into (MRG-01): their own, the one being merged away left out,
+ * wherever the contacts list it. The merge target is always the caller's, so a shared AI is never
+ * offered and the owner's own list is enough.
+ */
+export function mergeTargets(contacts: Contacts, from: string): IntelligenceRef[] {
+  return ownAIs(contacts)
+    .filter((ai) => ai.intelligence.id !== from)
+    .map((ai) => ai.intelligence);
+}
+
 /** Every AI the contacts list: the caller's own (machines, then unlinked) and the shared ones. */
 export function allAIs(contacts: Contacts): AIContact[] {
   return [
@@ -132,10 +151,11 @@ function pickable(ref: IntelligenceRef, ai?: AIContact, machineLabel = ""): Pick
  */
 export function pickables(contacts: Contacts): { ais: Pickable[]; users: Pickable[] } {
   const labels = machineLabels(contacts);
-  const own = [...contacts.machines.flatMap((m) => flattenTree(m.nodes)), ...contacts.unlinked];
   return {
     ais: [
-      ...own.map((ai) => pickable(ai.intelligence, ai, labels.get(ai.machine) ?? ai.machine)),
+      ...ownAIs(contacts).map((ai) =>
+        pickable(ai.intelligence, ai, labels.get(ai.machine) ?? ai.machine),
+      ),
       ...contacts.shared.map((ai) => pickable(ai.intelligence, ai, ai.machine)),
     ],
     users: contacts.users.map((ref) => pickable(ref)),

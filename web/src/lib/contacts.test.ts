@@ -9,6 +9,8 @@ import {
   knowsAI,
   machineLabels,
   machineOnlineCount,
+  mergeTargets,
+  ownAIs,
   pickables,
   sortMachines,
 } from "./contacts";
@@ -100,6 +102,17 @@ describe("machineLabels (TREE-04)", () => {
       ["devbox", "devbox"],
       ["notebook-01", "Laptop"],
     ]);
+  });
+});
+
+describe("ownAIs and mergeTargets (MRG-01)", () => {
+  it("lists the user's own AIs, the tree parents before their children and the unlinked last", () => {
+    expect(ownAIs(sampleContacts).map((c) => c.intelligence.id)).toEqual(["a1", "a2", "a3", "a4"]);
+  });
+
+  it("offers the owner's other AIs, never the one being merged away and never a shared one", () => {
+    expect(mergeTargets(sampleContacts, "a1").map((r) => r.id)).toEqual(["a2", "a3", "a4"]);
+    expect(mergeTargets(sampleContacts, "a4").map((r) => r.id)).toEqual(["a1", "a2", "a3"]);
   });
 });
 

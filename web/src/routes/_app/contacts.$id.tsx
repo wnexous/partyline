@@ -1,7 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeftIcon,
   CompassIcon,
+  GitMergeIcon,
   GlobeIcon,
   MessageCircleIcon,
   PlugZapIcon,
@@ -15,6 +17,7 @@ import { EmptyState } from "@/components/empty-state";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { KindBadge } from "@/components/intelligence/kind-badge";
+import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
 import { platformLabel } from "@/components/message-item";
 import { ProfileEditor } from "@/components/profile-editor";
@@ -24,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { harnessLabel } from "@/lib/agents";
 import { isApiError } from "@/lib/api/client";
-import { useIntelligence, useMe } from "@/lib/api/queries";
+import { contactsQuery, useIntelligence, useMe } from "@/lib/api/queries";
 import {
   type AIDetail,
   ConversationKindDM,
@@ -33,6 +36,7 @@ import {
   LevelManage,
   type PersonDetail,
 } from "@/lib/api/types.gen";
+import { mergeTargets } from "@/lib/contacts";
 import { useI18n, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { formatAbsolute, formatRelative } from "@/lib/time";
@@ -46,7 +50,7 @@ export const Route = createFileRoute("/_app/contacts/$id")({
  * it lives (an AI: its machine, folder and app; a person: the account it writes from), the apps
  * it speaks through (the connectors it operates among them) and, for a person, the conversations
  * the viewer can see with it. Whoever may edit it gets the editor; the owner of an AI can also
- * share or delete it.
+ * share, merge or delete it.
  */
 
 function ProfilePage() {
@@ -121,10 +125,15 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
   const me = useMe().data;
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
+  const [merging, setMerging] = useState(false);
   const own = me?.intelligence.id === profile.id;
   const isPerson = profile.role === IntelligenceRolePerson;
   const manages = profile.ai?.my_level === LevelManage;
   const name = profile.display_name;
+  // The targets of a merge are the caller's own AIs, which only the owner needs (MRG-01).
+  const contacts = useQuery({ ...contactsQuery(), enabled: manages });
+  const mergeCandidates = contacts.data ? mergeTargets(contacts.data, profile.id) : [];
+  const canMerge = manages && mergeCandidates.length > 0;
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-5 md:px-8 md:py-8">
@@ -148,6 +157,17 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           {own ? null : <MessageButton target={profile} compact={false} />}
+          {canMerge ? (
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label={t("ai.mergeAction", { name })}
+              onClick={() => setMerging(true)}
+            >
+              <GitMergeIcon aria-hidden="true" />
+              <span className="max-sm:hidden">{t("ai.mergeShort")}</span>
+            </Button>
+          ) : null}
           {manages ? (
             <>
               <SharingDialog
@@ -244,6 +264,14 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
         ai={deleting ? profile : null}
         onClose={() => setDeleting(false)}
         onDeleted={() => void navigate({ to: "/contacts" })}
+      />
+      <MergeAIDialog
+        ai={merging ? profile : null}
+        candidates={mergeCandidates}
+        onClose={() => setMerging(false)}
+        onMerged={(survivorId) =>
+          void navigate({ to: "/contacts/$id", params: { id: survivorId } })
+        }
       />
     </div>
   );

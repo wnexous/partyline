@@ -1,6 +1,9 @@
 import type { BrowserContext, Page, TestInfo } from "@playwright/test";
 import type {
   AgentInfo,
+  AgentMessage,
+  AgentRoom,
+  Page as ApiPage,
   CreatedInvite,
   CreatedToken,
   List,
@@ -11,12 +14,21 @@ import type {
 import { ADMIN, apiCall, expect, MEMBER, test } from "./fixtures";
 import type { Instance } from "./server";
 
-// Smoke suite against the built binary (web-app T19, T22: UI-01, UI-02, UI-04, UI-14, UI-24;
-// harness-onboarding WIZ-02). The tests share one fresh instance per project and run in order:
-// the first one creates the admin.
+// Smoke suite against the built binary (intelligences T52: LAY-01, LAY-05, DM-01, PROF-03,
+// TREE-01; web-app UI-01, UI-02, UI-04, UI-14, UI-24; harness-onboarding WIZ-02). The tests share
+// one fresh instance per project and run in order: the first one creates the admin.
 test.describe.configure({ mode: "serial" });
 
 const MOBILE_MAX_WIDTH = 767;
+
+/** The machine every fake AI session reports; the contacts page groups AIs by it (TREE-01). */
+const MACHINE = "e2e-box";
+
+/** A 1x1 PNG: the smallest image the avatar upload accepts (PROF-03). */
+const PHOTO = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 function isMobile(testInfo: TestInfo) {
   return (testInfo.project.use.viewport?.width ?? 1280) <= MOBILE_MAX_WIDTH;
@@ -41,6 +53,78 @@ function trackLive(page: Page) {
     });
   });
   return state;
+}
+
+/**
+ * A fake AI client (AID-01, AID-02): an agent token plus the machine and folder headers the CLI
+ * sends. The AI is the one the folder names, so two connects of one folder are one AI.
+ */
+interface AgentClient {
+  secret: string;
+  ai: AgentInfo;
+  machine: string;
+  /** The folder header as the CLI sends it (`url.PathEscape`d, so `/` is `%2F`). */
+  folder: string;
+}
+
+async function connectAI(
+  context: BrowserContext,
+  instance: Instance,
+  folder: string,
+  machine = MACHINE,
+): Promise<AgentClient> {
+  const token = await apiCall<CreatedToken>(context.request, instance, "POST", "/tokens", {
+    kind: "agent",
+    name: `e2e ${folder}`,
+  });
+  const folderHeader = encodeURIComponent(folder);
+  const res = await context.request.post(`${instance.url}/api/v1/agent/register`, {
+    headers: {
+      Authorization: `Bearer ${token.secret}`,
+      "X-Partyline-Machine": machine,
+      "X-Partyline-Folder": folderHeader,
+    },
+  });
+  expect(res.ok(), `register ${folder} → ${res.status()}`).toBe(true);
+  return {
+    secret: token.secret,
+    ai: (await res.json()) as AgentInfo,
+    machine,
+    folder: folderHeader,
+  };
+}
+
+/** One call of the fake AI client, as its folder and machine (never as a client-supplied id). */
+function agentCall(
+  context: BrowserContext,
+  instance: Instance,
+  agent: AgentClient,
+  method: "GET" | "POST",
+  path: string,
+  data?: unknown,
+) {
+  return context.request.fetch(`${instance.url}/api/v1${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${agent.secret}`,
+      "X-Partyline-Machine": agent.machine,
+      "X-Partyline-Folder": agent.folder,
+    },
+    data,
+  });
+}
+
+async function agentJSON<T>(
+  context: BrowserContext,
+  instance: Instance,
+  agent: AgentClient,
+  method: "GET" | "POST",
+  path: string,
+  data?: unknown,
+): Promise<T> {
+  const res = await agentCall(context, instance, agent, method, path, data);
+  expect(res.ok(), `${method} ${path} → ${res.status()}`).toBe(true);
+  return (await res.json()) as T;
 }
 
 test("first run: setup, log out, log back in to a protected route (UI-01, UI-02)", async ({
@@ -228,89 +312,242 @@ test("a machine is approved by typing its code; an old link with the code pre-fi
   expect(poll.approved_by).toBe(ADMIN.username);
 });
 
-/** Registers a temporary agent session of project for the logged-in context's user. */
-async function registerSession(
-  context: BrowserContext,
-  instance: Instance,
-  project: string,
-  harness: string,
-) {
-  const token = await apiCall<CreatedToken>(context.request, instance, "POST", "/tokens", {
-    kind: "agent",
-    name: `e2e-${project}-${harness}`,
+test("the messenger opens a conversation from the list and comes back (LAY-01, LAY-05)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
+    name: "e2e-messenger",
+    members: [],
   });
-  const res = await context.request.post(`${instance.url}/api/v1/agent/register`, {
-    headers: {
-      Authorization: `Bearer ${token.secret}`,
-      "X-Partyline-Project": project,
-      "X-Partyline-Harness": harness,
-      "X-Partyline-Machine": "e2e-box",
-    },
-  });
-  expect(res.ok(), `register → ${res.status()}`).toBe(true);
-  return (await res.json()) as AgentInfo;
-}
 
-test("agents are grouped by project and the owner renames the project (PROJ-04, PROJ-05)", async ({
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: homeHeading(testInfo), level: 1 })).toBeVisible();
+  const list = page.getByRole("list", { name: "Conversations" });
+  const row = list.getByRole("link", { name: /e2e-messenger/ });
+  await expect(row).toBeVisible();
+
+  await row.click();
+  await expect(page).toHaveURL(`${instance.url}/rooms/${room.id}`);
+  await expect(page.getByRole("heading", { name: "e2e-messenger", level: 1 })).toBeVisible();
+
+  if (isMobile(testInfo)) {
+    // LAY-05: the conversation owns the screen, and its back button returns to the list.
+    await expect(page.getByRole("complementary", { name: "Conversations" })).toHaveCount(0);
+    await page.getByRole("link", { name: "Back to conversations" }).click();
+  } else {
+    // LAY-01: the list stays beside the conversation and marks the open one.
+    await expect(page.getByRole("complementary", { name: "Conversations" })).toBeVisible();
+    await expect(list.getByRole("link", { name: /e2e-messenger/ })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await page.goBack();
+  }
+
+  await expect(page).toHaveURL(`${instance.url}/`);
+  await expect(page.getByRole("heading", { name: homeHeading(testInfo), level: 1 })).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "Conversations" }).getByRole("link", { name: /e2e-messenger/ }),
+  ).toBeVisible();
+});
+
+test("a direct message with an AI carries both ways: its post arrives live and the web post reaches it (DM-01)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const agent = await connectAI(context, instance, "/work/atlas");
+  const name = agent.ai.display_name;
+
+  const live = trackLive(page);
+  await page.goto("/contacts");
+  await page.getByRole("button", { name: `Message ${name}` }).click();
+  await expect(page).toHaveURL(new RegExp(`^${instance.url}/rooms/[^/]+$`));
+  const roomId = new URL(page.url()).pathname.split("/").pop() ?? "";
+  await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
+  // A DM has exactly two participants and no way to change them (DM-02).
+  await expect(page.getByRole("button", { name: "Participants (2)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No messages yet" })).toBeVisible();
+  await expect.poll(() => live.ready).toBe(true);
+
+  // Marks this document: a reload would drop it. Timeline fetches are counted from here on.
+  await page.evaluate(() => Object.assign(window, { e2eSameDocument: true }));
+  const timelineFetches: string[] = [];
+  page.on("request", (req) => {
+    if (new URL(req.url()).pathname === `/api/v1/rooms/${roomId}/messages`) {
+      timelineFetches.push(req.url());
+    }
+  });
+
+  // The AI sees the same DM from its folder and posts in it.
+  const rooms = await agentJSON<List<AgentRoom>>(context, instance, agent, "GET", "/agent/rooms");
+  expect(rooms.items.find((r) => r.id === roomId)?.kind).toBe("dm");
+  const fromAI = "Atlas is listening on the e2e line";
+  await agentJSON<AgentMessage>(
+    context,
+    instance,
+    agent,
+    "POST",
+    `/agent/rooms/${roomId}/messages`,
+    { text: fromAI },
+  );
+  const timeline = page.locator('[data-testid^="message-"]');
+  await expect(timeline.getByText(fromAI, { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => "e2eSameDocument" in window)).toBe(true);
+  expect(timelineFetches).toEqual([]);
+
+  // The other way: the AI reads the web's message, authored by its owner and so trusted.
+  const fromWeb = "Here it is on the web side";
+  await page.getByRole("textbox", { name: `Message ${name}` }).fill(fromWeb);
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(timeline.getByText(fromWeb, { exact: true })).toBeVisible();
+  await expect
+    .poll(async () => {
+      const history = await agentJSON<ApiPage<AgentMessage>>(
+        context,
+        instance,
+        agent,
+        "GET",
+        `/agent/rooms/${roomId}/messages?limit=20`,
+      );
+      const seen = history.items.find((m) => m.message.text === fromWeb);
+      return seen ? `${seen.trusted}:${seen.message.author_name}` : "missing";
+    })
+    .toBe(`true:${ADMIN.username}`);
+
+  // DM-01: "Message" again opens the same conversation, never a second one.
+  await page.goto("/contacts");
+  await page.getByRole("button", { name: `Message ${name}` }).click();
+  await expect(page).toHaveURL(`${instance.url}/rooms/${roomId}`);
+  await expect(timeline.getByText(fromAI, { exact: true })).toBeVisible();
+
+  // Its one row in the list is titled by the other participant, with the last message (LAY-01).
+  if (isMobile(testInfo)) {
+    await page.getByRole("link", { name: "Back to conversations" }).click();
+  }
+  const row = page
+    .getByRole("list", { name: "Conversations" })
+    .getByRole("link", { name: new RegExp(name) });
+  await expect(row).toHaveCount(1);
+  await expect(row.getByText(fromWeb, { exact: true })).toBeVisible();
+  await expect(row.locator("time")).toHaveCount(1);
+});
+
+test("a group is created from the list with an AI as its member (LAY-01, LAY-04)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const agent = await connectAI(context, instance, "/work/crew");
+  const name = agent.ai.display_name;
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "New group" }).click();
+  const dialog = page.getByRole("dialog", { name: "New group" });
+  await dialog.getByLabel("Name", { exact: true }).fill("e2e-crew");
+  await dialog.getByRole("checkbox", { name }).check();
+  await dialog.getByRole("button", { name: "Create group" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`^${instance.url}/rooms/[^/]+$`));
+  await expect(page.getByRole("heading", { name: "e2e-crew", level: 1 })).toBeVisible();
+  // The AI it picked is its one member; the creator reaches it as the owner.
+  await expect(page.getByRole("button", { name: "Members (1)" })).toBeVisible();
+  if (!isMobile(testInfo)) {
+    const panel = page.getByRole("complementary", { name: "Members" });
+    await expect(
+      panel.getByRole("region", { name: "Agents" }).getByText(name, { exact: true }),
+    ).toBeVisible();
+  }
+
+  // On a phone the list is the home screen again; beside the sidebar it is already there.
+  if (isMobile(testInfo)) {
+    await page.getByRole("link", { name: "Back to conversations" }).click();
+  }
+  await expect(
+    page.getByRole("list", { name: "Conversations" }).getByRole("link", { name: /e2e-crew/ }),
+  ).toBeVisible();
+});
+
+test("the contacts page groups AIs by machine and nests folders (TREE-01)", async ({
   context,
   page,
   instance,
 }) => {
   await loginAs(context, instance, ADMIN);
-  const session = await registerSession(context, instance, "atlas", "claude");
-  expect(session.display_name).toBe("Atlas · Claude Code");
+  const atlas = await connectAI(context, instance, "/work/atlas");
+  const notes = await connectAI(context, instance, "/work/atlas/notes");
+  const scribe = await connectAI(context, instance, "/opt/scribe", "e2e-laptop");
 
-  await page.goto("/agents");
-  await expect(page.getByRole("heading", { name: "Atlas", level: 2 })).toBeVisible();
-  const group = page.getByRole("list", { name: "Agents of Atlas" });
-  const row = group.getByRole("listitem", { name: "Atlas · Claude Code" });
-  await expect(row.getByText("Temporary")).toBeVisible();
-  await expect(row.getByText("e2e-box")).toBeVisible();
+  await page.goto("/contacts");
+  await expect(page.getByRole("heading", { name: "Contacts", level: 1 })).toBeVisible();
+  const box = page.getByRole("region", { name: MACHINE });
+  const laptop = page.getByRole("region", { name: "e2e-laptop" });
+  await expect(box.getByRole("link", { name: atlas.ai.display_name })).toBeVisible();
+  await expect(laptop.getByRole("link", { name: scribe.ai.display_name })).toBeVisible();
 
-  await page.getByRole("button", { name: "Rename project Atlas" }).click();
-  const field = page.getByRole("textbox", { name: "Rename project Atlas" });
-  await field.fill("Videos");
-  await field.press("Enter");
-  await expect(page.getByRole("heading", { name: "Videos", level: 2 })).toBeVisible();
-  await expect(
-    page.getByRole("list", { name: "Agents of Videos" }).getByRole("listitem", {
-      name: "Videos · Claude Code",
-    }),
-  ).toBeVisible();
+  // An AI whose folder is inside another AI's folder hangs from its row...
+  const atlasItem = box
+    .getByRole("listitem")
+    .filter({ has: page.getByTestId(`contact-${atlas.ai.id}`) });
+  await expect(atlasItem.getByTestId(`contact-${notes.ai.id}`)).toBeVisible();
+  await expect(atlasItem.getByTestId(`contact-${atlas.ai.id}`)).toBeVisible();
+  // ...and an AI of another machine is not part of that tree.
+  await expect(box.getByTestId(`contact-${scribe.ai.id}`)).toHaveCount(0);
 });
 
-test("a project joins a room from the member picker and shows its session (PROJ-06, PROJ-07)", async ({
+test("a profile photo is uploaded from the profile page and shows across the shell (PROF-03)", async ({
   context,
   page,
   instance,
-}, testInfo) => {
-  test.skip(isMobile(testInfo), "the members panel is a sheet on phones; covered on desktop");
+}) => {
   await loginAs(context, instance, ADMIN);
-  await registerSession(context, instance, "notes", "codex");
-  const room = await apiCall<Room>(context.request, instance, "POST", "/rooms", {
-    name: "e2e-projects",
+  const me = await apiCall<Me>(context.request, instance, "GET", "/me");
+  await page.goto(`/contacts/${me.intelligence.id}`);
+  await expect(
+    page.getByRole("heading", { name: me.intelligence.display_name, level: 1 }),
+  ).toBeVisible();
+
+  await page.getByLabel("Upload photo").setInputFiles({
+    name: "e2e-avatar.png",
+    mimeType: "image/png",
+    buffer: PHOTO,
   });
+  await expect(page.getByAltText("Preview of the new photo")).toBeVisible();
+  await page.getByRole("button", { name: "Use this photo" }).click();
 
-  await page.goto(`/rooms/${room.id}`);
-  await page.getByRole("button", { name: "Add members" }).click();
-  const dialog = page.getByRole("dialog", { name: "Add members" });
-  await dialog.getByRole("button", { name: "Add Notes (any session)" }).click();
-  await page.keyboard.press("Escape");
+  // The stored photo replaces the initials on the profile, before and after a reload.
+  const photo = new RegExp(`/api/v1/intelligences/${me.intelligence.id}/avatar\\?v=`);
+  const face = page.locator('[data-testid="intelligence-avatar"] img').first();
+  await expect(face).toHaveAttribute("src", photo);
+  await page.reload();
+  await expect(page.locator('[data-testid="intelligence-avatar"] img').first()).toHaveAttribute(
+    "src",
+    photo,
+  );
 
-  const group = page.getByRole("region", { name: "Projects" });
-  await expect(group.getByText("Notes", { exact: true })).toBeVisible();
-  await expect(group.getByText("No session online; messages wait for the next one")).toBeVisible();
+  // PROF-03: the photo shows wherever the user appears, the account menu included.
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Account menu" }).locator("img")).toHaveAttribute(
+    "src",
+    photo,
+  );
 });
 
-test("main pages fit the viewport with no horizontal page scroll (UI-24)", async ({
+test("main pages fit the viewport with no horizontal page scroll (UI-24, LAY-05)", async ({
   context,
   page,
   instance,
 }, testInfo) => {
   await loginAs(context, instance, ADMIN);
   const me = await apiCall<Me>(context.request, instance, "GET", "/me");
-  const room = await apiCall<Room>(context.request, instance, "POST", "/rooms", {
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
     name: "e2e-narrow",
+    members: [],
   });
   // A long token with no break opportunity (no spaces or hyphens) is the usual way a
   // timeline row pushes a page sideways; only `break-words` can wrap it.

@@ -987,8 +987,8 @@ design needs the API to return them). See `contract-notes.md`, T48.
 **Requirement**: LAY-01, LAY-05, DM-01, PROF-03, TREE-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `make e2e` passes on desktop-1280 and mobile-360
-- [ ] Gate check passes: `make check`
+- [x] `make e2e` passes on desktop-1280 and mobile-360
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(web): cover the messenger in the smoke suite`
@@ -1002,8 +1002,8 @@ design needs the API to return them). See `contract-notes.md`, T48.
 **Requirement**: CLI-01, SES-01, AID-01
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] Every command, flag, header-free behaviour and error code users meet is documented in English and Portuguese READMEs; no private data
-- [ ] Gate check passes: `make check`
+- [x] Every command, flag, header-free behaviour and error code users meet is documented in English and Portuguese READMEs; no private data
+- [x] Gate check passes: `make check`
 **Tests**: none
 **Gate**: build
 **Commit**: `docs: describe intelligences, DMs and the new login and setup`
@@ -1024,6 +1024,22 @@ design needs the API to return them). See `contract-notes.md`, T48.
 **Gate**: build
 **Commit**: `docs(specs): record the intelligences UAT`
 
+#### T55: Merge any of your AIs from its profile
+
+**What**: `/contacts/$id` for an AI the viewer owns gains **Merge into…**, reusing `MergeAIDialog` with the owner's other AIs as targets; after a merge the page opens the survivor and the contacts and conversations are refreshed. `ownAIs`/`mergeTargets` in `lib/contacts.ts` are the one definition of the merge targets; the merge dialog reports the survivor so the page can leave for it. Extends T47's MRG-01 web follow-up beyond the Unlinked rows.
+**Where**: `web/src/routes/_app/contacts.$id.tsx`
+**Depends on**: T48
+**Reuses**: `MergeAIDialog` (T47 follow-up), `useMergeAgent`, `useContacts` data
+**Requirement**: MRG-01, MRG-02
+**Tools**: MCP: NONE; Skill: NONE
+**Done when**:
+- [x] The owner of an offline AI sees **Merge into…** on its profile, picks one of the owner's other AIs and lands on the survivor's profile with the contacts and conversations refreshed (MRG-01)
+- [x] A grantee, a user and a person see no merge action, and a 409 `identity_online` leaves the page in place with the message (MRG-02)
+- [x] Gate check passes: `make check`
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(web): merge any of your AIs from its profile`
+
 ---
 
 ## Phase Execution Map
@@ -1039,7 +1055,7 @@ Phase 5:  T26 → T27 → T28 → T29 → T30 → T31
 Phase 6:  T32 → T33 → T34 → T35
 Phase 7:  T36 → T37 → T38 → T39 → T40 → T41
 Phase 8:  T42 → T43 → T44 → T45 → T46 → T47 → T48 → T49
-Phase 9:  T50 → T51 → T52 → T53 → T54
+Phase 9:  T50 → T51 → T52 → T53 → T54 → T55
 ```
 
 Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, or two batches) · P7 · P8 · P9.
@@ -1129,8 +1145,8 @@ Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, o
 | MIG-03 | T5, T50 |
 | MIG-04 | T4 |
 | MIG-05 | T1, T6, T51 |
-| MRG-01 | T35, T47 |
-| MRG-02 | T35 |
+| MRG-01 | T35, T47, T55 |
+| MRG-02 | T35, T55 |
 | NOTI-01 | T34, T49 |
 | NOTI-02 | T34 |
 | NOTI-03 | T34 |
@@ -1197,6 +1213,7 @@ Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, o
 | T52 | smoke suite | ✅ Granular |
 | T53 | docs | ✅ Granular |
 | T54 | UAT record | ✅ Granular |
+| T55 | one page + one shared selector | ✅ Granular |
 
 ---
 
@@ -1258,6 +1275,7 @@ Suggested batches (~7 tasks, whole phases): P1 · P2 · P3 · P4 · P5+P6 (10, o
 | T52 | T51 | T51 → T52 | ✅ Match |
 | T53 | T52 | T52 → T53 | ✅ Match |
 | T54 | T53 | T53 → T54 | ✅ Match |
+| T55 | T48 (Phase 8) | T54 → T55 | ⚠️ Follow-up added after T54: it only touches the T48 page |
 
 No task depends on a later phase.
 
@@ -1321,6 +1339,7 @@ No task depends on a later phase.
 | T52 | Web end-to-end | e2e (Playwright) | e2e | ✅ OK |
 | T53 | Docs | none | none | ✅ OK |
 | T54 | UAT (real harness) | e2e (manual UAT) | e2e | ✅ OK |
+| T55 | Web | unit | unit | ✅ OK |
 
 Tests for removed v0.3 behaviour (T16, T50) are replaced by tests of the rule that supersedes it,
 named in the commit body; no other test is deleted or weakened.
