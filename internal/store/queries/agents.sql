@@ -206,3 +206,26 @@ UPDATE agents SET machine = ?, folder = ? WHERE id = ?;
 
 -- name: GetAgentByFolder :one
 SELECT * FROM agents WHERE owner_id = ? AND machine = ? AND folder = ? AND folder <> '';
+
+-- name: InsertFolderAgent :exec
+-- A new AI of a folder (AID-01): the row stores its id as its v0.3 name.
+INSERT INTO agents (id, owner_id, name, description, created_at, harness, machine, folder)
+VALUES (?, ?, ?, '', ?, ?, ?, ?);
+
+-- name: SetAgentHarness :exec
+UPDATE agents SET harness = ? WHERE id = ?;
+
+-- name: GetUnlinkedAgentByHandle :one
+-- The owner's agent without a folder (a v0.3 identity) whose intelligence has the handle
+-- (MIG-02); handles compare case-insensitively.
+SELECT a.* FROM agents a JOIN intelligences i ON i.id = a.id
+WHERE a.owner_id = ? AND a.folder = '' AND i.handle = ?;
+
+-- name: GetUnlinkedAgentByName :one
+-- The owner's agent without a folder with the v0.3 name (MIG-02).
+SELECT * FROM agents WHERE owner_id = ? AND folder = '' AND name = ?;
+
+-- name: AdoptAgent :execrows
+-- Links an unlinked agent to a machine and folder; the folder = '' guard makes the link happen
+-- once (MIG-02).
+UPDATE agents SET machine = ?, folder = ?, harness = ? WHERE id = ? AND folder = '';

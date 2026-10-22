@@ -17,6 +17,7 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
@@ -30,9 +31,9 @@ import (
 // ErrNotRegistered means an agent token named an agent that never connected (403).
 var ErrNotRegistered = errors.New("agent not registered")
 
-// MaxAgentsPerOwner is the most agents one user can register; a token cannot create agents
-// without bound by connecting under new names.
-const MaxAgentsPerOwner = 50
+// MaxAgentsPerOwner is the most AIs one user can have. Every folder a session starts in is a
+// permanent identity, so a token cannot create identities without bound.
+const MaxAgentsPerOwner = 200
 
 // ErrAgentLimit answers the registration of a new agent beyond MaxAgentsPerOwner (409).
 var ErrAgentLimit = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "agent limit reached")
@@ -80,6 +81,8 @@ type Deps struct {
 	Access   *access.Authorizer
 	Bus      *events.Bus
 	Presence *Presence
+	// Audit records the adoption of a v0.3 identity (MIG-02); optional.
+	Audit *audit.Log
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
 }
@@ -91,13 +94,19 @@ type Registry struct {
 	az       *access.Authorizer
 	bus      *events.Bus
 	presence *Presence
+	audit    *audit.Log
 	now      func() time.Time
 	posts    *postLimiter
 
 	// allocMu serializes the sessions whose agent name the server picks (Identity.Allocates),
 	// from the name choice until the agent is online (WebSocket) or held (registration), so
-	// two sessions never pick the same name (ID-01).
+	// two sessions never pick the same name (ID-01). It also serializes the creation and
+	// adoption of folder identities (ResolveFolder).
 	allocMu sync.Mutex
+
+	// machines is the last sighting written per machine (touchMachine), guarded by machinesMu.
+	machinesMu sync.Mutex
+	machines   map[machineKey]machineSeen
 }
 
 // NewRegistry returns a Registry.
@@ -106,8 +115,8 @@ func NewRegistry(d Deps) *Registry {
 		d.Now = time.Now
 	}
 	return &Registry{
-		store: d.Store, az: d.Access, bus: d.Bus, presence: d.Presence, now: d.Now,
-		posts: newPostLimiter(PostLimit, PostWindow, d.Now),
+		store: d.Store, az: d.Access, bus: d.Bus, presence: d.Presence, audit: d.Audit, now: d.Now,
+		posts: newPostLimiter(PostLimit, PostWindow, d.Now), machines: map[machineKey]machineSeen{},
 	}
 }
 

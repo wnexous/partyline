@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -44,15 +45,16 @@ func TestAgentRegisterAuth(t *testing.T) {
 	require.Empty(t, agentNames(t, alice))
 }
 
-// PUSH-02 with the agent cap: registering a 51st agent answers 409 "agent limit reached".
+// PUSH-02 with the agent cap: registering an agent beyond agents.MaxAgentsPerOwner answers 409
+// "agent limit reached".
 func TestAgentRegisterLimit(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	for i := 1; i <= 50; i++ {
+	for i := 1; i <= agents.MaxAgentsPerOwner; i++ {
 		tok.WithHeader(dto.HeaderAgent, fmt.Sprintf("a%d", i)).Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)
 	}
-	e := tok.WithHeader(dto.HeaderAgent, "a51").Post("/api/v1/agent/register", nil).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
+	e := tok.WithHeader(dto.HeaderAgent, "one-too-many").Post("/api/v1/agent/register", nil).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 	require.Equal(t, "agent limit reached", e.Message)
 	tok.WithHeader(dto.HeaderAgent, "a7").Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)
 }

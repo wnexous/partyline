@@ -320,10 +320,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: AID-01, AID-02, AID-03, AID-05, MIG-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] (O, M, F) creates once and resolves to the same id from any harness, updating the app (AID-01, AID-02); same folder on two machines → two identities; same base name in two folders → `name`, `name-2` with the same display name (AID-03)
-- [ ] Validation table: empty, NUL, 1025 bytes, relative, trailing slash, `..` → the right code (AID-05)
-- [ ] Unlinked identity adopted by handle or by `Adopt`, once; a stale `Adopt` naming a linked or missing identity is ignored (MIG-02); concurrent resolves of one new folder create one identity
-- [ ] Gate check passes: `make check`
+- [x] (O, M, F) creates once and resolves to the same id from any harness, updating the app (AID-01, AID-02); same folder on two machines → two identities; same base name in two folders → `name`, `name-2` with the same display name (AID-03)
+- [x] Validation table: empty, NUL, 1025 bytes, relative, trailing slash, `..` → the right code (AID-05)
+- [x] Unlinked identity adopted by handle or by `Adopt`, once; a stale `Adopt` naming a linked or missing identity is ignored (MIG-02); concurrent resolves of one new folder create one identity
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(agents): resolve AI identities by machine and folder`

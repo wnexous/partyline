@@ -83,6 +83,11 @@ const (
 	ErrorCodeUnavailable   ErrorCode = "unavailable"    // 503, or 502 when a connector's platform failed
 	ErrorCodeHandleTaken   ErrorCode = "handle_taken"   // 409, the @handle belongs to another intelligence
 	ErrorCodeAvatarInvalid ErrorCode = "avatar_invalid" // 422, the avatar is not an acceptable image
+	// ErrorCodeFolderRequired is a session that did not say which machine and folder it works in
+	// (an old CLI sends none); ErrorCodeFolderInvalid one whose folder cannot be an identity
+	// (not absolute or canonical, a NUL, longer than 1024 bytes) (AID-05).
+	ErrorCodeFolderRequired ErrorCode = "folder_required" // 422
+	ErrorCodeFolderInvalid  ErrorCode = "folder_invalid"  // 422
 )
 
 // ErrorBody is the envelope of every error response.

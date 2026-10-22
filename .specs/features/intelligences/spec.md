@@ -371,11 +371,11 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AID-01 | P1: Folder identity | Tasks | Pending |
-| AID-02 | P1: Folder identity | Tasks | Pending |
+| AID-01 | P1: Folder identity | Execute | Implementing |
+| AID-02 | P1: Folder identity | Execute | Implementing |
 | AID-03 | P1: Folder identity | Execute | Implementing |
 | AID-04 | P1: Folder identity | Tasks | Pending |
-| AID-05 | P1: Folder identity | Tasks | Pending |
+| AID-05 | P1: Folder identity | Execute | Implementing |
 | AID-06 | P1: Folder identity | Execute | Implementing |
 | AID-07 | P1: Folder identity | Tasks | Pending |
 | SES-01 | P1: One live session | Tasks | Pending |
@@ -446,7 +446,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | CLI-06 | P1: Login and setup | Tasks | Pending |
 | CLI-07 | P1: Login and setup | Tasks | Pending |
 | MIG-01 | P1: Migration | Execute | Implementing |
-| MIG-02 | P1: Migration | Tasks | Pending |
+| MIG-02 | P1: Migration | Execute | Implementing |
 | MIG-03 | P1: Migration | Execute | Implementing |
 | MIG-04 | P1: Migration | Execute | Implementing |
 | MIG-05 | P1: Migration | Execute | Implementing |

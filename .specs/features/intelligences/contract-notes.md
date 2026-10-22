@@ -323,3 +323,53 @@ Package `internal/intelligences` (`service.go`; the tree builder of T25 lives ne
   set in the room), so they follow profile renames made by the owner (`PATCH
   /intelligences/{id}`) or by the AI (`PATCH /agent/profile`): covered by
   `TestOutboundAuthorFollowsProfileRename`.
+
+## T13 - Resolve AIs by folder (AID-01, AID-02, AID-03, AID-05, MIG-02)
+
+`internal/agents/folder.go`; nothing calls it from the API yet (T14).
+
+- `Registry.ResolveFolder(ctx, ownerID, FolderID{Machine, Folder, Home, Harness, Adopt}, live)
+  (db.Agent, error)`. Order: clean the machine (control characters dropped, trimmed, 64 characters)
+  and validate (`ValidateFolder`) **before anything is written** → harness id (`HarnessID`; empty
+  stays empty) and `Adopt` (trimmed, lower-cased) → `touchMachine` → lookup of (owner, machine,
+  folder) → on a miss `linkOrCreate` → `relabel`.
+- `ValidateFolder(machine, folder)`: empty/blank machine → 422 `folder_required` (field `machine`);
+  empty folder → 422 `folder_required` (field `folder`); invalid UTF-8, a NUL, more than
+  `MaxFolderLength` (1024) bytes, not absolute (`/…`, or `X:\…`/`X:/…`; UNC and `C:acme` are
+  relative), a trailing separator other than the root, or a `.`/`..` segment → 422
+  `folder_invalid` (field `folder`). Both are `*httpx.Error` with the new `dto.ErrorCodeFolderRequired`
+  / `ErrorCodeFolderInvalid`; the `folder_required` messages end with "update partyline" (an old
+  CLI sends nothing). On Unix `/` is the only separator (a backslash is a file name character);
+  on a drive path both are. Empty segments (`//`) are not refused.
+- Identity = (owner, machine, folder), the unique index `agents_folder` being the last guard. A
+  hit returns the same agent for any harness. **App (harness)**: a live session sets it; a
+  tools-only call (`live=false`) sets it only while `Presence.Online` is false, so a Codex call
+  never relabels a live Claude Code session; an empty harness never changes it; an unknown one is
+  the generic `agent` app.
+- Adoption (MIG-02), only when the folder has no identity: the owner's **unlinked** agent
+  (`folder = ''`) named by `Adopt` (its intelligence handle, case-insensitive, else its v0.3
+  `agents.name`), else the one whose handle is `handles.Default(AI, base(folder))`. A missing or
+  already linked name is ignored (no error); other owners' agents are never candidates.
+  `AdoptAgent … WHERE folder = ''` sets machine, folder and harness (the stored harness when none
+  was sent) and keeps id, name, profile, groups and history. It writes the audit entry
+  `agent.adopt` (`audit.ActionAgentAdopt`, target kind `agent`, detail `{"by": "as"|"folder"}`,
+  actor = the owner) in the same transaction, so a link is audited exactly once.
+- Creation: `CountAgentsByOwner >= MaxAgentsPerOwner` → `ErrAgentLimit`; row `name = id`,
+  `harness` = the session's, `kind` the column default; intelligence through `intelligences.Create`
+  with `handles.DisplayName(base)` and handle base `base` (`base` = last path element; `/` is
+  `/`, a drive root `C:`); `agents.display_name` is set to the profile's display name (the T7
+  mirror), so `agents.DisplayName(a)` reads the folder's name and never the row's id. All of this runs in one write transaction under `allocMu`, after a
+  re-check of the folder, so concurrent resolves of one new folder create one identity and
+  concurrent adoptions link once.
+- **`MaxAgentsPerOwner` is 200** (was 50) for every creation path; the limit error stays the
+  existing 409 `conflict` "agent limit reached" (`ErrAgentLimit`), not a new `agent_limit` code,
+  because the channel and the docs already know it. The v0.3 cap tests derive from the constant.
+- `touchMachine`: the `machines` row (home, `last_seen_at`) is written at most once per
+  `MachineTouchInterval` (1 minute) per (owner, machine) per process, and at once when the
+  session reports a different home folder. A home that is not a valid folder is ignored. The
+  `UpsertMachine` query now keeps the stored home when it is given an empty one; the owner's
+  label is never touched.
+- `agents.Deps.Audit` (optional) is the audit log; `app.go` builds it before the registry.
+- sqlc added: `InsertFolderAgent`, `SetAgentHarness`, `GetUnlinkedAgentByHandle`,
+  `GetUnlinkedAgentByName`, `AdoptAgent` (`:execrows`).
+

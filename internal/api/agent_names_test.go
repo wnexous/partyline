@@ -12,6 +12,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -139,18 +140,18 @@ func TestAgentWSExplicitNameStillReplaces(t *testing.T) {
 	require.Equal(t, map[string]bool{"proj": true}, agentNames(t, alice))
 }
 
-// NAME-02 with the agent cap (agents.MaxAgentsPerOwner = 50): a suffix that would be a new
+// NAME-02 with the agent cap (agents.MaxAgentsPerOwner): a suffix that would be a new
 // agent beyond the cap answers 409 "agent limit reached" and registers nothing; an offline
 // existing name still connects.
 func TestAgentWSUniqueModeKeepsAgentCap(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	for i := range 48 {
-		registerAgent(t, env, alice, fmt.Sprintf("agent-%02d", i))
+	for i := range agents.MaxAgentsPerOwner - 2 {
+		registerAgent(t, env, alice, fmt.Sprintf("agent-%03d", i))
 	}
-	proj, _ := dialUnique(t, tok, "proj")   // 49th agent
-	_, second := dialUnique(t, tok, "proj") // 50th agent
+	proj, _ := dialUnique(t, tok, "proj")   // the next to last agent
+	_, second := dialUnique(t, tok, "proj") // the last agent
 	require.Equal(t, "proj-2", second)
 
 	conn, resp := tok.DialAgentUnique("proj")
@@ -158,7 +159,7 @@ func TestAgentWSUniqueModeKeepsAgentCap(t *testing.T) {
 	e := resp.RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 	require.Equal(t, "agent limit reached", e.Message)
 	names := agentNames(t, alice)
-	require.Len(t, names, 50)
+	require.Len(t, names, agents.MaxAgentsPerOwner)
 	require.NotContains(t, names, "proj-3")
 
 	proj.Close()

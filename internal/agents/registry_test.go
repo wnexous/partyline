@@ -15,6 +15,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
@@ -23,6 +24,24 @@ import (
 
 var t0 = time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
 
+// fixtureClock is the registry's clock in the tests: it stands at t0 until a test advances it.
+type fixtureClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *fixtureClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *fixtureClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
 type fixture struct {
 	st       *store.Store
 	raw      *sql.DB // separate connection for inserting fixtures and counting rows
@@ -30,6 +49,7 @@ type fixture struct {
 	az       *access.Authorizer
 	presence *Presence
 	reg      *Registry
+	clock    *fixtureClock
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -42,12 +62,13 @@ func newFixture(t *testing.T) *fixture {
 	raw, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = raw.Close() })
-	now := func() time.Time { return t0 }
+	clock := &fixtureClock{now: t0}
+	now := clock.Now
 	bus := events.NewBus()
 	az := access.New(st, bus, access.Options{Now: now})
 	presence := NewPresence(st, bus, now)
-	reg := NewRegistry(Deps{Store: st, Access: az, Bus: bus, Presence: presence, Now: now})
-	return &fixture{st: st, raw: raw, bus: bus, az: az, presence: presence, reg: reg}
+	reg := NewRegistry(Deps{Store: st, Access: az, Bus: bus, Presence: presence, Audit: audit.New(st, now), Now: now})
+	return &fixture{st: st, raw: raw, bus: bus, az: az, presence: presence, reg: reg, clock: clock}
 }
 
 func (f *fixture) exec(t *testing.T, query string, args ...any) {

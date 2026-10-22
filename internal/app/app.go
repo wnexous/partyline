@@ -158,7 +158,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		now:           opts.Now,
 	}
 	a.Presence = presence
-	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Now: opts.Now})
+	auditLog := audit.New(st, opts.Now)
+	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Audit: auditLog, Now: opts.Now})
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
 		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Logger: opts.Logger,
 		Bus: bus, Sessions: usersSvc,
@@ -195,7 +196,6 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Bus: bus, Access: az, Rooms: a.Rooms, Intelligences: a.Intelligences, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
 		Sessions: usersSvc, SessionCheckInterval: opts.LiveSessionCheck,
 	})
-	auditLog := audit.New(st, opts.Now)
 	a.Devices = devices.New(devices.Deps{Store: st, Users: usersSvc, Box: box, Audit: auditLog, Now: opts.Now})
 	a.handler = api.New(api.Deps{
 		Config:        cfg,

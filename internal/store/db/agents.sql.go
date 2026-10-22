@@ -10,6 +10,32 @@ import (
 	"database/sql"
 )
 
+const adoptAgent = `-- name: AdoptAgent :execrows
+UPDATE agents SET machine = ?, folder = ?, harness = ? WHERE id = ? AND folder = ''
+`
+
+type AdoptAgentParams struct {
+	Machine string
+	Folder  string
+	Harness string
+	ID      string
+}
+
+// Links an unlinked agent to a machine and folder; the folder = ” guard makes the link happen
+// once (MIG-02).
+func (q *Queries) AdoptAgent(ctx context.Context, arg AdoptAgentParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, adoptAgent,
+		arg.Machine,
+		arg.Folder,
+		arg.Harness,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const advanceAgentCursor = `-- name: AdvanceAgentCursor :exec
 INSERT INTO agent_cursors (agent_id, room_id, seq) VALUES (?, ?, ?)
 ON CONFLICT (agent_id, room_id) DO UPDATE SET seq = MAX(agent_cursors.seq, excluded.seq)
@@ -447,6 +473,78 @@ func (q *Queries) GetProjectWithOwner(ctx context.Context, id string) (GetProjec
 	return i, err
 }
 
+const getUnlinkedAgentByHandle = `-- name: GetUnlinkedAgentByHandle :one
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.kind, a.display_name, a.auto_name, a.session_no, a.archived_at, a.connected_at, a.session_key, a.folder FROM agents a JOIN intelligences i ON i.id = a.id
+WHERE a.owner_id = ? AND a.folder = '' AND i.handle = ?
+`
+
+type GetUnlinkedAgentByHandleParams struct {
+	OwnerID string
+	Handle  string
+}
+
+// The owner's agent without a folder (a v0.3 identity) whose intelligence has the handle
+// (MIG-02); handles compare case-insensitively.
+func (q *Queries) GetUnlinkedAgentByHandle(ctx context.Context, arg GetUnlinkedAgentByHandleParams) (Agent, error) {
+	row := q.db.QueryRowContext(ctx, getUnlinkedAgentByHandle, arg.OwnerID, arg.Handle)
+	var i Agent
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.ProjectID,
+		&i.Harness,
+		&i.Machine,
+		&i.Kind,
+		&i.DisplayName,
+		&i.AutoName,
+		&i.SessionNo,
+		&i.ArchivedAt,
+		&i.ConnectedAt,
+		&i.SessionKey,
+		&i.Folder,
+	)
+	return i, err
+}
+
+const getUnlinkedAgentByName = `-- name: GetUnlinkedAgentByName :one
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, kind, display_name, auto_name, session_no, archived_at, connected_at, session_key, folder FROM agents WHERE owner_id = ? AND folder = '' AND name = ?
+`
+
+type GetUnlinkedAgentByNameParams struct {
+	OwnerID string
+	Name    string
+}
+
+// The owner's agent without a folder with the v0.3 name (MIG-02).
+func (q *Queries) GetUnlinkedAgentByName(ctx context.Context, arg GetUnlinkedAgentByNameParams) (Agent, error) {
+	row := q.db.QueryRowContext(ctx, getUnlinkedAgentByName, arg.OwnerID, arg.Name)
+	var i Agent
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.ProjectID,
+		&i.Harness,
+		&i.Machine,
+		&i.Kind,
+		&i.DisplayName,
+		&i.AutoName,
+		&i.SessionNo,
+		&i.ArchivedAt,
+		&i.ConnectedAt,
+		&i.SessionKey,
+		&i.Folder,
+	)
+	return i, err
+}
+
 const holdAgentForSession = `-- name: HoldAgentForSession :exec
 UPDATE agents SET session_key = ?, last_seen_at = ? WHERE id = ?
 `
@@ -482,6 +580,35 @@ func (q *Queries) InsertAgentIfMissing(ctx context.Context, arg InsertAgentIfMis
 		arg.OwnerID,
 		arg.Name,
 		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertFolderAgent = `-- name: InsertFolderAgent :exec
+INSERT INTO agents (id, owner_id, name, description, created_at, harness, machine, folder)
+VALUES (?, ?, ?, '', ?, ?, ?, ?)
+`
+
+type InsertFolderAgentParams struct {
+	ID        string
+	OwnerID   string
+	Name      string
+	CreatedAt int64
+	Harness   string
+	Machine   string
+	Folder    string
+}
+
+// A new AI of a folder (AID-01): the row stores its id as its v0.3 name.
+func (q *Queries) InsertFolderAgent(ctx context.Context, arg InsertFolderAgentParams) error {
+	_, err := q.db.ExecContext(ctx, insertFolderAgent,
+		arg.ID,
+		arg.OwnerID,
+		arg.Name,
+		arg.CreatedAt,
+		arg.Harness,
+		arg.Machine,
+		arg.Folder,
 	)
 	return err
 }
@@ -1243,6 +1370,20 @@ type SetAgentFolderParams struct {
 
 func (q *Queries) SetAgentFolder(ctx context.Context, arg SetAgentFolderParams) error {
 	_, err := q.db.ExecContext(ctx, setAgentFolder, arg.Machine, arg.Folder, arg.ID)
+	return err
+}
+
+const setAgentHarness = `-- name: SetAgentHarness :exec
+UPDATE agents SET harness = ? WHERE id = ?
+`
+
+type SetAgentHarnessParams struct {
+	Harness string
+	ID      string
+}
+
+func (q *Queries) SetAgentHarness(ctx context.Context, arg SetAgentHarnessParams) error {
+	_, err := q.db.ExecContext(ctx, setAgentHarness, arg.Harness, arg.ID)
 	return err
 }
 

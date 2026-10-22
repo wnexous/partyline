@@ -13,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -254,20 +255,20 @@ func TestAgentWSTemporaryModeReclaimsAssignedName(t *testing.T) {
 	require.Equal(t, dto.AgentKindTemporary, agentByName(t, alice, two.Name).Kind)
 }
 
-// ID-01 with the agent cap: a temporary session beyond MaxAgentsPerOwner (50) is refused with
+// ID-01 with the agent cap: a temporary session beyond agents.MaxAgentsPerOwner is refused with
 // 409 "agent limit reached" and registers nothing; existing agents still connect.
 func TestAgentWSTemporaryRespectsAgentCap(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	tok := alice.Token(dto.TokenKindAgent, "laptop")
-	for i := 1; i <= 50; i++ {
+	for i := 1; i <= agents.MaxAgentsPerOwner; i++ {
 		registerAgent(t, env, alice, fmt.Sprintf("a%d", i))
 	}
 	conn, resp := tok.DialAgentHeaders(sessionHeaders("proj", "claude", "laptop", "", ""))
 	require.Nil(t, conn)
 	e := resp.RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 	require.Equal(t, "agent limit reached", e.Message)
-	require.Len(t, agentNames(t, alice), 50)
+	require.Len(t, agentNames(t, alice), agents.MaxAgentsPerOwner)
 	_, info := dialSession(t, tok, sessionHeaders("proj", "claude", "laptop", "a7", ""))
 	require.Equal(t, "a7", info.Name)
 }
