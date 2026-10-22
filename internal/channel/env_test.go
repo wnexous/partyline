@@ -100,22 +100,26 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-// session is a running channel.Run driven over pipes, as Claude Code drives the process.
+// session is a running channel.Run driven over pipes, as Claude Code drives the process. The
+// notice the channel sends when it first connects, which says who the AI is and who its owner is
+// (reason "identity"), is kept apart from the room notifications and notices in notes, so the
+// tests of messages read them in the order they always had; identityNotice returns it.
 type session struct {
-	t      *testing.T
-	in     *io.PipeWriter
-	notes  chan Notification
-	resps  chan map[string]any
-	stderr *syncBuffer
-	done   chan error
-	nextID int
+	t        *testing.T
+	in       *io.PipeWriter
+	notes    chan Notification
+	identity chan Notification
+	resps    chan map[string]any
+	stderr   *syncBuffer
+	done     chan error
+	nextID   int
 }
 
 func startSession(t *testing.T, o Options) *session {
 	t.Helper()
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
-	s := &session{t: t, in: inW, notes: make(chan Notification, 256), resps: make(chan map[string]any, 64), stderr: &syncBuffer{}, done: make(chan error, 1), nextID: 100}
+	s := &session{t: t, in: inW, notes: make(chan Notification, 256), identity: make(chan Notification, 16), resps: make(chan map[string]any, 64), stderr: &syncBuffer{}, done: make(chan error, 1), nextID: 100}
 	o.Stdin, o.Stdout, o.Stderr = inR, outW, s.stderr
 	go func() {
 		sc := bufio.NewScanner(outR)
@@ -130,6 +134,10 @@ func startSession(t *testing.T, o Options) *session {
 					Params Notification `json:"params"`
 				}
 				_ = json.Unmarshal(sc.Bytes(), &n)
+				if n.Params.Meta["reason"] == "identity" {
+					s.identity <- n.Params
+					continue
+				}
 				s.notes <- n.Params
 				continue
 			}
@@ -198,6 +206,28 @@ func (s *session) expectNoNotification(d time.Duration) {
 	select {
 	case n := <-s.notes:
 		require.Failf(s.t, "unexpected notification", "%+v", n)
+	case <-time.After(d):
+	}
+}
+
+// identityNotice returns the notice the channel sent about who the AI is, waiting for it.
+func (s *session) identityNotice() Notification {
+	s.t.Helper()
+	select {
+	case n := <-s.identity:
+		return n
+	case <-time.After(wait):
+		require.FailNow(s.t, "no identity notice")
+		return Notification{}
+	}
+}
+
+// expectNoIdentityNotice fails when the channel sends another identity notice within d.
+func (s *session) expectNoIdentityNotice(d time.Duration) {
+	s.t.Helper()
+	select {
+	case n := <-s.identity:
+		require.Failf(s.t, "unexpected identity notice", "%+v", n)
 	case <-time.After(d):
 	}
 }

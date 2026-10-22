@@ -356,12 +356,13 @@ func TestRunFailsWhenOutputCloses(t *testing.T) {
 	e := newChanEnv(t)
 	o := e.options()
 	inR, inW := io.Pipe()
-	o.Stdin, o.Stdout, o.Stderr = inR, &failingWriter{after: 1}, &syncBuffer{}
+	o.Stdin, o.Stdout, o.Stderr = inR, &failingWriter{after: 2}, &syncBuffer{}
 	done := make(chan error, 1)
 	go func() { done <- Run(context.Background(), o) }()
 	t.Cleanup(func() { _ = inW.Close() })
 
-	// The initialize answer is written; the first notification write fails.
+	// The initialize answer and the notice that says who the AI is are written; the first message
+	// notification write fails.
 	_, err := inW.Write([]byte(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}` + "\n" + `{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n"))
 	require.NoError(t, err)
 	require.Eventually(t, e.online, wait, 10*time.Millisecond)

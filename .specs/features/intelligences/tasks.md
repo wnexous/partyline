@@ -722,10 +722,10 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: DM-04, PROF-04, AGRP-01, AGRP-02
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] `send_message to:"@owner"` creates the DM and posts (DM-04); both `room` and `to`, or neither → tool error
-- [ ] `update_profile` renames and sets an avatar from a local PNG; returns the profile; invalid file → `avatar_invalid` (PROF-04)
-- [ ] `create_group` returns the group, or the refused members with nothing created (AGRP-01, AGRP-02)
-- [ ] Gate check passes: `make check`
+- [x] `send_message to:"@owner"` creates the DM and posts (DM-04); both `room` and `to`, or neither → tool error
+- [x] `update_profile` renames and sets an avatar from a local PNG; returns the profile; invalid file → `avatar_invalid` (PROF-04)
+- [x] `create_group` returns the group, or the refused members with nothing created (AGRP-01, AGRP-02)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): add DM, group and profile tools`

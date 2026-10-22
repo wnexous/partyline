@@ -68,7 +68,7 @@ func apiError(resp *http.Response) error {
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("partyline: server error (%d): %s", resp.StatusCode, body.Error.Message)
 	}
-	msg := body.Error.Message
+	msg := withCode(body.Error.Code, body.Error.Message)
 	if len(body.Error.Fields) > 0 {
 		parts := make([]string, 0, len(body.Error.Fields))
 		for _, f := range slices.Sorted(maps.Keys(body.Error.Fields)) {
@@ -76,7 +76,39 @@ func apiError(resp *http.Response) error {
 		}
 		msg += " (" + strings.Join(parts, "; ") + ")"
 	}
+	if len(body.Error.Refused) > 0 {
+		// A refused group is all or nothing (AGRP-02): say which members and that nothing exists.
+		parts := make([]string, 0, len(body.Error.Refused))
+		for _, m := range body.Error.Refused {
+			parts = append(parts, m.ID+" ("+string(m.Reason)+")")
+		}
+		msg += "; nothing was created (refused: " + strings.Join(parts, ", ") + ")"
+	}
 	return errors.New(msg)
+}
+
+// namedCodes are the server codes a tool error names, so that the AI can tell the refusals of the
+// conversation and profile tools apart and act on them. The other errors show the server's
+// message alone.
+var namedCodes = map[dto.ErrorCode]bool{
+	dto.ErrorCodeContactNotFound:     true,
+	dto.ErrorCodeNoRouteToPerson:     true,
+	dto.ErrorCodeDMSelf:              true,
+	dto.ErrorCodeCounterpartDisabled: true,
+	dto.ErrorCodeMembersRefused:      true,
+	dto.ErrorCodeHandleTaken:         true,
+	dto.ErrorCodeAvatarInvalid:       true,
+	dto.ErrorCodeRateLimited:         true,
+}
+
+// withCode is the message prefixed with its code when the code is one of namedCodes ("code:
+// message"). A message that already leads with its code in words, as the post limit's "rate
+// limited: at most 30 messages per minute" does, is left as it is.
+func withCode(code dto.ErrorCode, message string) string {
+	if !namedCodes[code] || strings.HasPrefix(message, strings.ReplaceAll(string(code), "_", " ")+":") {
+		return message
+	}
+	return string(code) + ": " + message
 }
 
 // json sends v as JSON (nil for no body) and decodes a 2xx answer into out (nil to discard).

@@ -134,6 +134,9 @@ type link struct {
 	takeover bool
 	// zone is where the busy text shows the time the other session connected; nil is the local zone.
 	zone *time.Location
+	// announce makes the first welcome of the process a notice that says who the AI is and who
+	// its owner is (the full channel; listen prints message lines only).
+	announce bool
 	// onLost is called once, from run, when the link gives up because another session holds the
 	// AI: after the retries when it is busy, at once when it was taken over. The text is what
 	// the person is told (SES-04, SES-05). The channel then keeps answering its tools; listen
@@ -145,6 +148,8 @@ type link struct {
 	reason string   // what the server said about a refusal (stateInvalid)
 	busy   busyInfo // what the server said about the session that holds the AI (stateBusy)
 	seen   *idRing
+	// announced is set once the identity notice was sent: a reconnect is the same session.
+	announced bool
 }
 
 // lostReason says why a link gave up on its connection.
@@ -249,10 +254,54 @@ func (l *link) busyTextLocked() string {
 // connectionNotice is the notification that tells the harness why Partyline is not (or no
 // longer) connected here; adapters tell it from a room message by its type.
 func connectionNotice(reason lostReason, text string) Notification {
+	return systemNotice(string(reason), text)
+}
+
+// reasonIdentity is the reason of the notice that says who the AI is and who its owner is.
+const reasonIdentity = "identity"
+
+// systemNotice is a notification from Partyline itself, outside any room: its meta says type
+// "notice" and why. The adapters of pi, OpenCode and omp show such a notice to the person and
+// never hand it to the model; Claude Code gives every channel event to the model.
+func systemNotice(reason, text string) Notification {
 	return Notification{Content: text, Meta: map[string]string{
-		"type": "notice", "reason": string(reason), "author": "Partyline", "author_kind": string(dto.AuthorKindSystem),
+		"type": "notice", "reason": reason, "author": "Partyline", "author_kind": string(dto.AuthorKindSystem),
 		"sender_name": "", "trusted": "false", "kind": string(dto.MessageKindSystem),
 	}}
+}
+
+// identityText is what the first welcome tells the session: "You are <name> (@handle). Your owner
+// is <name> (@handle)." It is empty when the server named no AI, as an older one does, and has no
+// second sentence when it named no owner.
+func identityText(w dto.AgentWelcomeFrame) string {
+	named := func(r dto.IntelligenceRef) string { return r.DisplayName + " (@" + r.Handle + ")" }
+	if w.Intelligence.Handle == "" {
+		return ""
+	}
+	text := "You are " + named(w.Intelligence) + "."
+	if w.Owner.Handle != "" {
+		text += " Your owner is " + named(w.Owner) + "."
+	}
+	return text
+}
+
+// announceIdentity sends the notice that says who the AI is, once per process: the welcome of a
+// reconnect, which follows a dropped connection of the same session, says nothing.
+func (l *link) announceIdentity(w dto.AgentWelcomeFrame) error {
+	text := identityText(w)
+	l.mu.Lock()
+	skip := !l.announce || l.announced || text == ""
+	l.mu.Unlock()
+	if skip {
+		return nil
+	}
+	if err := l.notify.Notify(NotificationMethod, systemNotice(reasonIdentity, text)); err != nil {
+		return err
+	}
+	l.mu.Lock()
+	l.announced = true
+	l.mu.Unlock()
+	return nil
 }
 
 var errDeleted = errors.New("partyline: this agent was deleted; restart the session to register it again")
@@ -608,8 +657,14 @@ func (l *link) handle(ctx context.Context, ws *websocket.Conn, data []byte) erro
 			return nil
 		}
 		return l.notify.Notify(NotificationMethod, FormatNotice(f))
+	case dto.AgentFrameTypeWelcome:
+		var f dto.AgentWelcomeFrame
+		if json.Unmarshal(data, &f) != nil {
+			return nil
+		}
+		return l.announceIdentity(f)
 	}
-	return nil // welcome and unknown frames need nothing
+	return nil // unknown frames need nothing
 }
 
 func (l *link) seenBefore(id string) bool {

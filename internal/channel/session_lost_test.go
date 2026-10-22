@@ -43,6 +43,8 @@ var allTools = map[string]map[string]any{
 	"history":             toolArgs("room", "Support"),
 	"download_attachment": toolArgs("attachment_id", "a"),
 	"send_file":           toolArgs("room", "Support", "path", "/etc/hostname"),
+	"create_group":        toolArgs("name", "Ops", "members", []string{"@alice"}),
+	"update_profile":      toolArgs("bio", "x"),
 }
 
 // busyEnv is a server whose clock stands at holderStart with OpenCode holding alice's AI of
