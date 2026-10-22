@@ -94,7 +94,10 @@ describe("choosing where to be notified (NOTI-01)", () => {
     qc.setQueryData<Me>(queryKeys.me, stored);
     const { result } = renderHook(() => useSetNotify(), { wrapper });
     await act(() => result.current.mutateAsync("c9").catch(() => undefined));
-    expect(result.current.error).toMatchObject({ status: 422, code: "invalid" });
+    // The mutation state settles after the rejected promise, so wait for it.
+    await waitFor(() =>
+      expect(result.current.error).toMatchObject({ status: 422, code: "invalid" }),
+    );
     expect(qc.getQueryData<Me>(queryKeys.me)).toEqual(stored);
   });
 });

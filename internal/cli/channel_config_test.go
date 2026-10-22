@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -111,7 +112,9 @@ func TestChannelHarnessOmp(t *testing.T) {
 	require.Equal(t, channel.OmpInstructions, text)
 	require.Contains(t, text, "<partyline room=")
 	c.send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
-	require.Equal(t, "omp", e.ai(t, "/work/omp-proj").AI.App)
+	// The gateway sets the app right after the session attaches, so wait for it.
+	require.Eventually(t, func() bool { return e.ai(t, "/work/omp-proj").AI.App == "omp" }, chanWait, 20*time.Millisecond,
+		"the AI comes online as the omp app")
 }
 
 // An unknown harness, or omp together with --tools-only, exits 2 before anything connects.

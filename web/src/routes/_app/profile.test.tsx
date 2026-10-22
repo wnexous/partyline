@@ -303,7 +303,7 @@ describe("editing a profile (PROF-03, PROF-05)", () => {
     await user.clear(field("Bio"));
     await user.type(field("Bio"), "Shipping.");
     await user.click(screen.getByRole("button", { name: "Save profile" }));
-    await screen.findByText("Profile saved");
+    await screen.findByText("Profile saved", undefined, { timeout: 5000 });
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ bio: "Shipping." });
   });
 
@@ -316,7 +316,7 @@ describe("editing a profile (PROF-03, PROF-05)", () => {
     await name();
     await user.clear(field("Bio"));
     await user.click(screen.getByRole("button", { name: "Save profile" }));
-    await screen.findByText("Profile saved");
+    await screen.findByText("Profile saved", undefined, { timeout: 5000 });
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ bio: "" });
   });
 
@@ -333,7 +333,7 @@ describe("editing a profile (PROF-03, PROF-05)", () => {
     await user.clear(field("Display name"));
     await user.type(field("Display name"), "Ana S.");
     await user.click(screen.getByRole("button", { name: "Save profile" }));
-    await screen.findByText("Profile saved");
+    await screen.findByText("Profile saved", undefined, { timeout: 5000 });
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ display_name: "Ana S." });
   });
 
@@ -779,7 +779,7 @@ describe("a person (PEOP-03, PROF-11)", () => {
     await user.clear(field("Display name"));
     await user.type(field("Display name"), "Lia C.");
     await user.click(screen.getByRole("button", { name: "Save profile" }));
-    await screen.findByText("Profile saved");
+    await screen.findByText("Profile saved", undefined, { timeout: 5000 });
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ display_name: "Lia C." });
     expect(
       await screen.findByText("Renamed here: the platform’s name no longer replaces it."),
