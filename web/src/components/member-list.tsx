@@ -1,4 +1,11 @@
-import { BotIcon, MessageCircleIcon, UserIcon, XIcon } from "lucide-react";
+import {
+  BotIcon,
+  EllipsisIcon,
+  MessageCircleIcon,
+  MessageSquareIcon,
+  UserIcon,
+  XIcon,
+} from "lucide-react";
 import { type ReactNode, useId } from "react";
 import { toast } from "sonner";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
@@ -7,9 +14,16 @@ import { MemberSettings, memberSettingsSummary } from "@/components/member-setti
 import { chatTitle, platformLabel } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
+import { useStartConversation } from "@/hooks/use-start-conversation";
 import { useAddMember, useMe, useRemoveMember, useUpdateMember } from "@/lib/api/queries";
-import type { MemberKind, RoomMember } from "@/lib/api/types.gen";
+import type { IntelligenceRef, MemberKind, RoomMember } from "@/lib/api/types.gen";
 import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 
@@ -130,6 +144,8 @@ function MemberRow({
   const name = memberName(t, m);
   // The profile of an AI or user member: avatar, name, badge and @handle instead of an icon.
   const profile = m.kind === "agent" || m.kind === "user" ? m.intelligence : undefined;
+  // PDM-04: nobody messages herself, and a chat is not an intelligence to open a DM with (DM-05).
+  const canMessage = !!profile && !(m.kind === "user" && m.member_id === meId);
   let icon: ReactNode;
   let meta: ReactNode = null;
   if (m.kind === "agent") {
@@ -199,6 +215,7 @@ function MemberRow({
           )
         ) : null}
       </div>
+      {canMessage && profile ? <MemberDmActions member={m} profile={profile} /> : null}
       {canManage && m.kind === "agent" ? <MemberSettings roomId={roomId} member={m} /> : null}
       {canManage ? (
         <Button
@@ -212,5 +229,35 @@ function MemberRow({
         </Button>
       ) : null}
     </li>
+  );
+}
+
+/**
+ * The actions of a member (PDM-01, PDM-02): "Message privately" opens the DM with an AI or a user,
+ * the existing one or a new one, and goes to it. The row decides who gets it: an AI or another user
+ * the viewer can see, never the viewer herself and never a chat or a person behind one (PDM-04).
+ */
+function MemberDmActions({ member, profile }: { member: RoomMember; profile: IntelligenceRef }) {
+  const { t } = useI18n();
+  const { start, pending } = useStartConversation({ onError: (message) => toast.error(message) });
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="shrink-0 text-muted-foreground opacity-60 group-hover/member:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+          aria-label={t("members.actions", { name: memberName(t, member) })}
+        >
+          <EllipsisIcon aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem disabled={pending} onSelect={() => void start(profile)}>
+          <MessageSquareIcon aria-hidden="true" />
+          {t("members.messagePrivately")}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

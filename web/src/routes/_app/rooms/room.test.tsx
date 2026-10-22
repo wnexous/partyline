@@ -16,6 +16,8 @@ import {
   makeMachineTree,
   makeMe,
   makeMember,
+  makeMessage,
+  makeProfile,
   makeRoom,
   makeTreeNode,
 } from "@/test/fixtures";
@@ -700,5 +702,166 @@ describe("broadcast setting (ROUTE-06, ROUTE-07)", () => {
     roomApi({ broadcast: false });
     renderRoute("/rooms/r1");
     expect(await screen.findByText("Answer a chat explicitly")).toBeInTheDocument();
+  });
+});
+
+describe("DM from a participant (PDM-01..PDM-04)", () => {
+  const atlas = makeAI({ id: "a1", display_name: "Atlas", handle: "atlas" });
+  const bob = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
+  const ana = makeIntelligence({ id: "u1", display_name: "Ana Souza", handle: "ana" });
+  const dm = makeRoom({
+    id: "d1",
+    kind: "dm",
+    name: "",
+    my_level: "post",
+    participants: [atlas, bob],
+  });
+  // The viewer (Ana, u1) is a member too: the action must not be offered on her own row (PDM-04).
+  const profiled: RoomMember[] = [
+    makeMember({ id: "mb-atlas", member_id: "a1", name: "Atlas", intelligence: atlas }),
+    makeMember({
+      id: "mb-bob",
+      kind: "user",
+      member_id: "u2",
+      name: "Bob Lima",
+      intelligence: bob,
+      owner: undefined,
+    }),
+    makeMember({
+      id: "mb-me",
+      kind: "user",
+      member_id: "u1",
+      name: "Ana Souza",
+      intelligence: ana,
+      owner: undefined,
+    }),
+    members[1] as RoomMember,
+  ];
+
+  function withProfiles(extra: Parameters<typeof roomApi>[1] = {}) {
+    return roomApi({}, { "GET /rooms/r1/members": json(200, { items: profiled }), ...extra });
+  }
+
+  it("offers 'Message privately' on an AI member and opens the DM it creates (PDM-01, PDM-02)", async () => {
+    const { calls } = withProfiles({ "POST /conversations/dm": json(201, dm) });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/rooms/r1");
+    const row = await screen.findByTestId("member-mb-atlas");
+    await user.click(within(row).getByRole("button", { name: "Actions for Atlas" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Message privately" }));
+
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.method === "POST" && c.path === "/conversations/dm")?.body,
+      ).toEqual({ with: "a1" }),
+    );
+    await waitFor(() => expect(router.state.location.pathname).toBe("/rooms/d1"));
+  });
+
+  it("opens the existing DM with a user member (PDM-01, PDM-02)", async () => {
+    const { calls } = withProfiles({ "POST /conversations/dm": json(200, dm) });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/rooms/r1");
+    const row = await screen.findByTestId("member-mb-bob");
+    await user.click(within(row).getByRole("button", { name: "Actions for Bob Lima" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Message privately" }));
+
+    await waitFor(() =>
+      expect(
+        calls.find((c) => c.method === "POST" && c.path === "/conversations/dm")?.body,
+      ).toEqual({ with: "u2" }),
+    );
+    await waitFor(() => expect(router.state.location.pathname).toBe("/rooms/d1"));
+  });
+
+  it("offers it to everyone who can view the conversation, not only managers (PDM-01)", async () => {
+    roomApi({ my_level: "post" }, { "GET /rooms/r1/members": json(200, { items: profiled }) });
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    const atlasRow = await screen.findByTestId("member-mb-atlas");
+    const bobRow = screen.getByTestId("member-mb-bob");
+    // Reading the conversation is what allows the DM: nothing here is managers-only.
+    await user.click(within(atlasRow).getByRole("button", { name: "Actions for Atlas" }));
+    expect(await screen.findByRole("menuitem", { name: "Message privately" })).toBeEnabled();
+    await user.keyboard("{Escape}");
+    await user.click(within(bobRow).getByRole("button", { name: "Actions for Bob Lima" }));
+    expect(await screen.findByRole("menuitem", { name: "Message privately" })).toBeEnabled();
+  });
+
+  it("never offers it for the viewer's own row or for a chat (PDM-04)", async () => {
+    roomApi({}, { "GET /rooms/r1/members": json(200, { items: profiled }) });
+    renderRoute("/rooms/r1");
+    await screen.findByTestId("member-mb-atlas");
+    // The viewer's own row offers no private conversation with herself.
+    expect(
+      within(screen.getByTestId("member-mb-me")).queryByRole("button", { name: /^Actions for/ }),
+    ).toBeNull();
+    // A chat is not an intelligence: the people writing through it have no route (DM-05).
+    expect(
+      within(screen.getByTestId("member-mb-ops")).queryByRole("button", { name: /^Actions for/ }),
+    ).toBeNull();
+  });
+
+  it("opens an author's profile from the timeline, where Message is available (PDM-03)", async () => {
+    const { calls } = roomApi(
+      {},
+      {
+        "GET /rooms/r1/messages": json(200, {
+          items: [
+            makeMessage({
+              seq: 1,
+              author_kind: "agent",
+              author_id: "a1",
+              author_name: "Atlas",
+              author: atlas,
+              text: "ready",
+            }),
+          ],
+          has_more: false,
+        }),
+        "GET /intelligences/a1": json(200, makeProfile({ ...atlas })),
+      },
+    );
+    const user = userEvent.setup();
+    const { router } = renderRoute("/rooms/r1");
+    await screen.findByText("ready");
+    await user.click(within(screen.getByTestId("message-1")).getByRole("link", { name: "Atlas" }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/contacts/a1"));
+    expect(await screen.findByRole("button", { name: "Message Atlas" })).toBeInTheDocument();
+    expect(calls.some((c) => c.path === "/intelligences/a1")).toBe(true);
+  });
+
+  it("opens an author's profile from the timeline avatar (PDM-03)", async () => {
+    roomApi(
+      {},
+      {
+        "GET /rooms/r1/messages": json(200, {
+          items: [
+            makeMessage({
+              seq: 1,
+              author_kind: "agent",
+              author_id: "a1",
+              author_name: "Atlas",
+              author: atlas,
+              text: "ready",
+            }),
+          ],
+          has_more: false,
+        }),
+        "GET /intelligences/a1": json(200, makeProfile({ ...atlas })),
+      },
+    );
+    const user = userEvent.setup();
+    const { router } = renderRoute("/rooms/r1");
+    await screen.findByText("ready");
+    await user.click(
+      within(screen.getByTestId("message-1")).getByRole("link", {
+        name: "Open the profile of Atlas",
+      }),
+    );
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/contacts/a1"));
+    expect(await screen.findByRole("button", { name: "Message Atlas" })).toBeInTheDocument();
   });
 });

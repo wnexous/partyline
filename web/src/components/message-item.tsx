@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import {
   BotIcon,
   CheckIcon,
@@ -233,7 +234,14 @@ export const MessageItem = memo(function MessageItem({
             {time}
           </span>
         ) : profile ? (
-          <IntelligenceAvatar intelligence={profile} decorative className="mt-0.5" />
+          <Link
+            to="/contacts/$id"
+            params={{ id: profile.id }}
+            aria-label={t("message.openProfile", { name: profile.display_name })}
+            className="mt-0.5 rounded-full outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            <IntelligenceAvatar intelligence={profile} decorative />
+          </Link>
         ) : (
           <span
             aria-hidden="true"
@@ -259,6 +267,7 @@ export const MessageItem = memo(function MessageItem({
                   message.author_kind === "chat" ? { ...profile, platform: undefined } : profile
                 }
                 viewerId={meId}
+                profileLink
               />
             ) : (
               <span className="truncate font-semibold tracking-[-0.01em]">

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { KindBadge } from "@/components/intelligence/kind-badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
@@ -14,19 +15,49 @@ export interface IntelligenceNameProps {
   viewerId?: string;
   /** Shows the @handle next to the name instead of only in the tooltip. */
   showHandle?: boolean;
+  /**
+   * Makes the name a link to the intelligence's profile (PDM-03): the timeline author opens it
+   * with a click, and the @handle stays in the tooltip of that same link.
+   */
+  profileLink?: boolean;
   className?: string;
 }
 
 const NAME = "min-w-0 truncate font-semibold tracking-[-0.01em]";
+const FOCUS = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 export function IntelligenceName({
   intelligence,
   viewerId,
   showHandle = false,
+  profileLink = false,
   className,
 }: IntelligenceNameProps) {
   const name = intelligence.display_name.trim() || intelligence.handle || "?";
   const handle = intelligence.handle ? `@${intelligence.handle}` : "";
+  // The handle's tooltip trigger: the profile link when the name is one, else the plain button.
+  const nameEl = profileLink ? (
+    <Link
+      to="/contacts/$id"
+      params={{ id: intelligence.id }}
+      className={cn(NAME, "rounded-sm", FOCUS)}
+    >
+      {name}
+    </Link>
+  ) : handle && !showHandle ? (
+    <button
+      type="button"
+      className={cn(
+        NAME,
+        "cursor-default appearance-none border-0 bg-transparent p-0 text-left text-inherit",
+        FOCUS,
+      )}
+    >
+      {name}
+    </button>
+  ) : (
+    <span className={NAME}>{name}</span>
+  );
   return (
     <span
       data-testid="intelligence-name"
@@ -34,21 +65,11 @@ export function IntelligenceName({
     >
       {handle && !showHandle ? (
         <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className={cn(
-                NAME,
-                "cursor-default appearance-none border-0 bg-transparent p-0 text-left text-inherit focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-              )}
-            >
-              {name}
-            </button>
-          </TooltipTrigger>
+          <TooltipTrigger asChild>{nameEl}</TooltipTrigger>
           <TooltipContent>{handle}</TooltipContent>
         </Tooltip>
       ) : (
-        <span className={NAME}>{name}</span>
+        nameEl
       )}
       <KindBadge intelligence={intelligence} viewerId={viewerId} />
       {showHandle && handle ? (

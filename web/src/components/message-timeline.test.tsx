@@ -7,7 +7,7 @@ import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import { makeIntelligence, makeMessage } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
-import { renderWithProviders } from "@/test/render";
+import { renderWithRouter } from "@/test/render";
 
 const ME = "u1";
 
@@ -45,7 +45,8 @@ function chat(seq: number, over: Partial<Message> = {}) {
 }
 
 function renderTimeline(members: RoomMember[] = [chatMember]) {
-  return renderWithProviders(<MessageTimeline roomId="r1" meId={ME} members={members} />);
+  // The author name and face link to the profile (PDM-03), so the timeline needs a router.
+  return renderWithRouter(<MessageTimeline roomId="r1" meId={ME} members={members} />);
 }
 
 const row = (seq: number) => screen.getByTestId(`message-${seq}`);
@@ -262,8 +263,54 @@ describe("message author (PROF-03, PROF-09, GRP-03)", () => {
     expect(within(row(1)).getByTestId("intelligence-avatar")).toHaveTextContent("A");
     expect(within(row(1)).getByText("AI")).toBeInTheDocument();
     expect(within(row(1)).queryByText("@atlas")).toBeNull();
-    act(() => within(row(1)).getByRole("button", { name: "Atlas" }).focus());
+    act(() => within(row(1)).getByRole("link", { name: "Atlas" }).focus());
     expect(await screen.findByRole("tooltip")).toHaveTextContent("@atlas");
+  });
+
+  it("links an author's name and face to its profile (PDM-03)", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        makeMessage({
+          seq: 1,
+          author_kind: "agent",
+          author_id: "a1",
+          author_name: "Atlas",
+          author: atlas,
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByTestId("message-1");
+    expect(within(row(1)).getByRole("link", { name: "Atlas" })).toHaveAttribute(
+      "href",
+      "/contacts/a1",
+    );
+    expect(within(row(1)).getByRole("link", { name: "Open the profile of Atlas" })).toHaveAttribute(
+      "href",
+      "/contacts/a1",
+    );
+  });
+
+  it("links a person of a bridged chat to their profile (PDM-03)", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        chat(1, {
+          author_name: "Lia Costa",
+          author: lia,
+          sender_name: "lia",
+          chat: { id: "c1", title: "Front desk", platform: "whatsapp", kind: "group" },
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByTestId("message-1");
+    expect(within(row(1)).getByRole("link", { name: "Lia Costa" })).toHaveAttribute(
+      "href",
+      "/contacts/p1",
+    );
+    // PDM-04: the timeline never offers a DM with a person from here (DM-05 has no route).
+    expect(within(row(1)).queryByText("Message privately")).toBeNull();
+    expect(within(row(1)).queryByRole("menuitem")).toBeNull();
   });
 
   it("shows a user's avatar and name without a kind badge, and 'You' on the viewer's own (PROF-09)", async () => {
@@ -301,7 +348,7 @@ describe("message author (PROF-03, PROF-09, GRP-03)", () => {
     });
     renderTimeline();
     await screen.findByTestId("message-1");
-    expect(within(row(1)).getByRole("button", { name: "Release captain" })).toBeInTheDocument();
+    expect(within(row(1)).getByRole("link", { name: "Release captain" })).toBeInTheDocument();
     expect(within(row(1)).getByTestId("intelligence-avatar")).toHaveTextContent("RC");
   });
 
