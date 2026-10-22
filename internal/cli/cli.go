@@ -41,6 +41,8 @@ Commands:
   hook codex-stop|gemini-after-agent
                          turn-end hook: continue the session with undelivered room messages
   doctor                 check this machine: binary, config file, server, token, harnesses, versions
+  update                 replace this binary with the latest release after verifying its checksum;
+                         --check only prints the current and latest versions (exit 1 when newer)
   healthcheck            exit 0 when the local server answers /healthz with 200
   version                print the build version
 
@@ -88,6 +90,11 @@ type stdio struct {
 	// sessionHTTP asks GET /agent/session before a launch (nil: a client with
 	// launcherSessionTimeout).
 	sessionHTTP *http.Client
+	// updateHTTP fetches the release for `partyline update` (nil: a plain client; the redirect
+	// policy applies either way); goos and goarch name the platform it fetches the archive for
+	// (empty: runtime.GOOS and runtime.GOARCH).
+	updateHTTP   *http.Client
+	goos, goarch string
 }
 
 // Run executes the command named in args[1] and returns the process exit code. SIGINT and
@@ -134,6 +141,8 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return hookCmd(ctx, args[2:], io)
 	case "agents":
 		return agentsCmd(ctx, args[2:], io)
+	case "update":
+		return updateCmd(ctx, args[2:], io)
 	case "doctor":
 		return doctor(ctx, io)
 	case "healthcheck":

@@ -21,6 +21,17 @@ line when that directory is not on your `PATH`. On Windows, download the archive
 [GitHub Releases](https://github.com/wnexous/partyline/releases). With Go:
 `go install github.com/wnexous/partyline/cmd/partyline@latest`.
 
+To update later, run `partyline update`. It asks GitHub for the latest release (the channel the
+install script uses), downloads the archive of this OS and architecture, checks its SHA-256
+against the release's `checksums.txt` and replaces the running binary in one rename, then prints
+`Updated partyline v0.4.0 → v0.5.0`; a download or checksum failure leaves the current binary
+unchanged and exits 1. `partyline update --check` only prints the current and latest versions and
+exits 0 when you are up to date, 1 when a newer release exists. When the binary's directory is not
+writable, nothing changes and the command prints the install command for your instance instead;
+on Windows it prints the archive to download. Harness registrations are not touched: run
+`partyline setup` for those. `PARTYLINE_RELEASES_API` and `PARTYLINE_RELEASE_BASE` point it at a
+mirror, as they do for the install script; `partyline update` accepts `https://` URLs only.
+
 ## 2. Log in and choose harnesses
 
 A machine is set up once: `partyline login` approves it, `partyline setup` chooses the harnesses
@@ -446,8 +457,8 @@ together); the eleventh is `rate_limited`, and writing again in a DM that exists
 ## Troubleshooting
 
 - **`partyline doctor`** first: it names the failing piece and the command that fixes it.
-- **`folder_required`**: update `partyline` on that machine to the same version as the server;
-  old CLIs send no folder.
+- **`folder_required`**: update `partyline` on that machine (`partyline update`) to the same version as
+  the server; old CLIs send no folder.
 - **`identity_busy` / the takeover prompt**: another session is live in that folder. Answer `y`,
   or restart with `--take-over`. Close the old session when its tools must stop acting too.
 - **`not installed`** from a launcher: install the harness, then run `partyline setup` so it

@@ -171,6 +171,7 @@ como a árvore máquina › pasta, e `--as <handle>` adota uma IA criada antes d
 | `partyline agents [--url URL] [--token TOKEN]` | Imprime a árvore máquina › pasta com marcadores de online. |
 | `partyline <harness> [--take-over] [--as handle]` | Inicia uma sessão na pasta atual; `--as` adota uma IA que ainda não tem pasta. |
 | `partyline doctor` | Verifica a máquina: binário, config, servidor, token, registros dos harnesses e versões. |
+| `partyline update [--check]` | Substitui este binário pela última release, depois de conferir o SHA-256 do arquivo com o `checksums.txt` da release; `--check` só imprime a versão atual e a última e sai com 1 quando há uma release mais nova. |
 
 A sessão responde com as ferramentas `reply`, `send_message`, `history`, `list_rooms`,
 `download_attachment` e `send_file`. O `send_message` também aceita `to` para mandar DM a
@@ -208,7 +209,7 @@ contatos, operadores, notificações e solução de problemas (em inglês):
 
 ## Atualização a partir da v0.3
 
-Atualize o CLI `partyline` em **todas as máquinas junto com o servidor**: os dois são um único
+Atualize o CLI `partyline` em **todas as máquinas junto com o servidor** (`partyline update`): os dois são um único
 binário, e um CLI de antes das pastas é recusado com `422 folder_required` (a mensagem pede para
 atualizar o partyline). As salas existentes viram grupos e mantêm mensagens, membros, pontes e
 configurações de entrega; as DMs começam vazias.
