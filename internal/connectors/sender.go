@@ -34,7 +34,8 @@ var _ delivery.Sender = (*Sender)(nil)
 
 // Send loads the message, its stored attachments and the chat, adds the quote when the
 // replied message came from or was sent to the same chat, sets the author from the agent
-// member's settings (MEM-01, MEM-02), and sends it through the chat's connector. A stopped
+// member's settings (MEM-01, MEM-02) unless the author operates the connector (ACC-03, ACC-04),
+// and sends it through the chat's connector. A stopped
 // connector fails with ErrNotRunning, so the outbox retries (CON-05). Reaction messages go to
 // the connector's Reactor instead (REACT-01).
 func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) {
@@ -68,6 +69,16 @@ func (s *Sender) Send(ctx context.Context, d delivery.Delivery) (string, error) 
 		case err != nil && !errors.Is(err, sql.ErrNoRows):
 			return "", err
 		}
+	}
+	// ACC-03, ACC-04: the operator writes through its own account, so its messages carry no
+	// author line (an AI through its own account, the owner through theirs); anyone else is named.
+	// The author's name still goes to platforms that carry it as data (the webhook payload).
+	conn, err := s.store.R().GetConnector(ctx, chat.ConnectorID)
+	if err != nil {
+		return "", err
+	}
+	if author := msg.AuthorIid; author != "" && author == operatorID(conn) {
+		out.Unsigned = true
 	}
 	if msg.ReplyTo != "" {
 		if out.ReplyToID, out.ReplyToSenderID, err = s.quote(ctx, msg.ReplyTo, chat.ID); err != nil {

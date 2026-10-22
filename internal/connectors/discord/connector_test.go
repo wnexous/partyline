@@ -324,6 +324,15 @@ func TestSendPrefixesAuthorAndSendsFilesAlone(t *testing.T) {
 	require.Equal(t, map[string]string{"a.png": "png"}, sends[1].Files)
 }
 
+// ACC-03, ACC-04: a message of the account's operator carries no author line.
+func TestSendLeavesTheAuthorOutForTheOperator(t *testing.T) {
+	f := newFakeSession()
+	c := newWithSession(f, connectors.Deps{})
+	_, err := c.Send(context.Background(), connectors.Outbound{ChatID: channelID, Text: "hi", AuthorName: "Agent", Unsigned: true})
+	require.NoError(t, err)
+	require.Equal(t, "hi", f.sent()[0].Msg.Content)
+}
+
 // DC-03: the text channels of every guild are listed; DC-01: an inbound message of a
 // listed channel carries the same title.
 func TestListChats(t *testing.T) {

@@ -640,8 +640,8 @@ T50 → T51 → T52 → T53 → T54
 **Requirement**: ACC-03, ACC-04
 **Tools**: MCP: NONE; Skill: NONE
 **Done when**:
-- [ ] AI operator replying through its own account → no signature (ACC-03); an AI through a user-operated connector → signature per `sign_outbound` (on and off cases) (ACC-04); a user operator from the web through their own account → no author line
-- [ ] Gate check passes: `make check`
+- [x] AI operator replying through its own account → no signature (ACC-03); an AI through a user-operated connector → signature per `sign_outbound` (on and off cases) (ACC-04); a user operator from the web through their own account → no author line
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): sign only messages written through someone else's account`

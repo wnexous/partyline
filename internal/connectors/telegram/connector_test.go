@@ -371,6 +371,18 @@ func TestSendPrefixesAuthor(t *testing.T) {
 	require.NotContains(t, sent.JSON, "reply_parameters")
 }
 
+// ACC-03, ACC-04: a message of the account's operator carries no author line; it still names
+// its author to platforms that carry that as data.
+func TestSendLeavesTheAuthorOutForTheOperator(t *testing.T) {
+	f := newFakeBotAPI(t)
+	out := connectors.Outbound{ChatID: "5550001", Text: "hi", AuthorName: "Agent", Unsigned: true}
+	require.Equal(t, "Agent", out.AuthorName)
+	require.Empty(t, out.Signature())
+	_, err := newConnector(t, f).Send(context.Background(), out)
+	require.NoError(t, err)
+	require.Equal(t, "hi", f.next("sendMessage").JSON["text"])
+}
+
 // TG-03: images go with sendPhoto, everything else (and images over 10 MiB) with sendDocument.
 func TestSendFiles(t *testing.T) {
 	f := newFakeBotAPI(t)

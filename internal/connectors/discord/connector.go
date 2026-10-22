@@ -246,7 +246,7 @@ func (c *Connector) opener(rawURL string) func(ctx context.Context) (io.ReadClos
 // replied message (DC-02), and attaches the files to the last part. Mentions in the text
 // are not resolved, so a bridged message cannot ping anyone. It returns the first part's id.
 func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, error) {
-	parts := connectors.SplitText(connectors.AuthorLine(m.AuthorName, "**", "**: ", m.Text), MaxText)
+	parts := connectors.SplitText(connectors.AuthorLine(m.Signature(), "**", "**: ", m.Text), MaxText)
 	if len(parts) == 0 && len(m.Files) > 0 {
 		parts = []string{""}
 	}

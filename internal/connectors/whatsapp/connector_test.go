@@ -365,6 +365,15 @@ func TestSendTextQuotesReply(t *testing.T) {
 	require.Equal(t, map[string]any{"messageId": "ORIG1", "participant": peerJID}, req.Body["quoted"])
 }
 
+// ACC-03, ACC-04: a message of the account's operator carries no author line.
+func TestSendTextLeavesTheAuthorOutForTheOperator(t *testing.T) {
+	f := newFakeEvolution(t)
+	c := newConnector(t, f)
+	_, err := c.Send(context.Background(), connectors.Outbound{ChatID: ChatID(testInstance, groupJID), Text: "on it", AuthorName: "Agent", Unsigned: true})
+	require.NoError(t, err)
+	require.Equal(t, "on it", f.next("/send/text").Body["text"])
+}
+
 func TestSendTextWithoutReplyHasNoQuote(t *testing.T) {
 	f := newFakeEvolution(t)
 	c := newConnector(t, f)

@@ -414,8 +414,8 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | PEOP-06 | P1: People | Execute | Implementing |
 | ACC-01 | P1: Accounts | Execute | Implementing |
 | ACC-02 | P1: Accounts | Execute | Implementing |
-| ACC-03 | P1: Accounts | Tasks | Pending |
-| ACC-04 | P1: Accounts | Tasks | Pending |
+| ACC-03 | P1: Accounts | Execute | Implementing |
+| ACC-04 | P1: Accounts | Execute | Implementing |
 | ACC-05 | P1: Accounts | Tasks | Pending |
 | ACC-06 | P1: Accounts | Execute | Implementing |
 | ACC-07 | P1: Accounts | Execute | Implementing |

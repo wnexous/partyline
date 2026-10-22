@@ -1315,3 +1315,27 @@ the DTO's `IntelligenceRef` as a prop, so they do not depend on the T42 data lay
   broadcast, the AI's frame and reply), channel chats, owner as operator, untitled and over-long titles,
   scopes dms/off, a chat in a room by hand, a catch-all connector, the concurrent burst, the cap shared
   with DMs (30 + 30), and the 24-hour wait after a removal with a manager adding the chat back.
+
+## T32 - Operator signatures (ACC-03, ACC-04)
+
+- `Sender.Send` marks a message **`Outbound.Unsigned`** when its author intelligence (`messages.author_iid`)
+  is the chat's connector's operator (`operator_iid`, else the owner): an AI that operates the account
+  writes through its own account, and so does the owner from the web when no AI operates it. Every other
+  author is named as before: an AI per its member setting (`sign_outbound`, the name set for it in the
+  room: MEM-01, MEM-02), a user who is not the operator, and bridged chat messages (their author is the
+  person, or the linked user). The operator rule wins over `sign_outbound`: an operator AI with its
+  signature on is not signed, and as soon as it stops being the operator it signs again.
+- **`connectors.Outbound.Signature()`** is the author line to put in the text: `AuthorName`, or "" when
+  `Unsigned`. The Telegram, Discord and WhatsApp adapters build their text with it. **`AuthorName` still
+  names the author**, because the webhook carries it as data in its payload (`message.author_name`, HOOK-03)
+  and its signed requests would otherwise lose who wrote an operator's message; reactions keep it too. A
+  member with its signature off still has an empty `AuthorName` (MEM-01, unchanged), so a webhook payload
+  of such an agent has none, as before.
+- **Visible change:** the owner's own posts from the web, which used to reach her chats as "alice: text",
+  now go out as plain text from her account unless an AI is the operator; every other poster is still
+  named. `TestOutboundAuthorFollowsMemberSettings` keeps its `AuthorName` assertion for her post and
+  adds that its signature is empty.
+- Tests (`internal/connectors/operator_signature_test.go`, adapter tests): an operator AI unsigned with
+  the signature on and a name set, signed again once not the operator; an AI through the owner's account
+  signs on, with its room name, off; a user operator unsigned, a poster named, the owner named while an
+  AI operates; and each adapter leaving the line out.

@@ -131,6 +131,19 @@ type Outbound struct {
 	RoomID     string
 	AuthorName string
 	CreatedAt  time.Time
+	// Unsigned tells that the author operates the connector's account, so a platform that
+	// puts the author in the text leaves the author line out (ACC-03, ACC-04). AuthorName still
+	// names the author for platforms that carry it as data.
+	Unsigned bool
+}
+
+// Signature is the author line to put in the text: the author's name, unless the author is the
+// account's operator.
+func (o Outbound) Signature() string {
+	if o.Unsigned {
+		return ""
+	}
+	return o.AuthorName
 }
 
 // OutFile is an attachment of an outbound message; Open returns its content.
