@@ -155,6 +155,9 @@ export const ptBR: Dictionary = {
   "room.notFoundBody": "Ela foi apagada ou você não tem mais acesso a ela.",
   "room.backToRooms": "Voltar para as salas",
 
+  "intelligence.ai": "IA",
+  "intelligence.you": "Você",
+
   "message.kind.agent": "Agente",
   "message.kind.chat": "Chat",
   "message.kind.user": "Pessoa",

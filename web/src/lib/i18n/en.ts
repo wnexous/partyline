@@ -153,6 +153,9 @@ export const en = {
   "room.notFoundBody": "It was deleted, or you no longer have access to it.",
   "room.backToRooms": "Back to rooms",
 
+  "intelligence.ai": "AI",
+  "intelligence.you": "You",
+
   "message.kind.agent": "Agent",
   "message.kind.chat": "Chat",
   "message.kind.user": "Person",
