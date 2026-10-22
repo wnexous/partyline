@@ -65,7 +65,9 @@ func TestMenuKeys(t *testing.T) {
 }
 
 func TestMenuCancelKeepsSelection(t *testing.T) {
-	for _, keys := range []string{"q", "\x1b", "\x03"} {
+	// q and Ctrl+C are followed by enter: a menu that ignored them would apply instead. A lone ESC
+	// stays last, because ESC followed by another byte is read as an escape sequence.
+	for _, keys := range []string{"q\r", "\x1b", "\x03\r"} {
 		selected, ok, out := runMenu(t, testItems(), keys, 80)
 		require.False(t, ok)
 		require.Nil(t, selected)
@@ -78,7 +80,7 @@ func TestMenuCancelKeepsSelection(t *testing.T) {
 func TestMenuCtrlCCancelsAndRestoresTheTerminal(t *testing.T) {
 	fake := &fakeRawTerminal{terminal: true}
 	var out bytes.Buffer
-	m := Menu{Items: testItems(), In: strings.NewReader(" \x03"), Out: &out, Width: func() int { return 80 }, raw: fake}
+	m := Menu{Items: testItems(), In: strings.NewReader(" \x03\r"), Out: &out, Width: func() int { return 80 }, raw: fake}
 	selected, ok, err := m.Run()
 	require.NoError(t, err)
 	require.False(t, ok)
