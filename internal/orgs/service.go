@@ -26,7 +26,7 @@ import (
 // Limits of organization fields.
 const (
 	// MaxNameLength is the longest organization name in code points (ORG-01).
-	MaxNameLength = 100
+	MaxNameLength = handles.MaxOrgName
 	// RootPositionName is the position the creator of an organization holds (ORG-01).
 	RootPositionName = "Admin"
 )

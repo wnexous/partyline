@@ -38,18 +38,20 @@ type fixture struct {
 	svc   *Service
 	store *store.Store
 	clock *fakeClock
+	path  string // the database file
 }
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "partyline.db"))
+	path := filepath.Join(t.TempDir(), "partyline.db")
+	st, err := store.Open(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	require.NoError(t, st.Migrate(context.Background()))
 	clock := &fakeClock{now: time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}
 	svc, err := NewService(st, Options{Now: clock.Now})
 	require.NoError(t, err)
-	return &fixture{svc: svc, store: st, clock: clock}
+	return &fixture{svc: svc, store: st, clock: clock, path: path}
 }
 
 const adminPassword = "correct-horse-battery"

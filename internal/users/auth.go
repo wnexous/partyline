@@ -56,7 +56,7 @@ func (s *Service) Setup(ctx context.Context, token string, in AccountInput) (db.
 		if n > 0 {
 			return ErrSetupDone
 		}
-		if err := insertAccount(ctx, q, u, in.DisplayName); err != nil {
+		if err := s.insertAccount(ctx, q, u, in.DisplayName); err != nil {
 			return err
 		}
 		return s.audit.Record(ctx, q, audit.Entry{

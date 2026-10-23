@@ -12,6 +12,7 @@ import (
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -107,7 +108,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token string, in AccountInpu
 	err = s.store.WithTx(ctx, func(q *db.Queries) error {
 		now := s.now()
 		var err error
-		u, err = insertUser(ctx, q, in, hash, inv.Role, now)
+		u, err = s.insertUser(ctx, q, in, hash, inv.Role, now)
 		if err != nil {
 			return err
 		}
@@ -175,7 +176,7 @@ func (s *Service) CreateUser(ctx context.Context, in AccountInput, role dto.Role
 	var u db.User
 	err = s.store.WithTx(ctx, func(q *db.Queries) error {
 		var err error
-		u, err = insertUser(ctx, q, in, hash, string(role), s.now())
+		u, err = s.insertUser(ctx, q, in, hash, string(role), s.now())
 		if err != nil {
 			return err
 		}
@@ -188,7 +189,7 @@ func (s *Service) CreateUser(ctx context.Context, in AccountInput, role dto.Role
 }
 
 // insertUser creates a user row; a taken username (case-insensitive) is ErrUsernameTaken.
-func insertUser(ctx context.Context, q *db.Queries, in AccountInput, hash, role string, now time.Time) (db.User, error) {
+func (s *Service) insertUser(ctx context.Context, q *db.Queries, in AccountInput, hash, role string, now time.Time) (db.User, error) {
 	_, err := q.GetUserByUsername(ctx, in.Username)
 	if err == nil {
 		return db.User{}, ErrUsernameTaken
@@ -200,23 +201,36 @@ func insertUser(ctx context.Context, q *db.Queries, in AccountInput, hash, role 
 		ID: store.NewID(), Username: in.Username,
 		PasswordHash: hash, Role: role, CreatedAt: ms(now),
 	}
-	return u, insertAccount(ctx, q, u, in.DisplayName)
+	return u, s.insertAccount(ctx, q, u, in.DisplayName)
 }
 
-// insertAccount creates the user row and its intelligence in the caller's transaction, so
-// every account has exactly one (PROF-01). The intelligence is named by the display name,
-// else the username, and its handle derives from the username (PROF-02).
-func insertAccount(ctx context.Context, q *db.Queries, u db.User, displayName string) error {
+// insertAccount creates the user row, its intelligence and its personal organization in the caller's
+// transaction, so every account has exactly one of each (PROF-01, AD-021). The intelligence is named by
+// the display name, else the username, and its handle derives from the username (PROF-02); the
+// organization is named after the intelligence, is the account's default and is audited as personal.
+func (s *Service) insertAccount(ctx context.Context, q *db.Queries, u db.User, displayName string) error {
 	if err := q.CreateUser(ctx, db.CreateUserParams{
 		ID: u.ID, Username: u.Username,
 		PasswordHash: u.PasswordHash, Role: u.Role, CreatedAt: u.CreatedAt,
 	}); err != nil {
 		return err
 	}
-	_, err := intelligences.Create(ctx, q, intelligences.NewParams{
+	profile, err := intelligences.Create(ctx, q, intelligences.NewParams{
 		ID: u.ID, Kind: handles.User, DisplayName: displayName, HandleBase: u.Username, Now: time.UnixMilli(u.CreatedAt),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	org, err := orgs.CreatePersonal(ctx, q, orgs.PersonalParams{
+		UserID: u.ID, Name: profile.DisplayName, Username: u.Username, Now: time.UnixMilli(u.CreatedAt),
+	})
+	if err != nil {
+		return err
+	}
+	return s.audit.Record(ctx, q, audit.Entry{
+		ActorID: u.ID, Action: audit.ActionOrgCreate, TargetKind: audit.TargetOrganization, TargetID: org.ID,
+		Detail: map[string]any{"name": org.Name, "slug": org.Slug, "personal": true},
+	})
 }
 
 // ListUsers returns every account ordered by username.

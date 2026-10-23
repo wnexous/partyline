@@ -157,7 +157,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | ORG-01 | P1: Organizations own resources | Tasks | Implementing |
 | ORG-02 | P1: Organizations own resources | Tasks | Implementing |
 | ORG-03 | P1: Organizations own resources | Tasks | In Tasks |
-| ORG-04 | P1: Organizations own resources | Tasks | In Tasks |
+| ORG-04 | P1: Organizations own resources | Tasks | Implementing |
 | ORG-05 | P1: Organizations own resources | Tasks | In Tasks |
 | ORG-06 | P1: Organizations own resources | Tasks | Implementing |
 | ORG-07 | P1: Organizations own resources | Tasks | In Tasks |

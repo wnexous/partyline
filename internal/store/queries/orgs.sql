@@ -192,3 +192,19 @@ DELETE FROM org_invitations WHERE id = ?;
 
 -- name: DeleteExpiredOrgInvitations :many
 DELETE FROM org_invitations WHERE expires_at <= ? RETURNING *;
+
+-- name: SetUserDefaultOrg :exec
+UPDATE users SET default_org_id = ? WHERE id = ?;
+
+-- name: GetUserDefaultOrg :one
+-- The default organization of a user, if the user still belongs to it.
+SELECT CAST(m.org_id AS TEXT) AS org_id FROM users u
+JOIN org_members m ON m.org_id = u.default_org_id AND m.iid = u.id
+WHERE u.id = ?;
+
+-- name: GetOldestOrgOf :one
+-- The organization an identity belongs to for the longest time (ties by id); a permission narrows it
+-- to the memberships with that permission, an empty one takes any.
+SELECT org_id FROM org_members
+WHERE iid = sqlc.arg(iid) AND (sqlc.arg(permission) = '' OR permission = sqlc.arg(permission))
+ORDER BY joined_at, org_id LIMIT 1;

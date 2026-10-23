@@ -207,3 +207,23 @@ func TestGeneratedSlugsAreValid(t *testing.T) {
 		require.NoError(t, err, "%q → %q", name, next)
 	}
 }
+
+// AD-021: the personal organization of an account is named after it: the display name, else the
+// username, without control characters or invalid UTF-8, trimmed, and cut to 100 code points.
+func TestPersonalOrgName(t *testing.T) {
+	cases := []struct{ display, username, want, why string }{
+		{"Alice A.", "alice", "Alice A.", "the display name"},
+		{"", "alice", "alice", "the username when there is no display name"},
+		{"  \t ", "alice", "alice", "a blank display name"},
+		{"Ana\x00 Maria\n", "ana", "Ana Maria", "control characters are dropped"},
+		{"a\xffb", "ab", "ab", "invalid UTF-8 is dropped"},
+		{"\x00\x01", "carol", "carol", "nothing left of the display name"},
+		{"", "", "Organization", "nothing at all"},
+		{strings.Repeat("é", 150), "x", strings.Repeat("é", 100), "cut to 100 code points, not bytes"},
+		{strings.Repeat("a", 99) + " " + strings.Repeat("b", 10), "x", strings.Repeat("a", 99), "a cut that ends on a space drops it"},
+	}
+	for _, c := range cases {
+		require.Equal(t, c.want, PersonalOrgName(c.display, c.username), c.why)
+	}
+	require.Equal(t, 100, MaxOrgName)
+}

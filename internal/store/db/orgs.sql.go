@@ -368,6 +368,26 @@ func (q *Queries) GetAgentOrg(ctx context.Context, id string) (string, error) {
 	return org_id, err
 }
 
+const getOldestOrgOf = `-- name: GetOldestOrgOf :one
+SELECT org_id FROM org_members
+WHERE iid = ?1 AND (?2 = '' OR permission = ?2)
+ORDER BY joined_at, org_id LIMIT 1
+`
+
+type GetOldestOrgOfParams struct {
+	Iid        string
+	Permission interface{}
+}
+
+// The organization an identity belongs to for the longest time (ties by id); a permission narrows it
+// to the memberships with that permission, an empty one takes any.
+func (q *Queries) GetOldestOrgOf(ctx context.Context, arg GetOldestOrgOfParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getOldestOrgOf, arg.Iid, arg.Permission)
+	var org_id string
+	err := row.Scan(&org_id)
+	return org_id, err
+}
+
 const getOrgChartMember = `-- name: GetOrgChartMember :one
 SELECT m.iid, m.permission,
        CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
@@ -589,6 +609,20 @@ func (q *Queries) GetPositionByName(ctx context.Context, arg GetPositionByNamePa
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getUserDefaultOrg = `-- name: GetUserDefaultOrg :one
+SELECT CAST(m.org_id AS TEXT) AS org_id FROM users u
+JOIN org_members m ON m.org_id = u.default_org_id AND m.iid = u.id
+WHERE u.id = ?
+`
+
+// The default organization of a user, if the user still belongs to it.
+func (q *Queries) GetUserDefaultOrg(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getUserDefaultOrg, id)
+	var org_id string
+	err := row.Scan(&org_id)
+	return org_id, err
 }
 
 const listInvitationsForAIsAround = `-- name: ListInvitationsForAIsAround :many
@@ -972,6 +1006,20 @@ type SetOrganizationAvatarParams struct {
 
 func (q *Queries) SetOrganizationAvatar(ctx context.Context, arg SetOrganizationAvatarParams) error {
 	_, err := q.db.ExecContext(ctx, setOrganizationAvatar, arg.AvatarSha256, arg.UpdatedAt, arg.ID)
+	return err
+}
+
+const setUserDefaultOrg = `-- name: SetUserDefaultOrg :exec
+UPDATE users SET default_org_id = ? WHERE id = ?
+`
+
+type SetUserDefaultOrgParams struct {
+	DefaultOrgID sql.NullString
+	ID           string
+}
+
+func (q *Queries) SetUserDefaultOrg(ctx context.Context, arg SetUserDefaultOrgParams) error {
+	_, err := q.db.ExecContext(ctx, setUserDefaultOrg, arg.DefaultOrgID, arg.ID)
 	return err
 }
 

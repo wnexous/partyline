@@ -5,17 +5,12 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/handles"
 )
 
 // personalAdminPosition is the name of the root position of a personal organization (ORG-01).
 const personalAdminPosition = "Admin"
-
-// maxOrgName is the longest organization name in code points (ORG-01).
-const maxOrgName = 100
 
 // backfillOrganizations is the Go hook of 0019_organizations (OUPG-01, AD-021): every user gets a
 // personal organization where they are the admin holding the root position "Admin"; what they
@@ -84,7 +79,7 @@ func (b *orgBackfill) personalOrganizations(ctx context.Context) error {
 			args  []any
 		}{
 			{`INSERT INTO organizations (id, name, slug, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-				[]any{orgID, orgName(a.display, a.username), slug, a.id, a.created, a.created}},
+				[]any{orgID, handles.PersonalOrgName(a.display, a.username), slug, a.id, a.created, a.created}},
 			{`INSERT INTO positions (id, org_id, name, created_at) VALUES (?, ?, ?, ?)`,
 				[]any{positionID, orgID, personalAdminPosition, a.created}},
 			{`INSERT INTO org_members (org_id, iid, permission, position_id, joined_at) VALUES (?, ?, 'admin', ?, ?)`,
@@ -212,25 +207,4 @@ func (b *orgBackfill) groupMembers(ctx context.Context) error {
 func (b *orgBackfill) consumeGrants(ctx context.Context) error {
 	_, err := b.tx.ExecContext(ctx, `DELETE FROM grants`)
 	return err
-}
-
-// orgName is the name of a personal organization: the display name, else the username, without
-// control characters and invalid UTF-8, trimmed and cut to maxOrgName code points.
-func orgName(display, username string) string {
-	for _, s := range []string{display, username} {
-		s = strings.TrimSpace(strings.Map(func(r rune) rune {
-			if r == utf8.RuneError || unicode.IsControl(r) {
-				return -1
-			}
-			return r
-		}, s))
-		if s == "" {
-			continue
-		}
-		if utf8.RuneCountInString(s) > maxOrgName {
-			s = strings.TrimSpace(string([]rune(s)[:maxOrgName]))
-		}
-		return s
-	}
-	return "Organization"
 }

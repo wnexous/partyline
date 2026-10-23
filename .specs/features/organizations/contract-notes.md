@@ -389,3 +389,37 @@ Where a section refines the design, it says so.
   `GetOrgInvitationOf`, `UpsertOrgInvitation`, `ListOrgInvitations`, `ListInvitationsForInvitee`,
   `ListInvitationsForAIsAround`, `DeleteOrgInvitation`, `DeleteExpiredOrgInvitations`,
   `CountAuditEntriesSince`.
+
+## T9: Personal organization for new accounts and the default organization (ORG-04)
+
+- **Every new account has a personal organization (AD-021)**, created in the same transaction as the
+  account and its intelligence by all three paths: the first-run `Setup`, `AcceptInvite` and the admin's
+  `CreateUser` (`users.Service.insertAccount`, now a method). A failure after the organization was
+  written (the audit entry, for instance) leaves no account, no intelligence and no organization
+  (`TestAnAccountAndItsPersonalOrganizationAreOneTransaction`).
+  - **`orgs.CreatePersonal(ctx, q, PersonalParams{UserID, Name, Username, Now}) (Membership, error)`**:
+    the organization is named `handles.PersonalOrgName(display name, username)` - the display name of the
+    intelligence, else the username, control characters and invalid UTF-8 dropped, trimmed, cut to 100
+    code points (the upgrade of T2 uses the same function, so a new account and an upgraded one are
+    named alike) - at the first free address derived from the **username** (`bob`, `bob-2`), with the
+    account as `admin` holding a new root position `Admin`, and it becomes `users.default_org_id`.
+  - Audit: `org.create` `{name, slug, personal: true}`, target the organization, actor the new
+    account, recorded by the users service (so a new account adds one more audit entry than before).
+- **`orgs.DefaultFor(ctx, q, iid) (string, error)`**: the organization a new AI joins when `--org` is
+  not given; `""` when there is none.
+  - **A user**: the `default_org_id` they chose **if they still belong to it**; else the organization
+    where they have been an **admin** the longest; else the one they have belonged to the longest, any
+    permission (guest included). "Longest" is the smallest `joined_at`, ties by organization id.
+  - **An AI**: its **home organization** (`agents.org_id`) and nothing else; an AI with no home has none,
+    it is not guessed from its memberships.
+  - An identity that is neither (a stranger) has none.
+- **`(*Service).SetDefault(ctx, userIID, orgID) error`**: the user must be an **enabled user** and a
+  **member of the organization with any permission**; anything else - not a member, no such organization,
+  an empty id, an AI, an unknown identity - is `ErrForbidden` (T17 answers 403 and tells nothing about
+  organizations the user is not in). No audit entry, no event: it is a setting of the account (T17 returns
+  it in `me`). `Leave`/`Remove` (T7) clear `default_org_id` when the user leaves that organization, and
+  deleting the organization (T5) clears it by the foreign key.
+- **Existing tests changed**: `TestAuditPagination` expects one more audit entry (the first account's
+  `org.create`). Any test that counts audit entries or organizations after creating accounts must now
+  account for one personal organization per account (T11's testkit offers `PersonalOrg()`).
+- **Queries** added to `queries/orgs.sql`: `SetUserDefaultOrg`, `GetUserDefaultOrg`, `GetOldestOrgOf`.

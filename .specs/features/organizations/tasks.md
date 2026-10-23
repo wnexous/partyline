@@ -398,11 +398,11 @@ Add `orgs.SetDefault(user, org)`, which requires membership.
 **Reuses**: `orgs.CreatePersonal` tx helper (written here)
 **Requirement**: ORG-04
 **Done when**:
-- [ ] Integration tests:
+- [x] Integration tests:
   - a new account has an org where it is admin and "Admin", and it is the default;
   - `DefaultFor` with the default cleared falls back to the oldest admin membership, then to the oldest membership (L-041: a case where the fallback alone picks differently);
   - `SetDefault` to a non-member org → forbidden
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(users): give every new account a personal organization`

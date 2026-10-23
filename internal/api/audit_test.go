@@ -132,7 +132,7 @@ func TestAuditRecordsSecurityEvents(t *testing.T) {
 // AUD-02: entries come newest first, 50 per page, continued with ?before=; admins only.
 func TestAuditPagination(t *testing.T) {
 	env := testkit.New(t)
-	admin := env.SetupAdmin() // auth.setup + auth.login
+	admin := env.SetupAdmin() // org.create (the admin's personal organization) + auth.setup + auth.login
 	for i := range 58 {
 		admin.Post("/api/v1/tokens", dto.CreateTokenRequest{Kind: dto.TokenKindUser, Name: fmt.Sprintf("t%02d", i)}).RequireStatus(http.StatusCreated)
 	}
@@ -147,11 +147,12 @@ func TestAuditPagination(t *testing.T) {
 	}
 
 	second := auditPage(admin, first.Items[49].ID)
-	require.Len(t, second.Items, 10)
+	require.Len(t, second.Items, 11)
 	require.False(t, second.HasMore)
 	require.Equal(t, "t07", second.Items[0].Detail["name"])
 	require.Equal(t, "auth.login", second.Items[8].Action)
 	require.Equal(t, "auth.setup", second.Items[9].Action)
+	require.Equal(t, "org.create", second.Items[10].Action, "the oldest entry: the first account's personal organization")
 
 	member := env.NewUser("bob")
 	member.Get("/api/v1/admin/audit").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)

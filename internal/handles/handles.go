@@ -28,6 +28,8 @@ const (
 	MaxLen         = 40
 	SlugLen        = 36
 	MaxDisplayName = 64
+	// MaxOrgName is the longest organization name in code points.
+	MaxOrgName = 100
 )
 
 // ErrInvalid is returned by Validate for a handle that breaks the rules.
@@ -172,6 +174,28 @@ func AllocateSlug(taken func(string) bool, base string) string {
 			return candidate
 		}
 	}
+}
+
+// PersonalOrgName is the name of an account's personal organization (AD-021): its display name, else its
+// username, without control characters or invalid UTF-8, trimmed and cut to MaxOrgName code points.
+// The upgrade and the creation of a new account both use it.
+func PersonalOrgName(display, username string) string {
+	for _, s := range []string{display, username} {
+		s = strings.TrimSpace(strings.Map(func(r rune) rune {
+			if r == utf8.RuneError || unicode.IsControl(r) {
+				return -1
+			}
+			return r
+		}, s))
+		if s == "" {
+			continue
+		}
+		if utf8.RuneCountInString(s) > MaxOrgName {
+			s = strings.TrimSpace(string([]rune(s)[:MaxOrgName]))
+		}
+		return s
+	}
+	return "Organization"
 }
 
 // DisplayName returns the default display name for base: control characters dropped, the
