@@ -59,7 +59,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users WHERE id = ?
+SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id, default_org_id FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
@@ -74,12 +74,13 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 		&i.DisabledAt,
 		&i.CreatedAt,
 		&i.NotifyChatID,
+		&i.DefaultOrgID,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users WHERE username = ?
+SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id, default_org_id FROM users WHERE username = ?
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -94,6 +95,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.DisabledAt,
 		&i.CreatedAt,
 		&i.NotifyChatID,
+		&i.DefaultOrgID,
 	)
 	return i, err
 }
@@ -142,7 +144,7 @@ func (q *Queries) ListContactUsers(ctx context.Context, id string) ([]ListContac
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id FROM users ORDER BY username
+SELECT id, username, password_hash, role, locale, disabled_at, created_at, notify_chat_id, default_org_id FROM users ORDER BY username
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -163,6 +165,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.DisabledAt,
 			&i.CreatedAt,
 			&i.NotifyChatID,
+			&i.DefaultOrgID,
 		); err != nil {
 			return nil, err
 		}

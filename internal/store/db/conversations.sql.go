@@ -163,7 +163,7 @@ func (q *Queries) DeleteReadCursor(ctx context.Context, arg DeleteReadCursorPara
 }
 
 const getDMRoom = `-- name: GetDMRoom :one
-SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline FROM rooms WHERE kind = 'dm' AND dm_a = ? AND dm_b = ?
+SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid FROM rooms WHERE kind = 'dm' AND dm_a = ? AND dm_b = ?
 `
 
 type GetDMRoomParams struct {
@@ -192,6 +192,8 @@ func (q *Queries) GetDMRoom(ctx context.Context, arg GetDMRoomParams) (Room, err
 		&i.DmA,
 		&i.DmB,
 		&i.ReadBaseline,
+		&i.OrgID,
+		&i.CreatorIid,
 	)
 	return i, err
 }
@@ -245,7 +247,7 @@ func (q *Queries) InsertDMRoom(ctx context.Context, arg InsertDMRoomParams) (int
 }
 
 const listAgentDMRooms = `-- name: ListAgentDMRooms :many
-SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline FROM rooms WHERE kind = 'dm' AND (dm_a = ?1 OR dm_b = ?1) ORDER BY id
+SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid FROM rooms WHERE kind = 'dm' AND (dm_a = ?1 OR dm_b = ?1) ORDER BY id
 `
 
 // The DMs an AI takes part in (merge, MRG-01).
@@ -276,6 +278,8 @@ func (q *Queries) ListAgentDMRooms(ctx context.Context, id sql.NullString) ([]Ro
 			&i.DmA,
 			&i.DmB,
 			&i.ReadBaseline,
+			&i.OrgID,
+			&i.CreatorIid,
 		); err != nil {
 			return nil, err
 		}

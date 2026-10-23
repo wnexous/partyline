@@ -21,6 +21,8 @@ type Agent struct {
 	ConnectedAt     sql.NullInt64
 	Folder          string
 	PlatformDropped int64
+	OrgID           sql.NullString
+	CreatorIid      sql.NullString
 }
 
 type AgentCursor struct {
@@ -98,6 +100,7 @@ type Connector struct {
 	AccountLabel       string
 	Deliver            string
 	GroupsMentionsOnly bool
+	OrgID              sql.NullString
 }
 
 type DeviceCodeAttempt struct {
@@ -215,6 +218,36 @@ type MessageView struct {
 	AuthorAvatar   string
 }
 
+type OrgInvitation struct {
+	ID         string
+	OrgID      string
+	InviteeIid string
+	Permission string
+	PositionID sql.NullString
+	InvitedBy  string
+	CreatedAt  int64
+	ExpiresAt  int64
+}
+
+type OrgMember struct {
+	OrgID      string
+	Iid        string
+	Permission string
+	PositionID sql.NullString
+	InviterIid sql.NullString
+	JoinedAt   int64
+}
+
+type Organization struct {
+	ID           string
+	Name         string
+	Slug         string
+	AvatarSha256 string
+	CreatedBy    string
+	CreatedAt    int64
+	UpdatedAt    int64
+}
+
 type PairingCode struct {
 	CodeHash    string
 	UserID      string
@@ -276,6 +309,14 @@ type PlatformSend struct {
 	UpdatedAt         int64
 }
 
+type Position struct {
+	ID        string
+	OrgID     string
+	Name      string
+	ParentID  sql.NullString
+	CreatedAt int64
+}
+
 type Project struct {
 	ID        string
 	OwnerID   string
@@ -308,6 +349,8 @@ type Room struct {
 	DmA            sql.NullString
 	DmB            sql.NullString
 	ReadBaseline   int64
+	OrgID          sql.NullString
+	CreatorIid     sql.NullString
 }
 
 type RoomMember struct {
@@ -344,6 +387,7 @@ type User struct {
 	DisabledAt   sql.NullInt64
 	CreatedAt    int64
 	NotifyChatID sql.NullString
+	DefaultOrgID sql.NullString
 }
 
 type WebhookReplay struct {

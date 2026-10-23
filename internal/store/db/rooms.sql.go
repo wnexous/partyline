@@ -117,7 +117,7 @@ func (q *Queries) DeleteRoomMember(ctx context.Context, id string) error {
 }
 
 const getRoom = `-- name: GetRoom :one
-SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline FROM rooms WHERE id = ?
+SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline, org_id, creator_iid FROM rooms WHERE id = ?
 `
 
 func (q *Queries) GetRoom(ctx context.Context, id string) (Room, error) {
@@ -141,6 +141,8 @@ func (q *Queries) GetRoom(ctx context.Context, id string) (Room, error) {
 		&i.DmA,
 		&i.DmB,
 		&i.ReadBaseline,
+		&i.OrgID,
+		&i.CreatorIid,
 	)
 	return i, err
 }
@@ -203,7 +205,7 @@ func (q *Queries) GetRoomMemberByMember(ctx context.Context, arg GetRoomMemberBy
 }
 
 const getRoomWithOwner = `-- name: GetRoomWithOwner :one
-SELECT r.id, r.owner_id, r.name, r.description, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, u.username AS owner_username,
+SELECT r.id, r.owner_id, r.name, r.description, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, r.org_id, r.creator_iid, u.username AS owner_username,
        CAST(COALESCE(oi.kind, '') AS TEXT) AS owner_ikind,
        CAST(COALESCE(oi.display_name, '') AS TEXT) AS owner_iname,
        CAST(COALESCE(oi.handle, '') AS TEXT) AS owner_handle,
@@ -245,6 +247,8 @@ func (q *Queries) GetRoomWithOwner(ctx context.Context, id string) (GetRoomWithO
 		&i.Room.DmA,
 		&i.Room.DmB,
 		&i.Room.ReadBaseline,
+		&i.Room.OrgID,
+		&i.Room.CreatorIid,
 		&i.OwnerUsername,
 		&i.OwnerIkind,
 		&i.OwnerIname,
@@ -339,7 +343,7 @@ func (q *Queries) ListRoomMembers(ctx context.Context, roomID string) ([]ListRoo
 }
 
 const listRoomsForUser = `-- name: ListRoomsForUser :many
-SELECT r.id, r.owner_id, r.name, r.description, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, u.username AS owner_username,
+SELECT r.id, r.owner_id, r.name, r.description, r.retention_days, r.next_seq, r.agent_streak, r.agents_paused, r.created_at, r.updated_at, r.instructions, r.instructions_by, r.updated_by, r.kind, r.dm_a, r.dm_b, r.read_baseline, r.org_id, r.creator_iid, u.username AS owner_username,
        CAST(COALESCE(oi.kind, '') AS TEXT) AS owner_ikind,
        CAST(COALESCE(oi.display_name, '') AS TEXT) AS owner_iname,
        CAST(COALESCE(oi.handle, '') AS TEXT) AS owner_handle,
@@ -395,6 +399,8 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRo
 			&i.Room.DmA,
 			&i.Room.DmB,
 			&i.Room.ReadBaseline,
+			&i.Room.OrgID,
+			&i.Room.CreatorIid,
 			&i.OwnerUsername,
 			&i.OwnerIkind,
 			&i.OwnerIname,

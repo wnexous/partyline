@@ -143,7 +143,7 @@ func (q *Queries) DeleteAgentMemberships(ctx context.Context, memberID string) (
 }
 
 const getAgent = `-- name: GetAgent :one
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped FROM agents WHERE id = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid FROM agents WHERE id = ?
 `
 
 func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
@@ -162,12 +162,14 @@ func (q *Queries) GetAgent(ctx context.Context, id string) (Agent, error) {
 		&i.ConnectedAt,
 		&i.Folder,
 		&i.PlatformDropped,
+		&i.OrgID,
+		&i.CreatorIid,
 	)
 	return i, err
 }
 
 const getAgentByFolder = `-- name: GetAgentByFolder :one
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped FROM agents WHERE owner_id = ? AND machine = ? AND folder = ? AND folder <> ''
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid FROM agents WHERE owner_id = ? AND machine = ? AND folder = ? AND folder <> ''
 `
 
 type GetAgentByFolderParams struct {
@@ -192,6 +194,8 @@ func (q *Queries) GetAgentByFolder(ctx context.Context, arg GetAgentByFolderPara
 		&i.ConnectedAt,
 		&i.Folder,
 		&i.PlatformDropped,
+		&i.OrgID,
+		&i.CreatorIid,
 	)
 	return i, err
 }
@@ -213,7 +217,7 @@ func (q *Queries) GetAgentCursor(ctx context.Context, arg GetAgentCursorParams) 
 }
 
 const getAgentWithOwner = `-- name: GetAgentWithOwner :one
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, u.username AS owner_username,
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
        CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
@@ -249,6 +253,8 @@ func (q *Queries) GetAgentWithOwner(ctx context.Context, id string) (GetAgentWit
 		&i.Agent.ConnectedAt,
 		&i.Agent.Folder,
 		&i.Agent.PlatformDropped,
+		&i.Agent.OrgID,
+		&i.Agent.CreatorIid,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
 		&i.Handle,
@@ -275,7 +281,7 @@ func (q *Queries) GetMessageRoomSeq(ctx context.Context, id string) (GetMessageR
 }
 
 const getUnlinkedAgentByHandle = `-- name: GetUnlinkedAgentByHandle :one
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped FROM agents a JOIN intelligences i ON i.id = a.id
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid FROM agents a JOIN intelligences i ON i.id = a.id
 WHERE a.owner_id = ? AND a.folder = '' AND i.handle = ?
 `
 
@@ -302,12 +308,14 @@ func (q *Queries) GetUnlinkedAgentByHandle(ctx context.Context, arg GetUnlinkedA
 		&i.ConnectedAt,
 		&i.Folder,
 		&i.PlatformDropped,
+		&i.OrgID,
+		&i.CreatorIid,
 	)
 	return i, err
 }
 
 const getUnlinkedAgentByName = `-- name: GetUnlinkedAgentByName :one
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped FROM agents WHERE owner_id = ? AND folder = '' AND name = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid FROM agents WHERE owner_id = ? AND folder = '' AND name = ?
 `
 
 type GetUnlinkedAgentByNameParams struct {
@@ -332,6 +340,8 @@ func (q *Queries) GetUnlinkedAgentByName(ctx context.Context, arg GetUnlinkedAge
 		&i.ConnectedAt,
 		&i.Folder,
 		&i.PlatformDropped,
+		&i.OrgID,
+		&i.CreatorIid,
 	)
 	return i, err
 }
@@ -587,7 +597,7 @@ func (q *Queries) ListAgentRoomStates(ctx context.Context, memberID string) ([]L
 }
 
 const listAgentsByOwner = `-- name: ListAgentsByOwner :many
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped FROM agents WHERE owner_id = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid FROM agents WHERE owner_id = ?
 `
 
 func (q *Queries) ListAgentsByOwner(ctx context.Context, ownerID string) ([]Agent, error) {
@@ -612,6 +622,8 @@ func (q *Queries) ListAgentsByOwner(ctx context.Context, ownerID string) ([]Agen
 			&i.ConnectedAt,
 			&i.Folder,
 			&i.PlatformDropped,
+			&i.OrgID,
+			&i.CreatorIid,
 		); err != nil {
 			return nil, err
 		}
@@ -627,7 +639,7 @@ func (q *Queries) ListAgentsByOwner(ctx context.Context, ownerID string) ([]Agen
 }
 
 const listAgentsForUser = `-- name: ListAgentsForUser :many
-SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, u.username AS owner_username,
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
        CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
@@ -672,6 +684,8 @@ func (q *Queries) ListAgentsForUser(ctx context.Context, userID string) ([]ListA
 			&i.Agent.ConnectedAt,
 			&i.Agent.Folder,
 			&i.Agent.PlatformDropped,
+			&i.Agent.OrgID,
+			&i.Agent.CreatorIid,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
 			&i.Handle,

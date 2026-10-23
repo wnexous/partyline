@@ -176,15 +176,15 @@ All of it exactly as in the design's Data Model.
 **Reuses**: AD-012 `ADD COLUMN` pattern, `openMigratedBefore`
 **Requirement**: ORG-02, OUPG-01
 **Done when**:
-- [ ] Store test:
+- [x] Store test:
   - every table, column and index exists;
   - `UNIQUE (org_id, iid)` refuses a second membership;
   - `permission` accepts `admin`, `member` and `guest` and refuses anything else;
   - `org_members.inviter_iid` becomes NULL when the inviter's intelligence is deleted;
   - positions: a name is unique per org case-insensitively (`Lead` vs `lead`), and two orgs can each have "Admin";
   - deleting an org that an agent references fails, and an empty org deletes with cascading positions, members and invitations
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): add organizations, positions and memberships`

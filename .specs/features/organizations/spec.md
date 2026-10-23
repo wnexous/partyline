@@ -155,7 +155,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
 | ORG-01 | P1: Organizations own resources | Tasks | In Tasks |
-| ORG-02 | P1: Organizations own resources | Tasks | In Tasks |
+| ORG-02 | P1: Organizations own resources | Tasks | Implementing |
 | ORG-03 | P1: Organizations own resources | Tasks | In Tasks |
 | ORG-04 | P1: Organizations own resources | Tasks | In Tasks |
 | ORG-05 | P1: Organizations own resources | Tasks | In Tasks |
@@ -183,7 +183,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | CHART-02 | P1: Org chart view | Tasks | In Tasks |
 | CHART-03 | P1: Org chart view | Tasks | In Tasks |
 | CHART-04 | P1: Org chart view | Tasks | In Tasks |
-| OUPG-01 | Edge cases | Tasks | In Tasks |
+| OUPG-01 | Edge cases | Tasks | Implementing |
 | OUPG-02 | Edge cases | Tasks | In Tasks |
 
 **Coverage:** 31 total, 31 mapped to tasks.

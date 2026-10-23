@@ -81,7 +81,7 @@ func (q *Queries) DeleteConnectorChatMemberships(ctx context.Context, connectorI
 }
 
 const getConnector = `-- name: GetConnector :one
-SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at, auto_route_room_id, operator_iid, account_label, deliver, groups_mentions_only FROM connectors WHERE id = ?
+SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at, auto_route_room_id, operator_iid, account_label, deliver, groups_mentions_only, org_id FROM connectors WHERE id = ?
 `
 
 func (q *Queries) GetConnector(ctx context.Context, id string) (Connector, error) {
@@ -104,6 +104,7 @@ func (q *Queries) GetConnector(ctx context.Context, id string) (Connector, error
 		&i.AccountLabel,
 		&i.Deliver,
 		&i.GroupsMentionsOnly,
+		&i.OrgID,
 	)
 	return i, err
 }
@@ -121,7 +122,7 @@ func (q *Queries) GetConnectorOperator(ctx context.Context, id string) (sql.Null
 }
 
 const getConnectorWithOwner = `-- name: GetConnectorWithOwner :one
-SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_room_id, c.operator_iid, c.account_label, c.deliver, c.groups_mentions_only, u.username AS owner_username,
+SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_room_id, c.operator_iid, c.account_label, c.deliver, c.groups_mentions_only, c.org_id, u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name
 FROM connectors c JOIN users u ON u.id = c.owner_id
 LEFT JOIN intelligences ui ON ui.id = u.id
@@ -154,6 +155,7 @@ func (q *Queries) GetConnectorWithOwner(ctx context.Context, id string) (GetConn
 		&i.Connector.AccountLabel,
 		&i.Connector.Deliver,
 		&i.Connector.GroupsMentionsOnly,
+		&i.Connector.OrgID,
 		&i.OwnerUsername,
 		&i.OwnerDisplayName,
 	)
@@ -161,7 +163,7 @@ func (q *Queries) GetConnectorWithOwner(ctx context.Context, id string) (GetConn
 }
 
 const listConnectorsForUser = `-- name: ListConnectorsForUser :many
-SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_room_id, c.operator_iid, c.account_label, c.deliver, c.groups_mentions_only, u.username AS owner_username,
+SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_room_id, c.operator_iid, c.account_label, c.deliver, c.groups_mentions_only, c.org_id, u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name
 FROM connectors c JOIN users u ON u.id = c.owner_id
 LEFT JOIN intelligences ui ON ui.id = u.id
@@ -203,6 +205,7 @@ func (q *Queries) ListConnectorsForUser(ctx context.Context, userID string) ([]L
 			&i.Connector.AccountLabel,
 			&i.Connector.Deliver,
 			&i.Connector.GroupsMentionsOnly,
+			&i.Connector.OrgID,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
 		); err != nil {
@@ -220,7 +223,7 @@ func (q *Queries) ListConnectorsForUser(ctx context.Context, userID string) ([]L
 }
 
 const listConnectorsOperatedBy = `-- name: ListConnectorsOperatedBy :many
-SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at, auto_route_room_id, operator_iid, account_label, deliver, groups_mentions_only FROM connectors WHERE operator_iid = ? ORDER BY name, id
+SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at, auto_route_room_id, operator_iid, account_label, deliver, groups_mentions_only, org_id FROM connectors WHERE operator_iid = ? ORDER BY name, id
 `
 
 // The connectors an AI operates (CID-01, ACC-07).
@@ -250,6 +253,7 @@ func (q *Queries) ListConnectorsOperatedBy(ctx context.Context, operatorIid sql.
 			&i.AccountLabel,
 			&i.Deliver,
 			&i.GroupsMentionsOnly,
+			&i.OrgID,
 		); err != nil {
 			return nil, err
 		}
