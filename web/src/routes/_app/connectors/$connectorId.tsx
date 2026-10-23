@@ -305,7 +305,10 @@ function ChatsSection({ connector: c, canList }: { connector: Connector; canList
                 aria-label={name}
                 className="flex items-center gap-3 px-3 py-2.5 sm:px-4"
               >
-                <MessageCircleIcon className="size-4 shrink-0 text-info" aria-hidden="true" />
+                <MessageCircleIcon
+                  className="size-4 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{name}</p>
                   <p className="flex min-w-0 flex-wrap gap-x-2 text-xs text-muted-foreground">
@@ -475,7 +478,7 @@ function DeliveryForm({ connector: c }: { connector: Connector }) {
       {current === "" ? (
         <p
           role="note"
-          className="rounded-md border border-warning/45 bg-warning/12 px-3 py-2 text-sm"
+          className="rounded-md border border-tape-strong/40 bg-muted px-3 py-2 text-sm"
         >
           {t("connector.noOperatorHint")}
         </p>
@@ -587,7 +590,7 @@ function DeliverySummary({ connector: c }: { connector: Connector }) {
       {c.operator ? null : (
         <p
           role="note"
-          className="rounded-md border border-warning/45 bg-warning/12 px-3 py-2 text-sm"
+          className="rounded-md border border-tape-strong/40 bg-muted px-3 py-2 text-sm"
         >
           {t("connector.noOperatorReadOnly")}
         </p>
@@ -642,7 +645,7 @@ function DeleteConnector({ connector: c }: { connector: Connector }) {
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={remove.isPending}
               onClick={(e) => {
                 e.preventDefault();

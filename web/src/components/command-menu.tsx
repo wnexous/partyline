@@ -200,7 +200,7 @@ function PaletteItem({
       onSelect={onSelect}
       className={cn(
         "gap-3 rounded-md px-2.5 py-2",
-        "data-[selected=true]:bg-tape/55 data-[selected=true]:text-tape-foreground dark:data-[selected=true]:bg-tape/14 dark:data-[selected=true]:text-tape",
+        "data-[selected=true]:bg-tape/60 data-[selected=true]:text-tape-foreground",
       )}
     >
       {icon}

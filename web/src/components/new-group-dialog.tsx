@@ -321,7 +321,7 @@ function Candidates({
             <li key={p.ref.id}>
               <label
                 htmlFor={boxId}
-                className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-accent/40 has-[:focus-visible]:bg-accent/40 has-[[aria-checked=true]]:bg-tape/30 dark:has-[[aria-checked=true]]:bg-tape/10"
+                className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-accent/40 has-[:focus-visible]:bg-accent/40 has-[[aria-checked=true]]:bg-tape/40"
               >
                 <Checkbox
                   id={boxId}

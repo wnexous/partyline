@@ -30,8 +30,8 @@ export function EmptyState({
       )}
     >
       <div className="relative mb-6 flex h-12 w-28 items-center justify-center" aria-hidden="true">
-        <span className="absolute inset-x-0 top-1/2 h-7 -translate-y-1/2 -rotate-2 rounded-[3px] bg-tape/70 shadow-sm dark:bg-tape/20" />
-        <Icon className="relative size-6 text-tape-foreground dark:text-tape" strokeWidth={1.75} />
+        <span className="absolute inset-x-0 top-1/2 h-7 -translate-y-1/2 -rotate-2 rounded-[3px] bg-tape/80 shadow-sm" />
+        <Icon className="relative size-6 text-tape-foreground" strokeWidth={1.75} />
       </div>
       <Heading className="text-lg font-semibold tracking-[-0.01em] text-balance">{title}</Heading>
       {children ? (

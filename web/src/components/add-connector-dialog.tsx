@@ -144,7 +144,7 @@ function AddConnectorBody({
                 htmlFor={`${idBase}-${k.name}`}
                 className={cn(
                   "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent/60",
-                  k.name === kindName && "border-tape-strong bg-tape/35 dark:bg-tape/12",
+                  k.name === kindName && "border-tape-strong bg-tape/40",
                 )}
               >
                 <RadioGroupItem id={`${idBase}-${k.name}`} value={k.name} />

@@ -1,7 +1,11 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IntelligenceAvatar, initials } from "@/components/intelligence/intelligence-avatar";
+import {
+  avatarTone,
+  IntelligenceAvatar,
+  initials,
+} from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { KindBadge } from "@/components/intelligence/kind-badge";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
@@ -87,6 +91,15 @@ describe("IntelligenceAvatar (PROF-08)", () => {
     expect(first).toHaveTextContent(/^AS$/);
     expect(first.className).toBe(second.className);
     expect(first.className).not.toBe(third.className);
+  });
+
+  it("picks greys only: the red is for errors, never a face", () => {
+    const tones = new Set(Array.from({ length: 200 }, (_, i) => avatarTone(`id-${i}`)));
+    expect(tones.size).toBeGreaterThanOrEqual(6);
+    for (const tone of tones) {
+      expect(tone).not.toMatch(/destructive|red-|success|warning|info/);
+      expect(tone).toMatch(/\btext-/);
+    }
   });
 
   it("has a 96 px size for the profile page, with its initials larger", () => {

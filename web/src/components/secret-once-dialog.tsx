@@ -49,7 +49,7 @@ export function SecretOnceDialog({
             <CodeBlock label={label} value={secret} />
             <div
               role="note"
-              className="flex gap-2.5 rounded-md bg-warning/15 px-3 py-2.5 text-sm ring-1 ring-warning/45 ring-inset"
+              className="flex gap-2.5 rounded-md bg-muted px-3 py-2.5 text-sm ring-1 ring-tape-strong/40 ring-inset"
             >
               <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <p>{warning}</p>

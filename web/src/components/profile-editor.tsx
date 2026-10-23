@@ -114,7 +114,7 @@ function PhotoEditor({ profile }: { profile: IntelligenceProfile }) {
           alt={t("profile.photoPreview")}
           width={96}
           height={96}
-          className="size-24 rounded-full object-cover ring-2 ring-tape"
+          className="size-24 rounded-full object-cover ring-2 ring-tape-strong"
         />
       ) : (
         <IntelligenceAvatar intelligence={profile} size="xl" decorative />

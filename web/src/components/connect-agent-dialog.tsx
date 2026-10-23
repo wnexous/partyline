@@ -99,7 +99,7 @@ function Wizard({ onDone }: { onDone: () => void }) {
                     className={cn(
                       "h-7 flex-none rounded-[3px] border-border px-2.5 text-[0.8rem]",
                       "data-[state=active]:border-tape-strong data-[state=active]:bg-tape data-[state=active]:text-tape-foreground data-[state=active]:shadow-none",
-                      "dark:data-[state=active]:border-tape/50 dark:data-[state=active]:bg-tape/20 dark:data-[state=active]:text-tape",
+                      "dark:data-[state=active]:border-tape-strong dark:data-[state=active]:bg-tape dark:data-[state=active]:text-tape-foreground",
                     )}
                   >
                     {h.title}
@@ -208,7 +208,7 @@ function Step({ title, children }: { title: string; children: ReactNode }) {
     <li className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-x-3 [counter-increment:step]">
       <span
         aria-hidden="true"
-        className="flex size-6 items-center justify-center rounded-[3px] bg-tape font-mono text-xs font-semibold text-tape-foreground before:content-[counter(step)] dark:bg-tape/20 dark:text-tape"
+        className="flex size-6 items-center justify-center rounded-[3px] bg-tape font-mono text-xs font-semibold text-tape-foreground before:content-[counter(step)]"
       />
       <div className="min-w-0 space-y-2.5 text-sm text-muted-foreground">
         <h3 className="pt-0.5 font-semibold text-foreground">{title}</h3>

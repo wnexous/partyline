@@ -135,7 +135,7 @@ function CodeEntry({ onFound }: { onFound: (request: DeviceRequest, code: string
           </Button>
         </div>
       </form>
-      <div className="mt-8 flex gap-2.5 rounded-md border bg-warning/10 px-4 py-3 text-sm">
+      <div className="mt-8 flex gap-2.5 rounded-md border border-tape-strong/40 bg-muted px-4 py-3 text-sm">
         <ShieldAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <p className="text-pretty">{t("devices.warning")}</p>
       </div>
@@ -229,7 +229,7 @@ function Request({
         <div className="flex items-center gap-3 border-b px-4 py-3.5">
           <span
             aria-hidden="true"
-            className="flex size-9 shrink-0 items-center justify-center rounded-[3px] bg-tape text-tape-foreground dark:bg-tape/20 dark:text-tape"
+            className="flex size-9 shrink-0 items-center justify-center rounded-[3px] bg-tape text-tape-foreground"
           >
             <LaptopIcon className="size-4.5" strokeWidth={1.75} />
           </span>
@@ -258,7 +258,10 @@ function Request({
           </Field>
           <Field label={t("devices.expires")}>
             <span
-              className={cn("tabular font-mono", secondsLeft <= 60 && "text-destructive")}
+              className={cn(
+                "tabular font-mono",
+                secondsLeft <= 60 && "rounded-[3px] bg-foreground px-1.5 text-background",
+              )}
               role="timer"
               aria-live="off"
             >
@@ -266,7 +269,7 @@ function Request({
             </span>
           </Field>
         </dl>
-        <div className="flex gap-2.5 border-t bg-warning/10 px-4 py-3 text-sm">
+        <div className="flex gap-2.5 border-t bg-muted px-4 py-3 text-sm">
           <ShieldAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           <p className="text-pretty">{t("devices.warning")}</p>
         </div>

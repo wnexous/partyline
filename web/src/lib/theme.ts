@@ -38,7 +38,7 @@ export function resolveTheme(pref: ThemePreference): "light" | "dark" {
 }
 
 /** Browser chrome colour per scheme: the `--background` token in sRGB. */
-export const THEME_COLORS = { light: "#fbfaf7", dark: "#0e141e" } as const;
+export const THEME_COLORS = { light: "#fafafa", dark: "#0f0f0f" } as const;
 
 /**
  * Applies the resolved scheme to <html> (the `dark` class drives the tokens) and points every

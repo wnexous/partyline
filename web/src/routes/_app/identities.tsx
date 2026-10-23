@@ -107,7 +107,7 @@ function IdentityRow({ identity, onRemove }: { identity: Identity; onRemove: () 
   const { t, locale } = useI18n();
   return (
     <li aria-label={identity.display} className="flex items-center gap-4 px-4 py-3.5 md:px-8">
-      <FingerprintIcon className="size-4 shrink-0 text-success" aria-hidden="true" />
+      <FingerprintIcon className="size-4 shrink-0 text-foreground" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="flex min-w-0 items-center gap-2">
           <span className="truncate font-semibold tracking-[-0.01em]">{identity.display}</span>
@@ -156,7 +156,7 @@ function RemoveIdentityDialog({
         <AlertDialogFooter>
           <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-destructive text-white hover:bg-destructive/90"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             disabled={remove.isPending}
             onClick={(e) => {
               e.preventDefault();
@@ -226,7 +226,7 @@ function PairingBody({ onDone }: { onDone: () => void }) {
     return (
       <div className="space-y-5">
         <div role="status" className="flex flex-col items-center gap-2 py-4 text-center">
-          <CircleCheckIcon className="size-8 text-success" aria-hidden="true" />
+          <CircleCheckIcon className="size-8 text-foreground" aria-hidden="true" />
           <p className="font-semibold">{t("pairing.linked", { name: linked.display })}</p>
           <p className="text-sm text-muted-foreground">
             {t("pairing.linkedBody", { platform: platformLabel(linked.connector_kind) })}
@@ -309,7 +309,7 @@ function ConnectorChoice({
               htmlFor={`${idBase}-${c.id}`}
               className={cn(
                 "flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2.5 text-sm transition-colors hover:bg-accent/60",
-                c.id === selected && "border-tape-strong bg-tape/35 dark:bg-tape/12",
+                c.id === selected && "border-tape-strong bg-tape/40",
               )}
             >
               <RadioGroupItem id={`${idBase}-${c.id}`} value={c.id} />
@@ -418,9 +418,9 @@ function PairingCodeView({
       <div className="relative flex justify-center py-2">
         <span
           aria-hidden="true"
-          className="absolute inset-x-6 top-1/2 h-12 -translate-y-1/2 -rotate-1 rounded-[3px] bg-tape/70 shadow-sm dark:bg-tape/18"
+          className="absolute inset-x-6 top-1/2 h-12 -translate-y-1/2 -rotate-1 rounded-[3px] bg-tape/80 shadow-sm"
         />
-        <p className="relative font-mono text-4xl font-semibold tracking-[0.3em] text-tape-foreground tabular dark:text-tape">
+        <p className="relative font-mono text-4xl font-semibold tracking-[0.3em] text-tape-foreground tabular">
           <span className="sr-only">{t("pairing.codeLabel")}: </span>
           <span>{code.code}</span>
         </p>
@@ -437,7 +437,9 @@ function PairingCodeView({
           aria-live="off"
           className={cn(
             "font-mono font-semibold tabular",
-            secondsLeft <= 60 ? "text-destructive" : "text-foreground",
+            secondsLeft <= 60
+              ? "rounded-[3px] bg-foreground px-1.5 text-background"
+              : "text-foreground",
           )}
         >
           {clock(secondsLeft)}

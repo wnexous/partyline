@@ -1,7 +1,7 @@
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
-/** Agent presence: a tape-yellow pulse when online, a hollow ring when offline. */
+/** Agent presence: a filled, pulsing dot when online, a hollow ring when offline. */
 export function StatusDot({
   online,
   withLabel = false,
@@ -21,7 +21,7 @@ export function StatusDot({
           "size-2 shrink-0 rounded-full",
           online
             ? "animate-line-pulse bg-tape-strong"
-            : "border border-muted-foreground/60 bg-transparent",
+            : "border border-muted-foreground bg-transparent",
         )}
       />
       {withLabel ? (

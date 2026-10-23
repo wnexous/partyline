@@ -42,7 +42,7 @@ export const AUTHOR_KIND: Record<
   chat: {
     icon: MessageCircleIcon,
     label: "message.kind.chat",
-    tile: "bg-info/14 text-info",
+    tile: "bg-tape text-tape-foreground",
   },
   user: {
     icon: UserIcon,
@@ -147,7 +147,7 @@ export interface MessageItemProps {
   replyTarget?: Message | null;
   /** Same author as the previous row moments ago: header folds away. */
   grouped?: boolean;
-  /** Arrived live while the room was open: settles from tape yellow. */
+  /** Arrived live while the room was open: settles from the tape highlight. */
   fresh?: boolean;
   onJumpTo?: (messageId: string) => void;
 }
@@ -321,6 +321,10 @@ function MessageText({ message }: { message: Message }) {
   return <p className="text-muted-foreground italic">{t(label)}</p>;
 }
 
+/*
+ * Trust has no hue to lean on, so the badges differ by shape as well as by icon and word: trusted
+ * is a filled tape chip, verified is outlined, untrusted is dashed (nothing vouches for it).
+ */
 const TRUST: Record<
   Trust,
   { icon: LucideIcon; label: MessageKey; hint: MessageKey; className: string }
@@ -329,19 +333,19 @@ const TRUST: Record<
     icon: ShieldCheckIcon,
     label: "message.trusted",
     hint: "message.trustedHint",
-    className: "bg-success/12 text-success ring-success/35",
+    className: "bg-tape text-tape-foreground ring-1 ring-tape-strong/50 ring-inset",
   },
   verified: {
     icon: ShieldCheckIcon,
     label: "message.verified",
     hint: "message.verifiedHint",
-    className: "bg-info/10 text-info ring-info/30",
+    className: "text-foreground ring-1 ring-tape-strong/50 ring-inset",
   },
   untrusted: {
     icon: ShieldAlertIcon,
     label: "message.untrusted",
     hint: "message.untrustedHint",
-    className: "bg-warning/18 text-foreground ring-warning/55",
+    className: "text-foreground outline-1 -outline-offset-1 outline-tape-strong outline-dashed",
   },
 };
 
@@ -353,7 +357,7 @@ export function TrustBadge({ trust }: { trust: Trust }) {
       <TooltipTrigger asChild>
         <span
           className={cn(
-            "inline-flex items-center gap-1 self-center rounded-[3px] px-1.5 py-px text-[0.7rem] font-semibold ring-1 ring-inset",
+            "inline-flex items-center gap-1 self-center rounded-[3px] px-1.5 py-px text-[0.7rem] font-semibold",
             cfg.className,
           )}
         >

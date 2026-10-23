@@ -3,19 +3,20 @@ import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { cn } from "@/lib/utils";
 
 /*
- * An intelligence's face (PROF-08): its uploaded image, or initials on a colour picked from the
- * design tokens by a hash of its id. Only the id drives the colour, so a rename keeps the face.
+ * An intelligence's face (PROF-08): its uploaded image, or initials on a grey picked from the
+ * design tokens by a hash of its id. Only the id drives the grey, so a rename keeps the face.
+ * Red is reserved for errors, so it is not one of the tones.
  */
 
 const TONES = [
   "bg-primary text-primary-foreground",
+  "bg-tape-strong text-background",
+  "bg-muted-foreground text-background",
+  "bg-input text-foreground",
   "bg-tape text-tape-foreground",
-  "bg-secondary text-secondary-foreground",
   "bg-accent text-accent-foreground",
-  "bg-success/15 text-success",
-  "bg-warning/20 text-foreground",
-  "bg-info/15 text-info",
-  "bg-destructive/12 text-destructive",
+  "bg-secondary text-secondary-foreground ring-1 ring-border ring-inset",
+  "bg-card text-foreground ring-1 ring-input ring-inset",
 ] as const;
 
 /** First letter of the first and of the last word; the single letter for a one-word name. */
@@ -29,7 +30,7 @@ export function initials(displayName: string): string {
   return `${first}${last}`.toUpperCase();
 }
 
-/** Token background for the initials: stable per id, spread across eight colours. */
+/** Token background for the initials: stable per id, spread across eight greys. */
 export function avatarTone(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i += 1) {

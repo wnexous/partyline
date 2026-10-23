@@ -40,7 +40,7 @@ export function DeleteAIDialog({
         <AlertDialogFooter>
           <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-destructive text-white hover:bg-destructive/90"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             disabled={remove.isPending}
             onClick={(e) => {
               // Stay open while the request runs: a failure must leave the dialog to retry from.

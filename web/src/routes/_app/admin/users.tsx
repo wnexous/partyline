@@ -107,7 +107,7 @@ function UserRow({ user: u, onDisable }: { user: AdminUser; onDisable: () => voi
         <p className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="truncate font-semibold tracking-[-0.01em]">{name}</span>
           {self ? (
-            <span className="rounded-[3px] bg-tape px-1.5 py-px text-[0.7rem] font-semibold text-tape-foreground dark:bg-tape/20 dark:text-tape">
+            <span className="rounded-[3px] bg-tape px-1.5 py-px text-[0.7rem] font-semibold text-tape-foreground">
               {t("admin.you")}
             </span>
           ) : null}
@@ -169,7 +169,7 @@ function DisableDialog({ user, onClose }: { user: AdminUser | null; onClose: () 
         <AlertDialogFooter>
           <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-destructive text-white hover:bg-destructive/90"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             disabled={update.isPending}
             onClick={(e) => {
               e.preventDefault();
