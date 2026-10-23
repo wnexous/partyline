@@ -26,9 +26,10 @@ func newCatchAllEnv(t *testing.T) *catchAllEnv {
 	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()))
 	e := &catchAllEnv{env: env, admin: env.SetupAdmin(), alice: env.NewUser("alice"), bob: env.NewUser("bob")}
 	create := func(c *testkit.Client) dto.Connector {
-		return testkit.Decode[dto.Connector](c.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+		conn := testkit.Decode[dto.Connector](c.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 			Kind: connectortest.KindName, Name: "wa", Config: map[string]any{"token": "fake-token-not-real"},
 		}).RequireStatus(http.StatusCreated))
+		return c.OperateConnector(conn.ID, c.NewAI("relay")) // a connection runs once an AI operates it
 	}
 	e.aliceConn, e.bobConn = create(e.alice), create(e.bob)
 	return e

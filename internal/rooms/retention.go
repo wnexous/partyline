@@ -13,8 +13,8 @@ const (
 	RetentionInterval = 24 * time.Hour
 	// blobGrace protects blobs stored recently: a message referencing them may still be committing.
 	blobGrace = time.Hour
-	// deleteBlobGrace is the same guard when a room is deleted: blobs written within it are
-	// left to the sweep.
+	// deleteBlobGrace is the same guard when blobs are released right after a delete (a room,
+	// purged platform queue items): blobs written within it are left to the sweep.
 	deleteBlobGrace = time.Minute
 	// retentionBatch bounds each delete so the single writer is never held for long.
 	retentionBatch = 1000
@@ -92,9 +92,14 @@ func (s *Service) RunRetention(ctx context.Context, interval time.Duration, log 
 	}
 }
 
-// blobReferenced reports whether an attachment or an intelligence's avatar uses the blob.
+// blobReferenced reports whether a message attachment, a file of a platform queue item or an
+// intelligence's avatar uses the blob.
 func (s *Service) blobReferenced(ctx context.Context, sha string) (bool, error) {
 	n, err := s.store.R().CountAttachmentsBySHA(ctx, sha)
+	if err != nil || n > 0 {
+		return n > 0, err
+	}
+	n, err = s.store.R().CountPlatformAttachmentsBySHA(ctx, sha)
 	if err != nil || n > 0 {
 		return n > 0, err
 	}
@@ -102,9 +107,10 @@ func (s *Service) blobReferenced(ctx context.Context, sha string) (bool, error) 
 	return n > 0, err
 }
 
-// removeRoomBlobs deletes, best effort, the blobs of a deleted room that no attachment
-// references any more (ROOM-02); the retention sweep remains the backstop.
-func (s *Service) removeRoomBlobs(ctx context.Context, shas []string) {
+// ReleaseBlobs deletes, best effort, the blobs among shas that nothing references any more and
+// that were not written in the last minute: the blobs of a deleted room (ROOM-02) and of purged
+// platform queue items (CID-09). The retention sweep remains the backstop.
+func (s *Service) ReleaseBlobs(ctx context.Context, shas []string) {
 	if s.blobs == nil {
 		return
 	}

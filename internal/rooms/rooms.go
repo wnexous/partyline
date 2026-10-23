@@ -445,7 +445,7 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) 
 	if err != nil {
 		return err
 	}
-	s.removeRoomBlobs(ctx, shas)
+	s.ReleaseBlobs(ctx, shas)
 	for _, c := range stopped {
 		s.bus.Publish(events.ConnectorStatus{ConnectorID: c.ID, Status: c.Status, Detail: dto.AutoRouteUnavailable})
 	}

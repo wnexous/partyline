@@ -197,18 +197,11 @@ func (s *Service) linkedAccounts(ctx context.Context, viewerID, userID string) (
 	return out, nil
 }
 
-// operatedConnectors lists the connectors an intelligence operates that the viewer owns or may
-// use (ACC-07): for a user, the connectors they own that no AI operates; for an AI, those that
-// name it. A connector the viewer cannot use is not theirs to learn about.
-func (s *Service) operatedConnectors(ctx context.Context, viewerID, operatorID string, user bool) ([]db.Connector, error) {
-	q := s.store.R()
-	var list []db.Connector
-	var err error
-	if user {
-		list, err = q.ListConnectorsOperatedByOwner(ctx, operatorID)
-	} else {
-		list, err = q.ListConnectorsOperatedBy(ctx, sql.NullString{String: operatorID, Valid: true})
-	}
+// operatedConnectors lists the connectors an AI operates that the viewer owns or may use
+// (ACC-07, CID-01): those that name it. A connector the viewer cannot use is not theirs to learn
+// about. Users operate none: a connection nobody operates is nobody's app.
+func (s *Service) operatedConnectors(ctx context.Context, viewerID, aiID string) ([]db.Connector, error) {
+	list, err := s.store.R().ListConnectorsOperatedBy(ctx, sql.NullString{String: aiID, Valid: true})
 	if err != nil {
 		return nil, err
 	}

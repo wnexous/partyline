@@ -2,6 +2,7 @@ package connectors_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -14,6 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -30,18 +32,35 @@ type outboundEnv struct {
 func newOutboundEnv(t *testing.T, opts ...testkit.Option) *outboundEnv {
 	t.Helper()
 	e := newInboundEnv(t, append([]testkit.Option{testkit.WithOutbox()}, opts...)...)
-	e.emit(text(groupID, "M0", "hello"))
+	e.emit(text(groupID, "M0", "hello")) // mentions-only drops it; the chat is recorded
 	chat := e.chatID(t, groupID)
 
-	e.env.NewAI(e.alice, "helper")
+	helperID := e.env.NewAI(e.alice, "helper")
 	token := e.alice.Token(dto.TokenKindAgent, "laptop")
 	conn, _ := token.DialAgent("helper")
 	conn.Welcome(connectortest.Timeout)
-	var agents dto.List[dto.Agent]
-	e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK).Decode(&agents)
-	require.Len(t, agents.Items, 1)
-	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: agents.Items[0].ID}).RequireStatus(http.StatusCreated))
+	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: helperID}).RequireStatus(http.StatusCreated))
+	e.patch(t, dto.UpdateConnectorRequest{GroupsMentionsOnly: ptr(false)}) // the own-typing tests deliver group messages
 	return &outboundEnv{inboundEnv: e, chat: chat, room: room, agent: token.AsAgent("helper"), helper: conn}
+}
+
+// chatSays stores a message of the routed chat in the room, the history the retired inbound
+// pipeline used to leave there, so that the outbound tests have a chat message to reply to and to
+// react to. It returns the message as the room lists it.
+func (e *outboundEnv) chatSays(t *testing.T, external, id, body string) dto.Message {
+	t.Helper()
+	m, err := e.env.App.Rooms.PostFromChat(context.Background(), e.room.ID, rooms.ChatMessage{
+		ChatID: e.chatID(t, external), SenderID: senderID, SenderAltID: senderAlt, SenderName: "Customer",
+		ExternalID: id, Kind: dto.MessageKindText, Text: body,
+	})
+	require.NoError(t, err)
+	for _, got := range e.messages(t, e.room.ID) {
+		if got.ID == m.ID {
+			return got
+		}
+	}
+	t.Fatalf("message %s not in the room", m.ID)
+	return dto.Message{}
 }
 
 // outbox returns the message's delivery to the chat once it satisfies done.
@@ -65,11 +84,9 @@ func (e *outboundEnv) outbox(t *testing.T, messageID string, done func(dto.Outbo
 // the chat's platform id and the quoted message's platform id and sender.
 func TestAgentReplyReachesConnectorWithQuote(t *testing.T) {
 	e := newOutboundEnv(t)
-	e.emit(text(groupID, "M1", "where is my order?"))
-	msgs := e.messages(t, e.room.ID)
-	require.Len(t, msgs, 1)
+	asked := e.chatSays(t, groupID, "M1", "where is my order?")
 
-	reply := testkit.Decode[dto.Message](e.agent.Post("/api/v1/agent/messages/"+msgs[0].ID+"/reply", dto.ReplyRequest{Text: "on its way"}).RequireStatus(http.StatusCreated))
+	reply := testkit.Decode[dto.Message](e.agent.Post("/api/v1/agent/messages/"+asked.ID+"/reply", dto.ReplyRequest{Text: "on its way"}).RequireStatus(http.StatusCreated))
 	sent := e.inst.WaitSend(t)
 	require.Equal(t, groupID, sent.ChatID)
 	require.Equal(t, "on its way", sent.Text)
@@ -100,12 +117,10 @@ func TestReplyQuotesOnlyInTheOriginChat(t *testing.T) {
 	chatB := e.chatID(t, otherID)
 	on := true
 	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chatB, Outbound: &on}).RequireStatus(http.StatusCreated)
-	e.emit(text(otherID, "B1", "question from B"))
-	msgs := e.messages(t, e.room.ID)
-	require.Len(t, msgs, 1)
-	require.Equal(t, "B1", msgs[0].ExternalID)
+	question := e.chatSays(t, otherID, "B1", "question from B")
+	require.Equal(t, "B1", question.ExternalID)
 
-	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: "answer", ReplyTo: msgs[0].ID}).RequireStatus(http.StatusCreated)
+	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: "answer", ReplyTo: question.ID}).RequireStatus(http.StatusCreated)
 	byChat := map[string]connectors.Outbound{}
 	for range 2 {
 		sent := e.inst.WaitSend(t)
@@ -232,14 +247,13 @@ func TestOutboundAuthorFollowsMemberSettings(t *testing.T) {
 	require.Equal(t, "helper", sent.AuthorName)
 	require.Equal(t, "helper", e.authorName(t, other.ID, m.ID))
 
-	// alice operates the connector: her own account sends her messages without an author line
-	// (ACC-04; TestUsersAreSignedUnlessTheyOperateTheAccount covers the users who are named),
-	// though the connector still learns who wrote it.
+	// An AI operates the connector (CID-01), so alice is named: the connector learns who wrote it
+	// and puts the author line in the text.
 	u := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: "from alice"}).RequireStatus(http.StatusCreated))
 	sent = e.inst.WaitSend(t)
 	require.Equal(t, u.ID, sent.MessageID)
 	require.Equal(t, "alice", sent.AuthorName)
-	require.Empty(t, sent.Signature())
+	require.Equal(t, "alice", sent.Signature())
 }
 
 func ptr[T any](v T) *T { return &v }

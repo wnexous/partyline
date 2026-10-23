@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/secrets"
@@ -34,6 +35,9 @@ var (
 	// detail is for logs only, never for API answers.
 	ErrPlatform = errors.New("the platform request failed")
 )
+
+// NoOperator is the status detail of a connection nobody operates (CID-02).
+const NoOperator = dto.ConnectorNoOperator
 
 // Backoff limits of the supervisor (CON-06).
 const (
@@ -191,7 +195,8 @@ func (m *Manager) Close() {
 	}
 }
 
-// Apply (re)starts the connector with its stored config when it is enabled (CON-04).
+// Apply (re)starts the connector with its stored config when it is enabled (CON-04). A connector
+// nobody operates is not started: it reports the error status NoOperator (CID-02).
 func (m *Manager) Apply(id string) {
 	m.ops.Lock()
 	defer m.ops.Unlock()
@@ -204,6 +209,10 @@ func (m *Manager) Apply(id string) {
 	}
 	c, err := m.d.Store.R().GetConnector(base, id)
 	if err != nil || !c.Enabled {
+		return
+	}
+	if !c.OperatorIid.Valid { // CID-02: what arrives would have no session to go to
+		m.persist(id, StatusError, NoOperator)
 		return
 	}
 	k, ok := m.d.Kinds.Lookup(c.Kind)

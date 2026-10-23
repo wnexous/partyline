@@ -9,17 +9,18 @@ import (
 )
 
 type Agent struct {
-	ID          string
-	OwnerID     string
-	Name        string
-	Description string
-	CreatedAt   int64
-	LastSeenAt  sql.NullInt64
-	ProjectID   sql.NullString
-	Harness     string
-	Machine     string
-	ConnectedAt sql.NullInt64
-	Folder      string
+	ID              string
+	OwnerID         string
+	Name            string
+	Description     string
+	CreatedAt       int64
+	LastSeenAt      sql.NullInt64
+	ProjectID       sql.NullString
+	Harness         string
+	Machine         string
+	ConnectedAt     sql.NullInt64
+	Folder          string
+	PlatformDropped int64
 }
 
 type AgentCursor struct {
@@ -87,21 +88,23 @@ type ChatPerson struct {
 }
 
 type Connector struct {
-	ID              string
-	OwnerID         string
-	Kind            string
-	Name            string
-	ConfigJson      string
-	SecretsEnc      []byte
-	Enabled         bool
-	Status          string
-	LastError       string
-	CreatedAt       int64
-	UpdatedAt       int64
-	AutoRouteScope  string
-	AutoRouteRoomID sql.NullString
-	OperatorIid     sql.NullString
-	AccountLabel    string
+	ID                 string
+	OwnerID            string
+	Kind               string
+	Name               string
+	ConfigJson         string
+	SecretsEnc         []byte
+	Enabled            bool
+	Status             string
+	LastError          string
+	CreatedAt          int64
+	UpdatedAt          int64
+	AutoRouteScope     string
+	AutoRouteRoomID    sql.NullString
+	OperatorIid        sql.NullString
+	AccountLabel       string
+	Deliver            string
+	GroupsMentionsOnly bool
 }
 
 type DeviceCodeAttempt struct {
@@ -248,6 +251,49 @@ type Person struct {
 	NameLocked    bool
 	LastSeenAt    sql.NullInt64
 	CreatedAt     int64
+}
+
+type PlatformAttachment struct {
+	ID     string
+	ItemID string
+	Sha256 string
+	Name   string
+	Mime   string
+	Size   int64
+	Status string
+}
+
+type PlatformItem struct {
+	Seq         int64
+	ID          string
+	AgentID     string
+	ConnectorID string
+	ChatID      string
+	ExternalID  string
+	SenderID    string
+	SenderName  string
+	Trusted     bool
+	FromSelf    bool
+	Kind        string
+	Text        string
+	ReceivedAt  int64
+	AckedAt     sql.NullInt64
+}
+
+type PlatformSend struct {
+	ID                string
+	ConnectorID       string
+	ChatID            string
+	AgentID           string
+	Text              string
+	ReplyToExternalID string
+	Status            string
+	Attempts          int64
+	NextAttemptAt     int64
+	LastError         string
+	ExternalID        string
+	CreatedAt         int64
+	UpdatedAt         int64
 }
 
 type Project struct {

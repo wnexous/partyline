@@ -20,14 +20,12 @@ import (
 // platform id and sender, and the emoji; nothing is sent as text.
 func TestAgentReactionReachesReactor(t *testing.T) {
 	e := newOutboundEnv(t)
-	e.emit(text(groupID, "M1", "my order arrived"))
-	msgs := e.messages(t, e.room.ID)
-	require.Len(t, msgs, 1)
+	target := e.chatSays(t, groupID, "M1", "my order arrived")
 
-	r := testkit.Decode[dto.Message](e.agent.Post("/api/v1/agent/messages/"+msgs[0].ID+"/react", dto.ReactRequest{Emoji: "👍"}).RequireStatus(http.StatusCreated))
+	r := testkit.Decode[dto.Message](e.agent.Post("/api/v1/agent/messages/"+target.ID+"/react", dto.ReactRequest{Emoji: "👍"}).RequireStatus(http.StatusCreated))
 	require.Equal(t, dto.MessageKindReaction, r.Kind)
 	require.Equal(t, "👍", r.Text)
-	require.Equal(t, msgs[0].ID, r.ReplyTo)
+	require.Equal(t, target.ID, r.ReplyTo)
 	require.Equal(t, []string{e.chat}, r.Recipients)
 	require.Equal(t, dto.AuthorKindAgent, r.AuthorKind)
 
@@ -44,8 +42,7 @@ func TestAgentReactionReachesReactor(t *testing.T) {
 // REACT-01: a platform without reactions fails the delivery with "reactions not supported".
 func TestReactionWithoutReactorFails(t *testing.T) {
 	e := newOutboundEnv(t)
-	e.emit(text(groupID, "M1", "hello"))
-	target := e.messages(t, e.room.ID)[0]
+	target := e.chatSays(t, groupID, "M1", "hello")
 
 	// Restart the connector as a platform without reactions.
 	e.fake.WithoutReactions()

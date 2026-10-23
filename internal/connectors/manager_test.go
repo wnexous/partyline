@@ -3,6 +3,7 @@ package connectors_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"log/slog"
@@ -16,6 +17,8 @@ import (
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/handles"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -115,8 +118,40 @@ func newManagerFixture(t *testing.T) *managerFixture {
 	return f
 }
 
-// insert stores a fake connector with the synthetic token.
+// ai creates an AI of the owner and returns its id.
+func (f *managerFixture) ai(t *testing.T) string {
+	t.Helper()
+	ctx := context.Background()
+	id := store.NewID()
+	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
+		if err := q.CreateAgent(ctx, db.CreateAgentParams{ID: id, OwnerID: f.owner, Name: id}); err != nil {
+			return err
+		}
+		_, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: id, Kind: handles.AI, DisplayName: "Atlas", HandleBase: "atlas", Now: time.Now()})
+		return err
+	}))
+	return id
+}
+
+// setOperator stores the AI (NULL for "") as the connector's operator.
+func (f *managerFixture) setOperator(t *testing.T, id, ai string) {
+	t.Helper()
+	require.NoError(t, f.st.WithTx(context.Background(), func(q *db.Queries) error {
+		return q.SetConnectorOperator(context.Background(), db.SetConnectorOperatorParams{OperatorIid: sql.NullString{String: ai, Valid: ai != ""}, ID: id})
+	}))
+}
+
+// insert stores a fake connector with the synthetic token, operated by a new AI of the owner (a
+// connection nobody operates does not run, CID-02).
 func (f *managerFixture) insert(t *testing.T, enabled bool) string {
+	t.Helper()
+	id := f.insertWithoutOperator(t, enabled)
+	f.setOperator(t, id, f.ai(t))
+	return id
+}
+
+// insertWithoutOperator stores a fake connector that nobody operates.
+func (f *managerFixture) insertWithoutOperator(t *testing.T, enabled bool) string {
 	t.Helper()
 	id := store.NewID()
 	public, sealed, err := f.kind.Encode(f.box, connectors.Config{"token": fakeToken})
@@ -268,4 +303,65 @@ func TestRedactReplacesEncodedForms(t *testing.T) {
 	secret := "a b/c+d"
 	got := connectors.Redact("raw=a b/c+d query=a+b%2Fc%2Bd path=a%20b%2Fc+d", []string{secret, ""})
 	require.Equal(t, "raw=[redacted] query=[redacted] path=[redacted]", got)
+}
+
+// CID-02: Start and Apply do not run a connection nobody operates: it reports the error status
+// that says what to do, persisted and published, and receives nothing; operated and disabled
+// connections are unaffected.
+func TestManagerDoesNotRunAConnectionWithoutAnOperator(t *testing.T) {
+	f := newManagerFixture(t)
+	idle := f.insertWithoutOperator(t, true)
+	operated := f.insert(t, true)
+	disabled := f.insertWithoutOperator(t, false)
+	f.m.Start(context.Background())
+
+	require.Equal(t, events.ConnectorStatus{ConnectorID: idle, Status: "error", Detail: "choose the AI that operates this connection"}, f.nextStatus(t, idle))
+	row := f.row(t, idle)
+	require.Equal(t, []string{"error", "choose the AI that operates this connection"}, []string{row.Status, row.LastError})
+	require.Nil(t, f.fake.Lookup(idle), "no connector instance is created")
+	_, err := f.m.Send(context.Background(), idle, connectors.Outbound{ChatID: "chat-1", Text: "x"})
+	require.ErrorIs(t, err, connectors.ErrNotRunning)
+
+	f.fake.Instance(t, operated).WaitRun(t)
+	require.Empty(t, f.row(t, operated).LastError)
+	require.Equal(t, []string{"stopped", ""}, []string{f.row(t, disabled).Status, f.row(t, disabled).LastError}, "a disabled connection is stopped, not idle")
+	require.Nil(t, f.fake.Lookup(disabled))
+}
+
+// CID-02: setting the operator and applying the connection runs it, and the detail goes away.
+func TestManagerRunsAConnectionOnceItHasAnOperator(t *testing.T) {
+	f := newManagerFixture(t)
+	f.m.Start(context.Background())
+	id := f.insertWithoutOperator(t, true)
+
+	f.m.Apply(id)
+	require.Equal(t, "error", f.nextStatus(t, id).Status)
+	require.Nil(t, f.fake.Lookup(id))
+
+	f.setOperator(t, id, f.ai(t))
+	f.m.Apply(id)
+	f.fake.Instance(t, id).WaitRun(t)
+	require.Equal(t, events.ConnectorStatus{ConnectorID: id, Status: "connecting"}, f.nextStatus(t, id), "the detail is cleared")
+	row := f.row(t, id)
+	require.Equal(t, []string{"connecting", ""}, []string{row.Status, row.LastError})
+}
+
+// CID-02: applying a running connection whose operator is gone (deleted AI) stops it and shows
+// the same status.
+func TestManagerStopsAConnectionThatLostItsOperator(t *testing.T) {
+	f := newManagerFixture(t)
+	f.m.Start(context.Background())
+	id := f.insert(t, true)
+	f.m.Apply(id)
+	inst := f.fake.Instance(t, id)
+	inst.WaitRun(t)
+
+	f.setOperator(t, id, "") // what deleting the operator does
+	f.m.Apply(id)
+
+	inst.WaitStop(t)
+	row := f.row(t, id)
+	require.Equal(t, []string{"error", "choose the AI that operates this connection"}, []string{row.Status, row.LastError})
+	_, err := f.m.Send(context.Background(), id, connectors.Outbound{ChatID: "chat-1", Text: "x"})
+	require.ErrorIs(t, err, connectors.ErrNotRunning)
 }

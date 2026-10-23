@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -38,17 +39,61 @@ type peopleFixture struct {
 	roomA, roomB, roomC                  dto.Room
 	chatX, chatY                         string
 	person                               string
+	history                              *connectortest.History
 }
 
+// emit stores what the retired inbound pipeline stored for a group message of the sender in the
+// chat (history, since CID-07): the chat is recorded; when it sits in rooms the sender is a person
+// seen in it and the message is stored in each of its rooms.
 func (f *peopleFixture) emit(chat, id, sender, name string) {
+	f.env.T.Helper()
+	ctx := context.Background()
 	title := "Support group"
 	if chat == peopleGroupY {
 		title = "Billing group"
 	}
-	f.inst.Emit(context.Background(), connectors.Inbound{
-		ChatID: chat, ChatTitle: title, ChatKind: "group", MessageID: id,
-		SenderID: sender, SenderName: name, Text: "hello " + id, At: f.clock.Now(),
+	at := f.clock.Now()
+	c, err := connectors.UpsertChat(ctx, f.env.App.Store, f.env.App.Bus, f.conn.ID, connectors.ChatInfo{ID: chat, Title: title, Kind: "group"}, at, at)
+	require.NoError(f.env.T, err)
+	chatRooms, err := f.env.App.Store.R().ListChatRooms(ctx, c.ID)
+	require.NoError(f.env.T, err)
+	if len(chatRooms) == 0 {
+		return // an unrouted chat keeps nobody
+	}
+	person, err := f.history.Seen(ctx, connectortest.Sighting{
+		ConnectorID: f.conn.ID, ConnectorKind: connectortest.KindName, Chat: c, SenderID: sender, Name: name, At: at,
 	})
+	require.NoError(f.env.T, err)
+	for _, r := range chatRooms {
+		_, err := f.env.App.Rooms.PostFromChat(ctx, r.ID, rooms.ChatMessage{
+			ChatID: c.ID, SenderID: sender, SenderName: name, AuthorIID: person.ID, ExternalID: id, Kind: dto.MessageKindText, Text: "hello " + id,
+		})
+		require.NoError(f.env.T, err)
+	}
+}
+
+// platformDM stores what the retired pipeline stored when a person wrote to a DM chat of the
+// connection while the AI operated it: the person seen in the chat, the DM between them with the
+// chat as a member, and the message. It returns the chat, the room and the person.
+func (f *peopleFixture) platformDM(ai, external, name, body string) (chat, room, person string) {
+	f.env.T.Helper()
+	ctx := context.Background()
+	at := f.clock.Now()
+	c, err := connectors.UpsertChat(ctx, f.env.App.Store, f.env.App.Bus, f.conn.ID, connectors.ChatInfo{ID: external, Title: name, Kind: "dm"}, at, at)
+	require.NoError(f.env.T, err)
+	p, err := f.history.Seen(ctx, connectortest.Sighting{
+		ConnectorID: f.conn.ID, ConnectorKind: connectortest.KindName, Chat: c, SenderID: external, Name: name, At: at,
+	})
+	require.NoError(f.env.T, err)
+	route, err := f.env.App.Conversations.EnsurePlatformDM(ctx, conversations.PlatformDM{
+		OwnerID: f.alice.User.ID, ChatID: c.ID, Author: conversations.Party{ID: p.ID}, Operator: conversations.Party{ID: ai, Kind: dto.MemberKindAgent},
+	})
+	require.NoError(f.env.T, err)
+	_, err = f.env.App.Rooms.PostFromChat(ctx, route.RoomID, rooms.ChatMessage{
+		ChatID: c.ID, SenderID: external, SenderName: name, AuthorIID: p.ID, ExternalID: "d1", Kind: dto.MessageKindText, Text: body,
+	})
+	require.NoError(f.env.T, err)
+	return c.ID, route.RoomID, p.ID
 }
 
 func (f *peopleFixture) addChat(owner *testkit.Client, roomID, chatID string) {
@@ -81,7 +126,10 @@ func newPeopleFixture(t *testing.T) *peopleFixture {
 		env: env, clock: clock, admin: env.SetupAdmin(),
 		alice: env.NewUser("alice"), bob: env.NewUser("bob"), carol: env.NewUser("carol"), dave: env.NewUser("dave"), erin: env.NewUser("erin"),
 	}
-	f.conn = createFake(f.alice, "wa", true)
+	// Atlas operates the connection (the contacts fixture names the same AI).
+	f.history = connectortest.NewHistory(connectortest.HistoryDeps{Store: env.App.Store, Bus: env.App.Bus, Now: clock.Now})
+	f.conn = createFakeIdle(f.alice, "wa", true)
+	f.alice.OperateConnector(f.conn.ID, aiAt(t, env, f.alice, "Atlas", "atlas", "devbox", "/home/alice/atlas", "/home/alice", "claude"))
 	shareConnector(f.alice, f.conn.ID, f.bob.User.ID)
 	f.inst = fake.Instance(t, f.conn.ID)
 	f.inst.WaitRun(t)
@@ -181,33 +229,12 @@ func TestPersonProfileFollowsTheConnector(t *testing.T) {
 // AI's DM.
 func TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople(t *testing.T) {
 	f := newPeopleFixture(t)
-	ctx := context.Background()
 	atlas := f.env.NewAI(f.alice, "atlas")
 	shareAI(f.alice, atlas, f.dave) // dave: use on atlas and nothing on the connector
-	noRoom, dms := "", dto.AutoRouteScopeDMs
-	f.alice.Patch("/api/v1/connectors/"+f.conn.ID, dto.UpdateConnectorRequest{AutoRouteScope: &dms, AutoRouteRoomID: &noRoom, OperatorID: &atlas}).RequireStatus(http.StatusOK)
+	f.alice.OperateConnector(f.conn.ID, atlas)
 
-	const dana = "5511999990003@s.whatsapp.net"
 	f.clock.Advance(time.Minute)
-	f.inst.Emit(ctx, connectors.Inbound{ChatID: dana, ChatTitle: "Dana", ChatKind: "dm", MessageID: "d1", SenderID: dana, SenderName: "Dana", Text: "hello Atlas", At: f.clock.Now()})
-	var chat string
-	for _, c := range testkit.Decode[dto.List[dto.Chat]](f.alice.Get("/api/v1/connectors/" + f.conn.ID + "/chats").RequireStatus(http.StatusOK)).Items {
-		if c.ExternalID == dana {
-			chat = c.ID
-		}
-	}
-	require.NotEmpty(t, chat)
-	roomIDs, err := f.env.App.Store.R().ListChatRoomIDs(ctx, chat)
-	require.NoError(t, err)
-	require.Len(t, roomIDs, 1, "the platform DM between Dana and Atlas")
-	dm := roomIDs[0]
-	var person string
-	for _, p := range testkit.Decode[dto.Room](f.alice.Get("/api/v1/rooms/" + dm).RequireStatus(http.StatusOK)).Participants {
-		if p.Role == dto.IntelligenceRolePerson {
-			person = p.ID
-		}
-	}
-	require.NotEmpty(t, person)
+	_, dm, person := f.platformDM(atlas, "5511999990003@s.whatsapp.net", "Dana", "hello Atlas")
 	putAvatar(f.alice, person, pngBytes(t, bands(300, 300))).RequireStatus(http.StatusOK)
 
 	// alice owns Atlas and dave may use it: both read the DM and the person, neither as a participant.
@@ -400,8 +427,7 @@ func TestPersonPageShowsTheUserItIsLinkedTo(t *testing.T) {
 func TestLinkedAccountsAreAppsOfTheUser(t *testing.T) {
 	f := newPeopleFixture(t)
 	web := dto.App{Kind: "web", Label: "Web app"}
-	operated := dto.App{Kind: connectortest.KindName, Label: "Fake: wa", ConnectorID: f.conn.ID} // alice operates her connector
-	require.Equal(t, []dto.App{web, operated}, profileOf(t, f.alice, f.alice.User.ID).Apps)
+	require.Equal(t, []dto.App{web}, profileOf(t, f.alice, f.alice.User.ID).Apps, "the connection is its operator AI's app, not the owner's")
 
 	code := testkit.Decode[dto.PairingCode](f.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: f.conn.ID}).RequireStatus(http.StatusCreated))
 	f.clock.Advance(time.Minute)
@@ -410,8 +436,8 @@ func TestLinkedAccountsAreAppsOfTheUser(t *testing.T) {
 	})
 
 	account := dto.App{Kind: connectortest.KindName, Label: "Fake: " + peopleSender, ConnectorID: f.conn.ID}
-	require.Equal(t, []dto.App{web, account, operated}, profileOf(t, f.alice, f.alice.User.ID).Apps, "the user's own accounts")
-	require.Equal(t, []dto.App{web, account, operated}, profileOf(t, f.bob, f.alice.User.ID).Apps, "bob may use the connector it was linked through")
+	require.Equal(t, []dto.App{web, account}, profileOf(t, f.alice, f.alice.User.ID).Apps, "the user's own accounts")
+	require.Equal(t, []dto.App{web, account}, profileOf(t, f.bob, f.alice.User.ID).Apps, "bob may use the connector it was linked through")
 	for _, c := range []*testkit.Client{f.carol, f.dave} {
 		require.Equal(t, []dto.App{web}, profileOf(t, c, f.alice.User.ID).Apps, "no access to the connector, no account")
 	}
@@ -419,7 +445,7 @@ func TestLinkedAccountsAreAppsOfTheUser(t *testing.T) {
 
 	idents := testkit.Decode[dto.List[dto.Identity]](f.alice.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items
 	f.alice.Delete("/api/v1/identities/" + idents[0].ID).RequireStatus(http.StatusNoContent)
-	require.Equal(t, []dto.App{web, operated}, profileOf(t, f.alice, f.alice.User.ID).Apps)
+	require.Equal(t, []dto.App{web}, profileOf(t, f.alice, f.alice.User.ID).Apps)
 }
 
 // GRP-02: a room's members list shows, for each bridged chat, the people seen in it with their

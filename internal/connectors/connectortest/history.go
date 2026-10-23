@@ -1,4 +1,4 @@
-package connectors
+package connectortest
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/intelligences"
@@ -19,27 +20,29 @@ import (
 // are: a busy group is not a write per message.
 const SeenInterval = 10 * time.Minute
 
-// PeopleDeps are the collaborators of People.
-type PeopleDeps struct {
+// HistoryDeps are the collaborators of History.
+type HistoryDeps struct {
 	Store *store.Store
 	Bus   *events.Bus
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
 }
 
-// People records who writes through connectors (AD-008): one person, with an intelligence,
-// per (connector, external id) (PEOP-01), the people seen in each chat (GRP-02) and the
-// counterpart of each DM chat.
-type People struct {
-	d PeopleDeps
+// History seeds, for tests, the people the inbound pipeline used to record before it stopped
+// (CID-07): one person, with an intelligence, per (connector, external id), the people seen in
+// each chat and the counterpart of each DM chat. Nothing in the product creates people any more;
+// the people of older instances stay as history, and the tests of what reads that history build
+// it with this.
+type History struct {
+	d HistoryDeps
 }
 
-// NewPeople returns People.
-func NewPeople(d PeopleDeps) *People {
+// NewHistory returns History.
+func NewHistory(d HistoryDeps) *History {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
-	return &People{d: d}
+	return &History{d: d}
 }
 
 // Sighting is a sender seen writing in a chat of a connector.
@@ -67,7 +70,7 @@ func (s Sighting) ids() []string {
 // to the chat (GRP-02) and, in a DM chat, is its counterpart. It returns the person; the zero
 // value when the platform gave no sender id. A message that changes nothing is answered
 // without a write.
-func (p *People) Seen(ctx context.Context, s Sighting) (db.Person, error) {
+func (p *History) Seen(ctx context.Context, s Sighting) (db.Person, error) {
 	now := p.d.Now()
 	s.Name = intelligences.CleanDisplayName(s.Name)
 	if s.SenderID == "" {
@@ -112,7 +115,7 @@ func (p *People) Seen(ctx context.Context, s Sighting) (db.Person, error) {
 
 // Find returns the id of the person of the sender on the connector, by either of its ids, without
 // recording anything; empty when the sender has no person yet.
-func (p *People) Find(ctx context.Context, connectorID, senderID, altID string) (string, error) {
+func (p *History) Find(ctx context.Context, connectorID, senderID, altID string) (string, error) {
 	s := Sighting{ConnectorID: connectorID, SenderID: senderID, AltID: altID}
 	if s.SenderID == "" {
 		s.SenderID, s.AltID = s.AltID, ""
@@ -136,7 +139,7 @@ type seenState struct {
 }
 
 // state finds the sender's person by either of its ids and its link to the chat.
-func (p *People) state(ctx context.Context, q *db.Queries, s Sighting) (seenState, error) {
+func (p *History) state(ctx context.Context, q *db.Queries, s Sighting) (seenState, error) {
 	var st seenState
 	for _, id := range s.ids() {
 		row, err := q.GetPersonByExternalID(ctx, db.GetPersonByExternalIDParams{ConnectorID: s.ConnectorID, SenderID: id})
@@ -209,7 +212,7 @@ func nextAlt(pr db.Person, s Sighting) string {
 
 // apply writes a sighting in the caller's transaction and returns the person and whether its
 // intelligence was renamed. An unknown sender gets a new person.
-func (p *People) apply(ctx context.Context, q *db.Queries, st seenState, s Sighting, now time.Time) (db.Person, bool, error) {
+func (p *History) apply(ctx context.Context, q *db.Queries, st seenState, s Sighting, now time.Time) (db.Person, bool, error) {
 	var pl seenPlan
 	person, renamed := st.person, false
 	if !st.found {
@@ -261,10 +264,10 @@ func (p *People) apply(ctx context.Context, q *db.Queries, st seenState, s Sight
 
 // create inserts a person and its intelligence: the platform's name, or "<Platform> contact"
 // when it gave none (PEOP-01), and a handle from it that is free across the instance.
-func (p *People) create(ctx context.Context, q *db.Queries, s Sighting, now time.Time) (db.Person, error) {
+func (p *History) create(ctx context.Context, q *db.Queries, s Sighting, now time.Time) (db.Person, error) {
 	display := s.Name
 	if display == "" {
-		display = PlatformLabel(s.ConnectorKind) + " contact"
+		display = connectors.PlatformLabel(s.ConnectorKind) + " contact"
 	}
 	id := store.NewID()
 	if _, err := intelligences.Create(ctx, q, intelligences.NewParams{

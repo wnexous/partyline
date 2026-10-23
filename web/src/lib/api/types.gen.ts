@@ -542,12 +542,23 @@ export interface Connector {
   status: ConnectorStatus;
   last_error?: string;
   /**
-   * Operator is the intelligence the platform account belongs to: the owner (the default) or
-   * one of the owner's AIs. Talking to the account is talking to the operator (ACC-01). The
-   * server always sets it; the field is optional so that clients written before it keep
-   * compiling.
+   * Operator is the owner's AI the platform account belongs to: what arrives on the account
+   * goes to that AI's session, and only it sends through the account (CID-01). Absent while
+   * nobody operates the connection: it then runs nothing and its status says so (CID-02).
    */
   operator?: IntelligenceRef;
+  /**
+   * Deliver and GroupsMentionsOnly choose what reaches the operator (CID-12, CID-27): the chats
+   * of the connection that are delivered, and whether a group message needs to mention the
+   * account or reply to it. A new connection delivers everything with mentions-only on.
+   */
+  deliver: ConnectorDeliver;
+  groups_mentions_only: boolean;
+  /**
+   * Queued is how many messages of the connection wait for their AI's session to acknowledge
+   * them (CID-23). Their text is never part of any connector view.
+   */
+  queued: number /* int64 */;
   /**
    * AccountLabel is how the platform names the account once connected: "@bot",
    * "+•••• 1234" (ACC-07); absent until then.
@@ -598,11 +609,29 @@ export interface UpdateConnectorRequest {
   auto_route_scope?: AutoRouteScope;
   auto_route_room_id?: string;
   /**
-   * OperatorID changes the operator (ACC-01): the owner's own id or an empty string for the
-   * owner, or the id of an AI the owner owns; only the owner may change it. Absent leaves it.
+   * Deliver and GroupsMentionsOnly change what reaches the operator (CID-12): Deliver must be
+   * dms, groups or all (422 on deliver otherwise). Only the owner may change them.
+   */
+  deliver?: ConnectorDeliver;
+  groups_mentions_only?: boolean;
+  /**
+   * OperatorID changes the operator (CID-01): the id of an AI the owner owns; anything else,
+   * the owner's own id and an empty string included, is a 422 on operator_id. Only the owner
+   * may change it. Absent leaves it.
    */
   operator_id?: string;
 }
+/**
+ * ConnectorDeliver selects which chats of a connection reach its operator: direct chats only,
+ * group chats only (group and channel chats) or all of them (CID-12).
+ */
+export const ConnectorDeliverDMs = "dms";
+export const ConnectorDeliverGroups = "groups";
+export const ConnectorDeliverAll = "all";
+/**
+ * Delivery choices.
+ */
+export type ConnectorDeliver = typeof ConnectorDeliverDMs | typeof ConnectorDeliverGroups | typeof ConnectorDeliverAll;
 /**
  * AutoRouteScope selects which new chats a connector routes to its catch-all room: none
  * (off), DMs, groups (group and channel chats) or all.
@@ -615,6 +644,11 @@ export const AutoRouteScopeAll = "all";
  * Catch-all scopes.
  */
 export type AutoRouteScope = typeof AutoRouteScopeOff | typeof AutoRouteScopeDMs | typeof AutoRouteScopeGroups | typeof AutoRouteScopeAll;
+/**
+ * ConnectorNoOperator is the status detail of a connection nobody operates (CID-02): the owner
+ * has to choose the AI that operates it before it runs.
+ */
+export const ConnectorNoOperator = "choose the AI that operates this connection";
 /**
  * AutoRouteUnavailable says the catch-all room is gone or its owner lost manage on it.
  */

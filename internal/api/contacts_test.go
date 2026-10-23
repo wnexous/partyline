@@ -159,7 +159,7 @@ func TestContactsListWhatTheCallerCanReach(t *testing.T) {
 // is absent, and a connector is a people group for those who own or may use it.
 func TestContactsOfOtherUsersHoldOnlyTheirOwnData(t *testing.T) {
 	f := newContactsFixture(t)
-	carolConn := createFake(f.carol, "carol-wa", true)
+	carolConn := createFakeIdle(f.carol, "carol-wa", true)
 
 	bob := contactsOf(t, f.bob)
 	require.Equal(t, []string{"bobs-pc"}, hostnames(bob.Machines))
@@ -451,7 +451,7 @@ func TestContactsPeopleRefusals(t *testing.T) {
 	require.Len(t, f.people(f.alice, "&limit=200&q="+strings.Repeat("é", 100)+"&after="+person).Items, 0, "the largest limit and search are accepted")
 
 	// A person of another connector is no cursor here.
-	other := createFake(f.alice, "second", true)
+	other := createFakeIdle(f.alice, "second", true)
 	f.alice.Get("/api/v1/contacts/people?connector_id="+other.ID+"&after="+person).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 }
 

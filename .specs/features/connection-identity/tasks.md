@@ -164,9 +164,9 @@ It also adds the sqlc queries the queue needs.
 **Reuses**: AD-012 `ADD COLUMN` pattern, `openMigratedBefore`
 **Requirement**: CID-08, CID-26, CID-27
 **Done when**:
-- [ ] Store test: the tables and columns exist; existing connectors read `deliver=all`, `groups_mentions_only=1` (CID-27); the dedupe index refuses a second `(connector, chat, external_id)` row and accepts empty external ids twice
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] Store test: the tables and columns exist; existing connectors read `deliver=all`, `groups_mentions_only=1` (CID-27); the dedupe index refuses a second `(connector, chat, external_id)` row and accepts empty external ids twice
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): add the platform queue`
@@ -185,14 +185,140 @@ It also adds the sqlc queries the queue needs.
 **Reuses**: `store.WithTx`, `events.Bus`
 **Requirement**: CID-08, CID-09, CID-11, CID-26
 **Done when**:
-- [ ] Integration tests:
+- [x] Integration tests:
   - the same message twice → one item;
   - the 5,001st item drops the oldest, and the counter reads 1;
   - `Unacked` orders by seq;
   - `Ack` clears the text and keeps the metadata;
   - an ack by another agent is a no-op;
   - `MoveConnector` moves acked and unacked items of one connection only
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(platform): queue platform messages per AI`
+
+### Phase 3: Inbound to the queue
+
+```
+T5 -> T6 -> T7
+T7 -> T8
+T7 -> T9
+T7 -> T10
+T7 -> T11
+```
+
+### Phase 4: Delivery to the session
+
+```
+T12 -> T14 -> T16
+T13 -> T15
+```
+
+### Phase 5: Answering through the connection
+
+```
+T17 -> T18
+T17 -> T19 -> T20
+```
+
+### Phase 6: Lifecycle and guards
+
+```
+T21 -> T22
+T23
+T24
+```
+
+### Phase 7: Web
+
+```
+T25
+T26
+T27
+T28
+T29
+T30
+T31
+T32
+```
+
+### Phase 8: Server retirement
+
+```
+T33 -> T35
+T34 -> T35
+```
+
+### Phase 9: Upgrade and release
+
+```
+T36 -> T37 -> T38
+```
+
+---
+
+## Task Breakdown
+
+### Phase 1: Done
+
+#### T1: WhatsApp connection uses exactly one instance [done]
+
+**What**: `instances` is required. With zero or several instances the connection reports `StatusError` with the detail `choose the instance (number) of this connection`, dials nothing and waits for ctx. Sends, reactions and chat listings use only the configured instance.
+**Where**: `internal/connectors/whatsapp/connector.go`
+**Depends on**: None
+**Reuses**: the fake evolution server
+**Requirement**: CID-04
+**Done when**:
+- [x] Implemented and tested in commit `bebd8d1` on branch `wnexous/pl-cid-t27` (contract notes there); merge that branch before T2
+- [x] Gate check passed: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(whatsapp): one instance per connection` (bebd8d1)
+
+### Phase 2: Store and queue
+
+#### T2: Migration 0017 for the platform queue [core]
+
+**What**: `0017_platform_queue.sql` adds:
+- `platform_items`, `platform_attachments` and `platform_sends` with the design's indexes;
+- `agents.platform_dropped`;
+- `connectors.deliver` (default `all`) and `connectors.groups_mentions_only` (default 1).
+
+It also adds the sqlc queries the queue needs.
+**Where**: `internal/store/migrations/0017_platform_queue.sql`
+**Depends on**: None
+**Reuses**: AD-012 `ADD COLUMN` pattern, `openMigratedBefore`
+**Requirement**: CID-08, CID-26, CID-27
+**Done when**:
+- [x] Store test: the tables and columns exist; existing connectors read `deliver=all`, `groups_mentions_only=1` (CID-27); the dedupe index refuses a second `(connector, chat, external_id)` row and accepts empty external ids twice
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(store): add the platform queue`
+
+#### T3: Platform queue service [core]
+
+**What**: New package `internal/platform` with:
+- `Enqueue`: dedup, and the 5,000 cap with the dropped counter;
+- `Unacked`: oldest first;
+- `Ack`: clears the text and is idempotent;
+- `TakeDropped`;
+- `MoveConnector`: a tx helper;
+- `events.PlatformQueued`.
+**Where**: `internal/platform/queue.go`
+**Depends on**: T2
+**Reuses**: `store.WithTx`, `events.Bus`
+**Requirement**: CID-08, CID-09, CID-11, CID-26
+**Done when**:
+- [x] Integration tests:
+  - the same message twice → one item;
+  - the 5,001st item drops the oldest, and the counter reads 1;
+  - `Unacked` orders by seq;
+  - `Ack` clears the text and keeps the metadata;
+  - an ack by another agent is a no-op;
+  - `MoveConnector` moves acked and unacked items of one connection only
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(platform): queue platform messages per AI`
@@ -209,11 +335,11 @@ The retention ticker runs it, and the blob `Sweep` treats `platform_attachments`
 **Reuses**: `attachments.Store.Sweep`
 **Requirement**: CID-09, CID-10
 **Done when**:
-- [ ] Fake-clock tests:
+- [x] Fake-clock tests:
   - an unacked item at 7 d − 1 ms stays, at 7 d it is deleted and counted;
   - an acked item at 24 h − 1 ms keeps its blob, at 24 h the row and the unshared blob go;
   - a blob shared with a room attachment survives
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(platform): expire queue items and their files`
@@ -228,10 +354,10 @@ The retention ticker runs it, and the blob `Sweep` treats `platform_attachments`
 **Reuses**: `Manager.persist`, `operatorID`
 **Requirement**: CID-01, CID-02
 **Done when**:
-- [ ] e2e: the owner's AI is accepted; the owner's own id, "" and another user's AI → 422 `operator_id` (L-017)
-- [ ] Integration: NULL operator → not run, exact detail; PATCH to an AI → runs
-- [ ] ACC-01 owner-operator tests rewritten (owner operator retired)
-- [ ] Gate check passes: `make check`
+- [x] e2e: the owner's AI is accepted; the owner's own id, "" and another user's AI → 422 `operator_id` (L-017)
+- [x] Integration: NULL operator → not run, exact detail; PATCH to an AI → runs
+- [x] ACC-01 owner-operator tests rewritten (owner operator retired)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors)!: a connection is operated by an AI`
@@ -244,13 +370,13 @@ The retention ticker runs it, and the blob `Sweep` treats `platform_attachments`
 **Reuses**: `view`, `attachOperators`
 **Requirement**: CID-23, CID-27
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - a new connection reads `deliver=all`, `groups_mentions_only=true`, even when the create body carries other values;
   - PATCH changes both, and an invalid `deliver` → 422;
   - `queued` counts unacked items only;
   - no field carries message text
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors): delivery settings and queued count`
@@ -272,15 +398,15 @@ Room posting, people and DM creation, `autoGroup`, `autoRoute` and `platformDM` 
 **Reuses**: `UpsertChat`, `saveMedia`, `truncate`, `SentIDs`, `identities.ResolveSender`
 **Requirement**: CID-06, CID-07, CID-12, CID-13, CID-14, CID-26
 **Done when**:
-- [ ] Integration:
+- [x] Integration:
   - group and DM events carry every CID-06 field;
   - no message, person or room is created (CID-07);
   - the `deliver` and mentions-only filters: each condition excludes on its own (L-042);
   - trust matrix (CID-13);
   - an echo is dropped, own typing is `from_self` (CID-14);
   - a repeat is queued once (CID-26)
-- [ ] Inbound/auto-group/catch-all/platform-DM tests deleted or rewritten (ROUTE-01..11, ACC-02, ACC-05, ACC-06, PEOP-01 creation retired)
-- [ ] Gate check passes: `make check`
+- [x] Inbound/auto-group/catch-all/platform-DM tests deleted or rewritten (ROUTE-01..11, ACC-02, ACC-05, ACC-06, PEOP-01 creation retired)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors)!: deliver inbound messages to the operator's queue`

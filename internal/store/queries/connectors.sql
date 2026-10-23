@@ -65,12 +65,8 @@ UPDATE connectors SET operator_iid = ? WHERE id = ?;
 UPDATE connectors SET account_label = ? WHERE id = ?;
 
 -- name: ListConnectorsOperatedBy :many
--- The connectors an AI operates (ACC-01, ACC-07).
+-- The connectors an AI operates (CID-01, ACC-07).
 SELECT * FROM connectors WHERE operator_iid = ? ORDER BY name, id;
-
--- name: ListConnectorsOperatedByOwner :many
--- The connectors a user operates: those they own and no AI operates.
-SELECT * FROM connectors WHERE owner_id = ? AND operator_iid IS NULL ORDER BY name, id;
 
 -- name: StopCatchAllConnectors :many
 -- ROUTE-03: the connectors whose catch-all room is going to be deleted stop auto-routing and say
@@ -79,3 +75,8 @@ SELECT * FROM connectors WHERE owner_id = ? AND operator_iid IS NULL ORDER BY na
 UPDATE connectors SET auto_route_scope = 'off', last_error = sqlc.arg(detail)
 WHERE auto_route_room_id = sqlc.arg(room_id)
 RETURNING id, status;
+
+-- name: UpdateConnectorDelivery :exec
+-- CID-12, CID-27: which chats of the connection are delivered, and whether a group message needs a
+-- mention of the account or a reply to it.
+UPDATE connectors SET deliver = ?, groups_mentions_only = ?, updated_at = ? WHERE id = ?;

@@ -67,11 +67,18 @@ type Connector struct {
 	Enabled   bool            `json:"enabled"`
 	Status    ConnectorStatus `json:"status"`
 	LastError string          `json:"last_error,omitempty"`
-	// Operator is the intelligence the platform account belongs to: the owner (the default) or
-	// one of the owner's AIs. Talking to the account is talking to the operator (ACC-01). The
-	// server always sets it; the field is optional so that clients written before it keep
-	// compiling.
+	// Operator is the owner's AI the platform account belongs to: what arrives on the account
+	// goes to that AI's session, and only it sends through the account (CID-01). Absent while
+	// nobody operates the connection: it then runs nothing and its status says so (CID-02).
 	Operator *IntelligenceRef `json:"operator,omitempty"`
+	// Deliver and GroupsMentionsOnly choose what reaches the operator (CID-12, CID-27): the chats
+	// of the connection that are delivered, and whether a group message needs to mention the
+	// account or reply to it. A new connection delivers everything with mentions-only on.
+	Deliver            ConnectorDeliver `json:"deliver"`
+	GroupsMentionsOnly bool             `json:"groups_mentions_only"`
+	// Queued is how many messages of the connection wait for their AI's session to acknowledge
+	// them (CID-23). Their text is never part of any connector view.
+	Queued int64 `json:"queued"`
 	// AccountLabel is how the platform names the account once connected: "@bot",
 	// "+•••• 1234" (ACC-07); absent until then.
 	AccountLabel string         `json:"account_label,omitempty"`
@@ -109,10 +116,26 @@ type UpdateConnectorRequest struct {
 	// manage on the room (ROUTE-04). An empty AutoRouteRoomID clears it.
 	AutoRouteScope  *AutoRouteScope `json:"auto_route_scope,omitempty"`
 	AutoRouteRoomID *string         `json:"auto_route_room_id,omitempty"`
-	// OperatorID changes the operator (ACC-01): the owner's own id or an empty string for the
-	// owner, or the id of an AI the owner owns; only the owner may change it. Absent leaves it.
+	// Deliver and GroupsMentionsOnly change what reaches the operator (CID-12): Deliver must be
+	// dms, groups or all (422 on deliver otherwise). Only the owner may change them.
+	Deliver            *ConnectorDeliver `json:"deliver,omitempty"`
+	GroupsMentionsOnly *bool             `json:"groups_mentions_only,omitempty"`
+	// OperatorID changes the operator (CID-01): the id of an AI the owner owns; anything else,
+	// the owner's own id and an empty string included, is a 422 on operator_id. Only the owner
+	// may change it. Absent leaves it.
 	OperatorID *string `json:"operator_id,omitempty"`
 }
+
+// ConnectorDeliver selects which chats of a connection reach its operator: direct chats only,
+// group chats only (group and channel chats) or all of them (CID-12).
+type ConnectorDeliver string
+
+// Delivery choices.
+const (
+	ConnectorDeliverDMs    ConnectorDeliver = "dms"
+	ConnectorDeliverGroups ConnectorDeliver = "groups"
+	ConnectorDeliverAll    ConnectorDeliver = "all"
+)
 
 // AutoRouteScope selects which new chats a connector routes to its catch-all room: none
 // (off), DMs, groups (group and channel chats) or all.
@@ -125,6 +148,10 @@ const (
 	AutoRouteScopeGroups AutoRouteScope = "groups"
 	AutoRouteScopeAll    AutoRouteScope = "all"
 )
+
+// ConnectorNoOperator is the status detail of a connection nobody operates (CID-02): the owner
+// has to choose the AI that operates it before it runs.
+const ConnectorNoOperator = "choose the AI that operates this connection"
 
 // Status details catch-all routing sets on a connector (ROUTE-03, ROUTE-08).
 const (

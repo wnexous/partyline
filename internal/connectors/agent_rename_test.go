@@ -7,16 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/testkit"
 )
 
 // ID-04: after the owner renames an agent, its outbound signature is the new name; a member
 // display name in the room still wins.
 func TestOutboundAuthorFollowsAgentRename(t *testing.T) {
 	e := newOutboundEnv(t)
-	agents := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items
-	require.Len(t, agents, 1)
-	e.alice.Patch("/api/v1/agents/"+agents[0].ID, dto.UpdateAgentRequest{DisplayName: ptr("Atlas bot")}).RequireStatus(http.StatusOK)
+	e.alice.Patch("/api/v1/agents/"+e.agentByHandle(t, "helper"), dto.UpdateAgentRequest{DisplayName: ptr("Atlas bot")}).RequireStatus(http.StatusOK)
 
 	m := e.agentPost(t, e.room.ID, "renamed")
 	sent := e.inst.WaitSend(t)
@@ -34,9 +31,7 @@ func TestOutboundAuthorFollowsAgentRename(t *testing.T) {
 // its outbound messages with the new display name; the name set for it in the room still wins.
 func TestOutboundAuthorFollowsProfileRename(t *testing.T) {
 	e := newOutboundEnv(t)
-	agents := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items
-	require.Len(t, agents, 1)
-	e.alice.Patch("/api/v1/intelligences/"+agents[0].ID, dto.UpdateProfileRequest{DisplayName: ptr("Orion Bot")}).RequireStatus(http.StatusOK)
+	e.alice.Patch("/api/v1/intelligences/"+e.agentByHandle(t, "helper"), dto.UpdateProfileRequest{DisplayName: ptr("Orion Bot")}).RequireStatus(http.StatusOK)
 
 	m := e.agentPost(t, e.room.ID, "renamed by the owner")
 	sent := e.inst.WaitSend(t)

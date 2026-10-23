@@ -88,10 +88,12 @@ type View struct {
 	InboundHook bool
 	// Generated holds the values Kind.Prepare generated, set only by Create (shown once).
 	Generated map[string]string
-	// Operator is the intelligence the platform account belongs to (ACC-01): the owner's own
-	// intelligence, or the owner's AI when OperatorAI.
-	Operator   db.Intelligence
-	OperatorAI bool
+	// Operator is the owner's AI the platform account belongs to (CID-01); the zero value, with
+	// HasOperator false, while nobody operates the connection (CID-02).
+	Operator    db.Intelligence
+	HasOperator bool
+	// Queued is the number of the connection's unacknowledged queue items (CID-23).
+	Queued int64
 }
 
 // CreateInput is a new connector.
@@ -111,9 +113,13 @@ type UpdateInput struct {
 	// room id clears the room.
 	AutoRouteScope  *dto.AutoRouteScope
 	AutoRouteRoomID *string
-	// OperatorID names the connector's operator (ACC-01): the owner's id or "" for the owner,
-	// else an AI the owner owns.
+	// OperatorID names the connector's operator (CID-01): an AI the owner owns. Any other value
+	// is a validation error on operator_id.
 	OperatorID *string
+	// Deliver (dms, groups or all) and GroupsMentionsOnly change what reaches the operator
+	// (CID-12); any other Deliver is a validation error on deliver.
+	Deliver            *dto.ConnectorDeliver
+	GroupsMentionsOnly *bool
 }
 
 // authorize requires the user to hold want on the connector: no access is
@@ -242,15 +248,43 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, id string) (View, 
 	if err := s.attachOperators(ctx, views); err != nil {
 		return View{}, err
 	}
+	if err := s.attachQueued(ctx, views); err != nil {
+		return View{}, err
+	}
 	return views[0], nil
 }
 
-// attachOperators fills the operator of each view: the intelligence of its operator_iid, else
-// of its owner.
+// attachQueued fills the number of unacknowledged queue items of each view's connection (CID-23).
+func (s *Service) attachQueued(ctx context.Context, views []View) error {
+	if len(views) == 0 {
+		return nil
+	}
+	ids := make([]string, len(views))
+	for i, v := range views {
+		ids[i] = v.ID
+	}
+	rows, err := s.d.Store.R().CountUnackedPlatformItemsByConnector(ctx, ids)
+	if err != nil {
+		return err
+	}
+	queued := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		queued[r.ConnectorID] = r.Queued
+	}
+	for i := range views {
+		views[i].Queued = queued[views[i].ID]
+	}
+	return nil
+}
+
+// attachOperators fills the operator of each view that has one: the intelligence of its
+// operator_iid (CID-01). A connection nobody operates keeps the zero value (CID-02).
 func (s *Service) attachOperators(ctx context.Context, views []View) error {
 	ids := make([]string, 0, len(views))
 	for _, v := range views {
-		ids = append(ids, operatorID(v.Connector))
+		if v.OperatorIid.Valid {
+			ids = append(ids, v.OperatorIid.String)
+		}
 	}
 	if len(ids) == 0 {
 		return nil
@@ -264,13 +298,16 @@ func (s *Service) attachOperators(ctx context.Context, views []View) error {
 		byID[r.ID] = r
 	}
 	for i := range views {
-		id := operatorID(views[i].Connector)
-		views[i].Operator, views[i].OperatorAI = byID[id], views[i].OperatorIid.Valid
+		if !views[i].OperatorIid.Valid {
+			continue
+		}
+		views[i].Operator, views[i].HasOperator = byID[views[i].OperatorIid.String], true
 	}
 	return nil
 }
 
-// operatorID is the intelligence that operates the connector: its operator, else its owner.
+// operatorID is the intelligence a connector's messages are attributed to in the rooms the
+// retired bridges still hold: its operator, else its owner.
 func operatorID(c db.Connector) string {
 	if c.OperatorIid.Valid {
 		return c.OperatorIid.String
@@ -320,6 +357,9 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]View, error) {
 		out = append(out, v)
 	}
 	if err := s.attachOperators(ctx, out); err != nil {
+		return nil, err
+	}
+	if err := s.attachQueued(ctx, out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -375,8 +415,20 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	if err != nil {
 		return View{}, err
 	}
+	deliver, mentionsOnly, err := s.delivery(c, in)
+	if err != nil {
+		return View{}, err
+	}
+	operatorChanged := operator != c.OperatorIid
+	gainedOperator := operatorChanged && !c.OperatorIid.Valid // it was idle until now: start it
 	if string(scope) != c.AutoRouteScope || routeRoom != c.AutoRouteRoomID {
 		changed = append(changed, "auto_route")
+	}
+	if deliver != dto.ConnectorDeliver(c.Deliver) {
+		changed = append(changed, "deliver")
+	}
+	if mentionsOnly != c.GroupsMentionsOnly {
+		changed = append(changed, "groups_mentions_only")
 	}
 	toggled := enabled != c.Enabled
 	// ROUTE-09: saved catch-all settings clear a detail that catch-all routing set.
@@ -392,18 +444,25 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 		}); err != nil {
 			return err
 		}
+		if deliver != dto.ConnectorDeliver(c.Deliver) || mentionsOnly != c.GroupsMentionsOnly {
+			if err := q.UpdateConnectorDelivery(ctx, db.UpdateConnectorDeliveryParams{
+				Deliver: string(deliver), GroupsMentionsOnly: mentionsOnly, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
+			}); err != nil {
+				return err
+			}
+		}
 		if clearDetail {
 			if err := q.SetConnectorLastError(ctx, db.SetConnectorLastErrorParams{LastError: "", ID: id}); err != nil {
 				return err
 			}
 		}
-		if from, to := operatorID(c), operatorID(db.Connector{OwnerID: c.OwnerID, OperatorIid: operator}); from != to {
+		if operatorChanged {
 			if err := q.SetConnectorOperator(ctx, db.SetConnectorOperatorParams{OperatorIid: operator, ID: id}); err != nil {
 				return err
 			}
 			if err := s.audit.Record(ctx, q, audit.Entry{
 				ActorID: p.UserID, Action: audit.ActionConnectorOperator, TargetKind: audit.TargetConnector, TargetID: id,
-				Detail: map[string]any{"kind": c.Kind, "name": name, "from": from, "to": to},
+				Detail: map[string]any{"kind": c.Kind, "name": name, "from": c.OperatorIid.String, "to": operator.String},
 			}); err != nil {
 				return err
 			}
@@ -460,32 +519,49 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 		switch {
 		case !enabled && toggled:
 			s.d.Runner.Stop(id)
-		case enabled && (toggled || in.Config != nil):
+		case enabled && (toggled || in.Config != nil || gainedOperator): // a connection runs once an AI operates it (CID-02)
 			s.d.Runner.Apply(id)
 		}
 	}
 	return s.Get(ctx, p, id)
 }
 
-// operator returns the connector's operator_iid after the request (ACC-01): unchanged when none
-// is given, NULL for the owner (an empty id or the owner's own), else an AI the owner owns. Any
-// other id, also one that does not exist, is a validation error on operator_id.
+// operator returns the connector's operator_iid after the request (CID-01): unchanged when none
+// is given, else an AI the owner owns. Anything else is a validation error on operator_id: an
+// empty id, the owner's own, another owner's AI (also one shared with the owner), a person, a user
+// and an id that does not exist.
 func (s *Service) operator(ctx context.Context, c db.Connector, requested *string) (sql.NullString, error) {
 	if requested == nil {
 		return c.OperatorIid, nil
 	}
 	id := strings.TrimSpace(*requested)
-	if id == "" || id == c.OwnerID {
-		return sql.NullString{}, nil
-	}
 	a, err := s.d.Store.R().GetAgent(ctx, id)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return sql.NullString{}, err
 	}
 	if err != nil || a.OwnerID != c.OwnerID {
-		return sql.NullString{}, &validation.Error{Fields: map[string]string{"operator_id": "must be you or an AI you own"}}
+		return sql.NullString{}, &validation.Error{Fields: map[string]string{"operator_id": "must be an AI you own"}}
 	}
 	return sql.NullString{String: id, Valid: true}, nil
+}
+
+// delivery returns the delivery settings after the request (CID-12): deliver must be dms, groups
+// or all, and an absent field is unchanged. Create never sets them: a new connection takes the
+// column defaults, deliver=all and mentions-only on (CID-27).
+func (s *Service) delivery(c db.Connector, in UpdateInput) (dto.ConnectorDeliver, bool, error) {
+	deliver, mentionsOnly := dto.ConnectorDeliver(c.Deliver), c.GroupsMentionsOnly
+	if in.Deliver != nil {
+		switch *in.Deliver {
+		case dto.ConnectorDeliverDMs, dto.ConnectorDeliverGroups, dto.ConnectorDeliverAll:
+			deliver = *in.Deliver
+		default:
+			return "", false, &validation.Error{Fields: map[string]string{"deliver": "must be dms, groups or all"}}
+		}
+	}
+	if in.GroupsMentionsOnly != nil {
+		mentionsOnly = *in.GroupsMentionsOnly
+	}
+	return deliver, mentionsOnly, nil
 }
 
 // autoRoute returns the catch-all settings after in (ROUTE-04): the scope must be one of

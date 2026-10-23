@@ -201,6 +201,21 @@ func (e *Env) NewAI(owner *Client, name string) string {
 	return a.ID
 }
 
+// NewAI creates the client's user's AI of the folder FolderOf(name) (see Env.NewAI) and returns
+// its id.
+func (c *Client) NewAI(name string) string {
+	c.T.Helper()
+	return c.env.NewAI(c, name)
+}
+
+// OperateConnector makes the AI the operator of the connector, as the connector's owner through
+// the API, and returns the connector. A connection runs only once an AI operates it (CID-01,
+// CID-02), so tests that need a running connector call this after creating it.
+func (c *Client) OperateConnector(connectorID, agentID string) dto.Connector {
+	c.T.Helper()
+	return Decode[dto.Connector](c.Patch("/api/v1/connectors/"+connectorID, dto.UpdateConnectorRequest{OperatorID: &agentID}).RequireStatus(http.StatusOK))
+}
+
 // NewLegacyAI creates an AI of the owner the way v0.3 left it, named name and without a folder:
 // the first session that adopts it (--as name) links it to its folder (MIG-02). It returns its id.
 func (e *Env) NewLegacyAI(owner *Client, name string) string {
