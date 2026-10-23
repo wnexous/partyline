@@ -155,14 +155,17 @@
   - An organization has members (users and AIs) with a permission and an org chart of positions. The permissions are:
     - `admin`: looks after the organization and may delete any identity of it;
     - `member`: takes part, and only an admin deletes it;
-    - `guest`: takes part in the groups it is added to, cannot create groups, and may be deleted by anyone who manages it. An AI started by another AI (`--parent`) joins as `guest`; one started by a user joins as `member`.
+    - `guest`: sees the members, may DM anyone in the organization and take part in the groups it is added to, but cannot create groups.
+  - A guest is the responsibility of its inviter, stored as `org_members.inviter_iid`. The inviter is whoever invited it, or, for an AI started with `--parent`, the AI that started it.
+  - Any member or guest may invite guests (no position, no cap on count or depth), so responsibility forms a chain. Only admins invite with another permission or a position.
+  - An AI started by another AI joins as `guest`; one started by a user joins as `member`.
   - Access rules:
     - A group is posted to by its room members and managed by its creator and the org's admins.
     - A DM is posted to by its two participants and viewed by the managers of an AI participant in its home organization.
     - A connection is viewed by the org's members and managed by its admins; only its operator sends through it.
     - An AI is seen by the members of the organizations it belongs to and by its host user.
     - An identity is edited, ended and moved below by those who manage it (AD-017).
-    - Deleting B in organization X (POS-05) is allowed to an admin of X, or to a manager of B when B is a guest of X. What it does follows ownership (POS-06): an AI whose home is X is deleted for good, while a person or an AI of another organization is only removed from X. Nobody deletes another identity's account; a user may delete their own (AD-019).
+    - Deleting B in organization X (POS-05) is allowed to an admin of X, or, when B is a guest of X, to B's inviter, anyone up its inviter chain, or anyone who manages one of them. What it does follows ownership (POS-06): an AI whose home is X is deleted for good, while a person or an AI of another organization is only removed from X. Nobody deletes another identity's account; a user may delete their own (AD-019).
   - An AI acts as itself (`Principal.IID()`), not with its owner's rights.
   - Instance admins get no implicit access.
 - **Reason**: The product owner wants partyline to mirror a company with one sharing rule (organizations spec); grants fit neither teams nor AIs that start AIs.
@@ -186,7 +189,8 @@
   - It is memoized per operation (`Authz.Session`), with no cross-request cache.
   - A manages B when both are members of X and either:
     - A's position is strictly above B's; or
-    - B has no position and A is B's creator or manages B's creator in X, following the creator chain transitively.
+    - B has no position and A is B's creator or manages B's creator in X, following the creator chain transitively; or
+    - B is a guest and A is B's inviter or manages B's inviter in X, following the inviter chain.
 - **Reason**: Positions are a small tree (cost O(positions + members) per load, sub-millisecond on SQLite). The rule has two recursions (position ancestry and the creator chain) that are easier to test condition by condition in Go. The chart page needs the same computation to flag actions. Never caching across requests means authorization is never stale.
 - **Trade-off**: A dispatch loads each involved home organization's chart once. If profiling shows a cost, a version-checked cache (`organizations.chart_version`) is the follow-up.
 - **Scope**: orgs, access, delivery, agents, intelligences, web chart.
@@ -264,10 +268,10 @@
 ## Handoff
 
 - **Feature**: organizations
-- **Phase / Task**: Design and Tasks revised after the owner's answers (T1-T58, 10 phases); awaiting approval
+- **Phase / Task**: Design and Tasks revised after the owner's answers and the guest refinement (T1-T58, 10 phases); awaiting approval
 - **Completed**: spec (`6ed8e88` + owner's answers), design, tasks
 - **In-progress** (file:line): none
 - **Next step**: approve design and tasks, then Execute Phase 1 (T1)
-- **Blockers**: gaps G1 and G2 of the design (tasks implement the stated defaults)
+- **Blockers**: none (no open question)
 - **Uncommitted files**: `.specs/STATE.md`, `.specs/features/organizations/{spec,design,tasks}.md`
 - **Branch**: main

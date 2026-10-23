@@ -2,7 +2,7 @@
 
 **Spec**: `.specs/features/organizations/spec.md`
 **Status**: Draft
-**Decisions**: AD-016 to AD-022 in `.specs/STATE.md`. Revised after the owner's answers (2026-10-23): three permissions, deletion follows ownership, self-deletion, machines become internal, chats per organization.
+**Decisions**: AD-016 to AD-022 in `.specs/STATE.md`. Revised after the owner's answers (2026-10-23): three permissions, deletion follows ownership, self-deletion, machines become internal, chats per organization; guests are the responsibility of their inviter (inviter chain).
 
 ---
 
@@ -113,10 +113,12 @@ CREATE TABLE org_members (
     iid         TEXT NOT NULL REFERENCES intelligences (id) ON DELETE CASCADE,
     permission  TEXT NOT NULL CHECK (permission IN ('admin', 'member', 'guest')),
     position_id TEXT REFERENCES positions (id) ON DELETE SET NULL,
+    inviter_iid TEXT REFERENCES intelligences (id) ON DELETE SET NULL, -- a guest's inviter (Guests, OMEM-01); NULL otherwise
     joined_at   INTEGER NOT NULL,
     PRIMARY KEY (org_id, iid)                       -- one membership, so at most one position (OMEM-03)
 );
 CREATE INDEX org_members_iid ON org_members (iid);
+CREATE INDEX org_members_inviter ON org_members (org_id, inviter_iid) WHERE inviter_iid IS NOT NULL;
 CREATE INDEX org_members_position ON org_members (position_id);
 
 CREATE TABLE org_invitations (
@@ -198,6 +200,7 @@ type Member struct {
     Permission Permission
     PositionID string // "" = no position
     CreatorIID string // agents.creator_iid; "" for users
+    InviterIID string // org_members.inviter_iid: a guest's inviter; "" otherwise
 }
 
 type Position struct {
@@ -228,6 +231,13 @@ type Chart struct {
      the spec Assumption's "sits directly under its creator" applied transitively (refinement R3).
    - A visited set stops cycles. Creators are fixed at creation, but merges re-point them.
    - The depth is at most the number of members.
+4. **Guests (spec Assumption "Guests").** If B is a `guest`, A also manages B when A is B's inviter,
+   or A manages B's inviter in X. The recursion walks the inviter chain: a guest invited by a guest
+   is reached by the first guest's inviter, by everyone up the chain, and by whoever manages any of
+   them. It stops at an inviter that is no longer a member, or NULL; the same visited set applies.
+   - For an AI started with `--parent`, the inviter is the starter (its creator), so rules 3 and 4
+     agree.
+   - A guest that holds a position is also managed through rule 2.
 
 Consequences that need no extra code:
 - A root position holder has nobody strictly above, so nobody in X manages them. Only an `admin`
@@ -236,7 +246,9 @@ Consequences that need no extra code:
   is, remove) them or give them a position.
 
 **Deletion rule (POS-05).** `Chart.CanDelete(a, b)` is true exactly when `a != b`, both are
-members, and either `a` is an `admin` of X, or `b` is a `guest` of X and `Manages(a, b)`.
+members, and either `a` is an `admin` of X, or `b` is a `guest` of X and `Manages(a, b)`. With
+rule 4, this covers "B's inviter, an identity up B's inviter chain, or an identity that manages one
+of them".
 Management alone therefore lets a manager edit, end and move a subordinate (POS-04), but delete
 only guests. What a deletion does follows ownership (POS-06, AD-019):
 - an AI whose home organization is X is deleted for good (`Registry.Delete`);
@@ -297,7 +309,7 @@ The rules are summarized here; every route group is listed in the matrix below.
 
 | Resource | View | Act / post | Manage |
 | --- | --- | --- | --- |
-| Organization | members (all three permissions) | `member` and `admin` create groups; a `guest` cannot (OMEM-04) | `admin`: name, slug, avatar, positions, invitations, permissions, connections, deleting the organization (OMEM-04) |
+| Organization | members of all three permissions, guests included (they see the members and the chart, CHART-02) | `member` and `admin` create groups; a `guest` cannot (OMEM-04). Any member or guest invites **guests** (no position), without limit on count or chain depth; it becomes the guest's inviter | `admin`: name, slug, avatar, positions, invitations with any permission or position, permissions, connections, deleting the organization (OMEM-04) |
 | Group (room `group`) | room members; the org's admins (manage implies view) | room members (guests included) | the group's creator and the org's admins |
 | DM | participants; managers of an AI participant in its home org (view only; replaces AD-013) | participants | nobody (DM-02 unchanged) |
 | AI | members of any org it belongs to; its host user | members DM it; only the operator sends through a connection (CID-03) | its managers in any shared org: edit profile and settings, end session, move below their own position (POS-04). Delete in X per `CanDelete`; it is a hard delete only in its home org (POS-05, POS-06). The AI edits its own profile |
@@ -318,6 +330,7 @@ Roles:
 - **Out**: not a member. Includes an instance admin without membership.
 - **M**: `member` with no relation to the target.
 - **G**: `guest` with no relation to the target. It is treated as M everywhere except group creation (403).
+- **Inv**: the target guest's inviter, or anyone up its inviter chain. This is a case of Mgr (rule 4).
 - **Mgr**: manages the target (POS-03).
 - **A**: org `admin`.
 - **Self**: the target itself.
@@ -342,7 +355,7 @@ A dash means "same as the column to its left".
 | `GET /orgs/{org}/members` | 404 | 200 | 200 | 200 | 200 |
 | `PATCH /orgs/{org}/members/{iid}` `permission` | 404 | 403 | 403 | 200; 409 `last_admin` (OMEM-05) | 403 unless A |
 | `PATCH /orgs/{org}/members/{iid}` `position_id` | 404 | 403 | 200 to a position strictly below the manager's own; null or anything else 403 | 200 for any position or null | 403 unless A |
-| `DELETE /orgs/{org}/members/{iid}` ("delete in X") | 404 | 403 | 204 when the target is a `guest`, else 403 (POS-05) | 204 for any target; 409 `last_admin` | 204 (leave); 409 `last_admin`; 409 `home_organization` when an AI leaves its home org |
+| `DELETE /orgs/{org}/members/{iid}` ("delete in X") | 404 | 403 | 204 when the target is a `guest` (Mgr includes Inv), else 403 (POS-05) | 204 for any target; 409 `last_admin` | 204 (leave); 409 `last_admin`; 409 `home_organization` when an AI leaves its home org |
 
 The effect of `DELETE /orgs/{org}/members/{iid}` follows ownership: an AI whose home is the org is
 deleted for good, and anything else is removed from the org only (POS-06).
@@ -354,13 +367,14 @@ deleted for good, and anything else is removed from the org only (POS-06).
 | `POST /orgs/{org}/positions` | 404 | 403 | 403 | 201; 422 for a name outside 1-60 or a parent from another org; 409 `conflict` for a duplicate name |
 | `PATCH /orgs/{org}/positions/{id}` | 404 | 403 | 403 | 200; 409 `position_cycle` (POS-02) |
 | `DELETE /orgs/{org}/positions/{id}` | 404 | 403 | 403 | 204 (POS-09) |
-| `GET /orgs/{org}/chart` | 404 (CHART-02) | 200 | 200 | 200, with action flags per target (CHART-03) |
+| `GET /orgs/{org}/chart` | 404 (CHART-02) | 200 (guests included) | 200 | 200, with action flags per target (CHART-03) |
 
 **Invitations** (`org_invitations_handlers.go`)
 
-| Route | Out | M | A | Invitee user / Mgr of invitee AI |
+| Route | Out | M / G | A | Invitee user / Mgr of invitee AI |
 | --- | --- | --- | --- | --- |
-| `POST /orgs/{org}/invitations` | 404 | 403 | 201; 409 `already_member`; 429 `rate_limited` above 30 per hour; 404 `contact_not_found` for an unknown handle | — |
+| `POST /orgs/{org}/invitations` | 404 | 201 for `permission: guest` without a position; 403 for any other permission or with a position (OMEM-04) | 201 for any permission and position | — |
+| (both columns) | | 409 `already_member`; 429 `rate_limited` above 30 per hour per org; 404 `contact_not_found` for an unknown handle | | |
 | `GET /orgs/{org}/invitations`, `DELETE …/{id}` | 404 | 403 | 200 / 204 | — |
 | `GET /api/v1/invitations` | own, plus those of the AIs the caller manages in their home org | — | — | — |
 | `POST /api/v1/invitations/{id}/accept\|decline` | 404 for anyone else | — | — | 200; 410 `gone` once expired (OMEM-07) |
@@ -460,8 +474,8 @@ is **created**:
      `admin` there. Otherwise 403 `forbidden`, and nothing is created.
    - Without `Position`, the AI has no position.
 5. **Permission (ORG-04).** The AI joins as `member` when its creator is a user, and as `guest`
-   when its creator is an AI (a valid `--parent`). A start whose `--parent` falls back to the host
-   user joins as `member`.
+   when its creator is an AI (a valid `--parent`), with `inviter_iid` = that AI. A start whose
+   `--parent` falls back to the host user joins as `member`.
 6. The AI row is written with `org_id` and `creator_iid`, together with an `org_members` row
    (permission, position) and an audit entry `org.member_join` with `by: start`.
 
@@ -636,12 +650,12 @@ The routes are file-based (TanStack Router). New files are under `web/src/routes
 | Page / component | Content | ACs |
 | --- | --- | --- |
 | `components/org-switcher.tsx` in `AppSidebar`'s header (and `MobileBar`) | Lists my organizations with avatar, permission and an **unread count**, plus "+ New organization". The unread count sums the unread counts of the conversations tagged with that org (`org_ids`); a DM shared by two orgs counts in both. The selection is kept per viewer in `localStorage` (`pl.org`, wrapped in try/catch) | ORG-01, CHART-02 |
-| Sidebar (`MessengerPanel`) | Shows the selected organization's groups, plus each DM whose other party is also a member of that organization (owner-confirmed). A DM whose other party shares no organization with the viewer is listed under the viewer's default organization (gap G1) | ORG-02 |
+| Sidebar (`MessengerPanel`) | Shows the selected organization's groups, plus each DM whose other party is also a member of that organization (owner-confirmed). A DM whose other party shares no organization with the viewer is listed under the viewer's default organization (spec assumption) | ORG-02 |
 | `orgs/index.tsx` | My organizations; create dialog (name 1-100); **pending invitations** for me and for AIs I manage, with accept and decline. An invitation that carries a position, or the `guest` permission, says what it grants: "Identities above <position> will manage you." plus, for a guest, "and may remove you from <org>." | ORG-01, OMEM-01, OMEM-02, OMEM-07 |
 | `orgs/$orgId/settings.tsx` | Name, slug, avatar (admin); "Leave"; "Delete organization", which shows the `organization_not_empty` message with counts | OMEM-04, ORG-06, OMEM-05 |
-| `orgs/$orgId/members.tsx` | Members table: identity, kind, permission (admin, member, guest), position. Per-row actions follow server flags: "Delete" for an AI of this org, "Remove from <org>" for anyone else. Invite dialog (admin): handle picker reusing `MemberPicker`, permission, optional position. Pending invitations with revoke. `last_admin` and `home_organization` errors are shown inline | OMEM-01..06, POS-05, POS-06 |
+| `orgs/$orgId/members.tsx` | Members table: identity, kind, permission (admin, member, guest), position, and "invited by" for guests. Per-row actions follow server flags: "Delete" for an AI of this org, "Remove from <org>" for anyone else. Invite dialog: an admin picks any permission and an optional position; any other member or guest invites as guest only (no permission or position fields). Pending invitations with revoke. `last_admin` and `home_organization` errors are shown inline | OMEM-01..06, POS-05, POS-06 |
 | `orgs/$orgId/positions.tsx` | Admin editor: a nested list with add child, rename, a parent select that excludes the subtree, and delete. The delete confirmation explains POS-09. `position_cycle` is shown inline. Non-admins are redirected to the chart | POS-01, POS-02, POS-09 |
-| `orgs/$orgId/chart.tsx` | `role="tree"` with `treeitem`, `aria-expanded`, `aria-level` and a roving tabindex (arrow keys, Home/End, Enter). Each holder shows avatar, name, @handle, a person/AI badge, the online dot, and an admin or guest badge. Positionless members appear under their creator, else under "Unassigned". The actions "delete" (an AI of this org), "remove" (anyone else) and "move" appear only where the server flags allow; "edit positions" only for admins. At 360 px, indentation is capped at 4 levels and names truncate, with no horizontal scroll | CHART-01..04 |
+| `orgs/$orgId/chart.tsx` | `role="tree"` with `treeitem`, `aria-expanded`, `aria-level` and a roving tabindex (arrow keys, Home/End, Enter). Each holder shows avatar, name, @handle, a person/AI badge, the online dot, and an admin or guest badge. Positionless guests appear under their inviter (CHART-02), other positionless members under their creator, else under "Unassigned". The actions "delete" (an AI of this org), "remove" (anyone else) and "move" appear only where the server flags allow; "edit positions" only for admins. At 360 px, indentation is capped at 4 levels and names truncate, with no horizontal scroll | CHART-01..04 |
 | `connectors/$connectorId.tsx` (and index) | Shows the owning organization. Admins edit; others are read-only. The operator picker lists the org's AIs only. The sharing dialog is removed. The list is filtered by the switcher | ORG-03, ORG-07, OMEM-04 |
 | `components/new-group-dialog.tsx` | Organization select (default: the switcher's; orgs where I am a guest are not offered); the member picker offers that org's members | ORG-03, OMEM-04 |
 | `contacts.$id.tsx` | Memberships (org, permission, position). For managers: "End session" (AI), "Edit", and per organization "Delete" or "Remove from <org>" where the profile's flags allow (POS-05, POS-06). The machine row is removed; the folder stays | POS-04, POS-05, POS-06 |
@@ -706,9 +720,9 @@ The server needs no version check: every new header is optional (AD-020).
 | ORG-05 | Start in a foreign org → 403 and no AI row (`agent_placement_test.go`) | e2e |
 | ORG-06 | Delete an org with one AI, one connection or one group → 409 in each case on its own (L-018); empty → 204 | e2e |
 | ORG-07 | Operator from another org → 422 `operator_id`; from the same org → 200 | e2e |
-| OMEM-01..02 | Invite by handle → pending; accept → member with that permission and position; an AI invitee is accepted by its manager and refused (404) for a non-manager; inviting again updates the row | e2e |
+| OMEM-01..02 | Invite by handle → pending; accept → member with that permission and position; a member and a guest each invite a guest → 201 with themselves as inviter; a three-level guest chain is recorded; an AI invitee is accepted by its manager and refused (404) for a non-manager; inviting again updates the row | e2e |
 | OMEM-03 | One identity in two orgs with different permissions and positions | integration |
-| OMEM-04 | Matrix: each admin-only action by a member → 403 (one case per action); a guest creating a group → 403 while a member → 201 | e2e |
+| OMEM-04 | Matrix: each admin-only action by a member → 403 (one case per action); a member inviting as `member`, and a guest inviting with a position → 403; a guest creating a group → 403 while a member → 201 | e2e |
 | OMEM-05 | Demote, remove and leave of the last admin → 409; with a second admin → OK | integration + e2e |
 | OMEM-06 | Removal drops the member's group memberships of that org only and its position; the org's AIs stay | e2e |
 | OMEM-07 | Fake clock: 14 d − 1 ms accept works, at 14 d → 410, and the ticker deletes the row (L-016) | integration |
@@ -717,14 +731,14 @@ The server needs no version check: every new header is optional (AD-020).
 | POS-02 | A→B→C, setting A's parent to C → 409 and nothing changes; setting A's parent to itself → 409 | integration |
 | POS-03 | Pure `Chart` table tests: each condition alone excludes (L-042); peer, above, two above, positionless with a creator, creator's superior, transitive creator chain, a creator who left, cross-org | unit |
 | POS-04 | A manager edits the profile, ends the session (the socket closes with 4002) and moves a subordinate between positions below its own; a move to its own level or to none → 403 | e2e |
-| POS-05 | Delete matrix: admin deletes a member → 204; a manager deletes a guest below → 204; a manager deletes a member below → 403; a peer deletes a guest → 403; an invisible target → 404 (each guard isolated, L-018) | e2e |
+| POS-05 | Delete matrix: admin deletes a member → 204; a guest's inviter → 204; the inviter's inviter (chain) → 204; the manager of an inviter → 204; a manager deletes a member below → 403; a peer deletes a guest it did not invite → 403; an invisible target → 404 (each guard isolated, L-018) | e2e |
 | POS-06 | Deleting an AI of the org → gone everywhere; deleting a person → removed from that org only (still a member elsewhere, can log in); deleting an AI of another org → removed only; self-deletion with the password → account, sessions and tokens gone (401), hosted AIs kept as unlinked identities in their orgs, groups and connections kept (owner re-pointed) | e2e |
 | POS-07 | `--position` below the creator → held; same level → 403; an admin creator at any position → held; unknown → 422 | e2e |
 | POS-08 | `--parent @lead` hosted on the same user → creator is the parent; a parent hosted by someone else → creator is the host user | e2e |
 | POS-09 | Deleting a middle position moves its holders and children to its parent; deleting a root leaves them with no position and the children become roots | integration |
 | POS-10 | Trusted from a manager; untrusted from a sibling AI of the same user, from a peer, from a subordinate and from an outsider; platform sender linked to a manager → trusted, linked to a peer → not; room instructions likewise (`delivery_trust_test.go`) | e2e |
 | CHART-01 | The API returns the tree with holders and fields; positionless members appear under their creator or Unassigned; the web renders it | e2e + web unit |
-| CHART-02 | Outsider → 404 (API); the web route shows not found | e2e + web unit |
+| CHART-02 | Outsider → 404 (API); a guest → 200; guests appear under their inviter; the web route shows not found to an outsider | e2e + web unit |
 | CHART-03 | Flags per target for an admin, a manager and a member; the web shows actions only where flagged (through the page, L-007) | e2e + web unit |
 | CHART-04 | `vitest-axe` with no violations; keyboard navigation test; Playwright at 360 px asserts `scrollWidth <= clientWidth` (L-009) | web unit + Playwright |
 | OUPG-01 | v0.5 database fixture (`v03_fixture` upgraded to 0018) → upgrade → personal orgs, resources moved, grantees as members, room members inside the org, history counts unchanged; an injected hook failure rolls back everything (`organizations_backfill_test.go`, `api/upgrade_test.go`) | integration + e2e |
@@ -757,7 +771,7 @@ The server needs no version check: every new header is optional (AD-020).
 | Organization address | Unique `slug` (from the name or username) next to the id; `--org` takes either | The CLI needs a typeable name; refinement R1 |
 | Position names | Unique per organization, case-insensitive | `--position <name>` must be unambiguous; refinement R2 |
 | Invitations | One pending row per (org, invitee); answered or expired rows are deleted and audited | "Inviting again updates the pending invitation" |
-| Rate limit | Count of `org.invite` audit entries in the last hour | Durable across restarts |
+| Rate limit | Count of `org.invite` audit entries in the last hour, per organization, guest invitations included | Durable across restarts. The spec's "without limit" for guest invitations is read as no cap on the number of guests or the chain depth; the sweep's 30 per hour still throttles bursts |
 | Group management | The creator and the org's admins | Replaces the room `manage` grant |
 | Member move by a manager | Only to positions strictly below the manager's own; clearing a position is admin-only | POS-04 "move between positions below A's" |
 | AI and its home org | An AI cannot leave its home org (409 `home_organization`, owner's answer to Q3); deleting it there is a hard delete | ORG-02 exactly one owning org |
@@ -787,10 +801,9 @@ The owner's answers (2026-10-23) settled the earlier Q1-Q4: deletion follows own
 deletes another identity's account (Q1, Q2); an AI cannot leave its home org (Q3); users may
 delete their own account (Q4).
 
-Remaining gaps:
-- **G1.** A DM whose other party shares no organization with the viewer would appear under no
-  organization in the sidebar. Default: it is listed under the viewer's default organization.
-- **G2.** CHART-03 still says "delete", "move" and "remove" are offered "only where the viewer
-  manages the target", but POS-05 lets an admin delete members it does not manage. Default: the
-  chart follows POS-05 (the server flags), and CHART-03's wording should say "only where the
-  viewer may".
+The owner then refined guests (inviter chain) and settled the gaps:
+- **G1** (a DM whose other party shares no organization) is listed under the viewer's default
+  organization, now a spec assumption;
+- **G2** is resolved: CHART-03 now says "delete only where POS-05 allows".
+
+No question is open.

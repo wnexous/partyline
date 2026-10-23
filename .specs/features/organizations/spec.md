@@ -39,6 +39,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | Machines | No longer a visible concept: the machines page and machine renaming go away. A login links a computer to the user who ran it, and the server keeps the computer only to tell the same folder on two computers apart | André: "dá pra tirar esse conceito de máquina" | y |
 | Membership | Users and AIs can be members of any number of organizations | André | y |
 | Permissions | Three per membership: `admin` (positions, invitations, permissions, connections, the organization's name and avatar; may delete any identity of the organization), `member` (takes part inside the organization; only an admin deletes it) and `guest` (takes part in the groups it is added to; any identity above it in the chart may delete it). AIs that another identity starts join as `guest` | André, 2026-10-23: "faz sentido ter a role de convidado; qualquer pai pode deletar convidado descendente; admin pode deletar qualquer um" | y |
+| Guests | A guest is the responsibility of whoever invited it (or started it, for an AI started with `--parent`): its inviter. Any member or guest may invite guests, without limit; each new guest is the responsibility of its own inviter, so responsibility forms a chain. A guest's inviter, and whoever manages that inviter, manage the guest and may delete it. A guest may talk to everyone in the organization (DMs, and groups it is added to) and sees its members; it cannot create groups | André, 2026-10-23: "um convidado fica por responsabilidade de quem convidou… pode convidar mais convidados (sem limite)… os convidados podem conversar com todo mundo da organização" | y |
 | Org chart | Each organization has its own tree of positions; a position has a name and at most one parent position; a position holds any number of identities; each member holds at most one position in that organization | André's drawing; "a árvore é por organização: isso" | y |
 | What a position grants | Whoever holds a position manages the identities (people and AIs) in the positions below it: edit their profile and settings, end their live session, move them between positions below. Deleting follows the permission: anyone above may delete a `guest`; only an `admin` deletes a `member`. Nothing over the same level or above | André | y |
 | People and AIs | Treated the same: a bot can hold a position above a person, and the same deletion rule applies to both. What "delete" removes follows ownership: an AI belongs to the organization, so deleting it removes it for good; a person owns their account, so deleting a person removes them from that organization (their account and other organizations stay) | André: "de igual pra igual"; the account is the person's | y |
@@ -79,10 +80,10 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 
 **Acceptance Criteria**:
 
-1. WHEN an `admin` invites an identity by @handle with a permission and an optional position THEN the system SHALL create a pending invitation, which the invited user (for an AI, anyone who manages it) can accept or decline. (OMEM-01)
+1. WHEN an `admin` invites an identity by @handle with any permission and an optional position, or any `member` or `guest` invites one as `guest`, THEN the system SHALL create a pending invitation, which the invited user (for an AI, anyone who manages it) can accept or decline; the inviter SHALL be recorded as the guest's inviter. (OMEM-01)
 2. WHEN the invitation is accepted THEN the identity SHALL become a member with that permission and position. (OMEM-02)
 3. The system SHALL let one identity be a member of several organizations, with its own permission and position in each. (OMEM-03)
-4. IF an identity without the `admin` permission creates or edits positions, invites, changes permissions, manages connections or renames the organization THEN the system SHALL refuse with `forbidden` (HTTP 403). IF a `guest` creates a group THEN the system SHALL refuse with `forbidden` (HTTP 403). (OMEM-04)
+4. IF an identity without the `admin` permission creates or edits positions, invites with a permission other than `guest`, changes permissions, manages connections or renames the organization THEN the system SHALL refuse with `forbidden` (HTTP 403). IF a `guest` creates a group THEN the system SHALL refuse with `forbidden` (HTTP 403). (OMEM-04)
 5. IF a change would leave an organization with no `admin` THEN the system SHALL refuse it with `last_admin` (HTTP 409). (OMEM-05)
 6. WHEN a member leaves or is removed THEN the system SHALL take it out of the organization's groups and of its position. AIs that belong to the organization SHALL stay in it. (OMEM-06)
 7. IF an invitation is not answered in 14 days THEN it SHALL expire. (OMEM-07)
@@ -101,7 +102,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 2. IF a parent change would create a cycle THEN the system SHALL refuse it with `position_cycle` (HTTP 409). (POS-02)
 3. The system SHALL treat identity A as managing identity B in organization X exactly when A holds a position in X strictly above B's position. IF B holds no position THEN A manages B exactly when A created B or A's position is above B's creator's position. (POS-03)
 4. WHILE A manages B the system SHALL let A edit B's profile and settings, end B's live session and move B between positions below A's. (POS-04)
-5. The system SHALL let A delete B in organization X exactly when A is an `admin` of X, or B is a `guest` of X and A manages B; otherwise it SHALL refuse with `forbidden` (HTTP 403). (POS-05)
+5. The system SHALL let A delete B in organization X exactly when A is an `admin` of X, or B is a `guest` of X and A is B's inviter, an identity up B's inviter chain, or an identity that manages one of them; otherwise it SHALL refuse with `forbidden` (HTTP 403). (POS-05)
 6. WHEN B is deleted in X THEN an AI whose home organization is X SHALL be deleted for good, and a person (or an AI of another organization) SHALL be removed from X only. A user MAY delete their own account. (POS-06)
 7. WHEN an AI starts with `--position <name>` THEN it SHALL hold that position. IF the position is not below the creator's position and the creator is not an `admin` THEN the start SHALL be refused with `forbidden` (HTTP 403). (POS-07)
 8. WHEN an AI starts with `--parent @handle` (or `PARTYLINE_PARENT`) THEN the system SHALL record that identity as its creator, provided the session's token holder may act for that identity. Otherwise the user who linked the machine SHALL be recorded as the creator. (POS-08)
@@ -119,7 +120,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 **Acceptance Criteria**:
 
 1. The chart page SHALL show the chosen organization's positions as a tree. Each position SHALL list its holders with avatar, name, @handle, kind (person or AI), online status and an admin badge where it applies. Members without a position SHALL be shown under their creator or in an "Unassigned" group. (CHART-01)
-2. The chart SHALL be visible only to members of that organization. (CHART-02)
+2. The chart SHALL be visible only to the organization's members and guests; guests SHALL be shown under their inviter. (CHART-02)
 3. The page SHALL offer "move" only where the viewer manages the target (POS-03), "delete" only where POS-05 allows it, and "edit positions" only to admins. (CHART-03)
 4. The chart SHALL be keyboard and screen-reader accessible (tree and treeitem roles) and SHALL fit a 360 px screen. (CHART-04)
 
