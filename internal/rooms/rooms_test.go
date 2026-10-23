@@ -474,8 +474,8 @@ func TestUpdateAndRemoveMember(t *testing.T) {
 	require.ErrorIs(t, f.svc.RemoveMember(ctx, alice, r.ID, m.ID), access.ErrNotFound)
 }
 
-// ROOM-02: deleting a room deletes its messages, attachments, cursors, outbox entries,
-// members and grants, and nothing of other rooms.
+// ROOM-02: deleting a room deletes its messages, attachments, cursors, members and grants, and
+// nothing of other rooms.
 func TestDeleteRoomRemovesEverything(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
@@ -492,7 +492,6 @@ func TestDeleteRoomRemovesEverything(t *testing.T) {
 		msg := store.NewID()
 		f.exec(t, "INSERT INTO messages (id, room_id, seq, author_kind, author_id, text, created_at) VALUES (?, ?, 1, 'user', ?, 'hi', ?)", msg, r.ID, alice.UserID, t0.UnixMilli())
 		f.exec(t, "INSERT INTO attachments (id, message_id, sha256, mime, name, size, created_at) VALUES (?, ?, 'abc', 'text/plain', 'a.txt', 3, ?)", store.NewID(), msg, t0.UnixMilli())
-		f.exec(t, "INSERT INTO outbox (id, message_id, chat_id, next_attempt_at, updated_at) VALUES (?, ?, ?, ?, ?)", store.NewID(), msg, chat, t0.UnixMilli(), t0.UnixMilli())
 		f.exec(t, "INSERT INTO agent_cursors (agent_id, room_id, seq) VALUES (?, ?, 1)", agent, r.ID)
 	}
 	sub, cancel := f.bus.Subscribe(8)
@@ -508,15 +507,13 @@ func TestDeleteRoomRemovesEverything(t *testing.T) {
 			"grants":      f.count(t, "SELECT COUNT(*) FROM grants WHERE resource_kind = 'room' AND resource_id = ?", roomID),
 			"messages":    f.count(t, "SELECT COUNT(*) FROM messages WHERE room_id = ?", roomID),
 			"attachments": f.count(t, "SELECT COUNT(*) FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.room_id = ?", roomID),
-			"outbox":      f.count(t, "SELECT COUNT(*) FROM outbox o JOIN messages m ON m.id = o.message_id WHERE m.room_id = ?", roomID),
 			"cursors":     f.count(t, "SELECT COUNT(*) FROM agent_cursors WHERE room_id = ?", roomID),
 		}
 	}
-	require.Equal(t, map[string]int{"rooms": 0, "members": 0, "grants": 0, "messages": 0, "attachments": 0, "outbox": 0, "cursors": 0}, countFor(doomed.ID))
-	require.Equal(t, map[string]int{"rooms": 1, "members": 1, "grants": 1, "messages": 1, "attachments": 1, "outbox": 1, "cursors": 1}, countFor(kept.ID))
+	require.Equal(t, map[string]int{"rooms": 0, "members": 0, "grants": 0, "messages": 0, "attachments": 0, "cursors": 0}, countFor(doomed.ID))
+	require.Equal(t, map[string]int{"rooms": 1, "members": 1, "grants": 1, "messages": 1, "attachments": 1, "cursors": 1}, countFor(kept.ID))
 	// Orphaned rows would hide behind the joins above: check the totals too.
 	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM attachments"))
-	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM outbox"))
 
 	_, err := f.svc.Get(ctx, alice, doomed.ID)
 	require.ErrorIs(t, err, access.ErrNotFound)

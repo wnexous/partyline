@@ -875,14 +875,14 @@ A request carrying them changes nothing.
 **Reuses**: v0.4 fixture, `openMigratedBefore`
 **Requirement**: CID-21, CID-27
 **Done when**:
-- [ ] Store test from the pre-0017 fixture:
+- [x] Store test from the pre-0017 fixture:
   - chat members are gone;
   - messages, intelligences, settings, people and DM rooms are kept;
   - connections read `deliver=all`, `groups_mentions_only=1` whatever their old scope (CID-27);
   - NULL operators stay NULL;
   - the dropped tables and columns are absent;
   - a failure rolls back
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store)!: upgrade to the connection proxy`

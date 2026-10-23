@@ -1183,3 +1183,50 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   other `outbox` counts, and the store tests that read `rooms.broadcast`, `rooms.bridge_chats`, `connectors.auto_route_scope`,
   `auto_route_skips` and `outbox`. The planted `auto_route_room_id`, `notify_chat_id`, `outbound` and `sign_outbound` survive the
   migration as columns.
+
+## T36: Upgrade migration 0018 (CID-21, CID-27)
+
+- **File** `internal/store/migrations/0018_connection_proxy.sql`, no Go hook: it runs with 0017 (and any other pending file) in
+  the one migration transaction (MIG-05), in this order:
+  1. `DELETE FROM room_members WHERE kind = 'chat'` (CID-21): every chat leaves its room, the platform DMs of v0.4 included.
+     Rooms keep their messages (those a chat wrote too), their AI and user members, settings, cursors and grants. People,
+     `chat_people`, chats and the DM rooms with people stay as read-only history.
+  2. `UPDATE connectors SET auto_route_room_id = NULL` and `UPDATE users SET notify_chat_id = NULL`. `operator_iid` is untouched:
+     NULL means "no operator" (CID-02), so an owner-operated v0.4 connection idles until its owner chooses an AI.
+  3. `DROP TABLE outbox` (rows and indexes with it, and the 0015 `purpose` column) and `DROP TABLE auto_route_skips`. Nothing
+     references either table, so the implicit `DELETE` of `DROP TABLE` cascades nowhere (AD-012).
+  4. `ALTER TABLE connectors DROP COLUMN auto_route_scope`, `ALTER TABLE rooms DROP COLUMN bridge_chats` and
+     `... DROP COLUMN broadcast`. SQLite accepts them because no index, view or trigger names the columns and the CHECK on
+     `auto_route_scope` belongs to the column.
+- **CID-27** needs no statement: `deliver='all'` and `groups_mentions_only=1` are the column defaults 0017 added, so every
+  connection reads them whatever its scope was (`off`, `dms`, `groups` or `all`).
+- **Dead columns kept** (AD-012): `room_members.outbound` and `room_members.sign_outbound` (the design does not list them, the API
+  stopped reading and writing them in T35), `connectors.auto_route_room_id` and `users.notify_chat_id` (foreign keys, emptied).
+  Their values survive for members; a new member takes the defaults.
+- **Atomic**: a statement that fails after the chats were deleted and the tables dropped leaves everything as it was, 0017 too
+  (`TestConnectionProxyUpgradeRollsBackOnFailure` makes `DROP COLUMN` fail with a view on `rooms.bridge_chats`, compares a full
+  snapshot of the schema and rows, then runs the same upgrade once the view is gone). A second start does not touch a database
+  that is already at 0018 (`TestConnectionProxyUpgradeRunsOnce`).
+- **Tests**: `internal/store/connection_proxy_migration_test.go`. `v04Fixture` is the v0.3 data set (`testdata/v03_fixture.sql`)
+  upgraded to schema 0016 plus what v0.4 wrote that the fixture predates: a connector operated by an AI, connectors of the four
+  scopes, a user's chat to notify and a platform DM between an AI and a person with its chat as a member and a message the chat
+  sent. `TestConnectionProxyUpgradeKeepsHistoryAndDropsTheRest` compares every row of every surviving column of every table
+  before and after (only the chat rows of `room_members` and the emptied columns differ), then the CID-27 settings, the
+  operators, the absent tables and columns, the kept dead columns, the foreign key check and the integrity check.
+- **Existing tests changed**, assertions kept: the tests that pin one earlier migration now stop right after it
+  (`MigrateBefore`), because the full upgrade removes the columns they read: `TestRoutingContextMigrationDefaultsAndChecks` and
+  `TestRoutingContextMigrationRoomAndChatReferences` (0006), `TestRoomSafetyMigrationDefaultsAndCatchAllRooms` (0008) and
+  `TestCleanupAloneKeepsEveryRow` (0016 on its own). `TestUpgradeV03KeepsEveryRow` keeps the full v0.3 upgrade and now also
+  accounts for 0018: the dropped tables and columns, the emptied column and the three chat members. `TestMigrateCreatesEveryDesignTable`
+  lists the queue tables instead of `outbox` and asserts the two dropped tables are absent.
+- **Retired with the tables** (IDs for the commit body): NOTI-02 (the `outbox.purpose` default and CHECK in
+  `TestDMPairIsUniqueAndKindsAreChecked`), ROOM-02's outbox part (the outbox counts of `TestDeletingOwnerDeletesTheirRooms` and
+  `TestDeleteRoomRemovesEverything`), ROUTE-06's "no warning in a room that switched broadcast off"
+  (`TestPostInARoomWithBroadcastOffAnswersNoWarning`: a room has no broadcast flag to switch), and the v0.3 "pending delivery is
+  left alone" assertion of `TestUpgradedAgentAdoptsItsFolderAndRepliesInTheRoom`, now "the delivery went with its table and nothing was
+  sent or queued". Tests that asserted nothing is delivered to a chat count `platform_sends` instead of `outbox`, the only place a send
+  to a platform is recorded.
+- **T35's e2e tests** (`retired_fields_test.go`) no longer plant the dropped columns: the room's flags and the connection's scope cannot
+  be stored, so the request tests assert the answer and, for the members and the connection, the surviving dead columns
+  (`outbound`, `sign_outbound`, `auto_route_room_id`).
+- **Authorization**: none; the migration runs at start-up, not through a route.

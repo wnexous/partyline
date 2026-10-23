@@ -45,12 +45,18 @@ func TestMigrateCreatesEveryDesignTable(t *testing.T) {
 	s := openMigrated(t)
 	for _, table := range []string{
 		"users", "sessions", "invites", "api_tokens", "agents", "connectors", "chats", "rooms",
-		"room_members", "grants", "messages", "attachments", "agent_cursors", "outbox",
-		"identities", "pairing_codes", "audit_log",
+		"room_members", "grants", "messages", "attachments", "agent_cursors",
+		"identities", "pairing_codes", "audit_log", "platform_items", "platform_attachments", "platform_sends",
 	} {
 		var name string
 		err := s.write.QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name)
 		require.NoError(t, err, table)
+	}
+	// The tables of the delivery to chats and of the catch-all skips went with the upgrade (0018).
+	for _, table := range []string{"outbox", "auto_route_skips"} {
+		var n int
+		require.NoError(t, s.write.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&n))
+		require.Zero(t, n, table)
 	}
 }
 
@@ -126,7 +132,7 @@ func TestMessageSequenceAndDedupeConstraints(t *testing.T) {
 
 // Edge case (ROOM-02): users are never deleted by the app (only disabled); if an owner
 // account is removed anyway, its rooms go with it, with their members, messages,
-// attachments, cursors and outbox entries.
+// attachments and cursors.
 func TestDeletingOwnerDeletesTheirRooms(t *testing.T) {
 	ctx := context.Background()
 	s := openMigrated(t)
@@ -144,7 +150,6 @@ func TestDeletingOwnerDeletesTheirRooms(t *testing.T) {
 		`INSERT INTO room_members (id, room_id, kind, member_id, created_at) VALUES ('rm1', 'r1', 'chat', 'c1', 1), ('rm2', 'r2', 'chat', 'c1', 1)`,
 		`INSERT INTO messages (id, room_id, seq, author_kind, author_id, created_at) VALUES ('m1', 'r1', 1, 'user', 'u1', 1), ('m2', 'r2', 1, 'user', 'u2', 1)`,
 		`INSERT INTO attachments (id, message_id, sha256, mime, name, size, created_at) VALUES ('f1', 'm1', 'abc', 'text/plain', 'a', 1, 1)`,
-		`INSERT INTO outbox (id, message_id, chat_id, next_attempt_at, updated_at) VALUES ('o1', 'm1', 'c1', 1, 1), ('o2', 'm2', 'c1', 1, 1)`,
 		`INSERT INTO agent_cursors (agent_id, room_id, seq) VALUES ('a1', 'r1', 1)`,
 		`DELETE FROM users WHERE id = 'u1'`,
 	} {
@@ -156,12 +161,11 @@ func TestDeletingOwnerDeletesTheirRooms(t *testing.T) {
 		require.NoError(t, s.write.QueryRowContext(ctx, query).Scan(&n))
 		return n
 	}
-	require.Equal(t, map[string]int{"rooms": 1, "members": 1, "messages": 1, "attachments": 0, "outbox": 1, "cursors": 0}, map[string]int{
+	require.Equal(t, map[string]int{"rooms": 1, "members": 1, "messages": 1, "attachments": 0, "cursors": 0}, map[string]int{
 		"rooms":       count(`SELECT COUNT(*) FROM rooms`),
 		"members":     count(`SELECT COUNT(*) FROM room_members`),
 		"messages":    count(`SELECT COUNT(*) FROM messages`),
 		"attachments": count(`SELECT COUNT(*) FROM attachments`),
-		"outbox":      count(`SELECT COUNT(*) FROM outbox`),
 		"cursors":     count(`SELECT COUNT(*) FROM agent_cursors`),
 	})
 	require.Equal(t, 1, count(`SELECT COUNT(*) FROM rooms WHERE id = 'r2'`), "rooms of other owners stay")
@@ -260,7 +264,7 @@ func TestRoutingContextMigrationDefaultsAndChecks(t *testing.T) {
 	require.NoError(t, exec(`INSERT INTO room_members (id, room_id, kind, member_id, created_at) VALUES ('m1', 'r1', 'agent', 'a1', 1)`))
 	require.NoError(t, exec(`INSERT INTO connectors (id, owner_id, kind, name, created_at, updated_at) VALUES ('c1', 'u1', 'telegram', 'tg', 1, 1)`))
 
-	require.NoError(t, s.Migrate(ctx))
+	require.NoError(t, s.MigrateBefore(ctx, "0007")) // 0006 alone: 0018 drops the catch-all scope
 
 	var displayName, delivery, keywords string
 	var signOutbound bool
@@ -294,7 +298,8 @@ func TestRoutingContextMigrationDefaultsAndChecks(t *testing.T) {
 // skip rows go with their chat.
 func TestRoutingContextMigrationRoomAndChatReferences(t *testing.T) {
 	ctx := context.Background()
-	s := openMigrated(t)
+	s := openMigratedBefore(t, "0006")
+	require.NoError(t, s.MigrateBefore(ctx, "0007")) // the schema 0006 made: 0018 drops the skip table and the scope
 	exec := func(query string, args ...any) error {
 		_, err := s.write.ExecContext(ctx, query, args...)
 		return err
@@ -334,7 +339,7 @@ func TestRoomSafetyMigrationDefaultsAndCatchAllRooms(t *testing.T) {
 	require.NoError(t, exec(`INSERT INTO connectors (id, owner_id, kind, name, auto_route_scope, auto_route_room_id, created_at, updated_at)
 		VALUES ('c1', 'u1', 'telegram', 'tg', 'dms', 'r2', 1, 1)`))
 
-	require.NoError(t, s.Migrate(ctx))
+	require.NoError(t, s.MigrateBefore(ctx, "0009")) // 0008 alone: 0018 drops both room switches
 
 	read := func(id string) (broadcast, bridge bool, by string) {
 		require.NoError(t, s.write.QueryRowContext(ctx, `SELECT broadcast, bridge_chats, instructions_by FROM rooms WHERE id = ?`, id).

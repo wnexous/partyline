@@ -27,7 +27,7 @@ type CleanupResult struct {
 }
 
 // Cleanup deletes messages older than their room's retention days (0 keeps them forever),
-// with their attachments rows and outbox entries, then removes blobs no attachment references
+// with their attachment rows, then removes blobs no attachment references
 // any more (OPS-02).
 func (s *Service) Cleanup(ctx context.Context) (CleanupResult, error) {
 	var res CleanupResult

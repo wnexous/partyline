@@ -169,7 +169,7 @@ func TestPostAuthorization(t *testing.T) {
 }
 
 // CID-22: a room sends nothing to a chat. Whoever posts (a user, an agent, a chat), whatever they
-// reply to or react to, a chat member of an old room gets no outbox row.
+// reply to or react to, a chat member of an old room gets nothing queued to send.
 func TestPostsPlanNoDeliveryForChatMembers(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
@@ -197,7 +197,7 @@ func TestPostsPlanNoDeliveryForChatMembers(t *testing.T) {
 	for _, m := range posts {
 		require.Empty(t, m.Recipients(), "no chat is named")
 	}
-	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM outbox"), "no delivery is planned for a chat")
+	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM platform_sends"), "no delivery is planned for a chat")
 	require.Equal(t, len(posts), f.count(t, "SELECT COUNT(*) FROM messages WHERE room_id = ?", r.ID), "every post is stored")
 }
 

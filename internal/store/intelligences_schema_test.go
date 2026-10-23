@@ -95,13 +95,6 @@ func TestDMPairIsUniqueAndKindsAreChecked(t *testing.T) {
 
 	require.Error(t, e.exec(`UPDATE rooms SET kind = 'channel' WHERE id = 'g1'`))
 	require.Error(t, e.intelligence("x1", "robot", "robot"))
-	e.must(`INSERT INTO connectors (id, owner_id, kind, name, created_at, updated_at) VALUES ('k1', 'u1', 'telegram', 'tg', 1, 1)`)
-	e.must(`INSERT INTO chats (id, connector_id, external_id, created_at) VALUES ('c1', 'k1', '42', 1)`)
-	e.must(`INSERT INTO messages (id, room_id, seq, author_kind, author_id, created_at) VALUES ('m1', 'g1', 1, 'user', 'u1', 1)`)
-	e.must(`INSERT INTO outbox (id, message_id, chat_id, next_attempt_at, updated_at) VALUES ('o1', 'm1', 'c1', 1, 1)`)
-	require.Equal(t, 1, e.count(`SELECT COUNT(*) FROM outbox WHERE purpose = 'room'`), "outbox rows default to room")
-	e.must(`UPDATE outbox SET purpose = 'notify' WHERE id = 'o1'`)
-	require.Error(t, e.exec(`UPDATE outbox SET purpose = 'spam' WHERE id = 'o1'`))
 }
 
 // DM-08 edge case, PROF-01: deleting a user deletes its agents, their intelligences and the

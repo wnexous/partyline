@@ -40,8 +40,9 @@ func v03Database(t *testing.T) string {
 
 // GRP-01, MIG-01, MIG-02: after the upgrade, the first session in a folder called atlas adopts
 // the v0.3 agent atlas, and the agent's reply to an old message of the v0.3 inbox room is stored in
-// the room, quoting it. It goes out to no chat, and neither does the delivery the v0.3 outbox left
-// pending: a room sends nothing to a platform any more (CID-22). (The catch-all routing of new chats
+// the room, quoting it. It goes out to no chat, and the delivery the v0.3 outbox left pending is not sent
+// either: a room sends nothing to a platform any more (CID-22), and the outbox went with the upgrade
+// (0018). (The catch-all routing of new chats
 // is retired, CID-07: what arrives on the connector is queued for its operator, which the upgrade
 // end-to-end test pins, T37.)
 func TestUpgradedAgentAdoptsItsFolderAndRepliesInTheRoom(t *testing.T) {
@@ -79,10 +80,10 @@ func TestUpgradedAgentAdoptsItsFolderAndRepliesInTheRoom(t *testing.T) {
 	require.Equal(t, "m-in3", reply.ReplyTo)
 	require.Equal(t, "tem sim, às 10h", reply.Text)
 	require.Empty(t, reply.Recipients)
-	require.Zero(t, countRows(t, env, "SELECT COUNT(*) FROM outbox WHERE message_id = ?", reply.ID), "no delivery is planned for the reply")
 	require.Never(t, func() bool { return len(inst.Sent()) > 0 }, 1500*time.Millisecond, 50*time.Millisecond,
 		"neither the reply nor the delivery v0.3 left pending reaches a chat")
-	require.Equal(t, 1, countRows(t, env, "SELECT COUNT(*) FROM outbox WHERE id = 'o-2' AND status = 'pending' AND attempts = 0"), "the pending v0.3 row is left alone")
+	require.Zero(t, countRows(t, env, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'outbox'"), "the pending v0.3 delivery went with its table")
+	require.Zero(t, countRows(t, env, "SELECT COUNT(*) FROM platform_sends"), "nothing was queued to send")
 
 	// History is left as it was: the answer v0.3 sent to a chat still names the chat it was for.
 	history := testkit.Decode[dto.Page[dto.AgentMessage]](alice.AsAgent("atlas").Get("/api/v1/agent/rooms/r-inbox/messages").RequireStatus(http.StatusOK))

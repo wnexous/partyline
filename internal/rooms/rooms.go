@@ -389,8 +389,8 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 	return s.Get(ctx, p, roomID)
 }
 
-// Delete removes a room with its members, grants, messages, attachments, cursors and outbox
-// entries, then its blob files no other attachment references (ROOM-02); requires manage.
+// Delete removes a room with its members, grants, messages, attachments and cursors, then its blob
+// files no other attachment references (ROOM-02); requires manage.
 func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) error {
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
 		return err
@@ -403,7 +403,7 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) 
 		if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(access.KindRoom), ResourceID: roomID}); err != nil {
 			return err
 		}
-		// Members, messages, attachments, cursors and outbox rows cascade from the room.
+		// Members, messages, attachments and cursors cascade from the room.
 		return q.DeleteRoom(ctx, roomID)
 	})
 	if err != nil {

@@ -50,9 +50,10 @@ func requireNoRetiredFields(t *testing.T, what string, body []byte) {
 }
 
 // upgradedAPI is alice's installation as an upgrade from v0.4 leaves it: a room with her AI Atlas and
-// bob, a connection Atlas operates with a chat, and everything the retired chat features stored
-// planted in the database with values that differ from the column defaults, so that a response that
-// still rendered them, or a request that still wrote them, shows.
+// bob, a connection Atlas operates with a chat, and what the retired chat features left in the columns
+// the upgrade (0018) keeps, planted with values that differ from the column defaults, so that a
+// response that still rendered them, or a request that still wrote them, shows. (The room's
+// bridge_chats and broadcast and the connection's auto_route_scope no longer exist as columns.)
 type upgradedAPI struct {
 	env                    *testkit.Env
 	admin, alice, bob      *testkit.Client
@@ -75,10 +76,9 @@ func newUpgradedAPI(t *testing.T) *upgradedAPI {
 	f.atlasMember, f.bobMember = add(dto.MemberKindAgent, f.atlas), add(dto.MemberKindUser, f.bob.User.ID)
 	f.conn = createFake(f.alice, "wa", true)
 	f.chat = insertChat(t, env, f.conn.ID, teamChat, "Support group")
-	execSQL(t, env, "UPDATE rooms SET bridge_chats = 1, broadcast = 0 WHERE id = ?", f.room.ID)
 	execSQL(t, env, "UPDATE room_members SET outbound = 0, sign_outbound = 0 WHERE room_id = ?", f.room.ID)
 	execSQL(t, env, "UPDATE users SET notify_chat_id = ? WHERE id = ?", f.chat, f.alice.User.ID)
-	execSQL(t, env, "UPDATE connectors SET auto_route_scope = 'dms', auto_route_room_id = ? WHERE id = ?", f.room.ID, f.conn.ID)
+	execSQL(t, env, "UPDATE connectors SET auto_route_room_id = ? WHERE id = ?", f.room.ID, f.conn.ID)
 	return f
 }
 
@@ -127,9 +127,9 @@ func TestResponsesCarryNoRetiredChatField(t *testing.T) {
 }
 
 // CID-22 (T35): a room request that carries a retired field changes nothing, and the rest of its body
-// works. The database holds a room that bridges chats and does not broadcast, which the request below
-// would flip if the fields were still read; the room is also the stored catch-all room of a connection,
-// where turning broadcast or bridging on used to be a 422.
+// works. The room is the stored catch-all room of a connection, where turning broadcast or bridging on
+// used to be a 422; the room's own flags are gone from the schema (0018), so the answer is all there is
+// to see.
 func TestRoomRequestsCarryingRetiredFieldsChangeNothing(t *testing.T) {
 	f := newUpgradedAPI(t)
 
@@ -138,11 +138,13 @@ func TestRoomRequestsCarryingRetiredFieldsChangeNothing(t *testing.T) {
 	}).RequireStatus(http.StatusOK))
 	require.Equal(t, "Atlas HQ 2", got.Name, "the rest of the body is applied")
 	f.alice.Patch(f.roomPath(), map[string]any{"broadcast": true, "bridge_chats": true}).RequireStatus(http.StatusOK)
-	require.Equal(t, 1, countRows(t, f.env, "SELECT COUNT(*) FROM rooms WHERE id = ? AND bridge_chats = 1 AND broadcast = 0", f.room.ID), "the stored flags are left alone")
+	kept := testkit.Decode[dto.Room](f.alice.Get(f.roomPath()).RequireStatus(http.StatusOK))
+	require.Equal(t, got.Name, kept.Name)
+	require.Equal(t, got.Description, kept.Description)
+	require.Equal(t, got.RetentionDays, kept.RetentionDays)
 
 	created := testkit.Decode[dto.Room](f.alice.Post("/api/v1/rooms", map[string]any{"name": "Fresh", "bridge_chats": true}).RequireStatus(http.StatusCreated))
 	require.Equal(t, "Fresh", created.Name)
-	require.Equal(t, 1, countRows(t, f.env, "SELECT COUNT(*) FROM rooms WHERE id = ? AND bridge_chats = 0", created.ID), "a new room does not bridge chats")
 }
 
 // CID-22 (T35): the same for the members. The two members of the room are stored silent and unsigned;
@@ -164,9 +166,9 @@ func TestMemberRequestsCarryingRetiredFieldsChangeNothing(t *testing.T) {
 	require.Equal(t, 1, countRows(t, f.env, "SELECT COUNT(*) FROM room_members WHERE id = ? AND outbound = 1 AND sign_outbound = 1", added.ID), "a new member takes the defaults")
 }
 
-// CID-22 (T35): the same for a connection. It is stored as routing DMs to the room; the requests would
-// route everything or nothing. The old validations are gone with the fields: a scope that is not one, a
-// room the caller cannot manage and a room that does not exist were a 422 and two 403s.
+// CID-22 (T35): the same for a connection. It is stored as routing to the room; the requests would
+// route it elsewhere or clear it. The old validations are gone with the fields: a scope that is not one,
+// a room the caller cannot manage and a room that does not exist were a 422 and two 403s.
 func TestConnectionRequestsCarryingRetiredFieldsChangeNothing(t *testing.T) {
 	f := newUpgradedAPI(t)
 	hidden := createRoom(f.bob, "bob only")
@@ -178,7 +180,7 @@ func TestConnectionRequestsCarryingRetiredFieldsChangeNothing(t *testing.T) {
 	f.alice.Patch(f.connectorPath(), map[string]any{"auto_route_scope": "everyone"}).RequireStatus(http.StatusOK)
 	f.alice.Patch(f.connectorPath(), map[string]any{"auto_route_scope": "all", "auto_route_room_id": hidden.ID}).RequireStatus(http.StatusOK)
 	f.alice.Patch(f.connectorPath(), map[string]any{"auto_route_room_id": "0190a000-0000-7000-8000-000000000000"}).RequireStatus(http.StatusOK)
-	require.Equal(t, 1, countRows(t, f.env, "SELECT COUNT(*) FROM connectors WHERE id = ? AND auto_route_scope = 'dms' AND auto_route_room_id = ?", f.conn.ID, f.room.ID), "the stored routing is left alone")
+	require.Equal(t, 1, countRows(t, f.env, "SELECT COUNT(*) FROM connectors WHERE id = ? AND auto_route_room_id = ?", f.conn.ID, f.room.ID), "the stored routing is left alone")
 
 	for _, entry := range auditPage(f.admin, "").Items {
 		changed, _ := entry.Detail["changed"].([]any)

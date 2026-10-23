@@ -532,8 +532,8 @@ func (s *Service) delivery(c db.Connector, in UpdateInput) (dto.ConnectorDeliver
 	return deliver, mentionsOnly, nil
 }
 
-// Delete stops and removes the connector with its chats (and their room memberships and
-// outbox entries) and grants; requires ownership (manage).
+// Delete stops and removes the connector with its chats (and their room memberships), its queue and
+// its grants; requires ownership (manage).
 func (s *Service) Delete(ctx context.Context, p authn.Principal, id string) error {
 	if _, err := s.authorize(ctx, p, id, dto.LevelManage); err != nil {
 		return err
@@ -554,7 +554,7 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, id string) erro
 		if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(access.KindConnector), ResourceID: id}); err != nil {
 			return err
 		}
-		if err := q.DeleteConnector(ctx, id); err != nil { // chats and their outbox entries cascade
+		if err := q.DeleteConnector(ctx, id); err != nil { // chats, queue items and sends cascade
 			return err
 		}
 		return s.audit.Record(ctx, q, audit.Entry{

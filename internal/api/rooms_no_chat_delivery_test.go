@@ -61,10 +61,11 @@ func newChatRoom(t *testing.T) *chatRoom {
 }
 
 // requireNoChatDelivery checks that nothing was planned for any chat and nothing reached the
-// platform: no outbox row exists and the connection sent nothing.
+// platform: no send is queued (the only way out to a platform is an AI's send, platform_sends) and the
+// connection sent nothing.
 func (f *chatRoom) requireNoChatDelivery(t *testing.T) {
 	t.Helper()
-	require.Zero(t, countRows(t, f.env, "SELECT COUNT(*) FROM outbox"), "no delivery is planned for any chat")
+	require.Zero(t, countRows(t, f.env, "SELECT COUNT(*) FROM platform_sends"), "no delivery is planned for any chat")
 	require.Empty(t, f.inst.Sent(), "nothing reached the connection")
 }
 
@@ -131,31 +132,6 @@ func TestPostsNamingChatsAreAcceptedAndReachNoChat(t *testing.T) {
 	}
 }
 
-// CID-22 (T33): a room that switched broadcast off before the upgrade (the flag is still stored, and
-// no API reads or writes it any more, T35) is not a special case: the post is stored and reaches the
-// agents like any other, and answers without the "reached no chat" warning (ROUTE-06 is retired with
-// the delivery it described).
-func TestPostInARoomWithBroadcastOffAnswersNoWarning(t *testing.T) {
-	f := newChatRoom(t)
-	conn := f.dial(t)
-	conn.Welcome(wsWait)
-	execSQL(t, f.env, "UPDATE rooms SET broadcast = 0 WHERE id = ?", f.room.ID)
-
-	for name, post := range map[string]func() *testkit.Response{
-		"user": func() *testkit.Response {
-			return f.alice.Post("/api/v1/rooms/"+f.room.ID+"/messages", dto.PostMessageRequest{Text: "hi all"})
-		},
-		"agent": func() *testkit.Response {
-			return f.rest().Post(agentRoomPath(f.room.ID, "/messages"), dto.PostMessageRequest{Text: "hi all"})
-		},
-	} {
-		resp := post().RequireStatus(http.StatusCreated)
-		require.NotContains(t, keysOf(t, resp.Body), "warning", name)
-	}
-	require.Equal(t, "hi all", conn.Message(wsWait).Message.Text)
-	f.requireNoChatDelivery(t)
-}
-
 // CID-22 (T33): answering a message of a chat, or reacting to it, in a room where the chat's messages
 // are history stores the reply or the reaction in the room only. Before, the reply went to the chat it
 // answered (TOOL-02) and the reaction became a platform reaction (REACT-01).
@@ -189,8 +165,8 @@ func TestAgentDMNamingChatsIsAcceptedAndReachesNoChat(t *testing.T) {
 
 // CID-22 (T33): the copy of an AI's DM that went to the app its user chose (NOTI-02) is gone. The
 // column stays in an upgraded database, so a user who had chosen a chat before the upgrade still
-// holds one; the AI's message in the DM reaches the user in the app only, and no outbox row is made
-// for the chat.
+// holds one; the AI's message in the DM reaches the user in the app only, and nothing is queued to send
+// to the chat.
 func TestAnAIsDMIsNotCopiedToTheUsersChosenApp(t *testing.T) {
 	f := newChatRoom(t)
 	execSQL(t, f.env, "UPDATE users SET notify_chat_id = ? WHERE id = ?", f.chat, f.alice.User.ID)
@@ -266,5 +242,5 @@ func TestPostsNamingChatsKeepTheAuthorizationOfTheirRoute(t *testing.T) {
 
 	// Only the three that were allowed stored something: the owner's, the poster's and the member AI's.
 	require.Equal(t, 3, countRows(t, m.env, "SELECT COUNT(*) FROM messages WHERE room_id = ?", room.ID))
-	require.Zero(t, countRows(t, m.env, "SELECT COUNT(*) FROM outbox"))
+	require.Zero(t, countRows(t, m.env, "SELECT COUNT(*) FROM platform_sends"))
 }
