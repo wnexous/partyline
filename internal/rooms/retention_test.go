@@ -239,3 +239,30 @@ func TestReleaseBlobsKeepsWhatIsStillReferenced(t *testing.T) {
 	require.False(t, blobExists(blobDir, inItem.SHA256), "the last item that used it expired")
 	require.True(t, blobExists(blobDir, inRoom.SHA256), "the room attachment still uses its blob")
 }
+
+// OMEM-04: the avatar of an organization is a blob like the avatar of an intelligence: the
+// retention sweep keeps it while the organization points at it and removes it once nothing does.
+func TestSweepKeepsTheAvatarOfAnOrganization(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	blobDir := filepath.Join(f.dir, "blobs")
+	blobs, err := attachments.Open(blobDir)
+	require.NoError(t, err)
+	f.svc = New(Deps{Store: f.st, Access: f.az, Bus: f.bus, Now: f.clock.Now, Blobs: blobs})
+	old := t0.Add(-2 * time.Hour) // past the sweep's one-hour grace
+	logo := putBlob(t, blobs, blobDir, "the-logo", old)
+	stray := putBlob(t, blobs, blobDir, "a-stray-blob", old)
+	f.exec(t, "INSERT INTO organizations (id, name, slug, avatar_sha256, created_at, updated_at) VALUES ('o1', 'Acme', 'acme', ?, 1, 1)", logo.SHA256)
+
+	res, err := f.svc.Cleanup(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Blobs)
+	require.True(t, blobExists(blobDir, logo.SHA256), "a blob an organization's avatar uses stays")
+	require.False(t, blobExists(blobDir, stray.SHA256), "a blob nothing uses goes")
+
+	f.exec(t, "UPDATE organizations SET avatar_sha256 = '' WHERE id = 'o1'")
+	res, err = f.svc.Cleanup(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Blobs)
+	require.False(t, blobExists(blobDir, logo.SHA256), "once the organization drops it, the sweep removes it")
+}

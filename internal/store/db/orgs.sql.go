@@ -10,6 +10,62 @@ import (
 	"database/sql"
 )
 
+const countOrgAgents = `-- name: CountOrgAgents :one
+SELECT COUNT(*) FROM agents WHERE org_id = ?
+`
+
+// The AIs whose home is the organization.
+func (q *Queries) CountOrgAgents(ctx context.Context, orgID sql.NullString) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOrgAgents, orgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOrgConnectors = `-- name: CountOrgConnectors :one
+SELECT COUNT(*) FROM connectors WHERE org_id = ?
+`
+
+func (q *Queries) CountOrgConnectors(ctx context.Context, orgID sql.NullString) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOrgConnectors, orgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOrgGroups = `-- name: CountOrgGroups :one
+SELECT COUNT(*) FROM rooms WHERE org_id = ? AND kind = 'group'
+`
+
+func (q *Queries) CountOrgGroups(ctx context.Context, orgID sql.NullString) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOrgGroups, orgID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOrganizationAvatar = `-- name: CountOrganizationAvatar :one
+SELECT COUNT(*) FROM organizations WHERE avatar_sha256 = ?
+`
+
+func (q *Queries) CountOrganizationAvatar(ctx context.Context, avatarSha256 string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOrganizationAvatar, avatarSha256)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOrganizationSlug = `-- name: CountOrganizationSlug :one
+SELECT COUNT(*) FROM organizations WHERE slug = ?
+`
+
+func (q *Queries) CountOrganizationSlug(ctx context.Context, slug string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOrganizationSlug, slug)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPositionName = `-- name: CountPositionName :one
 SELECT COUNT(*) FROM positions WHERE org_id = ? AND name = ?
 `
@@ -119,6 +175,15 @@ func (q *Queries) CreatePosition(ctx context.Context, arg CreatePositionParams) 
 	return err
 }
 
+const deleteOrganization = `-- name: DeleteOrganization :exec
+DELETE FROM organizations WHERE id = ?
+`
+
+func (q *Queries) DeleteOrganization(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteOrganization, id)
+	return err
+}
+
 const getAgentOrg = `-- name: GetAgentOrg :one
 SELECT CAST(COALESCE(org_id, '') AS TEXT) AS org_id FROM agents WHERE id = ?
 `
@@ -186,6 +251,41 @@ func (q *Queries) GetOrgMember(ctx context.Context, arg GetOrgMemberParams) (Org
 		&i.PositionID,
 		&i.InviterIid,
 		&i.JoinedAt,
+	)
+	return i, err
+}
+
+const getOrgMembership = `-- name: GetOrgMembership :one
+SELECT o.id, o.name, o.slug, o.avatar_sha256, o.created_by, o.created_at, o.updated_at, m.permission, CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id
+FROM org_members m JOIN organizations o ON o.id = m.org_id
+WHERE m.org_id = ? AND m.iid = ?
+`
+
+type GetOrgMembershipParams struct {
+	OrgID string
+	Iid   string
+}
+
+type GetOrgMembershipRow struct {
+	Organization Organization
+	Permission   string
+	PositionID   string
+}
+
+// An organization with the permission and position of one of its members.
+func (q *Queries) GetOrgMembership(ctx context.Context, arg GetOrgMembershipParams) (GetOrgMembershipRow, error) {
+	row := q.db.QueryRowContext(ctx, getOrgMembership, arg.OrgID, arg.Iid)
+	var i GetOrgMembershipRow
+	err := row.Scan(
+		&i.Organization.ID,
+		&i.Organization.Name,
+		&i.Organization.Slug,
+		&i.Organization.AvatarSha256,
+		&i.Organization.CreatedBy,
+		&i.Organization.CreatedAt,
+		&i.Organization.UpdatedAt,
+		&i.Permission,
+		&i.PositionID,
 	)
 	return i, err
 }
@@ -311,6 +411,53 @@ func (q *Queries) ListOrgPositions(ctx context.Context, orgID string) ([]ListOrg
 	return items, nil
 }
 
+const listOrgsOfMember = `-- name: ListOrgsOfMember :many
+SELECT o.id, o.name, o.slug, o.avatar_sha256, o.created_by, o.created_at, o.updated_at, m.permission, CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id
+FROM org_members m JOIN organizations o ON o.id = m.org_id
+WHERE m.iid = ?
+ORDER BY o.name COLLATE NOCASE, o.id
+`
+
+type ListOrgsOfMemberRow struct {
+	Organization Organization
+	Permission   string
+	PositionID   string
+}
+
+// The organizations an identity belongs to, with its permission and position, by name.
+func (q *Queries) ListOrgsOfMember(ctx context.Context, iid string) ([]ListOrgsOfMemberRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgsOfMember, iid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgsOfMemberRow
+	for rows.Next() {
+		var i ListOrgsOfMemberRow
+		if err := rows.Scan(
+			&i.Organization.ID,
+			&i.Organization.Name,
+			&i.Organization.Slug,
+			&i.Organization.AvatarSha256,
+			&i.Organization.CreatedBy,
+			&i.Organization.CreatedAt,
+			&i.Organization.UpdatedAt,
+			&i.Permission,
+			&i.PositionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSharedOrgIDs = `-- name: ListSharedOrgIDs :many
 SELECT x.org_id FROM org_members x JOIN org_members y ON y.org_id = x.org_id
 WHERE x.iid = ?1 AND y.iid = ?2
@@ -371,5 +518,41 @@ type SetAgentHomeParams struct {
 
 func (q *Queries) SetAgentHome(ctx context.Context, arg SetAgentHomeParams) error {
 	_, err := q.db.ExecContext(ctx, setAgentHome, arg.OrgID, arg.ID)
+	return err
+}
+
+const setOrganizationAvatar = `-- name: SetOrganizationAvatar :exec
+UPDATE organizations SET avatar_sha256 = ?, updated_at = ? WHERE id = ?
+`
+
+type SetOrganizationAvatarParams struct {
+	AvatarSha256 string
+	UpdatedAt    int64
+	ID           string
+}
+
+func (q *Queries) SetOrganizationAvatar(ctx context.Context, arg SetOrganizationAvatarParams) error {
+	_, err := q.db.ExecContext(ctx, setOrganizationAvatar, arg.AvatarSha256, arg.UpdatedAt, arg.ID)
+	return err
+}
+
+const updateOrganization = `-- name: UpdateOrganization :exec
+UPDATE organizations SET name = ?, slug = ?, updated_at = ? WHERE id = ?
+`
+
+type UpdateOrganizationParams struct {
+	Name      string
+	Slug      string
+	UpdatedAt int64
+	ID        string
+}
+
+func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) error {
+	_, err := q.db.ExecContext(ctx, updateOrganization,
+		arg.Name,
+		arg.Slug,
+		arg.UpdatedAt,
+		arg.ID,
+	)
 	return err
 }

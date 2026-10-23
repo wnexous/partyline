@@ -175,3 +175,65 @@ Where a section refines the design, it says so.
 - **Queries** added to `queries/orgs.sql`: `ListOrgPositions`, `ListOrgChartMembers`,
   `GetOrgChartMember`, `ListSharedOrgIDs`, `CountSharedOrgs`, `GetAgentOrg`, and the placement
   setters `SetAgentHome` and `SetAgentCreator` (test and testkit support).
+
+## T5: Organization service (ORG-01, ORG-06)
+
+- **`orgs.NewService(orgs.Deps{Store, Authz, Bus, Audit, Blobs, Now})`**, built by the app as
+  `app.App.Orgs` (`Authz`, `Audit` and `Now` default; `Bus` is optional; `Blobs` is needed for
+  avatars). `Service.Authz()` returns the facade it asks. T6-T8 add the chart, member and invitation
+  methods to the same type.
+- **Acting identity**: every method takes the IID it acts as first (a user, or an AI acting as
+  itself) and authorizes it through `Authz`: `ErrNotFound` for an outsider, `ErrForbidden` for a
+  member or guest who is not an admin. Authorization comes **before** validation (a member who
+  sends a bad name is told 403, not 422). Checks that guard a write are repeated inside the write
+  transaction, so a demotion cannot interleave.
+- **`Membership`** = `db.Organization` (embedded: `ID`, `Name`, `Slug`, `AvatarSha256`, `CreatedBy`,
+  `CreatedAt`, `UpdatedAt` in unix ms) + the viewer's `Permission` and `PositionID` (`""` = none). It
+  is what `Create`, `Get`, `ListMine`, `Update` and `SetAvatar` return.
+- **Methods**:
+  - `Create(creatorIID, name) (Membership, error)`: the creator must be an **enabled user**
+    (an AI, an unknown or disabled identity is `ErrForbidden`). The name is cleaned (control
+    characters and invalid UTF-8 dropped, trimmed) and must have 1-100 **code points**, else a
+    `*validation.Error` on field `name`. The slug is the first free one derived from the name
+    (`handles.AllocateSlug`: `acme`, `acme-2`, …; `org` when nothing Latin is left). The creator
+    becomes `admin` holding a new root position `Admin`. The returned `Membership` is the creator's
+    own, so `PositionID` is the root position. Audit `org.create` `{name, slug}`, then `OrgChanged`.
+  - `Get(viewerIID, orgID) (Membership, error)`: any member, guests included; otherwise
+    `ErrNotFound` (also for an organization that does not exist).
+  - `Resolve(ref) (db.Organization, error)`: an id first, then a slug ignoring case and surrounding
+    spaces; `ErrNotFound` when neither matches. It says nothing about visibility: callers follow it
+    with `Get` or an `Authz` check. This is what `--org` and the `{org}` path segments take.
+  - `ListMine(iid) ([]Membership, error)`: every membership, guests included, by name (case
+    insensitive) then id.
+  - `Update(actorIID, orgID, UpdateInput{Name *string, Slug *string}) (Membership, error)`: admin
+    only. Invalid fields are one `*validation.Error` naming `name` and/or `slug` and change nothing.
+    A slug is lower-cased and must be 1-40 characters of `a-z0-9` in groups joined by single hyphens
+    (`handles.ValidateSlug`). An address another organization has is `ErrSlugTaken` (409 `conflict`).
+    An update that changes nothing writes, audits and announces nothing. Audit `org.update` with the
+    changed fields.
+  - `SetAvatar(actorIID, orgID, io.Reader) (Membership, error)`, `ClearAvatar(actorIID, orgID)
+    error`, `Avatar(viewerIID, orgID) (*os.File, sha string, error)`: admin only to change; any member
+    to read (`ErrNotFound` for an outsider or when there is no avatar). The image is processed by
+    `avatars.Process` (PNG/JPEG/WebP up to 2 MiB → 256x256 PNG; `avatars.ErrInvalid` otherwise and the
+    old avatar stays). Setting or clearing audits `org.update` `{avatar: true|false}` and announces; a
+    clear of a missing avatar is silent.
+  - `Delete(actorIID, orgID) error`: admin only. While an AI has the organization as its **home**
+    (`agents.org_id`), or a connection or a group belongs to it, it returns a `*NotEmptyError{Agents,
+    Connectors, Groups int64}` that matches `ErrNotEmpty` (409 `organization_not_empty`, counts in the
+    details). DMs belong to no organization and never block. Otherwise the organization goes with its
+    positions, members and invitations, the users' `default_org_id` that pointed at it is cleared, and
+    `org.delete` `{name, slug}` is audited.
+- **Errors**: `ErrNotEmpty`, `ErrSlugTaken` (new); `ErrNotFound`, `ErrForbidden` (T4).
+- **Audit constants** (`internal/audit`): `ActionOrgCreate`, `ActionOrgUpdate`, `ActionOrgDelete` and
+  the target kind `TargetOrganization = "organization"`; the entry's actor is the acting IID.
+- **Events**: `events.OrgChanged{OrgID}` after every committed change (create, update, avatar,
+  delete).
+- **Retention**: an organization's avatar is a blob like an intelligence's. `rooms.blobReferenced`
+  also asks `CountOrganizationAvatar`, so the sweep keeps it (`TestSweepKeepsTheAvatarOfAnOrganization`).
+- **Helpers other tasks reuse**: `createOrg(ctx, q, orgParams)` (the organization, its root position
+  and its admin, in the caller's transaction; T9 builds personal organizations with it),
+  `requireAdmin(ctx, q, orgID, iid)` and `memberOf(ctx, q, orgID, iid)` (checks with a transaction's
+  queries), `handles.ValidateSlug`.
+- **Queries** added to `queries/orgs.sql`: `GetOrgMembership`, `ListOrgsOfMember`,
+  `UpdateOrganization`, `SetOrganizationAvatar`, `CountOrganizationAvatar`, `CountOrganizationSlug`,
+  `DeleteOrganization`, `CountOrgAgents`, `CountOrgConnectors`, `CountOrgGroups`.

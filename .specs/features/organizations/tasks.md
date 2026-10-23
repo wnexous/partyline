@@ -299,12 +299,12 @@ Wire it into the app's dependencies.
 **Reuses**: `validation.Check`, `audit.Log`, `avatars`
 **Requirement**: ORG-01, ORG-06
 **Done when**:
-- [ ] Integration tests:
+- [x] Integration tests:
   - names of 0/101 chars are refused; 1/100 and 100 multi-byte code points are accepted (L-023);
   - a duplicate slug gets a suffix;
   - delete refuses with one AI, with one connection and with one group, each alone (L-018);
   - an empty org deletes
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(orgs): create, rename and delete organizations`

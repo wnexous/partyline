@@ -79,7 +79,12 @@ func (z *Authz) Chart(ctx context.Context, orgID string) (*Chart, error) {
 
 // Member returns the membership of iid in the organization, and whether there is one.
 func (z *Authz) Member(ctx context.Context, orgID, iid string) (Member, bool, error) {
-	m, err := z.store.R().GetOrgChartMember(ctx, db.GetOrgChartMemberParams{OrgID: orgID, Iid: iid})
+	return memberOf(ctx, z.store.R(), orgID, iid)
+}
+
+// memberOf reads one membership with the given queries, which may be a transaction's.
+func memberOf(ctx context.Context, q *db.Queries, orgID, iid string) (Member, bool, error) {
+	m, err := q.GetOrgChartMember(ctx, db.GetOrgChartMemberParams{OrgID: orgID, Iid: iid})
 	if errors.Is(err, sql.ErrNoRows) {
 		return Member{}, false, nil
 	}
@@ -105,7 +110,14 @@ func (z *Authz) RequireMember(ctx context.Context, orgID, iid string) error {
 // RequireAdmin is ErrNotFound for an outsider and ErrForbidden for a member or guest who is not an
 // admin (OMEM-04).
 func (z *Authz) RequireAdmin(ctx context.Context, orgID, iid string) error {
-	m, ok, err := z.Member(ctx, orgID, iid)
+	return requireAdmin(ctx, z.store.R(), orgID, iid)
+}
+
+// requireAdmin is RequireAdmin with the given queries; the services call it inside the write
+// transaction that changes the organization, so the check and the change cannot interleave with a
+// demotion.
+func requireAdmin(ctx context.Context, q *db.Queries, orgID, iid string) error {
+	m, ok, err := memberOf(ctx, q, orgID, iid)
 	if err != nil {
 		return err
 	}

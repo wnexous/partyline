@@ -89,6 +89,8 @@ type App struct {
 	// Authz answers the organization questions: membership, the admin permission, who manages whom
 	// and who is trusted (AD-017). Every service that authorizes through organizations asks it.
 	Authz *orgs.Authz
+	// Orgs is the organization use cases: organizations, their org chart, members and invitations.
+	Orgs  *orgs.Service
 	Rooms *rooms.Service
 	// Intelligences serves the profiles of users, AIs and people.
 	Intelligences *intelligences.Service
@@ -157,6 +159,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	}
 	presence := agents.NewPresence(st, bus, opts.Now)
 	az := access.New(st, bus, access.Options{Now: opts.Now})
+	authz := orgs.NewAuthz(st)
+	auditLog := audit.New(st, opts.Now)
 	a := &App{
 		Config:        cfg,
 		Logger:        opts.Logger,
@@ -165,14 +169,14 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Bus:           bus,
 		Users:         usersSvc,
 		Access:        az,
-		Authz:         orgs.NewAuthz(st),
+		Authz:         authz,
+		Orgs:          orgs.NewService(orgs.Deps{Store: st, Authz: authz, Bus: bus, Audit: auditLog, Blobs: blobs, Now: opts.Now}),
 		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
 		Blobs:         blobs,
 		Platform:      platform.New(platform.Deps{Store: st, Bus: bus, Now: opts.Now}),
 		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Blobs: blobs, Online: presence.Online, Now: opts.Now}),
 	}
 	a.Presence = presence
-	auditLog := audit.New(st, opts.Now)
 	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Audit: auditLog, Now: opts.Now})
 	a.Conversations = conversations.New(conversations.Deps{
 		Store: st, Rooms: a.Rooms, Intelligences: a.Intelligences, Bus: bus, Queue: a.Platform, Access: az, AllowCreate: a.Agents.AllowCreate,

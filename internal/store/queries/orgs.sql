@@ -65,3 +65,41 @@ UPDATE agents SET org_id = ? WHERE id = ?;
 
 -- name: SetAgentCreator :exec
 UPDATE agents SET creator_iid = ? WHERE id = ?;
+
+-- name: GetOrgMembership :one
+-- An organization with the permission and position of one of its members.
+SELECT sqlc.embed(o), m.permission, CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id
+FROM org_members m JOIN organizations o ON o.id = m.org_id
+WHERE m.org_id = ? AND m.iid = ?;
+
+-- name: ListOrgsOfMember :many
+-- The organizations an identity belongs to, with its permission and position, by name.
+SELECT sqlc.embed(o), m.permission, CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id
+FROM org_members m JOIN organizations o ON o.id = m.org_id
+WHERE m.iid = ?
+ORDER BY o.name COLLATE NOCASE, o.id;
+
+-- name: UpdateOrganization :exec
+UPDATE organizations SET name = ?, slug = ?, updated_at = ? WHERE id = ?;
+
+-- name: SetOrganizationAvatar :exec
+UPDATE organizations SET avatar_sha256 = ?, updated_at = ? WHERE id = ?;
+
+-- name: CountOrganizationAvatar :one
+SELECT COUNT(*) FROM organizations WHERE avatar_sha256 = ?;
+
+-- name: DeleteOrganization :exec
+DELETE FROM organizations WHERE id = ?;
+
+-- name: CountOrgAgents :one
+-- The AIs whose home is the organization.
+SELECT COUNT(*) FROM agents WHERE org_id = ?;
+
+-- name: CountOrgConnectors :one
+SELECT COUNT(*) FROM connectors WHERE org_id = ?;
+
+-- name: CountOrgGroups :one
+SELECT COUNT(*) FROM rooms WHERE org_id = ? AND kind = 'group';
+
+-- name: CountOrganizationSlug :one
+SELECT COUNT(*) FROM organizations WHERE slug = ?;

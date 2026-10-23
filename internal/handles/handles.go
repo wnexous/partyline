@@ -35,6 +35,7 @@ var ErrInvalid = errors.New("invalid handle")
 
 var (
 	pattern  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,39}$`)
+	slugPat  = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	reserved = map[string]bool{"partyline": true, "all": true, "everyone": true, "here": true, "owner": true}
 	prefixes = map[Kind]string{AI: "ai", User: "user", Person: "contact"}
 )
@@ -140,6 +141,17 @@ func OrgSlug(name string) string {
 		return s
 	}
 	return "org"
+}
+
+// ValidateSlug lower-cases s and checks it as an organization slug: 1-40 characters a-z and 0-9, in
+// groups joined by single hyphens, so it neither starts nor ends with a hyphen. It returns the
+// lower-cased slug.
+func ValidateSlug(s string) (string, error) {
+	s = strings.ToLower(s)
+	if len(s) > MaxLen || !slugPat.MatchString(s) {
+		return "", fmt.Errorf("%w: use 1-%d characters a-z, 0-9 and single hyphens between them", ErrInvalid, MaxLen)
+	}
+	return s, nil
 }
 
 // AllocateSlug returns the first free organization slug among OrgSlug(base), -2, -3, …; taken

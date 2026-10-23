@@ -50,6 +50,10 @@ const (
 	ActionAgentAdopt = "agent.adopt"
 	// ActionAgentMerge records an AI identity merged into another of the same owner (MRG-01).
 	ActionAgentMerge = "agent.merge"
+	// Organizations (organizations feature): the organization itself, its org chart and its members.
+	ActionOrgCreate = "org.create"
+	ActionOrgUpdate = "org.update"
+	ActionOrgDelete = "org.delete"
 )
 
 // Target kinds.
@@ -60,6 +64,8 @@ const (
 	TargetToken     = "token"
 	TargetConnector = "connector"
 	TargetAgent     = "agent"
+	// TargetOrganization is the organization a change of the org model is about.
+	TargetOrganization = "organization"
 )
 
 // PageSize is the number of entries per page (AUD-02).

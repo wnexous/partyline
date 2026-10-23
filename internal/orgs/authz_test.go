@@ -26,7 +26,12 @@ type acmeChart struct {
 	designer                              string
 }
 
-func (f *fixture) acme() acmeChart {
+func (f *fixture) acme() acmeChart { return f.chart(true) }
+
+// bareOrg is acme without the two AIs: only people and the chart, so the organization owns nothing.
+func (f *fixture) bareOrg() acmeChart { return f.chart(false) }
+
+func (f *fixture) chart(withAIs bool) acmeChart {
 	f.t.Helper()
 	a := acmeChart{org: f.org("acme")}
 	a.admin = f.position(a.org, "Admin", "")
@@ -45,6 +50,9 @@ func (f *fixture) acme() acmeChart {
 	f.join(a.org, a.dee, PermissionMember, a.designer, "")
 	f.join(a.org, a.bob, PermissionMember, "", "")
 	f.join(a.org, a.gus, PermissionGuest, "", a.bob)
+	if !withAIs {
+		return a
+	}
 	a.notes = f.ai("notes", a.lee)
 	f.home(a.notes, a.org, a.lee, PermissionMember, "")
 	a.w1 = f.ai("w1", a.lee)

@@ -167,3 +167,43 @@ func TestAllocateSlug(t *testing.T) {
 	require.Equal(t, strings.Repeat("x", 35)+"-1000", got)
 	require.LessOrEqual(t, len(got), 40)
 }
+
+// ORG-01: an address typed by an admin is lower-cased and made of 1 to 40 characters a-z and 0-9
+// joined by single hyphens; it may start with a digit.
+func TestValidateSlug(t *testing.T) {
+	ok := []struct{ in, out string }{
+		{"acme", "acme"},
+		{"Acme-Labs", "acme-labs"},
+		{"42", "42"},
+		{"a", "a"},
+		{"3d-team-2", "3d-team-2"},
+		{strings.Repeat("a", 40), strings.Repeat("a", 40)},
+	}
+	for _, c := range ok {
+		got, err := ValidateSlug(c.in)
+		require.NoError(t, err, c.in)
+		require.Equal(t, c.out, got)
+	}
+	bad := []string{
+		"", "-acme", "acme-", "ac--me", "-", "acme corp", "acme_corp", "acme.corp", "é", "李雷", "a/b",
+		strings.Repeat("a", 41), " acme",
+	}
+	for _, in := range bad {
+		_, err := ValidateSlug(in)
+		require.ErrorIs(t, err, ErrInvalid, "%q", in)
+	}
+}
+
+// Every slug OrgSlug and AllocateSlug produce is one ValidateSlug accepts.
+func TestGeneratedSlugsAreValid(t *testing.T) {
+	for _, name := range []string{"Acme Inc.", "Ágata Ção", "42 Labs", "--x--", "李雷", "", strings.Repeat("long name ", 20), "A_B_C"} {
+		slug := OrgSlug(name)
+		got, err := ValidateSlug(slug)
+		require.NoError(t, err, "%q → %q", name, slug)
+		require.Equal(t, slug, got)
+		busy := func(s string) bool { return s == slug }
+		next := AllocateSlug(busy, name)
+		_, err = ValidateSlug(next)
+		require.NoError(t, err, "%q → %q", name, next)
+	}
+}

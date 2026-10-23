@@ -101,6 +101,8 @@ func TestStartRunsRetention(t *testing.T) {
 func TestAppWiresTheOrganizationAuthz(t *testing.T) {
 	a := newApp(t)
 	require.NotNil(t, a.Authz)
+	require.NotNil(t, a.Orgs)
+	require.Same(t, a.Authz, a.Orgs.Authz(), "the service asks the same authorization")
 	require.NoError(t, a.Start(context.Background()))
 	require.ErrorIs(t, a.Authz.RequireMember(context.Background(), "o-nothing", "u-nobody"), orgs.ErrNotFound)
 }
