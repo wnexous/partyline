@@ -260,3 +260,59 @@ Where a section refines the design, it says so.
   inbound tests, the people/contacts fixtures (history seeded through `connectortest.History`),
   the merge tests (platform DM history seeded with `EnsurePlatformDM`) and the v0.3 upgrade test
   (the agent adopts its folder and replies through the outbox; T37 pins the upgrade end to end).
+
+## T12: Gateway pushes platform events (CID-06, CID-08, CID-09, CID-10, CID-25)
+
+- **Opt-in**: the agent WebSocket request header `X-Partyline-Features` (`dto.HeaderFeatures`) lists,
+  separated by commas, the optional features of the client; the item `platform`
+  (`dto.FeaturePlatform`) opts in to platform events. Spaces around an item are ignored; the match
+  is exact (`platforms` and `non-platform` do not opt in). A session that did not opt in receives
+  no platform frame and no dropped notice, and it touches neither the queue nor the dropped count:
+  its items wait for a session that did (design refinement 4).
+- **Order on connect**: welcome (with `connections`), the room backlog, the dropped notice, then the
+  platform items. Live room messages and platform items interleave afterwards.
+- **Frames** (`dto`): `platform` (`AgentPlatformFrame{type, event}`, server to channel) and
+  `platform_ack` (`AgentPlatformAckFrame{type, item_id}`, channel to server). `PlatformEvent` is
+  the design's: `id` (the id the AI answers with), `platform`, `connection_id`, `chat_id`
+  (Partyline's), `chat_title`, `chat_kind`, `sender_name`, `sender_id`, `trusted`, `from_self`,
+  `kind`, `text`, `attachments` (`[]`, never null), `received_at` (RFC 3339, UTC). The platform's own
+  message id (`external_id`) and the blob hashes never leave the server. `convert.PlatformEvent`
+  renders a `platform.Event`; T13 reuses it.
+- **Window**: at most `agents.PlatformWindow = 50` frames are in flight per connection, in flight
+  being sent on this connection and not yet acknowledged by it. A slot is freed by the session's
+  `platform_ack` of that frame **whatever became of the item meanwhile** (expired, dropped by the
+  bound or moved to another AI): the channel acknowledges every frame it receives, and an item the
+  server deleted must not hold a slot for the life of the connection. An acknowledgement that
+  fails to record (a store error) keeps the slot and the item unacknowledged; the next connection
+  delivers it again.
+- **No cursor** (refinement of the design, which names `Unacked(afterSeq)`): the connection
+  remembers only the ids in flight, and every wake-up reads the AI's unacknowledged items from the
+  start of the queue (`Unacked(agent, 0, room + in flight)`), skips the ones in flight and sends the
+  oldest `room` of the rest. Wake-ups: connect, a freed slot, `events.PlatformQueued` for the AI
+  (with or without an `ItemID`) and `events.Lagged`. So:
+  - the items an operator change moved to the AI, which are older than what its session holds, are
+    delivered (CID-05): T21 only publishes `PlatformQueued{AgentID: new}` after its commit;
+  - a session that took the AI over receives every unacknowledged item, those in flight to the
+    old session included (CID-25);
+  - a lagged bus that dropped an event costs nothing.
+  Delivery is at least once: if the old session's acknowledgement lands between the new session's
+  read and write of an item, both sessions have it (the channel's `seenBefore` drops repeats within
+  one process).
+- **Dropped notice** (CID-10): an `AgentNoticeFrame` with an empty room and the text
+  `N platform messages were dropped (older than 7 days or over 5,000 queued)` (`agents.DroppedNotice`;
+  the same wording for N = 1, like `SkippedNotice`). `TakeDropped` reads and zeroes the count right
+  before the write, once per connection; a connection that dies between the two loses the notice.
+- **Welcome** (`AgentWelcomeFrame.connections`, `[]AgentConnection{id, platform, account_label}`):
+  every connection the AI operates, enabled or not, ordered by connection name then id; always
+  present, `[]` when the AI operates none. `platform` is the connector kind and `account_label`
+  the connection's stored label (empty until it is known). Sent to every session, platform-capable
+  or not.
+- **Wiring**: `GatewayDeps.Platform` (the app passes `App.Platform`). Without a `Bus` a platform
+  session reads its queue on connect and on acknowledgements only (no live push). `watchRevocations`
+  became `watchBus` and also wakes the feed.
+- **Authorization**: nothing new to authorize. The AI of a session is still the token owner's AI of
+  the machine and folder it names, so another AI of the owner, another user's AI of the same
+  folder (use grantee or stranger) and a user token or cookie (403) never see an item; an
+  acknowledgement of another AI's item is a no-op (`Queue.Ack`).
+- **Testkit**: `Folder.Features`, `Folder.WithPlatform()`, `Client.DialPlatform(name)`,
+  `AgentConn.Platform(timeout)`, `AgentConn.AckPlatform(itemID)`.

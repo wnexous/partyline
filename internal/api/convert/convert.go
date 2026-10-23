@@ -9,6 +9,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -69,6 +70,21 @@ func MessageFor(m rooms.Message, viewer string) dto.Message {
 	}
 	if m.Chat != nil {
 		out.Chat = &dto.ChatRef{ID: m.Chat.ID, Title: m.Chat.Title, Kind: dto.ChatKind(m.Chat.Kind), Platform: m.Chat.Platform}
+	}
+	return out
+}
+
+// PlatformEvent renders a queued platform message as the AI's session and the pending endpoint
+// receive it (CID-06). The platform's own message id (ExternalID) and the blob hashes of the files
+// stay inside the server.
+func PlatformEvent(e platform.Event) dto.PlatformEvent {
+	out := dto.PlatformEvent{
+		ID: e.ID, Platform: e.Platform, ConnectionID: e.ConnectionID, ChatID: e.ChatID, ChatTitle: e.ChatTitle, ChatKind: e.ChatKind,
+		SenderName: e.SenderName, SenderID: e.SenderID, Trusted: e.Trusted, FromSelf: e.FromSelf, Kind: e.Kind, Text: e.Text,
+		Attachments: make([]dto.Attachment, len(e.Attachments)), ReceivedAt: e.ReceivedAt,
+	}
+	for i, a := range e.Attachments {
+		out.Attachments[i] = dto.Attachment{ID: a.ID, Name: a.Name, Mime: a.Mime, Size: a.Size, Status: a.Status}
 	}
 	return out
 }

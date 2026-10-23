@@ -178,7 +178,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		},
 	})
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
-		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Logger: opts.Logger,
+		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Platform: a.Platform, Logger: opts.Logger,
 		Bus: bus, Sessions: usersSvc,
 	})
 	kinds := opts.ConnectorKinds

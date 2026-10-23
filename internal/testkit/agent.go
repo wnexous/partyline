@@ -8,6 +8,8 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,6 +89,14 @@ func (a *AgentConn) Message(timeout time.Duration) dto.AgentMessageFrame {
 	return m
 }
 
+// Platform reads the next frame, which must be a platform frame.
+func (a *AgentConn) Platform(timeout time.Duration) dto.AgentPlatformFrame {
+	a.T.Helper()
+	var p dto.AgentPlatformFrame
+	a.nextOf(dto.AgentFrameTypePlatform, &p, timeout)
+	return p
+}
+
 // Notice reads the next frame, which must be a notice frame.
 func (a *AgentConn) Notice(timeout time.Duration) dto.AgentNoticeFrame {
 	a.T.Helper()
@@ -122,6 +132,16 @@ func (a *AgentConn) Ack(messageID string) {
 	require.NoError(a.T, a.Conn.Write(ctx, websocket.MessageText, data))
 }
 
+// AckPlatform confirms a platform event, as the channel does after handing it to the harness.
+func (a *AgentConn) AckPlatform(itemID string) {
+	a.T.Helper()
+	data, err := json.Marshal(dto.AgentPlatformAckFrame{Type: dto.AgentFrameTypePlatformAck, ItemID: itemID})
+	require.NoError(a.T, err)
+	ctx, cancel := context.WithTimeout(context.Background(), IOTimeout)
+	defer cancel()
+	require.NoError(a.T, a.Conn.Write(ctx, websocket.MessageText, data))
+}
+
 // Closed waits up to timeout for the server to close the connection and returns the close
 // error (nil when still open). Use websocket.CloseStatus or errors.As with
 // websocket.CloseError to read the code and reason.
@@ -146,7 +166,8 @@ func (c *Client) DialAgentHeaders(h http.Header) (*AgentConn, *Response) {
 // handle or v0.3 name of an unlinked AI to adopt (AID-07, MIG-02). Live is the id of the
 // process that holds the WebSocket (DialFolder gives every dial its own when it is empty, as
 // every process has its own: pass one to reconnect as the same process) and Takeover asks to
-// take over the AI's live session (SES-02).
+// take over the AI's live session (SES-02). Features are the optional features the client
+// understands (dto.HeaderFeatures); none is a client from before platform events.
 type Folder struct {
 	Machine  string
 	Path     string
@@ -154,7 +175,21 @@ type Folder struct {
 	Harness  string
 	Adopt    string
 	Live     string
+	Features []string
 	Takeover bool
+}
+
+// WithPlatform returns the folder of a client that understands platform events (CID-06).
+func (f Folder) WithPlatform() Folder {
+	f.Features = append(slices.Clone(f.Features), dto.FeaturePlatform)
+	return f
+}
+
+// DialPlatform opens the agent WebSocket as the AI of FolderOf(name) with a client that
+// understands platform events.
+func (c *Client) DialPlatform(name string) (*AgentConn, *Response) {
+	c.T.Helper()
+	return c.DialFolder(FolderOf(name).WithPlatform())
 }
 
 // Headers returns the folder headers the way the CLI sends them: the folder and the home
@@ -164,6 +199,7 @@ func (f Folder) Headers() http.Header {
 	for k, v := range map[string]string{
 		dto.HeaderMachine: f.Machine, dto.HeaderHarness: f.Harness, dto.HeaderAdopt: f.Adopt,
 		dto.HeaderFolder: escapePath(f.Path), dto.HeaderHome: escapePath(f.Home), dto.HeaderLive: f.Live,
+		dto.HeaderFeatures: strings.Join(f.Features, ","),
 	} {
 		if v != "" {
 			h.Set(k, v)

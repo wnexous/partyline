@@ -484,15 +484,15 @@ New frame DTOs are added.
 **Reuses**: `run`, `backlog`, `readAcks`, takeover machinery
 **Requirement**: CID-06, CID-08, CID-09, CID-10, CID-25
 **Done when**:
-- [ ] e2e WebSocket tests:
+- [x] e2e WebSocket tests:
   - offline, 3 items → on connect, 3 frames oldest first (CID-08);
   - an ack clears the text (CID-09);
   - the dropped notice carries N and is sent once (CID-10);
   - 60 items → at most 50 unacked frames in flight;
   - after a takeover the new session gets the unacked item (CID-25);
   - a session without the header gets no platform frames
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): push platform events to the operator's session`
