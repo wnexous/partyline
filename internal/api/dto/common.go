@@ -125,6 +125,9 @@ const (
 	// ErrorCodeMembersRefused is a new group with a member its owner may not add; Refused lists
 	// them and nothing was created (422, LAY-04, AGRP-02).
 	ErrorCodeMembersRefused ErrorCode = "members_refused"
+	// ErrorCodeOrganizationRequired is a session or an AI start that names no usable organization: the
+	// host belongs to none, or --org names one that does not exist (422, ORG-04).
+	ErrorCodeOrganizationRequired ErrorCode = "organization_required"
 	// ErrorCodeIdentityOnline is a merge of an AI that has a live session: it must be offline
 	// (409, MRG-02).
 	ErrorCodeIdentityOnline ErrorCode = "identity_online"

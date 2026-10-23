@@ -420,8 +420,8 @@ all in the creation transaction. The headers, and `guest` for AI-started AIs, co
 **Reuses**: `orgs.AddMember`
 **Requirement**: ORG-04, ORG-02
 **Done when**:
-- [ ] e2e: a first session in a folder creates an AI in the host's default org as `member` with no position, created by the host; a second session in the same folder does not add a membership
-- [ ] Gate check passes: `make check`
+- [x] e2e: a first session in a folder creates an AI in the host's default org as `member` with no position, created by the host; a second session in the same folder does not add a membership
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): place new AIs in the creator's default organization`

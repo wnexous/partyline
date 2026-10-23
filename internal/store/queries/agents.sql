@@ -98,9 +98,10 @@ SELECT room_id FROM room_members WHERE kind = 'agent' AND member_id = ?;
 SELECT * FROM agents WHERE owner_id = ? AND machine = ? AND folder = ? AND folder <> '';
 
 -- name: InsertFolderAgent :exec
--- A new AI of a folder (AID-01): the row stores its id as its v0.3 name.
-INSERT INTO agents (id, owner_id, name, description, created_at, harness, machine, folder)
-VALUES (?, ?, ?, '', ?, ?, ?, ?);
+-- A new AI of a folder (AID-01): the row stores its id as its v0.3 name. org_id is its home
+-- organization and creator_iid the identity that created it (ORG-02, ORG-04).
+INSERT INTO agents (id, owner_id, name, description, created_at, harness, machine, folder, org_id, creator_iid)
+VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?);
 
 -- name: SetAgentHarness :exec
 UPDATE agents SET harness = ? WHERE id = ?;

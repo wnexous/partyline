@@ -34,6 +34,14 @@ const MaxAgentsPerOwner = 200
 // ErrAgentLimit answers the registration of a new agent beyond MaxAgentsPerOwner (409).
 var ErrAgentLimit = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "agent limit reached")
 
+// ErrNoOrganization answers the first session of a folder whose host belongs to no organization: there is
+// nowhere to put its AI (422 organization_required, ORG-04). Nothing is created.
+var ErrNoOrganization = &httpx.Error{
+	Status: http.StatusUnprocessableEntity, Code: dto.ErrorCodeOrganizationRequired,
+	Message: "you belong to no organization: create or join one first",
+	Fields:  map[string]string{"org": "you belong to no organization"},
+}
+
 // Limits of agent fields.
 const (
 	// MaxNameLength is the longest agent name (dto.AgentNamePattern).

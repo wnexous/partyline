@@ -13,8 +13,10 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/audit"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -243,7 +245,9 @@ func (r *Registry) linkOrCreate(ctx context.Context, ownerID string, id FolderID
 	r.allocMu.Lock()
 	defer r.allocMu.Unlock()
 	var out db.Agent
+	var placed string // the organization a new AI joined
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
+		placed = ""
 		a, err := q.GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.Folder})
 		if !errors.Is(err, sql.ErrNoRows) { // found (created while this call waited), or a failure
 			out = a
@@ -258,8 +262,12 @@ func (r *Registry) linkOrCreate(ctx context.Context, ownerID string, id FolderID
 			return err
 		}
 		out, err = r.createFolderAgent(ctx, q, ownerID, id)
+		placed = out.OrgID.String
 		return err
 	})
+	if err == nil && placed != "" && r.bus != nil {
+		r.bus.Publish(events.OrgChanged{OrgID: placed}) // the organization has a new member
+	}
 	return out, err
 }
 
@@ -320,7 +328,10 @@ func (r *Registry) adopt(ctx context.Context, q *db.Queries, a db.Agent, by stri
 
 // createFolderAgent inserts the owner's AI for a folder with its intelligence: the display name
 // is the folder's name with an upper-case first letter and the handle the first free one derived
-// from it (AID-01, AID-03).
+// from it (AID-01, AID-03). The AI is placed in the same transaction (ORG-02, ORG-04): its home
+// organization is the host's default, the host is its creator, and it is a member of that
+// organization with no position. A host that belongs to no organization has nowhere to put it
+// (ErrNoOrganization) and nothing is created.
 func (r *Registry) createFolderAgent(ctx context.Context, q *db.Queries, ownerID string, id FolderID) (db.Agent, error) {
 	n, err := q.CountAgentsByOwner(ctx, ownerID)
 	if err != nil {
@@ -329,18 +340,38 @@ func (r *Registry) createFolderAgent(ctx context.Context, q *db.Queries, ownerID
 	if n >= MaxAgentsPerOwner {
 		return db.Agent{}, ErrAgentLimit
 	}
+	home, err := orgs.DefaultFor(ctx, q, ownerID)
+	if err != nil {
+		return db.Agent{}, err
+	}
+	if home == "" {
+		return db.Agent{}, ErrNoOrganization
+	}
 	agentID := store.NewID()
+	now := r.now()
 	if err := q.InsertFolderAgent(ctx, db.InsertFolderAgentParams{
-		ID: agentID, OwnerID: ownerID, Name: agentID, CreatedAt: r.now().UnixMilli(),
+		ID: agentID, OwnerID: ownerID, Name: agentID, CreatedAt: now.UnixMilli(),
 		Harness: HarnessID(id.Harness), Machine: id.Machine, Folder: id.Folder,
+		OrgID: sql.NullString{String: home, Valid: true}, CreatorIid: sql.NullString{String: ownerID, Valid: true},
 	}); err != nil {
 		return db.Agent{}, err
 	}
 	base := folderBase(id.Folder)
 	if _, err := intelligences.Create(ctx, q, intelligences.NewParams{
-		ID: agentID, Kind: handles.AI, DisplayName: handles.DisplayName(base), HandleBase: base, Now: r.now(),
+		ID: agentID, Kind: handles.AI, DisplayName: handles.DisplayName(base), HandleBase: base, Now: now,
 	}); err != nil {
 		return db.Agent{}, err
+	}
+	if err := orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: home, IID: agentID, Permission: orgs.PermissionMember, Now: now}); err != nil {
+		return db.Agent{}, err
+	}
+	if r.audit != nil {
+		if err := r.audit.Record(ctx, q, audit.Entry{
+			ActorID: ownerID, Action: audit.ActionOrgMemberJoin, TargetKind: audit.TargetOrganization, TargetID: home,
+			Detail: map[string]any{"iid": agentID, "by": "start", "permission": string(orgs.PermissionMember)},
+		}); err != nil {
+			return db.Agent{}, err
+		}
 	}
 	return q.GetAgent(ctx, agentID)
 }

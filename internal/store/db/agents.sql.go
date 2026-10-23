@@ -347,21 +347,24 @@ func (q *Queries) GetUnlinkedAgentByName(ctx context.Context, arg GetUnlinkedAge
 }
 
 const insertFolderAgent = `-- name: InsertFolderAgent :exec
-INSERT INTO agents (id, owner_id, name, description, created_at, harness, machine, folder)
-VALUES (?, ?, ?, '', ?, ?, ?, ?)
+INSERT INTO agents (id, owner_id, name, description, created_at, harness, machine, folder, org_id, creator_iid)
+VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?)
 `
 
 type InsertFolderAgentParams struct {
-	ID        string
-	OwnerID   string
-	Name      string
-	CreatedAt int64
-	Harness   string
-	Machine   string
-	Folder    string
+	ID         string
+	OwnerID    string
+	Name       string
+	CreatedAt  int64
+	Harness    string
+	Machine    string
+	Folder     string
+	OrgID      sql.NullString
+	CreatorIid sql.NullString
 }
 
-// A new AI of a folder (AID-01): the row stores its id as its v0.3 name.
+// A new AI of a folder (AID-01): the row stores its id as its v0.3 name. org_id is its home
+// organization and creator_iid the identity that created it (ORG-02, ORG-04).
 func (q *Queries) InsertFolderAgent(ctx context.Context, arg InsertFolderAgentParams) error {
 	_, err := q.db.ExecContext(ctx, insertFolderAgent,
 		arg.ID,
@@ -371,6 +374,8 @@ func (q *Queries) InsertFolderAgent(ctx context.Context, arg InsertFolderAgentPa
 		arg.Harness,
 		arg.Machine,
 		arg.Folder,
+		arg.OrgID,
+		arg.CreatorIid,
 	)
 	return err
 }

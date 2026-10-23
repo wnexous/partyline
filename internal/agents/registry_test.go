@@ -18,7 +18,9 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
 )
 
@@ -84,11 +86,21 @@ func (f *fixture) count(t *testing.T, query string, args ...any) int {
 	return n
 }
 
+// user creates an account the way the app does: with its intelligence and its personal organization
+// (PROF-01, AD-021), which is where its first AIs go (ORG-04). The handle is not the username, so that it
+// never takes the handle an AI of the same name gets.
 func (f *fixture) user(t *testing.T, name string) authn.Principal {
 	t.Helper()
+	ctx := context.Background()
 	id := store.NewID()
 	f.exec(t, "INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, 'x', 'member', ?)",
 		id, name, t0.UnixMilli())
+	f.exec(t, "INSERT INTO intelligences (id, kind, display_name, handle, created_at, updated_at) VALUES (?, 'human', ?, ?, ?, ?)",
+		id, name, "user-"+name, t0.UnixMilli(), t0.UnixMilli())
+	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
+		_, err := orgs.CreatePersonal(ctx, q, orgs.PersonalParams{UserID: id, Name: name, Username: name, Now: t0})
+		return err
+	}))
 	return authn.Principal{Kind: authn.KindUser, UserID: id, Role: string(dto.RoleMember)}
 }
 

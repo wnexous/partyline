@@ -423,3 +423,36 @@ Where a section refines the design, it says so.
   `org.create`). Any test that counts audit entries or organizations after creating accounts must now
   account for one personal organization per account (T11's testkit offers `PersonalOrg()`).
 - **Queries** added to `queries/orgs.sql`: `SetUserDefaultOrg`, `GetUserDefaultOrg`, `GetOldestOrgOf`.
+
+## T10: Default placement of new AIs (ORG-02, ORG-04)
+
+- **Where**: `agents.Registry.createFolderAgent` (`internal/agents/folder.go`), the only place a folder
+  AI is created, for the live WebSocket and for tools-only calls alike (both resolve the folder through
+  `ResolveFolder`). In the creation transaction a new AI gets:
+  - `agents.org_id` = `orgs.DefaultFor(host)` (the host's chosen default if they still belong to it, else
+    the organization they have administered the longest, else the one they belong to longest, T9) and
+    `agents.creator_iid` = the host (`agents.owner_id` stays the host user, AD-019);
+  - an `org_members` row through `orgs.AddMember`: permission `member`, **no position**, no inviter, so
+    the host manages it as its creator (POS-03);
+  - an audit entry `org.member_join` `{iid, by: "start", permission: "member"}`, target the organization,
+    actor the host (recorded when the registry has an audit log, which the app always gives it).
+  After the commit the registry publishes `events.OrgChanged{OrgID}`.
+- **No organization at all**: a host whose `DefaultFor` is empty (they deleted or left every
+  organization) cannot start an AI. `agents.ErrNoOrganization` is a `*httpx.Error`: **422
+  `organization_required`**, field `org` (message "you belong to no organization: create or join one
+  first"). It is rendered as is by the WebSocket handshake and by every REST route that resolves the
+  folder, and nothing is created (no AI row, no profile, no membership). **`dto.ErrorCodeOrganizationRequired`
+  is defined here**; T18 reuses it for an unknown `--org`.
+- **Idempotence**: a second session in a folder that has an AI resolves it and adds nothing (no second
+  membership, the first `joined_at` stands, no second audit entry). Adopting a v0.3 identity (MIG-02)
+  places nothing: it already has its organization from the upgrade.
+- **What T18/T19 add on top**: the `--org`, `--position` and `--parent` headers, `guest` for an AI started
+  by an AI, and the checks of ORG-05/POS-07. This task fixes the defaults (`member`, the host as creator,
+  no position) and the plumbing; T18 replaces the `DefaultFor` call by its placement decision. Placement
+  never goes through invitations, so the 30-per-hour limit (T8) does not apply to AIs started with
+  `--parent`.
+- **Query**: `InsertFolderAgent` now takes `OrgID` and `CreatorIid`.
+- **Test fixtures**: the `agents` package fixture now creates accounts the way the app does (intelligence
+  with the handle `user-<name>`, plus the personal organization), because an AI needs a host with an
+  organization. `testkit.NewLegacyAI` still creates an AI without an organization (a v0.3 identity as
+  the upgrade leaves it is placed by the upgrade, not here); T11's helpers can put one in an organization.
