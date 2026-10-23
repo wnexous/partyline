@@ -584,12 +584,6 @@ describe("broadcast setting (ROUTE-06, ROUTE-07)", () => {
       await within(sheet).findByText("must stay off while the room is a catch-all room"),
     ).toBeInTheDocument();
   });
-
-  it("asks the composer for an explicit chat when the room does not broadcast", async () => {
-    roomApi({ broadcast: false });
-    renderRoute("/rooms/r1");
-    expect(await screen.findByText("Answer a chat explicitly")).toBeInTheDocument();
-  });
 });
 
 describe("DM from a participant (PDM-01..PDM-04)", () => {

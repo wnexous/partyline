@@ -855,3 +855,17 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - Tests: `member-list.test.tsx` pins the two sections, the hidden chat row and the absence of a
   switch/outbound text; `member-settings.test.tsx` pins no signature control and a PATCH without
   `sign_outbound`; the room page tests follow the same rows.
+
+## T27: Composer without chat recipients (CID-22)
+
+- `web/src/components/composer.tsx` has no recipient picker, no listen-only mapping and no
+  explicit-chat (ROUTE-06) state. A post is `{text}` plus optional files, never `recipients`;
+  Enter and Send just send. `MaxMessageRecipients` and the `recipients` DTO field stay on the
+  server until T33/T35 and are simply not read here.
+- `ComposerProps.broadcast` remains declared and ignored (marked deprecated) so the room page,
+  which another task edits, keeps compiling. The room page's `members` still feed `@` mentions.
+- Retired with the picker: DLV-03/DLV-04 (default and explicit chat recipients), DLV-05's
+  listen-only UI, ROUTE-06's "Answer a chat explicitly" hint and ROUTE-10's 10-chat cap.
+- Tests: `composer.test.tsx` keeps the text, length, mention-send, file and error cases and adds
+  one that renders with a chat member, finds no `To:` control and posts `{text}` only; the room
+  page no longer expects the explicit-chat hint.

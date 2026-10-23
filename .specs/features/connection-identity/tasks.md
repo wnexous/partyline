@@ -727,8 +727,8 @@ New frame DTOs are added.
 **Reuses**: composer tests
 **Requirement**: CID-22
 **Done when**:
-- [ ] Unit: no recipients control; post body carries no `recipients`
-- [ ] Gate check passes: `make check`
+- [x] Unit: no recipients control; post body carries no `recipients`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): composer without chat recipients`
