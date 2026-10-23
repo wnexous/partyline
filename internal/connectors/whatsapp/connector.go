@@ -271,6 +271,9 @@ func (c *Connector) handle(ctx context.Context, h connectors.Handler, data []byt
 		}
 		return
 	}
+	if len(p.MentionedJIDs) > 0 {
+		p.Inbound.MentionsAccount = c.mentions(p.MentionedJIDs)
+	}
 	if p.Media != nil {
 		p.Inbound.Media = []connectors.Media{c.media(p.Instance, *p.Media)}
 	}
@@ -278,6 +281,25 @@ func (c *Connector) handle(ctx context.Context, h connectors.Handler, data []byt
 		p.Inbound.ChatTitle = c.groupSubject(ctx, p.Instance, p.Inbound.ChatID)
 	}
 	h.Inbound(ctx, p.Inbound)
+}
+
+// mentions reports whether a mentioned jid is the connection's own account (CID-12). WhatsApp
+// mentions carry the account's jid without the device suffix; evolution-go may report the
+// instance jid as a phone jid or, for a newer account, as its LID, so both sides are compared
+// as bare jids.
+func (c *Connector) mentions(jids []string) bool {
+	c.mu.Lock()
+	self := BareJID(c.instances[c.instance].JID)
+	c.mu.Unlock()
+	if self == "" {
+		return false
+	}
+	for _, jid := range jids {
+		if BareJID(jid) == self {
+			return true
+		}
+	}
+	return false
 }
 
 // groupSubject returns the group's subject (CTX-05): cached for 10 minutes per chat, else

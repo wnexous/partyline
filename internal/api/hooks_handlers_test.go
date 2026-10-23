@@ -286,6 +286,36 @@ func TestWebhookPayloadWithoutAMentionIsNotDeliveredByDefault(t *testing.T) {
 	}())
 }
 
+// CID-12: under the default mentions-only, only the payload that says it mentions the account is
+// delivered to the operator; one that says it does not is accepted and recorded, and a
+// non-boolean mentions_account is a 422 on that field with nothing stored. The new field does not
+// change the route's authorization: a forged signature is still refused.
+func TestWebhookMentionsAccountDecidesDelivery(t *testing.T) {
+	e := newHookEnv(t)
+	e.post(t, e.secret, time.Now(), payload(t, map[string]any{
+		"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "please look", "message_id": "m-1", "mentions_account": true,
+	})).RequireStatus(http.StatusAccepted)
+	queued := e.queued(t, e.operator)
+	require.Len(t, queued, 1)
+	require.Equal(t, "please look", queued[0].Text)
+
+	e.post(t, e.secret, time.Now(), payload(t, map[string]any{
+		"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "quiet", "message_id": "m-2", "mentions_account": false,
+	})).RequireStatus(http.StatusAccepted)
+	require.Len(t, e.queued(t, e.operator), 1, "a payload that does not mention the account is not delivered")
+
+	e.post(t, "wrong-secret", time.Now(), payload(t, map[string]any{
+		"chat_id": "other-alerts", "sender_id": "ci-bot", "text": "forged", "message_id": "m-3", "mentions_account": true,
+	})).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+
+	invalid := e.post(t, e.secret, time.Now(), payload(t, map[string]any{
+		"chat_id": "other-alerts", "sender_id": "ci-bot", "text": "bad", "message_id": "m-4", "mentions_account": "yes",
+	})).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+	require.Equal(t, map[string]string{"mentions_account": "must be a boolean"}, invalid.Fields)
+	require.Len(t, e.queued(t, e.operator), 1, "nothing more is delivered")
+	require.Len(t, e.chats(t), 1, "the refused payload stores nothing, not even its chat")
+}
+
 // HOOK-02: a bad signature or a timestamp older than 5 minutes is refused with 401 and
 // stores nothing; the refusal is audited.
 func TestWebhookRejectsBadSignatureAndOldTimestamp(t *testing.T) {

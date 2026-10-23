@@ -261,6 +261,62 @@ Where a section refines the design, it says so.
   the merge tests (platform DM history seeded with `EnsurePlatformDM`) and the v0.3 upgrade test
   (the agent adopts its folder and replies through the outbox; T37 pins the upgrade end to end).
 
+## Fix after the T2-T7 review: the 7 days start on arrival (CID-10)
+
+The pipeline queues an item with `ReceivedAt` = the time partyline got the message, not the platform's timestamp: a message synced late with an old timestamp would otherwise expire within minutes, and one with a future timestamp would outlive 7 days. The chat's last activity still uses the platform time.
+
+## T8: Telegram mentions (CID-12)
+
+- **Detection**: `Connector.handle` sets `Inbound.MentionsAccount` when the message's `entities`
+  hold a `mention` whose covered text equals the bot's `@username` from `getMe`
+  (case-insensitive), or a `text_mention` whose `user.id` is the bot's id. A bot without a
+  username matches only `text_mention`; entity offsets/lengths are UTF-16 code units, so the
+  covered text is decoded from UTF-16 before comparing.
+- **Captions** (refinement of the design's row, which names the message text only): media messages
+  carry their text as `caption` with `caption_entities`; those entities are checked against the
+  caption, so a photo whose caption mentions the bot counts. Without it a media mention would
+  never pass mentions-only.
+- **Not mentions**: another bot's `mention`, a `text_mention` of another user, an entity of any
+  other type and a message without entities. `@everyone` is not a Telegram concept.
+
+## T9: Discord mentions (CID-12)
+
+- **Detection**: `Connector.onMessage` sets `Inbound.MentionsAccount` when the bot's user id, known
+  from the gateway's READY event, is in the message's `mentions`. The check is by id, not by
+  username, so a renamed bot still matches and a user with the same name does not.
+- **Not mentions**: another user's mention, `@everyone`/`@here` (`MentionEveryone` carries no user
+  in `mentions`) and a role mention; before READY the bot id is unknown and every message is
+  unmentioned.
+
+## T10: WhatsApp mentions (CID-12)
+
+- **Detection**: `Parse` exposes the jids of the content node's `contextInfo.mentionedJid` as
+  `Parsed.MentionedJIDs` (it also finds them in a media caption). The connector sets
+  `Inbound.MentionsAccount` when one of them equals its own account, comparing bare jids
+  (`BareJID`, which drops the device suffix on both sides).
+- **LID**: evolution-go reports the instance's jid in `/instance/all`; for a newer account that
+  may be its LID instead of a phone jid, and a group mention then carries the bare LID. The bare
+  comparison matches both forms. There is no mapping from the phone jid to a LID in the instance
+  payload, so a mention that is the account's *other* form (LID mention while evolution reports
+  the phone jid) cannot be recognised; the phone form is what groups send in that case.
+- **Not mentions**: another number's jid, a mention list without the account, and a message
+  without a `contextInfo` (a plain conversation).
+
+## T11: Webhook `mentions_account` (CID-12)
+
+- **Schema**: `dto.HookInboundRequest` gains `mentions_account` (bool, omitted when false), so the
+  generated TS type documents it; the connector now decodes that DTO instead of keeping a second
+  copy of the payload struct, so the documented schema and the accepted body cannot drift. A
+  webhook chat is a `channel`, so under the default `groups_mentions_only` a payload without the
+  field is accepted, records its chat and is not delivered (T7); `true` delivers.
+- **Invalid**: a non-boolean `mentions_account` is a 422 whose `fields` name
+  `mentions_account: "must be a boolean"` and nothing is stored (not even the chat). Other
+  malformed bodies keep the old `body: must be a JSON object`.
+- **Authorization** is unchanged and still the hook's HMAC signature/timestamp: the e2e test sends
+  a `mentions_account: true` body with a forged signature and gets 401, so the new field never
+  bypasses the route's only credential (operator/owner/use-grantee/other-AI tokens do not apply to
+  this unauthenticated-by-design route).
+
 ## T12: Gateway pushes platform events (CID-06, CID-08, CID-09, CID-10, CID-25)
 
 - **Opt-in**: the agent WebSocket request header `X-Partyline-Features` (`dto.HeaderFeatures`) lists,
@@ -353,4 +409,3 @@ Where a section refines the design, it says so.
   and the same-named AI of a stranger see only their own queue; user tokens and sessions get 403,
   anonymous callers 401.
 - **Wiring**: `api.Deps.Platform` (the app passes `App.Platform`).
-

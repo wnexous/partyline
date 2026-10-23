@@ -158,6 +158,7 @@ func (c *Connector) onMessage(_ *discordgo.Session, m *discordgo.MessageCreate) 
 	in := connectors.Inbound{
 		ChatID: m.ChannelID, ChatKind: "channel", MessageID: m.ID, FromSelf: fromSelf,
 		SenderID: m.Author.ID, SenderName: displayName(m), Kind: string(dto.MessageKindText), Text: m.Content, At: m.Timestamp,
+		MentionsAccount: mentions(m.Mentions, self),
 	}
 	if m.GuildID == "" {
 		in.ChatKind = "dm"
@@ -179,6 +180,21 @@ func (c *Connector) onMessage(_ *discordgo.Session, m *discordgo.MessageCreate) 
 		})
 	}
 	run.h.Inbound(run.ctx, in)
+}
+
+// mentions tells whether the message mentions the bot (CID-12): its user id is in mentions.
+// An @everyone, @here or role mention puts no user in mentions, so it is not a mention of the
+// account.
+func mentions(users []*discordgo.User, self string) bool {
+	if self == "" {
+		return false
+	}
+	for _, u := range users {
+		if u != nil && u.ID == self {
+			return true
+		}
+	}
+	return false
 }
 
 func displayName(m *discordgo.MessageCreate) string {

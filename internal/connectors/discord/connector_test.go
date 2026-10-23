@@ -250,6 +250,32 @@ func TestOwnBotMessagesAreFromSelf(t *testing.T) {
 	require.Empty(t, in.ChatTitle, "the bot's name is not the title of its DM channel")
 }
 
+// CID-12: the bot is mentioned when its user id is in the message's mentions; another user's
+// mention and an @everyone alone are not mentions of the account.
+func TestMentionsReportTheBot(t *testing.T) {
+	f := newFakeSession()
+	_, rec := start(t, f)
+	bot := &discordgo.User{ID: botID, Username: "atlas-bot", Discriminator: "0", Bot: true}
+	f.emitReady(bot)
+	require.Equal(t, "@atlas-bot", rec.NextAccount(t))
+
+	mentioned := userMessage("M1", "hey bot")
+	mentioned.Mentions = []*discordgo.User{bot}
+	f.emit(mentioned)
+
+	other := userMessage("M2", "hey person")
+	other.Mentions = []*discordgo.User{{ID: "300000000000000002", Username: "otherperson"}}
+	f.emit(other)
+
+	everyone := userMessage("M3", "@everyone deploy day")
+	everyone.MentionEveryone = true
+	f.emit(everyone)
+
+	require.True(t, rec.NextInbound(t).MentionsAccount, "the bot is in mentions")
+	require.False(t, rec.NextInbound(t).MentionsAccount, "another user is mentioned")
+	require.False(t, rec.NextInbound(t).MentionsAccount, "only @everyone")
+}
+
 // ACC-05: a send reports the id of every message it created, as the gateway echoes each.
 func TestSendReportsEveryCreatedMessage(t *testing.T) {
 	f := newFakeSession()

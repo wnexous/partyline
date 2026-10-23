@@ -123,7 +123,7 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 			return err
 		}
 	}
-	return p.enqueue(ctx, src, conn, chat, m, at)
+	return p.enqueue(ctx, src, conn, chat, m)
 }
 
 // pair links the sender to the user whose pairing code the message carries (IDN-02, IDN-03).
@@ -179,7 +179,7 @@ func (p *Pipeline) repliesToAccount(ctx context.Context, chatID, replyToID strin
 // (CID-26): a repeat downloads nothing and queues nothing. The sender is trusted only when it is
 // a verified account of the operator's owner on this connector, never the account's own typing
 // (CID-13, CID-14).
-func (p *Pipeline) enqueue(ctx context.Context, src Source, conn db.Connector, chat db.Chat, m Inbound, at time.Time) error {
+func (p *Pipeline) enqueue(ctx context.Context, src Source, conn db.Connector, chat db.Chat, m Inbound) error {
 	operator, err := p.d.Store.R().GetAgent(ctx, conn.OperatorIid.String)
 	if errors.Is(err, sql.ErrNoRows) { // the operator was deleted meanwhile: nobody to deliver to
 		return nil
@@ -200,10 +200,12 @@ func (p *Pipeline) enqueue(ctx context.Context, src Source, conn db.Connector, c
 	if kind == "" {
 		kind = dto.MessageKindText
 	}
+	// ReceivedAt is when partyline got the message, not the platform's timestamp: a message
+	// synced late with an old timestamp still waits 7 days for its AI (CID-10).
 	_, _, err = p.d.Queue.Enqueue(ctx, platform.Item{
 		AgentID: conn.OperatorIid.String, ConnectorID: src.ConnectorID, ChatID: chat.ID, ExternalID: m.MessageID,
 		SenderID: m.SenderID, SenderName: m.SenderName, Trusted: trusted, FromSelf: m.FromSelf,
-		Kind: kind, Text: truncate(m.Text), ReceivedAt: at, Attachments: p.saveMedia(ctx, src, m.Media),
+		Kind: kind, Text: truncate(m.Text), ReceivedAt: p.d.Now(), Attachments: p.saveMedia(ctx, src, m.Media),
 	})
 	return err
 }

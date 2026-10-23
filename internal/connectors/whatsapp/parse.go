@@ -97,6 +97,9 @@ type Parsed struct {
 	Instance string
 	Inbound  connectors.Inbound
 	Media    *MediaRef
+	// MentionedJIDs are the account jids the message mentions (CID-12), as the platform sent
+	// them; the connector matches them against its own jid.
+	MentionedJIDs []string
 }
 
 // ErrNotMessage means the event is not a chat message Partyline handles.
@@ -156,6 +159,7 @@ func content(p *Parsed, root map[string]json.RawMessage) bool {
 	inline := stripDataURL(str(root["base64"]))
 	msg := unwrap(root)
 	in.ReplyToID = quotedID(msg)
+	p.MentionedJIDs = mentionedJIDs(msg)
 	if s := str(msg["conversation"]); s != "" {
 		in.Kind, in.Text = string(dto.MessageKindText), s
 		return true
@@ -282,6 +286,26 @@ func quotedID(msg map[string]json.RawMessage) string {
 		}
 	}
 	return ""
+}
+
+// mentionedJIDs returns the jids the message mentions, from the contextInfo of its content
+// node (CID-12).
+func mentionedJIDs(msg map[string]json.RawMessage) []string {
+	for _, raw := range msg {
+		node := obj(raw)
+		if node == nil {
+			continue
+		}
+		ci := obj(node["contextInfo"])
+		if ci == nil {
+			continue
+		}
+		var jids []string
+		if json.Unmarshal(ci["mentionedJid"], &jids) == nil && len(jids) > 0 {
+			return jids
+		}
+	}
+	return nil
 }
 
 func keyID(raw json.RawMessage) string {

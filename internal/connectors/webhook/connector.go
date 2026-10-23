@@ -166,20 +166,11 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	return ctx.Err()
 }
 
-// payload is an inbound hook message (HOOK-01).
-type payload struct {
-	ChatID     string `json:"chat_id"`
-	ChatTitle  string `json:"chat_title"`
-	SenderID   string `json:"sender_id"`
-	SenderName string `json:"sender_name"`
-	Text       string `json:"text"`
-	MessageID  string `json:"message_id"`
-}
-
 // ReceiveHook verifies the timestamp (±5 minutes) and the normalized signature with a
 // constant-time compare (HOOK-02), refuses a signature it already accepted (HOOK-05), counts the request
 // toward the connector's budget of authenticated requests (HOOK-04) and hands the message
-// to the running handler (HOOK-01). Invalid requests never touch that budget; they have
+// to the running handler (HOOK-01). The body is dto.HookInboundRequest, the documented schema of
+// the route (AD-003). Invalid requests never touch that budget; they have
 // their own per-IP budget, beyond which they get ErrRateLimited instead of
 // ErrBadSignature. Nothing is handled when a check fails.
 func (c *Connector) ReceiveHook(ctx context.Context, r connectors.HookRequest) error {
@@ -193,8 +184,12 @@ func (c *Connector) ReceiveHook(ctx context.Context, r connectors.HookRequest) e
 	if err := c.admit(ctx, want); err != nil {
 		return err
 	}
-	var p payload
+	var p dto.HookInboundRequest
 	if err := json.Unmarshal(r.Body, &p); err != nil {
+		var te *json.UnmarshalTypeError
+		if errors.As(err, &te) && te.Field == "mentions_account" {
+			return &validation.Error{Fields: map[string]string{"mentions_account": "must be a boolean"}}
+		}
 		return &validation.Error{Fields: map[string]string{"body": "must be a JSON object"}}
 	}
 	check := validation.Check{}
@@ -215,6 +210,7 @@ func (c *Connector) ReceiveHook(ctx context.Context, r connectors.HookRequest) e
 	run.h.Inbound(ctx, connectors.Inbound{
 		ChatID: p.ChatID, ChatTitle: p.ChatTitle, ChatKind: string(dto.ChatKindChannel), MessageID: p.MessageID,
 		SenderID: p.SenderID, SenderName: p.SenderName, Kind: string(dto.MessageKindText), Text: p.Text, At: c.now(),
+		MentionsAccount: p.MentionsAccount,
 	})
 	return nil
 }
