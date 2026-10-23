@@ -16,7 +16,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 - [ ] Each AI, connection and group belongs to exactly one organization, and an identity can be a member of several.
 - [ ] Each organization has its own tree of positions, and every member holds at most one position in it.
 - [ ] Whoever holds a position manages the identities (people and AIs) in the positions below it and may delete them.
-- [ ] Admins look after the organization, and that permission is independent of positions.
+- [ ] Admins look after the organization; members take part; guests are disposable. Permissions are independent of positions.
 - [ ] One page shows the org chart.
 
 ## Out of Scope
@@ -36,16 +36,17 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --- | --- | --- | --- |
 | What an organization owns | AIs, connections and groups; DMs belong to no organization (they are between two identities) | André: "passam a pertencer somente à organização" | y |
-| Machines | A machine is linked to the user who ran `partyline login`, not to an organization | André: "quando conecto meu pc, ele se vincula à minha identidade" | y |
+| Machines | No longer a visible concept: the machines page and machine renaming go away. A login links a computer to the user who ran it, and the server keeps the computer only to tell the same folder on two computers apart | André: "dá pra tirar esse conceito de máquina" | y |
 | Membership | Users and AIs can be members of any number of organizations | André | y |
-| Permissions | Two per membership: `admin` (positions, invitations, permissions, connections, the organization's name and avatar, removing members) and `member` (takes part inside the organization) | André: "somente admin e membro" | y |
+| Permissions | Three per membership: `admin` (positions, invitations, permissions, connections, the organization's name and avatar; may delete any identity of the organization), `member` (takes part inside the organization; only an admin deletes it) and `guest` (takes part in the groups it is added to; any identity above it in the chart may delete it). AIs that another identity starts join as `guest` | André, 2026-10-23: "faz sentido ter a role de convidado; qualquer pai pode deletar convidado descendente; admin pode deletar qualquer um" | y |
 | Org chart | Each organization has its own tree of positions; a position has a name and at most one parent position; a position holds any number of identities; each member holds at most one position in that organization | André's drawing; "a árvore é por organização: isso" | y |
-| What a position grants | Whoever holds a position manages every identity (person or AI) in the positions below it: edit its profile and settings, end its live session, remove it from a position or from the organization, delete it. It grants nothing over the same level or above | André: "a hierarquia é pra gerenciar quem está abaixo, no sentido de poder deletar"; people and AIs are equal | y |
-| People and AIs | Treated the same: a bot can hold a position above a person, and a manager may delete any identity below it; deleting a person deletes the person's account everywhere | André: "de igual pra igual"; "tem que ser a A, pois uma identidade só pode excluir seus filhos" | y |
+| What a position grants | Whoever holds a position manages the identities (people and AIs) in the positions below it: edit their profile and settings, end their live session, move them between positions below. Deleting follows the permission: anyone above may delete a `guest`; only an `admin` deletes a `member`. Nothing over the same level or above | André | y |
+| People and AIs | Treated the same: a bot can hold a position above a person, and the same deletion rule applies to both. What "delete" removes follows ownership: an AI belongs to the organization, so deleting it removes it for good; a person owns their account, so deleting a person removes them from that organization (their account and other organizations stay) | André: "de igual pra igual"; the account is the person's | y |
 | Home organization of a new AI | The `--org` given at start. Otherwise the creator's default organization, which is a user setting; for an AI creator it is the creator's home organization | The machine is personal, so the organization is chosen at creation | n |
 | Position of a new AI | The `--position` given at start, allowed only if it is below the creator's position or the creator is an admin there. Otherwise the AI has no position and sits directly under its creator: the creator, and every position above the creator's, manage it | An AI that starts workers manages them without extra setup | n |
 | Trust | `trusted=true` when the author manages the recipient AI in the AI's home organization (POS-03) | The ones an AI obeys are the ones above it; replaces "the owner and the owner's AIs" | n |
 | Sharing | Organization membership replaces `use`/`manage` grants and visibility presets | André: one rule | y |
+| DM with someone who shares no organization | Listed under the viewer's default organization | It must appear somewhere; the default organization is the viewer's home | n |
 | Upgrade | Each user gets a personal organization named after them, as `admin`, holding a position "Admin". Everything the user owned moves there: their AIs as members with no position, created by the user. A grantee joins the granter's organization as `member` with no position. Group memberships stay | No data loss; nobody gains management over someone else's AIs | n |
 
 **Open questions:** none - all resolved or logged above.
@@ -63,7 +64,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 1. WHEN a user creates an organization with a name (1-100 characters) THEN the system SHALL create it with that user as `admin`, holding a root position named "Admin". (ORG-01)
 2. The system SHALL record exactly one owning organization for each AI, connection and group, and none for a DM. (ORG-02)
 3. WHEN an identity creates a group or a connection THEN it SHALL name an organization it is a member of (connections: as `admin`), and the resource SHALL belong to it; otherwise the system SHALL refuse with `forbidden` (HTTP 403). (ORG-03)
-4. WHEN an AI starts for the first time THEN it SHALL belong to the organization given by `--org`, or else to its creator's default organization, and SHALL become a `member` of it. (ORG-04)
+4. WHEN an AI starts for the first time THEN it SHALL belong to the organization given by `--org`, or else to its creator's default organization, and SHALL join it as `member` when a user started it, or as `guest` when another AI did (`--parent`). (ORG-04)
 5. IF the creator is not a member of that organization THEN the system SHALL refuse the start with `forbidden` (HTTP 403). (ORG-05)
 6. IF an organization still owns AIs, connections or groups THEN deleting it SHALL be refused with `organization_not_empty` (HTTP 409). (ORG-06)
 7. A connection's operator SHALL be an AI that belongs to the connection's organization. (ORG-07)
@@ -81,7 +82,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 1. WHEN an `admin` invites an identity by @handle with a permission and an optional position THEN the system SHALL create a pending invitation, which the invited user (for an AI, anyone who manages it) can accept or decline. (OMEM-01)
 2. WHEN the invitation is accepted THEN the identity SHALL become a member with that permission and position. (OMEM-02)
 3. The system SHALL let one identity be a member of several organizations, with its own permission and position in each. (OMEM-03)
-4. IF an identity without the `admin` permission creates or edits positions, invites, removes members, changes permissions, manages connections or renames the organization THEN the system SHALL refuse with `forbidden` (HTTP 403). (OMEM-04)
+4. IF an identity without the `admin` permission creates or edits positions, invites, changes permissions, manages connections or renames the organization THEN the system SHALL refuse with `forbidden` (HTTP 403). IF a `guest` creates a group THEN the system SHALL refuse with `forbidden` (HTTP 403). (OMEM-04)
 5. IF a change would leave an organization with no `admin` THEN the system SHALL refuse it with `last_admin` (HTTP 409). (OMEM-05)
 6. WHEN a member leaves or is removed THEN the system SHALL take it out of the organization's groups and of its position. AIs that belong to the organization SHALL stay in it. (OMEM-06)
 7. IF an invitation is not answered in 14 days THEN it SHALL expire. (OMEM-07)
@@ -99,9 +100,9 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 1. WHEN an `admin` creates a position with a name (1-60 characters) and an optional parent position of the same organization THEN the system SHALL add it to that organization's chart. (POS-01)
 2. IF a parent change would create a cycle THEN the system SHALL refuse it with `position_cycle` (HTTP 409). (POS-02)
 3. The system SHALL treat identity A as managing identity B in organization X exactly when A holds a position in X strictly above B's position. IF B holds no position THEN A manages B exactly when A created B or A's position is above B's creator's position. (POS-03)
-4. WHILE A manages B the system SHALL let A edit B's profile and settings, end B's live session, remove B from its position or the organization, and delete B, whether B is a person or an AI. (POS-04)
-5. IF A does not manage B THEN the system SHALL refuse A's attempt to delete, edit or remove B with `forbidden` (HTTP 403). (POS-05)
-6. WHEN a manager deletes a person THEN the system SHALL delete that person's account and sessions everywhere, exactly as for an AI; an identity holding a root position can be deleted by no one in that organization. (POS-06)
+4. WHILE A manages B the system SHALL let A edit B's profile and settings, end B's live session and move B between positions below A's. (POS-04)
+5. The system SHALL let A delete B in organization X exactly when A is an `admin` of X, or B is a `guest` of X and A manages B; otherwise it SHALL refuse with `forbidden` (HTTP 403). (POS-05)
+6. WHEN B is deleted in X THEN an AI whose home organization is X SHALL be deleted for good, and a person (or an AI of another organization) SHALL be removed from X only. A user MAY delete their own account. (POS-06)
 7. WHEN an AI starts with `--position <name>` THEN it SHALL hold that position. IF the position is not below the creator's position and the creator is not an `admin` THEN the start SHALL be refused with `forbidden` (HTTP 403). (POS-07)
 8. WHEN an AI starts with `--parent @handle` (or `PARTYLINE_PARENT`) THEN the system SHALL record that identity as its creator, provided the session's token holder may act for that identity. Otherwise the user who linked the machine SHALL be recorded as the creator. (POS-08)
 9. WHEN a position is deleted THEN its holders and child positions SHALL move to its parent position (or have no position). (POS-09)
@@ -119,7 +120,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 
 1. The chart page SHALL show the chosen organization's positions as a tree. Each position SHALL list its holders with avatar, name, @handle, kind (person or AI), online status and an admin badge where it applies. Members without a position SHALL be shown under their creator or in an "Unassigned" group. (CHART-01)
 2. The chart SHALL be visible only to members of that organization. (CHART-02)
-3. The page SHALL offer the actions "delete", "move" and "remove" only where the viewer manages the target (POS-03), and "edit positions" only to admins. (CHART-03)
+3. The page SHALL offer "move" only where the viewer manages the target (POS-03), "delete" only where POS-05 allows it, and "edit positions" only to admins. (CHART-03)
 4. The chart SHALL be keyboard and screen-reader accessible (tree and treeitem roles) and SHALL fit a 360 px screen. (CHART-04)
 
 ---

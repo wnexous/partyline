@@ -11,9 +11,15 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/organizations/design.md`
 **Status**: Draft
 
-Decisions: AD-016 to AD-021. Questions Q1-Q4 of the design are open; the tasks implement the
-defaults the design states. If the owner changes an answer, it changes only T20 (Q1, Q2, Q4) or
-T14/T26 (Q3).
+Decisions: AD-016 to AD-022. Revised after the owner's answers (2026-10-23):
+- three permissions (`admin`, `member`, `guest`);
+- deletion follows ownership;
+- self-deletion of an account;
+- machines become internal;
+- chats per organization.
+
+Gaps G1 (a DM with no shared organization) and G2 (CHART-03 wording) are open; the tasks implement
+the design's defaults. T56-T58 were added with these answers and are placed inside their phases.
 
 ---
 
@@ -105,8 +111,10 @@ T20 → T21
 ```
 T22 → T23
 T26 → T27
-T25 → T28
+T25 → T28 → T57
 ```
+
+T56 has no dependency inside the phase.
 
 ### Phase 6: Trust and live updates (group GA)
 
@@ -119,6 +127,8 @@ T29 → T30
 ```
 T33 → T34
 ```
+
+T58 has no dependency inside the phase.
 
 ### Phase 8: Web organization pages (group GB)
 
@@ -167,6 +177,7 @@ All of it exactly as in the design's Data Model.
 - [ ] Store test:
   - every table, column and index exists;
   - `UNIQUE (org_id, iid)` refuses a second membership;
+  - `permission` accepts `admin`, `member` and `guest` and refuses anything else;
   - positions: a name is unique per org case-insensitively (`Lead` vs `lead`), and two orgs can each have "Admin";
   - deleting an org that an agent references fails, and an empty org deletes with cascading positions, members and invitations
 - [ ] `make generate` run
@@ -214,13 +225,14 @@ All of it exactly as in the design's Data Model.
 - `ManagersOf(b)`, nearest first;
 - `ManagedBy(a)`;
 - `IsAdmin(iid)`;
+- `CanDelete(a, b)`: `a` is an admin, or `b` is a guest and `Manages(a, b)` (POS-05);
 - `HasCycle(positionID, newParentID)`.
 
 All of them are pure, with no I/O.
 **Where**: `internal/orgs/chart.go`
 **Depends on**: None
 **Reuses**: none
-**Requirement**: POS-03, POS-02, POS-06
+**Requirement**: POS-03, POS-02, POS-05
 **Done when**:
 - [ ] Table tests, one per predicate condition (L-042):
   - above vs. same level vs. below;
@@ -230,6 +242,7 @@ All of them are pure, with no I/O.
   - a == b;
   - a root holder has no manager;
   - a creator cycle terminates
+- [ ] `CanDelete`, one case per condition: an admin deletes a member it does not manage; a manager deletes a guest below; a manager cannot delete a member below; a peer cannot delete a guest; nobody deletes itself
 - [ ] `HasCycle`: self-parent, a descendant as parent, and a valid move
 - [ ] `ManagersOf` order is nearest first
 - [ ] Gate check passes: `make check`
@@ -241,7 +254,7 @@ All of them are pure, with no I/O.
 
 **What**: In `internal/orgs`:
 - `Load(ctx, q, orgID)` (two queries);
-- `Authz` with `Chart`, `Member`, `RequireMember`, `RequireAdmin`, `Manages`, `ManagesAnywhere`, `Trusts`, `SharesOrg` and `Session()`, the per-operation memo;
+- `Authz` with `Chart`, `Member`, `RequireMember`, `RequireAdmin`, `Manages`, `ManagesAnywhere`, `CanDelete`, `Trusts`, `SharesOrg` and `Session()`, the per-operation memo;
 - `authn.Principal.IID()`;
 - `events.OrgChanged{OrgID}`.
 
@@ -308,10 +321,10 @@ Wire it into the app's dependencies.
 
 **What**:
 - `SetPermission`: `ErrLastAdmin` when no admin would remain.
-- `SetPosition`: an admin may set any position. A manager may set a position strictly below its own, or none. Anything else is `ErrForbidden`.
-- `Remove` and `Leave`:
+- `SetPosition`: an admin may set any position or none. A manager may move a subordinate between positions strictly below its own (POS-04). Anything else, including a manager clearing a position, is `ErrForbidden`.
+- `Remove` (used by delete-in-org for persons and AIs of other orgs, T21) and `Leave`:
   - remove the member from the org's groups and from its position (OMEM-06);
-  - `ErrHomeOrganization` for an AI's home org;
+  - `ErrHomeOrganization` when an AI leaves its home org;
   - `ErrLastAdmin` for the last admin;
   - clear the operator of connections the AI operated in that org (OMEM-08 guard).
 - `AddMember`, a tx helper used by invitations and placement.
@@ -319,15 +332,15 @@ Wire it into the app's dependencies.
 **Where**: `internal/orgs/members.go`
 **Depends on**: T6
 **Reuses**: `rooms` member deletion queries, `Chart.Manages`
-**Requirement**: OMEM-03, OMEM-04, OMEM-05, OMEM-06, OMEM-08, POS-04, POS-05
+**Requirement**: OMEM-03, OMEM-04, OMEM-05, OMEM-06, OMEM-08, POS-04
 **Done when**:
 - [ ] Integration tests:
   - an identity in two orgs with different permissions and positions;
   - demoting, removing and the leaving of the last admin → `ErrLastAdmin`, each case alone;
   - with two admins each works;
-  - a manager moves a subordinate below itself; a move to its own level → forbidden; a peer → forbidden;
+  - a manager moves a subordinate below itself; a move to its own level → forbidden; clearing the position → forbidden for the manager and allowed for an admin; a peer → forbidden;
   - removal drops only that org's group memberships and keeps the org's AIs;
-  - removing an AI from its home org → `ErrHomeOrganization`
+  - an AI leaving its home org → `ErrHomeOrganization`
 - [ ] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
@@ -336,7 +349,7 @@ Wire it into the app's dependencies.
 #### T8: Invitations service [core]
 
 **What**:
-- `Invite(org, handle, permission, position)`: users and AIs only; `ErrAlreadyMember`; re-inviting updates the pending row; at most 30 per hour per org, counted from audit entries (`ErrRateLimited`).
+- `Invite(org, handle, permission, position)`: users and AIs only; the permission is `admin`, `member` or `guest`; `ErrAlreadyMember`; re-inviting updates the pending row; at most 30 per hour per org, counted from audit entries (`ErrRateLimited`).
 - `ListForOrg` and `ListMine`: mine plus those of the AIs I manage in their home org.
 - `Accept`, which calls `AddMember` (OMEM-02); `Decline`; `Revoke`.
 - Expiry: 14 days → `ErrGone`. The retention ticker deletes expired rows.
@@ -383,9 +396,9 @@ Add `orgs.SetDefault(user, org)`, which requires membership.
 **What**: `createFolderAgent` sets:
 - `org_id = DefaultFor(host)`;
 - `creator_iid = host`;
-- an `org_members` row (`member`, no position);
+- an `org_members` row (`member`, because a user started it; no position);
 
-all in the creation transaction. The headers come in T18.
+all in the creation transaction. The headers, and `guest` for AI-started AIs, come in T18.
 **Where**: `internal/agents/folder.go`
 **Depends on**: T9
 **Reuses**: `orgs.AddMember`
@@ -464,21 +477,20 @@ Phases 3-6 reuse these for their authorization matrices.
 
 #### T14: Member routes [core]
 
-**What**: `GET /orgs/{org}/members`, `PATCH /orgs/{org}/members/{iid}` (permission, position_id) and `DELETE /orgs/{org}/members/{iid}` (remove or leave). Add `home_organization` (409).
+**What**: `GET /orgs/{org}/members` and `PATCH /orgs/{org}/members/{iid}` (permission, position_id). `DELETE` on the same path belongs to T21.
 **Where**: `internal/api/org_members_handlers.go`
 **Depends on**: T12
 **Reuses**: T7 service, `OrgRoles`
-**Requirement**: OMEM-03, OMEM-04, OMEM-05, OMEM-06, OMEM-08, POS-04, POS-05
+**Requirement**: OMEM-03, OMEM-04, OMEM-05, POS-04
 **Done when**:
-- [ ] e2e: the "Members" matrix (Out/M/Mgr/A/Self)
-- [ ] The manager's move to its own level → 403 and to a lower level → 200
-- [ ] 409 `last_admin` and 409 `home_organization` observed
-- [ ] After a removal, the removed user gets 404 on a group of that org and still sees a group of another org
-- [ ] The operator AI deleted → connection status "choose the AI that operates this connection" (OMEM-08)
+- [ ] e2e: the GET and PATCH rows of the "Members" matrix (Out/M/G/Mgr/A/Self)
+- [ ] The manager's move to its own level → 403, to none → 403, and to a lower level → 200
+- [ ] Demoting the last admin → 409 `last_admin` observed
+- [ ] Setting `guest` on a member → 200 and the list shows it
 - [ ] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
-**Commit**: `feat(api): manage organization members`
+**Commit**: `feat(api): list members and change their permission and position`
 
 #### T15: Invitation routes [core]
 
@@ -502,7 +514,7 @@ Phases 3-6 reuse these for their authorization matrices.
 **What**: `GET /orgs/{org}/chart` returns `OrgChart`:
 - positions with their holders: avatar, name, handle, kind, online, admin;
 - members without a position, with `under` (their creator when the creator is a member), else in `unassigned`;
-- per member, `can_delete`, `can_move` and `can_remove` for the viewer;
+- per member, the permission (admin and guest badges), and for the viewer `can_delete` (POS-05), `delete_effect` (`delete` for an AI of this org, `remove` otherwise) and `can_move`;
 - `viewer.admin`.
 **Where**: `internal/api/org_chart_handlers.go`
 **Depends on**: T12
@@ -512,7 +524,8 @@ Phases 3-6 reuse these for their authorization matrices.
 - [ ] e2e on the spec's example chart (Admin › Director › Manager › Lead developer › Worktrees, plus Sentinel):
   - the tree shape;
   - three workers positioned in Worktrees, and one positionless worker under Lead;
-  - flags for the admin, for Lead (delete the workers: true; Sentinel: false) and for a member (all false);
+  - flags for the admin (delete on everyone but itself), for Lead (workers started by Lead are guests: delete true; Sentinel, a member: false; move true on both if below) and for a member (all false);
+  - `delete_effect` is `remove` for a person and for an AI of another org;
   - outsider 404
 - [ ] Gate check passes: `make check`
 **Tests**: e2e
@@ -542,6 +555,7 @@ Phases 3-6 reuse these for their authorization matrices.
 - the home org (`Org`, else the creator's default);
 - ORG-05 → 403;
 - the position check (POS-07 → 403);
+- the permission: `guest` when the creator is an AI (a valid `--parent`), `member` otherwise (ORG-04);
 - `position_unknown` (422) and `organization_required` (422).
 **Where**: `internal/agents/placement.go`
 **Depends on**: None
@@ -550,8 +564,8 @@ Phases 3-6 reuse these for their authorization matrices.
 **Done when**:
 - [ ] e2e on the live WebSocket and on a tools-only call (L-034: one test each):
   - `--org acme` → acme;
-  - a parent AI hosted by the same user → creator = parent, home = the parent's home;
-  - a parent hosted by another user → creator = host;
+  - a parent AI hosted by the same user → creator = parent, home = the parent's home, permission `guest`;
+  - a parent hosted by another user → creator = host, permission `member`;
   - a foreign org → 403 and no AI row;
   - a position below the creator → held; at the same level → 403; for an admin creator → held;
   - unknown position → 422 `position_unknown`; unknown org → 422 `organization_required`;
@@ -582,32 +596,576 @@ Phases 3-6 reuse these for their authorization matrices.
 **Gate**: build
 **Commit**: `feat(agents): keep an existing AI's organization on later starts`
 
-#### T20: Account deletion service [core]
+#### T20: Self-deletion of an account [core]
 
-**What**: `users.DeleteAccount(ctx, actorIID, userID)` in one transaction, in this order:
-1. `ErrLastInstanceAdmin`;
-2. the heir becomes admin where the user was the last admin (OUPG-02);
-3. `rooms.owner_id` and `connectors.owner_id` are re-pointed to the heir;
-4. hosted AIs are deleted through the `Registry.Delete` steps;
-5. the user row is deleted.
+**What**: `users.DeleteAccount(ctx, userID, password)` and the route `DELETE /api/v1/me` `{password}`. One transaction, in this order:
+1. wrong password → 422 field `password`;
+2. `ErrLastInstanceAdmin` (409 `last_instance_admin`);
+3. the heir becomes admin where the user was the last admin (OUPG-02);
+4. `rooms.owner_id` and `connectors.owner_id` are re-pointed to the heir;
+5. the hosted AIs stay: `owner_id` → heir, `folder` → `''`;
+6. the user row is deleted.
 
-After commit: `SessionsRevoked`, `OrgChanged` and audit `user.delete`.
+After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgChanged` and audit `user.delete`. MIG-02 adoption then only considers unlinked AIs whose `creator_iid` is the host.
 **Where**: `internal/users/delete.go`
 **Depends on**: None
-**Reuses**: `agents.Registry` deletion steps, `presence.Kick`, `events`
+**Reuses**: `ChangePassword` password check, `presence.Kick`, `events`
 **Requirement**: POS-06, OUPG-02
 **Done when**:
-- [ ] Integration tests:
-  - the user's sessions and tokens fail authentication;
+- [ ] e2e:
+  - the user's sessions and tokens fail authentication (401);
   - for every table with a user or intelligence column, the deleted id has no row left;
   - a group and a connection the user created survive in their org;
-  - the user's hosted AIs are gone;
+  - the user's hosted AIs are still members of their orgs, with their positions, offline and unlinked, and the heir's sessions never adopt them;
   - the last admin's org gets the instance admin as admin, while an org with a second admin is unchanged;
-  - the last instance admin → `ErrLastInstanceAdmin`
+  - a wrong password → 422 and nothing changes;
+  - the last instance admin → 409 `last_instance_admin` observed
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(users): let users delete their own account`
+
+#### T21: Delete in an organization and end a session [core]
+
+**What**:
+- `DELETE /orgs/{org}/members/{iid}`: `Authz.CanDelete` (POS-05), then by ownership (POS-06). An AI whose home is the org goes through `Registry.Delete`; anyone else goes through `orgs.Remove` (OMEM-06). Self is leave (409 `last_admin`, 409 `home_organization`).
+- `DELETE /agents/{id}`: the same rule in the AI's home org. `Registry.Delete`'s check becomes `CanDelete`; this task owns Delete, and T24 does not touch it.
+- `DELETE /agents/{id}/session`: a manager; `Kick` with 4002 and the reason "ended by @handle".
+- Add `home_organization` (409).
+**Where**: `internal/api/org_members_handlers.go`
+**Depends on**: None
+**Reuses**: `presence.Kick`, `orgs.Remove`, `OrgRoles`
+**Requirement**: POS-04, POS-05, POS-06, OMEM-06, OMEM-08
+**Done when**:
+- [ ] e2e, Lead developer starts three workers with `--parent @lead --position Worktrees` (guests):
+  - Lead deletes them for good, while Sentinel (not above them) gets 403 (spec Independent Test);
+  - a manager deleting a `member` below → 403, while an admin → 204 (L-018);
+  - an admin deleting a person → the person is removed from the org only: still a member elsewhere and able to log in;
+  - an admin deleting an AI of another org → removed only, and the AI still exists in its home org;
+  - a deleted member is out of the org's groups and its position, while the org's AIs stay (OMEM-06);
+  - the operator AI deleted → connection status "choose the AI that operates this connection" (OMEM-08);
+  - a manager ends a live session, and the socket closes with 4002;
+  - an AI leaving its home org → 409 `home_organization` observed; the last admin leaving → 409 `last_admin`;
+  - an invisible target → 404
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(api): delete identities in an organization and end sessions`
+
+### Phase 5: Resource authorization on organizations (group GA)
+
+```
+T22 → T23
+T26 → T27
+T25 → T28
+```
+
+### Phase 6: Trust and live updates (group GA)
+
+```
+T29 → T30
+```
+
+### Phase 7: CLI and channel (group GB)
+
+```
+T33 → T34
+```
+
+### Phase 8: Web organization pages (group GB)
+
+```
+T39 → T40
+T39 → T41
+T39 → T42
+T39 → T43
+T39 → T44
+```
+
+### Phase 9: Web resources on organizations (group GB, after Phase 8)
+
+```
+T45 → T50
+T47 → T50
+```
+
+### Phase 10: Retirement, upgrade proof and docs
+
+```
+T51 → T52 → T53
+T51 → T55
+```
+
+---
+
+## Task Breakdown
+
+### Phase 1: Store and chart core
+
+#### T1: Migration 0019 schema and org queries [core]
+
+**What**: `0019_organizations.sql` with:
+- the tables `organizations`, `positions`, `org_members` and `org_invitations`;
+- the columns `agents.org_id`/`creator_iid`, `rooms.org_id`/`creator_iid`, `connectors.org_id` and `users.default_org_id`;
+- the indexes;
+- the sqlc queries in a new `internal/store/queries/orgs.sql`.
+
+All of it exactly as in the design's Data Model.
+**Where**: `internal/store/migrations/0019_organizations.sql`
+**Depends on**: None
+**Reuses**: AD-012 `ADD COLUMN` pattern, `openMigratedBefore`
+**Requirement**: ORG-02, OUPG-01
+**Done when**:
+- [ ] Store test:
+  - every table, column and index exists;
+  - `UNIQUE (org_id, iid)` refuses a second membership;
+  - `permission` accepts `admin`, `member` and `guest` and refuses anything else;
+  - positions: a name is unique per org case-insensitively (`Lead` vs `lead`), and two orgs can each have "Admin";
+  - deleting an org that an agent references fails, and an empty org deletes with cascading positions, members and invitations
+- [ ] `make generate` run
 - [ ] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
-**Commit**: `feat(users): delete accounts without losing organization resources`
+**Commit**: `feat(store): add organizations, positions and memberships`
+
+#### T2: Upgrade hook 0019 (OUPG-01) [core]
+
+**What**: The Go hook `0019_organizations` (raw SQL), registered in `hooks`. It runs design steps 1-7:
+- personal orgs with the root "Admin" and the admin membership;
+- AIs with their home org and creator;
+- groups and connections moved;
+- user grants turned into memberships;
+- `post`/`manage` room grants turned into room members;
+- group members joined to the org;
+- `DELETE FROM grants`.
+**Where**: `internal/store/organizations_backfill.go`
+**Depends on**: T1
+**Reuses**: `intelligences_backfill.go` structure, `handles` slug rules, `store.NewID`
+**Requirement**: OUPG-01, ORG-02
+**Done when**:
+- [ ] Integration test on a v0.5 database (`v03_fixture.sql` migrated to 0018) plus seeded grants:
+  - each user has one org, is admin of it, holds "Admin", and that org is their default;
+  - every AI, group and connection has the owner's org; DMs have none;
+  - every AI's creator is its owner;
+  - a `use` grantee is a `member` with no position;
+  - a `view` room grantee is an org member but not a room member, while a `post` grantee is both;
+  - a `*` grant leaves no membership;
+  - a group member from another user is a member of the group's org;
+  - message, attachment and cursor counts are unchanged;
+  - slugs stay unique for usernames `bob` and `Bob_`
+- [ ] Injected hook failure: no org table or column remains (MIG-05)
+- [ ] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(store): move every user's resources into a personal organization`
+
+#### T3: Chart rules [core]
+
+**What**: Package `internal/orgs` with `Chart`, `Member`, `Position`, and:
+- `Manages(a, b)`;
+- `Above(pa, pb)`, meaning strictly above;
+- `ManagersOf(b)`, nearest first;
+- `ManagedBy(a)`;
+- `IsAdmin(iid)`;
+- `CanDelete(a, b)`: `a` is an admin, or `b` is a guest and `Manages(a, b)` (POS-05);
+- `HasCycle(positionID, newParentID)`.
+
+All of them are pure, with no I/O.
+**Where**: `internal/orgs/chart.go`
+**Depends on**: None
+**Reuses**: none
+**Requirement**: POS-03, POS-02, POS-05
+**Done when**:
+- [ ] Table tests, one per predicate condition (L-042):
+  - above vs. same level vs. below;
+  - two levels above;
+  - B without a position: A is the creator; A is above the creator; A is a peer of the creator; a transitive chain of two positionless creators; a creator who is not a member;
+  - A not a member;
+  - a == b;
+  - a root holder has no manager;
+  - a creator cycle terminates
+- [ ] `CanDelete`, one case per condition: an admin deletes a member it does not manage; a manager deletes a guest below; a manager cannot delete a member below; a peer cannot delete a guest; nobody deletes itself
+- [ ] `HasCycle`: self-parent, a descendant as parent, and a valid move
+- [ ] `ManagersOf` order is nearest first
+- [ ] Gate check passes: `make check`
+**Tests**: unit
+**Gate**: build
+**Commit**: `feat(orgs): compute who manages whom in an org chart`
+
+#### T4: Chart loader and Authz facade [core]
+
+**What**: In `internal/orgs`:
+- `Load(ctx, q, orgID)` (two queries);
+- `Authz` with `Chart`, `Member`, `RequireMember`, `RequireAdmin`, `Manages`, `ManagesAnywhere`, `CanDelete`, `Trusts`, `SharesOrg` and `Session()`, the per-operation memo;
+- `authn.Principal.IID()`;
+- `events.OrgChanged{OrgID}`.
+
+Wire it into the app's dependencies.
+**Where**: `internal/orgs/authz.go`
+**Depends on**: T1, T3
+**Reuses**: `access.ErrNotFound`/`ErrForbidden`, `store.R()`
+**Requirement**: POS-03, POS-10, CHART-02
+**Done when**:
+- [ ] Integration tests:
+  - `RequireAdmin` → `ErrNotFound` for an outsider and `ErrForbidden` for a member;
+  - `ManagesAnywhere` is true through a second shared org only;
+  - `Trusts` uses the AI's home org, not another shared org where the author is above it;
+  - `Session` loads each org's chart once (counted through a test hook)
+- [ ] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(orgs): authorize through organization membership and the chart`
+
+### Phase 2: Organization services
+
+#### T5: Organization service [core]
+
+**What**: `orgs.Service`:
+- `Create`: name 1-100 code points and a derived slug; the creator is `admin` holding the root "Admin" (ORG-01);
+- `Get`, `ListMine`, `Update` (name, slug, avatar) and `Delete`, which refuses with `ErrNotEmpty` and counts while AIs, connections or groups remain (ORG-06);
+- audit `org.create`, `org.update` and `org.delete`;
+- `OrgChanged` published after commit.
+**Where**: `internal/orgs/service.go`
+**Depends on**: T4
+**Reuses**: `validation.Check`, `audit.Log`, `avatars`
+**Requirement**: ORG-01, ORG-06
+**Done when**:
+- [ ] Integration tests:
+  - names of 0/101 chars are refused; 1/100 and 100 multi-byte code points are accepted (L-023);
+  - a duplicate slug gets a suffix;
+  - delete refuses with one AI, with one connection and with one group, each alone (L-018);
+  - an empty org deletes
+- [ ] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(orgs): create, rename and delete organizations`
+
+#### T6: Positions service [core]
+
+**What**: `CreatePosition` (name 1-60, parent of the same org), `UpdatePosition` (rename, reparent; the cycle check runs on a chart loaded in the same transaction → `ErrCycle`), and `DeletePosition`. Delete moves holders and children to the parent, or to none/root (POS-09). Audit `org.position_*`.
+**Where**: `internal/orgs/positions.go`
+**Depends on**: T5
+**Reuses**: `Chart.HasCycle`, `Load` with a tx `*db.Queries`
+**Requirement**: POS-01, POS-02, POS-09
+**Done when**:
+- [ ] Integration tests:
+  - name bounds of 1/60/61;
+  - a parent from another org is refused;
+  - A→B→C with A's parent set to C → `ErrCycle` and nothing changes;
+  - deleting a middle position moves its holders and children to its parent;
+  - deleting a root leaves its holders without a position and makes its children roots
+- [ ] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(orgs): edit the org chart's positions`
+
+#### T7: Membership service [core]
+
+**What**:
+- `SetPermission`: `ErrLastAdmin` when no admin would remain.
+- `SetPosition`: an admin may set any position or none. A manager may move a subordinate between positions strictly below its own (POS-04). Anything else, including a manager clearing a position, is `ErrForbidden`.
+- `Remove` (used by delete-in-org for persons and AIs of other orgs, T21) and `Leave`:
+  - remove the member from the org's groups and from its position (OMEM-06);
+  - `ErrHomeOrganization` when an AI leaves its home org;
+  - `ErrLastAdmin` for the last admin;
+  - clear the operator of connections the AI operated in that org (OMEM-08 guard).
+- `AddMember`, a tx helper used by invitations and placement.
+- Audit `org.member_*` and publish `OrgChanged`.
+**Where**: `internal/orgs/members.go`
+**Depends on**: T6
+**Reuses**: `rooms` member deletion queries, `Chart.Manages`
+**Requirement**: OMEM-03, OMEM-04, OMEM-05, OMEM-06, OMEM-08, POS-04
+**Done when**:
+- [ ] Integration tests:
+  - an identity in two orgs with different permissions and positions;
+  - demoting, removing and the leaving of the last admin → `ErrLastAdmin`, each case alone;
+  - with two admins each works;
+  - a manager moves a subordinate below itself; a move to its own level → forbidden; clearing the position → forbidden for the manager and allowed for an admin; a peer → forbidden;
+  - removal drops only that org's group memberships and keeps the org's AIs;
+  - an AI leaving its home org → `ErrHomeOrganization`
+- [ ] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(orgs): manage members, permissions and positions`
+
+#### T8: Invitations service [core]
+
+**What**:
+- `Invite(org, handle, permission, position)`: users and AIs only; the permission is `admin`, `member` or `guest`; `ErrAlreadyMember`; re-inviting updates the pending row; at most 30 per hour per org, counted from audit entries (`ErrRateLimited`).
+- `ListForOrg` and `ListMine`: mine plus those of the AIs I manage in their home org.
+- `Accept`, which calls `AddMember` (OMEM-02); `Decline`; `Revoke`.
+- Expiry: 14 days → `ErrGone`. The retention ticker deletes expired rows.
+- Audit for each step.
+**Where**: `internal/orgs/invitations.go`
+**Depends on**: T7
+**Reuses**: `rooms/retention.go` ticker, `handles` lookup
+**Requirement**: OMEM-01, OMEM-02, OMEM-07
+**Done when**:
+- [ ] Integration tests with a fake clock:
+  - accept at 14 d − 1 ms works; at 14 d → `ErrGone`; the ticker deletes the row (L-016);
+  - the 31st invitation within an hour → rate limited, and the limit still holds after a restart;
+  - an AI invitee is accepted by its manager and refused for a non-manager;
+  - a person handle → not found;
+  - accept gives the invitation's permission and position
+- [ ] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(orgs): invite identities into an organization`
+
+#### T9: Personal organization for new accounts and the default org [small]
+
+**What**: `insertAccount` creates the personal org in the account's transaction and sets `default_org_id` (AD-021). Add `orgs.DefaultFor(ctx, q, iid)`:
+- for a user: `default_org_id`, else the oldest admin membership, else the oldest membership;
+- for an AI: its home org.
+
+Add `orgs.SetDefault(user, org)`, which requires membership.
+**Where**: `internal/users/invites.go`
+**Depends on**: T5
+**Reuses**: `orgs.CreatePersonal` tx helper (written here)
+**Requirement**: ORG-04
+**Done when**:
+- [ ] Integration tests:
+  - a new account has an org where it is admin and "Admin", and it is the default;
+  - `DefaultFor` with the default cleared falls back to the oldest admin membership, then to the oldest membership (L-041: a case where the fallback alone picks differently);
+  - `SetDefault` to a non-member org → forbidden
+- [ ] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(users): give every new account a personal organization`
+
+#### T10: Default placement of new AIs [core]
+
+**What**: `createFolderAgent` sets:
+- `org_id = DefaultFor(host)`;
+- `creator_iid = host`;
+- an `org_members` row (`member`, because a user started it; no position);
+
+all in the creation transaction. The headers, and `guest` for AI-started AIs, come in T18.
+**Where**: `internal/agents/folder.go`
+**Depends on**: T9
+**Reuses**: `orgs.AddMember`
+**Requirement**: ORG-04, ORG-02
+**Done when**:
+- [ ] e2e: a first session in a folder creates an AI in the host's default org as `member` with no position, created by the host; a second session in the same folder does not add a membership
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(agents): place new AIs in the creator's default organization`
+
+#### T11: Test harness for organizations [small]
+
+**What**: `testkit` helpers:
+- `c.PersonalOrg()`;
+- `env.AddPosition(org, name, parent)`;
+- `env.AddMember(org, iid, permission, position)`;
+- `env.SetCreator(agent, iid)`.
+
+Plus an `OrgRoles` builder returning clients for:
+- admin;
+- manager (holds a position above the target's);
+- member;
+- peer;
+- outsider;
+- instance admin without membership.
+
+Phases 3-6 reuse these for their authorization matrices.
+**Where**: `internal/testkit/orgs.go`
+**Depends on**: T7, T10
+**Reuses**: `testkit.Env` app handle, `authmatrix_test.go` style
+**Requirement**: OMEM-04, POS-05, CHART-02
+**Done when**:
+- [ ] `testkit_test.go` case: `OrgRoles` yields the stated permissions and positions, and `Manages(manager, target)` is true while `Manages(peer, target)` is false
+- [ ] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `test(testkit): add organization roles for authorization tests`
+
+### Phase 3: Organization API (group GA)
+
+#### T12: Organization routes and DTOs [core]
+
+**What**: `GET|POST /api/v1/orgs`, `GET|PATCH|DELETE /api/v1/orgs/{org}` and `PUT|DELETE /orgs/{org}/avatar`, with the DTOs `Organization`, `OrgMember` and `Position` (tygo). Add the error codes `organization_not_empty` (409) and `last_admin` (409), plus their `httpx` mapping.
+**Where**: `internal/api/orgs_handlers.go`
+**Depends on**: None
+**Reuses**: `authed`, `avatar_handlers.go` pattern
+**Requirement**: ORG-01, ORG-06, OMEM-04, CHART-02
+**Done when**:
+- [ ] e2e: the design's "Organizations" matrix for every role, using `OrgRoles`
+- [ ] 409 `organization_not_empty` observed with counts (L-017)
+- [ ] An agent token → 403 on `POST /orgs`
+- [ ] `make generate` run
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(api): serve organizations`
+
+#### T13: Position routes [small]
+
+**What**: `POST /orgs/{org}/positions` and `PATCH|DELETE /orgs/{org}/positions/{id}`, with `position_cycle` (409).
+**Where**: `internal/api/positions_handlers.go`
+**Depends on**: T12
+**Reuses**: T6 service
+**Requirement**: POS-01, POS-02, POS-09, OMEM-04
+**Done when**:
+- [ ] e2e:
+  - admin 201/200/204; member 403; outsider 404;
+  - 409 `position_cycle` observed;
+  - 422 for a name of 61 chars and for a parent from another org;
+  - 409 `conflict` for a duplicate name
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(api): edit an organization's positions`
+
+#### T14: Member routes [core]
+
+**What**: `GET /orgs/{org}/members` and `PATCH /orgs/{org}/members/{iid}` (permission, position_id). `DELETE` on the same path belongs to T21.
+**Where**: `internal/api/org_members_handlers.go`
+**Depends on**: T12
+**Reuses**: T7 service, `OrgRoles`
+**Requirement**: OMEM-03, OMEM-04, OMEM-05, POS-04
+**Done when**:
+- [ ] e2e: the GET and PATCH rows of the "Members" matrix (Out/M/G/Mgr/A/Self)
+- [ ] The manager's move to its own level → 403, to none → 403, and to a lower level → 200
+- [ ] Demoting the last admin → 409 `last_admin` observed
+- [ ] Setting `guest` on a member → 200 and the list shows it
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(api): list members and change their permission and position`
+
+#### T15: Invitation routes [core]
+
+**What**: `POST|GET /orgs/{org}/invitations`, `DELETE /orgs/{org}/invitations/{id}`, `GET /api/v1/invitations` and `POST /api/v1/invitations/{id}/accept|decline`. Add `already_member` (409); 410 `gone` and 429 `rate_limited` already exist. Add the live event `invitation_received` for the invitee and the managers of an invitee AI.
+**Where**: `internal/api/org_invitations_handlers.go`
+**Depends on**: T12
+**Reuses**: T8 service, `live` event fan-out
+**Requirement**: OMEM-01, OMEM-02, OMEM-07
+**Done when**:
+- [ ] e2e: the "Invitations" matrix
+- [ ] Bob is invited, accepts, and creates a group in acme; Bob's invite attempt → 403 (spec Independent Test)
+- [ ] 409 `already_member`, 429 and 410 observed
+- [ ] Inviting again updates the permission of the pending invitation
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(api): invite identities to an organization`
+
+#### T16: Chart route [core]
+
+**What**: `GET /orgs/{org}/chart` returns `OrgChart`:
+- positions with their holders: avatar, name, handle, kind, online, admin;
+- members without a position, with `under` (their creator when the creator is a member), else in `unassigned`;
+- per member, the permission (admin and guest badges), and for the viewer `can_delete` (POS-05), `delete_effect` (`delete` for an AI of this org, `remove` otherwise) and `can_move`;
+- `viewer.admin`.
+**Where**: `internal/api/org_chart_handlers.go`
+**Depends on**: T12
+**Reuses**: `Chart.ManagedBy`, presence `Online`
+**Requirement**: CHART-01, CHART-02, CHART-03
+**Done when**:
+- [ ] e2e on the spec's example chart (Admin › Director › Manager › Lead developer › Worktrees, plus Sentinel):
+  - the tree shape;
+  - three workers positioned in Worktrees, and one positionless worker under Lead;
+  - flags for the admin (delete on everyone but itself), for Lead (workers started by Lead are guests: delete true; Sentinel, a member: false; move true on both if below) and for a member (all false);
+  - `delete_effect` is `remove` for a person and for an AI of another org;
+  - outsider 404
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(api): serve the org chart`
+
+#### T17: Default organization route [small]
+
+**What**: `PUT /api/v1/me/default-org` `{org_id}`, and `me` gains `default_org_id`.
+**Where**: `internal/api/auth_handlers.go`
+**Depends on**: T12
+**Reuses**: `orgs.SetDefault` (T9)
+**Requirement**: ORG-04
+**Done when**:
+- [ ] e2e: setting the default to a member org → 200, and the next new AI lands there; a non-member org → 403
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(api): let users choose their default organization`
+
+### Phase 4: AI placement and identity lifecycle (group GA)
+
+#### T18: Placement headers on creation [core]
+
+**What**: `FolderIDFromHeader` reads `X-Partyline-Org`, `X-Partyline-Position` (PathUnescape) and `X-Partyline-Parent`, and the dto header constants are added. `agents.place` resolves for a new AI:
+- the creator (parent the host may act for, else the host; POS-08);
+- the home org (`Org`, else the creator's default);
+- ORG-05 → 403;
+- the position check (POS-07 → 403);
+- the permission: `guest` when the creator is an AI (a valid `--parent`), `member` otherwise (ORG-04);
+- `position_unknown` (422) and `organization_required` (422).
+**Where**: `internal/agents/placement.go`
+**Depends on**: None
+**Reuses**: `linkOrCreate` transaction, `orgs.DefaultFor`, `Chart.Above`
+**Requirement**: ORG-04, ORG-05, POS-07, POS-08
+**Done when**:
+- [ ] e2e on the live WebSocket and on a tools-only call (L-034: one test each):
+  - `--org acme` → acme;
+  - a parent AI hosted by the same user → creator = parent, home = the parent's home, permission `guest`;
+  - a parent hosted by another user → creator = host, permission `member`;
+  - a foreign org → 403 and no AI row;
+  - a position below the creator → held; at the same level → 403; for an admin creator → held;
+  - unknown position → 422 `position_unknown`; unknown org → 422 `organization_required`;
+  - no headers → the defaults (v0.5 compatibility)
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(agents): place new AIs with --org, --position and --parent`
+
+#### T19: Start rules for an existing AI [small]
+
+**What**: For an AI that exists:
+- `Org` naming another org → 409 `organization_mismatch`, with the home org named in details;
+- `Parent` is ignored;
+- a different `Position` moves the AI when the starter manages it or is admin, plus the POS-07 check; otherwise 403.
+**Where**: `internal/agents/placement.go`
+**Depends on**: T18
+**Reuses**: `orgs.SetPosition` rules
+**Requirement**: ORG-04, POS-07
+**Done when**:
+- [ ] e2e:
+  - mismatch → 409, observed (L-017);
+  - the same `--org` → OK;
+  - a later `--position` within the rule moves the AI; outside it → 403 and the position is unchanged;
+  - `--parent` on a later start does not change the creator
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(agents): keep an existing AI's organization on later starts`
+
+#### T20: Self-deletion of an account [core]
+
+**What**: `users.DeleteAccount(ctx, userID, password)` and the route `DELETE /api/v1/me` `{password}`. One transaction, in this order:
+1. wrong password → 422 field `password`;
+2. `ErrLastInstanceAdmin` (409 `last_instance_admin`);
+3. the heir becomes admin where the user was the last admin (OUPG-02);
+4. `rooms.owner_id` and `connectors.owner_id` are re-pointed to the heir;
+5. the hosted AIs stay: `owner_id` → heir, `folder` → `''`;
+6. the user row is deleted.
+
+After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgChanged` and audit `user.delete`. MIG-02 adoption then only considers unlinked AIs whose `creator_iid` is the host.
+**Where**: `internal/users/delete.go`
+**Depends on**: None
+**Reuses**: `ChangePassword` password check, `presence.Kick`, `events`
+**Requirement**: POS-06, OUPG-02
+**Done when**:
+- [ ] e2e:
+  - the user's sessions and tokens fail authentication (401);
+  - for every table with a user or intelligence column, the deleted id has no row left;
+  - a group and a connection the user created survive in their org;
+  - the user's hosted AIs are still members of their orgs, with their positions, offline and unlinked, and the heir's sessions never adopt them;
+  - the last admin's org gets the instance admin as admin, while an org with a second admin is unchanged;
+  - a wrong password → 422 and nothing changes;
+  - the last instance admin → 409 `last_instance_admin` observed
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(users): let users delete their own account`
 
 #### T21: Manager deletion and session end routes [core]
 
@@ -656,14 +1214,15 @@ After commit: `SessionsRevoked`, `OrgChanged` and audit `user.delete`.
 
 #### T23: Groups belong to an organization [core]
 
-**What**: `POST /api/v1/groups` takes `org_id`; a member creates, and a non-member gets 403. The agent's `POST /agent/groups` takes an optional `org`, defaulting to the AI's home org. `rooms.org_id` and `creator_iid` are set. Member adds to a group require membership of its org (`members_refused`, reason `not_org_member`). The AI acts as itself (`IID()`).
+**What**: `POST /api/v1/groups` takes `org_id`; a `member` or `admin` creates; a non-member and a `guest` get 403 (ORG-03, OMEM-04). The agent's `POST /agent/groups` takes an optional `org`, defaulting to the AI's home org. `rooms.org_id` and `creator_iid` are set. Member adds to a group require membership of its org (`members_refused`, reason `not_org_member`). The AI acts as itself (`IID()`).
 **Where**: `internal/conversations/groups.go`
 **Depends on**: T22
 **Reuses**: `rooms.CreateWithMembers`, `MembersRefusedError`
-**Requirement**: ORG-02, ORG-03
+**Requirement**: ORG-02, ORG-03, OMEM-04
 **Done when**:
 - [ ] e2e:
   - a user group in acme → 201 with `org_id`; in a foreign org → 403;
+  - a guest user and a guest AI each → 403, while a guest added to a group posts in it;
   - an AI's `create_group` without `org` → its home org; with an org where it is not a member → 403;
   - adding a non-member → 422 `members_refused`/`not_org_member`;
   - rewrite `groups_test.go` and `conversation_tools_test.go`
@@ -700,7 +1259,7 @@ Merge moves org memberships (B wins) and re-points `creator_iid` from A to B. `D
 - `CanSee`: users always; AIs when sharing an org or hosted; people per the design table.
 - `CanEdit`: self or manager anywhere.
 
-`Profile` gains memberships (org, permission, position) and the viewer's `can_delete`/`can_end_session`. Rewrite `intelligences_handlers_test.go` and `service_test.go`.
+`Profile` gains memberships (org, permission, position), each with the viewer's `can_delete` and `delete_effect`, plus `can_edit` and `can_end_session`. The `machine`/`machine_label` fields go (AD-022). Rewrite `intelligences_handlers_test.go` and `service_test.go`.
 **Where**: `internal/intelligences/service.go`
 **Depends on**: None
 **Reuses**: `orgs.Authz`
@@ -756,7 +1315,7 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 
 #### T28: Contacts on organizations [small]
 
-**What**: `Contacts`: `Shared` becomes `OrgAIs`, the AIs of my orgs grouped by org; the hosted machine tree is unchanged; people come from my orgs' connections. Rewrite `contacts_test.go`, `dm_test.go` and `direct_messages_test.go`. DM targets of an AI are those it can see (DM-04 wording, AD-016).
+**What**: `Contacts`: `Shared` and the machine tree (`OwnAIs.Machines`, `Unlinked`) become `OrgAIs`, the AIs of my orgs grouped by org, each with its folder label; people come from my orgs' connections (AD-022). Rewrite `contacts_test.go`, `dm_test.go` and `direct_messages_test.go`. DM targets of an AI are those it can see (DM-04 wording, AD-016).
 **Where**: `internal/intelligences/contacts.go`
 **Depends on**: T25
 **Reuses**: `CanSee`
@@ -764,11 +1323,45 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Done when**:
 - [ ] e2e:
   - contacts list another user's AI after joining its org and not before;
+  - the response has no machine grouping; an AI hosted by me but in an org I left is still listed under "hosted by me";
   - an AI's `send_message to` an AI of a foreign org → 404 `contact_not_found`, while a user of the instance works
 - [ ] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(intelligences): list contacts by organization`
+
+#### T56: Conversations carry their organizations [small]
+
+**What**: `GET /api/v1/conversations` items gain `org_ids`: a group's org, or for a DM the orgs both participants belong to; a DM with none gets the viewer's default org (gap G1). The live `conversation` events carry the same field.
+**Where**: `internal/conversations/list.go`
+**Depends on**: None
+**Reuses**: `orgs.Authz`, `ListRoomsForUser`
+**Requirement**: ORG-02, OMEM-03
+**Done when**:
+- [ ] e2e:
+  - a group lists its org;
+  - a DM with a colleague in two shared orgs lists both;
+  - a DM with a user who shares no org lists the viewer's default org;
+  - after the colleague leaves one org, the DM lists only the remaining one
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(conversations): tag conversations with their organizations`
+
+#### T57: Machines become internal [small]
+
+**What**: Remove `PUT /api/v1/machines/{hostname}`, `intelligences.SetMachineLabel` and `GET /api/v1/agent/contacts/tree` with its DTO (AD-022). `GET /api/v1/agent/agents` gains `organization`. The `machines` table stays for the home folder label.
+**Where**: `internal/api/contacts_handlers.go`
+**Depends on**: T28
+**Reuses**: `retired_routes_test.go`
+**Requirement**: ORG-02
+**Done when**:
+- [ ] e2e: both removed routes → 404 (retired routes test); `/agent/agents` lists each hosted AI with its organization; folder labels still show `~`
+- [ ] `make generate` run
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `refactor(api): stop exposing machines`
 
 ### Phase 6: Trust and live updates (group GA)
 
@@ -927,20 +1520,35 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Gate**: build
 **Commit**: `feat(channel): create groups in a chosen organization`
 
+#### T58: `partyline agents` by organization [small]
+
+**What**: `partyline agents` prints the AIs hosted by the token user, grouped by organization: name, @handle, folder label, app and online state, with no machine tree (AD-022). It reads `/api/v1/agent/agents`.
+**Where**: `internal/cli/agents.go`
+**Depends on**: None
+**Reuses**: `printTreeNodes` indentation style
+**Requirement**: ORG-02
+**Done when**:
+- [ ] CLI e2e: two orgs print two headed groups; the output never contains the hostname; no hosted AI → the empty message; a server error → non-zero exit (L-045)
+- [ ] Gate check passes: `make check`
+**Tests**: e2e
+**Gate**: build
+**Commit**: `feat(cli): list hosted AIs by organization`
+
 ### Phase 8: Web organization pages (group GB)
 
 #### T39: Organization queries and switcher [core]
 
-**What**: Query hooks in `queries.ts` for orgs, members, positions, chart, invitations and the default org, plus `makeOrg*` fixtures. Add `OrgSwitcher` in the `AppSidebar` header and in `MobileBar`. The selection persists in `localStorage` (try/catch) and is exposed through `useCurrentOrg()`. Add i18n in en and pt-BR.
+**What**: Query hooks in `queries.ts` for orgs, members, positions, chart, invitations and the default org, plus `makeOrg*` fixtures. Add `OrgSwitcher` in the `AppSidebar` header and in `MobileBar`: each organization with its unread count (the sum over conversations whose `org_ids` include it), plus "+ New organization". The selection persists in `localStorage` (try/catch) and is exposed through `useCurrentOrg()`. Add i18n in en and pt-BR.
 **Where**: `web/src/components/org-switcher.tsx`
 **Depends on**: None
 **Reuses**: `dropdown-menu`, `useMe`, `test/fetch.ts`
-**Requirement**: ORG-01, CHART-02
+**Requirement**: ORG-01, ORG-02, CHART-02
 **Done when**:
 - [ ] Vitest:
-  - lists the orgs; switching updates `useCurrentOrg` and survives a remount;
+  - lists the orgs with unread counts (a DM shared by two orgs counts in both);
+  - switching updates `useCurrentOrg` and survives a remount;
   - throwing storage falls back to the default org;
-  - "Create organization" opens the dialog;
+  - "+ New organization" opens the dialog;
   - axe clean
 - [ ] Gate check passes: `make check`
 **Tests**: unit
@@ -949,7 +1557,7 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 
 #### T40: Organizations list, creation and invitation inbox [small]
 
-**What**: `orgs/index.tsx`: my orgs; a create dialog with 1-100 validation; pending invitations for me and my managed AIs with accept and decline. The position warning appears when an invitation carries a position.
+**What**: `orgs/index.tsx`: my orgs; a create dialog with 1-100 validation; pending invitations for me and my managed AIs with accept and decline. An invitation that carries a position or `guest` says what it grants (the design's wording).
 **Where**: `web/src/routes/_app/orgs/index.tsx`
 **Depends on**: T39
 **Reuses**: `Dialog`, `AlertDialog`
@@ -981,17 +1589,18 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 
 #### T42: Members page and invite dialog [core]
 
-**What**: `orgs/$orgId/members.tsx`: a members table; per-row actions from the server flags; an invite dialog (handle picker, permission, position); pending invitations with revoke; `last_admin` and `home_organization` errors inline.
+**What**: `orgs/$orgId/members.tsx`: a members table with the permission (admin, member, guest); per-row actions from the server flags, labelled "Delete" for an AI of this org and "Remove from <org>" otherwise; an invite dialog (handle picker, permission, position); pending invitations with revoke; `last_admin` and `home_organization` errors inline.
 **Where**: `web/src/routes/_app/orgs/$orgId/members.tsx`
 **Depends on**: T39
 **Reuses**: `MemberPicker`, `table`, `select`
-**Requirement**: OMEM-01, OMEM-03, OMEM-04, OMEM-05, OMEM-06
+**Requirement**: OMEM-01, OMEM-03, OMEM-04, OMEM-05, OMEM-06, POS-05, POS-06
 **Done when**:
 - [ ] Vitest through the route (L-007):
   - a member sees no invite button;
   - an admin invites with a position;
   - the 409 messages render;
-  - a manager sees "move" only on subordinates;
+  - a manager sees "move" only on subordinates and "Delete" only on guests below;
+  - the label is "Remove from acme" for a person;
   - axe clean
 - [ ] Gate check passes: `make check`
 **Tests**: unit
@@ -1019,7 +1628,7 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 
 #### T44: Org chart page [core]
 
-**What**: `orgs/$orgId/chart.tsx`: `role="tree"` with `treeitem`, `aria-expanded`, `aria-level` and a roving tabindex. Holders show avatar, name, @handle, kind, online and the admin badge. Positionless members appear under their creator or under "Unassigned". Actions appear per flag, and "edit positions" for admins. At 360 px: capped indentation and truncation.
+**What**: `orgs/$orgId/chart.tsx`: `role="tree"` with `treeitem`, `aria-expanded`, `aria-level` and a roving tabindex. Holders show avatar, name, @handle, kind, online, and the admin or guest badge. Positionless members appear under their creator or under "Unassigned". Actions appear per flag, and "edit positions" for admins. At 360 px: capped indentation and truncation.
 **Where**: `web/src/routes/_app/orgs/$orgId/chart.tsx`
 **Depends on**: T39
 **Reuses**: `delete-ai-dialog.tsx`, `dropdown-menu`
@@ -1028,7 +1637,7 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 - [ ] Vitest through the route:
   - the tree and fields render;
   - arrow keys, Home/End and Enter move focus and expand;
-  - actions are present only where flagged (a member sees none; Lead sees delete on the workers only);
+  - actions are present only where flagged (a member sees none; Lead sees delete on its guest workers only; an admin sees "Remove" on a person);
   - outsider (404) → not found;
   - axe clean
 - [ ] Gate check passes: `make check`
@@ -1054,13 +1663,17 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 
 #### T46: New group dialog with an organization and the sidebar filter [small]
 
-**What**: `new-group-dialog.tsx` gets an org select (default: current org); the member picker shows that org's members. The sidebar shows the current org's groups and all DMs.
+**What**: `new-group-dialog.tsx` gets an org select (default: current org; orgs where I am a guest are not offered); the member picker shows that org's members. The sidebar shows the selected org's groups, plus each DM whose `org_ids` include that org.
 **Where**: `web/src/components/new-group-dialog.tsx`
 **Depends on**: None
 **Reuses**: `MemberPicker`, `useCurrentOrg`
-**Requirement**: ORG-03
+**Requirement**: ORG-03, OMEM-04, ORG-02
 **Done when**:
-- [ ] Vitest: creating sends `org_id`; changing the org reloads the picker; the sidebar hides a group of another org and keeps the DMs
+- [ ] Vitest:
+  - creating sends `org_id`, and changing the org reloads the picker;
+  - a guest org is absent from the select;
+  - the sidebar hides a group of another org;
+  - it shows a DM with a colleague of the selected org and hides a DM with someone of another org only
 - [ ] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
@@ -1068,7 +1681,7 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 
 #### T47: Profile memberships and manager actions [core]
 
-**What**: `contacts.$id.tsx` lists memberships, and shows "End session", "Delete" and "Edit" from the profile's `can_*` flags. Deleting a person needs a typed-name confirmation, and the dialog states that the account is deleted everywhere. The sharing dialog is removed from this page.
+**What**: `contacts.$id.tsx` lists memberships, and shows "End session", "Edit", and per organization "Delete" or "Remove from <org>" from the profile's flags. The machine row and the sharing dialog are removed from this page.
 **Where**: `web/src/routes/_app/contacts.$id.tsx`
 **Depends on**: None
 **Reuses**: `delete-ai-dialog.tsx`, `alert-dialog`
@@ -1077,7 +1690,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 - [ ] Vitest through the route (L-007):
   - a non-manager sees no actions;
   - a manager ends a session (API called);
-  - person delete stays disabled until the typed name matches, and its dialog text is asserted literally
+  - an admin sees "Remove from acme" for a person, and the dialog text (removal only, the account stays) is asserted literally;
+  - no machine row renders
 - [ ] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
@@ -1085,13 +1699,13 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 
 #### T48: Contacts grouped by organization [small]
 
-**What**: `contacts.index.tsx` replaces "Shared AIs" with "AIs of my organizations", grouped by org; the machine tree stays.
+**What**: `contacts.index.tsx` lists AIs grouped by organization. "Shared AIs", the machine › folder tree, `machine-group.tsx` and the machine label editor are removed (AD-022).
 **Where**: `web/src/routes/_app/contacts.index.tsx`
 **Depends on**: None
 **Reuses**: `machine-group.tsx`
 **Requirement**: OMEM-03
 **Done when**:
-- [ ] Vitest: two orgs render two groups with their AIs; an empty org group is hidden
+- [ ] Vitest: two orgs render two groups with their AIs; an empty org group is hidden; no hostname or machine label renders
 - [ ] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
@@ -1099,17 +1713,19 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 
 #### T49: Default organization setting [small]
 
-**What**: `settings.tsx` gets a "Default organization for new AIs" select (`PUT /me/default-org`).
+**What**: `settings.tsx` gets a "Default organization for new AIs" select (`PUT /me/default-org`) and "Delete my account" (password; the dialog says that AIs, groups and connections stay in their organizations).
 **Where**: `web/src/routes/_app/settings.tsx`
 **Depends on**: None
 **Reuses**: `select`
-**Requirement**: ORG-04
+**Requirement**: ORG-04, POS-06
 **Done when**:
-- [ ] Vitest: the select shows the current default; changing it calls the API; an error toast shows on 403
+- [ ] Vitest:
+  - the select shows the current default; changing it calls the API; an error toast shows on 403;
+  - delete account: a wrong password (422) shows inline; 409 `last_instance_admin` shows its message; success logs out
 - [ ] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
-**Commit**: `feat(web): choose the default organization`
+**Commit**: `feat(web): default organization and account deletion settings`
 
 #### T50: Remove the sharing UI [small]
 
@@ -1172,10 +1788,11 @@ Rewrite `authmatrix_test.go` on `OrgRoles`.
 **What**: `upgrade_test.go` opens a v0.5 database (the v0.4 builder plus 0017/0018, with grants seeded), starts the app and checks through the API:
 - each user sees their personal org and their AIs as members;
 - a former `use` grantee sees the AI but cannot delete it (403);
-- the owner can delete it;
+- the owner, as admin, can delete it;
+- the upgraded AIs are `member`s;
 - after the upgrade, the owner's two AIs do not trust each other, and the owner's post is trusted;
 - room history is intact;
-- OUPG-02 holds through `DELETE /intelligences/{id}` of a last admin.
+- OUPG-02 holds through `DELETE /api/v1/me` of a last admin.
 **Where**: `internal/api/upgrade_test.go`
 **Depends on**: T52
 **Reuses**: `v04Database` helper
@@ -1204,7 +1821,7 @@ Rewrite `authmatrix_test.go` on `OrgRoles`.
 #### T55: Docs [small]
 
 **What**:
-- `docs/api.md`: org routes, removed sharing routes, new headers and error codes;
+- `docs/api.md`: org routes, removed sharing and machine routes, new headers and error codes, the three permissions and the delete rule;
 - README and README.pt-BR: organizations, `--org/--position/--parent`, `partyline orgs`;
 - release notes: trust wording for v0.5 CLIs, sibling AIs untrusted after the upgrade.
 
@@ -1235,14 +1852,16 @@ G3:  Phase 10
 | --- | --- | --- | --- |
 | 1 | P1 | 4 | high (schema, upgrade, rules) |
 | 2 | P2 | 7 | high |
-| 3a / 3b / 3c / 3d (parallel) | P3 / P4 / P5 / P6 | 6 / 4 / 7 / 4 | P3 mid; P4, P5, P6 high |
-| 4a / 4b (parallel) | P7 / P8 → P9 | 6 / 12 (two sequential batches of 6) | P7 mid; web mid; T44 and T47 high |
+| 3a / 3b / 3c / 3d (parallel) | P3 / P4 / P5 / P6 | 6 / 4 / 9 / 4 | P3 mid; P4, P5, P6 high |
+| 4a / 4b (parallel) | P7 / P8 → P9 | 7 / 12 (two sequential batches of 6) | P7 mid; web mid; T44 and T47 high |
 | 5 | P10 | 5 | high (T51, T53) |
 
-Total: 55 tasks. Per-phase counts: P1 4, P2 7, P3 6, P4 4, P5 7, P6 4, P7 6, P8 6, P9 6, P10 5.
+Total: 58 tasks. Per-phase counts: P1 4, P2 7, P3 6, P4 4, P5 9, P6 4, P7 7, P8 6, P9 6, P10 5.
 
 Shared files that GA phases touch, which the merge must reconcile:
 - `internal/agents/registry.go`: T21 owns `Delete`, T24 owns the rest.
+- `internal/api/org_members_handlers.go`: T14 (Phase 3) writes GET and PATCH, and T21 (Phase 4) adds DELETE. Merge both.
+- `internal/intelligences/contacts.go` vs. `contacts_handlers.go`: T28 and T57, which are in the same phase and run in order.
 - `internal/connectors/inbound.go`: T27 owns pairing, T31 owns trust.
 - `internal/api/dto/*`: each phase owns its own files.
 - Generated code: regenerate.
@@ -1262,7 +1881,8 @@ Shared files that GA phases touch, which the merge must reconcile:
 | T12-T17 | one route group each | ✅ |
 | T18, T19 | placement on creation; on later starts | ✅ |
 | T20, T21 | service; routes | ✅ |
-| T22-T28 | one package's authorization each | ✅ |
+| T22-T28, T56 | one package's authorization each | ✅ |
+| T57, T58 | machine routes removal; CLI listing | ✅ |
 | T29-T32 | one trust/visibility site each | ✅ |
 | T33-T38 | one CLI/channel concern each | ✅ |
 | T39-T50 | one component or page each | ✅ |
@@ -1294,12 +1914,14 @@ Shared files that GA phases touch, which the merge must reconcile:
 | T24, T25, T26 | None | — | ✅ |
 | T27 | T26 | T26 → T27 | ✅ |
 | T28 | T25 | T25 → T28 | ✅ |
+| T56 | None | — | ✅ |
+| T57 | T28 | T28 → T57 | ✅ |
 | T29 | None | — | ✅ |
 | T30 | T29 | T29 → T30 | ✅ |
 | T31, T32 | None | — | ✅ |
 | T33 | None (needs GA) | — | ✅ |
 | T34 | T33 | T33 → T34 | ✅ |
-| T35-T38 | None (needs GA) | — | ✅ |
+| T35-T38, T58 | None (needs GA) | — | ✅ |
 | T39 | None (needs GA) | — | ✅ |
 | T40-T44 | T39 | T39 → each | ✅ |
 | T45-T49 | None (needs Phase 8) | — | ✅ |
@@ -1319,8 +1941,8 @@ on another GA phase, and the same holds within GB.
 | --- | --- | --- | --- | --- |
 | T1, T2, T52 | store / migrations / hooks | integration | integration | ✅ |
 | T3 | pure rules | unit | unit | ✅ |
-| T4-T9, T11, T20 | services / testkit | integration | integration | ✅ |
-| T10, T12-T19, T21-T38, T51, T53 | routes / WS / channel / CLI (and the services they change) | e2e | e2e | ✅ |
+| T4-T9, T11 | services / testkit | integration | integration | ✅ |
+| T10, T12-T38, T51, T53, T56-T58 | routes / WS / channel / CLI (and the services they change) | e2e | e2e | ✅ |
 | T39-T50 | web components/pages | unit | unit | ✅ |
 | T54 | web end-to-end | e2e | e2e | ✅ |
 | T55 | docs | none | none | ✅ |

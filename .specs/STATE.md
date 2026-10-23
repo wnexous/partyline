@@ -152,13 +152,17 @@
 ### AD-016
 - **Decision**: Organizations own AIs, connections and groups, and organization membership is the only sharing mechanism.
   - Per-resource grants (`use`/`view`/`post`/`manage`), the visibility presets and owner-based access are removed, and so is the `grants` table (migration `0020`).
-  - An organization has members (users and AIs) with a permission (`admin` or `member`) and an org chart of positions.
+  - An organization has members (users and AIs) with a permission and an org chart of positions. The permissions are:
+    - `admin`: looks after the organization and may delete any identity of it;
+    - `member`: takes part, and only an admin deletes it;
+    - `guest`: takes part in the groups it is added to, cannot create groups, and may be deleted by anyone who manages it. An AI started by another AI (`--parent`) joins as `guest`; one started by a user joins as `member`.
   - Access rules:
     - A group is posted to by its room members and managed by its creator and the org's admins.
     - A DM is posted to by its two participants and viewed by the managers of an AI participant in its home organization.
     - A connection is viewed by the org's members and managed by its admins; only its operator sends through it.
     - An AI is seen by the members of the organizations it belongs to and by its host user.
-    - An AI is edited, ended and deleted by those who manage it (AD-017).
+    - An identity is edited, ended and moved below by those who manage it (AD-017).
+    - Deleting B in organization X (POS-05) is allowed to an admin of X, or to a manager of B when B is a guest of X. What it does follows ownership (POS-06): an AI whose home is X is deleted for good, while a person or an AI of another organization is only removed from X. Nobody deletes another identity's account; a user may delete their own (AD-019).
   - An AI acts as itself (`Principal.IID()`), not with its owner's rights.
   - Instance admins get no implicit access.
 - **Reason**: The product owner wants partyline to mirror a company with one sharing rule (organizations spec); grants fit neither teams nor AIs that start AIs.
@@ -204,17 +208,18 @@
   - AD-014 (the owner's own account is no longer a trust source; `from_self` stays untrusted, as AD-015 already said).
 
 ### AD-019
-- **Decision**: Ownership columns after organizations:
-  - **`agents.owner_id`** remains the AI's host user: the user whose machine and agent token run it. It stays part of the identity key (owner, machine, folder) of AD-010, but grants nothing.
+- **Decision**: Ownership columns and account deletion after organizations:
+  - **`agents.owner_id`** remains the AI's host user: the user whose computer and agent token run it. It stays part of the identity key (owner, machine, folder) of AD-010, but grants nothing.
   - **`rooms.owner_id` and `connectors.owner_id`** become dead foreign-key anchors (AD-012 cannot drop them). `creator_iid` and `org_id` carry the meaning.
-  - **Account deletion** (new: users were only disabled before) runs in one transaction:
-    1. re-points those anchors to an heir instance admin, so that `ON DELETE CASCADE` cannot delete organization-owned groups and connections;
-    2. makes that heir an admin of each organization the user was the last admin of (OUPG-02);
-    3. deletes the AIs hosted on the user's machines;
-    4. deletes the user row.
-  - The last active instance admin cannot be deleted (`last_instance_admin`, 409).
-- **Reason**: POS-06 deletes a person's account everywhere. The existing cascades would otherwise delete what organizations own.
-- **Trade-off**: Dead anchor columns stay in the schema. Hosted AIs die with their host's account (question Q2 of the design).
+  - **Deleting another identity** never deletes an account: a person is removed from the organization (AD-016).
+  - **Self-deletion** (`DELETE /api/v1/me` with the password; users were only disabled before) runs in one transaction:
+    1. the heir instance admin becomes an admin of each organization the user was the last admin of (OUPG-02);
+    2. the anchors are re-pointed to the heir, so that `ON DELETE CASCADE` cannot delete organization-owned groups and connections;
+    3. the AIs hosted on the user's computers stay in their organizations as unlinked identities owned by the heir (`folder = ''`, never adoptable). Deleting a person never touches AIs;
+    4. the user row is deleted.
+  - The last active instance admin cannot delete their account (`last_instance_admin`, 409).
+- **Reason**: POS-06 as answered by the owner (2026-10-23): what "delete" removes follows ownership, and the account belongs to the person. The existing cascades would otherwise delete what organizations own.
+- **Trade-off**: Dead anchor columns stay in the schema. A self-deleted user's AIs stay offline until an admin (or a manager, for a guest) deletes them.
 - **Scope**: users, orgs, agents, rooms, connectors, store.
 - **Date**: 2026-10-23
 - **Status**: active
@@ -244,13 +249,25 @@
 - **Date**: 2026-10-23
 - **Status**: active
 
+### AD-022
+- **Decision**: Machines stop being a visible concept.
+  - A login links a computer to the user.
+  - The server keeps the hostname only inside the AI identity key (AD-010), to tell the same folder on two computers apart.
+  - The web contacts' machine › folder tree, the machine row of profiles, machine renaming (`PUT /api/v1/machines/{hostname}`, `machines.label`, now a dead column), `GET /api/v1/agent/contacts/tree` and the `partyline agents` machine tree are removed.
+  - AIs are listed by organization instead.
+- **Reason**: The owner (2026-10-23): organizations are now how AIs are found and grouped; the machine is an implementation detail.
+- **Trade-off**: Two computers with the same folder show two AIs that differ only by folder label and history. v0.5 `partyline agents` prints "not found".
+- **Scope**: intelligences (supersedes TREE-01, TREE-03, TREE-04 and the machine grouping of TREE-02; the `~` folder label stays), contacts, cli, web-app.
+- **Date**: 2026-10-23
+- **Status**: active
+
 ## Handoff
 
 - **Feature**: organizations
-- **Phase / Task**: Design and Tasks written (T1-T54, 10 phases); awaiting approval and the owner's answers to design questions Q1-Q4
-- **Completed**: spec (`6ed8e88`), design, tasks
+- **Phase / Task**: Design and Tasks revised after the owner's answers (T1-T58, 10 phases); awaiting approval
+- **Completed**: spec (`6ed8e88` + owner's answers), design, tasks
 - **In-progress** (file:line): none
 - **Next step**: approve design and tasks, then Execute Phase 1 (T1)
-- **Blockers**: Q1-Q4 of the design (tasks implement the stated defaults)
+- **Blockers**: gaps G1 and G2 of the design (tasks implement the stated defaults)
 - **Uncommitted files**: `.specs/STATE.md`, `.specs/features/organizations/{spec,design,tasks}.md`
 - **Branch**: main

@@ -2,7 +2,7 @@
 
 **Spec**: `.specs/features/organizations/spec.md`
 **Status**: Draft
-**Decisions**: AD-016 to AD-021 in `.specs/STATE.md`
+**Decisions**: AD-016 to AD-022 in `.specs/STATE.md`. Revised after the owner's answers (2026-10-23): three permissions, deletion follows ownership, self-deletion, machines become internal, chats per organization.
 
 ---
 
@@ -57,7 +57,7 @@ graph TD
 | Account creation | `internal/users/invites.go:208` `insertAccount` | Creates the personal organization in the same transaction |
 | AI resolution | `internal/agents/folder.go:192` `ResolveFolder`, `:324` `createFolderAgent` | Placement (org, creator, position) when an AI is created |
 | Header parsing | `internal/agents/folder.go:53` `FolderIDFromHeader` | Reads the three new optional headers |
-| AI deletion | `internal/agents/registry.go:331` `Delete` | Manager deletion of an AI (check swapped to `Manages`) |
+| AI deletion | `internal/agents/registry.go:331` `Delete` | Deletion of an AI in its home org (check swapped to `CanDelete`, POS-05) |
 | Session end | `internal/agents/presence.go:171` `Kick` | Manager ends a live session with close 4002 (`CloseTakenOver`) |
 | Delivery trust | `internal/delivery/rules.go:42` `Trusted` + call sites (`dispatcher.go:149`, `gateway.go:590`, `pending.go`, `agent_handlers.go:496`) | Replaced by a trust oracle with the same call sites |
 | Platform trust | `internal/connectors/inbound.go:208` | Sender's linked user must manage the operator |
@@ -111,7 +111,7 @@ CREATE INDEX positions_parent ON positions (parent_id);
 CREATE TABLE org_members (
     org_id      TEXT NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
     iid         TEXT NOT NULL REFERENCES intelligences (id) ON DELETE CASCADE,
-    permission  TEXT NOT NULL CHECK (permission IN ('admin', 'member')),
+    permission  TEXT NOT NULL CHECK (permission IN ('admin', 'member', 'guest')),
     position_id TEXT REFERENCES positions (id) ON DELETE SET NULL,
     joined_at   INTEGER NOT NULL,
     PRIMARY KEY (org_id, iid)                       -- one membership, so at most one position (OMEM-03)
@@ -123,7 +123,7 @@ CREATE TABLE org_invitations (
     id          TEXT PRIMARY KEY,
     org_id      TEXT NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
     invitee_iid TEXT NOT NULL REFERENCES intelligences (id) ON DELETE CASCADE,
-    permission  TEXT NOT NULL CHECK (permission IN ('admin', 'member')),
+    permission  TEXT NOT NULL CHECK (permission IN ('admin', 'member', 'guest')),
     position_id TEXT REFERENCES positions (id) ON DELETE SET NULL,
     invited_by  TEXT NOT NULL,
     created_at  INTEGER NOT NULL,
@@ -148,10 +148,11 @@ Notes:
 - `agents.org_id`, `rooms.org_id` and `connectors.org_id` have no `ON DELETE` action. Deleting an
   organization that still owns anything fails at the database level as well as in the service
   (ORG-06 belt and braces).
-- `agents.owner_id` keeps its meaning as the **host user**: the user whose machine runs the AI and
+- `agents.owner_id` keeps its meaning as the **host user**: the user whose computer runs the AI and
   whose agent token authenticates it. It stays part of the identity key (owner, machine, folder)
-  of AD-010, which machines linked to users (spec Assumption "Machines") preserve. It no longer
-  grants anything (AD-019).
+  of AD-010. The machine is kept only internally, to tell the same folder on two computers apart
+  (spec Assumption "Machines", AD-022). It no longer grants anything (AD-019).
+- `machines.label` becomes a dead column: machine renaming is removed (AD-022).
 - `rooms.owner_id` and `connectors.owner_id` become dead foreign-key anchors (they cannot be
   dropped, AD-012). They are re-pointed before an account is deleted, because their
   `ON DELETE CASCADE` would otherwise delete organization-owned groups and connections (AD-019).
@@ -190,7 +191,7 @@ table or column is left behind.
 ### Go types (`internal/orgs`)
 
 ```go
-type Permission string // "admin" | "member"
+type Permission string // "admin" | "member" | "guest"
 
 type Member struct {
     IID        string
@@ -229,10 +230,20 @@ type Chart struct {
    - The depth is at most the number of members.
 
 Consequences that need no extra code:
-- A root position holder has nobody strictly above, so nobody in X manages them (POS-06, second
-  half).
-- Positionless users (they have no creator) are managed by nobody. Admins can still remove them or
-  give them a position.
+- A root position holder has nobody strictly above, so nobody in X manages them. Only an `admin`
+  can delete them (POS-05).
+- Positionless users (they have no creator) are managed by nobody. Admins can still delete (that
+  is, remove) them or give them a position.
+
+**Deletion rule (POS-05).** `Chart.CanDelete(a, b)` is true exactly when `a != b`, both are
+members, and either `a` is an `admin` of X, or `b` is a `guest` of X and `Manages(a, b)`.
+Management alone therefore lets a manager edit, end and move a subordinate (POS-04), but delete
+only guests. What a deletion does follows ownership (POS-06, AD-019):
+- an AI whose home organization is X is deleted for good (`Registry.Delete`);
+- a person, or an AI whose home is another organization, is removed from X only (OMEM-06). Their
+  account and other memberships stay.
+
+No path deletes another identity's account, and deleting a person never touches any AI.
 
 **Derived queries:**
 - `Chart.ManagersOf(b)`: every A with `Manages(A, b)`, nearest first. Used by the channel notice.
@@ -265,6 +276,7 @@ func (z *Authz) RequireMember(ctx context.Context, orgID, iid string) error  // 
 func (z *Authz) RequireAdmin(ctx context.Context, orgID, iid string) error   // ErrNotFound for outsiders, ErrForbidden for members
 func (z *Authz) Manages(ctx context.Context, actor, target, orgID string) (bool, error)
 func (z *Authz) ManagesAnywhere(ctx context.Context, actor, target string) (bool, error) // any shared org
+func (z *Authz) CanDelete(ctx context.Context, actor, target, orgID string) (bool, error) // POS-05
 func (z *Authz) Trusts(ctx context.Context, authorIID, agentID string) (bool, error)     // home org of agentID (POS-10)
 func (z *Authz) SharesOrg(ctx context.Context, a, b string) (bool, error)
 func (z *Authz) Session() *Session // memoized view with the same methods
@@ -285,11 +297,11 @@ The rules are summarized here; every route group is listed in the matrix below.
 
 | Resource | View | Act / post | Manage |
 | --- | --- | --- | --- |
-| Organization | members | — | `admin`: name, slug, avatar, positions, invitations, permissions, removing members, connections, delete (OMEM-04) |
-| Group (room `group`) | room members; the org's admins (manage implies view) | room members | the group's creator and the org's admins |
+| Organization | members (all three permissions) | `member` and `admin` create groups; a `guest` cannot (OMEM-04) | `admin`: name, slug, avatar, positions, invitations, permissions, connections, deleting the organization (OMEM-04) |
+| Group (room `group`) | room members; the org's admins (manage implies view) | room members (guests included) | the group's creator and the org's admins |
 | DM | participants; managers of an AI participant in its home org (view only; replaces AD-013) | participants | nobody (DM-02 unchanged) |
-| AI | members of any org it belongs to; its host user | members DM it; only the operator sends through a connection (CID-03) | its managers in any shared org: edit profile and settings, end session, delete (POS-04). The AI edits its own profile |
-| Person (user) | every user of the instance (directory, unchanged) | — | managers in any shared org: edit profile, remove, delete the account (POS-04, POS-06). The user edits their own profile |
+| AI | members of any org it belongs to; its host user | members DM it; only the operator sends through a connection (CID-03) | its managers in any shared org: edit profile and settings, end session, move below their own position (POS-04). Delete in X per `CanDelete`; it is a hard delete only in its home org (POS-05, POS-06). The AI edits its own profile |
+| Person (user) | every user of the instance (directory, unchanged) | — | managers in any shared org: edit profile, move (POS-04). Delete in X per `CanDelete` removes the person from X only (POS-06). Only the user deletes their own account |
 | Connection | members of its org (operator, status, queue count; never text, CID-23) | the operator AI sends | the org's `admin` (ORG-03, OMEM-04) |
 | People (history) | members of the connection's org, plus users who can view a conversation where the person wrote | — | nobody (history only, CID-21) |
 | Pairing a chat identity | members of the connection's org. For kinds whose caller picks sender ids (webhook), admins only (AD-008 amended) | — | — |
@@ -304,7 +316,8 @@ not belong to (ORG-03, ORG-05) and for starting with a position that is not allo
 
 Roles:
 - **Out**: not a member. Includes an instance admin without membership.
-- **M**: member with no relation to the target.
+- **M**: `member` with no relation to the target.
+- **G**: `guest` with no relation to the target. It is treated as M everywhere except group creation (403).
 - **Mgr**: manages the target (POS-03).
 - **A**: org `admin`.
 - **Self**: the target itself.
@@ -328,8 +341,11 @@ A dash means "same as the column to its left".
 | --- | --- | --- | --- | --- | --- |
 | `GET /orgs/{org}/members` | 404 | 200 | 200 | 200 | 200 |
 | `PATCH /orgs/{org}/members/{iid}` `permission` | 404 | 403 | 403 | 200; 409 `last_admin` (OMEM-05) | 403 unless A |
-| `PATCH /orgs/{org}/members/{iid}` `position_id` | 404 | 403 | 200 to a position strictly below the manager's own, or null; else 403 | 200 for any position | 403 unless A |
-| `DELETE /orgs/{org}/members/{iid}` | 404 | 403 | 204 | 204; 409 `last_admin`; 409 `home_organization` for an AI's home org | 204 (leave), with the same 409s |
+| `PATCH /orgs/{org}/members/{iid}` `position_id` | 404 | 403 | 200 to a position strictly below the manager's own; null or anything else 403 | 200 for any position or null | 403 unless A |
+| `DELETE /orgs/{org}/members/{iid}` ("delete in X") | 404 | 403 | 204 when the target is a `guest`, else 403 (POS-05) | 204 for any target; 409 `last_admin` | 204 (leave); 409 `last_admin`; 409 `home_organization` when an AI leaves its home org |
+
+The effect of `DELETE /orgs/{org}/members/{iid}` follows ownership: an AI whose home is the org is
+deleted for good, and anything else is removed from the org only (POS-06).
 
 **Positions** (`positions_handlers.go`)
 
@@ -354,6 +370,7 @@ A dash means "same as the column to its left".
 | Route | Rule |
 | --- | --- |
 | `PUT /api/v1/me/default-org` | the caller must be a member; otherwise 403 |
+| `DELETE /api/v1/me` `{password}` | the user deletes their own account (POS-06); a wrong password is 422 with field `password` (as `POST /me/password` does for `current_password`); 409 `last_instance_admin` |
 | `GET /api/v1/agent/orgs` (agent token) | the token user's organizations and their positions; used by `partyline orgs` |
 
 **Intelligences** (`intelligences_handlers.go`, `agents_handlers.go`)
@@ -361,10 +378,11 @@ A dash means "same as the column to its left".
 | Route | Out (cannot see) | Can see, not Mgr | Mgr (any shared org) | Self |
 | --- | --- | --- | --- | --- |
 | `PATCH /intelligences/{id}`, avatar | 404 | 403 (POS-05) | 200 | 200 |
-| `DELETE /intelligences/{id}` | 404 | 403 (POS-05) | 204: AI → `Registry.Delete`; user → `users.DeleteAccount` (POS-06); 409 `last_instance_admin` | 403 (self-deletion is out of scope) |
 | `DELETE /agents/{id}/session` | 404 | 403 | 204 (`Kick` with 4002) | — |
 | `GET /agents`, `GET /agents/{id}` | 404 | 200 | 200 | — |
-| `PATCH /agents/{id}`, `DELETE /agents/{id}` | 404 | 403 | 200 / 204 | — |
+| `PATCH /agents/{id}` | 404 | 403 | 200 | — |
+| `DELETE /agents/{id}` (delete in its home org) | 404 | 403 | 204 when `CanDelete` holds in the home org (admin there, or a manager of a guest AI); else 403 | — |
+| `PUT /api/v1/machines/{hostname}`, `GET /api/v1/agent/contacts/tree` | removed (404): machines are internal (AD-022) | | | |
 | `POST /agents/{id}/merge` | 404 | 403 | 200 when the caller manages both and both share a home org | — |
 | `/agents/{id}/sharing` | removed (404, `retired_routes_test`) | | | |
 
@@ -372,7 +390,8 @@ A dash means "same as the column to its left".
 
 | Route | Not visible | Room member | Group creator / org A |
 | --- | --- | --- | --- |
-| `POST /api/v1/groups` `{org_id}` | 403 when not a member of `org_id` (ORG-03) | — | 201 for any org member |
+| `POST /api/v1/groups` `{org_id}` | 403 when not a member of `org_id` (ORG-03), and 403 for a `guest` (OMEM-04) | — | 201 for an org `member` or `admin` |
+| `GET /api/v1/conversations` | each item carries `org_ids`: a group's org, or for a DM the orgs that both participants belong to | — | — |
 | `GET /rooms/{id}`, messages, files, read | 404 | 200 | 200 |
 | `POST /rooms/{id}/messages`, react | 404 | 201 | 201 (`manage` ranks above `post`, as today) |
 | `PATCH\|DELETE /rooms/{id}`, member add, remove and settings | 404 | 403 | 200. Adding a non-member of the org is refused: 422 `members_refused`, reason `not_org_member` |
@@ -394,7 +413,7 @@ A dash means "same as the column to its left".
 
 | Route | Rule |
 | --- | --- |
-| `POST /agent/groups` (`create_group`) | optional `org` (slug or id), default the AI's home org; the AI must be a member (403) |
+| `POST /agent/groups` (`create_group`) | optional `org` (slug or id), default the AI's home org; the AI must be a `member` or `admin` there (403; a guest AI is refused) |
 | `POST /agent/dms` / `send_message to` | target visible to the AI: shares an org with it, or is a user; otherwise 404 `contact_not_found` |
 | connection sends | operator only (CID-03, unchanged) |
 | WebSocket / any route that resolves the folder | placement rules below |
@@ -402,6 +421,8 @@ A dash means "same as the column to its left".
 Each new sentinel error gets a test that observes its status (L-017): `organization_not_empty`,
 `last_admin`, `position_cycle`, `home_organization`, `already_member`,
 `organization_mismatch`, `organization_required`, `position_unknown` and `last_instance_admin`.
+The `forbidden` cases that the spec names get one test each: a guest creating a group, and a
+manager deleting a `member`.
 Negative tests isolate the guard under test (L-018). For example, the `last_admin` test uses a
 target the actor otherwise may change.
 
@@ -438,8 +459,11 @@ is **created**:
    - It is allowed when the creator's position is strictly above it, or when the creator is an
      `admin` there. Otherwise 403 `forbidden`, and nothing is created.
    - Without `Position`, the AI has no position.
-5. The AI row is written with `org_id` and `creator_iid`, together with an `org_members` row
-   (`member`, position) and an audit entry `org.member_join` with `by: start`.
+5. **Permission (ORG-04).** The AI joins as `member` when its creator is a user, and as `guest`
+   when its creator is an AI (a valid `--parent`). A start whose `--parent` falls back to the host
+   user joins as `member`.
+6. The AI row is written with `org_id` and `creator_iid`, together with an `org_members` row
+   (permission, position) and an audit entry `org.member_join` with `by: start`.
 
 **An AI that already exists** keeps its home organization and its creator (refinements R5 and R6):
 - An explicit `Org` naming another organization is 409 `organization_mismatch`, and the message
@@ -490,37 +514,50 @@ per dispatch, by counting `Load` calls through a test hook.
 
 ---
 
-## Account deletion (POS-06, OUPG-02, AD-019)
+## Deletion (POS-05, POS-06, OUPG-02, AD-019)
 
-Users are never deleted today; only disabled. `users.DeleteAccount(ctx, actorIID, userID)` is new
-and runs in one transaction:
-1. **Refusals.** If the user is the last active instance admin: 409 `last_instance_admin`. That
-   instance admin is needed for OUPG-02.
+**Delete in an organization.** `DELETE /orgs/{org}/members/{iid}` and `DELETE /agents/{id}` (the
+latter means "in its home org") are the only ways to delete another identity. Both check
+`Authz.CanDelete(actor, target, org)` (POS-05), then act by ownership (POS-06):
+- **An AI whose home organization is X**: `Registry.Delete`. Memberships everywhere go, connection
+  operators are cleared (OMEM-08), and the live session is kicked with 4001 after commit.
+- **Anything else** (a person, or an AI of another organization): `orgs.Remove`. The target leaves
+  X's groups and its position there (OMEM-06), and nothing else changes.
+
+Positionless members created by a deleted AI keep their membership. Their `creator_iid` becomes
+NULL, so only admins (and their positions, if any) reach them afterwards.
+
+**Self-deletion of an account.** `DELETE /api/v1/me` with the current password (POS-06 "A user
+MAY delete their own account"). Users were never deleted before; only disabled.
+`users.DeleteAccount(ctx, userID)` is new and runs in one transaction:
+1. **Refusals.** A wrong password is 422 (field `password`). The last active instance admin gets
+   409 `last_instance_admin`, because that instance admin is needed for OUPG-02.
 2. **OUPG-02.** For each organization where the user is the only `admin`, the heir becomes an
    `admin` with no position (a new membership, or an upgraded one). The heir is the oldest active
-   instance admin other than the user. The change is audited as `org.admin_inherited`.
+   instance admin other than the user. Audited as `org.admin_inherited`.
 3. **Dead anchors.** `rooms.owner_id` and `connectors.owner_id` equal to the user are re-pointed to
-   the heir, so their `ON DELETE CASCADE` cannot delete groups and connections the organizations
+   the heir, so their `ON DELETE CASCADE` cannot delete groups and connections that organizations
    own.
-4. **Hosted AIs.** The user's machines are gone, so these AIs are deleted through the same steps as
-   `Registry.Delete`: memberships, connections' operator cleared (OMEM-08), presence kicked after
-   commit. **Spec question Q2.**
+4. **Hosted AIs stay.** Deleting a person never touches AIs (owner's answer). The AIs hosted on the
+   user's computers keep their organizations, memberships, positions and history:
+   - `agents.owner_id` is re-pointed to the heir;
+   - `folder` is set to `''`, so the AI becomes an unlinked identity: offline, with no folder key
+     that could collide or be claimed;
+   - the live sessions are kicked with 4001 after commit, because their tokens die with the
+     account.
+   Their admins, or managers if the AI is a guest, delete them when they are no longer wanted.
 5. **Delete.** `DELETE FROM users WHERE id = ?`. Sessions, tokens, identities, machines and
    pairing codes cascade. The intelligence trigger deletes the intelligence, which cascades org
    memberships, invitations and DMs. `creator_iid` references become NULL.
 6. **After commit.** `SessionsRevoked{UserDisabled:true}` closes sockets and tokens.
-   `OrgChanged` is published for each organization involved. The audit records
-   `user.delete` with the actor.
-
-The only path to `DeleteAccount` in this feature is `DELETE /intelligences/{id}` by a manager.
-OUPG-02 is written for "the last admin deletes their account". It applies to any deletion of the
-last admin's account; self-deletion is not added (question Q4).
+   `OrgChanged` is published for each organization involved. The audit records `user.delete`.
 
 ---
 
 ## CLI and channel
 
-**`partyline login`** never asks about organizations: machines link to users (spec Assumption).
+**`partyline login`** never asks about organizations: a login links the computer to the user (spec
+Assumption "Machines").
 After saving the token it prints one line: `New AIs join <org name> (<slug>); pass --org or change
 your default in Settings.` The org comes from `GET /api/v1/agent/orgs`. If that call fails, the
 line is skipped.
@@ -538,6 +575,11 @@ line is skipped.
   Worktrees` inside its own shell would otherwise inherit its own `PARTYLINE_POSITION` (see Risks & Concerns).
 - `channel.Identity.setHeaders` sends the three headers on the WebSocket and on every REST call,
   only when set.
+
+**`partyline agents`** no longer prints a machine › folder tree (AD-022). It lists the AIs hosted
+by the token user, grouped by organization: name, @handle, folder (with `~` for the home folder),
+app and online state. It reads `GET /api/v1/agent/agents`, which gains `organization`.
+`GET /api/v1/agent/contacts/tree` is retired.
 
 **`partyline orgs`** lists the token user's organizations: slug, name, permission, position, and
 a marker for the default. `partyline orgs <slug>` prints that organization's position tree, so
@@ -571,24 +613,41 @@ the reason "ended by @handle".
 
 ---
 
+## Machines become internal (AD-022)
+
+The owner removed machines as a visible concept. A login links a computer to the user, and the
+server keeps the hostname only inside the AI identity key, to tell the same folder on two computers
+apart:
+- **Removed:** `PUT /api/v1/machines/{hostname}` and `intelligences.SetMachineLabel` (TREE-04);
+  the machine › folder tree of the contacts DTO (`OwnAIs.Machines`, TREE-01..03); the
+  `machine`/`machine_label` fields of the AI profile; `GET /api/v1/agent/contacts/tree`; the
+  `partyline agents` machine tree.
+- **Kept:** the `machines` table (the home folder still renders `~` in folder labels, TREE-02's
+  label rule), `X-Partyline-Machine`, and the device approval page, which is how a login links a
+  computer.
+- `machines.label` becomes a dead column (AD-012).
+
+---
+
 ## Web
 
 The routes are file-based (TanStack Router). New files are under `web/src/routes/_app/orgs/`.
 
 | Page / component | Content | ACs |
 | --- | --- | --- |
-| `components/org-switcher.tsx` in `AppSidebar`'s header (and `MobileBar`) | Lists my organizations with avatar and permission, plus "Create organization". The selection is kept per viewer in `localStorage` (`pl.org`, wrapped in try/catch) and filters the sidebar's groups and the connections list; DMs are always shown | ORG-01, CHART-02 |
-| `orgs/index.tsx` | My organizations; create dialog (name 1-100); **pending invitations** for me and for AIs I manage, with accept and decline. An invitation that carries a position warns: "Identities above <position> will manage you and may delete your account." | ORG-01, OMEM-01, OMEM-02, OMEM-07 |
+| `components/org-switcher.tsx` in `AppSidebar`'s header (and `MobileBar`) | Lists my organizations with avatar, permission and an **unread count**, plus "+ New organization". The unread count sums the unread counts of the conversations tagged with that org (`org_ids`); a DM shared by two orgs counts in both. The selection is kept per viewer in `localStorage` (`pl.org`, wrapped in try/catch) | ORG-01, CHART-02 |
+| Sidebar (`MessengerPanel`) | Shows the selected organization's groups, plus each DM whose other party is also a member of that organization (owner-confirmed). A DM whose other party shares no organization with the viewer is listed under the viewer's default organization (gap G1) | ORG-02 |
+| `orgs/index.tsx` | My organizations; create dialog (name 1-100); **pending invitations** for me and for AIs I manage, with accept and decline. An invitation that carries a position, or the `guest` permission, says what it grants: "Identities above <position> will manage you." plus, for a guest, "and may remove you from <org>." | ORG-01, OMEM-01, OMEM-02, OMEM-07 |
 | `orgs/$orgId/settings.tsx` | Name, slug, avatar (admin); "Leave"; "Delete organization", which shows the `organization_not_empty` message with counts | OMEM-04, ORG-06, OMEM-05 |
-| `orgs/$orgId/members.tsx` | Members table: identity, kind, permission, position. Per-row actions follow server flags. Invite dialog (admin): handle picker reusing `MemberPicker`, permission, optional position. Pending invitations with revoke. `last_admin` and `home_organization` errors are shown inline | OMEM-01..06 |
+| `orgs/$orgId/members.tsx` | Members table: identity, kind, permission (admin, member, guest), position. Per-row actions follow server flags: "Delete" for an AI of this org, "Remove from <org>" for anyone else. Invite dialog (admin): handle picker reusing `MemberPicker`, permission, optional position. Pending invitations with revoke. `last_admin` and `home_organization` errors are shown inline | OMEM-01..06, POS-05, POS-06 |
 | `orgs/$orgId/positions.tsx` | Admin editor: a nested list with add child, rename, a parent select that excludes the subtree, and delete. The delete confirmation explains POS-09. `position_cycle` is shown inline. Non-admins are redirected to the chart | POS-01, POS-02, POS-09 |
-| `orgs/$orgId/chart.tsx` | `role="tree"` with `treeitem`, `aria-expanded`, `aria-level` and a roving tabindex (arrow keys, Home/End, Enter). Each holder shows avatar, name, @handle, a person/AI badge, the online dot and an admin badge. Positionless members appear under their creator, else under "Unassigned". The actions "delete", "move" and "remove" appear only where the server flags allow; "edit positions" only for admins. At 360 px, indentation is capped at 4 levels and names truncate, with no horizontal scroll | CHART-01..04 |
+| `orgs/$orgId/chart.tsx` | `role="tree"` with `treeitem`, `aria-expanded`, `aria-level` and a roving tabindex (arrow keys, Home/End, Enter). Each holder shows avatar, name, @handle, a person/AI badge, the online dot, and an admin or guest badge. Positionless members appear under their creator, else under "Unassigned". The actions "delete" (an AI of this org), "remove" (anyone else) and "move" appear only where the server flags allow; "edit positions" only for admins. At 360 px, indentation is capped at 4 levels and names truncate, with no horizontal scroll | CHART-01..04 |
 | `connectors/$connectorId.tsx` (and index) | Shows the owning organization. Admins edit; others are read-only. The operator picker lists the org's AIs only. The sharing dialog is removed. The list is filtered by the switcher | ORG-03, ORG-07, OMEM-04 |
-| `components/new-group-dialog.tsx` | Organization select (default: the switcher's); the member picker offers that org's members | ORG-03 |
-| `contacts.$id.tsx` | Memberships (org, permission, position). For managers: "End session" (AI), "Delete" (AI or person, with a typed-name confirmation for a person, POS-06) and "Edit" | POS-04, POS-05, POS-06 |
-| `contacts.index.tsx` | "Shared AIs" becomes "AIs of my organizations", grouped by org. The machine tree of hosted AIs stays | OMEM-03 |
-| `settings.tsx` | "Default organization for new AIs" select (`PUT /me/default-org`) | ORG-04 |
-| Removed | `sharing-dialog.tsx`, `room-visibility.tsx`, `useSharing`/`useUpdateSharing`, the i18n keys `sharing.*` and `rooms.visibility.*` | — |
+| `components/new-group-dialog.tsx` | Organization select (default: the switcher's; orgs where I am a guest are not offered); the member picker offers that org's members | ORG-03, OMEM-04 |
+| `contacts.$id.tsx` | Memberships (org, permission, position). For managers: "End session" (AI), "Edit", and per organization "Delete" or "Remove from <org>" where the profile's flags allow (POS-05, POS-06). The machine row is removed; the folder stays | POS-04, POS-05, POS-06 |
+| `contacts.index.tsx` | AIs grouped by organization; the machine › folder tree (`machine-group.tsx`) and machine renaming are removed (AD-022) | OMEM-03 |
+| `settings.tsx` | "Default organization for new AIs" select (`PUT /me/default-org`); "Delete my account" with the password and a statement that AIs and organizations stay (POS-06, OUPG-02) | ORG-04, POS-06 |
+| Removed | `machine-group.tsx` and the machine label editor; `sharing-dialog.tsx`, `room-visibility.tsx`, `useSharing`/`useUpdateSharing`, the i18n keys `sharing.*` and `rooms.visibility.*` | — |
 
 Every new string goes into both `en.ts` and `pt-BR.ts`. Pages are tested through the route that
 passes the permission, not only the leaf component (L-007).
@@ -605,7 +664,8 @@ passes the permission, not only the leaf component (L-007).
 | Reads `owner` in the welcome frame | Still filled (the host user); the new fields are additive and ignored |
 | Instructions say trusted = owner | The wording is stale, but the flag is computed by the server under the new rule. Release notes say so |
 | Close 4002 stops the channel | Reused for "session ended by a manager" |
-| Calls `/api/v1/agent/session`, `/agent/whoami`, `/agent/agents` | Unchanged. `/agent/agents` lists the AIs hosted on the token user's machines |
+| Calls `/api/v1/agent/session`, `/agent/whoami`, `/agent/agents` | Unchanged. `/agent/agents` lists the AIs hosted by the token user and gains `organization` |
+| `partyline agents` of v0.5 calls `/agent/contacts/tree` | Retired: v0.5 prints "not found"; the new CLI groups by organization |
 | Web sharing routes | Removed. Only the embedded web app (same version) called them. `docs/api.md` notes the removal |
 
 The server needs no version check: every new header is optional (AD-020).
@@ -619,7 +679,8 @@ The server needs no version check: every new header is optional (AD-020).
 | Deleting an org that still owns AIs, connections or groups | `organization_not_empty` 409, with counts in `details` | Settings shows what to delete first |
 | Removing or demoting the last admin, or the last admin leaving | `last_admin` 409 | Inline message |
 | A parent change that creates a cycle | `position_cycle` 409, checked in the same transaction | Inline in the positions editor |
-| Removing an AI from its home org | `home_organization` 409 | "Delete the AI instead" |
+| An AI leaving its home org | `home_organization` 409 | "Ask an admin to delete it" |
+| A guest creating a group, or a manager deleting a `member` | `forbidden` 403 (OMEM-04, POS-05) | The action is not offered in the web; the API refuses |
 | Inviting an existing member | `already_member` 409 | Inline |
 | More than 30 invitations in an hour | `rate_limited` 429, counted from audit entries (durable across restarts) | Toast |
 | Accepting an expired invitation | `gone` 410 | The invitation disappears from the inbox |
@@ -628,7 +689,8 @@ The server needs no version check: every new header is optional (AD-020).
 | Starting in an org the creator is not a member of | `forbidden` 403 (ORG-05) | The CLI prints the refusal and exits non-zero |
 | Starting with a position that is not allowed | `forbidden` 403 (POS-07) | Same |
 | `--org` differs from an existing AI's home org | `organization_mismatch` 409 | The message names the home org |
-| Deleting the last instance admin | `last_instance_admin` 409 | Inline |
+| The last instance admin deleting their account | `last_instance_admin` 409 | Inline |
+| A wrong password on self-deletion | 422, field `password` | Inline |
 | Not managing the target | `forbidden` 403 (POS-05); 404 when the target is not visible | — |
 
 ---
@@ -640,13 +702,13 @@ The server needs no version check: every new header is optional (AD-020).
 | ORG-01 | Create an org: creator is `admin` holding the root "Admin"; names of 0, 1, 100 and 101 characters, plus a multi-byte name of 100 code points (L-023) (`internal/orgs/service_test.go`, `internal/api/orgs_test.go`) | integration + e2e |
 | ORG-02 | Every AI, connection and group has exactly one org; a DM has none (store invariant test after upgrade and after creation) | integration |
 | ORG-03 | Group in an org of which the caller is a member → 201; not a member → 403; connection by a member → 403, by an admin → 201 (`groups_test.go`, `connectors_handlers_test.go`) | e2e |
-| ORG-04 | First start with `--org` → that org; without it → the default; with an AI parent → the parent's home org; an existing AI with a different `--org` → 409 (`internal/api/agent_placement_test.go`) | e2e |
+| ORG-04 | First start with `--org` → that org; without it → the default; with an AI parent → the parent's home org; started by a user → `member`, by an AI (`--parent`) → `guest`, by a parent that falls back → `member`; an existing AI with a different `--org` → 409 (`internal/api/agent_placement_test.go`) | e2e |
 | ORG-05 | Start in a foreign org → 403 and no AI row (`agent_placement_test.go`) | e2e |
 | ORG-06 | Delete an org with one AI, one connection or one group → 409 in each case on its own (L-018); empty → 204 | e2e |
 | ORG-07 | Operator from another org → 422 `operator_id`; from the same org → 200 | e2e |
 | OMEM-01..02 | Invite by handle → pending; accept → member with that permission and position; an AI invitee is accepted by its manager and refused (404) for a non-manager; inviting again updates the row | e2e |
 | OMEM-03 | One identity in two orgs with different permissions and positions | integration |
-| OMEM-04 | Matrix: each admin-only action by a member → 403 (one case per action) | e2e |
+| OMEM-04 | Matrix: each admin-only action by a member → 403 (one case per action); a guest creating a group → 403 while a member → 201 | e2e |
 | OMEM-05 | Demote, remove and leave of the last admin → 409; with a second admin → OK | integration + e2e |
 | OMEM-06 | Removal drops the member's group memberships of that org only and its position; the org's AIs stay | e2e |
 | OMEM-07 | Fake clock: 14 d − 1 ms accept works, at 14 d → 410, and the ticker deletes the row (L-016) | integration |
@@ -654,9 +716,9 @@ The server needs no version check: every new header is optional (AD-020).
 | POS-01 | Name bounds of 1 and 60 (61 refused); a parent from another org → 422 | e2e |
 | POS-02 | A→B→C, setting A's parent to C → 409 and nothing changes; setting A's parent to itself → 409 | integration |
 | POS-03 | Pure `Chart` table tests: each condition alone excludes (L-042); peer, above, two above, positionless with a creator, creator's superior, transitive creator chain, a creator who left, cross-org | unit |
-| POS-04 | A manager edits the profile, ends the session (the socket closes with 4002) and removes from a position and from the org | e2e |
-| POS-05 | A peer and a subordinate each get 403 on delete, edit and remove; an invisible target → 404 | e2e |
-| POS-06 | Deleting a person removes the account, sessions and tokens (a token returns 401), cascades the hosted AIs, keeps the org's groups and connections (owner re-pointed); a root holder cannot be deleted from inside that org | e2e |
+| POS-04 | A manager edits the profile, ends the session (the socket closes with 4002) and moves a subordinate between positions below its own; a move to its own level or to none → 403 | e2e |
+| POS-05 | Delete matrix: admin deletes a member → 204; a manager deletes a guest below → 204; a manager deletes a member below → 403; a peer deletes a guest → 403; an invisible target → 404 (each guard isolated, L-018) | e2e |
+| POS-06 | Deleting an AI of the org → gone everywhere; deleting a person → removed from that org only (still a member elsewhere, can log in); deleting an AI of another org → removed only; self-deletion with the password → account, sessions and tokens gone (401), hosted AIs kept as unlinked identities in their orgs, groups and connections kept (owner re-pointed) | e2e |
 | POS-07 | `--position` below the creator → held; same level → 403; an admin creator at any position → held; unknown → 422 | e2e |
 | POS-08 | `--parent @lead` hosted on the same user → creator is the parent; a parent hosted by someone else → creator is the host user | e2e |
 | POS-09 | Deleting a middle position moves its holders and children to its parent; deleting a root leaves them with no position and the children become roots | integration |
@@ -666,7 +728,7 @@ The server needs no version check: every new header is optional (AD-020).
 | CHART-03 | Flags per target for an admin, a manager and a member; the web shows actions only where flagged (through the page, L-007) | e2e + web unit |
 | CHART-04 | `vitest-axe` with no violations; keyboard navigation test; Playwright at 360 px asserts `scrollWidth <= clientWidth` (L-009) | web unit + Playwright |
 | OUPG-01 | v0.5 database fixture (`v03_fixture` upgraded to 0018) → upgrade → personal orgs, resources moved, grantees as members, room members inside the org, history counts unchanged; an injected hook failure rolls back everything (`organizations_backfill_test.go`, `api/upgrade_test.go`) | integration + e2e |
-| OUPG-02 | The last admin's account deleted → the instance admin becomes admin; with another admin → no change | e2e |
+| OUPG-02 | The last admin deletes their own account → the instance admin becomes admin; with another admin → no change | e2e |
 
 ---
 
@@ -678,7 +740,8 @@ The server needs no version check: every new header is optional (AD-020).
 | Users were never deleted, so cascades are untested | `internal/users/invites.go:237` (disable only) | Unknown rows left behind (grants, invitations) | `DeleteAccount` test asserts the row count of every table with a `user_id` or `iid` column for the deleted id |
 | 57 test files rely on sharing or grants | e.g. `internal/api/rooms_handlers_test.go`, `internal/access/access_test.go` | Mass test breakage | Each Phase 5 task rewrites the grant-based cases of its own package to org membership in the same commit; the sharing routes stay alive (inert) until Phase 10 |
 | Env inheritance in nested launches | `internal/cli/launcher.go:174-196`, `procenv.go:18` | A child session inherits the parent's `--position` and is refused | Launcher consumes and unsets the user-facing vars, passes internal `PARTYLINE_LAUNCH_*`; CLI test runs a nested launch |
-| Cross-organization deletion power | spec POS-06 | A manager in org X can delete a person who is root admin of org Y | Implemented as specified; the invitation warns before accepting a position; Q1 to the owner; OUPG-02 keeps Y administered |
+| Deleting a home AI with live subordinates | spec POS-06 | Positionless members it created lose their creator and fall out of reach of their former managers | `creator_iid` becomes NULL; admins still reach them; the chart lists them under "Unassigned" |
+| Unlinked AIs after a self-deletion | `internal/agents/folder.go` (adoption) | An heir's unlinked AIs could be adopted by a folder of the heir with the same handle (MIG-02) | Adoption (MIG-02) only considers unlinked AIs whose `creator_iid` is the host user; re-pointed AIs have a NULL creator and are never adopted; tested |
 | Trust change for sibling AIs | `internal/delivery/rules.go:42` | After the upgrade, a user's AIs stop trusting each other | Spec intent; release notes; the upgrade e2e test pins it |
 | Generated-file conflicts across parallel worktrees | `web/src/lib/api/types.gen.ts`, `internal/store/db` | Merge conflicts | Merge rule: never hand-merge generated files; run `make generate` after the merge and commit with the merge |
 | Live hub keyed on `GrantsChanged` | `internal/live/hub.go:331` | Stale UI after membership changes | `OrgChanged` re-evaluates the viewer's rooms, AIs and connections; live test |
@@ -696,9 +759,10 @@ The server needs no version check: every new header is optional (AD-020).
 | Invitations | One pending row per (org, invitee); answered or expired rows are deleted and audited | "Inviting again updates the pending invitation" |
 | Rate limit | Count of `org.invite` audit entries in the last hour | Durable across restarts |
 | Group management | The creator and the org's admins | Replaces the room `manage` grant |
-| Member move by a manager | Only to positions strictly below the manager's own, or none | POS-04 "move" without escalation |
-| AI and its home org | An AI cannot leave or be removed from its home org (409 `home_organization`); it is deleted instead | ORG-02 exactly one owning org |
-| Chart DTO | Server-computed `can_delete`, `can_move` and `can_remove` per member | CHART-03 in one place; the web shows flags only |
+| Member move by a manager | Only to positions strictly below the manager's own; clearing a position is admin-only | POS-04 "move between positions below A's" |
+| AI and its home org | An AI cannot leave its home org (409 `home_organization`, owner's answer to Q3); deleting it there is a hard delete | ORG-02 exactly one owning org |
+| Chart DTO | Server-computed `can_delete` (POS-05), `delete_effect` (`delete` for an AI of this org, `remove` otherwise) and `can_move` per member | CHART-03 in one place; the web shows flags only |
+| Self-deletion confirmation | The current password | Same proof as a password change |
 
 ## Spec refinements and open questions
 
@@ -712,18 +776,21 @@ Refinements adopted (the spec stays as approved; each is recorded in an AD):
   same rule.
 - **R7.** An AI's DMs are readable by its managers in its home org, not by every member (AD-016,
   replacing AD-013).
+- **R9.** Clearing a member's position is admin-only; a manager moves only between positions below
+  its own (POS-04 wording).
+- **R10.** Self-deletion keeps the AIs hosted on the user's computers as unlinked identities owned
+  by the heir (AD-019), because deleting a person never touches AIs.
 - **R8.** Grants to everyone and `view`-only room grants become org membership only; the reader
   loses the read-only view of that room.
 
-Questions for the owner:
-- **Q1.** Accepting a position puts one's whole account under the positions above: a manager in
-  one organization can delete the person's account, including their personal organization. Keep
-  it (default, with a warning on the invitation), or limit person deletion to managers in every
-  organization the person belongs to?
-- **Q2.** Deleting a person also deletes the AIs hosted on their machines, since those AIs cannot
-  connect any more. Is that intended?
-- **Q3.** OMEM-08 cannot be triggered by "leaving", because an AI cannot leave its home org and only
-  home-org AIs operate connections. It is implemented as a guard covered by deletion. Should an AI
-  be able to leave its home org?
-- **Q4.** Self-deletion of an account is not added; OUPG-02 applies to deletion by a manager.
-  Should users be able to delete their own account?
+The owner's answers (2026-10-23) settled the earlier Q1-Q4: deletion follows ownership and never
+deletes another identity's account (Q1, Q2); an AI cannot leave its home org (Q3); users may
+delete their own account (Q4).
+
+Remaining gaps:
+- **G1.** A DM whose other party shares no organization with the viewer would appear under no
+  organization in the sidebar. Default: it is listed under the viewer's default organization.
+- **G2.** CHART-03 still says "delete", "move" and "remove" are offered "only where the viewer
+  manages the target", but POS-05 lets an admin delete members it does not manage. Default: the
+  chart follows POS-05 (the server flags), and CHART-03's wording should say "only where the
+  viewer may".
