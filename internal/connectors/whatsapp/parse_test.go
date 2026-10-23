@@ -110,6 +110,21 @@ func TestParseExtendedTextWithQuote(t *testing.T) {
 	require.Equal(t, "ORIG2", p.Inbound.ReplyToID, "protojson spelling stanzaId")
 }
 
+// CID-12: the mentioned jids of a message come from the contextInfo of its content node, also
+// inside a media caption.
+func TestParseMentionedJIDs(t *testing.T) {
+	p := parse(t, frame(t, testInstance, groupInfo("MSG25"),
+		`{"extendedTextMessage":{"text":"@acme look","contextInfo":{"mentionedJid":["5511999990000@s.whatsapp.net","100000000000001@lid"]}}}`))
+	require.Equal(t, []string{"5511999990000@s.whatsapp.net", "100000000000001@lid"}, p.MentionedJIDs)
+
+	p = parse(t, frame(t, testInstance, groupInfo("MSG26"),
+		`{"imageMessage":{"caption":"@acme look","mimetype":"image/jpeg","contextInfo":{"mentionedJid":["5511999990000@s.whatsapp.net"]}}}`))
+	require.Equal(t, []string{"5511999990000@s.whatsapp.net"}, p.MentionedJIDs)
+
+	p = parse(t, frame(t, testInstance, groupInfo("MSG27"), `{"conversation":"no context"}`))
+	require.Empty(t, p.MentionedJIDs)
+}
+
 func TestParseImageWithCaption(t *testing.T) {
 	p := parse(t, frame(t, testInstance, groupInfo("MSG6"),
 		`{"imageMessage":{"caption":"a photo","mimetype":"image/jpeg","fileLength":2048},"base64":"data:image/jpeg;base64,aGVsbG8="}`))

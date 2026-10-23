@@ -283,3 +283,17 @@ Where a section refines the design, it says so.
 - **Not mentions**: another user's mention, `@everyone`/`@here` (`MentionEveryone` carries no user
   in `mentions`) and a role mention; before READY the bot id is unknown and every message is
   unmentioned.
+
+## T10: WhatsApp mentions (CID-12)
+
+- **Detection**: `Parse` exposes the jids of the content node's `contextInfo.mentionedJid` as
+  `Parsed.MentionedJIDs` (it also finds them in a media caption). The connector sets
+  `Inbound.MentionsAccount` when one of them equals its own account, comparing bare jids
+  (`BareJID`, which drops the device suffix on both sides).
+- **LID**: evolution-go reports the instance's jid in `/instance/all`; for a newer account that
+  may be its LID instead of a phone jid, and a group mention then carries the bare LID. The bare
+  comparison matches both forms. There is no mapping from the phone jid to a LID in the instance
+  payload, so a mention that is the account's *other* form (LID mention while evolution reports
+  the phone jid) cannot be recognised; the phone form is what groups send in that case.
+- **Not mentions**: another number's jid, a mention list without the account, and a message
+  without a `contextInfo` (a plain conversation).

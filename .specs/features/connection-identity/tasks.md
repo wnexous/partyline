@@ -447,8 +447,8 @@ Room posting, people and DM creation, `autoGroup`, `autoRoute` and `platformDM` 
 **Reuses**: captured evolution-go frames, `instanceNumber`
 **Requirement**: CID-12
 **Done when**:
-- [ ] Tests: own number mentioned, another number mentioned (false), no context (false)
-- [ ] Gate check passes: `make check`
+- [x] Tests: own number mentioned, another number mentioned (false), no context (false)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(whatsapp): report mentions of the number`
