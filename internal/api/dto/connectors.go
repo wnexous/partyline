@@ -166,6 +166,13 @@ const (
 	PlatformSendStatusFailed  PlatformSendStatus = "failed"
 )
 
+// SendToChatRequest is the body of POST /agent/connections/{id}/chats/{chat}/messages: the text an
+// AI writes, as its own account, to a chat of a connection it operates (CID-16). The answer is a
+// PlatformSendResult.
+type SendToChatRequest struct {
+	Text string `json:"text"`
+}
+
 // PlatformSendResult is what an AI is told about an answer it sent through its connection (CID-15,
 // CID-16): the id of the send and its state. A send the platform took is sent; one it refused or
 // did not answer in time is pending, Error says why and Partyline retries it (CID-18).

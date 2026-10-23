@@ -233,6 +233,12 @@ func TestPlatformReplyValidatesTheText(t *testing.T) {
 	f.token.AsAgent("Atlas").DoRaw(http.MethodPost, replyPath+id+"/reply", "application/json", strings.NewReader("{")).
 		RequireError(http.StatusBadRequest, dto.ErrorCodeInvalid)
 	require.Empty(t, f.inst.Sent())
+
+	// A refused request does not use up the AI's 30 posts a minute.
+	for range 31 {
+		f.reply("Atlas", id, "").RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+	}
+	f.reply("Atlas", id, "still allowed").RequireStatus(http.StatusCreated)
 }
 
 // TOOL-08: replies through a connection count against the AI's 30 posts a minute like every other

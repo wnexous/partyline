@@ -109,39 +109,44 @@ type SendInput struct {
 	ReplyTo string
 }
 
-// Send checks that the AI operates the connection and that the chat is one of its chats, stores the
-// answer and makes one attempt at once, under SendAttemptTimeout, through the connection. The result
-// is sent when the platform took the message; when it refused or did not answer in time the send is
-// pending, the result carries the reason and the worker retries it (CID-18). The attempt is not
-// abandoned when ctx is done: the caller going away does not unsend a message in flight.
-//
-// A connection that does not exist is access.ErrNotFound, an AI that does not operate it
-// ErrNotOperator, a chat of another connection ErrUnknownChat and an unusable text a
-// *validation.Error on text.
-func (s *Sends) Send(ctx context.Context, in SendInput) (dto.PlatformSendResult, error) {
+// Check refuses what Send would refuse before it stores or sends anything, and changes nothing: a
+// connection that does not exist is access.ErrNotFound, an AI that does not operate it (also while
+// nobody does) ErrNotOperator, a chat that is not one of its chats ErrUnknownChat and an unusable text
+// a *validation.Error on text. A caller that limits how much an AI sends calls it first, so that a
+// refused request does not count against the limit and the AI keeps seeing why it was refused.
+func (s *Sends) Check(ctx context.Context, in SendInput) error {
 	conn, err := s.d.Store.R().GetConnector(ctx, in.ConnectorID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return dto.PlatformSendResult{}, access.ErrNotFound
+		return access.ErrNotFound
 	}
 	if err != nil {
-		return dto.PlatformSendResult{}, err
+		return err
 	}
 	if !conn.OperatorIid.Valid || conn.OperatorIid.String != in.AgentID {
-		return dto.PlatformSendResult{}, ErrNotOperator
+		return ErrNotOperator
 	}
 	chat, err := s.d.Store.R().GetChat(ctx, in.ChatID)
 	switch {
 	case errors.Is(err, sql.ErrNoRows), err == nil && chat.ConnectorID != in.ConnectorID:
-		return dto.PlatformSendResult{}, ErrUnknownChat
+		return ErrUnknownChat
 	case err != nil:
-		return dto.PlatformSendResult{}, err
+		return err
 	}
-	if err := validateAnswer(in.Text); err != nil {
+	return validateAnswer(in.Text)
+}
+
+// Send stores the answer after the checks of Check and makes one attempt at once, under
+// SendAttemptTimeout, through the connection. The result is sent when the platform took the message;
+// when it refused or did not answer in time the send is pending, the result carries the reason and the
+// worker retries it (CID-18). The attempt is not abandoned when ctx is done: the caller going away
+// does not unsend a message in flight.
+func (s *Sends) Send(ctx context.Context, in SendInput) (dto.PlatformSendResult, error) {
+	if err := s.Check(ctx, in); err != nil {
 		return dto.PlatformSendResult{}, err
 	}
 	id, now := store.NewID(), s.d.Now().UnixMilli()
 	// The row is created claimed (sending): the worker only takes pending sends.
-	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+	err := s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		return q.InsertPlatformSend(ctx, db.InsertPlatformSendParams{
 			ID: id, ConnectorID: in.ConnectorID, ChatID: in.ChatID, AgentID: in.AgentID, Text: in.Text,
 			ReplyToExternalID: in.ReplyTo, NextAttemptAt: now, CreatedAt: now, UpdatedAt: now,

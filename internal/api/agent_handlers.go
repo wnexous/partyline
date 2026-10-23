@@ -48,6 +48,7 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentHistory))
 	s.handle(mux, "POST /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentPost))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/reply", s.agentOnly(s.agentReply))
+	s.handle(mux, "POST /api/v1/agent/connections/{id}/chats/{chat}/messages", s.agentOnly(s.agentConnectionSend))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/react", s.agentOnly(s.agentReact))
 	s.handle(mux, "GET /api/v1/agent/attachments/{id}", s.agentOnly(s.agentAttachment))
 	s.handle(mux, "POST /api/v1/agent/register", s.agentRegister)
@@ -558,17 +559,51 @@ func (s *server) replyOnConnection(w http.ResponseWriter, r *http.Request, p aut
 	if err != nil {
 		return err
 	}
+	return s.sendOnConnection(w, r, p, connectors.SendInput{
+		AgentID: p.AgentID, ConnectorID: ev.ConnectionID, ChatID: ev.ChatID, Text: text, ReplyTo: ev.ExternalID,
+	})
+}
+
+// sendOnConnection sends what the AI wrote through its connection and answers with the state of the send
+// (CID-15, CID-16). A request that is refused (not the operator, not a chat of the connection, unusable
+// text) is refused before the AI's posting limit is looked at, so that it does not use it up and the AI
+// keeps seeing why it was refused; a valid one counts like every other post (TOOL-08).
+func (s *server) sendOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, in connectors.SendInput) error {
+	if err := s.Sends.Check(r.Context(), in); err != nil {
+		return err
+	}
 	if !s.Agents.AllowPost(p.AgentID) {
 		return errAgentRateLimited
 	}
-	res, err := s.Sends.Send(r.Context(), connectors.SendInput{
-		AgentID: p.AgentID, ConnectorID: ev.ConnectionID, ChatID: ev.ChatID, Text: text, ReplyTo: ev.ExternalID,
-	})
+	res, err := s.Sends.Send(r.Context(), in)
 	if err != nil {
 		return err
 	}
 	writePlatformSend(w, res)
 	return nil
+}
+
+// agentConnectionSend writes to a chat of a connection the AI operates: the connection and the chat
+// are Partyline's ids, as a platform event carries them (CID-16). An AI whose owner owns the connection
+// or may use it, and that is not its operator, is refused with 403 not_operator (CID-03); an AI whose
+// owner cannot see the connection gets 404, as for a connection that does not exist, so the answer
+// reveals nothing about it. A chat of another connection is 404 unknown_chat (CID-17).
+func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.SendToChatRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	if s.Sends == nil {
+		return access.ErrNotFound
+	}
+	connectionID := r.PathValue("id")
+	owner := authn.Principal{Kind: authn.KindUser, UserID: p.UserID}
+	if err := s.Connectors.Require(r.Context(), owner, connectionID, dto.LevelUse); err != nil {
+		return err // access.ErrNotFound: the owner may not use it (or it does not exist)
+	}
+	return s.sendOnConnection(w, r, p, connectors.SendInput{
+		AgentID: p.AgentID, ConnectorID: connectionID, ChatID: r.PathValue("chat"), Text: req.Text,
+	})
 }
 
 // writePlatformSend answers an AI's send through a connection: 201 when the platform took it, 202

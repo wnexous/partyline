@@ -109,6 +109,17 @@ func (f *sendsFixture) insertSend(t *testing.T, status string, at time.Time, tex
 	return id
 }
 
+// sendRows counts the rows of platform_sends, through a connection of its own to the database.
+func (f *sendsFixture) sendRows(t *testing.T) int {
+	t.Helper()
+	raw, err := sql.Open("sqlite", "file:"+f.path+"?mode=ro&_pragma=busy_timeout(5000)")
+	require.NoError(t, err)
+	defer func() { _ = raw.Close() }()
+	var n int
+	require.NoError(t, raw.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM platform_sends").Scan(&n))
+	return n
+}
+
 func (f *sendsFixture) exists(t *testing.T, id string) bool {
 	t.Helper()
 	_, err := f.st.R().GetPlatformSend(context.Background(), id)
@@ -458,8 +469,8 @@ func TestPurgeDeletesEveryFinishedSendInBatches(t *testing.T) {
 }
 
 // CID-03, CID-17: only the operator sends through a connection, and only to a chat of that
-// connection; a refused send changes nothing and sends nothing. Each guard is tested alone, with
-// everything else valid (L-018).
+// connection; a refused send changes nothing and sends nothing, and Check says so without storing
+// anything either. Each guard is tested alone, with everything else valid (L-018).
 func TestSendRefusesWhoIsNotTheOperatorAndChatsOfOtherConnections(t *testing.T) {
 	f := newSendsFixture(t)
 	ctx := context.Background()
@@ -468,36 +479,32 @@ func TestSendRefusesWhoIsNotTheOperatorAndChatsOfOtherConnections(t *testing.T) 
 	f.setOperator(t, elsewhere, f.atlas)
 	foreign := f.newChat(t, elsewhere, otherID, "Elsewhere", "group")
 
+	require.NoError(t, f.sends.Check(ctx, f.input("on its way")), "a valid request passes")
 	for name, tc := range map[string]struct {
 		mutate func(*connectors.SendInput)
 		want   error
 	}{
-		"another AI of the owner":      {func(in *connectors.SendInput) { in.AgentID = other }, connectors.ErrNotOperator},
-		"an agent that does not exist": {func(in *connectors.SendInput) { in.AgentID = store.NewID() }, connectors.ErrNotOperator},
-		"a chat of another connection": {func(in *connectors.SendInput) { in.ChatID = foreign.ID }, connectors.ErrUnknownChat},
-		"a chat that does not exist":   {func(in *connectors.SendInput) { in.ChatID = store.NewID() }, connectors.ErrUnknownChat},
-		"a connection that does not exist": {func(in *connectors.SendInput) {
-			in.ConnectorID = store.NewID()
-		}, access.ErrNotFound},
+		"another AI of the owner":          {func(in *connectors.SendInput) { in.AgentID = other }, connectors.ErrNotOperator},
+		"an agent that does not exist":     {func(in *connectors.SendInput) { in.AgentID = store.NewID() }, connectors.ErrNotOperator},
+		"a chat of another connection":     {func(in *connectors.SendInput) { in.ChatID = foreign.ID }, connectors.ErrUnknownChat},
+		"a chat that does not exist":       {func(in *connectors.SendInput) { in.ChatID = store.NewID() }, connectors.ErrUnknownChat},
+		"a connection that does not exist": {func(in *connectors.SendInput) { in.ConnectorID = store.NewID() }, access.ErrNotFound},
 	} {
 		in := f.input("on its way")
 		tc.mutate(&in)
+		require.ErrorIs(t, f.sends.Check(ctx, in), tc.want, "Check: %s", name)
 		_, err := f.sends.Send(ctx, in)
-		require.ErrorIs(t, err, tc.want, name)
+		require.ErrorIs(t, err, tc.want, "Send: %s", name)
 	}
-	require.Empty(t, f.inst.Sent())
 
 	// A connection nobody operates has no operator to send: not even the AI that used to.
 	f.setOperator(t, f.conn, "")
+	require.ErrorIs(t, f.sends.Check(ctx, f.input("on its way")), connectors.ErrNotOperator)
 	_, err := f.send("on its way")
 	require.ErrorIs(t, err, connectors.ErrNotOperator)
-	require.Empty(t, f.inst.Sent())
 
-	// Nothing was stored for any refusal: the first thing that goes out is the first row.
-	f.setOperator(t, f.conn, f.atlas)
-	res, err := f.send("on its way")
-	require.NoError(t, err)
-	require.Equal(t, "ext-1", f.sendRow(t, res.ID).ExternalID, "no refused send reached the platform")
+	require.Empty(t, f.inst.Sent())
+	require.Zero(t, f.sendRows(t), "nothing was stored for any refusal, nor by Check")
 }
 
 // MSG-02: the text of an answer has 1 to 16000 characters; a refusal names the field and changes
@@ -505,12 +512,17 @@ func TestSendRefusesWhoIsNotTheOperatorAndChatsOfOtherConnections(t *testing.T) 
 func TestSendValidatesTheText(t *testing.T) {
 	f := newSendsFixture(t)
 	for name, text := range map[string]string{"empty": "", "blank": " \n\t ", "too long": strings.Repeat("a", dto.MaxTextLength+1)} {
-		_, err := f.send(text)
-		var verr *validation.Error
-		require.ErrorAs(t, err, &verr, name)
-		require.Contains(t, verr.Fields, "text", name)
+		for call, run := range map[string]func() error{
+			"Check": func() error { return f.sends.Check(context.Background(), f.input(text)) },
+			"Send":  func() error { _, err := f.send(text); return err },
+		} {
+			var verr *validation.Error
+			require.ErrorAs(t, run(), &verr, "%s of %s", call, name)
+			require.Contains(t, verr.Fields, "text", "%s of %s", call, name)
+		}
 	}
 	require.Empty(t, f.inst.Sent())
+	require.Zero(t, f.sendRows(t))
 
 	long := strings.Repeat("é", dto.MaxTextLength) // 32000 bytes, 16000 characters
 	res, err := f.send(long)

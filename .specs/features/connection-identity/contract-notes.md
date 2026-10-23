@@ -578,3 +578,29 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - **Tests**: `internal/api/agent_reply_platform_test.go` (e2e, including the authorization matrix and the refused,
   stopped-connection and acknowledged-then-purged cases) and `internal/channel/connection_tools_test.go` (the tool; its
   fixture `connectionChan` is the one T20 uses).
+
+## T19: Send to a connection chat (CID-03, CID-16, CID-17)
+
+- **Route**: `POST /api/v1/agent/connections/{id}/chats/{chat}/messages` with `dto.SendToChatRequest{text}`. `{id}` is the
+  connection's id and `{chat}` Partyline's id of the chat, the two ids a platform event carries (`connection_id`,
+  `chat_id`). Agent tokens only (`agentOnly`): a user, with a session or a token, is 403 `forbidden`, anonymous 401.
+  The answer is a `dto.PlatformSendResult`: `201` when the platform took the text, `202` with the reason when it did
+  not yet and Partyline retries (T17, CID-18).
+- **Order of the checks**, which fixes what each caller learns:
+  1. the body is JSON (400);
+  2. the AI's **owner** (the token's owner) owns the connection or may use it, else `404 not_found`, the very answer for a
+     connection that does not exist (design refinement 2): the AI of a stranger or of an admin learns nothing, not even
+     that the connection exists (admins have no implicit access, AD-005);
+  3. `Sends.Check`: the AI is the connection's operator, else `403 not_operator` (also while nobody operates it, and for
+     another AI of the owner or of a use grantee); the chat is one of the connection's chats, else `404 unknown_chat`
+     (also for a chat id nobody has); the text has 1 to 16,000 characters, else 422 on `text`. The operator check comes
+     before the chat check, so a caller that is not the operator learns nothing about the connection's chats;
+  4. the AI's 30 posts a minute (`Registry.AllowPost`, 429), then `Sends.Send`.
+- **Refusals do not count against the limit** (decision; it also applies to T18's `reply`): `Sends.Check` is a new method
+  that refuses without storing or sending anything, and the handlers call it before the limiter. An AI that keeps naming a
+  wrong connection or chat would otherwise use up its 30 posts and then see `rate limited` for a minute instead of the
+  refusal that tells it what is wrong. The shared handler code is `sendOnConnection`; `reply` (T18) goes through it too.
+- **Ids in the answer**: `PlatformSendResult.id` is the id of the send.
+- **Tests**: `internal/api/agent_connection_send_test.go` (the matrix with the operator, another AI of the owner, a use
+  grantee's AI, a stranger's, an admin's, users with sessions and tokens and anonymous callers, each refusal with an
+  otherwise valid request and its own code; the identical answers of a hidden and a missing connection; the limit).

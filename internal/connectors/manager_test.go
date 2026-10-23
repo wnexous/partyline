@@ -83,6 +83,8 @@ func (w *waits) waitFor(t *testing.T, n int) []time.Duration {
 }
 
 type managerFixture struct {
+	// path is the database file, for tests that count rows with a connection of their own.
+	path    string
 	st      *store.Store
 	bus     *events.Bus
 	box     *secrets.Box
@@ -96,13 +98,14 @@ type managerFixture struct {
 
 func newManagerFixture(t *testing.T) *managerFixture {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "partyline.db"))
+	path := filepath.Join(t.TempDir(), "partyline.db")
+	st, err := store.Open(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	require.NoError(t, st.Migrate(context.Background()))
 	box, err := secrets.NewBox(bytes.Repeat([]byte{3}, secrets.KeySize))
 	require.NoError(t, err)
-	f := &managerFixture{st: st, bus: events.NewBus(), box: box, fake: connectortest.New(), waits: newWaits(), owner: store.NewID()}
+	f := &managerFixture{path: path, st: st, bus: events.NewBus(), box: box, fake: connectortest.New(), waits: newWaits(), owner: store.NewID()}
 	f.kind = f.fake.Kind()
 	ch, cancel := f.bus.Subscribe(256)
 	t.Cleanup(cancel)

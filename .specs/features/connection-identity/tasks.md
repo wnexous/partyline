@@ -604,8 +604,8 @@ New frame DTOs are added.
 **Reuses**: `access.CanUseConnector`
 **Requirement**: CID-03, CID-16, CID-17
 **Done when**:
-- [ ] e2e: operator sends (201, unsigned); another AI of the owner → 403 `not_operator`; another user's AI → 404; a foreign chat → 404 `unknown_chat`; nothing sent in the refusals (L-017, L-018)
-- [ ] Gate check passes: `make check`
+- [x] e2e: operator sends (201, unsigned); another AI of the owner → 403 `not_operator`; another user's AI → 404; a foreign chat → 404 `unknown_chat`; nothing sent in the refusals (L-017, L-018)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): send to a chat of the AI's connection`
