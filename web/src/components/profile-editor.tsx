@@ -142,7 +142,7 @@ function PhotoEditor({ profile }: { profile: IntelligenceProfile }) {
         <label
           className={cn(
             buttonVariants({ variant: "outline", size: "sm" }),
-            "cursor-pointer has-[:focus-visible]:border-ring has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50",
+            "cursor-pointer has-[:focus-visible]:border-ring has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/70",
           )}
         >
           <input

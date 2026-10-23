@@ -187,7 +187,7 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
                         type="button"
                         aria-label={t("newGroup.remove", { name: p.ref.display_name })}
                         onClick={() => toggle(id, false)}
-                        className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:bg-background hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/70"
                       >
                         <XIcon className="size-3.5" aria-hidden="true" />
                       </button>

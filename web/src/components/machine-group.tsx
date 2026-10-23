@@ -119,7 +119,7 @@ function MachineHeader({
         <>
           <span className="inline-flex shrink-0 items-center gap-1.5 font-mono text-xs text-muted-foreground tabular">
             {counts.online > 0 ? (
-              <span aria-hidden="true" className="size-1.5 rounded-full bg-tape-strong" />
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-online" />
             ) : null}
             {t("contacts.onlineCount", counts)}
           </span>

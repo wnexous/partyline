@@ -209,7 +209,7 @@ function AccountMenu({ me }: { me: Me }) {
         <button
           type="button"
           aria-label={t("shell.userMenu")}
-          className="grid size-11 shrink-0 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[state=open]:ring-2 data-[state=open]:ring-sidebar-ring/60"
+          className="grid size-11 shrink-0 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring data-[state=open]:ring-2 data-[state=open]:ring-sidebar-ring/70"
         >
           <IntelligenceAvatar intelligence={me.intelligence} size="lg" decorative />
         </button>

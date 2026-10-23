@@ -305,7 +305,7 @@ function LevelSelect({
       value={value}
       onChange={(e) => onChange(e.target.value as Level)}
       aria-label={label}
-      className="h-8 shrink-0 rounded-md border border-input bg-background px-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+      className="h-8 shrink-0 rounded-md border border-input bg-background px-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/70 dark:bg-input/30"
     >
       {levels.map((l) => (
         <option key={l} value={l}>

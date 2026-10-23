@@ -153,7 +153,7 @@ function Advanced({ harness }: { harness: Harness }) {
   const t = useT();
   return (
     <details className="group mt-6 border-t pt-4 text-sm text-muted-foreground">
-      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm font-medium text-foreground outline-none select-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm font-medium text-foreground outline-none select-none focus-visible:ring-[3px] focus-visible:ring-ring/70 [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon
           className="size-4 transition-transform duration-150 ease-out group-open:rotate-90 motion-reduce:transition-none"
           aria-hidden="true"
