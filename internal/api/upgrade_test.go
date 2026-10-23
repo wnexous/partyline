@@ -49,9 +49,11 @@ func TestUpgradedAgentAdoptsItsFolderAndRepliesThroughTheOutbox(t *testing.T) {
 	fake := connectortest.New()
 	telegram := fake.Kind()
 	telegram.Name = "telegram" // the fixture's connector kind, served by the fake
-	// The app's clock stands an hour after the fixture's last message, so that the retention sweep at
-	// start-up (30 days in the inbox room) keeps its history whatever today is.
-	afterTheFixture := func() time.Time { return time.UnixMilli(1790003600000) }
+	// The app's clock starts an hour after the fixture's last message, so that the retention sweep at
+	// start-up (30 days in the inbox room) keeps its history whatever today is. It moves on: a send
+	// tried before the connection runs is retried 2 s later (DLV-07), which a frozen clock never reaches.
+	start := time.Now()
+	afterTheFixture := func() time.Time { return time.UnixMilli(1790003600000).Add(time.Since(start)) }
 	env := testkit.New(t, testkit.WithDatabase(v03Database(t)), testkit.WithConnectorKinds(telegram), testkit.WithOutbox(), testkit.WithClock(afterTheFixture))
 	// v0.3 connectors were operated by their owner; a connection runs once an AI operates it
 	// (CID-02), so here the adopted agent takes it over.
