@@ -101,10 +101,13 @@ type Event struct {
 	AckedAt time.Time
 }
 
-// Enqueue queues the item for its AI and wakes the AI's live session. The same platform
-// message of one chat of one connection queues once (CID-26): a repeat reports queued=false and
-// changes nothing. When the AI then holds more than MaxQueued unacknowledged items, the oldest
-// are deleted and counted as dropped (CID-11).
+// Enqueue queues the item and wakes the live session of the AI that holds it. The AI is the one
+// that operates the connection when the item is queued: Item.AgentID is the operator its caller
+// read earlier, which a change of operator may have replaced meanwhile (the change moved every item
+// queued until then, CID-05), so the connection's operator wins when it has one. A connection
+// nobody operates queues for the AI named. The same platform message of one chat of one connection
+// queues once (CID-26): a repeat reports queued=false and changes nothing. When the AI then holds
+// more than MaxQueued unacknowledged items, the oldest are deleted and counted as dropped (CID-11).
 func (q *Queue) Enqueue(ctx context.Context, it Item) (id string, queued bool, err error) {
 	id = store.NewID()
 	received := it.ReceivedAt
@@ -116,10 +119,18 @@ func (q *Queue) Enqueue(ctx context.Context, it Item) (id string, queued bool, e
 		kind = dto.MessageKindText
 	}
 	var seq int64
+	agent := it.AgentID
 	err = q.d.Store.WithTx(ctx, func(tx *db.Queries) error {
-		var err error
+		queued, agent = false, it.AgentID
+		operator, err := tx.GetConnectorOperator(ctx, it.ConnectorID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) { // an unknown connection is refused by the insert
+			return err
+		}
+		if operator.Valid {
+			agent = operator.String
+		}
 		seq, err = tx.InsertPlatformItem(ctx, db.InsertPlatformItemParams{
-			ID: id, AgentID: it.AgentID, ConnectorID: it.ConnectorID, ChatID: it.ChatID, ExternalID: it.ExternalID,
+			ID: id, AgentID: agent, ConnectorID: it.ConnectorID, ChatID: it.ChatID, ExternalID: it.ExternalID,
 			SenderID: it.SenderID, SenderName: it.SenderName, Trusted: it.Trusted, FromSelf: it.FromSelf,
 			Kind: string(kind), Text: it.Text, ReceivedAt: received.UnixMilli(),
 		})
@@ -137,12 +148,12 @@ func (q *Queue) Enqueue(ctx context.Context, it Item) (id string, queued bool, e
 				return err
 			}
 		}
-		return trim(ctx, tx, it.AgentID)
+		return trim(ctx, tx, agent)
 	})
 	if err != nil || !queued {
 		return "", false, err
 	}
-	q.d.Bus.Publish(events.PlatformQueued{AgentID: it.AgentID, ItemID: id, Seq: seq})
+	q.d.Bus.Publish(events.PlatformQueued{AgentID: agent, ItemID: id, Seq: seq})
 	return id, true, nil
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
@@ -42,6 +43,8 @@ type ServiceDeps struct {
 	Kinds  *Registry
 	// Rooms creates the room of RouteChat.
 	Rooms *rooms.Service
+	// Queue hands the items of a connection to its new operator (CID-05).
+	Queue *platform.Queue
 	// Runner is told about created, changed and deleted connectors; nil runs nothing.
 	Runner Runner
 	// Now returns the current time; defaults to time.Now.
@@ -421,6 +424,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	}
 	operatorChanged := operator != c.OperatorIid
 	gainedOperator := operatorChanged && !c.OperatorIid.Valid // it was idle until now: start it
+	var moved int64                                           // the queue items handed to the new operator
 	if string(scope) != c.AutoRouteScope || routeRoom != c.AutoRouteRoomID {
 		changed = append(changed, "auto_route")
 	}
@@ -434,6 +438,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	// ROUTE-09: saved catch-all settings clear a detail that catch-all routing set.
 	clearDetail := (in.AutoRouteScope != nil || in.AutoRouteRoomID != nil) && IsAutoRouteDetail(c.LastError)
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		moved = 0
 		if err := q.UpdateConnector(ctx, db.UpdateConnectorParams{
 			Name: name, ConfigJson: public, SecretsEnc: sealed, Enabled: enabled, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
 		}); err != nil {
@@ -460,9 +465,15 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 			if err := q.SetConnectorOperator(ctx, db.SetConnectorOperatorParams{OperatorIid: operator, ID: id}); err != nil {
 				return err
 			}
+			// CID-05: the connection's items, acknowledged or not, change hands with it, in the same
+			// transaction as the operator and its audit entry.
+			var err error
+			if moved, err = s.d.Queue.MoveConnector(ctx, q, id, operator.String); err != nil {
+				return err
+			}
 			if err := s.audit.Record(ctx, q, audit.Entry{
 				ActorID: p.UserID, Action: audit.ActionConnectorOperator, TargetKind: audit.TargetConnector, TargetID: id,
-				Detail: map[string]any{"kind": c.Kind, "name": name, "from": c.OperatorIid.String, "to": operator.String},
+				Detail: map[string]any{"kind": c.Kind, "name": name, "from": c.OperatorIid.String, "to": operator.String, "moved": moved},
 			}); err != nil {
 				return err
 			}
@@ -511,6 +522,9 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	}
 	if routeRoom.Valid {
 		s.d.Bus.Publish(events.RoomChanged{RoomID: routeRoom.String})
+	}
+	if moved > 0 { // the new operator's live session reads the items it was just handed (CID-05)
+		s.d.Bus.Publish(events.PlatformQueued{AgentID: operator.String})
 	}
 	if clearDetail {
 		s.d.Bus.Publish(events.ConnectorStatus{ConnectorID: id, Status: c.Status})

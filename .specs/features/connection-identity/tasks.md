@@ -639,8 +639,8 @@ New frame DTOs are added.
 **Reuses**: existing operator audit, T3
 **Requirement**: CID-05
 **Done when**:
-- [ ] e2e: the new operator's session receives the moved items; the old one's acks are no-ops; exactly one audit entry; a forced failure leaves items and operator unchanged
-- [ ] Gate check passes: `make check`
+- [x] e2e: the new operator's session receives the moved items; the old one's acks are no-ops; exactly one audit entry; a forced failure leaves items and operator unchanged
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors): move the queue with the operator`

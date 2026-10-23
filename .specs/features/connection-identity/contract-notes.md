@@ -489,3 +489,47 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   naming a connection for `send_message` needs its id, which only the full channel's identity
   notice lists (T14), so T20 has to decide how such a harness names its connection.
 
+
+## T21: Operator change moves the queue (CID-05)
+
+- **Move**: `Service.Update` (`PATCH /connectors/{id}`, owner only) hands every item of the
+  connection to the new operator inside the transaction that writes the operator and its audit
+  entry: `Queue.MoveConnector` runs between the two, acknowledged items included (a reply to one of
+  them keeps working). The items of the AI's other connections stay where they are, and the
+  connection's `queued` count does not change. A failure of any step (the operator write, the
+  move, the audit entry) rolls everything back: the operator, the items, the other edits of the
+  same request and the audit trail stay as they were (500, nothing changed), and the same request
+  works once the cause is gone. `ServiceDeps.Queue` is the app's `platform.Queue`.
+- **Audit**: one `connector.operator` entry `{kind, name, from, to, moved}`. `moved` is how many
+  items changed hands: 0 for the first choice (a connection without an operator holds none) and for
+  an empty queue. A request that names the operator the connection already has records nothing.
+- **Announce**: after the commit, when `moved > 0`, `events.PlatformQueued{AgentID: new operator}`
+  (no item id) wakes the new operator's live session, which re-reads its queue and sends the moved
+  items, older than what it holds, oldest first (T12). A new operator that is offline gets them on
+  connect. The old operator's session receives nothing; its acknowledgement of an item that moved is
+  a no-op (`Queue.Ack` only touches the AI's own items) and still frees its window slot.
+- **No restart (deviation from the task text "re-applies the connection")**: when one AI replaces
+  another, a running connection is not applied again, as T5 already noted. Nothing the connector
+  instance runs depends on the operator (`Source` carries none and the pipeline reads it per
+  message), and a restart would only cost a reconnect. The first choice (no operator to an AI) still starts the connection (T5). Pinned by
+  `TestOperatorChangeDoesNotRestartARunningConnection`.
+- **`Queue.Enqueue` follows the operator (addition to T3)**: it queues for the AI that operates the
+  connection at the moment of the insert, read inside the write transaction (`GetConnectorOperator`),
+  not for `Item.AgentID` when the connection has an operator. The pipeline reads the operator when
+  a message arrives and queues it after downloading its media; an owner who changes the operator in
+  between would otherwise leave the item with the AI the connection no longer has, after the move
+  that was meant to hand over everything. The bound and the `PlatformQueued` event follow the AI
+  that holds the item. A connection nobody operates (only fixtures; the pipeline drops its
+  messages) queues for the AI named, and an unknown connection is still refused. Pinned by
+  `TestEnqueueQueuesForTheOperatorOfTheConnectionNow` and `TestStaleEnqueueKeepsTheOperatorWithinTheBound`.
+- **Test changed by the spec**: `TestInboundGoesToTheCurrentOperator` (T7) asserted that the first
+  operator keeps the items it held when the owner picks another AI; CID-05 says they go with the
+  connection, so it now asserts that the old operator keeps nothing and that the new one holds the
+  moved item followed by what arrived after.
+- **Authorization** (matrix pinned by `TestRefusedOperatorChangesLeaveTheQueueAlone`): only the
+  owner changes the operator, so only the owner moves a queue. The use grantee gets 403; a
+  stranger, a user who may use the operator but not the connection and the admin get 404;
+  anonymous callers 401; AI tokens (the operator's, the AI that would receive the queue, another
+  owner's) 403; an operator that is not an AI of the owner is a 422 on `operator_id`. Every refusal
+  leaves the items with the operator, the audit trail unchanged and the operator's session without
+  a frame.
