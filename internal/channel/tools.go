@@ -49,7 +49,7 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.reply))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "react",
-		Description: "React to a chat message of a room with one emoji; the reaction appears on the message in its chat. Only messages from chats can get reactions; a message from one of your connections cannot (unsupported): answer it with reply.",
+		Description: "React to a chat message of a room with one emoji; the reaction stays in the room, it is not sent to the chat. Only messages from chats can get reactions; a message from one of your connections cannot (unsupported): answer it with reply.",
 		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the chat message"},"emoji":{"type":"string","description":"one emoji, e.g. 👍"}},"required":["message_id","emoji"]}`),
 	}, t.guard(t.react))
 	srv.HandleTool(mcp.ToolDef{

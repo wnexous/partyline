@@ -916,8 +916,8 @@ A request carrying them changes nothing.
 **Reuses**: none
 **Requirement**: CID-22, CID-27
 **Done when**:
-- [ ] No doc mentions route-to-agent, catch-all rooms, bridges, `chat_ids` or notify copies; no private names
-- [ ] Gate check passes: `make check`
+- [x] No doc mentions route-to-agent, catch-all rooms, bridges, `chat_ids` or notify copies; no private names
+- [x] Gate check passes: `make check`
 **Tests**: none
 **Gate**: build
 **Commit**: `docs: partyline as a proxy (v0.5.0)`

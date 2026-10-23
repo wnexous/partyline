@@ -1,8 +1,9 @@
 # Contributor guide (humans and coding agents)
 
 Partyline is a single Go binary (modular monolith, SQLite) that connects Claude Code sessions,
-chat platforms and people through rooms. Read `.specs/STATE.md` for the binding architecture
-decisions and `.specs/features/*/` for specs, designs and task plans.
+chat platforms and people: rooms hold users and AIs, and each platform connection is the own app
+of one AI (AD-015). Read `.specs/STATE.md` for the binding architecture decisions and
+`.specs/features/*/` for specs, designs and task plans.
 
 ## Layout
 

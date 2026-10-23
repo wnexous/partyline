@@ -1294,3 +1294,39 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   (`FramePending`, `Pending`, the tool), `internal/cli/hook_platform_test.go` (both hooks, the tool through the real channel,
   another AI's and another user's hook), `internal/platform/queue_test.go` (one taker), the shared framing case. The two T13 assertions that
   list the response keys (`items`, `platform`) now list `dropped` too.
+
+## T38: Docs and v0.5.0 release notes (CID-22, CID-27)
+
+- **Files**: `README.md` and `README.pt-BR.md` (same structure and content in both languages) and `docs/agents.md`. Also two
+  files the task did not name, which still described rooms as the routing primitive with chats routed to agents and bridged:
+  `PRODUCT.md` (purpose, positioning, capabilities and principle 3) and the first paragraph of `AGENTS.md`. `docs/claude-code.md` only
+  points at `agents.md` and needed nothing.
+- **README** (both languages): the intro, the feature list and the architecture diagram and paragraph describe the proxy (queue and
+  send worker instead of the room outbox); the tools paragraph names `reply` for connections and `send_message`'s `connection` and
+  `chat`; a new section "Connections" states the rules (operator is an AI of the owner, the idle statuses, arrival and the queue
+  with its 7 days, 5,000, 24 hours and the dropped notice, `deliver` and `groups_mentions_only` and their defaults, a webhook's
+  `mentions_account`, trust and `from_self`, answering with `reply` or `send_message`, `not_operator`, `unknown_chat`, `unsupported`,
+  the retries, what the owner sees, operator change and deletion); "Conversations and contacts" lost the operator signature and
+  notification bullets and says people and their DMs are read-only history; the security model states `trusted` for a message from
+  a connection; the error table gains `not_operator`, `unknown_chat`, `chats_not_members`, `history_only` and `unsupported`, and
+  `no_route_to_person` now says a person cannot be messaged at all.
+- **Breaking-change notes**: the new section "Upgrading from v0.4" (v0.5.0) holds the five points the task lists, each as one
+  bullet: back up the data directory first (the upgrade runs once and deletes chat memberships and the delivery tables); update the
+  CLI on every machine with the server (a v0.4 CLI gets no platform events, which wait in the queue and expire after 7 days); every
+  connection needs an AI operator and owner-operated ones go idle (the status text) until one is chosen; the defaults
+  `deliver=all` and `groups_mentions_only` on stop group messages without a mention; chats leave the rooms with history, people and
+  their DMs kept read-only; the retired features; no platform history in Partyline; app notifications end and web push follows in
+  v0.5.1. "Upgrading from v0.3" now sends readers there and no longer speaks of bridges or the catch-all room.
+- **`docs/agents.md`**: "Accounts and operators" and "Notify me on another app" are replaced by "Connections and operators" (the rules
+  above in detail, and what each harness shows); the Claude Code section shows a platform event and the identity notice's `You
+  operate:` sentence; the pi, OpenCode and omp frame, the Codex and Gemini hooks and `wait_for_messages` (the dropped notice, T39) are
+  described; DMs, groups, contacts, people and merge follow the new model; the tool table, the error table, the trust model, the
+  connection behaviour, the troubleshooting list and the `listen` line are updated, with a "nothing arrives from a platform" entry.
+- **The retired features are named once** per language, in the "Retired" bullet of "Upgrading from v0.4" (the names a v0.4 user knows:
+  bridges, the room switches, `chat_ids` and `recipients`, Route chat to agent, catch-all rooms, auto-routing, platform DMs, member
+  signatures, Settings → Notifications). No other doc or section describes them as current; a search of the docs for the terms finds
+  only that bullet (`no_route_to_person` and `routing` as a word are not the feature).
+- **No private data**: the examples use Atlas, Notes, Rita, the group "Team" and the synthetic id `5511999990000`; nothing else that looks
+  like a name, number, address or host.
+- **Tool text** (`internal/channel/tools.go`): the `react` description said the reaction "appears on the message in its chat", which
+  stopped being true when rooms stopped sending to chats (T33); it now says the reaction stays in the room. No test pins the sentence.
