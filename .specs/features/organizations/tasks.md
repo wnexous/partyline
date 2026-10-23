@@ -580,7 +580,7 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: `linkOrCreate` transaction, `orgs.DefaultFor`, `Chart.Above`
 **Requirement**: ORG-04, ORG-05, POS-07, POS-08
 **Done when**:
-- [ ] e2e on the live WebSocket and on a tools-only call (L-034: one test each):
+- [x] e2e on the live WebSocket and on a tools-only call (L-034: one test each):
   - `--org acme` → acme;
   - a parent AI hosted by the same user → creator = parent, home = the parent's home, permission `guest`;
   - a parent hosted by another user → creator = host, permission `member`;
@@ -588,7 +588,7 @@ Phases 3-6 reuse these for their authorization matrices.
   - a position below the creator → held; at the same level → 403; for an admin creator → held;
   - unknown position → 422 `position_unknown`; unknown org → 422 `organization_required`;
   - no headers → the defaults (v0.5 compatibility)
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): place new AIs with --org, --position and --parent`

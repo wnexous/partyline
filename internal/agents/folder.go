@@ -45,12 +45,22 @@ type FolderID struct {
 	// Adopt is a handle or a v0.3 agent name (--as, PARTYLINE_AGENT): the owner's unlinked
 	// identity to link to this folder when the folder has none yet (MIG-02).
 	Adopt string
+	// Org is the organization a new AI joins (--org, PARTYLINE_ORG): a slug or an id. Empty means the
+	// creator's default organization (ORG-04).
+	Org string
+	// Position is the name of the position a new AI holds (--position, PARTYLINE_POSITION). Empty
+	// means none (POS-07).
+	Position string
+	// Parent is the @handle or id of the AI that starts this one (--parent, PARTYLINE_PARENT). It counts
+	// when the token holder may act for it (POS-08).
+	Parent string
 }
 
-// FolderIDFromHeader reads the folder headers of a session (AID-07): the folder and the home
-// folder are percent-encoded (url.PathEscape), the machine, harness and the name to adopt are
-// plain. A folder that is not valid percent-encoding is 422 folder_invalid; a home folder that
-// is not is ignored. A missing header reads as empty. The result is not validated:
+// FolderIDFromHeader reads the folder headers of a session (AID-07): the folder, the home
+// folder and the position are percent-encoded (url.PathEscape), the machine, harness, the name to
+// adopt, the organization and the parent are plain. A folder that is not valid percent-encoding is
+// 422 folder_invalid, and a position that is not is 422 position_unknown; a home folder that is not
+// is ignored. A missing header reads as empty, and so does a blank one. The result is not validated:
 // ResolveFolder and LookupFolder do that (an empty folder is 422 folder_required).
 func FolderIDFromHeader(h http.Header) (FolderID, error) {
 	folder, err := url.PathUnescape(h.Get(dto.HeaderFolder))
@@ -61,13 +71,19 @@ func FolderIDFromHeader(h http.Header) (FolderID, error) {
 	if err != nil {
 		home = ""
 	}
+	position, err := url.PathUnescape(h.Get(dto.HeaderPosition))
+	if err != nil {
+		return FolderID{}, folderError(dto.ErrorCodePositionUnknown, "position", "the position is not valid percent-encoding")
+	}
 	return FolderID{
 		Machine: h.Get(dto.HeaderMachine), Folder: folder, Home: home,
 		Harness: h.Get(dto.HeaderHarness), Adopt: h.Get(dto.HeaderAdopt),
+		Org: strings.TrimSpace(h.Get(dto.HeaderOrg)), Position: strings.TrimSpace(position),
+		Parent: strings.TrimSpace(h.Get(dto.HeaderParent)),
 	}, nil
 }
 
-// folderError is a 422 for a session whose machine or folder the server cannot use.
+// folderError is a 422 for a session whose machine, folder, organization or position the server cannot use.
 func folderError(code dto.ErrorCode, field, message string) *httpx.Error {
 	return &httpx.Error{Status: http.StatusUnprocessableEntity, Code: code, Message: message, Fields: map[string]string{field: message}}
 }
@@ -328,10 +344,9 @@ func (r *Registry) adopt(ctx context.Context, q *db.Queries, a db.Agent, by stri
 
 // createFolderAgent inserts the owner's AI for a folder with its intelligence: the display name
 // is the folder's name with an upper-case first letter and the handle the first free one derived
-// from it (AID-01, AID-03). The AI is placed in the same transaction (ORG-02, ORG-04): its home
-// organization is the host's default, the host is its creator, and it is a member of that
-// organization with no position. A host that belongs to no organization has nowhere to put it
-// (ErrNoOrganization) and nothing is created.
+// from it (AID-01, AID-03). The AI is placed in the same transaction (ORG-02, ORG-04): place decides
+// its home organization, creator, permission and position from what the session asked for, and the AI
+// joins that organization with them. Nothing is created when the placement is refused.
 func (r *Registry) createFolderAgent(ctx context.Context, q *db.Queries, ownerID string, id FolderID) (db.Agent, error) {
 	n, err := q.CountAgentsByOwner(ctx, ownerID)
 	if err != nil {
@@ -340,19 +355,16 @@ func (r *Registry) createFolderAgent(ctx context.Context, q *db.Queries, ownerID
 	if n >= MaxAgentsPerOwner {
 		return db.Agent{}, ErrAgentLimit
 	}
-	home, err := orgs.DefaultFor(ctx, q, ownerID)
+	where, err := place(ctx, q, ownerID, id)
 	if err != nil {
 		return db.Agent{}, err
-	}
-	if home == "" {
-		return db.Agent{}, ErrNoOrganization
 	}
 	agentID := store.NewID()
 	now := r.now()
 	if err := q.InsertFolderAgent(ctx, db.InsertFolderAgentParams{
 		ID: agentID, OwnerID: ownerID, Name: agentID, CreatedAt: now.UnixMilli(),
 		Harness: HarnessID(id.Harness), Machine: id.Machine, Folder: id.Folder,
-		OrgID: sql.NullString{String: home, Valid: true}, CreatorIid: sql.NullString{String: ownerID, Valid: true},
+		OrgID: sql.NullString{String: where.orgID, Valid: true}, CreatorIid: sql.NullString{String: where.creatorIID, Valid: true},
 	}); err != nil {
 		return db.Agent{}, err
 	}
@@ -362,24 +374,23 @@ func (r *Registry) createFolderAgent(ctx context.Context, q *db.Queries, ownerID
 	}); err != nil {
 		return db.Agent{}, err
 	}
-	// An AI joins with its host's standing: a member (the host is a member or an admin), or a guest the
-	// host invited when the host is itself a guest there, so a guest never places an AI that only an
-	// admin could delete (Guests assumption, POS-05).
-	join := orgs.AddMemberInput{OrgID: home, IID: agentID, Permission: orgs.PermissionMember, Now: now}
-	host, err := q.GetOrgChartMember(ctx, db.GetOrgChartMemberParams{OrgID: home, Iid: ownerID})
-	if err != nil {
-		return db.Agent{}, err
-	}
-	if orgs.Permission(host.Permission) == orgs.PermissionGuest {
-		join.Permission, join.InviterIID = orgs.PermissionGuest, ownerID
-	}
-	if err := orgs.AddMember(ctx, q, join); err != nil {
+	if err := orgs.AddMember(ctx, q, orgs.AddMemberInput{
+		OrgID: where.orgID, IID: agentID, Permission: where.permission, PositionID: where.positionID,
+		InviterIID: where.inviterIID, Now: now,
+	}); err != nil {
 		return db.Agent{}, err
 	}
 	if r.audit != nil {
+		detail := map[string]any{"iid": agentID, "by": "start", "permission": string(where.permission)}
+		if where.creatorIID != ownerID {
+			detail["creator"] = where.creatorIID // an AI the token holder hosts started it (--parent)
+		}
+		if where.positionID != "" {
+			detail["position_id"] = where.positionID
+		}
 		if err := r.audit.Record(ctx, q, audit.Entry{
-			ActorID: ownerID, Action: audit.ActionOrgMemberJoin, TargetKind: audit.TargetOrganization, TargetID: home,
-			Detail: map[string]any{"iid": agentID, "by": "start", "permission": string(orgs.PermissionMember)},
+			ActorID: ownerID, Action: audit.ActionOrgMemberJoin, TargetKind: audit.TargetOrganization, TargetID: where.orgID,
+			Detail: detail,
 		}); err != nil {
 			return db.Agent{}, err
 		}

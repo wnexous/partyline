@@ -48,6 +48,18 @@ const (
 	// HeaderAdopt names a handle or a v0.3 agent name (--as, PARTYLINE_AGENT): the unlinked AI to
 	// link to the session's folder when the folder has no AI yet (MIG-02).
 	HeaderAdopt = "X-Partyline-Adopt"
+	// HeaderOrg names the organization a new AI joins (--org, PARTYLINE_ORG): a slug or an id. Without
+	// it the AI joins its creator's default organization. An existing AI keeps its home organization
+	// and a different one is refused with organization_mismatch (ORG-04, AD-020).
+	HeaderOrg = "X-Partyline-Org"
+	// HeaderPosition names the position the AI holds in its organization (--position,
+	// PARTYLINE_POSITION): the position's name, percent-encoded with url.PathEscape like the folder.
+	// Without it a new AI holds none (POS-07, AD-020).
+	HeaderPosition = "X-Partyline-Position"
+	// HeaderParent names the AI that starts this one (--parent, PARTYLINE_PARENT): an @handle or an id.
+	// It counts when the token holder may act for that AI (their own, hosted on their machines);
+	// otherwise the token holder is the creator (POS-08, AD-020).
+	HeaderParent = "X-Partyline-Parent"
 	// HeaderFeatures lists, separated by commas, the optional features the client of the agent
 	// WebSocket understands. FeaturePlatform opts in to platform events (CID-06): a session that
 	// does not name it gets room messages only, and its platform queue waits (CID-10).
@@ -95,6 +107,9 @@ const (
 	// (not absolute or canonical, a NUL, longer than 1024 bytes) (AID-05).
 	ErrorCodeFolderRequired ErrorCode = "folder_required" // 422
 	ErrorCodeFolderInvalid  ErrorCode = "folder_invalid"  // 422
+	// ErrorCodePositionUnknown is a start (--position) that names a position the organization does not
+	// have (422, field position, POS-07).
+	ErrorCodePositionUnknown ErrorCode = "position_unknown"
 	// ErrorCodeIdentityBusy is a connection for an AI that has a live session in another
 	// process (409); Details say who, in which app and since when (SES-04).
 	ErrorCodeIdentityBusy ErrorCode = "identity_busy" // 409

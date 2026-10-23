@@ -520,3 +520,47 @@ Where a section refines the design, it says so.
 - **A guest host's AI is a guest.** When the host of a new folder AI is only a guest of the AI's home organization, the AI joins as a `guest` with the host as its inviter, never as a `member` (which only an admin could delete). See `internal/agents/folder.go` and `TestAGuestHostsNewAIJoinsAsTheirGuest`.
 - **Admin invitations lapse with the inviter's admin right.** On accept, an invitation for `member` or `admin` needs its inviter to still be an admin of the organization. Otherwise the invitation is deleted and the answer is `ErrGone`. A guest invitation whose inviter left still stands, and the guest then has no inviter.
 - **Re-inviting a guest keeps the design's rule.** The latest inviter of a pending guest invitation becomes responsible for the guest. The invitee sees who invites them before accepting, so this is not a takeover. The review's third finding is declined.
+
+## T18: Placement headers on creation (ORG-04, ORG-05, POS-07, POS-08)
+
+- **Headers** (`dto.HeaderOrg`, `HeaderPosition`, `HeaderParent`): `X-Partyline-Org` (a slug or an id),
+  `X-Partyline-Position` (the position's name, percent-encoded with `url.PathEscape`) and
+  `X-Partyline-Parent` (an `@handle`, a handle or an id). `agents.FolderID` gains `Org`, `Position` and
+  `Parent`; `FolderIDFromHeader` trims them and a blank value is no value. A position that is not valid
+  percent-encoding is **422 `position_unknown`** (field `position`), like a folder that is not is
+  `folder_invalid`. Every route that reads the folder headers reads these too (WebSocket, tools-only calls,
+  `GET /agent/session`, `POST /agent/register`).
+- **`agents.place(ctx, q, host, id)`** (`internal/agents/placement.go`) decides where a *new* AI goes, in the
+  creation transaction (`createFolderAgent`, so it runs for the live WebSocket and for tools-only calls alike).
+  Order of the decisions, and the refusal each can give (all `*httpx.Error`, so the WebSocket handshake renders
+  them like the REST routes):
+  1. **Creator (POS-08).** `Parent` names an identity by id first, then by handle (case-insensitive, `@`
+     optional). It counts only when it is an **AI hosted by the token holder** (`agents.owner_id` = host); any
+     other parent (unknown, a user - the host included -, a person, an AI hosted by someone else) is ignored
+     without a word and the token holder is the creator.
+  2. **Home organization (ORG-04).** `Org` when given (`orgs.ResolveRef`: id first, then slug ignoring case);
+     one that does not exist is **422 `organization_required`** (field `org`). Else `orgs.DefaultFor(creator)`:
+     the host's default, or an AI parent's home organization; none at all is the T10 `ErrNoOrganization`.
+  3. **ORG-05.** The *creator* must be a member of the home organization - the parent AI when there is one,
+     whatever the host is - else **403 `forbidden`**.
+  4. **Position (POS-07).** `Position` is looked up in the home organization, ignoring case (the NOCASE
+     unique index decides what "the same name" is); a position that does not exist there, including one that
+     exists only in another organization, is **422 `position_unknown`** (field `position`). It is allowed when
+     the creator is an `admin` there or the creator's own position is **strictly above** it (`Chart.Above`);
+     otherwise **403 `forbidden`**. The **creator's** standing counts, never the host's: an admin host whose
+     parent AI sits lower cannot place the worker above the parent. A creator without a position (and not
+     admin), and a guest creator, therefore cannot hold a position on a new AI.
+  5. **Permission (ORG-04).** The AI joins as a **`guest` with `inviter_iid` = its creator** when the creator is
+     an AI *or* is itself only a guest of the organization (the T10 fix), else as a `member`. It holds the
+     requested position in either case. Nothing is created when any step refuses (no AI row, profile,
+     membership or audit entry; `TestStartInAnOrganizationTheCreatorIsNotInIsRefused` and friends count them).
+- **Audit.** `org.member_join` `{iid, by: "start", permission}` - `permission` is now what the AI really joined as
+  (T10 wrote `member` even for a guest host's AI) - plus `creator` when an AI parent started it and
+  `position_id` when it holds one. The actor is the token holder.
+- **v0.5 CLIs** send none of the headers: the defaults of T10 apply unchanged (pinned by
+  `TestSessionsWithoutPlacementHeadersKeepTheDefaults`).
+- **Helpers.** `orgs.ResolveRef(ctx, q, ref)` is the transaction-friendly form of `Service.Resolve` (which now
+  delegates to it). `testkit.Folder` gains `Org`, `Position` and `Parent` and sends them as the CLI would.
+- **Error codes.** `position_unknown` is declared in the one `ErrorCode` group of `internal/api/dto/common.go`,
+  next to the folder codes (a second group would make tygo emit a second `ErrorCode` union). Each later task of
+  Phase 4 adds its own codes to that group.

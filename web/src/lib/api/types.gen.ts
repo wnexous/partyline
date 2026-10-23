@@ -379,6 +379,24 @@ export const HeaderTakeover = "X-Partyline-Takeover";
  */
 export const HeaderAdopt = "X-Partyline-Adopt";
 /**
+ * HeaderOrg names the organization a new AI joins (--org, PARTYLINE_ORG): a slug or an id. Without
+ * it the AI joins its creator's default organization. An existing AI keeps its home organization
+ * and a different one is refused with organization_mismatch (ORG-04, AD-020).
+ */
+export const HeaderOrg = "X-Partyline-Org";
+/**
+ * HeaderPosition names the position the AI holds in its organization (--position,
+ * PARTYLINE_POSITION): the position's name, percent-encoded with url.PathEscape like the folder.
+ * Without it a new AI holds none (POS-07, AD-020).
+ */
+export const HeaderPosition = "X-Partyline-Position";
+/**
+ * HeaderParent names the AI that starts this one (--parent, PARTYLINE_PARENT): an @handle or an id.
+ * It counts when the token holder may act for that AI (their own, hosted on their machines);
+ * otherwise the token holder is the creator (POS-08, AD-020).
+ */
+export const HeaderParent = "X-Partyline-Parent";
+/**
  * HeaderFeatures lists, separated by commas, the optional features the client of the agent
  * WebSocket understands. FeaturePlatform opts in to platform events (CID-06): a session that
  * does not name it gets room messages only, and its platform queue waits (CID-10).
@@ -438,6 +456,11 @@ export const ErrorCodeUnsupported = "unsupported";
  */
 export const ErrorCodeFolderRequired = "folder_required"; // 422
 export const ErrorCodeFolderInvalid = "folder_invalid"; // 422
+/**
+ * ErrorCodePositionUnknown is a start (--position) that names a position the organization does not
+ * have (422, field position, POS-07).
+ */
+export const ErrorCodePositionUnknown = "position_unknown";
 /**
  * ErrorCodeIdentityBusy is a connection for an AI that has a live session in another
  * process (409); Details say who, in which app and since when (SES-04).
@@ -501,7 +524,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */
