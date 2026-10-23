@@ -599,3 +599,58 @@ Where a section refines the design, it says so.
 - **Error code and detail keys** are in `dto/common.go`: `ErrorCodeOrganizationMismatch` and
   `MismatchDetailOrganization`/`MismatchDetailName`.
 
+
+## T20: Self-deletion of an account (POS-06, OUPG-02)
+
+- **Route.** `DELETE /api/v1/me` `{password}` → **204** and the session cookie is cleared. There is no id in the
+  path: nobody deletes another account, a person is only ever removed from an organization (T21). The caller is a
+  user principal (cookie session or user token); an agent token is **403** (path rule), no credentials **401**, a
+  body that is not JSON **400**. `dto.DeleteAccountRequest{Password}`.
+- **`users.Service.DeleteAccount(ctx, userID, password)`**, in this order:
+  1. **Password** (before the transaction, nothing to undo): a wrong or empty password is a `*ValidationError` on the
+     field `password` (**422** `invalid`, "is incorrect"), told to everyone, the last instance admin included. Like
+     a password change, the failed attempts are not rate limited (an argon2id check each).
+  2. **Heir** (first thing in the transaction): the oldest **active** instance admin other than the user. None -
+     the user is the last active admin - is `users.ErrLastInstanceAdmin`: **409 `last_instance_admin`**
+     (`dto.ErrorCodeLastInstanceAdmin`). Nothing has changed at that point.
+  3. **OUPG-02**: in each organization where the user is the only `admin` the heir becomes `admin`: a new membership
+     with no position, an existing `member` or `guest` one is raised to `admin` keeping its position and losing its
+     inviter. An organization with another admin is untouched. Audit `org.admin_inherited` `{heir, user}`, target the
+     organization, actor the leaving user.
+  4. **Anchors**: `rooms.owner_id` and `connectors.owner_id` equal to the user are re-pointed to the heir (AD-019), so
+     the foreign keys that cascade from the owner cannot delete groups and connections an organization owns. Their
+     `creator_iid` becomes NULL with the user's intelligence: from then on the org's admins manage them.
+  5. **Hosted AIs** (`agents.owner_id` = the user): `owner_id` → the heir, `folder` → `''` (unlinked, no key left to
+     collide with the heir's own folders) and **`name` → their id** (`UNIQUE (owner_id, name)` would refuse an AI whose
+     v0.3 name the heir also uses; a folder AI's name is only a label). They keep their organization, membership,
+     position and history. After the deletion their `creator_iid` is NULL, so nobody manages them but the org's admins
+     (and positions above theirs).
+  6. **The user**: their `user` room memberships (`room_members` has no foreign key to cascade, DMs included), their
+     sessions (deleted explicitly to know which to announce), the audit entry **`user.delete`** `{username,
+     hosted_ais, heir}` (actor and target the user; recorded **inside** the transaction, so the deletion and its record
+     stand or fall together) and finally the `users` row. What cascades from it: tokens, device requests, linked chat
+     accounts, pairing codes, invites they created, read cursors, machines and the dead `projects`; the
+     `users_intelligence_delete` trigger deletes the intelligence, which takes their organization memberships,
+     invitations to them and DMs with it and sets `creator_iid`/`inviter_iid`/`operator_iid` references to NULL.
+- **After the commit**, in this order: the hosted AIs' live sessions are kicked with **4001** `deleted`
+  (`users.Options.Kick`, the app wires `presence.Kick(CloseDeleted, ReasonDeleted)`: to the channel the AI is a deleted
+  one and stops), `events.SessionsRevoked{UserID, SessionIDs, UserDisabled: true}` (the user's sockets close),
+  `events.OrgChanged` for each organization the user belonged to **and** each one a hosted AI belongs to (its creator
+  link is gone), and `MembersChanged{RoomID}` for each group the user left or `RoomChanged{RoomID, Deleted: true}` for
+  each DM that vanished. A failure anywhere changes nothing and publishes nothing.
+- **MIG-02 adoption** (`GetUnlinkedAgentByHandle`, `GetUnlinkedAgentByName`) now needs **`creator_iid = owner_id`**: only
+  an unlinked identity the owner created is the owner's to adopt (the upgrade made every v0.3 owner the creator of their
+  agents). The AIs a deleted account leaves behind are owned by the heir but created by nobody, so no session of the
+  heir adopts them, by the folder's handle, `--as` handle or `--as` name (each guard pinned alone by
+  `TestResolveFolderNeverAdoptsAnUnlinkedAIItsOwnerDidNotCreate`). `testkit.NewLegacyAI` and the `agents` fixture create
+  legacy AIs the way the upgrade leaves them (creator = owner).
+- **"No row left"** is asserted over every column of the schema named like an id (`user_id`, `owner_id`, `iid`,
+  `member_id`, `agent_id`, `creator_iid`, `inviter_iid`, `invitee_iid`, `operator_iid`, `dm_a`, `dm_b`, `used_by`,
+  `created_by`, plus `users.id` and `intelligences.id`), read from the schema so a later table is covered too. What keeps
+  the id on purpose is **history, not reference**: who wrote a message (`messages.author_*`), who did what
+  (`audit_log.actor_id`, `room_members.added_by`, `rooms.updated_by`/`instructions_by`, `org_invitations.invited_by`),
+  `organizations.created_by`, and the inert `grants` table (dropped by 0020). Messages stay readable (AD-015).
+- **Wiring.** `app.New` builds `agents.Presence` before the users service, which takes it as `Options.Kick`.
+- **Queries** (`queries/account_delete.sql`): `GetHeirAdmin`, `ListLastAdminOrgIDs`, `RepointRoomOwners`,
+  `RepointConnectorOwners`, `ListHostedAgentIDs`, `ListHostedAgentOrgIDs`, `RehomeHostedAgents`,
+  `DeleteUserRoomMemberships`, `DeleteUser`; audit constants `audit.ActionUserDelete`, `audit.ActionOrgAdminInherited`.

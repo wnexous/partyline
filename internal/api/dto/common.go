@@ -94,6 +94,9 @@ const (
 	ErrorCodeUnavailable   ErrorCode = "unavailable"    // 503, or 502 when a connector's platform failed
 	ErrorCodeHandleTaken   ErrorCode = "handle_taken"   // 409, the @handle belongs to another intelligence
 	ErrorCodeAvatarInvalid ErrorCode = "avatar_invalid" // 422, the avatar is not an acceptable image
+	// ErrorCodeLastInstanceAdmin is the last active instance admin deleting their own account: an admin is
+	// needed to inherit the organizations they leave without one (409, OUPG-02).
+	ErrorCodeLastInstanceAdmin ErrorCode = "last_instance_admin"
 	// ErrorCodeNotOperator is an AI that sends through a connection it does not operate: only the
 	// operator sends through it (403, CID-03). ErrorCodeUnknownChat is a chat that is not one of the
 	// named connection's chats (404, CID-17).

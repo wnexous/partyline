@@ -438,6 +438,11 @@ export const ErrorCodeUnavailable = "unavailable"; // 503, or 502 when a connect
 export const ErrorCodeHandleTaken = "handle_taken"; // 409, the @handle belongs to another intelligence
 export const ErrorCodeAvatarInvalid = "avatar_invalid"; // 422, the avatar is not an acceptable image
 /**
+ * ErrorCodeLastInstanceAdmin is the last active instance admin deleting their own account: an admin is
+ * needed to inherit the organizations they leave without one (409, OUPG-02).
+ */
+export const ErrorCodeLastInstanceAdmin = "last_instance_admin";
+/**
  * ErrorCodeNotOperator is an AI that sends through a connection it does not operate: only the
  * operator sends through it (403, CID-03). ErrorCodeUnknownChat is a chat that is not one of the
  * named connection's chats (404, CID-17).
@@ -529,7 +534,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1203,6 +1208,17 @@ export interface ReadState {
   room_id: string;
   seq: number /* int64 */;
   unread: number /* int */;
+}
+
+//////////
+// source: delete_account.go
+
+/**
+ * DeleteAccountRequest is the body of DELETE /me: the current password proves it is the person who
+ * deletes their own account (POS-06).
+ */
+export interface DeleteAccountRequest {
+  password: string;
 }
 
 //////////

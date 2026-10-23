@@ -3,6 +3,7 @@
 package users
 
 import (
+	"context"
 	"errors"
 	"net/netip"
 	"regexp"
@@ -61,6 +62,9 @@ type Options struct {
 	Now func() time.Time
 	// Bus receives SessionsRevoked events; optional.
 	Bus *events.Bus
+	// Kick ends the live session of an AI, as a deleted AI's is; DeleteAccount calls it for each AI the
+	// deleted user hosted. Optional.
+	Kick func(ctx context.Context, agentID string)
 }
 
 // Service implements account use cases over the store.
@@ -71,6 +75,7 @@ type Service struct {
 	limiter    *failureLimiter
 	audit      *audit.Log
 	bus        *events.Bus
+	kick       func(ctx context.Context, agentID string)
 	// verifyPassword checks a password against its argon2id hash (authn.VerifyPassword);
 	// tests wrap it to count the slow checks a login burst runs.
 	verifyPassword func(hash, password string) (bool, error)
@@ -95,6 +100,7 @@ func NewService(st *store.Store, opts Options) (*Service, error) {
 		limiter:    newFailureLimiter(loginMaxFailures, loginWindow),
 		audit:      audit.New(st, opts.Now),
 		bus:        opts.Bus,
+		kick:       opts.Kick,
 
 		verifyPassword: authn.VerifyPassword,
 	}, nil

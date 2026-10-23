@@ -630,7 +630,7 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
 **Reuses**: `ChangePassword` password check, `presence.Kick`, `events`
 **Requirement**: POS-06, OUPG-02
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - the user's sessions and tokens fail authentication (401);
   - for every table with a user or intelligence column, the deleted id has no row left;
   - a group and a connection the user created survive in their org;
@@ -638,7 +638,7 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
   - the last admin's org gets the instance admin as admin, while an org with a second admin is unchanged;
   - a wrong password → 422 and nothing changes;
   - the last instance admin → 409 `last_instance_admin` observed
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(users): let users delete their own account`

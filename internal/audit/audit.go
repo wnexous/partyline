@@ -71,6 +71,11 @@ const (
 	ActionOrgInviteDecline = "org.invite_decline"
 	ActionOrgInviteRevoke  = "org.invite_revoke"
 	ActionOrgInviteExpire  = "org.invite_expire"
+	// ActionUserDelete records a user deleting their own account (POS-06). ActionOrgAdminInherited records
+	// the heir, an instance admin, becoming admin of an organization whose last admin was that user
+	// (OUPG-02).
+	ActionUserDelete        = "user.delete"
+	ActionOrgAdminInherited = "org.admin_inherited"
 )
 
 // Target kinds.
