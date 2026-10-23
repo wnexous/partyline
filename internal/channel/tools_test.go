@@ -99,26 +99,6 @@ func TestToolsList(t *testing.T) {
 	}
 }
 
-// ROUTE-10: send_message documents the limit of 10 chats per message, and so do the
-// instructions.
-func TestToolsDocumentRecipientsCap(t *testing.T) {
-	e := newChanEnv(t)
-	s := e.connected(e.options())
-	s.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-	found := false
-	for _, item := range s.response()["result"].(map[string]any)["tools"].([]any) {
-		tool := item.(map[string]any)
-		if tool["name"] != "send_message" {
-			continue
-		}
-		found = true
-		chatIDs := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["chat_ids"].(map[string]any)
-		require.Contains(t, chatIDs["description"], "at most 10 chats per message")
-	}
-	require.True(t, found, "send_message is listed")
-	require.Contains(t, Instructions, "at most 10 chats per message")
-}
-
 // TOOL-02: reply posts in the message's room with reply_to; a chat-authored original is the
 // only recipient, otherwise there are no explicit recipients.
 func TestToolReply(t *testing.T) {
@@ -153,11 +133,10 @@ func TestToolReply(t *testing.T) {
 	require.Equal(t, "message not found", text)
 }
 
-// TOOL-03: send_message posts as the agent to a room by id or name, optionally limited to
-// the given chats.
+// TOOL-03: send_message posts as the agent to a room by id or name. recipients, the older name of
+// chat_ids, is still accepted and ignored (CID-22): the post goes to the room alone.
 func TestToolSendMessage(t *testing.T) {
 	e := newChanEnv(t)
-	family := e.chatMember("Family")
 	s := e.connected(e.options())
 
 	text, isErr := s.call("send_message", toolArgs("room", e.room.ID, "text", "by id"))
@@ -166,11 +145,11 @@ func TestToolSendMessage(t *testing.T) {
 	require.Equal(t, "by id", stored.Text)
 	require.Equal(t, e.agentID, stored.AuthorID)
 
-	text, isErr = s.call("send_message", toolArgs("room", "Support", "text", "by name", "recipients", []string{family}))
+	text, isErr = s.call("send_message", toolArgs("room", "Support", "text", "by name", "recipients", []string{"an-old-chat-id"}))
 	require.False(t, isErr, text)
 	stored = e.messages(e.room.ID)[0]
 	require.Equal(t, "by name", stored.Text)
-	require.Equal(t, []string{family}, stored.Recipients)
+	require.Empty(t, stored.Recipients, "recipients is accepted and ignored")
 }
 
 // TOOL-04: a room the agent is not a member of → isError "not a member of room <room>".

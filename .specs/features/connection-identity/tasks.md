@@ -564,12 +564,12 @@ New frame DTOs are added.
 **Reuses**: `delivery/outbox.go` claim/backoff pattern, `Manager.Send`
 **Requirement**: CID-14, CID-15, CID-16, CID-18
 **Done when**:
-- [ ] Integration:
+- [x] Integration:
   - a success is sent unsigned with its id recorded;
   - a failure is retried until it succeeds, and the text is cleared;
   - after the attempt limit the send is `failed` and the text is cleared;
   - an echo of a send is not queued
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): send through a connection with retries`
@@ -582,12 +582,12 @@ New frame DTOs are added.
 **Reuses**: `agentReply`
 **Requirement**: CID-15, CID-18
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - the fake connector gets the text, `Unsigned` and `ReplyToID`;
   - a failing platform → 202 with the reason;
   - another AI's item → 404;
   - room replies are unchanged
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): reply to platform messages`
@@ -604,8 +604,8 @@ New frame DTOs are added.
 **Reuses**: `access.CanUseConnector`
 **Requirement**: CID-03, CID-16, CID-17
 **Done when**:
-- [ ] e2e: operator sends (201, unsigned); another AI of the owner → 403 `not_operator`; another user's AI → 404; a foreign chat → 404 `unknown_chat`; nothing sent in the refusals (L-017, L-018)
-- [ ] Gate check passes: `make check`
+- [x] e2e: operator sends (201, unsigned); another AI of the owner → 403 `not_operator`; another user's AI → 404; a foreign chat → 404 `unknown_chat`; nothing sent in the refusals (L-017, L-018)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): send to a chat of the AI's connection`
@@ -618,13 +618,13 @@ New frame DTOs are added.
 **Reuses**: tool tests, instructions golden
 **Requirement**: CID-16, CID-22
 **Done when**:
-- [ ] Channel e2e:
+- [x] Channel e2e:
   - connection+chat is sent;
   - two targets → tool error;
   - a call with `chat_ids` still posts to the room;
   - the schema has no `chat_ids`;
   - the instructions golden is updated
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): answer on a connection chat`

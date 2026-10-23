@@ -418,6 +418,18 @@ export const ErrorCodeUnavailable = "unavailable"; // 503, or 502 when a connect
 export const ErrorCodeHandleTaken = "handle_taken"; // 409, the @handle belongs to another intelligence
 export const ErrorCodeAvatarInvalid = "avatar_invalid"; // 422, the avatar is not an acceptable image
 /**
+ * ErrorCodeNotOperator is an AI that sends through a connection it does not operate: only the
+ * operator sends through it (403, CID-03). ErrorCodeUnknownChat is a chat that is not one of the
+ * named connection's chats (404, CID-17).
+ */
+export const ErrorCodeNotOperator = "not_operator";
+export const ErrorCodeUnknownChat = "unknown_chat";
+/**
+ * ErrorCodeUnsupported is a reaction to, or a quote of, a message that arrived on one of the AI's
+ * connections: reactions and files work in rooms only (422, CID-22).
+ */
+export const ErrorCodeUnsupported = "unsupported";
+/**
  * ErrorCodeFolderRequired is a session that did not say which machine and folder it works in
  * (an old CLI sends none); ErrorCodeFolderInvalid one whose folder cannot be an identity
  * (not absolute or canonical, a NUL, longer than 1024 bytes) (AID-05).
@@ -471,7 +483,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeMembersRefused | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeMembersRefused | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -743,6 +755,37 @@ export type AutoRouteScope = typeof AutoRouteScopeOff | typeof AutoRouteScopeDMs
  * has to choose the AI that operates it before it runs.
  */
 export const ConnectorNoOperator = "choose the AI that operates this connection";
+/**
+ * PlatformSendStatus is the state of what an AI sent through a connection (CID-18): pending while
+ * the platform has not taken the message and Partyline retries it, sent once it has, failed when
+ * the attempts ran out.
+ */
+export const PlatformSendStatusPending = "pending";
+export const PlatformSendStatusSending = "sending";
+export const PlatformSendStatusSent = "sent";
+export const PlatformSendStatusFailed = "failed";
+/**
+ * Platform send states.
+ */
+export type PlatformSendStatus = typeof PlatformSendStatusPending | typeof PlatformSendStatusSending | typeof PlatformSendStatusSent | typeof PlatformSendStatusFailed;
+/**
+ * SendToChatRequest is the body of POST /agent/connections/{id}/chats/{chat}/messages: the text an
+ * AI writes, as its own account, to a chat of a connection it operates (CID-16). The answer is a
+ * PlatformSendResult.
+ */
+export interface SendToChatRequest {
+  text: string;
+}
+/**
+ * PlatformSendResult is what an AI is told about an answer it sent through its connection (CID-15,
+ * CID-16): the id of the send and its state. A send the platform took is sent; one it refused or
+ * did not answer in time is pending, Error says why and Partyline retries it (CID-18).
+ */
+export interface PlatformSendResult {
+  id: string;
+  status: PlatformSendStatus;
+  error?: string;
+}
 /**
  * AutoRouteUnavailable says the catch-all room is gone or its owner lost manage on it.
  */

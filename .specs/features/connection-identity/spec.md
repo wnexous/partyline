@@ -150,7 +150,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | --- | --- | --- | --- |
 | CID-01 | P1: One AI per connection | Execute | Implementing (T5) |
 | CID-02 | P1: One AI per connection | Execute | Implementing (T5, T7) |
-| CID-03 | P1: One AI per connection | Tasks | In Tasks |
+| CID-03 | P1: One AI per connection | Execute | Implementing (T17, T19) |
 | CID-04 | P1: One AI per connection | Execute | Implemented (T1, bebd8d1) |
 | CID-05 | P1: One AI per connection | Tasks | In Tasks |
 | CID-06 | P1: Direct delivery | Execute | Implementing (T7, T12, T13, T14, T15, T16) |
@@ -161,15 +161,15 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-11 | P1: Direct delivery | Execute | Implementing (T3) |
 | CID-12 | P1: Direct delivery | Execute | Implementing (T7-T11) |
 | CID-13 | P1: Direct delivery | Execute | Implementing (T7) |
-| CID-14 | P1: Direct delivery | Execute | Implementing (T7) |
-| CID-15 | P1: Answer through the connection | Tasks | In Tasks |
-| CID-16 | P1: Answer through the connection | Tasks | In Tasks |
-| CID-17 | P1: Answer through the connection | Tasks | In Tasks |
-| CID-18 | P1: Answer through the connection | Tasks | In Tasks |
+| CID-14 | P1: Direct delivery | Execute | Implementing (T7, T17) |
+| CID-15 | P1: Answer through the connection | Execute | Implementing (T17, T18) |
+| CID-16 | P1: Answer through the connection | Execute | Implementing (T17, T19, T20) |
+| CID-17 | P1: Answer through the connection | Execute | Implementing (T17, T19) |
+| CID-18 | P1: Answer through the connection | Execute | Implementing (T17, T18) |
 | CID-19 | P1: Partyline chat is one more app | Tasks | In Tasks |
 | CID-20 | P1: Partyline chat is one more app | Tasks | In Tasks |
 | CID-21 | P1: Partyline chat is one more app | Tasks | In Tasks |
-| CID-22 | P1: Partyline chat is one more app | Tasks | In Tasks |
+| CID-22 | P1: Partyline chat is one more app | Execute | Implementing (T20) |
 | CID-23 | P1: Partyline chat is one more app | Execute | Implementing (T6) |
 | CID-24 | Edge cases | Tasks | In Tasks |
 | CID-25 | Edge cases | Execute | Implementing (T12, T14) |

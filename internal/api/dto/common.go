@@ -85,6 +85,14 @@ const (
 	ErrorCodeUnavailable   ErrorCode = "unavailable"    // 503, or 502 when a connector's platform failed
 	ErrorCodeHandleTaken   ErrorCode = "handle_taken"   // 409, the @handle belongs to another intelligence
 	ErrorCodeAvatarInvalid ErrorCode = "avatar_invalid" // 422, the avatar is not an acceptable image
+	// ErrorCodeNotOperator is an AI that sends through a connection it does not operate: only the
+	// operator sends through it (403, CID-03). ErrorCodeUnknownChat is a chat that is not one of the
+	// named connection's chats (404, CID-17).
+	ErrorCodeNotOperator ErrorCode = "not_operator"
+	ErrorCodeUnknownChat ErrorCode = "unknown_chat"
+	// ErrorCodeUnsupported is a reaction to, or a quote of, a message that arrived on one of the AI's
+	// connections: reactions and files work in rooms only (422, CID-22).
+	ErrorCodeUnsupported ErrorCode = "unsupported"
 	// ErrorCodeFolderRequired is a session that did not say which machine and folder it works in
 	// (an old CLI sends none); ErrorCodeFolderInvalid one whose folder cannot be an identity
 	// (not absolute or canonical, a NUL, longer than 1024 bytes) (AID-05).

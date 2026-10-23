@@ -487,5 +487,182 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - **Known limitation, for T19/T20**: the shared framing does not show `from_self`, `connection_id`
   or `kind`. A harness fed by `listen` or the hooks can always answer with `reply` (the message id);
   naming a connection for `send_message` needs its id, which only the full channel's identity
-  notice lists (T14), so T20 has to decide how such a harness names its connection.
+  notice lists (T14), so T20 has to decide how such a harness names its connection. **Decided by T20**: the
+  frame shows `connection_id` (see T20).
 
+
+## T17: Platform sends with retries (CID-14, CID-15, CID-16, CID-18)
+
+- **Service**: `connectors.Sends` (`internal/connectors/sends.go`) is built by `connectors.NewSends(SendsDeps{Store,
+  Transport, Sent, Now, Logger, AttemptTimeout, PollInterval})`; `Transport` is the Manager. The app builds it as
+  `App.Sends`, shares its `SentIDs` registry with the inbound pipeline and runs its worker (`platform-sends`) unless
+  `Options.DisableOutbox` is set (the tests that inspect pending sends, `testkit.WithOutbox` turns it on again).
+- **`Send(ctx, SendInput{AgentID, ConnectorID, ChatID, Text, ReplyTo}) (dto.PlatformSendResult, error)`** refines the
+  design's five positional strings into a struct (all strings, easy to swap) and returns the DTO. Checks, in this order:
+  the connection exists (`access.ErrNotFound`), the AI is its operator (`ErrNotOperator`, also while nobody is), the
+  chat is one of its chats (`ErrUnknownChat`, also for a chat id nobody has), the text has 1 to 16,000 characters and is
+  not blank (`*validation.Error` on `text`, MSG-02). A refusal stores and sends nothing. T19 maps the errors to HTTP and
+  decides who may learn that a connection exists (design refinement 2); `Send` itself does not look at the caller's owner.
+- **Row lifecycle** (`platform_sends`): the row is inserted `sending`, claimed by the synchronous attempt, so the worker
+  (which only takes `pending`) never sends it twice. Then:
+  - `sent`: `attempts` + 1, `external_id` = the platform's id of the first message created, `last_error` and `text`
+    cleared;
+  - `pending`: the text stays for the retry, `last_error` says why, `next_attempt_at` = now + `delivery.Backoff(n)`
+    (2 s, 4 s, 8 s, 16 s after attempts 1 to 4);
+  - `failed`: after attempt `delivery.MaxAttempts` (5), or when retrying cannot help; `text` cleared.
+  `Backoff` and `MaxAttempts` are the room outbox's, imported from `delivery`: T33 must keep them (or move them).
+- **Attempt**: one at a time per call, bounded by `SendAttemptTimeout` (15 s, also for each retry). A platform that does
+  not answer gives the reason `the platform did not answer within 15s`; any other failure keeps the connector's own
+  (already redacted) error, cut to 500 bytes. The reason is stored and shown to the AI (`PlatformSendResult.error`), and
+  never logged: the log carries ids, the attempt number and the status only. The attempt is not abandoned when the
+  caller's context ends (the caller going away does not unsend a message in flight), and its outcome is recorded even
+  when the worker's context ends mid-send.
+- **What the connector gets**: `Unsigned` always true; `ChatID` the platform's id of the chat; `ReplyToID` the platform
+  id of the message quoted and `ReplyToSenderID` the sender of the queued item with that id in the same chat (looked up
+  at each attempt, empty when the item is gone or has no id), because WhatsApp needs the participant to quote in a group;
+  `MessageID` the send's id; `RoomID` empty (a send belongs to no room); `AuthorName` the AI's display name, which only
+  platforms that carry the author as data (the webhook payload) show: `Unsigned` keeps it out of the text.
+- **Echo (CID-14)**: every id a send creates goes to `SentIDs` (each part through `Outbound.Created`, and the id
+  `Send` returned for a connector that tells nothing else). The pipeline reads the sends too: `settle` holds an
+  own-account message while a send of its chat is `sending`, and `sentByPartyline` (also behind `repliesToAccount`,
+  CID-12) asks `SentIDs`, the room outbox and `platform_sends.external_id`, the first part's id, which survives a
+  restart. A message without an id is never an echo, and an id belongs to the chat it was sent to. The room outbox reads
+  stay until T33.
+- **Worker**: `Sends.Run` makes the rows a previous process left `sending` due again, flushes and then polls every second
+  (`SendsDeps.PollInterval`); `Flush` and `Running` are exported for tests. A retry first checks that the AI is still the
+  connection's operator: if the owner chose another AI meanwhile the send fails at once with `the AI no longer operates
+  this connection`, without a platform call, with its attempts unchanged and its text deleted (CID-03, CID-05). A deleted
+  operator AI, chat or connection takes its rows with it (foreign key cascade).
+- **Lifecycle of the table** (the point T4 left to this task): a finished row (`sent` or `failed`) keeps its metadata, no
+  text, for `SendRetention` = 30 days from its last change, and the daily retention job deletes it (`Sends.Purge`, batches
+  of 1,000, the exact age is deleted and a millisecond less is kept); a `pending` or `sending` row is never purged. The
+  number is this task's choice, since neither the spec nor the design gives one: long enough for a person to reply to an
+  old message of the account, short enough that the table is no log of what the AI sends. After 30 days a reply to such a
+  message no longer counts as a reply to the account under mentions-only (CID-12).
+- **DTO** (introduced here because the service's result has this shape; T18 and T19 answer with it): `PlatformSendStatus`
+  (`pending|sending|sent|failed`) and `PlatformSendResult{id, status, error?}`.
+- **sqlc**: `queries/platform_sends.sql` (insert, the attempt's context, due list, claim, the three outcomes, requeue, the
+  two echo counts, batched purge).
+- **Tests**: `internal/connectors/sends_test.go` (service and worker, on a manager fixture with a fake clock),
+  `sends_echo_test.go` (the pipeline through the app) and `internal/app/platform_sends_test.go` (the retention wiring).
+
+## T18: `reply` to a platform message (CID-15, CID-18)
+
+- **Route**: `POST /api/v1/agent/messages/{id}/reply` keeps its path and body (`dto.ReplyRequest`). It looks for a room
+  message of the AI first (`agentTarget`, unchanged, rate limit and all); when there is none it looks in the AI's own
+  platform queue (`Queue.Get`, acknowledged or not, until the record is purged: 24 hours after the acknowledgement, 7 days
+  for a message nobody acknowledged). An id that is in neither, another AI's queue item included (another AI of the owner,
+  the same-named AI of a use grantee, of a stranger or of an admin), is the same `404 not_found` "message not found" as an
+  unknown id: nothing about other AIs' queues is revealed.
+- **Answer for a platform message**: `dto.PlatformSendResult{id, status, error?}`, where `id` is the id of the send (not
+  something a later `reply` or `react` can name). `201` when the platform took the text (`sent`, no `error` key); `202`
+  when it did not yet (`pending`, `error` = the reason, Partyline retries, CID-18). A room reply is still `201` with the
+  `dto.Message`.
+- **What goes out**: `Sends.Send` with the item's connection and chat, `ReplyTo` = the item's platform message id (empty
+  when the platform gave none: no quote) and the sender of that item as the participant to quote in a group (T17).
+- **Rate limit**: a reply through a connection counts against the AI's 30 posts a minute (`Registry.AllowPost`, TOOL-08),
+  like every other post of an AI: a runaway AI cannot flood a platform account. It is checked after the item is found and
+  before the send, as for a room reply, so a refused request for an unknown message does not use it up.
+- **Errors**: `connectors.ErrNotOperator` is `403 not_operator` (message `only the AI that operates the connection can send
+  through it`) and `ErrUnknownChat` is `404 unknown_chat` (message `the chat does not belong to this connection`):
+  `dto.ErrorCodeNotOperator` and `dto.ErrorCodeUnknownChat` sit in the one `ErrorCode` block of `dto/common.go` (tygo emits one
+  `ErrorCode` union per block, so a second block in another file breaks the generated TypeScript), and `mapError` maps them. For a
+  reply `not_operator` is possible only in the gap between an operator change and the queue following it (the item is still
+  the old operator's); T19 gives both their own route. Text errors are the 422 on `text` of T17.
+- **Channel `reply` tool** (a refinement of the design's "the tool does not change": its arguments do not, its answer
+  must): the tool reads the answer as a room message or as a send result. A send result says `sent`, or `not sent yet:
+  <reason>; partyline retries` (CID-18) as a normal tool result, not an error: the message is not lost and sending it again
+  would duplicate it; `failed: <reason>` is the unreachable case of a send that has already failed. The tool description
+  says both targets. `platformSent` is shared with T20's `send_message`.
+- **Wiring**: `api.Deps.Sends` (the app passes `App.Sends`). Without `Platform` or `Sends` a reply to anything but a room
+  message is 404, as before.
+- **Tests**: `internal/api/agent_reply_platform_test.go` (e2e, including the authorization matrix and the refused,
+  stopped-connection and acknowledged-then-purged cases) and `internal/channel/connection_tools_test.go` (the tool; its
+  fixture `connectionChan` is the one T20 uses).
+
+## T19: Send to a connection chat (CID-03, CID-16, CID-17)
+
+- **Route**: `POST /api/v1/agent/connections/{id}/chats/{chat}/messages` with `dto.SendToChatRequest{text}`. `{id}` is the
+  connection's id and `{chat}` Partyline's id of the chat, the two ids a platform event carries (`connection_id`,
+  `chat_id`). Agent tokens only (`agentOnly`): a user, with a session or a token, is 403 `forbidden`, anonymous 401.
+  The answer is a `dto.PlatformSendResult`: `201` when the platform took the text, `202` with the reason when it did
+  not yet and Partyline retries (T17, CID-18).
+- **Order of the checks**, which fixes what each caller learns:
+  1. the body is JSON (400);
+  2. the AI's **owner** (the token's owner) owns the connection or may use it, else `404 not_found`, the very answer for a
+     connection that does not exist (design refinement 2): the AI of a stranger or of an admin learns nothing, not even
+     that the connection exists (admins have no implicit access, AD-005);
+  3. `Sends.Check`: the AI is the connection's operator, else `403 not_operator` (also while nobody operates it, and for
+     another AI of the owner or of a use grantee); the chat is one of the connection's chats, else `404 unknown_chat`
+     (also for a chat id nobody has); the text has 1 to 16,000 characters, else 422 on `text`. The operator check comes
+     before the chat check, so a caller that is not the operator learns nothing about the connection's chats;
+  4. the AI's 30 posts a minute (`Registry.AllowPost`, 429), then `Sends.Send`.
+- **Refusals do not count against the limit** (decision; it also applies to T18's `reply`): `Sends.Check` is a new method
+  that refuses without storing or sending anything, and the handlers call it before the limiter. An AI that keeps naming a
+  wrong connection or chat would otherwise use up its 30 posts and then see `rate limited` for a minute instead of the
+  refusal that tells it what is wrong. The shared handler code is `sendOnConnection`; `reply` (T18) goes through it too.
+- **Ids in the answer**: `PlatformSendResult.id` is the id of the send.
+- **Tests**: `internal/api/agent_connection_send_test.go` (the matrix with the operator, another AI of the owner, a use
+  grantee's AI, a stranger's, an admin's, users with sessions and tokens and anonymous callers, each refusal with an
+  otherwise valid request and its own code; the identical answers of a hidden and a missing connection; the limit).
+
+## T20: `send_message` names a connection chat (CID-16, CID-22)
+
+- **Targets**: `send_message` takes exactly one of `room`, `to`, or `connection` with `chat` (the `connection_id` and `chat_id`
+  of a message from the connection, or any chat of a connection the AI operates). An empty or blank value is not given, as
+  models that send every parameter do. Refusals, as the tool words them, all before anything is sent or posted:
+  - two or three targets: `give exactly one of room, to, or connection with chat, not several: …`;
+  - none: `room, to, or connection with chat is required: …`;
+  - `connection` without `chat`, or `chat` without `connection`, whatever else is given: `connection and chat go together:
+    give both (the connection_id and the chat_id of a message from your connection), or neither`. A lone half is an error
+    rather than being ignored, so a model that mixed the ids up is told;
+  - the text is still `text is required` (checked after the target).
+  A connection chat goes to T19's route and answers `sent`, or `not sent yet: <reason>; partyline retries` as a normal result
+  (T18's `platformSent`). The server's refusals reach the tool with their code named (`client.namedCodes` gains
+  `not_operator`, `unknown_chat` and `unsupported`): `not_operator: only the AI that operates the connection can send through
+  it`, `unknown_chat: the chat does not belong to this connection`, and plain `not found` for a connection the AI's owner
+  cannot see.
+- **`chat_ids` and `recipients`** leave the schema (the schema has `room`, `to`, `connection`, `chat` and `text`, with `text`
+  the only required property: it cannot say "exactly one of") and are accepted and ignored with every target: the tool no
+  longer reads them, so a message goes to everyone where it is sent. The server's `recipients` field is T33's.
+- **How listen and hook harnesses name the connection** (the decision T16 left): the `<partyline …>` frame, which they and the
+  tools-only instructions share, gains `connection_id` right before `chat_id`, from the record's `connection_id` (absent
+  when the record has none). A model copies `connection_id` and `chat_id` from the frame into `send_message`'s `connection` and
+  `chat`; `reply` needs the `message_id` only. The change is the same in `channel.Frame` and the `frame()` of the pi,
+  OpenCode and omp adapters, and the four platform cases of `integrations/testdata/framing.json` carry it in their expected
+  text (written from the frame format, not from the code's output). Rejected: a connection resolved from the chat alone
+  (a second route and a looser reading of "connection + chat", CID-17 asks for the pair) and a tool that lists the AI's
+  connections (a new endpoint). Still not in the frame: `from_self` and `kind`; a harness that frames a message typed on the
+  account itself still shows it as data from `from=<sender name>`.
+- **react and send_file with a message of a connection** (the design's "answer `unsupported`"): the server decides, so every
+  harness gets the same answer. `unsupported` is a new `dto.ErrorCode` answered with 422:
+  - `POST /agent/messages/{id}/react` for an id that is no room message but a message of the AI's own platform queue,
+    acknowledged or not: `reactions work on room messages only; a message from a connection cannot get one, answer it with
+    reply`;
+  - a post by an AI in a room (`POST /agent/rooms/{room}/messages`, JSON or multipart, so `send_file` too) whose `reply_to`
+    is a message of its own platform queue: `a message from a connection cannot be quoted in a room (files go to rooms only);
+    answer it with reply, or with send_message naming the connection and the chat`. The check follows the room
+    authorization and the body, and a user's post is not touched.
+  Another AI's message, an unknown id and an id nobody has keep the answer they always had (404 `message not found` for react,
+  422 on `reply_to` for a post), so nothing about other AIs' queues is revealed. `send_file` with a `room` that is no room of
+  the AI (a connection id, a chat id, a room name like `WhatsApp · Team`) keeps `not a member of room <room>`: those are not
+  message ids.
+- **Instructions**: the three texts open with the rooms-plus-connections wording and drop the chat_ids, broadcast and bridge
+  sentences. The channel text (Claude Code, omp's full channel) says what a platform event is (`author_kind="platform"`, from
+  the AI's own number or bot, the fields it carries, `from_self` never trusted, offline messages arrive on connect, the
+  connect notice lists the connections); the framed texts (tools-only, omp) say it for the frame (`connection_id`, `chat_id`).
+  All three say how to answer, in `toolUse`: `reply` (room message or connection message, unsigned, quoting), `send_message`
+  with `connection` and `chat`, `not sent yet` means Partyline retries and the AI must not send it twice, and `react` and
+  `send_file` answer `unsupported` for a message from a connection. The opening sentence about `reply`
+  (`Reply with the reply tool (message_id).`) and `react (message_id, one emoji)` stay as they were, because tests pin them.
+  `terminalNote` is unchanged.
+- **Tool descriptions**: `send_message` states the three targets; `react` and `send_file` say they work in rooms only.
+- **Retired** (CID-22, with their tests deleted or rewritten): ROUTE-10 (the 10-chat cap documented in the schema and the
+  instructions), CTX-04 (`chat_ids`/`recipients` forwarded as recipients, and the instructions explaining `chat_ids`), ROUTE-06's
+  instruction sentence about a post without `chat_ids` (the server's no-broadcast warning, which still names `chat_ids`, goes
+  with T33) and DM-04's `chat_ids` travelling with `to`. `TestToolSendMessage` and `TestConversationToolSchemas` were updated
+  to the new schema.
+- **Tests**: `internal/channel/connection_tools_test.go` (targets, refusals, chat_ids ignored, schema, unsupported),
+  `internal/channel/instructions_test.go` (the goldens, copied from the spec's wording, L-032),
+  `internal/api/agent_platform_unsupported_test.go` (the two refusals at their HTTP status, L-017), the shared framing cases and
+  the pinned frames of the channel and CLI tests.

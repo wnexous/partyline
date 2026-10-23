@@ -163,16 +163,9 @@ func isGroup(kind string) bool {
 
 // repliesToAccount tells whether a message answers one that Partyline sent to the chat through
 // the connection: the replied platform id is one of its sends (CID-12). The sends it remembers
-// are those of the last minutes and those the outbox recorded.
+// are those of the last minutes and those the room outbox and the AI's sends recorded.
 func (p *Pipeline) repliesToAccount(ctx context.Context, chatID, replyToID string) (bool, error) {
-	if replyToID == "" {
-		return false, nil
-	}
-	if p.d.Sent.Has(chatID, replyToID) {
-		return true, nil
-	}
-	n, err := p.d.Store.R().CountChatOutboxExternalID(ctx, db.CountChatOutboxExternalIDParams{ChatID: chatID, ExternalID: replyToID})
-	return n > 0, err
+	return p.sentByPartyline(ctx, chatID, replyToID)
 }
 
 // enqueue stores the media as blobs and queues the message for the connection's operator, once

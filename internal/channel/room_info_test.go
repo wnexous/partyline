@@ -93,44 +93,21 @@ func TestInstructionsNoticeOnConnect(t *testing.T) {
 	require.Equal(t, m2.ID, s2.notification().Meta["message_id"])
 }
 
-// CTX-04: send_message takes chat_ids to answer only some chats; the older recipients name
-// still works and both together reach the union.
-func TestToolSendMessageChatIDs(t *testing.T) {
-	e := newChanEnv(t)
-	family := e.chatMember("Family")
-	work := e.chatMember("Work")
-	e.chatMember("Friends")
-	s := e.connected(e.options())
-
-	text, isErr := s.call("send_message", toolArgs("room", "Support", "text", "only family", "chat_ids", []string{family}))
-	require.False(t, isErr, text)
-	stored := e.messages(e.room.ID)[0]
-	require.Equal(t, "only family", stored.Text)
-	require.Equal(t, []string{family}, stored.Recipients)
-
-	text, isErr = s.call("send_message", toolArgs("room", "Support", "text", "both", "chat_ids", []string{family}, "recipients", []string{work, family}))
-	require.False(t, isErr, text)
-	stored = e.messages(e.room.ID)[0]
-	require.Equal(t, "both", stored.Text)
-	require.ElementsMatch(t, []string{family, work}, stored.Recipients)
-	require.Len(t, stored.Recipients, 2)
-}
-
-// CTX-04: the instructions explain chat_ids and room_info.
-func TestInstructionsExplainChatIDsAndRoomInfo(t *testing.T) {
+// CTX-04: the instructions explain room_info; chat_ids is gone (CID-22).
+func TestInstructionsExplainRoomInfoAndNoLongerChatIDs(t *testing.T) {
 	require.Contains(t, Instructions, "send_message")
-	require.Contains(t, Instructions, "chat_ids")
 	require.Contains(t, Instructions, "room_info")
+	require.NotContains(t, Instructions, "chat_ids")
 }
 
 // insNotice is the INS-03 notice text as the spec words it.
 const insNotice = "This room has instructions for its agents; call the room_info tool to read them."
 
-// ROUTE-06 (tool): in a room with broadcast off, send_message without chat_ids says the post
-// reached no chat; with chat_ids, or a reply to a chat message, the result is the plain one.
+// ROUTE-06 (tool): in a room with broadcast off, send_message says the post reached no chat. The
+// remedy it names, chat_ids, is gone from the tool (CID-22) and the room feature itself goes with T33.
 func TestToolResultSaysNoChatInNoBroadcastRoom(t *testing.T) {
 	e := newChanEnv(t)
-	family := e.chatMember("Family")
+	e.chatMember("Family")
 	off := false
 	e.alice.Patch("/api/v1/rooms/"+e.room.ID, dto.UpdateRoomRequest{Broadcast: &off}).RequireStatus(http.StatusOK)
 	s := e.connected(e.options())
@@ -139,16 +116,6 @@ func TestToolResultSaysNoChatInNoBroadcastRoom(t *testing.T) {
 	require.False(t, isErr, text)
 	stored := e.messages(e.room.ID)[0]
 	require.Equal(t, "sent (message_id "+stored.ID+"); not sent to any chat: this room only answers explicit chats (use reply or chat_ids)", text)
-
-	text, isErr = s.call("send_message", toolArgs("room", "Support", "text", "only family", "chat_ids", []string{family}))
-	require.False(t, isErr, text)
-	stored = e.messages(e.room.ID)[0]
-	require.Equal(t, "sent (message_id "+stored.ID+")", text)
-}
-
-// ROUTE-06: the instructions say that a post without chat_ids may reach no chat.
-func TestInstructionsExplainNoBroadcastRooms(t *testing.T) {
-	require.Contains(t, Instructions, "a post without chat_ids reaches no chat")
 }
 
 // INS-03, INS-05: instructions saved by someone other than the agent's owner (bob, a manager of
