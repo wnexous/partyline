@@ -331,7 +331,7 @@ describe("loop guard banner (UI-08)", () => {
 });
 
 describe("room settings", () => {
-  it("saves name, bridge chats and retention with PATCH", async () => {
+  it("saves name and retention with PATCH and no chat settings", async () => {
     const { calls } = roomApi(
       {},
       { "PATCH /rooms/r1": json(200, makeRoom({ id: "r1", name: "deploys-prod" })) },
@@ -340,10 +340,12 @@ describe("room settings", () => {
     renderRoute("/rooms/r1");
     await user.click(await screen.findByRole("button", { name: "Room settings" }));
     const sheet = await screen.findByRole("dialog", { name: "Room settings" });
+    expect(within(sheet).queryAllByRole("switch")).toHaveLength(0);
+    expect(within(sheet).queryByText(/Bridge chats/)).toBeNull();
+    expect(within(sheet).queryByText(/Send to every chat/)).toBeNull();
     const name = within(sheet).getByLabelText("Name");
     await user.clear(name);
     await user.type(name, "deploys-prod");
-    await user.click(within(sheet).getByRole("switch", { name: /Bridge chats/ }));
     const retention = within(sheet).getByLabelText(/Keep messages for/);
     await user.clear(retention);
     await user.type(retention, "0");
@@ -352,7 +354,6 @@ describe("room settings", () => {
       expect(calls.find((c) => c.method === "PATCH" && c.path === "/rooms/r1")?.body).toEqual({
         name: "deploys-prod",
         description: "",
-        bridge_chats: true,
         retention_days: 0,
       }),
     );
@@ -394,7 +395,6 @@ describe("room instructions (INS-01)", () => {
     expect(patches()[0]?.body).toEqual({
       name: "deploys",
       description: "",
-      bridge_chats: false,
       retention_days: 90,
       instructions: "Answer in Portuguese. Be brief.",
     });
@@ -521,68 +521,6 @@ describe("room sharing entry (UI-11)", () => {
     await user.click(await screen.findByRole("button", { name: "Share" }));
     const dialog = await screen.findByRole("dialog", { name: "Share deploys" });
     expect(await within(dialog).findByRole("radio", { name: /Private/ })).toBeChecked();
-  });
-});
-
-describe("broadcast setting (ROUTE-06, ROUTE-07)", () => {
-  async function openSettings(
-    room: Partial<Room>,
-    patch: Response = json(200, makeRoom({ id: "r1" })),
-  ) {
-    const api = roomApi(room, { "PATCH /rooms/r1": patch });
-    const user = userEvent.setup();
-    renderRoute("/rooms/r1");
-    await user.click(await screen.findByRole("button", { name: "Room settings" }));
-    const sheet = await screen.findByRole("dialog", { name: "Room settings" });
-    const patches = () => api.calls.filter((c) => c.method === "PATCH");
-    return { user, sheet, patches };
-  }
-
-  it("shows broadcast on and sends it only when turned off", async () => {
-    const { user, sheet, patches } = await openSettings({ broadcast: true });
-    const toggle = within(sheet).getByRole("switch", { name: /Send to every chat/ });
-    expect(toggle).toBeChecked();
-    await user.click(toggle);
-    await user.click(within(sheet).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(patches()).toHaveLength(1));
-    expect(patches()[0]?.body).toEqual({
-      name: "deploys",
-      description: "",
-      bridge_chats: false,
-      retention_days: 90,
-      broadcast: false,
-    });
-  });
-
-  it("locks broadcast and bridging off in a catch-all room and says why", async () => {
-    const { sheet } = await openSettings({
-      broadcast: false,
-      bridge_chats: false,
-      catch_all: true,
-    });
-    const toggle = within(sheet).getByRole("switch", { name: /Send to every chat/ });
-    expect(toggle).not.toBeChecked();
-    expect(toggle).toBeDisabled();
-    const bridge = within(sheet).getByRole("switch", { name: /Bridge chats/ });
-    expect(bridge).toBeDisabled();
-    const locked =
-      "This is a catch-all room: posts only reach the chats you pick, and chats are not bridged.";
-    expect(toggle).toHaveAccessibleDescription(locked);
-    expect(bridge).toHaveAccessibleDescription(locked);
-  });
-
-  it("shows a 422 broadcast reason", async () => {
-    const { user, sheet } = await openSettings(
-      { broadcast: false },
-      apiError(422, "validation", "invalid", {
-        broadcast: "must stay off while the room is a catch-all room",
-      }),
-    );
-    await user.click(within(sheet).getByRole("switch", { name: /Send to every chat/ }));
-    await user.click(within(sheet).getByRole("button", { name: "Save" }));
-    expect(
-      await within(sheet).findByText("must stay off while the room is a catch-all room"),
-    ).toBeInTheDocument();
   });
 });
 

@@ -169,7 +169,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-19 | P1: Partyline chat is one more app | Execute | Implementing (T23) |
 | CID-20 | P1: Partyline chat is one more app | Execute | Implementing (T25, T26) |
 | CID-21 | P1: Partyline chat is one more app | Execute | Implementing (T24) |
-| CID-22 | P1: Partyline chat is one more app | Execute | Implementing (T20, T24, T26, T27) |
+| CID-22 | P1: Partyline chat is one more app | Execute | Implementing (T20, T24, T26, T27, T28) |
 | CID-23 | P1: Partyline chat is one more app | Execute | Implementing (T6) |
 | CID-24 | Edge cases | Execute | Implementing (T22) |
 | CID-25 | Edge cases | Execute | Implementing (T12, T14) |

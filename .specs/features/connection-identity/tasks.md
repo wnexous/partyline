@@ -741,8 +741,8 @@ New frame DTOs are added.
 **Reuses**: settings tests
 **Requirement**: CID-22
 **Done when**:
-- [ ] Unit: no bridge/broadcast fields; a save sends neither
-- [ ] Gate check passes: `make check`
+- [x] Unit: no bridge/broadcast fields; a save sends neither
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): drop chat settings from rooms`

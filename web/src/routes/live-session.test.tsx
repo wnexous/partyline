@@ -49,10 +49,14 @@ describe("revoked session on the live socket (UI-02)", () => {
 
     FakeSocket.latest().drop(1008, "session revoked");
 
-    await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
-    expect(router.state.location.search).toEqual({ redirect: "/contacts?tab=mine" });
+    // The close handler clears the cache before it triggers the redirect. Assert it here: the
+    // still-mounted page may legitimately refetch during the navigation, which is a UI concern
+    // of its own and would make this assertion race (deflake, T28).
     expect(queryClient.getQueryData(queryKeys.contacts)).toBeUndefined();
     expect(queryClient.getQueryData(queryKeys.me)).toBeUndefined();
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
+    expect(router.state.location.search).toEqual({ redirect: "/contacts?tab=mine" });
     // No reconnect attempt: the only socket is the one the server closed.
     expect(FakeSocket.instances).toHaveLength(1);
   });

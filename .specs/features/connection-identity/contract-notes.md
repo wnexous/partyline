@@ -869,3 +869,22 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - Tests: `composer.test.tsx` keeps the text, length, mention-send, file and error cases and adds
   one that renders with a chat member, finds no `To:` control and posts `{text}` only; the room
   page no longer expects the explicit-chat hint.
+
+## T28: Room settings without chat settings (CID-22)
+
+- `web/src/components/room-settings-sheet.tsx` and `roomSettingsSchema` own only name, description,
+  instructions and retention. The bridge switch, the broadcast switch and the catch-all locked
+  notice are removed; `room.catch_all`, `room.bridge_chats` and `room.broadcast` are ignored by the
+  sheet (the server still sends them until T35 drops the DTO fields).
+- A save sends `{name, description, retention_days}` and `instructions` only when it changed.
+  `bridge_chats` and `broadcast` are never sent, so the server keeps its stored dead values.
+- Retired with the controls: DLV-05's bridging toggle and ROUTE-06/ROUTE-07's broadcast setting and
+  catch-all lock in the web UI. The `settings.bridge*`, `settings.broadcast*` and
+  `settings.catchAllLocked` strings stay unused until a later cleanup.
+- Tests: `room-settings-sheet.test.tsx` renders a room with `bridge_chats`, `broadcast` and
+  `catch_all` set, finds no switch or those texts, and pins the PATCH body; the room page settings
+  tests save name/retention/instructions without the two fields.
+- **Deflake (not part of the task)**: `web/src/routes/live-session.test.tsx` read the cleared query
+  cache only after the redirect, when the still-mounted contacts page can legitimately refetch;
+  under the parallel gate it failed intermittently. It now asserts the synchronous clear at the
+  1008 close, before the redirect, which is the event UI-02 pins. No assertion was dropped.
