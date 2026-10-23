@@ -18,7 +18,6 @@ const (
 	LiveEventTypeAgentPresence   LiveEventType = "agent.presence"
 	LiveEventTypeConnectorStatus LiveEventType = "connector.status"
 	LiveEventTypeChatDiscovered  LiveEventType = "chat.discovered"
-	LiveEventTypeOutboxStatus    LiveEventType = "outbox.status"
 	LiveEventTypeIdentityLinked  LiveEventType = "identity.linked"
 	// LiveEventTypeIntelligenceChanged carries the new summary of an intelligence whose
 	// profile changed.
@@ -38,7 +37,6 @@ var _ = `export type LiveEvent =
   | LiveAgentPresence
   | LiveConnectorStatus
   | LiveChatDiscovered
-  | LiveOutboxStatus
   | LiveIdentityLinked
   | LiveIntelligenceChanged
   | LiveLagged;
@@ -139,19 +137,6 @@ type ConnectorStatusData struct {
 type LiveChatDiscovered struct {
 	Type LiveEventType `json:"type" tstype:"typeof LiveEventTypeChatDiscovered"`
 	Data Chat          `json:"data"`
-}
-
-// LiveOutboxStatus reports that an outbound delivery changed status (LIVE-04).
-type LiveOutboxStatus struct {
-	Type LiveEventType `json:"type" tstype:"typeof LiveEventTypeOutboxStatus"`
-	Data OutboxUpdate  `json:"data"`
-}
-
-// OutboxUpdate is an outbox item with the message and room it belongs to.
-type OutboxUpdate struct {
-	RoomID     string `json:"room_id"`
-	MessageID  string `json:"message_id"`
-	OutboxItem `tstype:",extends"`
 }
 
 // LiveIdentityLinked reports that a chat identity was linked to the user (UI-18).

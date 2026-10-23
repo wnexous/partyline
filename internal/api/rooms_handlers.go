@@ -42,9 +42,9 @@ func (s *server) roomRoutes(mux *http.ServeMux) {
 // toMember renders a member; agent members carry their online state.
 func (s *server) toMember(m rooms.Member) dto.RoomMember {
 	out := dto.RoomMember{
-		ID: m.ID, Kind: dto.MemberKind(m.Kind), MemberID: m.MemberID, Name: m.Name, Outbound: m.Outbound,
+		ID: m.ID, Kind: dto.MemberKind(m.Kind), MemberID: m.MemberID, Name: m.Name,
 		Owner: m.AgentOwner, ConnectorKind: m.ConnectorKind, ChatKind: dto.ChatKind(m.ChatKind),
-		DisplayName: m.DisplayName, SignOutbound: m.SignOutbound, Delivery: dto.DeliveryMode(m.Delivery),
+		DisplayName: m.DisplayName, Delivery: dto.DeliveryMode(m.Delivery),
 		Keywords: rooms.Keywords(m.RoomMember), CreatedAt: msTime(m.CreatedAt),
 	}
 	if out.Kind == dto.MemberKindAgent && s.Agents != nil {
@@ -99,8 +99,7 @@ func (s *server) createRoom(w http.ResponseWriter, r *http.Request, p authn.Prin
 		return err
 	}
 	room, err := s.Rooms.Create(r.Context(), p, rooms.CreateInput{
-		Name: req.Name, Description: req.Description, Instructions: req.Instructions, BridgeChats: req.BridgeChats,
-		RetentionDays: req.RetentionDays,
+		Name: req.Name, Description: req.Description, Instructions: req.Instructions, RetentionDays: req.RetentionDays,
 	})
 	if err != nil {
 		return err
@@ -124,8 +123,7 @@ func (s *server) updateRoom(w http.ResponseWriter, r *http.Request, p authn.Prin
 		return err
 	}
 	room, err := s.Rooms.Update(r.Context(), p, r.PathValue("id"), rooms.UpdateInput{
-		Name: req.Name, Description: req.Description, Instructions: req.Instructions, BridgeChats: req.BridgeChats,
-		Broadcast: req.Broadcast, RetentionDays: req.RetentionDays,
+		Name: req.Name, Description: req.Description, Instructions: req.Instructions, RetentionDays: req.RetentionDays,
 	})
 	if err != nil {
 		return err
@@ -197,7 +195,7 @@ func (s *server) addMember(w http.ResponseWriter, r *http.Request, p authn.Princ
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	m, err := s.Rooms.AddMember(r.Context(), p, r.PathValue("id"), rooms.MemberInput{Kind: req.Kind, MemberID: req.MemberID, Outbound: req.Outbound})
+	m, err := s.Rooms.AddMember(r.Context(), p, r.PathValue("id"), rooms.MemberInput{Kind: req.Kind, MemberID: req.MemberID})
 	if err != nil {
 		return err
 	}
@@ -211,8 +209,7 @@ func (s *server) updateMember(w http.ResponseWriter, r *http.Request, p authn.Pr
 		return err
 	}
 	m, err := s.Rooms.UpdateMember(r.Context(), p, r.PathValue("id"), r.PathValue("mid"), rooms.MemberUpdate{
-		Outbound: req.Outbound, DisplayName: req.DisplayName, SignOutbound: req.SignOutbound,
-		Delivery: req.Delivery, Keywords: req.Keywords,
+		DisplayName: req.DisplayName, Delivery: req.Delivery, Keywords: req.Keywords,
 	})
 	if err != nil {
 		return err

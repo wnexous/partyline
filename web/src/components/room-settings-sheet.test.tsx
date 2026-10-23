@@ -19,9 +19,6 @@ const room = makeRoom({
   description: "",
   instructions: "",
   retention_days: 90,
-  bridge_chats: true,
-  broadcast: false,
-  catch_all: true,
 });
 
 beforeEach(() => useLiveStore.setState({ locale: "en" }));

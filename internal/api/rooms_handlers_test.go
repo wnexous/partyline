@@ -102,10 +102,11 @@ func roomSetup(t *testing.T, m *matrix) matrixResource {
 		dto.SharingUser{UserID: m.clients[roleViewer].User.ID, Level: dto.LevelView},
 		dto.SharingUser{UserID: m.clients[rolePoster].User.ID, Level: dto.LevelPost})
 	_, chat := storeChat(t, m.env, owner.User.ID, "group")
-	member := owner.SeedChatMember(r.ID, chat, true)
+	member := owner.SeedChatMember(r.ID, chat)
+	ai := testkit.Decode[dto.RoomMember](owner.Post("/api/v1/rooms/"+r.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: owner.NewAI("builder")}).RequireStatus(http.StatusCreated))
 	msg := testkit.Decode[dto.Message](postMultipart(owner, r.ID, dto.PostMessageRequest{Text: "file"},
 		upload{"a.txt", "text/plain", "hello"}).RequireStatus(http.StatusCreated))
-	return matrixResource{"room": r.ID, "member": member.ID, "attachment": msg.Attachments[0].ID}
+	return matrixResource{"room": r.ID, "member": member.ID, "ai": ai.ID, "attachment": msg.Attachments[0].ID}
 }
 
 // Auth matrix for every room route (ACL-01..04, ACL-07, ACL-08, ROOM-01).
@@ -135,7 +136,7 @@ func TestRoomRoutesAuthMatrix(t *testing.T) {
 			return c.Post(room(res, "/members"), dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: m.clients[roleStranger].User.ID})
 		}, statuses(201, 403, 403, 404, 404)},
 		{"update member", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Patch(room(res, "/members/"+res["member"]), dto.UpdateMemberRequest{Outbound: ptr(false)})
+			return c.Patch(room(res, "/members/"+res["ai"]), dto.UpdateMemberRequest{DisplayName: ptr("Builder bot")})
 		}, statuses(200, 403, 403, 404, 404)},
 		{"remove member", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
 			return c.Delete(room(res, "/members/"+res["member"]))
@@ -202,8 +203,7 @@ func TestCreateRoomEndpoint(t *testing.T) {
 	require.Contains(t, e.Fields, "retention_days")
 	env.Anon().Get("/api/v1/rooms").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 
-	got := testkit.Decode[dto.Room](alice.Patch("/api/v1/rooms/"+r.ID, dto.UpdateRoomRequest{BridgeChats: ptr(true), RetentionDays: ptr(0)}).RequireStatus(http.StatusOK))
-	require.True(t, got.BridgeChats)
+	got := testkit.Decode[dto.Room](alice.Patch("/api/v1/rooms/"+r.ID, dto.UpdateRoomRequest{RetentionDays: ptr(0)}).RequireStatus(http.StatusOK))
 	require.Zero(t, got.RetentionDays)
 	require.Equal(t, "Ops", got.Name)
 }
@@ -259,15 +259,13 @@ func TestRoomMembersEndpoint(t *testing.T) {
 	alice.Post(path, dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: mine}).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 
 	alice.Post(path, dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeChatsNotMembers)
-	member := alice.SeedChatMember(r.ID, chat, true)
-	require.True(t, member.Outbound)
+	member := alice.SeedChatMember(r.ID, chat)
 	require.Equal(t, "telegram", member.ConnectorKind)
 	require.Equal(t, dto.ChatKindGroup, member.ChatKind)
-	msg := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+r.ID+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireStatus(http.StatusCreated))
-	require.Empty(t, msg.Outbox, "a room sends nothing to its chat members")
+	alice.Post("/api/v1/rooms/"+r.ID+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireStatus(http.StatusCreated)
 
-	got := testkit.Decode[dto.RoomMember](alice.Patch(path+"/"+member.ID, dto.UpdateMemberRequest{Outbound: ptr(false)}).RequireStatus(http.StatusOK))
-	require.False(t, got.Outbound)
+	got := testkit.Decode[dto.RoomMember](alice.Patch(path+"/"+agent.ID, dto.UpdateMemberRequest{DisplayName: ptr("Builder bot")}).RequireStatus(http.StatusOK))
+	require.Equal(t, "Builder bot", got.DisplayName)
 	list := testkit.Decode[dto.List[dto.RoomMember]](alice.Get(path).RequireStatus(http.StatusOK))
 	require.Len(t, list.Items, 2)
 
@@ -287,8 +285,7 @@ func TestRoomMembersEndpoint(t *testing.T) {
 	require.Equal(t, 1, get)
 	require.Equal(t, 1, listed)
 	alice.Delete(path+"/"+member.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	msg = testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+r.ID+"/messages", dto.PostMessageRequest{Text: "after"}).RequireStatus(http.StatusCreated))
-	require.Empty(t, msg.Outbox, "a removed chat gets no delivery")
+	alice.Post("/api/v1/rooms/"+r.ID+"/messages", dto.PostMessageRequest{Text: "after"}).RequireStatus(http.StatusCreated)
 }
 
 // MSG-01, MSG-02 and pagination over HTTP.

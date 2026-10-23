@@ -28,16 +28,15 @@ func execSQL(t *testing.T, env *testkit.Env, query string, args ...any) {
 }
 
 // chatRoom is alice's room "Support" with her AI builder as a member, plus two chats of a running
-// fake connection that sit in the room as members, one with outbound delivery on and one listen-only,
-// the way a room built before the connection proxy holds them (the API refuses chats as members,
-// CID-19). The app runs the workers that send, so a delivery that was still planned would reach the
-// connection.
+// fake connection that sit in the room as members, the way a room built before the connection proxy
+// holds them (the API refuses chats as members, CID-19). The app runs the workers that send, so a
+// delivery that was still planned would reach the connection.
 type chatRoom struct {
 	*agentRoom
 	inst  *connectortest.Instance
 	conn  dto.Connector
-	chat  string // outbound on
-	quiet string // listen-only
+	chat  string
+	other string
 }
 
 func newChatRoom(t *testing.T) *chatRoom {
@@ -55,9 +54,9 @@ func newChatRoom(t *testing.T) *chatRoom {
 	inst.WaitRun(t)
 	r := &chatRoom{agentRoom: f, inst: inst, conn: conn}
 	r.chat = insertChat(t, env, conn.ID, "120363000000000001@g.us", "Team")
-	r.quiet = insertChat(t, env, conn.ID, "120363000000000002@g.us", "Announcements")
-	alice.SeedChatMember(f.room.ID, r.chat, true)
-	alice.SeedChatMember(f.room.ID, r.quiet, false)
+	r.other = insertChat(t, env, conn.ID, "120363000000000002@g.us", "Announcements")
+	alice.SeedChatMember(f.room.ID, r.chat)
+	alice.SeedChatMember(f.room.ID, r.other)
 	return r
 }
 
@@ -73,7 +72,8 @@ func (f *chatRoom) requireNoChatDelivery(t *testing.T) {
 // (recipients, or chat_ids in the tool), is accepted whatever the names are and the names are
 // ignored: they are not stored, no delivery is planned, nothing reaches the connection, and the
 // room's agents still get the message. Each rule of the retired delivery to chats (DLV-03/04: a
-// listen-only chat is refused, ROUTE-10: at most ten chats) answers 201 now.
+// listen-only chat is refused, ROUTE-10: at most ten chats) answers 201 now, and the member switch
+// that made a chat listen-only is gone from the API (T35).
 func TestPostsNamingChatsAreAcceptedAndReachNoChat(t *testing.T) {
 	f := newChatRoom(t)
 	conn := f.dial(t)
@@ -89,7 +89,7 @@ func TestPostsNamingChatsAreAcceptedAndReachNoChat(t *testing.T) {
 	}{
 		{"nobody", nil},
 		{"a chat of the room", []string{f.chat}},
-		{"a listen-only chat of the room", []string{f.quiet}},
+		{"another chat of the room", []string{f.other}},
 		{"a chat nobody has", []string{"no-such-chat"}},
 		{"eleven chats", eleven},
 	}
@@ -118,7 +118,6 @@ func TestPostsNamingChatsAreAcceptedAndReachNoChat(t *testing.T) {
 				m := testkit.Decode[dto.Message](resp)
 				require.Equal(t, "hello", m.Text)
 				require.Empty(t, m.Recipients, "the names are not stored")
-				require.Empty(t, m.Outbox)
 				keys := keysOf(t, resp.Body)
 				for _, retired := range []string{"recipients", "outbox", "warning"} {
 					require.NotContains(t, keys, retired)
@@ -132,14 +131,15 @@ func TestPostsNamingChatsAreAcceptedAndReachNoChat(t *testing.T) {
 	}
 }
 
-// CID-22 (T33): a room that switched broadcast off before the upgrade is not a special case any more:
-// the post is stored and reaches the agents like any other, and answers without the "reached no chat"
-// warning (ROUTE-06 is retired with the delivery it described).
+// CID-22 (T33): a room that switched broadcast off before the upgrade (the flag is still stored, and
+// no API reads or writes it any more, T35) is not a special case: the post is stored and reaches the
+// agents like any other, and answers without the "reached no chat" warning (ROUTE-06 is retired with
+// the delivery it described).
 func TestPostInARoomWithBroadcastOffAnswersNoWarning(t *testing.T) {
 	f := newChatRoom(t)
 	conn := f.dial(t)
 	conn.Welcome(wsWait)
-	f.alice.Patch("/api/v1/rooms/"+f.room.ID, dto.UpdateRoomRequest{Broadcast: ptr(false)}).RequireStatus(http.StatusOK)
+	execSQL(t, f.env, "UPDATE rooms SET broadcast = 0 WHERE id = ?", f.room.ID)
 
 	for name, post := range map[string]func() *testkit.Response{
 		"user": func() *testkit.Response {
@@ -166,16 +166,13 @@ func TestRepliesAndReactionsToChatHistoryReachNoChat(t *testing.T) {
 	reply := testkit.Decode[dto.Message](f.rest().Post("/api/v1/agent/messages/"+target.ID+"/reply", dto.ReplyRequest{Text: "sure"}).RequireStatus(http.StatusCreated))
 	require.Equal(t, target.ID, reply.ReplyTo)
 	require.Empty(t, reply.Recipients)
-	require.Empty(t, reply.Outbox)
 
 	userReply := testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+f.room.ID+"/messages", dto.PostMessageRequest{Text: "me too", ReplyTo: target.ID}).RequireStatus(http.StatusCreated))
 	require.Empty(t, userReply.Recipients)
-	require.Empty(t, userReply.Outbox)
 
 	reaction := testkit.Decode[dto.Message](f.rest().Post("/api/v1/agent/messages/"+target.ID+"/react", dto.ReactRequest{Emoji: "👍"}).RequireStatus(http.StatusCreated))
 	require.Equal(t, dto.MessageKindReaction, reaction.Kind)
 	require.Empty(t, reaction.Recipients)
-	require.Empty(t, reaction.Outbox)
 	f.requireNoChatDelivery(t)
 }
 
@@ -183,10 +180,9 @@ func TestRepliesAndReactionsToChatHistoryReachNoChat(t *testing.T) {
 // ids that were no chat of the new DM refused the post (ROUTE-10, DLV-04) and left no DM behind.
 func TestAgentDMNamingChatsIsAcceptedAndReachesNoChat(t *testing.T) {
 	f := newChatRoom(t)
-	for _, ids := range [][]string{{f.chat}, {f.quiet}, {"no-such-chat"}} {
+	for _, ids := range [][]string{{f.chat}, {f.other}, {"no-such-chat"}} {
 		m := testkit.Decode[dto.Message](f.rest().Post("/api/v1/agent/dms", dto.AgentDMRequest{To: "@alice", Text: "hi", ChatIDs: ids}).RequireStatus(http.StatusCreated))
 		require.Empty(t, m.Recipients)
-		require.Empty(t, m.Outbox)
 	}
 	f.requireNoChatDelivery(t)
 }
@@ -200,12 +196,10 @@ func TestAnAIsDMIsNotCopiedToTheUsersChosenApp(t *testing.T) {
 	execSQL(t, f.env, "UPDATE users SET notify_chat_id = ? WHERE id = ?", f.chat, f.alice.User.ID)
 	dm := testkit.Decode[dto.Room](f.alice.Post("/api/v1/conversations/dm", dto.OpenDMRequest{With: f.agentID}).RequireStatus(http.StatusCreated))
 
-	m := testkit.Decode[dto.Message](f.rest().Post(agentRoomPath(dm.ID, "/messages"), dto.PostMessageRequest{Text: "build is green"}).RequireStatus(http.StatusCreated))
-	require.Empty(t, m.Outbox)
+	f.rest().Post(agentRoomPath(dm.ID, "/messages"), dto.PostMessageRequest{Text: "build is green"}).RequireStatus(http.StatusCreated)
 	seen := testkit.Decode[dto.Page[dto.Message]](f.alice.Get("/api/v1/rooms/" + dm.ID + "/messages").RequireStatus(http.StatusOK)).Items
 	require.Len(t, seen, 1)
 	require.Equal(t, "build is green", seen[0].Text)
-	require.Empty(t, seen[0].Outbox)
 	f.requireNoChatDelivery(t)
 }
 
@@ -239,7 +233,7 @@ func TestPostsNamingChatsKeepTheAuthorizationOfTheirRoute(t *testing.T) {
 		dto.SharingUser{UserID: m.clients[rolePoster].User.ID, Level: dto.LevelPost})
 	conn := createFake(owner, "wa", true)
 	chat := insertChat(t, m.env, conn.ID, "120363000000000001@g.us", "Team")
-	owner.SeedChatMember(room.ID, chat, true)
+	owner.SeedChatMember(room.ID, chat)
 	member := registerAgent(t, m.env, owner, "builder")
 	owner.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: member}).RequireStatus(http.StatusCreated)
 	registerAgent(t, m.env, owner, "outsider")

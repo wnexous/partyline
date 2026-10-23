@@ -131,8 +131,7 @@ func setDelivery(t *testing.T, env *testkit.Env, roomID, agentID string, mode dt
 	require.NoError(t, err)
 	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
 		return q.UpdateRoomMemberSettings(ctx, db.UpdateRoomMemberSettingsParams{
-			Outbound: m.Outbound, DisplayName: m.DisplayName, SignOutbound: m.SignOutbound, Delivery: string(mode),
-			KeywordsJson: m.KeywordsJson, ID: m.ID,
+			DisplayName: m.DisplayName, Delivery: string(mode), KeywordsJson: m.KeywordsJson, ID: m.ID,
 		})
 	}))
 }

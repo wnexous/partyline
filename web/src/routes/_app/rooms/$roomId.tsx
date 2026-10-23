@@ -197,7 +197,6 @@ function RoomPage() {
             roomName={title}
             level={r.my_level}
             members={memberList}
-            broadcast={r.broadcast}
           />
         )}
       </div>

@@ -80,41 +80,6 @@ func (q *Queries) DeleteConnectorChatMemberships(ctx context.Context, connectorI
 	return items, nil
 }
 
-const getAutoRouteSkip = `-- name: GetAutoRouteSkip :one
-SELECT until FROM auto_route_skips WHERE connector_id = ? AND chat_id = ?
-`
-
-type GetAutoRouteSkipParams struct {
-	ConnectorID string
-	ChatID      string
-}
-
-func (q *Queries) GetAutoRouteSkip(ctx context.Context, arg GetAutoRouteSkipParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, getAutoRouteSkip, arg.ConnectorID, arg.ChatID)
-	var until int64
-	err := row.Scan(&until)
-	return until, err
-}
-
-const getChatAutoRoute = `-- name: GetChatAutoRoute :one
-SELECT k.id AS connector_id, k.auto_route_room_id, k.auto_route_scope
-FROM chats c JOIN connectors k ON k.id = c.connector_id
-WHERE c.id = ?
-`
-
-type GetChatAutoRouteRow struct {
-	ConnectorID     string
-	AutoRouteRoomID sql.NullString
-	AutoRouteScope  string
-}
-
-func (q *Queries) GetChatAutoRoute(ctx context.Context, id string) (GetChatAutoRouteRow, error) {
-	row := q.db.QueryRowContext(ctx, getChatAutoRoute, id)
-	var i GetChatAutoRouteRow
-	err := row.Scan(&i.ConnectorID, &i.AutoRouteRoomID, &i.AutoRouteScope)
-	return i, err
-}
-
 const getConnector = `-- name: GetConnector :one
 SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at, auto_route_scope, auto_route_room_id, operator_iid, account_label, deliver, groups_mentions_only FROM connectors WHERE id = ?
 `
@@ -372,48 +337,6 @@ func (q *Queries) SetConnectorOperator(ctx context.Context, arg SetConnectorOper
 	return err
 }
 
-const stopCatchAllConnectors = `-- name: StopCatchAllConnectors :many
-UPDATE connectors SET auto_route_scope = 'off', last_error = ?1
-WHERE auto_route_room_id = ?2
-RETURNING id, status
-`
-
-type StopCatchAllConnectorsParams struct {
-	Detail string
-	RoomID sql.NullString
-}
-
-type StopCatchAllConnectorsRow struct {
-	ID     string
-	Status string
-}
-
-// ROUTE-03: the connectors whose catch-all room is going to be deleted stop auto-routing and say
-// so. The foreign key empties their room on deletion, and an empty room with a scope on reads as
-// per-chat conversations (ACC-02), so the scope goes off with it.
-func (q *Queries) StopCatchAllConnectors(ctx context.Context, arg StopCatchAllConnectorsParams) ([]StopCatchAllConnectorsRow, error) {
-	rows, err := q.db.QueryContext(ctx, stopCatchAllConnectors, arg.Detail, arg.RoomID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []StopCatchAllConnectorsRow
-	for rows.Next() {
-		var i StopCatchAllConnectorsRow
-		if err := rows.Scan(&i.ID, &i.Status); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const updateConnector = `-- name: UpdateConnector :exec
 UPDATE connectors SET name = ?, config_json = ?, secrets_enc = ?, enabled = ?, updated_at = ?
 WHERE id = ?
@@ -434,27 +357,6 @@ func (q *Queries) UpdateConnector(ctx context.Context, arg UpdateConnectorParams
 		arg.ConfigJson,
 		arg.SecretsEnc,
 		arg.Enabled,
-		arg.UpdatedAt,
-		arg.ID,
-	)
-	return err
-}
-
-const updateConnectorAutoRoute = `-- name: UpdateConnectorAutoRoute :exec
-UPDATE connectors SET auto_route_scope = ?, auto_route_room_id = ?, updated_at = ? WHERE id = ?
-`
-
-type UpdateConnectorAutoRouteParams struct {
-	AutoRouteScope  string
-	AutoRouteRoomID sql.NullString
-	UpdatedAt       int64
-	ID              string
-}
-
-func (q *Queries) UpdateConnectorAutoRoute(ctx context.Context, arg UpdateConnectorAutoRouteParams) error {
-	_, err := q.db.ExecContext(ctx, updateConnectorAutoRoute,
-		arg.AutoRouteScope,
-		arg.AutoRouteRoomID,
 		arg.UpdatedAt,
 		arg.ID,
 	)
@@ -496,21 +398,5 @@ type UpdateConnectorStatusParams struct {
 
 func (q *Queries) UpdateConnectorStatus(ctx context.Context, arg UpdateConnectorStatusParams) error {
 	_, err := q.db.ExecContext(ctx, updateConnectorStatus, arg.Status, arg.LastError, arg.ID)
-	return err
-}
-
-const upsertAutoRouteSkip = `-- name: UpsertAutoRouteSkip :exec
-INSERT INTO auto_route_skips (connector_id, chat_id, until) VALUES (?, ?, ?)
-ON CONFLICT (connector_id, chat_id) DO UPDATE SET until = excluded.until
-`
-
-type UpsertAutoRouteSkipParams struct {
-	ConnectorID string
-	ChatID      string
-	Until       int64
-}
-
-func (q *Queries) UpsertAutoRouteSkip(ctx context.Context, arg UpsertAutoRouteSkipParams) error {
-	_, err := q.db.ExecContext(ctx, upsertAutoRouteSkip, arg.ConnectorID, arg.ChatID, arg.Until)
 	return err
 }

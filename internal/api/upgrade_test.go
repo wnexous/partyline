@@ -79,7 +79,6 @@ func TestUpgradedAgentAdoptsItsFolderAndRepliesInTheRoom(t *testing.T) {
 	require.Equal(t, "m-in3", reply.ReplyTo)
 	require.Equal(t, "tem sim, às 10h", reply.Text)
 	require.Empty(t, reply.Recipients)
-	require.Empty(t, reply.Outbox)
 	require.Zero(t, countRows(t, env, "SELECT COUNT(*) FROM outbox WHERE message_id = ?", reply.ID), "no delivery is planned for the reply")
 	require.Never(t, func() bool { return len(inst.Sent()) > 0 }, 1500*time.Millisecond, 50*time.Millisecond,
 		"neither the reply nor the delivery v0.3 left pending reaches a chat")

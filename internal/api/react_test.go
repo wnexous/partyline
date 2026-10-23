@@ -31,7 +31,6 @@ func TestAgentReactStoresReaction(t *testing.T) {
 		require.Equal(t, f.agentID, r.AuthorID)
 		require.Equal(t, target.ID, r.ReplyTo)
 		require.Empty(t, r.Recipients)
-		require.Empty(t, r.Outbox)
 		require.Equal(t, strings.TrimSpace(emoji), r.Text)
 	}
 }
@@ -69,7 +68,7 @@ func TestAgentReactUnknownMessage(t *testing.T) {
 	f := newAgentRoom(t)
 	other := createRoom(f.alice, "Private")
 	_, chat := storeChat(t, f.env, f.alice.User.ID, "Elsewhere")
-	f.alice.SeedChatMember(other.ID, chat, true)
+	f.alice.SeedChatMember(other.ID, chat)
 	foreign := postFromChatIn(t, f, other.ID, chat, "not for the agent")
 	for _, id := range []string{"unknown", foreign} {
 		e := f.rest().Post(reactPath(id), dto.ReactRequest{Emoji: "👍"}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)

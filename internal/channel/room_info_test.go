@@ -55,8 +55,8 @@ func TestToolRoomInfo(t *testing.T) {
 	require.Equal(t, true, got["room_text_trusted"], "alice created the room")
 	require.NotContains(t, got, "room_text_note")
 	require.Equal(t, map[string]any{
-		"display_name": "Lolo bot", "sign_outbound": true, "delivery": "mentions", "keywords": []any{"pedido"},
-	}, got["me"])
+		"display_name": "Lolo bot", "delivery": "mentions", "keywords": []any{"pedido"},
+	}, got["me"], "the agent's settings in the room; member signatures are retired (CID-22)")
 	members := got["members"].([]any)
 	require.Len(t, members, 2)
 	byKind := map[string]map[string]any{}
@@ -103,14 +103,12 @@ func TestInstructionsExplainRoomInfoAndNoLongerChatIDs(t *testing.T) {
 // insNotice is the INS-03 notice text as the spec words it.
 const insNotice = "This room has instructions for its agents; call the room_info tool to read them."
 
-// CID-22: send_message says only that the post was sent, also in a room that switched broadcast off
-// before the connection proxy: the "reached no chat" warning of ROUTE-06 is retired with the delivery to
-// chats it described.
-func TestToolResultHasNoNoChatWarningInANoBroadcastRoom(t *testing.T) {
+// CID-22: send_message says only that the post was sent, also in a room that still holds a chat: the
+// "reached no chat" warning of ROUTE-06 is retired with the delivery to chats it described, and so is
+// the room's broadcast setting it depended on (T35).
+func TestToolResultHasNoNoChatWarning(t *testing.T) {
 	e := newChanEnv(t)
 	e.chatMember("Family")
-	off := false
-	e.alice.Patch("/api/v1/rooms/"+e.room.ID, dto.UpdateRoomRequest{Broadcast: &off}).RequireStatus(http.StatusOK)
 	s := e.connected(e.options())
 
 	text, isErr := s.call("send_message", toolArgs("room", "Support", "text", "hello all"))
@@ -164,7 +162,7 @@ func TestToolRoomInfoUnknownAuthorInstructions(t *testing.T) {
 		}
 		return q.UpdateRoom(ctx, db.UpdateRoomParams{
 			Name: r.Name, Description: r.Description, Instructions: r.Instructions, InstructionsBy: "",
-			BridgeChats: r.BridgeChats, Broadcast: r.Broadcast, RetentionDays: r.RetentionDays, UpdatedAt: r.UpdatedAt, UpdatedBy: r.UpdatedBy, ID: r.ID,
+			RetentionDays: r.RetentionDays, UpdatedAt: r.UpdatedAt, UpdatedBy: r.UpdatedBy, ID: r.ID,
 		})
 	}))
 	s := e.connected(e.options())

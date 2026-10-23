@@ -39,7 +39,7 @@ func (s *server) toConnector(v connectors.View) dto.Connector {
 		Owner:   dto.User{ID: v.OwnerID, Username: v.OwnerUsername, DisplayName: v.OwnerDisplayName},
 		MyLevel: v.Level, Enabled: v.Enabled, Status: dto.ConnectorStatus(v.Status), LastError: v.LastError,
 		AccountLabel: v.AccountLabel, Deliver: dto.ConnectorDeliver(v.Deliver), GroupsMentionsOnly: v.GroupsMentionsOnly, Queued: v.Queued,
-		Config: v.Config, AutoRouteScope: dto.AutoRouteScope(v.AutoRouteScope), AutoRouteRoomID: v.AutoRouteRoomID.String,
+		Config:    v.Config,
 		CreatedAt: convert.Time(v.CreatedAt), UpdatedAt: convert.Time(v.UpdatedAt),
 	}
 	if v.HasOperator {
@@ -108,8 +108,7 @@ func (s *server) updateConnector(w http.ResponseWriter, r *http.Request, p authn
 		return err
 	}
 	v, err := s.Connectors.Update(r.Context(), p, r.PathValue("id"), connectors.UpdateInput{
-		Name: req.Name, Config: req.Config, Enabled: req.Enabled,
-		AutoRouteScope: req.AutoRouteScope, AutoRouteRoomID: req.AutoRouteRoomID, OperatorID: req.OperatorID,
+		Name: req.Name, Config: req.Config, Enabled: req.Enabled, OperatorID: req.OperatorID,
 		Deliver: req.Deliver, GroupsMentionsOnly: req.GroupsMentionsOnly,
 	})
 	if err != nil {

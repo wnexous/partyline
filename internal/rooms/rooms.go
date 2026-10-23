@@ -1,4 +1,4 @@
-// Package rooms owns rooms, their members and their messages (AD-002). Every method
+// Package rooms owns rooms, their members and their messages (AD-015). Every method
 // authorizes the caller through package access: callers without view get
 // access.ErrNotFound, callers that can view but not act get access.ErrForbidden.
 package rooms
@@ -86,10 +86,8 @@ type Room struct {
 	Level access.Level
 	// Visibility is the sharing preset the room's grants form.
 	Visibility dto.Visibility
-	// MemberCount counts the room's agents, chats and users.
+	// MemberCount counts the room's members.
 	MemberCount int64
-	// CatchAll is set while a connector routes new chats to the room (ROUTE-07).
-	CatchAll bool
 	// InstructionsByName is the username of InstructionsBy; empty when unknown (INS-04).
 	InstructionsByName string
 	// OwnerIntelligence is the owner's profile (ID empty when the owner has none).
@@ -137,8 +135,7 @@ type CreateInput struct {
 	Name          string
 	Description   string
 	Instructions  string // INS-01, at most dto.MaxRoomInstructions characters
-	BridgeChats   bool
-	RetentionDays *int // nil = DefaultRetentionDays; 0 keeps messages forever
+	RetentionDays *int   // nil = DefaultRetentionDays; 0 keeps messages forever
 }
 
 func validateRoom(name, description, instructions string, retention int) error {
@@ -227,17 +224,15 @@ func (s *Service) CreateWithMembers(ctx context.Context, ownerID string, in Crea
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		if err := q.CreateRoom(ctx, db.CreateRoomParams{
 			ID: id, OwnerID: ownerID, Name: name, Description: description, Instructions: instructions,
-			InstructionsBy: author,
-			BridgeChats:    in.BridgeChats, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
+			InstructionsBy: author, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
 			UpdatedBy: ownerID, // INS-06: the creator wrote the name and description
 		}); err != nil {
 			return err
 		}
 		for _, m := range members {
-			outbound := m.Outbound == nil || *m.Outbound
 			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
 				ID: store.NewID(), RoomID: id, Kind: string(m.Kind), MemberID: m.MemberID,
-				Outbound: outbound, AddedBy: ownerID, CreatedAt: now,
+				AddedBy: ownerID, CreatedAt: now,
 			}); err != nil {
 				return err
 			}
@@ -285,10 +280,6 @@ func (s *Service) view(ctx context.Context, r db.Room, ownerUsername string, own
 	if err != nil {
 		return Room{}, err
 	}
-	catchAll, err := s.store.R().CountCatchAllConnectors(ctx, sql.NullString{String: r.ID, Valid: true})
-	if err != nil {
-		return Room{}, err
-	}
 	by := ""
 	if r.InstructionsBy != "" {
 		u, err := s.store.R().GetUser(ctx, r.InstructionsBy)
@@ -309,7 +300,7 @@ func (s *Service) view(ctx context.Context, r db.Room, ownerUsername string, own
 	}
 	return Room{
 		Room: r, OwnerUsername: ownerUsername, Level: l, Visibility: v.Mode,
-		MemberCount: members, CatchAll: catchAll > 0, InstructionsByName: by, OwnerIntelligence: owner,
+		MemberCount: members, InstructionsByName: by, OwnerIntelligence: owner,
 		Participants: participants,
 	}, nil
 }
@@ -353,17 +344,10 @@ type UpdateInput struct {
 	Name          *string
 	Description   *string
 	Instructions  *string
-	BridgeChats   *bool
-	Broadcast     *bool // ROUTE-06
 	RetentionDays *int
 }
 
-// catchAllOff is the 422 reason for turning broadcast or bridge_chats on in a room that is a
-// connector's catch-all room (ROUTE-07).
-const catchAllOff = "must stay off while the room is a catch-all room"
-
-// Update changes a room's settings; requires manage. While the room is a connector's
-// catch-all room, broadcast and bridge_chats cannot be turned on (ROUTE-07).
+// Update changes a room's settings; requires manage.
 func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, in UpdateInput) (Room, error) {
 	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
 		return Room{}, err
@@ -387,28 +371,6 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 			r.Instructions = roomText(*in.Instructions)
 			r.InstructionsBy = instructionsBy(p, r.Instructions)
 		}
-		if in.BridgeChats != nil {
-			r.BridgeChats = *in.BridgeChats
-		}
-		if in.Broadcast != nil {
-			r.Broadcast = *in.Broadcast
-		}
-		if (in.Broadcast != nil && *in.Broadcast) || (in.BridgeChats != nil && *in.BridgeChats) {
-			n, err := q.CountCatchAllConnectors(ctx, sql.NullString{String: roomID, Valid: true})
-			if err != nil {
-				return err
-			}
-			if n > 0 {
-				check := validation.Check{}
-				if in.Broadcast != nil && *in.Broadcast {
-					check.Add("broadcast", catchAllOff)
-				}
-				if in.BridgeChats != nil && *in.BridgeChats {
-					check.Add("bridge_chats", catchAllOff)
-				}
-				return check.Err()
-			}
-		}
 		if in.RetentionDays != nil {
 			r.RetentionDays = int64(*in.RetentionDays)
 		}
@@ -417,8 +379,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, roomID string, 
 		}
 		return q.UpdateRoom(ctx, db.UpdateRoomParams{
 			Name: r.Name, Description: r.Description, Instructions: r.Instructions, InstructionsBy: r.InstructionsBy,
-			BridgeChats: r.BridgeChats, Broadcast: r.Broadcast, RetentionDays: r.RetentionDays,
-			UpdatedAt: s.now().UnixMilli(), UpdatedBy: r.UpdatedBy, ID: roomID,
+			RetentionDays: r.RetentionDays, UpdatedAt: s.now().UnixMilli(), UpdatedBy: r.UpdatedBy, ID: roomID,
 		})
 	})
 	if err != nil {
@@ -435,16 +396,8 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) 
 		return err
 	}
 	var shas []string
-	var stopped []db.StopCatchAllConnectorsRow
 	err := s.store.WithTx(ctx, func(q *db.Queries) (err error) {
 		if shas, err = q.ListRoomAttachmentSHAs(ctx, roomID); err != nil {
-			return err
-		}
-		// ROUTE-03: a connector whose catch-all room goes stops auto-routing and says so. The
-		// foreign key empties its room, which with a scope on would read as per-chat routing.
-		if stopped, err = q.StopCatchAllConnectors(ctx, db.StopCatchAllConnectorsParams{
-			Detail: dto.AutoRouteUnavailable, RoomID: sql.NullString{String: roomID, Valid: true},
-		}); err != nil {
 			return err
 		}
 		if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(access.KindRoom), ResourceID: roomID}); err != nil {
@@ -457,9 +410,6 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, roomID string) 
 		return err
 	}
 	s.ReleaseBlobs(ctx, shas)
-	for _, c := range stopped {
-		s.bus.Publish(events.ConnectorStatus{ConnectorID: c.ID, Status: c.Status, Detail: dto.AutoRouteUnavailable})
-	}
 	s.bus.Publish(events.RoomChanged{RoomID: roomID, Deleted: true})
 	return nil
 }

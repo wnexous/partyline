@@ -43,15 +43,12 @@ func TestCreateGroupWithMembers(t *testing.T) {
 	require.Equal(t, 3, room.MemberCount)
 	require.Equal(t, dto.VisibilityPrivate, room.Visibility)
 	require.Empty(t, room.Participants)
-	require.True(t, room.Broadcast, "the defaults of POST /rooms")
-	require.False(t, room.BridgeChats)
-	require.Equal(t, 90, room.RetentionDays)
+	require.Equal(t, 90, room.RetentionDays, "the defaults of POST /rooms")
 
 	members := membersOf(t, alice, room.ID)
 	require.Len(t, members, 3)
 	for id, kind := range map[string]dto.MemberKind{bob.User.ID: dto.MemberKindUser, atlas: dto.MemberKindAgent, orion: dto.MemberKindAgent} {
 		require.Equal(t, kind, members[id].Kind, id)
-		require.True(t, members[id].Outbound)
 	}
 	require.Equal(t, dto.DeliveryModeAll, members[atlas].Delivery)
 	require.Equal(t, dto.DeliveryModeAll, members[orion].Delivery)

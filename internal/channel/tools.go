@@ -480,12 +480,11 @@ type roomInfoMember struct {
 	ChatKind dto.ChatKind `json:"chat_kind,omitempty"`
 }
 
-// membershipSettings are the calling agent's settings in the room (MEM-01..04).
+// membershipSettings are the calling agent's settings in the room (MEM-02..05).
 type membershipSettings struct {
-	DisplayName  string           `json:"display_name"`
-	SignOutbound bool             `json:"sign_outbound"`
-	Delivery     dto.DeliveryMode `json:"delivery"`
-	Keywords     []string         `json:"keywords"`
+	DisplayName string           `json:"display_name"`
+	Delivery    dto.DeliveryMode `json:"delivery"`
+	Keywords    []string         `json:"keywords"`
 }
 
 func (t *tools) roomInfo(ctx context.Context, args json.RawMessage) (string, error) {
@@ -506,7 +505,7 @@ func (t *tools) roomInfo(ctx context.Context, args json.RawMessage) (string, err
 		Room: info.Room, Instructions: info.Instructions, InstructionsBy: info.InstructionsBy,
 		InstructionsTrusted: info.InstructionsTrusted, RoomTextTrusted: info.RoomTextTrusted,
 		Members: make([]roomInfoMember, 0, len(info.Members)),
-		Me:      membershipSettings{DisplayName: info.Me.DisplayName, SignOutbound: info.Me.SignOutbound, Delivery: info.Me.Delivery, Keywords: info.Me.Keywords},
+		Me:      membershipSettings{DisplayName: info.Me.DisplayName, Delivery: info.Me.Delivery, Keywords: info.Me.Keywords},
 	}
 	if out.Me.Keywords == nil {
 		out.Me.Keywords = []string{}

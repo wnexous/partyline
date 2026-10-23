@@ -109,10 +109,6 @@ type UpdateInput struct {
 	Name    *string
 	Config  Config // nil = unchanged; merged into the stored config (Kind.Merge)
 	Enabled *bool
-	// AutoRouteScope and AutoRouteRoomID change the catch-all settings (ROUTE-04); an empty
-	// room id clears the room.
-	AutoRouteScope  *dto.AutoRouteScope
-	AutoRouteRoomID *string
 	// OperatorID names the connector's operator (CID-01): an AI the owner owns. Any other value
 	// is a validation error on operator_id.
 	OperatorID *string
@@ -398,10 +394,6 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	if in.Enabled != nil {
 		enabled = *in.Enabled
 	}
-	scope, routeRoom, err := s.autoRoute(ctx, p, c, in)
-	if err != nil {
-		return View{}, err
-	}
 	operator, err := s.operator(ctx, c, in.OperatorID)
 	if err != nil {
 		return View{}, err
@@ -413,9 +405,6 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	operatorChanged := operator != c.OperatorIid
 	gainedOperator := operatorChanged && !c.OperatorIid.Valid // it was idle until now: start it
 	var moved int64                                           // the queue items handed to the new operator
-	if string(scope) != c.AutoRouteScope || routeRoom != c.AutoRouteRoomID {
-		changed = append(changed, "auto_route")
-	}
 	if deliver != dto.ConnectorDeliver(c.Deliver) {
 		changed = append(changed, "deliver")
 	}
@@ -423,8 +412,6 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 		changed = append(changed, "groups_mentions_only")
 	}
 	toggled := enabled != c.Enabled
-	// ROUTE-09: saved catch-all settings clear a detail that catch-all routing set.
-	clearDetail := (in.AutoRouteScope != nil || in.AutoRouteRoomID != nil) && IsAutoRouteDetail(c.LastError)
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		moved = 0
 		if err := q.UpdateConnector(ctx, db.UpdateConnectorParams{
@@ -432,20 +419,10 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 		}); err != nil {
 			return err
 		}
-		if err := q.UpdateConnectorAutoRoute(ctx, db.UpdateConnectorAutoRouteParams{
-			AutoRouteScope: string(scope), AutoRouteRoomID: routeRoom, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
-		}); err != nil {
-			return err
-		}
 		if deliver != dto.ConnectorDeliver(c.Deliver) || mentionsOnly != c.GroupsMentionsOnly {
 			if err := q.UpdateConnectorDelivery(ctx, db.UpdateConnectorDeliveryParams{
 				Deliver: string(deliver), GroupsMentionsOnly: mentionsOnly, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
 			}); err != nil {
-				return err
-			}
-		}
-		if clearDetail {
-			if err := q.SetConnectorLastError(ctx, db.SetConnectorLastErrorParams{LastError: "", ID: id}); err != nil {
 				return err
 			}
 		}
@@ -463,11 +440,6 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 				ActorID: p.UserID, Action: audit.ActionConnectorOperator, TargetKind: audit.TargetConnector, TargetID: id,
 				Detail: map[string]any{"kind": c.Kind, "name": name, "from": c.OperatorIid.String, "to": operator.String, "moved": moved},
 			}); err != nil {
-				return err
-			}
-		}
-		if routeRoom.Valid { // ROUTE-07: a catch-all room neither broadcasts nor bridges chats
-			if err := q.SetRoomCatchAllSafety(ctx, db.SetRoomCatchAllSafetyParams{UpdatedAt: s.d.Now().UnixMilli(), ID: routeRoom.String}); err != nil {
 				return err
 			}
 		}
@@ -508,14 +480,8 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	if err != nil {
 		return View{}, err
 	}
-	if routeRoom.Valid {
-		s.d.Bus.Publish(events.RoomChanged{RoomID: routeRoom.String})
-	}
 	if moved > 0 { // the new operator's live session reads the items it was just handed (CID-05)
 		s.d.Bus.Publish(events.PlatformQueued{AgentID: operator.String})
-	}
-	if clearDetail {
-		s.d.Bus.Publish(events.ConnectorStatus{ConnectorID: id, Status: c.Status})
 	}
 	if s.d.Runner != nil {
 		switch {
@@ -564,43 +530,6 @@ func (s *Service) delivery(c db.Connector, in UpdateInput) (dto.ConnectorDeliver
 		mentionsOnly = *in.GroupsMentionsOnly
 	}
 	return deliver, mentionsOnly, nil
-}
-
-// autoRoute returns the catch-all settings after in (ROUTE-04): the scope must be one of
-// off, dms, groups, all; the caller must hold manage on the room, and an unknown room answers
-// the same 403. A scope other than off without a room routes each new chat to a conversation of
-// its own with the connector's operator (ACC-02, ACC-06): clearing the room switches a v0.3
-// catch-all connector to it.
-func (s *Service) autoRoute(ctx context.Context, p authn.Principal, c db.Connector, in UpdateInput) (dto.AutoRouteScope, sql.NullString, error) {
-	scope, room := dto.AutoRouteScope(c.AutoRouteScope), c.AutoRouteRoomID
-	if in.AutoRouteScope != nil {
-		switch *in.AutoRouteScope {
-		case dto.AutoRouteScopeOff, dto.AutoRouteScopeDMs, dto.AutoRouteScopeGroups, dto.AutoRouteScopeAll:
-			scope = *in.AutoRouteScope
-		default:
-			return "", room, &validation.Error{Fields: map[string]string{"auto_route_scope": "must be off, dms, groups or all"}}
-		}
-	}
-	if in.AutoRouteRoomID != nil {
-		room = sql.NullString{String: strings.TrimSpace(*in.AutoRouteRoomID), Valid: strings.TrimSpace(*in.AutoRouteRoomID) != ""}
-		if room.Valid {
-			// An unknown room answers like a hidden one (403), so the answer does not tell
-			// whether a room id exists.
-			if _, err := s.d.Store.R().GetRoom(ctx, room.String); errors.Is(err, sql.ErrNoRows) {
-				return "", room, access.ErrForbidden
-			} else if err != nil {
-				return "", room, err
-			}
-			l, err := s.d.Access.RoomLevel(ctx, p, room.String)
-			if err != nil {
-				return "", room, err
-			}
-			if !access.AtLeast(l, dto.LevelManage) {
-				return "", room, access.ErrForbidden
-			}
-		}
-	}
-	return scope, room, nil
 }
 
 // Delete stops and removes the connector with its chats (and their room memberships and

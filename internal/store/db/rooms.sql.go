@@ -7,20 +7,7 @@ package db
 
 import (
 	"context"
-	"database/sql"
 )
-
-const countCatchAllConnectors = `-- name: CountCatchAllConnectors :one
-SELECT COUNT(*) FROM connectors WHERE auto_route_room_id = ?
-`
-
-// Connectors whose catch-all room is this room (ROUTE-07).
-func (q *Queries) CountCatchAllConnectors(ctx context.Context, autoRouteRoomID sql.NullString) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countCatchAllConnectors, autoRouteRoomID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
 
 const countRoomChatMembers = `-- name: CountRoomChatMembers :one
 SELECT COUNT(*) FROM room_members WHERE room_id = ? AND kind = 'chat'
@@ -51,9 +38,9 @@ func (q *Queries) CountRoomMember(ctx context.Context, arg CountRoomMemberParams
 }
 
 const createRoom = `-- name: CreateRoom :exec
-INSERT INTO rooms (id, owner_id, name, description, instructions, instructions_by, bridge_chats, retention_days,
+INSERT INTO rooms (id, owner_id, name, description, instructions, instructions_by, retention_days,
                    created_at, updated_at, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateRoomParams struct {
@@ -63,7 +50,6 @@ type CreateRoomParams struct {
 	Description    string
 	Instructions   string
 	InstructionsBy string
-	BridgeChats    bool
 	RetentionDays  int64
 	CreatedAt      int64
 	UpdatedAt      int64
@@ -78,7 +64,6 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) error {
 		arg.Description,
 		arg.Instructions,
 		arg.InstructionsBy,
-		arg.BridgeChats,
 		arg.RetentionDays,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -88,8 +73,8 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) error {
 }
 
 const createRoomMember = `-- name: CreateRoomMember :exec
-INSERT INTO room_members (id, room_id, kind, member_id, outbound, added_by, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO room_members (id, room_id, kind, member_id, added_by, created_at)
+VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateRoomMemberParams struct {
@@ -97,7 +82,6 @@ type CreateRoomMemberParams struct {
 	RoomID    string
 	Kind      string
 	MemberID  string
-	Outbound  bool
 	AddedBy   string
 	CreatedAt int64
 }
@@ -108,7 +92,6 @@ func (q *Queries) CreateRoomMember(ctx context.Context, arg CreateRoomMemberPara
 		arg.RoomID,
 		arg.Kind,
 		arg.MemberID,
-		arg.Outbound,
 		arg.AddedBy,
 		arg.CreatedAt,
 	)
@@ -438,23 +421,8 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRo
 	return items, nil
 }
 
-const setRoomCatchAllSafety = `-- name: SetRoomCatchAllSafety :exec
-UPDATE rooms SET broadcast = 0, bridge_chats = 0, updated_at = ? WHERE id = ?
-`
-
-type SetRoomCatchAllSafetyParams struct {
-	UpdatedAt int64
-	ID        string
-}
-
-// A room chosen as a catch-all room stops broadcasting and bridging (ROUTE-07).
-func (q *Queries) SetRoomCatchAllSafety(ctx context.Context, arg SetRoomCatchAllSafetyParams) error {
-	_, err := q.db.ExecContext(ctx, setRoomCatchAllSafety, arg.UpdatedAt, arg.ID)
-	return err
-}
-
 const updateRoom = `-- name: UpdateRoom :exec
-UPDATE rooms SET name = ?, description = ?, instructions = ?, instructions_by = ?, bridge_chats = ?, broadcast = ?,
+UPDATE rooms SET name = ?, description = ?, instructions = ?, instructions_by = ?,
                  retention_days = ?, updated_at = ?, updated_by = ?
 WHERE id = ?
 `
@@ -464,8 +432,6 @@ type UpdateRoomParams struct {
 	Description    string
 	Instructions   string
 	InstructionsBy string
-	BridgeChats    bool
-	Broadcast      bool
 	RetentionDays  int64
 	UpdatedAt      int64
 	UpdatedBy      string
@@ -478,8 +444,6 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) error {
 		arg.Description,
 		arg.Instructions,
 		arg.InstructionsBy,
-		arg.BridgeChats,
-		arg.Broadcast,
 		arg.RetentionDays,
 		arg.UpdatedAt,
 		arg.UpdatedBy,
@@ -489,14 +453,12 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) error {
 }
 
 const updateRoomMemberSettings = `-- name: UpdateRoomMemberSettings :exec
-UPDATE room_members SET outbound = ?, display_name = ?, sign_outbound = ?, delivery = ?, keywords_json = ?
+UPDATE room_members SET display_name = ?, delivery = ?, keywords_json = ?
 WHERE id = ?
 `
 
 type UpdateRoomMemberSettingsParams struct {
-	Outbound     bool
 	DisplayName  string
-	SignOutbound bool
 	Delivery     string
 	KeywordsJson string
 	ID           string
@@ -504,9 +466,7 @@ type UpdateRoomMemberSettingsParams struct {
 
 func (q *Queries) UpdateRoomMemberSettings(ctx context.Context, arg UpdateRoomMemberSettingsParams) error {
 	_, err := q.db.ExecContext(ctx, updateRoomMemberSettings,
-		arg.Outbound,
 		arg.DisplayName,
-		arg.SignOutbound,
 		arg.Delivery,
 		arg.KeywordsJson,
 		arg.ID,

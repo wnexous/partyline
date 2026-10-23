@@ -85,7 +85,7 @@ func TestLiveRoomEventsFollowAccess(t *testing.T) {
 	bobLive.Expect(dto.LiveEventTypeRoomChanged, &seen, liveWait)
 	require.Equal(t, "ops-2", seen.Name)
 	_, chat := storeChat(t, env, alice.User.ID, "group")
-	alice.SeedChatMember(room.ID, chat, true)
+	alice.SeedChatMember(room.ID, chat)
 	var ref dto.RoomIDData
 	bobLive.Expect(dto.LiveEventTypeMembersChanged, &ref, liveWait)
 	require.Equal(t, room.ID, ref.RoomID)

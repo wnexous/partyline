@@ -520,42 +520,6 @@ func (q *Queries) ListRoomAgentCursors(ctx context.Context, roomID string) ([]Li
 	return items, nil
 }
 
-const listRoomChatConnectors = `-- name: ListRoomChatConnectors :many
-SELECT k.id, k.owner_id, k.operator_iid
-FROM room_members m JOIN chats c ON c.id = m.member_id JOIN connectors k ON k.id = c.connector_id
-WHERE m.room_id = ? AND m.kind = 'chat'
-`
-
-type ListRoomChatConnectorsRow struct {
-	ID          string
-	OwnerID     string
-	OperatorIid sql.NullString
-}
-
-// The connectors of the chats that are members of a room, with who operates each (DM-05).
-func (q *Queries) ListRoomChatConnectors(ctx context.Context, roomID string) ([]ListRoomChatConnectorsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listRoomChatConnectors, roomID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListRoomChatConnectorsRow
-	for rows.Next() {
-		var i ListRoomChatConnectorsRow
-		if err := rows.Scan(&i.ID, &i.OwnerID, &i.OperatorIid); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listRoomChatMemberRows = `-- name: ListRoomChatMemberRows :many
 SELECT id, room_id, kind, member_id, outbound, added_by, created_at, display_name, sign_outbound, delivery, keywords_json FROM room_members WHERE room_id = ? AND kind = 'chat' ORDER BY created_at, id
 `

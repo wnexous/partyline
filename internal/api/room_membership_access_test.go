@@ -39,7 +39,7 @@ func storeDM(t *testing.T, env *testkit.Env, ownerID, a, b string) string {
 			if _, err := q.GetAgent(ctx, p); err == nil {
 				kind = dto.MemberKindAgent
 			}
-			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{ID: store.NewID(), RoomID: id, Kind: string(kind), MemberID: p, Outbound: true}); err != nil {
+			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{ID: store.NewID(), RoomID: id, Kind: string(kind), MemberID: p}); err != nil {
 				return err
 			}
 		}

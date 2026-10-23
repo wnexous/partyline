@@ -65,12 +65,12 @@ func TestAddingAChatAsAMemberIsRefused(t *testing.T) {
 	live.Expect(dto.LiveEventTypeHello, nil, wsWait)
 	path := "/api/v1/rooms/" + room.ID + "/members"
 
-	for name, req := range map[string]dto.AddMemberRequest{
-		"a chat of the caller's connection":         {Kind: dto.MemberKindChat, MemberID: mine},
-		"a listen-only chat":                        {Kind: dto.MemberKindChat, MemberID: mine, Outbound: ptr(false)},
-		"a chat of a connection the caller may use": {Kind: dto.MemberKindChat, MemberID: bobs},
-		"a chat that does not exist":                {Kind: dto.MemberKindChat, MemberID: "no-such-chat"},
-		"a chat without an id":                      {Kind: dto.MemberKindChat},
+	for name, req := range map[string]map[string]any{
+		"a chat of the caller's connection":         {"kind": "chat", "member_id": mine},
+		"a listen-only chat (a v0.4 client)":        {"kind": "chat", "member_id": mine, "outbound": false},
+		"a chat of a connection the caller may use": {"kind": "chat", "member_id": bobs},
+		"a chat that does not exist":                {"kind": "chat", "member_id": "no-such-chat"},
+		"a chat without an id":                      {"kind": "chat"},
 	} {
 		e := alice.Post(path, req).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeChatsNotMembers)
 		require.NotEmpty(t, e.Message, name)
@@ -125,7 +125,7 @@ func TestOldChatMembersCanStillBeListedAndRemoved(t *testing.T) {
 	alice := env.NewUser("alice")
 	_, chat := storeChat(t, env, alice.User.ID, "family")
 	room := createRoom(alice, "ops")
-	member := alice.SeedChatMember(room.ID, chat, true)
+	member := alice.SeedChatMember(room.ID, chat)
 	path := "/api/v1/rooms/" + room.ID + "/members"
 
 	listed := testkit.Decode[dto.List[dto.RoomMember]](alice.Get(path).RequireStatus(http.StatusOK)).Items

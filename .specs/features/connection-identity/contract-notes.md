@@ -1120,3 +1120,66 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   of AI token, then the other methods on the same paths, then no room made and no chat stored). Retired with the routes:
   UI-13 (`TestRouteChatIsRefusedBecauseChatsAreNeverMembers`, the route row of `TestChatRoutesAuthMatrix`), CTX-07 and
   the `GET /chats` check of the same matrix; the tests of NOTI-01's options and choice were deleted in T7.
+
+## T35: Retire chat-related DTO fields (CID-22)
+
+- **Removed from the contract** (`internal/api/dto`, and with it `types.gen.ts`): the room's `bridge_chats`, `broadcast`
+  and `catch_all` (`Room`, `CreateRoomRequest`, `UpdateRoomRequest`); a member's `outbound` and `sign_outbound`
+  (`RoomMember`, `AddMemberRequest`, `UpdateMemberRequest`); `Message.outbox` with `OutboxItem`, `OutboxStatus` and
+  `OutboxPurpose`; `Me.notify_chat_id` with `NotifyOption` and `SetNotifyRequest` (`notify.go`); a connection's
+  `auto_route_scope` and `auto_route_room_id` (`Connector`, `UpdateConnectorRequest`) with `AutoRouteScope` and the
+  `AutoRouteUnavailable`/`AutoRouteLimited` details; the live `outbox.status` frame (`LiveOutboxStatus`, `OutboxUpdate`,
+  `LiveEventTypeOutboxStatus`); and the constant `MaxMessageRecipients`. `recipients` of a post and `chat_ids` stay accepted
+  and ignored (T33), and `Message.recipients` still shows what an old message named.
+- **A request carrying them changes nothing**: the JSON decoder ignores unknown fields, so the fields are not read, validated
+  or stored, and the rest of the body is applied. What they used to refuse is gone with them: `PATCH /rooms/{id}` with
+  `broadcast` or `bridge_chats` in a catch-all room (422), `PATCH /connectors/{id}` with an `auto_route_scope` that is not one
+  (422) or an `auto_route_room_id` the caller cannot manage or that does not exist (403), and `sign_outbound` on a user
+  member (422 "only for agent members"). A PATCH of a member whose body holds only retired fields is a 200 that returns the
+  member unchanged. Authorization is untouched: pinned for the four requests by `TestRetiredFieldRequestsKeepTheAuthorizationOfTheirRoutes`
+  (owner 200/201, the view, post and use grantees 403, a stranger and the admin 404) and
+  `TestRetiredFieldRequestsAreRefusedToAnonymousCallersAndAIs` (anonymous 401, the operator AI, another AI of the owner and
+  another user's AI 403 `agent tokens can only call agent endpoints`).
+- **Logic removed with the fields**: the catch-all guard of `rooms.Update` (ROUTE-07) and `Room.CatchAll`; the stop of a
+  connection when its catch-all room is deleted, with its `auto-route room unavailable` detail and status event (ROUTE-03),
+  so deleting a room that a stored `auto_route_room_id` still names leaves the connection alone; the catch-all settings of
+  `connectors.Service.Update` (`autoRoute`, ROUTE-04), their `auto_route` audit change, the safety switch they set on the room
+  (ROUTE-07), the `RoomChanged` they published, and the clearing of the routing details (ROUTE-09, `IsAutoRouteDetail`,
+  `autoroute.go`); `rooms.skipAutoRoute` and `AutoRouteSkip` (the 24-hour skip of a chat taken out of a catch-all room); the
+  outbound and signature switches of `MemberInput`, `MemberUpdate` and `toMember`; and the `NotifyChatID` of `GET /me`. The
+  channel tool `room_info` lost `sign_outbound` in its `me` settings.
+- **Queries removed** (`make generate`): `CountCatchAllConnectors`, `SetRoomCatchAllSafety`, `StopCatchAllConnectors`,
+  `UpdateConnectorAutoRoute`, `GetAutoRouteSkip`, `UpsertAutoRouteSkip`, `GetChatAutoRoute` and `ListRoomChatConnectors` (dead
+  since T24). `CreateRoom`, `UpdateRoom`, `CreateRoomMember` and `UpdateRoomMemberSettings` no longer name `bridge_chats`,
+  `broadcast`, `outbound` or `sign_outbound`, so no sqlc query names a column or table that migration 0018 (T36) drops.
+- **Dead columns** (AD-012): nothing reads or writes them now, and a new row takes the column default. T36 drops
+  `rooms.bridge_chats`, `rooms.broadcast`, `connectors.auto_route_scope` and the tables `outbox` and `auto_route_skips`. The design
+  does not drop `room_members.outbound`, `room_members.sign_outbound`, `connectors.auto_route_room_id` and `users.notify_chat_id`: they
+  stay as documented dead columns (the last two as dead foreign keys, cleared by 0018).
+- **Web** (same commit, since the types are generated): the undo of a member removal adds the member back with its kind and id
+  only; the composer lost its ignored `broadcast` prop and the room page no longer passes it; the fixtures follow the DTO.
+  The thirty strings of the retired features are gone from `en` and `pt-BR` (`composer.toDefault`..`composer.recipientsListenOnly`,
+  `members.chats`, `members.outbound*`, `members.updateFailed`, `picker.addConnector`, `settings.bridge*`, `settings.broadcast*`,
+  `settings.catchAllLocked`, `memberSettings.sign*`, `memberSettings.unsigned`); each was unreferenced.
+- **Testkit**: `Client.SeedChatMember(roomID, chatID)` lost its `outbound` argument (the rooms fixture's `addMember` and
+  `seedChatMember` too).
+- **Tests retired** (IDs for the commit body): ROUTE-03 and ROUTE-04 (`catch_all_settings_test.go`), ROUTE-07
+  (`no_broadcast_test.go`, `TestCatchAllRoomRefusesBroadcastAndBridge`), ROUTE-09 (the detail cleared by a save), MEM-01 (the
+  signature switch and `sign_outbound` in `TestAgentMemberSettings*`), DLV-03 (the member `outbound` switch and the chat PATCH of
+  `TestMemberSettingsRefusedForChats`) and LIVE-04's `outbox.status` DTO. Rewritten with the same outcome: the member and
+  room tests that used `outbound`, `sign_outbound`, `bridge_chats` or `Outbox` as setup or as an assertion about a delivery that
+  no longer exists (`TestRoomMembersEndpoint`, the room matrix's "update member" row now patches an AI member,
+  `TestUpdateAndRemoveMember`, `TestPostsPlanNoDeliveryForChatMembers`, `TestToolResultHasNoNoChatWarning`, the DM, group,
+  merge and room_info tests). The v0.4 client that sends `outbound` with a chat is still refused `chats_not_members` (raw body).
+- **New tests**: `internal/api/retired_fields_test.go` (responses carry no retired field, whatever the database holds; a
+  request carrying them changes nothing for the room, the members and the connection, the stored values being planted so that a
+  lingering read or write shows; deleting a former catch-all room leaves the connection alone; the authorization of the four
+  requests), `internal/api/dto/retired_test.go` (no declaration of the package carries a retired JSON field or a name of a retired
+  type, which also covers the never-filled `outbox`), the undo case of `member-list.test.tsx`, and the `me` expectation of
+  `TestToolRoomInfo`.
+- **Left for T36**: tests that plant or read the columns it drops must change with it: the `UPDATE rooms SET bridge_chats ... broadcast`,
+  `UPDATE connectors SET auto_route_scope` and the matching `countRows` assertions of `retired_fields_test.go`,
+  `TestPostInARoomWithBroadcastOffAnswersNoWarning` (its scenario ends with the column), `TestDeleteRoomRemovesEverything` and the
+  other `outbox` counts, and the store tests that read `rooms.broadcast`, `rooms.bridge_chats`, `connectors.auto_route_scope`,
+  `auto_route_skips` and `outbox`. The planted `auto_route_room_id`, `notify_chat_id`, `outbound` and `sign_outbound` survive the
+  migration as columns.

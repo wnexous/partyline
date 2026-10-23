@@ -83,10 +83,6 @@ type Connector struct {
 	// "+•••• 1234" (ACC-07); absent until then.
 	AccountLabel string         `json:"account_label,omitempty"`
 	Config       map[string]any `json:"config" tstype:"{ [key: string]: unknown }"`
-	// AutoRouteScope and AutoRouteRoomID are the catch-all settings (ROUTE-01): new chats of
-	// the matching kind that belong to no room join AutoRouteRoomID.
-	AutoRouteScope  AutoRouteScope `json:"auto_route_scope"`
-	AutoRouteRoomID string         `json:"auto_route_room_id,omitempty"`
 	// InboundURL is where a webhook connector receives messages
 	// (<public URL>/api/v1/hooks/<id>); empty for other kinds.
 	InboundURL string `json:"inbound_url,omitempty"`
@@ -112,10 +108,6 @@ type UpdateConnectorRequest struct {
 	Name    *string        `json:"name,omitempty"`
 	Config  map[string]any `json:"config,omitempty" tstype:"{ [key: string]: unknown }"`
 	Enabled *bool          `json:"enabled,omitempty"`
-	// AutoRouteScope and AutoRouteRoomID change the catch-all settings; the caller needs
-	// manage on the room (ROUTE-04). An empty AutoRouteRoomID clears it.
-	AutoRouteScope  *AutoRouteScope `json:"auto_route_scope,omitempty"`
-	AutoRouteRoomID *string         `json:"auto_route_room_id,omitempty"`
 	// Deliver and GroupsMentionsOnly change what reaches the operator (CID-12): Deliver must be
 	// dms, groups or all (422 on deliver otherwise). Only the owner may change them.
 	Deliver            *ConnectorDeliver `json:"deliver,omitempty"`
@@ -135,18 +127,6 @@ const (
 	ConnectorDeliverDMs    ConnectorDeliver = "dms"
 	ConnectorDeliverGroups ConnectorDeliver = "groups"
 	ConnectorDeliverAll    ConnectorDeliver = "all"
-)
-
-// AutoRouteScope selects which new chats a connector routes to its catch-all room: none
-// (off), DMs, groups (group and channel chats) or all.
-type AutoRouteScope string
-
-// Catch-all scopes.
-const (
-	AutoRouteScopeOff    AutoRouteScope = "off"
-	AutoRouteScopeDMs    AutoRouteScope = "dms"
-	AutoRouteScopeGroups AutoRouteScope = "groups"
-	AutoRouteScopeAll    AutoRouteScope = "all"
 )
 
 // ConnectorNoOperator is the status detail of a connection nobody operates (CID-02): the owner
@@ -182,14 +162,6 @@ type PlatformSendResult struct {
 	Error  string             `json:"error,omitempty"`
 }
 
-// Status details catch-all routing sets on a connector (ROUTE-03, ROUTE-08).
-const (
-	// AutoRouteUnavailable says the catch-all room is gone or its owner lost manage on it.
-	AutoRouteUnavailable = "auto-route room unavailable"
-	// AutoRouteLimited says a cap on new chats was reached.
-	AutoRouteLimited = "auto-route limit reached"
-)
-
 // ChatKind is the kind of an external chat.
 type ChatKind string
 
@@ -200,7 +172,7 @@ const (
 	ChatKindChannel ChatKind = "channel"
 )
 
-// Chat is an external conversation seen by a connector (GET /connectors/{id}/chats, GET /chats).
+// Chat is an external conversation seen by a connector (GET /connectors/{id}/chats).
 type Chat struct {
 	ID            string     `json:"id"`
 	ConnectorID   string     `json:"connector_id"`

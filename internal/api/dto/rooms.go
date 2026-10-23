@@ -2,7 +2,7 @@ package dto
 
 import "time"
 
-// Room is a routing room (GET /rooms, GET /rooms/{id}).
+// Room is a conversation of intelligences, a group or a DM (GET /rooms, GET /rooms/{id}).
 type Room struct {
 	ID string `json:"id"`
 	// Kind tells a group from a direct message; a DM has no name and exactly two Participants.
@@ -17,19 +17,12 @@ type Room struct {
 	Owner        User       `json:"owner"`
 	Visibility   Visibility `json:"visibility"`
 	// MyLevel is the caller's resolved level on this room (ACL-02).
-	MyLevel     Level `json:"my_level"`
-	BridgeChats bool  `json:"bridge_chats"`
-	// Broadcast sends agent and user posts without explicit recipients to every chat with
-	// outbound on (DLV-03); when false they reach no chat (ROUTE-06).
-	Broadcast bool `json:"broadcast"`
-	// CatchAll is set while the room is a connector's catch-all room: broadcast and
-	// bridge_chats then stay false (ROUTE-07).
-	CatchAll      bool `json:"catch_all"`
-	RetentionDays int  `json:"retention_days"`
+	MyLevel       Level `json:"my_level"`
+	RetentionDays int   `json:"retention_days"`
 	// AgentsPaused is set by the loop guard (DLV-08) and cleared by POST /rooms/{id}/resume.
 	AgentsPaused bool  `json:"agents_paused"`
 	LastSeq      int64 `json:"last_seq"`
-	// MemberCount counts the room's agents, chats and users.
+	// MemberCount counts the room's members.
 	MemberCount int       `json:"member_count"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -40,7 +33,6 @@ type CreateRoomRequest struct {
 	Name          string `json:"name"`
 	Description   string `json:"description,omitempty"`
 	Instructions  string `json:"instructions,omitempty"`
-	BridgeChats   bool   `json:"bridge_chats,omitempty"`
 	RetentionDays *int   `json:"retention_days,omitempty"`
 }
 
@@ -49,8 +41,6 @@ type UpdateRoomRequest struct {
 	Name          *string `json:"name,omitempty"`
 	Description   *string `json:"description,omitempty"`
 	Instructions  *string `json:"instructions,omitempty"`
-	BridgeChats   *bool   `json:"bridge_chats,omitempty"`
-	Broadcast     *bool   `json:"broadcast,omitempty"`
 	RetentionDays *int    `json:"retention_days,omitempty"`
 }
 
@@ -102,8 +92,6 @@ type RoomMember struct {
 	// MaxChatPeople, each with its platform (GRP-02). Only GET /rooms/{id}/members fills it;
 	// absent for other members and for a chat nobody was seen in.
 	People []IntelligenceRef `json:"people,omitempty"`
-	// Outbound tells whether agent and user posts without explicit recipients reach this chat (DLV-03).
-	Outbound bool `json:"outbound"`
 	// Online is set for agent members: whether the AI has a live session.
 	Online *bool `json:"online,omitempty"`
 	// Owner is set for agent members: the username of the agent's owner.
@@ -111,13 +99,11 @@ type RoomMember struct {
 	// ConnectorKind and ChatKind are set for chat members.
 	ConnectorKind string   `json:"connector_kind,omitempty"`
 	ChatKind      ChatKind `json:"chat_kind,omitempty"`
-	// DisplayName, SignOutbound, Delivery and Keywords are per-room settings of agent members
-	// (MEM-01..05); other kinds carry the defaults ("", true, all, []).
-	// DisplayName replaces the agent name in outbound headers and the timeline when set.
-	DisplayName string `json:"display_name"`
-	// SignOutbound adds the author header to the agent's messages sent to chats.
-	SignOutbound bool         `json:"sign_outbound"`
-	Delivery     DeliveryMode `json:"delivery"`
+	// DisplayName, Delivery and Keywords are per-room settings of agent members (MEM-02..05);
+	// other kinds carry the defaults ("", all, []).
+	// DisplayName replaces the agent name in the timeline when set (MEM-02).
+	DisplayName string       `json:"display_name"`
+	Delivery    DeliveryMode `json:"delivery"`
 	// Keywords count as mentions (on word boundaries) when Delivery is mentions.
 	Keywords  []string  `json:"keywords"`
 	CreatedAt time.Time `json:"created_at"`
@@ -126,22 +112,20 @@ type RoomMember struct {
 // MaxChatPeople is the most people listed for one chat member of a room (GRP-02).
 const MaxChatPeople = 200
 
-// AddMemberRequest is the body of POST /rooms/{id}/members. Outbound defaults to true.
+// AddMemberRequest is the body of POST /rooms/{id}/members: an AI or a user. A chat is refused
+// (422 chats_not_members, CID-19).
 type AddMemberRequest struct {
 	Kind     MemberKind `json:"kind"`
 	MemberID string     `json:"member_id"`
-	Outbound *bool      `json:"outbound,omitempty"`
 }
 
 // UpdateMemberRequest is the body of PATCH /rooms/{id}/members/{mid}; absent fields are
-// unchanged. DisplayName, SignOutbound, Delivery and Keywords apply to agent members only
-// (422 for other kinds); limits MaxMemberDisplayName, MaxMemberKeywords, MaxMemberKeyword.
+// unchanged. All of them apply to agent members only (422 for other kinds); limits
+// MaxMemberDisplayName, MaxMemberKeywords, MaxMemberKeyword.
 type UpdateMemberRequest struct {
-	Outbound     *bool         `json:"outbound,omitempty"`
-	DisplayName  *string       `json:"display_name,omitempty"`
-	SignOutbound *bool         `json:"sign_outbound,omitempty"`
-	Delivery     *DeliveryMode `json:"delivery,omitempty"`
-	Keywords     *[]string     `json:"keywords,omitempty"`
+	DisplayName *string       `json:"display_name,omitempty"`
+	Delivery    *DeliveryMode `json:"delivery,omitempty"`
+	Keywords    *[]string     `json:"keywords,omitempty"`
 }
 
 // AuthorKind is who wrote a message.
@@ -206,9 +190,7 @@ type Message struct {
 	// Chat is the chat a chat-authored message came from; absent for other authors (CTX-01).
 	Chat        *ChatRef     `json:"chat,omitempty"`
 	Attachments []Attachment `json:"attachments"`
-	// Outbox is never filled any more: a room sends to no chat (CID-22). The field goes with T35.
-	Outbox    []OutboxItem `json:"outbox,omitempty"`
-	CreatedAt time.Time    `json:"created_at"`
+	CreatedAt   time.Time    `json:"created_at"`
 }
 
 // PostMessageRequest is the body of POST /rooms/{id}/messages (JSON), or the JSON of the
@@ -238,42 +220,6 @@ type Attachment struct {
 	Mime   string           `json:"mime"`
 	Size   int64            `json:"size"`
 	Status AttachmentStatus `json:"status"`
-}
-
-// OutboxStatus is the state of one outbound delivery to a chat.
-type OutboxStatus string
-
-// Outbound delivery states (DLV-07).
-const (
-	OutboxStatusPending OutboxStatus = "pending"
-	OutboxStatusSending OutboxStatus = "sending"
-	OutboxStatusSent    OutboxStatus = "sent"
-	OutboxStatusFailed  OutboxStatus = "failed"
-)
-
-// OutboxPurpose says why a message is delivered to a chat.
-type OutboxPurpose string
-
-// Outbox purposes. A delivery to a chat that is a member of the room is the default and carries
-// no purpose in OutboxItem.
-const (
-	// OutboxPurposeRoom is the delivery of a room message to a chat member of the room.
-	OutboxPurposeRoom OutboxPurpose = "room"
-	// OutboxPurposeNotify is the copy of an AI's DM sent to the app its user chose (NOTI-02).
-	OutboxPurposeNotify OutboxPurpose = "notify"
-)
-
-// OutboxItem is the delivery of a message to one chat.
-type OutboxItem struct {
-	ID     string       `json:"id"`
-	ChatID string       `json:"chat_id"`
-	Status OutboxStatus `json:"status"`
-	// Purpose is notify for the copy of an AI's DM sent to the user's chosen app (that chat is
-	// no member of the room); absent for an ordinary delivery.
-	Purpose   OutboxPurpose `json:"purpose,omitempty"`
-	Attempts  int           `json:"attempts"`
-	LastError string        `json:"last_error,omitempty"`
-	UpdatedAt time.Time     `json:"updated_at"`
 }
 
 // RoomRef names a room inside agent frames and events. In the frames an AI receives, a DM is

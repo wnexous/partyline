@@ -27,8 +27,8 @@ func TestPostsRecordTheirAuthorIntelligence(t *testing.T) {
 	a1 := f.agent(t, alice, "a1")
 	_, chat := f.chat(t, alice, "c1")
 	r := f.room(t, alice, "ops")
-	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, chat, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, chat)
 
 	require.Equal(t, alice.UserID, f.authorIID(t, f.post(t, alice, r.ID, "from the user").ID))
 	agent := agentPrincipal(alice, a1)

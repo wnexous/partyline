@@ -1,4 +1,5 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemberList } from "@/components/member-list";
 import { useLiveStore } from "@/lib/live/store";
@@ -11,6 +12,9 @@ import { renderWithRouter } from "@/test/render";
  * chat row, so it also has no per-chat outbound control. A chat member left in old data stays
  * invisible instead of coming back as a switch.
  */
+
+const toast = vi.hoisted(() => Object.assign(vi.fn(), { error: vi.fn() }));
+vi.mock("sonner", () => ({ toast }));
 
 const atlas = makeAI({ id: "a1", display_name: "Atlas", handle: "atlas" });
 const bob = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
@@ -37,7 +41,10 @@ const members = [
 ];
 const chatOnly = members[2] as (typeof members)[number];
 
-beforeEach(() => useLiveStore.setState({ locale: "en" }));
+beforeEach(() => {
+  useLiveStore.setState({ locale: "en" });
+  toast.mockClear();
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("member list (CID-20, CID-22)", () => {
@@ -66,5 +73,27 @@ describe("member list (CID-20, CID-22)", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("member-mb-ops")).toBeNull();
+  });
+
+  it("undoes a removal by adding the member back with nothing but who it is", async () => {
+    const { calls } = mockApi({
+      "GET /me": json(200, makeMe()),
+      "DELETE /rooms/r1/members/mb-atlas": new Response(null, { status: 204 }),
+      "POST /rooms/r1/members": json(201, members[0]),
+    });
+    renderWithRouter(<MemberList roomId="r1" members={members} canManage />);
+
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Remove Atlas" }));
+    await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
+    const options = toast.mock.calls[0]?.[1] as { action: { label: string; onClick: () => void } };
+    expect(options.action.label).toBe("Undo");
+    options.action.onClick();
+
+    // The retired outbound switch is not sent back (CID-22): a member is an AI or a user, nothing more.
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST")).toHaveLength(1));
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({
+      kind: "agent",
+      member_id: "a1",
+    });
   });
 });

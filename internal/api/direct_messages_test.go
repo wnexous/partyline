@@ -186,7 +186,6 @@ func TestOpenDMWithAnAI(t *testing.T) {
 	require.Len(t, members, 2)
 	require.Equal(t, dto.MemberKindAgent, members[atlas].Kind)
 	require.Equal(t, dto.DeliveryModeAll, members[atlas].Delivery)
-	require.True(t, members[atlas].Outbound)
 	require.Equal(t, dto.MemberKindUser, members[alice.User.ID].Kind)
 
 	seen := testkit.Decode[dto.Room](owner.Get("/api/v1/rooms/" + hers.ID).RequireStatus(http.StatusOK))
@@ -288,7 +287,7 @@ func TestDMMembersAreFixed(t *testing.T) {
 	row := before[atlas].ID
 
 	add := dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}
-	update := dto.UpdateMemberRequest{Outbound: ptr(false)}
+	update := dto.UpdateMemberRequest{DisplayName: ptr("renamed")}
 	for name, c := range map[string]*testkit.Client{"participant": alice, "AI owner": owner} {
 		t.Run(name, func(t *testing.T) {
 			c := *c

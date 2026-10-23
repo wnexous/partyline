@@ -27,7 +27,7 @@ func (e *chanEnv) chatIn(platform, title string, kind dto.ChatKind) string {
 		}
 		return q.CreateChat(ctx, db.CreateChatParams{ID: chat, ConnectorID: conn, ExternalID: "ext-" + chat, Title: title, Kind: string(kind)})
 	}))
-	e.alice.SeedChatMember(e.room.ID, chat, true)
+	e.alice.SeedChatMember(e.room.ID, chat)
 	return chat
 }
 

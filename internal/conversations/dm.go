@@ -134,7 +134,7 @@ func (s *Service) createDM(ctx context.Context, p authn.Principal, pair db.GetDM
 		created = true
 		for _, m := range who {
 			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
-				ID: store.NewID(), RoomID: id, Kind: string(m.kind), MemberID: m.id, Outbound: true, AddedBy: p.UserID, CreatedAt: now,
+				ID: store.NewID(), RoomID: id, Kind: string(m.kind), MemberID: m.id, AddedBy: p.UserID, CreatedAt: now,
 			}); err != nil {
 				return err
 			}

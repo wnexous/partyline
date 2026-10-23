@@ -26,8 +26,8 @@ func TestAgentRoomInfo(t *testing.T) {
 	chat := f.chatMember(t, "Family")
 	setInstructions(f.alice, f.room.ID, "Answer in Portuguese. Client: Lollerie.")
 	keywords := []string{"deploy", "build"}
-	name, sign, mode := "Bot", false, dto.DeliveryModeMentions
-	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: &name, SignOutbound: &sign, Delivery: &mode, Keywords: &keywords})
+	name, mode := "Bot", dto.DeliveryModeMentions
+	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: &name, Delivery: &mode, Keywords: &keywords})
 
 	for _, ref := range []string{f.room.ID, "support"} {
 		info := testkit.Decode[dto.RoomInfo](f.rest().Get(agentRoomPath(ref, "/info")).RequireStatus(http.StatusOK))
@@ -36,7 +36,6 @@ func TestAgentRoomInfo(t *testing.T) {
 		require.Equal(t, dto.MemberKindAgent, info.Me.Kind)
 		require.Equal(t, f.agentID, info.Me.MemberID)
 		require.Equal(t, "Bot", info.Me.DisplayName)
-		require.False(t, info.Me.SignOutbound)
 		require.Equal(t, dto.DeliveryModeMentions, info.Me.Delivery)
 		require.Equal(t, []string{"deploy", "build"}, info.Me.Keywords)
 		require.Len(t, info.Members, 2)
@@ -172,7 +171,7 @@ func forgetInstructionsAuthor(t *testing.T, env *testkit.Env, roomID string) {
 		}
 		return q.UpdateRoom(ctx, db.UpdateRoomParams{
 			Name: r.Name, Description: r.Description, Instructions: r.Instructions, InstructionsBy: "",
-			BridgeChats: r.BridgeChats, Broadcast: r.Broadcast, RetentionDays: r.RetentionDays, UpdatedAt: r.UpdatedAt, UpdatedBy: r.UpdatedBy, ID: r.ID,
+			RetentionDays: r.RetentionDays, UpdatedAt: r.UpdatedAt, UpdatedBy: r.UpdatedBy, ID: r.ID,
 		})
 	}))
 }
@@ -251,7 +250,7 @@ func TestRoomInfoRoomTextTrust(t *testing.T) {
 		}
 		return q.UpdateRoom(ctx, db.UpdateRoomParams{
 			Name: r.Name, Description: r.Description, Instructions: r.Instructions, InstructionsBy: r.InstructionsBy,
-			BridgeChats: r.BridgeChats, Broadcast: r.Broadcast, RetentionDays: r.RetentionDays, UpdatedAt: r.UpdatedAt, UpdatedBy: "", ID: r.ID,
+			RetentionDays: r.RetentionDays, UpdatedAt: r.UpdatedAt, UpdatedBy: "", ID: r.ID,
 		})
 	}))
 	require.False(t, trusted(f.rest()), "an unknown author is trusted by nobody")
@@ -259,11 +258,10 @@ func TestRoomInfoRoomTextTrust(t *testing.T) {
 }
 
 // webSave is the PATCH the web room settings form sends on any save (room-settings-sheet.tsx):
-// the name and the description as the form trimmed them, bridge_chats and retention_days;
-// instructions and broadcast only when edited.
+// the name and the description as the form trimmed them and retention_days; instructions only
+// when edited.
 func webSave(name, description string, retention int) dto.UpdateRoomRequest {
-	bridge := false
-	return dto.UpdateRoomRequest{Name: &name, Description: &description, BridgeChats: &bridge, RetentionDays: &retention}
+	return dto.UpdateRoomRequest{Name: &name, Description: &description, RetentionDays: &retention}
 }
 
 // setRoomText writes a room's name, description and room text author straight to the store, as
@@ -278,7 +276,7 @@ func setRoomText(t *testing.T, env *testkit.Env, roomID, name, description, by s
 		}
 		return q.UpdateRoom(ctx, db.UpdateRoomParams{
 			Name: name, Description: description, Instructions: r.Instructions, InstructionsBy: r.InstructionsBy,
-			BridgeChats: r.BridgeChats, Broadcast: r.Broadcast, RetentionDays: r.RetentionDays, UpdatedAt: r.UpdatedAt, UpdatedBy: by, ID: r.ID,
+			RetentionDays: r.RetentionDays, UpdatedAt: r.UpdatedAt, UpdatedBy: by, ID: r.ID,
 		})
 	}))
 }

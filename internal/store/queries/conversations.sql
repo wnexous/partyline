@@ -89,12 +89,6 @@ SELECT r.id FROM room_members m JOIN rooms r ON r.id = m.room_id
 WHERE m.kind = 'chat' AND m.member_id = ? AND r.kind = 'dm'
 ORDER BY r.id;
 
--- name: ListRoomChatConnectors :many
--- The connectors of the chats that are members of a room, with who operates each (DM-05).
-SELECT k.id, k.owner_id, k.operator_iid
-FROM room_members m JOIN chats c ON c.id = m.member_id JOIN connectors k ON k.id = c.connector_id
-WHERE m.room_id = ? AND m.kind = 'chat';
-
 -- name: ListAgentDMRooms :many
 -- The DMs an AI takes part in (merge, MRG-01).
 SELECT * FROM rooms WHERE kind = 'dm' AND (dm_a = sqlc.arg(id) OR dm_b = sqlc.arg(id)) ORDER BY id;

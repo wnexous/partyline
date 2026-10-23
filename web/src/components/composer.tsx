@@ -64,11 +64,6 @@ export interface ComposerProps {
   roomName: string;
   level: Level;
   members?: RoomMember[];
-  /**
-   * @deprecated Ignored: rooms no longer send to chats, so there is no explicit-recipient mode.
-   * Kept optional until the room page stops passing it (CID-22).
-   */
-  broadcast?: boolean;
 }
 
 export function Composer({ roomId, roomName, level, members }: ComposerProps) {

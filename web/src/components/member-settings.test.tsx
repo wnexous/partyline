@@ -68,7 +68,7 @@ describe("agent membership settings (MEM-01..05)", () => {
   });
 
   it("offers no signature control and never sends sign_outbound (CID-22)", async () => {
-    const { user, patches } = setup({ sign_outbound: false });
+    const { user, patches } = setup();
     const dialog = await open(user);
     expect(within(dialog).queryByRole("switch")).toBeNull();
     expect(within(dialog).queryByText(/Sign messages/)).toBeNull();

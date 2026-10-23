@@ -854,9 +854,9 @@ A request carrying them changes nothing.
 **Reuses**: none
 **Requirement**: CID-22
 **Done when**:
-- [ ] e2e: GET responses lack the fields; PATCH with them changes nothing
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] e2e: GET responses lack the fields; PATCH with them changes nothing
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api)!: retire chat fields from the API`
