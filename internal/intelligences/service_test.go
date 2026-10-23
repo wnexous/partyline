@@ -481,9 +481,8 @@ func TestCanSeeAnAIThroughSharedConversations(t *testing.T) {
 	w := newWorld(t)
 	atlas := w.agent(w.alice, "atlas")
 	room := w.room(w.alice, "Ops", atlas)
-	require.NoError(t, w.env.App.Access.SetVisibility(w.ctx, w.alice.User.ID, access.KindRoom, room, w.alice.User.ID, access.Visibility{
-		Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: w.carol.User.ID, Level: dto.LevelView}},
-	}))
+	_, err := w.env.App.Rooms.AddMember(w.ctx, asUser(w.alice), room, rooms.MemberInput{Kind: dto.MemberKindUser, MemberID: w.carol.User.ID})
+	require.NoError(t, err)
 
 	see := func(c *testkit.Client) bool {
 		t.Helper()
@@ -491,7 +490,7 @@ func TestCanSeeAnAIThroughSharedConversations(t *testing.T) {
 		require.NoError(t, err)
 		return ok
 	}
-	require.True(t, see(w.carol), "a viewer of a room the AI is a member of")
+	require.True(t, see(w.carol), "a member of a room the AI is a member of")
 	require.False(t, see(w.erin), "no access to the room")
 	edit, err := w.svc.CanEdit(w.ctx, asUser(w.carol), atlas)
 	require.NoError(t, err)
@@ -507,10 +506,9 @@ func TestCanSeeAnAIThroughSharedConversations(t *testing.T) {
 	members, err := w.env.App.Rooms.Members(w.ctx, asUser(w.alice), left)
 	require.NoError(t, err)
 	require.NoError(t, w.env.App.Rooms.RemoveMember(w.ctx, asUser(w.alice), left, members[0].ID))
-	require.NoError(t, w.env.App.Access.SetVisibility(w.ctx, w.alice.User.ID, access.KindRoom, left, w.alice.User.ID, access.Visibility{
-		Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: w.erin.User.ID, Level: dto.LevelPost}},
-	}))
-	require.True(t, see(w.erin), "a viewer of a room the AI wrote in")
+	_, err = w.env.App.Rooms.AddMember(w.ctx, asUser(w.alice), left, rooms.MemberInput{Kind: dto.MemberKindUser, MemberID: w.erin.User.ID})
+	require.NoError(t, err)
+	require.True(t, see(w.erin), "a member of a room the AI wrote in")
 	require.False(t, see(w.dave), "a stranger to both rooms")
 }
 

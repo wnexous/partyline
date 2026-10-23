@@ -514,3 +514,47 @@ Where a section refines the design, it says so.
   | `*validation.Error` (`name`, `slug`, `permission`, `position_id`, `parent_id`) | 422 `invalid` with `fields` |
   | `agents.ErrNoOrganization` (an `*httpx.Error`) | 422 `organization_required` |
 - **Query** added: `GetPersonalOrg`.
+
+## T22: Room levels from organizations (ORG-02, OMEM-06)
+
+- **Where**: `access.UserRoomLevel` / `RoomLevel` / `GrantedRoomLevels` (`internal/access/access.go`), the queries
+  `ListUserRoomLevels` (moved from `grants.sql` to `rooms.sql`, it reads no grant any more) and
+  `ListRoomsForUser`. `access.Options.Authz` takes the facade the app shares (`App.Authz`); without one
+  `access.New` builds its own over the store.
+- **Group** (AD-016): the level is the highest of
+  - `post` as a **user** member of the room (`room_members`, kind `user`; guests included, an AI member's host gets
+    nothing from it);
+  - `manage` as an **admin** of `rooms.org_id`;
+  - `manage` as the **creator** (`rooms.creator_iid`) while still a member of that organization **other than as a
+    guest**.
+  The last condition is the one refinement of the design table, kept to the least privilege: a creator who
+  left or was removed (OMEM-06 takes them out of the organization's groups) must not keep running the group,
+  and a guest takes part in groups but does not run them (OMEM-04). A creator who is only a guest still posts
+  when they are a room member. Positions, grants, the room row's `owner_id` and the instance admin role give
+  **nothing**. A group of the legacy shape (no `org_id`) gives its room members `post` and nobody `manage`.
+  Disabled users resolve to none (AUTH-10). Nothing is cached: a demotion takes effect on the next call.
+- **DM** (DM-08, AD-016): the two participants (`dm_a`, `dm_b`, the columns alone, member rows are not read)
+  `post`; whoever **manages** an AI participant in that AI's **home** organization (`agents.org_id`, `Chart.Manages`)
+  `view`s; nobody `manage`s. A user or person participant, an AI without a home, a manager in another shared
+  organization, the AI's host (`agents.owner_id`), a position-less admin and a `use` grant all give nothing.
+- **Agent principal**: unchanged, `post` as a member of the room and nothing else (an AI admin or creator does not
+  read rooms it is not in; the channel tools resolve rooms among the AI's own).
+- **Listing**: `rooms.List` / `GET /rooms` lists the groups the user is a member of (`post`), created or administers
+  (`manage`, every group of an organization they administer) and the DMs they take part in; the DMs they only
+  view as the manager of an AI stay reachable by id. `GET /conversations` (T56) builds on the same set.
+- **Grants are inert for rooms**: the sharing routes still write and read `grants` (they go in T51), the `visibility`
+  of a room is still computed from them, and no grant changes any room level (`TestGroupRoomLevel`,
+  `TestRoomSharingGivesNoAccess`). Agents and connectors still resolve through grants until T24 / T26.
+- **Creation (interim until T23)**: `rooms.CreateWithMembers(ctx, creator authn.Principal, in, members)` puts the group
+  in `orgs.DefaultFor(creator.IID())` and records `creator_iid = creator.IID()`; the row's `owner_id` is the
+  principal's `UserID` (the host user for an AI; a dead anchor, AD-019). `rooms.ErrNoOrganization` (an
+  `*httpx.Error`, 422 `organization_required`, field `org_id`) when the creator belongs to no organization;
+  nothing is created. T23 adds the explicit organization, the member/guest checks and the `not_org_member`
+  refusal on top.
+- **Query**: `CreateRoom` takes `org_id` and `creator_iid` (nullable).
+- **Tests**: the grant-based room cases of `access_test.go`, `rooms_test.go`, `messages_test.go`,
+  `rooms_handlers_test.go`, `room_membership_access_test.go`, `activity_test.go`, `message_authors_test.go`,
+  `room_info_test.go` and their neighbours were rewritten on organization membership. `internal/api/room_roles_test.go`
+  holds the helpers the room tests share: `groupIn` (a group in a chosen organization, which is the creator's default
+  while it is made), `addToRoom` / `joinOrgOf` (organization membership plus room membership), and `runRoomRoutes`
+  with `groupWant` / `dmWant`, the role matrix over `testkit.OrgRoles` (9 roles per route).

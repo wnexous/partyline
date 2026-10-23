@@ -143,11 +143,11 @@ func TestAIAvatarIsServedToWhoCanSeeTheAI(t *testing.T) {
 
 	room := createRoom(alice, "ops")
 	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: id}).RequireStatus(http.StatusCreated)
-	shareRoom(alice, room.ID, dto.SharingUser{UserID: carol.User.ID, Level: dto.LevelView})
+	addToRoom(t, env, alice, room.ID, carol)
 	getAvatar(carol, id).RequireStatus(http.StatusOK)
 	getAvatar(dave, id).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
-	// Seeing the AI through a room shared with it is no access to the AI itself.
+	// Seeing the AI through a room it is in is no access to the AI itself.
 	seen := profileOf(t, carol, id)
 	require.Equal(t, []any{false, dto.Level("")}, []any{seen.CanEdit, seen.AI.MyLevel})
 	patchProfile(carol, id, dto.UpdateProfileRequest{Bio: ptr("hijack")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)

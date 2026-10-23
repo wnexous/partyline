@@ -78,12 +78,19 @@ func TestAgentRoomsListsMembersWithPresence(t *testing.T) {
 	require.Equal(t, f.room.ID, room.ID)
 	require.Equal(t, "Support", room.Name)
 	online := map[string]bool{}
+	users := 0
 	for _, m := range room.Members {
+		if m.Kind == dto.MemberKindUser {
+			users++ // bobby is in the room as a user, which has no online state to show
+			require.Nil(t, m.Online)
+			continue
+		}
 		require.Equal(t, dto.MemberKindAgent, m.Kind)
 		require.NotNil(t, m.Online)
 		online[m.Name+"@"+m.Owner] = *m.Online
 	}
 	require.Equal(t, map[string]bool{"builder@alice": true, "helper@bobby": false}, online)
+	require.Equal(t, 1, users)
 }
 
 // TOOL-03: the agent posts by room id or name.
@@ -127,7 +134,7 @@ func TestAgentRoomRefErrors(t *testing.T) {
 func TestAgentHistory(t *testing.T) {
 	f := newAgentRoom(t)
 	bob := f.env.NewUser("bobby")
-	shareRoom(f.alice, f.room.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelPost})
+	addToRoom(t, f.env, f.alice, f.room.ID, bob)
 	alice := authn.Principal{Kind: authn.KindUser, UserID: f.alice.User.ID}
 	var posted []rooms.Message
 	for i := 1; i <= 105; i++ {

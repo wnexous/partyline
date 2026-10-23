@@ -158,8 +158,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		return nil, err
 	}
 	presence := agents.NewPresence(st, bus, opts.Now)
-	az := access.New(st, bus, access.Options{Now: opts.Now})
 	authz := orgs.NewAuthz(st)
+	az := access.New(st, bus, access.Options{Now: opts.Now, Authz: authz})
 	auditLog := audit.New(st, opts.Now)
 	a := &App{
 		Config:        cfg,

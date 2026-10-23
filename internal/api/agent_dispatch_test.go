@@ -27,7 +27,7 @@ func newTwoAgents(t *testing.T) *twoAgents {
 	t.Helper()
 	f := &twoAgents{agentRoom: newAgentRoom(t)}
 	f.bob = f.env.NewUser("bobby")
-	shareRoom(f.alice, f.room.ID, dto.SharingUser{UserID: f.bob.User.ID, Level: dto.LevelPost})
+	addToRoom(t, f.env, f.alice, f.room.ID, f.bob)
 	f.helperID = registerAgent(t, f.env, f.bob, "helper")
 	shareAgent(f.bob, f.helperID, f.alice.User.ID)
 	f.alice.Post("/api/v1/rooms/"+f.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: f.helperID}).RequireStatus(http.StatusCreated)

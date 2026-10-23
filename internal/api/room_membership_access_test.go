@@ -50,9 +50,9 @@ func storeDM(t *testing.T, env *testkit.Env, ownerID, a, b string) string {
 
 var dmFixtureCounter atomic.Int32
 
-// dmSetup creates a DM between the poster and a new AI of the owner, which the viewer may use:
-// the matrix roles read as the AI's owner (view), a use grantee (view), a participant (post), a
-// stranger and an admin.
+// dmSetup creates a DM between the poster and a new AI of the owner, which the viewer holds a use grant
+// on: the matrix roles read as the AI's creator (it manages the AI, so it views the DM), a use grantee
+// (a grant gives nothing any more, AD-016), a participant (post), a stranger and an admin.
 func dmSetup(t *testing.T, m *matrix) matrixResource {
 	t.Helper()
 	owner, viewer, poster := m.as(t, roleOwner), m.as(t, roleViewer), m.as(t, rolePoster)
@@ -65,41 +65,75 @@ func dmSetup(t *testing.T, m *matrix) matrixResource {
 	return matrixResource{"room": room, "ai": ai}
 }
 
-// DM-08, AD-011 over HTTP: the participant posts, the AI's owner and its use grantee only view,
-// everybody else (an admin included) gets 404, and nobody manages a DM.
-func TestDMRoutesAuthMatrix(t *testing.T) {
-	m := newMatrix(t)
-	room := func(res matrixResource, suffix string) string { return "/api/v1/rooms/" + res["room"] + suffix }
-	routes := []matrixRoute{
-		{"get room", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Get(room(res, ""))
-		}, statuses(200, 200, 200, 404, 404)},
-		{"list messages", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Get(room(res, "/messages"))
-		}, statuses(200, 200, 200, 404, 404)},
-		{"list members", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Get(room(res, "/members"))
-		}, statuses(200, 200, 200, 404, 404)},
-		{"post message", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Post(room(res, "/messages"), dto.PostMessageRequest{Text: "hello"})
-		}, statuses(403, 403, 201, 404, 404)},
-		{"update room", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Patch(room(res, ""), dto.UpdateRoomRequest{Name: ptr("renamed")})
-		}, statuses(403, 403, 403, 404, 404)},
-		{"delete room", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Delete(room(res, ""))
-		}, statuses(403, 403, 403, 404, 404)},
-		{"resume", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Post(room(res, "/resume"), nil)
-		}, statuses(403, 403, 403, 404, 404)},
-		{"get sharing", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Get(room(res, "/sharing"))
-		}, statuses(200, 200, 200, 404, 404)},
-		{"put sharing", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Put(room(res, "/sharing"), dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost})
-		}, statuses(422, 422, 422, 404, 404)},
+// dmRoomSetup returns the setup of the DM matrix: a fresh DM between the role "target" and a new AI that
+// the role "manager" created and hosts, like the AI of testkit.OrgRoles (a pair has one DM, so every
+// setup needs its own AI), with a message of the participant so that reading has something to return.
+func dmRoomSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T) map[string]string {
+	return func(t *testing.T) map[string]string {
+		target, manager := *roles.Target, *roles.Manager
+		target.T, manager.T = t, t
+		ai := env.NewAIIn(&manager, roles.Org.ID, fmt.Sprintf("dm-ai-%d", dmFixtureCounter.Add(1)))
+		room := storeDM(t, env, target.User.ID, target.User.ID, ai)
+		target.Post("/api/v1/rooms/"+room+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireStatus(http.StatusCreated)
+		return map[string]string{"room": room}
 	}
-	m.run(t, dmSetup, routes)
+}
+
+// DM-08, AD-011, AD-016 over HTTP: the participant posts; whoever manages the AI in its home organization
+// (the manager that created it, and the admin whose position is above the creator's) only views;
+// everybody else - a peer, a member, an inviter, a guest, an outsider, an instance admin - gets 404; and
+// nobody manages a DM.
+func TestDMRoutesAuthMatrix(t *testing.T) {
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	room := func(res map[string]string, suffix string) string { return "/api/v1/rooms/" + res["room"] + suffix }
+	runRoomRoutes(t, roles, dmRoomSetup(env, roles), []roomRoute{
+		{"get room", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Get(room(res, ""))
+		}, dmWant(200, 200, 404)},
+		{"list messages", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Get(room(res, "/messages"))
+		}, dmWant(200, 200, 404)},
+		{"list members", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Get(room(res, "/members"))
+		}, dmWant(200, 200, 404)},
+		{"mark read", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Put(room(res, "/read"), dto.MarkReadRequest{})
+		}, dmWant(200, 200, 404)},
+		{"post message", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Post(room(res, "/messages"), dto.PostMessageRequest{Text: "hello"})
+		}, dmWant(201, 403, 404)},
+		{"update room", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Patch(room(res, ""), dto.UpdateRoomRequest{Name: ptr("renamed")})
+		}, dmWant(403, 403, 404)},
+		{"delete room", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Delete(room(res, ""))
+		}, dmWant(403, 403, 404)},
+		{"resume", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Post(room(res, "/resume"), nil)
+		}, dmWant(403, 403, 404)},
+		{"get sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Get(room(res, "/sharing"))
+		}, dmWant(200, 200, 404)},
+		{"put sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Put(room(res, "/sharing"), dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost})
+		}, dmWant(422, 422, 404)},
+	})
+
+	// The DM lists for its participant only: the managers view it by id.
+	res := dmRoomSetup(env, roles)(t)
+	for _, role := range roles.All() {
+		list := testkit.Decode[dto.List[dto.Room]](role.Client.Get("/api/v1/rooms").RequireStatus(http.StatusOK))
+		ids := []string{}
+		for _, r := range list.Items {
+			ids = append(ids, r.ID)
+		}
+		require.Equal(t, role.Name == "target", contains(ids, res["room"]), role.Name)
+	}
+
+	// The tools of the AI itself reach agent routes only: its token is no way into the user routes of a DM.
+	token := roles.Manager.Token(dto.TokenKindAgent, "tools").AsAgent("acme-ai")
+	token.Get("/api/v1/rooms/"+res["room"]).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 }
 
 // DM-08: sharing a DM is 422 dm_no_sharing for whoever can view it, with nothing written; those who
@@ -108,7 +142,7 @@ func TestDMSharingIsRefusedWithItsOwnCode(t *testing.T) {
 	m := newMatrix(t)
 	res := dmSetup(t, m)
 	path := "/api/v1/rooms/" + res["room"] + "/sharing"
-	for _, role := range []matrixRole{roleOwner, roleViewer, rolePoster} {
+	for _, role := range []matrixRole{roleOwner, rolePoster} {
 		for _, preset := range []dto.Sharing{
 			{Mode: dto.VisibilityPrivate},
 			{Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: m.clients[roleStranger].User.ID, Level: dto.LevelView}}},
@@ -119,6 +153,7 @@ func TestDMSharingIsRefusedWithItsOwnCode(t *testing.T) {
 		}
 	}
 	m.as(t, roleStranger).Put(path, dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	m.as(t, roleViewer).Put(path, dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
 	// Nothing was written: no grants, the stranger still has no access.
 	s := testkit.Decode[dto.Sharing](m.as(t, rolePoster).Get(path).RequireStatus(http.StatusOK))

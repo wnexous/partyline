@@ -73,7 +73,7 @@ func (s *Service) CreateGroup(ctx context.Context, p authn.Principal, in GroupIn
 	if me.kind == dto.MemberKindAgent && s.allowCreate != nil && !s.allowCreate(p.AgentID) {
 		return rooms.Room{}, ErrRateLimited // only a group that would be created uses a slot
 	}
-	roomID, err := s.rooms.CreateWithMembers(ctx, p.UserID, create, members)
+	roomID, err := s.rooms.CreateWithMembers(ctx, p, create, members)
 	if err != nil {
 		return rooms.Room{}, err
 	}

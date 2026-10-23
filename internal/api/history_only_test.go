@@ -116,9 +116,10 @@ func TestPostInAPlatformDMIsRefusedAsHistory(t *testing.T) {
 		require.Equal(t, []string{c.opening}, texts(timeline(t, f.alice, c.dm)), "%s: nothing was added", c.name)
 	}
 
-	// Reading history still works: the owner and the use grantee of Atlas read the DM, the AI reads
-	// its own history, and the room is listed.
-	require.Equal(t, []string{"hello Atlas"}, f.history(t, f.dave))
+	// Reading history still works: the manager of Atlas reads the DM (a use grant gives nothing since
+	// AD-016) and the AI reads its own history.
+	require.Equal(t, []string{"hello Atlas"}, f.history(t, f.alice))
+	f.dave.Get("/api/v1/rooms/"+f.dm+"/messages").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	hist := testkit.Decode[dto.Page[dto.AgentMessage]](f.atlasAI.Get("/api/v1/agent/rooms/" + f.dm + "/messages").RequireStatus(http.StatusOK))
 	require.Len(t, hist.Items, 1)
 	require.Equal(t, "hello Atlas", hist.Items[0].Message.Text)
@@ -134,9 +135,10 @@ func TestPostInAPlatformDMIsRefusedAsHistory(t *testing.T) {
 }
 
 // CID-21 (authorization matrix of POST /rooms/{id}/messages in a platform DM): who may not post in
-// the DM are refused as before, whatever else is true of it: the owner and the use grantee of the
-// AI can only view it (403 forbidden), the connection's user and the others cannot see it (404), and
-// anonymous callers get 401; another AI of the owner and another user's AI are not members (403).
+// the DM are refused as before, whatever else is true of it: the manager of the AI can only view it
+// (403 forbidden), the connection's user, the use grantee of the AI (AD-016) and the others cannot see
+// it (404), and anonymous callers get 401; another AI of the owner and another user's AI are not
+// members (403).
 // The refusal for history is the answer of the one who may post, and nothing is added.
 func TestPlatformDMPostAuthorizationMatrix(t *testing.T) {
 	f := newHistoryFixture(t)
@@ -144,7 +146,7 @@ func TestPlatformDMPostAuthorizationMatrix(t *testing.T) {
 	post := func(c *testkit.Client) *testkit.Response { return c.Post(path, dto.PostMessageRequest{Text: "hello"}) }
 
 	post(f.alice).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden) // owns Atlas: views the DM
-	post(f.dave).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)  // may use Atlas: views the DM
+	post(f.dave).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)    // may use Atlas: a grant gives nothing
 	post(f.bob).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)     // may use the connection, not Atlas
 	post(f.carol).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)   // stranger
 	post(f.admin).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)   // no implicit access

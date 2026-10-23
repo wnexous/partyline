@@ -12,6 +12,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -61,7 +62,7 @@ func clockEnv(t *testing.T) (*testkit.Env, *testkit.Clock) {
 	return testkit.New(t, testkit.WithClock(clock.Now)), clock
 }
 
-// DM-06, LAY-01: the list holds the groups a user owns, was granted or is a member of and the DMs
+// DM-06, LAY-01: the list holds the groups a user created, administers or is a member of and the DMs
 // they take part in, newest activity first; a conversation without messages sorts by its creation;
 // each carries its kind, title (the group name, or the other participant's display name), the
 // counterpart of a DM, the user's level and the member names.
@@ -73,11 +74,12 @@ func TestConversationListOrdersByNewestActivity(t *testing.T) {
 	clock.Advance(time.Minute)
 	owned := createRoom(alice, "Owned") // created first, never written to
 	clock.Advance(time.Minute)
-	granted := createRoom(carol, "Granted")
-	shareRoom(carol, granted.ID, dto.SharingUser{UserID: alice.User.ID, Level: dto.LevelView})
+	// carol makes a group in alice's organization, which alice administers without being in the group.
+	env.AddMember(alice.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember, "")
+	granted := groupIn(t, env, carol, alice.PersonalOrg().ID, "Granted")
 	clock.Advance(time.Minute)
 	member := createRoom(bob, "Member of")
-	bob.Post("/api/v1/rooms/"+member.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: alice.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, bob, member.ID, alice)
 	clock.Advance(time.Minute)
 	dm := dmWith(alice, bob.User.ID, http.StatusCreated)
 	hidden := createRoom(carol, "Not for alice")
@@ -101,7 +103,7 @@ func TestConversationListOrdersByNewestActivity(t *testing.T) {
 	require.Equal(t, dto.ConversationKindGroup, g.Kind)
 	require.Equal(t, "Granted", g.Title)
 	require.Nil(t, g.Counterpart)
-	require.Equal(t, dto.LevelView, g.MyLevel)
+	require.Equal(t, dto.LevelManage, g.MyLevel, "an admin of the group's organization manages it")
 	require.True(t, g.ActivityAt.Equal(last.CreatedAt), "activity is the time of the last message")
 
 	d := conversationIn(t, list, dm.ID)
@@ -261,13 +263,15 @@ func TestMarkReadIsMonotonicAndPerUser(t *testing.T) {
 	require.Equal(t, dto.ReadState{RoomID: empty.ID}, zero)
 }
 
-// DM-07 authorization: reading needs view; others get 404, an AI's owner may mark the DM it views,
-// an agent token and an anonymous caller are refused.
+// DM-07 authorization: reading needs view - the creator, a member of the room or an admin of its
+// organization (the viewer role here) - and others get 404; the manager of an AI may mark the DM it
+// views; an agent token and an anonymous caller are refused.
 func TestMarkReadAuthorization(t *testing.T) {
 	m := newMatrix(t)
 	owner, viewer, poster := m.as(t, roleOwner), m.as(t, roleViewer), m.as(t, rolePoster)
 	room := createRoom(owner, "Ops")
-	shareRoom(owner, room.ID, dto.SharingUser{UserID: viewer.User.ID, Level: dto.LevelView}, dto.SharingUser{UserID: poster.User.ID, Level: dto.LevelPost})
+	joinOrgOf(t, m.env, room.ID, viewer, orgs.PermissionAdmin)
+	addToRoom(t, m.env, owner, room.ID, poster)
 	say(owner, room.ID, "hello")
 
 	for role, want := range map[matrixRole]int{roleOwner: 200, roleViewer: 200, rolePoster: 200, roleStranger: 404, roleAdmin: 404} {

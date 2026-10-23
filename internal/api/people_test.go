@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"testing"
@@ -60,9 +61,9 @@ const (
 )
 
 // peopleFixture is a fake connector of alice, shared for use with bob. Its chat X is bridged
-// into alice's room A ("Support", shared for view with dave) and its chat Y into her private
+// into alice's room A ("Support", with dave in it) and its chat Y into her private
 // room B ("Billing"). The sender "Customer" wrote in both chats, so the connector has one person.
-// carol and the admin have no access to anything; erin can view a room C only, which holds chat X
+// carol and the admin have no access to anything; erin is in a room C only, which holds chat X
 // since after the person wrote.
 type peopleFixture struct {
 	env                                  *testkit.Env
@@ -184,7 +185,7 @@ func newPeopleFixture(t *testing.T) *peopleFixture {
 	f.roomB = testkit.Decode[dto.Room](f.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Billing"}).RequireStatus(http.StatusCreated))
 	f.addChat(f.alice, f.roomA.ID, f.chatX)
 	f.addChat(f.alice, f.roomB.ID, f.chatY)
-	shareRoom(f.alice, f.roomA.ID, dto.SharingUser{UserID: f.dave.User.ID, Level: dto.LevelView})
+	addToRoom(t, env, f.alice, f.roomA.ID, f.dave)
 
 	clock.Advance(time.Minute)
 	f.emit(peopleGroupX, "x1", peopleSender, "Customer")
@@ -199,7 +200,7 @@ func newPeopleFixture(t *testing.T) *peopleFixture {
 	clock.Advance(time.Minute)
 	f.roomC = testkit.Decode[dto.Room](f.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Zulu archive"}).RequireStatus(http.StatusCreated))
 	f.addChat(f.alice, f.roomC.ID, f.chatX)
-	shareRoom(f.alice, f.roomC.ID, dto.SharingUser{UserID: f.erin.User.ID, Level: dto.LevelView})
+	addToRoom(t, env, f.alice, f.roomC.ID, f.erin)
 	return f
 }
 
@@ -254,22 +255,41 @@ func TestPersonProfileFollowsTheConnector(t *testing.T) {
 	}
 }
 
-// DM-08, PEOP-04 (AD-013): a user granted use on the AI that operates a connector account reads
-// the AI's platform DMs with external people and those people's profiles and avatars, without any
-// access to the connector; a user with neither the AI grant nor the connector finds neither the DM
-// nor the person, an admin included, and the users of the connector see the person but not the
-// AI's DM.
-func TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople(t *testing.T) {
+// DM-08, PEOP-04 (AD-016, which supersedes AD-013): the managers of the AI that operates a connector account
+// read the AI's platform DMs with external people and those people's profiles and avatars, without any
+// access to the connector: the user that holds a position above the AI's, and the admin of the
+// organization whose position is above that one; a user granted use on the AI finds neither the DM nor
+// the person, since a grant gives nothing any more; neither does a user with no relation to the AI, an
+// admin of the instance included, and the users of the connector see the person but not the AI's DM.
+func TestManagersOfAnAIReadItsPlatformDMsAndPeople(t *testing.T) {
+	ctx := context.Background()
 	f := newPeopleFixture(t)
 	atlas := f.env.NewAI(f.alice, "atlas")
-	shareAI(f.alice, atlas, f.dave) // dave: use on atlas and nothing on the connector
+	shareAI(f.alice, atlas, f.carol) // carol: use on atlas, which gives her nothing, and nothing on the connector
 	f.alice.OperateConnector(f.conn.ID, atlas)
+
+	// alice's chart: she holds the root Admin; dave holds Lead below it and manages Atlas, who holds Worker below him.
+	org := f.alice.PersonalOrg().ID
+	root, err := f.env.App.Store.R().GetPositionByName(ctx, db.GetPositionByNameParams{OrgID: org, Name: "Admin"})
+	require.NoError(t, err)
+	lead := f.env.AddPosition(org, "Lead", root.ID)
+	worker := f.env.AddPosition(org, "Worker", lead)
+	require.NoError(t, f.env.App.Store.WithTx(ctx, func(q *db.Queries) error { // dave is in alice's organization already, through room A
+		for iid, position := range map[string]string{f.dave.User.ID: lead, atlas: worker} {
+			if err := q.UpdateOrgMemberPosition(ctx, db.UpdateOrgMemberPositionParams{
+				PositionID: sql.NullString{String: position, Valid: true}, OrgID: org, Iid: iid,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
 
 	f.clock.Advance(time.Minute)
 	_, dm, person := f.platformDM(atlas, "5511999990003@s.whatsapp.net", "Dana", "hello Atlas")
 	plantAvatar(t, f.env, person, pngBytes(t, bands(300, 300)))
 
-	// alice owns Atlas and dave may use it: both read the DM and the person, neither as a participant.
+	// alice and dave manage Atlas: both read the DM and the person, neither as a participant.
 	for _, c := range []*testkit.Client{f.alice, f.dave} {
 		room := testkit.Decode[dto.Room](c.Get("/api/v1/rooms/" + dm).RequireStatus(http.StatusOK))
 		require.Equal(t, []any{dto.ConversationKindDM, dto.LevelView}, []any{room.Kind, room.MyLevel}, c.User.Username)
@@ -289,13 +309,16 @@ func TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople(t *testing.T) {
 	f.bob.Get("/api/v1/rooms/"+dm).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	f.bob.Get("/api/v1/rooms/"+dm+"/messages").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
-	// carol has neither the AI nor the connector, and the admin is no exception (AD-005).
-	for _, c := range []*testkit.Client{f.carol, f.admin} {
+	// carol holds a use grant on the AI and has no connector, erin is a user of nothing here, and the
+	// admin of the instance is no exception (AD-016): none of them finds the DM or the person.
+	for _, c := range []*testkit.Client{f.carol, f.erin, f.admin} {
 		f.env.T.Helper()
 		c.Get("/api/v1/rooms/"+dm).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 		c.Get("/api/v1/rooms/"+dm+"/messages").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-		getProfile(c, person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 		getAvatar(c, person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	}
+	for _, c := range []*testkit.Client{f.carol, f.admin} {
+		getProfile(c, person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	}
 }
 
@@ -304,25 +327,25 @@ func TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople(t *testing.T) {
 func TestPersonProfileIsVisibleThroughAConversation(t *testing.T) {
 	f := newPeopleFixture(t)
 
-	// Room A: dave views it and the person wrote there. Take the room back and it is gone.
+	// Room A: dave is in it and the person wrote there. Take him out and it is gone.
 	require.Equal(t, "Customer", profileOf(t, f.dave, f.person).DisplayName)
-	f.alice.Put("/api/v1/rooms/"+f.roomA.ID+"/sharing", dto.Sharing{Mode: dto.VisibilityPrivate}).RequireStatus(http.StatusOK)
+	f.alice.Delete("/api/v1/rooms/" + f.roomA.ID + "/members/" + membersOf(t, f.alice, f.roomA.ID)[f.dave.User.ID].ID).RequireStatus(http.StatusNoContent)
 	getProfile(f.dave, f.person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	shareRoom(f.alice, f.roomA.ID, dto.SharingUser{UserID: f.dave.User.ID, Level: dto.LevelView})
+	addToRoom(t, f.env, f.alice, f.roomA.ID, f.dave)
 	require.Equal(t, "Customer", profileOf(t, f.dave, f.person).DisplayName)
 
 	// Remove the chat from room A: the person's message stays there, so its viewers still see it.
 	f.alice.Delete("/api/v1/rooms/" + f.roomA.ID + "/members/" + f.chatMember(f.alice, f.roomA.ID, f.chatX).ID).RequireStatus(http.StatusNoContent)
 	require.Equal(t, "Customer", profileOf(t, f.dave, f.person).DisplayName, "a room where it wrote")
 
-	// Room C: erin views it; the person was seen in its chat but wrote nothing there.
+	// Room C: erin is in it; the person was seen in its chat but wrote nothing there.
 	require.Equal(t, "Customer", profileOf(t, f.erin, f.person).DisplayName, "a chat where it was seen")
 	f.alice.Delete("/api/v1/rooms/" + f.roomC.ID + "/members/" + f.chatMember(f.alice, f.roomC.ID, f.chatX).ID).RequireStatus(http.StatusNoContent)
 	getProfile(f.erin, f.person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
-	// Room B: erin sees the person once she can view it, because it wrote there; frank views
+	// Room B: erin sees the person once she is in it, because it wrote there; frank views
 	// nothing and still finds nothing.
-	shareRoom(f.alice, f.roomB.ID, dto.SharingUser{UserID: f.erin.User.ID, Level: dto.LevelView})
+	addToRoom(t, f.env, f.alice, f.roomB.ID, f.erin)
 	require.Equal(t, "Customer", profileOf(t, f.erin, f.person).DisplayName)
 	getProfile(f.env.NewUser("frank"), f.person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
@@ -525,6 +548,6 @@ func TestMembersOtherThanChatsCarryNoPeople(t *testing.T) {
 			require.Empty(t, m.People, "%s member %s", m.Kind, m.Name)
 		}
 	}
-	require.Equal(t, map[dto.MemberKind]int{dto.MemberKindChat: 2, dto.MemberKindAgent: 1, dto.MemberKindUser: 1}, kinds)
+	require.Equal(t, map[dto.MemberKind]int{dto.MemberKindChat: 2, dto.MemberKindAgent: 1, dto.MemberKindUser: 2}, kinds, "two chats, the helper, and the users dave and bob")
 	require.NotEmpty(t, f.chatMember(f.alice, f.roomA.ID, f.chatX).People)
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 	"unicode"
@@ -14,10 +15,12 @@ import (
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/attachments"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -38,6 +41,15 @@ var ErrChatsNotMembers = errors.New("chats cannot be members of a conversation")
 // ErrCounterpartDisabled is returned when posting in a direct message whose other participant is a
 // disabled user: the DM stays readable (403 counterpart_disabled, DM-02).
 var ErrCounterpartDisabled = errors.New("the other participant of the direct message is disabled")
+
+// ErrNoOrganization answers the creation of a group by someone who belongs to no organization: a group
+// belongs to exactly one (422 organization_required, ORG-02) and there is nowhere to put it. Nothing
+// is created.
+var ErrNoOrganization = &httpx.Error{
+	Status: http.StatusUnprocessableEntity, Code: dto.ErrorCodeOrganizationRequired,
+	Message: "you belong to no organization: create or join one first",
+	Fields:  map[string]string{"org_id": "you belong to no organization"},
+}
 
 // Limits of room fields.
 const (
@@ -173,12 +185,13 @@ func instructionsBy(p authn.Principal, instructions string) string {
 	return p.UserID
 }
 
-// Create makes a room owned by the caller, who gets manage (ACL-01).
+// Create makes a group in the caller's default organization; the caller created it and manages it
+// (ACL-01, AD-016).
 func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput) (Room, error) {
 	if p.Kind != authn.KindUser {
 		return Room{}, access.ErrForbidden
 	}
-	id, err := s.CreateWithMembers(ctx, p.UserID, in, nil)
+	id, err := s.CreateWithMembers(ctx, p, in, nil)
 	if err != nil {
 		return Room{}, err
 	}
@@ -196,12 +209,14 @@ func ValidateCreate(in CreateInput) error {
 	return validateRoom(roomText(in.Name), roomText(in.Description), roomText(in.Instructions), retention)
 }
 
-// CreateWithMembers makes a group owned by ownerID with the members in one transaction and
-// returns its id (LAY-04, AGRP-01). The owner gets manage by ownership and is a member only when
-// listed. The members are not checked here, except that a chat is never one (ErrChatsNotMembers,
-// CID-19, and nothing is created): callers check each one with CheckMember first, so that a
-// refused member creates nothing.
-func (s *Service) CreateWithMembers(ctx context.Context, ownerID string, in CreateInput, members []MemberInput) (string, error) {
+// CreateWithMembers makes a group created by the principal (a user, or an AI acting as itself) with the
+// members in one transaction and returns its id (LAY-04, AGRP-01). The group belongs to the creator's
+// default organization (ORG-02): ErrNoOrganization when they belong to none. The creator manages it by
+// creating it and is a member only when listed; the room row's owner column names the user the
+// principal acts for and gives no access. The members are not checked here, except that a chat is
+// never one (ErrChatsNotMembers, CID-19, and nothing is created): callers check each one with
+// CheckMember first, so that a refused member creates nothing.
+func (s *Service) CreateWithMembers(ctx context.Context, creator authn.Principal, in CreateInput, members []MemberInput) (string, error) {
 	for _, m := range members { // CID-19: before anything is created
 		if m.Kind == dto.MemberKindChat {
 			return "", ErrChatsNotMembers
@@ -217,22 +232,30 @@ func (s *Service) CreateWithMembers(ctx context.Context, ownerID string, in Crea
 	}
 	author := ""
 	if instructions != "" {
-		author = ownerID
+		author = creator.UserID
 	}
 	now := s.now().UnixMilli()
 	id := store.NewID()
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+		orgID, err := orgs.DefaultFor(ctx, q, creator.IID())
+		if err != nil {
+			return err
+		}
+		if orgID == "" {
+			return ErrNoOrganization
+		}
 		if err := q.CreateRoom(ctx, db.CreateRoomParams{
-			ID: id, OwnerID: ownerID, Name: name, Description: description, Instructions: instructions,
+			ID: id, OwnerID: creator.UserID, Name: name, Description: description, Instructions: instructions,
 			InstructionsBy: author, RetentionDays: int64(retention), CreatedAt: now, UpdatedAt: now,
-			UpdatedBy: ownerID, // INS-06: the creator wrote the name and description
+			UpdatedBy: creator.UserID, // INS-06: the creator wrote the name and description
+			OrgID:     sql.NullString{String: orgID, Valid: true}, CreatorIid: sql.NullString{String: creator.IID(), Valid: creator.IID() != ""},
 		}); err != nil {
 			return err
 		}
 		for _, m := range members {
 			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
 				ID: store.NewID(), RoomID: id, Kind: string(m.Kind), MemberID: m.MemberID,
-				AddedBy: ownerID, CreatedAt: now,
+				AddedBy: creator.UserID, CreatedAt: now,
 			}); err != nil {
 				return err
 			}
@@ -305,9 +328,9 @@ func (s *Service) view(ctx context.Context, r db.Room, ownerUsername string, own
 	}, nil
 }
 
-// List returns the conversations the calling user lists, by name: the groups they own, were
-// granted or are a member of, and the DMs they take part in. A DM the user only views through
-// an AI is not listed (it is reachable by id).
+// List returns the conversations the calling user lists, by name: the groups they are a member of,
+// created or administer, and the DMs they take part in (AD-016). A DM the user only views as the
+// manager of an AI is not listed (it is reachable by id).
 func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 	if p.Kind != authn.KindUser {
 		return nil, access.ErrForbidden
@@ -323,9 +346,6 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 	out := make([]Room, 0, len(rows))
 	for _, row := range rows {
 		l := granted[row.Room.ID]
-		if row.Room.OwnerID == p.UserID && row.Room.Kind == string(dto.ConversationKindGroup) {
-			l = dto.LevelManage // a DM has no owner to manage it (DM-02)
-		}
 		if l == access.None {
 			continue
 		}

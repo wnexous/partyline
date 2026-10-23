@@ -685,13 +685,13 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
 **Reuses**: `orgs.Authz`, `OrgRoles`
 **Requirement**: ORG-02, OMEM-06
 **Done when**:
-- [ ] e2e: the "Groups and DMs" matrix:
+- [x] e2e: the "Groups and DMs" matrix:
   - an org admin who is not a member manages a group;
   - a member who is not in the room → 404;
   - the manager of an AI views its DM, a non-manager org member → 404;
   - an instance admin → 404
-- [ ] A grant row (still writable) gives nothing
-- [ ] Gate check passes: `make check`
+- [x] A grant row (still writable) gives nothing
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(access): derive room access from organizations`

@@ -144,7 +144,7 @@ func TestDMPassesAllAndMentionsDelivery(t *testing.T) {
 	his := dmWith(f.bob, f.atlas, http.StatusCreated)
 	group := createRoom(f.alice, "Ops")
 	f.alice.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: f.atlas}).RequireStatus(http.StatusCreated)
-	shareRoom(f.alice, group.ID, dto.SharingUser{UserID: f.bob.User.ID, Level: dto.LevelPost})
+	addToRoom(t, f.env, f.alice, group.ID, f.bob)
 	members := membersOf(t, f.alice, group.ID)
 	f.alice.Patch("/api/v1/rooms/"+group.ID+"/members/"+members[f.atlas].ID, dto.UpdateMemberRequest{Delivery: ptr(dto.DeliveryModeMentions)}).RequireStatus(http.StatusOK)
 	setDelivery(t, f.env, hers.ID, f.atlas, dto.DeliveryModeMentions)
