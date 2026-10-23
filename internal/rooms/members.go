@@ -103,9 +103,10 @@ type MemberInput struct {
 	Outbound *bool
 }
 
-// AddMember adds an agent, chat or user to a room; requires manage. Agents need the caller to
-// own or use the agent (ACL-05), chats to own or use the chat's connector (ACL-06); otherwise
-// ErrForbidden.
+// AddMember adds an agent or a user to a room; requires manage. Agents need the caller to own or
+// use the agent (ACL-05); otherwise ErrForbidden. A chat is never a member (ErrChatsNotMembers,
+// CID-19): the check follows the caller's rights on the room, so a stranger still gets not found
+// and a direct message still answers ErrDMMembersFixed.
 func (s *Service) AddMember(ctx context.Context, p authn.Principal, roomID string, in MemberInput) (Member, error) {
 	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
 		return Member{}, err
@@ -162,7 +163,7 @@ func (s *Service) CheckMember(ctx context.Context, ownerID string, in MemberInpu
 	return false, err
 }
 
-// checkUse verifies the caller may put the agent or chat in a room.
+// checkUse verifies the caller may put the agent or user in a room; a chat is refused (CID-19).
 func (s *Service) checkUse(ctx context.Context, userID string, in MemberInput) error {
 	switch in.Kind {
 	case dto.MemberKindAgent:
@@ -174,20 +175,7 @@ func (s *Service) checkUse(ctx context.Context, userID string, in MemberInput) e
 			return access.ErrForbidden
 		}
 	case dto.MemberKindChat:
-		chat, err := s.store.R().GetChat(ctx, in.MemberID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return access.ErrForbidden
-		}
-		if err != nil {
-			return err
-		}
-		ok, err := s.az.CanUseConnector(ctx, userID, chat.ConnectorID)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return access.ErrForbidden
-		}
+		return ErrChatsNotMembers
 	case dto.MemberKindUser:
 		u, err := s.store.R().GetUser(ctx, in.MemberID)
 		if errors.Is(err, sql.ErrNoRows) || (err == nil && u.DisabledAt.Valid) {
@@ -195,7 +183,7 @@ func (s *Service) checkUse(ctx context.Context, userID string, in MemberInput) e
 		}
 		return err
 	default:
-		return &validation.Error{Fields: map[string]string{"kind": "must be agent, chat or user"}}
+		return &validation.Error{Fields: map[string]string{"kind": "must be agent or user"}}
 	}
 	return nil
 }

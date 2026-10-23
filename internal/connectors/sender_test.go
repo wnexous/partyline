@@ -27,8 +27,9 @@ type outboundEnv struct {
 	helper *testkit.AgentConn // helper's live connection
 }
 
-// newOutboundEnv runs the outbox worker with a fake connector whose group chat is routed to
-// alice's agent "helper" (connected).
+// newOutboundEnv runs the outbox worker with a fake connector whose group chat is a member of a
+// room with alice's agent "helper" (connected): a room built before the connection proxy, which
+// the API no longer builds (CID-19), so the chat member is planted.
 func newOutboundEnv(t *testing.T, opts ...testkit.Option) *outboundEnv {
 	t.Helper()
 	e := newInboundEnv(t, append([]testkit.Option{testkit.WithOutbox()}, opts...)...)
@@ -39,7 +40,9 @@ func newOutboundEnv(t *testing.T, opts ...testkit.Option) *outboundEnv {
 	token := e.alice.Token(dto.TokenKindAgent, "laptop")
 	conn, _ := token.DialAgent("helper")
 	conn.Welcome(connectortest.Timeout)
-	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: helperID}).RequireStatus(http.StatusCreated))
+	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support group"}).RequireStatus(http.StatusCreated))
+	e.alice.SeedChatMember(room.ID, chat, true)
+	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: helperID}).RequireStatus(http.StatusCreated)
 	e.patch(t, dto.UpdateConnectorRequest{GroupsMentionsOnly: ptr(false)}) // the own-typing tests deliver group messages
 	return &outboundEnv{inboundEnv: e, chat: chat, room: room, agent: token.AsAgent("helper"), helper: conn}
 }
@@ -115,8 +118,7 @@ func TestReplyQuotesOnlyInTheOriginChat(t *testing.T) {
 	e := newOutboundEnv(t)
 	e.emit(text(otherID, "B0", "hello from B"))
 	chatB := e.chatID(t, otherID)
-	on := true
-	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chatB, Outbound: &on}).RequireStatus(http.StatusCreated)
+	e.alice.SeedChatMember(e.room.ID, chatB, true)
 	question := e.chatSays(t, otherID, "B1", "question from B")
 	require.Equal(t, "B1", question.ExternalID)
 
@@ -239,6 +241,10 @@ func TestOutboundAuthorFollowsMemberSettings(t *testing.T) {
 	other := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "other"}).RequireStatus(http.StatusCreated))
 	members := testkit.Decode[dto.List[dto.RoomMember]](e.alice.Get("/api/v1/rooms/" + e.room.ID + "/members").RequireStatus(http.StatusOK)).Items
 	for _, mb := range members {
+		if mb.Kind == dto.MemberKindChat { // planted: the API no longer takes a chat as a member (CID-19)
+			e.alice.SeedChatMember(other.ID, mb.MemberID, mb.Outbound)
+			continue
+		}
 		e.alice.Post("/api/v1/rooms/"+other.ID+"/members", dto.AddMemberRequest{Kind: mb.Kind, MemberID: mb.MemberID}).RequireStatus(http.StatusCreated)
 	}
 	m = e.agentPost(t, other.ID, "elsewhere")

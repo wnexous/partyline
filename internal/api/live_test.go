@@ -85,7 +85,7 @@ func TestLiveRoomEventsFollowAccess(t *testing.T) {
 	bobLive.Expect(dto.LiveEventTypeRoomChanged, &seen, liveWait)
 	require.Equal(t, "ops-2", seen.Name)
 	_, chat := storeChat(t, env, alice.User.ID, "group")
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated)
+	alice.SeedChatMember(room.ID, chat, true)
 	var ref dto.RoomIDData
 	bobLive.Expect(dto.LiveEventTypeMembersChanged, &ref, liveWait)
 	require.Equal(t, room.ID, ref.RoomID)
@@ -120,7 +120,7 @@ func TestLiveStatusEventsReachUsersWithAccess(t *testing.T) {
 	require.NoError(t, env.App.Access.SetVisibility(ctx, alice.User.ID, access.KindConnector, conn, alice.User.ID,
 		access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: bob.User.ID}}}))
 	room := createRoom(alice, "ops")
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated)
+	alice.SeedChatMember(room.ID, chat, true)
 	msg := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireStatus(http.StatusCreated))
 	require.Len(t, msg.Outbox, 1)
 

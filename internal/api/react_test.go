@@ -69,7 +69,7 @@ func TestAgentReactUnknownMessage(t *testing.T) {
 	f := newAgentRoom(t)
 	other := createRoom(f.alice, "Private")
 	_, chat := storeChat(t, f.env, f.alice.User.ID, "Elsewhere")
-	f.alice.Post("/api/v1/rooms/"+other.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated)
+	f.alice.SeedChatMember(other.ID, chat, true)
 	foreign := postFromChatIn(t, f, other.ID, chat, "not for the agent")
 	for _, id := range []string{"unknown", foreign} {
 		e := f.rest().Post(reactPath(id), dto.ReactRequest{Emoji: "👍"}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)

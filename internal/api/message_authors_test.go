@@ -116,7 +116,7 @@ func TestChatMembersCarryNoIntelligence(t *testing.T) {
 	alice := env.NewUser("alice")
 	_, chatID := storeChat(t, env, alice.User.ID, "family")
 	room := createRoom(alice, "ops")
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chatID}).RequireStatus(http.StatusCreated)
+	alice.SeedChatMember(room.ID, chatID, true)
 	m := membersOf(t, alice, room.ID)[chatID]
 	require.Equal(t, "family", m.Name)
 	require.Nil(t, m.Intelligence)
@@ -131,7 +131,7 @@ func TestChatAuthoredMessagesExposeTheirAuthor(t *testing.T) {
 	alice := env.NewUser("alice")
 	connectorID, chatID := storeChat(t, env, alice.User.ID, "family")
 	room := createRoom(alice, "ops")
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chatID}).RequireStatus(http.StatusCreated)
+	alice.SeedChatMember(room.ID, chatID, true)
 	pat := seedPerson(t, env, connectorID, "5511999990000", "Pat")
 
 	post := func(text, senderName, senderUserID string) rooms.Message {

@@ -45,7 +45,7 @@ func TestRoomFilesCarryTheirAuthor(t *testing.T) {
 	})
 	require.NoError(t, err)
 	_, chat := storeChat(t, env, alice.User.ID, "Customers")
-	alice.Post("/api/v1/rooms/"+r.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated)
+	alice.SeedChatMember(r.ID, chat, true)
 	_, err = env.App.Rooms.PostFromChat(ctx, r.ID, rooms.ChatMessage{
 		ChatID: chat, SenderID: "100000001", SenderName: "Customer", Text: "photo",
 		Files: []rooms.File{{Name: "lost.jpg", Mime: "image/jpeg", Status: dto.AttachmentStatusUnavailable}},
@@ -81,7 +81,7 @@ func TestRoomFilesList(t *testing.T) {
 		upload{"notes.txt", "text/plain", "txt"}, upload{"SHOUT.JPG", "IMAGE/JPEG", "jpg"}).RequireStatus(http.StatusCreated))
 
 	_, chat := storeChat(t, env, alice.User.ID, "Customers")
-	alice.Post("/api/v1/rooms/"+r.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated)
+	alice.SeedChatMember(r.ID, chat, true)
 	fromChat, err := env.App.Rooms.PostFromChat(context.Background(), r.ID, rooms.ChatMessage{
 		ChatID: chat, SenderID: "100000001", SenderName: "Customer", Text: "big video",
 		Files: []rooms.File{

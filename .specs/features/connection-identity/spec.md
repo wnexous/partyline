@@ -166,7 +166,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-16 | P1: Answer through the connection | Tasks | In Tasks |
 | CID-17 | P1: Answer through the connection | Tasks | In Tasks |
 | CID-18 | P1: Answer through the connection | Tasks | In Tasks |
-| CID-19 | P1: Partyline chat is one more app | Tasks | In Tasks |
+| CID-19 | P1: Partyline chat is one more app | Execute | Implementing (T23) |
 | CID-20 | P1: Partyline chat is one more app | Tasks | In Tasks |
 | CID-21 | P1: Partyline chat is one more app | Tasks | In Tasks |
 | CID-22 | P1: Partyline chat is one more app | Tasks | In Tasks |

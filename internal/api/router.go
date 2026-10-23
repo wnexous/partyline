@@ -209,6 +209,8 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeDMNoSharing, "a direct message cannot be shared")
 	case errors.Is(err, rooms.ErrDMMembersFixed):
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeDMMembersFixed, "the members of a direct message cannot be changed")
+	case errors.Is(err, rooms.ErrChatsNotMembers):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeChatsNotMembers, "chats cannot be members of a conversation: a chat reaches the AI that operates its connection")
 	case errors.Is(err, rooms.ErrCounterpartDisabled):
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeCounterpartDisabled, "the other participant of this direct message is disabled")
 	case errors.Is(err, conversations.ErrDMSelf):

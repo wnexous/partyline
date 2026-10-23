@@ -667,9 +667,9 @@ New frame DTOs are added.
 **Reuses**: `ErrDMMembersFixed` pattern
 **Requirement**: CID-19
 **Done when**:
-- [ ] e2e: `POST /rooms/{id}/members {kind: chat}` with an otherwise valid request → 422 `chats_not_members` (L-017, L-018)
-- [ ] Chat-member tests deleted (ACL-06 chat branch retired)
-- [ ] Gate check passes: `make check`
+- [x] e2e: `POST /rooms/{id}/members {kind: chat}` with an otherwise valid request → 422 `chats_not_members` (L-017, L-018)
+- [x] Chat-member tests deleted (ACL-06 chat branch retired)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(rooms): refuse chats as members`

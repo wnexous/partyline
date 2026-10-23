@@ -98,7 +98,7 @@ func (f *peopleFixture) platformDM(ai, external, name, body string) (chat, room,
 
 func (f *peopleFixture) addChat(owner *testkit.Client, roomID, chatID string) {
 	f.env.T.Helper()
-	owner.Post("/api/v1/rooms/"+roomID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chatID}).RequireStatus(http.StatusCreated)
+	owner.SeedChatMember(roomID, chatID, true)
 }
 
 func (f *peopleFixture) members(c *testkit.Client, roomID string) []dto.RoomMember {

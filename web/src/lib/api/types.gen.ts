@@ -459,6 +459,11 @@ export const ErrorCodeNoRouteToPerson = "no_route_to_person";
  */
 export const ErrorCodeCounterpartDisabled = "counterpart_disabled";
 /**
+ * ErrorCodeChatsNotMembers is a chat added as a member of a conversation: rooms hold users and
+ * AIs only, and a chat reaches its operator AI through its connection (422, CID-19).
+ */
+export const ErrorCodeChatsNotMembers = "chats_not_members";
+/**
  * ErrorCodeMembersRefused is a new group with a member its owner may not add; Refused lists
  * them and nothing was created (422, LAY-04, AGRP-02).
  */
@@ -471,7 +476,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeMembersRefused | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */

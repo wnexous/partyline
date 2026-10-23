@@ -51,7 +51,7 @@ func (e *chanEnv) chatMember(title string) string {
 		}
 		return q.CreateChat(ctx, db.CreateChatParams{ID: chat, ConnectorID: conn, ExternalID: "-100" + chat[len(chat)-6:], Title: title, Kind: "group"})
 	}))
-	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated)
+	e.alice.SeedChatMember(e.room.ID, chat, true)
 	return chat
 }
 

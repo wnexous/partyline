@@ -102,8 +102,7 @@ func roomSetup(t *testing.T, m *matrix) matrixResource {
 		dto.SharingUser{UserID: m.clients[roleViewer].User.ID, Level: dto.LevelView},
 		dto.SharingUser{UserID: m.clients[rolePoster].User.ID, Level: dto.LevelPost})
 	_, chat := storeChat(t, m.env, owner.User.ID, "group")
-	member := testkit.Decode[dto.RoomMember](owner.Post("/api/v1/rooms/"+r.ID+"/members",
-		dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated))
+	member := owner.SeedChatMember(r.ID, chat, true)
 	msg := testkit.Decode[dto.Message](postMultipart(owner, r.ID, dto.PostMessageRequest{Text: "file"},
 		upload{"a.txt", "text/plain", "hello"}).RequireStatus(http.StatusCreated))
 	return matrixResource{"room": r.ID, "member": member.ID, "attachment": msg.Attachments[0].ID}
@@ -238,7 +237,9 @@ func TestRoomSharingEndpoint(t *testing.T) {
 	require.Contains(t, e.Fields, "public_level")
 }
 
-// ACL-05, ACL-06, ROOM-01 over HTTP.
+// ACL-05, ROOM-01 over HTTP. A chat is no member whoever owns its connection (CID-19; the chat
+// branch of ACL-06 is retired with it): the room's outbound delivery to a chat that a room
+// built before the connection proxy still holds is planted.
 func TestRoomMembersEndpoint(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
@@ -254,10 +255,11 @@ func TestRoomMembersEndpoint(t *testing.T) {
 	require.Equal(t, "builder", agent.Name)
 	require.Equal(t, "alice", agent.Owner)
 	alice.Post(path, dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: bobs}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	alice.Post(path, dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: bobChat}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	alice.Post(path, dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: bobChat}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeChatsNotMembers)
 	alice.Post(path, dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: mine}).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 
-	member := testkit.Decode[dto.RoomMember](alice.Post(path, dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated))
+	alice.Post(path, dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeChatsNotMembers)
+	member := alice.SeedChatMember(r.ID, chat, true)
 	require.True(t, member.Outbound)
 	require.Equal(t, "telegram", member.ConnectorKind)
 	require.Equal(t, dto.ChatKindGroup, member.ChatKind)

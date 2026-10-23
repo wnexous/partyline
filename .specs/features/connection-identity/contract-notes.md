@@ -569,3 +569,41 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   a stranger and the admin 404, anonymous callers 401, AI tokens (the AI itself, another AI of the
   owner, another user's AI) 403; every refusal leaves the operator, the connection's session and
   status, the queue and the dropped counts as they were.
+
+## T23: Chats are never members (CID-19)
+
+- **Refusal**: `rooms.ErrChatsNotMembers` is 422 `chats_not_members` (`dto.ErrorCodeChatsNotMembers`).
+  - `AddMember` refuses kind `chat` after the caller's rights on the room are checked: a user who
+    cannot see the room gets 404, one who can see but not manage it 403 (the view and post
+    grantees), and a direct message still answers `dm_members_fixed` (its members are fixed whatever
+    the kind). Then it refuses before any lookup, so the chat's existence, its connection's owner,
+    a use grant on its connection and `outbound` are never read: a chat of the caller's own
+    connection, one of another user's connection, an unknown chat and a request without an id all
+    get the same 422. The chat branch of ACL-06 is retired with it.
+  - `CreateWithMembers` refuses a member list that holds a chat before it creates anything.
+    `CheckMember` returns the error. `conversations.CreateGroup` names members by intelligence id,
+    so a chat id there is `members_refused` (`not_found`), as for any id that is not an
+    intelligence; that answer is unchanged.
+  - The kind validation now reads `must be agent or user` (a chat is no longer among the kinds a
+    request may add; `TestProjectMemberKindIsRefused` follows).
+- **Authorization** (matrix pinned by `TestAddChatMemberAuthMatrix`): owner 422, view and post
+  grantees 403, a stranger and the admin 404, anonymous callers 401, AI tokens 403 (agent tokens
+  reach agent endpoints only). Nothing is added, no `room.members` event is published and
+  `member_count` stays.
+- **Legacy members**: chat members that rooms built before the connection proxy hold stay listable,
+  updatable and removable until migration 0018 (T36) deletes them; a room's outbound delivery to them
+  works until T33.
+- **`POST /chats/{id}/route` (retired by T34)** creates a room and adds the chat to it, so with this
+  rule it is refused 422 `chats_not_members` after its own checks (an agent id is required and the
+  caller must be allowed to use the agent), and the room it created is deleted again. Its
+  success-path tests are rewritten to say so (`TestRouteChatIsRefusedBecauseChatsAreNeverMembers`,
+  the matrix row now 422 for the owner and the grantee) or deleted:
+  `TestRoutedRoomIsNamedAfterTheChat` (CTX-07, the name of a routed room cannot be observed any
+  more). T34 removes the route, its service and these tests.
+- **Tests that only used a chat member as setup** (chat delivery that T33 retires): the API refuses a
+  chat as member, so `testkit.Client.SeedChatMember(roomID, chatID, outbound)` and the rooms
+  fixture's `addMember` plant the row the way an old room holds it. Assertions did not change. The
+  helper goes when the last of those tests does (T33 to T35).
+- **Deflake (not part of the task)**: `TestRunPurgesWhenItStartsAndEveryInterval` (T4) read the
+  files the runner released right after the item vanished, before the runner had handed them over; it
+  now waits for them. It failed once in a loaded full run.

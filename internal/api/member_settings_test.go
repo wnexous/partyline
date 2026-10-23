@@ -29,7 +29,7 @@ func newSettingsRoom(t *testing.T) *settingsRoom {
 	agentID := storeAgent(t, env, f.alice.User.ID, "builder")
 	_, chatID := storeChat(t, env, f.alice.User.ID, "family")
 	f.agent = testkit.Decode[dto.RoomMember](f.alice.Post(f.members(), dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agentID}).RequireStatus(http.StatusCreated))
-	f.chat = testkit.Decode[dto.RoomMember](f.alice.Post(f.members(), dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chatID}).RequireStatus(http.StatusCreated))
+	f.chat = f.alice.SeedChatMember(f.room.ID, chatID, true)
 	return f
 }
 

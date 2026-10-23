@@ -45,7 +45,7 @@ func (f *agentRoom) roomChat(t *testing.T, kind string) string {
 		}
 		return q.CreateChat(ctx, db.CreateChatParams{ID: chat, ConnectorID: conn, ExternalID: "ext-" + kind, Title: kind + " chat", Kind: kind})
 	}))
-	f.alice.Post("/api/v1/rooms/"+f.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated)
+	f.alice.SeedChatMember(f.room.ID, chat, true)
 	return chat
 }
 

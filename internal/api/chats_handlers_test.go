@@ -31,10 +31,13 @@ func TestChatRoutesAuthMatrix(t *testing.T) {
 		{"refresh chats", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
 			return c.Post("/api/v1/connectors/"+res["connector"]+"/chats/refresh", nil)
 		}, statuses(204, 403, 404, 404, 404)},
+		// Routing a chat puts it in a room as a member, which no conversation accepts any more
+		// (CID-19): whoever may use the connection is refused alike, and everyone else still
+		// cannot see the chat. The feature goes with T34.
 		{"route chat", func(t *testing.T, m *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
 			agent := registerAgent(t, m.env, c, "helper")
 			return c.Post("/api/v1/chats/"+res["chat"]+"/route", dto.RouteChatRequest{AgentID: agent})
-		}, statuses(201, 201, 404, 404, 404)},
+		}, statuses(422, 422, 404, 404, 404)},
 	}
 	m.run(t, setup, routes)
 
@@ -110,8 +113,11 @@ func TestRefreshChatsPlatformFailure(t *testing.T) {
 	require.NotContains(t, resp.String(), "10.0.0.5")
 }
 
-// UI-13: routing a chat creates a private room of the caller with the chat and the agent.
-func TestRouteChatToAgent(t *testing.T) {
+// CID-19: routing a chat to an agent used to make a private room with the chat and the agent as
+// members; a chat is no member of any conversation now, so the request is refused with 422
+// chats_not_members and no room is left behind. The checks before it keep their answers: an agent id
+// is required, and the caller must be allowed to use the agent. (The route itself is retired by T34.)
+func TestRouteChatIsRefusedBecauseChatsAreNeverMembers(t *testing.T) {
 	fake := connectortest.New()
 	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()))
 	alice := env.NewUser("alice")
@@ -123,17 +129,7 @@ func TestRouteChatToAgent(t *testing.T) {
 	alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 	bobsAgent := registerAgent(t, env, bob, "other")
 	alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: bobsAgent}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	require.Empty(t, testkit.Decode[dto.List[dto.Room]](alice.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items, "no room is left behind")
 
-	room := testkit.Decode[dto.Room](alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: agent}).RequireStatus(http.StatusCreated))
-	require.Equal(t, "Support group", room.Name)
-	require.Equal(t, dto.VisibilityPrivate, room.Visibility)
-	require.Equal(t, dto.LevelManage, room.MyLevel)
-	require.Equal(t, alice.User.ID, room.Owner.ID)
-	members := testkit.Decode[dto.List[dto.RoomMember]](alice.Get("/api/v1/rooms/" + room.ID + "/members").RequireStatus(http.StatusOK)).Items
-	require.Len(t, members, 2)
-	require.Equal(t, dto.MemberKindChat, members[0].Kind)
-	require.Equal(t, chat, members[0].MemberID)
-	require.Equal(t, dto.MemberKindAgent, members[1].Kind)
-	require.Equal(t, agent, members[1].MemberID)
+	alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: agent}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeChatsNotMembers)
+	require.Empty(t, testkit.Decode[dto.List[dto.Room]](alice.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items, "no room is left behind")
 }

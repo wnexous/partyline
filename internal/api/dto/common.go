@@ -110,6 +110,9 @@ const (
 	// ErrorCodeCounterpartDisabled is a post in a direct message whose other participant is a
 	// disabled user: the DM stays readable (403, DM-02).
 	ErrorCodeCounterpartDisabled ErrorCode = "counterpart_disabled"
+	// ErrorCodeChatsNotMembers is a chat added as a member of a conversation: rooms hold users and
+	// AIs only, and a chat reaches its operator AI through its connection (422, CID-19).
+	ErrorCodeChatsNotMembers ErrorCode = "chats_not_members"
 	// ErrorCodeMembersRefused is a new group with a member its owner may not add; Refused lists
 	// them and nothing was created (422, LAY-04, AGRP-02).
 	ErrorCodeMembersRefused ErrorCode = "members_refused"

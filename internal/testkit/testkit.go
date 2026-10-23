@@ -36,6 +36,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/store"
@@ -214,6 +215,30 @@ func (c *Client) NewAI(name string) string {
 func (c *Client) OperateConnector(connectorID, agentID string) dto.Connector {
 	c.T.Helper()
 	return Decode[dto.Connector](c.Patch("/api/v1/connectors/"+connectorID, dto.UpdateConnectorRequest{OperatorID: &agentID}).RequireStatus(http.StatusOK))
+}
+
+// SeedChatMember puts the chat in the room as a member, with outbound delivery on or off, the way a
+// room built before the connection proxy holds it, and returns the member as the room's member list
+// shows it to the client. The API refuses chats as members (CID-19), so the tests of the chat
+// delivery that is left until it is retired (T33) plant the row; a test of anything else does not
+// need a chat in a room. It publishes what adding a member does.
+func (c *Client) SeedChatMember(roomID, chatID string, outbound bool) dto.RoomMember {
+	c.T.Helper()
+	ctx := context.Background()
+	require.NoError(c.T, c.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
+			ID: store.NewID(), RoomID: roomID, Kind: string(dto.MemberKindChat), MemberID: chatID,
+			Outbound: outbound, AddedBy: c.User.ID, CreatedAt: time.Now().UnixMilli(),
+		})
+	}))
+	c.env.App.Bus.Publish(events.MembersChanged{RoomID: roomID})
+	for _, m := range Decode[dto.List[dto.RoomMember]](c.Get("/api/v1/rooms/" + roomID + "/members").RequireStatus(http.StatusOK)).Items {
+		if m.Kind == dto.MemberKindChat && m.MemberID == chatID {
+			return m
+		}
+	}
+	require.FailNow(c.T, "the seeded chat member is not in the member list", "room %s chat %s", roomID, chatID)
+	return dto.RoomMember{}
 }
 
 // NewLegacyAI creates an AI of the owner the way v0.3 left it, named name and without a folder:
