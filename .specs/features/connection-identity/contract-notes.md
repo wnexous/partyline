@@ -443,3 +443,30 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   title, the platform, the sender (`from`), `trusted`, `message_id` and `chat_id`; `from_self`,
   `connection_id` and `kind` are not part of it (T16 pins this framing).
 
+## T15: Hooks and wait tool include platform events (CID-06)
+
+- **Request**: `channel.Pending` (the turn-end hooks) calls `GET /agent/pending?platform=1`, and the
+  `wait_for_messages` tool calls it with `wait=N&platform=1`. Both now return `dto.AgentPending`
+  (`Items` and `Platform`) instead of the room messages alone (`channel.Pending`'s signature
+  changed; its only caller is `partyline hook`). A server from before platform events ignores the
+  parameter and answers `{"items": [...]}`, which decodes to an empty `Platform`.
+- **Taken**: the server acknowledges the events it returns (T13), so a hook or a tool call that
+  returns them has delivered them.
+- **Framing**: `FrameAll(msgs, events...)` frames every message and every event with the same frame
+  and the trust line of its own flag (`trusted="true"` gets the owner line, everything else the
+  data line), separated by a blank line. `channel.PlatformRecord(e)` is the record of an event (the
+  keys of its notification plus `content`), which `Frame` renders as `<partyline room="<Platform> ·
+  <chat title>" chat=… platform=… from=… trusted=… message_id=… chat_id=…>text</partyline>`. The
+  two lists are merged oldest first by `Message.CreatedAt` and `PlatformEvent.ReceivedAt`; a message
+  goes before an event of the same time. The messages alone frame exactly as before.
+- **Hooks**: `codex-stop` (decision `block`) and `gemini-after-agent` (`deny`) continue with the
+  framed text as the reason when either list has something, and allow the stop (`{}`) when both are
+  empty. As for room messages, what the hook returns is delivered: an error after the server took
+  the events loses them, and the hook then allows the stop and reports on stderr.
+- **Tool**: `wait_for_messages` returns the framed text, ends its wait at the first room message or
+  platform event, and answers `no new messages in N seconds` only when both lists are empty. Its
+  description now says it covers the connections the AI operates.
+- **Authorization**: nothing new; the hook and the tool act as the AI of their folder (T13), so
+  another AI of the owner and another user's AI of the same folder name neither see nor take the
+  events.
+

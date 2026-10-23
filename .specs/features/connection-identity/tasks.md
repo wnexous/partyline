@@ -534,8 +534,8 @@ New frame DTOs are added.
 **Reuses**: `FrameAll`, hook tests
 **Requirement**: CID-06
 **Done when**:
-- [ ] e2e: the `codex-stop` hook prints a block decision whose reason contains the platform event; `wait_for_messages` returns it
-- [ ] Gate check passes: `make check`
+- [x] e2e: the `codex-stop` hook prints a block decision whose reason contains the platform event; `wait_for_messages` returns it
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): hooks show platform events`
