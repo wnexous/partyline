@@ -288,6 +288,33 @@ func TestRunFlagsOwnMessages(t *testing.T) {
 	require.Equal(t, "Test Person", in.ChatTitle)
 }
 
+// CID-12: a message mentions the bot through a "mention" entity of its @username or a
+// "text_mention" of its user id, in its text or in the caption of a media message; a mention of
+// another bot and a message without entities do not.
+func TestRunReportsMentionsOfTheBot(t *testing.T) {
+	f := newFakeBotAPI(t)
+	mention := func(offset, length int) []map[string]any {
+		return []map[string]any{{"type": "mention", "offset": offset, "length": length}}
+	}
+	f.queue(
+		groupMessage(1, 20, map[string]any{"text": "hi @test_bot", "entities": mention(3, 9)}),
+		groupMessage(2, 21, map[string]any{"text": "hey bot", "entities": []map[string]any{{
+			"type": "text_mention", "offset": 0, "length": 3,
+			"user": map[string]any{"id": botID, "is_bot": true, "first_name": "Test Bot"},
+		}}}),
+		groupMessage(3, 22, map[string]any{"text": "@other_bot", "entities": mention(0, 10)}),
+		groupMessage(4, 23, map[string]any{"text": "no mention here"}),
+		groupMessage(5, 24, map[string]any{"caption": "\U0001F44B @test_bot", "caption_entities": mention(3, 9),
+			"photo": []map[string]any{{"file_id": "small", "file_size": 100, "width": 90}}}),
+	)
+	rec := start(t, newConnector(t, f))
+	require.True(t, rec.NextInbound(t).MentionsAccount, "a mention of @test_bot")
+	require.True(t, rec.NextInbound(t).MentionsAccount, "a text_mention of the bot's id")
+	require.False(t, rec.NextInbound(t).MentionsAccount, "another bot's mention")
+	require.False(t, rec.NextInbound(t).MentionsAccount, "no entities")
+	require.True(t, rec.NextInbound(t).MentionsAccount, "a mention in a caption, after an emoji (UTF-16 offsets)")
+}
+
 // TG-01 edge case: a group upgraded to a supergroup moves the chat to its new id.
 func TestRunMigratesChat(t *testing.T) {
 	f := newFakeBotAPI(t)

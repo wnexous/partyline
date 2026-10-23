@@ -260,3 +260,17 @@ Where a section refines the design, it says so.
   inbound tests, the people/contacts fixtures (history seeded through `connectortest.History`),
   the merge tests (platform DM history seeded with `EnsurePlatformDM`) and the v0.3 upgrade test
   (the agent adopts its folder and replies through the outbox; T37 pins the upgrade end to end).
+
+## T8: Telegram mentions (CID-12)
+
+- **Detection**: `Connector.handle` sets `Inbound.MentionsAccount` when the message's `entities`
+  hold a `mention` whose covered text equals the bot's `@username` from `getMe`
+  (case-insensitive), or a `text_mention` whose `user.id` is the bot's id. A bot without a
+  username matches only `text_mention`; entity offsets/lengths are UTF-16 code units, so the
+  covered text is decoded from UTF-16 before comparing.
+- **Captions** (refinement of the design's row, which names the message text only): media messages
+  carry their text as `caption` with `caption_entities`; those entities are checked against the
+  caption, so a photo whose caption mentions the bot counts. Without it a media mention would
+  never pass mentions-only.
+- **Not mentions**: another bot's `mention`, a `text_mention` of another user, an entity of any
+  other type and a message without entities. `@everyone` is not a Telegram concept.

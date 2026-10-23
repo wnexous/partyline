@@ -419,8 +419,8 @@ Room posting, people and DM creation, `autoGroup`, `autoRoute` and `platformDM` 
 **Reuses**: captured update payloads
 **Requirement**: CID-12
 **Done when**:
-- [ ] Tests: mention, text_mention, another bot's mention (false), no entities (false)
-- [ ] Gate check passes: `make check`
+- [x] Tests: mention, text_mention, another bot's mention (false), no entities (false)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(telegram): report mentions of the bot`
