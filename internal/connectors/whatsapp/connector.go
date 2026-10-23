@@ -36,6 +36,14 @@ const (
 // ErrUnauthorized means evolution-go rejected the API key or an instance token.
 var ErrUnauthorized = errors.New("unauthorized")
 
+// ErrOtherInstance means a chat belongs to a WhatsApp instance this connection does not use:
+// one number per connection (CID-04).
+var ErrOtherInstance = errors.New("chat of another instance")
+
+// instanceChoiceDetail is the status detail of a connection that does not name exactly one
+// instance (CID-04): until the owner chooses the number, the connection cannot run.
+const instanceChoiceDetail = "choose the instance (number) of this connection"
+
 // Kind returns the WhatsApp (evolution-go) connector kind.
 func Kind() connectors.Kind {
 	return connectors.Kind{
@@ -44,8 +52,8 @@ func Kind() connectors.Kind {
 			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Endpoint: true,
 				Help: "e.g. https://evolution.example.com"},
 			{Name: "api_key", Label: "Global API key", Type: dto.FieldTypeSecret, Required: true},
-			{Name: "instances", Label: "Instances", Type: dto.FieldTypeStringList,
-				Help: "Instance names to use; empty uses every instance with WebSocket events enabled"},
+			{Name: "instances", Label: "Instances", Type: dto.FieldTypeStringList, Required: true,
+				Help: "exactly one instance: the number of this connection"},
 		},
 		New: func(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {
 			return New(cfg, d)
@@ -57,7 +65,7 @@ func Kind() connectors.Kind {
 type Connector struct {
 	base      *url.URL
 	apiKey    string
-	allowed   map[string]bool
+	instance  string // the single evolution-go instance of this connection; empty when the config names zero or several
 	userAgent string
 	log       *slog.Logger
 	client    *http.Client // REST calls (JSON)
@@ -114,24 +122,35 @@ func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
 	if err != nil || base.Host == "" {
 		return nil, errors.New("invalid base_url")
 	}
-	allowed := map[string]bool{}
-	for _, name := range cfg.Strings("instances") {
-		allowed[name] = true
+	// CID-04: a connection is one number. A config that names zero or several instances (one
+	// stored before the requirement existed) constructs the connector so Run can say what the
+	// owner must do; it uses no instance at all.
+	instances := cfg.Strings("instances")
+	instance := ""
+	if len(instances) == 1 {
+		instance = instances[0]
 	}
 	log := d.Logger
 	if log == nil {
 		log = slog.Default()
 	}
 	return &Connector{
-		base: base, apiKey: cfg.String("api_key"), allowed: allowed, userAgent: d.UserAgent, log: log,
+		base: base, apiKey: cfg.String("api_key"), instance: instance, userAgent: d.UserAgent, log: log,
 		client: d.JSONClient(requestTimeout), downloads: d.HTTPClient(requestTimeout, mediaEnvelope(d.MediaLimit())),
 		stream: d.StreamClient(), maxFrame: mediaEnvelope(d.MediaLimit()), now: time.Now,
 	}, nil
 }
 
 // Run checks the API key, subscribes to the broadcast WebSocket and hands every Message
-// event of an allowed instance to h (WA-01). It returns when ctx ends or the socket fails.
+// event of the connection's instance to h (WA-01). It returns when ctx ends or the socket
+// fails. A connection that does not name exactly one instance (CID-04) reports what the owner
+// must do, neither dials nor restarts, and waits for ctx.
 func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
+	if c.instance == "" {
+		h.Status(connectors.StatusError, instanceChoiceDetail)
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	insts, err := c.refreshInstances(ctx)
 	if err != nil {
 		return err
@@ -172,45 +191,28 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 }
 
 // accountLabel is how WhatsApp names the connector's account (ACC-07): the masked phone number
-// of each instance it uses, as evolution-go reports it, in the order of /instance/all, each
-// number once. An instance whose jid is no phone number (not connected, a LID) adds nothing.
+// of the connection's instance, as evolution-go reports it. An instance whose jid is no phone
+// number (not connected, a LID) or that evolution-go does not have adds nothing.
 func (c *Connector) accountLabel(insts []instance) string {
-	var labels []string
 	for _, inst := range insts {
-		if !c.listed(inst) {
+		if inst.Name != c.instance {
 			continue
 		}
 		if n := instanceNumber(inst.JID); n != "" {
-			if l := maskNumber(n); !slices.Contains(labels, l) {
-				labels = append(labels, l)
-			}
+			return maskNumber(n)
 		}
 	}
-	return strings.Join(labels, ", ")
+	return ""
 }
 
-// idleWarning explains a connection that will never deliver a message: no instance has WebSocket
-// events enabled (and no allowlist names one), or an allowlisted instance is missing from
-// evolution-go. It is shown with the connected status so a quiet connector is not mistaken for
-// a working one; empty when messages can arrive.
+// idleWarning explains a connection that will never deliver a message: evolution-go does not
+// have the instance the connection names. It is shown with the connected status so a quiet
+// connector is not mistaken for a working one; empty when messages can arrive.
 func (c *Connector) idleWarning(insts []instance) string {
-	if len(c.allowed) > 0 {
-		var missing []string
-		for name := range c.allowed {
-			if !slices.ContainsFunc(insts, func(i instance) bool { return i.Name == name }) {
-				missing = append(missing, name)
-			}
-		}
-		slices.Sort(missing)
-		if len(missing) > 0 {
-			return "evolution-go has no instance named " + strings.Join(missing, ", ") + ": messages of it cannot arrive"
-		}
+	if slices.ContainsFunc(insts, func(i instance) bool { return i.Name == c.instance }) {
 		return ""
 	}
-	if slices.ContainsFunc(insts, func(i instance) bool { return bool(i.WebsocketEnable) }) {
-		return ""
-	}
-	return "no evolution-go instance has WebSocket events enabled, so no message can arrive: enable websocketEnable on the instance or list the instances to use"
+	return "evolution-go has no instance named " + c.instance + ": messages of it cannot arrive"
 }
 
 // instanceNumber is the phone number of an instance jid ("5511999990000:7@s.whatsapp.net" is
@@ -251,15 +253,15 @@ func (c *Connector) ping(ctx context.Context, conn *websocket.Conn, cancel conte
 	}
 }
 
-// handle parses one frame; events that are not chat messages or come from instances
-// outside the allowlist are ignored.
+// handle parses one frame; events that are not chat messages or come from another instance
+// of the evolution-go server are ignored.
 func (c *Connector) handle(ctx context.Context, h connectors.Handler, data []byte) {
 	ev, err := DecodeFrame(data)
 	if err != nil {
 		c.log.Warn("whatsapp: undecodable frame")
 		return
 	}
-	if ev.Event != "Message" || !c.instanceAllowed(ev.InstanceName) {
+	if ev.Event != "Message" || !c.uses(ev.InstanceName) {
 		return
 	}
 	p, err := Parse(ev)
@@ -313,8 +315,9 @@ func (c *Connector) cacheTitle(chatID, name string) {
 	c.mu.Unlock()
 }
 
-func (c *Connector) instanceAllowed(name string) bool {
-	return len(c.allowed) == 0 || c.allowed[name]
+// uses reports whether name is the single instance of this connection.
+func (c *Connector) uses(name string) bool {
+	return name == c.instance
 }
 
 // media opens inline content, or downloads it through evolution-go on demand.
@@ -362,10 +365,14 @@ func (c *Connector) download(ctx context.Context, inst string, message json.RawM
 // Send sends the text with /send/text, quoting the replied message (WA-03), and every
 // file with /send/media (WA-04). It returns the id of the first sent message and tells m.Created
 // the id of each, as the platform reports every one as a message of the account (ACC-05).
+// A chat of another instance is refused (CID-04): only the connection's number sends.
 func (c *Connector) Send(ctx context.Context, m connectors.Outbound) (string, error) {
 	inst, jid, ok := SplitChatID(m.ChatID)
 	if !ok {
 		return "", errors.New("invalid chat id")
+	}
+	if inst != c.instance {
+		return "", ErrOtherInstance
 	}
 	first := ""
 	if text := formatText(m); text != "" {
@@ -452,7 +459,7 @@ func (c *Connector) send(ctx context.Context, inst, path string, body map[string
 	return resp.Data.Info.ID, nil
 }
 
-// ListChats lists the groups of every allowed instance (WA-05) and refreshes the cached
+// ListChats lists the groups of the connection's instance (WA-05) and refreshes the cached
 // group subjects.
 func (c *Connector) ListChats(ctx context.Context) ([]connectors.ChatInfo, error) {
 	insts, err := c.refreshInstances(ctx)
@@ -482,13 +489,9 @@ func (c *Connector) ListChats(ctx context.Context) ([]connectors.ChatInfo, error
 	return out, nil
 }
 
-// listed reports whether the instance is used: on the allowlist, or with WebSocket
-// events enabled when the allowlist is empty.
+// listed reports whether inst is the instance this connection uses.
 func (c *Connector) listed(inst instance) bool {
-	if len(c.allowed) > 0 {
-		return c.allowed[inst.Name]
-	}
-	return bool(inst.WebsocketEnable)
+	return inst.Name == c.instance
 }
 
 // refreshInstances reloads the instance list with the global key.
@@ -512,8 +515,8 @@ func (c *Connector) refreshInstances(ctx context.Context) ([]instance, error) {
 // token returns the instance token, refreshing the cached list when it is older than
 // 5 minutes or misses the instance.
 func (c *Connector) token(ctx context.Context, name string) (string, error) {
-	if !c.instanceAllowed(name) {
-		return "", fmt.Errorf("instance %s is not allowed", name)
+	if !c.uses(name) {
+		return "", ErrOtherInstance
 	}
 	c.mu.Lock()
 	inst, ok := c.instances[name]

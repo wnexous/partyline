@@ -125,7 +125,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-01 | P1: One identity per connection | Tasks | In Tasks |
 | CID-02 | P1: One identity per connection | Tasks | In Tasks |
 | CID-03 | P1: One identity per connection | Tasks | In Tasks |
-| CID-04 | P1: One identity per connection | Tasks | In Tasks |
+| CID-04 | P1: One identity per connection | Tasks | Implementing |
 | CID-05 | P1: One identity per connection | Tasks | In Tasks |
 | CID-06 | P1: Platform chats are conversations | Tasks | In Tasks |
 | CID-07 | P1: Platform chats are conversations | Tasks | In Tasks |

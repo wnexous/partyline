@@ -523,9 +523,9 @@ T33 -> T34 -> T35 -> T36
 **Reuses**: `allowed`, fake evolution server
 **Requirement**: CID-04
 **Done when**:
-- [ ] Integration: 0 and 2 instances → exact detail, no WebSocket dial, a frame is not delivered; 1 instance connects; send to another instance fails
-- [ ] `idleWarning` allowlist-empty branch removed with its test
-- [ ] Gate check passes: `make check`
+- [x] Integration: 0 and 2 instances → exact detail, no WebSocket dial, a frame is not delivered; 1 instance connects; send to another instance fails
+- [x] `idleWarning` allowlist-empty branch removed with its test
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(whatsapp): one instance per connection`
