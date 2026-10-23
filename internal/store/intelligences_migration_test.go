@@ -115,15 +115,16 @@ func without(rows []string, drop func(string) bool) []string {
 	return out
 }
 
-// MIG-01, MIG-03, MIG-05: upgrading the v0.3 fixture (0015 to 0018 apply in one transaction)
+// MIG-01, MIG-03, MIG-05: upgrading the v0.3 fixture (0015 to 0019 apply in one transaction)
 // keeps every row of every v0.3 table with all its columns, except what the upgrade replaces on
 // purpose: the project rows the conversion replaces (project members become agent members,
 // project grants, projects and their cursors go, agents lose their project), the legacy
 // identity columns 0016 drops, whose values live in the intelligences
-// (TestUpgradeV03Identities), and what the connection proxy retires (0018, CID-21): the chats in
+// (TestUpgradeV03Identities), what the connection proxy retires (0018, CID-21): the chats in
 // rooms, the delivery tables and the catch-all and room switches
-// (TestConnectionProxyUpgradeKeepsHistoryAndDropsTheRest). Every room is a group whose history
-// counts as read.
+// (TestConnectionProxyUpgradeKeepsHistoryAndDropsTheRest), and the grants, which the organizations
+// upgrade (0019, OUPG-01) turns into memberships (TestOrganizationsUpgrade...). Every room is a
+// group whose history counts as read.
 func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 	e := v03Fixture(t)
 	all := e.v03Tables()
@@ -151,7 +152,7 @@ func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 
 	require.NotContains(t, versions(t, e.s), "0015_intelligences", "fixture sanity: the database is a v0.3 one")
 	require.NoError(t, e.s.Migrate(context.Background()))
-	require.Subset(t, versions(t, e.s), []string{"0015_intelligences", "0016_drop_v03_identity", "0018_connection_proxy"}, "the fixture upgrades through 0015, 0016 and 0018")
+	require.Subset(t, versions(t, e.s), []string{"0015_intelligences", "0016_drop_v03_identity", "0018_connection_proxy", "0019_organizations"}, "the fixture upgrades through 0015, 0016, 0018 and 0019")
 
 	// 0016 drops the legacy columns and project_cursors, 0018 the delivery tables and the catch-all
 	// and room switches, and no other column or table of v0.3.
@@ -190,8 +191,7 @@ func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 		"Proj's ops membership moves to proj-claude-2 (latest connected) with its settings")
 	require.Equal(t, 11-3+1-3, e.count(`SELECT COUNT(*) FROM room_members`), "Empty's membership and Proj's dev membership go, and the three chats")
 
-	require.Equal(t, without(before["grants"], func(r string) bool { return strings.Contains(r, "resource_kind=project") }),
-		e.rowsOf("grants", tables["grants"]))
+	require.Empty(t, e.rowsOf("grants", tables["grants"]), "the project grants went with 0015 and the others became organization memberships (0019)")
 	require.Empty(t, e.rowsOf("projects", tables["projects"]))
 
 	require.Equal(t, agentsBefore, e.rowsOf("agents", agentCols), "agents keep every other column")

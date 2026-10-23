@@ -117,3 +117,53 @@ func TestDisplayNameBounds(t *testing.T) {
 	require.Equal(t, 64, len([]rune(got)))
 	require.Equal(t, "É", string([]rune(got)[0]))
 }
+
+// ORG-01: the address of an organization (its slug) derives from a name or a username with the
+// handle slug rules; it may start with a digit, and "org" stands in when no Latin letter or digit is
+// left.
+func TestOrgSlug(t *testing.T) {
+	cases := []struct{ in, want, why string }{
+		{"Acme", "acme", "lower-cased"},
+		{"Acme Inc.", "acme-inc", "runs of other characters become one hyphen"},
+		{"Ágata Ção", "agata-cao", "common accents fold"},
+		{"42 Labs", "42-labs", "unlike a handle it may start with a digit"},
+		{"Bob_", "bob", "a trailing separator is trimmed"},
+		{"--  --", "org", "nothing left"},
+		{"李雷", "org", "no Latin letter left"},
+		{"", "org", "empty"},
+	}
+	for _, c := range cases {
+		require.Equal(t, c.want, OrgSlug(c.in), c.why)
+	}
+	require.Equal(t, strings.Repeat("a", 36), OrgSlug(strings.Repeat("a", 50)), "cut to 36 bytes so a -NNN suffix fits")
+}
+
+// ORG-01, OUPG-01: two organizations named alike get acme, acme-2, acme-3; taken checks ignore case,
+// and a suffix that would pass 40 characters cuts the stem. Unlike a handle, "all" and "partyline"
+// are not reserved.
+func TestAllocateSlug(t *testing.T) {
+	taken := map[string]bool{}
+	use := func(s string) bool { return taken[strings.ToLower(s)] }
+	for _, want := range []string{"acme", "acme-2", "acme-3"} {
+		got := AllocateSlug(use, "Acme")
+		require.Equal(t, want, got)
+		taken[got] = true
+	}
+	require.Equal(t, "acme-2", AllocateSlug(func(s string) bool { return strings.EqualFold(s, "ACME") }, "acme"))
+	require.Equal(t, "all", AllocateSlug(func(string) bool { return false }, "all"))
+	require.Equal(t, "partyline", AllocateSlug(func(string) bool { return false }, "partyline"))
+	require.Equal(t, "42-labs", AllocateSlug(func(string) bool { return false }, "42 Labs"), "the base is normalised")
+	require.Equal(t, "org", AllocateSlug(func(string) bool { return false }, "李雷"))
+
+	base := strings.Repeat("x", 36)
+	busy := func(s string) bool {
+		if s == base {
+			return true
+		}
+		n, err := strconv.Atoi(strings.TrimPrefix(s, base+"-"))
+		return strings.HasPrefix(s, base+"-") && err == nil && n < 1000
+	}
+	got := AllocateSlug(busy, base)
+	require.Equal(t, strings.Repeat("x", 35)+"-1000", got)
+	require.LessOrEqual(t, len(got), 40)
+}

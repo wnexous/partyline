@@ -133,6 +133,35 @@ func Allocate(taken func(string) bool, base string) string {
 	}
 }
 
+// OrgSlug returns the address of an organization derived from name (a name or a username): its
+// Slug, or "org" when no Latin letter or digit is left. Unlike a handle it may start with a digit.
+func OrgSlug(name string) string {
+	if s := Slug(name); s != "" {
+		return s
+	}
+	return "org"
+}
+
+// AllocateSlug returns the first free organization slug among OrgSlug(base), -2, -3, …; taken
+// reports whether a (lower-case) slug is in use. A suffix that would pass MaxLen cuts the stem.
+// Unlike handles, no word is reserved.
+func AllocateSlug(taken func(string) bool, base string) string {
+	base = OrgSlug(base)
+	if !taken(base) {
+		return base
+	}
+	for n := 2; ; n++ {
+		suffix := "-" + strconv.Itoa(n)
+		stem := base
+		if len(stem)+len(suffix) > MaxLen {
+			stem = strings.TrimRight(stem[:MaxLen-len(suffix)], "-")
+		}
+		if candidate := stem + suffix; !taken(candidate) {
+			return candidate
+		}
+	}
+}
+
 // DisplayName returns the default display name for base: control characters dropped, the
 // first rune upper-cased, at most MaxDisplayName code points.
 func DisplayName(base string) string {

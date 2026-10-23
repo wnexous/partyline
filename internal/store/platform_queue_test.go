@@ -66,7 +66,7 @@ func TestPlatformQueueMigrationGivesExistingConnectorsTheDefaults(t *testing.T) 
 		('k-groups', 'u1', 'whatsapp', 'groups', 'groups', 1, 1),
 		('k-all', 'u1', 'discord', 'all', 'all', 1, 1)`)
 
-	require.NoError(t, s.Migrate(ctx))
+	require.NoError(t, s.MigrateBefore(ctx, "0019")) // 0017 and 0018 alone: 0019 has tests of its own
 
 	rows, err := s.write.QueryContext(ctx, `SELECT id, deliver, groups_mentions_only FROM connectors ORDER BY id`)
 	require.NoError(t, err)

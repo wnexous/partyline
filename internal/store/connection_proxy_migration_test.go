@@ -104,8 +104,9 @@ func TestConnectionProxyUpgradeKeepsHistoryAndDropsTheRest(t *testing.T) {
 	require.NotEmpty(t, before["people"], "fixture sanity: people")
 	require.NotEmpty(t, before["intelligences"], "fixture sanity: intelligences")
 
-	require.NoError(t, e.s.Migrate(ctx))
+	require.NoError(t, e.s.MigrateBefore(ctx, "0019")) // 0017 and 0018 alone: 0019 turns the grants into memberships and has tests of its own
 	require.Subset(t, versions(t, e.s), []string{"0017_platform_queue", "0018_connection_proxy"})
+	require.NotContains(t, versions(t, e.s), "0019_organizations")
 
 	// The chats leave every room; every AI and user member stays, with every column.
 	require.Zero(t, e.count(`SELECT COUNT(*) FROM room_members WHERE kind = 'chat'`), "no chat is a member of any room")

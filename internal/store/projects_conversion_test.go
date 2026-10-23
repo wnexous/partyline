@@ -70,7 +70,7 @@ func TestProjectsBecomeAgentMembers(t *testing.T) {
 		e.must(stmt)
 	}
 
-	require.NoError(t, e.s.Migrate(ctx))
+	require.NoError(t, e.s.MigrateBefore(ctx, "0017")) // 0015 and 0016 alone: later migrations have tests of their own
 
 	require.Equal(t, []member{
 		{Room: "r1", Kind: "agent", MemberID: "a-2-new", AddedBy: "u2", Display: "Web Bot", Delivery: "trusted", Keywords: `["build"]`, Outbound: false, Sign: false, Created: 10},

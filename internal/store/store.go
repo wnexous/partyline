@@ -108,6 +108,7 @@ type Hook func(ctx context.Context, tx *sql.Tx) error
 // hooks maps a migration version (the file name without ".sql") to its Go step.
 var hooks = map[string]Hook{
 	"0015_intelligences": backfillIntelligences,
+	"0019_organizations": backfillOrganizations,
 }
 
 // migrations holds the embedded migration files at its root.

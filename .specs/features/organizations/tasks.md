@@ -204,7 +204,7 @@ All of it exactly as in the design's Data Model.
 **Reuses**: `intelligences_backfill.go` structure, `handles` slug rules, `store.NewID`
 **Requirement**: OUPG-01, ORG-02
 **Done when**:
-- [ ] Integration test on a v0.5 database (`v03_fixture.sql` migrated to 0018) plus seeded grants:
+- [x] Integration test on a v0.5 database (`v03_fixture.sql` migrated to 0018) plus seeded grants:
   - each user has one org, is admin of it, holds "Admin", and that org is their default;
   - every AI, group and connection has the owner's org; DMs have none;
   - every AI's creator is its owner;
@@ -214,8 +214,8 @@ All of it exactly as in the design's Data Model.
   - a group member from another user is a member of the group's org;
   - message, attachment and cursor counts are unchanged;
   - slugs stay unique for usernames `bob` and `Bob_`
-- [ ] Injected hook failure: no org table or column remains (MIG-05)
-- [ ] Gate check passes: `make check`
+- [x] Injected hook failure: no org table or column remains (MIG-05)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): move every user's resources into a personal organization`
