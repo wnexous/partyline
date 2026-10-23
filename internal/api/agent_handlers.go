@@ -214,7 +214,8 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 	if err != nil {
 		return err
 	}
-	a, err := s.Agents.ByID(r.Context(), p.AgentID) // agentOnly resolved it
+	withPlatform = withPlatform && s.Platform != nil // a server built without the queue has no events
+	a, err := s.Agents.ByID(r.Context(), p.AgentID)  // agentOnly resolved it
 	if err != nil {
 		return err
 	}
