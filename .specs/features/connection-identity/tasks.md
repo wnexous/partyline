@@ -335,11 +335,11 @@ The retention ticker runs it, and the blob `Sweep` treats `platform_attachments`
 **Reuses**: `attachments.Store.Sweep`
 **Requirement**: CID-09, CID-10
 **Done when**:
-- [ ] Fake-clock tests:
+- [x] Fake-clock tests:
   - an unacked item at 7 d − 1 ms stays, at 7 d it is deleted and counted;
   - an acked item at 24 h − 1 ms keeps its blob, at 24 h the row and the unshared blob go;
   - a blob shared with a room attachment survives
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(platform): expire queue items and their files`

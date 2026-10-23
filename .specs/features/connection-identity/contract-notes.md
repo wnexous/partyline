@@ -260,3 +260,7 @@ Where a section refines the design, it says so.
   inbound tests, the people/contacts fixtures (history seeded through `connectortest.History`),
   the merge tests (platform DM history seeded with `EnsurePlatformDM`) and the v0.3 upgrade test
   (the agent adopts its folder and replies through the outbox; T37 pins the upgrade end to end).
+
+## Fix after the T2-T7 review: the 7 days start on arrival (CID-10)
+
+The pipeline queues an item with `ReceivedAt` = the time partyline got the message, not the platform's timestamp: a message synced late with an old timestamp would otherwise expire within minutes, and one with a future timestamp would outlive 7 days. The chat's last activity still uses the platform time.

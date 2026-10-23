@@ -220,7 +220,10 @@ func TestInboundMessagesReachTheOperatorsQueueWithEveryField(t *testing.T) {
 	e := newInboundEnv(t)
 	announcements, cancel := e.env.App.Bus.Subscribe(64)
 	defer cancel()
-	at := time.Now().Add(-time.Minute).Truncate(time.Millisecond)
+	// The platform's timestamps are a month old (a message synced late): the queue keeps the
+	// arrival time, so the 7 days of CID-10 start when partyline got the message.
+	at := time.Now().Add(-30 * 24 * time.Hour).Truncate(time.Millisecond)
+	before := time.Now().Truncate(time.Millisecond)
 	group := mention(groupID, "M1", "where is my order?")
 	group.At = at
 	e.emit(group)
@@ -235,7 +238,8 @@ func TestInboundMessagesReachTheOperatorsQueueWithEveryField(t *testing.T) {
 		[]any{g.Platform, g.ConnectionID, g.ChatID, g.ChatTitle, g.ChatKind})
 	require.Equal(t, []any{"Customer", senderID, "where is my order?", dto.MessageKindText, false, false, "M1"},
 		[]any{g.SenderName, g.SenderID, g.Text, g.Kind, g.Trusted, g.FromSelf, g.ExternalID})
-	require.True(t, g.ReceivedAt.Equal(at), "received_at is the platform time: %v", g.ReceivedAt)
+	require.False(t, g.ReceivedAt.Before(before), "received_at is the arrival time, not the platform time: %v", g.ReceivedAt)
+	require.False(t, g.ReceivedAt.After(time.Now()), "received_at is the arrival time: %v", g.ReceivedAt)
 	require.Empty(t, g.Attachments)
 	require.NotEmpty(t, g.ID)
 	require.Equal(t, []any{connectortest.KindName, e.chatID(t, dmA), "Customer", dto.ChatKindDM, dmA, "oi"},
