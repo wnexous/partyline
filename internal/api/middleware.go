@@ -139,20 +139,24 @@ func clientIP(trusted []netip.Prefix, next http.Handler) http.Handler {
 }
 
 // bodyLimit caps request bodies at 1 MiB, or at the upload limit plus 1 MiB of envelope for
-// multipart requests (SEC-03). An avatar upload is a raw image: it may use the upload limit
-// (at least 2 MiB and one byte), so that a file over 2 MiB reaches the handler and is refused
-// as an invalid avatar (PROF-06).
+// multipart requests (SEC-03). An avatar upload is a raw image capped at the avatar limit: a
+// larger body is answered 413 avatar_invalid before it is read, so a browser is never left
+// pushing a body at a server that stopped reading it (PROF-06).
 func bodyLimit(maxUpload int64, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		limit := int64(httpx.MaxJSONBody)
+		code := dto.ErrorCodeTooLarge
+		message := "request body too large"
 		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err == nil && mt == "multipart/form-data" {
 			limit += maxUpload
 		}
 		if isAvatarUpload(r) {
-			limit = max(maxUpload, avatars.MaxBytes+1)
+			limit = avatars.MaxBytes
+			code = dto.ErrorCodeAvatarInvalid
+			message = "the avatar must be a PNG, JPEG or WebP image up to 2 MB"
 		}
 		if r.ContentLength > limit {
-			httpx.WriteError(w, httpx.NewError(http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge, "request body too large"))
+			httpx.WriteError(w, httpx.NewError(http.StatusRequestEntityTooLarge, code, message))
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limit)

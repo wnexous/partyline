@@ -253,7 +253,6 @@ export const en = {
   "profile.photoHint": "PNG, JPEG or WebP, up to 2 MB. It is cropped to a square.",
   "profile.photoUpload": "Upload photo",
   "profile.photoPreview": "Preview of the new photo",
-  "profile.photoUse": "Use this photo",
   "profile.photoSending": "Sending…",
   "profile.photoUpdated": "Photo updated",
   "profile.photoRemove": "Remove photo",

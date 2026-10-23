@@ -255,7 +255,6 @@ export const ptBR: Dictionary = {
   "profile.photoHint": "PNG, JPEG ou WebP, até 2 MB. Ela é cortada em quadrado.",
   "profile.photoUpload": "Enviar foto",
   "profile.photoPreview": "Prévia da nova foto",
-  "profile.photoUse": "Usar esta foto",
   "profile.photoSending": "Enviando…",
   "profile.photoUpdated": "Foto atualizada",
   "profile.photoRemove": "Remover foto",
