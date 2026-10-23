@@ -16,7 +16,7 @@
 - **Trade-off**: Simple "chat X → session Y" needs a room. The UI hides this with a one-click "route chat to agent" action that creates the room.
 - **Scope**: core-platform, agent-channel, connectors, web-app.
 - **Date**: 2026-10-19
-- **Status**: active
+- **Status**: superseded by AD-015 (platform chats are no longer room members)
 
 ### AD-003
 - **Decision**: Go DTO structs in `internal/api/dto` are the single source of the HTTP/WS contract. TypeScript types are generated from them with `tygo` into `web/src/lib/api/types.gen.ts`; nobody hand-writes API types in TS.
@@ -120,6 +120,15 @@
 - **Status**: active
 - **Amends**: AD-006 (adds this source of `trusted`); ACC-05 refines CON-12 of the connectors spec: only the echo of a Partyline send is dropped.
 - **Context**: Verifier iteration 1 of the intelligences feature (gap 6): own-account messages were stored with `author_user_id` = the connector's owner whoever the operator was (contract-notes T33), a trust source AD-006 did not list. Pinned by `TestOwnAccountMessageIsTrustedOnlyWhenTheOwnerOperatesTheAccount`.
+
+### AD-015
+- **Decision**: Each connection (connector) is one intelligence: its operator (the owner or one AI of the owner). A platform chat is never a conversation member. It is the transport of exactly one conversation of the operator: a DM chat of the DM between its author and the operator (ACC-02), a group or channel chat of a platform group (members: the operator, plus the people seen in the chat). The transport keeps the `room_members` row of kind `chat`, but only the server creates it, at most one per chat (unique partial index `room_members_chat_once`), and it is never shown or editable as a member. Only the operator's posts leave through a connection (unsigned). Other viewers of a platform conversation (the owner, `use` grantees of the operator AI) read only. Grants do not apply to platform conversations. Rooms stay the routing primitive between intelligences. Bridges between chats, broadcast to chats, route-chat-to-agent and catch-all rooms are retired.
+- **Reason**: The owner wants a number to be one agent: people who write to an account must know who answers, and partyline groups must hold identities, not chats (connection-identity spec, CID-01..18).
+- **Trade-off**: Breaking change (v0.5.0). Chats leave mixed rooms at upgrade, and only one-chat operator groups are adopted. The auto-route scope decides only for chats without a conversation: a chat that has one keeps receiving whatever the scope, and every chat that was in a room before the upgrade gets its operator conversation on its next message (`chats.route_pending`); deleting a platform conversation detaches its chat and the scope decides again. Nothing that flowed before the upgrade is silenced. Copies of AI DMs (NOTI-02) go only through accounts the notified user operates (decided 2026-10-22). The `room_members` kind `chat` value and `connectors.auto_route_room_id` remain in the schema (AD-012).
+- **Scope**: core-platform, connectors, delivery, access, conversations, agent-channel, web-app.
+- **Date**: 2026-10-22
+- **Status**: active
+- **Supersedes**: AD-002. **Amends**: AD-011 and AD-013 (a platform group is viewed like an AI's DM: by the operator AI's owner and named `use` grantees, never through grants); NOTI-01 and NOTI-02 of the intelligences spec.
 
 ## Handoff
 

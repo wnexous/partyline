@@ -32,9 +32,10 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | Platform DM chat | Unchanged: the DM between the person and the operator (ACC-02) | Already the target model | y |
 | Who sends into a platform conversation | Only the operator; its posts go out unsigned; a human operator's own posts go out as typed (no signature) | The account is the operator's app | n |
 | Who sees a platform conversation | The operator, the connection's owner, and users with `use` on the operator AI (AD-013); viewers other than the operator read only | Owner oversight without writing through someone else's account | n |
-| Volume | Auto-route scope (off, dms, groups, all) chooses which chats become conversations; the operator's delivery mode per conversation (all, mentions, trusted) limits what reaches its session; default `all` | André: "recebe tudo"; existing settings already filter | n |
+| Volume | Auto-route scope (off, dms, groups, all) chooses which chats **without a conversation** become conversations; a chat that has one keeps receiving whatever the scope; deleting a platform conversation detaches its chat and the scope decides again; the operator's delivery mode per conversation (all, mentions, trusted) limits what reaches its session; default `all` | André: "recebe tudo"; nothing that flows today is silenced (orchestrator, 2026-10-22) | y |
 | Offline operator | Missed messages arrive on reconnect, newest 50 per conversation, then a skipped notice (AGT-08/09, already built) | Verified in code (internal/agents/gateway.go) | y |
-| Existing rooms with chat members (upgrade) | Each chat member leaves the room; each chat gets its operator conversation on its next message; the room keeps its history, intelligences and settings; catch-all rooms lose their chats | No silent fan-out through someone else's account after upgrade | n |
+| Existing rooms with chat members (upgrade) | A room whose only members are one group chat and that chat's operator becomes that chat's conversation (history kept in place); every other chat member leaves its room, which keeps its history, intelligences and settings; every chat that was in any room before the upgrade gets its operator conversation on its next message whatever the scope; catch-all rooms lose their chats | No silent fan-out through someone else's account after upgrade, and nothing that flows today is silenced | y (orchestrator, 2026-10-22) |
+| Copies of AI DMs to a user's app (NOTI-02) | Sent only through a connection the notified user operates (their own account writes to them); other choices are cleared at upgrade | Keeps "no message leaves a connection with an author other than its operator" | y (orchestrator, 2026-10-22) |
 | Operator change | Every platform conversation of the connection moves to the new operator (member swap, audit entry), like the DM move in ACC-02 | One account = one current identity | n |
 | Room-to-chat features | `bridge_chats`, broadcast to chats, member signatures for chats, "route chat to agent" and catch-all rooms are retired | They exist only to put chats in rooms | n |
 | Release | Breaking server change, shipped as v0.5.0; CLIs need no change | The channel protocol does not change | n |
@@ -86,7 +87,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 1. IF a request adds a chat as a member of any conversation THEN the system SHALL refuse with 422 `chats_not_members`. (CID-12)
 2. The add-member picker SHALL offer users and AIs only. (CID-13)
-3. WHEN the server upgrades THEN every chat member SHALL leave its room, the room SHALL keep its history, intelligences and settings, and the chat's next message SHALL follow CID-06 or ACC-02. (CID-14)
+3. WHEN the server upgrades THEN a room whose only members are one group chat and that chat's operator SHALL become that chat's conversation, every other chat member SHALL leave its room, the room SHALL keep its history, intelligences and settings, and the next message of a chat that left SHALL create its operator conversation (CID-06 or ACC-02) whatever the auto-route scope. (CID-14)
 4. The system SHALL no longer offer bridges between chats, broadcast to chats, "route chat to agent" or catch-all rooms, in the API or the web app. (CID-15)
 
 **Independent Test**: After the upgrade, a room that held a WhatsApp group chat, the owner and two AIs lists the owner and the two AIs and no chat; the WhatsApp group is a conversation of the connection's operator.
@@ -97,7 +98,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 - IF the operator AI is deleted THEN its platform conversations SHALL move to the connection owner (ACC-02 rule, extended to groups). (CID-16)
 - WHEN the owner's own account writes in a chat (a human operator typing on the phone) THEN the message SHALL be authored by the operator, with trust per AD-014 (ACC-05 unchanged). (CID-17)
-- IF the auto-route scope excludes a chat's kind THEN the system SHALL keep no message from that chat (CON-07 unchanged). (CID-18)
+- IF the auto-route scope excludes a chat's kind and the chat has no conversation THEN the system SHALL keep no message from that chat (CON-07 unchanged); a chat that has a conversation SHALL keep receiving whatever the scope, and a chat whose platform conversation was deleted SHALL have none until the scope routes it again. (CID-18)
 
 ---
 
@@ -121,26 +122,26 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| CID-01 | P1: One identity per connection | Specify | Pending |
-| CID-02 | P1: One identity per connection | Specify | Pending |
-| CID-03 | P1: One identity per connection | Specify | Pending |
-| CID-04 | P1: One identity per connection | Specify | Pending |
-| CID-05 | P1: One identity per connection | Specify | Pending |
-| CID-06 | P1: Platform chats are conversations | Specify | Pending |
-| CID-07 | P1: Platform chats are conversations | Specify | Pending |
-| CID-08 | P1: Platform chats are conversations | Specify | Pending |
-| CID-09 | P1: Platform chats are conversations | Specify | Pending |
-| CID-10 | P1: Platform chats are conversations | Specify | Pending |
-| CID-11 | P1: Platform chats are conversations | Specify | Pending |
-| CID-12 | P1: Groups hold intelligences only | Specify | Pending |
-| CID-13 | P1: Groups hold intelligences only | Specify | Pending |
-| CID-14 | P1: Groups hold intelligences only | Specify | Pending |
-| CID-15 | P1: Groups hold intelligences only | Specify | Pending |
-| CID-16 | Edge cases | Specify | Pending |
-| CID-17 | Edge cases | Specify | Pending |
-| CID-18 | Edge cases | Specify | Pending |
+| CID-01 | P1: One identity per connection | Tasks | In Tasks |
+| CID-02 | P1: One identity per connection | Tasks | In Tasks |
+| CID-03 | P1: One identity per connection | Tasks | In Tasks |
+| CID-04 | P1: One identity per connection | Tasks | In Tasks |
+| CID-05 | P1: One identity per connection | Tasks | In Tasks |
+| CID-06 | P1: Platform chats are conversations | Tasks | In Tasks |
+| CID-07 | P1: Platform chats are conversations | Tasks | In Tasks |
+| CID-08 | P1: Platform chats are conversations | Tasks | In Tasks |
+| CID-09 | P1: Platform chats are conversations | Tasks | In Tasks |
+| CID-10 | P1: Platform chats are conversations | Tasks | In Tasks |
+| CID-11 | P1: Platform chats are conversations | Tasks | In Tasks |
+| CID-12 | P1: Groups hold intelligences only | Tasks | In Tasks |
+| CID-13 | P1: Groups hold intelligences only | Tasks | In Tasks |
+| CID-14 | P1: Groups hold intelligences only | Tasks | In Tasks |
+| CID-15 | P1: Groups hold intelligences only | Tasks | In Tasks |
+| CID-16 | Edge cases | Tasks | In Tasks |
+| CID-17 | Edge cases | Tasks | In Tasks |
+| CID-18 | Edge cases | Tasks | In Tasks |
 
-**Coverage:** 18 total, 0 mapped to tasks.
+**Coverage:** 18 total, 18 mapped to tasks (`tasks.md` T1-T36).
 
 ---
 

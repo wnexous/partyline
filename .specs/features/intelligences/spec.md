@@ -330,8 +330,8 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 
 **Acceptance Criteria**:
 
-1. A user SHALL be able to choose one of their linked app accounts (or none) as "notify me here". (NOTI-01)
-2. WHEN an AI posts in a DM with a user who chose an app THEN the system SHALL send "<AI name>: <text>" to that account through its connector, attachments as links to the instance, and mark the outbox like other outbound messages. (NOTI-02)
+1. A user SHALL be able to choose one of their linked app accounts (or none) as "notify me here", among the accounts on connections the user operates (amended by connection-identity, AD-015). (NOTI-01)
+2. WHEN an AI posts in a DM with a user who chose an app THEN the system SHALL send "<AI name>: <text>" to that account through its connector, only when the user operates that connector (amended by connection-identity, AD-015: no message leaves a connection on behalf of anyone but its operator), attachments as links to the instance, and mark the outbox like other outbound messages. (NOTI-02)
 3. IF the chosen account's connector is down THEN the system SHALL retry like other outbound messages and the DM SHALL still be readable on the web. (NOTI-03)
 
 **Independent Test**: Choose Telegram; an AI DMs you; the text arrives on Telegram.
