@@ -564,3 +564,38 @@ Where a section refines the design, it says so.
 - **Error codes.** `position_unknown` is declared in the one `ErrorCode` group of `internal/api/dto/common.go`,
   next to the folder codes (a second group would make tygo emit a second `ErrorCode` union). Each later task of
   Phase 4 adds its own codes to that group.
+
+## T19: Start rules for an existing AI (ORG-04, POS-07)
+
+- **Where.** `agents.Registry.ResolveFolder` applies them to an AI that already exists - found before any
+  transaction, found inside the creating transaction (it was created while this call waited) or adopted (MIG-02)
+  - through `checkStart` (decides, writes nothing), `restart` (the fast path) and `startExisting` (inside a
+  transaction), all in `internal/agents/placement.go`. A refusal changes nothing, an adoption included: the rules
+  run in the adopting transaction. `LookupFolder` (`GET /agent/session`) still changes nothing and applies no
+  rules.
+- **`--org`** may only name the AI's home organization (id or slug, any case). Any other value - another
+  organization of the host, one the host is not in, one that does not exist - is **409
+  `organization_mismatch`** with `Details` `organization` (the home slug, what `--org` takes) and
+  `organization_name` (`dto.MismatchDetailOrganization`, `MismatchDetailName`), and a message that names it. An
+  unknown `--org` on an existing AI is therefore a mismatch, not `organization_required` (that is for creation).
+- **`--parent`** is ignored: the creator is fixed when the AI is created and the token holder acts for
+  themselves (design R6, "`--parent` counts at creation only"). The design's sentence "the creator rule of step 1
+  holds for the starter" is read that way too: the starter is the token holder. An admin host therefore can move
+  an AI whatever AI they name as parent.
+- **`--position`**, when it names a position other than the one the AI holds, moves it iff the token holder is an
+  **admin** of the home organization, or **manages the AI** there *and* holds a position **strictly above** the
+  new one - the rule of `orgs.Service.SetPosition` (POS-04), which the registry cannot call inside the starting
+  transaction. Otherwise **403 `forbidden`** and the position stays; a position the organization does not have is
+  **422 `position_unknown`** (also for a token holder who may not move anything). The position the AI already
+  holds is nothing, whoever asks (no write, no audit, no event); a start without `--position` never clears it.
+  A move writes `org_members.position_id`, audits `org.member_position` `{iid, from, to, by: "start"}` (the actor is
+  the token holder) and publishes `OrgChanged` after the commit.
+- **Cost.** A start without `--org` and `--position` runs no query for these rules. With them, the rules are
+  decided on a read snapshot (`GetOrganization`, and the chart for a position); only a move opens a write
+  transaction, which decides it again under the write lock.
+- **An AI without a home organization** (a v0.3 identity no upgrade placed - only test fixtures) has no rules.
+- **Test hook.** `Registry.afterFolderMiss` (`agents.SetAfterFolderMiss` in `export_test.go`) lets a test hold a
+  first session after it found no AI, so another session can create it first.
+- **Error code and detail keys** are in `dto/common.go`: `ErrorCodeOrganizationMismatch` and
+  `MismatchDetailOrganization`/`MismatchDetailName`.
+

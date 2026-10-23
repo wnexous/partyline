@@ -604,12 +604,12 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: `orgs.SetPosition` rules
 **Requirement**: ORG-04, POS-07
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - mismatch → 409, observed (L-017);
   - the same `--org` → OK;
   - a later `--position` within the rule moves the AI; outside it → 403 and the position is unchanged;
   - `--parent` on a later start does not change the creator
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): keep an existing AI's organization on later starts`

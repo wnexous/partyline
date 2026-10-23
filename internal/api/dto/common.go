@@ -110,6 +110,9 @@ const (
 	// ErrorCodePositionUnknown is a start (--position) that names a position the organization does not
 	// have (422, field position, POS-07).
 	ErrorCodePositionUnknown ErrorCode = "position_unknown"
+	// ErrorCodeOrganizationMismatch is a start of an existing AI with --org naming an organization other
+	// than its home: AIs do not move (409, Details name the home organization, ORG-04).
+	ErrorCodeOrganizationMismatch ErrorCode = "organization_mismatch"
 	// ErrorCodeIdentityBusy is a connection for an AI that has a live session in another
 	// process (409); Details say who, in which app and since when (SES-04).
 	ErrorCodeIdentityBusy ErrorCode = "identity_busy" // 409
@@ -159,7 +162,7 @@ type Error struct {
 	Message string            `json:"message"`
 	Fields  map[string]string `json:"fields,omitempty"`
 	// Details carries facts about the refusal that are not request fields: for identity_busy the
-	// BusyDetail keys.
+	// BusyDetail keys, for organization_mismatch the MismatchDetail keys.
 	Details map[string]string `json:"details,omitempty"`
 	// Refused lists the members of members_refused, in the order they were asked for.
 	Refused []RefusedMember `json:"refused,omitempty"`
@@ -172,6 +175,13 @@ const (
 	BusyDetailApp         = "app"
 	BusyDetailAppLabel    = "app_label"
 	BusyDetailConnectedAt = "connected_at"
+)
+
+// Keys of Error.Details for organization_mismatch: the slug (what --org takes) and the name of the
+// organization the AI belongs to.
+const (
+	MismatchDetailOrganization = "organization"
+	MismatchDetailName         = "organization_name"
 )
 
 // List wraps an unpaginated collection.

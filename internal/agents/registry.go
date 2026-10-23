@@ -114,6 +114,9 @@ type Registry struct {
 	// afterAppCheck runs after a tools-only call found nobody connected and before it writes the
 	// app; tests use it to attach a session in between. Nil in production.
 	afterAppCheck func()
+	// afterFolderMiss runs when a session found no AI for its folder and before it creates or adopts
+	// one; tests use it to let another session create the AI in between. Nil in production.
+	afterFolderMiss func()
 
 	// machines is the last sighting written per machine (touchMachine), guarded by machinesMu.
 	machinesMu sync.Mutex

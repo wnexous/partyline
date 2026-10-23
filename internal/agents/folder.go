@@ -207,6 +207,10 @@ func (r *Registry) touchMachine(ctx context.Context, ownerID, hostname, home str
 // one whose handle is the folder's handle; a name that is missing or already linked is ignored,
 // and an identity is linked once (MIG-02). Creation stops at MaxAgentsPerOwner (ErrAgentLimit).
 // An invalid machine or folder is a 422 (ValidateFolder) and changes nothing.
+//
+// What the session asked for with --org, --position and --parent places a new AI (place, ORG-04); an AI
+// that already exists keeps its home organization and its creator, and only a later --position can move
+// it (restart, POS-07).
 func (r *Registry) ResolveFolder(ctx context.Context, ownerID string, id FolderID, live bool) (db.Agent, error) {
 	id.Machine = cleanText(id.Machine, MaxMachineLength)
 	if err := ValidateFolder(id.Machine, id.Folder); err != nil {
@@ -218,8 +222,14 @@ func (r *Registry) ResolveFolder(ctx context.Context, ownerID string, id FolderI
 		return db.Agent{}, err
 	}
 	a, err := r.store.R().GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.Folder})
-	if errors.Is(err, sql.ErrNoRows) {
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if r.afterFolderMiss != nil {
+			r.afterFolderMiss()
+		}
 		a, err = r.linkOrCreate(ctx, ownerID, id)
+	case err == nil:
+		err = r.restart(ctx, ownerID, a, id)
 	}
 	if err != nil {
 		return db.Agent{}, err
@@ -261,28 +271,33 @@ func (r *Registry) linkOrCreate(ctx context.Context, ownerID string, id FolderID
 	r.allocMu.Lock()
 	defer r.allocMu.Unlock()
 	var out db.Agent
-	var placed string // the organization a new AI joined
+	var changed string // the organization whose chart this call changed
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
-		placed = ""
+		changed = ""
 		a, err := q.GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.Folder})
 		if !errors.Is(err, sql.ErrNoRows) { // found (created while this call waited), or a failure
 			out = a
+			if err == nil {
+				changed, err = r.startExisting(ctx, q, ownerID, a, id)
+			}
 			return err
 		}
 		cand, by, found, err := adoptionCandidate(ctx, q, ownerID, id)
 		if err != nil {
 			return err
 		}
-		if found {
-			out, err = r.adopt(ctx, q, cand, by, id)
+		if found { // the start rules refuse before anything is linked: the same transaction
+			if out, err = r.adopt(ctx, q, cand, by, id); err == nil {
+				changed, err = r.startExisting(ctx, q, ownerID, out, id)
+			}
 			return err
 		}
 		out, err = r.createFolderAgent(ctx, q, ownerID, id)
-		placed = out.OrgID.String
+		changed = out.OrgID.String // the organization has a new member
 		return err
 	})
-	if err == nil && placed != "" && r.bus != nil {
-		r.bus.Publish(events.OrgChanged{OrgID: placed}) // the organization has a new member
+	if err == nil && changed != "" && r.bus != nil {
+		r.bus.Publish(events.OrgChanged{OrgID: changed})
 	}
 	return out, err
 }

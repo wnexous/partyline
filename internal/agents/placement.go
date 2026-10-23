@@ -4,11 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
+	"github.com/wnexous/partyline/internal/audit"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -154,4 +157,126 @@ func notBelow(by starter) *httpx.Error {
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "that position is not below the parent AI's own")
 	}
 	return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "that position is not below your own")
+}
+
+// positionMove is a later start asking an existing AI to hold another position.
+type positionMove struct {
+	orgID, agentID string
+	from, to       string
+}
+
+// checkStart applies the start rules to an AI that already exists, against the state q sees (ORG-04, POS-07):
+//
+//   - --org may only name its home organization: any other - a different one of the host's, one the host is not
+//     in, one that does not exist - is 409 organization_mismatch, and the answer names the home organization,
+//     because an AI does not move;
+//   - --parent is ignored: the creator is fixed when the AI is created, and the token holder acts for themselves;
+//   - --position, when it differs from the position the AI holds, asks the AI to move there. The token holder
+//     may when they are an admin of the home organization, or manage the AI and hold a position strictly above
+//     the new one (the rule of orgs.Service.SetPosition); otherwise 403. A position that does not exist is
+//     422 position_unknown. The position it already holds is nothing, whoever asks; no --position never clears.
+//
+// It writes nothing: the move it returns, if any, is for applyMove. An AI without a home organization (a
+// v0.3 identity no upgrade placed) has no rules.
+func checkStart(ctx context.Context, q *db.Queries, host string, a db.Agent, id FolderID) (*positionMove, error) {
+	if !a.OrgID.Valid || (id.Org == "" && id.Position == "") {
+		return nil, nil
+	}
+	home := a.OrgID.String
+	if id.Org != "" {
+		o, err := orgs.ResolveRef(ctx, q, id.Org)
+		switch {
+		case errors.Is(err, orgs.ErrNotFound):
+			return nil, mismatch(ctx, q, home)
+		case err != nil:
+			return nil, err
+		case o.ID != home:
+			return nil, mismatch(ctx, q, home)
+		}
+	}
+	if id.Position == "" {
+		return nil, nil
+	}
+	pos, err := positionNamed(ctx, q, home, id.Position)
+	if err != nil {
+		return nil, err
+	}
+	chart, err := orgs.Load(ctx, q, home)
+	if err != nil {
+		return nil, err
+	}
+	cur, ok := chart.Member(a.ID)
+	if !ok || cur.PositionID == pos.ID {
+		return nil, nil
+	}
+	by, ok := chart.Member(host)
+	switch {
+	case !ok:
+		return nil, httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "you are not a member of the organization this AI belongs to")
+	case by.Permission == orgs.PermissionAdmin:
+	case !chart.Manages(host, a.ID):
+		return nil, httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "you do not manage this AI, so you cannot change its position")
+	case !chart.Above(by.PositionID, pos.ID):
+		return nil, notBelow(starter{iid: host})
+	}
+	return &positionMove{orgID: home, agentID: a.ID, from: cur.PositionID, to: pos.ID}, nil
+}
+
+// mismatch is the refusal of a start that names an organization other than the AI's home.
+func mismatch(ctx context.Context, q *db.Queries, home string) error {
+	o, err := q.GetOrganization(ctx, home)
+	if err != nil {
+		return err
+	}
+	e := httpx.NewError(http.StatusConflict, dto.ErrorCodeOrganizationMismatch,
+		fmt.Sprintf("this AI belongs to %s (%s): an AI does not move to another organization", o.Name, o.Slug))
+	e.Details = map[string]string{dto.MismatchDetailOrganization: o.Slug, dto.MismatchDetailName: o.Name}
+	return e
+}
+
+// applyMove writes a move checkStart allowed, in the caller's transaction, and audits it. The actor is the
+// token holder, who started the session.
+func (r *Registry) applyMove(ctx context.Context, q *db.Queries, host string, m positionMove) error {
+	if err := q.UpdateOrgMemberPosition(ctx, db.UpdateOrgMemberPositionParams{
+		PositionID: sql.NullString{String: m.to, Valid: m.to != ""}, OrgID: m.orgID, Iid: m.agentID,
+	}); err != nil {
+		return err
+	}
+	if r.audit == nil {
+		return nil
+	}
+	return r.audit.Record(ctx, q, audit.Entry{
+		ActorID: host, Action: audit.ActionOrgMemberPosition, TargetKind: audit.TargetOrganization, TargetID: m.orgID,
+		Detail: map[string]any{"iid": m.agentID, "from": m.from, "to": m.to, "by": "start"},
+	})
+}
+
+// startExisting applies the start rules to an existing AI inside the caller's transaction, and reports the
+// organization whose chart changed ("" when none did).
+func (r *Registry) startExisting(ctx context.Context, q *db.Queries, host string, a db.Agent, id FolderID) (string, error) {
+	move, err := checkStart(ctx, q, host, a, id)
+	if err != nil || move == nil {
+		return "", err
+	}
+	return move.orgID, r.applyMove(ctx, q, host, *move)
+}
+
+// restart applies the start rules to an AI that was found before any transaction began. Most starts carry
+// neither --org nor a position that differs, so the rules are decided on a read snapshot; only a move opens a
+// write transaction, which decides it again under the write lock, so the check and the change cannot
+// interleave with another change of the chart.
+func (r *Registry) restart(ctx context.Context, host string, a db.Agent, id FolderID) error {
+	move, err := checkStart(ctx, r.store.R(), host, a, id)
+	if err != nil || move == nil {
+		return err
+	}
+	changed := ""
+	err = r.store.WithTx(ctx, func(q *db.Queries) (err error) {
+		changed, err = r.startExisting(ctx, q, host, a, id)
+		return err
+	})
+	if err == nil && changed != "" && r.bus != nil {
+		r.bus.Publish(events.OrgChanged{OrgID: changed})
+	}
+	return err
 }

@@ -462,6 +462,11 @@ export const ErrorCodeFolderInvalid = "folder_invalid"; // 422
  */
 export const ErrorCodePositionUnknown = "position_unknown";
 /**
+ * ErrorCodeOrganizationMismatch is a start of an existing AI with --org naming an organization other
+ * than its home: AIs do not move (409, Details name the home organization, ORG-04).
+ */
+export const ErrorCodeOrganizationMismatch = "organization_mismatch";
+/**
  * ErrorCodeIdentityBusy is a connection for an AI that has a live session in another
  * process (409); Details say who, in which app and since when (SES-04).
  */
@@ -524,7 +529,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -540,7 +545,7 @@ export interface Error {
   fields?: { [key: string]: string};
   /**
    * Details carries facts about the refusal that are not request fields: for identity_busy the
-   * BusyDetail keys.
+   * BusyDetail keys, for organization_mismatch the MismatchDetail keys.
    */
   details?: { [key: string]: string};
   /**
@@ -557,6 +562,13 @@ export const BusyDetailConnectedAt = "connected_at";
  * the app of its live session and when that session connected (RFC 3339, UTC).
  */
 export type BusyDetail = typeof BusyDetailDisplayName | typeof BusyDetailApp | typeof BusyDetailAppLabel | typeof BusyDetailConnectedAt;
+export const MismatchDetailOrganization = "organization";
+export const MismatchDetailName = "organization_name";
+/**
+ * Keys of Error.Details for organization_mismatch: the slug (what --org takes) and the name of the
+ * organization the AI belongs to.
+ */
+export type MismatchDetail = typeof MismatchDetailOrganization | typeof MismatchDetailName;
 /**
  * List wraps an unpaginated collection.
  */

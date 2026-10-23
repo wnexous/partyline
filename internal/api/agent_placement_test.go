@@ -28,6 +28,9 @@ type startPath struct {
 
 var startPaths = []startPath{
 	{"a live session", func(t *testing.T, tok *testkit.Client, f testkit.Folder) (string, *testkit.Response) {
+		if f.Live == "" {
+			f.Live = "placement-test-process" // one process: dialing a folder again is a reconnect, never identity_busy
+		}
 		conn, resp := tok.DialFolder(f)
 		if conn == nil {
 			return "", resp
