@@ -50,6 +50,9 @@ type Deps struct {
 	// Platform is the delivery queue of the messages that arrive on connections: GET
 	// /agent/pending?platform=1 takes from it and the agent attachments route serves its files.
 	Platform *platform.Queue
+	// Sends sends what an AI answers through a connection it operates: the reply to a message
+	// of the queue (CID-15).
+	Sends *connectors.Sends
 	// Live serves the live WebSocket at GET /api/v1/live.
 	Live http.Handler
 	// AgentWS serves the agent WebSocket at GET /api/v1/agent/ws.
@@ -235,6 +238,10 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "this connector kind cannot list chats")
 	case errors.Is(err, connectors.ErrPlatform):
 		return httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, "the platform did not answer the request")
+	case errors.Is(err, connectors.ErrNotOperator):
+		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeNotOperator, "only the AI that operates the connection can send through it")
+	case errors.Is(err, connectors.ErrUnknownChat):
+		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeUnknownChat, "the chat does not belong to this connection")
 	}
 	return err
 }

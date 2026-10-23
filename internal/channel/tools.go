@@ -44,7 +44,7 @@ func schema(s string) json.RawMessage { return json.RawMessage(s) }
 func (t *tools) register(srv *mcp.Server) {
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "reply",
-		Description: "Reply to a room message. The reply goes to the message's room; when the message came from a chat, only that chat receives it.",
+		Description: "Reply to a message by its message_id. A message from one of your connections (a WhatsApp number, a Telegram or Discord bot, a webhook) is answered in that chat through your own account, unsigned, quoting it when the platform supports quotes; a room message is answered in its room. When the platform does not take a reply at once the answer says so and Partyline retries it: do not send it again.",
 		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the message to answer"},"text":{"type":"string","description":"reply text"}},"required":["message_id","text"]}`),
 	}, t.guard(t.reply))
 	srv.HandleTool(mcp.ToolDef{
@@ -159,11 +159,35 @@ func (t *tools) reply(ctx context.Context, args json.RawMessage) (string, error)
 	if err := required("message_id", a.MessageID, "text", a.Text); err != nil {
 		return "", err
 	}
-	var m dto.Message
-	if err := t.api.json(ctx, http.MethodPost, "agent/messages/"+url.PathEscape(a.MessageID)+"/reply", nil, dto.ReplyRequest{Text: a.Text}, &m); err != nil {
+	var out replyAnswer
+	if err := t.api.json(ctx, http.MethodPost, "agent/messages/"+url.PathEscape(a.MessageID)+"/reply", nil, dto.ReplyRequest{Text: a.Text}, &out); err != nil {
 		return "", err
 	}
-	return sent(m), nil
+	if out.Status != "" {
+		return platformSent(dto.PlatformSendResult{ID: out.ID, Status: out.Status, Error: out.Error}), nil
+	}
+	return sent(out.Message), nil
+}
+
+// replyAnswer is what a reply is answered with: the message it created in a room or, for a message
+// that arrived on one of the AI's connections, the state of the send through it (CID-15).
+type replyAnswer struct {
+	dto.Message
+	Status dto.PlatformSendStatus `json:"status"`
+	Error  string                 `json:"error"`
+}
+
+// platformSent is what a tool tells the AI about a send through a connection (CID-18): that it was
+// sent, or why the platform did not take it yet and that Partyline retries. The second is no tool
+// error: the message is not lost, and sending it again would duplicate it.
+func platformSent(res dto.PlatformSendResult) string {
+	switch res.Status {
+	case dto.PlatformSendStatusSent:
+		return "sent"
+	case dto.PlatformSendStatusFailed:
+		return "failed: " + res.Error
+	}
+	return "not sent yet: " + res.Error + "; partyline retries"
 }
 
 func (t *tools) react(ctx context.Context, args json.RawMessage) (string, error) {

@@ -582,12 +582,12 @@ New frame DTOs are added.
 **Reuses**: `agentReply`
 **Requirement**: CID-15, CID-18
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - the fake connector gets the text, `Unsigned` and `ReplyToID`;
   - a failing platform → 202 with the reason;
   - another AI's item → 404;
   - room replies are unchanged
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): reply to platform messages`

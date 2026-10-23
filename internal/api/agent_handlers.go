@@ -15,6 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
@@ -510,13 +511,19 @@ func (s *server) agentTarget(ctx context.Context, p authn.Principal, id string) 
 }
 
 // agentReply answers a message in its room with reply_to set; a reply to a chat message
-// goes to that chat only (TOOL-02).
+// goes to that chat only (TOOL-02). A message that is no message of one of its rooms may be one
+// that arrived on a connection the AI operates: the answer then goes to that message's chat through
+// the connection (CID-15).
 func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	var req dto.ReplyRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	orig, err := s.agentTarget(r.Context(), p, r.PathValue("id"))
+	id := r.PathValue("id")
+	orig, err := s.agentTarget(r.Context(), p, id)
+	if errors.Is(err, errMessageNotFound) {
+		return s.replyOnConnection(w, r, p, id, req.Text)
+	}
 	if err != nil {
 		return err
 	}
@@ -533,6 +540,45 @@ func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Prin
 	}
 	httpx.WriteJSON(w, http.StatusCreated, convert.Message(m))
 	return nil
+}
+
+// replyOnConnection answers a message of the AI's platform queue, acknowledged or not until its
+// record is purged: the text goes to the message's chat through the connection, unsigned, quoting the
+// message (CID-15). A message that is not in the AI's own queue, another AI's included, is unknown
+// (404). The answer is 201 with the state of the send when the platform took the text, and 202 when it
+// did not yet: the state is pending, carries the reason and Partyline retries (CID-18).
+func (s *server) replyOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, id, text string) error {
+	if s.Platform == nil || s.Sends == nil {
+		return errMessageNotFound
+	}
+	ev, err := s.Platform.Get(r.Context(), p.AgentID, id)
+	if errors.Is(err, platform.ErrNotFound) {
+		return errMessageNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if !s.Agents.AllowPost(p.AgentID) {
+		return errAgentRateLimited
+	}
+	res, err := s.Sends.Send(r.Context(), connectors.SendInput{
+		AgentID: p.AgentID, ConnectorID: ev.ConnectionID, ChatID: ev.ChatID, Text: text, ReplyTo: ev.ExternalID,
+	})
+	if err != nil {
+		return err
+	}
+	writePlatformSend(w, res)
+	return nil
+}
+
+// writePlatformSend answers an AI's send through a connection: 201 when the platform took it, 202
+// when it is still pending (CID-18).
+func writePlatformSend(w http.ResponseWriter, res dto.PlatformSendResult) {
+	status := http.StatusCreated
+	if res.Status != dto.PlatformSendStatusSent {
+		status = http.StatusAccepted
+	}
+	httpx.WriteJSON(w, status, res)
 }
 
 // agentReact reacts to a chat message with one emoji (REACT-01): the reaction is stored as a

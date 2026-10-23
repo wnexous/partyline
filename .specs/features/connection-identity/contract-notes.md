@@ -544,3 +544,37 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   two echo counts, batched purge).
 - **Tests**: `internal/connectors/sends_test.go` (service and worker, on a manager fixture with a fake clock),
   `sends_echo_test.go` (the pipeline through the app) and `internal/app/platform_sends_test.go` (the retention wiring).
+
+## T18: `reply` to a platform message (CID-15, CID-18)
+
+- **Route**: `POST /api/v1/agent/messages/{id}/reply` keeps its path and body (`dto.ReplyRequest`). It looks for a room
+  message of the AI first (`agentTarget`, unchanged, rate limit and all); when there is none it looks in the AI's own
+  platform queue (`Queue.Get`, acknowledged or not, until the record is purged: 24 hours after the acknowledgement, 7 days
+  for a message nobody acknowledged). An id that is in neither, another AI's queue item included (another AI of the owner,
+  the same-named AI of a use grantee, of a stranger or of an admin), is the same `404 not_found` "message not found" as an
+  unknown id: nothing about other AIs' queues is revealed.
+- **Answer for a platform message**: `dto.PlatformSendResult{id, status, error?}`, where `id` is the id of the send (not
+  something a later `reply` or `react` can name). `201` when the platform took the text (`sent`, no `error` key); `202`
+  when it did not yet (`pending`, `error` = the reason, Partyline retries, CID-18). A room reply is still `201` with the
+  `dto.Message`.
+- **What goes out**: `Sends.Send` with the item's connection and chat, `ReplyTo` = the item's platform message id (empty
+  when the platform gave none: no quote) and the sender of that item as the participant to quote in a group (T17).
+- **Rate limit**: a reply through a connection counts against the AI's 30 posts a minute (`Registry.AllowPost`, TOOL-08),
+  like every other post of an AI: a runaway AI cannot flood a platform account. It is checked after the item is found and
+  before the send, as for a room reply, so a refused request for an unknown message does not use it up.
+- **Errors**: `connectors.ErrNotOperator` is `403 not_operator` (message `only the AI that operates the connection can send
+  through it`) and `ErrUnknownChat` is `404 unknown_chat` (message `the chat does not belong to this connection`):
+  `dto.ErrorCodeNotOperator` and `dto.ErrorCodeUnknownChat` sit in the one `ErrorCode` block of `dto/common.go` (tygo emits one
+  `ErrorCode` union per block, so a second block in another file breaks the generated TypeScript), and `mapError` maps them. For a
+  reply `not_operator` is possible only in the gap between an operator change and the queue following it (the item is still
+  the old operator's); T19 gives both their own route. Text errors are the 422 on `text` of T17.
+- **Channel `reply` tool** (a refinement of the design's "the tool does not change": its arguments do not, its answer
+  must): the tool reads the answer as a room message or as a send result. A send result says `sent`, or `not sent yet:
+  <reason>; partyline retries` (CID-18) as a normal tool result, not an error: the message is not lost and sending it again
+  would duplicate it; `failed: <reason>` is the unreachable case of a send that has already failed. The tool description
+  says both targets. `platformSent` is shared with T20's `send_message`.
+- **Wiring**: `api.Deps.Sends` (the app passes `App.Sends`). Without `Platform` or `Sends` a reply to anything but a room
+  message is 404, as before.
+- **Tests**: `internal/api/agent_reply_platform_test.go` (e2e, including the authorization matrix and the refused,
+  stopped-connection and acknowledged-then-purged cases) and `internal/channel/connection_tools_test.go` (the tool; its
+  fixture `connectionChan` is the one T20 uses).
