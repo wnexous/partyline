@@ -391,6 +391,25 @@ func TestSendsInterruptedByARestartAreSentAfterStart(t *testing.T) {
 	require.False(t, f.sends.Running())
 }
 
+// The recovery of interrupted sends runs once, before the server takes requests: a send that a
+// request has in flight when the worker starts is not taken for an interrupted one and sent twice.
+func TestRecoveredSendsAreNotRequeuedWhenTheWorkerStarts(t *testing.T) {
+	f := newSendsFixture(t)
+	interrupted := f.insertSend(t, "sending", f.clock.Now(), "left in flight")
+	require.NoError(t, f.sends.Recover(context.Background()))
+	require.Equal(t, "pending", f.sendRow(t, interrupted).Status, "made due again")
+	inFlight := f.insertSend(t, "sending", f.clock.Now(), "a request is sending this")
+
+	ctx, stop := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- f.sends.Run(ctx) }()
+	require.Eventually(t, f.sends.Running, connectortest.Timeout, 5*time.Millisecond)
+	require.Equal(t, []string{"left in flight"}, outboundTexts(f.inst.Sent()))
+	require.Equal(t, "sending", f.sendRow(t, inFlight).Status, "the request's send is left to the request")
+	stop()
+	require.NoError(t, <-done)
+}
+
 func outboundTexts(list []connectors.Outbound) []string {
 	out := make([]string, len(list))
 	for i, m := range list {

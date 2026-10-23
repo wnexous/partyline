@@ -75,8 +75,9 @@ type SendsDeps struct {
 // limit. Nothing but ids, states and errors is kept: the text is deleted when the send is over
 // (CID-15, CID-16, CID-18).
 type Sends struct {
-	d       SendsDeps
-	running atomic.Bool
+	d         SendsDeps
+	running   atomic.Bool
+	recovered atomic.Bool
 }
 
 // NewSends returns a Sends service; Run starts its worker.
@@ -248,10 +249,13 @@ func shorten(s string, n int) string {
 // Running reports whether Run finished its start-up pass and is waiting for work.
 func (s *Sends) Running() bool { return s.running.Load() }
 
-// Run makes the sends a previous process left in flight due again, sends everything that is due and
-// then keeps sending every poll interval until ctx is done (CID-18).
-func (s *Sends) Run(ctx context.Context) error {
-	defer s.running.Store(false)
+// Recover makes the sends a previous process left in flight due again. It runs once: the app calls
+// it before the server accepts requests, so a send started by a request is never taken for one a
+// previous process left behind and sent twice; Run calls it too, for a Sends started on its own.
+func (s *Sends) Recover(ctx context.Context) error {
+	if s.recovered.Load() {
+		return nil
+	}
 	var ids []string
 	err := s.d.Store.WithTx(ctx, func(q *db.Queries) (err error) {
 		ids, err = q.RequeueSendingPlatformSends(ctx, s.d.Now().UnixMilli())
@@ -260,8 +264,19 @@ func (s *Sends) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	s.recovered.Store(true)
 	if len(ids) > 0 {
 		s.d.Logger.Info("connectors: requeued interrupted platform sends", "count", len(ids))
+	}
+	return nil
+}
+
+// Run makes the sends a previous process left in flight due again (Recover), sends everything that is due and
+// then keeps sending every poll interval until ctx is done (CID-18).
+func (s *Sends) Run(ctx context.Context) error {
+	defer s.running.Store(false)
+	if err := s.Recover(ctx); err != nil {
+		return err
 	}
 	s.flushLogged(ctx)
 	s.running.Store(true)

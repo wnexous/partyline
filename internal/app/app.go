@@ -263,6 +263,12 @@ func (a *App) Start(ctx context.Context) error {
 	if err := a.Store.Migrate(ctx); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
+	if a.sendWorker {
+		// Before the server takes requests: a send a request starts must not look interrupted.
+		if err := a.Sends.Recover(ctx); err != nil {
+			return fmt.Errorf("recover platform sends: %w", err)
+		}
+	}
 	bg, stop := context.WithCancel(context.WithoutCancel(ctx))
 	a.stop = stop
 	if a.sender != nil {

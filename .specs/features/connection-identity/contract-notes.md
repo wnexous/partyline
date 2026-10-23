@@ -826,3 +826,13 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - **Authorization** (matrices pinned by `TestPlatformDMPostAuthorizationMatrix`,
   `TestEditingAPersonIsRefusedAsHistory`, `TestDMToAPersonHasNoRoute`): see the bullets above; every
   refusal changes nothing and announces nothing.
+
+## Fixes after the T17-T20 review
+
+- **Interrupted sends are recovered before the server takes requests.** `Sends.Recover` runs once, in `App.Start` before the HTTP listener opens; `Run` calls it too, as a no-op after the first call. Before, the worker's start-up requeue could turn a send that a request had in flight back into `pending`, and both the request and the worker sent it.
+- **Platform sends are at least once (CID-18).** A retry can repeat a message the platform already took:
+  - the attempt timed out after 15 s although the platform kept the text;
+  - a long Discord message split into chunks failed on a later chunk, so a retry sends again the chunks that went out;
+  - the database write failed after the platform took the text, so the AI got a 500 and may send again.
+
+  partyline does not deduplicate on the platform side.
