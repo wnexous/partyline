@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -125,4 +127,187 @@ func TestUpgradedTimelinesNameEveryAuthor(t *testing.T) {
 		}
 		require.Equal(t, want, got, room)
 	}
+}
+
+// v04Database writes what a v0.4 installation holds: the store's v0.3 fixture upgraded to schema 0016, the
+// last schema of v0.4, plus a room "Team" of the owner that held her, two of her AIs and the fixture's
+// WhatsApp group "Team" as members, with a message from the group and the answer of an AI. The app that
+// opens it applies the connection proxy upgrade (0017 and 0018).
+func v04Database(t *testing.T) string {
+	t.Helper()
+	ctx := context.Background()
+	path := v03Database(t)
+	st, err := store.Open(path)
+	require.NoError(t, err)
+	require.NoError(t, st.MigrateBefore(ctx, "0017"))
+	require.NoError(t, st.Close())
+	raw, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)")
+	require.NoError(t, err)
+	defer func() { _ = raw.Close() }()
+	_, err = raw.ExecContext(ctx, `
+INSERT INTO rooms (id, owner_id, name, description, retention_days, next_seq, created_at, updated_at, updated_by)
+VALUES ('r-team', 'u-alice', 'Team', 'The support team', 90, 3, 1790000000100, 1790000000100, 'u-alice');
+INSERT INTO room_members (id, room_id, kind, member_id, added_by, created_at) VALUES
+    ('rm-team-alice', 'r-team', 'user', 'u-alice', 'u-alice', 1790000000101),
+    ('rm-team-atlas', 'r-team', 'agent', 'a-atlas', 'u-alice', 1790000000102),
+    ('rm-team-pc2', 'r-team', 'agent', 'a-pc2', 'u-alice', 1790000000103),
+    ('rm-team-wa', 'r-team', 'chat', 'c-wagrp', 'u-alice', 1790000000104);
+INSERT INTO messages (id, room_id, seq, author_kind, author_id, author_user_id, author_iid, sender_id, sender_name,
+                      kind, text, reply_to, recipients_json, external_id, created_at) VALUES
+    ('m-team1', 'r-team', 1, 'chat', 'c-wagrp', '', '', '100000000000002@lid', 'Zé', 'text', 'anyone there?', '', '[]', 'wa-90', 1790000000105),
+    ('m-team2', 'r-team', 2, 'agent', 'a-atlas', 'u-alice', 'a-atlas', '', '', 'text', 'yes, I am', 'm-team1', '["c-wagrp"]', NULL, 1790000000106);`)
+	require.NoError(t, err)
+	return path
+}
+
+// teamGroup is the platform id of the fixture's WhatsApp group "Team" (chat c-wagrp of connection k-wa).
+const teamGroup = "120363000000000001@g.us"
+
+// nextPlatformEvent reads frames until a platform event arrives, skipping the room frames before it.
+func nextPlatformEvent(t *testing.T, conn *testkit.AgentConn) dto.PlatformEvent {
+	t.Helper()
+	for {
+		f := conn.Next(connectortest.Timeout)
+		if f.Type != dto.AgentFrameTypePlatform {
+			continue
+		}
+		var p dto.AgentPlatformFrame
+		require.NoError(t, json.Unmarshal(f.Raw, &p))
+		return p.Event
+	}
+}
+
+// platformEventsOf returns the platform events among the frames.
+func platformEventsOf(t *testing.T, frames []testkit.AgentFrame) []dto.PlatformEvent {
+	t.Helper()
+	var out []dto.PlatformEvent
+	for _, f := range frames {
+		if f.Type != dto.AgentFrameTypePlatform {
+			continue
+		}
+		var p dto.AgentPlatformFrame
+		require.NoError(t, json.Unmarshal(f.Raw, &p))
+		out = append(out, p.Event)
+	}
+	return out
+}
+
+// CID-21 (independent test), CID-02, CID-06, CID-07, CID-12, CID-27: the app boots on a v0.4 database. The room
+// that held a WhatsApp group chat, the owner and two AIs lists the owner and the two AIs and no chat, and keeps
+// its history. The owner-operated WhatsApp connection has no operator and runs nothing until the owner chooses
+// an AI; then the next message of the group that mentions the account reaches only that AI's session, and
+// no room, person or conversation is made for it. A group message that does not mention the account is not
+// delivered (the upgrade's defaults), a direct message is.
+func TestUpgradedWhatsAppRoomLosesItsChatAndItsGroupReachesOnlyTheOperator(t *testing.T) {
+	ctx := context.Background()
+	fake := connectortest.New()
+	whatsapp := fake.Kind()
+	whatsapp.Name = "whatsapp" // the fixture's connector kind, served by the fake
+	// The app's clock starts an hour after the fixture's last message, so that the retention sweep at
+	// start-up keeps its history whatever today is.
+	afterTheFixture := func() time.Time { return time.UnixMilli(1790003600000) }
+	env := testkit.New(t, testkit.WithDatabase(v04Database(t)), testkit.WithConnectorKinds(whatsapp), testkit.WithClock(afterTheFixture))
+	token := func(kind dto.TokenKind) *testkit.Client {
+		_, secret, err := env.App.Users.CreateToken(ctx, "u-alice", users.TokenInput{Kind: kind, Name: "alice " + string(kind)})
+		require.NoError(t, err)
+		return env.Anon().WithBearer(secret)
+	}
+	alice, sessions := token(dto.TokenKindUser), token(dto.TokenKindAgent)
+
+	// The room holds its owner and the two AIs and no chat (CID-21); its history is still there.
+	room := testkit.Decode[dto.Room](alice.Get("/api/v1/rooms/r-team").RequireStatus(http.StatusOK))
+	require.Equal(t, "u-alice", room.Owner.ID)
+	require.Equal(t, 3, room.MemberCount)
+	type who struct {
+		Kind dto.MemberKind
+		ID   string
+	}
+	var members []who
+	for _, m := range testkit.Decode[dto.List[dto.RoomMember]](alice.Get("/api/v1/rooms/r-team/members").RequireStatus(http.StatusOK)).Items {
+		members = append(members, who{m.Kind, m.MemberID})
+	}
+	require.Equal(t, []who{{dto.MemberKindUser, "u-alice"}, {dto.MemberKindAgent, "a-atlas"}, {dto.MemberKindAgent, "a-pc2"}}, members, "the owner and the two AIs, and no chat")
+	authors := map[string]string{}
+	for _, m := range testkit.Decode[dto.Page[dto.Message]](alice.Get("/api/v1/rooms/r-team/messages").RequireStatus(http.StatusOK)).Items {
+		authors[m.ID] = m.AuthorName
+	}
+	require.Equal(t, map[string]string{"m-team1": "Zé", "m-team2": "atlas"}, authors, "the history, the group's message included, is kept")
+	chats := testkit.Decode[dto.List[dto.Chat]](alice.Get("/api/v1/connectors/k-wa/chats").RequireStatus(http.StatusOK)).Items
+	require.Len(t, chats, 1, "the connection still knows its group")
+	require.Equal(t, "Team", chats[0].Title)
+
+	// The connection has no operator: it receives nothing and says what to do (CID-02), with the
+	// delivery defaults of the upgrade (CID-27).
+	connection := func() dto.Connector {
+		return testkit.Decode[dto.Connector](alice.Get("/api/v1/connectors/k-wa").RequireStatus(http.StatusOK))
+	}
+	idle := connection()
+	require.Nil(t, idle.Operator)
+	require.Equal(t, []any{dto.ConnectorStatusError, dto.ConnectorNoOperator}, []any{idle.Status, idle.LastError})
+	require.Equal(t, []any{dto.ConnectorDeliverAll, true, int64(0)}, []any{idle.Deliver, idle.GroupsMentionsOnly, idle.Queued})
+	require.Nil(t, fake.Lookup("k-wa"), "nothing runs until an AI operates the connection")
+
+	// The owner chooses Atlas. The connection starts, and both AIs of the room connect.
+	chosen := "a-atlas"
+	operated := testkit.Decode[dto.Connector](alice.Patch("/api/v1/connectors/k-wa", dto.UpdateConnectorRequest{OperatorID: &chosen}).RequireStatus(http.StatusOK))
+	require.NotNil(t, operated.Operator)
+	require.Equal(t, "a-atlas", operated.Operator.ID)
+	inst := fake.Instance(t, "k-wa")
+	inst.WaitRun(t)
+	inst.Connected()
+	dial := func(name, id string) *testkit.AgentConn {
+		t.Helper()
+		conn, resp := sessions.DialPlatform(name)
+		require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)
+		w := conn.Welcome(connectortest.Timeout)
+		require.Equal(t, id, w.Agent.ID, "the folder adopted the v0.3 agent")
+		return conn
+	}
+	atlas, other := dial("atlas", "a-atlas"), dial("proj-claude-2", "a-pc2")
+	for name, conn := range map[string]*testkit.AgentConn{"atlas": atlas, "proj-claude-2": other} {
+		require.Empty(t, platformEventsOf(t, conn.Drain(300*time.Millisecond)), "%s: the queue starts empty (the room backlog is not a platform event)", name)
+	}
+	messages := func() int { return countRows(t, env, "SELECT COUNT(*) FROM messages") }
+	rooms, people, before := countRows(t, env, "SELECT COUNT(*) FROM rooms"), countRows(t, env, "SELECT COUNT(*) FROM people"), messages()
+
+	// The next message of the group that mentions the account reaches Atlas alone (CID-06, CID-12).
+	inst.Emit(ctx, connectors.Inbound{
+		ChatID: teamGroup, ChatTitle: "Team", ChatKind: "group", MessageID: "wamid.up1",
+		SenderID: "5511999990077@s.whatsapp.net", SenderName: "Rita", Text: "can you check the invoice?", MentionsAccount: true, At: afterTheFixture(),
+	})
+	event := nextPlatformEvent(t, atlas)
+	require.NotEmpty(t, event.ID)
+	require.Equal(t, dto.PlatformEvent{
+		ID: event.ID, Platform: "whatsapp", ConnectionID: "k-wa", ChatID: "c-wagrp", ChatTitle: "Team", ChatKind: dto.ChatKindGroup,
+		SenderName: "Rita", SenderID: "5511999990077@s.whatsapp.net", Trusted: false, FromSelf: false, Kind: dto.MessageKindText,
+		Text: "can you check the invoice?", Attachments: []dto.Attachment{}, ReceivedAt: event.ReceivedAt,
+	}, event)
+	require.Empty(t, platformEventsOf(t, other.Drain(300*time.Millisecond)), "the other AI of the room hears nothing")
+	require.Equal(t, int64(1), connection().Queued, "it waits for Atlas to acknowledge it, and the page shows a count, not the text")
+	require.NotContains(t, string(alice.Get("/api/v1/connectors/k-wa").Body), "invoice")
+
+	// It is stored in no room, and no person or conversation is made for it (CID-07).
+	require.Equal(t, before, messages(), "no message of any room")
+	require.Equal(t, rooms, countRows(t, env, "SELECT COUNT(*) FROM rooms"))
+	require.Equal(t, people, countRows(t, env, "SELECT COUNT(*) FROM people"))
+	team := testkit.Decode[dto.Page[dto.Message]](alice.Get("/api/v1/rooms/r-team/messages").RequireStatus(http.StatusOK))
+	require.Len(t, team.Items, 2, "the room is as the upgrade left it")
+
+	atlas.AckPlatform(event.ID)
+	require.Eventually(t, func() bool { return connection().Queued == 0 }, connectortest.Timeout, 10*time.Millisecond, "the acknowledgement empties the queue")
+
+	// The upgrade's defaults: a group message that does not mention the account stops here, a direct one does not.
+	inst.Emit(ctx, connectors.Inbound{
+		ChatID: teamGroup, ChatTitle: "Team", ChatKind: "group", MessageID: "wamid.up2",
+		SenderID: "5511999990077@s.whatsapp.net", SenderName: "Rita", Text: "lunch anyone?", At: afterTheFixture(),
+	})
+	inst.Emit(ctx, connectors.Inbound{
+		ChatID: "5511999990077@s.whatsapp.net", ChatTitle: "Rita", ChatKind: "dm", MessageID: "wamid.up3",
+		SenderID: "5511999990077@s.whatsapp.net", SenderName: "Rita", Text: "are you there?", At: afterTheFixture(),
+	})
+	direct := nextPlatformEvent(t, atlas)
+	require.Equal(t, []any{"are you there?", dto.ChatKindDM}, []any{direct.Text, direct.ChatKind}, "the unmentioned group message was not queued before it")
+	require.Empty(t, platformEventsOf(t, atlas.Drain(300*time.Millisecond)), "and was not queued after it either")
+	require.Empty(t, platformEventsOf(t, other.Drain(100*time.Millisecond)))
+	require.Equal(t, before, messages())
 }

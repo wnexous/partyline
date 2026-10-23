@@ -1230,3 +1230,31 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   be stored, so the request tests assert the answer and, for the members and the connection, the surviving dead columns
   (`outbound`, `sign_outbound`, `auto_route_room_id`).
 - **Authorization**: none; the migration runs at start-up, not through a route.
+
+## T37: Upgrade end to end (CID-21)
+
+- **Test** `TestUpgradedWhatsAppRoomLosesItsChatAndItsGroupReachesOnlyTheOperator` (`internal/api/upgrade_test.go`): the app boots on
+  `v04Database`, the store's v0.3 fixture upgraded to schema 0016 (what v0.4 ended with) plus a room "Team" of the owner that
+  holds her as a user member, two of her AIs (`a-atlas`, `a-pc2`), the fixture's WhatsApp group chat (`c-wagrp` of connection
+  `k-wa`), a message from the group and an AI's answer. The app applies 0017 and 0018 at start-up; the fake connector kind is
+  registered as `whatsapp`. Alice acts through a user token, her AIs through an agent token, which adopts the v0.3 agents by their
+  folder names (`atlas`, `proj-claude-2`).
+- **What it pins**, through the API only:
+  1. `GET /rooms/r-team` and its members: the owner, `a-atlas` and `a-pc2`, `member_count` 3, no chat; the two messages are read
+     back with their authors (the group's sender "Zé" and the AI); the connection still lists its group chat.
+  2. `GET /connectors/k-wa`: no operator, status `error` with `choose the AI that operates this connection` (CID-02),
+     `deliver=all`, `groups_mentions_only=true`, `queued=0` (CID-27), and no connector instance runs.
+  3. `PATCH /connectors/k-wa {operator_id: a-atlas}` starts the connection. Both AIs connect with the platform feature; the room
+     backlog they receive is no platform event.
+  4. A group message that mentions the account arrives as a `platform` frame on Atlas only (all fields, `trusted=false`,
+     `from_self=false`, the chat's id the upgrade kept), nothing on the other AI's session, `queued=1` on the connection page whose
+     body carries no text, and afterwards no new message, room or person (CID-07). The acknowledgement empties the queue.
+  5. A group message without a mention is not delivered (the upgrade's defaults), a direct message is.
+- **Mutation check** (run by hand, not kept): without `DELETE FROM room_members WHERE kind = 'chat'` in 0018 this test and both
+  store tests fail on the chat in the member list.
+- **Testkit**: `AgentConn.Drain(d)` returns the frames that arrive within `d` (none is not a failure), for the backlog of a new
+  session and for "this session got nothing more".
+- **`make e2e`**: the 20 Playwright smoke tests pass against the built binary (chromium headless shell through
+  `PLAYWRIGHT_CHROMIUM_EXECUTABLE`). They cover the web app, which T35 and T29 already adapted; no spec file changed.
+- **Not covered here**: the Telegram connection of the fixture (its kind is not registered in this app, so it only reports an
+  error). The data of the other connections is pinned by `TestConnectionProxyUpgradeKeepsHistoryAndDropsTheRest`.

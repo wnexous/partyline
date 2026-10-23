@@ -895,10 +895,10 @@ A request carrying them changes nothing.
 **Reuses**: upgrade e2e harness
 **Requirement**: CID-21
 **Done when**:
-- [ ] The room that held a WhatsApp chat lists the owner and the two AIs and no chat
-- [ ] After choosing the operator, the next message in that WhatsApp group (with a mention) reaches only the operator's session and no room
-- [ ] `make e2e` passes
-- [ ] Gate check passes: `make check`
+- [x] The room that held a WhatsApp chat lists the owner and the two AIs and no chat
+- [x] After choosing the operator, the next message in that WhatsApp group (with a mention) reaches only the operator's session and no room
+- [x] `make e2e` passes
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(api): pin the connection proxy upgrade`
