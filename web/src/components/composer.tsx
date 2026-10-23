@@ -1,8 +1,7 @@
-import { EyeIcon, PaperclipIcon, SendHorizontalIcon, UsersRoundIcon, XIcon } from "lucide-react";
+import { EyeIcon, PaperclipIcon, SendHorizontalIcon, XIcon } from "lucide-react";
 import {
   type ChangeEvent,
   type KeyboardEvent,
-  type RefObject,
   type SyntheticEvent,
   useEffect,
   useId,
@@ -17,9 +16,7 @@ import {
   mentionCandidates,
   mentionOptionId,
 } from "@/components/mention-suggestions";
-import { platformLabel } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { isApiError } from "@/lib/api/client";
 import { useMe, usePostMessage } from "@/lib/api/queries";
 import {
@@ -27,7 +24,6 @@ import {
   type Level,
   LevelManage,
   LevelPost,
-  MaxMessageRecipients,
   MaxTextLength,
   type RoomMember,
 } from "@/lib/api/types.gen";
@@ -37,27 +33,16 @@ import { cn } from "@/lib/utils";
 
 /*
  * Message composer (UI-07). Enter sends the trimmed text, Shift+Enter adds a line. Text over
- * MaxTextLength (MSG-02) cannot be sent; files alone can. Recipients default to every chat with
- * outbound on (DLV-03); picking chats sends to exactly those (DLV-04). Recipients are chat ids
- * (`RoomMember.member_id` of chat members), not room member ids; the server rejects others (422).
- * Chats with outbound off are listen-only (DLV-05): they cannot be picked, and a 422
- * `recipients: listen-only` (the flag changed meanwhile) lands on the recipients picker.
- * In a room that does not broadcast (ROUTE-06) a post must name its chats: Send waits for a
- * picked chat; Send without one moves focus to the chat picker (A11Y-05). With no chat to pick,
- * the post goes to the room's agents only. The picker stops at MaxMessageRecipients chats, the
- * server's cap per post (ROUTE-10).
+ * MaxTextLength (MSG-02) cannot be sent; files alone can. A post is a message to the room's
+ * intelligences: chats are not members and there is no recipient picker any more (CID-22,
+ * ROUTE-06/DLV-03..05 and their listen-only mapping are retired). The body carries the text and
+ * files only. `members` still feeds the mention list below.
  *
  * Typing `@` at the start of a word suggests the conversation's participants (MEN-01..MEN-06):
  * the filtered list opens above the box, Up/Down move, Enter, Tab or a tap complete `@handle `
  * and never send, Escape or leaving the `@word` closes it, and Enter sends as usual when nothing
  * matches.
  */
-
-/** 422 reason for an explicit recipient whose chat member has outbound off. */
-const LISTEN_ONLY = "listen-only";
-
-const isListenOnlyError = (err: unknown) =>
-  isApiError(err) && err.status === 422 && err.fields.recipients === LISTEN_ONLY;
 
 /** The counter appears once the text gets this close to the limit. */
 const COUNTER_FROM = MaxTextLength - 1_000;
@@ -70,7 +55,6 @@ function postErrorText(t: Translate, err: unknown): string {
   if (err.status === 403) return t("composer.forbidden");
   if (err.status === 413) return t("composer.tooLarge");
   if (err.status === 429) return t("composer.rateLimited");
-  if (isListenOnlyError(err)) return t("composer.recipientsListenOnly");
   if (err.status === 422) return err.message || t("error.generic");
   return t("error.generic");
 }
@@ -80,11 +64,14 @@ export interface ComposerProps {
   roomName: string;
   level: Level;
   members?: RoomMember[];
-  /** Room.broadcast; false asks for an explicit chat (ROUTE-06). */
+  /**
+   * @deprecated Ignored: rooms no longer send to chats, so there is no explicit-recipient mode.
+   * Kept optional until the room page stops passing it (CID-22).
+   */
   broadcast?: boolean;
 }
 
-export function Composer({ roomId, roomName, level, members, broadcast = true }: ComposerProps) {
+export function Composer({ roomId, roomName, level, members }: ComposerProps) {
   const { t } = useI18n();
   if (!canPost(level)) {
     return (
@@ -94,29 +81,23 @@ export function Composer({ roomId, roomName, level, members, broadcast = true }:
       </div>
     );
   }
-  return (
-    <ComposerForm roomId={roomId} roomName={roomName} members={members} broadcast={broadcast} />
-  );
+  return <ComposerForm roomId={roomId} roomName={roomName} members={members} />;
 }
 
 function ComposerForm({
   roomId,
   roomName,
   members,
-  broadcast,
 }: {
   roomId: string;
   roomName: string;
   members?: RoomMember[];
-  broadcast: boolean;
 }) {
   const { t, locale } = useI18n();
   const post = usePostMessage(roomId);
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [recipients, setRecipients] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [recipientsInvalid, setRecipientsInvalid] = useState(false);
   // The caret is part of the mention state: the list follows the `@word` it is in (MEN-04).
   const [caret, setCaret] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -124,21 +105,13 @@ function ComposerForm({
   const [dismissedStart, setDismissedStart] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
-  const pickerRef = useRef<HTMLButtonElement>(null);
   // Where the caret goes once a completion re-renders the controlled textarea.
   const pendingCaret = useRef<number | null>(null);
   const counterId = useId();
   const errorId = useId();
-  const explicitId = useId();
   const mentionListId = useId();
   const viewerId = useMe().data?.id;
 
-  const chats = useMemo(() => (members ?? []).filter((m) => m.kind === "chat"), [members]);
-  // Only chats with outbound on can be explicit recipients (DLV-05).
-  const pickable = useMemo(() => chats.filter((c) => c.outbound), [chats]);
-  const chosen = recipients.filter((id) => pickable.some((c) => c.member_id === id));
-  // ROUTE-06: a room that does not broadcast answers chats only when they are named.
-  const needsChat = !broadcast && pickable.length > 0;
   const length = textLength(text);
   const tooLong = length > MaxTextLength;
   const trimmed = text.trim();
@@ -180,23 +153,12 @@ function ComposerForm({
     setCaret(position);
   }, [text]);
 
-  // fromButton: Send moves focus to the chat picker when a chat is missing; Enter keeps it in
-  // the message box so typing is not cut off (A11Y-05).
-  const send = (fromButton = false) => {
+  const send = () => {
     if (!canSend) return;
-    if (needsChat && chosen.length === 0) {
-      // ROUTE-06: say why nothing is sent instead of ignoring Enter or Send.
-      setError(t("composer.pickChat"));
-      setRecipientsInvalid(true);
-      if (fromButton) pickerRef.current?.focus();
-      return;
-    }
     setError(null);
-    setRecipientsInvalid(false);
     post.mutate(
       {
         text: trimmed,
-        ...(chosen.length ? { recipients: chosen } : {}),
         ...(files.length ? { files } : {}),
       },
       {
@@ -205,10 +167,7 @@ function ComposerForm({
           setFiles([]);
           textRef.current?.focus();
         },
-        onError: (err) => {
-          setError(postErrorText(t, err));
-          setRecipientsInvalid(isListenOnlyError(err));
-        },
+        onError: (err) => setError(postErrorText(t, err)),
       },
     );
   };
@@ -279,17 +238,12 @@ function ComposerForm({
       className="border-t bg-background px-3 pt-2.5 pb-3 md:px-6"
       onSubmit={(e) => {
         e.preventDefault();
-        send(true);
+        send();
       }}
     >
       {error ? (
         <p id={errorId} role="alert" className="mb-2 text-sm text-destructive">
           {error}
-        </p>
-      ) : null}
-      {needsChat ? (
-        <p id={explicitId} className="mb-2 text-xs text-muted-foreground">
-          {t("composer.explicitHint")}
         </p>
       ) : null}
       <div
@@ -352,11 +306,7 @@ function ComposerForm({
           aria-activedescendant={
             open && activeCandidate ? mentionOptionId(mentionListId, activeCandidate.id) : undefined
           }
-          aria-describedby={
-            [needsChat ? explicitId : "", length >= COUNTER_FROM ? counterId : ""]
-              .filter(Boolean)
-              .join(" ") || undefined
-          }
+          aria-describedby={length >= COUNTER_FROM ? counterId : undefined}
           placeholder={t("composer.placeholder", { room: roomName })}
           className="block max-h-56 min-h-11 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground"
         />
@@ -376,20 +326,6 @@ function ComposerForm({
             />
             <PaperclipIcon className="size-4" aria-hidden="true" />
           </label>
-          {chats.length > 0 ? (
-            <RecipientsPicker
-              triggerRef={pickerRef}
-              chats={chats}
-              value={recipients}
-              needsChat={needsChat}
-              onChange={(ids) => {
-                setRecipients(ids);
-                if (recipientsInvalid) setError(null);
-                setRecipientsInvalid(false);
-              }}
-              errorId={recipientsInvalid && error ? errorId : undefined}
-            />
-          ) : null}
           <span className="ml-auto hidden text-[0.7rem] text-muted-foreground lg:inline">
             {t("composer.hint")}
           </span>
@@ -417,121 +353,5 @@ function ComposerForm({
         </div>
       </div>
     </form>
-  );
-}
-
-function RecipientsPicker({
-  triggerRef,
-  chats,
-  value,
-  needsChat,
-  onChange,
-  errorId,
-}: {
-  triggerRef: RefObject<HTMLButtonElement | null>;
-  chats: RoomMember[];
-  value: string[];
-  /** The room does not broadcast: no pick means no chat (ROUTE-06). */
-  needsChat: boolean;
-  onChange: (ids: string[]) => void;
-  /** Id of the error describing the picked recipients, when the server rejected them. */
-  errorId?: string;
-}) {
-  const { t } = useI18n();
-  const limitId = useId();
-  const selected = value.filter((id) => chats.some((c) => c.member_id === id && c.outbound));
-  // ROUTE-10: the server refuses a post naming more chats, so the picker stops there.
-  const atLimit = selected.length >= MaxMessageRecipients;
-  const label =
-    selected.length === 0
-      ? needsChat
-        ? t("composer.toPick")
-        : t("composer.toDefault")
-      : selected.length === 1
-        ? t("composer.toOne")
-        : t("composer.toMany", { count: selected.length });
-  const toggle = (id: string) =>
-    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          ref={triggerRef}
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-invalid={errorId ? true : undefined}
-          aria-describedby={errorId}
-          className={cn(
-            "h-8 max-w-[60%] gap-1.5 px-2 text-xs font-normal text-muted-foreground",
-            selected.length > 0 && "bg-tape/60 text-tape-foreground hover:bg-tape",
-            errorId && "text-destructive ring-1 ring-destructive/50 ring-inset",
-          )}
-        >
-          <UsersRoundIcon aria-hidden="true" />
-          <span className="truncate">{label}</span>
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-72 p-0">
-        <div className="border-b px-3 py-2.5">
-          <p className="text-sm font-medium">{t("composer.recipientsTitle")}</p>
-          <p className="text-xs text-muted-foreground">
-            {needsChat ? t("composer.recipientsBodyExplicit") : t("composer.recipientsBody")}
-          </p>
-        </div>
-        <ul className="max-h-64 overflow-y-auto py-1">
-          {chats.map((c) => {
-            const picked = selected.includes(c.member_id);
-            const capped = c.outbound && !picked && atLimit;
-            return (
-              <li key={c.id}>
-                <label
-                  title={c.outbound ? undefined : t("composer.listenOnlyHint")}
-                  className={cn(
-                    "flex items-center gap-2.5 px-3 py-1.5 text-sm",
-                    c.outbound && !capped
-                      ? "cursor-pointer hover:bg-accent"
-                      : "cursor-not-allowed opacity-60",
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    className="size-4 accent-primary"
-                    checked={picked}
-                    disabled={!c.outbound || capped}
-                    aria-describedby={capped ? limitId : undefined}
-                    onChange={() => toggle(c.member_id)}
-                  />
-                  <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {platformLabel(c.connector_kind)}
-                    {c.outbound ? "" : ` · ${t("composer.listenOnly")}`}
-                  </span>
-                </label>
-              </li>
-            );
-          })}
-        </ul>
-        {atLimit ? (
-          <p id={limitId} className="border-t px-3 py-2 text-xs text-muted-foreground">
-            {t("composer.recipientsLimit", { count: MaxMessageRecipients })}
-          </p>
-        ) : null}
-        {selected.length > 0 ? (
-          <div className="border-t p-1.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-xs"
-              onClick={() => onChange([])}
-            >
-              {needsChat ? t("composer.recipientsClear") : t("composer.recipientsReset")}
-            </Button>
-          </div>
-        ) : null}
-      </PopoverContent>
-    </Popover>
   );
 }

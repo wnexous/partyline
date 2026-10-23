@@ -437,7 +437,7 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     appApi(locale);
     const { container } = renderRoute("/rooms/r1");
     await screen.findByText("deploy 2.4");
-    await screen.findByTestId("member-mb2");
+    await screen.findByTestId("member-mb1");
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 

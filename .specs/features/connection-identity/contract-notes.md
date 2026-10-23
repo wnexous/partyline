@@ -836,3 +836,65 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   - the database write failed after the platform took the text, so the AI got a 500 and may send again.
 
   partyline does not deduplicate on the platform side.
+
+## T25: Member picker offers users and AIs only (CID-20)
+
+- `web/src/components/member-picker.tsx` no longer calls `GET /chats` (`useChats` is gone): the
+  picker lists only the caller's AIs, shared AIs and users from `GET /contacts`, with the existing
+  avatar, name, handle, presence and machine rows. No chat can be picked or added.
+- Copy: `picker.body` says "AIs and users ...", the filter hint names name, handle, owner and
+  machine (not platform), and the empty state offers only "Connect an agent". The unused
+  `picker.addConnector` string stays for now; the connection page work owns connector copy.
+- Tests: `web/src/components/member-picker.test.tsx` pins the only sections (AIs, Users), the
+  absence of chat candidates even when a mocked `GET /chats` answers, and that the picker never
+  requests `/chats`. The room page tests keep the AI/user add flows and no longer expect chats.
+
+## T26: Member list and settings without chats (CID-20, CID-22)
+
+- `web/src/components/member-list.tsx` renders only `agent` and `user` members. A stored `chat`
+  member is filtered out before the empty check, so a room that only still holds a chat shows the
+  empty state instead of a row. Its platform badge and the per-chat outbound switch (DLV-03/05)
+  are gone with the row; there is no `PATCH .../members/{id} {outbound}` left in the UI.
+- `web/src/components/member-settings.tsx` (and `memberSettingsSchema`) lose `sign_outbound`: the
+  form no longer edits or sends it, and `memberSettingsSummary` no longer shows "unsigned".
+  Display name, delivery and keywords stay. The member list reads the summary as before.
+- Copy: `members.empty` now says "Add agents and users ..." in `en` and `pt-BR`. The retired
+  `members.chats`, `members.chatKind.*`, `members.outbound*`, `memberSettings.sign*` and
+  `memberSettings.unsigned` strings stay until the remaining screens are cleaned; nothing reads
+  the ones whose control is gone except the connector page's chat-kind labels (T29).
+- Tests: `member-list.test.tsx` pins the two sections, the hidden chat row and the absence of a
+  switch/outbound text; `member-settings.test.tsx` pins no signature control and a PATCH without
+  `sign_outbound`; the room page tests follow the same rows.
+
+## T27: Composer without chat recipients (CID-22)
+
+- `web/src/components/composer.tsx` has no recipient picker, no listen-only mapping and no
+  explicit-chat (ROUTE-06) state. A post is `{text}` plus optional files, never `recipients`;
+  Enter and Send just send. `MaxMessageRecipients` and the `recipients` DTO field stay on the
+  server until T33/T35 and are simply not read here.
+- `ComposerProps.broadcast` remains declared and ignored (marked deprecated) so the room page,
+  which another task edits, keeps compiling. The room page's `members` still feed `@` mentions.
+- Retired with the picker: DLV-03/DLV-04 (default and explicit chat recipients), DLV-05's
+  listen-only UI, ROUTE-06's "Answer a chat explicitly" hint and ROUTE-10's 10-chat cap.
+- Tests: `composer.test.tsx` keeps the text, length, mention-send, file and error cases and adds
+  one that renders with a chat member, finds no `To:` control and posts `{text}` only; the room
+  page no longer expects the explicit-chat hint.
+
+## T28: Room settings without chat settings (CID-22)
+
+- `web/src/components/room-settings-sheet.tsx` and `roomSettingsSchema` own only name, description,
+  instructions and retention. The bridge switch, the broadcast switch and the catch-all locked
+  notice are removed; `room.catch_all`, `room.bridge_chats` and `room.broadcast` are ignored by the
+  sheet (the server still sends them until T35 drops the DTO fields).
+- A save sends `{name, description, retention_days}` and `instructions` only when it changed.
+  `bridge_chats` and `broadcast` are never sent, so the server keeps its stored dead values.
+- Retired with the controls: DLV-05's bridging toggle and ROUTE-06/ROUTE-07's broadcast setting and
+  catch-all lock in the web UI. The `settings.bridge*`, `settings.broadcast*` and
+  `settings.catchAllLocked` strings stay unused until a later cleanup.
+- Tests: `room-settings-sheet.test.tsx` renders a room with `bridge_chats`, `broadcast` and
+  `catch_all` set, finds no switch or those texts, and pins the PATCH body; the room page settings
+  tests save name/retention/instructions without the two fields.
+- **Deflake (not part of the task)**: `web/src/routes/live-session.test.tsx` read the cleared query
+  cache only after the redirect, when the still-mounted contacts page can legitimately refetch;
+  under the parallel gate it failed intermittently. It now asserts the synchronous clear at the
+  1008 close, before the redirect, which is the event UI-02 pins. No assertion was dropped.

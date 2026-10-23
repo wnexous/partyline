@@ -699,8 +699,8 @@ New frame DTOs are added.
 **Reuses**: picker tests
 **Requirement**: CID-20
 **Done when**:
-- [ ] Unit: users and AIs, no chat entries
-- [ ] Gate check passes: `make check`
+- [x] Unit: users and AIs, no chat entries
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add only users and AIs to groups`
@@ -713,8 +713,8 @@ New frame DTOs are added.
 **Reuses**: `member-settings.tsx`
 **Requirement**: CID-20, CID-22
 **Done when**:
-- [ ] Unit: no chat row, no signature/outbound controls
-- [ ] Gate check passes: `make check`
+- [x] Unit: no chat row, no signature/outbound controls
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): members are intelligences only`
@@ -727,8 +727,8 @@ New frame DTOs are added.
 **Reuses**: composer tests
 **Requirement**: CID-22
 **Done when**:
-- [ ] Unit: no recipients control; post body carries no `recipients`
-- [ ] Gate check passes: `make check`
+- [x] Unit: no recipients control; post body carries no `recipients`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): composer without chat recipients`
@@ -741,8 +741,8 @@ New frame DTOs are added.
 **Reuses**: settings tests
 **Requirement**: CID-22
 **Done when**:
-- [ ] Unit: no bridge/broadcast fields; a save sends neither
-- [ ] Gate check passes: `make check`
+- [x] Unit: no bridge/broadcast fields; a save sends neither
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): drop chat settings from rooms`

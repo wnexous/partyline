@@ -1,47 +1,21 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Composer } from "@/components/composer";
 import { type Level, MaxTextLength, type RoomMember } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeMessage } from "@/test/fixtures";
+import { makeMember, makeMessage } from "@/test/fixtures";
 import { renderWithProviders } from "@/test/render";
 
-const chats: RoomMember[] = [
-  {
-    id: "mb-ops",
-    kind: "chat",
-    member_id: "c1",
-    name: "Ops on call",
-    outbound: true,
-    connector_kind: "telegram",
-    chat_kind: "group",
-    display_name: "",
-    sign_outbound: true,
-    delivery: "all",
-    keywords: [],
-    created_at: "2026-10-01T12:00:00Z",
-  },
-  {
-    id: "mb-dev",
-    kind: "chat",
-    member_id: "c2",
-    name: "#deploys",
-    outbound: false,
-    connector_kind: "discord",
-    chat_kind: "channel",
-    display_name: "",
-    sign_outbound: true,
-    delivery: "all",
-    keywords: [],
-    created_at: "2026-10-01T12:00:00Z",
-  },
+// A room may still carry chat members from before the upgrade; the composer ignores them.
+const chatMembers = [
+  makeMember({ id: "mb-ops", kind: "chat", member_id: "c1", name: "Ops on call" }),
 ];
 
-function renderComposer(level: Level = "post") {
+function renderComposer(level: Level = "post", members?: RoomMember[]) {
   return renderWithProviders(
-    <Composer roomId="r1" roomName="deploys" level={level} members={chats} />,
+    <Composer roomId="r1" roomName="deploys" level={level} members={members} />,
   );
 }
 
@@ -150,61 +124,15 @@ describe("composer (UI-07)", () => {
     expect(screen.getByRole("textbox", { name: "Message deploys" })).toBeInTheDocument();
   });
 
-  it("sends to chosen chats only when recipients are picked", async () => {
+  it("offers no chat recipients and posts without recipients (CID-22)", async () => {
     const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
     const user = userEvent.setup();
-    renderComposer();
-    const to = screen.getByRole("button", { name: /To: chats with outbound on/ });
-    await user.click(to);
-    const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("checkbox", { name: /Ops on call/ }));
-    await user.keyboard("{Escape}");
-    expect(screen.getByRole("button", { name: /To: 1 chat/ })).toBeInTheDocument();
-    await user.type(
-      screen.getByRole("textbox", { name: "Message deploys" }),
-      "only telegram{Enter}",
-    );
+    renderComposer("post", chatMembers);
+    expect(screen.queryByRole("button", { name: /^To:/ })).toBeNull();
+    expect(screen.queryByText(/chats with outbound on/)).toBeNull();
+    await user.type(screen.getByRole("textbox", { name: "Message deploys" }), "hello{Enter}");
     await waitFor(() => expect(posts(calls)).toHaveLength(1));
-    expect(posts(calls)[0]?.body).toEqual({ text: "only telegram", recipients: ["c1"] });
-  });
-
-  it("does not let a listen-only chat (outbound off) be picked as a recipient (DLV-05)", async () => {
-    mockApi({});
-    const user = userEvent.setup();
-    renderComposer();
-    await user.click(screen.getByRole("button", { name: /To: chats with outbound on/ }));
-    const dialog = await screen.findByRole("dialog");
-    const listenOnly = within(dialog).getByRole("checkbox", { name: /#deploys/ });
-    expect(listenOnly).toBeDisabled();
-    expect(listenOnly).toHaveAccessibleName(/listen-only/);
-    expect(within(dialog).getByRole("checkbox", { name: /Ops on call/ })).toBeEnabled();
-    await user.click(listenOnly);
-    expect(listenOnly).not.toBeChecked();
-    await user.keyboard("{Escape}");
-    expect(screen.getByRole("button", { name: /To: chats with outbound on/ })).toBeInTheDocument();
-  });
-
-  it("explains a 422 listen-only recipient on the recipients picker and keeps the text", async () => {
-    mockApi({
-      "POST /rooms/r1/messages": apiError(422, "invalid", "validation failed", {
-        recipients: "listen-only",
-      }),
-    });
-    const user = userEvent.setup();
-    renderComposer();
-    await user.click(screen.getByRole("button", { name: /To: chats with outbound on/ }));
-    const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("checkbox", { name: /Ops on call/ }));
-    await user.keyboard("{Escape}");
-    const box = screen.getByRole("textbox", { name: "Message deploys" });
-    await user.type(box, "hello{Enter}");
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/listen-only/);
-    expect(alert).not.toHaveTextContent("validation failed");
-    const to = screen.getByRole("button", { name: /To: 1 chat/ });
-    expect(to).toHaveAttribute("aria-invalid", "true");
-    expect(to).toHaveAccessibleDescription(alert.textContent ?? "");
-    expect(box).toHaveValue("hello");
+    expect(posts(calls)[0]?.body).toEqual({ text: "hello" });
   });
 
   it("uploads attached files as multipart with the message part", async () => {
@@ -233,129 +161,5 @@ describe("composer (UI-07)", () => {
     await user.type(box, "hello{Enter}");
     expect(await screen.findByRole("alert")).toHaveTextContent(/not allowed to post/i);
     expect(box).toHaveValue("hello");
-  });
-});
-
-describe("composer in a room that answers chats explicitly (ROUTE-06)", () => {
-  function renderExplicit(members: RoomMember[] = chats) {
-    return renderWithProviders(
-      <Composer roomId="r1" roomName="inbox" level="post" members={members} broadcast={false} />,
-    );
-  }
-
-  it("asks for a chat, says so on Enter or Send, and sends once one is picked", async () => {
-    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
-    const user = userEvent.setup();
-    renderExplicit();
-    const box = screen.getByRole("textbox", { name: "Message inbox" });
-    expect(screen.getByText("Answer a chat explicitly")).toBeInTheDocument();
-    expect(box).toHaveAccessibleDescription(/Answer a chat explicitly/);
-    await user.type(box, "hello{Enter}");
-    expect(await screen.findByRole("alert")).toHaveTextContent("Pick a chat to answer");
-    expect(screen.getByRole("button", { name: /To: choose a chat/ })).toHaveAccessibleDescription(
-      "Pick a chat to answer",
-    );
-    expect(posts(calls)).toHaveLength(0);
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Pick a chat to answer");
-    expect(posts(calls)).toHaveLength(0);
-    expect(box).toHaveValue("hello");
-
-    await user.click(screen.getByRole("button", { name: /To: choose a chat/ }));
-    const dialog = await screen.findByRole("dialog");
-    expect(
-      within(dialog).getByText(
-        "This room only answers the chats you pick; without one, the post reaches no chat.",
-      ),
-    ).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("checkbox", { name: /Ops on call/ }));
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("alert")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    await waitFor(() => expect(posts(calls)).toHaveLength(1));
-    expect(posts(calls)[0]?.body).toEqual({ text: "hello", recipients: ["c1"] });
-  });
-
-  it("moves focus to the chat picker after Send without a chat (A11Y-05)", async () => {
-    mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
-    const user = userEvent.setup();
-    renderExplicit();
-    const box = screen.getByRole("textbox", { name: "Message inbox" });
-    await user.type(box, "hello{Enter}");
-    expect(box).toHaveFocus();
-    await user.click(screen.getByRole("button", { name: "Send" }));
-    expect(screen.getByRole("button", { name: /To: choose a chat/ })).toHaveFocus();
-  });
-
-  it("stops the picker at 10 chats per message (ROUTE-10)", async () => {
-    const many: RoomMember[] = Array.from({ length: 11 }, (_, i) => ({
-      ...(chats[0] as RoomMember),
-      id: `mb-${i}`,
-      member_id: `c${i}`,
-      name: `Customer ${i}`,
-    }));
-    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
-    const user = userEvent.setup();
-    renderExplicit(many);
-    await user.click(screen.getByRole("button", { name: /To: choose a chat/ }));
-    const dialog = await screen.findByRole("dialog");
-    const box = (i: number) =>
-      within(dialog).getByRole("checkbox", { name: new RegExp(`Customer ${i}\\b`) });
-    for (let i = 0; i < 10; i++) await user.click(box(i));
-    expect(within(dialog).getByText("At most 10 chats per message")).toBeInTheDocument();
-    expect(box(10)).toBeDisabled();
-    expect(box(10)).toHaveAccessibleDescription("At most 10 chats per message");
-    expect(box(9)).toBeEnabled();
-    await user.click(box(10));
-    expect(box(10)).not.toBeChecked();
-
-    await user.click(box(0));
-    expect(box(10)).toBeEnabled();
-    expect(within(dialog).queryByText("At most 10 chats per message")).toBeNull();
-    await user.click(box(10));
-    await user.keyboard("{Escape}");
-    await user.type(screen.getByRole("textbox", { name: "Message inbox" }), "hi{Enter}");
-    await waitFor(() => expect(posts(calls)).toHaveLength(1));
-    expect(posts(calls)[0]?.body).toEqual({
-      text: "hi",
-      recipients: ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10"],
-    });
-  });
-
-  it("says the 10-chat limit in pt-BR", async () => {
-    const many: RoomMember[] = Array.from({ length: 10 }, (_, i) => ({
-      ...(chats[0] as RoomMember),
-      id: `mb-${i}`,
-      member_id: `c${i}`,
-      name: `Cliente ${i}`,
-    }));
-    mockApi({});
-    useLiveStore.setState({ locale: "pt-BR" });
-    const user = userEvent.setup();
-    renderExplicit(many);
-    await user.click(screen.getByRole("button", { name: /Para: escolha um chat/ }));
-    const dialog = await screen.findByRole("dialog");
-    for (const c of within(dialog).getAllByRole("checkbox")) await user.click(c);
-    expect(within(dialog).getByText("No máximo 10 chats por mensagem")).toBeInTheDocument();
-  });
-
-  it("says to pick a chat in pt-BR (A11Y-05)", async () => {
-    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
-    useLiveStore.setState({ locale: "pt-BR" });
-    const user = userEvent.setup();
-    renderExplicit();
-    await user.type(screen.getByRole("textbox"), "olá{Enter}");
-    expect(await screen.findByRole("alert")).toHaveTextContent("Escolha um chat para responder");
-    expect(posts(calls)).toHaveLength(0);
-  });
-
-  it("posts to the agents when the room has no chat to answer", async () => {
-    const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
-    const user = userEvent.setup();
-    renderExplicit([]);
-    expect(screen.queryByText("Answer a chat explicitly")).toBeNull();
-    await user.type(screen.getByRole("textbox", { name: "Message inbox" }), "note{Enter}");
-    await waitFor(() => expect(posts(calls)).toHaveLength(1));
-    expect(posts(calls)[0]?.body).toEqual({ text: "note" });
   });
 });

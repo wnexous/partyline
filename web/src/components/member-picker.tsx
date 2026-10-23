@@ -1,11 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { MessageCircleIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { PlusIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PickableMeta } from "@/components/contact-meta";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
-import { chatTitle, platformLabel } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,8 +17,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAutoFocus } from "@/hooks/use-auto-focus";
-import { useAddMember, useChats, useContacts } from "@/lib/api/queries";
-import type { Chat, MemberKind, RoomMember } from "@/lib/api/types.gen";
+import { useAddMember, useContacts } from "@/lib/api/queries";
+import type { MemberKind, RoomMember } from "@/lib/api/types.gen";
 import { type Pickable, pickables } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { useI18n } from "@/lib/i18n";
@@ -27,10 +26,10 @@ import { useLiveStore } from "@/lib/live/store";
 import { withContactPresence } from "@/lib/presence";
 
 /*
- * Adds AIs, users and chats to a group (UI-10). Only what the user may add is offered (ACL-05,
- * ACL-06): their own AIs and the AIs shared with them, the other users of the instance, and the
- * chats of connectors they can use (GET /chats). External people are not members: they join
- * through the chat they write in.
+ * Adds users and AIs to a group (UI-10, CID-20). Only what the user may add is offered (ACL-05):
+ * their own AIs and the AIs shared with them, and the other users of the instance. Chats are never
+ * members (AD-015): a connection is an AI's own app, not a room participant. External people are
+ * not members either: they join through the chat they write in.
  */
 
 export function MemberPicker({
@@ -62,7 +61,6 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   const { t } = useI18n();
   const autoFocus = useAutoFocus();
   const contacts = useContacts();
-  const chats = useChats();
   const add = useAddMember(roomId);
   const presence = useLiveStore((s) => s.presence);
   const [query, setQuery] = useState("");
@@ -76,15 +74,6 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   const userList = (picks?.users ?? []).filter(
     (p) => !taken.has(`user:${p.ref.id}`) && matchesTerms(p.haystack, query),
   );
-  const chatList = (chats.data ?? []).filter(
-    (c) =>
-      !taken.has(`chat:${c.id}`) &&
-      matchesTerms(
-        [chatTitle(t, c.title, c.connector_kind), c.connector_name, c.connector_kind].join("\n"),
-        query,
-      ),
-  );
-
   const onAdd = (kind: MemberKind, id: string, name: string) => {
     setAdding(`${kind}:${id}`);
     add.mutate(
@@ -97,9 +86,8 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
     );
   };
 
-  const loading = contacts.isPending || chats.isPending;
-  const nothing =
-    !loading && agentList.length === 0 && userList.length === 0 && chatList.length === 0;
+  const loading = contacts.isPending;
+  const nothing = !loading && agentList.length === 0 && userList.length === 0;
 
   return (
     <>
@@ -133,9 +121,6 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
                 <Link to="/contacts" className="font-medium text-foreground underline">
                   {t("picker.connectAgent")}
                 </Link>
-                <Link to="/connectors" className="font-medium text-foreground underline">
-                  {t("picker.addConnector")}
-                </Link>
               </p>
             ) : null}
           </div>
@@ -165,26 +150,6 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
                     online={false}
                     busy={adding === `user:${p.ref.id}`}
                     onAdd={() => onAdd("user", p.ref.id, p.ref.display_name)}
-                  />
-                ))}
-              </CandidateGroup>
-            ) : null}
-            {chatList.length > 0 ? (
-              <CandidateGroup label={t("members.chats")}>
-                {chatList.map((c: Chat) => (
-                  <Candidate
-                    key={c.id}
-                    testId={`candidate-chat-${c.id}`}
-                    icon={<MessageCircleIcon className="size-4 text-info" aria-hidden="true" />}
-                    title={chatTitle(t, c.title, c.connector_kind)}
-                    name={chatTitle(t, c.title, c.connector_kind)}
-                    meta={
-                      <span>
-                        {platformLabel(c.connector_kind)} · {c.connector_name}
-                      </span>
-                    }
-                    busy={adding === `chat:${c.id}`}
-                    onAdd={() => onAdd("chat", c.id, chatTitle(t, c.title, c.connector_kind))}
                   />
                 ))}
               </CandidateGroup>

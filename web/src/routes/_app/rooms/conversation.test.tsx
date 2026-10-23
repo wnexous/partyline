@@ -299,7 +299,7 @@ describe("participants (DM-02, GRP-02)", () => {
     }
   });
 
-  it("lists the AIs and users of a group with avatar, badge and handle, and its chats as before", async () => {
+  it("lists the AIs and users of a group with avatar, badge and handle, and no chat row", async () => {
     api();
     renderRoute("/rooms/g1");
     const panel = await screen.findByRole("complementary", { name: "Members" });
@@ -319,9 +319,10 @@ describe("participants (DM-02, GRP-02)", () => {
       user.getByText("Bob Lima"),
     );
 
-    const chat = within(within(panel).getByTestId("member-mb-c1"));
-    expect(chat.getByText("Ops on call")).toBeInTheDocument();
-    expect(chat.getByText(/Telegram/)).toBeInTheDocument();
+    // A chat is not a member to show, even when the stored list still holds one (CID-20).
+    expect(within(panel).queryByTestId("member-mb-c1")).toBeNull();
+    expect(within(panel).queryByText("Ops on call")).toBeNull();
+    expect(within(panel).queryByRole("switch")).toBeNull();
   });
 
   it("keeps the member controls of a group for its manager", async () => {

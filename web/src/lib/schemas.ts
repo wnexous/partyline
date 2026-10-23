@@ -90,9 +90,6 @@ export const profileEditSchema = z.object({
 export const roomSettingsSchema = z.object({
   name: z.string().trim().min(1, msg("validation.required")),
   description: z.string().trim(),
-  bridge_chats: z.boolean(),
-  // ROUTE-06: posts without chosen chats reach every chat only while this is on.
-  broadcast: z.boolean(),
   retention_days: z
     .number(msg("validation.retention"))
     .int(msg("validation.retention"))
@@ -150,7 +147,6 @@ export const memberSettingsSchema = z.object({
     .string()
     .trim()
     .refine((v) => textLength(v) <= MaxMemberDisplayName, msg("validation.displayName")),
-  sign_outbound: z.boolean(),
   delivery: z.enum([DeliveryModeAll, DeliveryModeMentions, DeliveryModeTrusted]),
   keywords: z.array(z.string()).max(MaxMemberKeywords, msg("validation.keywords")),
 });

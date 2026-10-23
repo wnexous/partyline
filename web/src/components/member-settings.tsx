@@ -17,7 +17,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Switch } from "@/components/ui/switch";
 import { isCoarsePointer } from "@/hooks/use-auto-focus";
 import { isApiError } from "@/lib/api/client";
 import { useUpdateMember } from "@/lib/api/queries";
@@ -41,9 +40,9 @@ import {
 import { cn } from "@/lib/utils";
 
 /*
- * Per-room settings of an agent member (MEM-01..05): the name it signs with, whether outgoing
- * chat messages carry that header, and which room messages it receives. Managers only; the
- * member list decides who sees the trigger.
+ * Per-room settings of an agent member (MEM-01..05): the name it uses in this room and which room
+ * messages it receives. Signatures and outbound delivery belonged to chats, which are no longer
+ * room members (CID-22), so they are gone. Managers only; the member list decides who sees it.
  */
 
 const DELIVERY: { mode: DeliveryMode; label: MessageKey; hint: MessageKey }[] = [
@@ -67,7 +66,6 @@ const DELIVERY: { mode: DeliveryMode; label: MessageKey; hint: MessageKey }[] = 
 /** The short, non-default settings of an agent member, for the member row. */
 export function memberSettingsSummary(m: RoomMember): MessageKey[] {
   const out: MessageKey[] = [];
-  if (!m.sign_outbound) out.push("memberSettings.unsigned");
   if (m.delivery === DeliveryModeMentions) out.push("memberSettings.mentionsOnly");
   if (m.delivery === DeliveryModeTrusted) out.push("memberSettings.trustedOnly");
   return out;
@@ -112,7 +110,6 @@ function changes(m: RoomMember, v: MemberSettingsForm): UpdateMemberRequest {
   const req: UpdateMemberRequest = {};
   const name = v.display_name.trim();
   if (name !== m.display_name) req.display_name = name;
-  if (v.sign_outbound !== m.sign_outbound) req.sign_outbound = v.sign_outbound;
   if (v.delivery !== m.delivery) req.delivery = v.delivery;
   if (v.keywords.join("\n") !== m.keywords.join("\n")) req.keywords = v.keywords;
   return req;
@@ -134,7 +131,6 @@ function SettingsForm({
     resolver: zodResolver(memberSettingsSchema),
     defaultValues: {
       display_name: member.display_name,
-      sign_outbound: member.sign_outbound,
       delivery: member.delivery,
       keywords: member.keywords,
     },
@@ -235,27 +231,6 @@ function SettingsForm({
                   {t("memberSettings.displayNameHint", { name: member.name })}
                 </FormDescription>
                 <FieldError />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="sign_outbound"
-            render={({ field }) => (
-              <FormItem className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <FormLabel>{t("memberSettings.sign")}</FormLabel>
-                  <FormDescription className="text-xs">
-                    {t("memberSettings.signHint")}
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                    aria-label={t("memberSettings.sign")}
-                  />
-                </FormControl>
               </FormItem>
             )}
           />

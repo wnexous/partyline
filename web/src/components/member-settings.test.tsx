@@ -39,13 +39,11 @@ describe("agent membership settings (MEM-01..05)", () => {
   it("starts from the member's current settings", async () => {
     const { user } = setup({
       display_name: "Bia",
-      sign_outbound: false,
       delivery: "mentions",
       keywords: ["deploy"],
     });
     const dialog = await open(user);
     expect(within(dialog).getByRole("textbox", { name: /Display name/ })).toHaveValue("Bia");
-    expect(within(dialog).getByRole("switch", { name: "Sign messages" })).not.toBeChecked();
     expect(within(dialog).getByRole("radio", { name: /Only mentions/ })).toBeChecked();
     expect(within(dialog).getByRole("listitem")).toHaveTextContent("deploy");
   });
@@ -69,15 +67,15 @@ describe("agent membership settings (MEM-01..05)", () => {
     expect(patches()[0]?.body).toEqual({ display_name: "" });
   });
 
-  it("turns the signature off with sign_outbound false (MEM-01)", async () => {
-    const { user, patches } = setup();
+  it("offers no signature control and never sends sign_outbound (CID-22)", async () => {
+    const { user, patches } = setup({ sign_outbound: false });
     const dialog = await open(user);
-    const sign = within(dialog).getByRole("switch", { name: "Sign messages" });
-    expect(sign).toBeChecked();
-    await user.click(sign);
+    expect(within(dialog).queryByRole("switch")).toBeNull();
+    expect(within(dialog).queryByText(/Sign messages/)).toBeNull();
+    await user.type(within(dialog).getByRole("textbox", { name: /Display name/ }), "Bia");
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(patches()).toHaveLength(1));
-    expect(patches()[0]?.body).toEqual({ sign_outbound: false });
+    expect(patches()[0]?.body).toEqual({ display_name: "Bia" });
   });
 
   it("sends delivery trusted (MEM-04)", async () => {
@@ -247,7 +245,7 @@ describe("agent membership settings (MEM-01..05)", () => {
     );
     await user.click(screen.getByRole("button", { name: "Configurações de release-bot" }));
     const dialog = await screen.findByRole("dialog", { name: "Configurações do agente" });
-    expect(within(dialog).getByRole("switch", { name: "Assinar mensagens" })).toBeChecked();
+    expect(within(dialog).queryByRole("switch")).toBeNull();
     expect(within(dialog).getByRole("radiogroup", { name: "Recebe" })).toHaveAccessibleDescription(
       "Só menções reduz o ruído; não é um filtro de segurança. Use Só confiáveis para limitar quem chega ao agente.",
     );

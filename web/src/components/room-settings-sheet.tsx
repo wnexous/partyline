@@ -35,7 +35,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { isApiError } from "@/lib/api/client";
 import { useDeleteRoom, useUpdateRoom } from "@/lib/api/queries";
@@ -46,9 +45,9 @@ import { type RoomSettingsForm, roomSettingsSchema, textLength } from "@/lib/sch
 import { cn } from "@/lib/utils";
 
 /**
- * Room settings for managers: name, description, instructions for agents (INS-01), chat bridging
- * (DLV-05), broadcast (ROUTE-06; both locked off in a catch-all room, ROUTE-07), retention, and
- * deleting the room (ROOMDEL-01).
+ * Room settings for managers: name, description, instructions for agents (INS-01), retention, and
+ * deleting the room (ROOMDEL-01). Chat bridging, broadcast and the catch-all lock are gone with
+ * platform chats as members (CID-22); the stored columns are dead until the server drops them.
  */
 export function RoomSettingsSheet({ room, trigger }: { room: Room; trigger: ReactNode }) {
   const { t } = useI18n();
@@ -76,8 +75,6 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
     defaultValues: {
       name: room.name,
       description: room.description,
-      bridge_chats: room.bridge_chats,
-      broadcast: room.broadcast,
       retention_days: room.retention_days,
       instructions: room.instructions,
     },
@@ -85,12 +82,13 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
 
   const onSubmit = form.handleSubmit((values) => {
     setFormError(null);
-    const { instructions, broadcast, ...rest } = roomSettingsSchema.parse(values);
-    // Instructions and broadcast go only when edited, so a save elsewhere never rewrites them.
+    const parsed = roomSettingsSchema.parse(values);
+    // Instructions go only when edited, so a save elsewhere never rewrites them.
     const req: UpdateRoomRequest = {
-      ...rest,
-      ...(instructions === room.instructions ? {} : { instructions }),
-      ...(broadcast === room.broadcast ? {} : { broadcast }),
+      name: parsed.name,
+      description: parsed.description,
+      retention_days: parsed.retention_days,
+      ...(parsed.instructions === room.instructions ? {} : { instructions: parsed.instructions }),
     };
     update.mutate(req, {
       onSuccess: () => {
@@ -102,8 +100,6 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
           applyFieldErrors(err, form.setError, [
             "name",
             "description",
-            "bridge_chats",
-            "broadcast",
             "retention_days",
             "instructions",
           ])
@@ -147,53 +143,6 @@ function SettingsForm({ room, onDone }: { room: Room; onDone: () => void }) {
                 </FormItem>
               );
             }}
-          />
-          <FormField
-            control={form.control}
-            name="bridge_chats"
-            render={({ field }) => (
-              <FormItem className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <FormLabel>{t("settings.bridge")}</FormLabel>
-                  <FormDescription className="text-xs">
-                    {room.catch_all ? t("settings.catchAllLocked") : t("settings.bridgeHint")}
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                    disabled={room.catch_all}
-                    aria-label={t("settings.bridge")}
-                  />
-                </FormControl>
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="broadcast"
-            render={({ field }) => (
-              <FormItem>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="space-y-1">
-                    <FormLabel>{t("settings.broadcast")}</FormLabel>
-                    <FormDescription className="text-xs">
-                      {room.catch_all ? t("settings.catchAllLocked") : t("settings.broadcastHint")}
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      disabled={room.catch_all}
-                      aria-label={t("settings.broadcast")}
-                    />
-                  </FormControl>
-                </div>
-                <FieldError />
-              </FormItem>
-            )}
           />
           <FormField
             control={form.control}

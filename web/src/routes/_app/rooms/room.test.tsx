@@ -9,7 +9,6 @@ import { apiError, json, mockApi } from "@/test/fetch";
 import {
   makeAI,
   makeAIContact,
-  makeChat,
   makeContacts,
   makeConversation,
   makeIntelligence,
@@ -72,13 +71,6 @@ function roomApi(room: Partial<Room> = {}, extra: Parameters<typeof mockApi>[0] 
     "GET /rooms/r1/members": json(200, { items: members }),
     "GET /rooms/r1/messages": json(200, { items: [], has_more: false }),
     "GET /contacts": json(200, contacts),
-    "GET /chats": json(200, {
-      items: [
-        makeChat({ id: "c1", title: "Ops on call" }),
-        makeChat({ id: "c3", title: "Release notes", kind: "channel" }),
-        makeChat({ id: "c4", title: "Support team", connector_kind: "whatsapp" }),
-      ],
-    }),
     ...extra,
   });
 }
@@ -97,7 +89,8 @@ describe("members panel (UI-10, UI-12)", () => {
     const bot = await within(panel).findByTestId("member-mb-bot");
     expect(within(bot).getByText("release-bot")).toBeInTheDocument();
     expect(within(bot).getByText("Online")).toBeInTheDocument();
-    expect(within(panel).getByTestId("member-mb-ops")).toHaveTextContent("Ops on call");
+    // A chat left in the stored members is no longer a row (CID-20).
+    expect(within(panel).queryByTestId("member-mb-ops")).toBeNull();
   });
 
   it("follows live presence for agent members", async () => {
@@ -111,27 +104,6 @@ describe("members panel (UI-10, UI-12)", () => {
       }),
     );
     await waitFor(() => expect(within(bot).getByText("Offline")).toBeInTheDocument());
-  });
-
-  it("toggles a chat member's outbound flag with PATCH", async () => {
-    const { calls } = roomApi(
-      {},
-      {
-        "PATCH /rooms/r1/members/mb-ops": json(200, { ...members[1], outbound: false }),
-      },
-    );
-    const user = userEvent.setup();
-    renderRoute("/rooms/r1");
-    const outbound = await screen.findByRole("switch", { name: /Outbound to Ops on call/ });
-    expect(outbound).toBeChecked();
-    await user.click(outbound);
-    await waitFor(() =>
-      expect(calls.find((c) => c.method === "PATCH")).toMatchObject({
-        path: "/rooms/r1/members/mb-ops",
-        body: { outbound: false },
-      }),
-    );
-    await waitFor(() => expect(outbound).not.toBeChecked());
   });
 
   it("removes a member with DELETE", async () => {
@@ -152,9 +124,9 @@ describe("members panel (UI-10, UI-12)", () => {
   it("is read-only for people without manage", async () => {
     roomApi({ my_level: "post" });
     renderRoute("/rooms/r1");
-    await screen.findByTestId("member-mb-ops");
+    await screen.findByTestId("member-mb-bot");
     expect(within(membersPanel()).queryByRole("switch")).toBeNull();
-    expect(within(membersPanel()).getByText("Outbound on")).toBeInTheDocument();
+    expect(within(membersPanel()).queryByText(/Outbound/)).toBeNull();
     expect(screen.queryByRole("button", { name: /Remove/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Add members" })).toBeNull();
   });
@@ -168,7 +140,6 @@ describe("agent membership settings (MEM-01..05)", () => {
         "PATCH /rooms/r1/members/mb-bot": json(200, {
           ...members[0],
           display_name: "Bia",
-          sign_outbound: false,
           delivery: "mentions",
         }),
       },
@@ -181,19 +152,17 @@ describe("agent membership settings (MEM-01..05)", () => {
     await user.click(within(bot).getByRole("button", { name: "Settings for release-bot" }));
     const dialog = await screen.findByRole("dialog", { name: "Agent settings" });
     await user.type(within(dialog).getByRole("textbox", { name: /Display name/ }), "Bia");
-    await user.click(within(dialog).getByRole("switch", { name: "Sign messages" }));
     await user.click(within(dialog).getByRole("radio", { name: /Only mentions/ }));
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
         display_name: "Bia",
-        sign_outbound: false,
         delivery: "mentions",
       }),
     );
     await waitFor(() => expect(bot).toHaveTextContent("as Bia"));
-    expect(bot).toHaveTextContent("unsigned");
+    expect(bot).not.toHaveTextContent("unsigned");
     expect(bot).toHaveTextContent("mentions only");
   });
 
@@ -202,56 +171,6 @@ describe("agent membership settings (MEM-01..05)", () => {
     renderRoute("/rooms/r1");
     await screen.findByTestId("member-mb-bot");
     expect(screen.queryByRole("button", { name: /^Settings for/ })).toBeNull();
-  });
-});
-
-describe("chat titles (CTX-07)", () => {
-  const untitled = makeMember({
-    id: "mb-dm",
-    kind: "chat",
-    member_id: "c5",
-    name: "",
-    online: undefined,
-    owner: undefined,
-    connector_kind: "whatsapp",
-    chat_kind: "dm",
-  });
-
-  it("names an untitled chat member after its platform", async () => {
-    roomApi({}, { "GET /rooms/r1/members": json(200, { items: [...members, untitled] }) });
-    renderRoute("/rooms/r1");
-    const row = await screen.findByTestId("member-mb-dm");
-    expect(within(row).getByText("WhatsApp chat")).toBeInTheDocument();
-    expect(within(row).getByRole("switch", { name: /Outbound to WhatsApp chat/ })).toBeChecked();
-    expect(within(row).getByRole("button", { name: "Remove WhatsApp chat" })).toBeInTheDocument();
-    // Titled chats keep their title.
-    expect(screen.getByTestId("member-mb-ops")).toHaveTextContent("Ops on call");
-  });
-
-  it("names an untitled chat in the add-member picker and finds it by that name", async () => {
-    const { calls } = roomApi(
-      {},
-      {
-        "GET /chats": json(200, {
-          items: [makeChat({ id: "c6", title: "", kind: "dm", connector_kind: "telegram" })],
-        }),
-        "POST /rooms/r1/members": json(201, makeMember({ kind: "chat", member_id: "c6" })),
-      },
-    );
-    const user = userEvent.setup();
-    renderRoute("/rooms/r1");
-    await user.click(await screen.findByRole("button", { name: "Add members" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add members" });
-    const candidate = await within(dialog).findByTestId("candidate-chat-c6");
-    expect(within(candidate).getByText("Telegram chat")).toBeInTheDocument();
-    await user.type(within(dialog).getByRole("searchbox", { name: "Filter" }), "telegram chat");
-    await user.click(within(dialog).getByRole("button", { name: "Add Telegram chat" }));
-    await waitFor(() =>
-      expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({
-        kind: "chat",
-        member_id: "c6",
-      }),
-    );
   });
 });
 
@@ -267,7 +186,7 @@ describe("member picker (UI-10)", () => {
       .getAllByRole("listitem")
       .map((li) => li.getAttribute("data-testid"));
 
-  it("offers the AIs, users and chats the user can add that are not members yet, filterable by text", async () => {
+  it("offers the AIs and users the user can add that are not members yet, filterable by text", async () => {
     roomApi(
       {},
       {
@@ -291,27 +210,20 @@ describe("member picker (UI-10)", () => {
     expect(within(dialog).getByTestId("candidate-agent-a3")).toHaveTextContent("Online");
     expect(within(dialog).getByTestId("candidate-agent-a3")).toHaveTextContent("by @bob");
     expect(within(dialog).getByTestId("candidate-user-u2")).toHaveTextContent("Bob Lima");
-    expect(within(dialog).getByTestId("candidate-chat-c3")).toHaveTextContent("Release notes");
-    expect(within(dialog).getByTestId("candidate-chat-c4")).toHaveTextContent("Support team");
     // Already members, whatever their kind.
     expect(within(dialog).queryByTestId("candidate-agent-a1")).toBeNull();
     expect(within(dialog).queryByTestId("candidate-user-u3")).toBeNull();
-    expect(within(dialog).queryByTestId("candidate-chat-c1")).toBeNull();
 
     const sections = within(dialog).getAllByRole("region");
-    expect(sections.map((r) => r.getAttribute("aria-label"))).toEqual(["AIs", "Users", "Chats"]);
+    expect(sections.map((r) => r.getAttribute("aria-label"))).toEqual(["AIs", "Users"]);
     expect(testIds(sections[0] as HTMLElement)).toEqual([
       "candidate-agent-a2",
       "candidate-agent-a3",
     ]);
 
     const filter = within(dialog).getByRole("searchbox", { name: "Filter" });
-    await user.type(filter, "SUPP");
-    expect(within(dialog).getByTestId("candidate-chat-c4")).toBeInTheDocument();
-    expect(within(dialog).queryByTestId("candidate-chat-c3")).toBeNull();
+    await user.type(filter, "BOB");
     expect(within(dialog).queryByTestId("candidate-agent-a2")).toBeNull();
-    await user.clear(filter);
-    await user.type(filter, "bob");
     expect(testIds(within(dialog).getByRole("region", { name: "Users" }))).toEqual([
       "candidate-user-u2",
     ]);
@@ -321,7 +233,6 @@ describe("member picker (UI-10)", () => {
     ["an AI", "candidate-agent-a2", "Add triage", { kind: "agent", member_id: "a2" }],
     ["a shared AI", "candidate-agent-a3", "Add docs-writer", { kind: "agent", member_id: "a3" }],
     ["a user", "candidate-user-u2", "Add Bob Lima", { kind: "user", member_id: "u2" }],
-    ["a chat", "candidate-chat-c3", "Add Release notes", { kind: "chat", member_id: "c3" }],
   ])("adds %s as the right kind of member", async (_what, testId, button, body) => {
     const { calls } = roomApi(
       {},
@@ -356,7 +267,6 @@ describe("member picker (UI-10)", () => {
       {},
       {
         "GET /contacts": json(200, makeContacts()),
-        "GET /chats": json(200, { items: [] }),
       },
     );
     const user = userEvent.setup();
@@ -369,29 +279,6 @@ describe("member picker (UI-10)", () => {
     expect(within(dialog).getByRole("link", { name: "Connect an agent" })).toHaveAttribute(
       "href",
       "/contacts",
-    );
-  });
-
-  it("adds the picked chat as a member", async () => {
-    const { calls } = roomApi(
-      {},
-      {
-        "POST /rooms/r1/members": json(
-          201,
-          makeMember({ id: "mb-new", kind: "chat", member_id: "c3", name: "Release notes" }),
-        ),
-      },
-    );
-    const user = userEvent.setup();
-    renderRoute("/rooms/r1");
-    await user.click(await screen.findByRole("button", { name: "Add members" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add members" });
-    const row = await within(dialog).findByTestId("candidate-chat-c3");
-    await user.click(within(row).getByRole("button", { name: "Add Release notes" }));
-    await waitFor(() =>
-      expect(
-        calls.find((c) => c.method === "POST" && c.path === "/rooms/r1/members")?.body,
-      ).toEqual({ kind: "chat", member_id: "c3" }),
     );
   });
 });
@@ -444,7 +331,7 @@ describe("loop guard banner (UI-08)", () => {
 });
 
 describe("room settings", () => {
-  it("saves name, bridge chats and retention with PATCH", async () => {
+  it("saves name and retention with PATCH and no chat settings", async () => {
     const { calls } = roomApi(
       {},
       { "PATCH /rooms/r1": json(200, makeRoom({ id: "r1", name: "deploys-prod" })) },
@@ -453,10 +340,12 @@ describe("room settings", () => {
     renderRoute("/rooms/r1");
     await user.click(await screen.findByRole("button", { name: "Room settings" }));
     const sheet = await screen.findByRole("dialog", { name: "Room settings" });
+    expect(within(sheet).queryAllByRole("switch")).toHaveLength(0);
+    expect(within(sheet).queryByText(/Bridge chats/)).toBeNull();
+    expect(within(sheet).queryByText(/Send to every chat/)).toBeNull();
     const name = within(sheet).getByLabelText("Name");
     await user.clear(name);
     await user.type(name, "deploys-prod");
-    await user.click(within(sheet).getByRole("switch", { name: /Bridge chats/ }));
     const retention = within(sheet).getByLabelText(/Keep messages for/);
     await user.clear(retention);
     await user.type(retention, "0");
@@ -465,7 +354,6 @@ describe("room settings", () => {
       expect(calls.find((c) => c.method === "PATCH" && c.path === "/rooms/r1")?.body).toEqual({
         name: "deploys-prod",
         description: "",
-        bridge_chats: true,
         retention_days: 0,
       }),
     );
@@ -507,7 +395,6 @@ describe("room instructions (INS-01)", () => {
     expect(patches()[0]?.body).toEqual({
       name: "deploys",
       description: "",
-      bridge_chats: false,
       retention_days: 90,
       instructions: "Answer in Portuguese. Be brief.",
     });
@@ -637,74 +524,6 @@ describe("room sharing entry (UI-11)", () => {
   });
 });
 
-describe("broadcast setting (ROUTE-06, ROUTE-07)", () => {
-  async function openSettings(
-    room: Partial<Room>,
-    patch: Response = json(200, makeRoom({ id: "r1" })),
-  ) {
-    const api = roomApi(room, { "PATCH /rooms/r1": patch });
-    const user = userEvent.setup();
-    renderRoute("/rooms/r1");
-    await user.click(await screen.findByRole("button", { name: "Room settings" }));
-    const sheet = await screen.findByRole("dialog", { name: "Room settings" });
-    const patches = () => api.calls.filter((c) => c.method === "PATCH");
-    return { user, sheet, patches };
-  }
-
-  it("shows broadcast on and sends it only when turned off", async () => {
-    const { user, sheet, patches } = await openSettings({ broadcast: true });
-    const toggle = within(sheet).getByRole("switch", { name: /Send to every chat/ });
-    expect(toggle).toBeChecked();
-    await user.click(toggle);
-    await user.click(within(sheet).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(patches()).toHaveLength(1));
-    expect(patches()[0]?.body).toEqual({
-      name: "deploys",
-      description: "",
-      bridge_chats: false,
-      retention_days: 90,
-      broadcast: false,
-    });
-  });
-
-  it("locks broadcast and bridging off in a catch-all room and says why", async () => {
-    const { sheet } = await openSettings({
-      broadcast: false,
-      bridge_chats: false,
-      catch_all: true,
-    });
-    const toggle = within(sheet).getByRole("switch", { name: /Send to every chat/ });
-    expect(toggle).not.toBeChecked();
-    expect(toggle).toBeDisabled();
-    const bridge = within(sheet).getByRole("switch", { name: /Bridge chats/ });
-    expect(bridge).toBeDisabled();
-    const locked =
-      "This is a catch-all room: posts only reach the chats you pick, and chats are not bridged.";
-    expect(toggle).toHaveAccessibleDescription(locked);
-    expect(bridge).toHaveAccessibleDescription(locked);
-  });
-
-  it("shows a 422 broadcast reason", async () => {
-    const { user, sheet } = await openSettings(
-      { broadcast: false },
-      apiError(422, "validation", "invalid", {
-        broadcast: "must stay off while the room is a catch-all room",
-      }),
-    );
-    await user.click(within(sheet).getByRole("switch", { name: /Send to every chat/ }));
-    await user.click(within(sheet).getByRole("button", { name: "Save" }));
-    expect(
-      await within(sheet).findByText("must stay off while the room is a catch-all room"),
-    ).toBeInTheDocument();
-  });
-
-  it("asks the composer for an explicit chat when the room does not broadcast", async () => {
-    roomApi({ broadcast: false });
-    renderRoute("/rooms/r1");
-    expect(await screen.findByText("Answer a chat explicitly")).toBeInTheDocument();
-  });
-});
-
 describe("DM from a participant (PDM-01..PDM-04)", () => {
   const atlas = makeAI({ id: "a1", display_name: "Atlas", handle: "atlas" });
   const bob = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
@@ -788,7 +607,7 @@ describe("DM from a participant (PDM-01..PDM-04)", () => {
     expect(await screen.findByRole("menuitem", { name: "Message privately" })).toBeEnabled();
   });
 
-  it("never offers it for the viewer's own row or for a chat (PDM-04)", async () => {
+  it("never offers it for the viewer's own row and shows no chat (PDM-04, CID-20)", async () => {
     roomApi({}, { "GET /rooms/r1/members": json(200, { items: profiled }) });
     renderRoute("/rooms/r1");
     await screen.findByTestId("member-mb-atlas");
@@ -796,10 +615,8 @@ describe("DM from a participant (PDM-01..PDM-04)", () => {
     expect(
       within(screen.getByTestId("member-mb-me")).queryByRole("button", { name: /^Actions for/ }),
     ).toBeNull();
-    // A chat is not an intelligence: the people writing through it have no route (DM-05).
-    expect(
-      within(screen.getByTestId("member-mb-ops")).queryByRole("button", { name: /^Actions for/ }),
-    ).toBeNull();
+    // A chat is not an intelligence and is not a member row at all.
+    expect(screen.queryByTestId("member-mb-ops")).toBeNull();
   });
 
   it("opens an author's profile from the timeline, where Message is available (PDM-03)", async () => {
