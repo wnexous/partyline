@@ -46,6 +46,7 @@ type fakeEvolution struct {
 	requests []request
 	wsUA     string
 	wsToken  string
+	wsDials  int // WebSocket handshakes received, accepted or not
 	sendErr  int // status for /send/* and /message/react when not zero
 	// groupName is the group subject /group/info answers; groupInfoErr fails it when set.
 	groupName    string
@@ -104,6 +105,7 @@ func newFakeEvolution(t *testing.T) *fakeEvolution {
 	mux.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.wsUA, f.wsToken = r.Header.Get("User-Agent"), r.URL.Query().Get("token")
+		f.wsDials++
 		f.mu.Unlock()
 		if r.URL.Query().Get("token") != globalKey || r.URL.Query().Has("instanceId") {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -180,15 +182,32 @@ func (f *fakeEvolution) socket() *websocket.Conn {
 	}
 }
 
+// socketDials returns how many WebSocket handshakes reached the fake server.
+func (f *fakeEvolution) socketDials() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.wsDials
+}
+
 func newConnector(t *testing.T, f *fakeEvolution, instances ...string) *Connector {
 	t.Helper()
-	cfg := connectors.Config{"base_url": f.srv.URL, "api_key": globalKey}
-	if len(instances) > 0 {
-		cfg["instances"] = instances
+	if len(instances) == 0 {
+		instances = []string{testInstance}
 	}
+	cfg := connectors.Config{"base_url": f.srv.URL, "api_key": globalKey, "instances": instances}
 	norm, errs := Kind().Validate(cfg)
 	require.Empty(t, errs)
 	c, err := New(norm, connectors.Deps{AllowPrivateNetworks: true, ID: "c1", UserAgent: userAgent})
+	require.NoError(t, err)
+	return c
+}
+
+// newStoredConnector builds a connector from an exact instance list, unvalidated: a config
+// stored before the exactly-one-instance requirement may name none or several.
+func newStoredConnector(t *testing.T, f *fakeEvolution, instances ...string) *Connector {
+	t.Helper()
+	c, err := New(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey, "instances": instances},
+		connectors.Deps{AllowPrivateNetworks: true, ID: "c1", UserAgent: userAgent})
 	require.NoError(t, err)
 	return c
 }
@@ -218,9 +237,10 @@ func push(t *testing.T, sock *websocket.Conn, data []byte) {
 	require.NoError(t, sock.Write(context.Background(), websocket.MessageText, data))
 }
 
-// WA-01: Message events of allowed instances arrive as inbound messages; the broadcast
-// socket uses the global key without instanceId and sends the User-Agent.
-func TestRunDeliversMessagesOfAllowedInstances(t *testing.T) {
+// WA-01: Message events of the connection's instance arrive as inbound messages and events of
+// another instance of the same evolution-go server are ignored; the broadcast socket uses the
+// global key without instanceId and sends the User-Agent.
+func TestRunDeliversMessagesOfItsInstance(t *testing.T) {
 	f := newFakeEvolution(t)
 	c := newConnector(t, f, "acme")
 	rec := connectortest.NewRecorder()
@@ -232,44 +252,43 @@ func TestRunDeliversMessagesOfAllowedInstances(t *testing.T) {
 	f.mu.Unlock()
 	require.Equal(t, userAgent, f.next("/instance/all").UserAgent, "REST calls carry partyline/<version>")
 
-	push(t, sock, frame(t, "other", groupInfo("NOT-ALLOWED"), `{"conversation":"ignored"}`))
+	push(t, sock, frame(t, "other", groupInfo("NOT-THIS-ONE"), `{"conversation":"ignored"}`))
 	push(t, sock, frame(t, testInstance, groupInfo("ALLOWED"), `{"conversation":"hello"}`))
 	in := rec.NextInbound(t)
-	require.Equal(t, "ALLOWED", in.MessageID, "the instance outside the allowlist was ignored")
+	require.Equal(t, "ALLOWED", in.MessageID, "the event of another instance was ignored")
 	require.Equal(t, "acme|120363000000000001@g.us", in.ChatID)
 	require.Equal(t, "hello", in.Text)
 }
 
-// ACC-07: the account label is the masked phone number of each instance the connector uses,
-// from the jid evolution-go reports for it (device suffix removed), in the order of
-// /instance/all: the instances with WebSocket events enabled, or the allowlist. Only the last 4
-// digits are shown, and a jid that is no phone number (a LID, none) adds nothing.
-func TestRunReportsTheMaskedNumbersOfItsInstances(t *testing.T) {
+// ACC-07: the account label is the masked phone number of the connection's instance, from the
+// jid evolution-go reports for it (device suffix removed). Only the last 4 digits are shown,
+// and a jid that is no phone number (a LID, none) adds nothing.
+func TestRunReportsTheMaskedNumberOfItsInstance(t *testing.T) {
 	f := newFakeEvolution(t)
 	rec := connectortest.NewRecorder()
 	start(t, newConnector(t, f), f, rec)
-	require.Equal(t, "+•••• 0000, +•••• 1234", rec.NextAccount(t), "acme and other; quiet has no WebSocket events")
+	require.Equal(t, "+•••• 0000", rec.NextAccount(t), "the configured instance's number")
 	require.True(t, rec.NoAccount())
 
 	rec = connectortest.NewRecorder()
-	start(t, newConnector(t, f, "acme"), f, rec)
-	require.Equal(t, "+•••• 0000", rec.NextAccount(t), "the allowlist picks the instances")
-
-	rec = connectortest.NewRecorder()
 	start(t, newConnector(t, f, "quiet"), f, rec)
-	require.Equal(t, "+•••• 5678", rec.NextAccount(t), "an allowlisted instance counts even without WebSocket events")
+	require.Equal(t, "+•••• 5678", rec.NextAccount(t), "the configured instance counts even without WebSocket events")
 
 	f.mu.Lock()
 	f.instances = []map[string]any{
-		{"name": "acme", "token": acmeToken, "websocketEnable": true, "connected": false, "jid": ""},
-		{"name": "other", "token": otherToken, "websocketEnable": true, "connected": true, "jid": "100000000000001@lid"},
-		{"name": "third", "token": "third-token", "websocketEnable": true, "connected": true, "jid": "5511999991234:9@s.whatsapp.net"},
-		{"name": "fourth", "token": "fourth-token", "websocketEnable": true, "connected": true, "jid": "5511999991234:5@s.whatsapp.net"},
+		{"name": "acme", "token": acmeToken, "websocketEnable": true, "connected": true, "jid": "5511999991234:9@s.whatsapp.net"},
 	}
 	f.mu.Unlock()
 	rec = connectortest.NewRecorder()
 	start(t, newConnector(t, f), f, rec)
-	require.Equal(t, "+•••• 1234", rec.NextAccount(t), "one number once, however many devices")
+	require.Equal(t, "+•••• 1234", rec.NextAccount(t), "the device suffix is not part of the number")
+
+	f.mu.Lock()
+	f.instances = []map[string]any{{"name": "acme", "token": acmeToken, "websocketEnable": true, "connected": true, "jid": "100000000000001@lid"}}
+	f.mu.Unlock()
+	rec = connectortest.NewRecorder()
+	start(t, newConnector(t, f), f, rec)
+	require.Empty(t, rec.NextAccount(t), "a LID is no phone number")
 
 	f.mu.Lock()
 	f.instances = []map[string]any{{"name": "acme", "token": acmeToken, "websocketEnable": true, "connected": true}}
@@ -279,20 +298,54 @@ func TestRunReportsTheMaskedNumbersOfItsInstances(t *testing.T) {
 	require.Empty(t, rec.NextAccount(t), "no jid (an older evolution-go): an empty label clears it")
 }
 
-// WA-01: an empty allowlist accepts every instance the broadcast socket delivers.
-func TestRunWithoutAllowlistAcceptsEveryInstance(t *testing.T) {
+// CID-04: a connection names exactly one instance (its number). With none or several it reports
+// the status detail that asks the owner to choose one, never dials, receives nothing and waits
+// for ctx; with one it connects and delivers.
+func TestRunRequiresExactlyOneInstance(t *testing.T) {
 	f := newFakeEvolution(t)
-	c := newConnector(t, f)
-	rec := connectortest.NewRecorder()
-	sock := start(t, c, f, rec)
-	push(t, sock, frame(t, "other", groupInfo("FROM-OTHER"), `{"conversation":"x"}`))
-	require.Equal(t, "other|120363000000000001@g.us", rec.NextInbound(t).ChatID)
+	for name, instances := range map[string][]string{
+		"none":    nil,
+		"several": {"acme", "other"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := newStoredConnector(t, f, instances...)
+			rec := connectortest.NewRecorder()
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan error, 1)
+			go func() { done <- c.Run(ctx, rec) }()
+			require.Equal(t, connectors.StatusError, rec.NextStatus(t))
+			require.Equal(t, "choose the instance (number) of this connection", rec.NextStatusDetail(t))
+			require.Zero(t, f.socketDials(), "no WebSocket dial")
+
+			// A frame that reaches the connector is not delivered while it is idle.
+			c.handle(context.Background(), rec, frame(t, testInstance, groupInfo("IGNORED"), `{"conversation":"x"}`))
+			require.True(t, rec.NoInbound())
+
+			cancel()
+			select {
+			case err := <-done:
+				require.ErrorIs(t, err, context.Canceled, "Run waits for ctx instead of restarting")
+			case <-time.After(wait):
+				t.Fatal("Run did not return after cancel")
+			}
+			require.Zero(t, f.socketDials())
+		})
+	}
+
+	t.Run("one", func(t *testing.T) {
+		c := newConnector(t, f)
+		rec := connectortest.NewRecorder()
+		sock := start(t, c, f, rec) // asserts StatusConnected and the socket
+		require.Equal(t, 1, f.socketDials())
+		push(t, sock, frame(t, testInstance, groupInfo("ONE"), `{"conversation":"hello"}`))
+		require.Equal(t, "ONE", rec.NextInbound(t).MessageID)
+	})
 }
 
 // CON-06: a rejected global key fails Run with "unauthorized"; the key is not in the error.
 func TestRunUnauthorized(t *testing.T) {
 	f := newFakeEvolution(t)
-	cfg := connectors.Config{"base_url": f.srv.URL, "api_key": "wrong-key-0123456789"}
+	cfg := connectors.Config{"base_url": f.srv.URL, "api_key": "wrong-key-0123456789", "instances": []string{"acme"}}
 	c, err := New(cfg, connectors.Deps{AllowPrivateNetworks: true, UserAgent: userAgent})
 	require.NoError(t, err)
 	err = c.Run(context.Background(), connectortest.NewRecorder())
@@ -451,26 +504,43 @@ func TestSendFailure(t *testing.T) {
 	require.Contains(t, err.Error(), "500")
 
 	_, err = c.Send(context.Background(), connectors.Outbound{ChatID: ChatID("other", groupJID), Text: "x"})
-	require.Error(t, err)
-
-	c = newConnector(t, f, "acme")
-	_, err = c.Send(context.Background(), connectors.Outbound{ChatID: ChatID("other", groupJID), Text: "x"})
-	require.ErrorContains(t, err, "not allowed", "an instance outside the allowlist is not used for sends")
+	require.ErrorIs(t, err, ErrOtherInstance, "a chat of another instance is not used for sends")
 }
 
-// WA-05: groups are listed per allowed instance with GET /group/list.
+// CID-04: one number per connection. A chat of another instance is refused before anything
+// leaves, and a config that names no single instance sends through no number at all.
+func TestSendRefusesAnotherInstance(t *testing.T) {
+	f := newFakeEvolution(t)
+	c := newConnector(t, f, "acme")
+	_, err := c.Send(context.Background(), connectors.Outbound{ChatID: ChatID("other", groupJID), Text: "x"})
+	require.ErrorIs(t, err, ErrOtherInstance)
+	require.Zero(t, f.count("/send/text"), "nothing goes out through another number")
+	require.Zero(t, f.count("/send/media"))
+
+	id, err := c.Send(context.Background(), connectors.Outbound{ChatID: ChatID(testInstance, groupJID), Text: "on it"})
+	require.NoError(t, err)
+	require.Equal(t, "SENT-TEXT", id)
+	require.Equal(t, 1, f.count("/send/text"))
+
+	for _, instances := range [][]string{nil, {"acme", "other"}} {
+		c := newStoredConnector(t, f, instances...)
+		_, err := c.Send(context.Background(), connectors.Outbound{ChatID: ChatID(testInstance, groupJID), Text: "x"})
+		require.ErrorIs(t, err, ErrOtherInstance, "an ambiguous config sends through no number")
+	}
+	require.Equal(t, 1, f.count("/send/text"))
+}
+
+// WA-05: groups are listed for the connection's instance with GET /group/list.
 func TestListChats(t *testing.T) {
 	f := newFakeEvolution(t)
 	chats, err := newConnector(t, f, "acme").ListChats(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []connectors.ChatInfo{{ID: "acme|" + groupJID, Title: "Acme Team", Kind: "group"}}, chats)
 
-	chats, err = newConnector(t, f).ListChats(context.Background())
+	chats, err = newConnector(t, f, "other").ListChats(context.Background())
 	require.NoError(t, err)
-	require.ElementsMatch(t, []connectors.ChatInfo{
-		{ID: "acme|" + groupJID, Title: "Acme Team", Kind: "group"},
-		{ID: "other|" + groupJID, Title: "Other Team", Kind: "group"},
-	}, chats, "without allowlist: every instance with WebSocket events enabled")
+	require.Equal(t, []connectors.ChatInfo{{ID: "other|" + groupJID, Title: "Other Team", Kind: "group"}}, chats,
+		"only the connection's instance is listed")
 }
 
 func TestKindSchema(t *testing.T) {
@@ -478,13 +548,22 @@ func TestKindSchema(t *testing.T) {
 	require.Equal(t, KindName, k.Name)
 	require.True(t, k.CanListChats)
 	_, errs := k.Validate(connectors.Config{})
-	require.Equal(t, map[string]string{"base_url": "required", "api_key": "required"}, errs)
+	require.Equal(t, map[string]string{"base_url": "required", "api_key": "required", "instances": "required"}, errs)
+
+	var instances connectors.Field
+	for _, field := range k.Fields {
+		if field.Name == "instances" {
+			instances = field
+		}
+	}
+	require.True(t, instances.Required, "CID-04: a connection must name its number")
+	require.Equal(t, "exactly one instance: the number of this connection", instances.Help)
 }
 
 // CON-13: by default the connector refuses a base_url on a private address.
 func TestPrivateBaseURLIsRefusedByDefault(t *testing.T) {
 	f := newFakeEvolution(t)
-	cfg := connectors.Config{"base_url": f.srv.URL, "api_key": globalKey}
+	cfg := connectors.Config{"base_url": f.srv.URL, "api_key": globalKey, "instances": []string{"acme"}}
 	c, err := New(cfg, connectors.Deps{UserAgent: userAgent})
 	require.NoError(t, err)
 	err = c.Run(context.Background(), connectortest.NewRecorder())
@@ -496,7 +575,7 @@ func TestPrivateBaseURLIsRefusedByDefault(t *testing.T) {
 // reaches the server.
 func TestRESTClientRefusesPrivateBaseURL(t *testing.T) {
 	f := newFakeEvolution(t)
-	c, err := New(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey}, connectors.Deps{UserAgent: userAgent})
+	c, err := New(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey, "instances": []string{"acme"}}, connectors.Deps{UserAgent: userAgent})
 	require.NoError(t, err)
 
 	_, err = c.ListChats(context.Background())
@@ -510,7 +589,7 @@ func TestRESTClientRefusesPrivateBaseURL(t *testing.T) {
 // allowed, Run still fails at the WebSocket dial and the socket is never opened.
 func TestWebSocketClientRefusesPrivateBaseURL(t *testing.T) {
 	f := newFakeEvolution(t)
-	c, err := New(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey}, connectors.Deps{UserAgent: userAgent})
+	c, err := New(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey, "instances": []string{"acme"}}, connectors.Deps{UserAgent: userAgent})
 	require.NoError(t, err)
 	c.client = safehttp.NewClient(safehttp.Options{AllowPrivate: true, Timeout: requestTimeout}) // REST only
 
@@ -549,7 +628,7 @@ func TestResponseCaps(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	c, err := New(connectors.Config{"base_url": srv.URL, "api_key": globalKey},
+	c, err := New(connectors.Config{"base_url": srv.URL, "api_key": globalKey, "instances": []string{"acme"}},
 		connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: limit, UserAgent: userAgent})
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -577,7 +656,7 @@ func TestWebSocketFrameCap(t *testing.T) {
 	const limit = 1000
 	envelope := (limit+2)/3*4 + connectors.MaxJSONResponse
 	f := newFakeEvolution(t)
-	c, err := New(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey},
+	c, err := New(connectors.Config{"base_url": f.srv.URL, "api_key": globalKey, "instances": []string{"acme"}},
 		connectors.Deps{AllowPrivateNetworks: true, MaxMediaBytes: limit, UserAgent: userAgent})
 	require.NoError(t, err)
 	rec := connectortest.NewRecorder()
@@ -604,7 +683,7 @@ func TestWebSocketFrameCap(t *testing.T) {
 
 // WA-05 / WA-01 against the real evolution-go 0.7.2 shape: /instance/all returns
 // websocketEnable as a string ("enabled" or "") plus many other fields; the connector must
-// read it, list groups of the enabled instance and skip the disabled one.
+// read it and list the groups of its own instance only.
 func TestInstanceListRealShape(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /instance/all", func(w http.ResponseWriter, _ *http.Request) {
@@ -620,7 +699,7 @@ func TestInstanceListRealShape(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	c, err := New(connectors.Config{"base_url": srv.URL, "api_key": globalKey},
+	c, err := New(connectors.Config{"base_url": srv.URL, "api_key": globalKey, "instances": []string{"acme"}},
 		connectors.Deps{AllowPrivateNetworks: true, UserAgent: userAgent})
 	require.NoError(t, err)
 
@@ -628,7 +707,7 @@ func TestInstanceListRealShape(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, chats, 1)
 	require.Equal(t, "acme|120363000000000001@g.us", chats[0].ID)
-	require.Equal(t, acmeToken, <-listed, "only the websocket-enabled instance is listed")
+	require.Equal(t, acmeToken, <-listed, "only the connection's instance is listed")
 	require.Empty(t, listed)
 }
 
@@ -655,7 +734,7 @@ func TestInvalidResponseNamesTheField(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	c, err := New(connectors.Config{"base_url": srv.URL, "api_key": globalKey},
+	c, err := New(connectors.Config{"base_url": srv.URL, "api_key": globalKey, "instances": []string{"acme"}},
 		connectors.Deps{AllowPrivateNetworks: true, UserAgent: userAgent})
 	require.NoError(t, err)
 	_, err = c.ListChats(context.Background())
@@ -747,25 +826,17 @@ func TestGroupSubjectFromListAndFailure(t *testing.T) {
 	require.Equal(t, 1, f.count("/group/info"), "the list filled the cache")
 }
 
-// A connector that can never receive a message says why next to its connected status: no
-// instance with WebSocket events enabled (and no allowlist), or an allowlisted instance that
-// evolution-go does not have. A connector that can receive gets no detail.
-func TestRunWarnsWhenNoMessageCanArrive(t *testing.T) {
+// A connector that can never receive a message says why next to its connected status: evolution-go
+// does not have its instance. A connector that can receive gets no detail.
+func TestRunWarnsWhenTheInstanceIsMissing(t *testing.T) {
 	f := newFakeEvolution(t)
 	rec := connectortest.NewRecorder()
 	start(t, newConnector(t, f), f, rec)
-	require.Empty(t, rec.NextStatusDetail(t), "acme and other send WebSocket events")
-
-	f.mu.Lock()
-	f.instances = []map[string]any{{"name": "quiet", "token": "quiet-token", "websocketEnable": false, "connected": true}}
-	f.mu.Unlock()
-	rec = connectortest.NewRecorder()
-	start(t, newConnector(t, f), f, rec)
-	require.Contains(t, rec.NextStatusDetail(t), "no evolution-go instance has WebSocket events enabled")
+	require.Empty(t, rec.NextStatusDetail(t), "acme exists")
 
 	rec = connectortest.NewRecorder()
 	start(t, newConnector(t, f, "quiet"), f, rec)
-	require.Empty(t, rec.NextStatusDetail(t), "an allowlisted instance is used even without the flag")
+	require.Empty(t, rec.NextStatusDetail(t), "the configured instance is used even without WebSocket events")
 
 	rec = connectortest.NewRecorder()
 	start(t, newConnector(t, f, "gone"), f, rec)
