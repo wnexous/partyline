@@ -152,39 +152,39 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| ORG-01 | P1: Organizations own resources | Specify | Pending |
-| ORG-02 | P1: Organizations own resources | Specify | Pending |
-| ORG-03 | P1: Organizations own resources | Specify | Pending |
-| ORG-04 | P1: Organizations own resources | Specify | Pending |
-| ORG-05 | P1: Organizations own resources | Specify | Pending |
-| ORG-06 | P1: Organizations own resources | Specify | Pending |
-| ORG-07 | P1: Organizations own resources | Specify | Pending |
-| OMEM-01 | P1: Members and permissions | Specify | Pending |
-| OMEM-02 | P1: Members and permissions | Specify | Pending |
-| OMEM-03 | P1: Members and permissions | Specify | Pending |
-| OMEM-04 | P1: Members and permissions | Specify | Pending |
-| OMEM-05 | P1: Members and permissions | Specify | Pending |
-| OMEM-06 | P1: Members and permissions | Specify | Pending |
-| OMEM-07 | P1: Members and permissions | Specify | Pending |
-| OMEM-08 | Edge cases | Specify | Pending |
-| POS-01 | P1: Org chart of positions | Specify | Pending |
-| POS-02 | P1: Org chart of positions | Specify | Pending |
-| POS-03 | P1: Org chart of positions | Specify | Pending |
-| POS-04 | P1: Org chart of positions | Specify | Pending |
-| POS-05 | P1: Org chart of positions | Specify | Pending |
-| POS-06 | P1: Org chart of positions | Specify | Pending |
-| POS-07 | P1: Org chart of positions | Specify | Pending |
-| POS-08 | P1: Org chart of positions | Specify | Pending |
-| POS-09 | P1: Org chart of positions | Specify | Pending |
-| POS-10 | P1: Org chart of positions | Specify | Pending |
-| CHART-01 | P1: Org chart view | Specify | Pending |
-| CHART-02 | P1: Org chart view | Specify | Pending |
-| CHART-03 | P1: Org chart view | Specify | Pending |
-| CHART-04 | P1: Org chart view | Specify | Pending |
-| OUPG-01 | Edge cases | Specify | Pending |
-| OUPG-02 | Edge cases | Specify | Pending |
+| ORG-01 | P1: Organizations own resources | Tasks | In Tasks |
+| ORG-02 | P1: Organizations own resources | Tasks | In Tasks |
+| ORG-03 | P1: Organizations own resources | Tasks | In Tasks |
+| ORG-04 | P1: Organizations own resources | Tasks | In Tasks |
+| ORG-05 | P1: Organizations own resources | Tasks | In Tasks |
+| ORG-06 | P1: Organizations own resources | Tasks | In Tasks |
+| ORG-07 | P1: Organizations own resources | Tasks | In Tasks |
+| OMEM-01 | P1: Members and permissions | Tasks | In Tasks |
+| OMEM-02 | P1: Members and permissions | Tasks | In Tasks |
+| OMEM-03 | P1: Members and permissions | Tasks | In Tasks |
+| OMEM-04 | P1: Members and permissions | Tasks | In Tasks |
+| OMEM-05 | P1: Members and permissions | Tasks | In Tasks |
+| OMEM-06 | P1: Members and permissions | Tasks | In Tasks |
+| OMEM-07 | P1: Members and permissions | Tasks | In Tasks |
+| OMEM-08 | Edge cases | Tasks | In Tasks |
+| POS-01 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-02 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-03 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-04 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-05 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-06 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-07 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-08 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-09 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-10 | P1: Org chart of positions | Tasks | In Tasks |
+| CHART-01 | P1: Org chart view | Tasks | In Tasks |
+| CHART-02 | P1: Org chart view | Tasks | In Tasks |
+| CHART-03 | P1: Org chart view | Tasks | In Tasks |
+| CHART-04 | P1: Org chart view | Tasks | In Tasks |
+| OUPG-01 | Edge cases | Tasks | In Tasks |
+| OUPG-02 | Edge cases | Tasks | In Tasks |
 
-**Coverage:** 31 total, 0 mapped to tasks.
+**Coverage:** 31 total, 31 mapped to tasks.
 
 ---
 

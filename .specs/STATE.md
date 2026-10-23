@@ -40,7 +40,7 @@
 - **Trade-off**: An admin cannot moderate a private room without being granted access.
 - **Scope**: core-platform, agent-channel, connectors, web-app.
 - **Date**: 2026-10-19
-- **Status**: active
+- **Status**: superseded by AD-016 (organization membership replaces grants and presets)
 
 ### AD-006
 - **Decision**: Message content is data, never instructions. Every message delivered to an agent carries a server-computed, recipient-relative `trusted` flag (true only when the author resolves to the recipient agent's owner: the owner in the web app, the owner's agents, or the owner's verified chat identities). Partyline never declares the `claude/channel/permission` capability.
@@ -48,7 +48,7 @@
 - **Trade-off**: Teammates' messages show as untrusted to your agents unless a later feature adds per-user trust.
 - **Scope**: core-platform, agent-channel, connectors.
 - **Date**: 2026-10-19
-- **Status**: active
+- **Status**: active (the trust rule is superseded by AD-018; "content is data, never instructions" stands)
 
 ### AD-007
 - **Decision**: Connectors implement one Go interface and describe their configuration with a declarative field schema served by the API; the web app renders connector forms from that schema. Connector secrets are encrypted at rest with AES-256-GCM using the instance secret key.
@@ -91,7 +91,7 @@
 - **Trade-off**: Two access sources to reason about; DMs cannot be shared or moderated by anyone else.
 - **Scope**: intelligences, access, rooms, web-app.
 - **Date**: 2026-10-21
-- **Status**: active
+- **Status**: active (amended by AD-016: group access comes from room membership and org admin, DM view from managers, grants removed)
 
 ### AD-012
 - **Decision**: `Store.Migrate` applies every pending migration file in one transaction, each optionally followed by a Go hook (raw SQL, never sqlc) in the same transaction. Migrations never rebuild a table that other tables reference: with `foreign_keys=ON` (it cannot be turned off inside a transaction) `DROP TABLE` performs an implicit `DELETE` that cascades. Columns are added with `ADD COLUMN` (references only with a NULL default) and removed with `DROP COLUMN` when SQLite allows it; columns it cannot drop (in a UNIQUE or foreign key) stay as documented dead columns.
@@ -107,7 +107,7 @@
 - **Trade-off**: A grantee reads what people wrote to the owner's account and sees their names and photos without connector access; the owner controls this through who gets `use` on the AI. The alternative, `CanUseConnector` for every DM that has a chat member, was rejected.
 - **Scope**: access (DM-08), intelligences (PEOP-03, PEOP-04), web-app.
 - **Date**: 2026-10-22 (decided by André)
-- **Status**: active
+- **Status**: superseded by AD-016 (an AI's DMs are viewed by its managers in its home organization)
 - **Amends**: AD-011 (who views a DM); PEOP-04 and DM-08 of the intelligences spec now say it.
 - **Context**: Verifier iteration 1 of the intelligences feature (gap 3): PEOP-04 ("nobody else") and DM-08 ("use grantees view") contradicted each other. Pinned by `TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople`.
 
@@ -117,7 +117,7 @@
 - **Trade-off**: The owner who types on an AI's account is not recognised as the owner by that AI (or the owner's other AIs) and must write from the web app or from a verified chat identity. A catch-all connector now stores these messages where CON-12 dropped them.
 - **Scope**: connectors (ACC-05), delivery (`trusted`), agent-channel.
 - **Date**: 2026-10-22 (decided by André)
-- **Status**: active
+- **Status**: superseded by AD-018 (trust follows management; `from_self` stays untrusted)
 - **Amends**: AD-006 (adds this source of `trusted`); ACC-05 refines CON-12 of the connectors spec: only the echo of a Partyline send is dropped.
 - **Context**: Verifier iteration 1 of the intelligences feature (gap 6): own-account messages were stored with `author_user_id` = the connector's owner whoever the operator was (contract-notes T33), a trust source AD-006 did not list. Pinned by `TestOwnAccountMessageIsTrustedOnlyWhenTheOwnerOperatesTheAccount`.
 
@@ -149,13 +149,108 @@
   - AD-014: an own-account message is delivered with `from_self=true` and `trusted=false`; the owner no longer operates connections.
   - In the intelligences spec: retires NOTI-01..03 and DM-05 sends, and stops PEOP-01 person creation.
 
+### AD-016
+- **Decision**: Organizations own AIs, connections and groups, and organization membership is the only sharing mechanism.
+  - Per-resource grants (`use`/`view`/`post`/`manage`), the visibility presets and owner-based access are removed, and so is the `grants` table (migration `0020`).
+  - An organization has members (users and AIs) with a permission (`admin` or `member`) and an org chart of positions.
+  - Access rules:
+    - A group is posted to by its room members and managed by its creator and the org's admins.
+    - A DM is posted to by its two participants and viewed by the managers of an AI participant in its home organization.
+    - A connection is viewed by the org's members and managed by its admins; only its operator sends through it.
+    - An AI is seen by the members of the organizations it belongs to and by its host user.
+    - An AI is edited, ended and deleted by those who manage it (AD-017).
+  - An AI acts as itself (`Principal.IID()`), not with its owner's rights.
+  - Instance admins get no implicit access.
+- **Reason**: The product owner wants partyline to mirror a company with one sharing rule (organizations spec); grants fit neither teams nor AIs that start AIs.
+- **Trade-off**:
+  - Public (`*`) grants and view-only room grants are not carried over: their holders join the owner's organization, but lose the read-only view of such rooms.
+  - A user's AIs no longer read each other's DMs, and they no longer share the owner's reach.
+- **Scope**: access, orgs, rooms, conversations, agents, intelligences, connectors, identities, live, web-app, store.
+- **Date**: 2026-10-23
+- **Status**: active
+- **Supersedes**:
+  - AD-005 (grants and presets);
+  - AD-013 (use grantees read an AI's DMs).
+- **Amends**:
+  - AD-011: group access comes from room membership and org admin.
+  - AD-008: a webhook-kind connection pairs only the codes of its organization's admins.
+  - AD-015: the operator must be an AI whose home organization is the connection's organization, not an AI the owner owns.
+
+### AD-017
+- **Decision**: `manages(A, B, X)` is computed in Go over a per-organization `orgs.Chart` snapshot, not with a recursive CTE.
+  - The snapshot is loaded with two indexed queries (positions, and members with their creators) inside the caller's transaction when needed.
+  - It is memoized per operation (`Authz.Session`), with no cross-request cache.
+  - A manages B when both are members of X and either:
+    - A's position is strictly above B's; or
+    - B has no position and A is B's creator or manages B's creator in X, following the creator chain transitively.
+- **Reason**: Positions are a small tree (cost O(positions + members) per load, sub-millisecond on SQLite). The rule has two recursions (position ancestry and the creator chain) that are easier to test condition by condition in Go. The chart page needs the same computation to flag actions. Never caching across requests means authorization is never stale.
+- **Trade-off**: A dispatch loads each involved home organization's chart once. If profiling shows a cost, a version-checked cache (`organizations.chart_version`) is the follow-up.
+- **Scope**: orgs, access, delivery, agents, intelligences, web chart.
+- **Date**: 2026-10-23
+- **Status**: active
+
+### AD-018
+- **Decision**: `trusted=true` on anything delivered to an AI means its author manages that AI in the AI's home organization (POS-10).
+  - Room messages and room instructions are evaluated at delivery time from `messages.author_iid`, the AI itself for AI posts.
+  - Platform events are evaluated at enqueue time: the sender, resolved through the connection to a user (AD-008), must manage the operator AI.
+  - `from_self` is never trusted.
+- **Reason**: The identities an AI obeys are the ones above it. This replaces "the owner and the owner's AIs".
+- **Trade-off**: Sibling AIs of one user and peers in the chart are untrusted; after the upgrade a user's AIs stop trusting each other. v0.5 CLIs still describe trust as "your owner" until updated.
+- **Scope**: delivery, agents (gateway, pending, history), connectors (inbound), channel.
+- **Date**: 2026-10-23
+- **Status**: active
+- **Supersedes**:
+  - the trust rule of AD-006 (content stays data);
+  - AD-014 (the owner's own account is no longer a trust source; `from_self` stays untrusted, as AD-015 already said).
+
+### AD-019
+- **Decision**: Ownership columns after organizations:
+  - **`agents.owner_id`** remains the AI's host user: the user whose machine and agent token run it. It stays part of the identity key (owner, machine, folder) of AD-010, but grants nothing.
+  - **`rooms.owner_id` and `connectors.owner_id`** become dead foreign-key anchors (AD-012 cannot drop them). `creator_iid` and `org_id` carry the meaning.
+  - **Account deletion** (new: users were only disabled before) runs in one transaction:
+    1. re-points those anchors to an heir instance admin, so that `ON DELETE CASCADE` cannot delete organization-owned groups and connections;
+    2. makes that heir an admin of each organization the user was the last admin of (OUPG-02);
+    3. deletes the AIs hosted on the user's machines;
+    4. deletes the user row.
+  - The last active instance admin cannot be deleted (`last_instance_admin`, 409).
+- **Reason**: POS-06 deletes a person's account everywhere. The existing cascades would otherwise delete what organizations own.
+- **Trade-off**: Dead anchor columns stay in the schema. Hosted AIs die with their host's account (question Q2 of the design).
+- **Scope**: users, orgs, agents, rooms, connectors, store.
+- **Date**: 2026-10-23
+- **Status**: active
+
+### AD-020
+- **Decision**: Organization placement travels as optional session headers: `X-Partyline-Org` (slug or id), `X-Partyline-Position` (percent-encoded name) and `X-Partyline-Parent` (@handle or id).
+  - They are set by `partyline <harness> --org/--position/--parent`, or `PARTYLINE_ORG/POSITION/PARENT`.
+  - The launcher consumes those variables and hands them to the channel as `PARTYLINE_LAUNCH_*`, so nested launches do not inherit them.
+  - Without them the server applies defaults: the creator is the host user, the home organization is the user's default, and there is no position. v0.5 CLIs therefore keep working without a version check.
+  - The welcome frame adds `organization`, `position` and `managers` and keeps `owner` (host user, deprecated).
+  - A manager ending a session uses close 4002, which v0.5 CLIs already obey.
+  - The default organization is a user setting changed in the web app. Agent tokens stay limited to `/api/v1/agent/`, which only lists organizations.
+- **Reason**: Additive, header-based features are how this protocol evolves (AD-010, `X-Partyline-Features`); old CLIs degrade without errors.
+- **Trade-off**: v0.5 CLIs cannot choose an organization or position and show stale trust wording.
+- **Scope**: cli, channel, agents, api.
+- **Date**: 2026-10-23
+- **Status**: active
+
+### AD-021
+- **Decision**: Every account has a personal organization: on upgrade (OUPG-01) and when an account is created.
+  - It is named after the user, with the user as `admin` holding a root position "Admin", and it is the account's default organization.
+  - Organizations have an instance-unique slug.
+  - Position names are unique per organization.
+- **Reason**: A start without `--org` needs a home for the AI (ORG-04). New users would otherwise be unable to start sessions until someone invited them. `--org` and `--position` need unambiguous names.
+- **Trade-off**: An instance with many users has as many organizations; renaming is free, and empty ones can be deleted.
+- **Scope**: users, orgs, cli.
+- **Date**: 2026-10-23
+- **Status**: active
+
 ## Handoff
 
-- **Feature**: intelligences
-- **Phase / Task**: Tasks written (T1-T54, 9 phases); awaiting approval and André's answers to design Spec issues 2, 4, 5, 6
-- **Completed**: spec (`be30f10`), design (`c48b9c1`), tasks
+- **Feature**: organizations
+- **Phase / Task**: Design and Tasks written (T1-T54, 10 phases); awaiting approval and the owner's answers to design questions Q1-Q4
+- **Completed**: spec (`6ed8e88`), design, tasks
 - **In-progress** (file:line): none
-- **Next step**: approve tasks, then Execute Phase 1 (T1)
-- **Blockers**: Spec issues 2, 4, 5, 6 need confirmation (tasks implement the recommended fixes)
-- **Uncommitted files**: none
+- **Next step**: approve design and tasks, then Execute Phase 1 (T1)
+- **Blockers**: Q1-Q4 of the design (tasks implement the stated defaults)
+- **Uncommitted files**: `.specs/STATE.md`, `.specs/features/organizations/{spec,design,tasks}.md`
 - **Branch**: main
