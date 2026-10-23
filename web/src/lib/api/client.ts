@@ -33,7 +33,7 @@ export function isApiError(err: unknown): err is ApiError {
   return err instanceof ApiError;
 }
 
-type UnauthorizedHandler = (returnTo: string) => void;
+type UnauthorizedHandler = (returnTo: string) => void | Promise<void>;
 
 let onUnauthorized: UnauthorizedHandler | null = null;
 
@@ -48,9 +48,12 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): () 
   };
 }
 
-/** Runs the 401 handler for the current location: the session ended (UI-02). */
-export function notifyUnauthorized(): void {
-  onUnauthorized?.(currentLocation());
+/**
+ * Runs the 401 handler for the current location: the session ended (UI-02). Returns what the
+ * handler returned, so a caller that has to wait for the redirect (the live socket does) can.
+ */
+export function notifyUnauthorized(): void | Promise<void> {
+  return onUnauthorized?.(currentLocation());
 }
 
 export function currentLocation(): string {

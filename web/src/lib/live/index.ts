@@ -24,7 +24,10 @@ export function startLive(
     // the 401 handler sends the user to login and back to this route afterwards (UI-02).
     onSessionEnded: () => {
       qc.clear();
-      notifyUnauthorized();
+      // A page still mounted for a moment can rebuild a query and refill the cache with data of
+      // the session that just ended; the redirect unmounts it first. Clear once it has settled.
+      const redirect = notifyUnauthorized();
+      if (redirect) void redirect.finally(() => qc.clear());
     },
   });
   socket.start();

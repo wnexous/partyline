@@ -760,8 +760,8 @@ Strings come in `en` and `pt-BR`.
 **Reuses**: `connector-catch-all.tsx` (removed), `schema-form.tsx`
 **Requirement**: CID-23, CID-27, CID-22
 **Done when**:
-- [ ] Unit: fields render and save; queued count shown; no route action; `route-chat-dialog.tsx` and its test removed (UI-13 retired)
-- [ ] Gate check passes: `make check`
+- [x] Unit: fields render and save; queued count shown; no route action; `route-chat-dialog.tsx` and its test removed (UI-13 retired)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): connection page for an AI's app`

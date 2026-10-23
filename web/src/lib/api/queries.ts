@@ -1105,16 +1105,6 @@ export const useChats = () =>
     queryFn: () => api<List<Chat>>("GET", "/chats").then(items),
   });
 
-/** Creates a private room with the chat and the agent as members (UI-13). */
-export function useRouteChat() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ chatId, agentId }: { chatId: string; agentId: string }) =>
-      api<Room>("POST", `/chats/${chatId}/route`, { agent_id: agentId }),
-    onSuccess: (room) => storeRoom(qc, room),
-  });
-}
-
 // ---------------------------------------------------------------------------------------------
 // Identities
 

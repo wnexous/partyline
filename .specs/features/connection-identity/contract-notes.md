@@ -826,3 +826,49 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - **Authorization** (matrices pinned by `TestPlatformDMPostAuthorizationMatrix`,
   `TestEditingAPersonIsRefusedAsHistory`, `TestDMToAPersonHasNoRoute`): see the bullets above; every
   refusal changes nothing and announces nothing.
+
+## T29: Connection page as an AI's app (CID-23, CID-27, CID-22)
+
+- **What the page shows** (`web/src/routes/_app/connectors/$connectorId.tsx`): the header keeps the
+  platform, the live status badge and the owner, and now names the operator (`No operator yet` when
+  there is none) and the `queued` count (`{count} queued`, with the hint that partyline never shows
+  the text). A new "Operator and delivery" section carries:
+  - the operator select over the **owner's AIs only** (machines plus unlinked, from `GET /contacts`);
+    there is no owner or "you" option any more and nothing shared by another owner. With no
+    operator the select holds the placeholder `Choose an AI` and a note with the CID-02 wording
+    ("Choose the AI that operates this connection. Until you do, nothing arrives through it.").
+  - `deliver` (`all`, `dms`, `groups`) and `groups_mentions_only`, with one `Save delivery` button.
+- **Save** sends only the fields that changed (`operator_id`, `deliver`, `groups_mentions_only`), so
+  an operator pick never rewrites the delivery settings and vice versa. A 422 maps to
+  `operator_id` or `deliver` under its field (aria-invalid + description); the values stay as
+  typed. Success toasts `Delivery settings saved`. The button waits for a change (A11Y-04's rule,
+  now on the delivery form).
+- **Use grantees** read the same three values without controls (`DeliverySummary`): the operator as
+  `Name (@handle)`, the deliver label, Yes/No for mentions-only, and a note that only the owner
+  chooses an operator when there is none. They still see the status badge and `queued`.
+- **No message text**: the connector DTO has no field for it and the page renders no timeline; the
+  chat list remains (titles and metadata only), without the per-chat route action.
+- **Retired with the catch-all and routing (CID-22)**: `components/connector-catch-all.tsx`,
+  `components/route-chat-dialog.tsx` and its test (UI-13), `useRouteChat` (and the
+  `conversations.test.tsx` case for it; the server route is T34's), the `route.*` and `catchAll.*`
+  strings in `en`/`pt-BR`; the `catch-all routing` and route-dialog cases of
+  `connectors.test.tsx` (ROUTE-01..11, UI-13). `connector.enabledHint`, `connector.deleteHint`,
+  `connector.deleteBody` and `connectors.emptyBody` no longer mention chats joining rooms.
+- **Strings**: `connector.noOperator`, `.queued`, `.queuedHint`, `.delivery`, `.deliveryBody`,
+  `.noOperatorHint`, `.noOperatorReadOnly`, `.operatorNone`, `.operatorNamed`, `.aiLoadError`,
+  `.deliver`, `.deliver.{all,dms,groups}`, `.deliverHint`, `.mentionsOnly`,
+  `.mentionsOnlyHint`, `.saveDelivery`, `.deliverySaved`, `.deliveryFailed`, `common.yes` and
+  `common.no`, in `en` and `pt-BR`; `connector.operator*` strings of the owner-as-operator page
+  (`operatorBody`, `operatorOwner`, `operatorSave`, `operatorSaved`, `operatorFailed`) are gone.
+- **Tests** (`web/src/routes/_app/connectors/connectors.test.tsx`): the delivery form renders the
+  operator, deliver, mentions-only, status and queued values; the owner's AIs only; the empty
+  operator with the CID-02 note and its save; saving deliver + mentions-only; the 422s on both
+  fields; no route action, catch-all or scope control and no message text or composer; the
+  read-only view of a grantee (with and without an operator); pt-BR. The use-grantee management
+  test now expects the read-only delivery values instead of the owner's header text.
+- **Deflake (not part of the task)**: `live-session.test.tsx` (UI-02) failed on loaded gates: after
+  `qc.clear()` a still-mounted page re-rendered once, rebuilt its query (React Query's
+  `getOptimisticResult` calls `build`) and refilled the cache before the redirect unmounted it.
+  `notifyUnauthorized` now returns the handler's promise, the shell's handler returns
+  `router.navigate(...)`, and the live socket clears the cache again once that redirect settled.
+  No assertion changed.
