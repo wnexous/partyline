@@ -192,6 +192,16 @@ func TestDoctorReportsEachFailure(t *testing.T) {
 		require.Contains(t, r.stdout, "FAIL versions: partyline v1.2.0, server v1.3.0\n"+
 			"     fix: update this machine: curl -fsSL "+env.URL+"/install.sh | sh\n")
 	})
+	t.Run("server is a development build", func(t *testing.T) {
+		old := Version
+		t.Cleanup(func() { Version = old })
+		Version = "v1.2.0"
+		env := testkit.New(t, testkit.WithVersion("dev-0123456789ab"))
+		d := newDoctorEnv(t)
+		writeConfig(t, d.home, cliconfig.Config{URL: env.URL, Token: "pl_agent_x"})
+		r := d.run(t)
+		require.Contains(t, r.stdout, "ok   versions: partyline v1.2.0, server dev-0123456789ab\n")
+	})
 	t.Run("server version unknown", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"status":"ok"}`)) }))
 		t.Cleanup(srv.Close)

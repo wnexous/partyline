@@ -228,19 +228,24 @@ func executableFile(path string) bool {
 	return err == nil && fi.Mode().IsRegular() && fi.Mode().Perm()&0o111 != 0
 }
 
-// checkVersions reports both versions; two release versions that differ fail.
+// checkVersions reports both versions; two release versions that differ fail. A development
+// build ("dev", or "dev-<commit>" from a server built from a branch without its tags) is not
+// compared, as it names no release to install.
 func checkVersions(local, server, base string) check {
 	c := check{name: "versions", detail: fmt.Sprintf("partyline %s, server %s", local, orUnknown(server))}
 	switch {
 	case server == "":
 		c.fix = "the server did not report its version; update the server"
-	case local != "dev" && server != "dev" && local != server:
+	case !devBuild(local) && !devBuild(server) && local != server:
 		c.fix = fmt.Sprintf("update this machine: curl -fsSL %s/install.sh | sh", strings.TrimRight(base, "/"))
 	default:
 		c.ok = true
 	}
 	return c
 }
+
+// devBuild tells whether a version is a development build rather than a release.
+func devBuild(v string) bool { return v == "dev" || strings.HasPrefix(v, "dev-") }
 
 func orUnknown(s string) string {
 	if s == "" {
