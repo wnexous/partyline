@@ -51,6 +51,10 @@ const (
 	// HeaderAdopt names a handle or a v0.3 agent name (--as, PARTYLINE_AGENT): the unlinked AI to
 	// link to the session's folder when the folder has no AI yet (MIG-02).
 	HeaderAdopt = "X-Partyline-Adopt"
+	// HeaderFeatures lists, separated by commas, the optional features the client of the agent
+	// WebSocket understands. FeaturePlatform opts in to platform events (CID-06): a session that
+	// does not name it gets room messages only, and its platform queue waits (CID-10).
+	HeaderFeatures = "X-Partyline-Features"
 	// HeaderSignature carries "sha256=<hex HMAC>" on webhook requests in both directions.
 	HeaderSignature = "X-Partyline-Signature"
 	// HeaderTimestamp carries the unix seconds used in the webhook signature.
@@ -60,6 +64,9 @@ const (
 	// MultipartFileField is the multipart part name for each uploaded file.
 	MultipartFileField = "file"
 )
+
+// FeaturePlatform is the HeaderFeatures token of a client that understands platform events.
+const FeaturePlatform = "platform"
 
 // ErrorCode is the machine-readable code of an API error.
 type ErrorCode string

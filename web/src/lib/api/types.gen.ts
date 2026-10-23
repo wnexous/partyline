@@ -119,10 +119,12 @@ export const AgentFrameTypeWelcome = "welcome"; // server → channel
 export const AgentFrameTypeMessage = "message"; // server → channel
 export const AgentFrameTypeNotice = "notice"; // server → channel
 export const AgentFrameTypeAck = "ack"; // channel → server
+export const AgentFrameTypePlatform = "platform"; // server → channel, sessions that opted in (FeaturePlatform)
+export const AgentFrameTypePlatformAck = "platform_ack"; // channel → server
 /**
  * Agent WebSocket frame types.
  */
-export type AgentFrameType = typeof AgentFrameTypeWelcome | typeof AgentFrameTypeMessage | typeof AgentFrameTypeNotice | typeof AgentFrameTypeAck;
+export type AgentFrameType = typeof AgentFrameTypeWelcome | typeof AgentFrameTypeMessage | typeof AgentFrameTypeNotice | typeof AgentFrameTypeAck | typeof AgentFrameTypePlatform | typeof AgentFrameTypePlatformAck;
 /**
  * AgentInfo identifies the connected agent in the welcome frame.
  */
@@ -139,6 +141,21 @@ export interface AgentInfo {
   owner: string; // owner's username
 }
 /**
+ * AgentConnection is a connection (an account on a platform) the AI operates, as the welcome
+ * frame lists it (CID-01): the channel tells the harness which numbers are its own.
+ */
+export interface AgentConnection {
+  id: string;
+  /**
+   * Platform is the connector kind: whatsapp, telegram, discord or webhook.
+   */
+  platform: string;
+  /**
+   * AccountLabel names the account (a masked number or a bot name); empty while unknown.
+   */
+  account_label: string;
+}
+/**
  * AgentWelcomeFrame is the first frame after the agent WebSocket opens.
  */
 export interface AgentWelcomeFrame {
@@ -150,6 +167,11 @@ export interface AgentWelcomeFrame {
    */
   intelligence: IntelligenceRef;
   owner: IntelligenceRef;
+  /**
+   * Connections are the connections the AI operates, by name; always present, empty when it
+   * operates none (CID-01).
+   */
+  connections: AgentConnection[];
 }
 /**
  * SessionState is GET /agent/session: what the server knows about the AI of the machine and
@@ -192,6 +214,68 @@ export interface AgentNoticeFrame {
 export interface AgentAckFrame {
   type: typeof AgentFrameTypeAck;
   message_id: string;
+}
+/**
+ * PlatformEvent is a message that arrived on a connection the AI operates, as its session
+ * receives it (CID-06): never a message of a Partyline conversation. ID is what the AI answers
+ * with (reply); ChatID names the chat for send_message together with ConnectionID. A chat of
+ * another connection, a message of the account itself (FromSelf) and a sender whose account is not
+ * linked to the AI's owner are never trusted as the owner's (CID-13, CID-14).
+ */
+export interface PlatformEvent {
+  id: string;
+  platform: string; // whatsapp, telegram, discord or webhook
+  connection_id: string;
+  /**
+   * ChatID is Partyline's id of the chat, not the platform's.
+   */
+  chat_id: string;
+  chat_title: string;
+  chat_kind: ChatKind;
+  sender_name: string;
+  sender_id: string;
+  /**
+   * Trusted is true only when the sender's account is linked to the AI's owner (AD-006).
+   */
+  trusted: boolean;
+  /**
+   * FromSelf is true for a message written from the connection's own account on the platform
+   * itself (typed on its device), which Partyline did not send.
+   */
+  from_self: boolean;
+  kind: MessageKind;
+  text: string;
+  /**
+   * Attachments are downloadable until 24 hours after the session acknowledged the event.
+   */
+  attachments: Attachment[];
+  received_at: string /* RFC 3339 */;
+}
+/**
+ * AgentPlatformFrame pushes one platform event to a session that opted in with FeaturePlatform:
+ * the AI's queued messages first, oldest first, then live. At most 50 are in flight; the session
+ * acknowledges each with an AgentPlatformAckFrame, which deletes its text (CID-08, CID-09).
+ */
+export interface AgentPlatformFrame {
+  type: typeof AgentFrameTypePlatform;
+  event: PlatformEvent;
+}
+/**
+ * AgentPlatformAckFrame confirms a platform event was handed to the harness (CID-09).
+ */
+export interface AgentPlatformAckFrame {
+  type: typeof AgentFrameTypePlatformAck;
+  item_id: string;
+}
+/**
+ * AgentPending is the answer of GET /agent/pending?platform=1 (CID-06): the undelivered room
+ * messages, exactly as the call without the parameter returns them (a List of AgentMessage), and
+ * the AI's queued platform events, oldest first, at most 20 per call like the room messages. Both
+ * lists count as delivered once returned: the platform events lose their text (CID-09).
+ */
+export interface AgentPending {
+  items: AgentMessage[];
+  platform: PlatformEvent[];
 }
 /**
  * AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its
@@ -293,6 +377,12 @@ export const HeaderTakeover = "X-Partyline-Takeover";
  */
 export const HeaderAdopt = "X-Partyline-Adopt";
 /**
+ * HeaderFeatures lists, separated by commas, the optional features the client of the agent
+ * WebSocket understands. FeaturePlatform opts in to platform events (CID-06): a session that
+ * does not name it gets room messages only, and its platform queue waits (CID-10).
+ */
+export const HeaderFeatures = "X-Partyline-Features";
+/**
  * HeaderSignature carries "sha256=<hex HMAC>" on webhook requests in both directions.
  */
 export const HeaderSignature = "X-Partyline-Signature";
@@ -308,6 +398,10 @@ export const MultipartMessageField = "message";
  * MultipartFileField is the multipart part name for each uploaded file.
  */
 export const MultipartFileField = "file";
+/**
+ * FeaturePlatform is the HeaderFeatures token of a client that understands platform events.
+ */
+export const FeaturePlatform = "platform";
 /**
  * ErrorCode is the machine-readable code of an API error.
  */

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/handles"
 )
 
 // NotificationMethod is the MCP notification Claude Code reads channel events from.
@@ -30,13 +31,6 @@ type Notification struct {
 // sender_id; other authors carry none of them (CTX-02).
 func Format(m dto.AgentMessage) Notification {
 	msg := m.Message
-	lines := make([]string, 0, 1+len(msg.Attachments))
-	if msg.Text != "" {
-		lines = append(lines, msg.Text)
-	}
-	for _, a := range msg.Attachments {
-		lines = append(lines, "[attachment "+a.ID+": "+a.Name+", "+a.Mime+"]")
-	}
 	conversation := dto.ConversationKindGroup
 	if m.Room.Kind == dto.ConversationKindDM {
 		conversation = dto.ConversationKindDM
@@ -68,7 +62,74 @@ func Format(m dto.AgentMessage) Notification {
 		meta["platform"] = c.Platform
 		meta["sender_id"] = msg.SenderID
 	}
-	return Notification{Content: strings.Join(lines, "\n"), Meta: meta}
+	return Notification{Content: contentOf(msg.Text, msg.Attachments), Meta: meta}
+}
+
+// contentOf is the content of a notification: the text, then one line per attachment.
+func contentOf(text string, attachments []dto.Attachment) string {
+	lines := make([]string, 0, 1+len(attachments))
+	if text != "" {
+		lines = append(lines, text)
+	}
+	for _, a := range attachments {
+		lines = append(lines, "[attachment "+a.ID+": "+a.Name+", "+a.Mime+"]")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// PlatformType is the type of the notification, and of the line `partyline listen` prints, of a
+// platform event; AuthorKindPlatform is its author_kind: the author wrote on the platform, and is
+// no member of a Partyline conversation.
+const (
+	PlatformType       = "platform"
+	AuthorKindPlatform = "platform"
+)
+
+// FormatPlatform renders a platform event (CID-06): a message that arrived on a connection the AI
+// operates. The PlatformEvent fields go onto the keys of a room message, so that every adapter
+// frames it like one: the sender is the author, the room is "<Platform> · <chat title>", and
+// message_id is the id reply answers; the chat, the connection and the flags follow as chat_id,
+// chat_title, chat_kind, platform, connection_id, trusted and from_self (true for what was typed
+// on the account itself). Attachments are listed in the content like those of a message.
+func FormatPlatform(e dto.PlatformEvent) Notification {
+	room := platformLabel(e.Platform)
+	if e.ChatTitle != "" {
+		room += " · " + e.ChatTitle
+	}
+	return Notification{Content: contentOf(e.Text, e.Attachments), Meta: map[string]string{
+		"type":          PlatformType,
+		"room_name":     room,
+		"message_id":    e.ID,
+		"author":        e.SenderName,
+		"author_kind":   AuthorKindPlatform,
+		"sender_name":   e.SenderName,
+		"sender_id":     e.SenderID,
+		"trusted":       strconv.FormatBool(e.Trusted),
+		"from_self":     strconv.FormatBool(e.FromSelf),
+		"kind":          string(e.Kind),
+		"platform":      e.Platform,
+		"connection_id": e.ConnectionID,
+		"chat_id":       e.ChatID,
+		"chat_title":    e.ChatTitle,
+		"chat_kind":     string(e.ChatKind),
+	}}
+}
+
+// platformLabel names a connector kind the way people write it; other kinds are capitalized.
+func platformLabel(kind string) string {
+	switch kind {
+	case "whatsapp":
+		return "WhatsApp"
+	case "telegram":
+		return "Telegram"
+	case "discord":
+		return "Discord"
+	case "webhook":
+		return "Webhook"
+	case "":
+		return "Chat"
+	}
+	return handles.DisplayName(kind)
 }
 
 // FormatNotice renders a server notice (e.g. skipped backlog, AGT-09) as a system event of

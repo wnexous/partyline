@@ -21,6 +21,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -64,8 +65,12 @@ type GatewayDeps struct {
 	Registry *Registry
 	Presence *Presence
 	Rooms    *rooms.Service
+	// Platform is the AIs' platform queue. Without it no session gets platform events (optional).
+	Platform *platform.Queue
 	// Bus carries SessionsRevoked: a connection whose token is revoked, or whose owner is
-	// disabled, closes at once. Sessions re-checks the token after a lagged bus. Both optional.
+	// disabled, closes at once. Sessions re-checks the token after a lagged bus. It also carries
+	// PlatformQueued, which wakes a session that receives platform events; without it those
+	// sessions read the queue only on connect and on acknowledgements. Both optional.
 	Bus      *events.Bus
 	Sessions PrincipalChecker
 	Logger   *slog.Logger
@@ -209,6 +214,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer stopReq()
 
 	c := &conn{ws: ws, queue: make(chan dto.AgentMessage, QueueSize), cancel: cancel}
+	if hs.platform && g.d.Platform != nil {
+		c.feed = newPlatformFeed(g.d.Platform, row.Agent.ID)
+	}
 	if g.beforeAttach != nil {
 		g.beforeAttach()
 	}
@@ -227,7 +235,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	go g.readAcks(ctx, c, row.Agent.ID)
 	if revocations != nil {
-		go g.watchRevocations(ctx, c, p, revocations)
+		go g.watchBus(ctx, c, p, revocations)
 	}
 
 	err = g.run(ctx, c, row)
@@ -255,10 +263,12 @@ func (g *Gateway) active(ctx context.Context, p authn.Principal) (bool, error) {
 	return g.d.Sessions.PrincipalActive(ctx, p)
 }
 
-// watchRevocations closes c (1008) when an event revokes its token or disables its owner, and
-// re-checks the token after a lagged bus, which may have dropped such an event (a failed
-// check closes with 1013 so the channel reconnects and authenticates again).
-func (g *Gateway) watchRevocations(ctx context.Context, c *conn, p authn.Principal, sub <-chan events.Event) {
+// watchBus closes c (1008) when an event revokes its token or disables its owner, and re-checks
+// the token after a lagged bus, which may have dropped such an event (a failed check closes with
+// 1013 so the channel reconnects and authenticates again). A connection that receives platform
+// events reads its queue again when an item was queued for its AI, and after a lagged bus, which
+// may have dropped that event.
+func (g *Gateway) watchBus(ctx context.Context, c *conn, p authn.Principal, sub <-chan events.Event) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -273,7 +283,14 @@ func (g *Gateway) watchRevocations(ctx context.Context, c *conn, p authn.Princip
 					c.Close(websocket.StatusPolicyViolation, "token revoked")
 					return
 				}
+			case events.PlatformQueued:
+				if c.feed != nil && e.AgentID == c.feed.agentID {
+					c.feed.poke()
+				}
 			case events.Lagged:
+				if c.feed != nil {
+					c.feed.poke()
+				}
 				ok, err := g.active(ctx, p)
 				switch {
 				case err != nil && ctx.Err() == nil:
@@ -297,6 +314,8 @@ type handshake struct {
 	liveID string
 	// takeover asks to take the AI's live session over (SES-02).
 	takeover bool
+	// platform is set when the client understands platform events (dto.FeaturePlatform, CID-06).
+	platform bool
 }
 
 // liveIDPattern is the shape of a process id (dto.HeaderLive).
@@ -311,7 +330,7 @@ func (g *Gateway) register(ctx context.Context, p authn.Principal, h http.Header
 	if err != nil {
 		return db.GetAgentWithOwnerRow{}, handshake{}, err
 	}
-	d := handshake{harness: cleanHarness(id.Harness), takeover: h.Get(dto.HeaderTakeover) == "1"}
+	d := handshake{harness: cleanHarness(id.Harness), takeover: h.Get(dto.HeaderTakeover) == "1", platform: hasFeature(h, dto.FeaturePlatform)}
 	if v := h.Get(dto.HeaderLive); liveIDPattern.MatchString(v) {
 		d.liveID = v
 	}
@@ -367,6 +386,8 @@ type conn struct {
 	ws     *websocket.Conn
 	queue  chan dto.AgentMessage
 	cancel context.CancelFunc
+	// feed sends the AI's platform items; nil for a client that did not opt in to them.
+	feed *platformFeed
 
 	mu     sync.Mutex
 	closed bool
@@ -420,10 +441,14 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 	if err != nil {
 		return err
 	}
+	connections, err := g.connections(ctx, a.ID)
+	if err != nil {
+		return err
+	}
 	if err := c.write(ctx, dto.AgentWelcomeFrame{
 		Type:         dto.AgentFrameTypeWelcome,
 		Agent:        dto.AgentInfo{ID: a.ID, Name: row.Handle, DisplayName: row.ProfileName, Owner: row.OwnerUsername},
-		Intelligence: ai, Owner: owner,
+		Intelligence: ai, Owner: owner, Connections: connections,
 	}); err != nil {
 		return err
 	}
@@ -431,12 +456,23 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 	if err != nil {
 		return err
 	}
+	var feedWake <-chan struct{} // nil, which never fires, for a client without platform events
+	if c.feed != nil {
+		feedWake = c.feed.wake
+		if err := g.platformStart(ctx, c, a.ID); err != nil {
+			return err
+		}
+	}
 	ping := time.NewTicker(g.d.PingInterval)
 	defer ping.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-feedWake:
+			if err := c.feed.fill(ctx, c); err != nil {
+				return err
+			}
 		case <-ping.C:
 			pctx, cancel := context.WithTimeout(ctx, g.d.PingTimeout)
 			err := c.ws.Ping(pctx)
@@ -581,7 +617,8 @@ func (g *Gateway) advanceRoom(ctx context.Context, agentID string, st RoomState,
 	return g.advance(ctx, agentID, st.ID, seq)
 }
 
-// readAcks reads frames from the agent and records acks (AGT-07) until the connection ends.
+// readAcks reads frames from the agent and records acks (AGT-07, CID-09) until the connection
+// ends.
 func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 	defer c.cancel()
 	for {
@@ -589,12 +626,29 @@ func (g *Gateway) readAcks(ctx context.Context, c *conn, agentID string) {
 		if err != nil {
 			return
 		}
-		var f dto.AgentAckFrame
-		if json.Unmarshal(data, &f) != nil || f.Type != dto.AgentFrameTypeAck || f.MessageID == "" {
+		var head struct {
+			Type      dto.AgentFrameType `json:"type"`
+			MessageID string             `json:"message_id"`
+			ItemID    string             `json:"item_id"`
+		}
+		if json.Unmarshal(data, &head) != nil {
 			continue
 		}
-		if err := g.ack(ctx, agentID, f.MessageID); err != nil && ctx.Err() == nil {
-			g.d.Logger.Error("agent: ack failed", "agent_id", agentID, "err", err)
+		switch {
+		case head.Type == dto.AgentFrameTypeAck && head.MessageID != "":
+			if err := g.ack(ctx, agentID, head.MessageID); err != nil && ctx.Err() == nil {
+				g.d.Logger.Error("agent: ack failed", "agent_id", agentID, "err", err)
+			}
+		case head.Type == dto.AgentFrameTypePlatformAck && head.ItemID != "" && g.d.Platform != nil:
+			if err := g.d.Platform.Ack(ctx, agentID, head.ItemID); err != nil {
+				if ctx.Err() == nil {
+					g.d.Logger.Error("agent: platform ack failed", "agent_id", agentID, "err", err)
+				}
+				continue // the item stays in flight and unacknowledged: the next connection delivers it again
+			}
+			if c.feed != nil {
+				c.feed.release(head.ItemID)
+			}
 		}
 	}
 }

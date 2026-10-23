@@ -316,3 +316,176 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   a `mentions_account: true` body with a forged signature and gets 401, so the new field never
   bypasses the route's only credential (operator/owner/use-grantee/other-AI tokens do not apply to
   this unauthenticated-by-design route).
+
+## T12: Gateway pushes platform events (CID-06, CID-08, CID-09, CID-10, CID-25)
+
+- **Opt-in**: the agent WebSocket request header `X-Partyline-Features` (`dto.HeaderFeatures`) lists,
+  separated by commas, the optional features of the client; the item `platform`
+  (`dto.FeaturePlatform`) opts in to platform events. Spaces around an item are ignored; the match
+  is exact (`platforms` and `non-platform` do not opt in). A session that did not opt in receives
+  no platform frame and no dropped notice, and it touches neither the queue nor the dropped count:
+  its items wait for a session that did (design refinement 4).
+- **Order on connect**: welcome (with `connections`), the room backlog, the dropped notice, then the
+  platform items. Live room messages and platform items interleave afterwards.
+- **Frames** (`dto`): `platform` (`AgentPlatformFrame{type, event}`, server to channel) and
+  `platform_ack` (`AgentPlatformAckFrame{type, item_id}`, channel to server). `PlatformEvent` is
+  the design's: `id` (the id the AI answers with), `platform`, `connection_id`, `chat_id`
+  (Partyline's), `chat_title`, `chat_kind`, `sender_name`, `sender_id`, `trusted`, `from_self`,
+  `kind`, `text`, `attachments` (`[]`, never null), `received_at` (RFC 3339, UTC). The platform's own
+  message id (`external_id`) and the blob hashes never leave the server. `convert.PlatformEvent`
+  renders a `platform.Event`; T13 reuses it.
+- **Window**: at most `agents.PlatformWindow = 50` frames are in flight per connection, in flight
+  being sent on this connection and not yet acknowledged by it. A slot is freed by the session's
+  `platform_ack` of that frame **whatever became of the item meanwhile** (expired, dropped by the
+  bound or moved to another AI): the channel acknowledges every frame it receives, and an item the
+  server deleted must not hold a slot for the life of the connection. An acknowledgement that
+  fails to record (a store error) keeps the slot and the item unacknowledged; the next connection
+  delivers it again.
+- **No cursor** (refinement of the design, which names `Unacked(afterSeq)`): the connection
+  remembers only the ids in flight, and every wake-up reads the AI's unacknowledged items from the
+  start of the queue (`Unacked(agent, 0, room + in flight)`), skips the ones in flight and sends the
+  oldest `room` of the rest. Wake-ups: connect, a freed slot, `events.PlatformQueued` for the AI
+  (with or without an `ItemID`) and `events.Lagged`. So:
+  - the items an operator change moved to the AI, which are older than what its session holds, are
+    delivered (CID-05): T21 only publishes `PlatformQueued{AgentID: new}` after its commit;
+  - a session that took the AI over receives every unacknowledged item, those in flight to the
+    old session included (CID-25);
+  - a lagged bus that dropped an event costs nothing.
+  Delivery is at least once: if the old session's acknowledgement lands between the new session's
+  read and write of an item, both sessions have it (the channel's `seenBefore` drops repeats within
+  one process).
+- **Dropped notice** (CID-10): an `AgentNoticeFrame` with an empty room and the text
+  `N platform messages were dropped (older than 7 days or over 5,000 queued)` (`agents.DroppedNotice`;
+  the same wording for N = 1, like `SkippedNotice`). `TakeDropped` reads and zeroes the count right
+  before the write, once per connection; a connection that dies between the two loses the notice.
+- **Welcome** (`AgentWelcomeFrame.connections`, `[]AgentConnection{id, platform, account_label}`):
+  every connection the AI operates, enabled or not, ordered by connection name then id; always
+  present, `[]` when the AI operates none. `platform` is the connector kind and `account_label`
+  the connection's stored label (empty until it is known). Sent to every session, platform-capable
+  or not.
+- **Wiring**: `GatewayDeps.Platform` (the app passes `App.Platform`). Without a `Bus` a platform
+  session reads its queue on connect and on acknowledgements only (no live push). `watchRevocations`
+  became `watchBus` and also wakes the feed.
+- **Authorization**: nothing new to authorize. The AI of a session is still the token owner's AI of
+  the machine and folder it names, so another AI of the owner, another user's AI of the same
+  folder (use grantee or stranger) and a user token or cookie (403) never see an item; an
+  acknowledgement of another AI's item is a no-op (`Queue.Ack`).
+- **Testkit**: `Folder.Features`, `Folder.WithPlatform()`, `Client.DialPlatform(name)`,
+  `AgentConn.Platform(timeout)`, `AgentConn.AckPlatform(itemID)`.
+
+## T13: Pending endpoint returns platform events (CID-06, CID-08, CID-09)
+
+- **Request**: `GET /api/v1/agent/pending?platform=1`. `platform` is `1` (on) or `0` or empty or
+  absent (off); anything else, or the parameter twice, is a 422 `invalid` with `fields.platform`
+  ("must be 1 or 0") and takes nothing. `wait` and the 409 for an AI that holds the WebSocket
+  (`messages are pushed to this agent's session; there is nothing to wait for`) are unchanged and
+  apply to `platform=1` too.
+- **Answer**: without the parameter the answer is what it always was, `{"items": [...]}`, with no
+  `platform` key, and the platform queue is neither read nor changed. With it, `dto.AgentPending`:
+  `{"items": [...], "platform": [...]}`, both always present (`[]` when empty). `platform` holds
+  `PlatformEvent`s (the WebSocket frame's event, `convert.PlatformEvent`), oldest first.
+- **Limit** (refinement of "within the existing limit"): each list has the existing limit of 20 per
+  call. The room messages are the same with and without the parameter, which only adds the platform
+  list; the rest of a longer queue comes with the next call.
+- **Taken** (CID-09): the events count as delivered once returned, "as room messages do".
+  `platform.Queue.Take(agent, limit)` lists the oldest unacknowledged items and acknowledges them in
+  one write transaction (their text is deleted, the events returned still carry it); a failure
+  acknowledges none. An empty queue is polled with a read only. The room messages are read first
+  (their cursors move), then the platform events are taken: a store error between the two loses what
+  the first step returned, like a failed response write after the cursors moved.
+- **Wait**: `wait=N&platform=1` ends at the first room message or platform event, polling every
+  500 ms like the room side; without `platform=1` a platform event neither ends the wait nor is taken.
+- **Files of platform messages** (not assigned to a task by the plan, needed by CID-09 "attachments
+  stay downloadable for 24 hours"; the design's data-model note): `GET /api/v1/agent/attachments/{id}`
+  serves the attachment of a room the AI can view and, when there is none, a file of an item the AI
+  holds, acknowledged or not (`Queue.Attachment`). Any other id is the same 404 as before: unknown,
+  another AI's, not stored (`too_large`, `unavailable`), purged (24 hours after the ack). Images
+  show inline and everything else downloads under its name, as for room files (`serveBlob` is
+  shared). The user route `GET /api/v1/attachments/{id}` is unchanged and never serves a platform
+  file. Agent tokens only (user credentials 403, anonymous 401). The purge runner (T4) deletes the
+  blob once nothing references it.
+- **Authorization** (agent tokens only): the AI is the token owner's AI of the machine and folder in
+  the headers, so another AI of the owner, the same-named AI of a user granted use of the operator
+  and the same-named AI of a stranger see only their own queue; user tokens and sessions get 403,
+  anonymous callers 401.
+- **Wiring**: `api.Deps.Platform` (the app passes `App.Platform`).
+
+## T14: Channel and listen show platform events (CID-06, CID-25)
+
+- **Opt-in**: every WebSocket connection of `partyline channel` and of `partyline listen` sends
+  `X-Partyline-Features: platform`, so a current CLI always receives platform events. The REST calls
+  of the tools send no such header; the hooks and `wait_for_messages` ask with `?platform=1` (T15).
+- **Notification** (`channel.FormatPlatform`; `listen` prints the same keys plus `content`):
+  - content: the text, then one `[attachment <id>: <name>, <mime>]` line per file, as for a message
+    (`download_attachment` takes the id, T13);
+  - meta, all strings:
+    - `type` = `platform`, `author_kind` = `platform`;
+    - `room_name` = `<Platform> · <chat title>` (the platform alone when the chat has no title);
+      the platform reads WhatsApp, Telegram, Discord or Webhook, other kinds are capitalized and an
+      empty one is `Chat`;
+    - `message_id` = the event id, which `reply` takes;
+    - `author` and `sender_name` = the sender's name, `sender_id` = the sender's id on the platform;
+    - `trusted` (CID-13), `from_self` (CID-14), `kind`;
+    - `platform` (the connector kind), `connection_id`, `chat_id` (Partyline's: what `send_message`
+      takes together with `connection_id`, T19/T20), `chat_title`, `chat_kind`.
+  - There is no `room`, `conversation`, `author_id`, `author_handle` or `reply_to`: a platform event
+    belongs to no room or conversation, and the platform's own message ids never reach the session.
+- **Acknowledgement**: after the notification is written the link sends `platform_ack {item_id}`.
+  Messages and platform events share one path (`notifyThenAck`) and one dedupe window of 1,000 ids
+  (`seenBefore`): a repeated id, which the gateway sends again after a reconnect or a takeover
+  (CID-25), is acknowledged without a second notification. A platform frame without an event id is
+  dropped. The message path behaves as before.
+- **Identity notice**: `You are X (@x). Your owner is Y (@y). You operate: WhatsApp +55 11 *****-0000
+  (connection <id>), Telegram (connection <id>).` The last sentence appears only when the welcome
+  lists connections (T12); an empty account label leaves the platform alone. The notice is still
+  sent once per process, and `listen` still prints none.
+- **Adapters**: no change. The shared framing shows a platform record with the room name, the chat
+  title, the platform, the sender (`from`), `trusted`, `message_id` and `chat_id`; `from_self`,
+  `connection_id` and `kind` are not part of it (T16 pins this framing).
+
+## T15: Hooks and wait tool include platform events (CID-06)
+
+- **Request**: `channel.Pending` (the turn-end hooks) calls `GET /agent/pending?platform=1`, and the
+  `wait_for_messages` tool calls it with `wait=N&platform=1`. Both now return `dto.AgentPending`
+  (`Items` and `Platform`) instead of the room messages alone (`channel.Pending`'s signature
+  changed; its only caller is `partyline hook`). A server from before platform events ignores the
+  parameter and answers `{"items": [...]}`, which decodes to an empty `Platform`.
+- **Taken**: the server acknowledges the events it returns (T13), so a hook or a tool call that
+  returns them has delivered them.
+- **Framing**: `FrameAll(msgs, events...)` frames every message and every event with the same frame
+  and the trust line of its own flag (`trusted="true"` gets the owner line, everything else the
+  data line), separated by a blank line. `channel.PlatformRecord(e)` is the record of an event (the
+  keys of its notification plus `content`), which `Frame` renders as `<partyline room="<Platform> ·
+  <chat title>" chat=… platform=… from=… trusted=… message_id=… chat_id=…>text</partyline>`. The
+  two lists are merged oldest first by `Message.CreatedAt` and `PlatformEvent.ReceivedAt`; a message
+  goes before an event of the same time. The messages alone frame exactly as before.
+- **Hooks**: `codex-stop` (decision `block`) and `gemini-after-agent` (`deny`) continue with the
+  framed text as the reason when either list has something, and allow the stop (`{}`) when both are
+  empty. As for room messages, what the hook returns is delivered: an error after the server took
+  the events loses them, and the hook then allows the stop and reports on stderr.
+- **Tool**: `wait_for_messages` returns the framed text, ends its wait at the first room message or
+  platform event, and answers `no new messages in N seconds` only when both lists are empty. Its
+  description now says it covers the connections the AI operates.
+- **Authorization**: nothing new; the hook and the tool act as the AI of their folder (T13), so
+  another AI of the owner and another user's AI of the same folder name neither see nor take the
+  events.
+
+## T16: Adapter framing covers platform records (CID-06)
+
+- **Where**: the shared cases live in `integrations/testdata/framing.json` (`framing.ts` imports
+  them and `TestFrameMatchesTheAdapters` reads the same file on the Go side), so the four new cases
+  run for pi, OpenCode and omp (12 tests) and for the Go framing that `wait_for_messages` and the
+  turn-end hooks use. `framing.ts` itself did not change.
+- **Cases**: a WhatsApp group event with an attachment line (untrusted: data line), a Telegram
+  direct event from the owner's verified account (trusted: owner line), a direct event typed on the
+  account itself (`from_self`, untrusted: data line) and one whose chat title and sender name carry
+  quotes and angle brackets (the title and the name are third-party text, escaped in the room, chat
+  and from attributes). Their records are what `FormatPlatform` produces plus `content`; the
+  expected texts were written from the PUSH-06 frame format, not from the code's output.
+- **No adapter changed**: they frame from `room_name`, `chat_title`, `platform`, `sender_name` or
+  `author`, `trusted`, `message_id`, `chat_id` and `content`, and treat only `type` `notice` apart.
+- **Known limitation, for T19/T20**: the shared framing does not show `from_self`, `connection_id`
+  or `kind`. A harness fed by `listen` or the hooks can always answer with `reply` (the message id);
+  naming a connection for `send_message` needs its id, which only the full channel's identity
+  notice lists (T14), so T20 has to decide how such a harness names its connection.
+

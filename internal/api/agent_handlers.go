@@ -9,12 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/agents"
 	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/delivery"
+	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -46,7 +48,7 @@ func (s *server) agentAPIRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/v1/agent/rooms/{room}/messages", s.agentOnly(s.agentPost))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/reply", s.agentOnly(s.agentReply))
 	s.handle(mux, "POST /api/v1/agent/messages/{id}/react", s.agentOnly(s.agentReact))
-	s.handle(mux, "GET /api/v1/agent/attachments/{id}", s.agentOnly(s.downloadAttachment))
+	s.handle(mux, "GET /api/v1/agent/attachments/{id}", s.agentOnly(s.agentAttachment))
 	s.handle(mux, "POST /api/v1/agent/register", s.agentRegister)
 	s.handle(mux, "GET /api/v1/agent/pending", s.agentOnly(s.agentPending))
 	s.handle(mux, "DELETE /api/v1/agent/token", s.revokeOwnAgentToken)
@@ -194,7 +196,9 @@ var errPushedSession = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict
 // agentPending returns up to 20 undelivered messages, oldest first, and counts them as
 // delivered. With wait=N (1-300 s) it waits up to N seconds for the first one and returns an
 // empty list on timeout. An agent connected over the WebSocket gets 409: its messages are
-// pushed there.
+// pushed there. With platform=1 the answer also carries the AI's queued platform events (up to
+// 20, oldest first), which count as delivered too, and a platform event ends the wait (CID-06,
+// CID-08, CID-09); without it the platform queue is neither read nor touched.
 func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	wait := 0
 	if v := r.URL.Query().Get("wait"); v != "" {
@@ -205,6 +209,10 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 			return c.Err()
 		}
 		wait = n
+	}
+	withPlatform, err := platformParam(r)
+	if err != nil {
+		return err
 	}
 	a, err := s.Agents.ByID(r.Context(), p.AgentID) // agentOnly resolved it
 	if err != nil {
@@ -219,9 +227,23 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 		if err != nil {
 			return err
 		}
+		events := []dto.PlatformEvent{}
+		if withPlatform {
+			taken, err := s.Platform.Take(r.Context(), a.ID, agents.PendingLimit)
+			if err != nil {
+				return err
+			}
+			for _, e := range taken {
+				events = append(events, convert.PlatformEvent(e))
+			}
+		}
 		left := time.Until(deadline)
-		if len(msgs) > 0 || left <= 0 {
-			httpx.WriteJSON(w, http.StatusOK, dto.List[dto.AgentMessage]{Items: msgs})
+		if len(msgs) > 0 || len(events) > 0 || left <= 0 {
+			if withPlatform {
+				httpx.WriteJSON(w, http.StatusOK, dto.AgentPending{Items: msgs, Platform: events})
+			} else {
+				httpx.WriteJSON(w, http.StatusOK, dto.List[dto.AgentMessage]{Items: msgs})
+			}
 			return nil
 		}
 		select {
@@ -230,6 +252,44 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 		case <-time.After(min(pendingPoll, left)):
 		}
 	}
+}
+
+// platformParam reads the platform query parameter of GET /agent/pending: 1 asks for the platform
+// events, 0 or none leaves them alone; anything else is a 422.
+func platformParam(r *http.Request) (bool, error) {
+	switch v := r.URL.Query()["platform"]; {
+	case len(v) == 0:
+		return false, nil
+	case len(v) == 1 && v[0] == "1":
+		return true, nil
+	case len(v) == 1 && (v[0] == "0" || v[0] == ""):
+		return false, nil
+	}
+	c := validation.Check{}
+	c.Add("platform", "must be 1 or 0")
+	return false, c.Err()
+}
+
+// agentAttachment serves a file the AI may read: an attachment of a room it can view, else a file
+// of a platform message it holds, acknowledged or not (CID-09). Any other id is a 404, so a caller
+// learns nothing about files it cannot read.
+func (s *server) agentAttachment(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	id := r.PathValue("id")
+	a, err := s.Rooms.Attachment(r.Context(), p, id)
+	if err == nil {
+		return s.serveBlob(w, r, a.Sha256, a.Name, a.Mime)
+	}
+	if !errors.Is(err, access.ErrNotFound) || s.Platform == nil {
+		return err
+	}
+	f, perr := s.Platform.Attachment(r.Context(), p.AgentID, id)
+	switch {
+	case errors.Is(perr, platform.ErrNotFound):
+		return err
+	case perr != nil:
+		return perr
+	}
+	return s.serveBlob(w, r, f.SHA256, f.Name, f.Mime)
 }
 
 // agentRegister resolves the AI of the machine and folder named in the headers, as the

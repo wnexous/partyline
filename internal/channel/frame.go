@@ -69,11 +69,32 @@ func Record(m dto.AgentMessage) map[string]string {
 	return r
 }
 
-// FrameAll frames each message, separated by a blank line.
-func FrameAll(msgs []dto.AgentMessage) string {
-	parts := make([]string, len(msgs))
-	for i, m := range msgs {
-		parts[i] = Frame(Record(m))
+// PlatformRecord is the record of a platform event: the meta fields of its notification plus
+// "content" (CID-06).
+func PlatformRecord(e dto.PlatformEvent) map[string]string {
+	n := FormatPlatform(e)
+	r := make(map[string]string, len(n.Meta)+1)
+	for k, v := range n.Meta {
+		r[k] = v
+	}
+	r["content"] = n.Content
+	return r
+}
+
+// FrameAll frames each message and each platform event, separated by a blank line and with the
+// trust line of its own flag. Both lists are oldest first and come out oldest first across the two
+// (what wait_for_messages and the turn-end hooks hand the harness); a message goes before an event
+// of the same time.
+func FrameAll(msgs []dto.AgentMessage, events ...dto.PlatformEvent) string {
+	parts := make([]string, 0, len(msgs)+len(events))
+	for len(msgs) > 0 || len(events) > 0 {
+		if len(events) == 0 || (len(msgs) > 0 && !msgs[0].Message.CreatedAt.After(events[0].ReceivedAt)) {
+			parts = append(parts, Frame(Record(msgs[0])))
+			msgs = msgs[1:]
+			continue
+		}
+		parts = append(parts, Frame(PlatformRecord(events[0])))
+		events = events[1:]
 	}
 	return strings.Join(parts, "\n\n")
 }

@@ -23,9 +23,9 @@ var hookDecisions = map[string]string{
 }
 
 // hookCmd runs `partyline hook codex-stop|gemini-after-agent`: it reads the hook input (JSON
-// with the session's cwd) from stdin, takes the agent's undelivered room messages and prints
-// the harness's decision to continue with them as the reason, or {} (stop as usual) when there
-// are none. Problems are reported on stderr and never block the harness.
+// with the session's cwd) from stdin, takes the agent's undelivered room messages and platform
+// events (the messages that arrived on the connections it operates) and prints the harness's
+// decision to continue with them as the reason, or {} (stop as usual) when there are none. Problems are reported on stderr and never block the harness.
 func hookCmd(ctx context.Context, args []string, io stdio) int {
 	if len(args) != 1 || hookDecisions[args[0]] == "" {
 		fmt.Fprintln(io.stderr, "usage: partyline hook codex-stop|gemini-after-agent")
@@ -62,17 +62,17 @@ func hookCmd(ctx context.Context, args []string, io stdio) int {
 	}
 	ctx, cancel := context.WithTimeout(ctx, hookTimeout)
 	defer cancel()
-	msgs, err := channel.Pending(ctx, channel.PendingOptions{URL: creds.URL, Token: creds.Token, Identity: sessionIdentity("", hio)})
+	pending, err := channel.Pending(ctx, channel.PendingOptions{URL: creds.URL, Token: creds.Token, Identity: sessionIdentity("", hio)})
 	if err != nil {
 		fmt.Fprintln(io.stderr, "partyline hook:", err)
 		return allow()
 	}
-	if len(msgs) == 0 {
+	if len(pending.Items) == 0 && len(pending.Platform) == 0 {
 		return allow()
 	}
 	enc := json.NewEncoder(io.stdout)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(map[string]string{"decision": decision, "reason": channel.FrameAll(msgs)})
+	_ = enc.Encode(map[string]string{"decision": decision, "reason": channel.FrameAll(pending.Items, pending.Platform...)})
 	return 0
 }
 

@@ -19,18 +19,20 @@ const MaxWaitSeconds = 300
 // defaultWaitSeconds is the wait when the model gives no timeout_seconds.
 const defaultWaitSeconds = 60
 
-// pending fetches the agent's undelivered messages (GET /agent/pending), waiting up to wait
-// seconds for the first one; they count as delivered once returned.
-func (c *client) pending(ctx context.Context, wait int) ([]dto.AgentMessage, error) {
-	q := url.Values{}
+// pending fetches the agent's undelivered room messages and platform events (GET
+// /agent/pending?platform=1), waiting up to wait seconds for the first of either; they count as
+// delivered once returned. A server from before platform events answers with the room messages
+// alone.
+func (c *client) pending(ctx context.Context, wait int) (dto.AgentPending, error) {
+	q := url.Values{"platform": {"1"}}
 	if wait > 0 {
 		q.Set("wait", strconv.Itoa(wait))
 	}
-	var page dto.List[dto.AgentMessage]
-	if err := c.json(ctx, http.MethodGet, "agent/pending", q, nil, &page); err != nil {
-		return nil, err
+	var p dto.AgentPending
+	if err := c.json(ctx, http.MethodGet, "agent/pending", q, nil, &p); err != nil {
+		return dto.AgentPending{}, err
 	}
-	return page.Items, nil
+	return p, nil
 }
 
 // registerWait adds wait_for_messages, the way a session without pushed messages (Codex,
@@ -38,7 +40,7 @@ func (c *client) pending(ctx context.Context, wait int) ([]dto.AgentMessage, err
 func (t *tools) registerWait(srv *mcp.Server) {
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "wait_for_messages",
-		Description: "Wait for new room messages; this session does not receive them on its own. Returns the messages that arrived (each counts as delivered), or says that none arrived within timeout_seconds.",
+		Description: "Wait for new messages, from your rooms and from the connections you operate; this session does not receive them on its own. Returns what arrived (each counts as delivered), or says that nothing arrived within timeout_seconds.",
 		InputSchema: schema(`{"type":"object","properties":{"timeout_seconds":{"type":"integer","minimum":0,"maximum":300,"description":"how long to wait for the first message (default 60, at most 300)"}}}`),
 	}, t.guardFor(MaxWaitSeconds*time.Second+toolTimeout, t.waitForMessages))
 }
@@ -56,14 +58,14 @@ func (t *tools) waitForMessages(ctx context.Context, args json.RawMessage) (stri
 	if a.Timeout != nil {
 		wait = min(max(*a.Timeout, 0), MaxWaitSeconds)
 	}
-	msgs, err := t.api.pending(ctx, wait)
+	p, err := t.api.pending(ctx, wait)
 	if err != nil {
 		return "", err
 	}
-	if len(msgs) == 0 {
+	if len(p.Items) == 0 && len(p.Platform) == 0 {
 		return fmt.Sprintf("no new messages in %d seconds", wait), nil
 	}
-	return FrameAll(msgs), nil
+	return FrameAll(p.Items, p.Platform...), nil
 }
 
 // PendingOptions configure Pending.
@@ -75,12 +77,12 @@ type PendingOptions struct {
 	HTTPClient *http.Client
 }
 
-// Pending returns the agent's undelivered messages without waiting and counts them as
-// delivered (the turn-end hooks, TURN-02).
-func Pending(ctx context.Context, o PendingOptions) ([]dto.AgentMessage, error) {
+// Pending returns the agent's undelivered room messages and platform events without waiting and
+// counts them as delivered (the turn-end hooks, TURN-02, CID-06).
+func Pending(ctx context.Context, o PendingOptions) (dto.AgentPending, error) {
 	base, err := parseBase(o.URL)
 	if err != nil {
-		return nil, err
+		return dto.AgentPending{}, err
 	}
 	if o.HTTPClient == nil {
 		o.HTTPClient = &http.Client{}

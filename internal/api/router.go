@@ -19,6 +19,7 @@ import (
 	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
 	"github.com/wnexous/partyline/internal/validation"
@@ -46,6 +47,9 @@ type Deps struct {
 	Devices *devices.Service
 	Blobs   *attachments.Store
 	Audit   *audit.Log
+	// Platform is the delivery queue of the messages that arrive on connections: GET
+	// /agent/pending?platform=1 takes from it and the agent attachments route serves its files.
+	Platform *platform.Queue
 	// Live serves the live WebSocket at GET /api/v1/live.
 	Live http.Handler
 	// AgentWS serves the agent WebSocket at GET /api/v1/agent/ws.

@@ -95,10 +95,12 @@ type AgentFrameType string
 
 // Agent WebSocket frame types.
 const (
-	AgentFrameTypeWelcome AgentFrameType = "welcome" // server → channel
-	AgentFrameTypeMessage AgentFrameType = "message" // server → channel
-	AgentFrameTypeNotice  AgentFrameType = "notice"  // server → channel
-	AgentFrameTypeAck     AgentFrameType = "ack"     // channel → server
+	AgentFrameTypeWelcome     AgentFrameType = "welcome"      // server → channel
+	AgentFrameTypeMessage     AgentFrameType = "message"      // server → channel
+	AgentFrameTypeNotice      AgentFrameType = "notice"       // server → channel
+	AgentFrameTypeAck         AgentFrameType = "ack"          // channel → server
+	AgentFrameTypePlatform    AgentFrameType = "platform"     // server → channel, sessions that opted in (FeaturePlatform)
+	AgentFrameTypePlatformAck AgentFrameType = "platform_ack" // channel → server
 )
 
 // AgentInfo identifies the connected agent in the welcome frame.
@@ -111,6 +113,16 @@ type AgentInfo struct {
 	Owner       string `json:"owner"` // owner's username
 }
 
+// AgentConnection is a connection (an account on a platform) the AI operates, as the welcome
+// frame lists it (CID-01): the channel tells the harness which numbers are its own.
+type AgentConnection struct {
+	ID string `json:"id"`
+	// Platform is the connector kind: whatsapp, telegram, discord or webhook.
+	Platform string `json:"platform"`
+	// AccountLabel names the account (a masked number or a bot name); empty while unknown.
+	AccountLabel string `json:"account_label"`
+}
+
 // AgentWelcomeFrame is the first frame after the agent WebSocket opens.
 type AgentWelcomeFrame struct {
 	Type  AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeWelcome"`
@@ -119,6 +131,9 @@ type AgentWelcomeFrame struct {
 	// who it is and who it works for.
 	Intelligence IntelligenceRef `json:"intelligence"`
 	Owner        IntelligenceRef `json:"owner"`
+	// Connections are the connections the AI operates, by name; always present, empty when it
+	// operates none (CID-01).
+	Connections []AgentConnection `json:"connections"`
 }
 
 // SessionState is GET /agent/session: what the server knows about the AI of the machine and
@@ -152,6 +167,56 @@ type AgentNoticeFrame struct {
 type AgentAckFrame struct {
 	Type      AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeAck"`
 	MessageID string         `json:"message_id"`
+}
+
+// PlatformEvent is a message that arrived on a connection the AI operates, as its session
+// receives it (CID-06): never a message of a Partyline conversation. ID is what the AI answers
+// with (reply); ChatID names the chat for send_message together with ConnectionID. A chat of
+// another connection, a message of the account itself (FromSelf) and a sender whose account is not
+// linked to the AI's owner are never trusted as the owner's (CID-13, CID-14).
+type PlatformEvent struct {
+	ID           string `json:"id"`
+	Platform     string `json:"platform"` // whatsapp, telegram, discord or webhook
+	ConnectionID string `json:"connection_id"`
+	// ChatID is Partyline's id of the chat, not the platform's.
+	ChatID     string   `json:"chat_id"`
+	ChatTitle  string   `json:"chat_title"`
+	ChatKind   ChatKind `json:"chat_kind"`
+	SenderName string   `json:"sender_name"`
+	SenderID   string   `json:"sender_id"`
+	// Trusted is true only when the sender's account is linked to the AI's owner (AD-006).
+	Trusted bool `json:"trusted"`
+	// FromSelf is true for a message written from the connection's own account on the platform
+	// itself (typed on its device), which Partyline did not send.
+	FromSelf bool        `json:"from_self"`
+	Kind     MessageKind `json:"kind"`
+	Text     string      `json:"text"`
+	// Attachments are downloadable until 24 hours after the session acknowledged the event.
+	Attachments []Attachment `json:"attachments"`
+	ReceivedAt  time.Time    `json:"received_at"`
+}
+
+// AgentPlatformFrame pushes one platform event to a session that opted in with FeaturePlatform:
+// the AI's queued messages first, oldest first, then live. At most 50 are in flight; the session
+// acknowledges each with an AgentPlatformAckFrame, which deletes its text (CID-08, CID-09).
+type AgentPlatformFrame struct {
+	Type  AgentFrameType `json:"type" tstype:"typeof AgentFrameTypePlatform"`
+	Event PlatformEvent  `json:"event"`
+}
+
+// AgentPlatformAckFrame confirms a platform event was handed to the harness (CID-09).
+type AgentPlatformAckFrame struct {
+	Type   AgentFrameType `json:"type" tstype:"typeof AgentFrameTypePlatformAck"`
+	ItemID string         `json:"item_id"`
+}
+
+// AgentPending is the answer of GET /agent/pending?platform=1 (CID-06): the undelivered room
+// messages, exactly as the call without the parameter returns them (a List of AgentMessage), and
+// the AI's queued platform events, oldest first, at most 20 per call like the room messages. Both
+// lists count as delivered once returned: the platform events lose their text (CID-09).
+type AgentPending struct {
+	Items    []AgentMessage  `json:"items"`
+	Platform []PlatformEvent `json:"platform"`
 }
 
 // AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its

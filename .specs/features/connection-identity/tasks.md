@@ -484,15 +484,15 @@ New frame DTOs are added.
 **Reuses**: `run`, `backlog`, `readAcks`, takeover machinery
 **Requirement**: CID-06, CID-08, CID-09, CID-10, CID-25
 **Done when**:
-- [ ] e2e WebSocket tests:
+- [x] e2e WebSocket tests:
   - offline, 3 items → on connect, 3 frames oldest first (CID-08);
   - an ack clears the text (CID-09);
   - the dropped notice carries N and is sent once (CID-10);
   - 60 items → at most 50 unacked frames in flight;
   - after a takeover the new session gets the unacked item (CID-25);
   - a session without the header gets no platform frames
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): push platform events to the operator's session`
@@ -505,8 +505,8 @@ New frame DTOs are added.
 **Reuses**: `agentPending`, `Queue.Unacked/Ack`
 **Requirement**: CID-06, CID-08, CID-09
 **Done when**:
-- [ ] e2e: with `platform=1`, the events are returned and acked; without it they are neither returned nor acked; `wait` still long-polls
-- [ ] Gate check passes: `make check`
+- [x] e2e: with `platform=1`, the events are returned and acked; without it they are neither returned nor acked; `wait` still long-polls
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): pending returns platform events on request`
@@ -519,9 +519,9 @@ New frame DTOs are added.
 **Reuses**: `handle`, `seenBefore`, `Format`, `lineWriter`
 **Requirement**: CID-06, CID-25
 **Done when**:
-- [ ] Channel e2e: notification meta and content for a group and a DM event; ack after notify; a duplicate id is notified once
-- [ ] listen e2e: the JSON line has the record
-- [ ] Gate check passes: `make check`
+- [x] Channel e2e: notification meta and content for a group and a DM event; ack after notify; a duplicate id is notified once
+- [x] listen e2e: the JSON line has the record
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): deliver platform events to the harness`
@@ -534,8 +534,8 @@ New frame DTOs are added.
 **Reuses**: `FrameAll`, hook tests
 **Requirement**: CID-06
 **Done when**:
-- [ ] e2e: the `codex-stop` hook prints a block decision whose reason contains the platform event; `wait_for_messages` returns it
-- [ ] Gate check passes: `make check`
+- [x] e2e: the `codex-stop` hook prints a block decision whose reason contains the platform event; `wait_for_messages` returns it
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): hooks show platform events`
@@ -548,8 +548,8 @@ New frame DTOs are added.
 **Reuses**: shared framing cases
 **Requirement**: CID-06
 **Done when**:
-- [ ] `make integrations-test` passes with the new cases for pi, OpenCode and omp
-- [ ] Gate check passes: `make check`
+- [x] `make integrations-test` passes with the new cases for pi, OpenCode and omp
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `test(integrations): frame platform events`
