@@ -164,9 +164,9 @@ It also adds the sqlc queries the queue needs.
 **Reuses**: AD-012 `ADD COLUMN` pattern, `openMigratedBefore`
 **Requirement**: CID-08, CID-26, CID-27
 **Done when**:
-- [ ] Store test: the tables and columns exist; existing connectors read `deliver=all`, `groups_mentions_only=1` (CID-27); the dedupe index refuses a second `(connector, chat, external_id)` row and accepts empty external ids twice
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] Store test: the tables and columns exist; existing connectors read `deliver=all`, `groups_mentions_only=1` (CID-27); the dedupe index refuses a second `(connector, chat, external_id)` row and accepts empty external ids twice
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): add the platform queue`

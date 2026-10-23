@@ -445,7 +445,7 @@ WITH mine AS (
            OR (x.alt_external_id <> '' AND x.alt_external_id IN (p.external_id, CASE WHEN p.alt_external_id <> '' THEN p.alt_external_id ELSE p.external_id END)))
     GROUP BY p.id
 )
-SELECT c.id, c.connector_id, c.external_id, c.title, c.kind, c.last_seen_at, c.created_at, c.person_id, k.id, k.owner_id, k.kind, k.name, k.config_json, k.secrets_enc, k.enabled, k.status, k.last_error, k.created_at, k.updated_at, k.auto_route_scope, k.auto_route_room_id, k.operator_iid, k.account_label, mine.account
+SELECT c.id, c.connector_id, c.external_id, c.title, c.kind, c.last_seen_at, c.created_at, c.person_id, k.id, k.owner_id, k.kind, k.name, k.config_json, k.secrets_enc, k.enabled, k.status, k.last_error, k.created_at, k.updated_at, k.auto_route_scope, k.auto_route_room_id, k.operator_iid, k.account_label, k.deliver, k.groups_mentions_only, mine.account
 FROM mine
 JOIN chats c ON c.person_id = mine.person_id AND c.kind = 'dm'
 JOIN connectors k ON k.id = c.connector_id
@@ -497,6 +497,8 @@ func (q *Queries) ListNotifyOptions(ctx context.Context, userID string) ([]ListN
 			&i.Connector.AutoRouteRoomID,
 			&i.Connector.OperatorIid,
 			&i.Connector.AccountLabel,
+			&i.Connector.Deliver,
+			&i.Connector.GroupsMentionsOnly,
 			&i.Account,
 		); err != nil {
 			return nil, err

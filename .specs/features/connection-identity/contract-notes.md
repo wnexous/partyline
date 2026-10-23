@@ -32,3 +32,36 @@ Where a section refines the design, it says so.
   `idleWarning` survives only for `evolution-go has no instance named X`, which is not that
   retired branch: the rule is now about the one configured instance and is still shown with the
   connected status.
+
+## T2: Migration 0017, the platform queue schema (CID-08, CID-26, CID-27)
+
+- **Tables** (`0017_platform_queue.sql`, additive, no rebuild):
+  - `platform_items`: `seq` (AUTOINCREMENT, never reused), `id` (unique), `agent_id`,
+    `connector_id`, `chat_id` (all `ON DELETE CASCADE`), `external_id`, `sender_id`,
+    `sender_name`, `trusted`, `from_self`, `kind`, `text`, `received_at`, `acked_at` (NULL while
+    unacknowledged). Times are unix milliseconds.
+  - `platform_attachments`: `id`, `item_id` (cascade), `sha256` (`''` = no blob), `name`, `mime`,
+    `size`, `status` (`stored|too_large|unavailable`, as for room attachments).
+  - `platform_sends`: the design's columns. `status` is checked against
+    `pending|sending|sent|failed`. Rows go with their connection, chat and AI.
+  - `agents.platform_dropped` (default 0), `connectors.deliver` (default `all`, checked against
+    `dms|groups|all`) and `connectors.groups_mentions_only` (default 1).
+- **Dedupe (CID-26)**: the unique index is `(connector_id, chat_id, external_id) WHERE
+  external_id <> ''`. It does not name the AI, so moving a connection to another operator can never
+  duplicate an item, and a platform message without an id never collides.
+- **Indexes beyond the design**: `platform_items(connector_id, acked_at)` (the `queued` count and the
+  move), `platform_items(chat_id)`, `platform_attachments(item_id)` and the `platform_sends` ones
+  (`due`, `(chat_id, external_id)` for the echo check, `agent_id`, `connector_id`). They back the
+  foreign-key cascades and the lookups of later tasks; they change no behaviour.
+- **Defaults (CID-27)**: existing connections read `deliver=all` and `groups_mentions_only=1`
+  whatever their old `auto_route_scope`; the column defaults are the single source (T6 makes
+  `Create` rely on them).
+- **sqlc queries** (`queries/platform.sql`), used by the queue service of T3:
+  - `InsertPlatformItem` is `:one ... RETURNING seq` with `ON CONFLICT (connector_id, chat_id,
+    external_id) WHERE external_id <> '' DO NOTHING`: a repeat returns `sql.ErrNoRows`, which the
+    service reads as "already queued".
+  - `ListUnackedPlatformItems` (oldest first, after a seq, joined with the chat and the connector
+    kind as `platform`), `ListPlatformAttachmentsForItems`, `AckPlatformItem` (own AI only, once),
+    `CountUnackedPlatformItems`, `DeleteUnackedPlatformItemsOverCap` (keeps the newest `cap`
+    unacknowledged items; acknowledged ones are never counted), `AddPlatformDropped`,
+    `GetPlatformDropped`, `ResetPlatformDropped` and `MovePlatformItems`.
