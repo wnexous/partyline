@@ -235,6 +235,10 @@ type HookInboundRequest struct {
 	SenderName string `json:"sender_name,omitempty"`
 	Text       string `json:"text"`
 	MessageID  string `json:"message_id,omitempty"`
+	// MentionsAccount tells that the message mentions the account. A webhook chat is a channel,
+	// so while the connection's groups_mentions_only is on a message without it is not
+	// delivered (CID-12).
+	MentionsAccount bool `json:"mentions_account,omitempty"`
 }
 
 // HookOutboundEvent is the JSON a webhook connector POSTs to its outbound URL (HOOK-03).

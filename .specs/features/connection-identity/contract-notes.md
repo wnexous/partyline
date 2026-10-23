@@ -297,3 +297,18 @@ Where a section refines the design, it says so.
   the phone jid) cannot be recognised; the phone form is what groups send in that case.
 - **Not mentions**: another number's jid, a mention list without the account, and a message
   without a `contextInfo` (a plain conversation).
+
+## T11: Webhook `mentions_account` (CID-12)
+
+- **Schema**: `dto.HookInboundRequest` gains `mentions_account` (bool, omitted when false), so the
+  generated TS type documents it; the connector now decodes that DTO instead of keeping a second
+  copy of the payload struct, so the documented schema and the accepted body cannot drift. A
+  webhook chat is a `channel`, so under the default `groups_mentions_only` a payload without the
+  field is accepted, records its chat and is not delivered (T7); `true` delivers.
+- **Invalid**: a non-boolean `mentions_account` is a 422 whose `fields` name
+  `mentions_account: "must be a boolean"` and nothing is stored (not even the chat). Other
+  malformed bodies keep the old `body: must be a JSON object`.
+- **Authorization** is unchanged and still the hook's HMAC signature/timestamp: the e2e test sends
+  a `mentions_account: true` body with a forged signature and gets 401, so the new field never
+  bypasses the route's only credential (operator/owner/use-grantee/other-AI tokens do not apply to
+  this unauthenticated-by-design route).

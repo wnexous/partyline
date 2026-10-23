@@ -461,8 +461,8 @@ Room posting, people and DM creation, `autoGroup`, `autoRoute` and `platformDM` 
 **Reuses**: webhook handler tests
 **Requirement**: CID-12
 **Done when**:
-- [ ] e2e: the payload with `mentions_account` true or false reaches the pipeline flag; a non-boolean value → 422
-- [ ] Gate check passes: `make check`
+- [x] e2e: the payload with `mentions_account` true or false reaches the pipeline flag; a non-boolean value → 422
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(webhook): accept mentions_account`
