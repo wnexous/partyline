@@ -127,6 +127,7 @@ T34 -> T35
 
 ```
 T36 -> T37 -> T38
+T39
 ```
 
 ---
@@ -253,6 +254,7 @@ T34 -> T35
 
 ```
 T36 -> T37 -> T38
+T39
 ```
 
 ---
@@ -919,6 +921,21 @@ A request carrying them changes nothing.
 **Tests**: none
 **Gate**: build
 **Commit**: `docs: partyline as a proxy (v0.5.0)`
+
+#### T39: Dropped notice for polling harnesses [small]
+
+**What**: Added after the T12-T16 review. Harnesses that poll (Codex and Gemini hooks, and the `wait_for_messages` tool) never hear about dropped items (CID-10), because only the WebSocket takes the dropped count. `GET /agent/pending?platform=1` now returns `dropped` (the count, taken once). The hook and `wait_for_messages` output show it with the same wording as the WebSocket notice.
+**Where**: `internal/api/agent_handlers.go`, `internal/cli/hook*.go`, `internal/channel/`
+**Depends on**: None
+**Reuses**: `platform.Queue.TakeDropped`, the WebSocket notice text
+**Requirement**: CID-10
+**Done when**:
+- [ ] A poll with `platform=1` after drops returns the count once; a second poll returns 0; a poll without `platform=1` leaves the count for the next platform reader
+- [ ] The hook and `wait_for_messages` output show the notice
+- [ ] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(api): tell polling harnesses about dropped platform messages`
 
 ---
 
