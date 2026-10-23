@@ -208,3 +208,7 @@ WHERE u.id = ?;
 SELECT org_id FROM org_members
 WHERE iid = sqlc.arg(iid) AND (sqlc.arg(permission) = '' OR permission = sqlc.arg(permission))
 ORDER BY joined_at, org_id LIMIT 1;
+
+-- name: GetPersonalOrg :one
+-- The first organization an account created: its personal one (AD-021), whatever its default is now.
+SELECT * FROM organizations WHERE created_by = ? ORDER BY created_at, id LIMIT 1;

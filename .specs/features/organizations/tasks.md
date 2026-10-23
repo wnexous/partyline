@@ -449,8 +449,8 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: `testkit.Env` app handle, `authmatrix_test.go` style
 **Requirement**: OMEM-04, POS-05, CHART-02
 **Done when**:
-- [ ] `testkit_test.go` case: `OrgRoles` yields the stated permissions and positions, and `Manages(manager, target)` is true while `Manages(peer, target)` is false
-- [ ] Gate check passes: `make check`
+- [x] `testkit_test.go` case: `OrgRoles` yields the stated permissions and positions, and `Manages(manager, target)` is true while `Manages(peer, target)` is false
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `test(testkit): add organization roles for authorization tests`

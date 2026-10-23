@@ -566,6 +566,26 @@ func (q *Queries) GetOrganizationBySlug(ctx context.Context, slug string) (Organ
 	return i, err
 }
 
+const getPersonalOrg = `-- name: GetPersonalOrg :one
+SELECT id, name, slug, avatar_sha256, created_by, created_at, updated_at FROM organizations WHERE created_by = ? ORDER BY created_at, id LIMIT 1
+`
+
+// The first organization an account created: its personal one (AD-021), whatever its default is now.
+func (q *Queries) GetPersonalOrg(ctx context.Context, createdBy string) (Organization, error) {
+	row := q.db.QueryRowContext(ctx, getPersonalOrg, createdBy)
+	var i Organization
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.AvatarSha256,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getPosition = `-- name: GetPosition :one
 SELECT id, org_id, name, parent_id, created_at FROM positions WHERE id = ?1 AND org_id = ?2
 `

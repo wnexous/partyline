@@ -456,3 +456,61 @@ Where a section refines the design, it says so.
   with the handle `user-<name>`, plus the personal organization), because an AI needs a host with an
   organization. `testkit.NewLegacyAI` still creates an AI without an organization (a v0.3 identity as
   the upgrade leaves it is placed by the upgrade, not here); T11's helpers can put one in an organization.
+
+## T11: Test harness for organizations (OMEM-04, POS-05, CHART-02)
+
+`internal/testkit/orgs.go`. Phases 3-6 build their authorization matrices on these.
+
+- **`(*Client).PersonalOrg() db.Organization`**: the first organization the account created, its
+  personal one (AD-021), not whatever its default is now.
+- **Store-level setup, no authorization, all announce `OrgChanged` where it matters**:
+  - `env.AddPosition(org, name, parent) string` returns the position id (`parent == ""` for a root).
+  - `env.AddMember(org, iid, permission, position)` and `env.AddGuest(org, iid, inviter, position)` go
+    through `orgs.AddMember`, so an identity that already is a member, a bad permission or a foreign
+    position fails the test. Use them for users and AIs alike.
+  - `env.SetCreator(agent, iid)` re-points the creator of an AI.
+  - `env.NewAIIn(owner, org, name) string` creates the owner's AI of `FolderOf(name)` with `org` as its
+    home (the owner must be a member): it makes `org` the owner's default for the creation and puts the
+    owner's default back afterwards. Idempotent per (owner, name), like `NewAI`: an AI that exists keeps its
+    home. `NewAI` itself still goes to the owner's default organization (T10).
+- **`env.OrgRoles(name) *OrgRoles`**: an organization called `name` (lower case, up to 20 characters: it
+  prefixes the usernames) with a logged-in client in every role of the design's matrices; it can be called
+  once per name in an environment (`acme`, then `globex`).
+
+  | Field | Who | Position | Relations |
+  | --- | --- | --- | --- |
+  | `Admin` | `admin` of the organization, created it | `Admin` (root) | manages everyone positioned below it, i.e. `Manager`, `Target`, `Peer` and, through `Manager`, `TargetAI` |
+  | `Manager` | `member` | `Manager`, child of `Admin` | manages `Target`, `Peer` (both below it) and `TargetAI` (it created it); manages none of `Admin`, `Member`, `Inviter`, `Guest` |
+  | `Target`, `Peer` | `member` | both `Worker`, child of `Manager` | peers: neither manages the other, nor `Manager`; `Manager` and `Admin` manage both |
+  | `Member` | `member` | none | no relation to anyone |
+  | `Inviter` | `member` | none | invited `Guest`, so manages it |
+  | `Guest` | `guest` | none | `InviterIID` = `Inviter` |
+  | `Outsider` | ordinary user, **not** a member | - | has its own personal organization |
+  | `InstanceAdmin` | instance admin account `<name>-root`, **not** a member | - | an admin of the instance gets no access (AD-016) |
+
+  Also `TargetAI` (id of an AI whose home is the organization: `member`, no position, created and hosted
+  by `Manager`), `Org` (`db.Organization`) and the position ids `AdminPosition`, `ManagerPosition`,
+  `WorkerPosition`. `r.All()` lists `RoleClient{Name, Client}` for `admin`, `manager`, `target`, `peer`,
+  `member`, `inviter`, `guest`, `outsider` and `instance_admin`, for tests that loop over every role. An AI
+  acts as itself with `r.Manager.Token(dto.TokenKindAgent, "t").AsAgent(name+"-ai")` (the folder of
+  `TargetAI`); `Manager` is its host.
+- **Accounts created by the kit now have a personal organization** (T9), and `NewAI` places AIs (T10); tests
+  of earlier phases that count audit entries, organizations or memberships must expect that.
+- **Where the sentinels end up** (T12-T17 map them; listed here so the statuses agree):
+
+  | Go error | HTTP |
+  | --- | --- |
+  | `orgs.ErrNotFound` (= `access.ErrNotFound`) | 404 `not_found` |
+  | `orgs.ErrForbidden` (= `access.ErrForbidden`) | 403 `forbidden` |
+  | `*NotEmptyError` / `ErrNotEmpty` | 409 `organization_not_empty`, counts in `details` |
+  | `ErrLastAdmin` | 409 `last_admin` |
+  | `ErrHomeOrganization` | 409 `home_organization` |
+  | `ErrAlreadyMember` | 409 `already_member` |
+  | `ErrCycle` | 409 `position_cycle` |
+  | `ErrSlugTaken`, `ErrPositionNameTaken` | 409 `conflict` |
+  | `ErrGone` | 410 `gone` |
+  | `ErrRateLimited` | 429 `rate_limited` |
+  | `ErrContactNotFound` | 404 `contact_not_found` |
+  | `*validation.Error` (`name`, `slug`, `permission`, `position_id`, `parent_id`) | 422 `invalid` with `fields` |
+  | `agents.ErrNoOrganization` (an `*httpx.Error`) | 422 `organization_required` |
+- **Query** added: `GetPersonalOrg`.
