@@ -66,7 +66,7 @@ func TestMentionsModePushesOnlyMentions(t *testing.T) {
 	f := newAgentRoom(t)
 	group, dm := f.roomChat(t, "group"), f.roomChat(t, "dm")
 	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{
-		Delivery: ptr(dto.DeliveryModeMentions), DisplayName: ptr("Lolo"), Keywords: &[]string{"deploy"},
+		Delivery: ptr(dto.DeliveryModeMentions), DisplayName: ptr("Vega"), Keywords: &[]string{"deploy"},
 	})
 	conn := f.dial(t)
 	conn.Welcome(wsWait)
@@ -74,7 +74,7 @@ func TestMentionsModePushesOnlyMentions(t *testing.T) {
 	var want []string
 	f.post(f.alice, "plain message")
 	want = append(want, f.post(f.alice, "hey @BUILDER, ship it").ID)
-	want = append(want, f.post(f.alice, "ping @lolo").ID)
+	want = append(want, f.post(f.alice, "ping @vega").ID)
 	f.post(f.alice, "mail x@builder now")
 	f.post(f.alice, "ask @builders")
 	want = append(want, f.postFromChat(t, group, "deploy now please").ID)
@@ -117,7 +117,7 @@ func TestTrustedModePushesOnlyTrusted(t *testing.T) {
 func TestMentionsModeBacklogSkipsAndAdvancesCursor(t *testing.T) {
 	f := newAgentRoom(t)
 	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{
-		Delivery: ptr(dto.DeliveryModeMentions), DisplayName: ptr("Lolo"), Keywords: &[]string{"deploy"},
+		Delivery: ptr(dto.DeliveryModeMentions), DisplayName: ptr("Vega"), Keywords: &[]string{"deploy"},
 	})
 
 	a := f.post(f.alice, "plain a")
@@ -138,7 +138,7 @@ func TestMentionsModeBacklogSkipsAndAdvancesCursor(t *testing.T) {
 	last := f.post(f.alice, "plain f")
 	again := f.dial(t)
 	again.Welcome(wsWait)
-	g := f.post(f.alice, "@lolo g")
+	g := f.post(f.alice, "@vega g")
 	require.Equal(t, g.ID, again.Message(wsWait).Message.ID)
 	require.Equal(t, last.Seq, f.cursor(t), "a backlog of skipped messages moves the cursor past them")
 }

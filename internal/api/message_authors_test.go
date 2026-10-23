@@ -95,18 +95,18 @@ func TestRenamedAuthorsShowEverywhere(t *testing.T) {
 
 	// GRP-04: the name set for the agent in this room wins in this room's timeline; the member
 	// list keeps the profile name and carries the room name apart.
-	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: ptr("Lolo")})
+	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: ptr("Vega")})
 	byID = map[string]dto.Message{}
 	for _, m := range timelineOf(t, f.alice, f.room.ID) {
 		byID[m.ID] = m
 	}
 	for _, id := range []string{oldAgent.ID, newAgent.ID} {
-		require.Equal(t, "Lolo", byID[id].AuthorName)
-		require.Equal(t, "Lolo", byID[id].Author.DisplayName)
+		require.Equal(t, "Vega", byID[id].AuthorName)
+		require.Equal(t, "Vega", byID[id].Author.DisplayName)
 		require.Equal(t, "atlas", byID[id].Author.Handle, "the handle is the profile's")
 	}
 	agent = membersOf(t, f.alice, f.room.ID)[f.agentID]
-	require.Equal(t, []any{"Atlas", "Lolo", "Atlas"}, []any{agent.Name, agent.DisplayName, agent.Intelligence.DisplayName})
+	require.Equal(t, []any{"Atlas", "Vega", "Atlas"}, []any{agent.Name, agent.DisplayName, agent.Intelligence.DisplayName})
 }
 
 // Chat members have no intelligence of their own: the person of a chat shows through the

@@ -46,8 +46,8 @@ func TestAgentRenameShowsEverywhere(t *testing.T) {
 	mention := f.post(f.alice, "ping @atlas bot, please")
 	require.Equal(t, mention.ID, conn.Message(wsWait).Message.ID, "only the mention by the new name is pushed")
 
-	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: ptr("Lolo")})
-	require.Equal(t, "Lolo", timelineAuthor(t, f.alice, f.room.ID, after.ID), "the room's member display name wins")
+	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: ptr("Vega")})
+	require.Equal(t, "Vega", timelineAuthor(t, f.alice, f.room.ID, after.ID), "the room's member display name wins")
 }
 
 // ID-04: a display name has 1 to 64 characters after trimming (code points, so 64 two-byte

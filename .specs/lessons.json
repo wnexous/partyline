@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 54,
+  "next_id": 55,
   "lessons": [
     {
       "id": "L-001",
@@ -969,6 +969,24 @@
       ],
       "created": "2026-10-22T21:32:45Z",
       "last_seen": "2026-10-22T21:32:45Z"
+    },
+    {
+      "id": "L-054",
+      "key": "spec_precision_gap::state the error code and http status of every refusal an acceptance criterion implies not only the accepted case",
+      "text": "State the error code and HTTP status of every refusal an acceptance criterion implies, not only the accepted case",
+      "signal": "spec_precision_gap",
+      "scope": "spec",
+      "status": "candidate",
+      "features": [
+        "connection-identity"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "CID-01 (validation.md) (spec)"
+      ],
+      "created": "2026-10-23T08:41:56Z",
+      "last_seen": "2026-10-23T08:41:56Z"
     }
   ]
 }

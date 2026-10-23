@@ -42,8 +42,8 @@ func TestMessageAuthor(t *testing.T) {
 		}), dto.IntelligenceRef{ID: "u1", Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "Ana", Handle: "ana"}},
 		{"AI", view(func(v *db.MessageView) {
 			v.AuthorKind, v.AuthorID, v.AuthorIid = "agent", "a1", "a1"
-			v.AuthorName, v.AuthorHandle, v.AuthorIkind = "Lolo", "atlas", "ai"
-		}), dto.IntelligenceRef{ID: "a1", Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: "Lolo", Handle: "atlas"}},
+			v.AuthorName, v.AuthorHandle, v.AuthorIkind = "Vega", "atlas", "ai"
+		}), dto.IntelligenceRef{ID: "a1", Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: "Vega", Handle: "atlas"}},
 		{"AI without an intelligence row", view(func(v *db.MessageView) {
 			v.AuthorKind, v.AuthorID, v.AuthorName = "agent", "a1", "builder"
 		}), dto.IntelligenceRef{ID: "a1", Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: "builder"}},

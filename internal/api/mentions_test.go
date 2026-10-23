@@ -38,8 +38,8 @@ func TestMentionsFollowTheProfile(t *testing.T) {
 	byHandle := f.post(f.alice, "ping @NOVA, status?")    // the new handle, any case
 	byName := f.post(f.alice, "hey @Orion Bot, status?")  // the new display name
 	byKeyword := f.post(f.alice, "please deploy it")      // a keyword
-	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: ptr("Lolo")})
-	byRoomName := f.post(f.alice, "and @lolo too") // the name set for the AI in this room (GRP-04)
+	setMember(t, f.alice, f.room.ID, f.agentID, dto.UpdateMemberRequest{DisplayName: ptr("Vega")})
+	byRoomName := f.post(f.alice, "and @vega too") // the name set for the AI in this room (GRP-04)
 
 	for _, want := range []string{byHandle.ID, byName.ID, byKeyword.ID, byRoomName.ID} {
 		require.Equal(t, want, conn.Message(wsWait).Message.ID)

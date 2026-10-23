@@ -78,9 +78,9 @@ func TestWantsIgnoresEmptyNames(t *testing.T) {
 // stored JSON. The internal agent name is no mention (AID-06).
 func TestPrefsFromMember(t *testing.T) {
 	profile := db.Intelligence{ID: "i1", Kind: "ai", DisplayName: "Orion Bot", Handle: "nova"}
-	p := Prefs(profile, "Lolo", "mentions", `["deploy"]`)
-	require.Equal(t, MemberPrefs{Delivery: dto.DeliveryModeMentions, Names: []string{"Lolo", "Orion Bot"}, Handle: "nova", Keywords: []string{"deploy"}}, p)
-	require.True(t, Wants(p, Delivered{Text: "@lolo"}), "the name set in the room")
+	p := Prefs(profile, "Vega", "mentions", `["deploy"]`)
+	require.Equal(t, MemberPrefs{Delivery: dto.DeliveryModeMentions, Names: []string{"Vega", "Orion Bot"}, Handle: "nova", Keywords: []string{"deploy"}}, p)
+	require.True(t, Wants(p, Delivered{Text: "@vega"}), "the name set in the room")
 	require.True(t, Wants(p, Delivered{Text: "@orion bot"}), "the profile name")
 	require.True(t, Wants(p, Delivered{Text: "@nova"}), "the handle")
 	require.True(t, Wants(p, Delivered{Text: "deploy"}), "the keywords")

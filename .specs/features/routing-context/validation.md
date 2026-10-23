@@ -181,7 +181,7 @@ Rows unchanged since iteration 2 were re-checked at 35b48bc. Their cited asserti
 | AC | Spec-defined outcome | `file:line` + assertion | Result |
 | --- | --- | --- | --- |
 | MEM-01 | no author header | `internal/connectors/sender_test.go:196` | ✅ |
-| MEM-02 | display name outbound and in the timeline | `sender_test.go:206` `"Lolo"` | ✅ |
+| MEM-02 | display name outbound and in the timeline | `sender_test.go:206` `"Vega"` | ✅ |
 | MEM-03 | only mentions delivered, all stored; reply-to-me | `internal/delivery/wants_test.go:15`; `internal/api/delivery_filter_test.go:148` | ✅ |
 | MEM-04 | only `trusted=true` | `delivery_filter_test.go:100` | ✅ |
 | MEM-05 | 422 limits | `internal/api/member_settings_test.go:99` | ✅ |

@@ -324,6 +324,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: X2/X2b internal/agents/gateway.go:106-108,444-446 (SES-06) (delivery)
 - last seen: 2026-10-22T21:32:45Z
 
+### L-054 - State the error code and HTTP status of every refusal an acceptance criterion implies, not only the accepted case
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `spec` · harmful: 0
+- features: connection-identity
+- evidence: CID-01 (validation.md) (spec)
+- last seen: 2026-10-23T08:41:56Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

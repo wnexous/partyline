@@ -36,7 +36,7 @@ func TestToolRoomInfo(t *testing.T) {
 	e := newChanEnv(t)
 	group := e.chatIn("whatsapp", "Lollerie", dto.ChatKindGroup)
 	e.setInstructions("Tone: friendly. Language: Portuguese.")
-	name, mode, keywords := "Lolo bot", dto.DeliveryModeMentions, []string{"pedido"}
+	name, mode, keywords := "Vega bot", dto.DeliveryModeMentions, []string{"pedido"}
 	e.alice.Patch("/api/v1/rooms/"+e.room.ID+"/members/"+e.builderMember().ID, dto.UpdateMemberRequest{
 		DisplayName: &name, Delivery: &mode, Keywords: &keywords,
 	}).RequireStatus(http.StatusOK)
@@ -55,7 +55,7 @@ func TestToolRoomInfo(t *testing.T) {
 	require.Equal(t, true, got["room_text_trusted"], "alice created the room")
 	require.NotContains(t, got, "room_text_note")
 	require.Equal(t, map[string]any{
-		"display_name": "Lolo bot", "delivery": "mentions", "keywords": []any{"pedido"},
+		"display_name": "Vega bot", "delivery": "mentions", "keywords": []any{"pedido"},
 	}, got["me"], "the agent's settings in the room; member signatures are retired (CID-22)")
 	members := got["members"].([]any)
 	require.Len(t, members, 2)

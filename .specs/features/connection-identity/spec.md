@@ -58,7 +58,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 **Acceptance Criteria**:
 
-1. The system SHALL accept as a connection's operator only an AI that the connection's owner owns. (CID-01)
+1. The system SHALL accept as a connection's operator only an AI that the connection's owner owns, and SHALL refuse any other operator with HTTP 422 naming the field `operator_id`. (CID-01)
 2. IF a connection has no operator THEN the system SHALL deliver nothing from it and SHALL show the status detail "choose the AI that operates this connection". (CID-02)
 3. IF an intelligence other than the operator asks to send through a connection THEN the system SHALL refuse with `not_operator` (HTTP 403) and send nothing. (CID-03)
 4. IF a WhatsApp connection names zero or several instances THEN the system SHALL receive nothing through it and SHALL show the status detail "choose the instance (number) of this connection". (CID-04)
@@ -148,35 +148,35 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| CID-01 | P1: One AI per connection | Execute | Implementing (T5) |
-| CID-02 | P1: One AI per connection | Execute | Implementing (T5, T7) |
-| CID-03 | P1: One AI per connection | Execute | Implementing (T17, T19) |
-| CID-04 | P1: One AI per connection | Execute | Implemented (T1, bebd8d1) |
-| CID-05 | P1: One AI per connection | Execute | Implementing (T21, T22) |
-| CID-06 | P1: Direct delivery | Execute | Implementing (T7, T12, T13, T14, T15, T16) |
-| CID-07 | P1: Direct delivery | Execute | Implementing (T7) |
-| CID-08 | P1: Direct delivery | Execute | Implementing (T2, T3, T12, T13) |
-| CID-09 | P1: Direct delivery | Execute | Implementing (T3, T4, T12, T13) |
-| CID-10 | P1: Direct delivery | Execute | Implementing (T4, T12, T39) |
-| CID-11 | P1: Direct delivery | Execute | Implementing (T3) |
-| CID-12 | P1: Direct delivery | Execute | Implementing (T7-T11) |
-| CID-13 | P1: Direct delivery | Execute | Implementing (T7) |
-| CID-14 | P1: Direct delivery | Execute | Implementing (T7, T17) |
-| CID-15 | P1: Answer through the connection | Execute | Implementing (T17, T18) |
-| CID-16 | P1: Answer through the connection | Execute | Implementing (T17, T19, T20) |
-| CID-17 | P1: Answer through the connection | Execute | Implementing (T17, T19) |
-| CID-18 | P1: Answer through the connection | Execute | Implementing (T17, T18) |
-| CID-19 | P1: Partyline chat is one more app | Execute | Implementing (T23) |
-| CID-20 | P1: Partyline chat is one more app | Execute | Implementing (T25, T26) |
-| CID-21 | P1: Partyline chat is one more app | Execute | Implementing (T24, T30, T36, T37) |
-| CID-22 | P1: Partyline chat is one more app | Execute | Implementing (T20, T24, T26-T35, T38) |
-| CID-23 | P1: Partyline chat is one more app | Execute | Implementing (T6, T29) |
-| CID-24 | Edge cases | Execute | Implementing (T22) |
-| CID-25 | Edge cases | Execute | Implementing (T12, T14) |
-| CID-26 | Edge cases | Execute | Implementing (T2, T3, T7) |
-| CID-27 | P1: Direct delivery | Execute | Implementing (T2, T6, T29, T36, T38) |
+| CID-01 | P1: One AI per connection | Execute | Verified (T5) |
+| CID-02 | P1: One AI per connection | Execute | Verified (T5, T7) |
+| CID-03 | P1: One AI per connection | Execute | Verified (T17, T19) |
+| CID-04 | P1: One AI per connection | Execute | Verified (T1, bebd8d1) |
+| CID-05 | P1: One AI per connection | Execute | Verified (T21, T22) |
+| CID-06 | P1: Direct delivery | Execute | Verified (T7, T12, T13, T14, T15, T16) |
+| CID-07 | P1: Direct delivery | Execute | Verified (T7) |
+| CID-08 | P1: Direct delivery | Execute | Verified (T2, T3, T12, T13) |
+| CID-09 | P1: Direct delivery | Execute | Verified (T3, T4, T12, T13) |
+| CID-10 | P1: Direct delivery | Execute | Verified (T4, T12, T39) |
+| CID-11 | P1: Direct delivery | Execute | Verified (T3) |
+| CID-12 | P1: Direct delivery | Execute | Verified (T7-T11) |
+| CID-13 | P1: Direct delivery | Execute | Verified (T7) |
+| CID-14 | P1: Direct delivery | Execute | Verified (T7, T17) |
+| CID-15 | P1: Answer through the connection | Execute | Verified (T17, T18) |
+| CID-16 | P1: Answer through the connection | Execute | Verified (T17, T19, T20) |
+| CID-17 | P1: Answer through the connection | Execute | Verified (T17, T19) |
+| CID-18 | P1: Answer through the connection | Execute | Verified (T17, T18) |
+| CID-19 | P1: Partyline chat is one more app | Execute | Verified (T23) |
+| CID-20 | P1: Partyline chat is one more app | Execute | Verified (T25, T26) |
+| CID-21 | P1: Partyline chat is one more app | Execute | Verified (T24, T30, T36, T37) |
+| CID-22 | P1: Partyline chat is one more app | Execute | Verified (T20, T24, T26-T35, T38) |
+| CID-23 | P1: Partyline chat is one more app | Execute | Verified (T6, T29) |
+| CID-24 | Edge cases | Execute | Verified (T22) |
+| CID-25 | Edge cases | Execute | Verified (T12, T14) |
+| CID-26 | Edge cases | Execute | Verified (T2, T3, T7) |
+| CID-27 | P1: Direct delivery | Execute | Verified (T2, T6, T29, T36, T38) |
 
-**Coverage:** 27 total, 27 mapped to tasks (`tasks.md` T1-T38); CID-04 implemented (T1).
+**Coverage:** 27 total, 27 mapped to tasks (`tasks.md` T1-T39), all Verified (validation.md, 2026-10-23).
 
 ---
 
