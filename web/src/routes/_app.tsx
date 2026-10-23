@@ -6,6 +6,7 @@ import { BackToConversations } from "@/components/back-link";
 import { Wordmark } from "@/components/brand";
 import { CommandMenu } from "@/components/command-menu";
 import { LiveBanner } from "@/components/live-status";
+import { ProfilePanel } from "@/components/profile-panel";
 import { Button } from "@/components/ui/button";
 import { SidebarInset } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -73,6 +74,7 @@ function AppLayout() {
         <Outlet />
       </SidebarInset>
       <CommandMenu me={me} />
+      <ProfilePanel />
     </div>
   );
 }

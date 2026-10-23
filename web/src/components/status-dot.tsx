@@ -6,10 +6,13 @@ export function StatusDot({
   online,
   withLabel = false,
   className,
+  labelClassName,
 }: {
   online: boolean;
   withLabel?: boolean;
   className?: string;
+  /** Classes of the word beside the dot, where it sits among text bigger than a list row's. */
+  labelClassName?: string;
 }) {
   const { t } = useI18n();
   const label = online ? t("presence.online") : t("presence.offline");
@@ -23,7 +26,7 @@ export function StatusDot({
         )}
       />
       {withLabel ? (
-        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className={cn("text-xs text-muted-foreground", labelClassName)}>{label}</span>
       ) : (
         <span className="sr-only">{label}</span>
       )}

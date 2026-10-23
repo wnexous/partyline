@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/empty-state";
 import { FormAlert } from "@/components/form-fields";
 import { chatTitle, platformLabel } from "@/components/message-item";
 import { NativeSelect } from "@/components/native-select";
+import { NamedSentence } from "@/components/profile-link";
 import { ConnectorForm } from "@/components/schema-form";
 import { SharingDialog } from "@/components/sharing-dialog";
 import {
@@ -149,7 +150,13 @@ function ConnectorView({ connector: c, kind }: { connector: Connector; kind?: Co
               <span>{kind?.label ?? platformLabel(c.kind)}</span>
               <ConnectorStatusBadge status={status} enabled={c.enabled} />
               {c.operator ? (
-                <span>{t("connector.operatedBy", { name: c.operator.display_name })}</span>
+                <span>
+                  <NamedSentence
+                    id={c.operator.id}
+                    name={c.operator.display_name}
+                    sentence={(name) => t("connector.operatedBy", { name })}
+                  />
+                </span>
               ) : (
                 <span className="font-medium text-destructive">{t("connector.noOperator")}</span>
               )}
@@ -601,12 +608,17 @@ function DeliverySummary({ connector: c }: { connector: Connector }) {
             {t("connector.operatorPick")}
           </dt>
           <dd>
-            {c.operator
-              ? t("connector.operatorNamed", {
-                  name: c.operator.display_name,
-                  handle: c.operator.handle,
-                })
-              : t("connector.noOperator")}
+            {c.operator ? (
+              <NamedSentence
+                id={c.operator.id}
+                name={c.operator.display_name}
+                sentence={(name) =>
+                  t("connector.operatorNamed", { name, handle: c.operator?.handle ?? "" })
+                }
+              />
+            ) : (
+              t("connector.noOperator")
+            )}
           </dd>
         </div>
         <div className="space-y-0.5">

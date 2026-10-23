@@ -4,6 +4,7 @@ import { BackToConversations } from "@/components/back-link";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { KindBadge } from "@/components/intelligence/kind-badge";
+import { ProfileLink } from "@/components/profile-link";
 import { VisibilityLabel } from "@/components/room-visibility";
 import { ConversationKindDM, type Room } from "@/lib/api/types.gen";
 import { counterpartOf, groupFace } from "@/lib/conversations";
@@ -32,10 +33,10 @@ export function historyPlatform(room: Room): string | null {
 
 /**
  * The conversation page's header: avatar, title and kind badge; for a DM the counterpart's
- * @handle and, for an AI, whether it is online and in which app; for a group its visibility and
- * description. A DM the viewer only reads through an AI has no counterpart: both participants are
- * named, each with its own badge (PROF-09). `actions` are the page's buttons, `back` the way
- * back on a phone.
+ * @handle and, for an AI, whether it is online and in which app (the face and the name open its
+ * profile panel, PRF-01); for a group its visibility and description. A DM the viewer only reads
+ * through an AI has no counterpart: both participants are named, each with its own badge
+ * (PROF-09). `actions` are the page's buttons, `back` the way back on a phone.
  */
 export function ConversationHeader({
   room,
@@ -62,22 +63,44 @@ export function ConversationHeader({
       className="flex items-center gap-2 border-b px-4 py-2.5 md:px-6"
     >
       {back ? <BackToConversations className="-ml-3" /> : null}
-      <IntelligenceAvatar
-        intelligence={face ?? groupFace(room.id, room.name)}
-        size="lg"
-        decorative
-        className={isDM ? undefined : "rounded-lg *:rounded-lg"}
-      />
+      {face ? (
+        // The face of a DM opens that intelligence's profile panel (PRF-01); a group has no profile.
+        <ProfileLink
+          id={face.id}
+          aria-label={t("message.openProfile", { name: face.display_name })}
+          className="shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <IntelligenceAvatar intelligence={face} size="lg" decorative />
+        </ProfileLink>
+      ) : (
+        <IntelligenceAvatar
+          intelligence={groupFace(room.id, room.name)}
+          size="lg"
+          decorative
+          className="rounded-lg *:rounded-lg"
+        />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           {between ? (
             <h1 className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-lg tracking-[-0.015em]">
-              <IntelligenceName intelligence={between[0]} viewerId={viewerId} />
+              <IntelligenceName intelligence={between[0]} viewerId={viewerId} profileLink />
               <span className="font-normal text-muted-foreground">{t("conversation.and")}</span>
-              <IntelligenceName intelligence={between[1]} viewerId={viewerId} />
+              <IntelligenceName intelligence={between[1]} viewerId={viewerId} profileLink />
             </h1>
           ) : (
-            <h1 className="truncate text-lg font-semibold tracking-[-0.015em]">{title}</h1>
+            <h1 className="truncate text-lg font-semibold tracking-[-0.015em]">
+              {counterpart ? (
+                <ProfileLink
+                  id={counterpart.id}
+                  className="rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                >
+                  {title}
+                </ProfileLink>
+              ) : (
+                title
+              )}
+            </h1>
           )}
           {counterpart ? (
             <KindBadge intelligence={counterpart} viewerId={viewerId} className="shrink-0" />

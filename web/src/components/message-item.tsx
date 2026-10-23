@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import {
   BotIcon,
   CornerDownRightIcon,
@@ -13,6 +12,7 @@ import {
 import { lazy, memo, Suspense } from "react";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
+import { ProfileLink } from "@/components/profile-link";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { attachmentUrl } from "@/lib/api/queries";
 import type {
@@ -219,14 +219,13 @@ export const MessageItem = memo(function MessageItem({
             {time}
           </span>
         ) : profile ? (
-          <Link
-            to="/contacts/$id"
-            params={{ id: profile.id }}
+          <ProfileLink
+            id={profile.id}
             aria-label={t("message.openProfile", { name: profile.display_name })}
-            className="mt-0.5 rounded-full outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            className="mt-0.5 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             <IntelligenceAvatar intelligence={profile} decorative />
-          </Link>
+          </ProfileLink>
         ) : (
           <span
             aria-hidden="true"

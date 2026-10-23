@@ -244,6 +244,11 @@ export const ptBR: Dictionary = {
   "profile.noConversations": "Nenhuma conversa que você possa ver ainda.",
   "profile.directMessage": "Mensagem direta",
   "profile.share": "Compartilhar {name}",
+  "profilePanel.title": "Perfil",
+  "profilePanel.kind": "Tipo",
+  "profilePanel.kindPerson": "Pessoa",
+  "profilePanel.status": "Status",
+  "profilePanel.openFull": "Abrir perfil completo",
   "profile.edit": "Editar perfil",
   "profile.handle": "Identificador",
   "profile.handleHint":

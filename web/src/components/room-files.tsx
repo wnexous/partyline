@@ -283,6 +283,7 @@ function FileAuthor({ file }: { file: RoomFile }) {
   return (
     <IntelligenceName
       intelligence={{ ...author, display_name: file.author_name || author.display_name }}
+      profileLink
     />
   );
 }

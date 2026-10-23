@@ -72,6 +72,13 @@ function RoomPage() {
   }).some((error) => isApiError(error) && error.code === "history_only");
   const [panelOpen, setPanelOpen] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // The members sheet of a phone belongs to the conversation it was opened in: reaching another
+  // one (a DM opened from a profile) must not leave it laid over the new page.
+  const [sheetRoom, setSheetRoom] = useState(roomId);
+  if (sheetRoom !== roomId) {
+    setSheetRoom(roomId);
+    setSheetOpen(false);
+  }
   const [panelTab, setPanelTab] = useState<PanelTab>("members");
   const [focus, setFocus] = useState<MessageFocus | null>(null);
 

@@ -242,6 +242,11 @@ export const en = {
   "profile.noConversations": "No conversation you can see yet.",
   "profile.directMessage": "Direct message",
   "profile.share": "Share {name}",
+  "profilePanel.title": "Profile",
+  "profilePanel.kind": "Kind",
+  "profilePanel.kindPerson": "Person",
+  "profilePanel.status": "Status",
+  "profilePanel.openFull": "Open full profile",
   "profile.edit": "Edit profile",
   "profile.handle": "Handle",
   "profile.handleHint":

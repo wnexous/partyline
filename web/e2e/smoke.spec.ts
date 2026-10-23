@@ -764,3 +764,125 @@ test("Enter sends with a mouse and adds a line on a phone, where only Send sends
     await phone.close();
   }
 });
+
+test("a click on a name opens the profile panel: a sidebar on a wide screen, a drawer on a phone (PRF-01..PRF-05)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const me = await apiCall<Me>(context.request, instance, "GET", "/me");
+  const agent = await connectAI(context, instance, "/work/panel");
+  const name = agent.ai.display_name;
+  await apiCall(context.request, instance, "PATCH", `/intelligences/${agent.ai.id}`, {
+    bio: "Keeps the release train on time. Answers in the room, or in a DM.",
+  });
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
+    name: "e2e-panel",
+    members: [],
+  });
+  await apiCall(context.request, instance, "POST", `/rooms/${room.id}/members`, {
+    kind: "agent",
+    member_id: agent.ai.id,
+  });
+  await agentJSON<AgentMessage>(
+    context,
+    instance,
+    agent,
+    "POST",
+    `/agent/rooms/${room.id}/messages`,
+    { text: "Release is green." },
+  );
+  await apiCall(context.request, instance, "POST", `/rooms/${room.id}/messages`, {
+    text: "Thanks, shipping it.",
+  });
+
+  // PRF-01: a click on the author's name opens the panel, and the page stays where it is.
+  await page.goto(`/rooms/${room.id}`);
+  const author = page.getByRole("log").getByRole("link", { name, exact: true });
+  await author.click();
+  const panel = page.getByRole("dialog", { name });
+  await expect(panel).toBeVisible();
+  await expect(page).toHaveURL(`${instance.url}/rooms/${room.id}`);
+
+  // PRF-02: the right edge of a wide screen, the bottom of a phone's.
+  await settled(page);
+  const screen = page.viewportSize() ?? { width: 0, height: 0 };
+  const box = await panel.boundingBox();
+  if (isMobile(testInfo)) {
+    await expect(panel).toHaveAttribute("data-layout", "drawer");
+    expect(box?.x).toBe(0);
+    expect(box?.width).toBe(screen.width);
+    expect((box?.y ?? 0) + (box?.height ?? 0)).toBeCloseTo(screen.height, 0);
+    expect(box?.y ?? 0).toBeGreaterThan(0);
+  } else {
+    await expect(panel).toHaveAttribute("data-layout", "sidebar");
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeCloseTo(screen.width, 0);
+    expect(box?.height).toBeCloseTo(screen.height, 0);
+    expect(box?.width ?? 0).toBeLessThanOrEqual(384);
+  }
+
+  // PRF-03: who it is, and what it can do.
+  await expect(panel.getByRole("heading", { name })).toBeVisible();
+  await expect(panel.getByText(`@${agent.ai.name}`, { exact: true })).toBeVisible();
+  await expect(panel.getByText("Keeps the release train on time.")).toBeVisible();
+  await expect(panel.getByText("Kind", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Offline", { exact: true })).toBeVisible();
+  const message = panel.getByRole("button", { name: "Message", exact: true });
+  const full = panel.getByRole("link", { name: "Open full profile" });
+  await expect(message).toBeVisible();
+  await expect(full).toHaveAttribute("href", `/contacts/${agent.ai.id}`);
+  // The viewer owns this AI, and still edits it from its page, not from here.
+  await expect(panel.getByRole("link", { name: "Edit profile" })).toHaveCount(0);
+  if (isMobile(testInfo)) {
+    for (const control of [message, full, panel.getByRole("button", { name: "Close" })]) {
+      const size = await control.boundingBox();
+      expect(size?.height ?? 0).toBeGreaterThanOrEqual(44);
+      expect(size?.width ?? 0).toBeGreaterThanOrEqual(44);
+    }
+  }
+  await shoot(page, "profile-panel", testInfo);
+
+  // PRF-05: Escape closes it and focus is back on the name.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(author).toBeFocused();
+
+  // The viewer's own profile offers Edit profile, not Message.
+  const mine = page
+    .getByRole("log")
+    .getByRole("link", { name: me.intelligence.display_name, exact: true });
+  await mine.click();
+  const own = page.getByRole("dialog", { name: me.intelligence.display_name });
+  await expect(own.getByRole("link", { name: "Edit profile" })).toBeVisible();
+  await expect(own.getByRole("button", { name: "Message", exact: true })).toHaveCount(0);
+  await own.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(mine).toBeFocused();
+
+  // A member of the list opens it too (wide screens show the list beside the conversation).
+  if (!isMobile(testInfo)) {
+    await page
+      .getByRole("complementary", { name: "Members" })
+      .getByRole("link", { name, exact: true })
+      .click();
+    await expect(page.getByRole("dialog", { name })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+
+  // The contacts page shows it instead of leaving the list.
+  await page.goto("/contacts");
+  await page
+    .getByTestId(`contact-${agent.ai.id}`)
+    .getByRole("link", { name: new RegExp(name) })
+    .click();
+  await expect(page.getByRole("dialog", { name })).toBeVisible();
+  await expect(page).toHaveURL(`${instance.url}/contacts`);
+
+  // PRF-04: the full page is one action away, and the panel makes way for it.
+  await page.getByRole("dialog", { name }).getByRole("link", { name: "Open full profile" }).click();
+  await expect(page).toHaveURL(`${instance.url}/contacts/${agent.ai.id}`);
+  await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
