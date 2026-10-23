@@ -139,14 +139,15 @@ func ptr[T any](v T) *T { return &v }
 
 // --- the tools' schemas ---
 
-// The schemas tell how to call the tools: send_message takes room or to, create_group a name,
-// members and a description, update_profile the four profile fields; strings unless noted.
+// The schemas tell how to call the tools: send_message takes room, to, or connection with chat,
+// create_group a name, members and a description, update_profile the four profile fields; strings
+// unless noted.
 func TestConversationToolSchemas(t *testing.T) {
 	e := newChanEnv(t)
 	s := e.connected(e.options())
 	s.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	want := map[string]map[string]string{
-		"send_message":   {"room": "string", "to": "string", "text": "string", "chat_ids": "array", "recipients": "array"},
+		"send_message":   {"room": "string", "to": "string", "connection": "string", "chat": "string", "text": "string"},
 		"create_group":   {"name": "string", "description": "string", "members": "array"},
 		"update_profile": {"display_name": "string", "handle": "string", "bio": "string", "avatar_path": "string"},
 	}
@@ -319,18 +320,17 @@ func TestToolSendMessageToADisabledUser(t *testing.T) {
 	require.Empty(t, c.listDMs(s), "no empty DM was left")
 }
 
-// DM-04: chat_ids (and recipients, its older name) travel with to like they do with room: the
-// server refuses a chat that is no chat of a new DM, and the call leaves no DM behind.
-func TestToolSendMessageToForwardsTheChats(t *testing.T) {
+// DM-04, CID-22: chat_ids (and recipients, its older name) are accepted and ignored with to as with
+// room: the DM is opened and the message is sent, whatever chats they name.
+func TestToolSendMessageToIgnoresChatIDs(t *testing.T) {
 	c := newCast(t)
 	s := c.connected(c.options())
 
 	for _, param := range []string{"chat_ids", "recipients"} {
-		text, isErr := s.call("send_message", toolArgs("to", "@alice", "text", "to a chat", param, []string{"no-such-chat"}))
-		require.True(t, isErr, "%s: %s", param, text)
-		require.Contains(t, text, "recipients", param)
-		require.Empty(t, c.listDMs(s), "%s: no empty DM was left", param)
+		text, isErr := s.call("send_message", toolArgs("to", "@alice", "text", "to "+param, param, []string{"no-such-chat"}))
+		require.False(t, isErr, "%s: %s", param, text)
 	}
+	require.Len(t, c.listDMs(s), 1, "the DM was opened once and used for both")
 }
 
 // TOOL-08 with DM-04: posts to a DM count against the same 30 a minute as posts to a room, and

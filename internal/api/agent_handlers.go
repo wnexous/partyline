@@ -34,6 +34,12 @@ var (
 	errAmbiguousRoom    = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "ambiguous room name")
 	errMessageNotFound  = httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "message not found")
 	errReactNotChat     = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid, "can only react to chat messages")
+	// Reactions and files work in rooms only (CID-22): the two answers for a message that arrived on
+	// one of the AI's connections, which say how to answer it.
+	errUnsupportedReaction = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeUnsupported,
+		"reactions work on room messages only; a message from a connection cannot get one, answer it with reply")
+	errUnsupportedQuote = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeUnsupported,
+		"a message from a connection cannot be quoted in a room (files go to rooms only); answer it with reply, or with send_message naming the connection and the chat")
 )
 
 // errNotMember answers a room reference the agent is not a member of (TOOL-04).
@@ -616,6 +622,20 @@ func writePlatformSend(w http.ResponseWriter, res dto.PlatformSendResult) {
 	httpx.WriteJSON(w, status, res)
 }
 
+// isPlatformMessage tells whether id is a message of the AI's own platform queue, one that arrived on
+// a connection it operates, acknowledged or not. Another AI's messages are not: nothing is revealed
+// about queues that are not the caller's.
+func (s *server) isPlatformMessage(ctx context.Context, agentID, id string) (bool, error) {
+	if s.Platform == nil {
+		return false, nil
+	}
+	_, err := s.Platform.Get(ctx, agentID, id)
+	if errors.Is(err, platform.ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // agentReact reacts to a chat message with one emoji (REACT-01): the reaction is stored as a
 // message of kind reaction (text = emoji, reply_to = target) whose only recipient is the
 // target's chat; the connectors' sender turns it into a platform reaction. Non-chat targets
@@ -625,7 +645,16 @@ func (s *server) agentReact(w http.ResponseWriter, r *http.Request, p authn.Prin
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	orig, err := s.agentTarget(r.Context(), p, r.PathValue("id"))
+	id := r.PathValue("id")
+	orig, err := s.agentTarget(r.Context(), p, id)
+	if errors.Is(err, errMessageNotFound) {
+		// A message of the AI's own platform queue is no room message: it cannot get a reaction (CID-22).
+		if mine, perr := s.isPlatformMessage(r.Context(), p.AgentID, id); perr != nil {
+			return perr
+		} else if mine {
+			return errUnsupportedReaction
+		}
+	}
 	if err != nil {
 		return err
 	}

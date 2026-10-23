@@ -99,6 +99,9 @@ var namedCodes = map[dto.ErrorCode]bool{
 	dto.ErrorCodeHandleTaken:         true,
 	dto.ErrorCodeAvatarInvalid:       true,
 	dto.ErrorCodeRateLimited:         true,
+	dto.ErrorCodeNotOperator:         true,
+	dto.ErrorCodeUnknownChat:         true,
+	dto.ErrorCodeUnsupported:         true,
 }
 
 // withCode is the message prefixed with its code when the code is one of namedCodes ("code:

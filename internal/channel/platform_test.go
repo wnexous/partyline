@@ -98,9 +98,9 @@ func TestPlatformRecordFramesLikeAMessage(t *testing.T) {
 		}
 		return r
 	}
-	require.Equal(t, "<partyline room=\"WhatsApp · Team\" chat=\"Team\" platform=\"whatsapp\" from=\"Pat\" trusted=\"false\" message_id=\"01HITEM1\" chat_id=\"01HCHAT\">"+
+	require.Equal(t, "<partyline room=\"WhatsApp · Team\" chat=\"Team\" platform=\"whatsapp\" from=\"Pat\" trusted=\"false\" message_id=\"01HITEM1\" connection_id=\"01HCONN\" chat_id=\"01HCHAT\">"+
 		"look at this\n[attachment 01HFILE: photo.png, image/png]</partyline>\n"+DataLine, Frame(record(groupEvent)))
-	require.Equal(t, "<partyline room=\"Telegram · André\" chat=\"André\" platform=\"telegram\" from=\"André\" trusted=\"true\" message_id=\"01HITEM2\" chat_id=\"01HCHAT2\">"+
+	require.Equal(t, "<partyline room=\"Telegram · André\" chat=\"André\" platform=\"telegram\" from=\"André\" trusted=\"true\" message_id=\"01HITEM2\" connection_id=\"01HCONN2\" chat_id=\"01HCHAT2\">"+
 		"pode publicar</partyline>\n"+OwnerLine, Frame(record(directEvent)))
 }
 

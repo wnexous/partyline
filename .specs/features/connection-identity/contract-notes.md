@@ -487,7 +487,8 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - **Known limitation, for T19/T20**: the shared framing does not show `from_self`, `connection_id`
   or `kind`. A harness fed by `listen` or the hooks can always answer with `reply` (the message id);
   naming a connection for `send_message` needs its id, which only the full channel's identity
-  notice lists (T14), so T20 has to decide how such a harness names its connection.
+  notice lists (T14), so T20 has to decide how such a harness names its connection. **Decided by T20**: the
+  frame shows `connection_id` (see T20).
 
 
 ## T17: Platform sends with retries (CID-14, CID-15, CID-16, CID-18)
@@ -604,3 +605,64 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - **Tests**: `internal/api/agent_connection_send_test.go` (the matrix with the operator, another AI of the owner, a use
   grantee's AI, a stranger's, an admin's, users with sessions and tokens and anonymous callers, each refusal with an
   otherwise valid request and its own code; the identical answers of a hidden and a missing connection; the limit).
+
+## T20: `send_message` names a connection chat (CID-16, CID-22)
+
+- **Targets**: `send_message` takes exactly one of `room`, `to`, or `connection` with `chat` (the `connection_id` and `chat_id`
+  of a message from the connection, or any chat of a connection the AI operates). An empty or blank value is not given, as
+  models that send every parameter do. Refusals, as the tool words them, all before anything is sent or posted:
+  - two or three targets: `give exactly one of room, to, or connection with chat, not several: …`;
+  - none: `room, to, or connection with chat is required: …`;
+  - `connection` without `chat`, or `chat` without `connection`, whatever else is given: `connection and chat go together:
+    give both (the connection_id and the chat_id of a message from your connection), or neither`. A lone half is an error
+    rather than being ignored, so a model that mixed the ids up is told;
+  - the text is still `text is required` (checked after the target).
+  A connection chat goes to T19's route and answers `sent`, or `not sent yet: <reason>; partyline retries` as a normal result
+  (T18's `platformSent`). The server's refusals reach the tool with their code named (`client.namedCodes` gains
+  `not_operator`, `unknown_chat` and `unsupported`): `not_operator: only the AI that operates the connection can send through
+  it`, `unknown_chat: the chat does not belong to this connection`, and plain `not found` for a connection the AI's owner
+  cannot see.
+- **`chat_ids` and `recipients`** leave the schema (the schema has `room`, `to`, `connection`, `chat` and `text`, with `text`
+  the only required property: it cannot say "exactly one of") and are accepted and ignored with every target: the tool no
+  longer reads them, so a message goes to everyone where it is sent. The server's `recipients` field is T33's.
+- **How listen and hook harnesses name the connection** (the decision T16 left): the `<partyline …>` frame, which they and the
+  tools-only instructions share, gains `connection_id` right before `chat_id`, from the record's `connection_id` (absent
+  when the record has none). A model copies `connection_id` and `chat_id` from the frame into `send_message`'s `connection` and
+  `chat`; `reply` needs the `message_id` only. The change is the same in `channel.Frame` and the `frame()` of the pi,
+  OpenCode and omp adapters, and the four platform cases of `integrations/testdata/framing.json` carry it in their expected
+  text (written from the frame format, not from the code's output). Rejected: a connection resolved from the chat alone
+  (a second route and a looser reading of "connection + chat", CID-17 asks for the pair) and a tool that lists the AI's
+  connections (a new endpoint). Still not in the frame: `from_self` and `kind`; a harness that frames a message typed on the
+  account itself still shows it as data from `from=<sender name>`.
+- **react and send_file with a message of a connection** (the design's "answer `unsupported`"): the server decides, so every
+  harness gets the same answer. `unsupported` is a new `dto.ErrorCode` answered with 422:
+  - `POST /agent/messages/{id}/react` for an id that is no room message but a message of the AI's own platform queue,
+    acknowledged or not: `reactions work on room messages only; a message from a connection cannot get one, answer it with
+    reply`;
+  - a post by an AI in a room (`POST /agent/rooms/{room}/messages`, JSON or multipart, so `send_file` too) whose `reply_to`
+    is a message of its own platform queue: `a message from a connection cannot be quoted in a room (files go to rooms only);
+    answer it with reply, or with send_message naming the connection and the chat`. The check follows the room
+    authorization and the body, and a user's post is not touched.
+  Another AI's message, an unknown id and an id nobody has keep the answer they always had (404 `message not found` for react,
+  422 on `reply_to` for a post), so nothing about other AIs' queues is revealed. `send_file` with a `room` that is no room of
+  the AI (a connection id, a chat id, a room name like `WhatsApp · Team`) keeps `not a member of room <room>`: those are not
+  message ids.
+- **Instructions**: the three texts open with the rooms-plus-connections wording and drop the chat_ids, broadcast and bridge
+  sentences. The channel text (Claude Code, omp's full channel) says what a platform event is (`author_kind="platform"`, from
+  the AI's own number or bot, the fields it carries, `from_self` never trusted, offline messages arrive on connect, the
+  connect notice lists the connections); the framed texts (tools-only, omp) say it for the frame (`connection_id`, `chat_id`).
+  All three say how to answer, in `toolUse`: `reply` (room message or connection message, unsigned, quoting), `send_message`
+  with `connection` and `chat`, `not sent yet` means Partyline retries and the AI must not send it twice, and `react` and
+  `send_file` answer `unsupported` for a message from a connection. The opening sentence about `reply`
+  (`Reply with the reply tool (message_id).`) and `react (message_id, one emoji)` stay as they were, because tests pin them.
+  `terminalNote` is unchanged.
+- **Tool descriptions**: `send_message` states the three targets; `react` and `send_file` say they work in rooms only.
+- **Retired** (CID-22, with their tests deleted or rewritten): ROUTE-10 (the 10-chat cap documented in the schema and the
+  instructions), CTX-04 (`chat_ids`/`recipients` forwarded as recipients, and the instructions explaining `chat_ids`), ROUTE-06's
+  instruction sentence about a post without `chat_ids` (the server's no-broadcast warning, which still names `chat_ids`, goes
+  with T33) and DM-04's `chat_ids` travelling with `to`. `TestToolSendMessage` and `TestConversationToolSchemas` were updated
+  to the new schema.
+- **Tests**: `internal/channel/connection_tools_test.go` (targets, refusals, chat_ids ignored, schema, unsupported),
+  `internal/channel/instructions_test.go` (the goldens, copied from the spec's wording, L-032),
+  `internal/api/agent_platform_unsupported_test.go` (the two refusals at their HTTP status, L-017), the shared framing cases and
+  the pinned frames of the channel and CLI tests.

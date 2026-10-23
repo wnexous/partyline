@@ -28,9 +28,9 @@ func pendingEvent(e dto.PlatformEvent, offset time.Duration) dto.PlatformEvent {
 }
 
 const (
-	framedGroup = `<partyline room="WhatsApp · Team" chat="Team" platform="whatsapp" from="Pat" trusted="false" message_id="01HITEM1" chat_id="01HCHAT">` +
+	framedGroup = `<partyline room="WhatsApp · Team" chat="Team" platform="whatsapp" from="Pat" trusted="false" message_id="01HITEM1" connection_id="01HCONN" chat_id="01HCHAT">` +
 		"look at this\n[attachment 01HFILE: photo.png, image/png]</partyline>\n" + DataLine
-	framedDirect = `<partyline room="Telegram · André" chat="André" platform="telegram" from="André" trusted="true" message_id="01HITEM2" chat_id="01HCHAT2">` +
+	framedDirect = `<partyline room="Telegram · André" chat="André" platform="telegram" from="André" trusted="true" message_id="01HITEM2" connection_id="01HCONN2" chat_id="01HCHAT2">` +
 		"pode publicar</partyline>\n" + OwnerLine
 	framedRoom = `<partyline room="Support" conversation="group" from="Alice" trusted="true" message_id="m1">first</partyline>` + "\n" + OwnerLine
 )

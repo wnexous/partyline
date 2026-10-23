@@ -270,6 +270,14 @@ func (s *server) postTo(w http.ResponseWriter, r *http.Request, p authn.Principa
 	} else if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
+	if req.ReplyTo != "" && p.Kind == authn.KindAgent {
+		// A message that arrived on the AI's connection is no message of the room to quote (CID-22).
+		if mine, err := s.isPlatformMessage(r.Context(), p.AgentID, req.ReplyTo); err != nil {
+			return err
+		} else if mine {
+			return errUnsupportedQuote
+		}
+	}
 	m, err := s.Rooms.Post(r.Context(), p, roomID, rooms.PostInput{Text: req.Text, ReplyTo: req.ReplyTo, Recipients: req.Recipients, Files: files})
 	if err != nil {
 		return err

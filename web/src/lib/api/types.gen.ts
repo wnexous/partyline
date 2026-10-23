@@ -425,6 +425,11 @@ export const ErrorCodeAvatarInvalid = "avatar_invalid"; // 422, the avatar is no
 export const ErrorCodeNotOperator = "not_operator";
 export const ErrorCodeUnknownChat = "unknown_chat";
 /**
+ * ErrorCodeUnsupported is a reaction to, or a quote of, a message that arrived on one of the AI's
+ * connections: reactions and files work in rooms only (422, CID-22).
+ */
+export const ErrorCodeUnsupported = "unsupported";
+/**
  * ErrorCodeFolderRequired is a session that did not say which machine and folder it works in
  * (an old CLI sends none); ErrorCodeFolderInvalid one whose folder cannot be an identity
  * (not absolute or canonical, a NUL, longer than 1024 bytes) (AID-05).
@@ -478,7 +483,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeMembersRefused | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeMembersRefused | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */

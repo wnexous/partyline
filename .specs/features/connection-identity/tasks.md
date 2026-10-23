@@ -618,13 +618,13 @@ New frame DTOs are added.
 **Reuses**: tool tests, instructions golden
 **Requirement**: CID-16, CID-22
 **Done when**:
-- [ ] Channel e2e:
+- [x] Channel e2e:
   - connection+chat is sent;
   - two targets → tool error;
   - a call with `chat_ids` still posts to the room;
   - the schema has no `chat_ids`;
   - the instructions golden is updated
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): answer on a connection chat`

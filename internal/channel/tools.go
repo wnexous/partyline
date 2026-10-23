@@ -49,13 +49,13 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.reply))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "react",
-		Description: "React to a chat message with one emoji; the reaction appears on the message in its chat. Only messages from chats can get reactions.",
+		Description: "React to a chat message of a room with one emoji; the reaction appears on the message in its chat. Only messages from chats can get reactions; a message from one of your connections cannot (unsupported): answer it with reply.",
 		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the chat message"},"emoji":{"type":"string","description":"one emoji, e.g. 👍"}},"required":["message_id","emoji"]}`),
 	}, t.guard(t.react))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_message",
-		Description: "Post a message to a room or DM you belong to (room), or message an intelligence directly (to): the DM is created the first time, for any intelligence your owner can see. Give exactly one of room and to; chat_ids limits a post to some of the room's chats.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"to":{"type":"string","description":"instead of room: the @handle, handle or id of an intelligence to message directly; the DM is created if you never talked"},"text":{"type":"string","description":"message text"},"chat_ids":{"type":"array","items":{"type":"string"},"description":"optional chat ids (the chat_id of a chat message, or member_id of chat members from list_rooms) to answer only those chats, at most 10 chats per message; empty sends to every chat of the room"},"recipients":{"type":"array","items":{"type":"string"},"description":"older name of chat_ids; still accepted"}},"required":["text"]}`),
+		Description: "Send a message. Give exactly one target: room (post to a room or DM you belong to), to (message an intelligence directly: the DM is created the first time, for any intelligence your owner can see), or connection together with chat (write to a chat of a connection you operate, from your own account and unsigned: take the connection_id and chat_id of a message from it). A message the platform does not take at once is retried by Partyline: do not send it again.",
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"to":{"type":"string","description":"instead of room: the @handle, handle or id of an intelligence to message directly; the DM is created if you never talked"},"connection":{"type":"string","description":"instead of room and to: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to write to, as a message from that connection carries it"},"text":{"type":"string","description":"message text"}},"required":["text"]}`),
 	}, t.guard(t.sendMessage))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "room_info",
@@ -79,7 +79,7 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.downloadAttachment))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_file",
-		Description: "Upload a local file to a room, with an optional caption and reply_to.",
+		Description: "Upload a local file to a room, with an optional caption and reply_to. Files go to rooms only: a message from one of your connections cannot be quoted or answered with a file (unsupported); answer it with reply or send_message.",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"path":{"type":"string","description":"local file path"},"caption":{"type":"string","description":"optional text sent with the file"},"reply_to":{"type":"string","description":"optional message_id this file answers"}},"required":["room","path"]}`),
 	}, t.guard(t.sendFile))
 	srv.HandleTool(mcp.ToolDef{
@@ -208,48 +208,74 @@ func (t *tools) react(ctx context.Context, args json.RawMessage) (string, error)
 	return "reacted (message_id " + m.ID + ")", nil
 }
 
+// The refusals of send_message about where a message goes.
+const (
+	msgSeveralTargets = "give exactly one of room, to, or connection with chat, not several: room posts in a room or DM you belong to, to messages an intelligence directly, connection with chat writes to a chat of a connection you operate"
+	msgNoTarget       = "room, to, or connection with chat is required: name the room to post in, the @handle of the intelligence to message, or the connection and the chat to write to"
+	msgHalfTarget     = "connection and chat go together: give both (the connection_id and the chat_id of a message from your connection), or neither"
+)
+
+// sendMessage sends a message to exactly one of a room, an intelligence (to) or a chat of a connection
+// the AI operates (connection and chat, CID-16). chat_ids and recipients, its older name, are accepted
+// and ignored (CID-22): decoding skips them, and a message goes to everyone where it is sent.
 func (t *tools) sendMessage(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
-		Room       string   `json:"room"`
-		To         string   `json:"to"`
-		Text       string   `json:"text"`
-		ChatIDs    []string `json:"chat_ids"`
-		Recipients []string `json:"recipients"`
+		Room       string `json:"room"`
+		To         string `json:"to"`
+		Connection string `json:"connection"`
+		Chat       string `json:"chat"`
+		Text       string `json:"text"`
 	}
 	if err := decode(args, &a); err != nil {
 		return "", err
 	}
-	// Exactly one of room and to says where the message goes; an empty value is not given, as
-	// some models send every parameter (DM-04).
+	// An empty value is not given, as some models send every parameter (DM-04). A connection needs
+	// its chat and a chat its connection, whatever else is given.
 	hasRoom, hasTo := strings.TrimSpace(a.Room) != "", strings.TrimSpace(a.To) != ""
-	switch {
-	case hasRoom && hasTo:
-		return "", errors.New("give either room or to, not both: room posts in a room or DM you belong to, to messages an intelligence directly")
-	case !hasRoom && !hasTo:
-		return "", errors.New("room or to is required: name the room to post in, or the @handle of the intelligence to message")
+	hasConnection, hasChat := strings.TrimSpace(a.Connection) != "", strings.TrimSpace(a.Chat) != ""
+	if hasConnection != hasChat {
+		return "", errors.New(msgHalfTarget)
+	}
+	switch targets := count(hasRoom, hasTo, hasConnection); {
+	case targets > 1:
+		return "", errors.New(msgSeveralTargets)
+	case targets == 0:
+		return "", errors.New(msgNoTarget)
 	}
 	if err := required("text", a.Text); err != nil {
 		return "", err
 	}
-	// chat_ids is the documented name; recipients (the older one) still works, and both
-	// together name the union of their chats (CTX-04).
-	recipients := a.ChatIDs
-	for _, id := range a.Recipients {
-		if !slices.Contains(recipients, id) {
-			recipients = append(recipients, id)
+	switch {
+	case hasConnection:
+		var res dto.PlatformSendResult
+		path := "agent/connections/" + url.PathEscape(strings.TrimSpace(a.Connection)) + "/chats/" + url.PathEscape(strings.TrimSpace(a.Chat)) + "/messages"
+		if err := t.api.json(ctx, http.MethodPost, path, nil, dto.SendToChatRequest{Text: a.Text}, &res); err != nil {
+			return "", err
 		}
+		return platformSent(res), nil
+	case hasTo:
+		var m dto.Message
+		if err := t.api.json(ctx, http.MethodPost, "agent/dms", nil, dto.AgentDMRequest{To: a.To, Text: a.Text}, &m); err != nil {
+			return "", err
+		}
+		return sent(m), nil
 	}
 	var m dto.Message
-	var err error
-	if hasTo {
-		err = t.api.json(ctx, http.MethodPost, "agent/dms", nil, dto.AgentDMRequest{To: a.To, Text: a.Text, ChatIDs: recipients}, &m)
-	} else {
-		err = t.api.json(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil, dto.PostMessageRequest{Text: a.Text, Recipients: recipients}, &m)
-	}
-	if err != nil {
+	if err := t.api.json(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil, dto.PostMessageRequest{Text: a.Text}, &m); err != nil {
 		return "", err
 	}
 	return sent(m), nil
+}
+
+// count is how many of the flags are set.
+func count(flags ...bool) int {
+	n := 0
+	for _, f := range flags {
+		if f {
+			n++
+		}
+	}
+	return n
 }
 
 // createGroup makes a group of the AI's owner with the AI and the named members (AGRP-01); a

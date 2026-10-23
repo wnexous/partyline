@@ -47,7 +47,7 @@ function escapeAttr(s: string): string {
 }
 
 // frame renders one message (the channel meta fields plus content) as
-// <partyline room=… conversation=… chat=… platform=… from=… trusted=… message_id=… chat_id=…>text</partyline>
+// <partyline room=… conversation=… chat=… platform=… from=… trusted=… message_id=… connection_id=… chat_id=…>text</partyline>
 // followed by the trust line. Absent fields are left out.
 function frame(m: Record<string, string>): string {
 	const trusted = m.trusted === "true";
@@ -59,6 +59,7 @@ function frame(m: Record<string, string>): string {
 		["from", m.sender_name || m.author],
 		["trusted", trusted ? "true" : "false"],
 		["message_id", m.message_id],
+		["connection_id", m.connection_id],
 		["chat_id", m.chat_id],
 	];
 	const head = attrs
