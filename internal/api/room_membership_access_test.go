@@ -87,7 +87,7 @@ func TestDMRoutesAuthMatrix(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
 	room := func(res map[string]string, suffix string) string { return "/api/v1/rooms/" + res["room"] + suffix }
-	runRoomRoutes(t, roles, dmRoomSetup(env, roles), []roomRoute{
+	runRoleRoutes(t, roles, dmRoomSetup(env, roles), []roleRoute{
 		{"get room", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get(room(res, ""))
 		}, dmWant(200, 200, 404)},

@@ -84,18 +84,20 @@ func TestPromotingAnAgentIsAHarmlessNoOp(t *testing.T) {
 	require.Contains(t, e.Fields, "fixed")
 }
 
-// Auth matrix for the agent PATCH fields (ID-04, ID-05): only the owner renames and promotes;
-// everyone else gets 403 or 404.
+// Auth matrix for the agent PATCH fields (ID-04, ID-05, POS-04): only whoever manages the AI renames and
+// promotes it; the others who see it get 403, those who cannot 404.
 func TestAgentIdentityRoutesAuthMatrix(t *testing.T) {
-	m := newMatrix(t)
-	agent := func(res matrixResource) string { return "/api/v1/agents/" + res["agent"] }
-	m.run(t, agentSetup, []matrixRoute{
-		{"rename agent", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	agent := func(res map[string]string) string { return "/api/v1/agents/" + res["agent"] }
+	setup := func(*testing.T) map[string]string { return map[string]string{"agent": roles.TargetAI} }
+	runRoleRoutes(t, roles, setup, []roleRoute{
+		{"rename agent", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch(agent(res), dto.UpdateAgentRequest{DisplayName: ptr("Renamed")})
-		}, statuses(200, 403, 404, 404, 404)},
-		{"promote agent", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, agentWant(200, 403, 404)},
+		{"promote agent", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch(agent(res), dto.UpdateAgentRequest{Fixed: ptr(true)})
-		}, statuses(200, 403, 404, 404, 404)},
+		}, agentWant(200, 403, 404)},
 	})
 }
 

@@ -729,10 +729,10 @@ Merge moves org memberships (B wins) and re-points `creator_iid` from A to B. `D
 **Reuses**: `orgs.Authz`, `conversations/merge.go`
 **Requirement**: POS-04, POS-05
 **Done when**:
-- [ ] e2e: the "Intelligences" matrix rows for `/agents*`
-- [ ] Merge across home orgs → 403
-- [ ] After a merge, A's created AIs have B as their creator
-- [ ] Gate check passes: `make check`
+- [x] e2e: the "Intelligences" matrix rows for `/agents*`
+- [x] Merge across home orgs → 403
+- [x] After a merge, A's created AIs have B as their creator
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): administer AIs through the org chart`

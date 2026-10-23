@@ -75,9 +75,9 @@ func addToRoom(t *testing.T, env *testkit.Env, manager *testkit.Client, roomID s
 		dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: u.User.ID}).RequireStatus(http.StatusCreated))
 }
 
-// roomRoute is one route of an organization-role matrix: call performs the request as c against res, and
+// roleRoute is one route of an organization-role matrix: call performs the request as c against res, and
 // want maps every role name of testkit.OrgRoles.All to the expected status.
-type roomRoute struct {
+type roleRoute struct {
 	name string
 	call func(t *testing.T, c *testkit.Client, res map[string]string) *testkit.Response
 	want map[string]int
@@ -102,9 +102,9 @@ func dmWant(participant, viewer, other int) map[string]int {
 	}
 }
 
-// runRoomRoutes calls every route as every role, each against a fresh resource from setup, and checks the
+// runRoleRoutes calls every route as every role, each against a fresh resource from setup, and checks the
 // status; 403 and 404 must carry the forbidden and not_found error codes.
-func runRoomRoutes(t *testing.T, roles *testkit.OrgRoles, setup func(t *testing.T) map[string]string, routes []roomRoute) {
+func runRoleRoutes(t *testing.T, roles *testkit.OrgRoles, setup func(t *testing.T) map[string]string, routes []roleRoute) {
 	t.Helper()
 	for _, rt := range routes {
 		t.Run(rt.name, func(t *testing.T) {

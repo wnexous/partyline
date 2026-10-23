@@ -11,6 +11,24 @@ import (
 	"strings"
 )
 
+const clearSelfInviter = `-- name: ClearSelfInviter :exec
+UPDATE org_members SET inviter_iid = (SELECT f.inviter_iid FROM org_members f
+                                      WHERE f.org_id = org_members.org_id AND f.iid = ?1)
+WHERE org_members.iid = ?2 AND org_members.inviter_iid = ?2
+`
+
+type ClearSelfInviterParams struct {
+	FromID string
+	IntoID string
+}
+
+// Merge: when the merged identity invited the survivor itself, the survivor answers to whoever invited the
+// merged one in that organization (nobody when it had no inviter), not to itself.
+func (q *Queries) ClearSelfInviter(ctx context.Context, arg ClearSelfInviterParams) error {
+	_, err := q.db.ExecContext(ctx, clearSelfInviter, arg.FromID, arg.IntoID)
+	return err
+}
+
 const countUnreadByRoom = `-- name: CountUnreadByRoom :many
 SELECT m.room_id, COUNT(*) AS unread
 FROM messages m
@@ -96,6 +114,34 @@ func (q *Queries) CreateDMRoom(ctx context.Context, arg CreateDMRoomParams) erro
 		arg.UpdatedAt,
 	)
 	return err
+}
+
+const deleteAgentOrgMemberships = `-- name: DeleteAgentOrgMemberships :many
+DELETE FROM org_members WHERE iid = ? RETURNING org_id
+`
+
+// Merge: what is left of the merged AI's memberships, the organizations both belong to.
+func (q *Queries) DeleteAgentOrgMemberships(ctx context.Context, iid string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, deleteAgentOrgMemberships, iid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var org_id string
+		if err := rows.Scan(&org_id); err != nil {
+			return nil, err
+		}
+		items = append(items, org_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteDuplicateAgentGroupMemberships = `-- name: DeleteDuplicateAgentGroupMemberships :many
@@ -760,6 +806,43 @@ func (q *Queries) MoveAgentGroupMemberships(ctx context.Context, arg MoveAgentGr
 	return items, nil
 }
 
+const moveAgentOrgMemberships = `-- name: MoveAgentOrgMemberships :many
+UPDATE org_members SET iid = ?1
+WHERE org_members.iid = ?2
+  AND org_members.org_id NOT IN (SELECT o.org_id FROM org_members o WHERE o.iid = ?1)
+RETURNING org_id
+`
+
+type MoveAgentOrgMembershipsParams struct {
+	IntoID string
+	FromID string
+}
+
+// Merge: the organizations only the merged AI belongs to become the surviving AI's, with the permission,
+// position and inviter it had there. Where both belong, the survivor's membership stays (it wins).
+func (q *Queries) MoveAgentOrgMemberships(ctx context.Context, arg MoveAgentOrgMembershipsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, moveAgentOrgMemberships, arg.IntoID, arg.FromID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var org_id string
+		if err := rows.Scan(&org_id); err != nil {
+			return nil, err
+		}
+		items = append(items, org_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const moveMessage = `-- name: MoveMessage :exec
 UPDATE messages SET room_id = ?, seq = ? WHERE id = ?
 `
@@ -786,6 +869,21 @@ type MoveRoomMemberParams struct {
 
 func (q *Queries) MoveRoomMember(ctx context.Context, arg MoveRoomMemberParams) error {
 	_, err := q.db.ExecContext(ctx, moveRoomMember, arg.RoomID, arg.ID)
+	return err
+}
+
+const reassignAgentCreator = `-- name: ReassignAgentCreator :exec
+UPDATE agents SET creator_iid = ?1 WHERE creator_iid = ?2
+`
+
+type ReassignAgentCreatorParams struct {
+	IntoID sql.NullString
+	FromID sql.NullString
+}
+
+// Merge: the AIs the merged AI created are the survivor's.
+func (q *Queries) ReassignAgentCreator(ctx context.Context, arg ReassignAgentCreatorParams) error {
+	_, err := q.db.ExecContext(ctx, reassignAgentCreator, arg.IntoID, arg.FromID)
 	return err
 }
 
@@ -850,6 +948,51 @@ func (q *Queries) ReassignConnectorOperator(ctx context.Context, arg ReassignCon
 		return nil, err
 	}
 	return items, nil
+}
+
+const reassignInvitationInviter = `-- name: ReassignInvitationInviter :exec
+UPDATE org_invitations SET invited_by = ?1 WHERE invited_by = ?2
+`
+
+type ReassignInvitationInviterParams struct {
+	IntoID string
+	FromID string
+}
+
+// Merge: a pending invitation the merged identity sent is the surviving one's.
+func (q *Queries) ReassignInvitationInviter(ctx context.Context, arg ReassignInvitationInviterParams) error {
+	_, err := q.db.ExecContext(ctx, reassignInvitationInviter, arg.IntoID, arg.FromID)
+	return err
+}
+
+const reassignInviter = `-- name: ReassignInviter :exec
+UPDATE org_members SET inviter_iid = ?1 WHERE inviter_iid = ?2
+`
+
+type ReassignInviterParams struct {
+	IntoID sql.NullString
+	FromID sql.NullString
+}
+
+// Merge: the guests the merged identity invited answer to the surviving one.
+func (q *Queries) ReassignInviter(ctx context.Context, arg ReassignInviterParams) error {
+	_, err := q.db.ExecContext(ctx, reassignInviter, arg.IntoID, arg.FromID)
+	return err
+}
+
+const reassignRoomCreator = `-- name: ReassignRoomCreator :exec
+UPDATE rooms SET creator_iid = ?1 WHERE creator_iid = ?2
+`
+
+type ReassignRoomCreatorParams struct {
+	IntoID sql.NullString
+	FromID sql.NullString
+}
+
+// Merge: the groups the merged AI created are the survivor's.
+func (q *Queries) ReassignRoomCreator(ctx context.Context, arg ReassignRoomCreatorParams) error {
+	_, err := q.db.ExecContext(ctx, reassignRoomCreator, arg.IntoID, arg.FromID)
+	return err
 }
 
 const replaceAgentCursor = `-- name: ReplaceAgentCursor :exec

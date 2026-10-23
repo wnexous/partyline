@@ -609,3 +609,39 @@ Where a section refines the design, it says so.
   AI refused), `agent_conversations_test.go`, `conversations/groups_test.go` and `channel/conversation_tools_test.go`
   were rewritten; the test helpers `storeAgent`, `registerAgent`-created AIs and `testkit.NewAI` place their AIs in
   the owner's default organization, which is where the app puts them.
+
+## T24: AI administration on organizations (POS-04, POS-05)
+
+- **Levels** (`agents.Registry.authorize`, user principals only; an agent token is `forbidden`): `use` is *seeing*
+  the AI - `access.CanSeeAI`: the user hosts it (`agents.owner_id`) or shares an organization with it, with any
+  permission, guests included - and `manage` is `Authz.ManagesAnywhere` (POS-03: the identities above it in a shared
+  organization, or its creator). Hosting gives sight, never management: a host who left the AI's organization still
+  lists it, at `use`. No sight is 404, sight without management 403. A use grant gives nothing. `dto.Agent.my_level`
+  carries the level (`manage` or `use`).
+- **Routes**: `GET /api/v1/agents` lists `ListVisibleAgents` (hosted + the AIs of the user's organizations; the
+  grant-based `ListAgentsForUser` stays for the contacts tree until T28), `GET /api/v1/agents/{id}` (new: the design's
+  matrix lists it; 200 for whoever sees the AI, 404 for the rest), `PATCH /api/v1/agents/{id}` (description, display
+  name; a manager), and the inert `/sharing` pair (`GET` sees, `PUT` manages). `DELETE /agents/{id}` and
+  `DELETE /agents/{id}/session` are T21's: `Registry.Delete` still asks `authorize(manage)` here, which T21 replaces by
+  `CanDelete` in the home organization.
+- **Merge** (`conversations.Service.Merge`, `POST /agents/{id}/merge`): the caller must **manage both AIs in their home
+  organization** (`Authz.Manages` with `agents.org_id`), and the two **must share it**. `from` unseen is 404, then the
+  `into` field is validated (422 `into` required / must differ), then `into` unseen is 404, an AI the caller sees and
+  does not manage - or that has no home organization - is 403, **different home organizations are 403**, an online
+  `from` is 409 `identity_online`. The two need not be hosted by the caller or by the same user (the survivor keeps its
+  host). The home organization is checked again inside the transaction.
+- **What a merge moves** (besides groups, cursors, DMs, messages, connectors, grants): the organizations only `from`
+  belongs to become `into`'s with the permission, position and inviter `from` had there (`MoveAgentOrgMemberships`);
+  where both belong, `into`'s membership stays (it wins) and `from`'s is deleted; `agents.creator_iid`,
+  `rooms.creator_iid`, `org_members.inviter_iid` and `org_invitations.invited_by` that named `from` now name `into`.
+  Two repairs avoid self-references: when `from` created `into`, `into`'s creator becomes `from`'s creator (nobody when
+  it had none); when `from` invited `into` as a guest, `into` answers to whoever invited `from` in that organization.
+  `events.OrgChanged` is published for every organization `from` belonged to; the audit entry stays `agent.merge`
+  (actor: the caller).
+- **Tests**: `TestAgentRoutesAuthMatrix` and `TestAgentIdentityRoutesAuthMatrix` (9 roles, `agentWant`),
+  `TestAgentListAndLevelFollowTheChartNotTheHost`, `TestMergeAuthorization` and
+  `TestMergeMovesOrganizationMembershipsAndWhatTheMergedAICreated`. A merge needs both AIs in one home
+  organization, so the tests that merge a `NewLegacyAI` (the v0.3 identity with no folder, which has no home) place it
+  first with **`env.PlaceInDefaultOrg(owner, aiID)`** (`testkit/orgs.go`): the owner's default organization as a member
+  with no position, created by the owner, which is what the upgrade does (OUPG-01). The registry/operator-removal tests
+  that relied on a use grant now expect 404.

@@ -710,6 +710,75 @@ func (q *Queries) ListAgentsForUser(ctx context.Context, userID string) ([]ListA
 	return items, nil
 }
 
+const listVisibleAgents = `-- name: ListVisibleAgents :many
+SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, u.username AS owner_username,
+       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
+       CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
+       CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
+       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar
+FROM agents a JOIN users u ON u.id = a.owner_id
+LEFT JOIN intelligences i ON i.id = a.id
+LEFT JOIN intelligences ui ON ui.id = u.id
+WHERE a.owner_id = ?1
+   OR a.id IN (SELECT y.iid FROM org_members x JOIN org_members y ON y.org_id = x.org_id
+               WHERE x.iid = ?1)
+ORDER BY a.name, u.username, a.id
+`
+
+type ListVisibleAgentsRow struct {
+	Agent            Agent
+	OwnerUsername    string
+	OwnerDisplayName string
+	Handle           string
+	ProfileName      string
+	ProfileAvatar    string
+}
+
+// The AIs a user sees (AD-016): those hosted on their computers and those of the organizations they
+// belong to, whatever their permission there.
+func (q *Queries) ListVisibleAgents(ctx context.Context, userID string) ([]ListVisibleAgentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listVisibleAgents, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVisibleAgentsRow
+	for rows.Next() {
+		var i ListVisibleAgentsRow
+		if err := rows.Scan(
+			&i.Agent.ID,
+			&i.Agent.OwnerID,
+			&i.Agent.Name,
+			&i.Agent.Description,
+			&i.Agent.CreatedAt,
+			&i.Agent.LastSeenAt,
+			&i.Agent.ProjectID,
+			&i.Agent.Harness,
+			&i.Agent.Machine,
+			&i.Agent.ConnectedAt,
+			&i.Agent.Folder,
+			&i.Agent.PlatformDropped,
+			&i.Agent.OrgID,
+			&i.Agent.CreatorIid,
+			&i.OwnerUsername,
+			&i.OwnerDisplayName,
+			&i.Handle,
+			&i.ProfileName,
+			&i.ProfileAvatar,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markAgentConnected = `-- name: MarkAgentConnected :exec
 UPDATE agents SET connected_at = ? WHERE id = ?
 `

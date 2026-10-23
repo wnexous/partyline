@@ -35,7 +35,7 @@ func TestAddChatMemberAuthMatrix(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
 	setup := chatRoomSetup(env, roles)
-	runRoomRoutes(t, roles, setup, []roomRoute{
+	runRoleRoutes(t, roles, setup, []roleRoute{
 		{"add chat member", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Post("/api/v1/rooms/"+res["room"]+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: res["chat"]})
 		}, groupWant(422, 422, 403, 404)},

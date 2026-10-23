@@ -216,10 +216,10 @@ func TestPostsNamingChatsKeepTheAuthorizationOfTheirRoute(t *testing.T) {
 	env.NewAI(roles.Outsider, "builder")
 	req := dto.PostMessageRequest{Text: "hello", Recipients: []string{chat}}
 
-	userPost := []roomRoute{{"post naming a chat", func(_ *testing.T, c *testkit.Client, _ map[string]string) *testkit.Response {
+	userPost := []roleRoute{{"post naming a chat", func(_ *testing.T, c *testkit.Client, _ map[string]string) *testkit.Response {
 		return c.Post("/api/v1/rooms/"+room.ID+"/messages", req)
 	}, groupWant(http.StatusCreated, http.StatusCreated, http.StatusCreated, http.StatusNotFound)}}
-	runRoomRoutes(t, roles, func(*testing.T) map[string]string { return map[string]string{} }, userPost)
+	runRoleRoutes(t, roles, func(*testing.T) map[string]string { return map[string]string{} }, userPost)
 	env.Anon().Post("/api/v1/rooms/"+room.ID+"/messages", req).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 
 	agentPath := agentRoomPath(room.ID, "/messages")

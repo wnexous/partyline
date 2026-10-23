@@ -90,6 +90,29 @@ func (e *Env) NewAIIn(owner *Client, org, name string) string {
 	return id
 }
 
+// PlaceInDefaultOrg gives an AI that has no organization (NewLegacyAI) the home the upgrade gives a v0.3
+// identity (OUPG-01): its owner's default organization, which the owner created it in, as a member with no
+// position, created by the owner.
+func (e *Env) PlaceInDefaultOrg(owner *Client, aiID string) {
+	e.T.Helper()
+	ctx := context.Background()
+	var orgID string
+	require.NoError(e.T, e.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		if orgID, err = orgs.DefaultFor(ctx, q, owner.User.ID); err != nil {
+			return err
+		}
+		if err := q.SetAgentHome(ctx, db.SetAgentHomeParams{OrgID: nullable(orgID), ID: aiID}); err != nil {
+			return err
+		}
+		if err := q.SetAgentCreator(ctx, db.SetAgentCreatorParams{CreatorIid: nullable(owner.User.ID), ID: aiID}); err != nil {
+			return err
+		}
+		return orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: orgID, IID: aiID, Permission: orgs.PermissionMember, Now: time.Now()})
+	}))
+	e.App.Bus.Publish(events.OrgChanged{OrgID: orgID})
+}
+
 // OrgRoles is one organization with an identity in every role of the authorization matrices (design,
 // "Authorization matrix per route group"), all logged in:
 //

@@ -224,8 +224,8 @@ func retiredRoomFieldSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *te
 
 // retiredRoomFieldRoutes are the requests that used to change a room or a member through a retired
 // field, each carrying nothing but retired fields.
-func retiredRoomFieldRoutes() []roomRoute {
-	return []roomRoute{
+func retiredRoomFieldRoutes() []roleRoute {
+	return []roleRoute{
 		{"PATCH a room with bridge_chats and broadcast", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch("/api/v1/rooms/"+res["room"], map[string]any{"bridge_chats": true, "broadcast": false})
 		}, groupWant(200, 200, 403, 404)},
@@ -267,7 +267,7 @@ func TestRetiredFieldRequestsKeepTheAuthorizationOfTheirRoutes(t *testing.T) {
 
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
-	runRoomRoutes(t, roles, retiredRoomFieldSetup(env, roles), retiredRoomFieldRoutes())
+	runRoleRoutes(t, roles, retiredRoomFieldSetup(env, roles), retiredRoomFieldRoutes())
 }
 
 // CID-22 (T35): the same requests from anonymous callers and from every kind of AI token are refused:

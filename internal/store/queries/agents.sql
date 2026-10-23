@@ -32,6 +32,22 @@ WHERE (a.owner_id = sqlc.arg(user_id)
                    WHERE g.resource_kind = 'agent' AND g.subject IN (sqlc.arg(user_id), '*')))
 ORDER BY a.name, u.username, a.id;
 
+-- name: ListVisibleAgents :many
+-- The AIs a user sees (AD-016): those hosted on their computers and those of the organizations they
+-- belong to, whatever their permission there.
+SELECT sqlc.embed(a), u.username AS owner_username,
+       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
+       CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
+       CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
+       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar
+FROM agents a JOIN users u ON u.id = a.owner_id
+LEFT JOIN intelligences i ON i.id = a.id
+LEFT JOIN intelligences ui ON ui.id = u.id
+WHERE a.owner_id = sqlc.arg(user_id)
+   OR a.id IN (SELECT y.iid FROM org_members x JOIN org_members y ON y.org_id = x.org_id
+               WHERE x.iid = sqlc.arg(user_id))
+ORDER BY a.name, u.username, a.id;
+
 -- name: UpdateAgentDescription :exec
 UPDATE agents SET description = ? WHERE id = ?;
 

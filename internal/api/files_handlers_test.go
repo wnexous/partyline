@@ -207,7 +207,7 @@ func evenNames(total int) []string {
 func TestRoomFilesAuthMatrix(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
-	runRoomRoutes(t, roles, roomSetup(env, roles), []roomRoute{
+	runRoleRoutes(t, roles, roomSetup(env, roles), []roleRoute{
 		{"list files", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get("/api/v1/rooms/" + res["room"] + "/attachments")
 		}, groupWant(200, 200, 200, 404)},

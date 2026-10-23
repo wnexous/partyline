@@ -137,7 +137,7 @@ func TestRoomRoutesAuthMatrix(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
 	room := func(res map[string]string, suffix string) string { return "/api/v1/rooms/" + res["room"] + suffix }
-	routes := []roomRoute{
+	routes := []roleRoute{
 		{"get room", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get(room(res, ""))
 		}, groupWant(200, 200, 200, 404)},
@@ -187,7 +187,7 @@ func TestRoomRoutesAuthMatrix(t *testing.T) {
 			return c.Put(room(res, "/read"), dto.MarkReadRequest{})
 		}, groupWant(200, 200, 200, 404)},
 	}
-	runRoomRoutes(t, roles, roomSetup(env, roles), routes)
+	runRoleRoutes(t, roles, roomSetup(env, roles), routes)
 
 	// Listing: everyone gets 200, but only the people who can view the group list it.
 	res := roomSetup(env, roles)(t)

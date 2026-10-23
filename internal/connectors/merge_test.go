@@ -120,6 +120,7 @@ func (e *mergeEnv) plantAnswer(t *testing.T, ai, roomID, body string) string {
 func TestMergeKeepsAPlatformDMAsHistory(t *testing.T) {
 	e := newMergeEnv(t)
 	oldID := e.env.NewLegacyAI(e.alice, "old")
+	e.env.PlaceInDefaultOrg(e.alice, oldID) // the upgrade gives a v0.3 identity its owner's organization (OUPG-01)
 	e.alice.OperateConnector(e.conn.ID, oldID)
 	chat, room := e.platformDM(t, oldID, "A1", "to old")
 	require.Equal(t, []string{room}, e.roomsOf(t, chat))
@@ -155,6 +156,7 @@ func TestMergeKeepsAPlatformDMAsHistory(t *testing.T) {
 func TestMergeAppendsAPlatformDMAndMovesItsChat(t *testing.T) {
 	e := newMergeEnv(t)
 	oldID := e.env.NewLegacyAI(e.alice, "old")
+	e.env.PlaceInDefaultOrg(e.alice, oldID) // the upgrade gives a v0.3 identity its owner's organization (OUPG-01)
 
 	// The person wrote to Atlas, then the account moved to old and they wrote to old, whose answer
 	// the history holds.

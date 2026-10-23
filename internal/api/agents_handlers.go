@@ -13,6 +13,7 @@ import (
 // agentRoutes are the management endpoints of agents for users (sessions or user tokens).
 func (s *server) agentRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agents", authed(s.listAgents))
+	s.handle(mux, "GET /api/v1/agents/{id}", authed(s.getAgent))
 	s.handle(mux, "PATCH /api/v1/agents/{id}", authed(s.updateAgent))
 	s.handle(mux, "DELETE /api/v1/agents/{id}", authed(s.deleteAgent))
 	s.handle(mux, "POST /api/v1/agents/{id}/merge", authed(s.mergeAgent))
@@ -43,6 +44,16 @@ func (s *server) listAgents(w http.ResponseWriter, r *http.Request, p authn.Prin
 		out.Items[i] = toAgent(a)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// getAgent renders one AI the caller hosts or shares an organization with; others get 404.
+func (s *server) getAgent(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	a, err := s.Agents.Get(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, toAgent(a))
 	return nil
 }
 
