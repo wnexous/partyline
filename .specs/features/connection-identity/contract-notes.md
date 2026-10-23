@@ -872,3 +872,41 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   `notifyUnauthorized` now returns the handler's promise, the shell's handler returns
   `router.navigate(...)`, and the live socket clears the cache again once that redirect settled.
   No assertion changed.
+
+## T30: Platform DM history banner (CID-21, CID-22)
+
+- **Detection** (`web/src/components/conversation-header.tsx`): `historyPlatform(room)` answers the
+  connector kind of a DM's person participant, `""` when the person carries no platform, and
+  `null` for every other conversation. A person is the only role a DM can hold besides users and
+  AIs.
+- **Banner** (`web/src/routes/_app/rooms/$roomId.tsx`): when it is not `null`, a `HistoryNotice`
+  replaces the composer in the footer (`role="note"`, `data-testid="history-notice"`):
+  `History: answer this person on {platform}` with the platform's display name
+  (`room.history`), `History: answer this person on their platform` when the person has none
+  (`room.historyUnknown`), plus `room.historyHint` ("Partyline no longer delivers this
+  conversation…"). The header still names both participants with their kind badges, and the
+  timeline, files and member panels are unchanged: the DM stays readable.
+- **`history_only` mapping**: `usePostMessage` now carries `mutationKey: postMessageKey(roomId)`
+  (exported from `lib/api/queries.ts`). The room page reads that room's post errors with
+  `useMutationState` and, when one is a 422 with code `history_only`, shows the same notice (with
+  the platform-less wording when the room data did not reveal a person) instead of the composer.
+  The composer itself is untouched (T27 owns it) and no post is retried.
+- **People are read-only in the app** (CID-22, T24): `contacts.$id.tsx` offers no `Message` button
+  and no editor for a person (it also checks `!isPerson` on top of the server's `can_edit=false`);
+  `components/people-group.tsx` lists people without actions; the new-conversation dialog no
+  longer searches or offers people, so no UI creates a DM with a person (DM-05 retired). Removed
+  with it: `usePeopleSearch`, `peopleSearchQuery`, `PEOPLE_SEARCH_SIZE`,
+  `newConversation.peopleHint/peopleError/searching` (en and pt-BR) and the `people (DM-05)` cases
+  of `new-conversation-dialog.test.tsx`. The server's `no_route_to_person` text of
+  `useStartConversation` stays as the answer of a stale client.
+- **Strings**: `room.history`, `room.historyUnknown`, `room.historyHint` in `en` and `pt-BR`.
+- **Tests**: `conversation.test.tsx` (person DM shows the notice with WhatsApp and no textbox;
+  AI–user DM keeps its composer; a post refused `history_only` turns into the notice with the
+  platform-less text), `profile.test.tsx` (a person offers no `Message` and no editor; the retired
+  person-rename case is replaced), `contacts.test.tsx` (people list rows have no `Message`) and
+  `conversation-list.test.tsx` (find-in-contacts still opens a contact that has no conversation,
+  now an AI).
+- **Deflake (not part of the task)**: `TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone`
+  read the connection right after `WaitStop`, but `Manager.Apply` stops the connector before it
+  persists the CID-02 detail, so a loaded gate read the old empty detail. It now waits (bounded,
+  `require.Eventually`) for `status=error` and the exact detail; no assertion was removed.

@@ -156,7 +156,7 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
           ) : null}
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          {own ? null : <MessageButton target={profile} compact={false} />}
+          {own || isPerson ? null : <MessageButton target={profile} compact={false} />}
           {canMerge ? (
             <Button
               variant="outline"
@@ -201,7 +201,8 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
         </div>
       </header>
 
-      {profile.can_edit ? <ProfileEditor profile={profile} /> : null}
+      {/* A person's profile is history: no editor and no message (CID-21, CID-22). */}
+      {profile.can_edit && !isPerson ? <ProfileEditor profile={profile} /> : null}
 
       {profile.ai || profile.person ? (
         <Section title={t("profile.details")}>

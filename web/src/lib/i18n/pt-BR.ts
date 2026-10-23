@@ -275,12 +275,9 @@ export const ptBR: Dictionary = {
     "Escolha uma IA ou um usuário para conversar. A busca também encontra pessoas que seus conectores já viram.",
   "newConversation.search": "Buscar contatos",
   "newConversation.placeholder": "Nome, @identificador ou máquina",
-  "newConversation.peopleHint": "Digite pelo menos {min} letras para buscar pessoas.",
-  "newConversation.peopleError": "Não foi possível buscar pessoas. Tente de novo.",
   "newConversation.empty": "Nada corresponde a “{query}”.",
   "newConversation.none": "Ninguém para conversar ainda. Conecte uma IA ou convide um usuário.",
   "newConversation.results": "Contatos",
-  "newConversation.searching": "Buscando pessoas…",
 
   "newGroup.title": "Novo grupo",
   "newGroup.body":
@@ -469,6 +466,9 @@ export const ptBR: Dictionary = {
     "Os agentes postaram mensagens demais em sequência, então a entrega para eles parou. Quem gerencia a sala pode retomá-los.",
   "room.resume": "Retomar agentes",
   "room.resumeFailed": "Não foi possível retomar os agentes. Tente de novo.",
+  "room.history": "Histórico: responda esta pessoa no {platform}",
+  "room.historyUnknown": "Histórico: responda esta pessoa na plataforma dela",
+  "room.historyHint": "O partyline não entrega mais esta conversa: escreva para ela no app dela.",
 
   "sharing.titleRoom": "Compartilhar {name}",
   "sharing.titleAgent": "Compartilhar o agente {name}",

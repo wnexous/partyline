@@ -1,7 +1,6 @@
 import { ChevronRightIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { ContactRow } from "@/components/contact-row";
-import { MessageButton } from "@/components/message-button";
 import { platformLabel } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -91,11 +90,11 @@ export function PeopleGroup({ group, query }: { group: PeopleGroupData; query: s
                 <ul aria-label={connector.name} className="divide-y border-t">
                   {items.map((person) => (
                     <li key={person.id}>
+                      {/* People are read-only history: answering happens on their platform. */}
                       <ContactRow
                         testId={`contact-${person.id}`}
                         className="px-4 md:px-8"
                         intelligence={person}
-                        actions={<MessageButton target={person} />}
                       />
                     </li>
                   ))}

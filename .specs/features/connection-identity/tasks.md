@@ -774,8 +774,8 @@ Strings come in `en` and `pt-BR`.
 **Reuses**: `conversation-header.tsx`
 **Requirement**: CID-21, CID-22
 **Done when**:
-- [ ] Unit: a person DM shows the banner and no input; an AI–user DM is unchanged
-- [ ] Gate check passes: `make check`
+- [x] Unit: a person DM shows the banner and no input; an AI–user DM is unchanged
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): platform DMs read as history`

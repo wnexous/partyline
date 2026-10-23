@@ -403,16 +403,15 @@ describe("search (LAY-03)", () => {
       "GET /me": json(200, makeMe()),
       "GET /conversations": json(200, { items: conversations }),
       "GET /contacts": json(200, sampleContacts),
-      "GET /contacts/people": json(200, { items: [lia], has_more: false }),
     });
     const user = userEvent.setup();
     renderRoute("/");
     await sidebar();
-    await user.type(await searchbox(), "lia");
-    await user.click(await screen.findByRole("button", { name: "Find “lia” in contacts" }));
+    await user.type(await searchbox(), "lab");
+    await user.click(await screen.findByRole("button", { name: "Find “lab” in contacts" }));
     const dialog = await screen.findByRole("dialog", { name: "New conversation" });
-    expect(within(dialog).getByRole("combobox", { name: "Search contacts" })).toHaveValue("lia");
-    expect(await within(dialog).findByTestId("contact-p1")).toHaveTextContent("Lia Costa");
+    expect(within(dialog).getByRole("combobox", { name: "Search contacts" })).toHaveValue("lab");
+    expect(await within(dialog).findByTestId("contact-a3")).toHaveTextContent("Lab");
   });
 
   it("tells screen readers how many conversations match", async () => {

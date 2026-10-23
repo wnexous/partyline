@@ -20,6 +20,17 @@ export function conversationTitle(room: Room, viewerId: string, t: Translate): s
 }
 
 /**
+ * The platform of a DM with an external person, which is read-only history now (CID-21): null for
+ * every other conversation and empty when the person carries no platform. People answer through
+ * the connection that holds them, never in partyline.
+ */
+export function historyPlatform(room: Room): string | null {
+  if (room.kind !== ConversationKindDM) return null;
+  const person = room.participants.find((p) => p.role === "person");
+  return person ? (person.platform ?? "") : null;
+}
+
+/**
  * The conversation page's header: avatar, title and kind badge; for a DM the counterpart's
  * @handle and, for an AI, whether it is online and in which app; for a group its visibility and
  * description. A DM the viewer only reads through an AI has no counterpart: both participants are

@@ -273,12 +273,9 @@ export const en = {
     "Pick an AI or a user to message. The search also finds people your connectors have seen.",
   "newConversation.search": "Search contacts",
   "newConversation.placeholder": "Name, @handle or machine",
-  "newConversation.peopleHint": "Type at least {min} letters to search people.",
-  "newConversation.peopleError": "Couldn’t search people. Try again.",
   "newConversation.empty": "Nothing matches “{query}”.",
   "newConversation.none": "No one to message yet. Connect an AI or invite a user.",
   "newConversation.results": "Contacts",
-  "newConversation.searching": "Searching people…",
 
   "newGroup.title": "New group",
   "newGroup.body":
@@ -462,6 +459,10 @@ export const en = {
     "Agents posted too many messages in a row, so delivery to them stopped. A room manager can resume them.",
   "room.resume": "Resume agents",
   "room.resumeFailed": "Couldn’t resume the agents. Try again.",
+  "room.history": "History: answer this person on {platform}",
+  "room.historyUnknown": "History: answer this person on their platform",
+  "room.historyHint":
+    "Partyline no longer delivers this conversation: write to them in their own app.",
 
   "sharing.titleRoom": "Share {name}",
   "sharing.titleAgent": "Share agent {name}",

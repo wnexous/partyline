@@ -6,7 +6,6 @@ import {
   queryOptions,
   useInfiniteQuery,
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -451,8 +450,12 @@ export interface PostMessageInput extends PostMessageRequest {
   files?: File[];
 }
 
+/** Identifies one room's posts, so the page can read the refusal of its own composer. */
+export const postMessageKey = (roomId: string) => ["post-message", roomId] as const;
+
 export function usePostMessage(roomId: string) {
   return useMutation({
+    mutationKey: postMessageKey(roomId),
     mutationFn: ({ files, ...req }: PostMessageInput) => {
       if (!files?.length) return api<Message>("POST", `/rooms/${roomId}/messages`, req);
       const form = new FormData();
@@ -820,39 +823,6 @@ export const peopleQuery = (connectorId: string, q = "") =>
 
 export const usePeople = (connectorId: string, q = "", enabled = true) =>
   useInfiniteQuery({ ...peopleQuery(connectorId, q), enabled, placeholderData: keepPreviousData });
-
-/** How many people one connector contributes to a search box (the pickers show a few, not a page). */
-export const PEOPLE_SEARCH_SIZE = 8;
-
-/** The first few people of a connector matching `q`: what a picker shows while the user types. */
-export const peopleSearchQuery = (connectorId: string, q: string) =>
-  queryOptions({
-    queryKey: ["contacts", "people-search", connectorId, q] as const,
-    queryFn: ({ signal }) =>
-      api<Page<IntelligenceRef>>("GET", "/contacts/people", undefined, {
-        query: { connector_id: connectorId, q, limit: PEOPLE_SEARCH_SIZE },
-        signal,
-      }),
-  });
-
-/**
- * Searches the people of several connectors at once, in the order of `connectorIds`. While `enabled`
- * is false nothing is asked; the previous results stay until the next ones arrive.
- */
-export function usePeopleSearch(connectorIds: string[], q: string, enabled: boolean) {
-  return useQueries({
-    queries: connectorIds.map((id) => ({
-      ...peopleSearchQuery(id, q),
-      enabled,
-      placeholderData: keepPreviousData,
-    })),
-    combine: (results) => ({
-      people: results.flatMap((r) => r.data?.items ?? []),
-      searching: results.some((r) => r.isFetching),
-      failed: results.some((r) => r.isError),
-    }),
-  });
-}
 
 /**
  * Names a machine (TREE-04): the label replaces the hostname in the tree; an empty one brings the
