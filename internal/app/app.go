@@ -207,7 +207,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	})
 	a.sendWorker = !opts.DisableOutbox
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
-		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Rooms: a.Rooms, Queue: a.Platform, Runner: a.ConnectorManager, Now: opts.Now,
+		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Queue: a.Platform, Runner: a.ConnectorManager, Now: opts.Now,
 	})
 	a.Live = live.New(live.Deps{
 		Bus: bus, Access: az, Rooms: a.Rooms, Intelligences: a.Intelligences, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,

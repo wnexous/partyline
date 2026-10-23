@@ -833,8 +833,8 @@ Strings come in `en` and `pt-BR`.
 **Reuses**: none
 **Requirement**: CID-22
 **Done when**:
-- [ ] e2e: each route answers 404/405
-- [ ] Gate check passes: `make check`
+- [x] e2e: each route answers 404/405
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api)!: retire chat routing and app notifications`

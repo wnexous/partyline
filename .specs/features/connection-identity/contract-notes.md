@@ -905,3 +905,31 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   a file, naming no chat, a chat of the room, a listen-only one, an unknown one and eleven; broadcast off; replies and
   reactions to chat history; the DM of an AI with a user whose `notify_chat_id` is set; the live stream),
   `TestPostsPlanNoDeliveryForChatMembers` (service level) and the agents-only `TestPlanTable`/`TestPlanExhaustive`.
+
+## T34: Retire routing and notify endpoints (CID-22)
+
+- **Routes removed**: `POST /api/v1/chats/{id}/route`, `GET /api/v1/chats`, `GET /api/v1/me/notify-options` and
+  `PUT /api/v1/me/notify`. They are not routes any more, so the API's catch-all for unknown paths answers them
+  (every method on those paths, `PUT /me/notify` with a null chat included) with `404 not_found`: to the owner of a
+  connection and of the chat, a use grantee, a stranger, an admin and an anonymous caller alike (the route does not
+  exist, so an anonymous caller is not asked to log in, and there is nothing to authorize or reveal). An AI token is
+  refused before routing, as for every path outside `/api/v1/agent/` (TOK-03): 403 `forbidden` ("agent tokens can only
+  call agent endpoints"), the operator of the connection, another AI of its owner and another user's AI alike. No
+  request creates a room or stores a chat to notify, and the 404 body names nothing of the chat, the connection or the
+  agent in the request.
+- **Kept**: `GET /connectors/{id}/chats` and `POST /connectors/{id}/chats/refresh` (CON-09), with their matrix
+  (`TestChatRoutesAuthMatrix`: owner and use grantee list, only the owner refreshes). `connectors.PlatformLabel` stays: the
+  profile pages use it.
+- **Removed code**: `connectors.Service.RouteChat` and `UsableChats`, `roomName` (CTX-07) and `ServiceDeps.Rooms`
+  (RouteChat was its only user); `conversations.NotifyOptions`, `SetNotify` and `NotifyUsable`
+  (`conversations/notify.go`); the queries `ListUsableChats`, `ListNotifyOptions` and `SetUserNotifyChat`;
+  `dto.RouteChatRequest`.
+- **Left for T35**: `dto.NotifyOption` and `dto.SetNotifyRequest` stay, with a comment saying so, because the web app's
+  notify queries still import them and this task may not edit `web/` (its typecheck would fail without them); T35 removes
+  them together with `Me.notify_chat_id` and the web's queries. The `users.notify_chat_id` column stays (T36 clears it);
+  nothing writes it now. The query `ListRoomChatConnectors` (DM-05, unused since T24) is also dead and was left alone.
+- **Tests**: `internal/api/retired_routes_test.go` (the authorization matrix of the five requests the four routes took, for
+  the owner, the use grantee, a poster of nothing, a stranger and the admin, then anonymous callers and the three kinds
+  of AI token, then the other methods on the same paths, then no room made and no chat stored). Retired with the routes:
+  UI-13 (`TestRouteChatIsRefusedBecauseChatsAreNeverMembers`, the route row of `TestChatRoutesAuthMatrix`), CTX-07 and
+  the `GET /chats` check of the same matrix; the tests of NOTI-01's options and choice were deleted in T7.

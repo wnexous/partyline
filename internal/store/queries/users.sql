@@ -29,9 +29,6 @@ UPDATE users SET password_hash = ? WHERE id = ?;
 -- name: CountActiveAdmins :one
 SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled_at IS NULL;
 
--- name: SetUserNotifyChat :exec
-UPDATE users SET notify_chat_id = ? WHERE id = ?;
-
 -- name: ListContactUsers :many
 -- The enabled users other than the given one, with their intelligence, by name (CONT-01).
 SELECT sqlc.embed(i) FROM users u JOIN intelligences i ON i.id = u.id

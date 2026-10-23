@@ -14,7 +14,6 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/platform"
-	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -41,8 +40,6 @@ type ServiceDeps struct {
 	Bus    *events.Bus
 	Box    *secrets.Box
 	Kinds  *Registry
-	// Rooms creates the room of RouteChat.
-	Rooms *rooms.Service
 	// Queue hands the items of a connection to its new operator (CID-05).
 	Queue *platform.Queue
 	// Runner is told about created, changed and deleted connectors; nil runs nothing.

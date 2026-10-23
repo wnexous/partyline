@@ -1,5 +1,9 @@
 package dto
 
+// The routes these types belonged to, GET /me/notify-options and PUT /me/notify, are retired
+// (CID-22, AD-015): nothing sends a copy of an AI's DM to a user's app any more. The types stay only
+// until the web app has dropped its notify queries, and go with T35.
+
 // NotifyOption is a chat that can receive a copy of the DMs AIs write to the caller (NOTI-01):
 // the DM chat of an account the caller linked, on a connector they own or may use.
 type NotifyOption struct {

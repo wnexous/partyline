@@ -15,36 +15,6 @@ func (s *server) conversationRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/v1/groups", authed(s.createGroup))
 	s.handle(mux, "GET /api/v1/conversations", authed(s.listConversations))
 	s.handle(mux, "PUT /api/v1/rooms/{id}/read", authed(s.markRead))
-	s.handle(mux, "GET /api/v1/me/notify-options", authed(s.notifyOptions))
-	s.handle(mux, "PUT /api/v1/me/notify", authed(s.setNotify))
-}
-
-// notifyOptions lists the chats the caller may choose to be notified in: the DM chats of their
-// linked accounts on connectors they may use (NOTI-01).
-func (s *server) notifyOptions(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	options, err := s.Conversations.NotifyOptions(r.Context(), p.UserID)
-	if err != nil {
-		return err
-	}
-	httpx.WriteJSON(w, http.StatusOK, dto.List[dto.NotifyOption]{Items: options})
-	return nil
-}
-
-// setNotify chooses the chat that receives a copy of the DMs AIs write to the caller, or none
-// with a null chat_id (NOTI-01), and answers with the caller's account.
-func (s *server) setNotify(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	var req dto.SetNotifyRequest
-	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		return err
-	}
-	if err := s.Conversations.SetNotify(r.Context(), p.UserID, req.ChatID); err != nil {
-		return err
-	}
-	u, err := s.Users.GetUser(r.Context(), p.UserID)
-	if err != nil {
-		return err
-	}
-	return s.writeMe(w, r, http.StatusOK, u)
 }
 
 // listConversations is the sidebar: the caller's groups and DMs, newest activity first, each with

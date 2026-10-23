@@ -231,69 +231,6 @@ func (q *Queries) ListConnectorChats(ctx context.Context, connectorID string) ([
 	return items, nil
 }
 
-const listUsableChats = `-- name: ListUsableChats :many
-SELECT c.id, c.connector_id, c.external_id, c.title, c.kind, c.last_seen_at, c.created_at, c.person_id, k.id, k.owner_id, k.kind, k.name, k.config_json, k.secrets_enc, k.enabled, k.status, k.last_error, k.created_at, k.updated_at, k.auto_route_scope, k.auto_route_room_id, k.operator_iid, k.account_label, k.deliver, k.groups_mentions_only
-FROM chats c JOIN connectors k ON k.id = c.connector_id
-WHERE k.owner_id = ?1
-   OR k.id IN (SELECT g.resource_id FROM grants g
-               WHERE g.resource_kind = 'connector' AND g.subject IN (?1, '*'))
-ORDER BY k.name, c.title, c.id
-`
-
-type ListUsableChatsRow struct {
-	Chat      Chat
-	Connector Connector
-}
-
-func (q *Queries) ListUsableChats(ctx context.Context, userID string) ([]ListUsableChatsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listUsableChats, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListUsableChatsRow
-	for rows.Next() {
-		var i ListUsableChatsRow
-		if err := rows.Scan(
-			&i.Chat.ID,
-			&i.Chat.ConnectorID,
-			&i.Chat.ExternalID,
-			&i.Chat.Title,
-			&i.Chat.Kind,
-			&i.Chat.LastSeenAt,
-			&i.Chat.CreatedAt,
-			&i.Chat.PersonID,
-			&i.Connector.ID,
-			&i.Connector.OwnerID,
-			&i.Connector.Kind,
-			&i.Connector.Name,
-			&i.Connector.ConfigJson,
-			&i.Connector.SecretsEnc,
-			&i.Connector.Enabled,
-			&i.Connector.Status,
-			&i.Connector.LastError,
-			&i.Connector.CreatedAt,
-			&i.Connector.UpdatedAt,
-			&i.Connector.AutoRouteScope,
-			&i.Connector.AutoRouteRoomID,
-			&i.Connector.OperatorIid,
-			&i.Connector.AccountLabel,
-			&i.Connector.Deliver,
-			&i.Connector.GroupsMentionsOnly,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const migrateChatExternalID = `-- name: MigrateChatExternalID :execrows
 UPDATE chats SET external_id = ?1
 WHERE chats.connector_id = ?2 AND chats.external_id = ?3

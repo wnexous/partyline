@@ -845,13 +845,6 @@ export interface ChatRef {
   platform: string;
 }
 /**
- * RouteChatRequest is the body of POST /chats/{id}/route; the response is the new private Room
- * with the chat and the agent as members (UI-13).
- */
-export interface RouteChatRequest {
-  agent_id: string;
-}
-/**
  * Identity is a chat account verified as belonging to the current user (GET /identities).
  * It is trusted only for messages received through ConnectorID, the connector it was
  * linked through.
