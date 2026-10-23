@@ -233,7 +233,7 @@ func (e *schemaEnv) unacked(agent string, after int64, limit int64) []db.ListUna
 func ids(rows []db.ListUnackedPlatformItemsRow) []string {
 	out := make([]string, len(rows))
 	for i, r := range rows {
-		out[i] = r.ID
+		out[i] = r.PlatformItem.ID
 	}
 	return out
 }
@@ -259,12 +259,13 @@ func TestPlatformQueueInsertAndListQueries(t *testing.T) {
 	list := e.unacked("a1", 0, 10)
 	require.Equal(t, []string{"item-m1-c1", "item-m2-c1"}, ids(list), "oldest first, only this AI's")
 	first := list[0]
-	require.Equal(t, seq1, first.Seq)
+	require.Equal(t, seq1, first.PlatformItem.Seq)
+	item := first.PlatformItem
 	require.Equal(t, []string{"k1", "c1", "m1", "5511999990000", "Pat", "hello m1", "Family", "group", "telegram", "text"},
-		[]string{first.ConnectorID, first.ChatID, first.ExternalID, first.SenderID, first.SenderName, first.Text, first.ChatTitle, first.ChatKind, first.Platform, first.Kind})
-	require.True(t, first.Trusted)
-	require.False(t, first.FromSelf)
-	require.Equal(t, int64(1000), first.ReceivedAt)
+		[]string{item.ConnectorID, item.ChatID, item.ExternalID, item.SenderID, item.SenderName, item.Text, first.ChatTitle, first.ChatKind, first.Platform, item.Kind})
+	require.True(t, item.Trusted)
+	require.False(t, item.FromSelf)
+	require.Equal(t, int64(1000), item.ReceivedAt)
 
 	require.Equal(t, []string{"item-m2-c1"}, ids(e.unacked("a1", seq1, 10)), "after a seq")
 	require.Equal(t, []string{"item-m1-c1"}, ids(e.unacked("a1", 0, 1)), "limited")

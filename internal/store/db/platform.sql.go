@@ -93,6 +93,52 @@ func (q *Queries) GetPlatformDropped(ctx context.Context, id string) (int64, err
 	return platform_dropped, err
 }
 
+const getPlatformItemForAgent = `-- name: GetPlatformItemForAgent :one
+SELECT i.seq, i.id, i.agent_id, i.connector_id, i.chat_id, i.external_id, i.sender_id, i.sender_name, i.trusted, i.from_self, i.kind, i.text, i.received_at, i.acked_at, c.title AS chat_title, c.kind AS chat_kind, k.kind AS platform
+FROM platform_items i
+JOIN chats c ON c.id = i.chat_id
+JOIN connectors k ON k.id = i.connector_id
+WHERE i.id = ?1 AND i.agent_id = ?2
+`
+
+type GetPlatformItemForAgentParams struct {
+	ID      string
+	AgentID string
+}
+
+type GetPlatformItemForAgentRow struct {
+	PlatformItem PlatformItem
+	ChatTitle    string
+	ChatKind     string
+	Platform     string
+}
+
+// An item of the AI, acknowledged or not (a reply targets it until the purge removes it).
+func (q *Queries) GetPlatformItemForAgent(ctx context.Context, arg GetPlatformItemForAgentParams) (GetPlatformItemForAgentRow, error) {
+	row := q.db.QueryRowContext(ctx, getPlatformItemForAgent, arg.ID, arg.AgentID)
+	var i GetPlatformItemForAgentRow
+	err := row.Scan(
+		&i.PlatformItem.Seq,
+		&i.PlatformItem.ID,
+		&i.PlatformItem.AgentID,
+		&i.PlatformItem.ConnectorID,
+		&i.PlatformItem.ChatID,
+		&i.PlatformItem.ExternalID,
+		&i.PlatformItem.SenderID,
+		&i.PlatformItem.SenderName,
+		&i.PlatformItem.Trusted,
+		&i.PlatformItem.FromSelf,
+		&i.PlatformItem.Kind,
+		&i.PlatformItem.Text,
+		&i.PlatformItem.ReceivedAt,
+		&i.PlatformItem.AckedAt,
+		&i.ChatTitle,
+		&i.ChatKind,
+		&i.Platform,
+	)
+	return i, err
+}
+
 const insertPlatformAttachment = `-- name: InsertPlatformAttachment :exec
 INSERT INTO platform_attachments (id, item_id, sha256, name, mime, size, status)
 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -212,9 +258,7 @@ func (q *Queries) ListPlatformAttachmentsForItems(ctx context.Context, itemIds [
 }
 
 const listUnackedPlatformItems = `-- name: ListUnackedPlatformItems :many
-SELECT i.seq, i.id, i.connector_id, i.chat_id, i.external_id, i.sender_id, i.sender_name,
-       i.trusted, i.from_self, i.kind, i.text, i.received_at,
-       c.title AS chat_title, c.kind AS chat_kind, k.kind AS platform
+SELECT i.seq, i.id, i.agent_id, i.connector_id, i.chat_id, i.external_id, i.sender_id, i.sender_name, i.trusted, i.from_self, i.kind, i.text, i.received_at, i.acked_at, c.title AS chat_title, c.kind AS chat_kind, k.kind AS platform
 FROM platform_items i
 JOIN chats c ON c.id = i.chat_id
 JOIN connectors k ON k.id = i.connector_id
@@ -230,21 +274,10 @@ type ListUnackedPlatformItemsParams struct {
 }
 
 type ListUnackedPlatformItemsRow struct {
-	Seq         int64
-	ID          string
-	ConnectorID string
-	ChatID      string
-	ExternalID  string
-	SenderID    string
-	SenderName  string
-	Trusted     bool
-	FromSelf    bool
-	Kind        string
-	Text        string
-	ReceivedAt  int64
-	ChatTitle   string
-	ChatKind    string
-	Platform    string
+	PlatformItem PlatformItem
+	ChatTitle    string
+	ChatKind     string
+	Platform     string
 }
 
 // CID-08: the unacknowledged items of an AI after a seq, oldest first, with the chat and the
@@ -259,18 +292,20 @@ func (q *Queries) ListUnackedPlatformItems(ctx context.Context, arg ListUnackedP
 	for rows.Next() {
 		var i ListUnackedPlatformItemsRow
 		if err := rows.Scan(
-			&i.Seq,
-			&i.ID,
-			&i.ConnectorID,
-			&i.ChatID,
-			&i.ExternalID,
-			&i.SenderID,
-			&i.SenderName,
-			&i.Trusted,
-			&i.FromSelf,
-			&i.Kind,
-			&i.Text,
-			&i.ReceivedAt,
+			&i.PlatformItem.Seq,
+			&i.PlatformItem.ID,
+			&i.PlatformItem.AgentID,
+			&i.PlatformItem.ConnectorID,
+			&i.PlatformItem.ChatID,
+			&i.PlatformItem.ExternalID,
+			&i.PlatformItem.SenderID,
+			&i.PlatformItem.SenderName,
+			&i.PlatformItem.Trusted,
+			&i.PlatformItem.FromSelf,
+			&i.PlatformItem.Kind,
+			&i.PlatformItem.Text,
+			&i.PlatformItem.ReceivedAt,
+			&i.PlatformItem.AckedAt,
 			&i.ChatTitle,
 			&i.ChatKind,
 			&i.Platform,

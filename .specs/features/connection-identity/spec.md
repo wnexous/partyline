@@ -155,10 +155,10 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-05 | P1: One AI per connection | Tasks | In Tasks |
 | CID-06 | P1: Direct delivery | Tasks | In Tasks |
 | CID-07 | P1: Direct delivery | Tasks | In Tasks |
-| CID-08 | P1: Direct delivery | Execute | Implementing (T2) |
-| CID-09 | P1: Direct delivery | Tasks | In Tasks |
+| CID-08 | P1: Direct delivery | Execute | Implementing (T2, T3) |
+| CID-09 | P1: Direct delivery | Execute | Implementing (T3) |
 | CID-10 | P1: Direct delivery | Tasks | In Tasks |
-| CID-11 | P1: Direct delivery | Tasks | In Tasks |
+| CID-11 | P1: Direct delivery | Execute | Implementing (T3) |
 | CID-12 | P1: Direct delivery | Tasks | In Tasks |
 | CID-13 | P1: Direct delivery | Tasks | In Tasks |
 | CID-14 | P1: Direct delivery | Tasks | In Tasks |
@@ -173,7 +173,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-23 | P1: Partyline chat is one more app | Tasks | In Tasks |
 | CID-24 | Edge cases | Tasks | In Tasks |
 | CID-25 | Edge cases | Tasks | In Tasks |
-| CID-26 | Edge cases | Execute | Implementing (T2) |
+| CID-26 | Edge cases | Execute | Implementing (T2, T3) |
 | CID-27 | P1: Direct delivery | Execute | Implementing (T2) |
 
 **Coverage:** 27 total, 27 mapped to tasks (`tasks.md` T1-T38); CID-04 implemented (T1).

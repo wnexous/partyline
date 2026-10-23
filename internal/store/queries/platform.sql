@@ -37,15 +37,21 @@ UPDATE agents SET platform_dropped = 0 WHERE id = ?;
 -- name: ListUnackedPlatformItems :many
 -- CID-08: the unacknowledged items of an AI after a seq, oldest first, with the chat and the
 -- platform they came from.
-SELECT i.seq, i.id, i.connector_id, i.chat_id, i.external_id, i.sender_id, i.sender_name,
-       i.trusted, i.from_self, i.kind, i.text, i.received_at,
-       c.title AS chat_title, c.kind AS chat_kind, k.kind AS platform
+SELECT sqlc.embed(i), c.title AS chat_title, c.kind AS chat_kind, k.kind AS platform
 FROM platform_items i
 JOIN chats c ON c.id = i.chat_id
 JOIN connectors k ON k.id = i.connector_id
 WHERE i.agent_id = sqlc.arg(agent_id) AND i.acked_at IS NULL AND i.seq > sqlc.arg(after_seq)
 ORDER BY i.seq
 LIMIT sqlc.arg(limit);
+
+-- name: GetPlatformItemForAgent :one
+-- An item of the AI, acknowledged or not (a reply targets it until the purge removes it).
+SELECT sqlc.embed(i), c.title AS chat_title, c.kind AS chat_kind, k.kind AS platform
+FROM platform_items i
+JOIN chats c ON c.id = i.chat_id
+JOIN connectors k ON k.id = i.connector_id
+WHERE i.id = sqlc.arg(id) AND i.agent_id = sqlc.arg(agent_id);
 
 -- name: ListPlatformAttachmentsForItems :many
 SELECT * FROM platform_attachments WHERE item_id IN (sqlc.slice(item_ids)) ORDER BY item_id, id;

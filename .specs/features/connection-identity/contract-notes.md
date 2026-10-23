@@ -65,3 +65,44 @@ Where a section refines the design, it says so.
     `CountUnackedPlatformItems`, `DeleteUnackedPlatformItemsOverCap` (keeps the newest `cap`
     unacknowledged items; acknowledged ones are never counted), `AddPlatformDropped`,
     `GetPlatformDropped`, `ResetPlatformDropped` and `MovePlatformItems`.
+
+## T3: Platform queue service (CID-08, CID-09, CID-11, CID-26)
+
+- **Package** `internal/platform` (imports store, events and dto only):
+  `platform.New(platform.Deps{Store, Bus, Now})` returns the `*Queue`. T7 wires it into the app.
+- **Methods**:
+  - `Enqueue(ctx, Item) (id string, queued bool, err error)`: inserts the item and its attachment
+    rows in one transaction, trims the AI's queue, and publishes `events.PlatformQueued` after
+    the commit. A repeat of the same `(connector, chat, platform id)` returns `("", false, nil)`
+    and publishes nothing. The dedupe does not name the AI, and an acknowledged item still blocks
+    a repeat until the purge deletes it (24 h after the ack). `Item.ChatID` is Partyline's chat
+    id, which must belong to `Item.ConnectorID` (the caller guarantees it); an unknown AI, chat
+    or connection is a foreign-key error and queues nothing.
+  - `Unacked(ctx, agentID, afterSeq, limit) ([]Event, error)`: the AI's unacknowledged items with
+    `seq > afterSeq`, oldest first, with their attachments.
+  - `Get(ctx, agentID, itemID) (Event, error)`: an item of that AI, acknowledged or not
+    (`platform.ErrNotFound` for an unknown id or another AI's item). Not in the design: `reply`
+    (T18) needs the acknowledged items' metadata, and the Ack tests need to read them.
+  - `Ack(ctx, agentID, itemID) error`: sets `acked_at` and clears `text`. Idempotent; an unknown
+    item and another AI's item are no-ops and not errors; the first ack time is kept.
+  - `TakeDropped(ctx, agentID) (int64, error)`: reads the AI's dropped counter and zeroes it in
+    one transaction; 0 for an unknown AI.
+  - `MoveConnector(ctx, tx *db.Queries, connectorID, toAgent) (moved int64, err)`: runs in the
+    caller's transaction, moves every item of the connection (acked or not, from any AI) to
+    `toAgent` and returns how many changed hands. It publishes nothing: the caller sends
+    `events.PlatformQueued{AgentID: toAgent}` (empty `ItemID`) after it commits (T21).
+- **`Event`** is the internal shape of a platform event: `Seq`, `ID` (the id the AI replies
+  with), `Platform` (the connection's kind), `ConnectionID`, `ChatID` (Partyline's), `ChatTitle`,
+  `ChatKind`, `ExternalID` (the platform's message id, never sent to the session), `SenderName`,
+  `SenderID`, `Trusted`, `FromSelf`, `Kind`, `Text`, `Attachments`, `ReceivedAt` and `AckedAt`
+  (zero while unacknowledged). T12 maps it to `dto.PlatformEvent`.
+- **`events.PlatformQueued{AgentID, ItemID, Seq}`**: `Seq` is an addition to the design's
+  `{AgentID, ItemID}`; the gateway uses it to skip items it already sent (L-050).
+- **Bound** (`platform.MaxQueued = 5000`, CID-11): counts the AI's unacknowledged items only.
+  Acknowledged items and other AIs' items do not use it up. Refinement of the design, which
+  bounds `Enqueue` only: `MoveConnector` trims the receiving AI to the bound too (the oldest
+  unacknowledged items go and are counted for that AI), so no operator change makes a queue
+  unbounded. A dropped item's blobs are not deleted here: with no attachment row referencing
+  them they fall to the blob sweep (T4).
+- **sqlc**: `ListUnackedPlatformItems` and `GetPlatformItemForAgent` embed the `platform_items`
+  row (`sqlc.embed`) next to `chat_title`, `chat_kind` and `platform`.

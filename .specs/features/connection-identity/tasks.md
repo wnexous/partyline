@@ -185,14 +185,14 @@ It also adds the sqlc queries the queue needs.
 **Reuses**: `store.WithTx`, `events.Bus`
 **Requirement**: CID-08, CID-09, CID-11, CID-26
 **Done when**:
-- [ ] Integration tests:
+- [x] Integration tests:
   - the same message twice → one item;
   - the 5,001st item drops the oldest, and the counter reads 1;
   - `Unacked` orders by seq;
   - `Ack` clears the text and keeps the metadata;
   - an ack by another agent is a no-op;
   - `MoveConnector` moves acked and unacked items of one connection only
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(platform): queue platform messages per AI`

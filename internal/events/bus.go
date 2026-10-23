@@ -68,6 +68,15 @@ type OutboxChanged struct {
 	Status    string
 }
 
+// PlatformQueued reports that an item joined the platform queue of an AI: the AI's live session
+// should read it. Seq is the item's position in the queue, so a session can skip an item it
+// already sent (CID-08). ItemID is empty when several items were handed to the AI at once.
+type PlatformQueued struct {
+	AgentID string
+	ItemID  string
+	Seq     int64
+}
+
 // IdentityLinked reports that a chat identity was linked to a user.
 type IdentityLinked struct{ UserID, IdentityID string }
 
@@ -108,6 +117,7 @@ func (AgentPresence) isEvent()       {}
 func (ConnectorStatus) isEvent()     {}
 func (ChatDiscovered) isEvent()      {}
 func (OutboxChanged) isEvent()       {}
+func (PlatformQueued) isEvent()      {}
 func (IdentityLinked) isEvent()      {}
 func (SessionsRevoked) isEvent()     {}
 func (Lagged) isEvent()              {}
