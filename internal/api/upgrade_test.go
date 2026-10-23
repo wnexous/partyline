@@ -15,6 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/store"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 	"github.com/wnexous/partyline/internal/users"
 )
@@ -48,6 +49,12 @@ func TestUpgradedCatchAllRouteDeliversBothWays(t *testing.T) {
 	telegram := fake.Kind()
 	telegram.Name = "telegram" // the fixture's connector kind, served by the fake
 	env := testkit.New(t, testkit.WithDatabase(v03Database(t)), testkit.WithConnectorKinds(telegram), testkit.WithOutbox())
+	// v0.3 connectors were operated by their owner; a connection runs once an AI operates it
+	// (CID-02), so here the adopted agent takes it over.
+	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.SetConnectorOperator(ctx, db.SetConnectorOperatorParams{OperatorIid: sql.NullString{String: "a-atlas", Valid: true}, ID: "k-tg"})
+	}))
+	env.App.ConnectorManager.Apply("k-tg")
 
 	inst := fake.Instance(t, "k-tg")
 	inst.WaitRun(t)

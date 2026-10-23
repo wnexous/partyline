@@ -42,8 +42,10 @@ func (s *server) toConnector(v connectors.View) dto.Connector {
 		Config:       v.Config, AutoRouteScope: dto.AutoRouteScope(v.AutoRouteScope), AutoRouteRoomID: v.AutoRouteRoomID.String,
 		CreatedAt: convert.Time(v.CreatedAt), UpdatedAt: convert.Time(v.UpdatedAt),
 	}
-	operator := convert.IntelligenceRef(v.Operator, operatorRole(v.OperatorAI), "")
-	out.Operator = &operator
+	if v.HasOperator {
+		operator := convert.IntelligenceRef(v.Operator, dto.IntelligenceRoleAI, "")
+		out.Operator = &operator
+	}
 	if len(v.Generated) > 0 {
 		out.GeneratedSecrets = v.Generated
 	}
@@ -51,14 +53,6 @@ func (s *server) toConnector(v connectors.View) dto.Connector {
 		out.InboundURL = strings.TrimRight(s.Config.PublicURL.String(), "/") + "/api/v1/hooks/" + v.ID
 	}
 	return out
-}
-
-// operatorRole is the role of a connector's operator: an AI, or the owner (a user).
-func operatorRole(ai bool) dto.IntelligenceRole {
-	if ai {
-		return dto.IntelligenceRoleAI
-	}
-	return dto.IntelligenceRoleUser
 }
 
 func (s *server) listConnectorKinds(w http.ResponseWriter, _ *http.Request, _ authn.Principal) error {

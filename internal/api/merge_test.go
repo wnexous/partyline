@@ -518,18 +518,20 @@ func conversation(t *testing.T, c *testkit.Client, room string) dto.Conversation
 // MRG-01: the connectors the merged AI operated are operated by the survivor.
 func TestMergeMovesTheOperatorOfConnectors(t *testing.T) {
 	w := newMergeWorld(t)
-	mine, other := createFake(w.alice, "wa", true), createFake(w.alice, "tg", true)
-	w.alice.Patch("/api/v1/connectors/"+mine.ID, dto.UpdateConnectorRequest{OperatorID: &w.old}).RequireStatus(http.StatusOK)
+	orion := w.alice.NewAI("orion")
+	mine, other := createFakeIdle(w.alice, "wa", true), createFakeIdle(w.alice, "tg", true)
+	w.alice.OperateConnector(mine.ID, w.old)
+	w.alice.OperateConnector(other.ID, orion)
 	operator := func(id string) string {
 		return testkit.Decode[dto.Connector](w.alice.Get("/api/v1/connectors/" + id).RequireStatus(http.StatusOK)).Operator.ID
 	}
 	require.Equal(t, w.old, operator(mine.ID))
-	require.Equal(t, w.alice.User.ID, operator(other.ID))
+	require.Equal(t, orion, operator(other.ID))
 
 	merge(w.alice, w.old, w.atlas).RequireStatus(http.StatusOK)
 
 	require.Equal(t, w.atlas, operator(mine.ID))
-	require.Equal(t, w.alice.User.ID, operator(other.ID), "the owner still operates the other")
+	require.Equal(t, orion, operator(other.ID), "another AI still operates the other")
 	apps := testkit.Decode[dto.IntelligenceProfile](w.alice.Get("/api/v1/intelligences/" + w.atlas).RequireStatus(http.StatusOK)).Apps
 	require.Contains(t, apps, dto.App{Kind: connectortest.KindName, Label: "Fake: wa", ConnectorID: mine.ID})
 }

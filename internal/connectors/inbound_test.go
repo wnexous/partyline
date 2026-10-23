@@ -52,12 +52,26 @@ func newInboundEnv(t *testing.T, opts ...testkit.Option) *inboundEnv {
 	conn := testkit.Decode[dto.Connector](alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 		Kind: connectortest.KindName, Name: "wa", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &on,
 	}).RequireStatus(http.StatusCreated))
+	conn = alice.OperateConnector(conn.ID, alice.NewAI("relay")) // a connection runs once an AI operates it
 	inst := fake.Instance(t, conn.ID)
 	inst.WaitRun(t)
 	return &inboundEnv{fake: fake, env: env, alice: alice, conn: conn, inst: inst}
 }
 
 func (e *inboundEnv) emit(m connectors.Inbound) { e.inst.Emit(context.Background(), m) }
+
+// agentByHandle returns the id of alice's AI with the handle (the connector's operator is
+// another AI, "relay").
+func (e *inboundEnv) agentByHandle(t *testing.T, handle string) string {
+	t.Helper()
+	for _, a := range testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items {
+		if a.Intelligence.Handle == handle {
+			return a.ID
+		}
+	}
+	t.Fatalf("no AI with the handle %s", handle)
+	return ""
+}
 
 func (e *inboundEnv) chats(t *testing.T) []dto.Chat {
 	t.Helper()
@@ -345,6 +359,7 @@ func TestInboundIdentityIsScopedToItsConnector(t *testing.T) {
 	other := testkit.Decode[dto.Connector](e.alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 		Kind: connectortest.KindName, Name: "second", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &on,
 	}).RequireStatus(http.StatusCreated))
+	e.alice.OperateConnector(other.ID, e.alice.NewAI("relay"))
 	inst := e.fake.Instance(t, other.ID)
 	inst.WaitRun(t)
 	inst.Emit(context.Background(), text(otherID, "M2", "first"))
@@ -369,6 +384,7 @@ func TestInboundPairingCodeOnlyLinksOnItsConnector(t *testing.T) {
 	mconn := testkit.Decode[dto.Connector](mallory.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 		Kind: connectortest.KindName, Name: "listener", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &on,
 	}).RequireStatus(http.StatusCreated))
+	mallory.OperateConnector(mconn.ID, mallory.NewAI("relay"))
 	minst := e.fake.Instance(t, mconn.ID)
 	minst.WaitRun(t)
 	minst.Emit(context.Background(), text(groupID, "M1", "first"))

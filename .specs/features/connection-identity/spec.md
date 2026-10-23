@@ -148,8 +148,8 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| CID-01 | P1: One AI per connection | Tasks | In Tasks |
-| CID-02 | P1: One AI per connection | Tasks | In Tasks |
+| CID-01 | P1: One AI per connection | Execute | Implementing (T5) |
+| CID-02 | P1: One AI per connection | Execute | Implementing (T5) |
 | CID-03 | P1: One AI per connection | Tasks | In Tasks |
 | CID-04 | P1: One AI per connection | Execute | Implemented (T1, bebd8d1) |
 | CID-05 | P1: One AI per connection | Tasks | In Tasks |

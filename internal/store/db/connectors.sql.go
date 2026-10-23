@@ -249,55 +249,9 @@ const listConnectorsOperatedBy = `-- name: ListConnectorsOperatedBy :many
 SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at, auto_route_scope, auto_route_room_id, operator_iid, account_label, deliver, groups_mentions_only FROM connectors WHERE operator_iid = ? ORDER BY name, id
 `
 
-// The connectors an AI operates (ACC-01, ACC-07).
+// The connectors an AI operates (CID-01, ACC-07).
 func (q *Queries) ListConnectorsOperatedBy(ctx context.Context, operatorIid sql.NullString) ([]Connector, error) {
 	rows, err := q.db.QueryContext(ctx, listConnectorsOperatedBy, operatorIid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Connector
-	for rows.Next() {
-		var i Connector
-		if err := rows.Scan(
-			&i.ID,
-			&i.OwnerID,
-			&i.Kind,
-			&i.Name,
-			&i.ConfigJson,
-			&i.SecretsEnc,
-			&i.Enabled,
-			&i.Status,
-			&i.LastError,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.AutoRouteScope,
-			&i.AutoRouteRoomID,
-			&i.OperatorIid,
-			&i.AccountLabel,
-			&i.Deliver,
-			&i.GroupsMentionsOnly,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listConnectorsOperatedByOwner = `-- name: ListConnectorsOperatedByOwner :many
-SELECT id, owner_id, kind, name, config_json, secrets_enc, enabled, status, last_error, created_at, updated_at, auto_route_scope, auto_route_room_id, operator_iid, account_label, deliver, groups_mentions_only FROM connectors WHERE owner_id = ? AND operator_iid IS NULL ORDER BY name, id
-`
-
-// The connectors a user operates: those they own and no AI operates.
-func (q *Queries) ListConnectorsOperatedByOwner(ctx context.Context, ownerID string) ([]Connector, error) {
-	rows, err := q.db.QueryContext(ctx, listConnectorsOperatedByOwner, ownerID)
 	if err != nil {
 		return nil, err
 	}

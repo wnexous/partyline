@@ -203,8 +203,8 @@ func TestPlatformDMNotUsedWhileTheConnectorHasACatchAllRoom(t *testing.T) {
 
 // ACC-02 (spec edge case, issue 2): the operator can change; the chat's next message goes to the
 // DM between the person and the new operator, the old DM keeps its history and no longer
-// receives the chat, a later switch back reuses the old DM, and a deleted operator AI means the
-// owner.
+// receives the chat, and a later switch back reuses the old DM. (A deleted operator AI used to
+// mean the owner; since CID-01 and CID-24 it means no operator.)
 func TestPlatformDMFollowsTheOperator(t *testing.T) {
 	pc := newPerChat(t)
 	pc.emit(dmText(dmA, "A1", "to Atlas"))
@@ -215,22 +215,23 @@ func TestPlatformDMFollowsTheOperator(t *testing.T) {
 	reply := testkit.Decode[dto.Message](pc.tok.AsAgent("atlas").Post("/api/v1/agent/rooms/"+atlasDM+"/messages", dto.PostMessageRequest{Text: "on it"}).RequireStatus(http.StatusCreated))
 	require.Len(t, reply.Outbox, 1)
 
-	// The owner operates the account herself: the next message is a DM with her.
-	pc.patch(t, dto.UpdateConnectorRequest{OperatorID: strOf("")})
-	pc.emit(dmText(dmA, "A2", "to alice"))
+	// Another of the owner's AIs operates the account: the next message is a DM with it.
+	backup := pc.env.NewAI(pc.alice, "backup")
+	pc.patch(t, dto.UpdateConnectorRequest{OperatorID: &backup})
+	pc.emit(dmText(dmA, "A2", "to backup"))
 	rooms := pc.roomsOf(t, chat)
 	require.Len(t, rooms, 1)
-	aliceDM := rooms[0]
-	require.NotEqual(t, atlasDM, aliceDM)
-	room := pc.room(t, pc.alice, aliceDM)
-	require.Equal(t, dto.LevelPost, room.MyLevel, "alice is a participant of this DM")
+	backupDM := rooms[0]
+	require.NotEqual(t, atlasDM, backupDM)
+	room := pc.room(t, pc.alice, backupDM)
+	require.Equal(t, dto.LevelView, room.MyLevel, "alice reads her AI's DMs (DM-08)")
 	require.Len(t, room.Participants, 2)
 	require.Equal(t, 2, pc.dmRooms(t))
 	require.Len(t, pc.messages(t, atlasDM), 2, "the old DM keeps what was said in it")
 	for _, m := range pc.messages(t, atlasDM) {
 		require.Empty(t, m.Outbox, "what was queued for the chat in the old DM is cancelled (ROOM-01): %s", m.Text)
 	}
-	require.Len(t, pc.messages(t, aliceDM), 1)
+	require.Len(t, pc.messages(t, backupDM), 1)
 	for _, m := range pc.members(t, pc.alice, atlasDM) {
 		require.NotEqual(t, dto.MemberKindChat, m.Kind, "the chat left the old DM")
 	}
@@ -243,13 +244,6 @@ func TestPlatformDMFollowsTheOperator(t *testing.T) {
 	require.Equal(t, []string{atlasDM}, pc.roomsOf(t, chat))
 	require.Equal(t, 2, pc.dmRooms(t))
 	require.Len(t, pc.messages(t, atlasDM), 3)
-
-	// Atlas is deleted: its DMs go with it and the owner operates the account again.
-	pc.alice.Delete("/api/v1/agents/" + pc.atlasID).RequireStatus(http.StatusNoContent)
-	pc.emit(dmText(dmA, "A4", "Atlas is gone"))
-	rooms = pc.roomsOf(t, chat)
-	require.Equal(t, []string{aliceDM}, rooms, "the DM with the owner")
-	require.Len(t, pc.messages(t, aliceDM), 2)
 }
 
 // logSink collects what the app logs.
@@ -297,23 +291,14 @@ func TestPlatformDMWithoutASenderIsNotRouted(t *testing.T) {
 	require.Equal(t, 1, pc.dmRooms(t))
 }
 
-// ACC-02 (no self-DM): a sender who is the operator gets no DM with themself; the chat is
-// recorded and its message is not stored. A sender linked to the owner is still a DM partner of
-// the owner's AI, and is trusted by it.
-func TestPlatformDMNeverMakesADMWithOneself(t *testing.T) {
+// ACC-02: a sender linked to the owner is a DM partner of the owner's AI that operates the account,
+// and is trusted by it. (The no-self-DM rule of the owner-operated account is retired with the
+// owner as operator, CID-01: an AI never writes to its own number as a sender.)
+func TestPlatformDMFromTheOwnersLinkedAccountIsTrusted(t *testing.T) {
 	pc := newPerChat(t)
-	pc.patch(t, dto.UpdateConnectorRequest{OperatorID: strOf("")})
 	code := testkit.Decode[dto.PairingCode](pc.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: pc.conn.ID}).RequireStatus(http.StatusCreated))
 	pc.emit(dmText(dmA, "L0", "!link "+code.Code))
 
-	before := pc.messageCount(t)
-	pc.emit(dmText(dmA, "A1", "alice writes to her own account"))
-	require.Zero(t, pc.dmRooms(t))
-	require.Equal(t, before, pc.messageCount(t))
-	require.True(t, pc.hasChat(t, dmA))
-	require.Empty(t, pc.people(t), "an unrouted sender is not recorded")
-
-	pc.patch(t, dto.UpdateConnectorRequest{OperatorID: &pc.atlasID})
 	pc.emit(dmText(dmA, "A2", "alice writes to Atlas"))
 	got := pc.atlas.Message(connectortest.Timeout)
 	require.True(t, got.Trusted, "the owner's verified account is trusted")
@@ -374,7 +359,6 @@ func TestSendToAPersonOnlyThroughTheOperator(t *testing.T) {
 
 	// Another AI of the owner has no route; so has the owner herself while an AI operates it.
 	sage := pc.env.NewAI(pc.alice, "sage")
-	_ = sage
 	pc.tok.AsAgent("sage").Post("/api/v1/agent/dms", dto.AgentDMRequest{To: handle, Text: "hi"}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeNoRouteToPerson)
 	pc.alice.Post("/api/v1/conversations/dm", dto.OpenDMRequest{With: person.ID}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeNoRouteToPerson)
 	require.Equal(t, 1, pc.dmRooms(t), "refusals create nothing")
@@ -399,13 +383,12 @@ func TestSendToAPersonOnlyThroughTheOperator(t *testing.T) {
 	pc.env.NewAdmin("root").Post("/api/v1/conversations/dm", dto.OpenDMRequest{With: person.ID}).RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
 
 	// The operator changes: the old operator loses the route, the new one gets it.
-	pc.patch(t, dto.UpdateConnectorRequest{OperatorID: strOf("")})
+	pc.patch(t, dto.UpdateConnectorRequest{OperatorID: &sage})
 	pc.tok.AsAgent("atlas").Post("/api/v1/agent/dms", dto.AgentDMRequest{To: handle, Text: "still there?"}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeNoRouteToPerson)
-	pc.emit(dmText(dmA, "A2", "I am talking to alice now"))
-	room := testkit.Decode[dto.Room](pc.alice.Post("/api/v1/conversations/dm", dto.OpenDMRequest{With: person.ID}).RequireStatus(http.StatusOK))
-	require.NotEqual(t, got.Room.ID, room.ID, "alice's DM with the person")
+	pc.emit(dmText(dmA, "A2", "I am talking to sage now"))
+	posted := testkit.Decode[dto.Message](pc.tok.AsAgent("sage").Post("/api/v1/agent/dms", dto.AgentDMRequest{To: handle, Text: "sou a Sage"}).RequireStatus(http.StatusCreated))
+	require.NotEqual(t, got.Room.ID, posted.RoomID, "sage's DM with the person")
 	require.Equal(t, 2, pc.dmRooms(t), "opening it created nothing")
-	posted := testkit.Decode[dto.Message](pc.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "sou a Alice"}).RequireStatus(http.StatusCreated))
 	require.Len(t, posted.Outbox, 1)
 	require.Equal(t, pc.chatID(t, dmA), posted.Outbox[0].ChatID)
 }

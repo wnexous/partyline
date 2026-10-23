@@ -87,6 +87,7 @@ func newHookEnv(t *testing.T, opts ...testkit.Option) *hookEnv {
 	conn := testkit.Decode[dto.Connector](alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 		Kind: webhook.KindName, Name: "ci", Config: map[string]any{"outbound_url": out.srv.URL},
 	}).RequireStatus(http.StatusCreated))
+	alice.OperateConnector(conn.ID, alice.NewAI("hookbot")) // a connection runs once an AI operates it
 	e := &hookEnv{env: env, alice: alice, conn: conn, secret: conn.GeneratedSecrets["secret"], out: out}
 	e.waitConnected(t)
 	return e
@@ -515,6 +516,7 @@ func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 		Kind: webhook.KindName, Name: "mine", Config: map[string]any{},
 	}).RequireStatus(http.StatusCreated))
 	msecret := mconn.GeneratedSecrets["secret"]
+	mallory.OperateConnector(mconn.ID, mallory.NewAI("hookbot"))
 	waitHookConnected(t, mallory, mconn.ID)
 
 	// IDN-05: a webhook connector links only its owner's codes, even a code issued for it (mallory

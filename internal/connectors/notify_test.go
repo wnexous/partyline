@@ -150,6 +150,7 @@ func TestNotifyOptionsAreTheCallersLinkedDMChats(t *testing.T) {
 	second := testkit.Decode[dto.Connector](n.alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 		Kind: connectortest.KindName, Name: "wb", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: ptr(true),
 	}).RequireStatus(http.StatusCreated))
+	n.alice.OperateConnector(second.ID, n.alice.NewAI("relay"))
 	inst := n.fake.Instance(t, second.ID)
 	inst.WaitRun(t)
 	n.alice.Patch("/api/v1/connectors/"+second.ID, dto.UpdateConnectorRequest{AutoRouteScope: scopeOf(dto.AutoRouteScopeDMs), AutoRouteRoomID: &n.inbox.ID}).RequireStatus(http.StatusOK)

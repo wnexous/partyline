@@ -62,8 +62,9 @@ func TestNewGroupChatBecomesAGroup(t *testing.T) {
 	require.Zero(t, pc.dmRooms(t))
 }
 
-// ACC-06: a channel chat (Discord) is a group too, a user-operated connector makes the owner a
-// member, and a chat without a title is named after its platform.
+// ACC-06: a channel chat (Discord) is a group too, and a chat without a title is named after its
+// platform. (The owner-operated case, where the owner became the member, is retired with the
+// owner as operator, CID-01.)
 func TestGroupChatsOfEveryKindAndOperator(t *testing.T) {
 	pc := newPerChat(t)
 	pc.patch(t, dto.UpdateConnectorRequest{AutoRouteScope: scopeOf(dto.AutoRouteScopeAll)})
@@ -81,20 +82,6 @@ func TestGroupChatsOfEveryKindAndOperator(t *testing.T) {
 	long.ChatTitle = strings.Repeat("é", 150)
 	pc.emit(long)
 	require.Equal(t, strings.Repeat("é", 100), pc.atlas.Message(connectortest.Timeout).Room.Name, "cut to the room name limit")
-
-	// The owner operates the account: she is the member, and nobody else receives it.
-	pc.patch(t, dto.UpdateConnectorRequest{OperatorID: strOf("")})
-	pc.emit(text(groupPeer(3), "O1", "to alice"))
-	chat := pc.chatID(t, groupPeer(3))
-	rooms := pc.roomsOf(t, chat)
-	require.Len(t, rooms, 1)
-	kinds := map[dto.MemberKind]string{}
-	for _, m := range pc.members(t, pc.alice, rooms[0]) {
-		kinds[m.Kind] = m.MemberID
-	}
-	require.Equal(t, map[dto.MemberKind]string{dto.MemberKindUser: pc.alice.User.ID, dto.MemberKindChat: chat}, kinds)
-	pc.atlas.ExpectNone(300 * time.Millisecond)
-	require.Equal(t, dto.LevelManage, pc.room(t, pc.alice, rooms[0]).MyLevel)
 }
 
 // ACC-06: scopes dms and off leave group chats unrouted (and their senders unrecorded); a

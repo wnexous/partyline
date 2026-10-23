@@ -194,6 +194,7 @@ func TestInboundPeopleBelongToTheirConnector(t *testing.T) {
 	other := testkit.Decode[dto.Connector](e.alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 		Kind: connectortest.KindName, Name: "second", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &on,
 	}).RequireStatus(http.StatusCreated))
+	e.alice.OperateConnector(other.ID, e.alice.NewAI("relay"))
 	inst := e.fake.Instance(t, other.ID)
 	inst.WaitRun(t)
 	inst.Emit(context.Background(), text(otherID, "X0", "first"))

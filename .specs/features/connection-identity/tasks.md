@@ -354,10 +354,10 @@ The retention ticker runs it, and the blob `Sweep` treats `platform_attachments`
 **Reuses**: `Manager.persist`, `operatorID`
 **Requirement**: CID-01, CID-02
 **Done when**:
-- [ ] e2e: the owner's AI is accepted; the owner's own id, "" and another user's AI → 422 `operator_id` (L-017)
-- [ ] Integration: NULL operator → not run, exact detail; PATCH to an AI → runs
-- [ ] ACC-01 owner-operator tests rewritten (owner operator retired)
-- [ ] Gate check passes: `make check`
+- [x] e2e: the owner's AI is accepted; the owner's own id, "" and another user's AI → 422 `operator_id` (L-017)
+- [x] Integration: NULL operator → not run, exact detail; PATCH to an AI → runs
+- [x] ACC-01 owner-operator tests rewritten (owner operator retired)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors)!: a connection is operated by an AI`

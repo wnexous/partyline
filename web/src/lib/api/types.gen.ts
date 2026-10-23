@@ -542,10 +542,9 @@ export interface Connector {
   status: ConnectorStatus;
   last_error?: string;
   /**
-   * Operator is the intelligence the platform account belongs to: the owner (the default) or
-   * one of the owner's AIs. Talking to the account is talking to the operator (ACC-01). The
-   * server always sets it; the field is optional so that clients written before it keep
-   * compiling.
+   * Operator is the owner's AI the platform account belongs to: what arrives on the account
+   * goes to that AI's session, and only it sends through the account (CID-01). Absent while
+   * nobody operates the connection: it then runs nothing and its status says so (CID-02).
    */
   operator?: IntelligenceRef;
   /**
@@ -598,8 +597,9 @@ export interface UpdateConnectorRequest {
   auto_route_scope?: AutoRouteScope;
   auto_route_room_id?: string;
   /**
-   * OperatorID changes the operator (ACC-01): the owner's own id or an empty string for the
-   * owner, or the id of an AI the owner owns; only the owner may change it. Absent leaves it.
+   * OperatorID changes the operator (CID-01): the id of an AI the owner owns; anything else,
+   * the owner's own id and an empty string included, is a 422 on operator_id. Only the owner
+   * may change it. Absent leaves it.
    */
   operator_id?: string;
 }
@@ -615,6 +615,11 @@ export const AutoRouteScopeAll = "all";
  * Catch-all scopes.
  */
 export type AutoRouteScope = typeof AutoRouteScopeOff | typeof AutoRouteScopeDMs | typeof AutoRouteScopeGroups | typeof AutoRouteScopeAll;
+/**
+ * ConnectorNoOperator is the status detail of a connection nobody operates (CID-02): the owner
+ * has to choose the AI that operates it before it runs.
+ */
+export const ConnectorNoOperator = "choose the AI that operates this connection";
 /**
  * AutoRouteUnavailable says the catch-all room is gone or its owner lost manage on it.
  */

@@ -52,10 +52,8 @@ func newCatchAll(t *testing.T, opts ...testkit.Option) *catchAll {
 	agent, _ := e.alice.Token(dto.TokenKindAgent, "laptop").DialAgent("helper")
 	require.NotNil(t, agent)
 	agent.Welcome(connectortest.Timeout)
-	agents := testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items
-	require.Len(t, agents, 1)
 	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "catch-all"}).RequireStatus(http.StatusCreated))
-	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agents[0].ID}).RequireStatus(http.StatusCreated)
+	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: e.agentByHandle(t, "helper")}).RequireStatus(http.StatusCreated)
 	return &catchAll{inboundEnv: e, room: room, agent: agent}
 }
 
@@ -565,6 +563,7 @@ func TestCatchAllHourlyCapIsPerConnector(t *testing.T) {
 	second := testkit.Decode[dto.Connector](c.alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 		Kind: connectortest.KindName, Name: "wa 2", Config: map[string]any{"token": "fake-token-not-real"},
 	}).RequireStatus(http.StatusCreated))
+	c.alice.OperateConnector(second.ID, c.agentByHandle(t, "helper"))
 	c.alice.Patch("/api/v1/connectors/"+second.ID, dto.UpdateConnectorRequest{AutoRouteScope: &all, AutoRouteRoomID: &c.room.ID}).RequireStatus(http.StatusOK)
 	p := c.ownPipeline(nil)
 	ctx := context.Background()

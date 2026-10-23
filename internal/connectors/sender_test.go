@@ -33,14 +33,11 @@ func newOutboundEnv(t *testing.T, opts ...testkit.Option) *outboundEnv {
 	e.emit(text(groupID, "M0", "hello"))
 	chat := e.chatID(t, groupID)
 
-	e.env.NewAI(e.alice, "helper")
+	helperID := e.env.NewAI(e.alice, "helper")
 	token := e.alice.Token(dto.TokenKindAgent, "laptop")
 	conn, _ := token.DialAgent("helper")
 	conn.Welcome(connectortest.Timeout)
-	var agents dto.List[dto.Agent]
-	e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK).Decode(&agents)
-	require.Len(t, agents.Items, 1)
-	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: agents.Items[0].ID}).RequireStatus(http.StatusCreated))
+	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: helperID}).RequireStatus(http.StatusCreated))
 	return &outboundEnv{inboundEnv: e, chat: chat, room: room, agent: token.AsAgent("helper"), helper: conn}
 }
 
@@ -232,14 +229,13 @@ func TestOutboundAuthorFollowsMemberSettings(t *testing.T) {
 	require.Equal(t, "helper", sent.AuthorName)
 	require.Equal(t, "helper", e.authorName(t, other.ID, m.ID))
 
-	// alice operates the connector: her own account sends her messages without an author line
-	// (ACC-04; TestUsersAreSignedUnlessTheyOperateTheAccount covers the users who are named),
-	// though the connector still learns who wrote it.
+	// An AI operates the connector (CID-01), so alice is named: the connector learns who wrote it
+	// and puts the author line in the text.
 	u := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: "from alice"}).RequireStatus(http.StatusCreated))
 	sent = e.inst.WaitSend(t)
 	require.Equal(t, u.ID, sent.MessageID)
 	require.Equal(t, "alice", sent.AuthorName)
-	require.Empty(t, sent.Signature())
+	require.Equal(t, "alice", sent.Signature())
 }
 
 func ptr[T any](v T) *T { return &v }

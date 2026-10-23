@@ -63,23 +63,23 @@ func (o *operatedOutbound) userPost(c *testkit.Client) func() dto.Message {
 func TestOperatorAIWritesUnsigned(t *testing.T) {
 	o := newOperatedOutbound(t)
 	o.operate(t, o.atlasID)
+	helper := o.helperID(t)
 
 	require.Empty(t, o.signature(t, o.atlasPost()), "its own account: no author line")
 	o.patchMember(t, o.atlasID, dto.UpdateMemberRequest{SignOutbound: ptr(true), DisplayName: ptr("Atlas Prime")})
 	require.Empty(t, o.signature(t, o.atlasPost()), "even with the signature on and a name set")
 	require.Equal(t, "Atlas Prime", o.authorName(t, o.room.ID, o.latest(t)), "the timeline still names the author")
 
-	o.operate(t, "")
+	o.operate(t, helper)
 	require.Equal(t, "Atlas Prime", o.signature(t, o.atlasPost()), "no longer the operator: signed")
 	o.operate(t, o.atlasID)
 	require.Empty(t, o.signature(t, o.atlasPost()))
 }
 
-// ACC-04: through a connector operated by the owner, an AI signs per its member setting (on, the
-// name set for it in the room, off); and an AI that is not the operator of a connector operated
-// by another AI signs too.
+// ACC-04: through a connector operated by another AI, an AI signs per its member setting (on, the
+// name set for it in the room, off).
 func TestAIThroughSomeoneElsesAccountSignsPerItsSetting(t *testing.T) {
-	o := newOperatedOutbound(t) // the owner operates the connector
+	o := newOperatedOutbound(t) // a third AI ("relay") operates the connector
 	require.Equal(t, "atlas", o.signature(t, o.atlasPost()), "signature on by default")
 
 	o.patchMember(t, o.atlasID, dto.UpdateMemberRequest{DisplayName: ptr("Atlas Prime")})
@@ -96,20 +96,17 @@ func TestAIThroughSomeoneElsesAccountSignsPerItsSetting(t *testing.T) {
 	require.Empty(t, o.signature(t, post))
 }
 
-// ACC-04, ACC-03: a user posting from the web through the connector's account is not signed
-// when they operate it (the owner by default): it is their own account. Anyone else, the owner
-// included while an AI operates the account, is named.
+// ACC-04, ACC-03: a user posting from the web through the connector's account is named: an AI
+// operates the account (CID-01), so no user writes as its operator, the owner included.
 func TestUsersAreSignedUnlessTheyOperateTheAccount(t *testing.T) {
 	o := newOperatedOutbound(t)
 
-	require.Empty(t, o.signature(t, o.userPost(o.alice)), "the owner operates the account")
+	require.Equal(t, "alice", o.signature(t, o.userPost(o.alice)), "the owner is named: an AI operates the account")
 	require.Equal(t, "bob", o.signature(t, o.userPost(o.bob)), "a poster who is not the operator is named")
 
 	o.operate(t, o.atlasID)
-	require.Equal(t, "alice", o.signature(t, o.userPost(o.alice)), "an AI operates it: the owner is named")
+	require.Equal(t, "alice", o.signature(t, o.userPost(o.alice)))
 	require.Equal(t, "bob", o.signature(t, o.userPost(o.bob)))
-	o.operate(t, "")
-	require.Empty(t, o.signature(t, o.userPost(o.alice)))
 }
 
 // latest returns the id of the newest message of the room.

@@ -137,3 +137,44 @@ Where a section refines the design, it says so.
   gateway, connector service).
 - **Not covered here**: `platform_sends` rows are not purged (T17 owns that table's lifecycle;
   its text is cleared at `sent` or `failed`).
+
+## T5: Operator must be an AI; no operator, no run (CID-01, CID-02)
+
+- **`operator_id` (PATCH /connectors/{id})** accepts only the id of an AI the connection's owner
+  owns. Everything else is a 422 with `fields: {operator_id: "must be an AI you own"}` and changes
+  nothing in the same request: an empty or blank id, the owner's own id, another user, an AI of
+  another owner (also one shared with the owner), a person, an id nobody has. Absent leaves the
+  operator alone. The operator cannot be cleared through the API: it becomes NULL only when the
+  operator AI is deleted (the foreign key sets it NULL; T22 completes that path).
+- **Create** has no operator field: a new connection has none, so it is idle until the owner chooses
+  one (the design's "creation may omit the operator").
+- **DTO**: `Connector.operator` is absent while there is no operator and an AI (`role: ai`)
+  otherwise; it never falls back to the owner. `connectors.View` has `HasOperator` instead of
+  `OperatorAI`. Profiles: a user lists no operated connections; an AI's page lists the connections
+  it operates, as before (`ListConnectorsOperatedByOwner` is removed).
+- **Status detail** `dto.ConnectorNoOperator` (= `connectors.NoOperator`) is
+  `choose the AI that operates this connection` (CID-02).
+- **`Manager.Apply`**: an enabled connection with a NULL `operator_iid` is not started (no connector
+  instance exists, so nothing is received and `Send` answers `ErrNotRunning`); it persists status
+  `error` with that detail and publishes the `ConnectorStatus` event. A disabled connection keeps
+  status `stopped` and an empty detail. `Start` applies every enabled connection the same way, and
+  applying a running connection whose operator became NULL stops it and reports the detail.
+- **`Service.Update`** applies the connection again (when enabled) the first time it gets an
+  operator (NULL to an AI), which starts it. A change from one AI to another does not restart the
+  connection: nothing the connector runs depends on the operator. This refines T21's "re-applies the
+  connection"; T21 can still add the restart if it needs one.
+- **Audit** `connector.operator`: `{kind, name, from, to}`, with `from` empty when there was none.
+- **Retired with the owner as operator** (tests deleted or reduced to their AI cases, named here
+  because the assertions they pinned no longer exist): `TestOwnAccountMessageIsTrustedOnlyWhenTheOwnerOperatesTheAccount`
+  (AD-014's owner-operated trust), the owner-operated parts of `TestGroupChatsOfEveryKindAndOperator`,
+  `TestPlatformDMFollowsTheOperator` ("a deleted operator AI means the owner"),
+  `TestPlatformDMNeverMakesADMWithOneself` (now `TestPlatformDMFromTheOwnersLinkedAccountIsTrusted`),
+  `TestSendToAPersonOnlyThroughTheOperator`, `TestOwnAccountMessageIsAuthoredByTheOperator`,
+  `TestUsersAreSignedUnlessTheyOperateTheAccount`, `TestOperatorAIWritesUnsigned`,
+  `TestMergeMovesTheOperatorOfConnectors`, `TestLinkedAccountsAreAppsOfTheUser` and the former
+  `connector_operator_test.go` tests (owner default, owner picks themself, deleting the operator
+  falls back to the owner). Their AI cases stay, with an AI as the default operator.
+- **Test helpers**: `testkit.Client.NewAI(name)` and `Client.OperateConnector(connectorID, aiID)`;
+  API tests `createFakeIdle` (no operator) and `createFake` (operated by the client's AI "Atlas");
+  `connectors_test.newInboundEnv` operates its connector with the AI "relay"; the manager fixture's
+  `insert` gives the connector an AI, `insertWithoutOperator` none.
