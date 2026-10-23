@@ -4,11 +4,14 @@
 
 After v0.4.0, André asked for three things while testing (2026-10-22): mention intelligences with `@` while typing, open a private conversation by clicking an intelligence in a conversation's participant list, and update the CLI from the CLI itself. Today mentions work only by typing the exact handle, the participant list has no way to start a DM, and updating needs the install script.
 
+On 2026-10-23 the product owner asked for three more things in the web app: images that open inside the app instead of in a new tab, an Enter key that does not send on a phone, and a profile panel that opens wherever an identity appears.
+
 ## Goals
 
 - [ ] Typing `@` in the composer suggests the conversation's participants and inserts `@handle`.
 - [ ] Clicking an intelligence in a participant list opens (or starts) the DM with it.
 - [ ] `partyline update` replaces the binary with the latest release after verifying its checksum.
+- [ ] An image in the timeline opens in a viewer inside the app, and the arrows walk the conversation's images (IMG-01..IMG-06).
 
 ## Out of Scope
 
@@ -17,6 +20,7 @@ After v0.4.0, André asked for three things while testing (2026-10-22): mention 
 | Mentioning people who are not in the conversation | A mention only notifies participants |
 | Auto-updating in the background | The user runs the command |
 | Updating harness registrations during `update` | `partyline setup` does that |
+| Zoom, rotate, slideshow, video or audio in the viewer | Not asked; "Open original" opens the file itself |
 
 ---
 
@@ -32,6 +36,9 @@ After v0.4.0, André asked for three things while testing (2026-10-22): mention 
 | Update source | The same release channel as `install.sh`: the instance's `/install.sh` logic — latest GitHub release of the server's version, `checksums.txt` SHA-256 verified before replacing | One source of truth, integrity check | n |
 | Update target | The running executable's path (`os.Executable`, symlinks resolved); written to a temp file in the same directory, chmod 0755, renamed over the old one; Windows prints the manual command | Atomic replace on Unix | n |
 | `--check` | `partyline update --check` prints current and latest version and exits 0 when up to date, 1 when an update exists | Scripts can check | n |
+| Images the viewer walks | The stored PNG, JPEG, GIF and WebP attachments of the messages loaded in the timeline, oldest first, one entry per attachment; older pages join the list as the timeline loads them | The same set the timeline shows inline (SVG and files the server did not store never open in the viewer) | n |
+| Where the viewer opens from | The timeline. The files panel keeps its links to the files | Scope of the request: "an image attachment in the timeline" | n |
+| Viewer chrome | A paper strip on top (name, position, Download, Open original, Close) over a dark stage; previous and next sit on the stage's edges | Operate surface: standard controls, the image is the only dark thing on the screen | n |
 
 **Open questions:** none - all resolved or logged above.
 
@@ -88,6 +95,23 @@ After v0.4.0, André asked for three things while testing (2026-10-22): mention 
 
 ---
 
+### P1: Open images in the app ⭐ MVP
+
+**User Story**: As a user, I want an image in the timeline to open inside the app so that I look at it, move through the conversation's other images and come back to where I was, without a new tab.
+
+**Acceptance Criteria**:
+
+1. WHEN the user clicks, or activates with the keyboard, an image attachment in the timeline THEN the app SHALL open it in a viewer dialog over the conversation with the image fitted to the viewport, and SHALL NOT open a new tab. (IMG-01)
+2. The viewer SHALL show the file name and the image's position among the conversation's images ("2 of 5", and "2 of 5+" while older images may exist that are not loaded yet), and SHALL offer "Download" (the file, saved under its name) and "Open original" (the file itself, in a new tab). (IMG-02)
+3. WHEN the user presses Escape, activates the close button or clicks the backdrop THEN the viewer SHALL close and focus SHALL return to the thumbnail of the image it was showing. (IMG-03)
+4. WHEN the user presses the left or right arrow, activates "Previous image" or "Next image", or swipes horizontally on a touch screen THEN the viewer SHALL show the previous or next image of the conversation, oldest first, and SHALL stop at the first and at the last. WHILE it shows the oldest image loaded it SHALL load older messages, page after page, until an older image arrives or the history ends. (IMG-04)
+5. WHILE the viewer is open the app SHALL keep focus inside it and name it for assistive technology; WHEN the image changes it SHALL announce the new name and position. (IMG-05)
+6. The viewer SHALL work on a 360 px wide screen: the file name truncates, the actions keep their names with only their icons visible, and every control is at least 44 px. (IMG-06)
+
+**Independent Test**: In a conversation with three pictures, click the second: the viewer shows it as "2 of 3"; press the right arrow for the third, Escape, and focus is on the third picture's thumbnail.
+
+---
+
 ## Requirement Traceability
 
 | Requirement ID | Story | Phase | Status |
@@ -108,8 +132,14 @@ After v0.4.0, André asked for three things while testing (2026-10-22): mention 
 | UPD-04 | P1: Update | Execute | Implementing |
 | UPD-05 | P1: Update | Execute | Implementing |
 | UPD-06 | P1: Update | Execute | Implementing |
+| IMG-01 | P1: Images in the app | Execute | Implementing |
+| IMG-02 | P1: Images in the app | Execute | Implementing |
+| IMG-03 | P1: Images in the app | Execute | Implementing |
+| IMG-04 | P1: Images in the app | Execute | Implementing |
+| IMG-05 | P1: Images in the app | Execute | Implementing |
+| IMG-06 | P1: Images in the app | Execute | Implementing |
 
-**Coverage:** 16 total
+**Coverage:** 22 total
 
 ---
 
@@ -118,3 +148,4 @@ After v0.4.0, André asked for three things while testing (2026-10-22): mention 
 - [ ] André mentions an AI by typing a few letters after `@`.
 - [ ] André opens a DM with an agent from a group's participant list.
 - [ ] André updates the notebook with `partyline update`.
+- [ ] The product owner clicks a picture in a conversation, flips through the others and closes it without leaving the app.

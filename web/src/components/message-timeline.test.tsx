@@ -223,7 +223,7 @@ describe("message item (UI-05)", () => {
     // stable while the image loads; the image is contained inside it.
     expect(img).toHaveAttribute("width", "320");
     expect(img).toHaveAttribute("height", "240");
-    expect(img.closest("a")).toHaveStyle({ aspectRatio: "4 / 3" });
+    expect(img.closest("button")).toHaveStyle({ aspectRatio: "4 / 3" });
   });
 
   it("renders a message without delivery badges while chat history keeps its platform (CID-22)", async () => {
@@ -488,6 +488,32 @@ describe("timeline (UI-04)", () => {
     expect(await screen.findByText("deploy finished")).toBeVisible();
     expect(row(2)).toBeInTheDocument();
     expect(calls.length).toBe(fetches);
+  });
+
+  it("keeps the messages on screen when an older page fails to load", async () => {
+    // A refresh that fails keeps what is shown, as the conversation list does: only a timeline
+    // that never loaded is an error.
+    const { calls } = mockApi({
+      "GET /rooms/r1/messages": (url) =>
+        url.searchParams.get("before_seq") === "51"
+          ? json(500, { error: { code: "internal", message: "internal" } })
+          : page(
+              Array.from({ length: 50 }, (_, i) => makeMessage({ seq: 51 + i })),
+              true,
+            ),
+    });
+    renderTimeline();
+    const log = await screen.findByRole("log");
+    await screen.findByTestId("message-51");
+    log.scrollTop = 0;
+    fireEvent.scroll(log);
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.searchParams.get("before_seq") === "51")).toBe(true),
+    );
+    await new Promise((done) => setTimeout(done, 100));
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByTestId("message-51")).toBeInTheDocument();
   });
 
   it("shows messages oldest first whatever the page order", async () => {

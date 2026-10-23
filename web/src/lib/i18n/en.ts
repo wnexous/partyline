@@ -317,6 +317,7 @@ export const en = {
   "message.replyTo": "Reply to {name}, show the original",
   "message.replyMissing": "Reply to an earlier message",
   "message.openProfile": "Open the profile of {name}",
+  "message.openImage": "Open {name}",
   "message.attachmentTooLarge": "too large to store",
   "message.attachmentUnavailable": "unavailable",
   "message.content.image": "Image",
@@ -342,6 +343,17 @@ export const en = {
   "timeline.yesterday": "Yesterday",
   "timeline.jumpLatest": "Jump to latest",
   "timeline.messageGone": "That message is no longer in the room.",
+
+  "viewer.position": "{position} of {count}",
+  "viewer.positionMore": "{position} of {count}+",
+  "viewer.download": "Download",
+  "viewer.openOriginal": "Open original",
+  "viewer.previous": "Previous image",
+  "viewer.next": "Next image",
+  "viewer.description":
+    "Use the left and right arrow keys to see the other images. Escape closes the viewer.",
+  "viewer.descriptionOne": "Escape closes the viewer.",
+  "viewer.loadError": "Couldn’t load this image.",
 
   "composer.label": "Message {room}",
   "composer.placeholder": "Message {room}",

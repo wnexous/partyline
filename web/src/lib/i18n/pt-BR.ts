@@ -320,6 +320,7 @@ export const ptBR: Dictionary = {
   "message.replyTo": "Resposta a {name}, mostrar a original",
   "message.replyMissing": "Resposta a uma mensagem anterior",
   "message.openProfile": "Abrir o perfil de {name}",
+  "message.openImage": "Abrir {name}",
   "message.attachmentTooLarge": "grande demais para guardar",
   "message.attachmentUnavailable": "indisponível",
   "message.content.image": "Imagem",
@@ -345,6 +346,17 @@ export const ptBR: Dictionary = {
   "timeline.yesterday": "Ontem",
   "timeline.jumpLatest": "Ir para a mais recente",
   "timeline.messageGone": "Essa mensagem não está mais na sala.",
+
+  "viewer.position": "{position} de {count}",
+  "viewer.positionMore": "{position} de {count}+",
+  "viewer.download": "Baixar",
+  "viewer.openOriginal": "Abrir original",
+  "viewer.previous": "Imagem anterior",
+  "viewer.next": "Próxima imagem",
+  "viewer.description":
+    "Use as setas esquerda e direita para ver as outras imagens. Esc fecha o visualizador.",
+  "viewer.descriptionOne": "Esc fecha o visualizador.",
+  "viewer.loadError": "Não foi possível carregar esta imagem.",
 
   "composer.label": "Mensagem para {room}",
   "composer.placeholder": "Mensagem para {room}",

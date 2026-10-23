@@ -80,6 +80,9 @@ export function chatTitle(t: Translate, title: string | undefined, platform?: st
 
 /** Images the server serves inline (others download); SVG is excluded on purpose. */
 export const INLINE_IMAGES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+/** An image the timeline shows inline and the viewer can open: stored, and one the server serves inline. */
+export const isViewableImage = (a: Attachment) =>
+  a.status === "stored" && INLINE_IMAGES.has(a.mime);
 /** Reserved box for inline images (Attachment has no width/height). */
 const IMAGE_BOX = { width: 320, height: 240 } as const;
 const IMAGE_BOX_RATIO = "4 / 3";
@@ -150,6 +153,8 @@ export interface MessageItemProps {
   /** Arrived live while the room was open: settles from the tape highlight. */
   fresh?: boolean;
   onJumpTo?: (messageId: string) => void;
+  /** Opens an image attachment in the viewer (IMG-01). */
+  onOpenImage: (attachmentId: string) => void;
 }
 
 export const MessageItem = memo(function MessageItem({
@@ -160,6 +165,7 @@ export const MessageItem = memo(function MessageItem({
   grouped = false,
   fresh = false,
   onJumpTo,
+  onOpenImage,
 }: MessageItemProps) {
   const { t, locale } = useI18n();
   const kind = AUTHOR_KIND[message.author_kind] ?? AUTHOR_KIND.system;
@@ -299,7 +305,7 @@ export const MessageItem = memo(function MessageItem({
           <ul className="mt-1.5 flex flex-wrap gap-2">
             {message.attachments.map((a) => (
               <li key={a.id} className="max-w-full">
-                <AttachmentView attachment={a} />
+                <AttachmentView attachment={a} onOpenImage={onOpenImage} />
               </li>
             ))}
           </ul>
@@ -420,7 +426,13 @@ export function formatBytes(size: number, locale: string): string {
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value)} ${units[unit]}`;
 }
 
-function AttachmentView({ attachment: a }: { attachment: Attachment }) {
+function AttachmentView({
+  attachment: a,
+  onOpenImage,
+}: {
+  attachment: Attachment;
+  onOpenImage: (attachmentId: string) => void;
+}) {
   const { t, locale } = useI18n();
   const url = attachmentUrl(a.id);
   if (a.status !== "stored") {
@@ -439,13 +451,17 @@ function AttachmentView({ attachment: a }: { attachment: Attachment }) {
   }
   if (INLINE_IMAGES.has(a.mime)) {
     return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
+      // The image opens in the viewer inside the app (IMG-01), which hands focus back to this
+      // button (`data-attachment-id` finds it again).
+      <button
+        type="button"
+        data-attachment-id={a.id}
+        aria-haspopup="dialog"
+        aria-label={t("message.openImage", { name: a.name })}
+        onClick={() => onOpenImage(a.id)}
         // Attachment carries no pixel size: a fixed 4:3 box keeps the row height stable while the
         // image loads (no layout shift, steady virtualizer measurements).
-        className="inline-block w-80 max-w-full overflow-hidden rounded-md border bg-muted align-top shadow-xs"
+        className="inline-block w-80 max-w-full cursor-zoom-in overflow-hidden rounded-md border bg-muted align-top shadow-xs"
         style={{ aspectRatio: IMAGE_BOX_RATIO }}
       >
         <img
@@ -457,7 +473,7 @@ function AttachmentView({ attachment: a }: { attachment: Attachment }) {
           decoding="async"
           className="block size-full object-contain"
         />
-      </a>
+      </button>
     );
   }
   return (

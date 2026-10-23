@@ -150,6 +150,7 @@ dark, ink 0.37 / 0.06 and 0.9 / 0.045), so the set reads as one family and none 
 | Avatar fallback | initials on a tint by kind, warm for people and groups, cool for AIs |
 | Links | `link`, always underlined (2px on hover) |
 | Text selection | `primary` at 30 %; inside code blocks and fields it is inverted (a `primary` fill) |
+| Image viewer | a dialog over the whole screen: a `popover` strip on top (name, position, Download, Open original, Close) and the picture on a black stage at 80 %, so it is the one dark thing on the page; previous and next are `secondary` buttons on the stage's edges, and the whole stage is a swipe target |
 
 ## Typography and shape
 

@@ -11,11 +11,14 @@ import type {
   Room,
   Token,
 } from "../src/lib/api/types.gen";
-import { ADMIN, apiCall, expect, MEMBER, test } from "./fixtures";
+import { ADMIN, apiCall, expect, MEMBER, settled, test } from "./fixtures";
+import { postPictures } from "./images";
 import type { Instance } from "./server";
+import { shoot } from "./shots";
 
 // Smoke suite against the built binary (intelligences T52: LAY-01, LAY-05, DM-01, PROF-03,
-// TREE-01; web-app UI-01, UI-02, UI-04, UI-14, UI-24; harness-onboarding WIZ-02). The tests share
+// TREE-01; web-app UI-01, UI-02, UI-04, UI-14, UI-24; harness-onboarding WIZ-02; messenger-polish
+// IMG-01..IMG-06). Set E2E_SHOTS_DIR to also save screenshots of those flows. The tests share
 // one fresh instance per project and run in order: the first one creates the admin.
 test.describe.configure({ mode: "serial" });
 
@@ -586,4 +589,117 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24, LAY-05)
     }));
     expect(width.scroll, `${path} scrolls sideways`).toBeLessThanOrEqual(width.viewport);
   }
+});
+
+test("an image opens in the viewer inside the app, the others are an arrow away and focus comes back (IMG-01..IMG-06)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
+    name: "e2e-gallery",
+    members: [],
+  });
+  await postPictures(
+    context.request,
+    instance,
+    room.id,
+    [
+      { name: "harbour.png", hue: 200 },
+      { name: "market.png", hue: 30 },
+    ],
+    "Two from the trip",
+  );
+  await postPictures(context.request, instance, room.id, [{ name: "sunset.png", hue: 340 }]);
+  const tabs: string[] = [];
+  context.on("page", (opened) => tabs.push(opened.url()));
+
+  await page.goto(`/rooms/${room.id}`);
+  const timeline = page.getByRole("log");
+  const thumbnail = (name: string) => timeline.getByRole("button", { name: `Open ${name}` });
+  await thumbnail("market.png").click();
+
+  // IMG-01, IMG-02: a dialog over the conversation, the picture fitted to the screen, no new tab.
+  const viewer = page.getByRole("dialog", { name: "market.png" });
+  await expect(viewer).toBeVisible();
+  await expect(viewer.getByText("2 of 3")).toBeVisible();
+  expect(tabs).toEqual([]);
+  await expect(page).toHaveURL(`${instance.url}/rooms/${room.id}`);
+  const picture = viewer.getByRole("img", { name: "market.png" });
+  await expect
+    .poll(() => picture.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
+    .toBe(1500);
+  const screen = page.viewportSize() ?? { width: 0, height: 0 };
+  const box = await picture.boundingBox();
+  expect(box?.width).toBeLessThanOrEqual(screen.width);
+  expect(box?.height).toBeLessThanOrEqual(screen.height);
+  // Scaled down, not cropped: the whole 3:2 picture is on screen.
+  expect(box?.width).toBeLessThan(1500);
+  expect((box?.width ?? 0) / (box?.height ?? 1)).toBeCloseTo(1.5, 1);
+  await expect(viewer.getByRole("link", { name: "Download" })).toHaveAttribute(
+    "download",
+    "market.png",
+  );
+  await expect(viewer.getByRole("link", { name: "Open original" })).toHaveAttribute(
+    "target",
+    "_blank",
+  );
+
+  // IMG-06: everything fits a phone, and every control is a finger wide.
+  const width = await page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    viewport: window.innerWidth,
+  }));
+  expect(width.scroll, "the viewer scrolls sideways").toBeLessThanOrEqual(width.viewport);
+  const controls = [
+    ...(await viewer.getByRole("button").all()),
+    ...(await viewer.getByRole("link").all()),
+  ];
+  // Close, Previous, Next, Download and Open original.
+  expect(controls).toHaveLength(5);
+  await settled(page);
+  const finger = isMobile(testInfo) ? 44 : 32;
+  for (const control of controls) {
+    const label = (await control.getAttribute("aria-label")) ?? (await control.textContent());
+    const size = await control.boundingBox();
+    expect(size?.width, `${label} is too narrow`).toBeGreaterThanOrEqual(finger);
+    expect(size?.height, `${label} is too short`).toBeGreaterThanOrEqual(finger);
+  }
+  await shoot(page, "lightbox", testInfo);
+
+  // IMG-04: the arrows walk the other images and stop at both ends; so does a swipe.
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("dialog", { name: "sunset.png" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next image" })).toBeDisabled();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByRole("dialog", { name: "market.png" })).toBeVisible();
+  const stage = page.getByTestId("image-viewer-backdrop");
+  const swipe = async (from: number, to: number) => {
+    await stage.dispatchEvent("pointerdown", { pointerType: "touch", clientX: from, clientY: 300 });
+    await stage.dispatchEvent("pointerup", { pointerType: "touch", clientX: to, clientY: 306 });
+  };
+  await swipe(60, 240);
+  await expect(page.getByRole("dialog", { name: "harbour.png" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Previous image" })).toBeDisabled();
+
+  // IMG-03: Escape closes it and focus is on the thumbnail of the image it showed last, which is
+  // not the one that opened it.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(thumbnail("harbour.png")).toBeFocused();
+
+  // The close button and the backdrop close it too.
+  await thumbnail("sunset.png").click();
+  await page
+    .getByRole("dialog", { name: "sunset.png" })
+    .getByRole("button", { name: "Close" })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(thumbnail("sunset.png")).toBeFocused();
+  await thumbnail("sunset.png").click();
+  await expect(page.getByRole("dialog", { name: "sunset.png" })).toBeVisible();
+  await page.getByTestId("image-viewer-backdrop").click({ position: { x: 4, y: 4 } });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(tabs).toEqual([]);
 });
