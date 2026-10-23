@@ -91,3 +91,9 @@ DELETE FROM platform_items WHERE id IN (sqlc.slice(item_ids));
 
 -- name: CountPlatformAttachmentsBySHA :one
 SELECT COUNT(*) FROM platform_attachments WHERE sha256 = ?;
+
+-- name: CountUnackedPlatformItemsByConnector :many
+-- CID-23: how many items of each connection wait for their AI's session.
+SELECT connector_id, COUNT(*) AS queued FROM platform_items
+WHERE acked_at IS NULL AND connector_id IN (sqlc.slice(connector_ids))
+GROUP BY connector_id;

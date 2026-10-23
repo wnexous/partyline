@@ -170,11 +170,11 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-20 | P1: Partyline chat is one more app | Tasks | In Tasks |
 | CID-21 | P1: Partyline chat is one more app | Tasks | In Tasks |
 | CID-22 | P1: Partyline chat is one more app | Tasks | In Tasks |
-| CID-23 | P1: Partyline chat is one more app | Tasks | In Tasks |
+| CID-23 | P1: Partyline chat is one more app | Execute | Implementing (T6) |
 | CID-24 | Edge cases | Tasks | In Tasks |
 | CID-25 | Edge cases | Tasks | In Tasks |
 | CID-26 | Edge cases | Execute | Implementing (T2, T3) |
-| CID-27 | P1: Direct delivery | Execute | Implementing (T2) |
+| CID-27 | P1: Direct delivery | Execute | Implementing (T2, T6) |
 
 **Coverage:** 27 total, 27 mapped to tasks (`tasks.md` T1-T38); CID-04 implemented (T1).
 

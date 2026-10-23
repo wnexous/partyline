@@ -68,6 +68,51 @@ func (q *Queries) CountUnackedPlatformItems(ctx context.Context, agentID string)
 	return count, err
 }
 
+const countUnackedPlatformItemsByConnector = `-- name: CountUnackedPlatformItemsByConnector :many
+SELECT connector_id, COUNT(*) AS queued FROM platform_items
+WHERE acked_at IS NULL AND connector_id IN (/*SLICE:connector_ids*/?)
+GROUP BY connector_id
+`
+
+type CountUnackedPlatformItemsByConnectorRow struct {
+	ConnectorID string
+	Queued      int64
+}
+
+// CID-23: how many items of each connection wait for their AI's session.
+func (q *Queries) CountUnackedPlatformItemsByConnector(ctx context.Context, connectorIds []string) ([]CountUnackedPlatformItemsByConnectorRow, error) {
+	query := countUnackedPlatformItemsByConnector
+	var queryParams []interface{}
+	if len(connectorIds) > 0 {
+		for _, v := range connectorIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:connector_ids*/?", strings.Repeat(",?", len(connectorIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:connector_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountUnackedPlatformItemsByConnectorRow
+	for rows.Next() {
+		var i CountUnackedPlatformItemsByConnectorRow
+		if err := rows.Scan(&i.ConnectorID, &i.Queued); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deletePlatformItems = `-- name: DeletePlatformItems :execrows
 DELETE FROM platform_items WHERE id IN (/*SLICE:item_ids*/?)
 `

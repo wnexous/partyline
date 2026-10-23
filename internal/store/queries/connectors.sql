@@ -75,3 +75,8 @@ SELECT * FROM connectors WHERE operator_iid = ? ORDER BY name, id;
 UPDATE connectors SET auto_route_scope = 'off', last_error = sqlc.arg(detail)
 WHERE auto_route_room_id = sqlc.arg(room_id)
 RETURNING id, status;
+
+-- name: UpdateConnectorDelivery :exec
+-- CID-12, CID-27: which chats of the connection are delivered, and whether a group message needs a
+-- mention of the account or a reply to it.
+UPDATE connectors SET deliver = ?, groups_mentions_only = ?, updated_at = ? WHERE id = ?;

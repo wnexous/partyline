@@ -92,6 +92,8 @@ type View struct {
 	// HasOperator false, while nobody operates the connection (CID-02).
 	Operator    db.Intelligence
 	HasOperator bool
+	// Queued is the number of the connection's unacknowledged queue items (CID-23).
+	Queued int64
 }
 
 // CreateInput is a new connector.
@@ -114,6 +116,10 @@ type UpdateInput struct {
 	// OperatorID names the connector's operator (CID-01): an AI the owner owns. Any other value
 	// is a validation error on operator_id.
 	OperatorID *string
+	// Deliver (dms, groups or all) and GroupsMentionsOnly change what reaches the operator
+	// (CID-12); any other Deliver is a validation error on deliver.
+	Deliver            *dto.ConnectorDeliver
+	GroupsMentionsOnly *bool
 }
 
 // authorize requires the user to hold want on the connector: no access is
@@ -242,7 +248,33 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, id string) (View, 
 	if err := s.attachOperators(ctx, views); err != nil {
 		return View{}, err
 	}
+	if err := s.attachQueued(ctx, views); err != nil {
+		return View{}, err
+	}
 	return views[0], nil
+}
+
+// attachQueued fills the number of unacknowledged queue items of each view's connection (CID-23).
+func (s *Service) attachQueued(ctx context.Context, views []View) error {
+	if len(views) == 0 {
+		return nil
+	}
+	ids := make([]string, len(views))
+	for i, v := range views {
+		ids[i] = v.ID
+	}
+	rows, err := s.d.Store.R().CountUnackedPlatformItemsByConnector(ctx, ids)
+	if err != nil {
+		return err
+	}
+	queued := make(map[string]int64, len(rows))
+	for _, r := range rows {
+		queued[r.ConnectorID] = r.Queued
+	}
+	for i := range views {
+		views[i].Queued = queued[views[i].ID]
+	}
+	return nil
 }
 
 // attachOperators fills the operator of each view that has one: the intelligence of its
@@ -327,6 +359,9 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]View, error) {
 	if err := s.attachOperators(ctx, out); err != nil {
 		return nil, err
 	}
+	if err := s.attachQueued(ctx, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -380,10 +415,20 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	if err != nil {
 		return View{}, err
 	}
+	deliver, mentionsOnly, err := s.delivery(c, in)
+	if err != nil {
+		return View{}, err
+	}
 	operatorChanged := operator != c.OperatorIid
 	gainedOperator := operatorChanged && !c.OperatorIid.Valid // it was idle until now: start it
 	if string(scope) != c.AutoRouteScope || routeRoom != c.AutoRouteRoomID {
 		changed = append(changed, "auto_route")
+	}
+	if deliver != dto.ConnectorDeliver(c.Deliver) {
+		changed = append(changed, "deliver")
+	}
+	if mentionsOnly != c.GroupsMentionsOnly {
+		changed = append(changed, "groups_mentions_only")
 	}
 	toggled := enabled != c.Enabled
 	// ROUTE-09: saved catch-all settings clear a detail that catch-all routing set.
@@ -398,6 +443,13 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 			AutoRouteScope: string(scope), AutoRouteRoomID: routeRoom, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
 		}); err != nil {
 			return err
+		}
+		if deliver != dto.ConnectorDeliver(c.Deliver) || mentionsOnly != c.GroupsMentionsOnly {
+			if err := q.UpdateConnectorDelivery(ctx, db.UpdateConnectorDeliveryParams{
+				Deliver: string(deliver), GroupsMentionsOnly: mentionsOnly, UpdatedAt: s.d.Now().UnixMilli(), ID: id,
+			}); err != nil {
+				return err
+			}
 		}
 		if clearDetail {
 			if err := q.SetConnectorLastError(ctx, db.SetConnectorLastErrorParams{LastError: "", ID: id}); err != nil {
@@ -491,6 +543,25 @@ func (s *Service) operator(ctx context.Context, c db.Connector, requested *strin
 		return sql.NullString{}, &validation.Error{Fields: map[string]string{"operator_id": "must be an AI you own"}}
 	}
 	return sql.NullString{String: id, Valid: true}, nil
+}
+
+// delivery returns the delivery settings after the request (CID-12): deliver must be dms, groups
+// or all, and an absent field is unchanged. Create never sets them: a new connection takes the
+// column defaults, deliver=all and mentions-only on (CID-27).
+func (s *Service) delivery(c db.Connector, in UpdateInput) (dto.ConnectorDeliver, bool, error) {
+	deliver, mentionsOnly := dto.ConnectorDeliver(c.Deliver), c.GroupsMentionsOnly
+	if in.Deliver != nil {
+		switch *in.Deliver {
+		case dto.ConnectorDeliverDMs, dto.ConnectorDeliverGroups, dto.ConnectorDeliverAll:
+			deliver = *in.Deliver
+		default:
+			return "", false, &validation.Error{Fields: map[string]string{"deliver": "must be dms, groups or all"}}
+		}
+	}
+	if in.GroupsMentionsOnly != nil {
+		mentionsOnly = *in.GroupsMentionsOnly
+	}
+	return deliver, mentionsOnly, nil
 }
 
 // autoRoute returns the catch-all settings after in (ROUTE-04): the scope must be one of

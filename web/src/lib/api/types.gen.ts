@@ -548,6 +548,18 @@ export interface Connector {
    */
   operator?: IntelligenceRef;
   /**
+   * Deliver and GroupsMentionsOnly choose what reaches the operator (CID-12, CID-27): the chats
+   * of the connection that are delivered, and whether a group message needs to mention the
+   * account or reply to it. A new connection delivers everything with mentions-only on.
+   */
+  deliver: ConnectorDeliver;
+  groups_mentions_only: boolean;
+  /**
+   * Queued is how many messages of the connection wait for their AI's session to acknowledge
+   * them (CID-23). Their text is never part of any connector view.
+   */
+  queued: number /* int64 */;
+  /**
    * AccountLabel is how the platform names the account once connected: "@bot",
    * "+•••• 1234" (ACC-07); absent until then.
    */
@@ -597,12 +609,29 @@ export interface UpdateConnectorRequest {
   auto_route_scope?: AutoRouteScope;
   auto_route_room_id?: string;
   /**
+   * Deliver and GroupsMentionsOnly change what reaches the operator (CID-12): Deliver must be
+   * dms, groups or all (422 on deliver otherwise). Only the owner may change them.
+   */
+  deliver?: ConnectorDeliver;
+  groups_mentions_only?: boolean;
+  /**
    * OperatorID changes the operator (CID-01): the id of an AI the owner owns; anything else,
    * the owner's own id and an empty string included, is a 422 on operator_id. Only the owner
    * may change it. Absent leaves it.
    */
   operator_id?: string;
 }
+/**
+ * ConnectorDeliver selects which chats of a connection reach its operator: direct chats only,
+ * group chats only (group and channel chats) or all of them (CID-12).
+ */
+export const ConnectorDeliverDMs = "dms";
+export const ConnectorDeliverGroups = "groups";
+export const ConnectorDeliverAll = "all";
+/**
+ * Delivery choices.
+ */
+export type ConnectorDeliver = typeof ConnectorDeliverDMs | typeof ConnectorDeliverGroups | typeof ConnectorDeliverAll;
 /**
  * AutoRouteScope selects which new chats a connector routes to its catch-all room: none
  * (off), DMs, groups (group and channel chats) or all.

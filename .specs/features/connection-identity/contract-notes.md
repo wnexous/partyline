@@ -178,3 +178,27 @@ Where a section refines the design, it says so.
   API tests `createFakeIdle` (no operator) and `createFake` (operated by the client's AI "Atlas");
   `connectors_test.newInboundEnv` operates its connector with the AI "relay"; the manager fixture's
   `insert` gives the connector an AI, `insertWithoutOperator` none.
+
+## T6: Connection settings and queued count (CID-23, CID-27)
+
+- **`dto.Connector`** gains `deliver` (`dms|groups|all`, type `dto.ConnectorDeliver`),
+  `groups_mentions_only` (bool) and `queued` (integer). All three are always present. `queued` is
+  the number of the connection's unacknowledged queue items, whichever AI holds them; acknowledged
+  items and other connections' items do not count. The owner and the connection's use grantees see
+  the same values in `GET /connectors/{id}`, `GET /connectors` and the answers of POST and PATCH.
+  No connector view carries message text (there is no field for it); the items' text exists only in
+  the queue until acknowledged.
+- **`dto.UpdateConnectorRequest`** gains `deliver` and `groups_mentions_only` (both optional;
+  absent leaves the stored value). A `deliver` other than the exact strings `dms`, `groups`, `all`
+  (any other case, blank, padded) is a 422 `{deliver: "must be dms, groups or all"}` that changes
+  nothing in the same request. Only the owner (manage) may change them: the same authorization as
+  every other PATCH field (use grantee 403, stranger and admin 404, anonymous 401, AI tokens 403).
+- **Create** takes no delivery fields: unknown JSON fields are ignored by the decoder, so a create
+  body carrying `deliver`, `groups_mentions_only` or `queued` is accepted and they are not read. The
+  column defaults of migration 0017 (`all`, on) are the single source (CID-27).
+- **Audit**: a real change records `connector.update` with `changed` listing `deliver` and/or
+  `groups_mentions_only` (in that order); a request that sets the stored values records nothing.
+- **sqlc**: `UpdateConnectorDelivery`, `CountUnackedPlatformItemsByConnector` (one grouped query
+  per list or view).
+- **Web**: `web/src/test/fixtures.ts` `makeConnector` carries the three new fields so that the
+  generated type still holds; the connection page itself is T29.

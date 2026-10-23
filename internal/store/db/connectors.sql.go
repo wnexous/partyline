@@ -449,6 +449,29 @@ func (q *Queries) UpdateConnectorAutoRoute(ctx context.Context, arg UpdateConnec
 	return err
 }
 
+const updateConnectorDelivery = `-- name: UpdateConnectorDelivery :exec
+UPDATE connectors SET deliver = ?, groups_mentions_only = ?, updated_at = ? WHERE id = ?
+`
+
+type UpdateConnectorDeliveryParams struct {
+	Deliver            string
+	GroupsMentionsOnly bool
+	UpdatedAt          int64
+	ID                 string
+}
+
+// CID-12, CID-27: which chats of the connection are delivered, and whether a group message needs a
+// mention of the account or a reply to it.
+func (q *Queries) UpdateConnectorDelivery(ctx context.Context, arg UpdateConnectorDeliveryParams) error {
+	_, err := q.db.ExecContext(ctx, updateConnectorDelivery,
+		arg.Deliver,
+		arg.GroupsMentionsOnly,
+		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
+}
+
 const updateConnectorStatus = `-- name: UpdateConnectorStatus :exec
 UPDATE connectors SET status = ?, last_error = ? WHERE id = ?
 `

@@ -370,13 +370,13 @@ The retention ticker runs it, and the blob `Sweep` treats `platform_attachments`
 **Reuses**: `view`, `attachOperators`
 **Requirement**: CID-23, CID-27
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - a new connection reads `deliver=all`, `groups_mentions_only=true`, even when the create body carries other values;
   - PATCH changes both, and an invalid `deliver` → 422;
   - `queued` counts unacked items only;
   - no field carries message text
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors): delivery settings and queued count`
