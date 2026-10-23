@@ -699,8 +699,8 @@ New frame DTOs are added.
 **Reuses**: picker tests
 **Requirement**: CID-20
 **Done when**:
-- [ ] Unit: users and AIs, no chat entries
-- [ ] Gate check passes: `make check`
+- [x] Unit: users and AIs, no chat entries
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): add only users and AIs to groups`

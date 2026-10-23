@@ -9,7 +9,6 @@ import { apiError, json, mockApi } from "@/test/fetch";
 import {
   makeAI,
   makeAIContact,
-  makeChat,
   makeContacts,
   makeConversation,
   makeIntelligence,
@@ -72,13 +71,6 @@ function roomApi(room: Partial<Room> = {}, extra: Parameters<typeof mockApi>[0] 
     "GET /rooms/r1/members": json(200, { items: members }),
     "GET /rooms/r1/messages": json(200, { items: [], has_more: false }),
     "GET /contacts": json(200, contacts),
-    "GET /chats": json(200, {
-      items: [
-        makeChat({ id: "c1", title: "Ops on call" }),
-        makeChat({ id: "c3", title: "Release notes", kind: "channel" }),
-        makeChat({ id: "c4", title: "Support team", connector_kind: "whatsapp" }),
-      ],
-    }),
     ...extra,
   });
 }
@@ -227,32 +219,6 @@ describe("chat titles (CTX-07)", () => {
     // Titled chats keep their title.
     expect(screen.getByTestId("member-mb-ops")).toHaveTextContent("Ops on call");
   });
-
-  it("names an untitled chat in the add-member picker and finds it by that name", async () => {
-    const { calls } = roomApi(
-      {},
-      {
-        "GET /chats": json(200, {
-          items: [makeChat({ id: "c6", title: "", kind: "dm", connector_kind: "telegram" })],
-        }),
-        "POST /rooms/r1/members": json(201, makeMember({ kind: "chat", member_id: "c6" })),
-      },
-    );
-    const user = userEvent.setup();
-    renderRoute("/rooms/r1");
-    await user.click(await screen.findByRole("button", { name: "Add members" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add members" });
-    const candidate = await within(dialog).findByTestId("candidate-chat-c6");
-    expect(within(candidate).getByText("Telegram chat")).toBeInTheDocument();
-    await user.type(within(dialog).getByRole("searchbox", { name: "Filter" }), "telegram chat");
-    await user.click(within(dialog).getByRole("button", { name: "Add Telegram chat" }));
-    await waitFor(() =>
-      expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({
-        kind: "chat",
-        member_id: "c6",
-      }),
-    );
-  });
 });
 
 describe("member picker (UI-10)", () => {
@@ -267,7 +233,7 @@ describe("member picker (UI-10)", () => {
       .getAllByRole("listitem")
       .map((li) => li.getAttribute("data-testid"));
 
-  it("offers the AIs, users and chats the user can add that are not members yet, filterable by text", async () => {
+  it("offers the AIs and users the user can add that are not members yet, filterable by text", async () => {
     roomApi(
       {},
       {
@@ -291,27 +257,20 @@ describe("member picker (UI-10)", () => {
     expect(within(dialog).getByTestId("candidate-agent-a3")).toHaveTextContent("Online");
     expect(within(dialog).getByTestId("candidate-agent-a3")).toHaveTextContent("by @bob");
     expect(within(dialog).getByTestId("candidate-user-u2")).toHaveTextContent("Bob Lima");
-    expect(within(dialog).getByTestId("candidate-chat-c3")).toHaveTextContent("Release notes");
-    expect(within(dialog).getByTestId("candidate-chat-c4")).toHaveTextContent("Support team");
     // Already members, whatever their kind.
     expect(within(dialog).queryByTestId("candidate-agent-a1")).toBeNull();
     expect(within(dialog).queryByTestId("candidate-user-u3")).toBeNull();
-    expect(within(dialog).queryByTestId("candidate-chat-c1")).toBeNull();
 
     const sections = within(dialog).getAllByRole("region");
-    expect(sections.map((r) => r.getAttribute("aria-label"))).toEqual(["AIs", "Users", "Chats"]);
+    expect(sections.map((r) => r.getAttribute("aria-label"))).toEqual(["AIs", "Users"]);
     expect(testIds(sections[0] as HTMLElement)).toEqual([
       "candidate-agent-a2",
       "candidate-agent-a3",
     ]);
 
     const filter = within(dialog).getByRole("searchbox", { name: "Filter" });
-    await user.type(filter, "SUPP");
-    expect(within(dialog).getByTestId("candidate-chat-c4")).toBeInTheDocument();
-    expect(within(dialog).queryByTestId("candidate-chat-c3")).toBeNull();
+    await user.type(filter, "BOB");
     expect(within(dialog).queryByTestId("candidate-agent-a2")).toBeNull();
-    await user.clear(filter);
-    await user.type(filter, "bob");
     expect(testIds(within(dialog).getByRole("region", { name: "Users" }))).toEqual([
       "candidate-user-u2",
     ]);
@@ -321,7 +280,6 @@ describe("member picker (UI-10)", () => {
     ["an AI", "candidate-agent-a2", "Add triage", { kind: "agent", member_id: "a2" }],
     ["a shared AI", "candidate-agent-a3", "Add docs-writer", { kind: "agent", member_id: "a3" }],
     ["a user", "candidate-user-u2", "Add Bob Lima", { kind: "user", member_id: "u2" }],
-    ["a chat", "candidate-chat-c3", "Add Release notes", { kind: "chat", member_id: "c3" }],
   ])("adds %s as the right kind of member", async (_what, testId, button, body) => {
     const { calls } = roomApi(
       {},
@@ -356,7 +314,6 @@ describe("member picker (UI-10)", () => {
       {},
       {
         "GET /contacts": json(200, makeContacts()),
-        "GET /chats": json(200, { items: [] }),
       },
     );
     const user = userEvent.setup();
@@ -369,29 +326,6 @@ describe("member picker (UI-10)", () => {
     expect(within(dialog).getByRole("link", { name: "Connect an agent" })).toHaveAttribute(
       "href",
       "/contacts",
-    );
-  });
-
-  it("adds the picked chat as a member", async () => {
-    const { calls } = roomApi(
-      {},
-      {
-        "POST /rooms/r1/members": json(
-          201,
-          makeMember({ id: "mb-new", kind: "chat", member_id: "c3", name: "Release notes" }),
-        ),
-      },
-    );
-    const user = userEvent.setup();
-    renderRoute("/rooms/r1");
-    await user.click(await screen.findByRole("button", { name: "Add members" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add members" });
-    const row = await within(dialog).findByTestId("candidate-chat-c3");
-    await user.click(within(row).getByRole("button", { name: "Add Release notes" }));
-    await waitFor(() =>
-      expect(
-        calls.find((c) => c.method === "POST" && c.path === "/rooms/r1/members")?.body,
-      ).toEqual({ kind: "chat", member_id: "c3" }),
     );
   });
 });

@@ -826,3 +826,15 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - **Authorization** (matrices pinned by `TestPlatformDMPostAuthorizationMatrix`,
   `TestEditingAPersonIsRefusedAsHistory`, `TestDMToAPersonHasNoRoute`): see the bullets above; every
   refusal changes nothing and announces nothing.
+
+## T25: Member picker offers users and AIs only (CID-20)
+
+- `web/src/components/member-picker.tsx` no longer calls `GET /chats` (`useChats` is gone): the
+  picker lists only the caller's AIs, shared AIs and users from `GET /contacts`, with the existing
+  avatar, name, handle, presence and machine rows. No chat can be picked or added.
+- Copy: `picker.body` says "AIs and users ...", the filter hint names name, handle, owner and
+  machine (not platform), and the empty state offers only "Connect an agent". The unused
+  `picker.addConnector` string stays for now; the connection page work owns connector copy.
+- Tests: `web/src/components/member-picker.test.tsx` pins the only sections (AIs, Users), the
+  absence of chat candidates even when a mocked `GET /chats` answers, and that the picker never
+  requests `/chats`. The room page tests keep the AI/user add flows and no longer expect chats.
