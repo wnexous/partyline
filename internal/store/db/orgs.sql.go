@@ -184,6 +184,20 @@ func (q *Queries) DeleteOrganization(ctx context.Context, id string) error {
 	return err
 }
 
+const deletePosition = `-- name: DeletePosition :exec
+DELETE FROM positions WHERE id = ? AND org_id = ?
+`
+
+type DeletePositionParams struct {
+	ID    string
+	OrgID string
+}
+
+func (q *Queries) DeletePosition(ctx context.Context, arg DeletePositionParams) error {
+	_, err := q.db.ExecContext(ctx, deletePosition, arg.ID, arg.OrgID)
+	return err
+}
+
 const getAgentOrg = `-- name: GetAgentOrg :one
 SELECT CAST(COALESCE(org_id, '') AS TEXT) AS org_id FROM agents WHERE id = ?
 `
@@ -325,6 +339,51 @@ func (q *Queries) GetOrganizationBySlug(ctx context.Context, slug string) (Organ
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getPosition = `-- name: GetPosition :one
+SELECT id, org_id, name, parent_id, created_at FROM positions WHERE id = ?1 AND org_id = ?2
+`
+
+type GetPositionParams struct {
+	ID    string
+	OrgID string
+}
+
+func (q *Queries) GetPosition(ctx context.Context, arg GetPositionParams) (Position, error) {
+	row := q.db.QueryRowContext(ctx, getPosition, arg.ID, arg.OrgID)
+	var i Position
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Name,
+		&i.ParentID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getPositionByName = `-- name: GetPositionByName :one
+SELECT id, org_id, name, parent_id, created_at FROM positions WHERE org_id = ? AND name = ?
+`
+
+type GetPositionByNameParams struct {
+	OrgID string
+	Name  string
+}
+
+// The position of the organization with this name, ignoring case.
+func (q *Queries) GetPositionByName(ctx context.Context, arg GetPositionByNameParams) (Position, error) {
+	row := q.db.QueryRowContext(ctx, getPositionByName, arg.OrgID, arg.Name)
+	var i Position
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Name,
+		&i.ParentID,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -493,6 +552,51 @@ func (q *Queries) ListSharedOrgIDs(ctx context.Context, arg ListSharedOrgIDsPara
 	return items, nil
 }
 
+const movePositionChildren = `-- name: MovePositionChildren :exec
+UPDATE positions SET parent_id = ?1 WHERE org_id = ?2 AND parent_id = ?3
+`
+
+type MovePositionChildrenParams struct {
+	ToPosition   sql.NullString
+	OrgID        string
+	FromPosition sql.NullString
+}
+
+func (q *Queries) MovePositionChildren(ctx context.Context, arg MovePositionChildrenParams) error {
+	_, err := q.db.ExecContext(ctx, movePositionChildren, arg.ToPosition, arg.OrgID, arg.FromPosition)
+	return err
+}
+
+const movePositionHolders = `-- name: MovePositionHolders :exec
+UPDATE org_members SET position_id = ?1 WHERE org_id = ?2 AND position_id = ?3
+`
+
+type MovePositionHoldersParams struct {
+	ToPosition   sql.NullString
+	OrgID        string
+	FromPosition sql.NullString
+}
+
+func (q *Queries) MovePositionHolders(ctx context.Context, arg MovePositionHoldersParams) error {
+	_, err := q.db.ExecContext(ctx, movePositionHolders, arg.ToPosition, arg.OrgID, arg.FromPosition)
+	return err
+}
+
+const movePositionInvitations = `-- name: MovePositionInvitations :exec
+UPDATE org_invitations SET position_id = ?1 WHERE org_id = ?2 AND position_id = ?3
+`
+
+type MovePositionInvitationsParams struct {
+	ToPosition   sql.NullString
+	OrgID        string
+	FromPosition sql.NullString
+}
+
+func (q *Queries) MovePositionInvitations(ctx context.Context, arg MovePositionInvitationsParams) error {
+	_, err := q.db.ExecContext(ctx, movePositionInvitations, arg.ToPosition, arg.OrgID, arg.FromPosition)
+	return err
+}
+
 const setAgentCreator = `-- name: SetAgentCreator :exec
 UPDATE agents SET creator_iid = ? WHERE id = ?
 `
@@ -553,6 +657,27 @@ func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganization
 		arg.Slug,
 		arg.UpdatedAt,
 		arg.ID,
+	)
+	return err
+}
+
+const updatePosition = `-- name: UpdatePosition :exec
+UPDATE positions SET name = ?, parent_id = ? WHERE id = ? AND org_id = ?
+`
+
+type UpdatePositionParams struct {
+	Name     string
+	ParentID sql.NullString
+	ID       string
+	OrgID    string
+}
+
+func (q *Queries) UpdatePosition(ctx context.Context, arg UpdatePositionParams) error {
+	_, err := q.db.ExecContext(ctx, updatePosition,
+		arg.Name,
+		arg.ParentID,
+		arg.ID,
+		arg.OrgID,
 	)
 	return err
 }

@@ -237,3 +237,37 @@ Where a section refines the design, it says so.
 - **Queries** added to `queries/orgs.sql`: `GetOrgMembership`, `ListOrgsOfMember`,
   `UpdateOrganization`, `SetOrganizationAvatar`, `CountOrganizationAvatar`, `CountOrganizationSlug`,
   `DeleteOrganization`, `CountOrgAgents`, `CountOrgConnectors`, `CountOrgGroups`.
+
+## T6: Positions service (POS-01, POS-02, POS-09)
+
+- **Methods on `*orgs.Service`** (`positions.go`); all are admin-only (`ErrNotFound` for an outsider,
+  `ErrForbidden` for a member, guest or AI that is not an admin; authorization comes before
+  validation) and announce `OrgChanged` after the commit:
+  - `CreatePosition(actorIID, orgID, name, parentID) (Position, error)`: `parentID == ""` makes a
+    root. The name is cleaned like an organization name and must have 1-60 **code points**
+    (`*validation.Error` on `name`). It is unique in the organization **ignoring case**
+    (`ErrPositionNameTaken`, 409 `conflict`); another organization may reuse it. A parent that is not
+    a position of this organization (another organization's, or unknown) is a `*validation.Error` on
+    `parent_id` (422). Audit `org.position_create` `{position_id, name, parent_id}`.
+  - `UpdatePosition(actorIID, orgID, positionID, PositionUpdate{Name *string, ParentID *string})
+    (Position, error)`: nil leaves a field alone; `ParentID` pointing at `""` makes a root. A
+    rename to the same name in other letters is a rename (the position's own name is not a duplicate
+    of itself); the same exact name is nothing. A move that would make the position its own
+    ancestor (itself or a descendant as the parent) is `ErrCycle` (409 `position_cycle`), decided on
+    the chart loaded **inside the transaction that moves** (`Load` with the transaction's queries), so
+    two moves that are fine alone cannot both commit (`TestTwoMovesThatTogetherMakeACycleCannotBothSucceed`).
+    A change that alters nothing writes, audits and announces nothing. A position of another
+    organization, or one that does not exist, is `ErrNotFound`. Audit `org.position_update`
+    `{position_id, name?, parent_id?}` with the changed fields.
+  - `DeletePosition(actorIID, orgID, positionID) error` (POS-09): in one transaction its **holders**,
+    its **child positions** and the **pending invitations** that carry it move to its parent
+    position, or to none (holders) and to roots (children) when it was a root; then it is deleted.
+    Audit `org.position_delete` `{position_id, name, moved_to, holders, children}` (`moved_to` is `""`
+    for a root). The moves change who manages whom at once, since management follows the chart.
+- **Errors**: `ErrCycle`, `ErrPositionNameTaken` (new).
+- **Constants**: `MaxPositionNameLength = 60`; audit actions `ActionOrgPositionCreate`,
+  `ActionOrgPositionUpdate`, `ActionOrgPositionDelete` (target kind `organization`, target id the
+  organization, the position in the detail).
+- **Queries** added to `queries/orgs.sql`: `GetPosition` (id + org), `GetPositionByName`,
+  `UpdatePosition`, `MovePositionChildren`, `MovePositionHolders`, `MovePositionInvitations`,
+  `DeletePosition`.

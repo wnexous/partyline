@@ -103,3 +103,25 @@ SELECT COUNT(*) FROM rooms WHERE org_id = ? AND kind = 'group';
 
 -- name: CountOrganizationSlug :one
 SELECT COUNT(*) FROM organizations WHERE slug = ?;
+
+-- name: GetPosition :one
+SELECT * FROM positions WHERE id = sqlc.arg(id) AND org_id = sqlc.arg(org_id);
+
+-- name: GetPositionByName :one
+-- The position of the organization with this name, ignoring case.
+SELECT * FROM positions WHERE org_id = ? AND name = ?;
+
+-- name: UpdatePosition :exec
+UPDATE positions SET name = ?, parent_id = ? WHERE id = ? AND org_id = ?;
+
+-- name: MovePositionChildren :exec
+UPDATE positions SET parent_id = sqlc.narg(to_position) WHERE org_id = sqlc.arg(org_id) AND parent_id = sqlc.arg(from_position);
+
+-- name: MovePositionHolders :exec
+UPDATE org_members SET position_id = sqlc.narg(to_position) WHERE org_id = sqlc.arg(org_id) AND position_id = sqlc.arg(from_position);
+
+-- name: MovePositionInvitations :exec
+UPDATE org_invitations SET position_id = sqlc.narg(to_position) WHERE org_id = sqlc.arg(org_id) AND position_id = sqlc.arg(from_position);
+
+-- name: DeletePosition :exec
+DELETE FROM positions WHERE id = ? AND org_id = ?;

@@ -317,13 +317,13 @@ Wire it into the app's dependencies.
 **Reuses**: `Chart.HasCycle`, `Load` with a tx `*db.Queries`
 **Requirement**: POS-01, POS-02, POS-09
 **Done when**:
-- [ ] Integration tests:
+- [x] Integration tests:
   - name bounds of 1/60/61;
   - a parent from another org is refused;
   - A→B→C with A's parent set to C → `ErrCycle` and nothing changes;
   - deleting a middle position moves its holders and children to its parent;
   - deleting a root leaves its holders without a position and makes its children roots
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(orgs): edit the org chart's positions`

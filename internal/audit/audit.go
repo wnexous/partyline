@@ -54,6 +54,10 @@ const (
 	ActionOrgCreate = "org.create"
 	ActionOrgUpdate = "org.update"
 	ActionOrgDelete = "org.delete"
+	// The org chart: positions added, renamed or moved, and deleted (POS-01, POS-09).
+	ActionOrgPositionCreate = "org.position_create"
+	ActionOrgPositionUpdate = "org.position_update"
+	ActionOrgPositionDelete = "org.position_delete"
 )
 
 // Target kinds.
