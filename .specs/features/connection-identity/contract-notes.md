@@ -274,3 +274,12 @@ Where a section refines the design, it says so.
   never pass mentions-only.
 - **Not mentions**: another bot's `mention`, a `text_mention` of another user, an entity of any
   other type and a message without entities. `@everyone` is not a Telegram concept.
+
+## T9: Discord mentions (CID-12)
+
+- **Detection**: `Connector.onMessage` sets `Inbound.MentionsAccount` when the bot's user id, known
+  from the gateway's READY event, is in the message's `mentions`. The check is by id, not by
+  username, so a renamed bot still matches and a user with the same name does not.
+- **Not mentions**: another user's mention, `@everyone`/`@here` (`MentionEveryone` carries no user
+  in `mentions`) and a role mention; before READY the bot id is unknown and every message is
+  unmentioned.

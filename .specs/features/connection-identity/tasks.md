@@ -433,8 +433,8 @@ Room posting, people and DM creation, `autoGroup`, `autoRoute` and `platformDM` 
 **Reuses**: captured gateway payloads
 **Requirement**: CID-12
 **Done when**:
-- [ ] Tests: bot mentioned, other user mentioned (false), `@everyone` only (false)
-- [ ] Gate check passes: `make check`
+- [x] Tests: bot mentioned, other user mentioned (false), `@everyone` only (false)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(discord): report mentions of the bot`
