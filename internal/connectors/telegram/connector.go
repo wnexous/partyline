@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
@@ -69,6 +70,8 @@ type Connector struct {
 	mu     sync.Mutex
 	offset int64
 	selfID int64
+	// selfUsername is the bot's @username from getMe; empty when the bot has none.
+	selfUsername string
 }
 
 var _ connectors.Connector = (*Connector)(nil)
@@ -117,6 +120,14 @@ type (
 		IsAnimated bool `json:"is_animated"`
 		IsVideo    bool `json:"is_video"`
 	}
+	// entity is a formatting or mention entity of a message text or caption; offsets and
+	// lengths count UTF-16 code units.
+	entity struct {
+		Type   string `json:"type"`
+		Offset int    `json:"offset"`
+		Length int    `json:"length"`
+		User   *user  `json:"user"`
+	}
 	message struct {
 		MessageID      int64     `json:"message_id"`
 		From           *user     `json:"from"`
@@ -140,8 +151,10 @@ type (
 		Poll *struct {
 			Question string `json:"question"`
 		} `json:"poll"`
-		MigrateToChatID   int64 `json:"migrate_to_chat_id"`
-		MigrateFromChatID int64 `json:"migrate_from_chat_id"`
+		Entities          []entity `json:"entities"`
+		CaptionEntities   []entity `json:"caption_entities"`
+		MigrateToChatID   int64    `json:"migrate_to_chat_id"`
+		MigrateFromChatID int64    `json:"migrate_from_chat_id"`
 	}
 	update struct {
 		UpdateID    int64    `json:"update_id"`
@@ -159,7 +172,7 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 		return ctxErr(ctx, err)
 	}
 	c.mu.Lock()
-	c.selfID = me.ID
+	c.selfID, c.selfUsername = me.ID, me.Username
 	c.mu.Unlock()
 	if me.Username != "" {
 		h.Account("@" + me.Username) // ACC-07
@@ -231,8 +244,40 @@ func (c *Connector) handle(ctx context.Context, h connectors.Handler, m *message
 	if m.ReplyToMessage != nil {
 		in.ReplyToID = strconv.FormatInt(m.ReplyToMessage.MessageID, 10)
 	}
+	c.mu.Lock()
+	selfID, selfUsername := c.selfID, c.selfUsername
+	c.mu.Unlock()
+	in.MentionsAccount = mentions(m.Text, m.Entities, selfID, selfUsername) ||
+		mentions(m.Caption, m.CaptionEntities, selfID, selfUsername)
 	c.content(&in, m)
 	h.Inbound(ctx, in)
+}
+
+// mentions tells whether the entities mention the bot (CID-12): a "mention" of its @username
+// or a "text_mention" of its user id.
+func mentions(text string, entities []entity, selfID int64, selfUsername string) bool {
+	for _, e := range entities {
+		switch e.Type {
+		case "mention":
+			if selfUsername != "" && strings.EqualFold(entityText(text, e), "@"+selfUsername) {
+				return true
+			}
+		case "text_mention":
+			if selfID != 0 && e.User != nil && e.User.ID == selfID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// entityText is the text an entity covers. Telegram offsets and lengths are UTF-16 code units.
+func entityText(text string, e entity) string {
+	units := utf16.Encode([]rune(text))
+	if e.Offset < 0 || e.Length <= 0 || e.Offset+e.Length > len(units) {
+		return ""
+	}
+	return string(utf16.Decode(units[e.Offset : e.Offset+e.Length]))
 }
 
 // content sets the kind and media of a message (TG-04: media are fetched with getFile).

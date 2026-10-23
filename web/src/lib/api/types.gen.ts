@@ -743,6 +743,12 @@ export interface HookInboundRequest {
   sender_name?: string;
   text: string;
   message_id?: string;
+  /**
+   * MentionsAccount tells that the message mentions the account. A webhook chat is a channel,
+   * so while the connection's groups_mentions_only is on a message without it is not
+   * delivered (CID-12).
+   */
+  mentions_account?: boolean;
 }
 /**
  * HookOutboundEvent is the JSON a webhook connector POSTs to its outbound URL (HOOK-03).

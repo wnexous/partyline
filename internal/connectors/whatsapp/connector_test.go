@@ -260,8 +260,33 @@ func TestRunDeliversMessagesOfItsInstance(t *testing.T) {
 	require.Equal(t, "hello", in.Text)
 }
 
-// ACC-07: the account label is the masked phone number of the connection's instance, from the
-// jid evolution-go reports for it (device suffix removed). Only the last 4 digits are shown,
+// CID-12: a group message mentions the number when its contextInfo lists the connection's jid
+// (or, for an account evolution-go reports by LID, that LID) as mentioned; another number and a
+// message without context are not mentions.
+func TestRunReportsMentionsOfTheNumber(t *testing.T) {
+	f := newFakeEvolution(t)
+	rec := connectortest.NewRecorder()
+	sock := start(t, newConnector(t, f), f, rec)
+	push(t, sock, frame(t, testInstance, groupInfo("MEN1"),
+		`{"extendedTextMessage":{"text":"@acme look","contextInfo":{"mentionedJid":["5511999990000@s.whatsapp.net"]}}}`))
+	push(t, sock, frame(t, testInstance, groupInfo("MEN2"),
+		`{"extendedTextMessage":{"text":"@other look","contextInfo":{"mentionedJid":["5511999991234@s.whatsapp.net"]}}}`))
+	push(t, sock, frame(t, testInstance, groupInfo("MEN3"), `{"conversation":"no context"}`))
+	require.True(t, rec.NextInbound(t).MentionsAccount, "the instance's jid is mentioned")
+	require.False(t, rec.NextInbound(t).MentionsAccount, "another number is mentioned")
+	require.False(t, rec.NextInbound(t).MentionsAccount, "no context")
+
+	f.mu.Lock()
+	f.instances = []map[string]any{{"name": "acme", "token": acmeToken, "websocketEnable": true, "connected": true, "jid": "100000000000001@lid"}}
+	f.mu.Unlock()
+	rec = connectortest.NewRecorder()
+	sock = start(t, newConnector(t, f), f, rec)
+	push(t, sock, frame(t, testInstance, groupInfo("MEN4"),
+		`{"extendedTextMessage":{"text":"@me look","contextInfo":{"mentionedJid":["100000000000001@lid"]}}}`))
+	require.True(t, rec.NextInbound(t).MentionsAccount, "the account's LID is mentioned")
+}
+
+// ACC-07: the account label is the masked phone number of the connection's instance, from the// jid evolution-go reports for it (device suffix removed). Only the last 4 digits are shown,
 // and a jid that is no phone number (a LID, none) adds nothing.
 func TestRunReportsTheMaskedNumberOfItsInstance(t *testing.T) {
 	f := newFakeEvolution(t)

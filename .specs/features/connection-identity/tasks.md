@@ -419,8 +419,8 @@ Room posting, people and DM creation, `autoGroup`, `autoRoute` and `platformDM` 
 **Reuses**: captured update payloads
 **Requirement**: CID-12
 **Done when**:
-- [ ] Tests: mention, text_mention, another bot's mention (false), no entities (false)
-- [ ] Gate check passes: `make check`
+- [x] Tests: mention, text_mention, another bot's mention (false), no entities (false)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(telegram): report mentions of the bot`
@@ -433,8 +433,8 @@ Room posting, people and DM creation, `autoGroup`, `autoRoute` and `platformDM` 
 **Reuses**: captured gateway payloads
 **Requirement**: CID-12
 **Done when**:
-- [ ] Tests: bot mentioned, other user mentioned (false), `@everyone` only (false)
-- [ ] Gate check passes: `make check`
+- [x] Tests: bot mentioned, other user mentioned (false), `@everyone` only (false)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(discord): report mentions of the bot`
@@ -447,8 +447,8 @@ Room posting, people and DM creation, `autoGroup`, `autoRoute` and `platformDM` 
 **Reuses**: captured evolution-go frames, `instanceNumber`
 **Requirement**: CID-12
 **Done when**:
-- [ ] Tests: own number mentioned, another number mentioned (false), no context (false)
-- [ ] Gate check passes: `make check`
+- [x] Tests: own number mentioned, another number mentioned (false), no context (false)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(whatsapp): report mentions of the number`
@@ -461,8 +461,8 @@ Room posting, people and DM creation, `autoGroup`, `autoRoute` and `platformDM` 
 **Reuses**: webhook handler tests
 **Requirement**: CID-12
 **Done when**:
-- [ ] e2e: the payload with `mentions_account` true or false reaches the pipeline flag; a non-boolean value → 422
-- [ ] Gate check passes: `make check`
+- [x] e2e: the payload with `mentions_account` true or false reaches the pipeline flag; a non-boolean value → 422
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(webhook): accept mentions_account`

@@ -14,6 +14,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/validation"
 )
 
 const secret = "synthetic-webhook-secret"
@@ -71,6 +72,26 @@ func TestReceiveHookMapsPayload(t *testing.T) {
 		ChatID: "alerts", ChatTitle: "Alerts", ChatKind: "channel", MessageID: "m-9", SenderID: "ci", SenderName: "CI",
 		Kind: "text", Text: "build failed", At: now,
 	}, in)
+}
+
+// CID-12: the payload's mentions_account reaches Inbound.MentionsAccount; a non-boolean value is
+// refused as an invalid field and hands nothing to the pipeline.
+func TestReceiveHookMentionsAccount(t *testing.T) {
+	now := time.Unix(1792497600, 0)
+	c, rec := startHook(t, &now)
+	require.NoError(t, c.ReceiveHook(context.Background(), request(now,
+		`{"chat_id":"alerts","sender_id":"ci","text":"look","mentions_account":true}`)))
+	require.True(t, rec.NextInbound(t).MentionsAccount)
+	require.NoError(t, c.ReceiveHook(context.Background(), request(now,
+		`{"chat_id":"alerts","sender_id":"ci","text":"quiet","mentions_account":false}`)))
+	require.False(t, rec.NextInbound(t).MentionsAccount)
+
+	err := c.ReceiveHook(context.Background(), request(now,
+		`{"chat_id":"alerts","sender_id":"ci","text":"bad","mentions_account":"yes"}`))
+	var invalid *validation.Error
+	require.ErrorAs(t, err, &invalid)
+	require.Equal(t, map[string]string{"mentions_account": "must be a boolean"}, invalid.Fields)
+	require.True(t, rec.NoInbound(), "an invalid payload is not a message")
 }
 
 // numbered is a distinct valid payload.
