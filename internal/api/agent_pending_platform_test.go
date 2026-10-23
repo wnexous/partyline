@@ -56,7 +56,7 @@ func TestPendingReturnsPlatformEventsAndAcknowledgesThem(t *testing.T) {
 	})
 
 	res := f.pendingAs("Atlas", "?platform=1").RequireStatus(http.StatusOK)
-	require.Equal(t, []string{"items", "platform"}, keysOf(t, res.Body))
+	require.Equal(t, []string{"dropped", "items", "platform"}, keysOf(t, res.Body))
 	got := testkit.Decode[dto.AgentPending](res)
 	require.Equal(t, []dto.AgentMessage{}, got.Items)
 	require.Len(t, got.Platform, 2)
@@ -179,7 +179,7 @@ func TestPendingPlatformWaitLongPolls(t *testing.T) {
 	start := time.Now()
 	res := f.pendingAs("Atlas", "?platform=1&wait=1").RequireStatus(http.StatusOK)
 	require.GreaterOrEqual(t, time.Since(start), time.Second)
-	require.JSONEq(t, `{"items":[],"platform":[]}`, string(res.Body))
+	require.JSONEq(t, `{"items":[],"platform":[],"dropped":0}`, string(res.Body))
 
 	go func() {
 		time.Sleep(300 * time.Millisecond)
@@ -250,4 +250,96 @@ func TestPendingPlatformAuthorizationMatrix(t *testing.T) {
 	got := f.pendingPlatform(t, "Atlas", "?platform=1")
 	require.Len(t, got.Platform, 1)
 	require.Equal(t, id, got.Platform[0].ID)
+}
+
+// CID-10: a harness that polls is told how many of its platform messages the server dropped (older than
+// 7 days, or over the bound of 5,000), the way the WebSocket tells a session on connect: GET
+// /agent/pending?platform=1 returns the count once, and the count starts again after it.
+func TestPendingTellsAPlatformPollHowManyMessagesWereDropped(t *testing.T) {
+	f := newPlatformWS(t)
+	f.expire(t, 2, "old")
+	require.Equal(t, int64(2), f.dropped(t, f.atlas), "fixture sanity")
+
+	res := f.pendingAs("Atlas", "?platform=1").RequireStatus(http.StatusOK)
+	require.Equal(t, []string{"dropped", "items", "platform"}, keysOf(t, res.Body))
+	require.Equal(t, int64(2), testkit.Decode[dto.AgentPending](res).Dropped, "the count of the first poll")
+	require.Zero(t, f.dropped(t, f.atlas), "it was taken")
+	require.Zero(t, f.pendingPlatform(t, "Atlas", "?platform=1").Dropped, "a second poll is told nothing")
+
+	f.expire(t, 3, "again")
+	require.Equal(t, int64(3), f.pendingPlatform(t, "Atlas", "?platform=1").Dropped, "the count starts anew: only what was dropped since")
+}
+
+// CID-10: the count comes with the messages that wait, and only once; a poll that finds nothing else
+// still returns it, at once, instead of waiting out wait=N (the AI would hear about the loss late).
+func TestPendingDroppedCountComesWithTheMessagesAndEndsAWait(t *testing.T) {
+	f := newPlatformWS(t)
+	f.expire(t, 4, "old")
+	waiting := f.enqueue(t, f.atlas, f.group, "new1", "still waiting")
+
+	got := f.pendingPlatform(t, "Atlas", "?platform=1")
+	require.Equal(t, int64(4), got.Dropped)
+	require.Len(t, got.Platform, 1)
+	require.Equal(t, waiting, got.Platform[0].ID, "the notice rides along with the queued message")
+
+	f.expire(t, 1, "later")
+	start := time.Now()
+	long := f.pendingPlatform(t, "Atlas", "?platform=1&wait=30")
+	require.Equal(t, int64(1), long.Dropped)
+	require.Empty(t, long.Platform)
+	require.Less(t, time.Since(start), 10*time.Second, "the count ended the wait")
+	start = time.Now()
+	require.Zero(t, f.pendingPlatform(t, "Atlas", "?platform=1&wait=1").Dropped)
+	require.GreaterOrEqual(t, time.Since(start), time.Second, "with nothing to tell, the wait runs out")
+}
+
+// CID-10 (L-018: only the parameter differs from the tests above): a poll without platform=1, with 0 or
+// with only wait, neither returns the count nor takes it; the next platform reader is told.
+func TestPendingWithoutThePlatformParameterLeavesTheDroppedCount(t *testing.T) {
+	f := newPlatformWS(t)
+	f.expire(t, 2, "old")
+
+	for _, query := range []string{"", "?platform=0", "?wait=0"} {
+		res := f.pendingAs("Atlas", query).RequireStatus(http.StatusOK)
+		require.Equal(t, []string{"items"}, keysOf(t, res.Body), "pending%s", query)
+		require.Equal(t, int64(2), f.dropped(t, f.atlas), "pending%s leaves the count", query)
+	}
+	f.pendingAs("Atlas", "?platform=true").RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+	require.Equal(t, int64(2), f.dropped(t, f.atlas), "a refused request takes nothing")
+
+	require.Equal(t, int64(2), f.pendingPlatform(t, "Atlas", "?platform=1").Dropped)
+}
+
+// CID-10 (authorization matrix): the count is the AI's own. The AI that was told reads it; another AI of
+// the owner, the AI of the same folder name of another user (who may use the first AI, or nothing) and
+// every caller that is not an AI see none of it and take none of it.
+func TestPendingDroppedCountBelongsToTheAI(t *testing.T) {
+	f := newPlatformWS(t)
+	bob, carol := f.env.NewUser("bob"), f.env.NewUser("carol")
+	shareAgent(f.alice, f.atlas, bob.User.ID) // bob may use Atlas
+	f.env.NewAI(bob, "Atlas")                 // and has an AI of the same name
+	f.env.NewAI(carol, "Atlas")
+	f.expire(t, 2, "old")
+
+	for name, c := range map[string]*testkit.Client{
+		"another AI of the owner":            f.token.AsAgent("Notes"),
+		"the same-named AI of a use grantee": bob.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas"),
+		"the same-named AI of a stranger":    carol.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas"),
+	} {
+		c.T = t
+		require.Zero(t, testkit.Decode[dto.AgentPending](c.Get("/api/v1/agent/pending?platform=1").RequireStatus(http.StatusOK)).Dropped, name)
+		require.Equal(t, int64(2), f.dropped(t, f.atlas), "%s took nothing", name)
+	}
+	for name, c := range map[string]*testkit.Client{
+		"the owner's session": f.alice, "the owner's user token": f.alice.Token(dto.TokenKindUser, "script"),
+		"a grantee": bob, "a stranger": carol, "an admin": f.env.NewAdmin("root"),
+	} {
+		c.T = t
+		c.Get("/api/v1/agent/pending?platform=1").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+		require.Equal(t, int64(2), f.dropped(t, f.atlas), "%s took nothing", name)
+	}
+	f.env.Anon().Get("/api/v1/agent/pending?platform=1").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	require.Equal(t, int64(2), f.dropped(t, f.atlas))
+
+	require.Equal(t, int64(2), f.pendingPlatform(t, "Atlas", "?platform=1").Dropped, "the AI itself is told")
 }

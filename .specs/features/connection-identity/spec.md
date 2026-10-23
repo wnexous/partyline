@@ -157,7 +157,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-07 | P1: Direct delivery | Execute | Implementing (T7) |
 | CID-08 | P1: Direct delivery | Execute | Implementing (T2, T3, T12, T13) |
 | CID-09 | P1: Direct delivery | Execute | Implementing (T3, T4, T12, T13) |
-| CID-10 | P1: Direct delivery | Execute | Implementing (T4, T12) |
+| CID-10 | P1: Direct delivery | Execute | Implementing (T4, T12, T39) |
 | CID-11 | P1: Direct delivery | Execute | Implementing (T3) |
 | CID-12 | P1: Direct delivery | Execute | Implementing (T7-T11) |
 | CID-13 | P1: Direct delivery | Execute | Implementing (T7) |

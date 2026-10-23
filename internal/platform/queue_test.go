@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
@@ -488,6 +489,41 @@ func TestTakeDroppedReadsAndResetsTheCounter(t *testing.T) {
 	require.Zero(t, f.takeDropped(t, f.atlas), "reading resets")
 	require.Equal(t, int64(1), f.takeDropped(t, f.notes), "each AI counts its own")
 	require.Zero(t, f.takeDropped(t, "no-such-agent"))
+}
+
+// CID-10: the count is taken once. Callers that race for it (a hook and a wait_for_messages of the same
+// AI, or the WebSocket and a poll) are not both told: exactly one gets the count, the others get 0.
+func TestTakeDroppedGivesTheCountToExactlyOneTaker(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
+		return q.AddPlatformDropped(ctx, db.AddPlatformDroppedParams{N: 7, AgentID: f.atlas})
+	}))
+
+	const takers = 8
+	got := make([]int64, takers)
+	var wg sync.WaitGroup
+	for i := range takers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			n, err := f.q.TakeDropped(ctx, f.atlas)
+			assert.NoError(t, err)
+			got[i] = n
+		}()
+	}
+	wg.Wait()
+
+	var total, told int64
+	for _, n := range got {
+		total += n
+		if n > 0 {
+			told++
+		}
+	}
+	require.Equal(t, int64(7), total, "the whole count was handed out")
+	require.Equal(t, int64(1), told, "to one taker")
+	require.Zero(t, f.takeDropped(t, f.atlas))
 }
 
 // The event the gateway listens to: one PlatformQueued per queued item, after the item exists,

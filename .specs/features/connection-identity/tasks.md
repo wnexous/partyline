@@ -930,9 +930,9 @@ A request carrying them changes nothing.
 **Reuses**: `platform.Queue.TakeDropped`, the WebSocket notice text
 **Requirement**: CID-10
 **Done when**:
-- [ ] A poll with `platform=1` after drops returns the count once; a second poll returns 0; a poll without `platform=1` leaves the count for the next platform reader
-- [ ] The hook and `wait_for_messages` output show the notice
-- [ ] Gate check passes: `make check`
+- [x] A poll with `platform=1` after drops returns the count once; a second poll returns 0; a poll without `platform=1` leaves the count for the next platform reader
+- [x] The hook and `wait_for_messages` output show the notice
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(api): tell polling harnesses about dropped platform messages`

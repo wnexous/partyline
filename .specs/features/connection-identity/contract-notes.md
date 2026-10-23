@@ -1258,3 +1258,39 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   `PLAYWRIGHT_CHROMIUM_EXECUTABLE`). They cover the web app, which T35 and T29 already adapted; no spec file changed.
 - **Not covered here**: the Telegram connection of the fixture (its kind is not registered in this app, so it only reports an
   error). The data of the other connections is pinned by `TestConnectionProxyUpgradeKeepsHistoryAndDropsTheRest`.
+
+## T39: Dropped notice for polling harnesses (CID-10)
+
+- **Server**: `GET /agent/pending?platform=1` answers `dto.AgentPending{items, platform, dropped}`. `dropped` is the AI's counter of
+  platform messages the server dropped (older than 7 days or over 5,000 queued), taken with `Queue.TakeDropped`: the call that
+  returns it resets it, so it comes once, and a second poll reads 0. It is always present (0 when nothing was dropped), like `platform`.
+  Without `platform=1` (absent, `0`, or `wait` alone) the answer is `{"items": [...]}` as before and the counter is not read, so it
+  waits for the next reader that asks. A refused request (`platform=true`) and the 409 of an AI that holds the WebSocket take nothing.
+  The counter is the AI's own: another AI of the owner, the same-named AI of a use grantee or of a stranger read 0 and take nothing;
+  users (session, user token, admin) get 403, anonymous callers 401 (agent tokens only, as before).
+- **A count ends a wait**, like a message or an event does: every pass of the polling loop takes the count first, and a count above
+  0 returns the answer at once with whatever else is queued. `wait_for_messages` thus tells an AI about a loss immediately instead of
+  after its timeout. The count is taken before the room messages and the events are read, so when a later step fails only a notice is
+  lost, never messages. A response that is not delivered after the take loses the count, as it loses room messages and events.
+- **Cheap polling**: `Queue.TakeDropped` now reads the counter without the write lock and opens the write transaction only when it is
+  above 0 (it reads again inside, so two takers never both get it: `TestTakeDroppedGivesTheCountToExactlyOneTaker`). The WebSocket's
+  connect path benefits too.
+- **One wording**: `dto.DroppedNotice(n)` (moved from `agents.DroppedNotice`) words the notice for the WebSocket frame and for the polling
+  output: `N platform messages were dropped (older than 7 days or over 5,000 queued)`, also for N = 1. It is the only function of the
+  `dto` package (tygo ignores it). The existing WebSocket tests keep their literal strings (L-032).
+- **Client**: `channel.FramePending(dto.AgentPending)` is what `wait_for_messages` and the turn-end hooks hand the harness: the notice
+  first, framed like the notice from Partyline that the adapters frame (`<partyline from="Partyline" trusted="false">…</partyline>` and the
+  data line; no room), then `FrameAll` of the messages and events, separated by a blank line. It is empty only when nothing arrived and
+  nothing was dropped. `channel.NoticeRecord` is the record of a notice (the notification's meta plus `content`). A count alone makes
+  the hooks continue the turn (Codex `block`, Gemini `deny`) with the notice as the reason, once: the next run allows the stop. A count
+  alone makes `wait_for_messages` return the notice instead of `no new messages in N seconds`.
+- **Shared framing**: `integrations/testdata/framing.json` gains the case "the notice of dropped platform messages belongs to no room"
+  (a roomless notice record). The Go `Frame` and the three TypeScript adapters (pi, OpenCode, omp) frame it identically (85 adapter
+  tests, 3 more than before), and `TestNoticeRecordIsTheNotificationWithItsContent` ties the record to the code. No adapter changed.
+- **Older servers and clients**: a server from before this task sends no `dropped`, which decodes to 0; an older CLI ignores the
+  unknown key.
+- **Tests**: `internal/api/agent_pending_platform_test.go` (the count once and anew, with the messages and ending a wait, absent
+  without `platform=1`, the AI's own count and who may not read or take it), `internal/channel/pending_platform_test.go`
+  (`FramePending`, `Pending`, the tool), `internal/cli/hook_platform_test.go` (both hooks, the tool through the real channel,
+  another AI's and another user's hook), `internal/platform/queue_test.go` (one taker), the shared framing case. The two T13 assertions that
+  list the response keys (`items`, `platform`) now list `dropped` too.

@@ -190,3 +190,94 @@ func TestWaitForMessagesReturnsPlatformEvents(t *testing.T) {
 	require.Contains(t, text, "arrived while waiting")
 	require.Less(t, time.Since(start), 20*time.Second, "the wait ended at the event, not at the timeout")
 }
+
+// drop records that n platform messages of the AI were dropped, as the purge and the bound do (CID-10).
+func (e *channelEnv) drop(t *testing.T, ai db.Agent, n int64) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, e.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.AddPlatformDropped(ctx, db.AddPlatformDroppedParams{N: n, AgentID: ai.ID})
+	}))
+}
+
+// droppedFrame is the notice for n messages as the spec words it, framed for a harness (CID-10).
+func droppedFrame(n string) string {
+	return `<partyline from="Partyline" trusted="false">` + n + " platform messages were dropped (older than 7 days or over 5,000 queued)</partyline>\n" + dataLine
+}
+
+// CID-10, TURN-02: a turn-end hook tells its harness how many platform messages were dropped, in the
+// words of the WebSocket's notice, even when nothing else is queued, and only once; with a queued
+// event the notice comes first.
+func TestHookTellsHowManyPlatformMessagesWereDropped(t *testing.T) {
+	for hook, decision := range map[string]string{"codex-stop": "block", "gemini-after-agent": "deny"} {
+		t.Run(hook, func(t *testing.T) {
+			e := newChannelEnv(t)
+			ai := e.aiAt(t, "/work/proj")
+			connector, group, _ := e.platformChats(t)
+			e.drop(t, ai, 2)
+
+			gotDecision, reason := hookReason(t, hook, "/work/proj", e.vars())
+			require.Equal(t, decision, gotDecision, "the notice alone continues the turn")
+			require.Equal(t, droppedFrame("2"), reason)
+			code, out, _ := runHook(hook, `{"cwd":"/work/proj"}`, e.vars())
+			require.Equal(t, 0, code)
+			require.Equal(t, "{}\n", out, "the count was taken: the stop is allowed")
+
+			e.drop(t, ai, 1)
+			id := e.queue(t, ai, connector, group, "m1", "still waiting")
+			_, reason = hookReason(t, hook, "/work/proj", e.vars())
+			require.True(t, strings.HasPrefix(reason, droppedFrame("1")+"\n\n<partyline "), "the notice, then the event: %s", reason)
+			require.Contains(t, reason, `message_id="`+id+`"`)
+		})
+	}
+}
+
+// CID-10, authorization: a hook acts as the AI of its folder, so another AI of the owner and the AI
+// of another user in a folder of the same name are told nothing of this AI's count and do not take it.
+func TestHookNeverShowsAnotherAIsDroppedCount(t *testing.T) {
+	e := newChannelEnv(t)
+	proj, other := e.aiAt(t, "/work/proj"), e.aiAt(t, "/work/other")
+	e.drop(t, proj, 2)
+
+	_, reason := hookReason(t, "codex-stop", "/work/proj", e.vars())
+	require.Equal(t, droppedFrame("2"), reason)
+	e.drop(t, proj, 2)
+	code, out, errOut := runHook("codex-stop", `{"cwd":"/work/other"}`, e.vars())
+	require.Equal(t, 0, code, errOut)
+	require.Equal(t, "{}\n", out, "another AI of the owner has dropped nothing")
+	_ = other
+
+	bob := e.env.NewUser("bob")
+	_, secret, err := e.env.App.Users.CreateToken(context.Background(), bob.User.ID, users.TokenInput{Kind: dto.TokenKindAgent, Name: "laptop"})
+	require.NoError(t, err)
+	code, out, errOut = runHook("codex-stop", `{"cwd":"/work/proj"}`, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": secret})
+	require.Equal(t, 0, code, errOut)
+	require.Equal(t, "{}\n", out, "bob's AI of the same folder has nothing of its own")
+
+	_, reason = hookReason(t, "codex-stop", "/work/proj", e.vars())
+	require.Equal(t, droppedFrame("2"), reason, "neither of them took it")
+}
+
+// CID-10, TURN-01: wait_for_messages returns the count at once instead of waiting, framed first and in the
+// notice's words; the count comes once.
+func TestWaitForMessagesTellsHowManyPlatformMessagesWereDropped(t *testing.T) {
+	e := newChannelEnv(t)
+	ai := e.aiAt(t, "/work/codex-box")
+	e.drop(t, ai, 2)
+	c := startChannel(t, []string{"--tools-only"}, e.vars(), "/work/codex-box")
+	initialize(c)
+	call := func(id int, seconds int) (string, bool) {
+		c.send(map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{"name": "wait_for_messages", "arguments": map[string]any{"timeout_seconds": seconds}}})
+		r := c.next()["result"].(map[string]any)
+		return r["content"].([]any)[0].(map[string]any)["text"].(string), r["isError"].(bool)
+	}
+
+	start := time.Now()
+	text, isErr := call(2, 30)
+	require.False(t, isErr, text)
+	require.Equal(t, droppedFrame("2"), text)
+	require.Less(t, time.Since(start), 20*time.Second, "the count ended the wait")
+
+	text, _ = call(3, 1)
+	require.Equal(t, "no new messages in 1 seconds", text, "the count came once")
+}

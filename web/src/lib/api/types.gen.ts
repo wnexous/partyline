@@ -276,6 +276,13 @@ export interface AgentPlatformAckFrame {
 export interface AgentPending {
   items: AgentMessage[];
   platform: PlatformEvent[];
+  /**
+   * Dropped is how many of the AI's platform messages the server dropped since it last told the AI,
+   * for being older than 7 days or over the bound of 5,000 (CID-10): the WebSocket's notice for the
+   * harnesses that poll (DroppedNotice words it). The call that returns it resets it, so it comes
+   * once, and it ends a wait like a message does. Always present; 0 when nothing was dropped.
+   */
+  dropped: number /* int64 */;
 }
 /**
  * AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its

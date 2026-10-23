@@ -72,6 +72,18 @@ func Record(m dto.AgentMessage) map[string]string {
 	return r
 }
 
+// NoticeRecord is the record of a server notice: the meta fields of its notification plus
+// "content". It belongs to no room unless the notice names one.
+func NoticeRecord(n dto.AgentNoticeFrame) map[string]string {
+	f := FormatNotice(n)
+	r := make(map[string]string, len(f.Meta)+1)
+	for k, v := range f.Meta {
+		r[k] = v
+	}
+	r["content"] = f.Content
+	return r
+}
+
 // PlatformRecord is the record of a platform event: the meta fields of its notification plus
 // "content" (CID-06).
 func PlatformRecord(e dto.PlatformEvent) map[string]string {
@@ -82,6 +94,23 @@ func PlatformRecord(e dto.PlatformEvent) map[string]string {
 	}
 	r["content"] = n.Content
 	return r
+}
+
+// FramePending frames what a poll of GET /agent/pending?platform=1 returned, which is what
+// wait_for_messages and the turn-end hooks hand the harness: first the notice of the platform
+// messages the server dropped (CID-10), in the words of the WebSocket's notice and framed like a
+// notice from Partyline, then the messages and events as FrameAll frames them. It is empty when
+// nothing arrived and nothing was dropped.
+func FramePending(p dto.AgentPending) string {
+	body := FrameAll(p.Items, p.Platform...)
+	if p.Dropped <= 0 {
+		return body
+	}
+	notice := Frame(NoticeRecord(dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Text: dto.DroppedNotice(p.Dropped)}))
+	if body == "" {
+		return notice
+	}
+	return notice + "\n\n" + body
 }
 
 // FrameAll frames each message and each platform event, separated by a blank line and with the
