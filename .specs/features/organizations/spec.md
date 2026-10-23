@@ -170,10 +170,10 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | OMEM-07 | P1: Members and permissions | Tasks | In Tasks |
 | OMEM-08 | Edge cases | Tasks | In Tasks |
 | POS-01 | P1: Org chart of positions | Tasks | In Tasks |
-| POS-02 | P1: Org chart of positions | Tasks | In Tasks |
-| POS-03 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-02 | P1: Org chart of positions | Tasks | Implementing |
+| POS-03 | P1: Org chart of positions | Tasks | Implementing |
 | POS-04 | P1: Org chart of positions | Tasks | In Tasks |
-| POS-05 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-05 | P1: Org chart of positions | Tasks | Implementing |
 | POS-06 | P1: Org chart of positions | Tasks | In Tasks |
 | POS-07 | P1: Org chart of positions | Tasks | In Tasks |
 | POS-08 | P1: Org chart of positions | Tasks | In Tasks |

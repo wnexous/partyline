@@ -94,3 +94,41 @@ Where a section refines the design, it says so.
   `TestPlatformQueueMigrationGivesExistingConnectorsTheDefaults` stop at 0018,
   `TestProjectsBecomeAgentMembers` at 0016). `TestUpgradeV03KeepsEveryRow` still runs the whole
   upgrade; its only change is that the grants table is empty afterwards.
+
+## T3: Chart rules (POS-02, POS-03, POS-05)
+
+- **Package** `internal/orgs` (`chart.go`), pure: no I/O, no dependency on another partyline package.
+  `Permission` is `admin|member|guest` (`PermissionAdmin`, `PermissionMember`, `PermissionGuest`,
+  `Permission.Valid()`).
+- **Types**, as in the design: `Member{IID, Permission, PositionID, CreatorIID, InviterIID}` (empty
+  string = none), `Position{ID, Name, ParentID}` and
+  `Chart{OrgID, Positions map[string]Position, Members map[string]Member}`. A `Chart` is a snapshot;
+  nothing in it changes after it is built.
+- **`(*Chart).Manages(a, b)`**: false when `a == b`, when `a` is not a member, or when `b` is not.
+  Otherwise it walks `b` and then every member `b` answers to, transitively, and is true as soon as
+  `a` is one of those (not `b`) or `a`'s position is **strictly above** that member's. A member
+  answers to:
+  - its **creator**, only while it holds **no position**;
+  - its **inviter**, only while its permission is `guest` (a stale inviter on a member or admin is
+    ignored).
+  The walk follows members only (a creator or inviter who left the organization ends the chain
+  there) and visits each member once (a creator or inviter cycle ends it). The `admin` permission
+  gives no management.
+- **`(*Chart).Above(pa, pb)`**: `pa` is a proper ancestor of `pb`. Empty ids, unknown ids and
+  `pa == pb` are false. The walk is bounded, so a corrupt parent cycle ends it.
+- **`(*Chart).HasCycle(positionID, newParentID)`**: true when the new parent is the position
+  itself or one of its descendants; an empty `newParentID` (a root) is false. Callers load the chart
+  in the transaction that changes the parent (POS-02).
+- **`(*Chart).CanDelete(a, b)`**: false for `a == b` or when either is not a member; true when `a`
+  is an `admin`, or when `b` is a `guest` and `Manages(a, b)`. Which means "delete" removes is the
+  caller's business (POS-06).
+- **`(*Chart).ManagersOf(b) []string`** (identity ids): exactly the `a` with `Manages(a, b)`,
+  **nearest first**. Distance = steps from `b`: a creator or inviter is one step from the member it
+  answers to, and the holders of the position above a member's are one step further, and so on
+  up the chart. The same manager reached two ways counts once at the shorter distance. Ties break by
+  id (ids are UUIDv7, so the older identity first). A root holder, a stranger, or a member only
+  admins reach has none. The welcome frame (T33) uses the first 10.
+- **`(*Chart).ManagedBy(a) map[string]bool`**: the set of `b` with `Manages(a, b)` (only true entries;
+  empty for a non-member). `Manages`, `ManagersOf` and `ManagedBy` are pinned to agree for every pair
+  by `TestManagesManagersOfAndManagedByAgree`.
+- **`(*Chart).IsAdmin(iid)`** and **`(*Chart).Member(iid)`** are plain lookups.

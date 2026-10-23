@@ -238,7 +238,7 @@ All of them are pure, with no I/O.
 **Reuses**: none
 **Requirement**: POS-03, POS-02, POS-05
 **Done when**:
-- [ ] Table tests, one per predicate condition (L-042):
+- [x] Table tests, one per predicate condition (L-042):
   - above vs. same level vs. below;
   - two levels above;
   - B without a position: A is the creator; A is above the creator; A is a peer of the creator; a transitive chain of two positionless creators; a creator who is not a member;
@@ -246,17 +246,17 @@ All of them are pure, with no I/O.
   - a == b;
   - a root holder has no manager;
   - a creator cycle terminates
-- [ ] Guest chain, one case per condition (L-042):
+- [x] Guest chain, one case per condition (L-042):
   - the inviter manages its guest;
   - the inviter's inviter manages a guest-of-a-guest;
   - the position manager of an inviter manages the inviter's guest;
   - an inviter who left the org breaks the chain;
   - an inviter cycle terminates;
   - a peer of the inviter does not manage the guest
-- [ ] `CanDelete`, one case per condition: an admin deletes a member it does not manage; an inviter deletes its guest; a manager cannot delete a member below; a peer cannot delete a guest it did not invite; nobody deletes itself
-- [ ] `HasCycle`: self-parent, a descendant as parent, and a valid move
-- [ ] `ManagersOf` order is nearest first
-- [ ] Gate check passes: `make check`
+- [x] `CanDelete`, one case per condition: an admin deletes a member it does not manage; an inviter deletes its guest; a manager cannot delete a member below; a peer cannot delete a guest it did not invite; nobody deletes itself
+- [x] `HasCycle`: self-parent, a descendant as parent, and a valid move
+- [x] `ManagersOf` order is nearest first
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(orgs): compute who manages whom in an org chart`
