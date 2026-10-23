@@ -1,17 +1,9 @@
-import {
-  BotIcon,
-  EllipsisIcon,
-  MessageCircleIcon,
-  MessageSquareIcon,
-  UserIcon,
-  XIcon,
-} from "lucide-react";
-import { type ReactNode, useId } from "react";
+import { BotIcon, EllipsisIcon, MessageSquareIcon, UserIcon, XIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { MemberSettings, memberSettingsSummary } from "@/components/member-settings";
-import { chatTitle, platformLabel } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,36 +12,27 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Switch } from "@/components/ui/switch";
 import { useStartConversation } from "@/hooks/use-start-conversation";
-import { useAddMember, useMe, useRemoveMember, useUpdateMember } from "@/lib/api/queries";
+import { useAddMember, useMe, useRemoveMember } from "@/lib/api/queries";
 import type { IntelligenceRef, MemberKind, RoomMember } from "@/lib/api/types.gen";
-import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
+import { type MessageKey, useI18n } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 
 /*
- * Room members (UI-10, UI-12, GRP-02): everything wired to the room, shown plainly. AIs and users
- * show their avatar, kind badge and @handle (PROF-09), AIs also live presence; chats show
- * whether agent and people posts go out to them (outbound, DLV-03). The people seen in a bridged
- * chat are not listed: the members API does not return them yet.
+ * Room members (UI-10, UI-12, GRP-02): the room's intelligences, shown plainly. AIs and users show
+ * their avatar, kind badge and @handle (PROF-09), AIs also live presence. Chats are never members
+ * (CID-20, AD-015), so a chat row left in old data is not rendered: there is no outbound switch
+ * and no platform badge any more. External people are not listed either: they are not members.
  */
 
 const GROUPS: { kind: MemberKind; label: MessageKey }[] = [
   { kind: "agent", label: "members.agents" },
-  { kind: "chat", label: "members.chats" },
   { kind: "user", label: "members.users" },
 ];
 
-const CHAT_KIND: Record<string, MessageKey> = {
-  group: "members.chatKind.group",
-  dm: "members.chatKind.dm",
-  channel: "members.chatKind.channel",
-};
-
-/** What a member is called in the panel: untitled chats are named after their platform (CTX-07). */
-function memberName(t: Translate, m: RoomMember): string {
-  return m.kind === "chat" ? chatTitle(t, m.name, m.connector_kind) : m.name;
-}
+/** A chat member can still be in the stored data until the upgrade; it is not shown. */
+const visibleMembers = (members: RoomMember[]) =>
+  members.filter((m) => m.kind === "agent" || m.kind === "user");
 
 export function MemberList({
   roomId,
@@ -62,12 +45,12 @@ export function MemberList({
 }) {
   const { t } = useI18n();
   const presence = useLiveStore((s) => s.presence);
-  const update = useUpdateMember(roomId);
   const remove = useRemoveMember(roomId);
   const add = useAddMember(roomId);
+  const shown = visibleMembers(members);
 
   const onRemove = (m: RoomMember) => {
-    const name = memberName(t, m);
+    const name = m.name;
     remove.mutate(m.id, {
       onSuccess: () =>
         toast(t("members.removed", { name }), {
@@ -81,21 +64,14 @@ export function MemberList({
     });
   };
 
-  const onOutbound = (m: RoomMember, outbound: boolean) => {
-    update.mutate(
-      { memberId: m.id, outbound },
-      { onError: () => toast.error(t("members.updateFailed", { name: memberName(t, m) })) },
-    );
-  };
-
-  if (members.length === 0) {
+  if (shown.length === 0) {
     return <p className="px-4 py-6 text-sm text-muted-foreground">{t("members.empty")}</p>;
   }
 
   return (
     <div className="space-y-5 py-3">
       {GROUPS.map(({ kind, label }) => {
-        const list = members.filter((m) => m.kind === kind);
+        const list = shown.filter((m) => m.kind === kind);
         if (list.length === 0) return null;
         return (
           <section key={kind} aria-label={t(label)}>
@@ -112,7 +88,6 @@ export function MemberList({
                   online={presence[m.member_id]?.online ?? m.online ?? false}
                   canManage={canManage}
                   onRemove={() => onRemove(m)}
-                  onOutbound={(v) => onOutbound(m, v)}
                 />
               ))}
             </ul>
@@ -129,22 +104,19 @@ function MemberRow({
   online,
   canManage,
   onRemove,
-  onOutbound,
 }: {
   roomId: string;
   member: RoomMember;
   online: boolean;
   canManage: boolean;
   onRemove: () => void;
-  onOutbound: (outbound: boolean) => void;
 }) {
   const { t } = useI18n();
-  const switchId = useId();
   const meId = useMe().data?.id;
-  const name = memberName(t, m);
+  const name = m.name;
   // The profile of an AI or user member: avatar, name, badge and @handle instead of an icon.
   const profile = m.kind === "agent" || m.kind === "user" ? m.intelligence : undefined;
-  // PDM-04: nobody messages herself, and a chat is not an intelligence to open a DM with (DM-05).
+  // PDM-04: nobody messages herself; a chat is no intelligence and is never shown here.
   const canMessage = !!profile && !(m.kind === "user" && m.member_id === meId);
   let icon: ReactNode;
   let meta: ReactNode = null;
@@ -161,15 +133,6 @@ function MemberRow({
           <span key={key}>{t(key)}</span>
         ))}
       </>
-    );
-  } else if (m.kind === "chat") {
-    icon = <MessageCircleIcon className="size-4 text-info" aria-hidden="true" />;
-    const kind = m.chat_kind ? CHAT_KIND[m.chat_kind] : undefined;
-    meta = (
-      <span>
-        {platformLabel(m.connector_kind)}
-        {kind ? ` · ${t(kind)}` : ""}
-      </span>
     );
   } else {
     icon = <UserIcon className="size-4 text-muted-foreground" aria-hidden="true" />;
@@ -194,26 +157,6 @@ function MemberRow({
             {meta}
           </p>
         ) : null}
-        {m.kind === "chat" ? (
-          canManage ? (
-            <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-              <Switch
-                id={switchId}
-                size="sm"
-                checked={m.outbound}
-                onCheckedChange={onOutbound}
-                aria-label={t("members.outboundFor", { name })}
-              />
-              <label htmlFor={switchId} aria-hidden="true">
-                {t("members.outbound")}
-              </label>
-            </div>
-          ) : (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {m.outbound ? t("members.outboundOn") : t("members.outboundOff")}
-            </p>
-          )
-        ) : null}
       </div>
       {canMessage && profile ? <MemberDmActions member={m} profile={profile} /> : null}
       {canManage && m.kind === "agent" ? <MemberSettings roomId={roomId} member={m} /> : null}
@@ -235,7 +178,7 @@ function MemberRow({
 /**
  * The actions of a member (PDM-01, PDM-02): "Message privately" opens the DM with an AI or a user,
  * the existing one or a new one, and goes to it. The row decides who gets it: an AI or another user
- * the viewer can see, never the viewer herself and never a chat or a person behind one (PDM-04).
+ * the viewer can see, never the viewer herself and never a person behind a platform DM (PDM-04).
  */
 function MemberDmActions({ member, profile }: { member: RoomMember; profile: IntelligenceRef }) {
   const { t } = useI18n();
@@ -247,7 +190,7 @@ function MemberDmActions({ member, profile }: { member: RoomMember; profile: Int
           variant="ghost"
           size="icon-xs"
           className="shrink-0 text-muted-foreground opacity-60 group-hover/member:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-          aria-label={t("members.actions", { name: memberName(t, member) })}
+          aria-label={t("members.actions", { name: member.name })}
         >
           <EllipsisIcon aria-hidden="true" />
         </Button>

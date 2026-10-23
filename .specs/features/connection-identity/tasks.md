@@ -713,8 +713,8 @@ New frame DTOs are added.
 **Reuses**: `member-settings.tsx`
 **Requirement**: CID-20, CID-22
 **Done when**:
-- [ ] Unit: no chat row, no signature/outbound controls
-- [ ] Gate check passes: `make check`
+- [x] Unit: no chat row, no signature/outbound controls
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): members are intelligences only`

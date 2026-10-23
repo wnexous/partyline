@@ -390,7 +390,7 @@ export const en = {
   "members.agents": "Agents",
   "members.chats": "Chats",
   "members.users": "Users",
-  "members.empty": "No members yet. Add agents and chats so messages have somewhere to go.",
+  "members.empty": "No members yet. Add agents and users so messages have somewhere to go.",
   "members.chatKind.group": "group",
   "members.chatKind.dm": "direct",
   "members.chatKind.channel": "channel",

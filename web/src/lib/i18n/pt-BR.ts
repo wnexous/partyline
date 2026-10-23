@@ -395,7 +395,7 @@ export const ptBR: Dictionary = {
   "members.chats": "Chats",
   "members.users": "Usuários",
   "members.empty":
-    "Nenhum membro ainda. Adicione agentes e chats para as mensagens terem para onde ir.",
+    "Nenhum membro ainda. Adicione agentes e usuários para as mensagens terem para onde ir.",
   "members.chatKind.group": "grupo",
   "members.chatKind.dm": "direto",
   "members.chatKind.channel": "canal",

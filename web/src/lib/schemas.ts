@@ -150,7 +150,6 @@ export const memberSettingsSchema = z.object({
     .string()
     .trim()
     .refine((v) => textLength(v) <= MaxMemberDisplayName, msg("validation.displayName")),
-  sign_outbound: z.boolean(),
   delivery: z.enum([DeliveryModeAll, DeliveryModeMentions, DeliveryModeTrusted]),
   keywords: z.array(z.string()).max(MaxMemberKeywords, msg("validation.keywords")),
 });

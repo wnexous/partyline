@@ -838,3 +838,20 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - Tests: `web/src/components/member-picker.test.tsx` pins the only sections (AIs, Users), the
   absence of chat candidates even when a mocked `GET /chats` answers, and that the picker never
   requests `/chats`. The room page tests keep the AI/user add flows and no longer expect chats.
+
+## T26: Member list and settings without chats (CID-20, CID-22)
+
+- `web/src/components/member-list.tsx` renders only `agent` and `user` members. A stored `chat`
+  member is filtered out before the empty check, so a room that only still holds a chat shows the
+  empty state instead of a row. Its platform badge and the per-chat outbound switch (DLV-03/05)
+  are gone with the row; there is no `PATCH .../members/{id} {outbound}` left in the UI.
+- `web/src/components/member-settings.tsx` (and `memberSettingsSchema`) lose `sign_outbound`: the
+  form no longer edits or sends it, and `memberSettingsSummary` no longer shows "unsigned".
+  Display name, delivery and keywords stay. The member list reads the summary as before.
+- Copy: `members.empty` now says "Add agents and users ..." in `en` and `pt-BR`. The retired
+  `members.chats`, `members.chatKind.*`, `members.outbound*`, `memberSettings.sign*` and
+  `memberSettings.unsigned` strings stay until the remaining screens are cleaned; nothing reads
+  the ones whose control is gone except the connector page's chat-kind labels (T29).
+- Tests: `member-list.test.tsx` pins the two sections, the hidden chat row and the absence of a
+  switch/outbound text; `member-settings.test.tsx` pins no signature control and a PATCH without
+  `sign_outbound`; the room page tests follow the same rows.
