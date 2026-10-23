@@ -197,6 +197,132 @@ It also adds the sqlc queries the queue needs.
 **Gate**: build
 **Commit**: `feat(platform): queue platform messages per AI`
 
+### Phase 3: Inbound to the queue
+
+```
+T5 -> T6 -> T7
+T7 -> T8
+T7 -> T9
+T7 -> T10
+T7 -> T11
+```
+
+### Phase 4: Delivery to the session
+
+```
+T12 -> T14 -> T16
+T13 -> T15
+```
+
+### Phase 5: Answering through the connection
+
+```
+T17 -> T18
+T17 -> T19 -> T20
+```
+
+### Phase 6: Lifecycle and guards
+
+```
+T21 -> T22
+T23
+T24
+```
+
+### Phase 7: Web
+
+```
+T25
+T26
+T27
+T28
+T29
+T30
+T31
+T32
+```
+
+### Phase 8: Server retirement
+
+```
+T33 -> T35
+T34 -> T35
+```
+
+### Phase 9: Upgrade and release
+
+```
+T36 -> T37 -> T38
+```
+
+---
+
+## Task Breakdown
+
+### Phase 1: Done
+
+#### T1: WhatsApp connection uses exactly one instance [done]
+
+**What**: `instances` is required. With zero or several instances the connection reports `StatusError` with the detail `choose the instance (number) of this connection`, dials nothing and waits for ctx. Sends, reactions and chat listings use only the configured instance.
+**Where**: `internal/connectors/whatsapp/connector.go`
+**Depends on**: None
+**Reuses**: the fake evolution server
+**Requirement**: CID-04
+**Done when**:
+- [x] Implemented and tested in commit `bebd8d1` on branch `wnexous/pl-cid-t27` (contract notes there); merge that branch before T2
+- [x] Gate check passed: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(whatsapp): one instance per connection` (bebd8d1)
+
+### Phase 2: Store and queue
+
+#### T2: Migration 0017 for the platform queue [core]
+
+**What**: `0017_platform_queue.sql` adds:
+- `platform_items`, `platform_attachments` and `platform_sends` with the design's indexes;
+- `agents.platform_dropped`;
+- `connectors.deliver` (default `all`) and `connectors.groups_mentions_only` (default 1).
+
+It also adds the sqlc queries the queue needs.
+**Where**: `internal/store/migrations/0017_platform_queue.sql`
+**Depends on**: None
+**Reuses**: AD-012 `ADD COLUMN` pattern, `openMigratedBefore`
+**Requirement**: CID-08, CID-26, CID-27
+**Done when**:
+- [x] Store test: the tables and columns exist; existing connectors read `deliver=all`, `groups_mentions_only=1` (CID-27); the dedupe index refuses a second `(connector, chat, external_id)` row and accepts empty external ids twice
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(store): add the platform queue`
+
+#### T3: Platform queue service [core]
+
+**What**: New package `internal/platform` with:
+- `Enqueue`: dedup, and the 5,000 cap with the dropped counter;
+- `Unacked`: oldest first;
+- `Ack`: clears the text and is idempotent;
+- `TakeDropped`;
+- `MoveConnector`: a tx helper;
+- `events.PlatformQueued`.
+**Where**: `internal/platform/queue.go`
+**Depends on**: T2
+**Reuses**: `store.WithTx`, `events.Bus`
+**Requirement**: CID-08, CID-09, CID-11, CID-26
+**Done when**:
+- [x] Integration tests:
+  - the same message twice → one item;
+  - the 5,001st item drops the oldest, and the counter reads 1;
+  - `Unacked` orders by seq;
+  - `Ack` clears the text and keeps the metadata;
+  - an ack by another agent is a no-op;
+  - `MoveConnector` moves acked and unacked items of one connection only
+- [x] Gate check passes: `make check`
+**Tests**: integration
+**Gate**: build
+**Commit**: `feat(platform): queue platform messages per AI`
+
 #### T4: Purge job and blob references [core]
 
 **What**: `Queue.Purge`:

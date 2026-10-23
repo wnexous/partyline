@@ -46,6 +46,17 @@ func (q *Queries) AddPlatformDropped(ctx context.Context, arg AddPlatformDropped
 	return err
 }
 
+const countPlatformAttachmentsBySHA = `-- name: CountPlatformAttachmentsBySHA :one
+SELECT COUNT(*) FROM platform_attachments WHERE sha256 = ?
+`
+
+func (q *Queries) CountPlatformAttachmentsBySHA(ctx context.Context, sha256 string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPlatformAttachmentsBySHA, sha256)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUnackedPlatformItems = `-- name: CountUnackedPlatformItems :one
 SELECT COUNT(*) FROM platform_items WHERE agent_id = ? AND acked_at IS NULL
 `
@@ -55,6 +66,29 @@ func (q *Queries) CountUnackedPlatformItems(ctx context.Context, agentID string)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const deletePlatformItems = `-- name: DeletePlatformItems :execrows
+DELETE FROM platform_items WHERE id IN (/*SLICE:item_ids*/?)
+`
+
+// Deletes the items with their files (the rows cascade).
+func (q *Queries) DeletePlatformItems(ctx context.Context, itemIds []string) (int64, error) {
+	query := deletePlatformItems
+	var queryParams []interface{}
+	if len(itemIds) > 0 {
+		for _, v := range itemIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:item_ids*/?", strings.Repeat(",?", len(itemIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:item_ids*/?", "NULL", 1)
+	}
+	result, err := q.db.ExecContext(ctx, query, queryParams...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteUnackedPlatformItemsOverCap = `-- name: DeleteUnackedPlatformItemsOverCap :execrows
@@ -210,6 +244,121 @@ func (q *Queries) InsertPlatformItem(ctx context.Context, arg InsertPlatformItem
 	var seq int64
 	err := row.Scan(&seq)
 	return seq, err
+}
+
+const listExpiredAckedPlatformItems = `-- name: ListExpiredAckedPlatformItems :many
+SELECT id FROM platform_items
+WHERE acked_at IS NOT NULL AND acked_at <= CAST(?1 AS INTEGER)
+ORDER BY seq
+LIMIT ?2
+`
+
+type ListExpiredAckedPlatformItemsParams struct {
+	Cutoff int64
+	Limit  int64
+}
+
+// CID-09: items acknowledged at or before the cutoff, oldest first.
+func (q *Queries) ListExpiredAckedPlatformItems(ctx context.Context, arg ListExpiredAckedPlatformItemsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listExpiredAckedPlatformItems, arg.Cutoff, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExpiredUnackedPlatformItems = `-- name: ListExpiredUnackedPlatformItems :many
+SELECT id, agent_id FROM platform_items
+WHERE acked_at IS NULL AND received_at <= ?1
+ORDER BY seq
+LIMIT ?2
+`
+
+type ListExpiredUnackedPlatformItemsParams struct {
+	Cutoff int64
+	Limit  int64
+}
+
+type ListExpiredUnackedPlatformItemsRow struct {
+	ID      string
+	AgentID string
+}
+
+// CID-10: unacknowledged items received at or before the cutoff, oldest first.
+func (q *Queries) ListExpiredUnackedPlatformItems(ctx context.Context, arg ListExpiredUnackedPlatformItemsParams) ([]ListExpiredUnackedPlatformItemsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listExpiredUnackedPlatformItems, arg.Cutoff, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListExpiredUnackedPlatformItemsRow
+	for rows.Next() {
+		var i ListExpiredUnackedPlatformItemsRow
+		if err := rows.Scan(&i.ID, &i.AgentID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlatformAttachmentSHAs = `-- name: ListPlatformAttachmentSHAs :many
+SELECT DISTINCT sha256 FROM platform_attachments WHERE item_id IN (/*SLICE:item_ids*/?) AND sha256 <> ''
+`
+
+// The blobs the files of these items use (files without a blob have an empty hash).
+func (q *Queries) ListPlatformAttachmentSHAs(ctx context.Context, itemIds []string) ([]string, error) {
+	query := listPlatformAttachmentSHAs
+	var queryParams []interface{}
+	if len(itemIds) > 0 {
+		for _, v := range itemIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:item_ids*/?", strings.Repeat(",?", len(itemIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:item_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var sha256 string
+		if err := rows.Scan(&sha256); err != nil {
+			return nil, err
+		}
+		items = append(items, sha256)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPlatformAttachmentsForItems = `-- name: ListPlatformAttachmentsForItems :many

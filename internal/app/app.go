@@ -30,6 +30,7 @@ import (
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/live"
+	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
@@ -92,6 +93,8 @@ type App struct {
 	// Conversations opens direct messages and creates groups.
 	Conversations *conversations.Service
 	Blobs         *attachments.Store
+	// Platform is the delivery queue of the messages that arrive on connections (AD-015).
+	Platform *platform.Queue
 	// Presence tracks connected agents; Agents is the agent registry.
 	Presence *agents.Presence
 	Agents   *agents.Registry
@@ -160,6 +163,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Access:        az,
 		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
 		Blobs:         blobs,
+		Platform:      platform.New(platform.Deps{Store: st, Bus: bus, Now: opts.Now}),
 		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Blobs: blobs, Online: presence.Online, Now: opts.Now}),
 		now:           opts.Now,
 	}
@@ -261,6 +265,9 @@ func (a *App) Start(ctx context.Context) error {
 	})
 	a.background(bg, "agent-dispatcher", dispatcher.Run)
 	a.ConnectorManager.Start(bg)
+	a.background(bg, "platform-purge", func(ctx context.Context) error {
+		return a.Platform.Run(ctx, platform.PurgeInterval, a.Rooms.ReleaseBlobs, a.Logger)
+	})
 	a.background(bg, "retention", func(ctx context.Context) error {
 		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger,
 			rooms.RetentionTask{Name: "revoked_tokens", Run: a.Users.PurgeRevokedTokens})

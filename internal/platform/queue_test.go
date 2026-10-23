@@ -36,6 +36,12 @@ func (c *clock) Advance(d time.Duration) {
 	c.mu.Unlock()
 }
 
+func (c *clock) Set(t time.Time) {
+	c.mu.Lock()
+	c.now = t
+	c.mu.Unlock()
+}
+
 // fixture is alice with two AIs (Atlas and Notes), a Telegram connection (tg, two chats) and a
 // WhatsApp connection (wa, one chat).
 type fixture struct {

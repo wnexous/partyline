@@ -106,3 +106,34 @@ Where a section refines the design, it says so.
   them they fall to the blob sweep (T4).
 - **sqlc**: `ListUnackedPlatformItems` and `GetPlatformItemForAgent` embed the `platform_items`
   row (`sqlc.embed`) next to `chat_title`, `chat_kind` and `platform`.
+
+## T4: Purge job and blob references (CID-09, CID-10)
+
+- **`Queue.Purge(ctx, now) (PurgeResult, error)`** (`internal/platform/purge.go`), in bounded
+  transactions of 1,000 items:
+  - an **unacknowledged** item is deleted when `received_at <= now - UnackedTTL` (7 days) and
+    counted in its AI's dropped counter, per AI (`TakeDropped` reports it, CID-10);
+  - an **acknowledged** item is deleted when `acked_at <= now - AckedTTL` (24 hours), so the
+    24 hours run from the ack, not from the arrival. It is not counted as dropped (it was
+    delivered), and an old acknowledged item is never expired by the 7 days. The file rows go
+    with the item (foreign key cascade);
+  - both boundaries are inclusive: one millisecond short keeps the item, the exact age deletes it.
+  - `PurgeResult{Expired, Acked, Files}`: `Files` lists the blob hashes the deleted items' files
+    used, each once.
+- **Blobs**: `Purge` deletes rows only. `rooms.Service.ReleaseBlobs(ctx, shas)` (the former
+  unexported `removeRoomBlobs`, now also used for platform files) deletes the listed blobs that no
+  message attachment, platform file or avatar references and that were not written in the last
+  minute. The daily retention sweep (`blobReferenced`) counts `platform_attachments` as
+  references and stays the backstop for blobs nothing released: items dropped by the 5,000 bound,
+  and queues deleted with an AI, a connection or a chat.
+- **Runner (deviation from the design)**: `Queue.Run(ctx, interval, release, log)` purges once at
+  start and then every interval, handing `Files` to `release`. The app runs it as its own
+  background worker `platform-purge` every `platform.PurgeInterval` (10 minutes) with
+  `Rooms.ReleaseBlobs`, instead of as a `RetentionTask` of the daily retention job: CID-09 and
+  CID-10 say 24 hours and 7 days, and a daily pass deletes up to a day late (files 48 hours after
+  the ack, items after 8 days) and would run after that day's blob sweep. The retention job is
+  unchanged. Nothing but counts is logged.
+- **`App.Platform`** (`*platform.Queue`) is built in `app.New` for the later tasks (pipeline,
+  gateway, connector service).
+- **Not covered here**: `platform_sends` rows are not purged (T17 owns that table's lifecycle;
+  its text is cleared at `sent` or `failed`).

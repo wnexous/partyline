@@ -66,3 +66,28 @@ WHERE id = sqlc.arg(id) AND agent_id = sqlc.arg(agent_id) AND acked_at IS NULL;
 -- CID-05: every item of the connection, acknowledged or not, goes to the new operator.
 UPDATE platform_items SET agent_id = sqlc.arg(agent_id)
 WHERE connector_id = sqlc.arg(connector_id) AND agent_id <> sqlc.arg(agent_id);
+
+-- name: ListExpiredUnackedPlatformItems :many
+-- CID-10: unacknowledged items received at or before the cutoff, oldest first.
+SELECT id, agent_id FROM platform_items
+WHERE acked_at IS NULL AND received_at <= sqlc.arg(cutoff)
+ORDER BY seq
+LIMIT sqlc.arg(limit);
+
+-- name: ListExpiredAckedPlatformItems :many
+-- CID-09: items acknowledged at or before the cutoff, oldest first.
+SELECT id FROM platform_items
+WHERE acked_at IS NOT NULL AND acked_at <= CAST(sqlc.arg(cutoff) AS INTEGER)
+ORDER BY seq
+LIMIT sqlc.arg(limit);
+
+-- name: ListPlatformAttachmentSHAs :many
+-- The blobs the files of these items use (files without a blob have an empty hash).
+SELECT DISTINCT sha256 FROM platform_attachments WHERE item_id IN (sqlc.slice(item_ids)) AND sha256 <> '';
+
+-- name: DeletePlatformItems :execrows
+-- Deletes the items with their files (the rows cascade).
+DELETE FROM platform_items WHERE id IN (sqlc.slice(item_ids));
+
+-- name: CountPlatformAttachmentsBySHA :one
+SELECT COUNT(*) FROM platform_attachments WHERE sha256 = ?;
