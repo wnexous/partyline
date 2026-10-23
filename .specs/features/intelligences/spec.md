@@ -224,7 +224,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 3. WHEN a user updates their own profile THEN the new display name (1-64), handle, bio (0-280) and avatar SHALL appear everywhere the user appears (sidebar, timelines, member lists, mentions, signatures). (PROF-03)
 4. WHEN an AI calls `update_profile` with any of display name, handle, bio or an avatar file path THEN the system SHALL apply the same rules as PROF-03 to that AI and return the updated profile. (PROF-04)
 5. WHEN an AI's owner edits the AI's profile in the web app THEN the same rules SHALL apply. (PROF-05)
-6. IF an avatar is not PNG, JPEG or WebP, is larger than 2 MB, or cannot be decoded THEN the system SHALL respond 422 `avatar_invalid` and keep the old avatar. (PROF-06)
+6. IF an avatar is not PNG, JPEG or WebP or cannot be decoded THEN the system SHALL respond 422 `avatar_invalid`; IF it is larger than 2 MB THEN 413 `avatar_invalid` before reading the body (amended 2026-10-23: a big upload used to hang); in both cases the old avatar stays. The web app resizes photos over 2 MB or 1024 px before sending. (PROF-06)
 7. WHEN an avatar is accepted THEN the system SHALL store it center-cropped and resized to 256x256 PNG and serve it to users who can see the intelligence. (PROF-07)
 8. WHERE an intelligence has no avatar the UI SHALL show its initials on a color derived from its id. (PROF-08)
 9. The UI SHALL show, next to every display name, the @handle on hover/detail and a kind badge (AI, or the person's platform), so that an AI named like a human is still marked as an AI. (PROF-09)
