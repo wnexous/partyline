@@ -12,6 +12,7 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 - [ ] Clicking an intelligence in a participant list opens (or starts) the DM with it.
 - [ ] `partyline update` replaces the binary with the latest release after verifying its checksum.
 - [ ] An image in the timeline opens in a viewer inside the app, and the arrows walk the conversation's images (IMG-01..IMG-06).
+- [ ] On a touch device Enter in the composer adds a new line and only the Send button sends (ENT-01..ENT-05).
 
 ## Out of Scope
 
@@ -38,6 +39,8 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 | `--check` | `partyline update --check` prints current and latest version and exits 0 when up to date, 1 when an update exists | Scripts can check | n |
 | Images the viewer walks | The stored PNG, JPEG, GIF and WebP attachments of the messages loaded in the timeline, oldest first, one entry per attachment; older pages join the list as the timeline loads them | The same set the timeline shows inline (SVG and files the server did not store never open in the viewer) | n |
 | Where the viewer opens from | The timeline. The files panel keeps its links to the files | Scope of the request: "an image attachment in the timeline" | n |
+| What a touch device is | The main pointer is coarse (`(pointer: coarse)`) or it cannot hover (`(hover: none)`), read live from the media queries; a mouse or trackpad with hover is not, even on a touch laptop | Decided in one helper (`hooks/use-enter-sends.ts`); phones and tablets answer both, Chrome's device emulation too | n |
+| Enter on a touch device | A new line; the Send button sends. Shift+Enter is a new line on both. With the mention list open Enter still completes the mention (MEN-03): that is a pick, not a send | The on-screen keyboard's Return key is for writing; sending is a deliberate tap | n |
 | Viewer chrome | A paper strip on top (name, position, Download, Open original, Close) over a dark stage; previous and next sit on the stage's edges | Operate surface: standard controls, the image is the only dark thing on the screen | n |
 
 **Open questions:** none - all resolved or logged above.
@@ -56,7 +59,7 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 2. WHEN the user types more characters after `@` THEN the app SHALL keep only participants whose display name or handle contains them, ignoring case and accents. (MEN-02)
 3. WHEN the user presses Enter or Tab, or taps a suggestion, THEN the app SHALL replace the `@word` with `@handle ` and SHALL NOT send the message. (MEN-03)
 4. WHEN the user presses Escape or moves the caret out of the `@word` THEN the app SHALL close the list without changing the text. (MEN-04)
-5. IF no participant matches THEN the app SHALL show no list and Enter SHALL send as usual. (MEN-05)
+5. IF no participant matches THEN the app SHALL show no list and Enter SHALL act as usual: it sends with a mouse or a trackpad and adds a line on a touch device (ENT-01, ENT-02). (MEN-05)
 6. The list SHALL be keyboard and screen-reader accessible (combobox/listbox roles, active option announced). (MEN-06)
 
 **Independent Test**: In a group with an AI "Atlas", type "@at", press Enter: the composer holds "@atlas ".
@@ -112,6 +115,22 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 
 ---
 
+### P1: Enter on touch devices ⭐ MVP
+
+**User Story**: As a phone user, I want Enter to start a new line so that I write several lines without sending half a message, and send with the Send button.
+
+**Acceptance Criteria**:
+
+1. WHEN the user presses Enter in the composer on a touch device THEN the app SHALL insert a new line and SHALL NOT send; the Send button SHALL be the only way to send. (ENT-01)
+2. WHEN the user presses Enter in the composer on a device with a mouse or trackpad THEN the app SHALL send the trimmed text, and Shift+Enter SHALL add a new line, as before. (ENT-02)
+3. The hint in the composer SHALL follow the device: "Enter to send · Shift+Enter for a new line" with a mouse or trackpad, "Enter for a new line · tap Send to send" on a touch device, which shows it at every width. (ENT-03)
+4. The on-screen keyboard's Return key SHALL show a new-line key on a touch device (`enterkeyhint="enter"`) and a send key with a mouse or trackpad. (ENT-04)
+5. WHEN the mention list is open THEN Enter SHALL still complete the mention on both kinds of device, and SHALL NOT send (MEN-03 holds). (ENT-05)
+
+**Independent Test**: With a coarse pointer, type "one", press Enter and type "two": the box holds both lines and nothing was sent; press Send: one message "one\ntwo" goes out.
+
+---
+
 ## Requirement Traceability
 
 | Requirement ID | Story | Phase | Status |
@@ -138,8 +157,13 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 | IMG-04 | P1: Images in the app | Execute | Implementing |
 | IMG-05 | P1: Images in the app | Execute | Implementing |
 | IMG-06 | P1: Images in the app | Execute | Implementing |
+| ENT-01 | P1: Enter on touch devices | Execute | Implementing |
+| ENT-02 | P1: Enter on touch devices | Execute | Implementing |
+| ENT-03 | P1: Enter on touch devices | Execute | Implementing |
+| ENT-04 | P1: Enter on touch devices | Execute | Implementing |
+| ENT-05 | P1: Enter on touch devices | Execute | Implementing |
 
-**Coverage:** 22 total
+**Coverage:** 27 total
 
 ---
 
@@ -149,3 +173,4 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 - [ ] André opens a DM with an agent from a group's participant list.
 - [ ] André updates the notebook with `partyline update`.
 - [ ] The product owner clicks a picture in a conversation, flips through the others and closes it without leaving the app.
+- [ ] The product owner writes three lines on his phone, sends them with one tap, and on his computer Enter still sends.

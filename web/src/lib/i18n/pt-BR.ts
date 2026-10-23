@@ -364,6 +364,7 @@ export const ptBR: Dictionary = {
   "composer.attach": "Anexar arquivos",
   "composer.removeFile": "Remover {name}",
   "composer.hint": "Enter envia · Shift+Enter quebra a linha",
+  "composer.hintTouch": "Enter quebra a linha · toque em Enviar",
   "composer.mentions": "Mencionar alguém",
   "composer.readOnly":
     "Você pode ler esta sala, mas não postar. Peça acesso de postagem a quem gerencia a sala.",

@@ -703,3 +703,64 @@ test("an image opens in the viewer inside the app, the others are an arrow away 
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(tabs).toEqual([]);
 });
+
+test("Enter sends with a mouse and adds a line on a phone, where only Send sends (ENT-01..ENT-04)", async ({
+  browser,
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
+    name: "e2e-enter",
+    members: [],
+  });
+  const message = (on: Page) => on.locator('[data-testid^="message-"]');
+
+  // A mouse: Enter sends, Shift+Enter adds a line, and the Return key of a screen keyboard says send.
+  await page.goto(`/rooms/${room.id}`);
+  const box = page.getByRole("textbox", { name: "Message e2e-enter" });
+  await expect(box).toHaveAttribute("enterkeyhint", "send");
+  if (!isMobile(testInfo)) {
+    await expect(page.getByText("Enter to send · Shift+Enter for a new line")).toBeVisible();
+  }
+  await box.fill("first line");
+  await box.press("Shift+Enter");
+  await box.pressSequentially("second line");
+  await expect(box).toHaveValue("first line\nsecond line");
+  await box.press("Enter");
+  await expect(message(page)).toContainText("second line");
+  await expect(box).toHaveValue("");
+
+  // A phone: Enter writes, Send sends, and the hint says so at 360 px without breaking the row.
+  const phone = await browser.newContext({
+    viewport: { width: 360, height: 780 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  try {
+    await loginAs(phone, instance, ADMIN);
+    const touch = await phone.newPage();
+    await touch.goto(`/rooms/${room.id}`);
+    const field = touch.getByRole("textbox", { name: "Message e2e-enter" });
+    await expect(field).toHaveAttribute("enterkeyhint", "enter");
+    const hint = touch.getByText("Enter for a new line · tap Send to send");
+    await expect(hint).toBeVisible();
+    const send = touch.getByRole("button", { name: "Send" });
+    const [hintBox, sendBox] = [await hint.boundingBox(), await send.boundingBox()];
+    expect((hintBox?.x ?? 0) + (hintBox?.width ?? 0)).toBeLessThanOrEqual(sendBox?.x ?? 0);
+
+    await field.tap();
+    await touch.keyboard.type("one");
+    await touch.keyboard.press("Enter");
+    await touch.keyboard.type("two");
+    await expect(field).toHaveValue("one\ntwo");
+    // Enter wrote a line: nothing was sent besides the mouse's message above.
+    await expect(message(touch)).toHaveCount(1);
+    await send.tap();
+    await expect(message(touch).last()).toContainText("two");
+    await expect(field).toHaveValue("");
+  } finally {
+    await phone.close();
+  }
+});

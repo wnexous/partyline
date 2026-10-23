@@ -5,7 +5,8 @@ import { Composer } from "@/components/composer";
 import { type Level, MaxTextLength, type RoomMember } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeMember, makeMessage } from "@/test/fixtures";
+import { makeAI, makeMember, makeMessage } from "@/test/fixtures";
+import { stubMatchMedia, stubPointer } from "@/test/media";
 import { renderWithProviders } from "@/test/render";
 
 // A room may still carry chat members from before the upgrade; the composer ignores them.
@@ -161,5 +162,136 @@ describe("composer (UI-07)", () => {
     await user.type(box, "hello{Enter}");
     expect(await screen.findByRole("alert")).toHaveTextContent(/not allowed to post/i);
     expect(box).toHaveValue("hello");
+  });
+});
+
+describe("Enter on touch devices (ENT-01..ENT-05)", () => {
+  const sendsOnEnter = "Enter to send · Shift+Enter for a new line";
+  const newLineOnEnter = "Enter for a new line · tap Send to send";
+
+  const touchDevices: [string, () => void][] = [
+    ["a coarse pointer", () => stubPointer("coarse")],
+    ["a device that cannot hover", () => stubMatchMedia((query) => query === "(hover: none)")],
+  ];
+
+  describe.each(touchDevices)("on %s", (_name, touch) => {
+    it("ENT-01: Enter adds a new line and does not send; the Send button sends", async () => {
+      touch();
+      const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+      const user = userEvent.setup();
+      renderComposer();
+      const box = screen.getByRole("textbox", { name: "Message deploys" });
+
+      await user.type(box, "line one{Enter}line two{Enter}");
+      expect(box).toHaveValue("line one\nline two\n");
+      expect(posts(calls)).toHaveLength(0);
+
+      await user.click(screen.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(posts(calls)).toHaveLength(1));
+      // The lines are part of the text; the trailing one is trimmed like any trailing space.
+      expect(posts(calls)[0]?.body).toEqual({ text: "line one\nline two" });
+      await waitFor(() => expect(box).toHaveValue(""));
+    });
+
+    it("ENT-01: Shift+Enter is a new line too", async () => {
+      touch();
+      const { calls } = mockApi({});
+      const user = userEvent.setup();
+      renderComposer();
+      const box = screen.getByRole("textbox", { name: "Message deploys" });
+      await user.type(box, "a{Shift>}{Enter}{/Shift}b");
+      expect(box).toHaveValue("a\nb");
+      expect(posts(calls)).toHaveLength(0);
+    });
+
+    it("ENT-03: the hint says Enter is a new line and the Send button sends", () => {
+      touch();
+      mockApi({});
+      renderComposer();
+      expect(screen.getByText(newLineOnEnter)).toBeInTheDocument();
+      expect(screen.queryByText(sendsOnEnter)).toBeNull();
+    });
+
+    it("ENT-03: the hint is in Portuguese when the app is", () => {
+      touch();
+      useLiveStore.setState({ locale: "pt-BR" });
+      mockApi({});
+      renderComposer();
+      expect(screen.getByText("Enter quebra a linha · toque em Enviar")).toBeInTheDocument();
+      expect(screen.queryByText("Enter envia · Shift+Enter quebra a linha")).toBeNull();
+    });
+
+    it("ENT-04: the on-screen keyboard's Return key is a new-line key", () => {
+      touch();
+      mockApi({});
+      renderComposer();
+      expect(screen.getByRole("textbox", { name: "Message deploys" })).toHaveAttribute(
+        "enterkeyhint",
+        "enter",
+      );
+    });
+
+    it("ENT-05: with the mention list open Enter still completes the mention and sends nothing", async () => {
+      touch();
+      const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+      const user = userEvent.setup();
+      const atlas = makeMember({
+        kind: "agent",
+        member_id: "a1",
+        name: "Atlas",
+        intelligence: makeAI(),
+      });
+      renderComposer("post", [atlas]);
+      const box = screen.getByRole("textbox", { name: "Message deploys" });
+      await user.type(box, "@at{Enter}");
+      expect(box).toHaveValue("@atlas ");
+      expect(posts(calls)).toHaveLength(0);
+    });
+  });
+
+  describe.each([
+    ["a mouse or a trackpad", () => stubPointer("fine")],
+    [
+      "a touch laptop whose main pointer is its trackpad",
+      () =>
+        stubMatchMedia((query) =>
+          ["(any-pointer: coarse)", "(pointer: fine)", "(hover: hover)"].includes(query),
+        ),
+    ],
+  ] satisfies [string, () => void][])("with %s", (_name, desktop) => {
+    it("ENT-02: Enter sends the trimmed text and Shift+Enter adds a new line", async () => {
+      desktop();
+      const { calls } = mockApi({ "POST /rooms/r1/messages": json(201, makeMessage({ seq: 9 })) });
+      const user = userEvent.setup();
+      renderComposer();
+      const box = screen.getByRole("textbox", { name: "Message deploys" });
+
+      await user.type(box, "line one{Shift>}{Enter}{/Shift}line two");
+      expect(box).toHaveValue("line one\nline two");
+      expect(posts(calls)).toHaveLength(0);
+
+      await user.type(box, "  {Enter}");
+      await waitFor(() => expect(posts(calls)).toHaveLength(1));
+      expect(posts(calls)[0]?.body).toEqual({ text: "line one\nline two" });
+      await waitFor(() => expect(box).toHaveValue(""));
+    });
+
+    it("ENT-03: the hint says Enter sends and Shift+Enter adds a line", () => {
+      desktop();
+      mockApi({});
+      renderComposer();
+      expect(screen.getByText(sendsOnEnter)).toBeInTheDocument();
+      expect(screen.queryByText(newLineOnEnter)).toBeNull();
+    });
+
+    it("ENT-04: the on-screen keyboard's Return key is a send key", () => {
+      desktop();
+      mockApi({});
+      renderComposer();
+      expect(screen.getByRole("textbox", { name: "Message deploys" })).toHaveAttribute(
+        "enterkeyhint",
+        "send",
+      );
+    });
   });
 });

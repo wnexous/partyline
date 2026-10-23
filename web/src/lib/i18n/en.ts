@@ -361,6 +361,7 @@ export const en = {
   "composer.attach": "Attach files",
   "composer.removeFile": "Remove {name}",
   "composer.hint": "Enter to send · Shift+Enter for a new line",
+  "composer.hintTouch": "Enter for a new line · tap Send to send",
   "composer.mentions": "Mention someone",
   "composer.readOnly": "You can read this room but not post. Ask a room manager for post access.",
   "composer.forbidden": "You’re not allowed to post in this room.",
