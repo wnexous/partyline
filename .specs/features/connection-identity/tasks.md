@@ -548,8 +548,8 @@ New frame DTOs are added.
 **Reuses**: shared framing cases
 **Requirement**: CID-06
 **Done when**:
-- [ ] `make integrations-test` passes with the new cases for pi, OpenCode and omp
-- [ ] Gate check passes: `make check`
+- [x] `make integrations-test` passes with the new cases for pi, OpenCode and omp
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `test(integrations): frame platform events`

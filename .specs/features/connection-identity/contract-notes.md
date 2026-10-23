@@ -470,3 +470,22 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   another AI of the owner and another user's AI of the same folder name neither see nor take the
   events.
 
+## T16: Adapter framing covers platform records (CID-06)
+
+- **Where**: the shared cases live in `integrations/testdata/framing.json` (`framing.ts` imports
+  them and `TestFrameMatchesTheAdapters` reads the same file on the Go side), so the four new cases
+  run for pi, OpenCode and omp (12 tests) and for the Go framing that `wait_for_messages` and the
+  turn-end hooks use. `framing.ts` itself did not change.
+- **Cases**: a WhatsApp group event with an attachment line (untrusted: data line), a Telegram
+  direct event from the owner's verified account (trusted: owner line), a direct event typed on the
+  account itself (`from_self`, untrusted: data line) and one whose chat title and sender name carry
+  quotes and angle brackets (the title and the name are third-party text, escaped in the room, chat
+  and from attributes). Their records are what `FormatPlatform` produces plus `content`; the
+  expected texts were written from the PUSH-06 frame format, not from the code's output.
+- **No adapter changed**: they frame from `room_name`, `chat_title`, `platform`, `sender_name` or
+  `author`, `trusted`, `message_id`, `chat_id` and `content`, and treat only `type` `notice` apart.
+- **Known limitation, for T19/T20**: the shared framing does not show `from_self`, `connection_id`
+  or `kind`. A harness fed by `listen` or the hooks can always answer with `reply` (the message id);
+  naming a connection for `send_message` needs its id, which only the full channel's identity
+  notice lists (T14), so T20 has to decide how such a harness names its connection.
+
