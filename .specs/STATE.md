@@ -16,7 +16,7 @@
 - **Trade-off**: Simple "chat X → session Y" needs a room. The UI hides this with a one-click "route chat to agent" action that creates the room.
 - **Scope**: core-platform, agent-channel, connectors, web-app.
 - **Date**: 2026-10-19
-- **Status**: superseded by AD-015 (platform chats are no longer room members)
+- **Status**: superseded by AD-015 (partyline is a proxy: platform chats are no longer room members)
 
 ### AD-003
 - **Decision**: Go DTO structs in `internal/api/dto` are the single source of the HTTP/WS contract. TypeScript types are generated from them with `tygo` into `web/src/lib/api/types.gen.ts`; nobody hand-writes API types in TS.
@@ -122,13 +122,32 @@
 - **Context**: Verifier iteration 1 of the intelligences feature (gap 6): own-account messages were stored with `author_user_id` = the connector's owner whoever the operator was (contract-notes T33), a trust source AD-006 did not list. Pinned by `TestOwnAccountMessageIsTrustedOnlyWhenTheOwnerOperatesTheAccount`.
 
 ### AD-015
-- **Decision**: Each connection (connector) is one intelligence: its operator (the owner or one AI of the owner). A platform chat is never a conversation member. It is the transport of exactly one conversation of the operator: a DM chat of the DM between its author and the operator (ACC-02), a group or channel chat of a platform group (members: the operator, plus the people seen in the chat). The transport keeps the `room_members` row of kind `chat`, but only the server creates it, at most one per chat (unique partial index `room_members_chat_once`), and it is never shown or editable as a member. Only the operator's posts leave through a connection (unsigned). Other viewers of a platform conversation (the owner, `use` grantees of the operator AI) read only. Grants do not apply to platform conversations. Rooms stay the routing primitive between intelligences. Bridges between chats, broadcast to chats, route-chat-to-agent and catch-all rooms are retired.
-- **Reason**: The owner wants a number to be one agent: people who write to an account must know who answers, and partyline groups must hold identities, not chats (connection-identity spec, CID-01..18).
-- **Trade-off**: Breaking change (v0.5.0). Chats leave mixed rooms at upgrade, and only one-chat operator groups are adopted. The auto-route scope decides only for chats without a conversation: a chat that has one keeps receiving whatever the scope, and every chat that was in a room before the upgrade gets its operator conversation on its next message (`chats.route_pending`); deleting a platform conversation detaches its chat and the scope decides again. Nothing that flowed before the upgrade is silenced. Copies of AI DMs (NOTI-02) go only through accounts the notified user operates (decided 2026-10-22). The `room_members` kind `chat` value and `connectors.auto_route_room_id` remain in the schema (AD-012).
-- **Scope**: core-platform, connectors, delivery, access, conversations, agent-channel, web-app.
-- **Date**: 2026-10-22
+- **Decision**: Partyline is a proxy between integrations and intelligences.
+  - **Connections**: each connection (connector) is the app of exactly one AI, its operator. The operator must be an AI the connection's owner owns. A connection without one is not run.
+  - **Inbound**: what arrives on a connection is never stored as a conversation message. It goes into the operator's platform queue (`platform_items`):
+    - delivery oldest first over the agent WebSocket as a `platform` frame, opt-in per session;
+    - one ack per item, which deletes the text; attachments are deleted 24 h after the ack;
+    - unacked items expire after 7 days, with at most 5,000 per AI, and dropped items are counted and announced.
+  - **Answers**: the AI answers with `reply` (platform message id) or `send_message` (connection + chat). Answers go through `platform_sends`, unsigned, and their text is deleted once sent or failed.
+  - **Rooms**: rooms (DMs and groups) hold users and AIs only, and chats are never members. Bridges, broadcast to chats, route-chat-to-agent, catch-all rooms and auto-route are retired, and so are platform DMs (DM-05 sends), copies of AI DMs to a user's app (NOTI-01..03) and member signatures.
+  - **History**: old room history, people and platform DMs stay as read-only history.
+- **Reason**: The owner wants each number to be one AI and partyline's own DMs/groups to be one more app. Modelling every platform inside rooms put several agents behind one number and stored platform conversations partyline should not keep (connection-identity spec, CID-01..27).
+- **Trade-off**:
+  - Breaking change (v0.5.0), with a CLI release: v0.4 CLIs keep room messages but get no platform events.
+  - Owner-operated connections go idle until an AI is chosen.
+  - Every connection starts with `deliver=all` and `groups_mentions_only=on`, so group messages without a mention stop.
+  - Partyline keeps no platform history and no send log; history lives in the platform and the AI's session.
+  - `connectors.auto_route_room_id` and `users.notify_chat_id` remain as dead columns (AD-012).
+- **Scope**: connectors, delivery, agents (gateway), channel/listen/hooks, rooms, access, conversations, store, web-app.
+- **Date**: 2026-10-22 (decided by André)
 - **Status**: active
-- **Supersedes**: AD-002. **Amends**: AD-011 and AD-013 (a platform group is viewed like an AI's DM: by the operator AI's owner and named `use` grantees, never through grants); NOTI-01 and NOTI-02 of the intelligences spec.
+- **Supersedes**: AD-002 (the room is no longer the routing primitive for platforms; it remains the conversation of intelligences).
+- **Amends**:
+  - AD-006: `trusted` is also computed for platform events; true only when the sender's account is linked to the operator's owner (AD-008 pairing), never for `from_self`.
+  - AD-011: DMs and groups are between intelligences only; DMs with people are history.
+  - AD-013: use grantees still read an AI's old platform DMs; no new ones are created.
+  - AD-014: an own-account message is delivered with `from_self=true` and `trusted=false`; the owner no longer operates connections.
+  - In the intelligences spec: retires NOTI-01..03 and DM-05 sends, and stops PEOP-01 person creation.
 
 ## Handoff
 

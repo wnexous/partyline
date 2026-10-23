@@ -2,23 +2,27 @@
 
 ## Problem Statement
 
-Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs to its owner, and any AI or user in a room can write through it, signed. A person who talks to that number in a WhatsApp group is in fact talking to several agents behind one number, and partyline groups mix chats with intelligences. André wants each account to be one intelligence: the number IS an agent (2026-10-22).
+Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs to its owner, its chats are members of partyline rooms, and any AI or user in such a room can write through the account. A person who talks to that number is in fact talking to several agents behind one number, and partyline has to model every platform inside its rooms. André wants partyline's core to be a proxy that connects integrations to intelligences: each account is one AI's own app, what arrives on it goes straight to that AI's session, and partyline's own DMs and groups are just one more app (2026-10-22).
 
 ## Goals
 
-- [ ] Each connection belongs to exactly one intelligence (its operator); only that intelligence sends through it.
-- [ ] Partyline groups hold intelligences only (users and AIs); platform chats are never group members.
-- [ ] Every platform chat a connection receives is a conversation of its operator with the people in that chat.
+- [ ] Each connection is operated by exactly one AI; only that AI sends through it.
+- [ ] What arrives on a connection reaches its AI's session directly, without being stored as a partyline conversation.
+- [ ] Partyline DMs and groups hold intelligences only (users and AIs); platform chats are never part of them.
 
 ## Out of Scope
 
 | Feature | Reason |
 | --- | --- |
-| Several accounts per intelligence of the same platform | One number per agent is enough now; an intelligence may operate several connections of different kinds (already allowed) |
-| Relaying a platform chat into a partyline group automatically | The operator decides what to bring to a group (André's rule) |
+| Reading platform chat history through partyline | Nothing is stored; the history lives in the platform and in the AI's session |
+| Showing platform conversations on the site | André: the owner reads them in the platform itself |
+| Several accounts of the same platform per AI | One number per agent is enough now; an AI may operate connections of different kinds |
+| A user (not an AI) operating a connection | Nothing would receive the messages; users talk through partyline's own app |
 | Connecting André's personal WhatsApp number | André keeps it out for now |
-| External people as members of partyline groups | They are reached only through their platform conversation (DM-05) |
-| Rewriting old messages | History stays in the room where it was written |
+| Rewriting or deleting old messages | Existing room history stays as it is |
+| A log of what the operator sends | André declined it (2026-10-22) |
+| Web push notifications | Next release (v0.5.1), replacing the retired copies of AI DMs |
+| Fetching platform history | Later |
 
 ---
 
@@ -26,19 +30,21 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --- | --- | --- | --- |
-| Operator of a connection | Required: the owner (default) or one AI the owner owns, as today (ACC-01) | Keeps the existing setting; only its meaning widens | y (André: his bot number is operated by one AI) |
-| One account per WhatsApp connection | A WhatsApp connection names exactly one instance; a connection with zero or several instances receives nothing and shows "choose the instance (number) of this connection" until the owner picks one | One number = one intelligence; the old empty list meant "every instance" | n |
-| Platform group chat | Becomes a conversation (group kind) whose members are the operator plus the people seen in the chat; it keeps the chat as its transport; nobody else can join it | André: "grupo com identidades, não com chats" | n |
-| Platform DM chat | Unchanged: the DM between the person and the operator (ACC-02) | Already the target model | y |
-| Who sends into a platform conversation | Only the operator; its posts go out unsigned; a human operator's own posts go out as typed (no signature) | The account is the operator's app | n |
-| Who sees a platform conversation | The operator, the connection's owner, and users with `use` on the operator AI (AD-013); viewers other than the operator read only | Owner oversight without writing through someone else's account | n |
-| Volume | Auto-route scope (off, dms, groups, all) chooses which chats **without a conversation** become conversations; a chat that has one keeps receiving whatever the scope; deleting a platform conversation detaches its chat and the scope decides again; the operator's delivery mode per conversation (all, mentions, trusted) limits what reaches its session; default `all` | André: "recebe tudo"; nothing that flows today is silenced (orchestrator, 2026-10-22) | y |
-| Offline operator | Missed messages arrive on reconnect, newest 50 per conversation, then a skipped notice (AGT-08/09, already built) | Verified in code (internal/agents/gateway.go) | y |
-| Existing rooms with chat members (upgrade) | A room whose only members are one group chat and that chat's operator becomes that chat's conversation (history kept in place); every other chat member leaves its room, which keeps its history, intelligences and settings; every chat that was in any room before the upgrade gets its operator conversation on its next message whatever the scope; catch-all rooms lose their chats | No silent fan-out through someone else's account after upgrade, and nothing that flows today is silenced | y (orchestrator, 2026-10-22) |
-| Copies of AI DMs to a user's app (NOTI-02) | Sent only through a connection the notified user operates (their own account writes to them); other choices are cleared at upgrade | Keeps "no message leaves a connection with an author other than its operator" | y (orchestrator, 2026-10-22) |
-| Operator change | Every platform conversation of the connection moves to the new operator (member swap, audit entry), like the DM move in ACC-02 | One account = one current identity | n |
-| Room-to-chat features | `bridge_chats`, broadcast to chats, member signatures for chats, "route chat to agent" and catch-all rooms are retired | They exist only to put chats in rooms | n |
-| Release | Breaking server change, shipped as v0.5.0; CLIs need no change | The channel protocol does not change | n |
+| Operator of a connection | Required and must be an AI the connection's owner owns; until one is chosen the connection receives nothing and shows "choose the AI that operates this connection" | Messages go to a session; a user has none | y (André: his bot number is operated by one AI) |
+| One account per WhatsApp connection | A WhatsApp connection names exactly one instance; zero or several instances receive nothing and show "choose the instance (number) of this connection" | One number = one AI | y |
+| Storage of inbound platform messages | Not stored as conversation messages; kept only in a delivery queue per AI until the session acknowledges them | André: "vai direto pra sessão do agente" | y |
+| Offline AI | Queue items wait for the AI's session; delivered oldest first on reconnect; an item unacknowledged for 7 days is deleted and the AI is told how many were dropped | André accepted the queue with a 7-day limit | y |
+| After acknowledgement | The item's text is deleted at once; its attachments stay downloadable for 24 hours, then are deleted | The AI needs time to fetch files it was told about | n |
+| Queue bound | At most 5,000 items per AI; a new item over the limit drops the oldest and counts it as dropped | Bounded storage for an AI that never comes back | n |
+| Owner visibility | The owner sees each connection's operator, status and queued-item count; never message text | André: conversations stay in the platform | y |
+| Which chats are delivered | Connection setting `deliver`: dms, groups or all; setting `groups_mentions_only` delivers a group message only when it mentions the account or replies to it. A new connection starts with `deliver=all` and `groups_mentions_only=on` (DMs plus mentions in groups); upgraded connections get the same | Safe default agreed by André and his AIs; the owner widens it per connection | y |
+| Trust of a platform sender | `trusted=true` only when the sender's external account is linked to the AI's owner (AD-008 pairing); otherwise false | Same rule as today (PEOP-06) | n |
+| Messages written by the account itself | The echo of a send made through partyline is not delivered; any other own-account message (someone typing on the device) is delivered with `from_self=true` and `trusted=false` | The AI must know its number spoke, without trusting it | n |
+| Answering | The AI answers a delivered message with `reply` (its message id) or writes to any chat of its connection with `send_message` naming the connection chat; both go out unsigned | The account is the AI's own app | n |
+| Operator change | Undelivered queue items of the connection go to the new operator; one audit entry | One account = one current AI | n |
+| Upgrade of existing data | Chat members leave every room; rooms keep history, intelligences and settings; people and platform DMs stay as read-only history; no new person or platform DM is created | Keep history, stop modelling platforms in rooms | n |
+| Retired features | Chats as room members, bridges between chats, broadcast to chats, "route chat to agent", catch-all rooms, auto-route, platform DMs with people (DM-05 sends), copies of AI DMs to a user's app (NOTI-01/02), member signatures | They exist only to carry platforms inside rooms | n |
+| Release | Breaking server change, shipped as v0.5.0 together with a CLI release (the channel learns the new event and tool arguments) | Old CLIs keep receiving room messages but not platform events | n |
 
 **Open questions:** none - all resolved or logged above.
 
@@ -46,59 +52,79 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 ## User Stories
 
-### P1: One identity per connection ⭐ MVP
+### P1: One AI per connection ⭐ MVP
 
-**User Story**: As an owner, I want a number to be one agent so that people who talk to it know who answers.
+**User Story**: As an owner, I want a number to be one AI so that people who talk to it know who answers.
 
 **Acceptance Criteria**:
 
-1. The system SHALL send a message through a connection only when its author is the connection's operator. (CID-01)
-2. IF any other intelligence tries to post in a platform conversation THEN the system SHALL refuse with 403 `not_operator` and send nothing. (CID-02)
-3. WHEN the operator posts in a platform conversation THEN the message SHALL go out through the connection unsigned. (CID-03)
-4. IF a WhatsApp connection names zero or several instances THEN the system SHALL receive no message through it and SHALL show the status detail "choose the instance (number) of this connection". (CID-04)
-5. WHEN the owner changes the operator THEN every platform conversation of the connection SHALL have the new operator as its member instead of the old one, and the system SHALL record one audit entry. (CID-05)
+1. The system SHALL accept as a connection's operator only an AI that the connection's owner owns. (CID-01)
+2. IF a connection has no operator THEN the system SHALL deliver nothing from it and SHALL show the status detail "choose the AI that operates this connection". (CID-02)
+3. IF an intelligence other than the operator asks to send through a connection THEN the system SHALL refuse with `not_operator` (HTTP 403) and send nothing. (CID-03)
+4. IF a WhatsApp connection names zero or several instances THEN the system SHALL receive nothing through it and SHALL show the status detail "choose the instance (number) of this connection". (CID-04)
+5. WHEN the owner changes the operator THEN the connection's undelivered queue items SHALL belong to the new operator and the system SHALL record one audit entry. (CID-05)
 
-**Independent Test**: Operator of a Telegram connection = Atlas; Atlas's reply in the bot's group goes out unsigned; another AI posting there gets 403 `not_operator`.
+**Independent Test**: Operator of a Telegram connection = Atlas; Atlas sends through it; another AI of the same owner gets `not_operator`.
 
 ---
 
-### P1: Platform chats are the operator's conversations ⭐ MVP
+### P1: Direct delivery to the AI ⭐ MVP
 
-**User Story**: As an operator AI, I want each chat of my number to be my own conversation so that I receive everything said to my number.
+**User Story**: As an operator AI, I want everything said to my number to reach my session so that I answer as that number.
 
 **Acceptance Criteria**:
 
-1. WHERE the auto-route scope includes groups, WHEN a group chat not seen before sends a message THEN the system SHALL create a group conversation whose members are the operator and the people seen in that chat, and deliver the message there. (CID-06)
-2. WHEN a person not seen before writes in that chat THEN the system SHALL add the person to the conversation (PEOP-01). (CID-07)
-3. The system SHALL keep each platform chat in exactly one conversation. (CID-08)
-4. WHILE the operator's session is offline the system SHALL keep the conversation's messages and deliver them on reconnect per AGT-08/09. (CID-09)
-5. The system SHALL show a platform conversation to the operator, the connection's owner and users with `use` on the operator AI, and to no one else. (CID-10)
-6. IF a viewer other than the operator posts in a platform conversation THEN the system SHALL refuse with 403 `not_operator` (CID-02). (CID-11)
+1. WHEN a message arrives on a connection and the `deliver` setting includes its chat kind THEN the system SHALL deliver it to the operator's session as a platform event carrying platform, connection id, chat id, chat title, chat kind, sender name, sender id, `trusted`, `from_self`, text and attachments. (CID-06)
+2. The system SHALL NOT store an inbound platform message as a message of any partyline conversation. (CID-07)
+3. WHILE the operator's session is offline the system SHALL keep the connection's messages in the operator's queue and deliver them oldest first when a session connects. (CID-08)
+4. WHEN the session acknowledges an item THEN the system SHALL delete its text and SHALL delete its attachments 24 hours later. (CID-09)
+5. IF an item stays unacknowledged for 7 days THEN the system SHALL delete it and SHALL tell the operator on its next connection how many items were dropped. (CID-10)
+6. IF a new item would exceed 5,000 queued items for the operator THEN the system SHALL drop the oldest item and count it in the dropped notice of CID-10. (CID-11)
+7. WHERE `groups_mentions_only` is on, WHEN a group message neither mentions the account nor replies to it THEN the system SHALL NOT deliver it. (CID-12)
+10. WHEN a connection is created or upgraded THEN its settings SHALL be `deliver=all` and `groups_mentions_only=on`. (CID-27)
+8. The system SHALL set `trusted=true` only when the sender's external account is linked to the operator's owner. (CID-13)
+9. WHEN the account itself writes a message that partyline did not send THEN the system SHALL deliver it with `from_self=true` and `trusted=false`; the echo of a partyline send SHALL NOT be delivered. (CID-14)
 
-**Independent Test**: A new WhatsApp group with Atlas's number appears as a conversation of Atlas with the people in it; the owner can read it; another AI of the owner cannot see it.
+**Independent Test**: With Atlas offline, three WhatsApp messages arrive on its connection; when Atlas connects it receives the three, oldest first; none appears in any partyline conversation; the owner's connection page shows the queued count but no text.
 
 ---
 
-### P1: Groups hold intelligences only ⭐ MVP
+### P1: Answer through the connection ⭐ MVP
 
-**User Story**: As a user, I want partyline groups to contain intelligences so that a group is a talk between identities, not a switchboard of chats.
+**User Story**: As an operator AI, I want to answer on my own number so that the people in that chat hear me.
 
 **Acceptance Criteria**:
 
-1. IF a request adds a chat as a member of any conversation THEN the system SHALL refuse with 422 `chats_not_members`. (CID-12)
-2. The add-member picker SHALL offer users and AIs only. (CID-13)
-3. WHEN the server upgrades THEN a room whose only members are one group chat and that chat's operator SHALL become that chat's conversation, every other chat member SHALL leave its room, the room SHALL keep its history, intelligences and settings, and the next message of a chat that left SHALL create its operator conversation (CID-06 or ACC-02) whatever the auto-route scope. (CID-14)
-4. The system SHALL no longer offer bridges between chats, broadcast to chats, "route chat to agent" or catch-all rooms, in the API or the web app. (CID-15)
+1. WHEN the operator calls `reply` with the id of a delivered platform message THEN the system SHALL send the text to that message's chat through the connection, unsigned, quoting it when the platform supports quotes. (CID-15)
+2. WHEN the operator calls `send_message` with a connection chat (connection id and chat id) THEN the system SHALL send the text to that chat through the connection, unsigned. (CID-16)
+3. IF the chat does not belong to the named connection THEN the system SHALL refuse with `unknown_chat` (HTTP 404) and send nothing. (CID-17)
+4. IF the platform refuses or times out THEN the tool SHALL answer with the failure reason and the system SHALL keep the existing outbox retries. (CID-18)
 
-**Independent Test**: After the upgrade, a room that held a WhatsApp group chat, the owner and two AIs lists the owner and the two AIs and no chat; the WhatsApp group is a conversation of the connection's operator.
+**Independent Test**: Atlas replies to a delivered Telegram message; the bot posts the text in that chat without a signature.
+
+---
+
+### P1: Partyline chat is one more app ⭐ MVP
+
+**User Story**: As a user, I want partyline's DMs and groups to hold intelligences only so that partyline is a messenger of its own, not a switchboard of chats.
+
+**Acceptance Criteria**:
+
+1. IF a request adds a chat as a member of any conversation THEN the system SHALL refuse with `chats_not_members` (HTTP 422). (CID-19)
+2. The add-member picker SHALL offer users and AIs only. (CID-20)
+3. WHEN the server upgrades THEN every chat member SHALL leave its room and the room SHALL keep its history, intelligences and settings. (CID-21)
+4. The system SHALL no longer offer the retired features listed in the Assumptions table, in the API, the channel tools or the web app. (CID-22)
+5. The connection page SHALL show the operator, the `deliver` and `groups_mentions_only` settings, the status and the queued-item count, and SHALL show no message text. (CID-23)
+
+**Independent Test**: After the upgrade, a room that held a WhatsApp group chat, the owner and two AIs lists the owner and the two AIs and no chat; the next message in that WhatsApp group reaches only the connection's operator AI.
 
 ---
 
 ## Edge Cases
 
-- IF the operator AI is deleted THEN its platform conversations SHALL move to the connection owner (ACC-02 rule, extended to groups). (CID-16)
-- WHEN the owner's own account writes in a chat (a human operator typing on the phone) THEN the message SHALL be authored by the operator, with trust per AD-014 (ACC-05 unchanged). (CID-17)
-- IF the auto-route scope excludes a chat's kind and the chat has no conversation THEN the system SHALL keep no message from that chat (CON-07 unchanged); a chat that has a conversation SHALL keep receiving whatever the scope, and a chat whose platform conversation was deleted SHALL have none until the scope routes it again. (CID-18)
+- IF the operator AI is deleted THEN the connection SHALL have no operator (CID-02) and its queue SHALL be deleted. (CID-24)
+- IF the operator's live session is replaced (takeover) THEN unacknowledged items SHALL be delivered to the new session. (CID-25)
+- WHEN the same platform message arrives twice (platform retry) THEN the system SHALL queue it once. (CID-26)
 
 ---
 
@@ -106,15 +132,15 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 | Dimension | Covered by |
 | --- | --- |
-| Input validation & bounds | CID-04 (one instance), CID-12 (no chat members) |
-| Failure / partial-failure states | CID-04 (connection idle with a status detail); send failures keep the existing outbox retries |
-| Idempotency / duplicates | CID-08 (one conversation per chat), PEOP-01 (one person per account) |
-| Auth boundaries & rate limits | CID-01, CID-02, CID-10, CID-11; existing auto-route caps (60 new chats per hour) apply |
-| Concurrency / ordering | CID-05 (operator change swaps members in one transaction with the audit entry) |
-| Data lifecycle | CID-14 (upgrade keeps history), CID-16 (operator deleted) |
-| Observability | CID-04 status detail; CID-05 audit entry |
-| External-dependency failure | N/A because platform outages keep the existing connector status and retries |
-| State-transition integrity | CID-05, CID-14, CID-16 |
+| Input validation & bounds | CID-01, CID-04, CID-17, CID-19; queue bound CID-11 |
+| Failure / partial-failure states | CID-02, CID-04 (status details), CID-18 (send failures) |
+| Idempotency / duplicates | CID-26 (one queue item per platform message), CID-09 (ack deletes once) |
+| Auth boundaries & rate limits | CID-01, CID-03, CID-13; existing per-connection inbound limits apply |
+| Concurrency / ordering | CID-08 (oldest first), CID-05 (operator change moves the queue with one audit entry), CID-25 |
+| Data lifecycle | CID-09, CID-10, CID-11, CID-21, CID-24 |
+| Observability | CID-02/CID-04 status details, CID-23 queued count, CID-05 audit entry, CID-10 dropped notice |
+| External-dependency failure | CID-18 |
+| State-transition integrity | CID-05, CID-21, CID-24, CID-25 |
 
 ---
 
@@ -122,31 +148,40 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| CID-01 | P1: One identity per connection | Tasks | In Tasks |
-| CID-02 | P1: One identity per connection | Tasks | In Tasks |
-| CID-03 | P1: One identity per connection | Tasks | In Tasks |
-| CID-04 | P1: One identity per connection | Tasks | In Tasks |
-| CID-05 | P1: One identity per connection | Tasks | In Tasks |
-| CID-06 | P1: Platform chats are conversations | Tasks | In Tasks |
-| CID-07 | P1: Platform chats are conversations | Tasks | In Tasks |
-| CID-08 | P1: Platform chats are conversations | Tasks | In Tasks |
-| CID-09 | P1: Platform chats are conversations | Tasks | In Tasks |
-| CID-10 | P1: Platform chats are conversations | Tasks | In Tasks |
-| CID-11 | P1: Platform chats are conversations | Tasks | In Tasks |
-| CID-12 | P1: Groups hold intelligences only | Tasks | In Tasks |
-| CID-13 | P1: Groups hold intelligences only | Tasks | In Tasks |
-| CID-14 | P1: Groups hold intelligences only | Tasks | In Tasks |
-| CID-15 | P1: Groups hold intelligences only | Tasks | In Tasks |
-| CID-16 | Edge cases | Tasks | In Tasks |
-| CID-17 | Edge cases | Tasks | In Tasks |
-| CID-18 | Edge cases | Tasks | In Tasks |
+| CID-01 | P1: One AI per connection | Tasks | In Tasks |
+| CID-02 | P1: One AI per connection | Tasks | In Tasks |
+| CID-03 | P1: One AI per connection | Tasks | In Tasks |
+| CID-04 | P1: One AI per connection | Execute | Implemented (T1, bebd8d1) |
+| CID-05 | P1: One AI per connection | Tasks | In Tasks |
+| CID-06 | P1: Direct delivery | Tasks | In Tasks |
+| CID-07 | P1: Direct delivery | Tasks | In Tasks |
+| CID-08 | P1: Direct delivery | Tasks | In Tasks |
+| CID-09 | P1: Direct delivery | Tasks | In Tasks |
+| CID-10 | P1: Direct delivery | Tasks | In Tasks |
+| CID-11 | P1: Direct delivery | Tasks | In Tasks |
+| CID-12 | P1: Direct delivery | Tasks | In Tasks |
+| CID-13 | P1: Direct delivery | Tasks | In Tasks |
+| CID-14 | P1: Direct delivery | Tasks | In Tasks |
+| CID-15 | P1: Answer through the connection | Tasks | In Tasks |
+| CID-16 | P1: Answer through the connection | Tasks | In Tasks |
+| CID-17 | P1: Answer through the connection | Tasks | In Tasks |
+| CID-18 | P1: Answer through the connection | Tasks | In Tasks |
+| CID-19 | P1: Partyline chat is one more app | Tasks | In Tasks |
+| CID-20 | P1: Partyline chat is one more app | Tasks | In Tasks |
+| CID-21 | P1: Partyline chat is one more app | Tasks | In Tasks |
+| CID-22 | P1: Partyline chat is one more app | Tasks | In Tasks |
+| CID-23 | P1: Partyline chat is one more app | Tasks | In Tasks |
+| CID-24 | Edge cases | Tasks | In Tasks |
+| CID-25 | Edge cases | Tasks | In Tasks |
+| CID-26 | Edge cases | Tasks | In Tasks |
+| CID-27 | P1: Direct delivery | Tasks | In Tasks |
 
-**Coverage:** 18 total, 18 mapped to tasks (`tasks.md` T1-T36).
+**Coverage:** 27 total, 27 mapped to tasks (`tasks.md` T1-T38); CID-04 implemented (T1).
 
 ---
 
 ## Success Criteria
 
-- [ ] André talks to his bot number in a WhatsApp group and only its operator AI answers, unsigned.
+- [ ] André writes to his bot number in a WhatsApp group and only its operator AI receives it and answers, unsigned.
+- [ ] No platform message text is stored outside the delivery queue.
 - [ ] André's existing team room holds him and his AIs, and no chat.
-- [ ] No message leaves a connection with an author other than its operator.
