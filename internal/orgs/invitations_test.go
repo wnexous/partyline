@@ -566,6 +566,28 @@ func TestAcceptAfterThePositionOrTheInviterChanged(t *testing.T) {
 	require.Equal(t, Member{IID: yan, Permission: PermissionGuest}, memberOfOrg(t, f, a.org, yan), "no inviter left to record")
 }
 
+// OMEM-01, OMEM-04: an invitation for more than a guest needs its inviter to still be an admin when it is
+// accepted; otherwise it is gone (and deleted).
+func TestAdminInvitationsLapseWithTheInvitersAdminRight(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	a := f.acme()
+	zed := f.user("zed")
+	boss := f.user("boss")
+	f.join(a.org, boss, PermissionAdmin, "", "")
+	inv, err := f.invite(boss, a.org, "zed", PermissionMember, "")
+	require.NoError(t, err)
+	_, err = f.svc.SetPermission(ctx, a.alice, a.org, boss, PermissionMember)
+	require.NoError(t, err)
+	_, err = f.svc.Accept(ctx, zed, inv.ID)
+	require.ErrorIs(t, err, ErrGone, "the inviter is no longer an admin")
+	require.Zero(t, f.pending(), "the lapsed invitation is deleted")
+	_, ok, err := memberOf(ctx, f.st.R(), a.org, zed)
+	require.NoError(t, err)
+	require.False(t, ok)
+
+}
+
 // OMEM-04: only an admin lists and revokes the organization's pending invitations.
 func TestListAndRevokeAreForAdmins(t *testing.T) {
 	ctx := context.Background()

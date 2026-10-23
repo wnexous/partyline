@@ -514,3 +514,9 @@ Where a section refines the design, it says so.
   | `*validation.Error` (`name`, `slug`, `permission`, `position_id`, `parent_id`) | 422 `invalid` with `fields` |
   | `agents.ErrNoOrganization` (an `*httpx.Error`) | 422 `organization_required` |
 - **Query** added: `GetPersonalOrg`.
+
+## Fixes after the T1-T11 review
+
+- **A guest host's AI is a guest.** When the host of a new folder AI is only a guest of the AI's home organization, the AI joins as a `guest` with the host as its inviter, never as a `member` (which only an admin could delete). See `internal/agents/folder.go` and `TestAGuestHostsNewAIJoinsAsTheirGuest`.
+- **Admin invitations lapse with the inviter's admin right.** On accept, an invitation for `member` or `admin` needs its inviter to still be an admin of the organization. Otherwise the invitation is deleted and the answer is `ErrGone`. A guest invitation whose inviter left still stands, and the guest then has no inviter.
+- **Re-inviting a guest keeps the design's rule.** The latest inviter of a pending guest invitation becomes responsible for the guest. The invitee sees who invites them before accepting, so this is not a takeover. The review's third finding is declined.

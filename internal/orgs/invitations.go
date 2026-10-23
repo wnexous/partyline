@@ -367,10 +367,10 @@ func (s *Service) answer(ctx context.Context, q *db.Queries, actorIID, invitatio
 // stale invitation goes. It returns the invitee's membership.
 func (s *Service) Accept(ctx context.Context, actorIID, invitationID string) (Membership, error) {
 	var out Membership
-	var stale bool
+	var stale, gone bool
 	var orgID string
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		stale = false
+		stale, gone = false, false
 		inv, err := s.answer(ctx, q, actorIID, invitationID)
 		if err != nil {
 			return err
@@ -381,6 +381,17 @@ func (s *Service) Accept(ctx context.Context, actorIID, invitationID string) (Me
 				return err
 			}
 			stale = true
+			return q.DeleteOrgInvitation(ctx, inv.ID)
+		}
+		// An invitation for more than a guest is only as good as its inviter's standing now: once the
+		// inviter is no longer an admin of the organization it is gone. (A guest invitation whose inviter
+		// left still stands; the guest then has no inviter.)
+		by, ok, err := memberOf(ctx, q, inv.OrgID, inv.InvitedBy)
+		if err != nil {
+			return err
+		}
+		if Permission(inv.Permission) != PermissionGuest && (!ok || by.Permission != PermissionAdmin) {
+			gone = true
 			return q.DeleteOrgInvitation(ctx, inv.ID)
 		}
 		inviter := ""
@@ -419,6 +430,9 @@ func (s *Service) Accept(ctx context.Context, actorIID, invitationID string) (Me
 	s.changed(orgID)
 	if stale {
 		return Membership{}, ErrAlreadyMember
+	}
+	if gone {
+		return Membership{}, ErrGone
 	}
 	return out, nil
 }

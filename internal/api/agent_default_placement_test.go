@@ -171,6 +171,33 @@ func TestNewAIsFollowTheHostsDefaultOrganization(t *testing.T) {
 	requireHome(t, env, second, team.ID, alice.User.ID) // it stays in Team, which alice left
 }
 
+// Guests assumption, POS-05: a host who is only a guest of their default organization starts AIs that
+// join it as guests the host invited - never as members, which only an admin could delete - so the
+// host manages and may delete them.
+func TestAGuestHostsNewAIJoinsAsTheirGuest(t *testing.T) {
+	ctx := context.Background()
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	bob := env.NewUser("bob")
+	team, err := env.App.Orgs.Create(ctx, alice.User.ID, "Team")
+	require.NoError(t, err)
+	env.AddGuest(team.ID, bob.User.ID, alice.User.ID, "")
+	require.NoError(t, env.App.Orgs.SetDefault(ctx, bob.User.ID, team.ID))
+
+	tok := bob.Token(dto.TokenKindAgent, "laptop")
+	ai := testkit.Decode[dto.AgentInfo](tok.AsFolder(testkit.Folder{Machine: "devbox", Path: "/work/guest"}).Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK)).ID
+
+	requireHome(t, env, ai, team.ID, bob.User.ID)
+	m, ok, err := env.App.Authz.Member(ctx, team.ID, ai)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, orgs.PermissionGuest, m.Permission, "a guest's AI is a guest")
+	require.Equal(t, bob.User.ID, m.InviterIID, "invited by its host")
+	managed, err := env.App.Authz.Manages(ctx, bob.User.ID, ai, team.ID)
+	require.NoError(t, err)
+	require.True(t, managed, "the guest host manages the AI it started")
+}
+
 // ORG-04: a host that belongs to no organization cannot start an AI - a live session and a tools-only call
 // are each refused with 422 organization_required - and nothing is created.
 func TestAHostWithoutAnOrganizationCannotStartAnAI(t *testing.T) {

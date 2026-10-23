@@ -362,7 +362,18 @@ func (r *Registry) createFolderAgent(ctx context.Context, q *db.Queries, ownerID
 	}); err != nil {
 		return db.Agent{}, err
 	}
-	if err := orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: home, IID: agentID, Permission: orgs.PermissionMember, Now: now}); err != nil {
+	// An AI joins with its host's standing: a member (the host is a member or an admin), or a guest the
+	// host invited when the host is itself a guest there, so a guest never places an AI that only an
+	// admin could delete (Guests assumption, POS-05).
+	join := orgs.AddMemberInput{OrgID: home, IID: agentID, Permission: orgs.PermissionMember, Now: now}
+	host, err := q.GetOrgChartMember(ctx, db.GetOrgChartMemberParams{OrgID: home, Iid: ownerID})
+	if err != nil {
+		return db.Agent{}, err
+	}
+	if orgs.Permission(host.Permission) == orgs.PermissionGuest {
+		join.Permission, join.InviterIID = orgs.PermissionGuest, ownerID
+	}
+	if err := orgs.AddMember(ctx, q, join); err != nil {
 		return db.Agent{}, err
 	}
 	if r.audit != nil {
