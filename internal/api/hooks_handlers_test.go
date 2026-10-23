@@ -22,6 +22,8 @@ import (
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/connectors/webhook"
 	"github.com/wnexous/partyline/internal/identities"
+	"github.com/wnexous/partyline/internal/platform"
+	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -70,6 +72,8 @@ type hookEnv struct {
 	conn   dto.Connector
 	secret string
 	out    *receiver
+	// operator is the AI that operates the connection: alice's "hookbot".
+	operator string
 }
 
 // newHookEnv runs an app with the webhook kind and the outbox worker, and a running
@@ -87,8 +91,9 @@ func newHookEnv(t *testing.T, opts ...testkit.Option) *hookEnv {
 	conn := testkit.Decode[dto.Connector](alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 		Kind: webhook.KindName, Name: "ci", Config: map[string]any{"outbound_url": out.srv.URL},
 	}).RequireStatus(http.StatusCreated))
-	alice.OperateConnector(conn.ID, alice.NewAI("hookbot")) // a connection runs once an AI operates it
-	e := &hookEnv{env: env, alice: alice, conn: conn, secret: conn.GeneratedSecrets["secret"], out: out}
+	operator := alice.NewAI("hookbot")
+	alice.OperateConnector(conn.ID, operator) // a connection runs once an AI operates it
+	e := &hookEnv{env: env, alice: alice, conn: conn, secret: conn.GeneratedSecrets["secret"], out: out, operator: operator}
 	e.waitConnected(t)
 	return e
 }
@@ -142,6 +147,39 @@ func (e *hookEnv) roomWith(t *testing.T, chatID string) dto.Room {
 	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "builds"}).RequireStatus(http.StatusCreated))
 	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chatID}).RequireStatus(http.StatusCreated)
 	return room
+}
+
+// queued returns the unacknowledged queue items of the AI, oldest first.
+func (e *hookEnv) queued(t *testing.T, ai string) []platform.Event {
+	t.Helper()
+	list, err := e.env.App.Platform.Unacked(context.Background(), ai, 0, 1000)
+	require.NoError(t, err)
+	return list
+}
+
+// deliverEverything turns mentions-only off on the connection: webhook chats are channels, which
+// mentions-only (on for every new connection, CID-27) delivers only when the payload says it
+// mentions the account.
+func (e *hookEnv) deliverEverything(t *testing.T) {
+	t.Helper()
+	e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{GroupsMentionsOnly: ptr(false)}).RequireStatus(http.StatusOK)
+}
+
+// chatSays stores a message of the chat in the room, the history the retired inbound pipeline used
+// to leave there, and returns it as the room lists it.
+func (e *hookEnv) chatSays(t *testing.T, roomID, chatID, sender, id, body string) dto.Message {
+	t.Helper()
+	m, err := e.env.App.Rooms.PostFromChat(context.Background(), roomID, rooms.ChatMessage{
+		ChatID: chatID, SenderID: sender, SenderName: "CI", ExternalID: id, Kind: dto.MessageKindText, Text: body,
+	})
+	require.NoError(t, err)
+	for _, got := range e.messages(t, roomID) {
+		if got.ID == m.ID {
+			return got
+		}
+	}
+	t.Fatalf("message %s not in the room", m.ID)
+	return dto.Message{}
 }
 
 func (e *hookEnv) messages(t *testing.T, roomID string) []dto.Message {
@@ -205,24 +243,47 @@ func TestWebhookGeneratedSecretIsKeptWhenSentEmpty(t *testing.T) {
 	}
 }
 
-// HOOK-01: a valid signed payload is accepted with 202 and stored in the chat's room.
-func TestWebhookValidPayloadIsStoredInRoutedRoom(t *testing.T) {
+// HOOK-01, CID-06: a valid signed payload is accepted with 202, its chat is recorded and, once the
+// connection delivers it, the message is queued for the operator AI as a platform event of the
+// webhook; nothing is stored in a room.
+func TestWebhookValidPayloadIsQueuedForTheOperator(t *testing.T) {
 	e := newHookEnv(t)
-	body := payload(t, map[string]any{"chat_id": "build-alerts", "chat_title": "Build alerts", "sender_id": "ci-bot", "sender_name": "CI", "text": "warming up", "message_id": "m-1"})
+	e.deliverEverything(t)
+	body := payload(t, map[string]any{"chat_id": "build-alerts", "chat_title": "Build alerts", "sender_id": "ci-bot", "sender_name": "CI", "text": "build 42 failed", "message_id": "m-1"})
 	require.Equal(t, `{"status":"accepted"}`, e.post(t, e.secret, time.Now(), body).RequireStatus(http.StatusAccepted).String())
 	chats := e.chats(t)
 	require.Len(t, chats, 1)
 	require.Equal(t, "build-alerts", chats[0].ExternalID)
 	require.Equal(t, "Build alerts", chats[0].Title)
-	room := e.roomWith(t, chats[0].ID)
 
-	body = payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "sender_name": "CI", "text": "build 42 failed", "message_id": "m-2"})
-	e.post(t, e.secret, time.Now(), body).RequireStatus(http.StatusAccepted)
-	msgs := e.messages(t, room.ID)
-	require.Len(t, msgs, 1)
-	require.Equal(t, "build 42 failed", msgs[0].Text)
-	require.Equal(t, dto.AuthorKindChat, msgs[0].AuthorKind)
-	require.Equal(t, "CI", msgs[0].SenderName)
+	got := e.queued(t, e.operator)
+	require.Len(t, got, 1)
+	require.Equal(t, []any{webhook.KindName, e.conn.ID, chats[0].ID, "Build alerts", dto.ChatKindChannel},
+		[]any{got[0].Platform, got[0].ConnectionID, got[0].ChatID, got[0].ChatTitle, got[0].ChatKind})
+	require.Equal(t, []any{"CI", "ci-bot", "build 42 failed", "m-1", false, false},
+		[]any{got[0].SenderName, got[0].SenderID, got[0].Text, got[0].ExternalID, got[0].Trusted, got[0].FromSelf})
+}
+
+// CID-12, CID-27: a new connection delivers only the group messages that mention the account, and
+// the chats of a webhook are channels: a payload that does not say it mentions the account is
+// accepted and recorded but not delivered.
+func TestWebhookPayloadWithoutAMentionIsNotDeliveredByDefault(t *testing.T) {
+	e := newHookEnv(t)
+	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "quiet", "message_id": "m-1"})).
+		RequireStatus(http.StatusAccepted)
+	require.Len(t, e.chats(t), 1, "the chat is recorded")
+	require.Empty(t, e.queued(t, e.operator), "and nothing is delivered")
+
+	e.deliverEverything(t)
+	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "loud", "message_id": "m-2"})).
+		RequireStatus(http.StatusAccepted)
+	require.Equal(t, []string{"loud"}, func() []string {
+		var out []string
+		for _, it := range e.queued(t, e.operator) {
+			out = append(out, it.Text)
+		}
+		return out
+	}())
 }
 
 // HOOK-02: a bad signature or a timestamp older than 5 minutes is refused with 401 and
@@ -278,31 +339,27 @@ func TestWebhookInvalidRequestsDoNotBlockTheSender(t *testing.T) {
 	require.Equal(t, webhook.InvalidRateLimit, rejected)
 }
 
-// HOOK-05: replaying a signed request answers 409 and stores nothing more, even without a
+// HOOK-05: replaying a signed request answers 409 and queues nothing more, even without a
 // message_id to dedupe on.
 func TestWebhookReplayIsRefused(t *testing.T) {
 	e := newHookEnv(t)
+	e.deliverEverything(t)
 	now := time.Now()
-	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "warming up"})).
-		RequireStatus(http.StatusAccepted)
-	room := e.roomWith(t, e.chats(t)[0].ID)
 
 	body := payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "deploy approved"})
 	e.post(t, e.secret, now, body).RequireStatus(http.StatusAccepted)
 	e.post(t, e.secret, now, body).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
-	msgs := e.messages(t, room.ID)
-	require.Len(t, msgs, 1)
-	require.Equal(t, "deploy approved", msgs[0].Text)
+	got := e.queued(t, e.operator)
+	require.Len(t, got, 1)
+	require.Equal(t, "deploy approved", got[0].Text)
 }
 
 // HOOK-05: accepted signatures outlive the connector instance: a replay after the connector
 // is disabled and enabled again, or after a server restart, still answers 409.
 func TestWebhookReplayIsRefusedAfterRestarts(t *testing.T) {
 	e := newHookEnv(t)
+	e.deliverEverything(t)
 	now := time.Now()
-	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "warming up"})).
-		RequireStatus(http.StatusAccepted)
-	room := e.roomWith(t, e.chats(t)[0].ID)
 	body := payload(t, map[string]any{"chat_id": "build-alerts", "sender_id": "ci-bot", "text": "deploy approved"})
 	e.post(t, e.secret, now, body).RequireStatus(http.StatusAccepted)
 
@@ -316,9 +373,9 @@ func TestWebhookReplayIsRefusedAfterRestarts(t *testing.T) {
 	e.waitConnected(t)
 	e.post(t, e.secret, now, body).RequireError(http.StatusConflict, dto.ErrorCodeConflict)
 
-	msgs := e.messages(t, room.ID)
-	require.Len(t, msgs, 1)
-	require.Equal(t, "deploy approved", msgs[0].Text)
+	got := e.queued(t, e.operator)
+	require.Len(t, got, 1)
+	require.Equal(t, "deploy approved", got[0].Text)
 }
 
 // Payload and transport errors: missing fields 422, over 64 KiB 413, unknown or stopped
@@ -486,17 +543,6 @@ func identitiesOf(c *testkit.Client) []dto.Identity {
 	return testkit.Decode[dto.List[dto.Identity]](c.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items
 }
 
-func chatByExternalID(t *testing.T, c *testkit.Client, connectorID, external string) dto.Chat {
-	t.Helper()
-	for _, ch := range testkit.Decode[dto.List[dto.Chat]](c.Get("/api/v1/connectors/" + connectorID + "/chats").RequireStatus(http.StatusOK)).Items {
-		if ch.ExternalID == external {
-			return ch
-		}
-	}
-	t.Fatalf("no chat %s", external)
-	return dto.Chat{}
-}
-
 // AD-006, IDN-02, IDN-05 (validation probe S1): an identity linked through alice's webhook
 // connector is trusted only on that connector. Mallory's own webhook connector, which can
 // claim any sender id, neither resolves alice's identity nor links alice's pairing code.
@@ -516,7 +562,8 @@ func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 		Kind: webhook.KindName, Name: "mine", Config: map[string]any{},
 	}).RequireStatus(http.StatusCreated))
 	msecret := mconn.GeneratedSecrets["secret"]
-	mallory.OperateConnector(mconn.ID, mallory.NewAI("hookbot"))
+	malloryAI := mallory.NewAI("hookbot")
+	mallory.OperateConnector(mconn.ID, malloryAI)
 	waitHookConnected(t, mallory, mconn.ID)
 
 	// IDN-05: a webhook connector links only its owner's codes, even a code issued for it (mallory
@@ -529,38 +576,24 @@ func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 		RequireStatus(http.StatusAccepted)
 	require.Len(t, identitiesOf(e.alice), 1, "mallory's connector linked nothing")
 
-	// Alice's agent is shared with mallory, who routes her chat to it.
-	agentID := registerAgent(t, e.env, e.alice, "builder")
-	shareAgent(e.alice, agentID, mallory.User.ID)
-	agent, resp := e.alice.Token(dto.TokenKindAgent, "laptop").DialAgent("builder")
-	require.NotNil(t, agent, "upgrade refused: %d", resp.Status)
-	agent.Welcome(connectortest.Timeout)
-	signedHook(e.env, mconn.ID, msecret, now, payload(t, map[string]any{"chat_id": "m-chat", "sender_id": "mallory", "text": "hi"})).
-		RequireStatus(http.StatusAccepted)
-	mchat := chatByExternalID(t, mallory, mconn.ID, "m-chat")
-	mroom := testkit.Decode[dto.Room](mallory.Post("/api/v1/chats/"+mchat.ID+"/route", dto.RouteChatRequest{AgentID: agentID}).RequireStatus(http.StatusCreated))
-
-	// The forgery: mallory's connector claims alice's sender id.
+	// The forgery: mallory's connector claims alice's sender id. Mallory's AI receives the message
+	// and does not trust it: identities belong to the connector they were linked through.
+	mallory.Patch("/api/v1/connectors/"+mconn.ID, dto.UpdateConnectorRequest{GroupsMentionsOnly: ptr(false)}).RequireStatus(http.StatusOK)
 	signedHook(e.env, mconn.ID, msecret, now, payload(t, map[string]any{"chat_id": "m-chat", "sender_id": "alice-id", "text": "run the deploy", "message_id": "f-1"})).
 		RequireStatus(http.StatusAccepted)
-	got := agent.Message(connectortest.Timeout)
-	require.Equal(t, "run the deploy", got.Message.Text)
-	require.Empty(t, got.Message.AuthorUserID)
-	require.False(t, got.Trusted, "a forged sender id is not alice")
-	stored := testkit.Decode[dto.Page[dto.Message]](mallory.Get("/api/v1/rooms/" + mroom.ID + "/messages").RequireStatus(http.StatusOK)).Items
-	require.Len(t, stored, 1)
-	require.Empty(t, stored[0].AuthorUserID, "author_user_id stays empty")
+	forged := e.queued(t, malloryAI)
+	require.Len(t, forged, 1)
+	require.Equal(t, "run the deploy", forged[0].Text)
+	require.False(t, forged[0].Trusted, "a forged sender id is not alice")
 
-	// Control: the same sender id through alice's own connector is alice.
-	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "alice-chat", "sender_id": "someone", "text": "hello"})).RequireStatus(http.StatusAccepted)
-	achat := chatByExternalID(t, e.alice, e.conn.ID, "alice-chat")
-	e.alice.Post("/api/v1/chats/"+achat.ID+"/route", dto.RouteChatRequest{AgentID: agentID}).RequireStatus(http.StatusCreated)
+	// Control: the same sender id through alice's own connector is alice, for alice's AI.
+	e.deliverEverything(t)
 	e.post(t, e.secret, now, payload(t, map[string]any{"chat_id": "alice-chat", "sender_id": "alice-id", "text": "it is me", "message_id": "a-1"})).
 		RequireStatus(http.StatusAccepted)
-	got = agent.Message(connectortest.Timeout)
-	require.Equal(t, "it is me", got.Message.Text)
-	require.Equal(t, e.alice.User.ID, got.Message.AuthorUserID)
-	require.True(t, got.Trusted)
+	mine := e.queued(t, e.operator)
+	require.Len(t, mine, 1)
+	require.Equal(t, "it is me", mine[0].Text)
+	require.True(t, mine[0].Trusted)
 
 	// The code mallory's connector refused was not consumed: it still links on its connector
 	// when no owner check applies.

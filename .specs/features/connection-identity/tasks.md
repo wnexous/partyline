@@ -398,15 +398,15 @@ Room posting, people and DM creation, `autoGroup`, `autoRoute` and `platformDM` 
 **Reuses**: `UpsertChat`, `saveMedia`, `truncate`, `SentIDs`, `identities.ResolveSender`
 **Requirement**: CID-06, CID-07, CID-12, CID-13, CID-14, CID-26
 **Done when**:
-- [ ] Integration:
+- [x] Integration:
   - group and DM events carry every CID-06 field;
   - no message, person or room is created (CID-07);
   - the `deliver` and mentions-only filters: each condition excludes on its own (L-042);
   - trust matrix (CID-13);
   - an echo is dropped, own typing is `from_self` (CID-14);
   - a repeat is queued once (CID-26)
-- [ ] Inbound/auto-group/catch-all/platform-DM tests deleted or rewritten (ROUTE-01..11, ACC-02, ACC-05, ACC-06, PEOP-01 creation retired)
-- [ ] Gate check passes: `make check`
+- [x] Inbound/auto-group/catch-all/platform-DM tests deleted or rewritten (ROUTE-01..11, ACC-02, ACC-05, ACC-06, PEOP-01 creation retired)
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors)!: deliver inbound messages to the operator's queue`

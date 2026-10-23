@@ -193,7 +193,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	}
 	sentIDs := connectors.NewSentIDs(opts.Now)
 	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
-		Store: st, Bus: bus, Rooms: a.Rooms, Blobs: blobs, Identities: a.Identities, Conversations: a.Conversations,
+		Store: st, Bus: bus, Blobs: blobs, Identities: a.Identities, Queue: a.Platform,
 		Sent: sentIDs, Wait: opts.InboundWait, MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
 	})
 	fileLinks := connectors.NewFileLinks(box, st, cfg.PublicURL, opts.Now)

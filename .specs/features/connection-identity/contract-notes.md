@@ -202,3 +202,61 @@ Where a section refines the design, it says so.
   per list or view).
 - **Web**: `web/src/test/fixtures.ts` `makeConnector` carries the three new fields so that the
   generated type still holds; the connection page itself is T29.
+
+## T7: Pipeline delivers to the operator's queue (CID-02, CID-06, CID-07, CID-12, CID-13, CID-14, CID-26)
+
+- **`Pipeline.Handle` order** (`internal/connectors/inbound.go`; deps are `Store, Bus, Blobs,
+  Identities, Queue, Sent, Wait, MaxUploadBytes, Logger, Now`; `Rooms`, `Conversations`, `People` and
+  `SetRouteHook` are gone):
+  1. A pairing command (`!link CODE`, `/link CODE`) links the sender on this connector and stops.
+     It records no chat. A message of the account itself is never a pairing command: it is ignored
+     and not delivered.
+  2. `UpsertChat` records every other message's chat (id, title, kind, last seen), delivered or not
+     (`chat.discovered` goes out as before). A message with neither text nor media stops here.
+  3. The connector row is read per message. No operator drops the message; so does an operator
+     whose agent row vanished meanwhile (no error logged).
+  4. A message of the account itself (`FromSelf`) first goes through `settle`: it waits up to
+     `SelfHold` (10 s) while a send to the chat runs, and is dropped when its platform id is one
+     Partyline sent (`SentIDs`, 5 minutes, or the outbox's recorded ids). Otherwise it goes on
+     as the operator's own typing. T17 adds `platform_sends` to the ids `settle` and
+     `repliesToAccount` read.
+  5. `deliver`: `all` takes every chat (also one of unknown, empty kind), `dms` takes `dm`,
+     `groups` takes `group` and `channel`.
+  6. Mentions-only, when on, applies to `group` and `channel` chats only (direct chats and chats of
+     unknown kind are exempt): the message is kept when `Inbound.MentionsAccount` is set or its
+     `ReplyToID` is a platform id Partyline sent to that chat (an id belongs to its chat). The chat's
+     kind is the stored one when the message gives none.
+  7. A repeat is detected before anything is downloaded (`Queue.Has`: the connection, the chat and
+     the platform id; an acknowledged item still counts until its purge); then `trusted` is
+     decided, the media become blobs and `Queue.Enqueue` queues the item for the operator.
+- **`trusted`** (CID-13) is true only when `Identities.ResolveSender(connection, sender id, alt id)`
+  gives the user who owns the operator AI. A sender without an id, an account linked through
+  another connection and another user's account are untrusted, and so is every `FromSelf` message.
+- **Item content**: `SenderID` and `SenderName` are the message's (`SenderAltID` only serves the
+  trust lookup), `Kind` defaults to text, `Text` is cut to 16,000 code points with the truncation
+  marker (CON-14), `ReceivedAt` is the platform time (now when the message has none) and the files
+  are `platform.Attachment`s: stored (blob hash), `too_large` or `unavailable`, with the
+  attachment name defaulting to `file` and its type to `application/octet-stream`.
+- **`Inbound.MentionsAccount`** is new. The adapters set it in T8 to T11. Until they do, only
+  direct messages, replies to Partyline sends and (with mentions-only off) everything else pass; a
+  webhook chat is a `channel`, so a webhook connection delivers nothing under the defaults until the
+  owner turns mentions-only off (T11 adds the `mentions_account` payload field).
+- **`platform.Queue.Has(connectorID, chatID, externalID)`** and its query `PlatformItemExists`.
+- **Removed** with the pipeline's routing (CID-07, CID-22): room posting, `People` (the recorder of
+  people and of who is seen in each chat; its logic lives on as the test-only
+  `connectortest.History`, which the tests of the history that is still read use), DM creation,
+  `autoGroup`, `autoRoute`, `platformDM`, the catch-all caps and `handleSelf`. `autoroute.go` keeps
+  only `IsAutoRouteDetail` and the two detail constants, which `Service.Update` (ROUTE-09) still
+  reads until T35. Still present, and retired later: the catch-all and `auto_route_*` settings, the
+  room outbox and `Sender` (T33), `RouteChat` and the notify endpoints (T34),
+  `conversations.EnsurePlatformDM` and `rooms.PostFromChat` (kept for the history tests).
+- **Tests retired with the routing** (commit body names the IDs): `catch_all_test.go` (ROUTE-01..11),
+  `auto_groups_test.go` (ACC-06), `platform_dm_test.go` (ACC-02, DM-05 sends), the person-creating
+  tests of `people_test.go` (PEOP-01 creation, GRP-02 seen links, PEOP-05 following the platform
+  name; `TestPlatformLabel` survives in `chats_test.go`) and `notify_test.go` (NOTI-01..03 and the
+  tests of `GET /me/notify-options` and `PUT /me/notify`: every fixture built a linked phone
+  through inbound DMs that no longer create persons or routes; T33 and T34 remove the code those
+  tests covered). Rewritten against the queue: the inbound, own-account and echo tests, the webhook
+  inbound tests, the people/contacts fixtures (history seeded through `connectortest.History`),
+  the merge tests (platform DM history seeded with `EnsurePlatformDM`) and the v0.3 upgrade test
+  (the agent adopts its folder and replies through the outbox; T37 pins the upgrade end to end).

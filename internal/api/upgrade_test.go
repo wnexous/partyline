@@ -40,15 +40,19 @@ func v03Database(t *testing.T) string {
 }
 
 // GRP-01, MIG-01, MIG-02: after the upgrade, the first session in a folder called atlas adopts
-// the v0.3 agent atlas, and the v0.3 catch-all room of the telegram connector still routes both
-// ways through it: a DM from a chat already in the room and a DM from a new chat reach the
-// agent member, and the agent's reply goes out to the chat through the outbox.
-func TestUpgradedCatchAllRouteDeliversBothWays(t *testing.T) {
+// the v0.3 agent atlas, and the agent's reply to an old message of the v0.3 inbox room still goes
+// out to the chat through the outbox, with the v0.3 outbox row that was pending. (The catch-all
+// routing of new chats is retired, CID-07: what arrives on the connector is queued for its
+// operator, which the upgrade end-to-end test pins, T37.)
+func TestUpgradedAgentAdoptsItsFolderAndRepliesThroughTheOutbox(t *testing.T) {
 	ctx := context.Background()
 	fake := connectortest.New()
 	telegram := fake.Kind()
 	telegram.Name = "telegram" // the fixture's connector kind, served by the fake
-	env := testkit.New(t, testkit.WithDatabase(v03Database(t)), testkit.WithConnectorKinds(telegram), testkit.WithOutbox())
+	// The app's clock stands an hour after the fixture's last message, so that the retention sweep at
+	// start-up (30 days in the inbox room) keeps its history whatever today is.
+	afterTheFixture := func() time.Time { return time.UnixMilli(1790003600000) }
+	env := testkit.New(t, testkit.WithDatabase(v03Database(t)), testkit.WithConnectorKinds(telegram), testkit.WithOutbox(), testkit.WithClock(afterTheFixture))
 	// v0.3 connectors were operated by their owner; a connection runs once an AI operates it
 	// (CID-02), so here the adopted agent takes it over.
 	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
@@ -67,19 +71,8 @@ func TestUpgradedCatchAllRouteDeliversBothWays(t *testing.T) {
 	require.Equal(t, "a-atlas", agent.Welcome(connectortest.Timeout).Agent.ID, "the folder adopted the v0.3 agent")
 	require.Equal(t, "r-ops", agent.Notice(connectortest.Timeout).Room.ID, "ops keeps its instructions")
 
-	inst.Emit(ctx, connectors.Inbound{
-		ChatID: "100", ChatTitle: "Maria", ChatKind: "dm", MessageID: "tg-4",
-		SenderID: "100", SenderName: "Maria Silva", Text: "ainda tem horário?", At: time.Now(),
-	})
-	got := agent.Message(connectortest.Timeout)
-	require.Equal(t, "r-inbox", got.Room.ID)
-	require.Equal(t, "ainda tem horário?", got.Message.Text)
-	require.Equal(t, dto.AuthorKindChat, got.Message.AuthorKind)
-	require.Equal(t, "c-tgdm", got.Message.AuthorID)
-	agent.Ack(got.Message.ID)
-
 	reply := testkit.Decode[dto.Message](alice.AsAgent("atlas").
-		Post("/api/v1/agent/messages/"+got.Message.ID+"/reply", dto.ReplyRequest{Text: "tem sim, às 10h"}).
+		Post("/api/v1/agent/messages/m-in3/reply", dto.ReplyRequest{Text: "tem sim, às 10h"}).
 		RequireStatus(http.StatusCreated))
 	require.Equal(t, "a-atlas", reply.AuthorID)
 	// The reply and the fixture's pending outbox row both go out; the failed row stays failed.
@@ -91,15 +84,6 @@ func TestUpgradedCatchAllRouteDeliversBothWays(t *testing.T) {
 	require.Equal(t, "100", sent[reply.ID].ChatID)
 	require.Contains(t, sent[reply.ID].Text, "tem sim, às 10h")
 	require.Equal(t, "-1001", sent["m-ops1"].ChatID, "pending v0.3 outbox rows are still delivered")
-
-	// A DM from a new chat still joins the catch-all room (scope dms) and reaches the agent.
-	inst.Emit(ctx, connectors.Inbound{
-		ChatID: "102", ChatTitle: "João", ChatKind: "dm", MessageID: "tg-5",
-		SenderID: "102", SenderName: "João", Text: "oi", At: time.Now(),
-	})
-	got = agent.Message(connectortest.Timeout)
-	require.Equal(t, "r-inbox", got.Room.ID)
-	require.Equal(t, "oi", got.Message.Text)
 }
 
 // MIG-01, GRP-01: after the upgrade (0015 and 0016 in one transaction, the legacy name columns

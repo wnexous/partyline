@@ -94,8 +94,13 @@ type Inbound struct {
 	SenderID    string
 	SenderAltID string
 	SenderName  string
-	// FromSelf marks messages sent by the connector's own account (CON-12).
+	// FromSelf marks messages sent by the connector's own account (CON-12): typed on its device or
+	// the echo of a Partyline send, which the pipeline tells apart (CID-14).
 	FromSelf bool
+	// MentionsAccount tells that the message mentions the connector's own account, in the syntax
+	// of the platform (CID-12). Only the connector knows; replies to the account are recognised by
+	// the pipeline.
+	MentionsAccount bool
 	// Kind is a dto.MessageKind value (text, image, ...); empty means text.
 	Kind string
 	Text string

@@ -149,19 +149,19 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
 | CID-01 | P1: One AI per connection | Execute | Implementing (T5) |
-| CID-02 | P1: One AI per connection | Execute | Implementing (T5) |
+| CID-02 | P1: One AI per connection | Execute | Implementing (T5, T7) |
 | CID-03 | P1: One AI per connection | Tasks | In Tasks |
 | CID-04 | P1: One AI per connection | Execute | Implemented (T1, bebd8d1) |
 | CID-05 | P1: One AI per connection | Tasks | In Tasks |
-| CID-06 | P1: Direct delivery | Tasks | In Tasks |
-| CID-07 | P1: Direct delivery | Tasks | In Tasks |
+| CID-06 | P1: Direct delivery | Execute | Implementing (T7) |
+| CID-07 | P1: Direct delivery | Execute | Implementing (T7) |
 | CID-08 | P1: Direct delivery | Execute | Implementing (T2, T3) |
 | CID-09 | P1: Direct delivery | Execute | Implementing (T3, T4) |
 | CID-10 | P1: Direct delivery | Execute | Implementing (T4) |
 | CID-11 | P1: Direct delivery | Execute | Implementing (T3) |
-| CID-12 | P1: Direct delivery | Tasks | In Tasks |
-| CID-13 | P1: Direct delivery | Tasks | In Tasks |
-| CID-14 | P1: Direct delivery | Tasks | In Tasks |
+| CID-12 | P1: Direct delivery | Execute | Implementing (T7) |
+| CID-13 | P1: Direct delivery | Execute | Implementing (T7) |
+| CID-14 | P1: Direct delivery | Execute | Implementing (T7) |
 | CID-15 | P1: Answer through the connection | Tasks | In Tasks |
 | CID-16 | P1: Answer through the connection | Tasks | In Tasks |
 | CID-17 | P1: Answer through the connection | Tasks | In Tasks |
@@ -173,7 +173,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-23 | P1: Partyline chat is one more app | Execute | Implementing (T6) |
 | CID-24 | Edge cases | Tasks | In Tasks |
 | CID-25 | Edge cases | Tasks | In Tasks |
-| CID-26 | Edge cases | Execute | Implementing (T2, T3) |
+| CID-26 | Edge cases | Execute | Implementing (T2, T3, T7) |
 | CID-27 | P1: Direct delivery | Execute | Implementing (T2, T6) |
 
 **Coverage:** 27 total, 27 mapped to tasks (`tasks.md` T1-T38); CID-04 implemented (T1).

@@ -146,6 +146,16 @@ func (q *Queue) Enqueue(ctx context.Context, it Item) (id string, queued bool, e
 	return id, true, nil
 }
 
+// Has reports whether the platform message of the chat of the connection is queued, or was
+// acknowledged and not yet purged: callers skip downloading the files of a repeat (CID-26). A
+// message without a platform id is never a repeat.
+func (q *Queue) Has(ctx context.Context, connectorID, chatID, externalID string) (bool, error) {
+	if externalID == "" {
+		return false, nil
+	}
+	return q.d.Store.R().PlatformItemExists(ctx, db.PlatformItemExistsParams{ConnectorID: connectorID, ChatID: chatID, ExternalID: externalID})
+}
+
 // trim deletes the oldest unacknowledged items of the AI over MaxQueued and adds them to its
 // dropped counter.
 func trim(ctx context.Context, tx *db.Queries, agentID string) error {

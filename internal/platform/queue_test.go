@@ -269,6 +269,35 @@ func TestEnqueueRefusesUnknownRows(t *testing.T) {
 	require.Empty(t, ch, "no event for an item that was not queued")
 }
 
+// CID-26 (L-042): Has matches the connection, the chat and the platform id, each alone; an item
+// still counts after its ack, an empty platform id matches nothing, and a purged item no longer
+// counts.
+func TestHasMatchesTheConnectionTheChatAndThePlatformID(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	id := f.enqueue(t, f.item("77"))
+	f.enqueue(t, f.item("")) // a message without a platform id
+	has := func(connector, chat, external string) bool {
+		t.Helper()
+		got, err := f.q.Has(ctx, connector, chat, external)
+		require.NoError(t, err)
+		return got
+	}
+
+	require.True(t, has(f.tg, f.tgGroup, "77"))
+	require.False(t, has(f.wa, f.tgGroup, "77"), "only the connection differs")
+	require.False(t, has(f.tg, f.tgDM, "77"), "only the chat differs")
+	require.False(t, has(f.tg, f.tgGroup, "78"), "only the platform id differs")
+	require.False(t, has(f.tg, f.tgGroup, ""), "an empty platform id matches nothing, not even an item that has none")
+
+	require.NoError(t, f.q.Ack(ctx, f.atlas, id))
+	require.True(t, has(f.tg, f.tgGroup, "77"), "an acknowledged message is still a repeat")
+	f.purge(t, t0.Add(platform.AckedTTL-ms))
+	require.True(t, has(f.tg, f.tgGroup, "77"), "24 hours minus 1 ms after the ack")
+	f.purge(t, t0.Add(platform.AckedTTL))
+	require.False(t, has(f.tg, f.tgGroup, "77"), "purged 24 hours after the ack: a repeat would queue again")
+}
+
 // CID-08: Unacked returns an AI's own items oldest first, after a seq and up to a limit.
 func TestUnackedIsOldestFirst(t *testing.T) {
 	f := newFixture(t)

@@ -97,3 +97,11 @@ SELECT COUNT(*) FROM platform_attachments WHERE sha256 = ?;
 SELECT connector_id, COUNT(*) AS queued FROM platform_items
 WHERE acked_at IS NULL AND connector_id IN (sqlc.slice(connector_ids))
 GROUP BY connector_id;
+
+-- name: PlatformItemExists :one
+-- CID-26: whether the platform message of the chat is queued or was acknowledged less than a day
+-- ago; a message without a platform id is never a repeat.
+SELECT EXISTS (
+    SELECT 1 FROM platform_items
+    WHERE connector_id = ? AND chat_id = ? AND external_id = ? AND external_id <> ''
+);

@@ -536,6 +536,28 @@ func (q *Queries) MovePlatformItems(ctx context.Context, arg MovePlatformItemsPa
 	return result.RowsAffected()
 }
 
+const platformItemExists = `-- name: PlatformItemExists :one
+SELECT EXISTS (
+    SELECT 1 FROM platform_items
+    WHERE connector_id = ? AND chat_id = ? AND external_id = ? AND external_id <> ''
+)
+`
+
+type PlatformItemExistsParams struct {
+	ConnectorID string
+	ChatID      string
+	ExternalID  string
+}
+
+// CID-26: whether the platform message of the chat is queued or was acknowledged less than a day
+// ago; a message without a platform id is never a repeat.
+func (q *Queries) PlatformItemExists(ctx context.Context, arg PlatformItemExistsParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, platformItemExists, arg.ConnectorID, arg.ChatID, arg.ExternalID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const resetPlatformDropped = `-- name: ResetPlatformDropped :exec
 UPDATE agents SET platform_dropped = 0 WHERE id = ?
 `
