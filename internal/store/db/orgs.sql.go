@@ -10,6 +10,54 @@ import (
 	"database/sql"
 )
 
+const clearOrgOperator = `-- name: ClearOrgOperator :many
+UPDATE connectors SET operator_iid = NULL WHERE org_id = ?1 AND operator_iid = ?2 RETURNING id
+`
+
+type ClearOrgOperatorParams struct {
+	OrgID sql.NullString
+	Iid   sql.NullString
+}
+
+// The connections of the organization an identity operated now have no operator (OMEM-08).
+func (q *Queries) ClearOrgOperator(ctx context.Context, arg ClearOrgOperatorParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, clearOrgOperator, arg.OrgID, arg.Iid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const clearUserDefaultOrg = `-- name: ClearUserDefaultOrg :exec
+UPDATE users SET default_org_id = NULL WHERE id = ? AND default_org_id = ?
+`
+
+type ClearUserDefaultOrgParams struct {
+	ID           string
+	DefaultOrgID sql.NullString
+}
+
+// A user who leaves its default organization has no default.
+func (q *Queries) ClearUserDefaultOrg(ctx context.Context, arg ClearUserDefaultOrgParams) error {
+	_, err := q.db.ExecContext(ctx, clearUserDefaultOrg, arg.ID, arg.DefaultOrgID)
+	return err
+}
+
 const countOrgAgents = `-- name: CountOrgAgents :one
 SELECT COUNT(*) FROM agents WHERE org_id = ?
 `
@@ -175,12 +223,77 @@ func (q *Queries) CreatePosition(ctx context.Context, arg CreatePositionParams) 
 	return err
 }
 
+const deleteOrgGroupMemberships = `-- name: DeleteOrgGroupMemberships :many
+DELETE FROM room_members
+WHERE member_id = ?1 AND kind IN ('user', 'agent')
+  AND room_id IN (SELECT id FROM rooms WHERE org_id = ?2 AND kind = 'group')
+RETURNING room_id
+`
+
+type DeleteOrgGroupMembershipsParams struct {
+	Iid   string
+	OrgID sql.NullString
+}
+
+// Takes a user or an AI out of the groups of an organization (OMEM-06); DMs and the groups of other
+// organizations are not touched.
+func (q *Queries) DeleteOrgGroupMemberships(ctx context.Context, arg DeleteOrgGroupMembershipsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, deleteOrgGroupMemberships, arg.Iid, arg.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var room_id string
+		if err := rows.Scan(&room_id); err != nil {
+			return nil, err
+		}
+		items = append(items, room_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteOrgMember = `-- name: DeleteOrgMember :exec
+DELETE FROM org_members WHERE org_id = ? AND iid = ?
+`
+
+type DeleteOrgMemberParams struct {
+	OrgID string
+	Iid   string
+}
+
+func (q *Queries) DeleteOrgMember(ctx context.Context, arg DeleteOrgMemberParams) error {
+	_, err := q.db.ExecContext(ctx, deleteOrgMember, arg.OrgID, arg.Iid)
+	return err
+}
+
 const deleteOrganization = `-- name: DeleteOrganization :exec
 DELETE FROM organizations WHERE id = ?
 `
 
 func (q *Queries) DeleteOrganization(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, deleteOrganization, id)
+	return err
+}
+
+const deletePlatformItemsOfAgentOnConnector = `-- name: DeletePlatformItemsOfAgentOnConnector :exec
+DELETE FROM platform_items WHERE agent_id = ? AND connector_id = ?
+`
+
+type DeletePlatformItemsOfAgentOnConnectorParams struct {
+	AgentID     string
+	ConnectorID string
+}
+
+func (q *Queries) DeletePlatformItemsOfAgentOnConnector(ctx context.Context, arg DeletePlatformItemsOfAgentOnConnectorParams) error {
+	_, err := q.db.ExecContext(ctx, deletePlatformItemsOfAgentOnConnector, arg.AgentID, arg.ConnectorID)
 	return err
 }
 
@@ -637,6 +750,42 @@ type SetOrganizationAvatarParams struct {
 
 func (q *Queries) SetOrganizationAvatar(ctx context.Context, arg SetOrganizationAvatarParams) error {
 	_, err := q.db.ExecContext(ctx, setOrganizationAvatar, arg.AvatarSha256, arg.UpdatedAt, arg.ID)
+	return err
+}
+
+const updateOrgMemberPermission = `-- name: UpdateOrgMemberPermission :exec
+UPDATE org_members SET permission = ?, inviter_iid = ? WHERE org_id = ? AND iid = ?
+`
+
+type UpdateOrgMemberPermissionParams struct {
+	Permission string
+	InviterIid sql.NullString
+	OrgID      string
+	Iid        string
+}
+
+func (q *Queries) UpdateOrgMemberPermission(ctx context.Context, arg UpdateOrgMemberPermissionParams) error {
+	_, err := q.db.ExecContext(ctx, updateOrgMemberPermission,
+		arg.Permission,
+		arg.InviterIid,
+		arg.OrgID,
+		arg.Iid,
+	)
+	return err
+}
+
+const updateOrgMemberPosition = `-- name: UpdateOrgMemberPosition :exec
+UPDATE org_members SET position_id = ? WHERE org_id = ? AND iid = ?
+`
+
+type UpdateOrgMemberPositionParams struct {
+	PositionID sql.NullString
+	OrgID      string
+	Iid        string
+}
+
+func (q *Queries) UpdateOrgMemberPosition(ctx context.Context, arg UpdateOrgMemberPositionParams) error {
+	_, err := q.db.ExecContext(ctx, updateOrgMemberPosition, arg.PositionID, arg.OrgID, arg.Iid)
 	return err
 }
 

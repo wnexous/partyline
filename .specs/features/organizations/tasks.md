@@ -345,14 +345,14 @@ Wire it into the app's dependencies.
 **Reuses**: `rooms` member deletion queries, `Chart.Manages`
 **Requirement**: OMEM-03, OMEM-04, OMEM-05, OMEM-06, OMEM-08, POS-04
 **Done when**:
-- [ ] Integration tests:
+- [x] Integration tests:
   - an identity in two orgs with different permissions and positions;
   - demoting, removing and the leaving of the last admin → `ErrLastAdmin`, each case alone;
   - with two admins each works;
   - a manager moves a subordinate below itself; a move to its own level → forbidden; clearing the position → forbidden for the manager and allowed for an admin; a peer → forbidden;
   - removal drops only that org's group memberships and keeps the org's AIs;
   - an AI leaving its home org → `ErrHomeOrganization`
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(orgs): manage members, permissions and positions`

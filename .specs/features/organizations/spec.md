@@ -163,16 +163,16 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | ORG-07 | P1: Organizations own resources | Tasks | In Tasks |
 | OMEM-01 | P1: Members and permissions | Tasks | In Tasks |
 | OMEM-02 | P1: Members and permissions | Tasks | In Tasks |
-| OMEM-03 | P1: Members and permissions | Tasks | In Tasks |
-| OMEM-04 | P1: Members and permissions | Tasks | In Tasks |
-| OMEM-05 | P1: Members and permissions | Tasks | In Tasks |
-| OMEM-06 | P1: Members and permissions | Tasks | In Tasks |
+| OMEM-03 | P1: Members and permissions | Tasks | Implementing |
+| OMEM-04 | P1: Members and permissions | Tasks | Implementing |
+| OMEM-05 | P1: Members and permissions | Tasks | Implementing |
+| OMEM-06 | P1: Members and permissions | Tasks | Implementing |
 | OMEM-07 | P1: Members and permissions | Tasks | In Tasks |
-| OMEM-08 | Edge cases | Tasks | In Tasks |
+| OMEM-08 | Edge cases | Tasks | Implementing |
 | POS-01 | P1: Org chart of positions | Tasks | Implementing |
 | POS-02 | P1: Org chart of positions | Tasks | Implementing |
 | POS-03 | P1: Org chart of positions | Tasks | Implementing |
-| POS-04 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-04 | P1: Org chart of positions | Tasks | Implementing |
 | POS-05 | P1: Org chart of positions | Tasks | Implementing |
 | POS-06 | P1: Org chart of positions | Tasks | In Tasks |
 | POS-07 | P1: Org chart of positions | Tasks | In Tasks |

@@ -40,11 +40,12 @@ func validPositionName(name string) (string, error) {
 	return name, nil
 }
 
-// parentOfOrg is a validation error on parent_id unless parentID names a position of the organization.
-func requirePositionIn(ctx context.Context, q *db.Queries, orgID, positionID string) error {
+// requirePositionIn is a validation error on the field unless positionID names a position of the
+// organization.
+func requirePositionIn(ctx context.Context, q *db.Queries, orgID, positionID, field string) error {
 	_, err := q.GetPosition(ctx, db.GetPositionParams{ID: positionID, OrgID: orgID})
 	if errors.Is(err, sql.ErrNoRows) {
-		return &validation.Error{Fields: map[string]string{"parent_id": "must be a position of this organization"}}
+		return &validation.Error{Fields: map[string]string{field: "must be a position of this organization"}}
 	}
 	return err
 }
@@ -86,7 +87,7 @@ func (s *Service) CreatePosition(ctx context.Context, actorIID, orgID, name, par
 			return err
 		}
 		if parentID != "" {
-			if err := requirePositionIn(ctx, q, orgID, parentID); err != nil {
+			if err := requirePositionIn(ctx, q, orgID, parentID, "parent_id"); err != nil {
 				return err
 			}
 		}
@@ -148,7 +149,7 @@ func (s *Service) UpdatePosition(ctx context.Context, actorIID, orgID, positionI
 		if in.ParentID != nil && *in.ParentID != cur.ParentID.String {
 			parent := *in.ParentID
 			if parent != "" {
-				if err := requirePositionIn(ctx, q, orgID, parent); err != nil {
+				if err := requirePositionIn(ctx, q, orgID, parent, "parent_id"); err != nil {
 					return err
 				}
 				chart, err := Load(ctx, q, orgID)

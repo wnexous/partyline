@@ -211,3 +211,33 @@ func (f *fixture) adminOf(org string) string {
 	f.join(org, u, PermissionAdmin, "", "")
 	return u
 }
+
+// roomMember makes a user ("user") or an AI ("agent") a member of a room.
+func (f *fixture) roomMember(room, kind, member string) {
+	f.t.Helper()
+	f.exec(`INSERT INTO room_members (id, room_id, kind, member_id, added_by, created_at) VALUES (?, ?, ?, ?, '', 1)`,
+		"rm-"+room+"-"+member, room, kind, member)
+}
+
+// roomsOf lists the rooms the identity is a member of, sorted.
+func (f *fixture) roomsOf(member string) []string {
+	f.t.Helper()
+	rows, err := f.raw.Query(`SELECT room_id FROM room_members WHERE member_id = ? ORDER BY room_id`, member)
+	require.NoError(f.t, err)
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var id string
+		require.NoError(f.t, rows.Scan(&id))
+		out = append(out, id)
+	}
+	require.NoError(f.t, rows.Err())
+	return out
+}
+
+// queued puts a platform item for the AI on the connection (and the chat it came from).
+func (f *fixture) queued(item, ai, connector string) {
+	f.t.Helper()
+	f.exec(`INSERT OR IGNORE INTO chats (id, connector_id, external_id, created_at) VALUES (?, ?, 'ext', 1)`, "chat-"+connector, connector)
+	f.exec(`INSERT INTO platform_items (id, agent_id, connector_id, chat_id, received_at) VALUES (?, ?, ?, ?, 1)`, item, ai, connector, "chat-"+connector)
+}

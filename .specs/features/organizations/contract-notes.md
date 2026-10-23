@@ -271,3 +271,57 @@ Where a section refines the design, it says so.
 - **Queries** added to `queries/orgs.sql`: `GetPosition` (id + org), `GetPositionByName`,
   `UpdatePosition`, `MovePositionChildren`, `MovePositionHolders`, `MovePositionInvitations`,
   `DeletePosition`.
+
+## T7: Membership service (OMEM-03, OMEM-04, OMEM-05, OMEM-06, OMEM-08, POS-04)
+
+- **`orgs.AddMember(ctx, q *db.Queries, AddMemberInput{OrgID, IID, Permission, PositionID, InviterIID,
+  Now}) error`** is the transaction helper invitations (T8) and placement (T10, T18) use. It refuses
+  an identity that already is a member of the organization with any permission (`ErrAlreadyMember`, 409
+  `already_member`), a permission that is not `admin|member|guest` (validation error on `permission`)
+  and a position that is not the organization's (validation error on `position_id`). `InviterIID` is
+  stored for a guest and ignored for any other permission. It audits and announces nothing: the
+  caller records `audit.ActionOrgMemberJoin` (`org.member_join`, detail `by`: `invitation` or
+  `start`) and publishes `OrgChanged` after its commit. The foreign key on `iid` still refuses an
+  identity that does not exist.
+- **Methods on `*orgs.Service`** (`members.go`). All return the chart's `Member` or an `error`, check
+  their conditions inside the write transaction, and announce `OrgChanged` after the commit:
+  - `SetPermission(actorIID, orgID, targetIID, perm) (Member, error)`: admin only; the target must
+    be a member (`ErrNotFound`); a value that is not a permission is a validation error on
+    `permission` (told to admins only: authorization first). **`ErrLastAdmin`** (409 `last_admin`,
+    OMEM-05) when the target is the only admin and `perm` is not `admin`. A guest that becomes `member`
+    or `admin` loses its inviter. The same permission again is nothing (no audit, no event). Audit
+    `org.member_permission` `{iid, from, to}`.
+  - `SetPosition(actorIID, orgID, targetIID, positionID) (Member, error)` (POS-04): `positionID ==
+    ""` clears. An **admin** gives anyone any position of the organization or none; a position that is
+    not the organization's is a validation error on `position_id`. **Anyone else** needs
+    `Manages(actor, target)` and a position **strictly below the actor's own** (`Chart.Above`):
+    clearing, the actor's own level, a higher or another branch's position, or a target it does not
+    manage - itself, a peer, a superior - is `ErrForbidden`. An actor without a position (an inviter
+    with no position) therefore positions nobody. An outsider actor or a target that is not a member is
+    `ErrNotFound`. The same position again is nothing. Audit `org.member_position` `{iid, from, to}`.
+  - `Remove(actorIID, orgID, targetIID) error` and `Leave(iid, orgID) error`. `Remove` with
+    `actor == target` **is** `Leave`. Order of the checks: the actor is a member (`ErrNotFound`), the
+    target is a member (`ErrNotFound`), actor may delete target (`Chart.CanDelete`, POS-05) or it is a
+    leave (`ErrForbidden`), then **`ErrHomeOrganization`** (409 `home_organization`) when the target is
+    an AI whose home (`agents.org_id`) is this organization - such an AI is deleted for good, never
+    removed, and T21 routes it to `Registry.Delete` - then **`ErrLastAdmin`** for the only admin.
+    Effects, in one transaction: the target leaves **only this organization's groups** (rooms of kind
+    `group` with this `org_id`; DMs and other organizations' groups stay) and its membership row with
+    its position; its `default_org_id` is cleared when it was this organization; the AIs of the
+    organization and the people and AIs it created stay (their creator link is kept, but a creator who
+    is not a member manages nothing, so only admins reach them); the guests it invited stay (the chain
+    breaks). **OMEM-08 guard**: connections of this organization the target operated lose their operator
+    (`connectors.operator_iid = NULL`), the target's platform items for them are deleted, and
+    `events.ConnectorsOrphaned{IDs}` is published so the connector manager stops them (unreachable in
+    normal use: operators are home AIs, which never leave; deleting an operator AI goes through
+    `Registry.Delete`). Audit `org.member_leave` (self) or `org.member_remove` (by another) `{iid,
+    groups, operator_of?}`. After the commit: `events.MembersChanged{RoomID}` per group left,
+    `ConnectorsOrphaned` if any, `OrgChanged`.
+- **Errors** (new): `ErrLastAdmin`, `ErrHomeOrganization`, `ErrAlreadyMember`.
+- **Audit constants**: `ActionOrgMemberJoin`, `ActionOrgMemberPermission`, `ActionOrgMemberPosition`,
+  `ActionOrgMemberLeave`, `ActionOrgMemberRemove`.
+- **Note for T22/T32**: no `events.GrantsChanged` is published by these methods; the live hub learns of a
+  membership change from `MembersChanged` and `OrgChanged` (T32 makes it re-evaluate visibility).
+- **Queries** added to `queries/orgs.sql`: `UpdateOrgMemberPermission`, `UpdateOrgMemberPosition`,
+  `DeleteOrgMember`, `DeleteOrgGroupMemberships`, `ClearOrgOperator`,
+  `DeletePlatformItemsOfAgentOnConnector`, `ClearUserDefaultOrg`.

@@ -125,3 +125,31 @@ UPDATE org_invitations SET position_id = sqlc.narg(to_position) WHERE org_id = s
 
 -- name: DeletePosition :exec
 DELETE FROM positions WHERE id = ? AND org_id = ?;
+
+-- name: UpdateOrgMemberPermission :exec
+UPDATE org_members SET permission = ?, inviter_iid = ? WHERE org_id = ? AND iid = ?;
+
+-- name: UpdateOrgMemberPosition :exec
+UPDATE org_members SET position_id = ? WHERE org_id = ? AND iid = ?;
+
+-- name: DeleteOrgMember :exec
+DELETE FROM org_members WHERE org_id = ? AND iid = ?;
+
+-- name: DeleteOrgGroupMemberships :many
+-- Takes a user or an AI out of the groups of an organization (OMEM-06); DMs and the groups of other
+-- organizations are not touched.
+DELETE FROM room_members
+WHERE member_id = sqlc.arg(iid) AND kind IN ('user', 'agent')
+  AND room_id IN (SELECT id FROM rooms WHERE org_id = sqlc.arg(org_id) AND kind = 'group')
+RETURNING room_id;
+
+-- name: ClearOrgOperator :many
+-- The connections of the organization an identity operated now have no operator (OMEM-08).
+UPDATE connectors SET operator_iid = NULL WHERE org_id = sqlc.arg(org_id) AND operator_iid = sqlc.arg(iid) RETURNING id;
+
+-- name: DeletePlatformItemsOfAgentOnConnector :exec
+DELETE FROM platform_items WHERE agent_id = ? AND connector_id = ?;
+
+-- name: ClearUserDefaultOrg :exec
+-- A user who leaves its default organization has no default.
+UPDATE users SET default_org_id = NULL WHERE id = ? AND default_org_id = ?;

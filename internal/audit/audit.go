@@ -58,6 +58,12 @@ const (
 	ActionOrgPositionCreate = "org.position_create"
 	ActionOrgPositionUpdate = "org.position_update"
 	ActionOrgPositionDelete = "org.position_delete"
+	// Membership: joined (accepted invitation, started AI), changed, left and removed (OMEM-01..06).
+	ActionOrgMemberJoin       = "org.member_join"
+	ActionOrgMemberPermission = "org.member_permission"
+	ActionOrgMemberPosition   = "org.member_position"
+	ActionOrgMemberLeave      = "org.member_leave"
+	ActionOrgMemberRemove     = "org.member_remove"
 )
 
 // Target kinds.
