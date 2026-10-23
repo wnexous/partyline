@@ -4,7 +4,7 @@ import { useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { cn } from "@/lib/utils";
 
-/** The line indicator: a filled, pulsing dot while the live socket is open, a pulsing ring while it connects. */
+/** The line indicator: a filled, pulsing green dot while the live socket is open, a pulsing ring while it connects. */
 export function LiveIndicator({ className }: { className?: string }) {
   const t = useT();
   const status = useLiveStore((s) => s.status);
@@ -20,8 +20,8 @@ export function LiveIndicator({ className }: { className?: string }) {
         aria-hidden="true"
         className={cn(
           "size-2 rounded-full",
-          status === "open" && "animate-line-pulse bg-tape-strong",
-          status === "connecting" && "animate-pulse border border-tape-strong bg-transparent",
+          status === "open" && "animate-line-pulse bg-online",
+          status === "connecting" && "animate-pulse border border-online bg-transparent",
           status === "closed" && "bg-muted-foreground/50",
         )}
       />

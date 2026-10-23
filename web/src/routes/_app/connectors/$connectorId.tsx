@@ -137,7 +137,7 @@ function ConnectorView({ connector: c, kind }: { connector: Connector; kind?: Co
       <header className="border-b px-4 pt-5 pb-5 md:px-8 md:pt-6">
         <Link
           to="/connectors"
-          className="mb-3 inline-flex items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="mb-3 inline-flex items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/70"
         >
           <ArrowLeftIcon className="size-3.5" aria-hidden="true" />
           {t("page.connectorsTitle")}

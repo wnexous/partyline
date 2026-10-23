@@ -203,7 +203,7 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
         // biome-ignore lint/a11y/noNoninteractiveTabindex: the log scrolls; keyboard users need to reach it
         tabIndex={0}
         onScroll={onScroll}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-inset"
       >
         <div className="flex min-h-full flex-col">
           <div className="flex-1" />

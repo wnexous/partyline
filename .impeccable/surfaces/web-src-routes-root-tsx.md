@@ -11,9 +11,9 @@ Constraints: shadcn/ui (Radix) standard controls, light + dark, 360 px up, i18n 
 
 ## Direction contract
 
-THESIS: The room is a wire: every screen reads like the operator's copy of a telegraph line, where live traffic arrives as freshly pasted tape. Refuses the generic SaaS dashboard (one blue accent, a card grid) and the dark neon "terminal" costume. The owner's neutral brief (2026-10-23) took hue out, so the identity rests on form.
+THESIS: The room is a wire: every screen reads like the operator's copy of a telegraph line, where live traffic arrives as freshly pasted tape. Refuses the generic SaaS dashboard (one bright blue accent, a card grid) and the dark neon "terminal" costume. The owner's neutral brief (2026-10-23) took hue out and his second brief (same day) asked for a little back, so the identity rests on form and the colour stays sparse: one dusty-indigo ink, a quiet green, the muted red and soft faces.
 
-OWN-WORLD: Paper ground with a grey second layer for the sidebar/rail; black ink for text and primary actions; grey tape as the live/selection mark (in dark mode the ground is near-black and the primary flips to paper-white). Black, greys and white only, plus one muted red for errors and destructive actions (see DESIGN.md). Archivo (variable width) for UI, with condensed uppercase only for small section labels; JetBrains Mono strictly for data: sequence numbers, times, codes, tokens, commands. Hairline rules, 6px radius, soft offset shadows.
+OWN-WORLD: Paper ground with a grey second layer for the sidebar/rail; black ink for text; a dusty-indigo stamp ink for primary actions, links and focus; tape, tinted by that ink, as the live/selection mark (in dark mode the ground is near-black and the accent lifts to a soft periwinkle). Surfaces and ink are greys; colour is the indigo, a quiet green for online, a muted red for errors and destructive actions, and soft warm (people) and cool (AI) tints for faces (see DESIGN.md). Archivo (variable width) for UI, with condensed uppercase only for small section labels; JetBrains Mono strictly for data: sequence numbers, times, codes, tokens, commands. Hairline rules, 6px radius, soft offset shadows.
 
 STORY: The visitor sees at a glance which wires are live, who is on them, and whether the line is connected; they read, post, and route with standard controls.
 

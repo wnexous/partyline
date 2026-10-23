@@ -80,7 +80,7 @@ function BackToContacts() {
   return (
     <Link
       to="/contacts"
-      className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-1 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-1 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/70"
     >
       <ArrowLeftIcon className="size-4" aria-hidden="true" />
       {t("profile.back")}

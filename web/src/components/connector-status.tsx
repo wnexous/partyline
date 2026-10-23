@@ -4,8 +4,8 @@ import { useLiveStore } from "@/lib/live/store";
 import { cn } from "@/lib/utils";
 
 /*
- * Connector status (UI-17): the line metaphor again. Connected is a filled, pulsing dot like an
- * online agent; connecting blinks grey; error is a solid red dot; stopped is a hollow ring.
+ * Connector status (UI-17): the line metaphor again. Connected is a filled, pulsing green dot like
+ * an online agent; connecting blinks grey; error is a solid red dot; stopped is a hollow ring.
  */
 
 const LABEL: Record<ConnectorStatus, MessageKey> = {
@@ -16,7 +16,7 @@ const LABEL: Record<ConnectorStatus, MessageKey> = {
 };
 
 const DOT: Record<ConnectorStatus, string> = {
-  connected: "animate-line-pulse bg-tape-strong",
+  connected: "animate-line-pulse bg-online",
   connecting: "animate-pulse bg-muted-foreground",
   error: "bg-destructive",
   stopped: "border border-muted-foreground bg-transparent",

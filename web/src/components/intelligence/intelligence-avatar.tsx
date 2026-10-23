@@ -1,22 +1,27 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
+import type { IntelligenceKind, IntelligenceRef } from "@/lib/api/types.gen";
 import { cn } from "@/lib/utils";
 
 /*
- * An intelligence's face (PROF-08): its uploaded image, or initials on a grey picked from the
- * design tokens by a hash of its id. Only the id drives the grey, so a rename keeps the face.
- * Red is reserved for errors, so it is not one of the tones.
+ * An intelligence's face (PROF-08): its uploaded image, or initials on a soft tint picked from the
+ * design tokens by a hash of its id. The kind chooses the family, so who is talking reads before
+ * the name does: warm tints are people's faces (users, people on a chat platform, groups), cool
+ * tints are AIs'. The hash only picks the tint inside the family, and only the id drives it, so a
+ * rename keeps the face. Red is for errors and green for presence, so neither is a tint.
  */
 
-const TONES = [
-  "bg-primary text-primary-foreground",
-  "bg-tape-strong text-background",
-  "bg-muted-foreground text-background",
-  "bg-input text-foreground",
-  "bg-tape text-tape-foreground",
-  "bg-accent text-accent-foreground",
-  "bg-secondary text-secondary-foreground ring-1 ring-border ring-inset",
-  "bg-card text-foreground ring-1 ring-input ring-inset",
+const PEOPLE_TONES = [
+  "bg-tint-apricot text-tint-apricot-foreground",
+  "bg-tint-ochre text-tint-ochre-foreground",
+  "bg-tint-sage text-tint-sage-foreground",
+  "bg-tint-rose text-tint-rose-foreground",
+] as const;
+
+const AI_TONES = [
+  "bg-tint-teal text-tint-teal-foreground",
+  "bg-tint-sky text-tint-sky-foreground",
+  "bg-tint-indigo text-tint-indigo-foreground",
+  "bg-tint-violet text-tint-violet-foreground",
 ] as const;
 
 /** First letter of the first and of the last word; the single letter for a one-word name. */
@@ -30,13 +35,17 @@ export function initials(displayName: string): string {
   return `${first}${last}`.toUpperCase();
 }
 
-/** Token background for the initials: stable per id, spread across eight greys. */
-export function avatarTone(id: string): string {
+/**
+ * Token classes for the initials: a tint of the kind's family (cool for an AI, warm for anyone or
+ * anything else), stable per id.
+ */
+export function avatarTone(id: string, kind?: IntelligenceKind): string {
   let hash = 0;
   for (let i = 0; i < id.length; i += 1) {
     hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
   }
-  return TONES[hash % TONES.length] ?? TONES[0];
+  const tones = kind === "ai" ? AI_TONES : PEOPLE_TONES;
+  return tones[hash % tones.length] ?? tones[0];
 }
 
 const PIXELS = { sm: 24, default: 32, lg: 40, xl: 96 } as const;
@@ -74,9 +83,10 @@ export function IntelligenceAvatar({
       ) : null}
       <AvatarFallback
         className={cn(
-          "text-xs font-semibold tracking-wide uppercase select-none",
+          // The hairline, in the tint's own ink, keeps a pale face visible on a pale surface.
+          "text-xs font-semibold tracking-wide uppercase ring-1 ring-current/25 ring-inset select-none",
           size === "xl" && "text-2xl",
-          avatarTone(intelligence.id),
+          avatarTone(intelligence.id, intelligence.kind),
         )}
       >
         {initials(name)}

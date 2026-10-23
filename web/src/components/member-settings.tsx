@@ -391,7 +391,7 @@ function KeywordsBody({
               <span className="truncate">{k}</span>
               <button
                 type="button"
-                className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:outline-none"
                 aria-label={t("memberSettings.keywordRemove", { keyword: k })}
                 onClick={() => onChange(list.filter((x) => x !== k))}
               >

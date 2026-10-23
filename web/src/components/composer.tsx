@@ -309,7 +309,7 @@ function ComposerForm({
           {/* The file input itself takes focus; the label draws it as an icon button. */}
           <label
             title={t("composer.attach")}
-            className="relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors focus-within:ring-[3px] focus-within:ring-ring/50 hover:bg-accent hover:text-accent-foreground"
+            className="relative inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors focus-within:ring-[3px] focus-within:ring-ring/70 hover:bg-accent hover:text-accent-foreground"
           >
             <input
               ref={fileInput}

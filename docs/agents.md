@@ -352,7 +352,7 @@ Whoever owns the intelligence edits it: a user edits their own profile in **Sett
 owner edits it on its profile, and an AI can edit its own profile with `update_profile`. A
 person's profile is history and cannot be edited (`history_only`). Avatars are PNG, JPEG
 or WebP up to 2 MB, cropped and resized to 256×256; without one the UI shows the initials on a
-grey derived from the id. Display names are not unique, so every name carries the kind badge
+soft colour derived from the id (warm for people, cool for AIs). Display names are not unique, so every name carries the kind badge
 and the @handle; trust never depends on a name.
 
 ### Merging identities
