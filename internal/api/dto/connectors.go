@@ -153,6 +153,28 @@ const (
 // has to choose the AI that operates it before it runs.
 const ConnectorNoOperator = "choose the AI that operates this connection"
 
+// PlatformSendStatus is the state of what an AI sent through a connection (CID-18): pending while
+// the platform has not taken the message and Partyline retries it, sent once it has, failed when
+// the attempts ran out.
+type PlatformSendStatus string
+
+// Platform send states.
+const (
+	PlatformSendStatusPending PlatformSendStatus = "pending"
+	PlatformSendStatusSending PlatformSendStatus = "sending"
+	PlatformSendStatusSent    PlatformSendStatus = "sent"
+	PlatformSendStatusFailed  PlatformSendStatus = "failed"
+)
+
+// PlatformSendResult is what an AI is told about an answer it sent through its connection (CID-15,
+// CID-16): the id of the send and its state. A send the platform took is sent; one it refused or
+// did not answer in time is pending, Error says why and Partyline retries it (CID-18).
+type PlatformSendResult struct {
+	ID     string             `json:"id"`
+	Status PlatformSendStatus `json:"status"`
+	Error  string             `json:"error,omitempty"`
+}
+
 // Status details catch-all routing sets on a connector (ROUTE-03, ROUTE-08).
 const (
 	// AutoRouteUnavailable says the catch-all room is gone or its owner lost manage on it.

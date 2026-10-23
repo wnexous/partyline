@@ -564,12 +564,12 @@ New frame DTOs are added.
 **Reuses**: `delivery/outbox.go` claim/backoff pattern, `Manager.Send`
 **Requirement**: CID-14, CID-15, CID-16, CID-18
 **Done when**:
-- [ ] Integration:
+- [x] Integration:
   - a success is sent unsigned with its id recorded;
   - a failure is retried until it succeeds, and the text is cleared;
   - after the attempt limit the send is `failed` and the text is cleared;
   - an echo of a send is not queued
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(connectors): send through a connection with retries`

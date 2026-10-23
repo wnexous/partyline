@@ -20,17 +20,36 @@ const selfPoll = 50 * time.Millisecond
 func (p *Pipeline) settle(ctx context.Context, chatID, platformID string) (bool, error) {
 	deadline := p.d.Now().Add(SelfHold)
 	for {
-		sending, err := p.d.Store.R().CountSendingOutboxForChat(ctx, chatID)
+		sending, err := p.sendInFlight(ctx, chatID)
 		if err != nil {
 			return false, err
 		}
-		if sending == 0 || !p.d.Now().Before(deadline) {
+		if !sending || !p.d.Now().Before(deadline) {
 			break
 		}
 		if err := p.d.Wait(ctx, selfPoll); err != nil {
 			return false, err
 		}
 	}
+	return p.sentByPartyline(ctx, chatID, platformID)
+}
+
+// sendInFlight tells whether a send to the chat is running: one of the room outbox, or one an AI
+// makes through the connection.
+func (p *Pipeline) sendInFlight(ctx context.Context, chatID string) (bool, error) {
+	n, err := p.d.Store.R().CountSendingOutboxForChat(ctx, chatID)
+	if err != nil || n > 0 {
+		return n > 0, err
+	}
+	n, err = p.d.Store.R().CountSendingPlatformSendsForChat(ctx, chatID)
+	return n > 0, err
+}
+
+// sentByPartyline tells whether Partyline sent the message with this platform id to the chat: it
+// remembers the ids of the last minutes, and the records of the room outbox and of the sends an AI
+// made through the connection hold the id of the first message of each send (CID-14). A message
+// without an id is never one of them.
+func (p *Pipeline) sentByPartyline(ctx context.Context, chatID, platformID string) (bool, error) {
 	if platformID == "" {
 		return false, nil
 	}
@@ -38,5 +57,9 @@ func (p *Pipeline) settle(ctx context.Context, chatID, platformID string) (bool,
 		return true, nil
 	}
 	n, err := p.d.Store.R().CountChatOutboxExternalID(ctx, db.CountChatOutboxExternalIDParams{ChatID: chatID, ExternalID: platformID})
+	if err != nil || n > 0 {
+		return n > 0, err
+	}
+	n, err = p.d.Store.R().CountChatPlatformSendExternalID(ctx, db.CountChatPlatformSendExternalIDParams{ChatID: chatID, ExternalID: platformID})
 	return n > 0, err
 }

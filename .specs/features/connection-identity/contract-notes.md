@@ -489,3 +489,58 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   naming a connection for `send_message` needs its id, which only the full channel's identity
   notice lists (T14), so T20 has to decide how such a harness names its connection.
 
+
+## T17: Platform sends with retries (CID-14, CID-15, CID-16, CID-18)
+
+- **Service**: `connectors.Sends` (`internal/connectors/sends.go`) is built by `connectors.NewSends(SendsDeps{Store,
+  Transport, Sent, Now, Logger, AttemptTimeout, PollInterval})`; `Transport` is the Manager. The app builds it as
+  `App.Sends`, shares its `SentIDs` registry with the inbound pipeline and runs its worker (`platform-sends`) unless
+  `Options.DisableOutbox` is set (the tests that inspect pending sends, `testkit.WithOutbox` turns it on again).
+- **`Send(ctx, SendInput{AgentID, ConnectorID, ChatID, Text, ReplyTo}) (dto.PlatformSendResult, error)`** refines the
+  design's five positional strings into a struct (all strings, easy to swap) and returns the DTO. Checks, in this order:
+  the connection exists (`access.ErrNotFound`), the AI is its operator (`ErrNotOperator`, also while nobody is), the
+  chat is one of its chats (`ErrUnknownChat`, also for a chat id nobody has), the text has 1 to 16,000 characters and is
+  not blank (`*validation.Error` on `text`, MSG-02). A refusal stores and sends nothing. T19 maps the errors to HTTP and
+  decides who may learn that a connection exists (design refinement 2); `Send` itself does not look at the caller's owner.
+- **Row lifecycle** (`platform_sends`): the row is inserted `sending`, claimed by the synchronous attempt, so the worker
+  (which only takes `pending`) never sends it twice. Then:
+  - `sent`: `attempts` + 1, `external_id` = the platform's id of the first message created, `last_error` and `text`
+    cleared;
+  - `pending`: the text stays for the retry, `last_error` says why, `next_attempt_at` = now + `delivery.Backoff(n)`
+    (2 s, 4 s, 8 s, 16 s after attempts 1 to 4);
+  - `failed`: after attempt `delivery.MaxAttempts` (5), or when retrying cannot help; `text` cleared.
+  `Backoff` and `MaxAttempts` are the room outbox's, imported from `delivery`: T33 must keep them (or move them).
+- **Attempt**: one at a time per call, bounded by `SendAttemptTimeout` (15 s, also for each retry). A platform that does
+  not answer gives the reason `the platform did not answer within 15s`; any other failure keeps the connector's own
+  (already redacted) error, cut to 500 bytes. The reason is stored and shown to the AI (`PlatformSendResult.error`), and
+  never logged: the log carries ids, the attempt number and the status only. The attempt is not abandoned when the
+  caller's context ends (the caller going away does not unsend a message in flight), and its outcome is recorded even
+  when the worker's context ends mid-send.
+- **What the connector gets**: `Unsigned` always true; `ChatID` the platform's id of the chat; `ReplyToID` the platform
+  id of the message quoted and `ReplyToSenderID` the sender of the queued item with that id in the same chat (looked up
+  at each attempt, empty when the item is gone or has no id), because WhatsApp needs the participant to quote in a group;
+  `MessageID` the send's id; `RoomID` empty (a send belongs to no room); `AuthorName` the AI's display name, which only
+  platforms that carry the author as data (the webhook payload) show: `Unsigned` keeps it out of the text.
+- **Echo (CID-14)**: every id a send creates goes to `SentIDs` (each part through `Outbound.Created`, and the id
+  `Send` returned for a connector that tells nothing else). The pipeline reads the sends too: `settle` holds an
+  own-account message while a send of its chat is `sending`, and `sentByPartyline` (also behind `repliesToAccount`,
+  CID-12) asks `SentIDs`, the room outbox and `platform_sends.external_id`, the first part's id, which survives a
+  restart. A message without an id is never an echo, and an id belongs to the chat it was sent to. The room outbox reads
+  stay until T33.
+- **Worker**: `Sends.Run` makes the rows a previous process left `sending` due again, flushes and then polls every second
+  (`SendsDeps.PollInterval`); `Flush` and `Running` are exported for tests. A retry first checks that the AI is still the
+  connection's operator: if the owner chose another AI meanwhile the send fails at once with `the AI no longer operates
+  this connection`, without a platform call, with its attempts unchanged and its text deleted (CID-03, CID-05). A deleted
+  operator AI, chat or connection takes its rows with it (foreign key cascade).
+- **Lifecycle of the table** (the point T4 left to this task): a finished row (`sent` or `failed`) keeps its metadata, no
+  text, for `SendRetention` = 30 days from its last change, and the daily retention job deletes it (`Sends.Purge`, batches
+  of 1,000, the exact age is deleted and a millisecond less is kept); a `pending` or `sending` row is never purged. The
+  number is this task's choice, since neither the spec nor the design gives one: long enough for a person to reply to an
+  old message of the account, short enough that the table is no log of what the AI sends. After 30 days a reply to such a
+  message no longer counts as a reply to the account under mentions-only (CID-12).
+- **DTO** (introduced here because the service's result has this shape; T18 and T19 answer with it): `PlatformSendStatus`
+  (`pending|sending|sent|failed`) and `PlatformSendResult{id, status, error?}`.
+- **sqlc**: `queries/platform_sends.sql` (insert, the attempt's context, due list, claim, the three outcomes, requeue, the
+  two echo counts, batched purge).
+- **Tests**: `internal/connectors/sends_test.go` (service and worker, on a manager fixture with a fake clock),
+  `sends_echo_test.go` (the pipeline through the app) and `internal/app/platform_sends_test.go` (the retention wiring).

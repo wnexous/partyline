@@ -55,8 +55,9 @@ type Options struct {
 	LiveSessionCheck time.Duration
 	// Sender delivers outbox entries to external chats; nil uses the connectors' sender.
 	Sender delivery.Sender
-	// DisableOutbox keeps the outbox worker from running, so entries stay pending (tests
-	// that inspect queued deliveries).
+	// DisableOutbox keeps the outbox worker and the worker that retries the sends of AIs
+	// through their connections from running, so entries stay pending (tests that inspect
+	// queued deliveries).
 	DisableOutbox bool
 	// ConnectorKinds are the supported connector kinds; nil means BuiltinKinds().
 	ConnectorKinds []connectors.Kind
@@ -101,6 +102,8 @@ type App struct {
 	// Connectors manages connectors (CRUD, sharing); ConnectorManager runs them.
 	Connectors       *connectors.Service
 	ConnectorManager *connectors.Manager
+	// Sends sends what an AI answers through a connection it operates (AD-015).
+	Sends *connectors.Sends
 	// Identities links chat accounts to users (pairing codes).
 	Identities *identities.Service
 	// Devices approves new machines (partyline setup --browser).
@@ -112,7 +115,9 @@ type App struct {
 	handler http.Handler
 	ready   atomic.Bool
 	sender  delivery.Sender
-	now     func() time.Time
+	// sendWorker is whether Start runs the worker that retries the sends of Sends.
+	sendWorker bool
+	now        func() time.Time
 
 	stop context.CancelFunc
 	bg   sync.WaitGroup
@@ -207,6 +212,10 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	if a.sender == nil && !opts.DisableOutbox {
 		a.sender = connectors.NewSender(st, a.Rooms, blobs, a.ConnectorManager, sentIDs, cfg.PublicURL)
 	}
+	a.Sends = connectors.NewSends(connectors.SendsDeps{
+		Store: st, Transport: a.ConnectorManager, Sent: sentIDs, Now: opts.Now, Logger: opts.Logger,
+	})
+	a.sendWorker = !opts.DisableOutbox
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
 		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Rooms: a.Rooms, Runner: a.ConnectorManager, Now: opts.Now,
 	})
@@ -265,13 +274,17 @@ func (a *App) Start(ctx context.Context) error {
 		Store: a.Store, Bus: a.Bus, Agents: a.Gateway, Load: a.Gateway.Message, Logger: a.Logger,
 	})
 	a.background(bg, "agent-dispatcher", dispatcher.Run)
+	if a.sendWorker {
+		a.background(bg, "platform-sends", a.Sends.Run)
+	}
 	a.ConnectorManager.Start(bg)
 	a.background(bg, "platform-purge", func(ctx context.Context) error {
 		return a.Platform.Run(ctx, platform.PurgeInterval, a.Rooms.ReleaseBlobs, a.Logger)
 	})
 	a.background(bg, "retention", func(ctx context.Context) error {
 		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger,
-			rooms.RetentionTask{Name: "revoked_tokens", Run: a.Users.PurgeRevokedTokens})
+			rooms.RetentionTask{Name: "revoked_tokens", Run: a.Users.PurgeRevokedTokens},
+			rooms.RetentionTask{Name: "platform_sends", Run: a.Sends.Purge})
 	})
 	a.ready.Store(true)
 	return nil

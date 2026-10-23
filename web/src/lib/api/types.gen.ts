@@ -744,6 +744,29 @@ export type AutoRouteScope = typeof AutoRouteScopeOff | typeof AutoRouteScopeDMs
  */
 export const ConnectorNoOperator = "choose the AI that operates this connection";
 /**
+ * PlatformSendStatus is the state of what an AI sent through a connection (CID-18): pending while
+ * the platform has not taken the message and Partyline retries it, sent once it has, failed when
+ * the attempts ran out.
+ */
+export const PlatformSendStatusPending = "pending";
+export const PlatformSendStatusSending = "sending";
+export const PlatformSendStatusSent = "sent";
+export const PlatformSendStatusFailed = "failed";
+/**
+ * Platform send states.
+ */
+export type PlatformSendStatus = typeof PlatformSendStatusPending | typeof PlatformSendStatusSending | typeof PlatformSendStatusSent | typeof PlatformSendStatusFailed;
+/**
+ * PlatformSendResult is what an AI is told about an answer it sent through its connection (CID-15,
+ * CID-16): the id of the send and its state. A send the platform took is sent; one it refused or
+ * did not answer in time is pending, Error says why and Partyline retries it (CID-18).
+ */
+export interface PlatformSendResult {
+  id: string;
+  status: PlatformSendStatus;
+  error?: string;
+}
+/**
  * AutoRouteUnavailable says the catch-all room is gone or its owner lost manage on it.
  */
 export const AutoRouteUnavailable = "auto-route room unavailable";
