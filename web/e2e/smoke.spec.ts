@@ -517,10 +517,9 @@ test("a profile photo is uploaded from the profile page and shows across the she
     mimeType: "image/png",
     buffer: PHOTO,
   });
-  await expect(page.getByAltText("Preview of the new photo")).toBeVisible();
-  await page.getByRole("button", { name: "Use this photo" }).click();
 
-  // The stored photo replaces the initials on the profile, before and after a reload.
+  // The photo is sent as soon as it is chosen: no confirmation click. The stored photo replaces
+  // the initials on the profile, before and after a reload.
   const photo = new RegExp(`/api/v1/intelligences/${me.intelligence.id}/avatar\\?v=`);
   const face = page.locator('[data-testid="intelligence-avatar"] img').first();
   await expect(face).toHaveAttribute("src", photo);

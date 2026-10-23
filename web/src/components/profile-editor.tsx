@@ -15,6 +15,7 @@ import {
   MaxProfileBio,
   type UpdateProfileRequest,
 } from "@/lib/api/types.gen";
+import { prepareAvatar } from "@/lib/avatar";
 import { applyFieldErrors } from "@/lib/forms";
 import { type Translate, useT } from "@/lib/i18n";
 import { type ProfileEditForm, profileEditSchema } from "@/lib/schemas";
@@ -45,20 +46,21 @@ export function ProfileEditor({ profile }: { profile: IntelligenceProfile }) {
   );
 }
 
-/** Why a photo was refused, in words the user can act on. */
+/** Why a photo was refused, in words the user can act on; a lost connection ends like any other
+ * failed upload. */
 function photoError(t: Translate, err: unknown): string {
   if (isApiError(err)) {
     if (err.code === ErrorCodeAvatarInvalid) return t("profile.photoInvalid");
     if (err.status === 413) return t("profile.photoTooLarge");
-    if (err.status === 0) return t("error.network");
   }
   return t("profile.photoFailed");
 }
 
 /**
- * The photo: the current one with a way to remove it, and a picker. A chosen file is shown first,
- * cropped to a circle as it will be, and only sent once confirmed; the server's refusal (not an
- * image it can use) stays next to the preview, so the old photo is never lost.
+ * The photo: the current one with a way to remove it, and a picker. A chosen file is sent at once,
+ * cropped to a circle as it will be; the server's refusal (not an image it can use) stays next to
+ * the preview, so the old photo is never lost. A big photo is resized first, and an upload that
+ * stalls is abandoned, so the sending state always ends.
  */
 function PhotoEditor({ profile }: { profile: IntelligenceProfile }) {
   const t = useT();
@@ -67,6 +69,9 @@ function PhotoEditor({ profile }: { profile: IntelligenceProfile }) {
   const remove = useRemoveAvatar(profile.id);
   const [picked, setPicked] = useState<{ file: File; url: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  // Which choice the pending answer belongs to: a newer choice ignores an older answer.
+  const attempt = useRef(0);
 
   // The preview address lives as long as the preview does.
   useEffect(() => {
@@ -76,29 +81,43 @@ function PhotoEditor({ profile }: { profile: IntelligenceProfile }) {
     };
   }, [picked]);
 
-  const choose = (e: ChangeEvent<HTMLInputElement>) => {
+  const choose = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     // So that choosing the same file again still counts as a change.
     e.target.value = "";
     if (!file) return;
+    const current = ++attempt.current;
     setError(null);
     setPicked({ file, url: URL.createObjectURL(file) });
-  };
-
-  const send = () => {
-    if (!picked || upload.isPending) return;
-    setError(null);
-    upload.mutate(picked.file, {
-      onSuccess: () => {
-        setPicked(null);
-        toast.success(t("profile.photoUpdated"));
-      },
-      onError: (err) => setError(photoError(t, err)),
-    });
+    setSending(true);
+    try {
+      let image: Blob;
+      try {
+        image = await prepareAvatar(file);
+      } catch {
+        if (attempt.current !== current) return;
+        setError(t("profile.photoInvalid"));
+        return;
+      }
+      if (attempt.current !== current) return;
+      // Sent now, not on the form's Save: the photo must not wait for a button that may never come.
+      await upload.mutateAsync(image);
+      if (attempt.current !== current) return;
+      setPicked(null);
+      toast.success(t("profile.photoUpdated"));
+    } catch (err) {
+      if (attempt.current !== current) return;
+      setError(photoError(t, err));
+    } finally {
+      if (attempt.current === current) setSending(false);
+    }
   };
 
   const clear = () => {
+    attempt.current += 1;
     setError(null);
+    setPicked(null);
+    setSending(false);
     remove.mutate(undefined, {
       onSuccess: () => toast.success(t("profile.photoRemoved")),
       onError: () => setError(t("profile.photoRemoveFailed")),
@@ -119,50 +138,36 @@ function PhotoEditor({ profile }: { profile: IntelligenceProfile }) {
       ) : (
         <IntelligenceAvatar intelligence={profile} size="xl" decorative />
       )}
-      {picked ? (
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" disabled={upload.isPending} onClick={send}>
-            {upload.isPending ? t("profile.photoSending") : t("profile.photoUse")}
+      <div className="flex flex-wrap gap-2">
+        <label
+          className={cn(
+            buttonVariants({ variant: "outline", size: "sm" }),
+            "cursor-pointer has-[:focus-visible]:border-ring has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50",
+          )}
+        >
+          <input
+            type="file"
+            accept={PHOTO_TYPES}
+            aria-describedby={hintId}
+            onChange={choose}
+            className="sr-only"
+          />
+          {t("profile.photoUpload")}
+        </label>
+        {profile.avatar_url ? (
+          <Button variant="ghost" size="sm" disabled={remove.isPending} onClick={clear}>
+            {t("profile.photoRemove")}
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={upload.isPending}
-            onClick={() => {
-              setError(null);
-              setPicked(null);
-            }}
-          >
-            {t("common.cancel")}
-          </Button>
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <label
-            className={cn(
-              buttonVariants({ variant: "outline", size: "sm" }),
-              "cursor-pointer has-[:focus-visible]:border-ring has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50",
-            )}
-          >
-            <input
-              type="file"
-              accept={PHOTO_TYPES}
-              aria-describedby={hintId}
-              onChange={choose}
-              className="sr-only"
-            />
-            {t("profile.photoUpload")}
-          </label>
-          {profile.avatar_url ? (
-            <Button variant="ghost" size="sm" disabled={remove.isPending} onClick={clear}>
-              {t("profile.photoRemove")}
-            </Button>
-          ) : null}
-        </div>
-      )}
+        ) : null}
+      </div>
       <p id={hintId} className="text-xs text-pretty text-muted-foreground">
         {t("profile.photoHint")}
       </p>
+      {sending ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {t("profile.photoSending")}
+        </p>
+      ) : null}
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}

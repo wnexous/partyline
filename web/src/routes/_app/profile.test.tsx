@@ -24,6 +24,8 @@ import { renderRoute } from "@/test/render";
 import { sampleContacts } from "@/test/sample-contacts";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
+// The photo is resized by its own unit tests; the page tests the upload flow itself.
+vi.mock("@/lib/avatar", () => ({ prepareAvatar: (file: File) => Promise.resolve(file) }));
 
 /*
  * The profile page (PROF-03, PROF-05, PROF-11, PEOP-03, ACC-07): what an intelligence is, with an
@@ -570,7 +572,7 @@ describe("the photo (PROF-03, PROF-06, PROF-07)", () => {
     expect(within(editor).queryByRole("button", { name: "Remove photo" })).toBeNull();
   });
 
-  it("previews the chosen file before sending anything, and sends it as it is once confirmed", async () => {
+  it("sends the chosen file at once, and the new photo shows in the header", async () => {
     const withPhoto = { ...atlas, avatar_url: "/api/v1/intelligences/a1/avatar?v=abc" };
     const { calls } = api(atlas, { "PUT /intelligences/a1/avatar": json(200, withPhoto) });
     const user = userEvent.setup();
@@ -579,35 +581,16 @@ describe("the photo (PROF-03, PROF-06, PROF-07)", () => {
     const file = png();
     await user.upload(screen.getByLabelText("Upload photo"), file);
 
-    const preview = await screen.findByAltText("Preview of the new photo");
-    expect(preview).toHaveAttribute("src", "blob:preview-1");
-    expect(URL.createObjectURL).toHaveBeenCalledWith(file);
-    expect(calls.some((c) => c.method === "PUT")).toBe(false);
-
-    await user.click(screen.getByRole("button", { name: "Use this photo" }));
-    await screen.findByText("Photo updated");
+    await waitFor(() => expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1));
     const put = calls.find((c) => c.method === "PUT");
     expect(put?.path).toBe("/intelligences/a1/avatar");
     expect(put?.body).toBe(file);
+    await screen.findByText("Photo updated");
     // The preview is gone, and the new avatar shows in the header.
     await waitFor(() => expect(screen.queryByAltText("Preview of the new photo")).toBeNull());
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview-1");
     expect(headerPhoto()).toHaveAttribute("src", "/api/v1/intelligences/a1/avatar?v=abc");
     expect(await screen.findByRole("button", { name: "Remove photo" })).toBeInTheDocument();
-  });
-
-  it("drops the preview without sending anything when cancelled", async () => {
-    const { calls } = api(atlas);
-    const user = userEvent.setup();
-    renderRoute("/contacts/a1");
-    await name();
-    await user.upload(screen.getByLabelText("Upload photo"), png());
-    await screen.findByAltText("Preview of the new photo");
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByAltText("Preview of the new photo")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Use this photo" })).toBeNull();
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview-1");
-    expect(calls.some((c) => c.method === "PUT")).toBe(false);
   });
 
   it("shows an image the server cannot use as an error under the photo, keeping the preview and the old photo", async () => {
@@ -617,16 +600,13 @@ describe("the photo (PROF-03, PROF-06, PROF-07)", () => {
     renderRoute("/contacts/a1");
     await name();
     await user.upload(screen.getByLabelText("Upload photo"), png());
-    await user.click(await screen.findByRole("button", { name: "Use this photo" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(
       "That image can’t be used. Use a PNG, JPEG or WebP of up to 2 MB.",
     );
-    // Nothing was lost: the preview can be tried again or cancelled, and the old photo stays.
+    // Nothing was lost: the preview stays so the user sees what failed, and the old photo stays.
     expect(screen.getByAltText("Preview of the new photo")).toBeInTheDocument();
     expect(headerPhoto()).toHaveAttribute("src", "/api/v1/intelligences/a1/avatar?v=old");
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("says a file over the instance's upload limit is too large", async () => {
@@ -635,7 +615,6 @@ describe("the photo (PROF-03, PROF-06, PROF-07)", () => {
     renderRoute("/contacts/a1");
     await name();
     await user.upload(screen.getByLabelText("Upload photo"), png());
-    await user.click(await screen.findByRole("button", { name: "Use this photo" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("That file is too large.");
   });
 
@@ -645,13 +624,12 @@ describe("the photo (PROF-03, PROF-06, PROF-07)", () => {
     renderRoute("/contacts/a1");
     await name();
     await user.upload(screen.getByLabelText("Upload photo"), png());
-    await user.click(await screen.findByRole("button", { name: "Use this photo" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Couldn’t upload the photo. Try again.",
     );
   });
 
-  it("disables the confirm button while the photo is on its way, so it is sent once", async () => {
+  it("shows the sending state while the photo is on its way, and sends it once", async () => {
     let release: () => void = () => {};
     const { calls } = api(atlas, {
       "PUT /intelligences/a1/avatar": () =>
@@ -663,8 +641,9 @@ describe("the photo (PROF-03, PROF-06, PROF-07)", () => {
     renderRoute("/contacts/a1");
     await name();
     await user.upload(screen.getByLabelText("Upload photo"), png());
-    await user.click(await screen.findByRole("button", { name: "Use this photo" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Sending…" })).toBeDisabled());
+    const editor = screen.getByRole("region", { name: "Edit profile" });
+    expect(await within(editor).findByRole("status")).toHaveTextContent("Sending…");
+    expect(screen.getByAltText("Preview of the new photo")).toBeInTheDocument();
     expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1);
     release();
     await waitFor(() => expect(screen.queryByAltText("Preview of the new photo")).toBeNull());

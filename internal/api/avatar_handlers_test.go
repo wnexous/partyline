@@ -153,9 +153,9 @@ func TestAIAvatarIsServedToWhoCanSeeTheAI(t *testing.T) {
 	patchProfile(carol, id, dto.UpdateProfileRequest{Bio: ptr("hijack")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 }
 
-// PROF-06: a file that is not PNG, JPEG or WebP, is over 2 MB or cannot be decoded is 422
-// avatar_invalid and the old avatar keeps being served; a body over the instance upload limit
-// is 413.
+// PROF-06: a file that is not PNG, JPEG or WebP or cannot be decoded is 422 avatar_invalid and
+// the old avatar keeps being served; a body over 2 MiB is 413 avatar_invalid before it is read,
+// so the client gets a JSON answer instead of a cut connection.
 func TestInvalidAvatarKeepsTheOldOne(t *testing.T) {
 	env := testkit.New(t, testkit.WithEnv(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": "3"}))
 	alice := env.NewUser("alice")
@@ -168,24 +168,38 @@ func TestInvalidAvatarKeepsTheOldOne(t *testing.T) {
 	truncated := pngBytes(t, bands(300, 300))
 	truncated = truncated[:len(truncated)/2]
 	for name, body := range map[string][]byte{
-		"gif":                      gifBuf.Bytes(),
-		"text":                     []byte("not an image at all"),
-		"empty":                    {},
-		"truncated png":            truncated,
-		"2 MiB + 1 byte":           append(good, bytes.Repeat([]byte{0}, 2<<20+1-len(good))...),
-		"3 MiB (the upload limit)": bytes.Repeat([]byte{0}, 3<<20),
-		"5000 x 10 pixels":         pngBytes(t, bands(5000, 10)),
-		"polyglot html after PNG":  append(append([]byte{}, good[:8]...), []byte("<script>alert(1)</script>")...),
+		"gif":                     gifBuf.Bytes(),
+		"text":                    []byte("not an image at all"),
+		"empty":                   {},
+		"truncated png":           truncated,
+		"5000 x 10 pixels":        pngBytes(t, bands(5000, 10)),
+		"polyglot html after PNG": append(append([]byte{}, good[:8]...), []byte("<script>alert(1)</script>")...),
 	} {
 		e := putAvatar(alice, alice.User.ID, body).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeAvatarInvalid)
 		require.NotEmpty(t, e.Message, name)
 		require.Equal(t, before, getAvatar(alice, alice.User.ID).RequireStatus(http.StatusOK).Body, "%s: the old avatar is still served", name)
 		require.Equal(t, prof.AvatarURL, profileOf(t, alice, alice.User.ID).AvatarURL, name)
 	}
+}
 
-	huge := bytes.Repeat([]byte{0}, 3<<20+1)
-	putAvatar(alice, alice.User.ID, huge).RequireError(http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge)
-	require.Equal(t, before, getAvatar(alice, alice.User.ID).RequireStatus(http.StatusOK).Body)
+// PROF-06: an oversized avatar is refused as 413 avatar_invalid with a message, and the old
+// avatar stays; the answer must not depend on the server reading the whole body.
+func TestOversizedAvatarIsRefusedWith413(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	good := pngBytes(t, bands(300, 300))
+	prof := testkit.Decode[dto.IntelligenceProfile](putAvatar(alice, alice.User.ID, good).RequireStatus(http.StatusOK))
+	before := getAvatar(alice, alice.User.ID).RequireStatus(http.StatusOK).Body
+
+	for name, body := range map[string][]byte{
+		"2 MiB + 1 byte": append(good, bytes.Repeat([]byte{0}, 2<<20+1-len(good))...),
+		"5 MB":           append(good, bytes.Repeat([]byte{0}, 5<<20-len(good))...),
+	} {
+		e := putAvatar(alice, alice.User.ID, body).RequireError(http.StatusRequestEntityTooLarge, dto.ErrorCodeAvatarInvalid)
+		require.NotEmpty(t, e.Message, name)
+		require.Equal(t, before, getAvatar(alice, alice.User.ID).RequireStatus(http.StatusOK).Body, "%s: the old avatar is still served", name)
+		require.Equal(t, prof.AvatarURL, profileOf(t, alice, alice.User.ID).AvatarURL, name)
+	}
 }
 
 // An accepted upload of exactly 2 MiB is fine (PROF-06 refuses only larger files).

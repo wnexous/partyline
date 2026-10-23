@@ -732,12 +732,25 @@ export function useUpdateIntelligence(id: string) {
   });
 }
 
+/** How long an avatar upload may take before it is abandoned, so a stalled connection cannot
+ * leave the photo "sending" forever. */
+export const AvatarUploadTimeoutMs = 30_000;
+
 /** Uploads an avatar: the image file goes as the raw body (PROF-07); 422 `avatar_invalid`. */
 export function useUploadAvatar(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (image: Blob) =>
-      api<IntelligenceProfile>("PUT", `/intelligences/${id}/avatar`, image),
+    mutationFn: async (image: Blob) => {
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), AvatarUploadTimeoutMs);
+      try {
+        return await api<IntelligenceProfile>("PUT", `/intelligences/${id}/avatar`, image, {
+          signal: abort.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     onSuccess: (profile) => storeProfile(qc, profile),
   });
 }
