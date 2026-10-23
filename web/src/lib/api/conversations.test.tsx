@@ -16,7 +16,6 @@ import {
   useMarkRead,
   useOpenDM,
   useRemoveAvatar,
-  useRouteChat,
   useUpdateIntelligence,
   useUpdateRoom,
   useUploadAvatar,
@@ -199,16 +198,6 @@ describe("rooms made, renamed, routed or deleted through the room hooks (LAY-01)
     const { result } = renderHook(() => useUpdateRoom("r1"), { wrapper });
     await act(async () => {
       await result.current.mutateAsync({ name: "renamed" });
-    });
-    expect(stale(queryKeys.conversations)).toBe(true);
-  });
-
-  it("a chat routed to an agent is a row of the sidebar", async () => {
-    mockApi({ "POST /chats/c1/route": json(201, makeRoom({ id: "r9" })) });
-    seed();
-    const { result } = renderHook(() => useRouteChat(), { wrapper });
-    await act(async () => {
-      await result.current.mutateAsync({ chatId: "c1", agentId: "a1" });
     });
     expect(stale(queryKeys.conversations)).toBe(true);
   });

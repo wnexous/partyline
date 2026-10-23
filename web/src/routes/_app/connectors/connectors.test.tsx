@@ -5,16 +5,7 @@ import { type Connector, SecretMask } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
-import {
-  makeAgent,
-  makeAI,
-  makeChat,
-  makeConnector,
-  makeConnectorKind,
-  makeIntelligence,
-  makeMe,
-  makeRoom,
-} from "@/test/fixtures";
+import { makeAI, makeChat, makeConnector, makeConnectorKind, makeMe } from "@/test/fixtures";
 import { renderRoute } from "@/test/render";
 import { sampleContacts } from "@/test/sample-contacts";
 
@@ -221,7 +212,7 @@ describe("add connector (UI-16)", () => {
   });
 });
 
-describe("connector page (UI-13, UI-17)", () => {
+describe("connector page (UI-17)", () => {
   const connector = makeConnector({
     id: "k1",
     name: "ops-bot",
@@ -238,12 +229,7 @@ describe("connector page (UI-13, UI-17)", () => {
     "GET /connector-kinds": kinds,
     "GET /connectors/k1": json(200, connector),
     "GET /connectors/k1/chats": json(200, { items: chats }),
-    "GET /agents": json(200, {
-      items: [
-        makeAgent({ id: "a1", name: "release-bot", online: true }),
-        makeAgent({ id: "a2", name: "reviewer" }),
-      ],
-    }),
+    "GET /contacts": json(200, sampleContacts),
   };
 
   it("shows status, last error and the chats", async () => {
@@ -270,7 +256,6 @@ describe("connector page (UI-13, UI-17)", () => {
     const list = await screen.findByRole("list", { name: "Chats" });
     const row = within(list).getByRole("listitem", { name: "WhatsApp chat" });
     expect(within(row).getByText("WhatsApp chat")).toBeInTheDocument();
-    expect(within(row).getByRole("button", { name: /WhatsApp chat/ })).toBeInTheDocument();
   });
 
   it("refreshes the chat list on demand", async () => {
@@ -286,69 +271,6 @@ describe("connector page (UI-13, UI-17)", () => {
         calls.some((c) => c.method === "POST" && c.path === "/connectors/k1/chats/refresh"),
       ).toBe(true),
     );
-  });
-
-  it("routes a chat to an agent in one action and opens the new room", async () => {
-    const room = makeRoom({ id: "r7", name: "Ops on call → release-bot" });
-    const { calls } = mockApi({
-      ...base,
-      "POST /chats/c1/route": json(201, room),
-      "GET /rooms/r7": json(200, room),
-      "GET /rooms/r7/members": json(200, { items: [] }),
-      "GET /rooms/r7/messages": json(200, { items: [], has_more: false }),
-    });
-    const user = userEvent.setup();
-    const { router } = renderRoute("/connectors/k1");
-    await screen.findByRole("listitem", { name: "Ops on call" });
-    await user.click(
-      within(row("Ops on call")).getByRole("button", { name: "Route Ops on call to an agent" }),
-    );
-    const dialog = await screen.findByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: /release-bot/ }));
-    await waitFor(() => expect(router.state.location.pathname).toBe("/rooms/r7"));
-    expect(calls.find((c) => c.method === "POST" && c.path === "/chats/c1/route")?.body).toEqual({
-      agent_id: "a1",
-    });
-  });
-
-  it("names the AIs of the route dialog by their profile and filters by name or handle", async () => {
-    mockApi({
-      ...base,
-      "GET /agents": json(200, {
-        items: [
-          makeAgent({
-            id: "a1",
-            intelligence: makeAI({ id: "a1", display_name: "Atlas Prime", handle: "atlas" }),
-          }),
-          makeAgent({
-            id: "a2",
-            intelligence: makeAI({ id: "a2", display_name: "Reviewer", handle: "rev" }),
-          }),
-        ],
-      }),
-    });
-    const user = userEvent.setup();
-    renderRoute("/connectors/k1");
-    await screen.findByRole("listitem", { name: "Ops on call" });
-    await user.click(
-      within(row("Ops on call")).getByRole("button", { name: "Route Ops on call to an agent" }),
-    );
-    const dialog = await screen.findByRole("dialog");
-    const agents = await within(dialog).findByRole("list", { name: "Agents" });
-    const buttons = within(agents).getAllByRole("button");
-    expect(buttons).toHaveLength(2);
-    expect(buttons[0]).toHaveTextContent("Atlas Prime");
-    expect(buttons[0]).not.toHaveTextContent("atlas");
-    expect(buttons[1]).toHaveTextContent("Reviewer");
-
-    const filter = within(dialog).getByRole("searchbox", { name: "Filter agents" });
-    await user.type(filter, "REV");
-    expect(within(agents).getAllByRole("button")).toHaveLength(1);
-    expect(within(agents).getByRole("button", { name: /Reviewer/ })).toBeInTheDocument();
-    await user.clear(filter);
-    await user.type(filter, "Prime");
-    expect(within(agents).getByRole("button", { name: /Atlas Prime/ })).toBeInTheDocument();
-    expect(within(agents).queryByRole("button", { name: /Reviewer/ })).toBeNull();
   });
 
   it("edits the connector and keeps untouched secrets masked", async () => {
@@ -447,327 +369,150 @@ describe("connector page (UI-13, UI-17)", () => {
   });
 });
 
-describe("catch-all routing (ROUTE-01, ROUTE-04)", () => {
-  const connector = makeConnector({ id: "k1", name: "support-line" });
-  const rooms = [
-    makeRoom({ id: "r1", name: "deploys", my_level: "manage" }),
-    makeRoom({ id: "r2", name: "watch-only", my_level: "view" }),
-    makeRoom({ id: "r3", name: "front desk", my_level: "manage" }),
-  ];
-  const api = (over: Partial<Connector> = {}, patch?: Response, viewer = me) =>
-    mockApi({
-      "GET /me": json(200, viewer),
-      "GET /connector-kinds": kinds,
-      "GET /connectors/k1": json(200, { ...connector, ...over }),
-      "GET /connectors/k1/chats": json(200, { items: [] }),
-      "GET /rooms": json(200, { items: rooms }),
-      "PATCH /connectors/k1":
-        patch ??
-        ((_url, init) => json(200, { ...connector, ...over, ...JSON.parse(String(init?.body)) })),
-    });
-  const card = () => screen.findByRole("region", { name: "Catch-all" });
-  const patches = (calls: ReturnType<typeof mockApi>["calls"]) =>
-    calls.filter((c) => c.method === "PATCH");
-
-  it("shows the current scope and room with the exposure warning", async () => {
-    api({ auto_route_scope: "dms", auto_route_room_id: "r1" });
-    renderRoute("/connectors/k1");
-    const region = await card();
-    expect(within(region).getByRole("radio", { name: "Direct chats" })).toBeChecked();
-    expect(await within(region).findByRole("combobox", { name: "Room" })).toHaveValue("r1");
-    expect(within(region).getByRole("note")).toHaveTextContent(
-      "Anyone who writes to this account reaches the agents in deploys.",
-    );
-  });
-
-  it("shows no warning and no room picker while off", async () => {
-    api();
-    renderRoute("/connectors/k1");
-    const region = await card();
-    expect(within(region).getByRole("radio", { name: "Off" })).toBeChecked();
-    expect(within(region).queryByRole("note")).toBeNull();
-    expect(within(region).queryByRole("combobox", { name: "Room" })).toBeNull();
-  });
-
-  it("offers only rooms the user manages and saves scope and room together", async () => {
-    const { calls } = api();
-    const user = userEvent.setup();
-    renderRoute("/connectors/k1");
-    const region = await card();
-    await user.click(within(region).getByRole("radio", { name: "Groups" }));
-    expect(within(region).getByRole("note")).toBeInTheDocument();
-    const picker = await within(region).findByRole("combobox", { name: "Room" });
-    expect(
-      within(picker)
-        .getAllByRole("option")
-        .map((o) => o.textContent),
-    ).toEqual(["Pick a room", "deploys", "front desk"]);
-    await user.selectOptions(picker, "r3");
-    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
-    await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    expect(patches(calls)[0]?.body).toEqual({
-      auto_route_scope: "groups",
-      auto_route_room_id: "r3",
-    });
-    expect(within(region).getByRole("note")).toHaveTextContent("front desk");
-  });
-
-  it("turning it off clears the room", async () => {
-    const { calls } = api({ auto_route_scope: "all", auto_route_room_id: "r1" });
-    const user = userEvent.setup();
-    renderRoute("/connectors/k1");
-    const region = await card();
-    await user.click(within(region).getByRole("radio", { name: "Off" }));
-    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
-    await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    expect(patches(calls)[0]?.body).toEqual({ auto_route_scope: "off", auto_route_room_id: "" });
-  });
-
-  it("asks for a room before sending a scope other than off", async () => {
-    const { calls } = api();
-    const user = userEvent.setup();
-    renderRoute("/connectors/k1");
-    const region = await card();
-    await user.click(within(region).getByRole("radio", { name: "All chats" }));
-    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
-    expect(await within(region).findByText("Pick the room new chats join")).toBeInTheDocument();
-    expect(within(region).getByRole("combobox", { name: "Room" })).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
-    expect(patches(calls)).toHaveLength(0);
-  });
-
-  it("explains a 403 when the user lost manage on the room", async () => {
-    api({ auto_route_scope: "dms", auto_route_room_id: "r1" }, apiError(403, "forbidden"));
-    const user = userEvent.setup();
-    renderRoute("/connectors/k1");
-    const region = await card();
-    await user.selectOptions(await within(region).findByRole("combobox", { name: "Room" }), "r3");
-    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
-    expect(await within(region).findByRole("alert")).toHaveTextContent(
-      "You need manage access on that room to route chats to it.",
-    );
-  });
-
-  it("shows a 422 room reason under the picker", async () => {
-    api(
-      { auto_route_scope: "dms", auto_route_room_id: "r1" },
-      apiError(422, "validation", "invalid", {
-        auto_route_room_id: "required when the scope is not off",
-      }),
-    );
-    const user = userEvent.setup();
-    renderRoute("/connectors/k1");
-    const region = await card();
-    const picker = await within(region).findByRole("combobox", { name: "Room" });
-    await user.selectOptions(picker, "r3");
-    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
-    // A11Y-01: the reason is announced and describes the picker.
-    expect(await within(region).findByRole("alert")).toHaveTextContent(
-      "required when the scope is not off",
-    );
-    expect(picker).toHaveAccessibleDescription("required when the scope is not off");
-  });
-
-  it("announces a 422 scope reason and ties it to the scope choice (A11Y-01)", async () => {
-    api(
-      { auto_route_scope: "dms", auto_route_room_id: "r1" },
-      apiError(422, "validation", "invalid", {
-        auto_route_scope: "must be off, dms, groups or all",
-      }),
-    );
-    const user = userEvent.setup();
-    renderRoute("/connectors/k1");
-    const region = await card();
-    await user.click(within(region).getByRole("radio", { name: "All chats" }));
-    await user.click(within(region).getByRole("button", { name: "Save catch-all" }));
-    expect(await within(region).findByRole("alert")).toHaveTextContent(
-      "must be off, dms, groups or all",
-    );
-    expect(
-      within(region).getByRole("radiogroup", { name: "New chats to route" }),
-    ).toHaveAccessibleDescription("must be off, dms, groups or all");
-  });
-
-  it("says why Save is disabled before anything changes (A11Y-04)", async () => {
-    api({ auto_route_scope: "dms", auto_route_room_id: "r1" });
-    const user = userEvent.setup();
-    renderRoute("/connectors/k1");
-    const region = await card();
-    const save = within(region).getByRole("button", { name: "Save catch-all" });
-    expect(save).toBeDisabled();
-    expect(save).toHaveAccessibleDescription("No changes to save.");
-    expect(within(region).getByText("No changes to save.")).toBeInTheDocument();
-    await user.click(within(region).getByRole("radio", { name: "All chats" }));
-    expect(save).toBeEnabled();
-    expect(within(region).queryByText("No changes to save.")).toBeNull();
-  });
-
-  it("names a catch-all room the user cannot pick any more", async () => {
-    api({ auto_route_scope: "dms", auto_route_room_id: "r-gone" });
-    renderRoute("/connectors/k1");
-    const region = await card();
-    const picker = await within(region).findByRole("combobox", { name: "Room" });
-    expect(picker).toHaveValue("r-gone");
-    expect(within(picker).getByRole("option", { selected: true })).toHaveTextContent(
-      "Unavailable room",
-    );
-  });
-
-  it("says when the rooms could not be loaded", async () => {
-    mockApi({
-      "GET /me": json(200, me),
-      "GET /connector-kinds": kinds,
-      "GET /connectors/k1": json(200, { ...connector, auto_route_scope: "dms" }),
-      "GET /connectors/k1/chats": json(200, { items: [] }),
-      "GET /rooms": apiError(500, "internal"),
-    });
-    renderRoute("/connectors/k1");
-    const region = await card();
-    expect(await within(region).findByText("Couldn’t load your rooms.")).toBeInTheDocument();
-  });
-
-  it("offers to switch a legacy catch-all room to per-chat conversations", async () => {
-    const { calls } = api({ auto_route_scope: "dms", auto_route_room_id: "r1" });
-    const user = userEvent.setup();
-    renderRoute("/connectors/k1");
-    const region = await card();
-    expect(await within(region).findByRole("combobox", { name: "Room" })).toHaveValue("r1");
-    expect(within(region).getByRole("note")).toHaveTextContent(
-      "Anyone who writes to this account reaches the agents in deploys.",
-    );
-    await user.click(
-      within(region).getByRole("button", { name: "Switch to per-chat conversations" }),
-    );
-    await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    // The scope is kept: an empty room is how per-chat conversations are chosen.
-    expect(patches(calls)[0]?.body).toEqual({ auto_route_room_id: "" });
-    await waitFor(() =>
-      expect(
-        within(region).queryByRole("button", { name: "Switch to per-chat conversations" }),
-      ).toBeNull(),
-    );
-    expect(within(region).getByRole("note")).toHaveTextContent(
-      "Each new chat becomes its own conversation with the operator.",
-    );
-    expect(
-      within(region).getByText(
-        "Leave it empty: each new chat opens its own conversation with the operator.",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("has no switch action without a legacy catch-all room", async () => {
-    api({ auto_route_scope: "dms" });
-    renderRoute("/connectors/k1");
-    const region = await card();
-    expect(
-      within(region).queryByRole("button", { name: "Switch to per-chat conversations" }),
-    ).toBeNull();
-  });
-
-  it("is not shown for a connector shared for use", async () => {
-    api({ my_level: "use" });
-    renderRoute("/connectors/k1");
-    await screen.findByRole("heading", { name: "support-line" });
-    expect(screen.queryByRole("region", { name: "Catch-all" })).toBeNull();
-  });
-
-  it("speaks Portuguese", async () => {
-    useLiveStore.setState({ locale: "pt-BR" });
-    api(
-      { auto_route_scope: "dms", auto_route_room_id: "r1" },
-      undefined,
-      makeMe({ locale: "pt-BR" }),
-    );
-    renderRoute("/connectors/k1");
-    const region = await screen.findByRole("region", { name: "Encaminhar tudo" });
-    expect(within(region).getByRole("radio", { name: "Chats diretos" })).toBeChecked();
-  });
-});
-
-describe("connector operator (ACC-01)", () => {
+describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
+  const atlas = makeAI();
   const base = makeConnector({
     id: "k1",
     name: "support-line",
-    operator: makeIntelligence(),
+    operator: atlas,
+    deliver: "dms",
+    groups_mentions_only: false,
+    queued: 4,
   });
-  const atlas = makeAI();
   const api = (over: Partial<Connector> = {}, patch?: Response) =>
     mockApi({
       "GET /me": json(200, me),
       "GET /connector-kinds": kinds,
       "GET /connectors/k1": json(200, { ...base, ...over }),
-      "GET /connectors/k1/chats": json(200, { items: [] }),
+      "GET /connectors/k1/chats": json(200, { items: [makeChat({ id: "c1" })] }),
       "GET /contacts": json(200, sampleContacts),
       "PATCH /connectors/k1":
         patch ??
-        ((_url, init) => {
-          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-          const operator = body.operator_id === me.id ? me.intelligence : atlas;
-          return json(200, { ...base, ...over, ...body, operator });
-        }),
+        ((_url, init) => json(200, { ...base, ...over, ...JSON.parse(String(init?.body)) })),
     });
   const patches = (calls: ReturnType<typeof mockApi>["calls"]) =>
     calls.filter((c) => c.method === "PATCH");
-  const openSettings = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(await screen.findByRole("button", { name: "Connector settings" }));
-    return screen.findByRole("dialog", { name: "Connector settings" });
-  };
 
-  it("lets the owner pick one of their AIs as the operator and saves it", async () => {
-    const { calls } = api();
-    const user = userEvent.setup();
+  it("shows the operator, the delivery filters, the status and the queued count", async () => {
+    api();
     renderRoute("/connectors/k1");
-    const sheet = await openSettings(user);
-    const picker = await within(sheet).findByRole("combobox", { name: "Operator" });
+    await screen.findByRole("heading", { name: "support-line" });
+    // CID-23: the header names the operator and the queue, the status is live.
+    expect(screen.getByText("Operated by Atlas")).toBeInTheDocument();
+    expect(screen.getByText("4 queued")).toBeInTheDocument();
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    const operator = await screen.findByRole("combobox", { name: "Operator" });
+    expect(operator).toHaveValue(atlas.id);
+    // Only the owner's AIs: no user, and nothing shared by another owner (CID-01).
     expect(
-      within(picker)
+      within(operator)
         .getAllByRole("option")
         .map((o) => o.textContent),
     ).toEqual([
-      "Ana Souza (you)",
+      "Choose an AI",
       "Atlas (@atlas)",
       "Notes (@notes)",
       "Lab (@lab)",
       "Old helper (@old-helper)",
     ]);
-    expect(picker).toHaveValue(me.id);
-    await user.selectOptions(picker, "a1");
-    await user.click(within(sheet).getByRole("button", { name: "Save operator" }));
-    await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    expect(patches(calls)[0]?.body).toEqual({ operator_id: "a1" });
-    expect(await screen.findByText("Operator saved")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Deliver" })).toHaveValue("dms");
+    expect(screen.getByRole("switch", { name: "Groups: only when mentioned" })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Save delivery" })).toBeDisabled();
   });
 
-  it("shows the operator read-only to someone the connector is shared with", async () => {
-    api({ my_level: "use", operator: atlas });
+  it("asks for an operator when there is none and saves the pick (CID-02)", async () => {
+    const { calls } = api({ operator: undefined, queued: 0 });
+    const user = userEvent.setup();
     renderRoute("/connectors/k1");
-    expect(await screen.findByText("Operated by Atlas")).toBeInTheDocument();
-    // No settings sheet, so no way to change it.
-    expect(screen.queryByRole("button", { name: "Connector settings" })).toBeNull();
-    expect(screen.queryByRole("combobox", { name: "Operator" })).toBeNull();
+    expect(await screen.findByText("No operator yet")).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "Choose the AI that operates this connection. Until you do, nothing arrives through it.",
+    );
+    const picker = await screen.findByRole("combobox", { name: "Operator" });
+    expect(picker).toHaveValue("");
+    const save = screen.getByRole("button", { name: "Save delivery" });
+    expect(save).toBeDisabled();
+    await user.selectOptions(picker, atlas.id);
+    await user.click(save);
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({ operator_id: atlas.id });
+    expect(await screen.findByText("Delivery settings saved")).toBeInTheDocument();
   });
 
-  it("shows the server's reason under the operator pick and keeps the old one", async () => {
+  it("saves deliver and groups_mentions_only", async () => {
+    const { calls } = api();
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Deliver" }), "groups");
+    await user.click(screen.getByRole("switch", { name: "Groups: only when mentioned" }));
+    await user.click(screen.getByRole("button", { name: "Save delivery" }));
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({ deliver: "groups", groups_mentions_only: true });
+  });
+
+  it("shows the server's reason under the deliver field", async () => {
+    api({}, apiError(422, "invalid", "invalid", { deliver: "must be dms, groups or all" }));
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const deliver = await screen.findByRole("combobox", { name: "Deliver" });
+    await user.selectOptions(deliver, "groups");
+    await user.click(screen.getByRole("button", { name: "Save delivery" }));
+    expect(await screen.findByText("must be dms, groups or all")).toBeInTheDocument();
+    expect(deliver).toHaveAttribute("aria-invalid", "true");
+    expect(deliver).toHaveAccessibleDescription("must be dms, groups or all");
+    expect(deliver).toHaveValue("groups");
+  });
+
+  it("shows the server's reason under the operator pick", async () => {
     api(
-      {},
+      { operator: undefined },
       apiError(422, "invalid", "invalid", {
-        operator_id: "must be you or an AI you own",
+        operator_id: "must be an AI you own",
       }),
     );
     const user = userEvent.setup();
     renderRoute("/connectors/k1");
-    const sheet = await openSettings(user);
-    const picker = await within(sheet).findByRole("combobox", { name: "Operator" });
-    await user.selectOptions(picker, "a1");
-    await user.click(within(sheet).getByRole("button", { name: "Save operator" }));
-    expect(await within(sheet).findByRole("alert")).toHaveTextContent(
-      "must be you or an AI you own",
+    const picker = await screen.findByRole("combobox", { name: "Operator" });
+    await user.selectOptions(picker, atlas.id);
+    await user.click(screen.getByRole("button", { name: "Save delivery" }));
+    expect(await screen.findByText("must be an AI you own")).toBeInTheDocument();
+    expect(picker).toHaveValue(atlas.id);
+  });
+
+  it("offers no route action and no catch-all controls (CID-22)", async () => {
+    const { calls } = api();
+    renderRoute("/connectors/k1");
+    await screen.findByRole("heading", { name: "support-line" });
+    expect(screen.queryByRole("button", { name: /Route/ })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Catch-all" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "New chats to route" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Room" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Direct chats" })).toBeNull();
+    // The page shows no message text and no way to post: the connection has no timeline.
+    expect(screen.queryByRole("log")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(calls.some((c) => c.path === "/chats/c1/route")).toBe(false);
+  });
+
+  it("reads the delivery settings without controls to someone it is shared with", async () => {
+    api({ my_level: "use", operator: atlas, deliver: "all", groups_mentions_only: true });
+    renderRoute("/connectors/k1");
+    expect(await screen.findByText("Operated by Atlas")).toBeInTheDocument();
+    expect(screen.getByText("Atlas (@atlas)")).toBeInTheDocument();
+    expect(screen.getByText("Direct chats and groups")).toBeInTheDocument();
+    expect(screen.getByText("Yes")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Operator" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Deliver" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save delivery" })).toBeNull();
+  });
+
+  it("says who chooses an operator that does not exist yet to someone it is shared with", async () => {
+    api({ my_level: "use", operator: undefined });
+    renderRoute("/connectors/k1");
+    expect(await screen.findByRole("note")).toHaveTextContent(
+      "No AI operates this account yet, so nothing arrives through it. Its owner chooses the operator.",
     );
-    expect(picker).toHaveAttribute("aria-invalid", "true");
-    expect(picker).toHaveValue("a1");
+    expect(screen.getAllByText("No operator yet").length).toBeGreaterThan(0);
   });
 
   it("speaks Portuguese", async () => {
@@ -779,11 +524,14 @@ describe("connector operator (ACC-01)", () => {
       "GET /connectors/k1/chats": json(200, { items: [] }),
       "GET /contacts": json(200, sampleContacts),
     });
-    const user = userEvent.setup();
     renderRoute("/connectors/k1");
-    await user.click(await screen.findByRole("button", { name: "Configurações do conector" }));
-    const sheet = await screen.findByRole("dialog", { name: "Configurações do conector" });
-    expect(await within(sheet).findByRole("combobox", { name: "Operador" })).toBeInTheDocument();
-    expect(within(sheet).getByRole("button", { name: "Salvar operador" })).toBeDisabled();
+    expect(await screen.findByText("Operado por Atlas")).toBeInTheDocument();
+    expect(screen.getByText("4 na fila")).toBeInTheDocument();
+    expect(await screen.findByRole("combobox", { name: "Operador" })).toHaveValue(atlas.id);
+    expect(screen.getByRole("combobox", { name: "Entregar" })).toHaveValue("dms");
+    expect(
+      screen.getByRole("switch", { name: "Grupos: só quando mencionarem" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Salvar entrega" })).toBeDisabled();
   });
 });

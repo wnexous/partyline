@@ -168,27 +168,6 @@ describe("live handlers", () => {
     });
   });
 
-  it("outbox.status updates the delivery chip of the matching message", () => {
-    seedTimeline(qc, "r1", [1, 2]);
-    handleLiveEvent(qc, actions(), {
-      type: "outbox.status",
-      data: {
-        id: "o1",
-        room_id: "r1",
-        message_id: "m-r1-2",
-        chat_id: "ch1",
-        status: "sent",
-        attempts: 1,
-        updated_at: "2026-10-19T12:00:01Z",
-      },
-    });
-    const items = qc.getQueryData<MessagePages>(queryKeys.roomMessages("r1"))?.pages[0]?.items;
-    expect(items?.[1]?.outbox).toEqual([
-      { id: "o1", chat_id: "ch1", status: "sent", attempts: 1, updated_at: "2026-10-19T12:00:01Z" },
-    ]);
-    expect(items?.[0]?.outbox).toBeUndefined();
-  });
-
   it("identity.linked records the identity and refetches identities (UI-18)", () => {
     qc.setQueryData(queryKeys.identities, []);
     const identity = { id: "i1", connector_kind: "telegram", display: "Ana" } as Identity;

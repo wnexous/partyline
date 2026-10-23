@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { NotifyOption, Session } from "@/lib/api/types.gen";
+import type { Session } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { LOCALE_KEY, THEME_KEY } from "@/lib/theme";
 import { apiError, json, mockApi } from "@/test/fetch";
@@ -36,24 +36,8 @@ const sessions: Session[] = [
 const base = {
   "GET /me": json(200, me),
   "GET /intelligences/u1": json(200, profile),
-  "GET /me/notify-options": json(200, { items: [] }),
   "GET /me/sessions": json(200, { items: sessions }),
 };
-
-const notifyOptions: NotifyOption[] = [
-  {
-    chat_id: "c1",
-    title: "Lia Costa",
-    connector: { id: "k1", kind: "whatsapp", name: "ops-line" },
-    account: "+5511999990001",
-  },
-  {
-    chat_id: "c2",
-    title: "Atlas",
-    connector: { id: "k2", kind: "telegram", name: "ops-bot" },
-    account: "@ana",
-  },
-];
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -142,69 +126,14 @@ describe("settings page", () => {
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ handle: "ana-souza" });
   });
 
-  it("lists the chats of the linked accounts and saves and clears the notify choice (NOTI-01)", async () => {
-    let current = me;
-    const { calls } = mockApi({
-      ...base,
-      "GET /me/notify-options": json(200, { items: notifyOptions }),
-      "PUT /me/notify": (_url, init) => {
-        const body = JSON.parse(String(init?.body)) as { chat_id: string | null };
-        current = body.chat_id ? { ...me, notify_chat_id: body.chat_id } : { ...me };
-        return json(200, current);
-      },
-    });
-    const user = userEvent.setup();
+  it("offers no app-notification choice and asks for none (CID-22)", async () => {
+    const { calls } = mockApi(base);
     renderRoute("/settings");
-    const picker = await screen.findByRole("combobox", { name: "Send them to" });
-    expect(
-      within(picker)
-        .getAllByRole("option")
-        .map((o) => o.textContent),
-    ).toEqual([
-      "Don’t notify me anywhere",
-      "ops-line · +5511999990001 · Lia Costa",
-      "ops-bot · @ana · Atlas",
-    ]);
-    await user.selectOptions(picker, "c2");
-    await user.click(screen.getByRole("button", { name: "Save notifications" }));
-    await waitFor(() => expect(calls.find((c) => c.method === "PUT")).toBeDefined());
-    expect(calls.find((c) => c.method === "PUT")?.body).toEqual({ chat_id: "c2" });
-    expect(await screen.findByText("Notifications saved")).toBeInTheDocument();
-    expect(picker).toHaveValue("c2");
-
-    await user.selectOptions(picker, "");
-    await user.click(screen.getByRole("button", { name: "Save notifications" }));
-    await waitFor(() =>
-      expect(calls.filter((c) => c.method === "PUT").at(-1)?.body).toEqual({ chat_id: null }),
-    );
-    expect(picker).toHaveValue("");
-  });
-
-  it("shows a stored choice that is no longer an option (NOTI-01)", async () => {
-    mockApi({
-      ...base,
-      "GET /me": json(200, { ...me, notify_chat_id: "c9" }),
-      "GET /me/notify-options": json(200, { items: notifyOptions }),
-    });
-    renderRoute("/settings");
-    const picker = await screen.findByRole("combobox", { name: "Send them to" });
-    expect(picker).toHaveValue("c9");
-    expect(within(picker).getByRole("option", { selected: true })).toHaveTextContent(
-      "An account that is no longer linked",
-    );
-  });
-
-  it("points at the linked accounts when no app can receive a copy (NOTI-01)", async () => {
-    mockApi(base);
-    renderRoute("/settings");
-    expect(
-      await screen.findByText("No linked account can receive messages yet."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Link a chat account" })).toHaveAttribute(
-      "href",
-      "/identities",
-    );
+    await screen.findByRole("heading", { level: 1, name: "Settings" });
+    await screen.findByLabelText(/Display name/);
+    expect(screen.queryByText("Notifications")).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Send them to" })).toBeNull();
+    expect(calls.some((c) => c.path.startsWith("/me/notify"))).toBe(false);
   });
 
   it("changes the password, checking the confirmation first", async () => {

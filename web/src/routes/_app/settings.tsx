@@ -1,12 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FormAlert, TextField } from "@/components/form-fields";
 import { LOCALE_NAMES, useChooseLocale } from "@/components/language-switch";
-import { NativeSelect } from "@/components/native-select";
+
 import { PageHeader } from "@/components/page-header";
 import { ProfileEditor } from "@/components/profile-editor";
 import { Button } from "@/components/ui/button";
@@ -18,10 +18,8 @@ import {
   useChangePassword,
   useIntelligence,
   useMe,
-  useNotifyOptions,
   useRevokeSession,
   useSessions,
-  useSetNotify,
 } from "@/lib/api/queries";
 import { type Me, PasswordMinLength, type Session } from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/lib/forms";
@@ -45,7 +43,6 @@ function SettingsPage() {
       <PageHeader title={t("page.settingsTitle")} description={t("page.settingsBody")} />
       <div className="max-w-2xl divide-y px-4 md:px-8">
         <ProfileSection me={me} />
-        <NotifySection me={me} />
         <AppearanceSection />
         <PasswordSection />
         <SessionsSection />
@@ -114,122 +111,6 @@ function ProfileSection({ me }: { me: Me }) {
           <Skeleton className="h-9 w-full max-w-sm" />
           <Skeleton className="h-9 w-full max-w-sm" />
         </div>
-      )}
-    </Section>
-  );
-}
-
-/**
- * "Notify me here" (NOTI-01): one of the DM chats of the user's linked accounts receives a copy
- * of the direct messages AIs write to them. The empty choice clears it; a stored chat that is no
- * longer an option still shows, so it can be cleared.
- */
-function NotifySection({ me }: { me: Me }) {
-  const t = useT();
-  const id = useId();
-  const options = useNotifyOptions();
-  const save = useSetNotify();
-  const stored = me.notify_chat_id ?? "";
-  const [chatId, setChatId] = useState(stored);
-  const [error, setError] = useState<string | null>(null);
-  const [fieldError, setFieldError] = useState<string | null>(null);
-  const list = options.data ?? [];
-  const unavailable = stored !== "" && !list.some((o) => o.chat_id === stored);
-  const dirty = chatId !== stored;
-  const fieldId = `${id}-notify-chat`;
-  const fieldErrorId = `${id}-notify-chat-error`;
-  const hintId = `${id}-notify-chat-hint`;
-
-  const submit = () => {
-    if (!dirty || save.isPending) return;
-    setError(null);
-    setFieldError(null);
-    save.mutate(chatId === "" ? null : chatId, {
-      onSuccess: (next) => {
-        setChatId(next.notify_chat_id ?? "");
-        toast.success(t("account.notifySaved"));
-      },
-      onError: (err) => {
-        if (isApiError(err) && err.status === 422 && err.fields.chat_id) {
-          setFieldError(err.fields.chat_id);
-          return;
-        }
-        setError(formError(t, err));
-      },
-    });
-  };
-
-  return (
-    <Section id={`${id}-notify`} title={t("account.notify")} description={t("account.notifyBody")}>
-      {options.isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t("account.notifyLoadError")}
-        </p>
-      ) : options.isPending ? (
-        <Skeleton className="h-9 w-full max-w-sm" />
-      ) : list.length === 0 && stored === "" ? (
-        <p className="text-sm text-muted-foreground">
-          {t("account.notifyNone")}{" "}
-          <Link
-            to="/identities"
-            className="font-medium text-foreground underline-offset-4 hover:underline"
-          >
-            {t("account.notifyLink")}
-          </Link>
-        </p>
-      ) : (
-        <form
-          aria-labelledby={`${id}-notify`}
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit();
-          }}
-          noValidate
-          className="space-y-4"
-        >
-          <FormAlert>{error}</FormAlert>
-          <div className="space-y-1">
-            <label htmlFor={fieldId} className="block text-sm font-medium">
-              {t("account.notifyWhere")}
-            </label>
-            <NativeSelect
-              id={fieldId}
-              value={chatId}
-              onChange={(e) => {
-                setChatId(e.target.value);
-                setFieldError(null);
-              }}
-              aria-invalid={fieldError ? true : undefined}
-              aria-describedby={fieldError ? fieldErrorId : hintId}
-            >
-              <option value="">{t("account.notifyOff")}</option>
-              {unavailable ? (
-                <option value={stored}>{t("account.notifyUnavailable")}</option>
-              ) : null}
-              {list.map((option) => (
-                <option key={option.chat_id} value={option.chat_id}>
-                  {t("account.notifyOption", {
-                    connector: option.connector.name,
-                    account: option.account,
-                    title: option.title,
-                  })}
-                </option>
-              ))}
-            </NativeSelect>
-            {fieldError ? (
-              <p id={fieldErrorId} role="alert" className="text-sm text-destructive">
-                {fieldError}
-              </p>
-            ) : (
-              <p id={hintId} className="text-xs text-muted-foreground">
-                {t("account.notifyHint")}
-              </p>
-            )}
-          </div>
-          <Button type="submit" variant="outline" disabled={!dirty || save.isPending}>
-            {t("account.notifySave")}
-          </Button>
-        </form>
       )}
     </Section>
   );

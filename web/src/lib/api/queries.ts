@@ -6,7 +6,6 @@ import {
   queryOptions,
   useInfiniteQuery,
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -55,7 +54,6 @@ import {
   type MessagePreview,
   MultipartFileField,
   MultipartMessageField,
-  type NotifyOption,
   type OpenDMRequest,
   type Page,
   type PairingCode,
@@ -67,7 +65,6 @@ import {
   type RoomMember,
   type Session,
   type SetMachineLabelRequest,
-  type SetNotifyRequest,
   type SetupRequest,
   type SetupStatus,
   type Sharing,
@@ -91,7 +88,6 @@ export type SharingResource = "rooms" | "agents" | "connectors";
 
 export const queryKeys = {
   me: ["me"] as const,
-  notifyOptions: ["me", "notify-options"] as const,
   setupStatus: ["setup-status"] as const,
   invite: (token: string) => ["invite", token] as const,
   users: ["users"] as const,
@@ -451,8 +447,12 @@ export interface PostMessageInput extends PostMessageRequest {
   files?: File[];
 }
 
+/** Identifies one room's posts, so the page can read the refusal of its own composer. */
+export const postMessageKey = (roomId: string) => ["post-message", roomId] as const;
+
 export function usePostMessage(roomId: string) {
   return useMutation({
+    mutationKey: postMessageKey(roomId),
     mutationFn: ({ files, ...req }: PostMessageInput) => {
       if (!files?.length) return api<Message>("POST", `/rooms/${roomId}/messages`, req);
       const form = new FormData();
@@ -759,28 +759,6 @@ export function useRemoveAvatar(id: string) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Notify me on another app (NOTI-01)
-
-/** The chats of the caller's linked accounts that can receive a copy of AIs' DMs (NOTI-01). */
-export const notifyOptionsQuery = () =>
-  queryOptions({
-    queryKey: queryKeys.notifyOptions,
-    queryFn: () => api<List<NotifyOption>>("GET", "/me/notify-options").then(items),
-  });
-
-export const useNotifyOptions = () => useQuery(notifyOptionsQuery());
-
-/** Chooses where AIs' direct messages reach the caller; null clears the choice (NOTI-01). */
-export function useSetNotify() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (chatId: string | null) =>
-      api<Me>("PUT", "/me/notify", { chat_id: chatId } satisfies SetNotifyRequest),
-    onSuccess: (me) => qc.setQueryData(queryKeys.me, me),
-  });
-}
-
-// ---------------------------------------------------------------------------------------------
 // Contacts: the machine tree, shared AIs, users and the people of the user's connectors
 // (CONT-01, TREE-01..06)
 
@@ -820,39 +798,6 @@ export const peopleQuery = (connectorId: string, q = "") =>
 
 export const usePeople = (connectorId: string, q = "", enabled = true) =>
   useInfiniteQuery({ ...peopleQuery(connectorId, q), enabled, placeholderData: keepPreviousData });
-
-/** How many people one connector contributes to a search box (the pickers show a few, not a page). */
-export const PEOPLE_SEARCH_SIZE = 8;
-
-/** The first few people of a connector matching `q`: what a picker shows while the user types. */
-export const peopleSearchQuery = (connectorId: string, q: string) =>
-  queryOptions({
-    queryKey: ["contacts", "people-search", connectorId, q] as const,
-    queryFn: ({ signal }) =>
-      api<Page<IntelligenceRef>>("GET", "/contacts/people", undefined, {
-        query: { connector_id: connectorId, q, limit: PEOPLE_SEARCH_SIZE },
-        signal,
-      }),
-  });
-
-/**
- * Searches the people of several connectors at once, in the order of `connectorIds`. While `enabled`
- * is false nothing is asked; the previous results stay until the next ones arrive.
- */
-export function usePeopleSearch(connectorIds: string[], q: string, enabled: boolean) {
-  return useQueries({
-    queries: connectorIds.map((id) => ({
-      ...peopleSearchQuery(id, q),
-      enabled,
-      placeholderData: keepPreviousData,
-    })),
-    combine: (results) => ({
-      people: results.flatMap((r) => r.data?.items ?? []),
-      searching: results.some((r) => r.isFetching),
-      failed: results.some((r) => r.isError),
-    }),
-  });
-}
 
 /**
  * Names a machine (TREE-04): the label replaces the hostname in the tree; an empty one brings the
@@ -1104,16 +1049,6 @@ export const useChats = () =>
     queryKey: queryKeys.chats,
     queryFn: () => api<List<Chat>>("GET", "/chats").then(items),
   });
-
-/** Creates a private room with the chat and the agent as members (UI-13). */
-export function useRouteChat() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ chatId, agentId }: { chatId: string; agentId: string }) =>
-      api<Room>("POST", `/chats/${chatId}/route`, { agent_id: agentId }),
-    onSuccess: (room) => storeRoom(qc, room),
-  });
-}
 
 // ---------------------------------------------------------------------------------------------
 // Identities

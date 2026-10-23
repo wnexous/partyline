@@ -1,6 +1,8 @@
+import { useMutationState } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   FilesIcon,
+  HistoryIcon,
   MessageSquareOffIcon,
   PauseIcon,
   PlusIcon,
@@ -12,10 +14,15 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { BackToConversations } from "@/components/back-link";
 import { Composer } from "@/components/composer";
-import { ConversationHeader, conversationTitle } from "@/components/conversation-header";
+import {
+  ConversationHeader,
+  conversationTitle,
+  historyPlatform,
+} from "@/components/conversation-header";
 import { EmptyState } from "@/components/empty-state";
 import { MemberList } from "@/components/member-list";
 import { MemberPicker } from "@/components/member-picker";
+import { platformName } from "@/components/message-item";
 import { type MessageFocus, MessageTimeline } from "@/components/message-timeline";
 import { ParticipantList } from "@/components/participant-list";
 import { RoomFiles } from "@/components/room-files";
@@ -35,7 +42,7 @@ import { useMarkRoomRead } from "@/hooks/use-mark-room-read";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useOpenConversation } from "@/hooks/use-open-conversation";
 import { isApiError } from "@/lib/api/client";
-import { useMe, useResumeRoom, useRoom, useRoomMembers } from "@/lib/api/queries";
+import { postMessageKey, useMe, useResumeRoom, useRoom, useRoomMembers } from "@/lib/api/queries";
 import {
   ConversationKindDM,
   type IntelligenceRef,
@@ -58,6 +65,11 @@ function RoomPage() {
   const isMobile = useIsMobile();
   useOpenConversation(roomId);
   useMarkRoomRead(roomId);
+  // A post refused as history (CID-21): the DM held a person the room data did not reveal.
+  const refusedAsHistory = useMutationState({
+    filters: { mutationKey: postMessageKey(roomId) },
+    select: (mutation) => mutation.state.error,
+  }).some((error) => isApiError(error) && error.code === "history_only");
   const [panelOpen, setPanelOpen] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<PanelTab>("members");
@@ -72,6 +84,8 @@ function RoomPage() {
   // Nobody manages a DM: its participants are fixed and it cannot be shared (DM-02).
   const isDM = r.kind === ConversationKindDM;
   const canManage = !isDM && r.my_level === LevelManage;
+  const history = historyPlatform(r);
+  const historyOnly = history !== null || refusedAsHistory;
   const memberList = members.data ?? [];
   const participantCount = isDM ? r.participants.length : memberList.length;
   const title = conversationTitle(r, me.id, t);
@@ -174,14 +188,18 @@ function RoomPage() {
           members={memberList}
           focus={focus}
         />
-        <Composer
-          key={`composer-${roomId}`}
-          roomId={roomId}
-          roomName={title}
-          level={r.my_level}
-          members={memberList}
-          broadcast={r.broadcast}
-        />
+        {historyOnly ? (
+          <HistoryNotice platform={history ?? ""} />
+        ) : (
+          <Composer
+            key={`composer-${roomId}`}
+            roomId={roomId}
+            roomName={title}
+            level={r.my_level}
+            members={memberList}
+            broadcast={r.broadcast}
+          />
+        )}
       </div>
 
       {!isMobile && panelOpen ? (
@@ -307,6 +325,31 @@ function MembersPanel({
       ) : (
         <MemberList roomId={roomId} members={members} canManage={canManage} />
       )}
+    </div>
+  );
+}
+
+/**
+ * A platform DM with a person is history (CID-21): the person answers on their platform, through
+ * the connection that holds them, and partyline keeps the conversation only to be read.
+ */
+function HistoryNotice({ platform }: { platform: string }) {
+  const t = useT();
+  return (
+    <div
+      role="note"
+      data-testid="history-notice"
+      className="flex items-start gap-2.5 border-t bg-muted/40 px-4 py-3 md:px-6"
+    >
+      <HistoryIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 space-y-0.5">
+        <p className="text-sm font-medium">
+          {platform
+            ? t("room.history", { platform: platformName(platform) })
+            : t("room.historyUnknown")}
+        </p>
+        <p className="text-xs text-muted-foreground">{t("room.historyHint")}</p>
+      </div>
     </div>
   );
 }

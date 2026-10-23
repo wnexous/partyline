@@ -234,13 +234,12 @@ describe("messaging from the profile (DM-01)", () => {
     expect(calls.find((c) => c.method === "POST")?.body).toEqual({ with: "a1" });
   });
 
-  it("explains why a person cannot be messaged", async () => {
-    api(lia, { "POST /conversations/dm": apiError(422, "no_route_to_person") });
-    const user = userEvent.setup();
-    const { router } = renderRoute("/contacts/p1");
-    await user.click(await screen.findByRole("button", { name: "Message Lia Costa" }));
-    expect(await screen.findByText(/You can’t message Lia Costa from here\./)).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/contacts/p1");
+  it("offers no way to message a person (CID-22)", async () => {
+    const { calls } = api(lia);
+    renderRoute("/contacts/p1");
+    await name();
+    expect(screen.queryByRole("button", { name: "Message Lia Costa" })).toBeNull();
+    expect(calls.some((c) => c.path === "/conversations/dm")).toBe(false);
   });
 });
 
@@ -761,29 +760,16 @@ describe("a person (PEOP-03, PROF-11)", () => {
     expect(screen.queryByRole("list", { name: "Conversations" })).toBeNull();
   });
 
-  it("lets the users of its connector rename it, and says a rename is kept over the platform's", async () => {
-    const { calls } = api(lia, {
-      "PATCH /intelligences/p1": json(200, {
-        ...lia,
-        display_name: "Lia C.",
-        person: {
-          ...(lia.person as NonNullable<IntelligenceProfile["person"]>),
-          name_locked: true,
-        },
-      }),
-    });
-    const user = userEvent.setup();
+  it("shows a person read-only: no editor and no way to message them (CID-21, CID-22)", async () => {
+    api(lia);
     renderRoute("/contacts/p1");
     await name();
-    expect(screen.queryByText(/platform’s name/)).toBeNull();
-    await user.clear(field("Display name"));
-    await user.type(field("Display name"), "Lia C.");
-    await user.click(screen.getByRole("button", { name: "Save profile" }));
-    await screen.findByText("Profile saved", undefined, { timeout: 5000 });
-    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ display_name: "Lia C." });
-    expect(
-      await screen.findByText("Renamed here: the platform’s name no longer replaces it."),
-    ).toBeInTheDocument();
+    // The page would offer the editor from can_edit; a person is history now (T24).
+    expect(screen.queryByLabelText("Display name")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Message Lia Costa" })).toBeNull();
+    // Reading stays: the account it writes from is still there.
+    expect(within(pageHeader()).getByText("WhatsApp")).toBeInTheDocument();
   });
 
   it("shows only the platform to someone who sees them through a conversation, with no editor", async () => {

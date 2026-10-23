@@ -227,6 +227,38 @@ describe("message item (UI-05)", () => {
     expect(img).toHaveAttribute("height", "240");
     expect(img.closest("a")).toHaveStyle({ aspectRatio: "4 / 3" });
   });
+
+  it("renders a message without delivery badges while chat history keeps its platform (CID-22)", async () => {
+    mockApi({
+      "GET /rooms/r1/messages": page([
+        chat(1, {
+          text: "restart the pool",
+          chat: { id: "c1", title: "Ops on call", kind: "group", platform: "telegram" },
+        }),
+        makeMessage({
+          seq: 2,
+          text: "restarted",
+          outbox: [
+            {
+              id: "o1",
+              chat_id: "c1",
+              status: "sent",
+              attempts: 1,
+              updated_at: "2026-10-19T12:00:01Z",
+            },
+          ],
+        }),
+      ]),
+    });
+    renderTimeline();
+    await screen.findByText("restarted");
+    // Delivery to chats is retired: no chip, no "to <chat>" and no error text.
+    expect(within(row(2)).queryByText(/^(Queued|Sending|Delivered|Failed)$/)).toBeNull();
+    expect(within(row(2)).queryByText(/^to /)).toBeNull();
+    expect(within(row(2)).getByText("restarted")).toBeInTheDocument();
+    // History written by a chat still says where it came from.
+    expect(within(row(1)).getByTestId("chat-platform")).toHaveTextContent(/^Telegram$/);
+  });
 });
 
 describe("message author (PROF-03, PROF-09, GRP-03)", () => {

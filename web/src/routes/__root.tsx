@@ -31,7 +31,7 @@ function RootLayout() {
         const loc = router.state.location;
         if (isPublicPath(loc.pathname)) return;
         queryClient.removeQueries({ queryKey: queryKeys.me });
-        void router.navigate({ to: "/login", search: { redirect: loc.href } });
+        return router.navigate({ to: "/login", search: { redirect: loc.href } });
       }),
     [router, queryClient],
   );

@@ -898,3 +898,118 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   cache only after the redirect, when the still-mounted contacts page can legitimately refetch;
   under the parallel gate it failed intermittently. It now asserts the synchronous clear at the
   1008 close, before the redirect, which is the event UI-02 pins. No assertion was dropped.
+
+## T29: Connection page as an AI's app (CID-23, CID-27, CID-22)
+
+- **What the page shows** (`web/src/routes/_app/connectors/$connectorId.tsx`): the header keeps the
+  platform, the live status badge and the owner, and now names the operator (`No operator yet` when
+  there is none) and the `queued` count (`{count} queued`, with the hint that partyline never shows
+  the text). A new "Operator and delivery" section carries:
+  - the operator select over the **owner's AIs only** (machines plus unlinked, from `GET /contacts`);
+    there is no owner or "you" option any more and nothing shared by another owner. With no
+    operator the select holds the placeholder `Choose an AI` and a note with the CID-02 wording
+    ("Choose the AI that operates this connection. Until you do, nothing arrives through it.").
+  - `deliver` (`all`, `dms`, `groups`) and `groups_mentions_only`, with one `Save delivery` button.
+- **Save** sends only the fields that changed (`operator_id`, `deliver`, `groups_mentions_only`), so
+  an operator pick never rewrites the delivery settings and vice versa. A 422 maps to
+  `operator_id` or `deliver` under its field (aria-invalid + description); the values stay as
+  typed. Success toasts `Delivery settings saved`. The button waits for a change (A11Y-04's rule,
+  now on the delivery form).
+- **Use grantees** read the same three values without controls (`DeliverySummary`): the operator as
+  `Name (@handle)`, the deliver label, Yes/No for mentions-only, and a note that only the owner
+  chooses an operator when there is none. They still see the status badge and `queued`.
+- **No message text**: the connector DTO has no field for it and the page renders no timeline; the
+  chat list remains (titles and metadata only), without the per-chat route action.
+- **Retired with the catch-all and routing (CID-22)**: `components/connector-catch-all.tsx`,
+  `components/route-chat-dialog.tsx` and its test (UI-13), `useRouteChat` (and the
+  `conversations.test.tsx` case for it; the server route is T34's), the `route.*` and `catchAll.*`
+  strings in `en`/`pt-BR`; the `catch-all routing` and route-dialog cases of
+  `connectors.test.tsx` (ROUTE-01..11, UI-13). `connector.enabledHint`, `connector.deleteHint`,
+  `connector.deleteBody` and `connectors.emptyBody` no longer mention chats joining rooms.
+- **Strings**: `connector.noOperator`, `.queued`, `.queuedHint`, `.delivery`, `.deliveryBody`,
+  `.noOperatorHint`, `.noOperatorReadOnly`, `.operatorNone`, `.operatorNamed`, `.aiLoadError`,
+  `.deliver`, `.deliver.{all,dms,groups}`, `.deliverHint`, `.mentionsOnly`,
+  `.mentionsOnlyHint`, `.saveDelivery`, `.deliverySaved`, `.deliveryFailed`, `common.yes` and
+  `common.no`, in `en` and `pt-BR`; `connector.operator*` strings of the owner-as-operator page
+  (`operatorBody`, `operatorOwner`, `operatorSave`, `operatorSaved`, `operatorFailed`) are gone.
+- **Tests** (`web/src/routes/_app/connectors/connectors.test.tsx`): the delivery form renders the
+  operator, deliver, mentions-only, status and queued values; the owner's AIs only; the empty
+  operator with the CID-02 note and its save; saving deliver + mentions-only; the 422s on both
+  fields; no route action, catch-all or scope control and no message text or composer; the
+  read-only view of a grantee (with and without an operator); pt-BR. The use-grantee management
+  test now expects the read-only delivery values instead of the owner's header text.
+- **Deflake (not part of the task)**: `live-session.test.tsx` (UI-02) failed on loaded gates: after
+  `qc.clear()` a still-mounted page re-rendered once, rebuilt its query (React Query's
+  `getOptimisticResult` calls `build`) and refilled the cache before the redirect unmounted it.
+  `notifyUnauthorized` now returns the handler's promise, the shell's handler returns
+  `router.navigate(...)`, and the live socket clears the cache again once that redirect settled.
+  No assertion changed.
+
+## T30: Platform DM history banner (CID-21, CID-22)
+
+- **Detection** (`web/src/components/conversation-header.tsx`): `historyPlatform(room)` answers the
+  connector kind of a DM's person participant, `""` when the person carries no platform, and
+  `null` for every other conversation. A person is the only role a DM can hold besides users and
+  AIs.
+- **Banner** (`web/src/routes/_app/rooms/$roomId.tsx`): when it is not `null`, a `HistoryNotice`
+  replaces the composer in the footer (`role="note"`, `data-testid="history-notice"`):
+  `History: answer this person on {platform}` with the platform's display name
+  (`room.history`), `History: answer this person on their platform` when the person has none
+  (`room.historyUnknown`), plus `room.historyHint` ("Partyline no longer delivers this
+  conversation…"). The header still names both participants with their kind badges, and the
+  timeline, files and member panels are unchanged: the DM stays readable.
+- **`history_only` mapping**: `usePostMessage` now carries `mutationKey: postMessageKey(roomId)`
+  (exported from `lib/api/queries.ts`). The room page reads that room's post errors with
+  `useMutationState` and, when one is a 422 with code `history_only`, shows the same notice (with
+  the platform-less wording when the room data did not reveal a person) instead of the composer.
+  The composer itself is untouched (T27 owns it) and no post is retried.
+- **People are read-only in the app** (CID-22, T24): `contacts.$id.tsx` offers no `Message` button
+  and no editor for a person (it also checks `!isPerson` on top of the server's `can_edit=false`);
+  `components/people-group.tsx` lists people without actions; the new-conversation dialog no
+  longer searches or offers people, so no UI creates a DM with a person (DM-05 retired). Removed
+  with it: `usePeopleSearch`, `peopleSearchQuery`, `PEOPLE_SEARCH_SIZE`,
+  `newConversation.peopleHint/peopleError/searching` (en and pt-BR) and the `people (DM-05)` cases
+  of `new-conversation-dialog.test.tsx`. The server's `no_route_to_person` text of
+  `useStartConversation` stays as the answer of a stale client.
+- **Strings**: `room.history`, `room.historyUnknown`, `room.historyHint` in `en` and `pt-BR`.
+- **Tests**: `conversation.test.tsx` (person DM shows the notice with WhatsApp and no textbox;
+  AI–user DM keeps its composer; a post refused `history_only` turns into the notice with the
+  platform-less text), `profile.test.tsx` (a person offers no `Message` and no editor; the retired
+  person-rename case is replaced), `contacts.test.tsx` (people list rows have no `Message`) and
+  `conversation-list.test.tsx` (find-in-contacts still opens a contact that has no conversation,
+  now an AI).
+- **Deflake (not part of the task)**: `TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone`
+  read the connection right after `WaitStop`, but `Manager.Apply` stops the connector before it
+  persists the CID-02 detail, so a loaded gate read the old empty detail. It now waits (bounded,
+  `require.Eventually`) for `status=error` and the exact detail; no assertion was removed.
+
+## T31: Settings without app notifications (CID-22)
+
+- **Removed from `web/src/routes/_app/settings.tsx`**: the "Notify me here" section (NOTI-01) and
+  its choice form; the page now holds the profile, appearance, password and sessions sections.
+- **Removed queries**: `notifyOptionsQuery`, `useNotifyOptions`, `useSetNotify`, the
+  `notifyOptions` query key and the `NotifyOption`/`SetNotifyRequest` imports in
+  `web/src/lib/api/queries.ts`. No request to `/me/notify-options` or `PUT /me/notify` is made by
+  the app any more. `Me.notify_chat_id` stays in the DTO (T35 removes it) and is ignored.
+- **Strings**: `account.notify*` (twelve keys) removed from `en` and `pt-BR`.
+- **Tests**: `src/lib/api/notify.test.tsx` deleted (NOTI-01). `settings.test.tsx` loses the
+  notify-options fixture and its three notify cases, and gains "offers no app-notification choice
+  and asks for none (CID-22)" (no Notifications heading, no `Send them to` combobox, no
+  `/me/notify*` call). `a11y.test.tsx` waits for the appearance radios instead of the notify
+  combobox, and its `GET /me/notify-options` stub is gone.
+
+## T32: Timeline without chat delivery status (CID-22)
+
+- **`web/src/components/message-item.tsx`** no longer reads `Message.outbox`: the outbox map, the
+  `OutboxList` row (status chip plus `to <chat>`) and the status icons are gone, so a message of
+  any kind renders only its author, text, files and reply context. The field stays in the DTO
+  (T35 removes it) and is ignored.
+- **Live handler**: `outbox.status` (`patchOutbox` and its case in `web/src/lib/live/handlers.ts`)
+  is removed with it: the room outbox is what T33 retires server-side, and nothing rendered the
+  patched field any more. The `outbox.status` case of `handlers.test.ts` is deleted (retired
+  feature).
+- **Strings**: `message.outbox.pending/sending/sent/failed` and `message.outboxTo` removed from
+  `en` and `pt-BR`.
+- **Test** (`message-timeline.test.tsx`): a message carrying `outbox` items renders its text with
+  no `Queued`/`Sending`/`Delivered`/`Failed` chip and no `to <chat>`, while a chat-authored
+  history message still shows its platform badge (`Telegram`).

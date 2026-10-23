@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IntelligenceProfile, Message, Room } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
-import { json, mockApi } from "@/test/fetch";
+import { apiError, json, mockApi } from "@/test/fetch";
 import {
   makeConversation,
   makeIntelligence,
@@ -457,5 +457,58 @@ describe("marking read (DM-07)", () => {
       }),
     );
     await waitFor(() => expect(reads(calls, "g1")).toEqual([{ seq: 2 }]));
+  });
+});
+
+describe("a platform DM is history (CID-21, CID-22)", () => {
+  const dana = makeIntelligence({
+    id: "p1",
+    role: "person",
+    platform: "whatsapp",
+    display_name: "Dana",
+    handle: "dana",
+  });
+  const personDM = makeRoom({
+    id: "d1",
+    kind: "dm",
+    name: "",
+    participants: [atlas, dana],
+    my_level: "view",
+    member_count: 2,
+  });
+
+  it("shows the history banner instead of the composer", async () => {
+    api({ "GET /rooms/d1": json(200, personDM) });
+    renderRoute("/rooms/d1");
+    const notice = await screen.findByTestId("history-notice");
+    expect(notice).toHaveTextContent("History: answer this person on WhatsApp");
+    expect(notice).toHaveTextContent("Partyline no longer delivers this conversation");
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByText(/You can read this room but not post/)).toBeNull();
+  });
+
+  it("leaves a DM between intelligences writable", async () => {
+    api();
+    renderRoute("/rooms/d1");
+    expect(await screen.findByRole("textbox", { name: "Message Atlas" })).toBeInTheDocument();
+    expect(screen.queryByTestId("history-notice")).toBeNull();
+  });
+
+  it("turns a post refused as history into the same banner", async () => {
+    api({
+      "POST /rooms/d1/messages": apiError(
+        422,
+        "history_only",
+        "this is history: answer people on their platform, through the connection",
+      ),
+    });
+    const user = userEvent.setup();
+    renderRoute("/rooms/d1");
+    const box = await screen.findByRole("textbox", { name: "Message Atlas" });
+    await user.type(box, "hello Dana");
+    await user.keyboard("{Enter}");
+    const notice = await screen.findByTestId("history-notice");
+    expect(notice).toHaveTextContent("History: answer this person on their platform");
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 });

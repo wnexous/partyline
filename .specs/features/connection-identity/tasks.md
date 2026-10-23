@@ -760,8 +760,8 @@ Strings come in `en` and `pt-BR`.
 **Reuses**: `connector-catch-all.tsx` (removed), `schema-form.tsx`
 **Requirement**: CID-23, CID-27, CID-22
 **Done when**:
-- [ ] Unit: fields render and save; queued count shown; no route action; `route-chat-dialog.tsx` and its test removed (UI-13 retired)
-- [ ] Gate check passes: `make check`
+- [x] Unit: fields render and save; queued count shown; no route action; `route-chat-dialog.tsx` and its test removed (UI-13 retired)
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): connection page for an AI's app`
@@ -774,8 +774,8 @@ Strings come in `en` and `pt-BR`.
 **Reuses**: `conversation-header.tsx`
 **Requirement**: CID-21, CID-22
 **Done when**:
-- [ ] Unit: a person DM shows the banner and no input; an AI–user DM is unchanged
-- [ ] Gate check passes: `make check`
+- [x] Unit: a person DM shows the banner and no input; an AI–user DM is unchanged
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): platform DMs read as history`
@@ -788,8 +788,8 @@ Strings come in `en` and `pt-BR`.
 **Reuses**: settings tests
 **Requirement**: CID-22
 **Done when**:
-- [ ] Unit: no notify control; no request to `/me/notify*`
-- [ ] Gate check passes: `make check`
+- [x] Unit: no notify control; no request to `/me/notify*`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): retire app notification settings`
@@ -802,8 +802,8 @@ Strings come in `en` and `pt-BR`.
 **Reuses**: timeline tests
 **Requirement**: CID-22
 **Done when**:
-- [ ] Unit: messages render without delivery badges; chat-authored history still shows its platform badge
-- [ ] Gate check passes: `make check`
+- [x] Unit: messages render without delivery badges; chat-authored history still shows its platform badge
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): drop chat delivery status from the timeline`

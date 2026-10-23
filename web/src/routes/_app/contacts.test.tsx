@@ -974,17 +974,17 @@ describe("messaging a contact (DM-01)", () => {
     });
   });
 
-  it("explains why a person cannot be messaged when no account the user operates has a chat with them", async () => {
+  it("lists people without a way to message them (CID-22)", async () => {
     api(sampleContacts, {
       "GET /contacts/people": json(200, { items: [lia], has_more: false }),
-      "POST /conversations/dm": apiError(422, "no_route_to_person"),
     });
     const user = userEvent.setup();
-    const { router } = renderRoute("/contacts");
+    renderRoute("/contacts");
     await user.click(await screen.findByRole("button", { name: /ops-line/ }));
-    await user.click(await screen.findByRole("button", { name: "Message Lia Costa" }));
-    expect(await screen.findByText(/You can’t message Lia Costa from here\./)).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/contacts");
+    const row = await screen.findByTestId("contact-p1");
+    expect(row).toHaveTextContent("Lia Costa");
+    // A person is history: they are answered on their platform, not in a DM (DM-05 retired).
+    expect(within(row).queryByRole("button", { name: /Message/ })).toBeNull();
   });
 
   it("says when the contact is gone, and stays on the page", async () => {

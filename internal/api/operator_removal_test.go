@@ -177,7 +177,12 @@ func TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone(t *testing.T) {
 
 	del(f.alice).RequireStatus(http.StatusNoContent)
 	inst.WaitStop(t)
-	require.Equal(t, noOperatorDetail, f.connector(f.alice).LastError)
+	// Apply stops the connector before it persists the CID-02 detail, so a loaded machine can read
+	// the row in between; wait for the write instead of racing it.
+	require.Eventually(t, func() bool {
+		got := f.connector(f.alice)
+		return got.Status == dto.ConnectorStatusError && got.LastError == noOperatorDetail
+	}, 2*time.Second, 20*time.Millisecond, "the connection shows the CID-02 detail")
 }
 
 // mergedWorld is alice's merge world with three connections: "wa" operated by the AI that is

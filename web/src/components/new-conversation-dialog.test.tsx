@@ -6,7 +6,7 @@ import { apiError, json, mockApi } from "@/test/fetch";
 import { makeContacts, makeConversation, makeMe, makeRoom } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { renderRoute } from "@/test/render";
-import { atlas, sampleContacts as contacts, lia, liam } from "@/test/sample-contacts";
+import { atlas, sampleContacts as contacts } from "@/test/sample-contacts";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
@@ -30,14 +30,6 @@ function mocks(extra: Parameters<typeof mockApi>[0] = {}) {
     "GET /me": json(200, makeMe()),
     "GET /conversations": json(200, { items: [makeConversation({ id: "r1", title: "deploys" })] }),
     "GET /contacts": json(200, contacts),
-    "GET /contacts/people": (url) => {
-      const q = (url.searchParams.get("q") ?? "").toLowerCase();
-      const all = url.searchParams.get("connector_id") === "k1" ? [lia, liam] : [];
-      return json(200, {
-        items: all.filter((p) => p.display_name.toLowerCase().includes(q)),
-        has_more: false,
-      });
-    },
     "GET /rooms/d1": json(200, dm()),
     "GET /rooms/d1/members": json(200, { items: [] }),
     "GET /rooms/d1/messages": json(200, { items: [], has_more: false }),
@@ -246,56 +238,6 @@ describe("opening the conversation (DM-01)", () => {
     const again = await screen.findByRole("dialog", { name: "New conversation" });
     await within(again).findByTestId("contact-a1");
     expect(within(again).queryByRole("alert")).toBeNull();
-  });
-});
-
-describe("people (DM-05)", () => {
-  it("asks for no people before two letters are typed, and says how to find them", async () => {
-    const { calls, user, dialog } = await open();
-    expect(
-      within(dialog).getByText(/Type at least 2 letters to search people/),
-    ).toBeInTheDocument();
-    await user.type(search(dialog), "l");
-    await new Promise((r) => setTimeout(r, 350));
-    expect(calls.some((c) => c.path === "/contacts/people")).toBe(false);
-  });
-
-  it("searches the connectors that have people for the text once typing settles, and lists them with their platform", async () => {
-    const { calls, user, dialog } = await open();
-    await user.type(search(dialog), "lia");
-
-    const people = await within(dialog).findByRole("group", { name: "People" });
-    await waitFor(() => expect(ids(people)).toEqual(["contact-p1", "contact-p2"]));
-    const first = within(within(people).getByTestId("contact-p1"));
-    expect(first.getByText("Lia Costa")).toBeInTheDocument();
-    expect(first.getByText("WhatsApp")).toBeInTheDocument();
-    // Only the connector with people is asked, and only for the text that settled.
-    const asked = calls.filter((c) => c.path === "/contacts/people");
-    expect(asked.length).toBeGreaterThan(0);
-    expect(asked.map((c) => c.url.searchParams.get("connector_id"))).toEqual(asked.map(() => "k1"));
-    expect(asked.map((c) => c.url.searchParams.get("q"))).toEqual(asked.map(() => "lia"));
-  });
-
-  it("opens the DM of a person the user has a route to", async () => {
-    const { calls, router, user, dialog } = await open({
-      "POST /conversations/dm": json(200, { ...dm(), participants: [makeMe().intelligence, lia] }),
-    });
-    await user.type(search(dialog), "lia");
-    await user.click(await within(dialog).findByTestId("contact-p1"));
-    await waitFor(() => expect(router.state.location.pathname).toBe("/rooms/d1"));
-    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ with: "p1" });
-  });
-
-  it("explains that a person can only be answered through an account the user operates", async () => {
-    const { router, user, dialog } = await open({
-      "POST /conversations/dm": apiError(422, "no_route_to_person"),
-    });
-    await user.type(search(dialog), "lia");
-    await user.click(await within(dialog).findByTestId("contact-p1"));
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "You can’t message Lia Costa from here. People can be answered only in conversations they started with an account you operate.",
-    );
-    expect(router.state.location.pathname).toBe("/");
   });
 });
 
