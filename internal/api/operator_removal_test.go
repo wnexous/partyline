@@ -177,7 +177,8 @@ func TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone(t *testing.T) {
 
 	del(f.alice).RequireStatus(http.StatusNoContent)
 	inst.WaitStop(t)
-	require.Equal(t, noOperatorDetail, f.connector(f.alice).LastError)
+	require.Eventually(t, func() bool { return f.connector(f.alice).LastError == noOperatorDetail }, connectortest.Timeout, 20*time.Millisecond,
+		"the connection shows what to do once it stopped")
 }
 
 // mergedWorld is alice's merge world with three connections: "wa" operated by the AI that is

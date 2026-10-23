@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -40,20 +39,19 @@ func v03Database(t *testing.T) string {
 }
 
 // GRP-01, MIG-01, MIG-02: after the upgrade, the first session in a folder called atlas adopts
-// the v0.3 agent atlas, and the agent's reply to an old message of the v0.3 inbox room still goes
-// out to the chat through the outbox, with the v0.3 outbox row that was pending. (The catch-all
-// routing of new chats is retired, CID-07: what arrives on the connector is queued for its
-// operator, which the upgrade end-to-end test pins, T37.)
-func TestUpgradedAgentAdoptsItsFolderAndRepliesThroughTheOutbox(t *testing.T) {
+// the v0.3 agent atlas, and the agent's reply to an old message of the v0.3 inbox room is stored in
+// the room, quoting it. It goes out to no chat, and neither does the delivery the v0.3 outbox left
+// pending: a room sends nothing to a platform any more (CID-22). (The catch-all routing of new chats
+// is retired, CID-07: what arrives on the connector is queued for its operator, which the upgrade
+// end-to-end test pins, T37.)
+func TestUpgradedAgentAdoptsItsFolderAndRepliesInTheRoom(t *testing.T) {
 	ctx := context.Background()
 	fake := connectortest.New()
 	telegram := fake.Kind()
 	telegram.Name = "telegram" // the fixture's connector kind, served by the fake
 	// The app's clock starts an hour after the fixture's last message, so that the retention sweep at
-	// start-up (30 days in the inbox room) keeps its history whatever today is. It moves on: a send
-	// tried before the connection runs is retried 2 s later (DLV-07), which a frozen clock never reaches.
-	start := time.Now()
-	afterTheFixture := func() time.Time { return time.UnixMilli(1790003600000).Add(time.Since(start)) }
+	// start-up (30 days in the inbox room) keeps its history whatever today is.
+	afterTheFixture := func() time.Time { return time.UnixMilli(1790003600000) }
 	env := testkit.New(t, testkit.WithDatabase(v03Database(t)), testkit.WithConnectorKinds(telegram), testkit.WithOutbox(), testkit.WithClock(afterTheFixture))
 	// v0.3 connectors were operated by their owner; a connection runs once an AI operates it
 	// (CID-02), so here the adopted agent takes it over.
@@ -77,15 +75,25 @@ func TestUpgradedAgentAdoptsItsFolderAndRepliesThroughTheOutbox(t *testing.T) {
 		Post("/api/v1/agent/messages/m-in3/reply", dto.ReplyRequest{Text: "tem sim, às 10h"}).
 		RequireStatus(http.StatusCreated))
 	require.Equal(t, "a-atlas", reply.AuthorID)
-	// The reply and the fixture's pending outbox row both go out; the failed row stays failed.
-	sent := map[string]connectors.Outbound{}
-	for range 2 {
-		out := inst.WaitSend(t)
-		sent[out.MessageID] = out
+	require.Equal(t, "r-inbox", reply.RoomID)
+	require.Equal(t, "m-in3", reply.ReplyTo)
+	require.Equal(t, "tem sim, às 10h", reply.Text)
+	require.Empty(t, reply.Recipients)
+	require.Empty(t, reply.Outbox)
+	require.Zero(t, countRows(t, env, "SELECT COUNT(*) FROM outbox WHERE message_id = ?", reply.ID), "no delivery is planned for the reply")
+	require.Never(t, func() bool { return len(inst.Sent()) > 0 }, 1500*time.Millisecond, 50*time.Millisecond,
+		"neither the reply nor the delivery v0.3 left pending reaches a chat")
+	require.Equal(t, 1, countRows(t, env, "SELECT COUNT(*) FROM outbox WHERE id = 'o-2' AND status = 'pending' AND attempts = 0"), "the pending v0.3 row is left alone")
+
+	// History is left as it was: the answer v0.3 sent to a chat still names the chat it was for.
+	history := testkit.Decode[dto.Page[dto.AgentMessage]](alice.AsAgent("atlas").Get("/api/v1/agent/rooms/r-inbox/messages").RequireStatus(http.StatusOK))
+	var answered dto.Message
+	for _, m := range history.Items {
+		if m.Message.ID == "m-in2" {
+			answered = m.Message
+		}
 	}
-	require.Equal(t, "100", sent[reply.ID].ChatID)
-	require.Contains(t, sent[reply.ID].Text, "tem sim, às 10h")
-	require.Equal(t, "-1001", sent["m-ops1"].ChatID, "pending v0.3 outbox rows are still delivered")
+	require.Equal(t, []string{"c-tgdm"}, answered.Recipients, "a message from before the upgrade keeps the chats it named")
 }
 
 // MIG-01, GRP-01: after the upgrade (0015 and 0016 in one transaction, the legacy name columns

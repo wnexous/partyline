@@ -818,9 +818,9 @@ Strings come in `en` and `pt-BR`.
 **Reuses**: none
 **Requirement**: CID-22
 **Done when**:
-- [ ] e2e: a post with `recipients` (an old CLI) succeeds and creates no outbox; agents still receive room messages
-- [ ] Tests of DLV-03..05, ROUTE-06, ROUTE-10, NOTI-02/03, MEM-01 deleted (retired)
-- [ ] Gate check passes: `make check`
+- [x] e2e: a post with `recipients` (an old CLI) succeeds and creates no outbox; agents still receive room messages
+- [x] Tests of DLV-03..05, ROUTE-06, ROUTE-10, NOTI-02/03, MEM-01 deleted (retired)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(rooms)!: rooms no longer send to chats`

@@ -103,9 +103,10 @@ func TestInstructionsExplainRoomInfoAndNoLongerChatIDs(t *testing.T) {
 // insNotice is the INS-03 notice text as the spec words it.
 const insNotice = "This room has instructions for its agents; call the room_info tool to read them."
 
-// ROUTE-06 (tool): in a room with broadcast off, send_message says the post reached no chat. The
-// remedy it names, chat_ids, is gone from the tool (CID-22) and the room feature itself goes with T33.
-func TestToolResultSaysNoChatInNoBroadcastRoom(t *testing.T) {
+// CID-22: send_message says only that the post was sent, also in a room that switched broadcast off
+// before the connection proxy: the "reached no chat" warning of ROUTE-06 is retired with the delivery to
+// chats it described.
+func TestToolResultHasNoNoChatWarningInANoBroadcastRoom(t *testing.T) {
 	e := newChanEnv(t)
 	e.chatMember("Family")
 	off := false
@@ -115,7 +116,7 @@ func TestToolResultSaysNoChatInNoBroadcastRoom(t *testing.T) {
 	text, isErr := s.call("send_message", toolArgs("room", "Support", "text", "hello all"))
 	require.False(t, isErr, text)
 	stored := e.messages(e.room.ID)[0]
-	require.Equal(t, "sent (message_id "+stored.ID+"); not sent to any chat: this room only answers explicit chats (use reply or chat_ids)", text)
+	require.Equal(t, "sent (message_id "+stored.ID+")", text)
 }
 
 // INS-03, INS-05: instructions saved by someone other than the agent's owner (bob, a manager of

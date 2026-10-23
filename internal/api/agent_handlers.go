@@ -538,11 +538,7 @@ func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Prin
 	if !s.Agents.AllowPost(p.AgentID) {
 		return errAgentRateLimited
 	}
-	in := rooms.PostInput{Text: req.Text, ReplyTo: orig.ID}
-	if orig.AuthorKind == string(dto.AuthorKindChat) {
-		in.Recipients = []string{orig.AuthorID}
-	}
-	m, err := s.Rooms.Post(r.Context(), p, orig.RoomID, in)
+	m, err := s.Rooms.Post(r.Context(), p, orig.RoomID, rooms.PostInput{Text: req.Text, ReplyTo: orig.ID})
 	if err != nil {
 		return err
 	}
@@ -670,7 +666,7 @@ func (s *server) agentReact(w http.ResponseWriter, r *http.Request, p authn.Prin
 		return errAgentRateLimited
 	}
 	m, err := s.Rooms.Post(r.Context(), p, orig.RoomID, rooms.PostInput{
-		Kind: dto.MessageKindReaction, Text: emoji, ReplyTo: orig.ID, Recipients: []string{orig.AuthorID},
+		Kind: dto.MessageKindReaction, Text: emoji, ReplyTo: orig.ID,
 	})
 	if err != nil {
 		return err

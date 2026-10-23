@@ -309,15 +309,6 @@ func (s *Service) attachOperators(ctx context.Context, views []View) error {
 	return nil
 }
 
-// operatorID is the intelligence a connector's messages are attributed to in the rooms the
-// retired bridges still hold: its operator, else its owner.
-func operatorID(c db.Connector) string {
-	if c.OperatorIid.Valid {
-		return c.OperatorIid.String
-	}
-	return c.OwnerID
-}
-
 func (s *Service) view(c db.Connector, ownerUsername, ownerDisplay string, l access.Level) (View, error) {
 	k := s.Kind(c.Kind)
 	public, err := Decode(s.d.Box, c.ConfigJson, nil)

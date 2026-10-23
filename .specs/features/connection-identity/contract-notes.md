@@ -826,3 +826,82 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - **Authorization** (matrices pinned by `TestPlatformDMPostAuthorizationMatrix`,
   `TestEditingAPersonIsRefusedAsHistory`, `TestDMToAPersonHasNoRoute`): see the bullets above; every
   refusal changes nothing and announces nothing.
+
+## T33: Rooms no longer deliver to chats (CID-22)
+
+- **Delivery plan**: `delivery.Plan(members, Draft{AuthorKind, AuthorID}) []string` returns the agent members
+  other than the author, in member order (DLV-01, DLV-02), and nothing else: a user reads the room in the app,
+  and a chat is never a target. `RoomState`, `Member.Outbound`, `Draft.Recipients` and `Targets` are gone; the
+  agent dispatcher is its only caller. `rooms.Service.post` plans no delivery at all and reads no member list: it
+  stores the message and its files, moves the loop guard and publishes `MessageCreated`.
+- **`recipients` and `chat_ids` are accepted and ignored**, on every route that took them: `POST
+  /rooms/{id}/messages` (JSON and multipart), `POST /agent/rooms/{room}/messages` and `POST /agent/dms`
+  (`chat_ids`). They are not validated and not stored (`recipients_json` is `[]`; a message from before
+  the upgrade keeps its own and `Message.recipients` still shows it, as history). So the rules they had are
+  gone with the delivery: ROUTE-10 (at most 10 chats), DLV-04 (`must be chats of the room`, `listen-only`)
+  and the REACT-03 refusal answer 201 now. `POST /agent/messages/{id}/reply` to a chat message and `react`
+  name no chat as recipient: the reply or reaction is a message of the room and goes nowhere else.
+- **`REACT-02` is unchanged** (`react` still accepts only a chat-authored message, 422 `can only react to chat
+  messages` otherwise): with no chat messages being created, only history can be reacted to, and the reaction
+  stays in the room. The platform reaction (REACT-01 delivery, REACT-04's unsigned author) is retired with the
+  room sender. `connectors.Reactor`, its four platform implementations and `Manager.React` stay as plumbing
+  with no caller: reactions toward a platform are outside this feature.
+- **No warning**: `dto.NoBroadcastWarning` and `Message.warning` are removed (nothing sets a warning), so
+  `send_message` and `reply` answer `sent (message_id …)` and nothing more. The `broadcast` and `bridge_chats`
+  room settings are still stored and returned (T35 removes them) but change nothing.
+- **Removed code**: `delivery.OutboxWorker` with `Delivery`, `Sender`, `Permanent` and the worker's start in the
+  app (`app.Options.Sender` goes too); `connectors.Sender` (the room path: quote, member signature, reaction send) and
+  its notify copy (`sendNotify`, `notifyTarget`); `rooms.notifyChat`, `NotifiedUser`, `applyNoBroadcast`, the recipients
+  checks; `rooms.Message.Outbox/NotifyUserID/Warning`; `events.OutboxChanged` and with it the live `outbox.status`
+  frame, which is never sent now; `convert.MessageFor`, `Viewer` and `OutboxItem` (`convert.Message` renders for
+  everyone: the viewer only existed to hide notify copies); the echo checks of the pipeline on the outbox
+  (`CountSendingOutboxForChat`, `CountChatOutboxExternalID`); `ErrReactionTarget`; the queries of `outbox.sql`,
+  `CreateOutbox`, `ListOutboxByMessages` and the dead `FindChatMessageRef`. Removing a chat member and
+  `EnsurePlatformDM` no longer cancel pending outbox rows (there are none to make).
+- **Names kept**: `app.Options.DisableOutbox` and `testkit.WithOutbox` keep their names, though the room outbox is
+  gone: they now switch the worker that retries the sends of AIs through their connections (`platform-sends`), which
+  is what the tests that inspect a pending send need.
+- **Retry limits moved** (the point T17 left to this task): `delivery.MaxAttempts` and `delivery.Backoff` are now
+  `connectors.maxSendAttempts` (5) and `sendBackoff` (2 s doubling), used by `Sends` only; the sends tests pin 2, 4,
+  8 and 16 s and the fifth attempt.
+- **Authorization**: nothing new. The posting routes keep their rules (post level on the room, agent tokens only
+  on the agent routes), and a post that names chats neither gains nor loses anything by it:
+  `TestPostsNamingChatsKeepTheAuthorizationOfTheirRoute` runs the matrix with a chat of the room named in each
+  request (owner and poster 201, viewer 403, stranger and admin 404, anonymous 401; on the agent route the member AI
+  201, the owner's other AI and another user's AI of the same folder name 403, a session or a user token 403, anonymous
+  401), and only the allowed posts are stored.
+- **Left for T35 and T36** (named here so that neither is surprised): the DTO surface stays until T35, with the logic
+  behind it: `Room.bridge_chats/broadcast/catch_all` and their catch-all guard, `Message.outbox`, the `OutboxItem`,
+  `OutboxUpdate`, `OutboxStatus` and `OutboxPurpose` types and the `outbox.status` live event type, member
+  `outbound`/`sign_outbound`, `notify_chat_id`, `auto_route_*`, `MaxMessageRecipients` (the web composer imports it
+  until its picker goes), and `rooms.skipAutoRoute`, which still writes `auto_route_skips` when a chat member is
+  removed (T35 removes it, and the queries `GetAutoRouteSkip`/`UpsertAutoRouteSkip`, before T36 drops the table).
+  The legacy `outbox` table and its rows stay until T36, which also updates `TestDeleteRoomRemovesEverything`'s
+  ROOM-02 counts and the store migration tests that name the table.
+- **Tests retired** (IDs for the commit body): DLV-03..05 (`TestOutboxFollowsDeliveryPlan`, the chat cases of
+  `TestPlanTable` and `TestPlanExhaustive`), DLV-07 as the room outbox worker (`outbox_test.go`,
+  `TestStartRunsOutboxWorker`), ROUTE-06 (`TestNoBroadcast…`, `TestToolResultSaysNoChatInNoBroadcastRoom`, the plan
+  test), ROUTE-10 (`recipients_cap_test.go`, `TestPostRecipientsCap`), ROOM-01's chat part
+  (`TestRemoveMemberCancelsQueuedDeliveries`), NOTI-02/03 (the copy code; its tests went with T7), MEM-01 and MEM-02
+  outbound (`sender_test.go`, `TestOutboundAuthorFollowsMemberSettings`), ACC-03/ACC-04 signatures
+  (`operator_signature_test.go`), ID-04, AID-06 and GRP-04 outbound signatures (`agent_rename_test.go`), WA-03 quoting
+  in the origin chat, REACT-01 platform delivery, REACT-03 and REACT-04 (`reaction_test.go`, `hook_reaction_test.go`,
+  `TestAgentReactRefusesListenOnlyChat`), HOOK-03 for room messages and files, CON-05's retry of a room delivery and
+  LIVE-04's outbox status.
+- **Rewritten to the new outcome** (assertions on a delivery became "nothing is delivered"): `TestAgentPostsByIDOrName`,
+  `TestAgentReply`, `TestAgentReactStoresReaction`, `TestToolReply`, `TestToolReact`, `TestRoomMembersEndpoint`,
+  `TestLiveStatusEventsReachUsersWithAccess`, `TestAIDMValidation` (the post the room refuses after the DM was
+  created is now a forced store failure), the merge tests of connectors, and the upgrade test, now
+  `TestUpgradedAgentAdoptsItsFolderAndRepliesInTheRoom` (the reply stays in the room and the v0.3 outbox row that was
+  pending is not sent).
+- **Ported to the connection send path** (the behaviour lives on, only the way the test makes a send changed): the CID-14
+  echo tests that made sends through the outbox (`selfmsg_test.go`: every part of a send is dropped, the 10-second
+  hold, no hold without a send, ids per chat) and the webhook outbound tests (`hooks_handlers_test.go`: signature,
+  retry, private address, allowlist), where the AI sends to a hook chat. `TestWebhookFileLinkServesTheAttachmentWithoutALogin`
+  keeps the signed file route covered now that no outbound payload carries a file.
+- **Deflake, not part of the task**: `TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone` (T22) read the connection's
+  status detail right after the instance stopped, before the manager had stored it; it waits for it now.
+- **New tests**: `internal/api/rooms_no_chat_delivery_test.go` (the Done-when e2e: user and agent posts, with and without
+  a file, naming no chat, a chat of the room, a listen-only one, an unknown one and eleven; broadcast off; replies and
+  reactions to chat history; the DM of an AI with a user whose `notify_chat_id` is set; the live stream),
+  `TestPostsPlanNoDeliveryForChatMembers` (service level) and the agents-only `TestPlanTable`/`TestPlanExhaustive`.

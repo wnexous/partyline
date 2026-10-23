@@ -27,8 +27,6 @@ var (
 	ErrNotRunning = errors.New("connector is not running")
 	// ErrReactionsUnsupported means the connector's platform cannot send reactions (REACT-01).
 	ErrReactionsUnsupported = errors.New("reactions not supported")
-	// ErrReactionTarget means the reacted message is not known in the chat by a platform id.
-	ErrReactionTarget = errors.New("reaction target is not a message of this chat")
 	// ErrCannotListChats means the connector's platform cannot list chats (CON-09).
 	ErrCannotListChats = errors.New("connector cannot list chats")
 	// ErrPlatform wraps a failure reported by the platform itself (CON-09: 502); its

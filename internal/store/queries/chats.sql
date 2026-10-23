@@ -30,15 +30,6 @@ WHERE k.owner_id = sqlc.arg(user_id)
                WHERE g.resource_kind = 'connector' AND g.subject IN (sqlc.arg(user_id), '*'))
 ORDER BY k.name, c.title, c.id;
 
--- name: FindChatMessageRef :one
-SELECT m.id FROM messages m
-WHERE m.room_id = sqlc.arg(room_id)
-  AND ((m.author_kind = 'chat' AND m.author_id = sqlc.arg(chat_id) AND m.external_id = sqlc.arg(external_id))
-       OR m.id IN (SELECT o.message_id FROM outbox o
-                   WHERE o.chat_id = sqlc.arg(chat_id) AND o.external_id = sqlc.arg(external_id)))
-ORDER BY m.seq
-LIMIT 1;
-
 -- name: MigrateChatExternalID :execrows
 UPDATE chats SET external_id = sqlc.arg(new_external_id)
 WHERE chats.connector_id = sqlc.arg(connector_id) AND chats.external_id = sqlc.arg(old_external_id)

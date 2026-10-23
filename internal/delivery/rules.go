@@ -1,6 +1,7 @@
-// Package delivery decides who receives a room message and runs the delivery workers.
-// The rules in this file are pure: Plan (DLV-01..05), Trusted (DLV-06) and LoopGuard
-// (DLV-08, DLV-10).
+// Package delivery decides who receives a room message and runs the agent dispatcher. The rules
+// in this file are pure: Plan (DLV-01, DLV-02), Trusted (DLV-06) and LoopGuard (DLV-08, DLV-10).
+// A room delivers to intelligences only: chats are never members of a conversation and a room
+// sends nothing to a platform (CID-22).
 package delivery
 
 import "github.com/wnexous/partyline/internal/api/dto"
@@ -10,18 +11,6 @@ type Member struct {
 	Kind dto.MemberKind
 	// ID is the agent, chat or user id (room_members.member_id).
 	ID string
-	// Outbound tells whether agent and user posts without explicit recipients (DLV-03) and
-	// bridged chat posts (DLV-05) reach this chat.
-	Outbound bool
-}
-
-// RoomState holds the room settings the rules depend on.
-type RoomState struct {
-	// BridgeChats relays chat-authored messages to the other chats (DLV-05).
-	BridgeChats bool
-	// NoBroadcast keeps agent and user posts without recipients away from every chat
-	// (ROUTE-06); the zero value broadcasts (DLV-03).
-	NoBroadcast bool
 }
 
 // Draft is the message being delivered.
@@ -29,66 +18,23 @@ type Draft struct {
 	AuthorKind dto.AuthorKind
 	// AuthorID is the authoring agent, chat or user id; empty for system messages.
 	AuthorID string
-	// Recipients are explicit chat ids (DLV-04); only agent and user authors set them.
-	Recipients []string
 }
 
-// Targets are the members a message is delivered to.
-type Targets struct {
-	// AgentIDs receive the message over the agent channel.
-	AgentIDs []string
-	// ChatIDs get an outbox entry each.
-	ChatIDs []string
-}
-
-// Plan returns the delivery targets of msg, in member order:
-//   - never the author itself (DLV-01);
-//   - every other agent member (DLV-02);
-//   - agent and user posts: the listed chats with Outbound on when Recipients is set (DLV-04),
-//     otherwise every chat with Outbound on (DLV-03), or none when the room does not
-//     broadcast (ROUTE-06);
-//   - chat posts: every other chat with Outbound on when the room bridges chats, else none
-//     (DLV-05);
-//   - system posts: no chats.
-func Plan(room RoomState, members []Member, msg Draft) Targets {
-	listed := make(map[string]bool, len(msg.Recipients))
-	for _, id := range msg.Recipients {
-		listed[id] = true
-	}
-	isAuthor := func(m Member) bool {
-		return msg.AuthorID != "" && string(m.Kind) == string(msg.AuthorKind) && m.ID == msg.AuthorID
-	}
-	var t Targets
+// Plan returns the agents a message is delivered to, in member order: every agent member except the
+// author itself (DLV-01, DLV-02). Users read the room in the app and chats are never targets: a
+// room sends nothing to a platform (CID-22).
+func Plan(members []Member, msg Draft) []string {
+	var agentIDs []string
 	for _, m := range members {
-		if isAuthor(m) {
+		if m.Kind != dto.MemberKindAgent {
 			continue
 		}
-		switch m.Kind {
-		case dto.MemberKindAgent:
-			t.AgentIDs = append(t.AgentIDs, m.ID)
-		case dto.MemberKindChat:
-			if chatReceives(room, m, msg, listed) {
-				t.ChatIDs = append(t.ChatIDs, m.ID)
-			}
+		if msg.AuthorID != "" && string(msg.AuthorKind) == string(m.Kind) && m.ID == msg.AuthorID {
+			continue
 		}
+		agentIDs = append(agentIDs, m.ID)
 	}
-	return t
-}
-
-func chatReceives(room RoomState, m Member, msg Draft, listed map[string]bool) bool {
-	switch msg.AuthorKind {
-	case dto.AuthorKindAgent, dto.AuthorKindUser:
-		if len(msg.Recipients) > 0 {
-			// A listen-only chat never receives, even when listed (the API rejects that with
-			// 422; this guards callers that skip the check).
-			return listed[m.ID] && m.Outbound
-		}
-		return m.Outbound && !room.NoBroadcast
-	case dto.AuthorKindChat:
-		return room.BridgeChats && m.Outbound
-	default:
-		return false
-	}
+	return agentIDs
 }
 
 // Trusted reports whether a message is trusted by an agent (DLV-06, AD-006): only when the

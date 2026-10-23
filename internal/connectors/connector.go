@@ -1,7 +1,7 @@
 // Package connectors is the framework every chat platform plugs into (AD-007): the kind
 // registry with its declarative config schema, the connector service and endpoints' logic,
-// the manager that supervises running connectors, the inbound pipeline that turns platform
-// messages into room messages and the outbound sender used by the outbox worker.
+// the manager that supervises running connectors, the inbound pipeline that queues platform
+// messages for the AI that operates the connection and the sends an AI makes through it.
 package connectors
 
 import (
@@ -120,7 +120,7 @@ type Media struct {
 	Open func(ctx context.Context) (io.ReadCloser, error)
 }
 
-// Outbound is a room message to deliver to one chat.
+// Outbound is a message an AI sends through a connection to one of its chats.
 type Outbound struct {
 	// ChatID is the platform chat id.
 	ChatID string
@@ -130,8 +130,8 @@ type Outbound struct {
 	ReplyToID       string
 	ReplyToSenderID string
 	Files           []OutFile
-	// MessageID, RoomID, AuthorName and CreatedAt describe the room message, for platforms
-	// that show them (e.g. the webhook payload).
+	// MessageID, RoomID, AuthorName and CreatedAt describe the message, for platforms that show
+	// them (e.g. the webhook payload). A send belongs to no room: RoomID is empty.
 	MessageID  string
 	RoomID     string
 	AuthorName string
@@ -140,9 +140,9 @@ type Outbound struct {
 	// parts of a long text and every file, not only the first. A platform that reports the
 	// account's own messages echoes them all back (ACC-05).
 	Created func(platformID string)
-	// Unsigned tells that the author operates the connector's account, so a platform that
-	// puts the author in the text leaves the author line out (ACC-03, ACC-04). AuthorName still
-	// names the author for platforms that carry it as data.
+	// Unsigned tells that the author operates the connector's account, which is always so
+	// (CID-15, CID-16): a platform that puts the author in the text leaves the author line out.
+	// AuthorName still names the author for platforms that carry it as data.
 	Unsigned bool
 }
 

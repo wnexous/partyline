@@ -108,11 +108,6 @@ func (s *Service) EnsurePlatformDM(ctx context.Context, in PlatformDM) (Platform
 			if other == id {
 				continue
 			}
-			// What was queued for the chat in the old DM but not sent is cancelled (ROOM-01); the
-			// history stays.
-			if _, err := q.DeletePendingRoomChatOutbox(ctx, db.DeletePendingRoomChatOutboxParams{ChatID: in.ChatID, RoomID: other}); err != nil {
-				return err
-			}
 			m, err := q.GetRoomMemberByMember(ctx, db.GetRoomMemberByMemberParams{RoomID: other, Kind: string(dto.MemberKindChat), MemberID: in.ChatID})
 			if err != nil {
 				return err

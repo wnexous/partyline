@@ -2,19 +2,16 @@ package rooms
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
-	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -27,7 +24,7 @@ func agentPrincipal(owner authn.Principal, agentID string) authn.Principal {
 
 // addMember adds the member through the service. A chat is refused as a member (CID-19), so a chat
 // is planted the way a room built before the connection proxy holds it: the tests that use one
-// cover the room's outbound delivery to chats, which T33 retires.
+// cover the history those rooms still hold.
 func (f *fixture) addMember(t *testing.T, owner authn.Principal, roomID string, kind dto.MemberKind, id string, outbound bool) Member {
 	t.Helper()
 	if kind == dto.MemberKindChat {
@@ -59,21 +56,6 @@ func (f *fixture) post(t *testing.T, p authn.Principal, roomID, text string) Mes
 	m, err := f.svc.Post(context.Background(), p, roomID, PostInput{Text: text})
 	require.NoError(t, err)
 	return m
-}
-
-func outboxChats(m Message) []string {
-	out := []string{}
-	for _, o := range m.Outbox {
-		out = append(out, o.ChatID)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func sorted(ids ...string) []string {
-	out := append([]string{}, ids...)
-	sort.Strings(out)
-	return out
 }
 
 // drain returns the events published so far.
@@ -151,38 +133,6 @@ func TestPostValidation(t *testing.T) {
 	require.Equal(t, string(dto.AttachmentStatusStored), withFile.Attachments[0].Status)
 }
 
-// ROUTE-10: a post names at most 10 distinct chats: 10 are queued, 11 are refused with 422
-// recipients "at most 10 chats per message" and nothing is stored; a repeated id counts once.
-func TestPostRecipientsCap(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	alice := f.user(t, "alice", dto.RoleMember)
-	a1 := f.agent(t, alice, "a1")
-	r := f.room(t, alice, "inbox")
-	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
-	var chats []string
-	for i := range 11 {
-		_, c := f.chat(t, alice, fmt.Sprintf("c%d", i))
-		f.addMember(t, alice, r.ID, dto.MemberKindChat, c, true)
-		chats = append(chats, c)
-	}
-
-	for _, p := range []authn.Principal{alice, agentPrincipal(alice, a1)} {
-		_, err := f.svc.Post(ctx, p, r.ID, PostInput{Text: "to everyone I can name", Recipients: chats})
-		var verr *validation.Error
-		require.ErrorAs(t, err, &verr)
-		require.Equal(t, map[string]string{"recipients": "at most 10 chats per message"}, verr.Fields)
-	}
-	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM messages"), "nothing stored")
-
-	ten, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "ten", Recipients: chats[:10]})
-	require.NoError(t, err)
-	require.Len(t, outboxChats(ten), 10)
-	repeated, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "ten again", Recipients: append(chats[:10:10], chats[0])})
-	require.NoError(t, err)
-	require.Len(t, outboxChats(repeated), 10)
-}
-
 // ACL-03/ACL-04 for posting: view-only is forbidden, strangers and non-member agents see nothing.
 func TestPostAuthorization(t *testing.T) {
 	ctx := context.Background()
@@ -218,62 +168,39 @@ func TestPostAuthorization(t *testing.T) {
 	require.Len(t, list, 2)
 }
 
-// DLV-03/04/05, ROOM-01: outbox entries follow the delivery plan.
-func TestOutboxFollowsDeliveryPlan(t *testing.T) {
+// CID-22: a room sends nothing to a chat. Whoever posts (a user, an agent, a chat), whatever they
+// reply to or react to, a chat member of an old room gets no outbox row.
+func TestPostsPlanNoDeliveryForChatMembers(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.user(t, "alice", dto.RoleMember)
-	a1, a2 := f.agent(t, alice, "a1"), f.agent(t, alice, "a2")
-	_, c1 := f.chat(t, alice, "c1")
-	_, c2 := f.chat(t, alice, "c2")
-	_, c3 := f.chat(t, alice, "c3")
+	a1 := f.agent(t, alice, "a1")
+	_, open := f.chat(t, alice, "open")
+	_, quiet := f.chat(t, alice, "quiet")
 	r := f.room(t, alice, "ops")
 	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a2, true)
-	m1 := f.addMember(t, alice, r.ID, dto.MemberKindChat, c1, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, c2, false)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, c3, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, open, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, quiet, false)
 
-	// DLV-03: users and agents without recipients reach the chats with outbound on.
-	m := f.post(t, alice, r.ID, "to all")
-	require.Equal(t, sorted(c1, c3), outboxChats(m))
-	for _, o := range m.Outbox {
-		require.Equal(t, string(dto.OutboxStatusPending), o.Status)
-		require.Zero(t, o.Attempts)
-		require.Equal(t, t0.UnixMilli(), o.NextAttemptAt)
+	fromChat, err := f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: open, SenderID: "5511999990000", Text: "can you help?"})
+	require.NoError(t, err)
+	posts := []Message{
+		f.post(t, alice, r.ID, "from the user"),
+		f.post(t, agentPrincipal(alice, a1), r.ID, "from the agent"),
+		fromChat,
 	}
-	require.Equal(t, sorted(c1, c3), outboxChats(f.post(t, agentPrincipal(alice, a1), r.ID, "agent to all")))
-
-	// DLV-04: explicit recipients reach only those chats; a listen-only chat (outbound off)
-	// receives nothing, so naming it is rejected with 422 recipients=listen-only.
-	m, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "to c3", Recipients: []string{c3}})
-	require.NoError(t, err)
-	require.Equal(t, []string{c3}, outboxChats(m))
-	require.Equal(t, []string{c3}, m.Recipients())
-	_, err = f.svc.Post(ctx, alice, r.ID, PostInput{Text: "to c2", Recipients: []string{c3, c2}})
-	var verr *validation.Error
-	require.ErrorAs(t, err, &verr)
-	require.Equal(t, "listen-only", verr.Fields["recipients"])
-	_, err = f.svc.Post(ctx, alice, r.ID, PostInput{Text: "bad", Recipients: []string{store.NewID()}})
-	require.ErrorAs(t, err, &verr)
-	require.Contains(t, verr.Fields, "recipients")
-
-	// DLV-05: chat messages reach the other outbound chats only when the room bridges chats;
-	// c2 has outbound off and receives nothing.
-	m, err = f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: c1, SenderID: "5511999990000", Text: "from c1"})
-	require.NoError(t, err)
-	require.Empty(t, outboxChats(m))
-	_, err = f.svc.Update(ctx, alice, r.ID, UpdateInput{BridgeChats: ptr(true)})
-	require.NoError(t, err)
-	m, err = f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: c1, SenderID: "5511999990000", Text: "bridged"})
-	require.NoError(t, err)
-	require.Equal(t, []string{c3}, outboxChats(m))
-
-	// ROOM-01: a removed chat gets nothing afterwards.
-	require.NoError(t, f.svc.RemoveMember(ctx, alice, r.ID, m1.ID))
-	require.Equal(t, []string{c3}, outboxChats(f.post(t, alice, r.ID, "after removal")))
-	_, err = f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: c1, Text: "still there?"})
-	require.ErrorIs(t, err, access.ErrNotFound, "a removed chat cannot post either")
+	for _, p := range []authn.Principal{alice, agentPrincipal(alice, a1)} {
+		reply, err := f.svc.Post(ctx, p, r.ID, PostInput{Text: "answer", ReplyTo: fromChat.ID})
+		require.NoError(t, err)
+		reaction, err := f.svc.Post(ctx, p, r.ID, PostInput{Text: "👍", ReplyTo: fromChat.ID, Kind: dto.MessageKindReaction})
+		require.NoError(t, err)
+		posts = append(posts, reply, reaction)
+	}
+	for _, m := range posts {
+		require.Empty(t, m.Recipients(), "no chat is named")
+	}
+	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM outbox"), "no delivery is planned for a chat")
+	require.Equal(t, len(posts), f.count(t, "SELECT COUNT(*) FROM messages WHERE room_id = ?", r.ID), "every post is stored")
 }
 
 // DLV-06 input: author_user_id is the user, the agent's owner, the verified sender's user,
@@ -388,7 +315,6 @@ func TestLoopGuardPauseAndResume(t *testing.T) {
 	require.Equal(t, string(dto.AuthorKindSystem), notice[0].AuthorKind)
 	require.Equal(t, string(dto.MessageKindSystem), notice[0].Kind)
 	require.Equal(t, PauseNotice, notice[0].Text)
-	require.Empty(t, notice[0].Outbox, "the notice is not sent to chats")
 	require.Equal(t, []events.Event{
 		events.MessageCreated{RoomID: r.ID, MessageID: last.ID, Seq: last.Seq},
 		events.MessageCreated{RoomID: r.ID, MessageID: notice[0].ID, Seq: last.Seq + 1},
@@ -420,9 +346,7 @@ func TestListPages(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.user(t, "alice", dto.RoleMember)
-	_, chat := f.chat(t, alice, "c1")
 	r := f.room(t, alice, "ops")
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, chat, true)
 	for i := 0; i < 7; i++ {
 		f.post(t, alice, r.ID, "m")
 	}
@@ -432,7 +356,6 @@ func TestListPages(t *testing.T) {
 		out := []int64{}
 		for _, m := range list {
 			out = append(out, m.Seq)
-			require.Len(t, m.Outbox, 1, "outbox entries come with each message")
 		}
 		return out, more
 	}
@@ -471,141 +394,6 @@ func TestReplyTo(t *testing.T) {
 	var verr *validation.Error
 	require.ErrorAs(t, err, &verr)
 	require.Contains(t, verr.Fields, "reply_to")
-}
-
-// recordingSender records every delivery the outbox worker attempts.
-type recordingSender struct {
-	mu    sync.Mutex
-	calls []delivery.Delivery
-}
-
-func (s *recordingSender) Send(_ context.Context, d delivery.Delivery) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.calls = append(s.calls, d)
-	return "ext-" + d.OutboxID, nil
-}
-
-// ROOM-01: removing a chat member cancels its not-yet-sent deliveries in that room, so a
-// message queued before the removal is never sent; sent history and other rooms stay.
-func TestRemoveMemberCancelsQueuedDeliveries(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	alice := f.user(t, "alice", dto.RoleMember)
-	_, chat := f.chat(t, alice, "c1")
-	_, kept := f.chat(t, alice, "c2")
-	r := f.room(t, alice, "ops")
-	other := f.room(t, alice, "other")
-	m := f.addMember(t, alice, r.ID, dto.MemberKindChat, chat, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, kept, true)
-	f.addMember(t, alice, other.ID, dto.MemberKindChat, chat, true)
-
-	sent := f.post(t, alice, r.ID, "already sent")
-	f.exec(t, "UPDATE outbox SET status = 'sent' WHERE message_id = ?", sent.ID)
-	f.post(t, alice, r.ID, "queued before removal")
-	backoff := f.post(t, alice, r.ID, "waiting for retry")
-	f.exec(t, "UPDATE outbox SET attempts = 2, next_attempt_at = ? WHERE message_id = ?", t0.Add(time.Minute).UnixMilli(), backoff.ID)
-	f.post(t, alice, other.ID, "other room")
-
-	require.NoError(t, f.svc.RemoveMember(ctx, alice, r.ID, m.ID))
-
-	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM outbox o JOIN messages m ON m.id = o.message_id WHERE m.room_id = ? AND o.chat_id = ? AND o.status = 'pending'", r.ID, chat))
-	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM outbox WHERE message_id = ? AND chat_id = ? AND status = 'sent'", sent.ID, chat), "sent history stays")
-	require.Equal(t, 2, f.count(t, "SELECT COUNT(*) FROM outbox o JOIN messages m ON m.id = o.message_id WHERE m.room_id = ? AND o.chat_id = ? AND o.status = 'pending'", r.ID, kept))
-	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM outbox o JOIN messages m ON m.id = o.message_id WHERE m.room_id = ? AND o.chat_id = ? AND o.status = 'pending'", other.ID, chat))
-
-	f.clock.mu.Lock()
-	f.clock.now = t0.Add(time.Hour)
-	f.clock.mu.Unlock()
-	s := &recordingSender{}
-	w := delivery.NewOutboxWorker(delivery.OutboxOptions{Store: f.st, Bus: f.bus, Sender: s, Now: f.clock.Now})
-	require.NoError(t, w.Flush(ctx))
-	for _, d := range s.calls {
-		require.False(t, d.RoomID == r.ID && d.ChatID == chat, "ROOM-01: removed chat received a delivery queued before its removal")
-	}
-	require.Len(t, s.calls, 3, "the other chat (2) and the other room (1) still get theirs")
-}
-
-// ROUTE-06: in a room with broadcast off, user and agent posts without recipients are stored
-// and planned for the agents but queued to no chat, and the post answers NoBroadcastWarning; a
-// reply to a chat message goes to that chat only; explicit recipients work as before; chat
-// messages are unchanged. With broadcast on, nothing changes and there is no warning.
-func TestNoBroadcastRoomQueuesNoChatWithoutRecipients(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	alice := f.user(t, "alice", dto.RoleMember)
-	a1 := f.agent(t, alice, "a1")
-	_, c1 := f.chat(t, alice, "c1")
-	_, c2 := f.chat(t, alice, "c2")
-	r := f.room(t, alice, "inbox")
-	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, c1, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, c2, true)
-
-	on := f.post(t, alice, r.ID, "broadcast on")
-	require.Equal(t, sorted(c1, c2), outboxChats(on))
-	require.Empty(t, on.Warning)
-
-	updated, err := f.svc.Update(ctx, alice, r.ID, UpdateInput{Broadcast: ptr(false)})
-	require.NoError(t, err)
-	require.False(t, updated.Broadcast)
-
-	for _, p := range []authn.Principal{alice, agentPrincipal(alice, a1)} {
-		m := f.post(t, p, r.ID, "no recipients")
-		require.Empty(t, outboxChats(m), "queued to no chat")
-		require.Empty(t, m.Recipients())
-		require.Equal(t, "not sent to any chat: this room only answers explicit chats (use reply or chat_ids)", m.Warning)
-		stored, err := f.svc.GetMessage(ctx, alice, r.ID, m.ID)
-		require.NoError(t, err)
-		require.Equal(t, "no recipients", stored.Text, "still stored in the room")
-	}
-
-	explicit, err := f.svc.Post(ctx, agentPrincipal(alice, a1), r.ID, PostInput{Text: "to c2", Recipients: []string{c2}})
-	require.NoError(t, err)
-	require.Equal(t, []string{c2}, outboxChats(explicit))
-	require.Empty(t, explicit.Warning)
-
-	fromC1, err := f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: c1, SenderID: "1", Text: "hello"})
-	require.NoError(t, err)
-	for _, p := range []authn.Principal{alice, agentPrincipal(alice, a1)} {
-		reply, err := f.svc.Post(ctx, p, r.ID, PostInput{Text: "answer", ReplyTo: fromC1.ID})
-		require.NoError(t, err)
-		require.Equal(t, []string{c1}, outboxChats(reply), "a reply goes to the replied chat")
-		require.Equal(t, []string{c1}, reply.Recipients())
-		require.Empty(t, reply.Warning)
-	}
-	toOwn, err := f.svc.Post(ctx, alice, r.ID, PostInput{Text: "re: own", ReplyTo: explicit.ID})
-	require.NoError(t, err)
-	require.Empty(t, outboxChats(toOwn), "a reply to a non-chat message reaches no chat")
-	require.Equal(t, dto.NoBroadcastWarning, toOwn.Warning)
-}
-
-// ROUTE-06: in a room with broadcast off, a reply to a message of a listen-only chat reaches no
-// chat: nothing is queued, no recipient is stored and the post answers the warning, for users
-// and agents alike.
-func TestNoBroadcastReplyToListenOnlyChat(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	alice := f.user(t, "alice", dto.RoleMember)
-	a1 := f.agent(t, alice, "a1")
-	_, quiet := f.chat(t, alice, "quiet")
-	_, open := f.chat(t, alice, "open")
-	r := f.room(t, alice, "inbox")
-	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, quiet, false)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, open, true)
-	_, err := f.svc.Update(ctx, alice, r.ID, UpdateInput{Broadcast: ptr(false)})
-	require.NoError(t, err)
-	fromQuiet, err := f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: quiet, SenderID: "1", Text: "just listening"})
-	require.NoError(t, err)
-
-	for _, p := range []authn.Principal{alice, agentPrincipal(alice, a1)} {
-		reply, err := f.svc.Post(ctx, p, r.ID, PostInput{Text: "answer", ReplyTo: fromQuiet.ID})
-		require.NoError(t, err)
-		require.Empty(t, reply.Recipients())
-		require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM outbox WHERE message_id = ?", reply.ID), "queued to no chat")
-		require.Equal(t, "not sent to any chat: this room only answers explicit chats (use reply or chat_ids)", reply.Warning)
-	}
 }
 
 // ROUTE-07: while a connector routes new chats to a room, broadcast and bridge_chats cannot

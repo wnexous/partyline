@@ -25,7 +25,7 @@ func (s *server) agentDM(w http.ResponseWriter, r *http.Request, p authn.Princip
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	in := rooms.PostInput{Text: req.Text, Recipients: req.ChatIDs}
+	in := rooms.PostInput{Text: req.Text}
 	// Refuse what is invalid before the allowance of a post is spent or anything is created.
 	if err := conversations.ValidateDM(req.To, in); err != nil {
 		return err

@@ -8,7 +8,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 )
 
-// REACT-01: react stores a reaction to the chat message, for that chat only.
+// REACT-01: react stores a reaction to the chat message in the room; it goes to no chat (CID-22).
 func TestToolReact(t *testing.T) {
 	e := newChanEnv(t)
 	family := e.chatMember("Family")
@@ -23,7 +23,7 @@ func TestToolReact(t *testing.T) {
 	require.Equal(t, dto.MessageKindReaction, stored.Kind)
 	require.Equal(t, "👍", stored.Text)
 	require.Equal(t, target.ID, stored.ReplyTo)
-	require.Equal(t, []string{family}, stored.Recipients)
+	require.Empty(t, stored.Recipients)
 	require.Equal(t, e.agentID, stored.AuthorID)
 }
 

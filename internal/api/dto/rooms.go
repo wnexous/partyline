@@ -198,28 +198,26 @@ type Message struct {
 	SenderName  string      `json:"sender_name,omitempty"`
 	Kind        MessageKind `json:"kind"`
 	Text        string      `json:"text"`
-	ReplyTo     string      `json:"reply_to,omitempty"`   // message id
-	Recipients  []string    `json:"recipients,omitempty"` // explicit chat member ids (DLV-04)
-	ExternalID  string      `json:"external_id,omitempty"`
+	ReplyTo     string      `json:"reply_to,omitempty"` // message id
+	// Recipients are the chats a message posted before the connection proxy named (DLV-04); a
+	// message posted since names none, because a room sends to no chat (CID-22).
+	Recipients []string `json:"recipients,omitempty"`
+	ExternalID string   `json:"external_id,omitempty"`
 	// Chat is the chat a chat-authored message came from; absent for other authors (CTX-01).
 	Chat        *ChatRef     `json:"chat,omitempty"`
 	Attachments []Attachment `json:"attachments"`
-	Outbox      []OutboxItem `json:"outbox,omitempty"`
-	CreatedAt   time.Time    `json:"created_at"`
-	// Warning is set on post responses only, e.g. NoBroadcastWarning (ROUTE-06).
-	Warning string `json:"warning,omitempty"`
+	// Outbox is never filled any more: a room sends to no chat (CID-22). The field goes with T35.
+	Outbox    []OutboxItem `json:"outbox,omitempty"`
+	CreatedAt time.Time    `json:"created_at"`
 }
-
-// NoBroadcastWarning answers a post without recipients in a room with broadcast off: it is
-// stored and reaches the agents, but no chat (ROUTE-06).
-const NoBroadcastWarning = "not sent to any chat: this room only answers explicit chats (use reply or chat_ids)"
 
 // PostMessageRequest is the body of POST /rooms/{id}/messages (JSON), or the JSON of the
 // "message" part of a multipart upload whose files are sent as "file" parts.
 type PostMessageRequest struct {
-	Text       string   `json:"text"`
-	ReplyTo    string   `json:"reply_to,omitempty"`
-	Recipients []string `json:"recipients,omitempty"` // chat member ids; empty = every chat with outbound on
+	Text    string `json:"text"`
+	ReplyTo string `json:"reply_to,omitempty"`
+	// Recipients, sent by v0.4 CLIs, is accepted and ignored: a room sends to no chat (CID-22).
+	Recipients []string `json:"recipients,omitempty"`
 }
 
 // AttachmentStatus is the storage state of an attachment.

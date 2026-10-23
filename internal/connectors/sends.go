@@ -13,7 +13,6 @@ import (
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -40,11 +39,19 @@ const (
 	// replaced as the connection's operator while it waited for a retry (CID-03).
 	noLongerOperator = "the AI no longer operates this connection"
 
+	// maxSendAttempts is how many attempts a send gets before it is failed (CID-18).
+	maxSendAttempts = 5
+
 	sendPoll     = time.Second
 	sendBatch    = 50
 	purgeBatch   = 1000
 	maxSendError = 500
 )
+
+// sendBackoff is the wait after the given failed attempt: 2 s · 2^(attempt-1) (CID-18).
+func sendBackoff(attempt int) time.Duration {
+	return 2 * time.Second << max(attempt-1, 0)
+}
 
 // Transport sends a message through a running connection; the Manager implements it. Its errors
 // carry no secrets (the Manager redacts them).
@@ -71,9 +78,9 @@ type SendsDeps struct {
 
 // Sends sends what an AI answers through a connection it operates (AD-015): to a chat of the
 // connection, as the account itself, never signed. A send is attempted once, right away, and a
-// failure keeps it pending for the worker, which retries it with the outbox's backoff and attempt
-// limit. Nothing but ids, states and errors is kept: the text is deleted when the send is over
-// (CID-15, CID-16, CID-18).
+// failure keeps it pending for the worker, which retries it with a doubling backoff (2 s first) and
+// gives up after five attempts. Nothing but ids, states and errors is kept: the text is deleted
+// when the send is over (CID-15, CID-16, CID-18).
 type Sends struct {
 	d       SendsDeps
 	running atomic.Bool
@@ -219,7 +226,7 @@ func (s *Sends) fail(ctx context.Context, send db.PlatformSend, n int, reason st
 	reason = shorten(reason, maxSendError)
 	now := s.d.Now()
 	status := dto.PlatformSendStatusPending
-	if final || n >= delivery.MaxAttempts {
+	if final || n >= maxSendAttempts {
 		status = dto.PlatformSendStatusFailed
 	}
 	err := s.d.Store.WithTx(ctx, func(q *db.Queries) error {
@@ -227,7 +234,7 @@ func (s *Sends) fail(ctx context.Context, send db.PlatformSend, n int, reason st
 			return q.MarkPlatformSendFailed(ctx, db.MarkPlatformSendFailedParams{Attempts: int64(n), LastError: reason, UpdatedAt: now.UnixMilli(), ID: send.ID})
 		}
 		return q.MarkPlatformSendRetry(ctx, db.MarkPlatformSendRetryParams{
-			Attempts: int64(n), NextAttemptAt: now.Add(delivery.Backoff(n)).UnixMilli(), LastError: reason, UpdatedAt: now.UnixMilli(), ID: send.ID,
+			Attempts: int64(n), NextAttemptAt: now.Add(sendBackoff(n)).UnixMilli(), LastError: reason, UpdatedAt: now.UnixMilli(), ID: send.ID,
 		})
 	})
 	s.d.Logger.Warn("connectors: platform send failed", "send_id", send.ID, "connector_id", send.ConnectorID, "attempt", n, "status", status)

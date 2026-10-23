@@ -36,29 +36,6 @@ func (q *Queries) CreateChat(ctx context.Context, arg CreateChatParams) error {
 	return err
 }
 
-const findChatMessageRef = `-- name: FindChatMessageRef :one
-SELECT m.id FROM messages m
-WHERE m.room_id = ?1
-  AND ((m.author_kind = 'chat' AND m.author_id = ?2 AND m.external_id = ?3)
-       OR m.id IN (SELECT o.message_id FROM outbox o
-                   WHERE o.chat_id = ?2 AND o.external_id = ?3))
-ORDER BY m.seq
-LIMIT 1
-`
-
-type FindChatMessageRefParams struct {
-	RoomID     string
-	ChatID     string
-	ExternalID sql.NullString
-}
-
-func (q *Queries) FindChatMessageRef(ctx context.Context, arg FindChatMessageRefParams) (string, error) {
-	row := q.db.QueryRowContext(ctx, findChatMessageRef, arg.RoomID, arg.ChatID, arg.ExternalID)
-	var id string
-	err := row.Scan(&id)
-	return id, err
-}
-
 const getChat = `-- name: GetChat :one
 SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at, person_id FROM chats WHERE id = ?
 `

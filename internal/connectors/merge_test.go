@@ -30,7 +30,7 @@ type mergeEnv struct {
 
 func newMergeEnv(t *testing.T) *mergeEnv {
 	t.Helper()
-	e := newInboundEnv(t) // no outbox worker: what is queued for a chat stays pending
+	e := newInboundEnv(t)
 	return &mergeEnv{inboundEnv: e, atlasID: e.alice.NewAI("atlas"), tok: e.alice.Token(dto.TokenKindAgent, "laptop")}
 }
 
@@ -93,10 +93,10 @@ func (e *mergeEnv) mergeAI(t *testing.T, from, into string) {
 	e.alice.Post("/api/v1/agents/"+from+"/merge", dto.MergeAgentRequest{Into: into}).RequireStatus(http.StatusOK)
 }
 
-// plantAnswer stores an answer of the AI in its platform DM with the delivery queued for the
-// person's chat, as an older version left it: an AI cannot write in such a DM any more (CID-21),
-// but the history a merge moves holds answers like it. It returns the message's id.
-func (e *mergeEnv) plantAnswer(t *testing.T, ai, roomID, chatID, body string) string {
+// plantAnswer stores an answer of the AI in its platform DM, as an older version left it: an AI
+// cannot write in such a DM any more (CID-21), but the history a merge moves holds answers like it.
+// It returns the message's id.
+func (e *mergeEnv) plantAnswer(t *testing.T, ai, roomID, body string) string {
 	t.Helper()
 	ctx := context.Background()
 	id, now := store.NewID(), time.Now().UnixMilli()
@@ -105,13 +105,10 @@ func (e *mergeEnv) plantAnswer(t *testing.T, ai, roomID, chatID, body string) st
 		if err != nil {
 			return err
 		}
-		if err := q.CreateMessage(ctx, db.CreateMessageParams{
+		return q.CreateMessage(ctx, db.CreateMessageParams{
 			ID: id, RoomID: roomID, Seq: r.NextSeq - 1, AuthorKind: string(dto.AuthorKindAgent), AuthorID: ai,
 			AuthorUserID: e.alice.User.ID, AuthorIid: ai, Kind: string(dto.MessageKindText), Text: body, RecipientsJson: "[]", CreatedAt: now,
-		}); err != nil {
-			return err
-		}
-		return q.CreateOutbox(ctx, db.CreateOutboxParams{ID: store.NewID(), MessageID: id, ChatID: chatID, NextAttemptAt: now, UpdatedAt: now})
+		})
 	}))
 	return id
 }
@@ -154,19 +151,18 @@ func TestMergeKeepsAPlatformDMAsHistory(t *testing.T) {
 }
 
 // MRG-01: both AIs had a platform DM with the person, at different times. The merged AI's history is
-// appended to the survivor's DM, the person's chat joins it, and what was queued for the chat stays
-// queued.
+// appended to the survivor's DM, with the answers it holds, and the person's chat joins it.
 func TestMergeAppendsAPlatformDMAndMovesItsChat(t *testing.T) {
 	e := newMergeEnv(t)
 	oldID := e.env.NewLegacyAI(e.alice, "old")
 
 	// The person wrote to Atlas, then the account moved to old and they wrote to old, whose answer
-	// waits in the outbox.
+	// the history holds.
 	chat, atlasDM := e.platformDM(t, e.atlasID, "A1", "to atlas")
 	oldChat, oldDM := e.platformDM(t, oldID, "A2", "to old")
 	require.NotEqual(t, atlasDM, oldDM, "two DMs with the person, one per operator")
 	require.Equal(t, chat, oldChat)
-	e.plantAnswer(t, oldID, oldDM, chat, "old's answer")
+	e.plantAnswer(t, oldID, oldDM, "old's answer")
 	require.Equal(t, 2, e.dmRooms(t))
 
 	e.mergeAI(t, oldID, e.atlasID)
@@ -184,16 +180,4 @@ func TestMergeAppendsAPlatformDMAndMovesItsChat(t *testing.T) {
 	}
 	require.Equal(t, []string{"to atlas", "History merged from @old", "to old", "old's answer"}, texts)
 	require.Equal(t, e.atlasID, answer.Author.ID)
-	require.Len(t, answer.Outbox, 1, "what was queued for the chat went with its message")
-	require.Equal(t, []any{chat, dto.OutboxStatusPending}, []any{answer.Outbox[0].ChatID, answer.Outbox[0].Status})
-
-	// ... and it can still be sent: the chat is a member of the room the message is in now.
-	due, err := e.env.App.Store.R().ListDueOutbox(context.Background(), db.ListDueOutboxParams{Now: time.Now().Add(time.Hour).UnixMilli(), Limit: 10})
-	require.NoError(t, err)
-	var dueMessages []string
-	for _, d := range due {
-		require.Equal(t, atlasDM, d.RoomID)
-		dueMessages = append(dueMessages, d.MessageID)
-	}
-	require.Contains(t, dueMessages, answer.ID)
 }
