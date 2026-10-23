@@ -7,7 +7,7 @@ import { catchUp, handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeAI, makeIntelligence, makeMessage, makePerson } from "@/test/fixtures";
-import { renderWithProviders } from "@/test/render";
+import { renderWithRouter } from "@/test/render";
 
 function makeFile(over: Partial<RoomFile> = {}): RoomFile {
   return {
@@ -52,7 +52,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("room files (FILES-04)", () => {
   it("lists each file with its thumbnail or icon, size, author and time, and a download link", async () => {
     mockApi({ "GET /rooms/r1/attachments": page([photo, report]) });
-    renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+    renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
 
     const list = await screen.findByRole("list", { name: "Files shared in the room" });
     const rows = within(list).getAllByRole("listitem");
@@ -86,7 +86,7 @@ describe("room files (FILES-04)", () => {
         url.searchParams.get("kind") === "image" ? page([photo]) : page([photo, report]),
     });
     const user = userEvent.setup();
-    renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+    renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
     await screen.findByTestId("file-f1");
     expect(filesCalls(calls)[0]?.url.searchParams.has("kind")).toBe(false);
 
@@ -111,7 +111,7 @@ describe("room files (FILES-04)", () => {
     mockApi({ "GET /rooms/r1/attachments": page([photo, report]) });
     const onOpen = vi.fn();
     const user = userEvent.setup();
-    renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={onOpen} />);
+    renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={onOpen} />);
     await user.click(
       await screen.findByRole("button", { name: "Open report.pdf in the timeline" }),
     );
@@ -125,7 +125,7 @@ describe("room files (FILES-04)", () => {
         url.searchParams.get("before") === "f1" ? page([older]) : page([photo, report], true),
     });
     const user = userEvent.setup();
-    renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+    renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
     await user.click(await screen.findByRole("button", { name: "Load older files" }));
     await screen.findByTestId("file-f0");
     expect(filesCalls(calls).at(-1)?.url.searchParams.get("before")).toBe("f1");
@@ -134,7 +134,7 @@ describe("room files (FILES-04)", () => {
 
   it("explains where shared files appear when the room has none", async () => {
     mockApi({ "GET /rooms/r1/attachments": page([]) });
-    renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+    renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
     expect(await screen.findByText("No files yet")).toBeInTheDocument();
     expect(
       screen.getByText("Images, audio, video and documents shared in this room appear here."),
@@ -147,7 +147,7 @@ describe("room files (FILES-04)", () => {
       "GET /rooms/r1/attachments": () => (fail ? apiError(500, "internal") : page([report])),
     });
     const user = userEvent.setup();
-    renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+    renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn’t load the files.");
     fail = false;
     await user.click(screen.getByRole("button", { name: "Try again" }));
@@ -177,7 +177,7 @@ describe("kind badges next to authors (PROF-09)", () => {
         report,
       ]),
     });
-    renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+    renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
 
     const ai = within(await screen.findByTestId("file-f5"));
     expect(ai.getByText("release-bot")).toBeInTheDocument();
@@ -213,16 +213,22 @@ describe("unavailable files (FILES-06)", () => {
         }),
       ]),
     });
-    renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+    renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
     const huge = await screen.findByTestId("file-f8");
     const lost = screen.getByTestId("file-f9");
     expect(huge).toHaveTextContent("huge.mov");
     expect(huge).toHaveTextContent("too large to store");
     expect(lost).toHaveTextContent("unavailable");
     for (const row of [huge, lost]) {
-      expect(within(row).queryByRole("link")).toBeNull();
+      // No link to the file; the only link left is the author's, to their profile (PRF-01).
+      expect(row.querySelector("a[download]")).toBeNull();
+      expect(row.querySelector('a[href^="/api/v1/attachments/"]')).toBeNull();
+      expect(
+        within(row)
+          .getAllByRole("link")
+          .map((a) => a.getAttribute("href")),
+      ).toEqual(["/contacts/u1"]);
       expect(row.querySelector("img")).toBeNull();
-      expect(row.querySelector("a")).toBeNull();
     }
     // Still reachable in the timeline.
     expect(
@@ -247,7 +253,7 @@ describe("live files (FILES-05)", () => {
 
   it("puts the files of a new message at the top without a reload", async () => {
     const { calls } = mockApi({ "GET /rooms/r1/attachments": page([photo, report]) });
-    const { queryClient } = renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+    const { queryClient } = renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
     await screen.findByTestId("file-f1");
     const fetches = filesCalls(calls).length;
 
@@ -306,7 +312,7 @@ describe("live files (FILES-05)", () => {
             : [report],
         ),
     });
-    const { queryClient } = renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+    const { queryClient } = renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
     await screen.findByTestId("file-f1");
     await act(() => catchUp(queryClient));
     expect(await screen.findByTestId("file-f40")).toBeInTheDocument();
@@ -318,7 +324,7 @@ describe("live files (FILES-05)", () => {
         url.searchParams.get("kind") === "image" ? page([photo]) : page([photo, report]),
     });
     const user = userEvent.setup();
-    const { queryClient } = renderWithProviders(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
+    const { queryClient } = renderWithRouter(<RoomFiles roomId="r1" onOpenMessage={() => {}} />);
     await screen.findByTestId("file-f1");
     await user.click(screen.getByRole("radio", { name: "Images" }));
     await waitFor(() => expect(screen.queryByTestId("file-f1")).toBeNull());

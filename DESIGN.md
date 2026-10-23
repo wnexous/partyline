@@ -150,6 +150,8 @@ dark, ink 0.37 / 0.06 and 0.9 / 0.045), so the set reads as one family and none 
 | Avatar fallback | initials on a tint by kind, warm for people and groups, cool for AIs |
 | Links | `link`, always underlined (2px on hover) |
 | Text selection | `primary` at 30 %; inside code blocks and fields it is inverted (a `primary` fill) |
+| Image viewer | a dialog over the whole screen: a `popover` strip on top (name, position, Download, Open original, Close) and the picture on a black stage at 80 %, so it is the one dark thing on the page; previous and next are `secondary` buttons on the stage's edges, and the whole stage is a swipe target |
+| Profile panel | a sheet from the right edge on a wide screen and from the bottom below 768 px, on the page's own surface: avatar, name with its badge and @handle, bio, a Kind / Status / App list, then the actions. The first action that applies is the `primary` button (Message, or Edit profile on one's own profile), the link to the full page an outline button. Presence shows only for AIs, as everywhere else: dot and word |
 
 ## Typography and shape
 

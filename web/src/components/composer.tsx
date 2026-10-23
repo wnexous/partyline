@@ -17,6 +17,7 @@ import {
   mentionOptionId,
 } from "@/components/mention-suggestions";
 import { Button } from "@/components/ui/button";
+import { useEnterSends } from "@/hooks/use-enter-sends";
 import { isApiError } from "@/lib/api/client";
 import { useMe, usePostMessage } from "@/lib/api/queries";
 import {
@@ -32,8 +33,9 @@ import { textLength } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
 
 /*
- * Message composer (UI-07). Enter sends the trimmed text, Shift+Enter adds a line. Text over
- * MaxTextLength (MSG-02) cannot be sent; files alone can. A post is a message to the room's
+ * Message composer (UI-07). Enter sends the trimmed text and Shift+Enter adds a line, with a mouse
+ * or a trackpad; on a touch device Enter adds a line and only the Send button sends (ENT-01..ENT-05,
+ * hooks/use-enter-sends.ts). Text over MaxTextLength (MSG-02) cannot be sent; files alone can. A post is a message to the room's
  * intelligences: chats are not members and there is no recipient picker any more (CID-22,
  * ROUTE-06/DLV-03..05 and their listen-only mapping are retired). The body carries the text and
  * files only. `members` still feeds the mention list below.
@@ -106,6 +108,8 @@ function ComposerForm({
   const errorId = useId();
   const mentionListId = useId();
   const viewerId = useMe().data?.id;
+  // False on a touch device, where Enter is a new line (ENT-01).
+  const sendsOnEnter = useEnterSends();
 
   const length = textLength(text);
   const tooLong = length > MaxTextLength;
@@ -216,7 +220,7 @@ function ComposerForm({
         return;
       }
     }
-    if (e.key !== "Enter" || e.shiftKey) return;
+    if (e.key !== "Enter" || e.shiftKey || !sendsOnEnter) return;
     e.preventDefault();
     send();
   };
@@ -302,6 +306,8 @@ function ComposerForm({
             open && activeCandidate ? mentionOptionId(mentionListId, activeCandidate.id) : undefined
           }
           aria-describedby={length >= COUNTER_FROM ? counterId : undefined}
+          // The on-screen Return key shows what it does (ENT-04).
+          enterKeyHint={sendsOnEnter ? "send" : "enter"}
           placeholder={t("composer.placeholder", { room: roomName })}
           className="block max-h-56 min-h-11 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground"
         />
@@ -321,15 +327,23 @@ function ComposerForm({
             />
             <PaperclipIcon className="size-4" aria-hidden="true" />
           </label>
-          <span className="ml-auto hidden text-[0.7rem] text-muted-foreground lg:inline">
-            {t("composer.hint")}
+          {/* A phone has no Shift key to remember, but it does need to be told Enter no longer
+              sends: its hint shows at every width and gives way to the counter's room (ENT-03). */}
+          <span
+            className={cn(
+              "ml-auto text-[0.7rem] text-muted-foreground",
+              sendsOnEnter ? "hidden lg:inline" : "min-w-0 truncate",
+            )}
+          >
+            {t(sendsOnEnter ? "composer.hint" : "composer.hintTouch")}
           </span>
           {length >= COUNTER_FROM ? (
             <span
               id={counterId}
               data-testid="composer-counter"
               className={cn(
-                "ml-auto font-mono text-[0.7rem] tabular lg:ml-2",
+                "font-mono text-[0.7rem] tabular",
+                sendsOnEnter ? "ml-auto lg:ml-2" : "ml-2 shrink-0",
                 tooLong ? "font-semibold text-destructive" : "text-muted-foreground",
               )}
             >
@@ -341,7 +355,7 @@ function ComposerForm({
             size="icon-sm"
             disabled={!canSend}
             aria-label={t("composer.send")}
-            className={cn(length < COUNTER_FROM && "ml-auto lg:ml-2")}
+            className={cn(sendsOnEnter ? length < COUNTER_FROM && "ml-auto lg:ml-2" : "ml-2")}
           >
             <SendHorizontalIcon aria-hidden="true" />
           </Button>

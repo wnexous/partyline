@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
-import { makeAgent, makeConnector, makeConversation, makeMe } from "@/test/fixtures";
+import { makeAgent, makeConnector, makeConversation, makeMe, makeProfile } from "@/test/fixtures";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
@@ -11,7 +11,7 @@ vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 beforeEach(() => useLiveStore.setState({ locale: "en", paletteOpen: false }));
 afterEach(() => vi.unstubAllGlobals());
 
-function api(role: "member" | "admin" = "member") {
+function api(role: "member" | "admin" = "member", extra: Parameters<typeof mockApi>[0] = {}) {
   return mockApi({
     "GET /me": json(200, makeMe({ role })),
     "GET /conversations": json(200, {
@@ -22,6 +22,7 @@ function api(role: "member" | "admin" = "member") {
     }),
     "GET /agents": json(200, { items: [makeAgent({ id: "a1", name: "release-bot" })] }),
     "GET /connectors": json(200, { items: [makeConnector({ id: "k1", name: "ops-bot" })] }),
+    ...extra,
   });
 }
 
@@ -114,7 +115,7 @@ describe("command palette (UI-22)", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Go to" })).toBeNull());
   });
 
-  it("jumps to connectors, an AI's profile and admin pages", async () => {
+  it("jumps to connectors and admin pages", async () => {
     api("admin");
     const user = userEvent.setup();
     const { router } = renderRoute("/");
@@ -132,8 +133,34 @@ describe("command palette (UI-22)", () => {
     };
 
     await jump("ops-bot", "/connectors/k1");
-    await jump("release-bot", "/contacts/a1");
     await jump("audit", "/admin/audit");
+  });
+
+  it("shows an AI's profile in the panel, without leaving the page (PRF-01)", async () => {
+    api("member", {
+      "GET /intelligences/a1": json(
+        200,
+        makeProfile({ id: "a1", display_name: "release-bot", handle: "release-bot", kind: "ai" }),
+      ),
+    });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/");
+    await screen.findByRole("list", { name: "Conversations" });
+
+    await user.keyboard("{Control>}k{/Control}");
+    const dialog = await palette();
+    await within(dialog).findByRole("option", { name: /general/ });
+    await user.type(within(dialog).getByRole("combobox"), "release-bot");
+    await waitFor(() => expect(options(dialog)).toHaveLength(1));
+    await user.keyboard("{Enter}");
+
+    const panel = await screen.findByRole("dialog", { name: "release-bot" });
+    expect(within(panel).getByRole("link", { name: "Open full profile" })).toHaveAttribute(
+      "href",
+      "/contacts/a1",
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Go to" })).toBeNull());
+    expect(router.state.location.pathname).toBe("/");
   });
 
   it("opens from the sidebar search button", async () => {

@@ -932,7 +932,7 @@ describe("opening a profile", () => {
     expect(link).toHaveAttribute("href", "/contacts/p1");
   });
 
-  it("opens the profile of the contact that was clicked", async () => {
+  it("opens the profile panel of the contact that was clicked, and the page from the panel (PRF-01, PRF-04)", async () => {
     api(sampleContacts, {
       "GET /intelligences/a1": json(
         200,
@@ -944,6 +944,12 @@ describe("opening a profile", () => {
     await user.click(
       await within(await screen.findByTestId("contact-a1")).findByRole("link", { name: /Atlas/ }),
     );
+    // A click shows the profile beside the list, which stays where it is...
+    const panel = await screen.findByRole("dialog", { name: "Atlas" });
+    expect(router.state.location.pathname).toBe("/contacts");
+
+    // ...and the full page is one action away.
+    await user.click(within(panel).getByRole("link", { name: "Open full profile" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/contacts/a1"));
     expect(await screen.findByRole("heading", { name: "Atlas", level: 1 })).toBeInTheDocument();
   });
