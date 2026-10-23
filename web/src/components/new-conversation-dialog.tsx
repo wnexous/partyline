@@ -189,7 +189,7 @@ function ContactRow({
       data-testid={`contact-${ref.id}`}
       disabled={disabled}
       onSelect={() => onPick(ref)}
-      className="items-start gap-3 rounded-md px-2.5 py-2 data-[selected=true]:bg-tape/55 data-[selected=true]:text-tape-foreground dark:data-[selected=true]:bg-tape/14 dark:data-[selected=true]:text-tape"
+      className="items-start gap-3 rounded-md px-2.5 py-2 data-[selected=true]:bg-tape/60 data-[selected=true]:text-tape-foreground"
     >
       <IntelligenceAvatar intelligence={ref} decorative />
       <div className="min-w-0 flex-1">

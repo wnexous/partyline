@@ -275,7 +275,7 @@ function ModeOption({
       htmlFor={id}
       className={cn(
         "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 transition-colors hover:bg-accent/50",
-        selected && "border-tape-strong bg-tape/25 hover:bg-tape/30 dark:bg-tape/10",
+        selected && "border-tape-strong bg-tape/40 hover:bg-tape/50",
       )}
     >
       <RadioGroupItem id={id} value={mode} className="mt-0.5" />

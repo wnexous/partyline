@@ -343,7 +343,7 @@ function NewTokenForm({
                     htmlFor={`${ids}-${kind}`}
                     className={cn(
                       "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 transition-colors hover:bg-accent/60",
-                      field.value === kind && "border-tape-strong bg-tape/35 dark:bg-tape/12",
+                      field.value === kind && "border-tape-strong bg-tape/40",
                     )}
                   >
                     <RadioGroupItem id={`${ids}-${kind}`} value={kind} className="mt-0.5" />
@@ -387,7 +387,7 @@ function NewTokenForm({
                     htmlFor={`${ids}-exp-${value}`}
                     className={cn(
                       "flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm transition-colors hover:bg-accent/60",
-                      field.value === value && "border-tape-strong bg-tape/35 dark:bg-tape/12",
+                      field.value === value && "border-tape-strong bg-tape/40",
                     )}
                   >
                     <RadioGroupItem id={`${ids}-exp-${value}`} value={value} />
@@ -426,7 +426,7 @@ function RevokeTokenDialog({ token, onClose }: { token: Token | null; onClose: (
         <AlertDialogFooter>
           <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-destructive text-white hover:bg-destructive/90"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             disabled={revoke.isPending}
             onClick={(e) => {
               e.preventDefault();
@@ -463,7 +463,7 @@ function DeleteTokenDialog({ token, onClose }: { token: Token | null; onClose: (
         <AlertDialogFooter>
           <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-destructive text-white hover:bg-destructive/90"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             disabled={purge.isPending}
             onClick={(e) => {
               e.preventDefault();

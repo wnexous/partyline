@@ -184,7 +184,7 @@ const ConversationRow = memo(function ConversationRow({
     <Link
       to="/rooms/$roomId"
       params={{ roomId: c.id }}
-      className="relative isolate grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-3 px-3 py-2.5 outline-none transition-colors hover:bg-sidebar-accent focus-visible:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-inset data-[status=active]:bg-tape/55 dark:data-[status=active]:bg-tape/14"
+      className="relative isolate grid grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-x-3 px-3 py-2.5 outline-none transition-colors hover:bg-sidebar-accent focus-visible:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-inset data-[status=active]:bg-tape"
     >
       {fresh ? (
         <span

@@ -22,8 +22,9 @@ Binding for every later web task.
 ## Forms
 - react-hook-form + zod; `TextField`, `FieldError`, `FormAlert` from `components/form-fields.tsx`; `applyFieldErrors` maps 422 reasons; `safeRedirect` keeps redirects internal.
 
-## Design language (`src/index.css`, `PRODUCT.md`, `.impeccable/`)
-- Paper background, blue-black ink, buff sidebar, telegram-tape yellow for live/selected (`bg-tape`, `text-tape-foreground`, `tape-strong`); semantic `success`, `warning`, `info`.
+## Design language (`src/index.css`, `DESIGN.md`, `PRODUCT.md`, `.impeccable/`)
+- Neutral monochrome (owner's brief, 2026-10-23): white paper, black ink, grey sidebar, grey tape for live/selected (`bg-tape`, `text-tape-foreground`, `tape-strong`). The only hue is the muted `destructive` red, for errors and destructive actions. There are no `success`, `warning` or `info` tokens: state is shown with filled vs hollow dots, outlines, dashes and an inverted banner (`DESIGN.md`).
+- Colour never bypasses the tokens: no hex, `rgb()`/`oklch()` literals or Tailwind palette classes in components, and a fill and its ink flip together with the theme, so write `bg-tape text-tape-foreground` without `dark:` colours. `src/lib/palette.test.ts` pins the greys, the WCAG AA pairs and the `theme-color` hex (`THEME_COLORS`, `index.html`).
 - `label-caps` for small section labels; `.tabular` for numbers. `animate-tape-settle` highlights new live messages; `animate-line-pulse` for connection dots.
 - Archivo for UI; JetBrains Mono only for data (seq, times, tokens, commands). Shared: `PageHeader`, `EmptyState`, status pages (403, not found, error).
 - No inline scripts (CSP `default-src 'self'`): theme pre-paint via `/theme-init.js`.

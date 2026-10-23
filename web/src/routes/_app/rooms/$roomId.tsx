@@ -359,7 +359,7 @@ function PausedBanner({ room, canManage }: { room: Room; canManage: boolean }) {
   return (
     <div
       role="status"
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-warning/40 bg-warning/15 px-4 py-2.5 text-sm md:px-6"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-tape-strong/40 bg-muted px-4 py-2.5 text-sm md:px-6"
     >
       <PauseIcon className="size-4 shrink-0" aria-hidden="true" />
       <p className="min-w-0 flex-1">

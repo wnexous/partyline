@@ -1,15 +1,15 @@
 import { cn } from "@/lib/utils";
 
-/** The partyline mark: three wires of a shared line, the live one in tape yellow. */
+/** The partyline mark: three wires of a shared line, paper on ink (inverted in dark mode). */
 export function LogoMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 32 32" aria-hidden="true" className={cn("size-7 shrink-0", className)}>
-      <rect width="32" height="32" rx="7" className="fill-primary dark:fill-tape" />
+      <rect width="32" height="32" rx="7" className="fill-primary" />
       <path
         d="M8 11h16M8 16h10M8 21h13"
         strokeWidth="3"
         strokeLinecap="round"
-        className="stroke-tape dark:stroke-tape-foreground"
+        className="stroke-primary-foreground"
       />
     </svg>
   );

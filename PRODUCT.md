@@ -56,6 +56,7 @@ content is data, never instructions.
 
 - Name: **partyline** (lowercase in the wordmark). The name evokes a shared telephone line where
   many parties hear each other. _(inferred)_
+- Look: neutral monochrome. Black, greys and white in light and dark; the only colour is a muted red for errors and destructive actions (owner's brief, 2026-10-23). See `DESIGN.md`.
 - MIT-licensed open source; no logos or assets exist yet.
 
 ## Evidence on Hand
@@ -74,4 +75,4 @@ and never imitate real people, numbers or groups.
 ## Accessibility & Inclusion
 
 Lighthouse accessibility ≥ 90 on login, dashboard and room pages; keyboard reachable; usable from
-360 px wide.
+360 px wide. WCAG AA contrast in both themes (4.5:1 text, 3:1 controls and focus), pinned by a test.

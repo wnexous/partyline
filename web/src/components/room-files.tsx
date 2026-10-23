@@ -93,7 +93,7 @@ export function RoomFiles({
           <ToggleGroupItem
             key={value}
             value={value}
-            className="h-7 flex-none rounded-[3px] px-2 text-xs data-[state=on]:border-tape-strong data-[state=on]:bg-tape/45 data-[state=on]:text-tape-foreground dark:data-[state=on]:bg-tape/15 dark:data-[state=on]:text-foreground"
+            className="h-7 flex-none rounded-[3px] px-2 text-xs data-[state=on]:border-tape-strong data-[state=on]:bg-tape/60 data-[state=on]:text-tape-foreground"
           >
             {t(label)}
           </ToggleGroupItem>
@@ -159,11 +159,8 @@ function FilesEmpty({ filtered }: { filtered: boolean }) {
   return (
     <div className="flex flex-col items-center px-6 py-12 text-center">
       <div className="relative mb-4 flex h-10 w-20 items-center justify-center" aria-hidden="true">
-        <span className="absolute inset-x-0 top-1/2 h-6 -translate-y-1/2 -rotate-2 rounded-[3px] bg-tape/70 shadow-sm dark:bg-tape/20" />
-        <FilesIcon
-          className="relative size-5 text-tape-foreground dark:text-tape"
-          strokeWidth={1.75}
-        />
+        <span className="absolute inset-x-0 top-1/2 h-6 -translate-y-1/2 -rotate-2 rounded-[3px] bg-tape/80 shadow-sm" />
+        <FilesIcon className="relative size-5 text-tape-foreground" strokeWidth={1.75} />
       </div>
       <h3 className="text-sm font-semibold">
         {filtered ? t("files.emptyFilteredTitle") : t("files.emptyTitle")}

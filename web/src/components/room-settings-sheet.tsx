@@ -212,7 +212,7 @@ function DeleteRoom({ room }: { room: Room }) {
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={remove.isPending}
               onClick={(e) => {
                 e.preventDefault();

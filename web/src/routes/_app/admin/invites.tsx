@@ -51,9 +51,12 @@ export const Route = createFileRoute("/_app/admin/invites")({
 const STATUS: Record<InviteStatus, { label: MessageKey; tone: string }> = {
   pending: {
     label: "invites.status.pending",
-    tone: "bg-tape text-tape-foreground dark:bg-tape/20 dark:text-tape",
+    tone: "bg-tape text-tape-foreground",
   },
-  used: { label: "invites.status.used", tone: "bg-success/15 text-foreground" },
+  used: {
+    label: "invites.status.used",
+    tone: "text-foreground ring-1 ring-tape-strong/50 ring-inset",
+  },
   revoked: { label: "invites.status.revoked", tone: "bg-muted text-muted-foreground" },
   expired: { label: "invites.status.expired", tone: "bg-muted text-muted-foreground" },
 };
@@ -240,7 +243,7 @@ function CreateInviteDialog({
                 htmlFor={`${ids}-${r}`}
                 className={cn(
                   "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 transition-colors hover:bg-accent/60",
-                  role === r && "border-tape-strong bg-tape/35 dark:bg-tape/12",
+                  role === r && "border-tape-strong bg-tape/40",
                 )}
               >
                 <RadioGroupItem id={`${ids}-${r}`} value={r} className="mt-0.5" />
@@ -280,7 +283,7 @@ function RevokeInviteDialog({ invite, onClose }: { invite: Invite | null; onClos
         <AlertDialogFooter>
           <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-destructive text-white hover:bg-destructive/90"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             disabled={revoke.isPending}
             onClick={(e) => {
               e.preventDefault();

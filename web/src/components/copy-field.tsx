@@ -47,7 +47,7 @@ export function CopyButton({
       className={cn("text-muted-foreground hover:text-foreground", className)}
     >
       {copied ? (
-        <CheckIcon className="text-success" aria-hidden="true" />
+        <CheckIcon className="text-foreground" aria-hidden="true" />
       ) : (
         <CopyIcon aria-hidden="true" />
       )}
@@ -80,7 +80,7 @@ export function CodeBlock({
       </div>
       <pre
         translate="no"
-        className="overflow-x-auto px-3 py-2.5 font-mono text-[0.78rem] leading-relaxed whitespace-pre text-foreground selection:bg-tape selection:text-tape-foreground"
+        className="overflow-x-auto px-3 py-2.5 font-mono text-[0.78rem] leading-relaxed whitespace-pre text-foreground selection:bg-primary selection:text-primary-foreground"
       >
         <code>{value}</code>
       </pre>

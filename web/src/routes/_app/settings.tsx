@@ -194,7 +194,7 @@ function Choice({
       lang={lang}
       className={cn(
         "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors hover:bg-accent/60",
-        checked && "border-tape-strong bg-tape/35 font-medium dark:bg-tape/12",
+        checked && "border-tape-strong bg-tape/40 font-medium",
       )}
     >
       <RadioGroupItem id={id} value={value} />
@@ -331,7 +331,7 @@ function SessionsSection() {
                   <p className="flex items-center gap-2 text-sm font-medium">
                     <span className="truncate">{device}</span>
                     {s.current ? (
-                      <span className="shrink-0 rounded-[3px] bg-tape px-1.5 py-px text-[0.7rem] font-semibold text-tape-foreground dark:bg-tape/20 dark:text-tape">
+                      <span className="shrink-0 rounded-[3px] bg-tape px-1.5 py-px text-[0.7rem] font-semibold text-tape-foreground">
                         {t("account.thisDevice")}
                       </span>
                     ) : null}

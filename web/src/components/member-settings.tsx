@@ -309,7 +309,7 @@ function DeliveryOption({
       htmlFor={id}
       className={cn(
         "flex cursor-pointer items-start gap-2.5 border-b px-3 py-2 transition-colors last:border-b-0 hover:bg-accent/50",
-        selected && "bg-tape/25 hover:bg-tape/30 dark:bg-tape/10",
+        selected && "bg-tape/40 hover:bg-tape/50",
       )}
     >
       <RadioGroupItem id={id} value={mode} className="mt-0.5" aria-describedby={`${id}-hint`} />
@@ -386,7 +386,7 @@ function KeywordsBody({
           {list.map((k) => (
             <li
               key={k}
-              className="inline-flex max-w-full items-center gap-0.5 rounded-sm border border-tape-strong/70 bg-tape/30 py-0.5 pr-0.5 pl-2 font-mono text-xs dark:bg-tape/10"
+              className="inline-flex max-w-full items-center gap-0.5 rounded-sm border border-tape-strong/70 bg-tape/40 py-0.5 pr-0.5 pl-2 font-mono text-xs"
             >
               <span className="truncate">{k}</span>
               <button
