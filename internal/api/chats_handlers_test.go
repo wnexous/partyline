@@ -13,7 +13,9 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// Auth matrix of the chat routes: viewer is the connector's use grantee.
+// Auth matrix of the chat routes that are left (the list of a connection's chats and its refresh):
+// viewer is the connector's use grantee. Routing a chat to an agent and the list of every usable chat
+// are retired (retired_routes_test.go).
 func TestChatRoutesAuthMatrix(t *testing.T) {
 	fake := connectortest.New()
 	m := newMatrix(t, testkit.WithConnectorKinds(fake.Kind()))
@@ -31,36 +33,8 @@ func TestChatRoutesAuthMatrix(t *testing.T) {
 		{"refresh chats", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
 			return c.Post("/api/v1/connectors/"+res["connector"]+"/chats/refresh", nil)
 		}, statuses(204, 403, 404, 404, 404)},
-		// Routing a chat puts it in a room as a member, which no conversation accepts any more
-		// (CID-19): whoever may use the connection is refused alike, and everyone else still
-		// cannot see the chat. The feature goes with T34.
-		{"route chat", func(t *testing.T, m *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			agent := registerAgent(t, m.env, c, "helper")
-			return c.Post("/api/v1/chats/"+res["chat"]+"/route", dto.RouteChatRequest{AgentID: agent})
-		}, statuses(422, 422, 404, 404, 404)},
 	}
 	m.run(t, setup, routes)
-
-	// GET /chats: owner and grantee see the chat, nobody else does.
-	res := setup(t, m)
-	for _, role := range matrixRoles {
-		list := testkit.Decode[dto.List[dto.Chat]](m.as(t, role).Get("/api/v1/chats").RequireStatus(http.StatusOK))
-		var ids []string
-		for _, c := range list.Items {
-			if c.ID == res["chat"] {
-				ids = append(ids, c.ID)
-				require.Equal(t, res["connector"], c.ConnectorID)
-				require.Equal(t, connectortest.KindName, c.ConnectorKind)
-				require.Equal(t, "wa", c.ConnectorName)
-				require.Equal(t, "Support group", c.Title)
-			}
-		}
-		if role == roleOwner || role == roleViewer {
-			require.Len(t, ids, 1, string(role))
-		} else {
-			require.Empty(t, ids, string(role))
-		}
-	}
 }
 
 // CON-09: refresh records the chats the platform lists; it needs a running connector of
@@ -111,25 +85,4 @@ func TestRefreshChatsPlatformFailure(t *testing.T) {
 	require.Equal(t, "the platform did not answer the request", apiErr.Message)
 	require.NotContains(t, resp.String(), "internal page")
 	require.NotContains(t, resp.String(), "10.0.0.5")
-}
-
-// CID-19: routing a chat to an agent used to make a private room with the chat and the agent as
-// members; a chat is no member of any conversation now, so the request is refused with 422
-// chats_not_members and no room is left behind. The checks before it keep their answers: an agent id
-// is required, and the caller must be allowed to use the agent. (The route itself is retired by T34.)
-func TestRouteChatIsRefusedBecauseChatsAreNeverMembers(t *testing.T) {
-	fake := connectortest.New()
-	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()))
-	alice := env.NewUser("alice")
-	bob := env.NewUser("bob")
-	c := createFake(alice, "wa", false)
-	chat := insertChat(t, env, c.ID, "120363000000000001@g.us", "Support group")
-	agent := registerAgent(t, env, alice, "helper")
-
-	alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-	bobsAgent := registerAgent(t, env, bob, "other")
-	alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: bobsAgent}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-
-	alice.Post("/api/v1/chats/"+chat+"/route", dto.RouteChatRequest{AgentID: agent}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeChatsNotMembers)
-	require.Empty(t, testkit.Decode[dto.List[dto.Room]](alice.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items, "no room is left behind")
 }

@@ -10,8 +10,6 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-const noBroadcastWarning = "not sent to any chat: this room only answers explicit chats (use reply or chat_ids)"
-
 func getRoom(c *testkit.Client, id string) dto.Room {
 	return testkit.Decode[dto.Room](c.Get("/api/v1/rooms/" + id).RequireStatus(http.StatusOK))
 }
@@ -72,44 +70,4 @@ func TestBroadcastStaysOffAfterCatchAllIsCleared(t *testing.T) {
 	require.False(t, cleared.CatchAll)
 	require.False(t, cleared.Broadcast, "clearing the catch-all leaves broadcast off")
 	require.False(t, cleared.BridgeChats)
-}
-
-// ROUTE-06 (HTTP): in a room with broadcast off, user and agent posts without recipients are
-// stored, pushed to the agent and queued to no chat, and the response carries the warning;
-// replies (agent reply tool or reply_to) go to the replied chat; explicit recipients work.
-// History does not repeat the warning.
-func TestNoBroadcastRoomPosts(t *testing.T) {
-	f := newAgentRoom(t)
-	family := f.chatMember(t, "Family")
-	f.chatMember(t, "Work")
-	f.alice.Patch("/api/v1/rooms/"+f.room.ID, dto.UpdateRoomRequest{Broadcast: ptr(false)}).RequireStatus(http.StatusOK)
-	conn := f.dial(t)
-	conn.Welcome(wsWait)
-
-	fromUser := f.post(f.alice, "hello everyone")
-	require.Empty(t, outboxChatIDs(fromUser), "queued to no chat")
-	require.Equal(t, noBroadcastWarning, fromUser.Warning)
-	require.Equal(t, fromUser.ID, conn.Message(wsWait).Message.ID, "agents still get it")
-
-	fromAgent := testkit.Decode[dto.Message](f.rest().Post(agentRoomPath(f.room.ID, "/messages"), dto.PostMessageRequest{Text: "hi all"}).RequireStatus(http.StatusCreated))
-	require.Empty(t, outboxChatIDs(fromAgent))
-	require.Equal(t, noBroadcastWarning, fromAgent.Warning)
-
-	target := f.postFromChat(t, family, "can you help?")
-	require.Equal(t, target.ID, conn.Message(wsWait).Message.ID)
-	reply := testkit.Decode[dto.Message](f.rest().Post("/api/v1/agent/messages/"+target.ID+"/reply", dto.ReplyRequest{Text: "sure"}).RequireStatus(http.StatusCreated))
-	require.Equal(t, []string{family}, outboxChatIDs(reply))
-	require.Empty(t, reply.Warning)
-	userReply := testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+f.room.ID+"/messages", dto.PostMessageRequest{Text: "me too", ReplyTo: target.ID}).RequireStatus(http.StatusCreated))
-	require.Equal(t, []string{family}, outboxChatIDs(userReply))
-	require.Empty(t, userReply.Warning)
-	explicit := testkit.Decode[dto.Message](f.rest().Post(agentRoomPath(f.room.ID, "/messages"), dto.PostMessageRequest{Text: "only family", Recipients: []string{family}}).RequireStatus(http.StatusCreated))
-	require.Equal(t, []string{family}, outboxChatIDs(explicit))
-	require.Empty(t, explicit.Warning)
-
-	page := testkit.Decode[dto.Page[dto.Message]](f.alice.Get("/api/v1/rooms/" + f.room.ID + "/messages").RequireStatus(http.StatusOK))
-	require.Len(t, page.Items, 6, "every post is stored")
-	for _, m := range page.Items {
-		require.Empty(t, m.Warning, "the warning answers the post only")
-	}
 }

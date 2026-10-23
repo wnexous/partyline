@@ -14,7 +14,6 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/platform"
-	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -41,8 +40,6 @@ type ServiceDeps struct {
 	Bus    *events.Bus
 	Box    *secrets.Box
 	Kinds  *Registry
-	// Rooms creates the room of RouteChat.
-	Rooms *rooms.Service
 	// Queue hands the items of a connection to its new operator (CID-05).
 	Queue *platform.Queue
 	// Runner is told about created, changed and deleted connectors; nil runs nothing.
@@ -307,15 +304,6 @@ func (s *Service) attachOperators(ctx context.Context, views []View) error {
 		views[i].Operator, views[i].HasOperator = byID[views[i].OperatorIid.String], true
 	}
 	return nil
-}
-
-// operatorID is the intelligence a connector's messages are attributed to in the rooms the
-// retired bridges still hold: its operator, else its owner.
-func operatorID(c db.Connector) string {
-	if c.OperatorIid.Valid {
-		return c.OperatorIid.String
-	}
-	return c.OwnerID
 }
 
 func (s *Service) view(c db.Connector, ownerUsername, ownerDisplay string, l access.Level) (View, error) {

@@ -178,12 +178,12 @@ func TestAIDMValidation(t *testing.T) {
 		sendDM(f.aliceAI, "@alice", " ").RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 	}
 
-	// A post the room refuses after the DM was created (a chat id that is no chat of a new DM)
-	// leaves no empty DM behind.
-	e := f.aliceAI.Post("/api/v1/agent/dms", dto.AgentDMRequest{To: "@alice", Text: "hi", ChatIDs: []string{"no-such-chat"}}).
-		RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-	require.Contains(t, e.Fields, "recipients")
+	// A post the room fails after the DM was created (here the store refuses the message) leaves no
+	// empty DM behind.
+	dropTrigger := forceFailure(t, f.env, "CREATE TRIGGER forced_failure BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'forced failure'); END")
+	f.aliceAI.Post("/api/v1/agent/dms", dto.AgentDMRequest{To: "@alice", Text: "hi"}).RequireError(http.StatusInternalServerError, dto.ErrorCodeInternal)
 	require.Empty(t, conversationsOf(t, f.alice), "no empty DM was left")
+	dropTrigger("DROP TRIGGER forced_failure")
 	ok := testkit.Decode[dto.Message](f.aliceAI.Post("/api/v1/agent/dms", dto.AgentDMRequest{To: "@alice", Text: "fine"}).RequireStatus(http.StatusCreated))
 	require.NotEmpty(t, ok.RoomID)
 	require.Len(t, conversationsOf(t, f.alice), 1)

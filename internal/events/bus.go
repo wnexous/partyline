@@ -64,15 +64,6 @@ type ConnectorsOrphaned struct{ IDs []string }
 // ChatDiscovered reports that a connector saw a chat for the first time or refreshed it.
 type ChatDiscovered struct{ ConnectorID, ChatID string }
 
-// OutboxChanged reports that an outbound delivery changed status.
-type OutboxChanged struct {
-	OutboxID  string
-	MessageID string
-	RoomID    string
-	ChatID    string
-	Status    string
-}
-
 // PlatformQueued reports that an item joined the platform queue of an AI: the AI's live session
 // should read it. Seq is the item's position in the queue, so a session can skip an item it
 // already sent (CID-08). ItemID is empty when several items were handed to the AI at once.
@@ -122,7 +113,6 @@ func (AgentPresence) isEvent()       {}
 func (ConnectorStatus) isEvent()     {}
 func (ConnectorsOrphaned) isEvent()  {}
 func (ChatDiscovered) isEvent()      {}
-func (OutboxChanged) isEvent()       {}
 func (PlatformQueued) isEvent()      {}
 func (IdentityLinked) isEvent()      {}
 func (SessionsRevoked) isEvent()     {}

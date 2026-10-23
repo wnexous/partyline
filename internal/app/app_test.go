@@ -15,8 +15,6 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/config"
-	"github.com/wnexous/partyline/internal/delivery"
-	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -73,60 +71,6 @@ func TestHealthAndReadiness(t *testing.T) {
 func TestLiveSessionCheckDefaultsToOneMinute(t *testing.T) {
 	a := newApp(t)
 	require.Equal(t, time.Minute, a.Live.SessionCheckInterval())
-}
-
-type recordingSender struct{ sent chan delivery.Delivery }
-
-func (s recordingSender) Send(_ context.Context, d delivery.Delivery) (string, error) {
-	s.sent <- d
-	return "ext-1", nil
-}
-
-// DLV-07: a started app runs the outbox worker with the configured sender, and Shutdown
-// stops it.
-func TestStartRunsOutboxWorker(t *testing.T) {
-	env := map[string]string{"PARTYLINE_DATA_DIR": t.TempDir()}
-	cfg, err := config.Load(func(k string) string { return env[k] })
-	require.NoError(t, err)
-	sender := recordingSender{sent: make(chan delivery.Delivery, 1)}
-	a, err := New(cfg, Options{Logger: slog.New(slog.NewTextHandler(t.Output(), nil)), Sender: sender})
-	require.NoError(t, err)
-	ctx := context.Background()
-	require.NoError(t, a.Start(ctx))
-
-	now := time.Now().UnixMilli() // recent, so the retention job started with the app keeps it
-	ids := map[string]string{"user": store.NewID(), "room": store.NewID(), "conn": store.NewID(), "chat": store.NewID(), "msg": store.NewID(), "out": store.NewID()}
-	require.NoError(t, a.Store.WithTx(ctx, func(q *db.Queries) error {
-		if err := q.CreateUser(ctx, db.CreateUserParams{ID: ids["user"], Username: "alice", PasswordHash: "x", Role: "member"}); err != nil {
-			return err
-		}
-		if err := q.CreateRoom(ctx, db.CreateRoomParams{ID: ids["room"], OwnerID: ids["user"], Name: "ops", RetentionDays: 90, CreatedAt: now, UpdatedAt: now}); err != nil {
-			return err
-		}
-		if err := q.CreateConnector(ctx, db.CreateConnectorParams{ID: ids["conn"], OwnerID: ids["user"], Kind: "telegram", Name: "tg"}); err != nil {
-			return err
-		}
-		if err := q.CreateChat(ctx, db.CreateChatParams{ID: ids["chat"], ConnectorID: ids["conn"], ExternalID: "x", Title: "g", Kind: "group"}); err != nil {
-			return err
-		}
-		if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{ID: store.NewID(), RoomID: ids["room"], Kind: "chat", MemberID: ids["chat"], Outbound: true, CreatedAt: now}); err != nil {
-			return err
-		}
-		if err := q.CreateMessage(ctx, db.CreateMessageParams{ID: ids["msg"], RoomID: ids["room"], Seq: 1, AuthorKind: "user", AuthorID: ids["user"], Kind: "text", Text: "hi", CreatedAt: now}); err != nil {
-			return err
-		}
-		return q.CreateOutbox(ctx, db.CreateOutboxParams{ID: ids["out"], MessageID: ids["msg"], ChatID: ids["chat"], NextAttemptAt: now, UpdatedAt: now})
-	}))
-	a.Bus.Publish(events.MessageCreated{RoomID: ids["room"], MessageID: ids["msg"], Seq: 1})
-
-	select {
-	case d := <-sender.sent:
-		require.Equal(t, ids["out"], d.OutboxID)
-		require.Equal(t, ids["chat"], d.ChatID)
-	case <-time.After(jobDeadline):
-		t.Fatal("outbox entry was not sent")
-	}
-	require.NoError(t, a.Shutdown(ctx))
 }
 
 // OPS-02: the retention job runs once when the app starts.

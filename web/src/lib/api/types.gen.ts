@@ -280,7 +280,7 @@ export interface AgentPending {
 /**
  * AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its
  * owner can see, opening the DM when there is none. To is the target's "@handle", handle or id;
- * ChatIDs reach chats of the DM like the recipients of a post.
+ * ChatIDs, sent by v0.4 CLIs, are accepted and ignored: a DM sends nothing to a chat (CID-22).
  */
 export interface AgentDMRequest {
   to: string;
@@ -324,8 +324,9 @@ export const PasswordMinLength = 10;
  */
 export const MaxTextLength = 16000;
 /**
- * MaxMessageRecipients is the most distinct chats one post may name in recipients
- * (chat_ids in the channel) (ROUTE-10).
+ * MaxMessageRecipients was the most distinct chats one post could name in recipients
+ * (ROUTE-10). A room sends to no chat any more (CID-22) and recipients are ignored, so nothing
+ * enforces it; it stays only until the web app has dropped its picker, and goes with T35.
  */
 export const MaxMessageRecipients = 10;
 /**
@@ -842,13 +843,6 @@ export interface ChatRef {
   title: string;
   kind: ChatKind;
   platform: string;
-}
-/**
- * RouteChatRequest is the body of POST /chats/{id}/route; the response is the new private Room
- * with the chat and the agent as members (UI-13).
- */
-export interface RouteChatRequest {
-  agent_id: string;
 }
 /**
  * Identity is a chat account verified as belonging to the current user (GET /identities).
@@ -1961,25 +1955,23 @@ export interface Message {
   kind: MessageKind;
   text: string;
   reply_to?: string; // message id
-  recipients?: string[]; // explicit chat member ids (DLV-04)
+  /**
+   * Recipients are the chats a message posted before the connection proxy named (DLV-04); a
+   * message posted since names none, because a room sends to no chat (CID-22).
+   */
+  recipients?: string[];
   external_id?: string;
   /**
    * Chat is the chat a chat-authored message came from; absent for other authors (CTX-01).
    */
   chat?: ChatRef;
   attachments: Attachment[];
+  /**
+   * Outbox is never filled any more: a room sends to no chat (CID-22). The field goes with T35.
+   */
   outbox?: OutboxItem[];
   created_at: string /* RFC 3339 */;
-  /**
-   * Warning is set on post responses only, e.g. NoBroadcastWarning (ROUTE-06).
-   */
-  warning?: string;
 }
-/**
- * NoBroadcastWarning answers a post without recipients in a room with broadcast off: it is
- * stored and reaches the agents, but no chat (ROUTE-06).
- */
-export const NoBroadcastWarning = "not sent to any chat: this room only answers explicit chats (use reply or chat_ids)";
 /**
  * PostMessageRequest is the body of POST /rooms/{id}/messages (JSON), or the JSON of the
  * "message" part of a multipart upload whose files are sent as "file" parts.
@@ -1987,7 +1979,10 @@ export const NoBroadcastWarning = "not sent to any chat: this room only answers 
 export interface PostMessageRequest {
   text: string;
   reply_to?: string;
-  recipients?: string[]; // chat member ids; empty = every chat with outbound on
+  /**
+   * Recipients, sent by v0.4 CLIs, is accepted and ignored: a room sends to no chat (CID-22).
+   */
+  recipients?: string[];
 }
 /**
  * AttachmentStatus is the storage state of an attachment.

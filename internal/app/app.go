@@ -53,11 +53,8 @@ type Options struct {
 	// LiveSessionCheck is how often live sockets re-check their session; defaults to
 	// live.DefaultSessionCheckInterval. Tests shorten it.
 	LiveSessionCheck time.Duration
-	// Sender delivers outbox entries to external chats; nil uses the connectors' sender.
-	Sender delivery.Sender
-	// DisableOutbox keeps the outbox worker and the worker that retries the sends of AIs
-	// through their connections from running, so entries stay pending (tests that inspect
-	// queued deliveries).
+	// DisableOutbox keeps the worker that retries the sends of AIs through their connections
+	// from running, so a send that failed stays pending (tests that inspect them).
 	DisableOutbox bool
 	// ConnectorKinds are the supported connector kinds; nil means BuiltinKinds().
 	ConnectorKinds []connectors.Kind
@@ -114,10 +111,8 @@ type App struct {
 
 	handler http.Handler
 	ready   atomic.Bool
-	sender  delivery.Sender
 	// sendWorker is whether Start runs the worker that retries the sends of Sends.
 	sendWorker bool
-	now        func() time.Time
 
 	stop context.CancelFunc
 	bg   sync.WaitGroup
@@ -170,7 +165,6 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Blobs:         blobs,
 		Platform:      platform.New(platform.Deps{Store: st, Bus: bus, Now: opts.Now}),
 		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Blobs: blobs, Online: presence.Online, Now: opts.Now}),
-		now:           opts.Now,
 	}
 	a.Presence = presence
 	auditLog := audit.New(st, opts.Now)
@@ -208,16 +202,12 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		PrivateAllowlist: cfg.PrivateNetworkAllowlist, MaxMediaBytes: cfg.MaxUploadBytes, Replays: connectors.NewReplays(st),
 		Inbound: pipeline.Handle, MigrateChat: pipeline.MigrateChat,
 	})
-	a.sender = opts.Sender
-	if a.sender == nil && !opts.DisableOutbox {
-		a.sender = connectors.NewSender(st, a.Rooms, blobs, a.ConnectorManager, sentIDs, cfg.PublicURL)
-	}
 	a.Sends = connectors.NewSends(connectors.SendsDeps{
 		Store: st, Transport: a.ConnectorManager, Sent: sentIDs, Now: opts.Now, Logger: opts.Logger,
 	})
 	a.sendWorker = !opts.DisableOutbox
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{
-		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Rooms: a.Rooms, Queue: a.Platform, Runner: a.ConnectorManager, Now: opts.Now,
+		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Queue: a.Platform, Runner: a.ConnectorManager, Now: opts.Now,
 	})
 	a.Live = live.New(live.Deps{
 		Bus: bus, Access: az, Rooms: a.Rooms, Intelligences: a.Intelligences, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
@@ -271,12 +261,6 @@ func (a *App) Start(ctx context.Context) error {
 	}
 	bg, stop := context.WithCancel(context.WithoutCancel(ctx))
 	a.stop = stop
-	if a.sender != nil {
-		w := delivery.NewOutboxWorker(delivery.OutboxOptions{
-			Store: a.Store, Bus: a.Bus, Sender: a.sender, Now: a.now, Logger: a.Logger,
-		})
-		a.background(bg, "outbox", w.Run)
-	}
 	dispatcher := delivery.NewAgentDispatcher(delivery.DispatcherOptions{
 		Store: a.Store, Bus: a.Bus, Agents: a.Gateway, Load: a.Gateway.Message, Logger: a.Logger,
 	})

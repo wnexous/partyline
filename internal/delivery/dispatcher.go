@@ -3,7 +3,6 @@ package delivery
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"log/slog"
 
@@ -104,18 +103,14 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 	members := make([]Member, len(rows))
 	memberRows := map[string]db.RoomMember{} // agent rows by id
 	for i, r := range rows {
-		members[i] = Member{Kind: dto.MemberKind(r.RoomMember.Kind), ID: r.RoomMember.MemberID, Outbound: r.RoomMember.Outbound}
+		members[i] = Member{Kind: dto.MemberKind(r.RoomMember.Kind), ID: r.RoomMember.MemberID}
 		if r.RoomMember.Kind == string(dto.MemberKindAgent) {
 			memberRows[r.RoomMember.MemberID] = r.RoomMember
 		}
 	}
-	var recipients []string
-	_ = json.Unmarshal([]byte(view.RecipientsJson), &recipients)
-	draft := Draft{AuthorKind: dto.AuthorKind(view.AuthorKind), AuthorID: view.AuthorID, Recipients: recipients}
-	targets := Plan(RoomState{BridgeChats: room.BridgeChats}, members, draft)
 
 	var pushes []string
-	for _, id := range targets.AgentIDs {
+	for _, id := range Plan(members, Draft{AuthorKind: dto.AuthorKind(view.AuthorKind), AuthorID: view.AuthorID}) {
 		if d.o.Agents.Online(id) {
 			pushes = append(pushes, id)
 		}

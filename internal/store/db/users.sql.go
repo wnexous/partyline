@@ -205,20 +205,6 @@ func (q *Queries) SetUserLocale(ctx context.Context, arg SetUserLocaleParams) er
 	return err
 }
 
-const setUserNotifyChat = `-- name: SetUserNotifyChat :exec
-UPDATE users SET notify_chat_id = ? WHERE id = ?
-`
-
-type SetUserNotifyChatParams struct {
-	NotifyChatID sql.NullString
-	ID           string
-}
-
-func (q *Queries) SetUserNotifyChat(ctx context.Context, arg SetUserNotifyChatParams) error {
-	_, err := q.db.ExecContext(ctx, setUserNotifyChat, arg.NotifyChatID, arg.ID)
-	return err
-}
-
 const updateUserPassword = `-- name: UpdateUserPassword :exec
 UPDATE users SET password_hash = ? WHERE id = ?
 `

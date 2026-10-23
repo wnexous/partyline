@@ -8,8 +8,8 @@ import (
 // SentIDs remembers, for a few minutes, the ids the platforms gave to the messages Partyline
 // sent, every part and file of a send: a platform that reports an account's own messages
 // (WhatsApp, Discord) echoes each of them back, and the echo must not be taken for something the
-// operator typed (ACC-05). The outbox keeps only the id of the first part, and loses these on a
-// restart, which an echo seconds later does not outlive.
+// operator typed (ACC-05). The record of a send keeps only the id of the first part, and these are
+// lost on a restart, which an echo seconds later does not outlive.
 type SentIDs struct {
 	mu  sync.Mutex
 	ids map[sentKey]time.Time

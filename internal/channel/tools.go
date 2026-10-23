@@ -138,14 +138,9 @@ func roomPath(room string, suffix string) string {
 	return "agent/rooms/" + url.PathEscape(room) + suffix
 }
 
-// sent is the result of a post; it adds the server's warning, such as a post that reached no
-// chat because the room does not broadcast (ROUTE-06).
+// sent is the result of a post.
 func sent(m dto.Message) string {
-	out := "sent (message_id " + m.ID + ")"
-	if m.Warning != "" {
-		out += "; " + m.Warning
-	}
-	return out
+	return "sent (message_id " + m.ID + ")"
 }
 
 func (t *tools) reply(ctx context.Context, args json.RawMessage) (string, error) {

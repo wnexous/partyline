@@ -28,14 +28,6 @@ func (f *agentRoom) chatMember(t *testing.T, title string) string {
 	return chat
 }
 
-func outboxChatIDs(m dto.Message) []string {
-	ids := []string{}
-	for _, o := range m.Outbox {
-		ids = append(ids, o.ChatID)
-	}
-	return ids
-}
-
 // TOK-03: agent tokens reach only agent routes; sessions and user tokens never reach them.
 func TestAgentAndUserRoutesAreSeparated(t *testing.T) {
 	f := newAgentRoom(t)
@@ -94,23 +86,20 @@ func TestAgentRoomsListsMembersWithPresence(t *testing.T) {
 	require.Equal(t, map[string]bool{"builder@alice": true, "helper@bobby": false}, online)
 }
 
-// TOOL-03: the agent posts by room id or name, optionally limited to chat members.
+// TOOL-03: the agent posts by room id or name.
 func TestAgentPostsByIDOrName(t *testing.T) {
 	f := newAgentRoom(t)
-	family, work := f.chatMember(t, "Family"), f.chatMember(t, "Work")
 
 	m := testkit.Decode[dto.Message](f.rest().Post(agentRoomPath(f.room.ID, "/messages"), dto.PostMessageRequest{Text: "by id"}).RequireStatus(http.StatusCreated))
 	require.Equal(t, f.room.ID, m.RoomID)
 	require.Equal(t, dto.AuthorKindAgent, m.AuthorKind)
 	require.Equal(t, f.agentID, m.AuthorID)
 	require.Equal(t, f.alice.User.ID, m.AuthorUserID)
-	require.ElementsMatch(t, []string{family, work}, outboxChatIDs(m))
 
 	for _, ref := range []string{"Support", "support"} {
-		m = testkit.Decode[dto.Message](f.rest().Post(agentRoomPath(ref, "/messages"), dto.PostMessageRequest{Text: "by name", Recipients: []string{work}}).RequireStatus(http.StatusCreated))
+		m = testkit.Decode[dto.Message](f.rest().Post(agentRoomPath(ref, "/messages"), dto.PostMessageRequest{Text: "by name"}).RequireStatus(http.StatusCreated))
 		require.Equal(t, f.room.ID, m.RoomID)
-		require.Equal(t, []string{work}, m.Recipients)
-		require.Equal(t, []string{work}, outboxChatIDs(m))
+		require.Equal(t, "by name", m.Text)
 	}
 }
 
@@ -173,10 +162,11 @@ func TestAgentHistory(t *testing.T) {
 	f.rest().Get(agentRoomPath(f.room.ID, "/messages?before="+stranger.ID)).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 }
 
-// TOOL-02: a reply sets reply_to; replying to a chat message goes to that chat only.
+// TOOL-02: a reply sets reply_to, whoever wrote the replied message. A reply to a chat message (history)
+// goes to no chat any more: a room sends nothing to a platform (CID-22).
 func TestAgentReply(t *testing.T) {
 	f := newAgentRoom(t)
-	family, work := f.chatMember(t, "Family"), f.chatMember(t, "Work")
+	family := f.chatMember(t, "Family")
 	fromChat, err := f.env.App.Rooms.PostFromChat(context.Background(), f.room.ID, rooms.ChatMessage{
 		ChatID: family, SenderID: "5511999990000", SenderName: "Grandma", ExternalID: "ext-1", Text: "dinner?",
 	})
@@ -186,14 +176,14 @@ func TestAgentReply(t *testing.T) {
 	require.Equal(t, fromChat.ID, r.ReplyTo)
 	require.Equal(t, f.room.ID, r.RoomID)
 	require.Equal(t, f.agentID, r.AuthorID)
-	require.Equal(t, []string{family}, r.Recipients)
-	require.Equal(t, []string{family}, outboxChatIDs(r))
+	require.Empty(t, r.Recipients)
+	require.Empty(t, r.Outbox)
 
 	fromUser := f.post(f.alice, "status?")
 	r = testkit.Decode[dto.Message](f.rest().Post("/api/v1/agent/messages/"+fromUser.ID+"/reply", dto.ReplyRequest{Text: "all green"}).RequireStatus(http.StatusCreated))
 	require.Equal(t, fromUser.ID, r.ReplyTo)
 	require.Empty(t, r.Recipients)
-	require.ElementsMatch(t, []string{family, work}, outboxChatIDs(r))
+	require.Empty(t, r.Outbox)
 
 	other := createRoom(f.alice, "Private")
 	elsewhere := testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+other.ID+"/messages", dto.PostMessageRequest{Text: "x"}).RequireStatus(http.StatusCreated))

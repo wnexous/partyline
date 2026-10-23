@@ -289,7 +289,7 @@ func TestManagerResetsBackoffAfterConnecting(t *testing.T) {
 	require.Equal(t, []time.Duration{2 * time.Second, 4 * time.Second, 2 * time.Second}, f.waits.waitFor(t, 3))
 }
 
-// Send errors are redacted before they reach the outbox (which stores them).
+// Send errors are redacted before they reach the record of the send (which stores them).
 func TestManagerRedactsSendErrors(t *testing.T) {
 	f := newManagerFixture(t)
 	f.m.Start(context.Background())

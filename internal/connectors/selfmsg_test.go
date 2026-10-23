@@ -12,7 +12,6 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
-	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -104,120 +103,32 @@ func TestOwnTypingMediaIsStoredOnce(t *testing.T) {
 	require.Equal(t, int32(1), opened.Load(), "a repeat downloads nothing (CON-10)")
 }
 
-// CID-14: what Partyline sent comes back from the platform as a message of the account itself;
-// it is not delivered. A message of the account with another id is.
-func TestEchoOfAPartylineSendIsDropped(t *testing.T) {
-	e := newOutboundEnv(t)
-	reply := e.agentPost(t, e.room.ID, "on its way")
-	require.Equal(t, "on its way", e.inst.WaitSend(t).Text)
-	e.outbox(t, reply.ID, func(o dto.OutboxItem) bool { return o.Status == dto.OutboxStatusSent })
-
-	e.emit(own(groupID, "ext-1", "on its way"))
-	require.Empty(t, e.queued(t), "the echo is dropped")
-
-	e.emit(own(groupID, "ext-2", "on its way"))
-	require.Equal(t, []string{"on its way"}, texts(e.queued(t)), "an id Partyline did not send is the account's own typing")
-	require.True(t, e.queued(t)[0].FromSelf)
-}
-
-// CID-14: the outbox records the first id of a send, which is enough to recognize its echo when
-// the connector reports nothing else, also after Partyline forgot what it sent.
-func TestEchoIsRecognizedFromTheOutboxAlone(t *testing.T) {
-	e := newOutboundEnv(t)
-	e.inst.QuietSends()
-	reply := e.agentPost(t, e.room.ID, "on its way")
-	e.inst.WaitSend(t)
-	e.outbox(t, reply.ID, func(o dto.OutboxItem) bool { return o.Status == dto.OutboxStatusSent })
-
-	e.emit(own(groupID, "ext-1", "on its way"))
-	require.Empty(t, e.queued(t), "the outbox knows ext-1")
-	e.emit(own(groupID, "ext-2", "typed"))
-	require.Equal(t, []string{"typed"}, texts(e.queued(t)))
-}
-
-// CID-14: an id belongs to the chat it was sent to; the same id in another chat is a different
-// message.
+// CID-14: an id belongs to the chat it was sent to, in Partyline's memory of the last minutes too;
+// the same id in another chat is a different message.
 func TestEchoIsMatchedInItsOwnChatOnly(t *testing.T) {
-	e := newOutboundEnv(t)
-	e.emit(text(otherID, "B0", "hello from B"))
-	e.drain(t)
-	reply := e.agentPost(t, e.room.ID, "on its way")
-	e.inst.WaitSend(t)
-	e.outbox(t, reply.ID, func(o dto.OutboxItem) bool { return o.Status == dto.OutboxStatusSent })
+	e := newInboundEnv(t)
+	e.connectionSend(t, e.dmChat(t, dmA), "on its way")
+	e.dmChat(t, dmB)
+	require.Equal(t, "on its way", e.inst.WaitSend(t).Text)
 
-	e.emit(own(otherID, "ext-1", "typed in B"))
+	e.emit(ownDM(dmB, "ext-1", "typed in B"))
 	require.Equal(t, []string{"typed in B"}, texts(e.queued(t)), "ext-1 was sent to chat A, not to chat B")
 }
 
-// CID-14: the echo can reach the pipeline while the platform call that created it is still
-// running, before the outbox row is marked sent. The message is held until the send ends, then
-// recognized and dropped.
-func TestEchoBeforeTheSendReturnsIsDropped(t *testing.T) {
-	e := newOutboundEnv(t)
-	e.inst.HoldSends()
-	reply := e.agentPost(t, e.room.ID, "on its way")
-	e.inst.WaitSending(t)
-
-	done := make(chan struct{})
-	go func() {
-		e.emit(own(groupID, "ext-1", "on its way"))
-		close(done)
-	}()
-	select {
-	case <-done:
-		t.Fatal("an own-account message was handled while a send to its chat was running")
-	case <-time.After(300 * time.Millisecond):
-	}
-
-	e.inst.ReleaseSends()
-	e.inst.WaitSend(t)
-	select {
-	case <-done:
-	case <-time.After(connectortest.Timeout):
-		t.Fatal("the held message was never handled")
-	}
-	e.outbox(t, reply.ID, func(o dto.OutboxItem) bool { return o.Status == dto.OutboxStatusSent })
-	require.Empty(t, e.queued(t), "recognized as the echo once the send ended")
-}
-
-// CID-14: a message typed on the phone while Partyline sends to the chat waits for the send and
-// is then delivered: only an echo is dropped.
-func TestTypedMessageDuringASendIsDeliveredAfterIt(t *testing.T) {
-	e := newOutboundEnv(t)
-	e.inst.HoldSends()
-	e.agentPost(t, e.room.ID, "on its way")
-	e.inst.WaitSending(t)
-
-	done := make(chan struct{})
-	go func() {
-		e.emit(own(groupID, "P1", "typed meanwhile"))
-		close(done)
-	}()
-	e.inst.ReleaseSends()
-	e.inst.WaitSend(t)
-	select {
-	case <-done:
-	case <-time.After(connectortest.Timeout):
-		t.Fatal("the held message was never handled")
-	}
-	require.Equal(t, []string{"typed meanwhile"}, texts(e.queued(t)))
-}
-
 // CID-14: a send that created several messages (the parts of a long text, its files) is echoed
-// once per message; the outbox keeps the first id only, and every one is dropped.
+// once per message; the record of the send keeps the first id only, and every one is dropped.
 func TestEchoOfEveryMessageOfASendIsDropped(t *testing.T) {
-	e := newOutboundEnv(t)
+	e := newInboundEnv(t)
 	e.inst.SetSendParts(2)
-	reply := e.agentPost(t, e.room.ID, "a long answer")
+	e.connectionSend(t, e.dmChat(t, dmA), "a long answer")
 	e.inst.WaitSend(t)
-	e.outbox(t, reply.ID, func(o dto.OutboxItem) bool { return o.Status == dto.OutboxStatusSent })
 
 	for _, id := range []string{"ext-1.p2", "ext-1", "ext-1.p1"} {
-		e.emit(own(groupID, id, "a long answer"))
+		e.emit(ownDM(dmA, id, "a long answer"))
 	}
 	require.Empty(t, e.queued(t), "every part's echo is dropped")
 
-	e.emit(own(groupID, "ext-1.p3", "typed"))
+	e.emit(ownDM(dmA, "ext-1.p3", "typed"))
 	require.Equal(t, []string{"typed"}, texts(e.queued(t)), "a part Partyline did not create is delivered")
 }
 
@@ -226,31 +137,36 @@ func TestEchoOfEveryMessageOfASendIsDropped(t *testing.T) {
 func TestAStuckSendHoldsAnOwnMessageForTenSecondsOnly(t *testing.T) {
 	clock := testkit.NewClock(time.Now())
 	var waited atomic.Int64
-	e := newOutboundEnv(t, testkit.WithClock(clock.Now), testkit.WithInboundWait(func(_ context.Context, d time.Duration) error {
+	e := newInboundEnv(t, testkit.WithClock(clock.Now), testkit.WithInboundWait(func(_ context.Context, d time.Duration) error {
 		waited.Add(int64(d))
 		clock.Advance(d)
 		return nil
 	}))
+	chat := e.dmChat(t, dmA)
+	waited.Store(0)
 	e.inst.HoldSends()
-	e.agentPost(t, e.room.ID, "never delivered")
+	sendDone := e.sendInBackground(chat, "never delivered")
 	e.inst.WaitSending(t)
 
-	e.emit(own(groupID, "P1", "typed on the phone"))
+	e.emit(ownDM(dmA, "P1", "typed on the phone"))
 
 	held := time.Duration(waited.Load())
 	require.GreaterOrEqual(t, held, 10*time.Second, "held for the whole limit")
 	require.Less(t, held, 11*time.Second, "and not longer")
 	require.Equal(t, []string{"typed on the phone"}, texts(e.queued(t)), "then delivered")
+
+	e.inst.ReleaseSends()
+	ended(t, sendDone)
 }
 
 // CID-14: a message of the account is not held when nothing is being sent to its chat.
 func TestOwnMessageIsNotHeldWithoutASend(t *testing.T) {
 	var waits atomic.Int32
-	e := newOutboundEnv(t, testkit.WithInboundWait(func(context.Context, time.Duration) error {
+	e := newInboundEnv(t, testkit.WithInboundWait(func(context.Context, time.Duration) error {
 		waits.Add(1)
 		return nil
 	}))
-	e.emit(own(groupID, "P1", "typed"))
+	e.emit(ownDM(dmA, "P1", "typed"))
 	require.Len(t, e.queued(t), 1)
 	require.Zero(t, waits.Load())
 }
@@ -272,8 +188,8 @@ func TestOwnAccountPairingCommandDoesNothing(t *testing.T) {
 	require.True(t, got[0].Trusted, "the code was still good for the person who typed it")
 }
 
-// Partyline remembers what it sent for a few minutes, for the parts of a send the outbox does not
-// record; it forgets later, and per chat.
+// Partyline remembers what it sent for a few minutes, for the parts of a send its record does not
+// hold; it forgets later, and per chat.
 func TestSentIDsRememberForAFewMinutesPerChat(t *testing.T) {
 	clock := testkit.NewClock(time.Now())
 	s := connectors.NewSentIDs(clock.Now)

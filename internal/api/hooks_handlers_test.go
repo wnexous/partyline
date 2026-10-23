@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -19,11 +18,12 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/audit"
+	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/connectors/webhook"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/platform"
-	"github.com/wnexous/partyline/internal/rooms"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -142,13 +142,6 @@ func (e *hookEnv) chats(t *testing.T) []dto.Chat {
 	return testkit.Decode[dto.List[dto.Chat]](e.alice.Get("/api/v1/connectors/" + e.conn.ID + "/chats").RequireStatus(http.StatusOK)).Items
 }
 
-func (e *hookEnv) roomWith(t *testing.T, chatID string) dto.Room {
-	t.Helper()
-	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "builds"}).RequireStatus(http.StatusCreated))
-	e.alice.SeedChatMember(room.ID, chatID, true)
-	return room
-}
-
 // queued returns the unacknowledged queue items of the AI, oldest first.
 func (e *hookEnv) queued(t *testing.T, ai string) []platform.Event {
 	t.Helper()
@@ -163,28 +156,6 @@ func (e *hookEnv) queued(t *testing.T, ai string) []platform.Event {
 func (e *hookEnv) deliverEverything(t *testing.T) {
 	t.Helper()
 	e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{GroupsMentionsOnly: ptr(false)}).RequireStatus(http.StatusOK)
-}
-
-// chatSays stores a message of the chat in the room, the history the retired inbound pipeline used
-// to leave there, and returns it as the room lists it.
-func (e *hookEnv) chatSays(t *testing.T, roomID, chatID, sender, id, body string) dto.Message {
-	t.Helper()
-	m, err := e.env.App.Rooms.PostFromChat(context.Background(), roomID, rooms.ChatMessage{
-		ChatID: chatID, SenderID: sender, SenderName: "CI", ExternalID: id, Kind: dto.MessageKindText, Text: body,
-	})
-	require.NoError(t, err)
-	for _, got := range e.messages(t, roomID) {
-		if got.ID == m.ID {
-			return got
-		}
-	}
-	t.Fatalf("message %s not in the room", m.ID)
-	return dto.Message{}
-}
-
-func (e *hookEnv) messages(t *testing.T, roomID string) []dto.Message {
-	t.Helper()
-	return testkit.Decode[dto.Page[dto.Message]](e.alice.Get("/api/v1/rooms/" + roomID + "/messages").RequireStatus(http.StatusOK)).Items
 }
 
 // The generated secret is shown once in the create response; reads mask it and report the
@@ -427,24 +398,40 @@ func TestWebhookRequestErrors(t *testing.T) {
 		RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
 
-// HOOK-03: room messages for a webhook chat are POSTed to the outbound URL, signed like
-// inbound requests, with expiring attachment links; a non-2xx answer is a failed attempt.
-func TestWebhookOutboundIsSignedWithAttachmentLinks(t *testing.T) {
-	e := newHookEnv(t)
-	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "deploys", "sender_id": "ci", "text": "hi", "message_id": "in-1"})).
-		RequireStatus(http.StatusAccepted)
-	room := e.roomWith(t, e.chats(t)[0].ID)
+// aiSends sends text to the chat through the connection as the AI that operates it, with the
+// agent API's connection route (CID-16).
+func (e *hookEnv) aiSends(t *testing.T, chatID, text string) *testkit.Response {
+	t.Helper()
+	ai := e.alice.Token(dto.TokenKindAgent, "laptop").AsAgent("hookbot")
+	return ai.Post("/api/v1/agent/connections/"+e.conn.ID+"/chats/"+chatID+"/messages", dto.SendToChatRequest{Text: text})
+}
 
-	var body bytes.Buffer
-	w := multipart.NewWriter(&body)
-	part, err := w.CreateFormField(dto.MultipartMessageField)
+// sendRow returns the stored state of the send with the id.
+func (e *hookEnv) sendRow(t *testing.T, id string) db.PlatformSend {
+	t.Helper()
+	row, err := e.env.App.Store.R().GetPlatformSend(context.Background(), id)
 	require.NoError(t, err)
-	require.NoError(t, json.NewEncoder(part).Encode(dto.PostMessageRequest{Text: "deploy now"}))
-	file, err := w.CreateFormFile(dto.MultipartFileField, "plan.txt")
-	require.NoError(t, err)
-	_, _ = file.Write([]byte("synthetic plan"))
-	require.NoError(t, w.Close())
-	msg := testkit.Decode[dto.Message](e.alice.DoRaw(http.MethodPost, "/api/v1/rooms/"+room.ID+"/messages", w.FormDataContentType(), &body).RequireStatus(http.StatusCreated))
+	return row
+}
+
+// hookChat records the webhook chat "deploys" by delivering a message to the connection and
+// returns the chat's id.
+func (e *hookEnv) hookChat(t *testing.T) string {
+	t.Helper()
+	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "deploys", "sender_id": "ci", "text": "hi"})).
+		RequireStatus(http.StatusAccepted)
+	return e.chats(t)[0].ID
+}
+
+// HOOK-03, CID-16: what the operator AI sends to a webhook chat is POSTed to the outbound URL, signed
+// like inbound requests; the payload names the chat and the connection, carries the text and the AI's
+// name as data, and belongs to no room.
+func TestWebhookOutboundIsSigned(t *testing.T) {
+	e := newHookEnv(t)
+	chat := e.hookChat(t)
+
+	res := testkit.Decode[dto.PlatformSendResult](e.aiSends(t, chat, "deploy now").RequireStatus(http.StatusCreated))
+	require.Equal(t, dto.PlatformSendStatusSent, res.Status)
 
 	call := e.out.next(t)
 	ts := call.Header.Get(webhook.TimestampHeader)
@@ -460,73 +447,61 @@ func TestWebhookOutboundIsSignedWithAttachmentLinks(t *testing.T) {
 			Text       string `json:"text"`
 			AuthorName string `json:"author_name"`
 		} `json:"message"`
-		Attachments []struct {
-			Name, Mime, URL string
-			Size            int64
-		} `json:"attachments"`
+		Attachments []any `json:"attachments"`
 	}
 	require.NoError(t, json.Unmarshal(call.Body, &got))
 	require.Equal(t, "message", got.Event)
 	require.Equal(t, e.conn.ID, got.ConnectorID)
 	require.Equal(t, "deploys", got.ChatID)
-	require.Equal(t, msg.ID, got.Message.ID)
-	require.Equal(t, room.ID, got.Message.RoomID)
+	require.Equal(t, res.ID, got.Message.ID)
+	require.Empty(t, got.Message.RoomID, "a send through a connection belongs to no room")
 	require.Equal(t, "deploy now", got.Message.Text)
-	require.Equal(t, msg.AuthorName, got.Message.AuthorName)
-	require.NotEmpty(t, got.Message.AuthorName)
-	require.Len(t, got.Attachments, 1)
-	require.Equal(t, "plan.txt", got.Attachments[0].Name)
-	require.Equal(t, int64(len("synthetic plan")), got.Attachments[0].Size)
+	require.Equal(t, "hookbot", got.Message.AuthorName)
+	require.Empty(t, got.Attachments)
+}
 
-	link := strings.TrimPrefix(got.Attachments[0].URL, e.env.App.Config.PublicURL.String())
-	require.True(t, strings.HasPrefix(link, "/api/v1/hooks/files/"), got.Attachments[0].URL)
+// HOOK-03: the expiring link the webhook connector puts in the outbound payload for a file serves the
+// file without a login and only while its signature is intact. (Rooms are the only place files
+// come from; a send through a connection carries none.)
+func TestWebhookFileLinkServesTheAttachmentWithoutALogin(t *testing.T) {
+	e := newHookEnv(t)
+	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "builds"}).RequireStatus(http.StatusCreated))
+	msg := testkit.Decode[dto.Message](postMultipart(e.alice, room.ID, dto.PostMessageRequest{Text: "the plan"}, upload{"plan.txt", "text/plain", "synthetic plan"}).RequireStatus(http.StatusCreated))
+	require.Len(t, msg.Attachments, 1)
+
+	links := connectors.NewFileLinks(e.env.App.Box, e.env.App.Store, e.env.App.Config.PublicURL, nil)
+	link := strings.TrimPrefix(links.URL(msg.Attachments[0].ID), e.env.App.Config.PublicURL.String())
+	require.True(t, strings.HasPrefix(link, "/api/v1/hooks/files/"), link)
 	require.Equal(t, "synthetic plan", string(e.env.Anon().Get(link).RequireStatus(http.StatusOK).Body), "the link works without a login")
 	e.env.Anon().Get(link[:len(link)-2]+"AA").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
 
+// HOOK-03, CID-18: a non-2xx answer is a failed attempt. The AI is told so right away, with the
+// reason, and the send waits for its retry.
 func TestWebhookOutboundFailureIsRetried(t *testing.T) {
 	e := newHookEnv(t)
 	e.out.mu.Lock()
 	e.out.status = http.StatusInternalServerError
 	e.out.mu.Unlock()
-	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "deploys", "sender_id": "ci", "text": "hi"})).
-		RequireStatus(http.StatusAccepted)
-	room := e.roomWith(t, e.chats(t)[0].ID)
-	msg := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "ping"}).RequireStatus(http.StatusCreated))
+	chat := e.hookChat(t)
+
+	res := testkit.Decode[dto.PlatformSendResult](e.aiSends(t, chat, "ping").RequireStatus(http.StatusAccepted))
 	e.out.next(t)
-
-	item := e.firstAttempt(t, room.ID, msg.ID)
-	require.Equal(t, dto.OutboxStatusPending, item.Status, "queued for a retry")
-	require.Equal(t, "outbound: status 500", item.LastError)
-}
-
-// firstAttempt waits until the message's single delivery made an attempt.
-func (e *hookEnv) firstAttempt(t *testing.T, roomID, messageID string) dto.OutboxItem {
-	t.Helper()
-	deadline := time.Now().Add(connectortest.Timeout)
-	for {
-		for _, m := range e.messages(t, roomID) {
-			if m.ID == messageID && len(m.Outbox) == 1 && m.Outbox[0].Attempts >= 1 {
-				return m.Outbox[0]
-			}
-		}
-		require.False(t, time.Now().After(deadline), "the failed attempt was never recorded")
-		time.Sleep(50 * time.Millisecond)
-	}
+	require.Equal(t, dto.PlatformSendStatusPending, res.Status, "queued for a retry")
+	require.Equal(t, "outbound: status 500", res.Error)
+	row := e.sendRow(t, res.ID)
+	require.Equal(t, []any{"pending", int64(1), "outbound: status 500"}, []any{row.Status, row.Attempts, row.LastError})
 }
 
 // CON-13: without PARTYLINE_ALLOW_PRIVATE_NETWORKS an outbound URL on a private address is
 // never called; the attempt fails with a short reason and is retried.
 func TestWebhookOutboundToPrivateAddressIsRefusedByDefault(t *testing.T) {
 	e := newHookEnv(t, testkit.WithEnv(map[string]string{"PARTYLINE_ALLOW_PRIVATE_NETWORKS": "false"}))
-	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "deploys", "sender_id": "ci", "text": "hi"})).
-		RequireStatus(http.StatusAccepted)
-	room := e.roomWith(t, e.chats(t)[0].ID)
-	msg := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "ping"}).RequireStatus(http.StatusCreated))
+	chat := e.hookChat(t)
 
-	item := e.firstAttempt(t, room.ID, msg.ID)
-	require.Equal(t, dto.OutboxStatusPending, item.Status)
-	require.Equal(t, "outbound: destination address not allowed", item.LastError)
+	res := testkit.Decode[dto.PlatformSendResult](e.aiSends(t, chat, "ping").RequireStatus(http.StatusAccepted))
+	require.Equal(t, dto.PlatformSendStatusPending, res.Status)
+	require.Equal(t, "outbound: destination address not allowed", res.Error)
 	select {
 	case <-e.out.calls:
 		t.Fatal("the private outbound URL was called")
@@ -543,14 +518,12 @@ func TestWebhookOutboundToAllowlistedPrivateAddress(t *testing.T) {
 		"PARTYLINE_ALLOW_PRIVATE_NETWORKS":    "false",
 		"PARTYLINE_PRIVATE_NETWORK_ALLOWLIST": strings.TrimPrefix(listed.srv.URL, "http://"),
 	}))
-	e.post(t, e.secret, time.Now(), payload(t, map[string]any{"chat_id": "deploys", "sender_id": "ci", "text": "hi"})).
-		RequireStatus(http.StatusAccepted)
-	room := e.roomWith(t, e.chats(t)[0].ID)
+	chat := e.hookChat(t)
 
 	e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{Config: map[string]any{"outbound_url": listed.srv.URL}}).
 		RequireStatus(http.StatusOK)
 	e.waitConnected(t)
-	e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "to the listed receiver"}).RequireStatus(http.StatusCreated)
+	e.aiSends(t, chat, "to the listed receiver").RequireStatus(http.StatusCreated)
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(listed.next(t).Body, &got))
 	require.Equal(t, "to the listed receiver", got["message"].(map[string]any)["text"])
@@ -558,9 +531,8 @@ func TestWebhookOutboundToAllowlistedPrivateAddress(t *testing.T) {
 	e.alice.Patch("/api/v1/connectors/"+e.conn.ID, dto.UpdateConnectorRequest{Config: map[string]any{"outbound_url": unlisted.srv.URL}}).
 		RequireStatus(http.StatusOK)
 	e.waitConnected(t)
-	msg := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "to the unlisted one"}).RequireStatus(http.StatusCreated))
-	item := e.firstAttempt(t, room.ID, msg.ID)
-	require.Equal(t, "outbound: destination address not allowed", item.LastError)
+	res := testkit.Decode[dto.PlatformSendResult](e.aiSends(t, chat, "to the unlisted one").RequireStatus(http.StatusAccepted))
+	require.Equal(t, "outbound: destination address not allowed", res.Error)
 	select {
 	case <-unlisted.calls:
 		t.Fatal("the unlisted private URL was called")

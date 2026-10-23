@@ -322,8 +322,7 @@ func (s *Service) skipAutoRoute(ctx context.Context, q *db.Queries, roomID, chat
 	})
 }
 
-// RemoveMember removes a member; later messages are no longer delivered to it, and a chat's
-// pending (not yet sent) outbox entries in this room are deleted in the same tx (ROOM-01).
+// RemoveMember removes a member; later messages are no longer delivered to it (ROOM-01).
 // Requires manage.
 func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, memberRowID string) error {
 	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
@@ -340,10 +339,6 @@ func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, m
 		}
 		removedKind = m.Kind
 		if m.Kind == string(dto.MemberKindChat) {
-			// Cancel what was queued for this chat in this room but not sent yet (ROOM-01).
-			if _, err := q.DeletePendingRoomChatOutbox(ctx, db.DeletePendingRoomChatOutboxParams{ChatID: m.MemberID, RoomID: roomID}); err != nil {
-				return err
-			}
 			if err := s.skipAutoRoute(ctx, q, roomID, m.MemberID); err != nil {
 				return err
 			}

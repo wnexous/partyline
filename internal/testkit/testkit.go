@@ -101,8 +101,8 @@ func WithLiveSessionCheck(d time.Duration) Option { return func(o *options) { o.
 // WithClock makes the app use now as its clock.
 func WithClock(now func() time.Time) Option { return func(o *options) { o.now = now } }
 
-// WithOutbox runs the outbox worker with the connectors' sender. Without it, outbound
-// deliveries stay pending so tests can inspect them.
+// WithOutbox runs the worker that retries the sends of AIs through their connections. Without it,
+// a send that failed stays pending so tests can inspect it.
 func WithOutbox() Option { return func(o *options) { o.outbox = true } }
 
 // WithConnectorKinds makes the app support exactly kinds (e.g. a fake kind from
@@ -219,9 +219,10 @@ func (c *Client) OperateConnector(connectorID, agentID string) dto.Connector {
 
 // SeedChatMember puts the chat in the room as a member, with outbound delivery on or off, the way a
 // room built before the connection proxy holds it, and returns the member as the room's member list
-// shows it to the client. The API refuses chats as members (CID-19), so the tests of the chat
-// delivery that is left until it is retired (T33) plant the row; a test of anything else does not
-// need a chat in a room. It publishes what adding a member does.
+// shows it to the client. The API refuses chats as members (CID-19), and a room sends them nothing
+// (CID-22), so only the tests of what such rooms still hold, their history and their members, plant
+// the row; a test of anything else does not need a chat in a room. It publishes what adding a member
+// does.
 func (c *Client) SeedChatMember(roomID, chatID string, outbound bool) dto.RoomMember {
 	c.T.Helper()
 	ctx := context.Background()

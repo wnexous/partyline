@@ -39,13 +39,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 -- name: ListAttachmentsByMessages :many
 SELECT * FROM attachments WHERE message_id IN (sqlc.slice(message_ids)) ORDER BY created_at, id;
 
--- name: CreateOutbox :exec
-INSERT INTO outbox (id, message_id, chat_id, status, attempts, next_attempt_at, updated_at)
-VALUES (?, ?, ?, 'pending', 0, ?, ?);
-
--- name: ListOutboxByMessages :many
-SELECT * FROM outbox WHERE message_id IN (sqlc.slice(message_ids)) ORDER BY id;
-
 -- name: ResumeRoom :exec
 UPDATE rooms SET agent_streak = 0, agents_paused = 0, updated_at = ? WHERE id = ?;
 

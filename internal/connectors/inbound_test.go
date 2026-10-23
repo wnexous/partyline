@@ -73,19 +73,6 @@ func newInboundEnv(t *testing.T, opts ...testkit.Option) *inboundEnv {
 
 func (e *inboundEnv) emit(m connectors.Inbound) { e.inst.Emit(context.Background(), m) }
 
-// agentByHandle returns the id of alice's AI with the handle (the connector's operator is
-// another AI, "relay").
-func (e *inboundEnv) agentByHandle(t *testing.T, handle string) string {
-	t.Helper()
-	for _, a := range testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items {
-		if a.Intelligence.Handle == handle {
-			return a.ID
-		}
-	}
-	t.Fatalf("no AI with the handle %s", handle)
-	return ""
-}
-
 func (e *inboundEnv) chats(t *testing.T) []dto.Chat {
 	t.Helper()
 	return testkit.Decode[dto.List[dto.Chat]](e.alice.Get("/api/v1/connectors/" + e.conn.ID + "/chats").RequireStatus(http.StatusOK)).Items
@@ -377,34 +364,6 @@ func TestDeliverAndMentionsOnlyFilters(t *testing.T) {
 		}
 		require.Len(t, e.queued(t), want, c.name)
 	}
-}
-
-// CID-12: a group message that replies to a message Partyline sent through the connection (known
-// from the outbox alone) is delivered under mentions-only, and only that: a reply to anything
-// else, or to the same platform id in another chat, is not.
-func TestMentionsOnlyKeepsRepliesToTheAccountsSends(t *testing.T) {
-	e := newOutboundEnv(t)
-	e.patch(t, dto.UpdateConnectorRequest{GroupsMentionsOnly: ptr(true)})
-	e.inst.QuietSends() // the outbox is the only record of the send: Partyline's memory has nothing
-	sent := e.agentPost(t, e.room.ID, "on its way")
-	e.inst.WaitSend(t)
-	e.outbox(t, sent.ID, func(o dto.OutboxItem) bool { return o.Status == dto.OutboxStatusSent })
-	e.emit(text(otherID, "B0", "hello from B")) // another chat, which was sent nothing
-	e.drain(t)
-
-	reply := text(groupID, "R1", "thanks!")
-	reply.ReplyToID = "ext-1"
-	e.emit(reply)
-	require.Equal(t, []string{"thanks!"}, texts(e.queued(t)), "a reply to the account's send is delivered")
-
-	elsewhere := text(otherID, "R2", "same id, another chat")
-	elsewhere.ReplyToID = "ext-1"
-	e.emit(elsewhere)
-	stranger := text(groupID, "R3", "reply to someone else")
-	stranger.ReplyToID = "M-someone-else"
-	e.emit(stranger)
-	e.emit(text(groupID, "R4", "no reply, no mention"))
-	require.Equal(t, []string{"thanks!"}, texts(e.queued(t)), "nothing else got through")
 }
 
 // CID-12: a reply to a message Partyline sent in the last minutes is recognised from memory too,
@@ -750,3 +709,5 @@ func TestInboundGoesToTheCurrentOperator(t *testing.T) {
 	require.Empty(t, texts(e.queued(t)), "the first operator keeps nothing of the connection")
 	require.Equal(t, []string{"to relay", "to atlas"}, texts(e.queuedFor(t, atlas)))
 }
+
+func ptr[T any](v T) *T { return &v }

@@ -36,29 +36,6 @@ func (q *Queries) CreateChat(ctx context.Context, arg CreateChatParams) error {
 	return err
 }
 
-const findChatMessageRef = `-- name: FindChatMessageRef :one
-SELECT m.id FROM messages m
-WHERE m.room_id = ?1
-  AND ((m.author_kind = 'chat' AND m.author_id = ?2 AND m.external_id = ?3)
-       OR m.id IN (SELECT o.message_id FROM outbox o
-                   WHERE o.chat_id = ?2 AND o.external_id = ?3))
-ORDER BY m.seq
-LIMIT 1
-`
-
-type FindChatMessageRefParams struct {
-	RoomID     string
-	ChatID     string
-	ExternalID sql.NullString
-}
-
-func (q *Queries) FindChatMessageRef(ctx context.Context, arg FindChatMessageRefParams) (string, error) {
-	row := q.db.QueryRowContext(ctx, findChatMessageRef, arg.RoomID, arg.ChatID, arg.ExternalID)
-	var id string
-	err := row.Scan(&id)
-	return id, err
-}
-
 const getChat = `-- name: GetChat :one
 SELECT id, connector_id, external_id, title, kind, last_seen_at, created_at, person_id FROM chats WHERE id = ?
 `
@@ -240,69 +217,6 @@ func (q *Queries) ListConnectorChats(ctx context.Context, connectorID string) ([
 			&i.LastSeenAt,
 			&i.CreatedAt,
 			&i.PersonID,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listUsableChats = `-- name: ListUsableChats :many
-SELECT c.id, c.connector_id, c.external_id, c.title, c.kind, c.last_seen_at, c.created_at, c.person_id, k.id, k.owner_id, k.kind, k.name, k.config_json, k.secrets_enc, k.enabled, k.status, k.last_error, k.created_at, k.updated_at, k.auto_route_scope, k.auto_route_room_id, k.operator_iid, k.account_label, k.deliver, k.groups_mentions_only
-FROM chats c JOIN connectors k ON k.id = c.connector_id
-WHERE k.owner_id = ?1
-   OR k.id IN (SELECT g.resource_id FROM grants g
-               WHERE g.resource_kind = 'connector' AND g.subject IN (?1, '*'))
-ORDER BY k.name, c.title, c.id
-`
-
-type ListUsableChatsRow struct {
-	Chat      Chat
-	Connector Connector
-}
-
-func (q *Queries) ListUsableChats(ctx context.Context, userID string) ([]ListUsableChatsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listUsableChats, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListUsableChatsRow
-	for rows.Next() {
-		var i ListUsableChatsRow
-		if err := rows.Scan(
-			&i.Chat.ID,
-			&i.Chat.ConnectorID,
-			&i.Chat.ExternalID,
-			&i.Chat.Title,
-			&i.Chat.Kind,
-			&i.Chat.LastSeenAt,
-			&i.Chat.CreatedAt,
-			&i.Chat.PersonID,
-			&i.Connector.ID,
-			&i.Connector.OwnerID,
-			&i.Connector.Kind,
-			&i.Connector.Name,
-			&i.Connector.ConfigJson,
-			&i.Connector.SecretsEnc,
-			&i.Connector.Enabled,
-			&i.Connector.Status,
-			&i.Connector.LastError,
-			&i.Connector.CreatedAt,
-			&i.Connector.UpdatedAt,
-			&i.Connector.AutoRouteScope,
-			&i.Connector.AutoRouteRoomID,
-			&i.Connector.OperatorIid,
-			&i.Connector.AccountLabel,
-			&i.Connector.Deliver,
-			&i.Connector.GroupsMentionsOnly,
 		); err != nil {
 			return nil, err
 		}

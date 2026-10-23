@@ -36,7 +36,7 @@ type PipelineDeps struct {
 	// (AD-015).
 	Queue *platform.Queue
 	// Sent remembers what Partyline sent, to tell its echoes from what was typed on the account
-	// (CID-14); nil remembers nothing, and only the outbox's ids then tell them apart.
+	// (CID-14); nil remembers nothing, and only the recorded ids of the sends then tell them apart.
 	Sent *SentIDs
 	// Wait sleeps for d or until ctx is done; defaults to a timer. Tests pass a fake clock's.
 	Wait func(ctx context.Context, d time.Duration) error
@@ -163,7 +163,7 @@ func isGroup(kind string) bool {
 
 // repliesToAccount tells whether a message answers one that Partyline sent to the chat through
 // the connection: the replied platform id is one of its sends (CID-12). The sends it remembers
-// are those of the last minutes and those the room outbox and the AI's sends recorded.
+// are those of the last minutes and those the AI's sends recorded.
 func (p *Pipeline) repliesToAccount(ctx context.Context, chatID, replyToID string) (bool, error) {
 	return p.sentByPartyline(ctx, chatID, replyToID)
 }

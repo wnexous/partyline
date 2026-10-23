@@ -23,23 +23,17 @@ import (
 // PauseNotice is the text of the system message posted when the loop guard pauses a room.
 const PauseNotice = "Agent delivery is paused: agents posted too many messages in a row. A room manager can resume it."
 
-// Message is a stored message with its author name, attachments and outbound deliveries.
+// Message is a stored message with its author name and attachments.
 type Message struct {
 	db.MessageView
 	Attachments []db.Attachment
-	Outbox      []db.Outbox
-	// NotifyUserID is the user a notify copy of the message was sent for: the user the DM of an
-	// AI's message is with. Only that user is shown the copy's delivery (NOTI-02). Empty when the
-	// message has no notify copy.
-	NotifyUserID string
 	// Chat is the chat a chat-authored message came from (CTX-01): its title, kind and
 	// connector kind (platform). Nil for other authors and for chats deleted since.
-	Chat *db.ListChatRefsRow // Warning is set by Post when the message reached no chat because the room does not
-	// broadcast (dto.NoBroadcastWarning, ROUTE-06).
-	Warning string
+	Chat *db.ListChatRefsRow
 }
 
-// Recipients decodes the explicit chat ids of the message.
+// Recipients decodes the explicit chat ids stored with a message posted before rooms stopped
+// sending to chats (CID-22); a message posted since names none.
 func (m Message) Recipients() []string {
 	var ids []string
 	_ = json.Unmarshal([]byte(m.RecipientsJson), &ids)
@@ -60,9 +54,7 @@ type File struct {
 type PostInput struct {
 	Text    string
 	ReplyTo string // message id in the same room
-	// Recipients are chat ids of chat members; empty reaches every chat with outbound on (DLV-03/04).
-	Recipients []string
-	Files      []File
+	Files   []File
 	// Kind defaults to text; agent reactions are MessageKindReaction (REACT-01).
 	Kind dto.MessageKind
 }
@@ -101,7 +93,6 @@ type draft struct {
 	kind        dto.MessageKind
 	text        string
 	replyTo     string
-	recipients  []string
 	externalID  string
 	files       []File
 }
@@ -125,7 +116,7 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 	}
 	d := draft{
 		authorKind: dto.AuthorKindUser, authorID: p.UserID, authorUserID: p.UserID, authorIID: p.UserID,
-		kind: kind, text: in.Text, replyTo: in.ReplyTo, recipients: in.Recipients, files: in.Files,
+		kind: kind, text: in.Text, replyTo: in.ReplyTo, files: in.Files,
 	}
 	if p.Kind == authn.KindAgent {
 		// An agent's messages resolve to its owner (DLV-06).
@@ -196,7 +187,7 @@ func (s *Service) PostFromChat(ctx context.Context, roomID string, in ChatMessag
 // nothing, for callers that create something to post into and must not create it for a message
 // that will be refused.
 func ValidatePost(in PostInput) error {
-	return draft{text: in.Text, recipients: in.Recipients, files: in.Files}.validate()
+	return draft{text: in.Text, files: in.Files}.validate()
 }
 
 // validate applies MSG-02.
@@ -208,28 +199,20 @@ func (d draft) validate() error {
 	if strings.TrimSpace(d.text) == "" && len(d.files) == 0 {
 		check.Add("text", "must not be empty without attachments")
 	}
-	distinct := map[string]bool{}
-	for _, id := range d.recipients {
-		distinct[id] = true
-	}
-	if len(distinct) > dto.MaxMessageRecipients { // ROUTE-10: no mass messaging through recipients
-		check.Add("recipients", "at most 10 chats per message")
-	}
 	return check.Err()
 }
 
-// post inserts the message in one write transaction: dedupe, next sequence number,
-// attachments, outbox entries from the delivery plan and the loop guard (with its pause
-// notice). MessageCreated is published after commit, except for duplicates.
+// post inserts the message in one write transaction: dedupe, next sequence number, attachments
+// and the loop guard (with its pause notice). MessageCreated is published after commit, except
+// for duplicates. Nothing is queued for a chat: a room delivers to intelligences only (CID-22).
 func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, error) {
 	if err := d.validate(); err != nil {
 		return Message{}, err
 	}
 	var created []events.MessageCreated
 	var id string
-	var noChat bool
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		created, noChat = nil, false
+		created = nil
 		if d.externalID != "" {
 			existing, err := q.GetMessageIDByExternalID(ctx, db.GetMessageIDByExternalIDParams{
 				RoomID: roomID, AuthorKind: string(d.authorKind), AuthorID: d.authorID,
@@ -243,17 +226,10 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 				return err
 			}
 		}
-		members, err := q.ListRoomMembers(ctx, roomID)
-		if err != nil {
+		if err := s.checkReplyTo(ctx, q, roomID, d); err != nil {
 			return err
 		}
-		if err := s.checkRefs(ctx, q, roomID, members, d); err != nil {
-			return err
-		}
-		if noChat, err = s.applyNoBroadcast(ctx, q, roomID, members, &d); err != nil {
-			return err
-		}
-		room, msg, err := s.insert(ctx, q, roomID, members, d)
+		room, msg, err := s.insert(ctx, q, roomID, d)
 		if err != nil {
 			return err
 		}
@@ -265,7 +241,7 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 			return err
 		}
 		if pausedNow { // DLV-08
-			_, notice, err := s.insert(ctx, q, roomID, members, draft{authorKind: dto.AuthorKindSystem, kind: dto.MessageKindSystem, text: PauseNotice})
+			_, notice, err := s.insert(ctx, q, roomID, draft{authorKind: dto.AuthorKindSystem, kind: dto.MessageKindSystem, text: PauseNotice})
 			if err != nil {
 				return err
 			}
@@ -282,77 +258,28 @@ func (s *Service) post(ctx context.Context, roomID string, d draft) (Message, er
 	if len(created) > 1 {
 		s.bus.Publish(events.RoomChanged{RoomID: roomID})
 	}
-	m, err := s.message(ctx, id)
-	if err == nil && noChat {
-		m.Warning = dto.NoBroadcastWarning
-	}
-	return m, err
+	return s.message(ctx, id)
 }
 
-// applyNoBroadcast handles a user or agent post without recipients in a room that does not
-// broadcast (ROUTE-06): a reply to a message of a chat with outbound on goes to that chat
-// only; anything else reaches no chat, which it reports.
-func (s *Service) applyNoBroadcast(ctx context.Context, q *db.Queries, roomID string, members []db.ListRoomMembersRow, d *draft) (bool, error) {
-	if (d.authorKind != dto.AuthorKindUser && d.authorKind != dto.AuthorKindAgent) || len(d.recipients) > 0 {
-		return false, nil
+// checkReplyTo validates the replied message: it must be a message of the room.
+func (s *Service) checkReplyTo(ctx context.Context, q *db.Queries, roomID string, d draft) error {
+	if d.replyTo == "" {
+		return nil
 	}
-	room, err := q.GetRoom(ctx, roomID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, access.ErrNotFound
+	n, err := q.CountRoomMessage(ctx, db.CountRoomMessageParams{ID: d.replyTo, RoomID: roomID})
+	if err != nil {
+		return err
 	}
-	if err != nil || room.Broadcast {
-		return false, err
-	}
-	if d.replyTo != "" {
-		target, err := q.GetMessageView(ctx, d.replyTo)
-		if err != nil {
-			return false, err
-		}
-		if target.AuthorKind == string(dto.AuthorKindChat) {
-			for _, m := range members {
-				if m.RoomMember.Kind == string(dto.MemberKindChat) && m.RoomMember.MemberID == target.AuthorID && m.RoomMember.Outbound {
-					d.recipients = []string{target.AuthorID}
-					return false, nil
-				}
-			}
-		}
-	}
-	return true, nil
-}
-
-// checkRefs validates recipients (chat members of the room with outbound on: a listen-only
-// chat receives nothing, DLV-04) and the replied message.
-func (s *Service) checkRefs(ctx context.Context, q *db.Queries, roomID string, members []db.ListRoomMembersRow, d draft) error {
 	check := validation.Check{}
-	for _, id := range d.recipients {
-		var member *db.RoomMember
-		for i := range members {
-			if m := &members[i].RoomMember; m.Kind == string(dto.MemberKindChat) && m.MemberID == id {
-				member = m
-			}
-		}
-		switch {
-		case member == nil:
-			check.Add("recipients", "must be chats of the room")
-		case !member.Outbound:
-			check.Add("recipients", "listen-only")
-		}
-	}
-	if d.replyTo != "" {
-		n, err := q.CountRoomMessage(ctx, db.CountRoomMessageParams{ID: d.replyTo, RoomID: roomID})
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			check.Add("reply_to", "must be a message of the room")
-		}
+	if n == 0 {
+		check.Add("reply_to", "must be a message of the room")
 	}
 	return check.Err()
 }
 
-// insert takes the next sequence number and stores the message, its attachments and its
-// outbox entries. It returns the room as updated by the sequence bump.
-func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, members []db.ListRoomMembersRow, d draft) (db.Room, events.MessageCreated, error) {
+// insert takes the next sequence number and stores the message and its attachments. It returns the
+// room as updated by the sequence bump.
+func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, d draft) (db.Room, events.MessageCreated, error) {
 	now := s.now().UnixMilli()
 	room, err := q.NextRoomSeq(ctx, db.NextRoomSeqParams{UpdatedAt: now, ID: roomID})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -362,19 +289,11 @@ func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, memb
 		return db.Room{}, events.MessageCreated{}, err
 	}
 	seq := room.NextSeq - 1
-	recipients := d.recipients
-	if recipients == nil {
-		recipients = []string{}
-	}
-	rcptJSON, err := json.Marshal(recipients)
-	if err != nil {
-		return db.Room{}, events.MessageCreated{}, err
-	}
 	id := store.NewID()
 	err = q.CreateMessage(ctx, db.CreateMessageParams{
 		ID: id, RoomID: roomID, Seq: seq, AuthorKind: string(d.authorKind), AuthorID: d.authorID,
 		AuthorUserID: d.authorUserID, AuthorIid: d.authorIID, SenderID: d.senderID, SenderAltID: d.senderAltID, SenderName: d.senderName,
-		Kind: string(d.kind), Text: d.text, ReplyTo: d.replyTo, RecipientsJson: string(rcptJSON),
+		Kind: string(d.kind), Text: d.text, ReplyTo: d.replyTo, RecipientsJson: "[]",
 		ExternalID: sql.NullString{String: d.externalID, Valid: d.externalID != ""}, CreatedAt: now,
 	})
 	if err != nil {
@@ -392,34 +311,10 @@ func (s *Service) insert(ctx context.Context, q *db.Queries, roomID string, memb
 			return db.Room{}, events.MessageCreated{}, err
 		}
 	}
-	targets := delivery.Plan(delivery.RoomState{BridgeChats: room.BridgeChats, NoBroadcast: !room.Broadcast}, planMembers(members),
-		delivery.Draft{AuthorKind: d.authorKind, AuthorID: d.authorID, Recipients: d.recipients})
-	for _, chatID := range targets.ChatIDs {
-		if err := q.CreateOutbox(ctx, db.CreateOutboxParams{ID: store.NewID(), MessageID: id, ChatID: chatID, NextAttemptAt: now, UpdatedAt: now}); err != nil {
-			return db.Room{}, events.MessageCreated{}, err
-		}
-	}
-	notify, err := s.notifyChat(ctx, q, room, d, targets)
-	if err != nil {
-		return db.Room{}, events.MessageCreated{}, err
-	}
-	if notify != "" { // NOTI-02: the user's chosen app gets a copy of the AI's DM
-		if err := q.CreateNotifyOutbox(ctx, db.CreateNotifyOutboxParams{ID: store.NewID(), MessageID: id, ChatID: notify, NextAttemptAt: now, UpdatedAt: now}); err != nil {
-			return db.Room{}, events.MessageCreated{}, err
-		}
-	}
 	return room, events.MessageCreated{RoomID: roomID, MessageID: id, Seq: seq}, nil
 }
 
-func planMembers(rows []db.ListRoomMembersRow) []delivery.Member {
-	out := make([]delivery.Member, len(rows))
-	for i, r := range rows {
-		out[i] = delivery.Member{Kind: dto.MemberKind(r.RoomMember.Kind), ID: r.RoomMember.MemberID, Outbound: r.RoomMember.Outbound}
-	}
-	return out
-}
-
-// message loads one stored message with its attachments and outbox entries.
+// message loads one stored message with its attachments.
 func (s *Service) message(ctx context.Context, id string) (Message, error) {
 	v, err := s.store.R().GetMessageView(ctx, id)
 	if err != nil {
@@ -450,8 +345,8 @@ func (s *Service) MessageRef(ctx context.Context, messageID string) (db.GetMessa
 	return s.store.R().GetMessageRoomSeq(ctx, messageID)
 }
 
-// Details loads the attachments and outbox entries of stored messages. It does not
-// authorize: callers are trusted server components that selected the messages themselves.
+// Details loads the attachments of stored messages. It does not authorize: callers are trusted
+// server components that selected the messages themselves.
 func (s *Service) Details(ctx context.Context, views []db.MessageView) ([]Message, error) {
 	return s.withDetails(ctx, views)
 }
@@ -495,49 +390,7 @@ func (s *Service) withDetails(ctx context.Context, views []db.MessageView) ([]Me
 		m := &out[index[a.MessageID]]
 		m.Attachments = append(m.Attachments, a)
 	}
-	outbox, err := s.store.R().ListOutboxByMessages(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	for _, o := range outbox {
-		m := &out[index[o.MessageID]]
-		m.Outbox = append(m.Outbox, o)
-		if o.Purpose == string(dto.OutboxPurposeNotify) && m.NotifyUserID == "" {
-			if m.NotifyUserID, err = s.notifiedUser(ctx, m.RoomID, m.AuthorID); err != nil {
-				return nil, err
-			}
-		}
-	}
 	return out, nil
-}
-
-// notifiedUser is the user a notify copy of the AI's message in the DM was made for: the DM's
-// participant that is not the AI. It is empty for a room that is gone.
-func (s *Service) notifiedUser(ctx context.Context, roomID, aiID string) (string, error) {
-	r, err := s.store.R().GetRoom(ctx, roomID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	if r.DmA.String == aiID {
-		return r.DmB.String, nil
-	}
-	return r.DmA.String, nil
-}
-
-// NotifiedUser is the user the notify copy of a message was made for (empty when the message is
-// gone). It does not authorize: the live hub asks it to decide who hears of the copy's delivery.
-func (s *Service) NotifiedUser(ctx context.Context, messageID string) (string, error) {
-	v, err := s.store.R().GetMessageView(ctx, messageID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	return s.notifiedUser(ctx, v.RoomID, v.AuthorID)
 }
 
 // Page selects messages: before BeforeSeq newest first (the default, from the latest), or

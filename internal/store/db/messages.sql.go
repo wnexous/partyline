@@ -104,30 +104,6 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 	return err
 }
 
-const createOutbox = `-- name: CreateOutbox :exec
-INSERT INTO outbox (id, message_id, chat_id, status, attempts, next_attempt_at, updated_at)
-VALUES (?, ?, ?, 'pending', 0, ?, ?)
-`
-
-type CreateOutboxParams struct {
-	ID            string
-	MessageID     string
-	ChatID        string
-	NextAttemptAt int64
-	UpdatedAt     int64
-}
-
-func (q *Queries) CreateOutbox(ctx context.Context, arg CreateOutboxParams) error {
-	_, err := q.db.ExecContext(ctx, createOutbox,
-		arg.ID,
-		arg.MessageID,
-		arg.ChatID,
-		arg.NextAttemptAt,
-		arg.UpdatedAt,
-	)
-	return err
-}
-
 const getAttachmentRoom = `-- name: GetAttachmentRoom :one
 SELECT a.id, a.message_id, a.sha256, a.mime, a.name, a.size, a.status, a.created_at, m.room_id
 FROM attachments a JOIN messages m ON m.id = a.message_id
@@ -432,54 +408,6 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 			&i.AuthorHandle,
 			&i.AuthorIkind,
 			&i.AuthorAvatar,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listOutboxByMessages = `-- name: ListOutboxByMessages :many
-SELECT id, message_id, chat_id, status, attempts, next_attempt_at, last_error, external_id, updated_at, purpose FROM outbox WHERE message_id IN (/*SLICE:message_ids*/?) ORDER BY id
-`
-
-func (q *Queries) ListOutboxByMessages(ctx context.Context, messageIds []string) ([]Outbox, error) {
-	query := listOutboxByMessages
-	var queryParams []interface{}
-	if len(messageIds) > 0 {
-		for _, v := range messageIds {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:message_ids*/?", strings.Repeat(",?", len(messageIds))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:message_ids*/?", "NULL", 1)
-	}
-	rows, err := q.db.QueryContext(ctx, query, queryParams...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Outbox
-	for rows.Next() {
-		var i Outbox
-		if err := rows.Scan(
-			&i.ID,
-			&i.MessageID,
-			&i.ChatID,
-			&i.Status,
-			&i.Attempts,
-			&i.NextAttemptAt,
-			&i.LastError,
-			&i.ExternalID,
-			&i.UpdatedAt,
-			&i.Purpose,
 		); err != nil {
 			return nil, err
 		}

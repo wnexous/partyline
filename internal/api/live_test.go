@@ -106,7 +106,7 @@ func TestLiveRoomEventsFollowAccess(t *testing.T) {
 	carolLive.ExpectNone(quiet)
 }
 
-// LIVE-04: agent presence, connector status and outbox status reach only users with access.
+// LIVE-04: agent presence and connector status reach only users with access.
 func TestLiveStatusEventsReachUsersWithAccess(t *testing.T) {
 	env := testkit.New(t)
 	ctx := context.Background()
@@ -114,15 +114,11 @@ func TestLiveStatusEventsReachUsersWithAccess(t *testing.T) {
 	bob := env.NewUser("bob")
 	carol := env.NewUser("carol")
 	agent := storeAgent(t, env, alice.User.ID, "builder")
-	conn, chat := storeChat(t, env, alice.User.ID, "group")
+	conn, _ := storeChat(t, env, alice.User.ID, "group")
 	require.NoError(t, env.App.Access.SetVisibility(ctx, alice.User.ID, access.KindAgent, agent, alice.User.ID,
 		access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: bob.User.ID}}}))
 	require.NoError(t, env.App.Access.SetVisibility(ctx, alice.User.ID, access.KindConnector, conn, alice.User.ID,
 		access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: bob.User.ID}}}))
-	room := createRoom(alice, "ops")
-	alice.SeedChatMember(room.ID, chat, true)
-	msg := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireStatus(http.StatusCreated))
-	require.Len(t, msg.Outbox, 1)
 
 	aliceLive, bobLive, carolLive := dialLive(t, alice), dialLive(t, bob), dialLive(t, carol)
 
@@ -139,16 +135,6 @@ func TestLiveStatusEventsReachUsersWithAccess(t *testing.T) {
 		c.Expect(dto.LiveEventTypeConnectorStatus, &s, liveWait)
 		require.Equal(t, dto.ConnectorStatusData{ConnectorID: conn, Status: dto.ConnectorStatusError, LastError: "bad gateway"}, s)
 	}
-
-	// The outbox entry belongs to alice's private room: bob uses the connector but cannot see the room.
-	env.App.Bus.Publish(events.OutboxChanged{OutboxID: msg.Outbox[0].ID, MessageID: msg.ID, RoomID: room.ID, ChatID: chat, Status: "pending"})
-	var up dto.OutboxUpdate
-	aliceLive.Expect(dto.LiveEventTypeOutboxStatus, &up, liveWait)
-	require.Equal(t, room.ID, up.RoomID)
-	require.Equal(t, msg.ID, up.MessageID)
-	require.Equal(t, msg.Outbox[0].ID, up.ID)
-	require.Equal(t, chat, up.ChatID)
-	require.Equal(t, dto.OutboxStatusPending, up.Status)
 
 	bobLive.ExpectNone(quiet)
 	carolLive.ExpectNone(quiet)

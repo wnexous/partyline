@@ -99,8 +99,8 @@ func TestToolsList(t *testing.T) {
 	}
 }
 
-// TOOL-02: reply posts in the message's room with reply_to; a chat-authored original is the
-// only recipient, otherwise there are no explicit recipients.
+// TOOL-02: reply posts in the message's room with reply_to, whoever wrote the original; a chat-authored
+// original (history) names no recipient any more: a room sends nothing to a platform (CID-22).
 func TestToolReply(t *testing.T) {
 	e := newChanEnv(t)
 	family := e.chatMember("Family")
@@ -119,7 +119,7 @@ func TestToolReply(t *testing.T) {
 	require.Equal(t, fromChat.ID, stored.ReplyTo)
 	require.Equal(t, dto.AuthorKindAgent, stored.AuthorKind)
 	require.Equal(t, e.agentID, stored.AuthorID)
-	require.Equal(t, []string{family}, stored.Recipients)
+	require.Empty(t, stored.Recipients)
 
 	fromUser := e.post("status?")
 	text, isErr = s.call("reply", toolArgs("message_id", fromUser.ID, "text", "all green"))

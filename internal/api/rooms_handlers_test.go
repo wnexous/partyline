@@ -237,9 +237,9 @@ func TestRoomSharingEndpoint(t *testing.T) {
 	require.Contains(t, e.Fields, "public_level")
 }
 
-// ACL-05, ROOM-01 over HTTP. A chat is no member whoever owns its connection (CID-19; the chat
-// branch of ACL-06 is retired with it): the room's outbound delivery to a chat that a room
-// built before the connection proxy still holds is planted.
+// ACL-05 over HTTP. A chat is no member whoever owns its connection (CID-19; the chat branch of
+// ACL-06 is retired with it). A chat that a room built before the connection proxy still holds is
+// planted: it is listed, updated and removed, and the room sends it nothing (CID-22).
 func TestRoomMembersEndpoint(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
@@ -264,9 +264,7 @@ func TestRoomMembersEndpoint(t *testing.T) {
 	require.Equal(t, "telegram", member.ConnectorKind)
 	require.Equal(t, dto.ChatKindGroup, member.ChatKind)
 	msg := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+r.ID+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireStatus(http.StatusCreated))
-	require.Len(t, msg.Outbox, 1)
-	require.Equal(t, chat, msg.Outbox[0].ChatID)
-	require.Equal(t, dto.OutboxStatusPending, msg.Outbox[0].Status)
+	require.Empty(t, msg.Outbox, "a room sends nothing to its chat members")
 
 	got := testkit.Decode[dto.RoomMember](alice.Patch(path+"/"+member.ID, dto.UpdateMemberRequest{Outbound: ptr(false)}).RequireStatus(http.StatusOK))
 	require.False(t, got.Outbound)
@@ -289,10 +287,8 @@ func TestRoomMembersEndpoint(t *testing.T) {
 	require.Equal(t, 1, get)
 	require.Equal(t, 1, listed)
 	alice.Delete(path+"/"+member.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	msg = testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+r.ID+"/messages", dto.PostMessageRequest{Text: "after", Recipients: nil}).RequireStatus(http.StatusCreated))
+	msg = testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+r.ID+"/messages", dto.PostMessageRequest{Text: "after"}).RequireStatus(http.StatusCreated))
 	require.Empty(t, msg.Outbox, "a removed chat gets no delivery")
-	alice.Post("/api/v1/rooms/"+r.ID+"/messages", dto.PostMessageRequest{Text: "x", Recipients: []string{chat}}).
-		RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 }
 
 // MSG-01, MSG-02 and pagination over HTTP.

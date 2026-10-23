@@ -95,29 +95,6 @@ SELECT k.id, k.owner_id, k.operator_iid
 FROM room_members m JOIN chats c ON c.id = m.member_id JOIN connectors k ON k.id = c.connector_id
 WHERE m.room_id = ? AND m.kind = 'chat';
 
--- name: ListNotifyOptions :many
--- The chats that can receive the copies of the DMs that AIs write to a user (NOTI-01): the DM
--- chats of the accounts the user linked (the match of ResolveIdentityUser), on the connectors the
--- user owns or may use. account labels the linked account.
-WITH mine AS (
-    SELECT p.id AS person_id,
-           CAST(MAX(COALESCE(NULLIF(x.display, ''), x.external_id)) AS TEXT) AS account
-    FROM identities x
-    JOIN people p ON p.connector_id = x.connector_id
-    WHERE x.user_id = sqlc.arg(user_id)
-      AND (x.external_id IN (p.external_id, CASE WHEN p.alt_external_id <> '' THEN p.alt_external_id ELSE p.external_id END)
-           OR (x.alt_external_id <> '' AND x.alt_external_id IN (p.external_id, CASE WHEN p.alt_external_id <> '' THEN p.alt_external_id ELSE p.external_id END)))
-    GROUP BY p.id
-)
-SELECT sqlc.embed(c), sqlc.embed(k), mine.account
-FROM mine
-JOIN chats c ON c.person_id = mine.person_id AND c.kind = 'dm'
-JOIN connectors k ON k.id = c.connector_id
-WHERE k.owner_id = sqlc.arg(user_id)
-   OR k.id IN (SELECT g.resource_id FROM grants g
-               WHERE g.resource_kind = 'connector' AND g.subject IN (sqlc.arg(user_id), '*'))
-ORDER BY k.name, c.title, c.id;
-
 -- name: ListAgentDMRooms :many
 -- The DMs an AI takes part in (merge, MRG-01).
 SELECT * FROM rooms WHERE kind = 'dm' AND (dm_a = sqlc.arg(id) OR dm_b = sqlc.arg(id)) ORDER BY id;
