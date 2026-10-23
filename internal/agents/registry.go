@@ -324,14 +324,25 @@ func (r *Registry) membersChanged(roomIDs []string) {
 
 // Delete removes the agent with its room memberships, grants and cursors and closes its
 // live connection; requires ownership (manage). Its direct messages go with it (DM-08): the
-// intelligence's deletion cascades to every room that names it as a participant.
+// intelligence's deletion cascades to every room that names it as a participant. The platform
+// queue goes too (its rows cascade, CID-24), and the connections the agent operated have no
+// operator afterwards: the bus tells the connector manager, which stops them and shows what to
+// do (CID-02).
 func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string) error {
 	if _, err := r.authorize(ctx, p, agentID, dto.LevelManage); err != nil {
 		return err
 	}
-	var roomIDs []string
+	var roomIDs, orphaned []string
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
-		var err error
+		roomIDs, orphaned = nil, nil
+		// Read before the deletion: the foreign key empties operator_iid with it.
+		operated, err := q.ListConnectorsOperatedBy(ctx, sql.NullString{String: agentID, Valid: true})
+		if err != nil {
+			return err
+		}
+		for _, c := range operated {
+			orphaned = append(orphaned, c.ID)
+		}
 		if roomIDs, err = q.DeleteAgentMemberships(ctx, agentID); err != nil {
 			return err
 		}
@@ -344,6 +355,9 @@ func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string
 		return err
 	}
 	r.presence.Kick(ctx, agentID, CloseDeleted, ReasonDeleted)
+	if len(orphaned) > 0 {
+		r.bus.Publish(events.ConnectorsOrphaned{IDs: orphaned})
+	}
 	for _, id := range roomIDs {
 		if _, err := r.store.R().GetRoom(ctx, id); errors.Is(err, sql.ErrNoRows) {
 			r.bus.Publish(events.RoomChanged{RoomID: id, Deleted: true}) // a DM of the agent

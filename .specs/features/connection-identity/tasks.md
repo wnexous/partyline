@@ -653,8 +653,8 @@ New frame DTOs are added.
 **Reuses**: `ListConnectorsOperatedBy`, `ReassignConnectorOperator`
 **Requirement**: CID-24, CID-05
 **Done when**:
-- [ ] Integration: delete → items gone, `operator_iid` NULL, the connection shows the CID-02 detail; merge → items belong to the surviving AI
-- [ ] Gate check passes: `make check`
+- [x] Integration: delete → items gone, `operator_iid` NULL, the connection shows the CID-02 detail; merge → items belong to the surviving AI
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(agents): stop connections of a deleted operator`

@@ -533,3 +533,39 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   owner's) 403; an operator that is not an AI of the owner is a 422 on `operator_id`. Every refusal
   leaves the items with the operator, the audit trail unchanged and the operator's session without
   a frame.
+
+## T22: Deleted or merged operator (CID-24, CID-05)
+
+- **Delete** (`Registry.Delete`, `DELETE /agents/{id}`, owner only): the connections the AI operates
+  are read inside the deleting transaction (the foreign key empties `operator_iid` with the AI, and
+  the list would be lost), and `events.ConnectorsOrphaned{IDs}` is published after the commit, only
+  when there are some. The AI's queue goes by the foreign key cascade: its items, their file rows and
+  its `platform_sends`; the blob files wait for the sweep (T4). The connection has no operator
+  (CID-02), as before.
+- **Manager**: `Manager.Start` subscribes to the bus (`operatorEventBuffer`, 64 events; it ends with
+  the start context or `Close`, and `Close` is idempotent).
+  - `ConnectorsOrphaned` applies each named connection: a running one stops and persists status
+    `error` with the CID-02 detail, which reaches the owner's live socket as `connector.status` and
+    the connection page; a disabled one keeps `stopped`; one whose owner already chose a new operator
+    is simply started again (`Apply` reads the stored row), so the order of the two never leaves a
+    stale detail.
+  - `Lagged` (the bus dropped events because `Apply` was busy stopping a connector) applies the
+    running connections whose operator is NULL, and only those: a missed event costs nothing and
+    restarts nothing else.
+  - The owner's other connections keep their session with the platform (same instance, status
+    untouched), and deleting an AI that operates nothing applies nothing.
+- **Merge** (`conversations.Merge`, `POST /agents/{id}/merge`): in the merge transaction each
+  connection `ReassignConnectorOperator` hands to the survivor goes through `Queue.MoveConnector`,
+  acknowledged items included, and the survivor keeps the 5,000 bound. The merged AI's
+  `platform_dropped` count is added to the survivor's (addition to the design: CID-10 tells the
+  operator how many items were dropped, and the counter would be deleted with the merged AI, so
+  nobody would ever be told). The survivor holds its own items and the moved ones in arrival order.
+  The `agent.merge` audit entry gains `platform_items`, the number of items that changed hands. After
+  the commit `PlatformQueued{AgentID: survivor}` wakes its live session. Items and counts roll back
+  with the rest of the merge. `conversations.Deps.Queue` is the app's queue (required for `Merge`
+  when the merged AI operated a connection).
+- **Authorization** (unchanged routes, matrices pinned by `TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone`
+  and `TestRefusedMergesLeaveTheQueueAlone`): deleting and merging need ownership. Use grantees get 403,
+  a stranger and the admin 404, anonymous callers 401, AI tokens (the AI itself, another AI of the
+  owner, another user's AI) 403; every refusal leaves the operator, the connection's session and
+  status, the queue and the dropped counts as they were.

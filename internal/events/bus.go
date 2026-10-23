@@ -56,6 +56,11 @@ type ConnectorStatus struct {
 	Detail      string
 }
 
+// ConnectorsOrphaned reports that connections lost their operator because its AI was deleted
+// (CID-24): IDs are the connections it operated. The connector manager applies them again, which
+// stops them and shows what to do (CID-02).
+type ConnectorsOrphaned struct{ IDs []string }
+
 // ChatDiscovered reports that a connector saw a chat for the first time or refreshed it.
 type ChatDiscovered struct{ ConnectorID, ChatID string }
 
@@ -115,6 +120,7 @@ func (GrantsChanged) isEvent()       {}
 func (ReadChanged) isEvent()         {}
 func (AgentPresence) isEvent()       {}
 func (ConnectorStatus) isEvent()     {}
+func (ConnectorsOrphaned) isEvent()  {}
 func (ChatDiscovered) isEvent()      {}
 func (OutboxChanged) isEvent()       {}
 func (PlatformQueued) isEvent()      {}
