@@ -64,6 +64,13 @@ const (
 	ActionOrgMemberPosition   = "org.member_position"
 	ActionOrgMemberLeave      = "org.member_leave"
 	ActionOrgMemberRemove     = "org.member_remove"
+	// Invitations: sent (also the entry the rate limit counts), accepted, declined, revoked by an admin
+	// and expired (OMEM-01, OMEM-07).
+	ActionOrgInvite        = "org.invite"
+	ActionOrgInviteAccept  = "org.invite_accept"
+	ActionOrgInviteDecline = "org.invite_decline"
+	ActionOrgInviteRevoke  = "org.invite_revoke"
+	ActionOrgInviteExpire  = "org.invite_expire"
 )
 
 // Target kinds.

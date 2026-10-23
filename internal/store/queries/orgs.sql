@@ -153,3 +153,42 @@ DELETE FROM platform_items WHERE agent_id = ? AND connector_id = ?;
 -- name: ClearUserDefaultOrg :exec
 -- A user who leaves its default organization has no default.
 UPDATE users SET default_org_id = NULL WHERE id = ? AND default_org_id = ?;
+
+-- name: GetOrgInvitation :one
+SELECT * FROM org_invitations WHERE id = ?;
+
+-- name: GetOrgInvitationOf :one
+SELECT * FROM org_invitations WHERE org_id = ? AND invitee_iid = ?;
+
+-- name: UpsertOrgInvitation :exec
+-- Inviting again updates the pending invitation of the invitee (OMEM-01): its permission, position,
+-- inviter and the 14 days all start over; the id stays.
+INSERT INTO org_invitations (id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (org_id, invitee_iid) DO UPDATE SET
+    permission = excluded.permission, position_id = excluded.position_id, invited_by = excluded.invited_by,
+    created_at = excluded.created_at, expires_at = excluded.expires_at;
+
+-- name: ListOrgInvitations :many
+-- The invitations of an organization that have not expired, newest first.
+SELECT * FROM org_invitations WHERE org_id = sqlc.arg(org_id) AND expires_at > sqlc.arg(now)
+ORDER BY created_at DESC, id;
+
+-- name: ListInvitationsForInvitee :many
+SELECT * FROM org_invitations WHERE invitee_iid = sqlc.arg(invitee_iid) AND expires_at > sqlc.arg(now)
+ORDER BY created_at DESC, id;
+
+-- name: ListInvitationsForAIsAround :many
+-- The pending invitations of the AIs whose home organization the identity belongs to: the candidates
+-- of the invitations an identity answers for the AIs it manages.
+SELECT inv.* FROM org_invitations inv
+JOIN agents a ON a.id = inv.invitee_iid
+JOIN org_members om ON om.org_id = a.org_id AND om.iid = sqlc.arg(member_iid)
+WHERE inv.expires_at > sqlc.arg(now)
+ORDER BY inv.created_at DESC, inv.id;
+
+-- name: DeleteOrgInvitation :exec
+DELETE FROM org_invitations WHERE id = ?;
+
+-- name: DeleteExpiredOrgInvitations :many
+DELETE FROM org_invitations WHERE expires_at <= ? RETURNING *;

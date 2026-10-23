@@ -284,7 +284,8 @@ func (a *App) Start(ctx context.Context) error {
 	a.background(bg, "retention", func(ctx context.Context) error {
 		return a.Rooms.RunRetention(ctx, rooms.RetentionInterval, a.Logger,
 			rooms.RetentionTask{Name: "revoked_tokens", Run: a.Users.PurgeRevokedTokens},
-			rooms.RetentionTask{Name: "platform_sends", Run: a.Sends.Purge})
+			rooms.RetentionTask{Name: "platform_sends", Run: a.Sends.Purge},
+			rooms.RetentionTask{Name: "org_invitations", Run: a.Orgs.PurgeExpiredInvitations})
 	})
 	a.ready.Store(true)
 	return nil

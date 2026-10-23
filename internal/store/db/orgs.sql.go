@@ -223,6 +223,42 @@ func (q *Queries) CreatePosition(ctx context.Context, arg CreatePositionParams) 
 	return err
 }
 
+const deleteExpiredOrgInvitations = `-- name: DeleteExpiredOrgInvitations :many
+DELETE FROM org_invitations WHERE expires_at <= ? RETURNING id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at
+`
+
+func (q *Queries) DeleteExpiredOrgInvitations(ctx context.Context, expiresAt int64) ([]OrgInvitation, error) {
+	rows, err := q.db.QueryContext(ctx, deleteExpiredOrgInvitations, expiresAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrgInvitation
+	for rows.Next() {
+		var i OrgInvitation
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.InviteeIid,
+			&i.Permission,
+			&i.PositionID,
+			&i.InvitedBy,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteOrgGroupMemberships = `-- name: DeleteOrgGroupMemberships :many
 DELETE FROM room_members
 WHERE member_id = ?1 AND kind IN ('user', 'agent')
@@ -258,6 +294,15 @@ func (q *Queries) DeleteOrgGroupMemberships(ctx context.Context, arg DeleteOrgGr
 		return nil, err
 	}
 	return items, nil
+}
+
+const deleteOrgInvitation = `-- name: DeleteOrgInvitation :exec
+DELETE FROM org_invitations WHERE id = ?
+`
+
+func (q *Queries) DeleteOrgInvitation(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteOrgInvitation, id)
+	return err
 }
 
 const deleteOrgMember = `-- name: DeleteOrgMember :exec
@@ -355,6 +400,51 @@ func (q *Queries) GetOrgChartMember(ctx context.Context, arg GetOrgChartMemberPa
 		&i.PositionID,
 		&i.InviterIid,
 		&i.CreatorIid,
+	)
+	return i, err
+}
+
+const getOrgInvitation = `-- name: GetOrgInvitation :one
+SELECT id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at FROM org_invitations WHERE id = ?
+`
+
+func (q *Queries) GetOrgInvitation(ctx context.Context, id string) (OrgInvitation, error) {
+	row := q.db.QueryRowContext(ctx, getOrgInvitation, id)
+	var i OrgInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.InviteeIid,
+		&i.Permission,
+		&i.PositionID,
+		&i.InvitedBy,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+	)
+	return i, err
+}
+
+const getOrgInvitationOf = `-- name: GetOrgInvitationOf :one
+SELECT id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at FROM org_invitations WHERE org_id = ? AND invitee_iid = ?
+`
+
+type GetOrgInvitationOfParams struct {
+	OrgID      string
+	InviteeIid string
+}
+
+func (q *Queries) GetOrgInvitationOf(ctx context.Context, arg GetOrgInvitationOfParams) (OrgInvitation, error) {
+	row := q.db.QueryRowContext(ctx, getOrgInvitationOf, arg.OrgID, arg.InviteeIid)
+	var i OrgInvitation
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.InviteeIid,
+		&i.Permission,
+		&i.PositionID,
+		&i.InvitedBy,
+		&i.CreatedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
@@ -501,6 +591,95 @@ func (q *Queries) GetPositionByName(ctx context.Context, arg GetPositionByNamePa
 	return i, err
 }
 
+const listInvitationsForAIsAround = `-- name: ListInvitationsForAIsAround :many
+SELECT inv.id, inv.org_id, inv.invitee_iid, inv.permission, inv.position_id, inv.invited_by, inv.created_at, inv.expires_at FROM org_invitations inv
+JOIN agents a ON a.id = inv.invitee_iid
+JOIN org_members om ON om.org_id = a.org_id AND om.iid = ?1
+WHERE inv.expires_at > ?2
+ORDER BY inv.created_at DESC, inv.id
+`
+
+type ListInvitationsForAIsAroundParams struct {
+	MemberIid string
+	Now       int64
+}
+
+// The pending invitations of the AIs whose home organization the identity belongs to: the candidates
+// of the invitations an identity answers for the AIs it manages.
+func (q *Queries) ListInvitationsForAIsAround(ctx context.Context, arg ListInvitationsForAIsAroundParams) ([]OrgInvitation, error) {
+	rows, err := q.db.QueryContext(ctx, listInvitationsForAIsAround, arg.MemberIid, arg.Now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrgInvitation
+	for rows.Next() {
+		var i OrgInvitation
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.InviteeIid,
+			&i.Permission,
+			&i.PositionID,
+			&i.InvitedBy,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInvitationsForInvitee = `-- name: ListInvitationsForInvitee :many
+SELECT id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at FROM org_invitations WHERE invitee_iid = ?1 AND expires_at > ?2
+ORDER BY created_at DESC, id
+`
+
+type ListInvitationsForInviteeParams struct {
+	InviteeIid string
+	Now        int64
+}
+
+func (q *Queries) ListInvitationsForInvitee(ctx context.Context, arg ListInvitationsForInviteeParams) ([]OrgInvitation, error) {
+	rows, err := q.db.QueryContext(ctx, listInvitationsForInvitee, arg.InviteeIid, arg.Now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrgInvitation
+	for rows.Next() {
+		var i OrgInvitation
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.InviteeIid,
+			&i.Permission,
+			&i.PositionID,
+			&i.InvitedBy,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrgChartMembers = `-- name: ListOrgChartMembers :many
 SELECT m.iid, m.permission,
        CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
@@ -535,6 +714,49 @@ func (q *Queries) ListOrgChartMembers(ctx context.Context, orgID string) ([]List
 			&i.PositionID,
 			&i.InviterIid,
 			&i.CreatorIid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgInvitations = `-- name: ListOrgInvitations :many
+SELECT id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at FROM org_invitations WHERE org_id = ?1 AND expires_at > ?2
+ORDER BY created_at DESC, id
+`
+
+type ListOrgInvitationsParams struct {
+	OrgID string
+	Now   int64
+}
+
+// The invitations of an organization that have not expired, newest first.
+func (q *Queries) ListOrgInvitations(ctx context.Context, arg ListOrgInvitationsParams) ([]OrgInvitation, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgInvitations, arg.OrgID, arg.Now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []OrgInvitation
+	for rows.Next() {
+		var i OrgInvitation
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.InviteeIid,
+			&i.Permission,
+			&i.PositionID,
+			&i.InvitedBy,
+			&i.CreatedAt,
+			&i.ExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -827,6 +1049,41 @@ func (q *Queries) UpdatePosition(ctx context.Context, arg UpdatePositionParams) 
 		arg.ParentID,
 		arg.ID,
 		arg.OrgID,
+	)
+	return err
+}
+
+const upsertOrgInvitation = `-- name: UpsertOrgInvitation :exec
+INSERT INTO org_invitations (id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (org_id, invitee_iid) DO UPDATE SET
+    permission = excluded.permission, position_id = excluded.position_id, invited_by = excluded.invited_by,
+    created_at = excluded.created_at, expires_at = excluded.expires_at
+`
+
+type UpsertOrgInvitationParams struct {
+	ID         string
+	OrgID      string
+	InviteeIid string
+	Permission string
+	PositionID sql.NullString
+	InvitedBy  string
+	CreatedAt  int64
+	ExpiresAt  int64
+}
+
+// Inviting again updates the pending invitation of the invitee (OMEM-01): its permission, position,
+// inviter and the 14 days all start over; the id stays.
+func (q *Queries) UpsertOrgInvitation(ctx context.Context, arg UpsertOrgInvitationParams) error {
+	_, err := q.db.ExecContext(ctx, upsertOrgInvitation,
+		arg.ID,
+		arg.OrgID,
+		arg.InviteeIid,
+		arg.Permission,
+		arg.PositionID,
+		arg.InvitedBy,
+		arg.CreatedAt,
+		arg.ExpiresAt,
 	)
 	return err
 }

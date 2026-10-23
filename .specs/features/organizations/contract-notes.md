@@ -325,3 +325,67 @@ Where a section refines the design, it says so.
 - **Queries** added to `queries/orgs.sql`: `UpdateOrgMemberPermission`, `UpdateOrgMemberPosition`,
   `DeleteOrgMember`, `DeleteOrgGroupMemberships`, `ClearOrgOperator`,
   `DeletePlatformItemsOfAgentOnConnector`, `ClearUserDefaultOrg`.
+
+## T8: Invitations service (OMEM-01, OMEM-02, OMEM-04, OMEM-07)
+
+- **Deviation (names)**: tasks.md calls the two list methods `ListForOrg` and `ListMine`, but T5 already
+  owns `Service.ListMine` (organizations of an identity). The invitation lists are
+  **`ListInvitations(actor, orgID)`** and **`MyInvitations(actor)`**; everything else keeps its name.
+- **`Invitation`** (the view a client shows): `ID`, `OrgID`, `OrgName`, `OrgSlug`, `InviteeIID`,
+  `InviteeHandle`, `InviteeName`, `InviteeKind` (`"user"` or `"ai"`), `Permission`, `PositionID`,
+  `PositionName`, `InvitedByIID`, `InvitedByHandle`, `InvitedByName`, `CreatedAt`, `ExpiresAt`
+  (`time.Time`, UTC).
+- **Constants and errors**: `InvitationTTL = 14 * 24h`, `InvitationsPerHour = 30`; new sentinels
+  `ErrContactNotFound` (404 `contact_not_found`), `ErrRateLimited` (429 `rate_limited`) and `ErrGone`
+  (410 `gone`); `ErrAlreadyMember` (T7) is 409 `already_member`.
+- **`Invite(actor, orgID, handle, perm, positionID) (Invitation, error)`**:
+  - The actor must be a member, any permission, an AI included (an outsider is `ErrNotFound`).
+    **Admin**: any permission and any position of the organization; an invalid permission or
+    position is a validation error on `permission` or `position_id`. **Anyone else**: only
+    `guest` with no position; anything else - another permission, a position, a value that is not a
+    permission - is `ErrForbidden` (authorization before validation).
+  - `handle` takes a leading `@`, any case and surrounding spaces. Only a **user** (enabled) or an
+    **AI** is invited; a person (an external account), a disabled user, an empty or unknown handle is
+    `ErrContactNotFound`. An identity that already is a member (any permission) is
+    `ErrAlreadyMember`.
+  - **One pending row per (organization, invitee)**: inviting again updates it in place (the id stays;
+    permission, position, inviter, creation time and the 14 days start over). Someone who may only
+    invite guests cannot replace a pending invitation for another permission (`ErrForbidden`); once
+    that invitation has expired it no longer protects anything.
+  - **Rate limit (30 per hour per organization)**: the count of `org.invite` audit entries with target
+    the organization in the last hour (`created_at > now - 1h`: an entry exactly one hour old is out).
+    The count, the invitation and its audit entry are one write transaction (a parallel burst of 45
+    yields exactly 30), and being audit-backed it survives a restart. Guest invitations and
+    re-invitations count; refused attempts do not. **It applies to invitations only**: an AI started
+    with `--parent` joins through `AddMember` (T10, T18) and never counts.
+  - Audit `org.invite` `{invitation, invitee, permission, position_id}`; after the commit
+    `events.InvitationReceived{OrgID, InvitationID, InviteeIID}` (T15 turns it into the live
+    `invitation_received` event for the invitee and, for an AI, its managers) and `OrgChanged`.
+- **Answering** - `Accept(actor, invitationID) (Membership, error)`, `Decline(actor, invitationID)
+  error`: the answerer is the invited **user** itself, or for an invited **AI** whoever manages it in
+  its home organization (`Chart.Manages` there); an AI cannot answer for itself. Any other caller, and
+  an unknown id, get `ErrNotFound` (404, nothing is revealed). `ErrGone` once `now >= expires_at`
+  (accepted at 14 days minus 1 ms, gone at 14 days); the expired row stays until the retention job.
+  - Accept becomes a member through `AddMember` with the invitation's permission and position; for a
+    guest the **inviter is the one who invited** (`invited_by`), or none when that account no longer
+    exists. A position deleted meanwhile has already moved the invitation to its parent (T6). The
+    invitation is deleted and the audit has `org.invite_accept` and `org.member_join` (`by:
+    "invitation"`, actor = whoever accepted). If the invitee became a member another way meanwhile,
+    the stale invitation is deleted and the answer is `ErrAlreadyMember`. It returns the invitee's
+    `Membership`.
+  - Decline deletes it; audit `org.invite_decline`.
+- **`Revoke(actor, orgID, invitationID) error`**: admin only (outsider `ErrNotFound`, member
+  `ErrForbidden`); an invitation of another organization is `ErrNotFound`. Audit `org.invite_revoke`.
+- **Lists** (expired ones are hidden, newest first): `ListInvitations(actor, orgID)` is admin only;
+  `MyInvitations(actor)` is the actor's own plus those of **AIs the actor manages in their home
+  organization**.
+- **`PurgeExpiredInvitations(ctx) (int64, error)`** deletes the invitations with `expires_at <= now`
+  (so exactly when they expire), audits each as `org.invite_expire`, announces `OrgChanged` per
+  organization and returns the count. The app registers it as the retention task `org_invitations`
+  (`rooms.RetentionTask`), which runs when the app starts and then daily.
+- **Audit constants**: `ActionOrgInvite`, `ActionOrgInviteAccept`, `ActionOrgInviteDecline`,
+  `ActionOrgInviteRevoke`, `ActionOrgInviteExpire`.
+- **Queries** added to `queries/orgs.sql` and `queries/audit.sql`: `GetOrgInvitation`,
+  `GetOrgInvitationOf`, `UpsertOrgInvitation`, `ListOrgInvitations`, `ListInvitationsForInvitee`,
+  `ListInvitationsForAIsAround`, `DeleteOrgInvitation`, `DeleteExpiredOrgInvitations`,
+  `CountAuditEntriesSince`.

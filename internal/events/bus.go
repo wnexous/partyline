@@ -39,6 +39,11 @@ type GrantsChanged struct{ ResourceKind, ResourceID string }
 // re-evaluate what they may see.
 type OrgChanged struct{ OrgID string }
 
+// InvitationReceived reports that an identity was invited to an organization, or invited again: the
+// invitee, and for an AI the identities that manage it, should see the invitation (OMEM-01). It carries
+// no more than the ids; the receiver reads the invitation.
+type InvitationReceived struct{ OrgID, InvitationID, InviteeIID string }
+
 // ReadChanged reports that a user marked a room read up to Seq (the position that holds, never
 // behind an earlier one). Only that user's own sockets hear about it.
 type ReadChanged struct {
@@ -114,6 +119,7 @@ func (MembersChanged) isEvent()      {}
 func (IntelligenceChanged) isEvent() {}
 func (GrantsChanged) isEvent()       {}
 func (OrgChanged) isEvent()          {}
+func (InvitationReceived) isEvent()  {}
 func (ReadChanged) isEvent()         {}
 func (AgentPresence) isEvent()       {}
 func (ConnectorStatus) isEvent()     {}

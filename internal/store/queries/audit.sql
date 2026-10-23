@@ -11,3 +11,10 @@ LEFT JOIN intelligences i ON i.id = u.id
 WHERE a.id < sqlc.arg(before)
 ORDER BY a.id DESC
 LIMIT sqlc.arg(limit);
+
+-- name: CountAuditEntriesSince :one
+-- The entries of one action about one target recorded after a time: what the invitation rate limit
+-- counts, so it survives a restart.
+SELECT COUNT(*) FROM audit_log
+WHERE action = sqlc.arg(action) AND target_kind = sqlc.arg(target_kind) AND target_id = sqlc.arg(target_id)
+  AND created_at > sqlc.arg(since);

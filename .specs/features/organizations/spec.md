@@ -161,13 +161,13 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | ORG-05 | P1: Organizations own resources | Tasks | In Tasks |
 | ORG-06 | P1: Organizations own resources | Tasks | Implementing |
 | ORG-07 | P1: Organizations own resources | Tasks | In Tasks |
-| OMEM-01 | P1: Members and permissions | Tasks | In Tasks |
-| OMEM-02 | P1: Members and permissions | Tasks | In Tasks |
+| OMEM-01 | P1: Members and permissions | Tasks | Implementing |
+| OMEM-02 | P1: Members and permissions | Tasks | Implementing |
 | OMEM-03 | P1: Members and permissions | Tasks | Implementing |
 | OMEM-04 | P1: Members and permissions | Tasks | Implementing |
 | OMEM-05 | P1: Members and permissions | Tasks | Implementing |
 | OMEM-06 | P1: Members and permissions | Tasks | Implementing |
-| OMEM-07 | P1: Members and permissions | Tasks | In Tasks |
+| OMEM-07 | P1: Members and permissions | Tasks | Implementing |
 | OMEM-08 | Edge cases | Tasks | Implementing |
 | POS-01 | P1: Org chart of positions | Tasks | Implementing |
 | POS-02 | P1: Org chart of positions | Tasks | Implementing |

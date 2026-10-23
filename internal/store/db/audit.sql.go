@@ -9,6 +9,33 @@ import (
 	"context"
 )
 
+const countAuditEntriesSince = `-- name: CountAuditEntriesSince :one
+SELECT COUNT(*) FROM audit_log
+WHERE action = ?1 AND target_kind = ?2 AND target_id = ?3
+  AND created_at > ?4
+`
+
+type CountAuditEntriesSinceParams struct {
+	Action     string
+	TargetKind string
+	TargetID   string
+	Since      int64
+}
+
+// The entries of one action about one target recorded after a time: what the invitation rate limit
+// counts, so it survives a restart.
+func (q *Queries) CountAuditEntriesSince(ctx context.Context, arg CountAuditEntriesSinceParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAuditEntriesSince,
+		arg.Action,
+		arg.TargetKind,
+		arg.TargetID,
+		arg.Since,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAuditEntry = `-- name: CreateAuditEntry :exec
 INSERT INTO audit_log (id, actor_id, action, target_kind, target_id, detail_json, ip, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)

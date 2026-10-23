@@ -373,7 +373,7 @@ Wire it into the app's dependencies.
 **Reuses**: `rooms/retention.go` ticker, `handles` lookup
 **Requirement**: OMEM-01, OMEM-02, OMEM-04, OMEM-07
 **Done when**:
-- [ ] Integration tests with a fake clock:
+- [x] Integration tests with a fake clock:
   - accept at 14 d − 1 ms works; at 14 d → `ErrGone`; the ticker deletes the row (L-016);
   - the 31st invitation within an hour → rate limited, and the limit still holds after a restart;
   - an AI invitee is accepted by its manager and refused for a non-manager;
@@ -381,7 +381,7 @@ Wire it into the app's dependencies.
   - accept gives the invitation's permission and position, and for a guest its inviter;
   - a member and a guest each invite a guest; a guest invited by a guest records the chain;
   - a member inviting as `member`, or a guest inviting with a position → forbidden
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(orgs): invite identities into an organization`
