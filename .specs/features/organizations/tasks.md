@@ -275,12 +275,12 @@ Wire it into the app's dependencies.
 **Reuses**: `access.ErrNotFound`/`ErrForbidden`, `store.R()`
 **Requirement**: POS-03, POS-10, CHART-02
 **Done when**:
-- [ ] Integration tests:
+- [x] Integration tests:
   - `RequireAdmin` → `ErrNotFound` for an outsider and `ErrForbidden` for a member;
   - `ManagesAnywhere` is true through a second shared org only;
   - `Trusts` uses the AI's home org, not another shared org where the author is above it;
   - `Session` loads each org's chart once (counted through a test hook)
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(orgs): authorize through organization membership and the chart`

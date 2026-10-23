@@ -15,6 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -22,10 +23,12 @@ import (
 
 // Errors returned by services that authorize through this package.
 var (
-	// ErrNotFound means the resource does not exist or the caller cannot view it (404).
-	ErrNotFound = errors.New("not found")
-	// ErrForbidden means the caller can view the resource but not perform the action (403).
-	ErrForbidden = errors.New("forbidden")
+	// ErrNotFound means the resource does not exist or the caller cannot view it (404). It is the
+	// sentinel of package orgs, so a room check and an organization check report the same error.
+	ErrNotFound = orgs.ErrNotFound
+	// ErrForbidden means the caller can view the resource but not perform the action (403). It is
+	// the sentinel of package orgs.
+	ErrForbidden = orgs.ErrForbidden
 	// ErrDMNoSharing means a direct message cannot be shared: it is visible to its two
 	// intelligences only (422 dm_no_sharing, DM-08).
 	ErrDMNoSharing = errors.New("a direct message cannot be shared")

@@ -30,6 +30,7 @@ import (
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/live"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/secrets"
@@ -85,7 +86,10 @@ type App struct {
 	Bus    *events.Bus
 	Users  *users.Service
 	Access *access.Authorizer
-	Rooms  *rooms.Service
+	// Authz answers the organization questions: membership, the admin permission, who manages whom
+	// and who is trusted (AD-017). Every service that authorizes through organizations asks it.
+	Authz *orgs.Authz
+	Rooms *rooms.Service
 	// Intelligences serves the profiles of users, AIs and people.
 	Intelligences *intelligences.Service
 	// Conversations opens direct messages and creates groups.
@@ -161,6 +165,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Bus:           bus,
 		Users:         usersSvc,
 		Access:        az,
+		Authz:         orgs.NewAuthz(st),
 		Rooms:         rooms.New(rooms.Deps{Store: st, Access: az, Bus: bus, Now: opts.Now, Blobs: blobs}),
 		Blobs:         blobs,
 		Platform:      platform.New(platform.Deps{Store: st, Bus: bus, Now: opts.Now}),

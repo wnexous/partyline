@@ -132,3 +132,46 @@ Where a section refines the design, it says so.
   empty for a non-member). `Manages`, `ManagersOf` and `ManagedBy` are pinned to agree for every pair
   by `TestManagesManagersOfAndManagedByAgree`.
 - **`(*Chart).IsAdmin(iid)`** and **`(*Chart).Member(iid)`** are plain lookups.
+
+## T4: Chart loader and Authz facade (POS-03, POS-10, CHART-02)
+
+- **Deviation from the design (import direction)**: the design has `Authz` reuse `access.ErrNotFound`
+  and `access.ErrForbidden`. Phase 5 (T22) makes `access` ask `orgs.Authz`, so `orgs` cannot import
+  `access` (a cycle). The sentinels now **live in `orgs`** (`orgs.ErrNotFound`, `orgs.ErrForbidden`)
+  and `access.ErrNotFound` / `access.ErrForbidden` are the same values (`access` imports `orgs`;
+  `TestAccessErrorsAreTheOrganizationErrors`). Every existing `errors.Is(err, access.ErrNotFound)`
+  and the API's 404/403 mapping keep working, and a service may return either name. `orgs` must
+  never import `access`, `intelligences`, `rooms`, `users`, `agents`, `conversations`,
+  `connectors`, `delivery` or `live`.
+- **`orgs.Load(ctx, q *db.Queries, orgID) (*Chart, error)`**: two queries (`ListOrgPositions`,
+  `ListOrgChartMembers`, which joins `agents.creator_iid`). `q` may belong to a transaction, so a
+  rule is checked on the state of that transaction (POS-02, OMEM-05). An organization that does not
+  exist loads as an empty chart (no error); callers that must tell the difference ask the table.
+- **`orgs.NewAuthz(st *store.Store) *Authz`**, built by the app as `app.App.Authz`. Methods (all
+  take `ctx` first and return `error` last):
+  - `Chart(orgID) (*Chart, error)`: reads the chart in one read snapshot, every time.
+  - `Member(orgID, iid) (Member, bool)`: one row, with the creator of an AI.
+  - `RequireMember(orgID, iid)`: `ErrNotFound` unless a member with any permission (guests included).
+  - `RequireAdmin(orgID, iid)`: `ErrNotFound` for an outsider, `ErrForbidden` for a member or guest.
+  - `Manages(actor, target, orgID) (bool)`, `CanDelete(actor, target, orgID) (bool)`: the chart rules
+    of one organization; false without a query when either id is empty or they are equal.
+  - `ManagesAnywhere(actor, target) (bool)`: true when `Manages` holds in any organization both
+    belong to.
+  - `Trusts(authorIID, agentID) (bool)`: `Manages(author, agent)` in the AI's **home** organization
+    (`agents.org_id`) and in no other; false for an empty id, an unknown AI or an AI with no home.
+  - `SharesOrg(a, b) (bool)`: a common organization with any permission.
+  - `Session() *Session`: the same questions plus `Chart`, memoized for one operation.
+  - `Loads() int64`: how many charts the facade has read, sessions included. This is the "test
+    hook" of the design: a test reads it before and after an operation to prove how many charts the
+    operation loaded.
+- **`Session`** remembers the chart of each organization and the home organization of each AI it is
+  asked about, for its whole life, and is safe for concurrent use. It is a snapshot: a change made
+  after it read something is not seen by it (a new session sees it). Never keep one across requests;
+  there is no cross-request cache.
+- **`authn.Principal.IID()`**: `AgentID` for an agent principal (possibly `""`: an agent token that
+  names no AI acts as nobody, never as its host user), `UserID` otherwise.
+- **`events.OrgChanged{OrgID}`**: published after the commit of any change to an organization (T5
+  onward). The live hub ignores it until T32.
+- **Queries** added to `queries/orgs.sql`: `ListOrgPositions`, `ListOrgChartMembers`,
+  `GetOrgChartMember`, `ListSharedOrgIDs`, `CountSharedOrgs`, `GetAgentOrg`, and the placement
+  setters `SetAgentHome` and `SetAgentCreator` (test and testkit support).

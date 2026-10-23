@@ -22,3 +22,46 @@ VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: GetOrgMember :one
 SELECT * FROM org_members WHERE org_id = ? AND iid = ?;
+
+-- name: ListOrgPositions :many
+-- The positions of an organization; parent_id is empty for a root.
+SELECT id, name, CAST(COALESCE(parent_id, '') AS TEXT) AS parent_id FROM positions WHERE org_id = ?;
+
+-- name: ListOrgChartMembers :many
+-- The members of an organization with what the rules of the chart read (AD-017): permission,
+-- position, a guest's inviter and, for an AI, its creator.
+SELECT m.iid, m.permission,
+       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
+       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
+       CAST(COALESCE(a.creator_iid, '') AS TEXT) AS creator_iid
+FROM org_members m LEFT JOIN agents a ON a.id = m.iid
+WHERE m.org_id = ?;
+
+-- name: GetOrgChartMember :one
+-- One member of ListOrgChartMembers.
+SELECT m.iid, m.permission,
+       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
+       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
+       CAST(COALESCE(a.creator_iid, '') AS TEXT) AS creator_iid
+FROM org_members m LEFT JOIN agents a ON a.id = m.iid
+WHERE m.org_id = ? AND m.iid = ?;
+
+-- name: ListSharedOrgIDs :many
+-- The organizations both identities are members of, oldest membership of the first one first.
+SELECT x.org_id FROM org_members x JOIN org_members y ON y.org_id = x.org_id
+WHERE x.iid = sqlc.arg(first_iid) AND y.iid = sqlc.arg(second_iid)
+ORDER BY x.joined_at, x.org_id;
+
+-- name: CountSharedOrgs :one
+SELECT COUNT(*) FROM org_members x JOIN org_members y ON y.org_id = x.org_id
+WHERE x.iid = sqlc.arg(first_iid) AND y.iid = sqlc.arg(second_iid);
+
+-- name: GetAgentOrg :one
+-- The home organization of an AI; empty when it has none.
+SELECT CAST(COALESCE(org_id, '') AS TEXT) AS org_id FROM agents WHERE id = ?;
+
+-- name: SetAgentHome :exec
+UPDATE agents SET org_id = ? WHERE id = ?;
+
+-- name: SetAgentCreator :exec
+UPDATE agents SET creator_iid = ? WHERE id = ?;

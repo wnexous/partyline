@@ -34,6 +34,11 @@ type IntelligenceChanged struct{ ID string }
 // for a room, its user members (membership is an access source next to grants).
 type GrantsChanged struct{ ResourceKind, ResourceID string }
 
+// OrgChanged reports that something about an organization changed: its name or avatar, its org chart,
+// its members or their permissions and positions. Live clients refresh what they show of it and
+// re-evaluate what they may see.
+type OrgChanged struct{ OrgID string }
+
 // ReadChanged reports that a user marked a room read up to Seq (the position that holds, never
 // behind an earlier one). Only that user's own sockets hear about it.
 type ReadChanged struct {
@@ -108,6 +113,7 @@ func (RoomChanged) isEvent()         {}
 func (MembersChanged) isEvent()      {}
 func (IntelligenceChanged) isEvent() {}
 func (GrantsChanged) isEvent()       {}
+func (OrgChanged) isEvent()          {}
 func (ReadChanged) isEvent()         {}
 func (AgentPresence) isEvent()       {}
 func (ConnectorStatus) isEvent()     {}

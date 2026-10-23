@@ -27,6 +27,23 @@ func (q *Queries) CountPositionName(ctx context.Context, arg CountPositionNamePa
 	return count, err
 }
 
+const countSharedOrgs = `-- name: CountSharedOrgs :one
+SELECT COUNT(*) FROM org_members x JOIN org_members y ON y.org_id = x.org_id
+WHERE x.iid = ?1 AND y.iid = ?2
+`
+
+type CountSharedOrgsParams struct {
+	FirstIid  string
+	SecondIid string
+}
+
+func (q *Queries) CountSharedOrgs(ctx context.Context, arg CountSharedOrgsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSharedOrgs, arg.FirstIid, arg.SecondIid)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createOrgMember = `-- name: CreateOrgMember :exec
 INSERT INTO org_members (org_id, iid, permission, position_id, inviter_iid, joined_at)
 VALUES (?, ?, ?, ?, ?, ?)
@@ -102,6 +119,54 @@ func (q *Queries) CreatePosition(ctx context.Context, arg CreatePositionParams) 
 	return err
 }
 
+const getAgentOrg = `-- name: GetAgentOrg :one
+SELECT CAST(COALESCE(org_id, '') AS TEXT) AS org_id FROM agents WHERE id = ?
+`
+
+// The home organization of an AI; empty when it has none.
+func (q *Queries) GetAgentOrg(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getAgentOrg, id)
+	var org_id string
+	err := row.Scan(&org_id)
+	return org_id, err
+}
+
+const getOrgChartMember = `-- name: GetOrgChartMember :one
+SELECT m.iid, m.permission,
+       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
+       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
+       CAST(COALESCE(a.creator_iid, '') AS TEXT) AS creator_iid
+FROM org_members m LEFT JOIN agents a ON a.id = m.iid
+WHERE m.org_id = ? AND m.iid = ?
+`
+
+type GetOrgChartMemberParams struct {
+	OrgID string
+	Iid   string
+}
+
+type GetOrgChartMemberRow struct {
+	Iid        string
+	Permission string
+	PositionID string
+	InviterIid string
+	CreatorIid string
+}
+
+// One member of ListOrgChartMembers.
+func (q *Queries) GetOrgChartMember(ctx context.Context, arg GetOrgChartMemberParams) (GetOrgChartMemberRow, error) {
+	row := q.db.QueryRowContext(ctx, getOrgChartMember, arg.OrgID, arg.Iid)
+	var i GetOrgChartMemberRow
+	err := row.Scan(
+		&i.Iid,
+		&i.Permission,
+		&i.PositionID,
+		&i.InviterIid,
+		&i.CreatorIid,
+	)
+	return i, err
+}
+
 const getOrgMember = `-- name: GetOrgMember :one
 SELECT org_id, iid, permission, position_id, inviter_iid, joined_at FROM org_members WHERE org_id = ? AND iid = ?
 `
@@ -162,4 +227,149 @@ func (q *Queries) GetOrganizationBySlug(ctx context.Context, slug string) (Organ
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listOrgChartMembers = `-- name: ListOrgChartMembers :many
+SELECT m.iid, m.permission,
+       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
+       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
+       CAST(COALESCE(a.creator_iid, '') AS TEXT) AS creator_iid
+FROM org_members m LEFT JOIN agents a ON a.id = m.iid
+WHERE m.org_id = ?
+`
+
+type ListOrgChartMembersRow struct {
+	Iid        string
+	Permission string
+	PositionID string
+	InviterIid string
+	CreatorIid string
+}
+
+// The members of an organization with what the rules of the chart read (AD-017): permission,
+// position, a guest's inviter and, for an AI, its creator.
+func (q *Queries) ListOrgChartMembers(ctx context.Context, orgID string) ([]ListOrgChartMembersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgChartMembers, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgChartMembersRow
+	for rows.Next() {
+		var i ListOrgChartMembersRow
+		if err := rows.Scan(
+			&i.Iid,
+			&i.Permission,
+			&i.PositionID,
+			&i.InviterIid,
+			&i.CreatorIid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgPositions = `-- name: ListOrgPositions :many
+SELECT id, name, CAST(COALESCE(parent_id, '') AS TEXT) AS parent_id FROM positions WHERE org_id = ?
+`
+
+type ListOrgPositionsRow struct {
+	ID       string
+	Name     string
+	ParentID string
+}
+
+// The positions of an organization; parent_id is empty for a root.
+func (q *Queries) ListOrgPositions(ctx context.Context, orgID string) ([]ListOrgPositionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgPositions, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgPositionsRow
+	for rows.Next() {
+		var i ListOrgPositionsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.ParentID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSharedOrgIDs = `-- name: ListSharedOrgIDs :many
+SELECT x.org_id FROM org_members x JOIN org_members y ON y.org_id = x.org_id
+WHERE x.iid = ?1 AND y.iid = ?2
+ORDER BY x.joined_at, x.org_id
+`
+
+type ListSharedOrgIDsParams struct {
+	FirstIid  string
+	SecondIid string
+}
+
+// The organizations both identities are members of, oldest membership of the first one first.
+func (q *Queries) ListSharedOrgIDs(ctx context.Context, arg ListSharedOrgIDsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listSharedOrgIDs, arg.FirstIid, arg.SecondIid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var org_id string
+		if err := rows.Scan(&org_id); err != nil {
+			return nil, err
+		}
+		items = append(items, org_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setAgentCreator = `-- name: SetAgentCreator :exec
+UPDATE agents SET creator_iid = ? WHERE id = ?
+`
+
+type SetAgentCreatorParams struct {
+	CreatorIid sql.NullString
+	ID         string
+}
+
+func (q *Queries) SetAgentCreator(ctx context.Context, arg SetAgentCreatorParams) error {
+	_, err := q.db.ExecContext(ctx, setAgentCreator, arg.CreatorIid, arg.ID)
+	return err
+}
+
+const setAgentHome = `-- name: SetAgentHome :exec
+UPDATE agents SET org_id = ? WHERE id = ?
+`
+
+type SetAgentHomeParams struct {
+	OrgID sql.NullString
+	ID    string
+}
+
+func (q *Queries) SetAgentHome(ctx context.Context, arg SetAgentHomeParams) error {
+	_, err := q.db.ExecContext(ctx, setAgentHome, arg.OrgID, arg.ID)
+	return err
 }

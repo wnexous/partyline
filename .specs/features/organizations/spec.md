@@ -178,9 +178,9 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | POS-07 | P1: Org chart of positions | Tasks | In Tasks |
 | POS-08 | P1: Org chart of positions | Tasks | In Tasks |
 | POS-09 | P1: Org chart of positions | Tasks | In Tasks |
-| POS-10 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-10 | P1: Org chart of positions | Tasks | Implementing |
 | CHART-01 | P1: Org chart view | Tasks | In Tasks |
-| CHART-02 | P1: Org chart view | Tasks | In Tasks |
+| CHART-02 | P1: Org chart view | Tasks | Implementing |
 | CHART-03 | P1: Org chart view | Tasks | In Tasks |
 | CHART-04 | P1: Org chart view | Tasks | In Tasks |
 | OUPG-01 | Edge cases | Tasks | Implementing |

@@ -85,3 +85,13 @@ func TestCancelClosesSubscription(t *testing.T) {
 	require.False(t, open)
 	bus.Publish(msg(1)) // must not panic on a cancelled subscriber
 }
+
+// OrgChanged travels on the bus like every event and carries the organization.
+func TestOrgChangedReachesSubscribers(t *testing.T) {
+	bus := NewBus()
+	ch, cancel := bus.Subscribe(4)
+	defer cancel()
+	bus.Publish(OrgChanged{OrgID: "o1"})
+	bus.Publish(OrgChanged{OrgID: "o2"})
+	require.Equal(t, []Event{OrgChanged{OrgID: "o1"}, OrgChanged{OrgID: "o2"}}, drain(t, ch, 2))
+}

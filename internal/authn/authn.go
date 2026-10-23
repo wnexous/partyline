@@ -37,6 +37,16 @@ type Principal struct {
 	SessionID string // set when authenticated by a session cookie
 }
 
+// IID is the intelligence the principal acts as (AD-016): the AI for an agent principal and the user
+// otherwise. An AI acts as itself, never with its host user's rights, so an agent principal that did
+// not resolve to an AI acts as nobody ("").
+func (p Principal) IID() string {
+	if p.Kind == KindAgent {
+		return p.AgentID
+	}
+	return p.UserID
+}
+
 // argon2id parameters: production uses the OWASP baseline (19 MiB, 2 passes, 1 lane); test
 // binaries use a minimal cost so suites that create many accounts do not spend most of their
 // time hashing. VerifyPassword reads the cost from each hash, so both stay compatible.

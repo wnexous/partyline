@@ -15,6 +15,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/config"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -94,4 +95,12 @@ func TestStartRunsRetention(t *testing.T) {
 		_, err := a.Store.R().GetMessageView(ctx, ids["msg"])
 		return errors.Is(err, sql.ErrNoRows)
 	}, jobDeadline, 10*time.Millisecond, "retention did not delete the expired message")
+}
+
+// AD-017: the app builds the organization authorization over its store, for the services that ask it.
+func TestAppWiresTheOrganizationAuthz(t *testing.T) {
+	a := newApp(t)
+	require.NotNil(t, a.Authz)
+	require.NoError(t, a.Start(context.Background()))
+	require.ErrorIs(t, a.Authz.RequireMember(context.Background(), "o-nothing", "u-nobody"), orgs.ErrNotFound)
 }

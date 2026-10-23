@@ -97,3 +97,14 @@ func TestNewSessionToken(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, a, b)
 }
+
+// AD-016: an AI acts as itself. The identity of a request is the AI for an agent principal and the
+// user otherwise; an agent principal that did not resolve to an AI acts as nobody, never as its host
+// user.
+func TestPrincipalIID(t *testing.T) {
+	require.Equal(t, "u1", Principal{Kind: KindUser, UserID: "u1"}.IID())
+	require.Equal(t, "u1", Principal{Kind: KindUser, UserID: "u1", AgentID: "a1"}.IID(), "a user principal ignores an agent id")
+	require.Equal(t, "a1", Principal{Kind: KindAgent, UserID: "u1", AgentID: "a1"}.IID(), "an agent principal is the AI, not the host user")
+	require.Empty(t, Principal{Kind: KindAgent, UserID: "u1"}.IID(), "an agent token that names no AI acts as nobody")
+	require.Empty(t, Principal{}.IID())
+}

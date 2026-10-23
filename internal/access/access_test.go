@@ -3,6 +3,7 @@ package access
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -772,4 +774,13 @@ func TestSetVisibilityRefusesDM(t *testing.T) {
 	group := f.room(t, alice)
 	require.NoError(t, f.az.SetVisibility(ctx, alice, KindRoom, group, alice, Visibility{Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: carol, Level: dto.LevelView}}}))
 	require.Equal(t, []string{carol + "=view"}, f.grantRows(t, KindRoom, group))
+}
+
+// The organization checks and the room checks report the same errors: the sentinels of package orgs
+// are the ones this package exports, so the API maps both to 404 and 403 alike.
+func TestAccessErrorsAreTheOrganizationErrors(t *testing.T) {
+	require.Same(t, orgs.ErrNotFound, ErrNotFound)
+	require.Same(t, orgs.ErrForbidden, ErrForbidden)
+	require.ErrorIs(t, fmt.Errorf("wrapped: %w", orgs.ErrNotFound), ErrNotFound)
+	require.NotErrorIs(t, ErrNotFound, ErrForbidden)
 }
