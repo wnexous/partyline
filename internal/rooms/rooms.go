@@ -106,6 +106,8 @@ type Room struct {
 	OwnerIntelligence db.Intelligence
 	// Participants are the two intelligences of a DM, by id; none for a group.
 	Participants []Participant
+	// OrgName and OrgSlug name the organization a group belongs to; Get fills them, List does not.
+	OrgName, OrgSlug string
 }
 
 // Participant is one of the two intelligences of a DM.
@@ -148,6 +150,9 @@ type CreateInput struct {
 	Description   string
 	Instructions  string // INS-01, at most dto.MaxRoomInstructions characters
 	RetentionDays *int   // nil = DefaultRetentionDays; 0 keeps messages forever
+	// Org is the organization the group belongs to, by id or slug (ORG-03); empty means the creator's
+	// default organization. The creator must be a member or an admin of it.
+	Org string
 }
 
 func validateRoom(name, description, instructions string, retention int) error {
@@ -209,13 +214,55 @@ func ValidateCreate(in CreateInput) error {
 	return validateRoom(roomText(in.Name), roomText(in.Description), roomText(in.Instructions), retention)
 }
 
+// CreatorOrg resolves the organization a group created by the principal belongs to and checks that they may
+// create it there (ORG-03, OMEM-04): requested is an id or a slug, empty meaning the creator's default
+// organization (ErrNoOrganization when they have none). The creator must be a member or an admin of it;
+// an organization that does not exist, one they are not in and one they are only a guest in are all
+// access.ErrForbidden, so that a refusal tells nothing about organizations the creator does not belong to.
+func (s *Service) CreatorOrg(ctx context.Context, creator authn.Principal, requested string) (string, error) {
+	return creatorOrg(ctx, s.store.R(), creator, requested)
+}
+
+func creatorOrg(ctx context.Context, q *db.Queries, creator authn.Principal, requested string) (string, error) {
+	iid := creator.IID()
+	var orgID string
+	if requested = strings.TrimSpace(requested); requested == "" {
+		def, err := orgs.DefaultFor(ctx, q, iid)
+		if err != nil {
+			return "", err
+		}
+		if def == "" {
+			return "", ErrNoOrganization
+		}
+		orgID = def
+	} else {
+		o, err := q.GetOrganization(ctx, requested)
+		if errors.Is(err, sql.ErrNoRows) {
+			o, err = q.GetOrganizationBySlug(ctx, requested)
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", access.ErrForbidden
+		}
+		if err != nil {
+			return "", err
+		}
+		orgID = o.ID
+	}
+	m, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: orgID, Iid: iid})
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && m.Permission == string(orgs.PermissionGuest)) {
+		return "", access.ErrForbidden
+	}
+	return orgID, err
+}
+
 // CreateWithMembers makes a group created by the principal (a user, or an AI acting as itself) with the
-// members in one transaction and returns its id (LAY-04, AGRP-01). The group belongs to the creator's
-// default organization (ORG-02): ErrNoOrganization when they belong to none. The creator manages it by
-// creating it and is a member only when listed; the room row's owner column names the user the
-// principal acts for and gives no access. The members are not checked here, except that a chat is
-// never one (ErrChatsNotMembers, CID-19, and nothing is created): callers check each one with
-// CheckMember first, so that a refused member creates nothing.
+// members in one transaction and returns its id (LAY-04, AGRP-01). The group belongs to in.Org, or to
+// the creator's default organization (ORG-02), where the creator must be a member or an admin
+// (CreatorOrg, checked again in the transaction). The creator manages it by creating it and is a member
+// only when listed; the room row's owner column names the user the principal acts for and gives no
+// access. The members are not checked here, except that a chat is never one (ErrChatsNotMembers,
+// CID-19, and nothing is created): callers check each one with CheckMember first, so that a refused
+// member creates nothing.
 func (s *Service) CreateWithMembers(ctx context.Context, creator authn.Principal, in CreateInput, members []MemberInput) (string, error) {
 	for _, m := range members { // CID-19: before anything is created
 		if m.Kind == dto.MemberKindChat {
@@ -237,12 +284,9 @@ func (s *Service) CreateWithMembers(ctx context.Context, creator authn.Principal
 	now := s.now().UnixMilli()
 	id := store.NewID()
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		orgID, err := orgs.DefaultFor(ctx, q, creator.IID())
+		orgID, err := creatorOrg(ctx, q, creator, in.Org)
 		if err != nil {
 			return err
-		}
-		if orgID == "" {
-			return ErrNoOrganization
 		}
 		if err := q.CreateRoom(ctx, db.CreateRoomParams{
 			ID: id, OwnerID: creator.UserID, Name: name, Description: description, Instructions: instructions,
@@ -286,7 +330,16 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, roomID string) (Ro
 		return Room{}, err
 	}
 	owner := ownerIntelligence(row.Room.OwnerID, row.OwnerIkind, row.OwnerIname, row.OwnerHandle, row.OwnerAvatar)
-	return s.view(ctx, row.Room, row.OwnerUsername, owner, row.MemberCount, l)
+	room, err := s.view(ctx, row.Room, row.OwnerUsername, owner, row.MemberCount, l)
+	if err != nil || !row.Room.OrgID.Valid {
+		return room, err
+	}
+	org, err := s.store.R().GetOrganization(ctx, row.Room.OrgID.String)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return Room{}, err
+	}
+	room.OrgName, room.OrgSlug = org.Name, org.Slug
+	return room, nil
 }
 
 // ownerIntelligence rebuilds an owner's profile from the columns a room query joins; the zero

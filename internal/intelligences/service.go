@@ -385,6 +385,12 @@ func (s *Service) rights(ctx context.Context, p authn.Principal, d db.GetIntelli
 		if access.AtLeast(level, dto.LevelUse) {
 			return true, user && level == dto.LevelManage, nil
 		}
+		// An AI of an organization the caller belongs to is seen by all its members, guests included
+		// (AD-016); they can talk to it.
+		inOrg, err := s.az.CanSeeAI(ctx, p, id)
+		if err != nil || inOrg {
+			return inOrg, false, err
+		}
 		shared, err := s.sharesConversation(ctx, p.UserID, id)
 		return shared, false, err
 	case RolePerson:

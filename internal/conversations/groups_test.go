@@ -10,29 +10,34 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/conversations"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 )
 
-func (f *fixture) shareOrion() {
-	f.bob.Put("/api/v1/agents/"+f.orion+"/sharing", dto.Sharing{
-		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: f.alice.User.ID, Level: dto.LevelUse}},
-	}).RequireStatus(http.StatusOK)
+// joinOrion puts bob's AI in alice's organization, so that atlas, which is of it, sees orion and can put it in
+// a group of the organization (AD-016: sharing is organization membership).
+func (f *fixture) joinOrion() {
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.orion, orgs.PermissionMember, "")
 }
 
-// AGRP-01 (service side): an AI creates a group with its owner and another AI its owner may use;
-// the group belongs to the owner, the AI itself is a member, and the AI sees it at post level.
-func TestAICreatesAGroupOwnedByItsOwner(t *testing.T) {
+// AGRP-01, ORG-03 (service side): an AI creates a group in its home organization, with a user of the
+// organization and another AI of it: the AI is the group's creator and a member of it, the host user is
+// no member unless listed, and the admins of the organization - alice, the admin of her own - run it.
+func TestAICreatesAGroupInItsHomeOrganization(t *testing.T) {
 	f := newFixture(t)
 	f.allowed = 10
-	f.shareOrion()
+	f.joinOrion()
 	ctx := context.Background()
 	atlas := f.ai(f.alice, f.atlas)
+	acme := f.alice.PersonalOrg().ID
 
 	room, err := f.svc.CreateGroup(ctx, atlas, conversations.GroupInput{
 		Name: "Ops", Description: "coordination", Members: []string{f.alice.User.ID, f.orion, f.atlas},
 	})
 	require.NoError(t, err)
-	require.Equal(t, f.alice.User.ID, room.OwnerID)
+	require.Equal(t, acme, room.OrgID.String, "the AI's home organization")
+	require.Equal(t, f.atlas, room.CreatorIid.String, "the AI acts as itself: it is the creator")
+	require.Equal(t, f.alice.User.ID, room.OwnerID, "the row's owner column names the host, and gives it nothing")
 	require.Equal(t, "Ops", room.Name)
 	require.Equal(t, "coordination", room.Description)
 	require.Equal(t, dto.ConversationKindGroup, dto.ConversationKind(room.Kind))
@@ -48,7 +53,7 @@ func TestAICreatesAGroupOwnedByItsOwner(t *testing.T) {
 	require.Equal(t, map[string]string{f.atlas: "agent", f.orion: "agent", f.alice.User.ID: "user"}, kinds)
 	require.Equal(t, f.atlas, members[0].MemberID, "the creating AI is the first member")
 
-	// The owner manages it and sees it listed.
+	// alice administers the organization and manages the group.
 	seen := f.alice.Get("/api/v1/rooms/" + room.ID).RequireStatus(http.StatusOK)
 	require.Contains(t, string(seen.Body), `"my_level":"manage"`)
 	require.Equal(t, 1, f.asked(), "one new conversation")
@@ -56,7 +61,7 @@ func TestAICreatesAGroupOwnedByItsOwner(t *testing.T) {
 
 func (f *fixture) asked() int { return len(f.askedIDs) }
 
-// AGRP-02: a member the owner may not add refuses the AI's group with the whole list and creates
+// AGRP-02: a member the AI may not add refuses its group with the whole list and creates
 // nothing; a refused request does not use up the AI's allowance.
 func TestAIGroupWithARefusedMemberCreatesNothing(t *testing.T) {
 	f := newFixture(t)
@@ -67,7 +72,7 @@ func TestAIGroupWithARefusedMemberCreatesNothing(t *testing.T) {
 	_, err := f.svc.CreateGroup(ctx, atlas, conversations.GroupInput{Name: "Ops", Members: []string{f.alice.User.ID, f.orion}})
 	var refused *conversations.MembersRefusedError
 	require.True(t, errors.As(err, &refused), "got %v", err)
-	require.Equal(t, []dto.RefusedMember{{ID: f.orion, Reason: dto.RefusedReasonNotFound}}, refused.Refused, "bob's AI is not shared with alice")
+	require.Equal(t, []dto.RefusedMember{{ID: f.orion, Reason: dto.RefusedReasonNotFound}}, refused.Refused, "bob's AI shares no organization with atlas: it is unknown to it")
 	rooms, err := f.env.App.Rooms.List(ctx, f.user(f.alice))
 	require.NoError(t, err)
 	require.Empty(t, rooms)
@@ -100,6 +105,7 @@ func TestOnlyCreatedGroupsOfAnAICountAgainstTheLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, f.asked())
 
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.bob.User.ID, orgs.PermissionMember, "")
 	_, err = f.svc.CreateGroup(ctx, f.user(f.alice), conversations.GroupInput{Name: "Mine", Members: []string{f.bob.User.ID}})
 	require.NoError(t, err)
 	require.Equal(t, 2, f.asked(), "users are not limited")

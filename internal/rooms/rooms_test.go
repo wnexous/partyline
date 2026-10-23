@@ -100,12 +100,15 @@ func (f *fixture) user(t *testing.T, name string, role dto.Role) authn.Principal
 	return authn.Principal{Kind: authn.KindUser, UserID: id, Role: string(role)}
 }
 
-// agent creates an AI named name for owner and returns its id.
+// agent creates an AI named name for owner, placed as the app places a new AI: in the owner's personal
+// organization, which is its home, as a member the owner created. It returns its id.
 func (f *fixture) agent(t *testing.T, owner authn.Principal, name string) string {
 	t.Helper()
 	id := store.NewID()
-	f.exec(t, "INSERT INTO agents (id, owner_id, name, created_at) VALUES (?, ?, ?, ?)", id, owner.UserID, name, t0.UnixMilli())
+	orgID := f.orgOf(t, owner)
+	f.exec(t, "INSERT INTO agents (id, owner_id, name, created_at, org_id, creator_iid) VALUES (?, ?, ?, ?, ?, ?)", id, owner.UserID, name, t0.UnixMilli(), orgID, owner.UserID)
 	f.intelligence(t, id, "ai", name, "ai-"+name)
+	f.exec(t, "INSERT INTO org_members (org_id, iid, permission, joined_at) VALUES (?, ?, 'member', ?)", orgID, id, t0.UnixMilli())
 	return id
 }
 
@@ -145,7 +148,7 @@ func (f *fixture) join(t *testing.T, orgID string, p authn.Principal, perm orgs.
 func (f *fixture) home(t *testing.T, orgID, aiID string, creator authn.Principal) {
 	t.Helper()
 	f.exec(t, "UPDATE agents SET org_id = ?, creator_iid = ? WHERE id = ?", orgID, creator.UserID, aiID)
-	f.exec(t, "INSERT INTO org_members (org_id, iid, permission, joined_at) VALUES (?, ?, 'member', ?)", orgID, aiID, t0.UnixMilli())
+	f.exec(t, "INSERT OR IGNORE INTO org_members (org_id, iid, permission, joined_at) VALUES (?, ?, 'member', ?)", orgID, aiID, t0.UnixMilli())
 }
 
 // colleague creates an account that joins the organization with the permission.
@@ -385,12 +388,16 @@ func TestAdminOfTheOrganizationUpdatesRoom(t *testing.T) {
 	require.Equal(t, dto.LevelPost, v.PublicLevel)
 }
 
-// ACL-05: adding an agent needs ownership of the agent or a use grant on it.
-func TestAddAgentRequiresUse(t *testing.T) {
+// ACL-05 replaced (AD-016, ORG-03): adding an agent needs an AI the caller can see - one they host or one
+// of an organization they belong to - that belongs to the group's organization. An AI they cannot see, or
+// that does not exist, is ErrForbidden; one they can see that is not of the organization is a
+// *MembersRefusedError; the caller's own AI is addable whoever created the group.
+func TestAddAgentNeedsAnAIOfTheGroupsOrganization(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.user(t, "alice", dto.RoleMember)
 	bob := f.user(t, "bob", dto.RoleMember)
+	acme := f.orgOf(t, alice)
 	mine := f.agent(t, alice, "builder")
 	bobs := f.agent(t, bob, "reviewer")
 	r := f.room(t, alice, "ops")
@@ -406,18 +413,32 @@ func TestAddAgentRequiresUse(t *testing.T) {
 	require.Equal(t, events.MembersChanged{RoomID: r.ID}, <-sub)
 
 	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: bobs})
-	require.ErrorIs(t, err, access.ErrForbidden)
+	require.ErrorIs(t, err, access.ErrForbidden, "bob's AI is not one alice can see")
 	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: store.NewID()})
-	require.ErrorIs(t, err, access.ErrForbidden)
-
+	require.ErrorIs(t, err, access.ErrForbidden, "and an AI that does not exist is the same answer")
 	f.grant(t, access.KindAgent, bobs, alice.UserID, dto.LevelUse)
+	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: bobs})
+	require.ErrorIs(t, err, access.ErrForbidden, "a use grant gives nothing")
+
+	// Once bob's AI joins alice's organization she sees it, and it is of the group's organization.
+	f.exec(t, "INSERT INTO org_members (org_id, iid, permission, joined_at) VALUES (?, ?, 'member', ?)", acme, bobs, t0.UnixMilli())
 	m, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: bobs})
 	require.NoError(t, err)
 	require.Equal(t, "bob", m.AgentOwner)
 
-	// The check is on the caller, not on the room's creator: a manager adds their own agent.
-	carol := f.colleague(t, f.orgOf(t, alice), "carol", orgs.PermissionAdmin)
-	_, err = f.svc.AddMember(ctx, carol, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: f.agent(t, carol, "c")})
+	// An AI alice hosts that belongs to another organization is refused, with the reason.
+	elsewhere := f.agent(t, alice, "wanderer")
+	f.exec(t, "DELETE FROM org_members WHERE org_id = ? AND iid = ?", acme, elsewhere)
+	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: elsewhere})
+	var refused *MembersRefusedError
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, []dto.RefusedMember{{ID: elsewhere, Reason: dto.RefusedReasonNotOrgMember}}, refused.Refused)
+
+	// The check is on the caller, not on the room's creator: an admin adds their own AI of the organization.
+	carol := f.colleague(t, acme, "carol", orgs.PermissionAdmin)
+	carols := f.agent(t, carol, "c")
+	f.exec(t, "INSERT INTO org_members (org_id, iid, permission, joined_at) VALUES (?, ?, 'member', ?)", acme, carols, t0.UnixMilli())
+	_, err = f.svc.AddMember(ctx, carol, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: carols})
 	require.NoError(t, err)
 }
 
@@ -469,7 +490,8 @@ func TestChatsAreNeverMembers(t *testing.T) {
 	_, err = f.svc.AddMember(ctx, alice, dm, MemberInput{Kind: dto.MemberKindChat, MemberID: mine})
 	require.ErrorIs(t, err, ErrDMMembersFixed, "the members of a direct message are fixed whatever the kind")
 
-	// The other kinds still join, and a chat is as refused next to them.
+	// The other kinds still join (a member of the organization), and a chat is as refused next to them.
+	f.join(t, f.orgOf(t, alice), bob, orgs.PermissionMember)
 	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindUser, MemberID: bob.UserID})
 	require.NoError(t, err)
 
@@ -481,9 +503,9 @@ func TestChatsAreNeverMembers(t *testing.T) {
 	require.ErrorIs(t, err, ErrChatsNotMembers)
 	require.Equal(t, rooms, f.count(t, "SELECT COUNT(*) FROM rooms"), "no room was created")
 	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM rooms WHERE name = 'team'"))
-	ok, err := f.svc.CheckMember(ctx, alice.UserID, MemberInput{Kind: dto.MemberKindChat, MemberID: mine})
+	reason, err := f.svc.CheckMember(ctx, alice, f.orgOf(t, alice), MemberInput{Kind: dto.MemberKindChat, MemberID: mine})
 	require.ErrorIs(t, err, ErrChatsNotMembers)
-	require.False(t, ok)
+	require.Empty(t, reason)
 }
 
 func TestAddMemberValidationAndDuplicates(t *testing.T) {
@@ -492,6 +514,13 @@ func TestAddMemberValidationAndDuplicates(t *testing.T) {
 	alice := f.user(t, "alice", dto.RoleMember)
 	bob := f.user(t, "bob", dto.RoleMember)
 	r := f.room(t, alice, "ops")
+
+	// A user who is not a member of the group's organization is refused, with the reason (ORG-03).
+	_, err := f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindUser, MemberID: bob.UserID})
+	var refused *MembersRefusedError
+	require.ErrorAs(t, err, &refused)
+	require.Equal(t, []dto.RefusedMember{{ID: bob.UserID, Reason: dto.RefusedReasonNotOrgMember}}, refused.Refused)
+	f.join(t, f.orgOf(t, alice), bob, orgs.PermissionMember)
 
 	m, err := f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindUser, MemberID: bob.UserID})
 	require.NoError(t, err)

@@ -295,12 +295,16 @@ export interface AgentDMRequest {
   chat_ids?: string[];
 }
 /**
- * CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name. Its
- * request is a CreateGroupRequest whose members are "@handle", handle or id.
+ * CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name, and
+ * the organization it belongs to (ORG-02). Its request is a CreateGroupRequest whose members are
+ * "@handle", handle or id.
  */
 export interface CreatedGroup {
   room: string;
   name: string;
+  org_id: string;
+  org_slug: string;
+  org_name: string;
 }
 
 //////////
@@ -1052,19 +1056,31 @@ export const MaxGroupMembers = 50;
 /**
  * CreateGroupRequest is the body of POST /groups (LAY-04) and of an AI's group creation (AGRP-01).
  * Members are the ids of the users and AIs to put in the group, each checked with the add-member
- * rules of the group's owner before anything is created; the owner is a member only when listed.
- * Repeated ids count once.
+ * rules of the group's creator before anything is created: it must exist, be visible to the creator
+ * and belong to the group's organization. The creator is a member only when listed. Repeated ids
+ * count once.
  */
 export interface CreateGroupRequest {
   name: string;
   description?: string;
   members: string[];
+  /**
+   * OrgID is the organization the group belongs to (ORG-03), by id; the web app sends it. Absent
+   * means the creator's default organization (an AI's is its home). A creator who is not a member
+   * or admin of it, a guest included, is refused with 403 forbidden, and so is an unknown one.
+   */
+  org_id?: string;
+  /**
+   * Org is OrgID by slug or id, for an AI's create_group (POST /agent/groups); both routes read
+   * either field, OrgID first.
+   */
+  org?: string;
 }
 /**
  * RefusedReason says why a member could not be added to a new group.
  */
 /**
- * RefusedReasonNotFound is an id that is no enabled user and no AI the owner may use.
+ * RefusedReasonNotFound is an id that is no enabled user and no AI the creator can see.
  */
 export const RefusedReasonNotFound = "not_found";
 /**
@@ -1072,10 +1088,15 @@ export const RefusedReasonNotFound = "not_found";
  */
 export const RefusedReasonPerson = "person";
 /**
- * Reasons a member is refused. An AI the owner may not use is not_found as well: it must not be
+ * RefusedReasonNotOrgMember is a user or an AI the creator can see that does not belong to the
+ * group's organization: a group is made of the members of its organization (ORG-03).
+ */
+export const RefusedReasonNotOrgMember = "not_org_member";
+/**
+ * Reasons a member is refused. An AI the creator cannot see is not_found as well: it must not be
  * told apart from an id that does not exist.
  */
-export type RefusedReason = typeof RefusedReasonNotFound | typeof RefusedReasonPerson;
+export type RefusedReason = typeof RefusedReasonNotFound | typeof RefusedReasonPerson | typeof RefusedReasonNotOrgMember;
 /**
  * RefusedMember is a member of a new group that was refused (422 members_refused).
  */
@@ -1652,6 +1673,10 @@ export interface Room {
    * characters; agents read it with the room_info tool.
    */
   instructions: string;
+  /**
+   * OrgID is the organization a group belongs to (ORG-02); absent for a DM.
+   */
+  org_id?: string;
   owner: User;
   visibility: Visibility;
   /**

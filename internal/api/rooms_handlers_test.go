@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
@@ -35,17 +36,30 @@ func shareRoom(c *testkit.Client, roomID string, users ...dto.SharingUser) {
 	c.Put("/api/v1/rooms/"+roomID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: users}).RequireStatus(http.StatusOK)
 }
 
-// storeAgent inserts an agent row with its profile (the display name and handle are name).
+// storeAgent inserts an agent row with its profile (the display name and handle are name), placed as the app
+// places a new AI: in its owner's default organization, which is its home, as a member the owner created.
 func storeAgent(t *testing.T, env *testkit.Env, ownerID, name string) string {
 	t.Helper()
 	ctx := context.Background()
 	id := store.NewID()
 	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		orgID, err := orgs.DefaultFor(ctx, q, ownerID)
+		if err != nil {
+			return err
+		}
 		if err := q.CreateAgent(ctx, db.CreateAgentParams{ID: id, OwnerID: ownerID, Name: name}); err != nil {
 			return err
 		}
-		_, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: id, Kind: handles.AI, DisplayName: name, HandleBase: name, Now: time.Now()})
-		return err
+		if _, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: id, Kind: handles.AI, DisplayName: name, HandleBase: name, Now: time.Now()}); err != nil {
+			return err
+		}
+		if err := q.SetAgentHome(ctx, db.SetAgentHomeParams{OrgID: sql.NullString{String: orgID, Valid: true}, ID: id}); err != nil {
+			return err
+		}
+		if err := q.SetAgentCreator(ctx, db.SetAgentCreatorParams{CreatorIid: sql.NullString{String: ownerID, Valid: true}, ID: id}); err != nil {
+			return err
+		}
+		return orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: orgID, IID: id, Permission: orgs.PermissionMember, Now: time.Now()})
 	}))
 	return id
 }

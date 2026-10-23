@@ -9,12 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// twoAgents extends agentRoom with bob, a poster in the room, and bob's agent "helper",
-// shared with alice and added to the room. Both agents are connected.
+// twoAgents extends agentRoom with bob, a poster in the room, and bob's agent "helper", a member of alice's
+// organization and added to the room. Both agents are connected.
 type twoAgents struct {
 	*agentRoom
 	bob      *testkit.Client
@@ -29,7 +30,7 @@ func newTwoAgents(t *testing.T) *twoAgents {
 	f.bob = f.env.NewUser("bobby")
 	addToRoom(t, f.env, f.alice, f.room.ID, f.bob)
 	f.helperID = registerAgent(t, f.env, f.bob, "helper")
-	shareAgent(f.bob, f.helperID, f.alice.User.ID)
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.helperID, orgs.PermissionMember, "") // bob's AI joins alice's organization
 	f.alice.Post("/api/v1/rooms/"+f.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: f.helperID}).RequireStatus(http.StatusCreated)
 
 	f.builder = f.dial(t)

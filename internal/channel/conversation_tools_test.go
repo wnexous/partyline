@@ -25,6 +25,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -424,11 +425,11 @@ func TestToolCreateGroup(t *testing.T) {
 	require.True(t, listed, "list_rooms lists the new group")
 }
 
-// AGRP-02: a member the owner cannot add makes the call fail with members_refused, naming every
-// refused member as the AI wrote it with its reason, and nothing is created. Members the owner
-// may add are not named. Once bob shares sage the same call works. The rules are the owner's: a
-// person of alice's connector is refused as a person, and bob's AI sage is refused as unknown
-// until it is shared.
+// AGRP-02: a member the AI cannot add makes the call fail with members_refused, naming every
+// refused member as the AI wrote it with its reason, and nothing is created. Members it may
+// add are not named. Once sage joins the AI's organization the same call works. The rules are the
+// AI's own: a person of alice's connector is refused as a person, and bob's AI sage is refused as
+// unknown until it shares an organization with the AI.
 func TestToolCreateGroupRefusesAndCreatesNothing(t *testing.T) {
 	c := newCast(t)
 	_, personHandle := c.person("Contact")
@@ -443,7 +444,7 @@ func TestToolCreateGroupRefusesAndCreatesNothing(t *testing.T) {
 	require.Empty(t, c.conversations(c.alice), "nothing was created")
 	require.Len(t, c.listRooms(s), rooms)
 
-	c.share(c.bob, c.sage, c.alice)
+	c.env.AddMember(c.alice.PersonalOrg().ID, c.sage, orgs.PermissionMember, "") // sage joins the organization of builder and helper
 	text, isErr = s.call("create_group", toolArgs("name", "Ops", "members", []string{"@alice", "@sage", c.helper}))
 	require.False(t, isErr, text)
 	group := decodeText[dto.CreatedGroup](t, text)

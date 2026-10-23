@@ -11,6 +11,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/channel"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -252,7 +253,7 @@ func TestAICreatesAGroup(t *testing.T) {
 	require.Equal(t, 1, testkit.Decode[dto.Room](f.alice.Get("/api/v1/rooms/"+alone.Room).RequireStatus(http.StatusOK)).MemberCount)
 }
 
-// AGRP-02: a member the owner may not add refuses the AI's group: 422 members_refused listing every
+// AGRP-02: a member the AI may not add refuses its group: 422 members_refused listing every
 // refused member as the AI named it, nothing created, and the request costs no allowance.
 func TestAIGroupRefusesAndCreatesNothing(t *testing.T) {
 	f := newAIEnv(t)
@@ -273,8 +274,10 @@ func TestAIGroupRefusesAndCreatesNothing(t *testing.T) {
 	hiddenPerson := agentGroup(f.bobAI, "Ops", "@"+personHandle).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
 	require.Equal(t, []dto.RefusedMember{{ID: "@" + personHandle, Reason: dto.RefusedReasonNotFound}}, hiddenPerson.Refused)
 
-	// Once bob shares sage the same request works for it.
+	// Once sage joins the organization of atlas the same request works for it; a use grant is not enough.
 	shareAI(f.bob, f.sage, f.alice)
+	agentGroup(f.aliceAI, "Ops", "@alice", "@sage", f.orion).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.sage, orgs.PermissionMember, "")
 	ok := agentGroup(f.aliceAI, "Ops", "@alice", "@sage", f.orion).RequireStatus(http.StatusCreated)
 	require.Equal(t, 4, testkit.Decode[dto.Room](f.alice.Get("/api/v1/rooms/"+testkit.Decode[dto.CreatedGroup](ok).Room).RequireStatus(http.StatusOK)).MemberCount)
 

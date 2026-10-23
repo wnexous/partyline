@@ -243,9 +243,13 @@ type AgentDMRequest struct {
 	ChatIDs []string `json:"chat_ids,omitempty"`
 }
 
-// CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name. Its
-// request is a CreateGroupRequest whose members are "@handle", handle or id.
+// CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name, and
+// the organization it belongs to (ORG-02). Its request is a CreateGroupRequest whose members are
+// "@handle", handle or id.
 type CreatedGroup struct {
-	Room string `json:"room"`
-	Name string `json:"name"`
+	Room    string `json:"room"`
+	Name    string `json:"name"`
+	OrgID   string `json:"org_id"`
+	OrgSlug string `json:"org_slug"`
+	OrgName string `json:"org_name"`
 }

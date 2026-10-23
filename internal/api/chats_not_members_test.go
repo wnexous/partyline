@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -85,6 +86,7 @@ func TestAddingAChatAsAMemberIsRefused(t *testing.T) {
 
 	// The other kinds still join, and a chat next to them is as refused.
 	alice.Post(path, dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: atlas}).RequireStatus(http.StatusCreated)
+	joinOrgOf(t, env, room.ID, bob, orgs.PermissionMember)
 	alice.Post(path, dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
 	alice.Post(path, dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: mine}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeChatsNotMembers)
 	require.Len(t, testkit.Decode[dto.List[dto.RoomMember]](alice.Get(path).RequireStatus(http.StatusOK)).Items, 2)
@@ -115,6 +117,7 @@ func TestNewGroupRefusesAChatAsAMember(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	_, chat := storeChat(t, env, alice.User.ID, "family")
+	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
 
 	e := createGroup(alice, "Launch", bob.User.ID, chat).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
 

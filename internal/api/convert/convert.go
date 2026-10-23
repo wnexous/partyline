@@ -24,7 +24,7 @@ func Room(r rooms.Room) dto.Room {
 	}
 	return dto.Room{
 		ID: r.ID, Kind: dto.ConversationKind(r.Kind), Participants: participants,
-		Name: r.Name, Description: r.Description, Instructions: r.Instructions,
+		Name: r.Name, Description: r.Description, Instructions: r.Instructions, OrgID: r.OrgID.String,
 		Owner:      dto.User{ID: r.OwnerID, Username: r.OwnerUsername, DisplayName: r.OwnerIntelligence.DisplayName, Intelligence: ownerRef(r)},
 		Visibility: r.Visibility, MyLevel: r.Level,
 		RetentionDays: int(r.RetentionDays), AgentsPaused: r.AgentsPaused, LastSeq: r.LastSeq(),

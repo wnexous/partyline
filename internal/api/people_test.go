@@ -531,7 +531,7 @@ func TestMembersOtherThanChatsCarryNoPeople(t *testing.T) {
 	f := newPeopleFixture(t)
 	agentID := f.env.NewAI(f.alice, "helper")
 	f.alice.Post("/api/v1/rooms/"+f.roomA.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agentID}).RequireStatus(http.StatusCreated)
-	f.alice.Post("/api/v1/rooms/"+f.roomA.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: f.bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, f.env, f.alice, f.roomA.ID, f.bob)
 	f.inst.Emit(context.Background(), connectors.Inbound{ChatID: "channel-9", ChatTitle: "Quiet", ChatKind: "group", MessageID: "q0", SenderID: "u9", Text: "x", At: f.clock.Now()})
 	var quiet string
 	for _, c := range testkit.Decode[dto.List[dto.Chat]](f.alice.Get("/api/v1/connectors/" + f.conn.ID + "/chats").RequireStatus(http.StatusOK)).Items {

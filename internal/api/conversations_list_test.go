@@ -163,7 +163,7 @@ func TestUnreadCountsPerUser(t *testing.T) {
 	atlas := env.NewAI(alice, "atlas")
 	dm := dmWith(alice, bob.User.ID, http.StatusCreated)
 	group := createRoom(alice, "Ops")
-	alice.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, group.ID, bob)
 	alice.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: atlas}).RequireStatus(http.StatusCreated)
 
 	unread := func(c *testkit.Client, roomID string) int {
@@ -216,7 +216,7 @@ func TestMarkReadIsMonotonicAndPerUser(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	room := createRoom(alice, "Ops")
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, room.ID, bob)
 	unread := func(c *testkit.Client) int {
 		t.Helper()
 		return conversationIn(t, conversationsOf(t, c), room.ID).Unread
@@ -313,7 +313,7 @@ func TestMarkReadEmitsRoomReadToTheReaderOnly(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	room := createRoom(alice, "Ops")
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, room.ID, bob)
 	say(bob, room.ID, "one")
 	say(bob, room.ID, "two")
 	aliceTab1, aliceTab2, bobLive := dialLive(t, alice), dialLive(t, alice), dialLive(t, bob)
@@ -342,7 +342,7 @@ func TestConversationPreview(t *testing.T) {
 	patchProfile(bob, bob.User.ID, dto.UpdateProfileRequest{DisplayName: ptr("Bob B.")}).RequireStatus(http.StatusOK)
 	dm := dmWith(alice, bob.User.ID, http.StatusCreated)
 	group := createRoom(alice, "Ops")
-	alice.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, group.ID, bob)
 
 	preview := func(c *testkit.Client, roomID string) dto.MessagePreview {
 		t.Helper()
@@ -396,7 +396,7 @@ func TestConversationMemberNames(t *testing.T) {
 	want := []string{}
 	for i := range 25 {
 		u := env.NewUser(fmt.Sprintf("user%02d", i))
-		alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: u.User.ID}).RequireStatus(http.StatusCreated)
+		addToRoom(t, env, alice, room.ID, u)
 		want = append(want, fmt.Sprintf("user%02d @user%02d", i, i))
 	}
 	got := conversationIn(t, conversationsOf(t, alice), room.ID).MemberNames
@@ -415,7 +415,7 @@ func TestConversationListAfterRetentionPurgesMessages(t *testing.T) {
 	env, clock := clockEnv(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	room := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Short lived", RetentionDays: ptr(1)}).RequireStatus(http.StatusCreated))
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, room.ID, bob)
 	say(bob, room.ID, "old")
 	clock.Advance(30 * time.Hour)
 	say(bob, room.ID, "recent")

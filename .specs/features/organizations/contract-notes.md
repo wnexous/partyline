@@ -558,3 +558,54 @@ Where a section refines the design, it says so.
   holds the helpers the room tests share: `groupIn` (a group in a chosen organization, which is the creator's default
   while it is made), `addToRoom` / `joinOrgOf` (organization membership plus room membership), and `runRoomRoutes`
   with `groupWant` / `dmWant`, the role matrix over `testkit.OrgRoles` (9 roles per route).
+
+## T23: Groups belong to an organization (ORG-02, ORG-03, OMEM-04)
+
+- **Creating** (`conversations.Service.CreateGroup`, used by `POST /api/v1/groups` and `POST /api/v1/agent/groups`):
+  - **Who**: the caller acting as itself - a user, or the AI of an agent principal (never through its host, so the
+    group's `creator_iid` is the AI and the host user has no access to it). It must be a **member or an admin**
+    of the organization: a **guest**, someone who is not a member, an instance admin who is not one and an
+    organization that does not exist are all **403 `forbidden`**, and nothing is created. A refusal tells
+    nothing about organizations the caller does not belong to.
+  - **Which organization**: `org_id` (id or slug, any case) or `org` (the same, the field the AI tools use); both
+    routes read either, `org_id` first on `POST /groups` and `org` first on `POST /agent/groups`. Absent means the
+    creator's default organization (`orgs.DefaultFor`: a user's chosen default, else where they have administered
+    longest; an AI's home). A default where the caller is only a guest is 403; a caller with no organization at
+    all is 422 `organization_required` (field `org_id`), nothing created.
+  - **Order of checks**: organization (403) -> name and member-list validation (422 `invalid`) -> members
+    (422 `members_refused`) -> an AI's allowance (429). The authorization comes first, as in the organization
+    services: a guest who sends a bad name is told 403.
+  - **Response**: `POST /groups` answers the `Room`, which now carries `org_id` (absent for a DM; the `Room` of
+    `GET /rooms`, `/rooms/{id}` and the live `room.changed` carry it too). `POST /agent/groups` answers
+    `CreatedGroup{room, name, org_id, org_slug, org_name}` so that the tool result can name the organization.
+  - **Phase 7 (T35, T38)**: the HTTP field the channel sends is **`org`** (a slug or an id); the tool argument the
+    model sees is `organization`. `dto.CreateGroupRequest` has both `org_id` and `org`.
+- **Members** (`rooms.Service.CheckMember(ctx, principal, orgID, member) (reason, error)`, shared by group creation
+  and `POST /rooms/{id}/members`): a member must be a **member of the group's organization with any permission**
+  (a guest added to a group posts in it). Reasons, in the order they are decided:
+  - `not_found`: no such enabled user (a disabled one included); no such AI **or an AI the caller cannot see**.
+    `access.Authorizer.CanSeeAI(principal, aiID)` is the visibility rule: a user sees the AIs they host
+    (`agents.owner_id`) and the AIs they share an organization with; an AI sees itself and the AIs it shares an
+    organization with, never through its host. T25 uses the same rule for `CanSee`.
+  - `person`: an external person (people join groups through bridged chats, CID-19 still holds: a chat is
+    `ErrChatsNotMembers`).
+  - `not_org_member` (`dto.RefusedReasonNotOrgMember`): a user or an AI the caller can see that does not belong to
+    the organization. A use grant gives nothing.
+  `POST /rooms/{id}/members` maps them: `not_org_member` is **422 `members_refused`** with `refused:[{id,reason}]`
+  (`rooms.MembersRefusedError`; `conversations.MembersRefusedError` is the same type), an AI the caller cannot see
+  or that does not exist is **403 `forbidden`** as before, an unknown or disabled user is 422 `invalid` on field
+  `member_id` as before. A group that is a DM answers `dm_members_fixed` first, and the caller needs `manage`.
+- **Guests**: a guest takes part in the groups it is added to (it reads and posts) and sees them in its list; it
+  cannot create a group (403) nor manage the one it is in. It opens a DM with any **user** of the organization
+  and with any **AI** of it: `intelligences.Service` sees (`CanSee`, profile, avatar) an AI through
+  `access.CanSeeAI` besides the grants and shared conversations it still honours; T25 drops those two and
+  keeps this rule, and T28 reads DM targets from it.
+- **Queries and code**: `rooms.CreatorOrg` resolves and authorizes (also used in the creating transaction, so a
+  demotion cannot interleave); `rooms.CreateInput.Org` carries the choice; `access.Authorizer.Authz()` hands services
+  the organization facade; `rooms.Room.OrgName` / `OrgSlug` are filled by `Get`, not by `List`.
+- **Tests**: `groups_test.go` (members and refusals on organizations), `groups_org_test.go` (the matrix over
+  `OrgRoles`: member, manager, admin, inviter create; guest, outsider and an instance admin 403; unknown
+  organization; slug; default; each member reason on its own; add-member; the guest; an AI as itself with a guest
+  AI refused), `agent_conversations_test.go`, `conversations/groups_test.go` and `channel/conversation_tools_test.go`
+  were rewritten; the test helpers `storeAgent`, `registerAgent`-created AIs and `testkit.NewAI` place their AIs in
+  the owner's default organization, which is where the app puts them.

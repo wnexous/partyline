@@ -2,6 +2,7 @@ package intelligences_test
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -474,13 +476,14 @@ func TestCanSeeAndCanEdit(t *testing.T) {
 	}
 }
 
-// A caller who shares a viewable conversation with an AI sees it, as a member or as an
-// author who has left; viewing the conversation is what counts (grants and ownership), and
-// seeing never allows editing.
-func TestCanSeeAnAIThroughSharedConversations(t *testing.T) {
+// AD-016: a caller sees the AIs of the organizations they belong to, and seeing never allows editing.
+// A viewable conversation where an AI is a member or wrote still shows it to a caller outside the
+// organization (a DM); the next task drops that rule.
+func TestCanSeeAnAIOfTheirOrganization(t *testing.T) {
 	w := newWorld(t)
 	atlas := w.agent(w.alice, "atlas")
 	room := w.room(w.alice, "Ops", atlas)
+	w.env.AddMember(w.alice.PersonalOrg().ID, w.carol.User.ID, orgs.PermissionMember, "")
 	_, err := w.env.App.Rooms.AddMember(w.ctx, asUser(w.alice), room, rooms.MemberInput{Kind: dto.MemberKindUser, MemberID: w.carol.User.ID})
 	require.NoError(t, err)
 
@@ -490,26 +493,33 @@ func TestCanSeeAnAIThroughSharedConversations(t *testing.T) {
 		require.NoError(t, err)
 		return ok
 	}
-	require.True(t, see(w.carol), "a member of a room the AI is a member of")
-	require.False(t, see(w.erin), "no access to the room")
+	require.True(t, see(w.carol), "a member of the AI's organization")
+	require.False(t, see(w.erin), "a user of no organization of the AI")
 	edit, err := w.svc.CanEdit(w.ctx, asUser(w.carol), atlas)
 	require.NoError(t, err)
 	require.False(t, edit)
+	w.env.AddMember(w.alice.PersonalOrg().ID, w.erin.User.ID, orgs.PermissionGuest, "")
+	require.True(t, see(w.erin), "a guest of the organization sees its AIs too")
+	require.False(t, see(w.dave), "a stranger to the organization")
 
-	// The AI wrote in a second room and left it: its author rows still make it visible there.
-	left := w.room(w.alice, "Old", atlas)
-	posted, err := w.env.App.Rooms.Post(w.ctx, asAgent(w.alice, atlas), left, rooms.PostInput{Text: "hello"})
-	require.NoError(t, err)
-	w.tx(func(q *db.Queries) error { // rooms.insert writes author_iid from T11 on; migrated rows have it already
-		return q.SetMessageAuthorIID(w.ctx, db.SetMessageAuthorIIDParams{AuthorIid: atlas, ID: posted.ID})
+	// The AI wrote in a second room and left it: a DM it holds with dave still shows it to him, who
+	// belongs to no organization of it.
+	dm := store.NewID()
+	w.tx(func(q *db.Queries) error {
+		if err := q.CreateDMRoom(w.ctx, db.CreateDMRoomParams{
+			ID: dm, OwnerID: w.alice.User.ID, DmA: sql.NullString{String: min(atlas, w.dave.User.ID), Valid: true},
+			DmB: sql.NullString{String: max(atlas, w.dave.User.ID), Valid: true}, CreatedAt: 1, UpdatedAt: 1,
+		}); err != nil {
+			return err
+		}
+		for kind, id := range map[string]string{"user": w.dave.User.ID, "agent": atlas} {
+			if err := q.CreateRoomMember(w.ctx, db.CreateRoomMemberParams{ID: store.NewID(), RoomID: dm, Kind: kind, MemberID: id, CreatedAt: 1}); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
-	members, err := w.env.App.Rooms.Members(w.ctx, asUser(w.alice), left)
-	require.NoError(t, err)
-	require.NoError(t, w.env.App.Rooms.RemoveMember(w.ctx, asUser(w.alice), left, members[0].ID))
-	_, err = w.env.App.Rooms.AddMember(w.ctx, asUser(w.alice), left, rooms.MemberInput{Kind: dto.MemberKindUser, MemberID: w.erin.User.ID})
-	require.NoError(t, err)
-	require.True(t, see(w.erin), "a member of a room the AI wrote in")
-	require.False(t, see(w.dave), "a stranger to both rooms")
+	require.True(t, see(w.dave), "a user who takes part in a DM with the AI")
 }
 
 // A disabled account has no access at all (AUTH-10), also to its own profile.

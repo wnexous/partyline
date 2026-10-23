@@ -13,9 +13,11 @@ type Room struct {
 	Description  string            `json:"description"`
 	// Instructions is free text for the room's agents (INS-01), up to MaxRoomInstructions
 	// characters; agents read it with the room_info tool.
-	Instructions string     `json:"instructions"`
-	Owner        User       `json:"owner"`
-	Visibility   Visibility `json:"visibility"`
+	Instructions string `json:"instructions"`
+	// OrgID is the organization a group belongs to (ORG-02); absent for a DM.
+	OrgID      string     `json:"org_id,omitempty"`
+	Owner      User       `json:"owner"`
+	Visibility Visibility `json:"visibility"`
 	// MyLevel is the caller's resolved level on this room (ACL-02).
 	MyLevel       Level `json:"my_level"`
 	RetentionDays int   `json:"retention_days"`

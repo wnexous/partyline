@@ -103,6 +103,42 @@ func New(st *store.Store, bus *events.Bus, opts Options) *Authorizer {
 	return &Authorizer{store: st, bus: bus, now: opts.Now, audit: audit.New(st, opts.Now), authz: opts.Authz}
 }
 
+// Authz is the organization facade the room levels are computed with. A service that holds the
+// Authorizer asks it the same organization questions (membership, who manages whom) instead of
+// building a second one.
+func (a *Authorizer) Authz() *orgs.Authz { return a.authz }
+
+// CanSeeAI reports whether the caller can see the AI (AD-016): a user sees the AIs hosted on their
+// computers and the AIs of the organizations they belong to; an AI sees itself and the AIs it shares an
+// organization with, and never reaches further through its host, because it acts as itself. A disabled
+// user and an unknown AI see and are seen by nobody.
+func (a *Authorizer) CanSeeAI(ctx context.Context, p authn.Principal, aiID string) (bool, error) {
+	if aiID == "" {
+		return false, nil
+	}
+	agent, err := a.store.R().GetAgent(ctx, aiID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	ok, err := a.activeUser(ctx, p.UserID)
+	if err != nil || !ok {
+		return false, err
+	}
+	if p.Kind == authn.KindAgent {
+		if p.AgentID == aiID {
+			return true, nil
+		}
+		return a.authz.SharesOrg(ctx, p.AgentID, aiID)
+	}
+	if agent.OwnerID == p.UserID {
+		return true, nil
+	}
+	return a.authz.SharesOrg(ctx, p.UserID, aiID)
+}
+
 // RoomLevel resolves the caller's level on a room (ACL-02). A user's level comes from room membership
 // and organizations (see UserRoomLevel); an agent gets post when it is a member of the room. Missing
 // rooms resolve to None.

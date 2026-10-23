@@ -12,6 +12,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -73,6 +74,7 @@ func newUpgradedAPI(t *testing.T) *upgradedAPI {
 	add := func(kind dto.MemberKind, id string) dto.RoomMember {
 		return testkit.Decode[dto.RoomMember](f.alice.Post(f.roomPath()+"/members", dto.AddMemberRequest{Kind: kind, MemberID: id}).RequireStatus(http.StatusCreated))
 	}
+	env.AddMember(f.alice.PersonalOrg().ID, f.bob.User.ID, orgs.PermissionMember, "") // a group is made of the members of its organization
 	f.atlasMember, f.bobMember = add(dto.MemberKindAgent, f.atlas), add(dto.MemberKindUser, f.bob.User.ID)
 	f.conn = createFake(f.alice, "wa", true)
 	f.chat = insertChat(t, env, f.conn.ID, teamChat, "Support group")

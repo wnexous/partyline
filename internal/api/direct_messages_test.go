@@ -13,6 +13,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -311,6 +312,7 @@ func TestDMMembersAreFixed(t *testing.T) {
 
 	// The same requests on a group are not refused for being a DM.
 	group := createRoom(alice, "ops")
+	joinOrgOf(t, env, group.ID, bob, orgs.PermissionMember)
 	alice.Post("/api/v1/rooms/"+group.ID+"/members", add).RequireStatus(http.StatusCreated)
 }
 
@@ -328,7 +330,7 @@ func TestPostInADMWithADisabledCounterpartIsRefused(t *testing.T) {
 	bob.Post(path+"/messages", dto.PostMessageRequest{Text: "answer"}).RequireStatus(http.StatusCreated)
 
 	group := createRoom(alice, "ops")
-	alice.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, group.ID, bob)
 	withAI := dmWith(alice, atlas, http.StatusCreated)
 
 	disableUser(admin, bob.User.ID, true)

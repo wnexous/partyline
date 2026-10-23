@@ -704,13 +704,13 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
 **Reuses**: `rooms.CreateWithMembers`, `MembersRefusedError`
 **Requirement**: ORG-02, ORG-03, OMEM-04
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - a user group in acme → 201 with `org_id`; in a foreign org → 403;
   - a guest user and a guest AI each → 403, while a guest added to a group posts in it and can DM any member of the org;
   - an AI's `create_group` without `org` → its home org; with an org where it is not a member → 403;
   - adding a non-member → 422 `members_refused`/`not_org_member`;
   - rewrite `groups_test.go` and `conversation_tools_test.go`
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): create groups inside an organization`

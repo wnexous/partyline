@@ -18,6 +18,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/conversations"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -37,8 +38,29 @@ func newMergeWorld(t *testing.T) *mergeWorld {
 	env, fake := fakeConnectorEnv(t)
 	w := &mergeWorld{env: env, fake: fake, alice: env.NewUser("alice"), bob: env.NewUser("bob"), carol: env.NewUser("carol"), admin: env.NewAdmin("root")}
 	w.old = env.NewLegacyAI(w.alice, "old")
+	placeInDefaultOrg(t, env, w.alice, w.old)
 	w.atlas = env.NewAI(w.alice, "atlas")
 	return w
+}
+
+// placeInDefaultOrg gives an AI that has no organization the home the upgrade gives it (OUPG-01): its
+// owner's default organization, which the owner created it in, as a member with no position.
+func placeInDefaultOrg(t *testing.T, env *testkit.Env, owner *testkit.Client, aiID string) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		orgID, err := orgs.DefaultFor(ctx, q, owner.User.ID)
+		if err != nil {
+			return err
+		}
+		if err := q.SetAgentHome(ctx, db.SetAgentHomeParams{OrgID: sql.NullString{String: orgID, Valid: true}, ID: aiID}); err != nil {
+			return err
+		}
+		if err := q.SetAgentCreator(ctx, db.SetAgentCreatorParams{CreatorIid: sql.NullString{String: owner.User.ID, Valid: true}, ID: aiID}); err != nil {
+			return err
+		}
+		return orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: orgID, IID: aiID, Permission: orgs.PermissionMember, Now: time.Now()})
+	}))
 }
 
 // by is the principal of alice's AI id, as the AI's session would post.
@@ -179,7 +201,8 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	join(t, w.alice, ahead.ID, w.atlas)
 	soloAtlas := join(t, w.alice, solo.ID, w.atlas)
 	settle(t, w.alice, solo.ID, soloAtlas, dto.UpdateMemberRequest{DisplayName: ptr("Solo")})
-	join(t, w.bob, bobs.ID, w.old) // bob may use old
+	w.env.AddMember(w.bob.PersonalOrg().ID, w.old, orgs.PermissionMember, "") // old also belongs to bob's organization
+	join(t, w.bob, bobs.ID, w.old)
 
 	for _, room := range []string{ops.ID, dev.ID, ahead.ID, solo.ID} {
 		for range 6 {

@@ -208,7 +208,7 @@ func TestUserMemberOfAGroupPosts(t *testing.T) {
 	path := "/api/v1/rooms/" + room.ID
 	bob.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
-	member := testkit.Decode[dto.RoomMember](alice.Post(path+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated))
+	member := addToRoom(t, env, alice, room.ID, bob)
 
 	got := testkit.Decode[dto.Room](bob.Get(path).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.LevelPost, got.MyLevel)
@@ -232,17 +232,18 @@ func TestUserMemberOfAGroupPosts(t *testing.T) {
 	carol.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	carol.Post(path+"/messages", dto.PostMessageRequest{Text: "x"}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
-	// The member sees the AIs of the group (a viewable conversation where the AI is a member).
+	// The member belongs to the organization, so it sees the organization's AIs, in the room or not, and
+	// cannot edit them; carol, who belongs to none of it, sees nothing.
 	atlas := env.NewAI(alice, "atlas")
-	bob.Get("/api/v1/intelligences/"+atlas).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	alice.Post(path+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: atlas}).RequireStatus(http.StatusCreated)
 	profile := testkit.Decode[dto.IntelligenceProfile](bob.Get("/api/v1/intelligences/" + atlas).RequireStatus(http.StatusOK))
 	require.False(t, profile.CanEdit)
+	carol.Get("/api/v1/intelligences/"+atlas).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	alice.Post(path+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: atlas}).RequireStatus(http.StatusCreated)
+	carol.Get("/api/v1/intelligences/"+atlas).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
 	alice.Delete(path + "/members/" + member.ID).RequireStatus(http.StatusNoContent)
 	bob.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	bob.Post(path+"/messages", dto.PostMessageRequest{Text: "again"}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	bob.Get("/api/v1/intelligences/"+atlas).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	require.Empty(t, testkit.Decode[dto.List[dto.Room]](bob.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items)
 }
 
@@ -255,7 +256,7 @@ func TestLiveUserMembershipFollowsAccess(t *testing.T) {
 	path := "/api/v1/rooms/" + room.ID
 	bobLive, carolLive := dialLive(t, bob), dialLive(t, carol)
 
-	member := testkit.Decode[dto.RoomMember](alice.Post(path+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated))
+	member := addToRoom(t, env, alice, room.ID, bob)
 	var seen dto.Room
 	bobLive.Expect(dto.LiveEventTypeRoomChanged, &seen, liveWait)
 	require.Equal(t, room.ID, seen.ID)
