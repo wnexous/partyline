@@ -28,8 +28,8 @@ var (
 	// ErrContactNotFound is a DM with an intelligence that does not exist or that the caller
 	// cannot see; the two cases are indistinguishable (404 contact_not_found).
 	ErrContactNotFound = errors.New("contact not found")
-	// ErrNoRouteToPerson is a DM with an external person that no platform conversation of the
-	// sender reaches (422 no_route_to_person, DM-05).
+	// ErrNoRouteToPerson is a DM with an external person: nobody writes to people through a DM any
+	// more, they are answered on their platform (422 no_route_to_person, CID-22).
 	ErrNoRouteToPerson = errors.New("no route to the person")
 	// ErrRateLimited is an AI that opened too many new conversations (429 rate_limited).
 	ErrRateLimited = errors.New("too many new conversations")

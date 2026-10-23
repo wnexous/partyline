@@ -607,3 +607,45 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
 - **Deflake (not part of the task)**: `TestRunPurgesWhenItStartsAndEveryInterval` (T4) read the
   files the runner released right after the item vanished, before the runner had handed them over; it
   now waits for them. It failed once in a loaded full run.
+
+## T24: Platform DMs and people are history (CID-21, CID-22)
+
+- **Posts**: every way a user or an AI writes into a room goes through `rooms.Service.Post`
+  (`POST /rooms/{id}/messages`, `POST /agent/rooms/{id}/messages`, `reply`, `react`, files).
+  `checkCounterpart` now refuses a post in a DM that has a person among its two participants with
+  `access.ErrHistoryOnly`, 422 `history_only` (`dto.ErrorCodeHistoryOnly`).
+  - It looks at both participants, so it holds whichever side the person sorts on (the ids sit in
+    `rooms.dm_a` and `dm_b` in sorted order); both orderings are tested.
+  - It follows the rights checks. Only a participant may post, so the owner and the use grantees of
+    the AI, who can only view the DM, still get 403, a user who cannot see it 404, a non-member AI
+    403 and anonymous callers 401; the AI that is a participant gets the 422.
+  - Reading stays: the room, its messages and its info, for the AI and for everyone who read them.
+    `PostFromChat` (history seeding) and system messages are not guarded.
+- **Edits**: `intelligences.Service.editable`, the gate of every profile edit (`Update`, `SetAvatar`,
+  `ClearAvatar`; `PATCH`, `PUT` and `DELETE` of the avatar), answers `ErrHistoryOnly` for a person
+  after the rights checks. Who could not edit a person before is refused as before (404 without view,
+  403 for a reader of a shared conversation, 403 for an AI, 401 anonymous); the users of its
+  connection get 422.
+  - `can_edit` is false for a person whoever asks (`Get`, `CanEdit`), so the web app offers no
+    editor (`contacts.$id.tsx` shows it from `can_edit`).
+  - The rename lock (PEOP-05, PROF-11: `SetPersonNameLocked` from `Update`) could no longer run and
+    is removed; the query and `people.name_locked` stay as dead history (`name_locked` is still in
+    the person DTO).
+- **DM to a person (DM-05 retired)**: `conversations.OpenDM` answers `ErrNoRouteToPerson` (422
+  `no_route_to_person`) for every person, also to the operator AI that holds the platform DM with
+  them, which used to get that DM back and could write into it (`platformRoom` is removed). So
+  `send_message to:@person` (`POST /agent/dms`) and `POST /conversations/dm` end there, creating
+  nothing; a person the caller cannot see is still `contact_not_found`. The AI answers people on its
+  connection (T19, T20).
+- **Superseded text of the intelligences spec** (AD-015 amends it; the file is not edited): DM-05's
+  "goes out through the connector account", PEOP-04's "and may edit them", PEOP-05 and PROF-11.
+- **Tests**: rewritten (assertions that a person can be edited, or a platform DM written, are gone):
+  `TestPersonProfileFollowsTheConnector`, `TestPersonProfile`, `TestPersonProfileRoutesAuthMatrix`
+  (the editors now get 422), `TestUpdateAuthorization`, `TestCanSeeAndCanEdit`, `TestGetProfile`,
+  `TestMergeKeepsAPlatformDMAsHistory` and `TestMergeAppendsAPlatformDMAndMovesItsChat` (the answer of
+  the merged AI is planted with its delivery: an AI cannot write in such a DM any more).
+  Deleted: `TestAUsersRenameOfAPersonSurvivesPlatformNames` (PROF-11, PEOP-05). Tests that only used a
+  person's avatar, name or handle as setup plant them (`plantAvatar`, `plantProfile`).
+- **Authorization** (matrices pinned by `TestPlatformDMPostAuthorizationMatrix`,
+  `TestEditingAPersonIsRefusedAsHistory`, `TestDMToAPersonHasNoRoute`): see the bullets above; every
+  refusal changes nothing and announces nothing.

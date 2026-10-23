@@ -11,12 +11,46 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/avatars"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/rooms"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
+
+// plantAvatar gives the intelligence the avatar an older version let a user set for a person (a
+// person's profile is history now, CID-21): the image goes through the avatar pipeline into the blob
+// store and onto the profile, and the avatar URL is returned.
+func plantAvatar(t *testing.T, env *testkit.Env, id string, image []byte) string {
+	t.Helper()
+	ctx := context.Background()
+	png, err := avatars.Process(bytes.NewReader(image))
+	require.NoError(t, err)
+	sha, _, err := env.App.Blobs.Put(bytes.NewReader(png), int64(len(png)))
+	require.NoError(t, err)
+	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.SetIntelligenceAvatar(ctx, db.SetIntelligenceAvatarParams{AvatarSha256: sha, UpdatedAt: time.Now().UnixMilli(), ID: id})
+	}))
+	return "/api/v1/intelligences/" + id + "/avatar?v=" + sha
+}
+
+// plantProfile gives the intelligence the name and handle an older version let a user choose for a
+// person.
+func plantProfile(t *testing.T, env *testkit.Env, id, name, handle string) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		cur, err := q.GetIntelligence(ctx, id)
+		if err != nil {
+			return err
+		}
+		return q.UpdateIntelligenceProfile(ctx, db.UpdateIntelligenceProfileParams{
+			DisplayName: name, Handle: handle, Bio: cur.Bio, UpdatedAt: time.Now().UnixMilli(), ID: id,
+		})
+	}))
+}
 
 // Synthetic platform ids of the people fixture.
 const (
@@ -169,9 +203,10 @@ func newPeopleFixture(t *testing.T) *peopleFixture {
 	return f
 }
 
-// PEOP-04 (L-017, L-018): users who own or may use the connector see and edit its people
-// whatever else they can view; a user who can view a conversation where the person was seen
-// reads the profile but cannot edit it; nobody else, admins included (AD-005), finds it.
+// PEOP-04 (L-017, L-018): users who own or may use the connector see its people whatever else they
+// can view; a user who can view a conversation where the person was seen reads the profile too; nobody
+// else, admins included (AD-005), finds it. Nobody edits a person: its profile is history (CID-21), so
+// the users of the connector are told so, and the others are refused as before.
 func TestPersonProfileFollowsTheConnector(t *testing.T) {
 	f := newPeopleFixture(t)
 	path := "/api/v1/intelligences/" + f.person
@@ -180,13 +215,13 @@ func TestPersonProfileFollowsTheConnector(t *testing.T) {
 	liveCarol, _ := f.carol.DialLive("")
 
 	owner := profileOf(t, f.alice, f.person)
-	require.Equal(t, []any{dto.IntelligenceRolePerson, dto.IntelligenceKindHuman, "Customer", "customer", connectortest.KindName, true},
+	require.Equal(t, []any{dto.IntelligenceRolePerson, dto.IntelligenceKindHuman, "Customer", "customer", connectortest.KindName, false},
 		[]any{owner.Role, owner.Kind, owner.DisplayName, owner.Handle, owner.Platform, owner.CanEdit})
 	require.NotNil(t, owner.Person)
 
 	// bob may use the connector and can view no room at all: the connector alone gives access.
 	grantee := profileOf(t, f.bob, f.person)
-	require.True(t, grantee.CanEdit)
+	require.False(t, grantee.CanEdit)
 	require.NotNil(t, grantee.Person)
 	require.Empty(t, grantee.Conversations)
 
@@ -210,16 +245,13 @@ func TestPersonProfileFollowsTheConnector(t *testing.T) {
 	getProfile(f.alice.Token(dto.TokenKindAgent, "laptop"), f.person).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	require.Empty(t, profileOf(t, f.alice, f.person).Bio, "refused edits change nothing")
 
-	// The grantee edits the person; the users who can see it hear about it, carol does not.
-	got := testkit.Decode[dto.IntelligenceProfile](patchProfile(f.bob, f.person, dto.UpdateProfileRequest{Bio: ptr("Orders desk")}).RequireStatus(http.StatusOK))
-	require.Equal(t, "Orders desk", got.Bio)
-	require.Equal(t, "Orders desk", profileOf(t, f.alice, f.person).Bio)
-	for _, live := range []*testkit.LiveConn{liveAlice, liveDave} {
-		var ref dto.IntelligenceRef
-		live.Expect(dto.LiveEventTypeIntelligenceChanged, &ref, connectortest.Timeout)
-		require.Equal(t, f.person, ref.ID)
+	// The users of the connector are told the profile is history: nothing changes and nobody hears of a change.
+	patchProfile(f.bob, f.person, dto.UpdateProfileRequest{Bio: ptr("Orders desk")}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeHistoryOnly)
+	patchProfile(f.alice, f.person, dto.UpdateProfileRequest{Bio: ptr("Orders desk")}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeHistoryOnly)
+	require.Empty(t, profileOf(t, f.alice, f.person).Bio)
+	for _, live := range []*testkit.LiveConn{liveAlice, liveDave, liveCarol} {
+		live.ExpectNone(300*time.Millisecond, dto.LiveEventTypeHello)
 	}
-	liveCarol.ExpectNone(300*time.Millisecond, dto.LiveEventTypeHello)
 }
 
 // DM-08, PEOP-04 (AD-013): a user granted use on the AI that operates a connector account reads
@@ -235,7 +267,7 @@ func TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople(t *testing.T) {
 
 	f.clock.Advance(time.Minute)
 	_, dm, person := f.platformDM(atlas, "5511999990003@s.whatsapp.net", "Dana", "hello Atlas")
-	putAvatar(f.alice, person, pngBytes(t, bands(300, 300))).RequireStatus(http.StatusOK)
+	plantAvatar(t, f.env, person, pngBytes(t, bands(300, 300)))
 
 	// alice owns Atlas and dave may use it: both read the DM and the person, neither as a participant.
 	for _, c := range []*testkit.Client{f.alice, f.dave} {
@@ -252,8 +284,8 @@ func TestUseGranteeOfAnAIReadsItsPlatformDMsAndPeople(t *testing.T) {
 	require.Equal(t, []dto.RoomRef{{ID: dm, Kind: dto.ConversationKindDM}}, seen.Conversations, "the DM with Atlas is the one conversation dave can view")
 	patchProfile(f.dave, person, dto.UpdateProfileRequest{Bio: ptr("Hijacked")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 
-	// bob may use the connector: he sees and edits the person, but the DM is Atlas's, not his.
-	require.True(t, profileOf(t, f.bob, person).CanEdit)
+	// bob may use the connector: he sees the person, whom nobody edits, but the DM is Atlas's, not his.
+	require.False(t, profileOf(t, f.bob, person).CanEdit)
 	f.bob.Get("/api/v1/rooms/"+dm).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	f.bob.Get("/api/v1/rooms/"+dm+"/messages").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
@@ -312,15 +344,17 @@ func TestRoomFilesNameAPersonWithItsPlatform(t *testing.T) {
 	}, files[0].Author)
 }
 
-// PROF-07: an avatar a user of the connector set for a person is stored as a 256x256 PNG and
-// served to whoever can see the person: the users of the connector and the viewers of a room where
-// it wrote or of a chat where it was seen; carol and the admin get 404.
+// PROF-07: the avatar a person has (a user of the connector set it before a person's profile became
+// history, CID-21) is stored as a 256x256 PNG and served to whoever can see the person: the users of
+// the connector and the viewers of a room where it wrote or of a chat where it was seen; carol and
+// the admin get 404.
 func TestPersonAvatarIsServedToWhoCanSeeThePerson(t *testing.T) {
 	f := newPeopleFixture(t)
 	getAvatar(f.alice, f.person).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
-	set := testkit.Decode[dto.IntelligenceProfile](putAvatar(f.bob, f.person, pngBytes(t, bands(400, 200))).RequireStatus(http.StatusOK))
-	require.Regexp(t, avatarURLPattern, set.AvatarURL, "the grantee of the connector sets it")
+	set := dto.IntelligenceProfile{}
+	set.AvatarURL = plantAvatar(t, f.env, f.person, pngBytes(t, bands(400, 200)))
+	require.Regexp(t, avatarURLPattern, set.AvatarURL)
 	viewers := map[string]*testkit.Client{
 		"the connector's owner": f.alice, "a user of the connector": f.bob,
 		"a viewer of a room it wrote in": f.dave, "a viewer of a chat it was seen in": f.erin,
@@ -382,24 +416,6 @@ func TestPersonPageListsAtMost100Conversations(t *testing.T) {
 		require.Equal(t, newest[i], c.ID, "position %d", i)
 	}
 	require.Len(t, profileOf(t, f.dave, f.person).Conversations, 1, "the cut is made among the rooms the caller can view")
-}
-
-// PROF-11, PEOP-05: a user's rename of a person (here by a use grantee) survives later platform
-// names, shows in the timeline, and marks the name as chosen.
-func TestAUsersRenameOfAPersonSurvivesPlatformNames(t *testing.T) {
-	f := newPeopleFixture(t)
-
-	got := testkit.Decode[dto.IntelligenceProfile](patchProfile(f.bob, f.person, dto.UpdateProfileRequest{DisplayName: ptr("Dana (Acme)")}).RequireStatus(http.StatusOK))
-	require.Equal(t, "Dana (Acme)", got.DisplayName)
-	require.True(t, got.Person.NameLocked)
-
-	f.clock.Advance(time.Minute)
-	f.emit(peopleGroupX, "x2", peopleSender, "Customer Prime")
-	require.Equal(t, "Dana (Acme)", profileOf(t, f.alice, f.person).DisplayName)
-	require.True(t, profileOf(t, f.alice, f.person).Person.NameLocked)
-	msgs := testkit.Decode[dto.Page[dto.Message]](f.alice.Get("/api/v1/rooms/" + f.roomA.ID + "/messages").RequireStatus(http.StatusOK)).Items
-	require.Equal(t, "Dana (Acme)", msgs[0].Author.DisplayName)
-	require.Equal(t, "Customer Prime", msgs[0].SenderName, "the platform's name stays on the message")
 }
 
 // PEOP-02: a person whose account a user verified (pairing, AD-008) shows who it is; the link

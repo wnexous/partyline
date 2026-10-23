@@ -24,9 +24,9 @@ import (
 //
 //   - withID is the caller itself: ErrDMSelf. An empty withID is a validation error.
 //   - withID is unknown or not visible to the caller: ErrContactNotFound, the same for both.
-//   - withID is an external person: the platform DM with them when a connector the caller
-//     operates carries it (created false, it is never made here), else ErrNoRouteToPerson
-//     (DM-05): a person is reached through the connector account they wrote to.
+//   - withID is an external person: always ErrNoRouteToPerson. Partyline no longer writes to
+//     people (DM-05 is retired, CID-22): a person is answered on their platform, by the AI that
+//     operates the connection they wrote to. The old platform DMs with them are history.
 //   - An AI that has to create the DM is asked to AllowCreate first: ErrRateLimited. Opening an
 //     existing DM is never counted.
 //
@@ -54,15 +54,7 @@ func (s *Service) OpenDM(ctx context.Context, p authn.Principal, withID string) 
 	case intelligences.RoleAI:
 		targetKind = dto.MemberKindAgent
 	case intelligences.RolePerson:
-		// DM-05: a person is reached through the platform DM of a connector the caller operates.
-		room, ok, err := s.platformRoom(ctx, p, me.id, withID)
-		if err != nil {
-			return rooms.Room{}, false, err
-		}
-		if !ok {
-			return rooms.Room{}, false, ErrNoRouteToPerson
-		}
-		return room, false, nil
+		return rooms.Room{}, false, ErrNoRouteToPerson
 	default: // an intelligence without account: nobody to talk to
 		return rooms.Room{}, false, ErrContactNotFound
 	}

@@ -107,6 +107,10 @@ const (
 	// ErrorCodeNoRouteToPerson is a direct message with an external person that no platform
 	// conversation of the sender reaches (422, DM-05).
 	ErrorCodeNoRouteToPerson ErrorCode = "no_route_to_person"
+	// ErrorCodeHistoryOnly is a post in a direct message with an external person, or an edit of a
+	// person's profile: what the connections left before AD-015 is read-only history, and a person
+	// is answered on their platform (422, CID-21).
+	ErrorCodeHistoryOnly ErrorCode = "history_only"
 	// ErrorCodeCounterpartDisabled is a post in a direct message whose other participant is a
 	// disabled user: the DM stays readable (403, DM-02).
 	ErrorCodeCounterpartDisabled ErrorCode = "counterpart_disabled"

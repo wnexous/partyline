@@ -6,9 +6,7 @@ import (
 	"errors"
 
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
-	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -149,33 +147,4 @@ func (s *Service) PlatformDMRoom(ctx context.Context, authorID, operatorID strin
 		return "", false, nil
 	}
 	return r.ID, err == nil, err
-}
-
-// platformRoom returns the DM between the caller and a person when a connector the caller
-// operates carries it (DM-05): the platform DM EnsurePlatformDM made, whose chat belongs to a
-// connector that names the caller as operator now. A person is never given a new DM here: nobody
-// is reached who did not write first.
-func (s *Service) platformRoom(ctx context.Context, p authn.Principal, meID, personID string) (rooms.Room, bool, error) {
-	existing, err := s.store.R().GetDMRoom(ctx, sortedPair(meID, personID))
-	if errors.Is(err, sql.ErrNoRows) {
-		return rooms.Room{}, false, nil
-	}
-	if err != nil {
-		return rooms.Room{}, false, err
-	}
-	connectors, err := s.store.R().ListRoomChatConnectors(ctx, existing.ID)
-	if err != nil {
-		return rooms.Room{}, false, err
-	}
-	for _, c := range connectors {
-		operator := c.OwnerID
-		if c.OperatorIid.Valid {
-			operator = c.OperatorIid.String
-		}
-		if operator == meID {
-			room, err := s.rooms.Get(ctx, p, existing.ID)
-			return room, err == nil, err
-		}
-	}
-	return rooms.Room{}, false, nil
 }

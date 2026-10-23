@@ -682,9 +682,9 @@ New frame DTOs are added.
 **Reuses**: `checkCounterpart`, `intelligences.Service.Update`
 **Requirement**: CID-21, CID-22
 **Done when**:
-- [ ] e2e: AI post in its old platform DM → 422 `history_only`; edit of a person → 422 `history_only`; DM to a person → `no_route_to_person`; reading history still works
-- [ ] DM-05 and PEOP-05/PROF-11 person-edit tests rewritten (retired)
-- [ ] Gate check passes: `make check`
+- [x] e2e: AI post in its old platform DM → 422 `history_only`; edit of a person → 422 `history_only`; DM to a person → `no_route_to_person`; reading history still works
+- [x] DM-05 and PEOP-05/PROF-11 person-edit tests rewritten (retired)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(rooms): platform DMs and people are read-only history`

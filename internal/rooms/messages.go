@@ -134,8 +134,11 @@ func (s *Service) Post(ctx context.Context, p authn.Principal, roomID string, in
 	return s.post(ctx, roomID, d)
 }
 
-// checkCounterpart refuses a post in a DM whose other participant is a disabled user; the DM
-// stays readable (DM-02). Rooms that are not DMs, and counterparts that are AIs or people, pass.
+// checkCounterpart refuses a post in a DM with an external person (access.ErrHistoryOnly): what
+// the connections left before AD-015 is history, and a person is answered on their platform,
+// through the connection (CID-21). It also refuses a post in a DM whose other participant is a
+// disabled user (DM-02). The DMs stay readable. Rooms that are not DMs, and counterparts that are
+// AIs or enabled users, pass.
 func (s *Service) checkCounterpart(ctx context.Context, roomID, authorIID string) error {
 	r, err := s.store.R().GetRoom(ctx, roomID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -143,6 +146,13 @@ func (s *Service) checkCounterpart(ctx context.Context, roomID, authorIID string
 	}
 	if err != nil || r.Kind != string(dto.ConversationKindDM) {
 		return err
+	}
+	for _, participant := range []string{r.DmA.String, r.DmB.String} {
+		if _, err := s.store.R().GetPerson(ctx, participant); err == nil {
+			return access.ErrHistoryOnly
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
 	}
 	other := r.DmA.String
 	if other == authorIID {

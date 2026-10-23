@@ -29,6 +29,10 @@ var (
 	// ErrDMNoSharing means a direct message cannot be shared: it is visible to its two
 	// intelligences only (422 dm_no_sharing, DM-08).
 	ErrDMNoSharing = errors.New("a direct message cannot be shared")
+	// ErrHistoryOnly means the caller may act on the resource but it is read-only history: a
+	// post in a platform DM with a person, or an edit of a person's profile (422 history_only,
+	// CID-21).
+	ErrHistoryOnly = errors.New("history is read-only")
 )
 
 // Kind is a resource kind that carries grants.
