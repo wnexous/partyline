@@ -22,7 +22,6 @@ import type {
   LiveEvent,
   Me,
   Message,
-  OutboxUpdate,
   Room,
   RoomMember,
   RoomRef,
@@ -78,16 +77,6 @@ function patchList<T extends { id: string }>(
   patch: (item: T) => T,
 ) {
   qc.setQueryData<T[]>(key, (old) => old?.map((item) => (item.id === id ? patch(item) : item)));
-}
-
-function patchOutbox(message: Message, update: OutboxUpdate): Message {
-  const { room_id: _room, message_id: _message, ...item } = update;
-  const outbox = message.outbox ?? [];
-  const exists = outbox.some((o) => o.id === item.id);
-  return {
-    ...message,
-    outbox: exists ? outbox.map((o) => (o.id === item.id ? item : o)) : [...outbox, item],
-  };
 }
 
 /** The room's name as the cache knows it: the feed itself, the room, or the rooms list. */
@@ -322,27 +311,6 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       qc.invalidateQueries({ queryKey: queryKeys.connectorChats(event.data.connector_id) });
       qc.invalidateQueries({ queryKey: queryKeys.chats });
       return;
-
-    case "outbox.status": {
-      const update = event.data;
-      qc.setQueryData<MessagePages>(queryKeys.roomMessages(update.room_id), (old) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page) =>
-            page.items.some((m) => m.id === update.message_id)
-              ? {
-                  ...page,
-                  items: page.items.map((m) =>
-                    m.id === update.message_id ? patchOutbox(m, update) : m,
-                  ),
-                }
-              : page,
-          ),
-        };
-      });
-      return;
-    }
 
     case "identity.linked":
       actions.setLastLinkedIdentity(event.data);

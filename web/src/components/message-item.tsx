@@ -1,17 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import {
   BotIcon,
-  CheckIcon,
-  ClockIcon,
   CornerDownRightIcon,
   FileIcon,
   InfoIcon,
-  LoaderIcon,
   type LucideIcon,
   MessageCircleIcon,
   ShieldAlertIcon,
   ShieldCheckIcon,
-  TriangleAlertIcon,
   UserIcon,
 } from "lucide-react";
 import { lazy, memo, Suspense } from "react";
@@ -24,8 +20,6 @@ import type {
   AuthorKind,
   IntelligenceRef,
   Message,
-  OutboxItem,
-  OutboxStatus,
   RoomMember,
 } from "@/lib/api/types.gen";
 import { type MessageKey, type Translate, useI18n } from "@/lib/i18n";
@@ -128,21 +122,6 @@ export function authorDisplayName(message: Message): string {
   }
   return message.author_name;
 }
-
-const OUTBOX: Record<OutboxStatus, { icon: LucideIcon; label: MessageKey; className: string }> = {
-  pending: { icon: ClockIcon, label: "message.outbox.pending", className: "text-muted-foreground" },
-  sending: {
-    icon: LoaderIcon,
-    label: "message.outbox.sending",
-    className: "text-muted-foreground",
-  },
-  sent: { icon: CheckIcon, label: "message.outbox.sent", className: "text-success" },
-  failed: {
-    icon: TriangleAlertIcon,
-    label: "message.outbox.failed",
-    className: "text-destructive",
-  },
-};
 
 const CONTENT_KIND: Partial<Record<Message["kind"], MessageKey>> = {
   image: "message.content.image",
@@ -325,8 +304,6 @@ export const MessageItem = memo(function MessageItem({
             ))}
           </ul>
         ) : null}
-
-        {message.outbox?.length ? <OutboxList items={message.outbox} members={members} /> : null}
       </div>
     </article>
   );
@@ -489,45 +466,5 @@ function AttachmentView({ attachment: a }: { attachment: Attachment }) {
       <span className="truncate font-medium">{a.name}</span>
       <span className="font-mono text-muted-foreground tabular">{formatBytes(a.size, locale)}</span>
     </a>
-  );
-}
-
-function OutboxList({
-  items,
-  members,
-}: {
-  items: OutboxItem[];
-  members?: Map<string, RoomMember>;
-}) {
-  const { t } = useI18n();
-  const chatName = (chatId: string) => {
-    for (const m of members?.values() ?? []) {
-      if (m.kind === "chat" && m.member_id === chatId) {
-        return chatTitle(t, m.name, m.connector_kind);
-      }
-    }
-    return chatId.slice(0, 8);
-  };
-  return (
-    <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.7rem]">
-      {items.map((o) => {
-        const cfg = OUTBOX[o.status] ?? OUTBOX.pending;
-        return (
-          <li
-            key={o.id}
-            className={cn("inline-flex items-center gap-1", cfg.className)}
-            title={o.last_error || undefined}
-          >
-            <cfg.icon className="size-3" aria-hidden="true" />
-            <span>
-              {t(cfg.label)} {t("message.outboxTo", { chat: chatName(o.chat_id) })}
-            </span>
-            {o.status === "failed" && o.last_error ? (
-              <span className="sr-only">: {o.last_error}</span>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
   );
 }

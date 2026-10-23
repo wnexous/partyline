@@ -802,8 +802,8 @@ Strings come in `en` and `pt-BR`.
 **Reuses**: timeline tests
 **Requirement**: CID-22
 **Done when**:
-- [ ] Unit: messages render without delivery badges; chat-authored history still shows its platform badge
-- [ ] Gate check passes: `make check`
+- [x] Unit: messages render without delivery badges; chat-authored history still shows its platform badge
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): drop chat delivery status from the timeline`

@@ -925,3 +925,19 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   and asks for none (CID-22)" (no Notifications heading, no `Send them to` combobox, no
   `/me/notify*` call). `a11y.test.tsx` waits for the appearance radios instead of the notify
   combobox, and its `GET /me/notify-options` stub is gone.
+
+## T32: Timeline without chat delivery status (CID-22)
+
+- **`web/src/components/message-item.tsx`** no longer reads `Message.outbox`: the outbox map, the
+  `OutboxList` row (status chip plus `to <chat>`) and the status icons are gone, so a message of
+  any kind renders only its author, text, files and reply context. The field stays in the DTO
+  (T35 removes it) and is ignored.
+- **Live handler**: `outbox.status` (`patchOutbox` and its case in `web/src/lib/live/handlers.ts`)
+  is removed with it: the room outbox is what T33 retires server-side, and nothing rendered the
+  patched field any more. The `outbox.status` case of `handlers.test.ts` is deleted (retired
+  feature).
+- **Strings**: `message.outbox.pending/sending/sent/failed` and `message.outboxTo` removed from
+  `en` and `pt-BR`.
+- **Test** (`message-timeline.test.tsx`): a message carrying `outbox` items renders its text with
+  no `Queued`/`Sending`/`Delivered`/`Failed` chip and no `to <chat>`, while a chat-authored
+  history message still shows its platform badge (`Telegram`).
