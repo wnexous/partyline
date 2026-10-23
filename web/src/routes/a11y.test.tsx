@@ -83,16 +83,6 @@ function appApi(locale: "en" | "pt-BR") {
   return mockApi({
     "GET /me": json(200, makeMe({ role: "admin", locale })),
     "GET /intelligences/u1": json(200, ownProfile),
-    "GET /me/notify-options": json(200, {
-      items: [
-        {
-          chat_id: "c1",
-          title: "Lia Costa",
-          connector: { id: "k1", kind: "whatsapp", name: "ops-line" },
-          account: "+5511999990000",
-        },
-      ],
-    }),
     "GET /rooms": json(200, { items: [makeRoom({ id: "r1", name: "deploys", last_seq: 3 })] }),
     "GET /rooms/r1": json(200, makeRoom({ id: "r1", name: "deploys", last_seq: 3 })),
     "GET /rooms/r1/members": json(200, {
@@ -345,11 +335,11 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
-  it("the settings page, with the profile editor and the notify choice, has no axe violations", async () => {
+  it("the settings page, with the profile editor and the appearance choices, has no axe violations", async () => {
     appApi(locale);
     const { container } = renderRoute("/settings");
-    await screen.findByRole("combobox", {
-      name: locale === "en" ? "Send them to" : "Enviar para",
+    await screen.findByRole("radio", {
+      name: locale === "en" ? "Dark" : "Escuro",
     });
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });

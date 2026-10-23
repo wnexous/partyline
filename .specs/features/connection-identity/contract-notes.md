@@ -910,3 +910,18 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   read the connection right after `WaitStop`, but `Manager.Apply` stops the connector before it
   persists the CID-02 detail, so a loaded gate read the old empty detail. It now waits (bounded,
   `require.Eventually`) for `status=error` and the exact detail; no assertion was removed.
+
+## T31: Settings without app notifications (CID-22)
+
+- **Removed from `web/src/routes/_app/settings.tsx`**: the "Notify me here" section (NOTI-01) and
+  its choice form; the page now holds the profile, appearance, password and sessions sections.
+- **Removed queries**: `notifyOptionsQuery`, `useNotifyOptions`, `useSetNotify`, the
+  `notifyOptions` query key and the `NotifyOption`/`SetNotifyRequest` imports in
+  `web/src/lib/api/queries.ts`. No request to `/me/notify-options` or `PUT /me/notify` is made by
+  the app any more. `Me.notify_chat_id` stays in the DTO (T35 removes it) and is ignored.
+- **Strings**: `account.notify*` (twelve keys) removed from `en` and `pt-BR`.
+- **Tests**: `src/lib/api/notify.test.tsx` deleted (NOTI-01). `settings.test.tsx` loses the
+  notify-options fixture and its three notify cases, and gains "offers no app-notification choice
+  and asks for none (CID-22)" (no Notifications heading, no `Send them to` combobox, no
+  `/me/notify*` call). `a11y.test.tsx` waits for the appearance radios instead of the notify
+  combobox, and its `GET /me/notify-options` stub is gone.

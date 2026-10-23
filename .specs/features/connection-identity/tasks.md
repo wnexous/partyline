@@ -788,8 +788,8 @@ Strings come in `en` and `pt-BR`.
 **Reuses**: settings tests
 **Requirement**: CID-22
 **Done when**:
-- [ ] Unit: no notify control; no request to `/me/notify*`
-- [ ] Gate check passes: `make check`
+- [x] Unit: no notify control; no request to `/me/notify*`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): retire app notification settings`
