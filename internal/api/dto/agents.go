@@ -210,6 +210,15 @@ type AgentPlatformAckFrame struct {
 	ItemID string         `json:"item_id"`
 }
 
+// AgentPending is the answer of GET /agent/pending?platform=1 (CID-06): the undelivered room
+// messages, exactly as the call without the parameter returns them (a List of AgentMessage), and
+// the AI's queued platform events, oldest first, at most 20 per call like the room messages. Both
+// lists count as delivered once returned: the platform events lose their text (CID-09).
+type AgentPending struct {
+	Items    []AgentMessage  `json:"items"`
+	Platform []PlatformEvent `json:"platform"`
+}
+
 // AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its
 // owner can see, opening the DM when there is none. To is the target's "@handle", handle or id;
 // ChatIDs reach chats of the DM like the recipients of a post.

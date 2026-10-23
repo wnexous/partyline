@@ -161,6 +161,34 @@ func (q *Queries) DeleteUnackedPlatformItemsOverCap(ctx context.Context, arg Del
 	return result.RowsAffected()
 }
 
+const getPlatformAttachmentForAgent = `-- name: GetPlatformAttachmentForAgent :one
+SELECT a.id, a.item_id, a.sha256, a.name, a.mime, a.size, a.status FROM platform_attachments a
+JOIN platform_items i ON i.id = a.item_id
+WHERE a.id = ?1 AND i.agent_id = ?2
+`
+
+type GetPlatformAttachmentForAgentParams struct {
+	ID      string
+	AgentID string
+}
+
+// CID-09: a file of an item the AI holds, acknowledged or not (the rows stay 24 hours after the
+// ack); an AI downloads the files of its own queue only.
+func (q *Queries) GetPlatformAttachmentForAgent(ctx context.Context, arg GetPlatformAttachmentForAgentParams) (PlatformAttachment, error) {
+	row := q.db.QueryRowContext(ctx, getPlatformAttachmentForAgent, arg.ID, arg.AgentID)
+	var i PlatformAttachment
+	err := row.Scan(
+		&i.ID,
+		&i.ItemID,
+		&i.Sha256,
+		&i.Name,
+		&i.Mime,
+		&i.Size,
+		&i.Status,
+	)
+	return i, err
+}
+
 const getPlatformDropped = `-- name: GetPlatformDropped :one
 SELECT platform_dropped FROM agents WHERE id = ?
 `

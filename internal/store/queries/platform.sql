@@ -53,6 +53,13 @@ JOIN chats c ON c.id = i.chat_id
 JOIN connectors k ON k.id = i.connector_id
 WHERE i.id = sqlc.arg(id) AND i.agent_id = sqlc.arg(agent_id);
 
+-- name: GetPlatformAttachmentForAgent :one
+-- CID-09: a file of an item the AI holds, acknowledged or not (the rows stay 24 hours after the
+-- ack); an AI downloads the files of its own queue only.
+SELECT a.* FROM platform_attachments a
+JOIN platform_items i ON i.id = a.item_id
+WHERE a.id = sqlc.arg(id) AND i.agent_id = sqlc.arg(agent_id);
+
 -- name: ListPlatformAttachmentsForItems :many
 SELECT * FROM platform_attachments WHERE item_id IN (sqlc.slice(item_ids)) ORDER BY item_id, id;
 

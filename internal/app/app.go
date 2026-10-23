@@ -229,6 +229,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		FileLinks:     fileLinks,
 		Blobs:         blobs,
 		Audit:         auditLog,
+		Platform:      a.Platform,
 		Live:          a.Live,
 		AgentWS:       a.Gateway,
 		Inbox:         a.Gateway,

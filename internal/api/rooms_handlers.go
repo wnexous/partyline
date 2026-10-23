@@ -350,7 +350,13 @@ func (s *server) downloadAttachment(w http.ResponseWriter, r *http.Request, p au
 	if err != nil {
 		return err
 	}
-	f, err := s.Blobs.Open(a.Sha256)
+	return s.serveBlob(w, r, a.Sha256, a.Name, a.Mime)
+}
+
+// serveBlob answers with the stored file sha: images show inline, everything else downloads under
+// its name. A file that was not stored (no hash) or whose blob is gone is a 404.
+func (s *server) serveBlob(w http.ResponseWriter, r *http.Request, sha, name, mimeType string) error {
+	f, err := s.Blobs.Open(sha)
 	if errors.Is(err, attachments.ErrNotFound) {
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
 	}
@@ -359,11 +365,11 @@ func (s *server) downloadAttachment(w http.ResponseWriter, r *http.Request, p au
 	}
 	defer func() { _ = f.Close() }()
 	disposition, ct := "attachment", "application/octet-stream"
-	if mt, _, err := mime.ParseMediaType(a.Mime); err == nil && inlineMimes[strings.ToLower(mt)] {
+	if mt, _, err := mime.ParseMediaType(mimeType); err == nil && inlineMimes[strings.ToLower(mt)] {
 		disposition, ct = "inline", mt
 	}
 	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": a.Name}))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": name}))
 	http.ServeContent(w, r, "", time.Time{}, f)
 	return nil
 }

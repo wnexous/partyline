@@ -206,6 +206,57 @@ func (q *Queue) Get(ctx context.Context, agentID, itemID string) (Event, error) 
 	return out[0], nil
 }
 
+// Take hands the AI its oldest unacknowledged items, at most limit, and acknowledges them in the
+// same transaction: the items count as delivered once they are returned, and a failure leaves them
+// all queued (CID-08, CID-09). It serves the harnesses that poll instead of holding the WebSocket.
+// The events are the items as they were queued, with their text, which the queue no longer has.
+func (q *Queue) Take(ctx context.Context, agentID string, limit int) ([]Event, error) {
+	out := []Event{}
+	if limit <= 0 {
+		return out, nil
+	}
+	// Polling an empty queue is the common case: look with a read before taking the write lock.
+	first, err := q.Unacked(ctx, agentID, 0, 1)
+	if err != nil || len(first) == 0 {
+		return out, err
+	}
+	at := sql.NullInt64{Int64: q.d.Now().UnixMilli(), Valid: true}
+	err = q.d.Store.WithTx(ctx, func(tx *db.Queries) error {
+		rows, err := tx.ListUnackedPlatformItems(ctx, db.ListUnackedPlatformItemsParams{AgentID: agentID, AfterSeq: 0, Limit: int64(limit)})
+		if err != nil {
+			return err
+		}
+		out = make([]Event, len(rows))
+		ids := make([]string, len(rows))
+		for i, r := range rows {
+			out[i] = event(r.PlatformItem, r.ChatTitle, r.ChatKind, r.Platform)
+			ids[i] = r.PlatformItem.ID
+			if _, err := tx.AckPlatformItem(ctx, db.AckPlatformItemParams{AckedAt: at, ID: r.PlatformItem.ID, AgentID: agentID}); err != nil {
+				return err
+			}
+		}
+		return attach(ctx, tx, out, ids)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Attachment returns a file of an item the AI holds, acknowledged or not (CID-09): ErrNotFound for
+// an unknown file and for one of another AI's item. The file goes with its item, 24 hours after the
+// acknowledgement.
+func (q *Queue) Attachment(ctx context.Context, agentID, attachmentID string) (Attachment, error) {
+	f, err := q.d.Store.R().GetPlatformAttachmentForAgent(ctx, db.GetPlatformAttachmentForAgentParams{ID: attachmentID, AgentID: agentID})
+	if errors.Is(err, sql.ErrNoRows) {
+		return Attachment{}, ErrNotFound
+	}
+	if err != nil {
+		return Attachment{}, err
+	}
+	return Attachment{ID: f.ID, Name: f.Name, Mime: f.Mime, Size: f.Size, SHA256: f.Sha256, Status: dto.AttachmentStatus(f.Status)}, nil
+}
+
 // Ack records that the AI's session received the item and deletes its text at once (CID-09).
 // The row stays, and so do its files, until Purge removes them. It is idempotent: a second ack,
 // an unknown item and another AI's item change nothing and are not errors.

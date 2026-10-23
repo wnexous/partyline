@@ -153,10 +153,10 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-03 | P1: One AI per connection | Tasks | In Tasks |
 | CID-04 | P1: One AI per connection | Execute | Implemented (T1, bebd8d1) |
 | CID-05 | P1: One AI per connection | Tasks | In Tasks |
-| CID-06 | P1: Direct delivery | Execute | Implementing (T7, T12) |
+| CID-06 | P1: Direct delivery | Execute | Implementing (T7, T12, T13) |
 | CID-07 | P1: Direct delivery | Execute | Implementing (T7) |
-| CID-08 | P1: Direct delivery | Execute | Implementing (T2, T3, T12) |
-| CID-09 | P1: Direct delivery | Execute | Implementing (T3, T4, T12) |
+| CID-08 | P1: Direct delivery | Execute | Implementing (T2, T3, T12, T13) |
+| CID-09 | P1: Direct delivery | Execute | Implementing (T3, T4, T12, T13) |
 | CID-10 | P1: Direct delivery | Execute | Implementing (T4, T12) |
 | CID-11 | P1: Direct delivery | Execute | Implementing (T3) |
 | CID-12 | P1: Direct delivery | Execute | Implementing (T7) |

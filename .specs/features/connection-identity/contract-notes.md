@@ -316,3 +316,41 @@ Where a section refines the design, it says so.
   acknowledgement of another AI's item is a no-op (`Queue.Ack`).
 - **Testkit**: `Folder.Features`, `Folder.WithPlatform()`, `Client.DialPlatform(name)`,
   `AgentConn.Platform(timeout)`, `AgentConn.AckPlatform(itemID)`.
+
+## T13: Pending endpoint returns platform events (CID-06, CID-08, CID-09)
+
+- **Request**: `GET /api/v1/agent/pending?platform=1`. `platform` is `1` (on) or `0` or empty or
+  absent (off); anything else, or the parameter twice, is a 422 `invalid` with `fields.platform`
+  ("must be 1 or 0") and takes nothing. `wait` and the 409 for an AI that holds the WebSocket
+  (`messages are pushed to this agent's session; there is nothing to wait for`) are unchanged and
+  apply to `platform=1` too.
+- **Answer**: without the parameter the answer is what it always was, `{"items": [...]}`, with no
+  `platform` key, and the platform queue is neither read nor changed. With it, `dto.AgentPending`:
+  `{"items": [...], "platform": [...]}`, both always present (`[]` when empty). `platform` holds
+  `PlatformEvent`s (the WebSocket frame's event, `convert.PlatformEvent`), oldest first.
+- **Limit** (refinement of "within the existing limit"): each list has the existing limit of 20 per
+  call. The room messages are the same with and without the parameter, which only adds the platform
+  list; the rest of a longer queue comes with the next call.
+- **Taken** (CID-09): the events count as delivered once returned, "as room messages do".
+  `platform.Queue.Take(agent, limit)` lists the oldest unacknowledged items and acknowledges them in
+  one write transaction (their text is deleted, the events returned still carry it); a failure
+  acknowledges none. An empty queue is polled with a read only. The room messages are read first
+  (their cursors move), then the platform events are taken: a store error between the two loses what
+  the first step returned, like a failed response write after the cursors moved.
+- **Wait**: `wait=N&platform=1` ends at the first room message or platform event, polling every
+  500 ms like the room side; without `platform=1` a platform event neither ends the wait nor is taken.
+- **Files of platform messages** (not assigned to a task by the plan, needed by CID-09 "attachments
+  stay downloadable for 24 hours"; the design's data-model note): `GET /api/v1/agent/attachments/{id}`
+  serves the attachment of a room the AI can view and, when there is none, a file of an item the AI
+  holds, acknowledged or not (`Queue.Attachment`). Any other id is the same 404 as before: unknown,
+  another AI's, not stored (`too_large`, `unavailable`), purged (24 hours after the ack). Images
+  show inline and everything else downloads under its name, as for room files (`serveBlob` is
+  shared). The user route `GET /api/v1/attachments/{id}` is unchanged and never serves a platform
+  file. Agent tokens only (user credentials 403, anonymous 401). The purge runner (T4) deletes the
+  blob once nothing references it.
+- **Authorization** (agent tokens only): the AI is the token owner's AI of the machine and folder in
+  the headers, so another AI of the owner, the same-named AI of a user granted use of the operator
+  and the same-named AI of a stranger see only their own queue; user tokens and sessions get 403,
+  anonymous callers 401.
+- **Wiring**: `api.Deps.Platform` (the app passes `App.Platform`).
+

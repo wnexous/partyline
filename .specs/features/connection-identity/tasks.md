@@ -505,8 +505,8 @@ New frame DTOs are added.
 **Reuses**: `agentPending`, `Queue.Unacked/Ack`
 **Requirement**: CID-06, CID-08, CID-09
 **Done when**:
-- [ ] e2e: with `platform=1`, the events are returned and acked; without it they are neither returned nor acked; `wait` still long-polls
-- [ ] Gate check passes: `make check`
+- [x] e2e: with `platform=1`, the events are returned and acked; without it they are neither returned nor acked; `wait` still long-polls
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): pending returns platform events on request`
