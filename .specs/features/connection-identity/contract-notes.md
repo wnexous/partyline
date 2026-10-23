@@ -409,3 +409,37 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   and the same-named AI of a stranger see only their own queue; user tokens and sessions get 403,
   anonymous callers 401.
 - **Wiring**: `api.Deps.Platform` (the app passes `App.Platform`).
+
+## T14: Channel and listen show platform events (CID-06, CID-25)
+
+- **Opt-in**: every WebSocket connection of `partyline channel` and of `partyline listen` sends
+  `X-Partyline-Features: platform`, so a current CLI always receives platform events. The REST calls
+  of the tools send no such header; the hooks and `wait_for_messages` ask with `?platform=1` (T15).
+- **Notification** (`channel.FormatPlatform`; `listen` prints the same keys plus `content`):
+  - content: the text, then one `[attachment <id>: <name>, <mime>]` line per file, as for a message
+    (`download_attachment` takes the id, T13);
+  - meta, all strings:
+    - `type` = `platform`, `author_kind` = `platform`;
+    - `room_name` = `<Platform> · <chat title>` (the platform alone when the chat has no title);
+      the platform reads WhatsApp, Telegram, Discord or Webhook, other kinds are capitalized and an
+      empty one is `Chat`;
+    - `message_id` = the event id, which `reply` takes;
+    - `author` and `sender_name` = the sender's name, `sender_id` = the sender's id on the platform;
+    - `trusted` (CID-13), `from_self` (CID-14), `kind`;
+    - `platform` (the connector kind), `connection_id`, `chat_id` (Partyline's: what `send_message`
+      takes together with `connection_id`, T19/T20), `chat_title`, `chat_kind`.
+  - There is no `room`, `conversation`, `author_id`, `author_handle` or `reply_to`: a platform event
+    belongs to no room or conversation, and the platform's own message ids never reach the session.
+- **Acknowledgement**: after the notification is written the link sends `platform_ack {item_id}`.
+  Messages and platform events share one path (`notifyThenAck`) and one dedupe window of 1,000 ids
+  (`seenBefore`): a repeated id, which the gateway sends again after a reconnect or a takeover
+  (CID-25), is acknowledged without a second notification. A platform frame without an event id is
+  dropped. The message path behaves as before.
+- **Identity notice**: `You are X (@x). Your owner is Y (@y). You operate: WhatsApp +55 11 *****-0000
+  (connection <id>), Telegram (connection <id>).` The last sentence appears only when the welcome
+  lists connections (T12); an empty account label leaves the platform alone. The notice is still
+  sent once per process, and `listen` still prints none.
+- **Adapters**: no change. The shared framing shows a platform record with the room name, the chat
+  title, the platform, the sender (`from`), `trusted`, `message_id` and `chat_id`; `from_self`,
+  `connection_id` and `kind` are not part of it (T16 pins this framing).
+

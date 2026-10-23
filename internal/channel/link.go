@@ -271,8 +271,10 @@ func systemNotice(reason, text string) Notification {
 }
 
 // identityText is what the first welcome tells the session: "You are <name> (@handle). Your owner
-// is <name> (@handle)." It is empty when the server named no AI, as an older one does, and has no
-// second sentence when it named no owner.
+// is <name> (@handle). You operate: <Platform> <account> (connection <id>), ...". It is empty when
+// the server named no AI, as an older one does, has no second sentence when it named no owner and
+// no third when the AI operates no connection (CID-06): the ids are what platform events name
+// their connection by.
 func identityText(w dto.AgentWelcomeFrame) string {
 	named := func(r dto.IntelligenceRef) string { return r.DisplayName + " (@" + r.Handle + ")" }
 	if w.Intelligence.Handle == "" {
@@ -281,6 +283,13 @@ func identityText(w dto.AgentWelcomeFrame) string {
 	text := "You are " + named(w.Intelligence) + "."
 	if w.Owner.Handle != "" {
 		text += " Your owner is " + named(w.Owner) + "."
+	}
+	if len(w.Connections) > 0 {
+		operated := make([]string, len(w.Connections))
+		for i, c := range w.Connections {
+			operated[i] = strings.TrimSpace(platformLabel(c.Platform)+" "+c.AccountLabel) + " (connection " + c.ID + ")"
+		}
+		text += " You operate: " + strings.Join(operated, ", ") + "."
 	}
 	return text
 }
@@ -475,6 +484,7 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 	if l.takeover {
 		h.Set(dto.HeaderTakeover, "1")
 	}
+	h.Set(dto.HeaderFeatures, dto.FeaturePlatform) // platform events (CID-06)
 	ws, resp, err := websocket.Dial(ctx, l.wsURL(), &websocket.DialOptions{HTTPClient: l.http, HTTPHeader: h})
 	if err != nil {
 		return l.refused(resp), nil
@@ -636,21 +646,15 @@ func (l *link) handle(ctx context.Context, ws *websocket.Conn, data []byte) erro
 		if json.Unmarshal(data, &f) != nil || f.Message.ID == "" {
 			return nil
 		}
-		// At-least-once delivery: a repeated id is acknowledged without a second
-		// notification (AGT-10).
-		if !l.seenBefore(f.Message.ID) {
-			if err := l.notify.Notify(NotificationMethod, Format(f.AgentMessage)); err != nil {
-				return err
-			}
-			l.remember(f.Message.ID)
-		}
-		// The ack follows the write to Claude Code (AGT-07).
 		ack, _ := json.Marshal(dto.AgentAckFrame{Type: dto.AgentFrameTypeAck, MessageID: f.Message.ID})
-		actx, cancel := context.WithTimeout(ctx, ackTimeout)
-		defer cancel()
-		if err := ws.Write(actx, websocket.MessageText, ack); err != nil {
-			return errAck
+		return l.notifyThenAck(ctx, ws, f.Message.ID, func() Notification { return Format(f.AgentMessage) }, ack)
+	case dto.AgentFrameTypePlatform:
+		var f dto.AgentPlatformFrame
+		if json.Unmarshal(data, &f) != nil || f.Event.ID == "" {
+			return nil
 		}
+		ack, _ := json.Marshal(dto.AgentPlatformAckFrame{Type: dto.AgentFrameTypePlatformAck, ItemID: f.Event.ID})
+		return l.notifyThenAck(ctx, ws, f.Event.ID, func() Notification { return FormatPlatform(f.Event) }, ack)
 	case dto.AgentFrameTypeNotice:
 		var f dto.AgentNoticeFrame
 		if json.Unmarshal(data, &f) != nil {
@@ -665,6 +669,24 @@ func (l *link) handle(ctx context.Context, ws *websocket.Conn, data []byte) erro
 		return l.announceIdentity(f)
 	}
 	return nil // unknown frames need nothing
+}
+
+// notifyThenAck hands the frame with this id to the harness and then acknowledges it. Delivery is
+// at least once: an id already notified is acknowledged without a second notification (AGT-10,
+// CID-25), and the ack follows the write to the harness (AGT-07). A failed ack ends the connection.
+func (l *link) notifyThenAck(ctx context.Context, ws *websocket.Conn, id string, notification func() Notification, ack []byte) error {
+	if !l.seenBefore(id) {
+		if err := l.notify.Notify(NotificationMethod, notification()); err != nil {
+			return err
+		}
+		l.remember(id)
+	}
+	actx, cancel := context.WithTimeout(ctx, ackTimeout)
+	defer cancel()
+	if err := ws.Write(actx, websocket.MessageText, ack); err != nil {
+		return errAck
+	}
+	return nil
 }
 
 func (l *link) seenBefore(id string) bool {

@@ -153,7 +153,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-03 | P1: One AI per connection | Tasks | In Tasks |
 | CID-04 | P1: One AI per connection | Execute | Implemented (T1, bebd8d1) |
 | CID-05 | P1: One AI per connection | Tasks | In Tasks |
-| CID-06 | P1: Direct delivery | Execute | Implementing (T7, T12, T13) |
+| CID-06 | P1: Direct delivery | Execute | Implementing (T7, T12, T13, T14) |
 | CID-07 | P1: Direct delivery | Execute | Implementing (T7) |
 | CID-08 | P1: Direct delivery | Execute | Implementing (T2, T3, T12, T13) |
 | CID-09 | P1: Direct delivery | Execute | Implementing (T3, T4, T12, T13) |
@@ -172,7 +172,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-22 | P1: Partyline chat is one more app | Tasks | In Tasks |
 | CID-23 | P1: Partyline chat is one more app | Execute | Implementing (T6) |
 | CID-24 | Edge cases | Tasks | In Tasks |
-| CID-25 | Edge cases | Execute | Implementing (T12) |
+| CID-25 | Edge cases | Execute | Implementing (T12, T14) |
 | CID-26 | Edge cases | Execute | Implementing (T2, T3, T7) |
 | CID-27 | P1: Direct delivery | Execute | Implementing (T2, T6) |
 

@@ -519,9 +519,9 @@ New frame DTOs are added.
 **Reuses**: `handle`, `seenBefore`, `Format`, `lineWriter`
 **Requirement**: CID-06, CID-25
 **Done when**:
-- [ ] Channel e2e: notification meta and content for a group and a DM event; ack after notify; a duplicate id is notified once
-- [ ] listen e2e: the JSON line has the record
-- [ ] Gate check passes: `make check`
+- [x] Channel e2e: notification meta and content for a group and a DM event; ack after notify; a duplicate id is notified once
+- [x] listen e2e: the JSON line has the record
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): deliver platform events to the harness`
