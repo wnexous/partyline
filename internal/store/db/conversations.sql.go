@@ -163,7 +163,7 @@ func (q *Queries) DeleteReadCursor(ctx context.Context, arg DeleteReadCursorPara
 }
 
 const getDMRoom = `-- name: GetDMRoom :one
-SELECT id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, broadcast, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline FROM rooms WHERE kind = 'dm' AND dm_a = ? AND dm_b = ?
+SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline FROM rooms WHERE kind = 'dm' AND dm_a = ? AND dm_b = ?
 `
 
 type GetDMRoomParams struct {
@@ -179,7 +179,6 @@ func (q *Queries) GetDMRoom(ctx context.Context, arg GetDMRoomParams) (Room, err
 		&i.OwnerID,
 		&i.Name,
 		&i.Description,
-		&i.BridgeChats,
 		&i.RetentionDays,
 		&i.NextSeq,
 		&i.AgentStreak,
@@ -187,7 +186,6 @@ func (q *Queries) GetDMRoom(ctx context.Context, arg GetDMRoomParams) (Room, err
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Instructions,
-		&i.Broadcast,
 		&i.InstructionsBy,
 		&i.UpdatedBy,
 		&i.Kind,
@@ -247,7 +245,7 @@ func (q *Queries) InsertDMRoom(ctx context.Context, arg InsertDMRoomParams) (int
 }
 
 const listAgentDMRooms = `-- name: ListAgentDMRooms :many
-SELECT id, owner_id, name, description, bridge_chats, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, broadcast, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline FROM rooms WHERE kind = 'dm' AND (dm_a = ?1 OR dm_b = ?1) ORDER BY id
+SELECT id, owner_id, name, description, retention_days, next_seq, agent_streak, agents_paused, created_at, updated_at, instructions, instructions_by, updated_by, kind, dm_a, dm_b, read_baseline FROM rooms WHERE kind = 'dm' AND (dm_a = ?1 OR dm_b = ?1) ORDER BY id
 `
 
 // The DMs an AI takes part in (merge, MRG-01).
@@ -265,7 +263,6 @@ func (q *Queries) ListAgentDMRooms(ctx context.Context, id sql.NullString) ([]Ro
 			&i.OwnerID,
 			&i.Name,
 			&i.Description,
-			&i.BridgeChats,
 			&i.RetentionDays,
 			&i.NextSeq,
 			&i.AgentStreak,
@@ -273,7 +270,6 @@ func (q *Queries) ListAgentDMRooms(ctx context.Context, id sql.NullString) ([]Ro
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Instructions,
-			&i.Broadcast,
 			&i.InstructionsBy,
 			&i.UpdatedBy,
 			&i.Kind,
@@ -507,42 +503,6 @@ func (q *Queries) ListRoomAgentCursors(ctx context.Context, roomID string) ([]Li
 	for rows.Next() {
 		var i ListRoomAgentCursorsRow
 		if err := rows.Scan(&i.AgentID, &i.Seq); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRoomChatConnectors = `-- name: ListRoomChatConnectors :many
-SELECT k.id, k.owner_id, k.operator_iid
-FROM room_members m JOIN chats c ON c.id = m.member_id JOIN connectors k ON k.id = c.connector_id
-WHERE m.room_id = ? AND m.kind = 'chat'
-`
-
-type ListRoomChatConnectorsRow struct {
-	ID          string
-	OwnerID     string
-	OperatorIid sql.NullString
-}
-
-// The connectors of the chats that are members of a room, with who operates each (DM-05).
-func (q *Queries) ListRoomChatConnectors(ctx context.Context, roomID string) ([]ListRoomChatConnectorsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listRoomChatConnectors, roomID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListRoomChatConnectorsRow
-	for rows.Next() {
-		var i ListRoomChatConnectorsRow
-		if err := rows.Scan(&i.ID, &i.OwnerID, &i.OperatorIid); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

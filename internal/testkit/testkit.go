@@ -217,19 +217,18 @@ func (c *Client) OperateConnector(connectorID, agentID string) dto.Connector {
 	return Decode[dto.Connector](c.Patch("/api/v1/connectors/"+connectorID, dto.UpdateConnectorRequest{OperatorID: &agentID}).RequireStatus(http.StatusOK))
 }
 
-// SeedChatMember puts the chat in the room as a member, with outbound delivery on or off, the way a
-// room built before the connection proxy holds it, and returns the member as the room's member list
-// shows it to the client. The API refuses chats as members (CID-19), and a room sends them nothing
+// SeedChatMember puts the chat in the room as a member, the way a room built before the connection
+// proxy holds it, and returns the member as the room's member list shows it to the client. The API refuses chats as members (CID-19), and a room sends them nothing
 // (CID-22), so only the tests of what such rooms still hold, their history and their members, plant
 // the row; a test of anything else does not need a chat in a room. It publishes what adding a member
 // does.
-func (c *Client) SeedChatMember(roomID, chatID string, outbound bool) dto.RoomMember {
+func (c *Client) SeedChatMember(roomID, chatID string) dto.RoomMember {
 	c.T.Helper()
 	ctx := context.Background()
 	require.NoError(c.T, c.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
 		return q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
 			ID: store.NewID(), RoomID: roomID, Kind: string(dto.MemberKindChat), MemberID: chatID,
-			Outbound: outbound, AddedBy: c.User.ID, CreatedAt: time.Now().UnixMilli(),
+			AddedBy: c.User.ID, CreatedAt: time.Now().UnixMilli(),
 		})
 	}))
 	c.env.App.Bus.Publish(events.MembersChanged{RoomID: roomID})

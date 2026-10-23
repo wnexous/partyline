@@ -228,7 +228,7 @@ func (i *Instance) WaitSending(t testing.TB) {
 }
 
 // QuietSends makes later sends not tell Outbound.Created the ids they create, like a connector
-// that only returns the first one: the outbox is then the only record of it.
+// that only returns the first one: the send's row (platform_sends) is then the only record of it.
 func (i *Instance) QuietSends() {
 	i.mu.Lock()
 	i.quiet = true

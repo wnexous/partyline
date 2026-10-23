@@ -25,25 +25,25 @@ func agentPrincipal(owner authn.Principal, agentID string) authn.Principal {
 // addMember adds the member through the service. A chat is refused as a member (CID-19), so a chat
 // is planted the way a room built before the connection proxy holds it: the tests that use one
 // cover the history those rooms still hold.
-func (f *fixture) addMember(t *testing.T, owner authn.Principal, roomID string, kind dto.MemberKind, id string, outbound bool) Member {
+func (f *fixture) addMember(t *testing.T, owner authn.Principal, roomID string, kind dto.MemberKind, id string) Member {
 	t.Helper()
 	if kind == dto.MemberKindChat {
-		return f.seedChatMember(t, owner, roomID, id, outbound)
+		return f.seedChatMember(t, owner, roomID, id)
 	}
-	m, err := f.svc.AddMember(context.Background(), owner, roomID, MemberInput{Kind: kind, MemberID: id, Outbound: &outbound})
+	m, err := f.svc.AddMember(context.Background(), owner, roomID, MemberInput{Kind: kind, MemberID: id})
 	require.NoError(t, err)
 	return m
 }
 
 // seedChatMember plants a chat member row and returns the member as the room lists it.
-func (f *fixture) seedChatMember(t *testing.T, owner authn.Principal, roomID, chatID string, outbound bool) Member {
+func (f *fixture) seedChatMember(t *testing.T, owner authn.Principal, roomID, chatID string) Member {
 	t.Helper()
 	ctx := context.Background()
 	rowID := store.NewID()
 	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
 		return q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
 			ID: rowID, RoomID: roomID, Kind: string(dto.MemberKindChat), MemberID: chatID,
-			Outbound: outbound, AddedBy: owner.UserID, CreatedAt: t0.UnixMilli(),
+			AddedBy: owner.UserID, CreatedAt: t0.UnixMilli(),
 		})
 	}))
 	m, err := f.svc.member(ctx, roomID, rowID)
@@ -145,7 +145,7 @@ func TestPostAuthorization(t *testing.T) {
 	r := f.room(t, alice, "ops")
 	f.grant(t, access.KindRoom, r.ID, viewer.UserID, dto.LevelView)
 	f.grant(t, access.KindRoom, r.ID, poster.UserID, dto.LevelPost)
-	f.addMember(t, alice, r.ID, dto.MemberKindAgent, member, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, member)
 
 	_, err := f.svc.Post(ctx, viewer, r.ID, PostInput{Text: "hi"})
 	require.ErrorIs(t, err, access.ErrForbidden)
@@ -169,18 +169,16 @@ func TestPostAuthorization(t *testing.T) {
 }
 
 // CID-22: a room sends nothing to a chat. Whoever posts (a user, an agent, a chat), whatever they
-// reply to or react to, a chat member of an old room gets no outbox row.
+// reply to or react to, a chat member of an old room gets nothing queued to send.
 func TestPostsPlanNoDeliveryForChatMembers(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.user(t, "alice", dto.RoleMember)
 	a1 := f.agent(t, alice, "a1")
 	_, open := f.chat(t, alice, "open")
-	_, quiet := f.chat(t, alice, "quiet")
 	r := f.room(t, alice, "ops")
-	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, open, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, quiet, false)
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, open)
 
 	fromChat, err := f.svc.PostFromChat(ctx, r.ID, ChatMessage{ChatID: open, SenderID: "5511999990000", Text: "can you help?"})
 	require.NoError(t, err)
@@ -199,7 +197,7 @@ func TestPostsPlanNoDeliveryForChatMembers(t *testing.T) {
 	for _, m := range posts {
 		require.Empty(t, m.Recipients(), "no chat is named")
 	}
-	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM outbox"), "no delivery is planned for a chat")
+	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM platform_sends"), "no delivery is planned for a chat")
 	require.Equal(t, len(posts), f.count(t, "SELECT COUNT(*) FROM messages WHERE room_id = ?", r.ID), "every post is stored")
 }
 
@@ -213,8 +211,8 @@ func TestAuthorResolution(t *testing.T) {
 	agent := f.agent(t, alice, "builder")
 	_, chat := f.chat(t, alice, "family")
 	r := f.room(t, alice, "ops")
-	f.addMember(t, alice, r.ID, dto.MemberKindAgent, agent, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, chat, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, agent)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, chat)
 
 	m := f.post(t, alice, r.ID, "user")
 	require.Equal(t, alice.UserID, m.AuthorUserID)
@@ -243,8 +241,8 @@ func TestDuplicateExternalIDReturnsExistingMessage(t *testing.T) {
 	_, c1 := f.chat(t, alice, "c1")
 	_, c2 := f.chat(t, alice, "c2")
 	r := f.room(t, alice, "ops")
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, c1, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, c2, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, c1)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, c2)
 	sub, cancel := f.bus.Subscribe(16)
 	defer cancel()
 
@@ -275,9 +273,9 @@ func TestLoopGuardPauseAndResume(t *testing.T) {
 	_, chat := f.chat(t, alice, "c1")
 	r := f.room(t, alice, "ops")
 	f.grant(t, access.KindRoom, r.ID, poster.UserID, dto.LevelPost)
-	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a2, true)
-	f.addMember(t, alice, r.ID, dto.MemberKindChat, chat, true)
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1)
+	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a2)
+	f.addMember(t, alice, r.ID, dto.MemberKindChat, chat)
 	streak := func() int { return f.count(t, "SELECT agent_streak FROM rooms WHERE id = ?", r.ID) }
 	agents := []authn.Principal{agentPrincipal(alice, a1), agentPrincipal(alice, a2)}
 
@@ -394,45 +392,4 @@ func TestReplyTo(t *testing.T) {
 	var verr *validation.Error
 	require.ErrorAs(t, err, &verr)
 	require.Contains(t, verr.Fields, "reply_to")
-}
-
-// ROUTE-07: while a connector routes new chats to a room, broadcast and bridge_chats cannot
-// be turned on (422 on the field, nothing applied), for the owner and for another manager;
-// turning them off, and other settings, still work.
-func TestCatchAllRoomRefusesBroadcastAndBridge(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	alice := f.user(t, "alice", dto.RoleMember)
-	bob := f.user(t, "bob", dto.RoleMember)
-	r := f.room(t, alice, "inbox")
-	f.grant(t, access.KindRoom, r.ID, bob.UserID, dto.LevelManage)
-	conn, _ := f.chat(t, alice, "c1")
-	f.exec(t, "UPDATE connectors SET auto_route_scope = 'dms', auto_route_room_id = ? WHERE id = ?", r.ID, conn)
-	f.exec(t, "UPDATE rooms SET broadcast = 0, bridge_chats = 0 WHERE id = ?", r.ID)
-
-	got, err := f.svc.Get(ctx, alice, r.ID)
-	require.NoError(t, err)
-	require.True(t, got.CatchAll)
-	for _, p := range []authn.Principal{alice, bob} {
-		var verr *validation.Error
-		_, err = f.svc.Update(ctx, p, r.ID, UpdateInput{Broadcast: ptr(true), Name: ptr("renamed")})
-		require.ErrorAs(t, err, &verr)
-		require.Equal(t, map[string]string{"broadcast": "must stay off while the room is a catch-all room"}, verr.Fields)
-		_, err = f.svc.Update(ctx, p, r.ID, UpdateInput{BridgeChats: ptr(true)})
-		require.ErrorAs(t, err, &verr)
-		require.Equal(t, map[string]string{"bridge_chats": "must stay off while the room is a catch-all room"}, verr.Fields)
-	}
-	got, err = f.svc.Get(ctx, alice, r.ID)
-	require.NoError(t, err)
-	require.Equal(t, "inbox", got.Name, "a refused update applies nothing")
-	require.False(t, got.Broadcast)
-	require.False(t, got.BridgeChats)
-	_, err = f.svc.Update(ctx, bob, r.ID, UpdateInput{Broadcast: ptr(false), BridgeChats: ptr(false), Name: ptr("support inbox")})
-	require.NoError(t, err)
-
-	f.exec(t, "UPDATE connectors SET auto_route_scope = 'off', auto_route_room_id = NULL WHERE id = ?", conn)
-	got, err = f.svc.Update(ctx, alice, r.ID, UpdateInput{Broadcast: ptr(true)})
-	require.NoError(t, err, "no longer a catch-all room")
-	require.True(t, got.Broadcast)
-	require.False(t, got.CatchAll)
 }

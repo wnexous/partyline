@@ -140,7 +140,7 @@ func TestMergeKeepsAPlatformDMAsHistory(t *testing.T) {
 		kinds[m.Kind] = m
 	}
 	require.Equal(t, e.atlasID, kinds[dto.MemberKindAgent].MemberID)
-	require.True(t, kinds[dto.MemberKindChat].Outbound, "the chat is still in the DM")
+	require.Equal(t, chat, kinds[dto.MemberKindChat].MemberID, "the chat is still in the DM")
 	require.Equal(t, 1, e.dmRooms(t))
 
 	e.tok.AsAgent("atlas").Post("/api/v1/agent/rooms/"+room+"/messages", dto.PostMessageRequest{Text: "on it"}).

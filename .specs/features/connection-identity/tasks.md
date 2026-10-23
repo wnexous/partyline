@@ -854,9 +854,9 @@ A request carrying them changes nothing.
 **Reuses**: none
 **Requirement**: CID-22
 **Done when**:
-- [ ] e2e: GET responses lack the fields; PATCH with them changes nothing
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] e2e: GET responses lack the fields; PATCH with them changes nothing
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api)!: retire chat fields from the API`
@@ -875,14 +875,14 @@ A request carrying them changes nothing.
 **Reuses**: v0.4 fixture, `openMigratedBefore`
 **Requirement**: CID-21, CID-27
 **Done when**:
-- [ ] Store test from the pre-0017 fixture:
+- [x] Store test from the pre-0017 fixture:
   - chat members are gone;
   - messages, intelligences, settings, people and DM rooms are kept;
   - connections read `deliver=all`, `groups_mentions_only=1` whatever their old scope (CID-27);
   - NULL operators stay NULL;
   - the dropped tables and columns are absent;
   - a failure rolls back
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store)!: upgrade to the connection proxy`
@@ -895,10 +895,10 @@ A request carrying them changes nothing.
 **Reuses**: upgrade e2e harness
 **Requirement**: CID-21
 **Done when**:
-- [ ] The room that held a WhatsApp chat lists the owner and the two AIs and no chat
-- [ ] After choosing the operator, the next message in that WhatsApp group (with a mention) reaches only the operator's session and no room
-- [ ] `make e2e` passes
-- [ ] Gate check passes: `make check`
+- [x] The room that held a WhatsApp chat lists the owner and the two AIs and no chat
+- [x] After choosing the operator, the next message in that WhatsApp group (with a mention) reaches only the operator's session and no room
+- [x] `make e2e` passes
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(api): pin the connection proxy upgrade`
@@ -916,8 +916,8 @@ A request carrying them changes nothing.
 **Reuses**: none
 **Requirement**: CID-22, CID-27
 **Done when**:
-- [ ] No doc mentions route-to-agent, catch-all rooms, bridges, `chat_ids` or notify copies; no private names
-- [ ] Gate check passes: `make check`
+- [x] No doc mentions route-to-agent, catch-all rooms, bridges, `chat_ids` or notify copies; no private names
+- [x] Gate check passes: `make check`
 **Tests**: none
 **Gate**: build
 **Commit**: `docs: partyline as a proxy (v0.5.0)`
@@ -930,9 +930,9 @@ A request carrying them changes nothing.
 **Reuses**: `platform.Queue.TakeDropped`, the WebSocket notice text
 **Requirement**: CID-10
 **Done when**:
-- [ ] A poll with `platform=1` after drops returns the count once; a second poll returns 0; a poll without `platform=1` leaves the count for the next platform reader
-- [ ] The hook and `wait_for_messages` output show the notice
-- [ ] Gate check passes: `make check`
+- [x] A poll with `platform=1` after drops returns the count once; a second poll returns 0; a poll without `platform=1` leaves the count for the next platform reader
+- [x] The hook and `wait_for_messages` output show the notice
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(api): tell polling harnesses about dropped platform messages`

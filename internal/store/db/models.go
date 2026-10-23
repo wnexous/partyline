@@ -64,12 +64,6 @@ type AuditLog struct {
 	CreatedAt  int64
 }
 
-type AutoRouteSkip struct {
-	ConnectorID string
-	ChatID      string
-	Until       int64
-}
-
 type Chat struct {
 	ID          string
 	ConnectorID string
@@ -99,7 +93,6 @@ type Connector struct {
 	LastError          string
 	CreatedAt          int64
 	UpdatedAt          int64
-	AutoRouteScope     string
 	AutoRouteRoomID    sql.NullString
 	OperatorIid        sql.NullString
 	AccountLabel       string
@@ -222,19 +215,6 @@ type MessageView struct {
 	AuthorAvatar   string
 }
 
-type Outbox struct {
-	ID            string
-	MessageID     string
-	ChatID        string
-	Status        string
-	Attempts      int64
-	NextAttemptAt int64
-	LastError     string
-	ExternalID    string
-	UpdatedAt     int64
-	Purpose       string
-}
-
 type PairingCode struct {
 	CodeHash    string
 	UserID      string
@@ -315,7 +295,6 @@ type Room struct {
 	OwnerID        string
 	Name           string
 	Description    string
-	BridgeChats    bool
 	RetentionDays  int64
 	NextSeq        int64
 	AgentStreak    int64
@@ -323,7 +302,6 @@ type Room struct {
 	CreatedAt      int64
 	UpdatedAt      int64
 	Instructions   string
-	Broadcast      bool
 	InstructionsBy string
 	UpdatedBy      string
 	Kind           string

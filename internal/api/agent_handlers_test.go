@@ -24,7 +24,7 @@ func agentRoomPath(room, suffix string) string { return "/api/v1/agent/rooms/" +
 func (f *agentRoom) chatMember(t *testing.T, title string) string {
 	t.Helper()
 	_, chat := storeChat(t, f.env, f.alice.User.ID, title)
-	f.alice.SeedChatMember(f.room.ID, chat, true)
+	f.alice.SeedChatMember(f.room.ID, chat)
 	return chat
 }
 
@@ -177,13 +177,11 @@ func TestAgentReply(t *testing.T) {
 	require.Equal(t, f.room.ID, r.RoomID)
 	require.Equal(t, f.agentID, r.AuthorID)
 	require.Empty(t, r.Recipients)
-	require.Empty(t, r.Outbox)
 
 	fromUser := f.post(f.alice, "status?")
 	r = testkit.Decode[dto.Message](f.rest().Post("/api/v1/agent/messages/"+fromUser.ID+"/reply", dto.ReplyRequest{Text: "all green"}).RequireStatus(http.StatusCreated))
 	require.Equal(t, fromUser.ID, r.ReplyTo)
 	require.Empty(t, r.Recipients)
-	require.Empty(t, r.Outbox)
 
 	other := createRoom(f.alice, "Private")
 	elsewhere := testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+other.ID+"/messages", dto.PostMessageRequest{Text: "x"}).RequireStatus(http.StatusCreated))

@@ -1,6 +1,9 @@
 package dto
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Agent is an AI as the agents list shows it (GET /agents): its profile, owner, machine, app and
 // presence.
@@ -163,6 +166,13 @@ type AgentNoticeFrame struct {
 	Text string         `json:"text"`
 }
 
+// DroppedNotice is the text that tells an AI how many of its platform messages the server dropped, for
+// being older than 7 days or over the bound of 5,000 queued (CID-10). The WebSocket notice and the
+// output of the harnesses that poll (the turn-end hooks and wait_for_messages) share it.
+func DroppedNotice(n int64) string {
+	return fmt.Sprintf("%d platform messages were dropped (older than 7 days or over 5,000 queued)", n)
+}
+
 // AgentAckFrame confirms a message was handed to Claude Code (AGT-07).
 type AgentAckFrame struct {
 	Type      AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeAck"`
@@ -217,6 +227,11 @@ type AgentPlatformAckFrame struct {
 type AgentPending struct {
 	Items    []AgentMessage  `json:"items"`
 	Platform []PlatformEvent `json:"platform"`
+	// Dropped is how many of the AI's platform messages the server dropped since it last told the AI,
+	// for being older than 7 days or over the bound of 5,000 (CID-10): the WebSocket's notice for the
+	// harnesses that poll (DroppedNotice words it). The call that returns it resets it, so it comes
+	// once, and it ends a wait like a message does. Always present; 0 when nothing was dropped.
+	Dropped int64 `json:"dropped"`
 }
 
 // AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its

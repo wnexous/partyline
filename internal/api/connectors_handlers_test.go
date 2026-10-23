@@ -276,7 +276,7 @@ func TestDeleteConnectorRemovesItsChatsFromRooms(t *testing.T) {
 	c := createBot(alice, "ops")
 	chat := insertChat(t, env, c.ID, "-1001", "Support group")
 	room := createRoom(alice, "Support")
-	alice.SeedChatMember(room.ID, chat, true)
+	alice.SeedChatMember(room.ID, chat)
 
 	alice.Delete("/api/v1/connectors/" + c.ID).RequireStatus(http.StatusNoContent)
 	alice.Get("/api/v1/connectors/"+c.ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)

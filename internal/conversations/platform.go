@@ -81,7 +81,7 @@ func (s *Service) EnsurePlatformDM(ctx context.Context, in PlatformDM) (Platform
 					continue
 				}
 				if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
-					ID: store.NewID(), RoomID: id, Kind: string(m.Kind), MemberID: m.ID, Outbound: true, AddedBy: in.OwnerID, CreatedAt: now,
+					ID: store.NewID(), RoomID: id, Kind: string(m.Kind), MemberID: m.ID, AddedBy: in.OwnerID, CreatedAt: now,
 				}); err != nil {
 					return err
 				}
@@ -94,7 +94,7 @@ func (s *Service) EnsurePlatformDM(ctx context.Context, in PlatformDM) (Platform
 		}
 		if member == 0 {
 			if err := q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
-				ID: store.NewID(), RoomID: id, Kind: string(dto.MemberKindChat), MemberID: in.ChatID, Outbound: true, AddedBy: in.OwnerID, CreatedAt: now,
+				ID: store.NewID(), RoomID: id, Kind: string(dto.MemberKindChat), MemberID: in.ChatID, AddedBy: in.OwnerID, CreatedAt: now,
 			}); err != nil {
 				return err
 			}

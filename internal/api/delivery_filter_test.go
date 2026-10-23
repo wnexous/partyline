@@ -45,7 +45,7 @@ func (f *agentRoom) roomChat(t *testing.T, kind string) string {
 		}
 		return q.CreateChat(ctx, db.CreateChatParams{ID: chat, ConnectorID: conn, ExternalID: "ext-" + kind, Title: kind + " chat", Kind: kind})
 	}))
-	f.alice.SeedChatMember(f.room.ID, chat, true)
+	f.alice.SeedChatMember(f.room.ID, chat)
 	return chat
 }
 

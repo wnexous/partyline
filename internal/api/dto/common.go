@@ -16,10 +16,6 @@ const (
 	PasswordMinLength = 10
 	// MaxTextLength is the maximum message text length in characters (MSG-02).
 	MaxTextLength = 16000
-	// MaxMessageRecipients was the most distinct chats one post could name in recipients
-	// (ROUTE-10). A room sends to no chat any more (CID-22) and recipients are ignored, so nothing
-	// enforces it; it stays only until the web app has dropped its picker, and goes with T35.
-	MaxMessageRecipients = 10
 	// DefaultPageSize is the page size of paginated lists when no limit is given.
 	DefaultPageSize = 50
 	// MaxPageSize is the largest accepted limit for paginated lists.

@@ -206,7 +206,9 @@ var errPushedSession = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict
 // empty list on timeout. An agent connected over the WebSocket gets 409: its messages are
 // pushed there. With platform=1 the answer also carries the AI's queued platform events (up to
 // 20, oldest first), which count as delivered too, and a platform event ends the wait (CID-06,
-// CID-08, CID-09); without it the platform queue is neither read nor touched.
+// CID-08, CID-09), and how many platform messages the server dropped since the AI was last told,
+// which is taken once and ends the wait too (CID-10); without it the platform queue and the count
+// are neither read nor touched.
 func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	wait := 0
 	if v := r.URL.Query().Get("wait"); v != "" {
@@ -232,6 +234,13 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 	}
 	deadline := time.Now().Add(time.Duration(wait) * time.Second)
 	for {
+		// The count goes first: when a later step fails, only a notice is lost, not messages.
+		var dropped int64
+		if withPlatform {
+			if dropped, err = s.Platform.TakeDropped(r.Context(), a.ID); err != nil {
+				return err
+			}
+		}
 		msgs, err := s.Inbox.Pending(r.Context(), a, agents.PendingLimit)
 		if err != nil {
 			return err
@@ -247,9 +256,9 @@ func (s *server) agentPending(w http.ResponseWriter, r *http.Request, p authn.Pr
 			}
 		}
 		left := time.Until(deadline)
-		if len(msgs) > 0 || len(events) > 0 || left <= 0 {
+		if len(msgs) > 0 || len(events) > 0 || dropped > 0 || left <= 0 {
 			if withPlatform {
-				httpx.WriteJSON(w, http.StatusOK, dto.AgentPending{Items: msgs, Platform: events})
+				httpx.WriteJSON(w, http.StatusOK, dto.AgentPending{Items: msgs, Platform: events, Dropped: dropped})
 			} else {
 				httpx.WriteJSON(w, http.StatusOK, dto.List[dto.AgentMessage]{Items: msgs})
 			}

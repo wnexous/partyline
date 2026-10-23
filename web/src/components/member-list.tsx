@@ -56,8 +56,7 @@ export function MemberList({
         toast(t("members.removed", { name }), {
           action: {
             label: t("members.undo"),
-            onClick: () =>
-              add.mutate({ kind: m.kind, member_id: m.member_id, outbound: m.outbound }),
+            onClick: () => add.mutate({ kind: m.kind, member_id: m.member_id }),
           },
         }),
       onError: () => toast.error(t("members.removeFailed", { name })),

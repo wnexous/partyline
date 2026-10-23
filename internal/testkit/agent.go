@@ -122,6 +122,22 @@ func (a *AgentConn) ExpectNone(d time.Duration) {
 	require.True(a.T, errors.Is(err, context.DeadlineExceeded), "read: %v", err)
 }
 
+// Drain returns the frames that arrive within d, in order. Nothing arriving is not a failure: it is
+// how a test reads the backlog of a new session, or checks that a session got nothing more.
+func (a *AgentConn) Drain(d time.Duration) []AgentFrame {
+	a.T.Helper()
+	var out []AgentFrame
+	deadline := time.Now().Add(d)
+	for {
+		f, err := a.s.read(time.Until(deadline))
+		if err != nil {
+			require.True(a.T, errors.Is(err, context.DeadlineExceeded), "read: %v", err)
+			return out
+		}
+		out = append(out, f)
+	}
+}
+
 // Ack confirms a message, as the channel does after handing it to Claude Code.
 func (a *AgentConn) Ack(messageID string) {
 	a.T.Helper()

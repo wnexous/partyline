@@ -3,7 +3,6 @@ package agents
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -18,12 +17,6 @@ import (
 // acknowledged. Each acknowledgement releases the next one (CID-08), so a queue of thousands
 // never overflows the channel's frame queue.
 const PlatformWindow = 50
-
-// DroppedNotice is the text of the notice that tells an AI how many of its platform messages the
-// server dropped, for being older than 7 days or over the bound of 5,000 (CID-10).
-func DroppedNotice(n int64) string {
-	return fmt.Sprintf("%d platform messages were dropped (older than 7 days or over 5,000 queued)", n)
-}
 
 // hasFeature reports whether the client named the feature in the comma separated list of
 // dto.HeaderFeatures, spaces around the items aside.
@@ -124,7 +117,7 @@ func (g *Gateway) platformStart(ctx context.Context, c *conn, agentID string) er
 		return err
 	}
 	if n > 0 {
-		if err := c.write(ctx, dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Text: DroppedNotice(n)}); err != nil {
+		if err := c.write(ctx, dto.AgentNoticeFrame{Type: dto.AgentFrameTypeNotice, Text: dto.DroppedNotice(n)}); err != nil {
 			return err
 		}
 	}

@@ -276,6 +276,13 @@ export interface AgentPlatformAckFrame {
 export interface AgentPending {
   items: AgentMessage[];
   platform: PlatformEvent[];
+  /**
+   * Dropped is how many of the AI's platform messages the server dropped since it last told the AI,
+   * for being older than 7 days or over the bound of 5,000 (CID-10): the WebSocket's notice for the
+   * harnesses that poll (DroppedNotice words it). The call that returns it resets it, so it comes
+   * once, and it ends a wait like a message does. Always present; 0 when nothing was dropped.
+   */
+  dropped: number /* int64 */;
 }
 /**
  * AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its
@@ -323,12 +330,6 @@ export const PasswordMinLength = 10;
  * MaxTextLength is the maximum message text length in characters (MSG-02).
  */
 export const MaxTextLength = 16000;
-/**
- * MaxMessageRecipients was the most distinct chats one post could name in recipients
- * (ROUTE-10). A room sends to no chat any more (CID-22) and recipients are ignored, so nothing
- * enforces it; it stays only until the web app has dropped its picker, and goes with T35.
- */
-export const MaxMessageRecipients = 10;
 /**
  * DefaultPageSize is the page size of paginated lists when no limit is given.
  */
@@ -684,12 +685,6 @@ export interface Connector {
   account_label?: string;
   config: { [key: string]: unknown };
   /**
-   * AutoRouteScope and AutoRouteRoomID are the catch-all settings (ROUTE-01): new chats of
-   * the matching kind that belong to no room join AutoRouteRoomID.
-   */
-  auto_route_scope: AutoRouteScope;
-  auto_route_room_id?: string;
-  /**
    * InboundURL is where a webhook connector receives messages
    * (<public URL>/api/v1/hooks/<id>); empty for other kinds.
    */
@@ -721,12 +716,6 @@ export interface UpdateConnectorRequest {
   config?: { [key: string]: unknown };
   enabled?: boolean;
   /**
-   * AutoRouteScope and AutoRouteRoomID change the catch-all settings; the caller needs
-   * manage on the room (ROUTE-04). An empty AutoRouteRoomID clears it.
-   */
-  auto_route_scope?: AutoRouteScope;
-  auto_route_room_id?: string;
-  /**
    * Deliver and GroupsMentionsOnly change what reaches the operator (CID-12): Deliver must be
    * dms, groups or all (422 on deliver otherwise). Only the owner may change them.
    */
@@ -750,18 +739,6 @@ export const ConnectorDeliverAll = "all";
  * Delivery choices.
  */
 export type ConnectorDeliver = typeof ConnectorDeliverDMs | typeof ConnectorDeliverGroups | typeof ConnectorDeliverAll;
-/**
- * AutoRouteScope selects which new chats a connector routes to its catch-all room: none
- * (off), DMs, groups (group and channel chats) or all.
- */
-export const AutoRouteScopeOff = "off";
-export const AutoRouteScopeDMs = "dms";
-export const AutoRouteScopeGroups = "groups";
-export const AutoRouteScopeAll = "all";
-/**
- * Catch-all scopes.
- */
-export type AutoRouteScope = typeof AutoRouteScopeOff | typeof AutoRouteScopeDMs | typeof AutoRouteScopeGroups | typeof AutoRouteScopeAll;
 /**
  * ConnectorNoOperator is the status detail of a connection nobody operates (CID-02): the owner
  * has to choose the AI that operates it before it runs.
@@ -799,18 +776,6 @@ export interface PlatformSendResult {
   error?: string;
 }
 /**
- * AutoRouteUnavailable says the catch-all room is gone or its owner lost manage on it.
- */
-export const AutoRouteUnavailable = "auto-route room unavailable";
-/**
- * AutoRouteLimited says a cap on new chats was reached.
- */
-export const AutoRouteLimited = "auto-route limit reached";
-/**
- * Status details catch-all routing sets on a connector (ROUTE-03, ROUTE-08).
- */
-export type AutoRoute = typeof AutoRouteUnavailable | typeof AutoRouteLimited;
-/**
  * ChatKind is the kind of an external chat.
  */
 export const ChatKindGroup = "group";
@@ -821,7 +786,7 @@ export const ChatKindChannel = "channel";
  */
 export type ChatKind = typeof ChatKindGroup | typeof ChatKindDM | typeof ChatKindChannel;
 /**
- * Chat is an external conversation seen by a connector (GET /connectors/{id}/chats, GET /chats).
+ * Chat is an external conversation seen by a connector (GET /connectors/{id}/chats).
  */
 export interface Chat {
   id: string;
@@ -1498,7 +1463,6 @@ export const LiveEventTypeAccessChanged = "access.changed";
 export const LiveEventTypeAgentPresence = "agent.presence";
 export const LiveEventTypeConnectorStatus = "connector.status";
 export const LiveEventTypeChatDiscovered = "chat.discovered";
-export const LiveEventTypeOutboxStatus = "outbox.status";
 export const LiveEventTypeIdentityLinked = "identity.linked";
 /**
  * LiveEventTypeIntelligenceChanged carries the new summary of an intelligence whose
@@ -1509,7 +1473,7 @@ export const LiveEventTypeLagged = "lagged";
 /**
  * Live event types.
  */
-export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeOutboxStatus | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged;
+export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged;
 export type LiveEvent =
   | LiveHello
   | LiveRoomMessage
@@ -1521,7 +1485,6 @@ export type LiveEvent =
   | LiveAgentPresence
   | LiveConnectorStatus
   | LiveChatDiscovered
-  | LiveOutboxStatus
   | LiveIdentityLinked
   | LiveIntelligenceChanged
   | LiveLagged;
@@ -1640,20 +1603,6 @@ export interface LiveChatDiscovered {
   data: Chat;
 }
 /**
- * LiveOutboxStatus reports that an outbound delivery changed status (LIVE-04).
- */
-export interface LiveOutboxStatus {
-  type: typeof LiveEventTypeOutboxStatus;
-  data: OutboxUpdate;
-}
-/**
- * OutboxUpdate is an outbox item with the message and room it belongs to.
- */
-export interface OutboxUpdate extends OutboxItem {
-  room_id: string;
-  message_id: string;
-}
-/**
  * LiveIdentityLinked reports that a chat identity was linked to the user (UI-18).
  */
 export interface LiveIdentityLinked {
@@ -1676,37 +1625,10 @@ export interface LiveLagged {
 }
 
 //////////
-// source: notify.go
-
-/**
- * NotifyOption is a chat that can receive a copy of the DMs AIs write to the caller (NOTI-01):
- * the DM chat of an account the caller linked, on a connector they own or may use.
- */
-export interface NotifyOption {
-  chat_id: string;
-  /**
-   * Title is the chat's title on the platform.
-   */
-  title: string;
-  connector: ConnectorRef;
-  /**
-   * Account is the linked account the chat belongs to, as the identities page shows it.
-   */
-  account: string;
-}
-/**
- * SetNotifyRequest is the body of PUT /me/notify: the chat to notify, one of the chats of GET
- * /me/notify-options, or null for none.
- */
-export interface SetNotifyRequest {
-  chat_id?: string | null;
-}
-
-//////////
 // source: rooms.go
 
 /**
- * Room is a routing room (GET /rooms, GET /rooms/{id}).
+ * Room is a conversation of intelligences, a group or a DM (GET /rooms, GET /rooms/{id}).
  */
 export interface Room {
   id: string;
@@ -1731,17 +1653,6 @@ export interface Room {
    * MyLevel is the caller's resolved level on this room (ACL-02).
    */
   my_level: Level;
-  bridge_chats: boolean;
-  /**
-   * Broadcast sends agent and user posts without explicit recipients to every chat with
-   * outbound on (DLV-03); when false they reach no chat (ROUTE-06).
-   */
-  broadcast: boolean;
-  /**
-   * CatchAll is set while the room is a connector's catch-all room: broadcast and
-   * bridge_chats then stay false (ROUTE-07).
-   */
-  catch_all: boolean;
   retention_days: number /* int */;
   /**
    * AgentsPaused is set by the loop guard (DLV-08) and cleared by POST /rooms/{id}/resume.
@@ -1749,7 +1660,7 @@ export interface Room {
   agents_paused: boolean;
   last_seq: number /* int64 */;
   /**
-   * MemberCount counts the room's agents, chats and users.
+   * MemberCount counts the room's members.
    */
   member_count: number /* int */;
   created_at: string /* RFC 3339 */;
@@ -1762,7 +1673,6 @@ export interface CreateRoomRequest {
   name: string;
   description?: string;
   instructions?: string;
-  bridge_chats?: boolean;
   retention_days?: number /* int */;
 }
 /**
@@ -1772,8 +1682,6 @@ export interface UpdateRoomRequest {
   name?: string;
   description?: string;
   instructions?: string;
-  bridge_chats?: boolean;
-  broadcast?: boolean;
   retention_days?: number /* int */;
 }
 /**
@@ -1835,10 +1743,6 @@ export interface RoomMember {
    */
   people?: IntelligenceRef[];
   /**
-   * Outbound tells whether agent and user posts without explicit recipients reach this chat (DLV-03).
-   */
-  outbound: boolean;
-  /**
    * Online is set for agent members: whether the AI has a live session.
    */
   online?: boolean;
@@ -1852,15 +1756,11 @@ export interface RoomMember {
   connector_kind?: string;
   chat_kind?: ChatKind;
   /**
-   * DisplayName, SignOutbound, Delivery and Keywords are per-room settings of agent members
-   * (MEM-01..05); other kinds carry the defaults ("", true, all, []).
-   * DisplayName replaces the agent name in outbound headers and the timeline when set.
+   * DisplayName, Delivery and Keywords are per-room settings of agent members (MEM-02..05);
+   * other kinds carry the defaults ("", all, []).
+   * DisplayName replaces the agent name in the timeline when set (MEM-02).
    */
   display_name: string;
-  /**
-   * SignOutbound adds the author header to the agent's messages sent to chats.
-   */
-  sign_outbound: boolean;
   delivery: DeliveryMode;
   /**
    * Keywords count as mentions (on word boundaries) when Delivery is mentions.
@@ -1873,22 +1773,20 @@ export interface RoomMember {
  */
 export const MaxChatPeople = 200;
 /**
- * AddMemberRequest is the body of POST /rooms/{id}/members. Outbound defaults to true.
+ * AddMemberRequest is the body of POST /rooms/{id}/members: an AI or a user. A chat is refused
+ * (422 chats_not_members, CID-19).
  */
 export interface AddMemberRequest {
   kind: MemberKind;
   member_id: string;
-  outbound?: boolean;
 }
 /**
  * UpdateMemberRequest is the body of PATCH /rooms/{id}/members/{mid}; absent fields are
- * unchanged. DisplayName, SignOutbound, Delivery and Keywords apply to agent members only
- * (422 for other kinds); limits MaxMemberDisplayName, MaxMemberKeywords, MaxMemberKeyword.
+ * unchanged. All of them apply to agent members only (422 for other kinds); limits
+ * MaxMemberDisplayName, MaxMemberKeywords, MaxMemberKeyword.
  */
 export interface UpdateMemberRequest {
-  outbound?: boolean;
   display_name?: string;
-  sign_outbound?: boolean;
   delivery?: DeliveryMode;
   keywords?: string[];
 }
@@ -1966,10 +1864,6 @@ export interface Message {
    */
   chat?: ChatRef;
   attachments: Attachment[];
-  /**
-   * Outbox is never filled any more: a room sends to no chat (CID-22). The field goes with T35.
-   */
-  outbox?: OutboxItem[];
   created_at: string /* RFC 3339 */;
 }
 /**
@@ -2004,49 +1898,6 @@ export interface Attachment {
   mime: string;
   size: number /* int64 */;
   status: AttachmentStatus;
-}
-/**
- * OutboxStatus is the state of one outbound delivery to a chat.
- */
-export const OutboxStatusPending = "pending";
-export const OutboxStatusSending = "sending";
-export const OutboxStatusSent = "sent";
-export const OutboxStatusFailed = "failed";
-/**
- * Outbound delivery states (DLV-07).
- */
-export type OutboxStatus = typeof OutboxStatusPending | typeof OutboxStatusSending | typeof OutboxStatusSent | typeof OutboxStatusFailed;
-/**
- * OutboxPurpose says why a message is delivered to a chat.
- */
-/**
- * OutboxPurposeRoom is the delivery of a room message to a chat member of the room.
- */
-export const OutboxPurposeRoom = "room";
-/**
- * OutboxPurposeNotify is the copy of an AI's DM sent to the app its user chose (NOTI-02).
- */
-export const OutboxPurposeNotify = "notify";
-/**
- * Outbox purposes. A delivery to a chat that is a member of the room is the default and carries
- * no purpose in OutboxItem.
- */
-export type OutboxPurpose = typeof OutboxPurposeRoom | typeof OutboxPurposeNotify;
-/**
- * OutboxItem is the delivery of a message to one chat.
- */
-export interface OutboxItem {
-  id: string;
-  chat_id: string;
-  status: OutboxStatus;
-  /**
-   * Purpose is notify for the copy of an AI's DM sent to the user's chosen app (that chat is
-   * no member of the room); absent for an ordinary delivery.
-   */
-  purpose?: OutboxPurpose;
-  attempts: number /* int */;
-  last_error?: string;
-  updated_at: string /* RFC 3339 */;
 }
 /**
  * RoomRef names a room inside agent frames and events. In the frames an AI receives, a DM is
@@ -2125,11 +1976,6 @@ export interface Me {
   role: Role;
   locale: string;
   created_at: string /* RFC 3339 */;
-  /**
-   * NotifyChatID is the chat of one of the user's linked apps that receives a copy of the DMs
-   * AIs write to them (PUT /me/notify); absent when they chose none (NOTI-01).
-   */
-  notify_chat_id?: string;
 }
 /**
  * UpdateMeRequest is the body of PATCH /me; absent fields are unchanged.

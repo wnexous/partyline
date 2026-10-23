@@ -98,7 +98,7 @@ func (f *fixture) addAgentMember(t *testing.T, roomID, agentID string) {
 	t.Helper()
 	f.exec(t, func(q *db.Queries) error {
 		return q.CreateRoomMember(context.Background(), db.CreateRoomMemberParams{
-			ID: store.NewID(), RoomID: roomID, Kind: string(dto.MemberKindAgent), MemberID: agentID, Outbound: true, CreatedAt: t0.UnixMilli(),
+			ID: store.NewID(), RoomID: roomID, Kind: string(dto.MemberKindAgent), MemberID: agentID, CreatedAt: t0.UnixMilli(),
 		})
 	})
 }
@@ -463,7 +463,7 @@ func (f *fixture) dm(t *testing.T, ownerID, a, b string) string {
 		}
 		f.exec(t, func(q *db.Queries) error {
 			return q.CreateRoomMember(context.Background(), db.CreateRoomMemberParams{
-				ID: store.NewID(), RoomID: id, Kind: string(kind), MemberID: p, Outbound: true, CreatedAt: t0.UnixMilli(),
+				ID: store.NewID(), RoomID: id, Kind: string(kind), MemberID: p, CreatedAt: t0.UnixMilli(),
 			})
 		})
 	}
@@ -491,7 +491,7 @@ func (f *fixture) addUserMember(t *testing.T, roomID, userID string) {
 	t.Helper()
 	f.exec(t, func(q *db.Queries) error {
 		return q.CreateRoomMember(context.Background(), db.CreateRoomMemberParams{
-			ID: store.NewID(), RoomID: roomID, Kind: string(dto.MemberKindUser), MemberID: userID, Outbound: true, CreatedAt: t0.UnixMilli(),
+			ID: store.NewID(), RoomID: roomID, Kind: string(dto.MemberKindUser), MemberID: userID, CreatedAt: t0.UnixMilli(),
 		})
 	})
 }

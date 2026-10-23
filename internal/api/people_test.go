@@ -132,7 +132,7 @@ func (f *peopleFixture) platformDM(ai, external, name, body string) (chat, room,
 
 func (f *peopleFixture) addChat(owner *testkit.Client, roomID, chatID string) {
 	f.env.T.Helper()
-	owner.SeedChatMember(roomID, chatID, true)
+	owner.SeedChatMember(roomID, chatID)
 }
 
 func (f *peopleFixture) members(c *testkit.Client, roomID string) []dto.RoomMember {

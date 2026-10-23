@@ -1120,3 +1120,213 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   of AI token, then the other methods on the same paths, then no room made and no chat stored). Retired with the routes:
   UI-13 (`TestRouteChatIsRefusedBecauseChatsAreNeverMembers`, the route row of `TestChatRoutesAuthMatrix`), CTX-07 and
   the `GET /chats` check of the same matrix; the tests of NOTI-01's options and choice were deleted in T7.
+
+## T35: Retire chat-related DTO fields (CID-22)
+
+- **Removed from the contract** (`internal/api/dto`, and with it `types.gen.ts`): the room's `bridge_chats`, `broadcast`
+  and `catch_all` (`Room`, `CreateRoomRequest`, `UpdateRoomRequest`); a member's `outbound` and `sign_outbound`
+  (`RoomMember`, `AddMemberRequest`, `UpdateMemberRequest`); `Message.outbox` with `OutboxItem`, `OutboxStatus` and
+  `OutboxPurpose`; `Me.notify_chat_id` with `NotifyOption` and `SetNotifyRequest` (`notify.go`); a connection's
+  `auto_route_scope` and `auto_route_room_id` (`Connector`, `UpdateConnectorRequest`) with `AutoRouteScope` and the
+  `AutoRouteUnavailable`/`AutoRouteLimited` details; the live `outbox.status` frame (`LiveOutboxStatus`, `OutboxUpdate`,
+  `LiveEventTypeOutboxStatus`); and the constant `MaxMessageRecipients`. `recipients` of a post and `chat_ids` stay accepted
+  and ignored (T33), and `Message.recipients` still shows what an old message named.
+- **A request carrying them changes nothing**: the JSON decoder ignores unknown fields, so the fields are not read, validated
+  or stored, and the rest of the body is applied. What they used to refuse is gone with them: `PATCH /rooms/{id}` with
+  `broadcast` or `bridge_chats` in a catch-all room (422), `PATCH /connectors/{id}` with an `auto_route_scope` that is not one
+  (422) or an `auto_route_room_id` the caller cannot manage or that does not exist (403), and `sign_outbound` on a user
+  member (422 "only for agent members"). A PATCH of a member whose body holds only retired fields is a 200 that returns the
+  member unchanged. Authorization is untouched: pinned for the four requests by `TestRetiredFieldRequestsKeepTheAuthorizationOfTheirRoutes`
+  (owner 200/201, the view, post and use grantees 403, a stranger and the admin 404) and
+  `TestRetiredFieldRequestsAreRefusedToAnonymousCallersAndAIs` (anonymous 401, the operator AI, another AI of the owner and
+  another user's AI 403 `agent tokens can only call agent endpoints`).
+- **Logic removed with the fields**: the catch-all guard of `rooms.Update` (ROUTE-07) and `Room.CatchAll`; the stop of a
+  connection when its catch-all room is deleted, with its `auto-route room unavailable` detail and status event (ROUTE-03),
+  so deleting a room that a stored `auto_route_room_id` still names leaves the connection alone; the catch-all settings of
+  `connectors.Service.Update` (`autoRoute`, ROUTE-04), their `auto_route` audit change, the safety switch they set on the room
+  (ROUTE-07), the `RoomChanged` they published, and the clearing of the routing details (ROUTE-09, `IsAutoRouteDetail`,
+  `autoroute.go`); `rooms.skipAutoRoute` and `AutoRouteSkip` (the 24-hour skip of a chat taken out of a catch-all room); the
+  outbound and signature switches of `MemberInput`, `MemberUpdate` and `toMember`; and the `NotifyChatID` of `GET /me`. The
+  channel tool `room_info` lost `sign_outbound` in its `me` settings.
+- **Queries removed** (`make generate`): `CountCatchAllConnectors`, `SetRoomCatchAllSafety`, `StopCatchAllConnectors`,
+  `UpdateConnectorAutoRoute`, `GetAutoRouteSkip`, `UpsertAutoRouteSkip`, `GetChatAutoRoute` and `ListRoomChatConnectors` (dead
+  since T24). `CreateRoom`, `UpdateRoom`, `CreateRoomMember` and `UpdateRoomMemberSettings` no longer name `bridge_chats`,
+  `broadcast`, `outbound` or `sign_outbound`, so no sqlc query names a column or table that migration 0018 (T36) drops.
+- **Dead columns** (AD-012): nothing reads or writes them now, and a new row takes the column default. T36 drops
+  `rooms.bridge_chats`, `rooms.broadcast`, `connectors.auto_route_scope` and the tables `outbox` and `auto_route_skips`. The design
+  does not drop `room_members.outbound`, `room_members.sign_outbound`, `connectors.auto_route_room_id` and `users.notify_chat_id`: they
+  stay as documented dead columns (the last two as dead foreign keys, cleared by 0018).
+- **Web** (same commit, since the types are generated): the undo of a member removal adds the member back with its kind and id
+  only; the composer lost its ignored `broadcast` prop and the room page no longer passes it; the fixtures follow the DTO.
+  The thirty strings of the retired features are gone from `en` and `pt-BR` (`composer.toDefault`..`composer.recipientsListenOnly`,
+  `members.chats`, `members.outbound*`, `members.updateFailed`, `picker.addConnector`, `settings.bridge*`, `settings.broadcast*`,
+  `settings.catchAllLocked`, `memberSettings.sign*`, `memberSettings.unsigned`); each was unreferenced.
+- **Testkit**: `Client.SeedChatMember(roomID, chatID)` lost its `outbound` argument (the rooms fixture's `addMember` and
+  `seedChatMember` too).
+- **Tests retired** (IDs for the commit body): ROUTE-03 and ROUTE-04 (`catch_all_settings_test.go`), ROUTE-07
+  (`no_broadcast_test.go`, `TestCatchAllRoomRefusesBroadcastAndBridge`), ROUTE-09 (the detail cleared by a save), MEM-01 (the
+  signature switch and `sign_outbound` in `TestAgentMemberSettings*`), DLV-03 (the member `outbound` switch and the chat PATCH of
+  `TestMemberSettingsRefusedForChats`) and LIVE-04's `outbox.status` DTO. Rewritten with the same outcome: the member and
+  room tests that used `outbound`, `sign_outbound`, `bridge_chats` or `Outbox` as setup or as an assertion about a delivery that
+  no longer exists (`TestRoomMembersEndpoint`, the room matrix's "update member" row now patches an AI member,
+  `TestUpdateAndRemoveMember`, `TestPostsPlanNoDeliveryForChatMembers`, `TestToolResultHasNoNoChatWarning`, the DM, group,
+  merge and room_info tests). The v0.4 client that sends `outbound` with a chat is still refused `chats_not_members` (raw body).
+- **New tests**: `internal/api/retired_fields_test.go` (responses carry no retired field, whatever the database holds; a
+  request carrying them changes nothing for the room, the members and the connection, the stored values being planted so that a
+  lingering read or write shows; deleting a former catch-all room leaves the connection alone; the authorization of the four
+  requests), `internal/api/dto/retired_test.go` (no declaration of the package carries a retired JSON field or a name of a retired
+  type, which also covers the never-filled `outbox`), the undo case of `member-list.test.tsx`, and the `me` expectation of
+  `TestToolRoomInfo`.
+- **Left for T36**: tests that plant or read the columns it drops must change with it: the `UPDATE rooms SET bridge_chats ... broadcast`,
+  `UPDATE connectors SET auto_route_scope` and the matching `countRows` assertions of `retired_fields_test.go`,
+  `TestPostInARoomWithBroadcastOffAnswersNoWarning` (its scenario ends with the column), `TestDeleteRoomRemovesEverything` and the
+  other `outbox` counts, and the store tests that read `rooms.broadcast`, `rooms.bridge_chats`, `connectors.auto_route_scope`,
+  `auto_route_skips` and `outbox`. The planted `auto_route_room_id`, `notify_chat_id`, `outbound` and `sign_outbound` survive the
+  migration as columns.
+
+## T36: Upgrade migration 0018 (CID-21, CID-27)
+
+- **File** `internal/store/migrations/0018_connection_proxy.sql`, no Go hook: it runs with 0017 (and any other pending file) in
+  the one migration transaction (MIG-05), in this order:
+  1. `DELETE FROM room_members WHERE kind = 'chat'` (CID-21): every chat leaves its room, the platform DMs of v0.4 included.
+     Rooms keep their messages (those a chat wrote too), their AI and user members, settings, cursors and grants. People,
+     `chat_people`, chats and the DM rooms with people stay as read-only history.
+  2. `UPDATE connectors SET auto_route_room_id = NULL` and `UPDATE users SET notify_chat_id = NULL`. `operator_iid` is untouched:
+     NULL means "no operator" (CID-02), so an owner-operated v0.4 connection idles until its owner chooses an AI.
+  3. `DROP TABLE outbox` (rows and indexes with it, and the 0015 `purpose` column) and `DROP TABLE auto_route_skips`. Nothing
+     references either table, so the implicit `DELETE` of `DROP TABLE` cascades nowhere (AD-012).
+  4. `ALTER TABLE connectors DROP COLUMN auto_route_scope`, `ALTER TABLE rooms DROP COLUMN bridge_chats` and
+     `... DROP COLUMN broadcast`. SQLite accepts them because no index, view or trigger names the columns and the CHECK on
+     `auto_route_scope` belongs to the column.
+- **CID-27** needs no statement: `deliver='all'` and `groups_mentions_only=1` are the column defaults 0017 added, so every
+  connection reads them whatever its scope was (`off`, `dms`, `groups` or `all`).
+- **Dead columns kept** (AD-012): `room_members.outbound` and `room_members.sign_outbound` (the design does not list them, the API
+  stopped reading and writing them in T35), `connectors.auto_route_room_id` and `users.notify_chat_id` (foreign keys, emptied).
+  Their values survive for members; a new member takes the defaults.
+- **Atomic**: a statement that fails after the chats were deleted and the tables dropped leaves everything as it was, 0017 too
+  (`TestConnectionProxyUpgradeRollsBackOnFailure` makes `DROP COLUMN` fail with a view on `rooms.bridge_chats`, compares a full
+  snapshot of the schema and rows, then runs the same upgrade once the view is gone). A second start does not touch a database
+  that is already at 0018 (`TestConnectionProxyUpgradeRunsOnce`).
+- **Tests**: `internal/store/connection_proxy_migration_test.go`. `v04Fixture` is the v0.3 data set (`testdata/v03_fixture.sql`)
+  upgraded to schema 0016 plus what v0.4 wrote that the fixture predates: a connector operated by an AI, connectors of the four
+  scopes, a user's chat to notify and a platform DM between an AI and a person with its chat as a member and a message the chat
+  sent. `TestConnectionProxyUpgradeKeepsHistoryAndDropsTheRest` compares every row of every surviving column of every table
+  before and after (only the chat rows of `room_members` and the emptied columns differ), then the CID-27 settings, the
+  operators, the absent tables and columns, the kept dead columns, the foreign key check and the integrity check.
+- **Existing tests changed**, assertions kept: the tests that pin one earlier migration now stop right after it
+  (`MigrateBefore`), because the full upgrade removes the columns they read: `TestRoutingContextMigrationDefaultsAndChecks` and
+  `TestRoutingContextMigrationRoomAndChatReferences` (0006), `TestRoomSafetyMigrationDefaultsAndCatchAllRooms` (0008) and
+  `TestCleanupAloneKeepsEveryRow` (0016 on its own). `TestUpgradeV03KeepsEveryRow` keeps the full v0.3 upgrade and now also
+  accounts for 0018: the dropped tables and columns, the emptied column and the three chat members. `TestMigrateCreatesEveryDesignTable`
+  lists the queue tables instead of `outbox` and asserts the two dropped tables are absent.
+- **Retired with the tables** (IDs for the commit body): NOTI-02 (the `outbox.purpose` default and CHECK in
+  `TestDMPairIsUniqueAndKindsAreChecked`), ROOM-02's outbox part (the outbox counts of `TestDeletingOwnerDeletesTheirRooms` and
+  `TestDeleteRoomRemovesEverything`), ROUTE-06's "no warning in a room that switched broadcast off"
+  (`TestPostInARoomWithBroadcastOffAnswersNoWarning`: a room has no broadcast flag to switch), and the v0.3 "pending delivery is
+  left alone" assertion of `TestUpgradedAgentAdoptsItsFolderAndRepliesInTheRoom`, now "the delivery went with its table and nothing was
+  sent or queued". Tests that asserted nothing is delivered to a chat count `platform_sends` instead of `outbox`, the only place a send
+  to a platform is recorded.
+- **T35's e2e tests** (`retired_fields_test.go`) no longer plant the dropped columns: the room's flags and the connection's scope cannot
+  be stored, so the request tests assert the answer and, for the members and the connection, the surviving dead columns
+  (`outbound`, `sign_outbound`, `auto_route_room_id`).
+- **Authorization**: none; the migration runs at start-up, not through a route.
+
+## T37: Upgrade end to end (CID-21)
+
+- **Test** `TestUpgradedWhatsAppRoomLosesItsChatAndItsGroupReachesOnlyTheOperator` (`internal/api/upgrade_test.go`): the app boots on
+  `v04Database`, the store's v0.3 fixture upgraded to schema 0016 (what v0.4 ended with) plus a room "Team" of the owner that
+  holds her as a user member, two of her AIs (`a-atlas`, `a-pc2`), the fixture's WhatsApp group chat (`c-wagrp` of connection
+  `k-wa`), a message from the group and an AI's answer. The app applies 0017 and 0018 at start-up; the fake connector kind is
+  registered as `whatsapp`. Alice acts through a user token, her AIs through an agent token, which adopts the v0.3 agents by their
+  folder names (`atlas`, `proj-claude-2`).
+- **What it pins**, through the API only:
+  1. `GET /rooms/r-team` and its members: the owner, `a-atlas` and `a-pc2`, `member_count` 3, no chat; the two messages are read
+     back with their authors (the group's sender "Zé" and the AI); the connection still lists its group chat.
+  2. `GET /connectors/k-wa`: no operator, status `error` with `choose the AI that operates this connection` (CID-02),
+     `deliver=all`, `groups_mentions_only=true`, `queued=0` (CID-27), and no connector instance runs.
+  3. `PATCH /connectors/k-wa {operator_id: a-atlas}` starts the connection. Both AIs connect with the platform feature; the room
+     backlog they receive is no platform event.
+  4. A group message that mentions the account arrives as a `platform` frame on Atlas only (all fields, `trusted=false`,
+     `from_self=false`, the chat's id the upgrade kept), nothing on the other AI's session, `queued=1` on the connection page whose
+     body carries no text, and afterwards no new message, room or person (CID-07). The acknowledgement empties the queue.
+  5. A group message without a mention is not delivered (the upgrade's defaults), a direct message is.
+- **Mutation check** (run by hand, not kept): without `DELETE FROM room_members WHERE kind = 'chat'` in 0018 this test and both
+  store tests fail on the chat in the member list.
+- **Testkit**: `AgentConn.Drain(d)` returns the frames that arrive within `d` (none is not a failure), for the backlog of a new
+  session and for "this session got nothing more".
+- **`make e2e`**: the 20 Playwright smoke tests pass against the built binary (chromium headless shell through
+  `PLAYWRIGHT_CHROMIUM_EXECUTABLE`). They cover the web app, which T35 and T29 already adapted; no spec file changed.
+- **Not covered here**: the Telegram connection of the fixture (its kind is not registered in this app, so it only reports an
+  error). The data of the other connections is pinned by `TestConnectionProxyUpgradeKeepsHistoryAndDropsTheRest`.
+
+## T39: Dropped notice for polling harnesses (CID-10)
+
+- **Server**: `GET /agent/pending?platform=1` answers `dto.AgentPending{items, platform, dropped}`. `dropped` is the AI's counter of
+  platform messages the server dropped (older than 7 days or over 5,000 queued), taken with `Queue.TakeDropped`: the call that
+  returns it resets it, so it comes once, and a second poll reads 0. It is always present (0 when nothing was dropped), like `platform`.
+  Without `platform=1` (absent, `0`, or `wait` alone) the answer is `{"items": [...]}` as before and the counter is not read, so it
+  waits for the next reader that asks. A refused request (`platform=true`) and the 409 of an AI that holds the WebSocket take nothing.
+  The counter is the AI's own: another AI of the owner, the same-named AI of a use grantee or of a stranger read 0 and take nothing;
+  users (session, user token, admin) get 403, anonymous callers 401 (agent tokens only, as before).
+- **A count ends a wait**, like a message or an event does: every pass of the polling loop takes the count first, and a count above
+  0 returns the answer at once with whatever else is queued. `wait_for_messages` thus tells an AI about a loss immediately instead of
+  after its timeout. The count is taken before the room messages and the events are read, so when a later step fails only a notice is
+  lost, never messages. A response that is not delivered after the take loses the count, as it loses room messages and events.
+- **Cheap polling**: `Queue.TakeDropped` now reads the counter without the write lock and opens the write transaction only when it is
+  above 0 (it reads again inside, so two takers never both get it: `TestTakeDroppedGivesTheCountToExactlyOneTaker`). The WebSocket's
+  connect path benefits too.
+- **One wording**: `dto.DroppedNotice(n)` (moved from `agents.DroppedNotice`) words the notice for the WebSocket frame and for the polling
+  output: `N platform messages were dropped (older than 7 days or over 5,000 queued)`, also for N = 1. It is the only function of the
+  `dto` package (tygo ignores it). The existing WebSocket tests keep their literal strings (L-032).
+- **Client**: `channel.FramePending(dto.AgentPending)` is what `wait_for_messages` and the turn-end hooks hand the harness: the notice
+  first, framed like the notice from Partyline that the adapters frame (`<partyline from="Partyline" trusted="false">…</partyline>` and the
+  data line; no room), then `FrameAll` of the messages and events, separated by a blank line. It is empty only when nothing arrived and
+  nothing was dropped. `channel.NoticeRecord` is the record of a notice (the notification's meta plus `content`). A count alone makes
+  the hooks continue the turn (Codex `block`, Gemini `deny`) with the notice as the reason, once: the next run allows the stop. A count
+  alone makes `wait_for_messages` return the notice instead of `no new messages in N seconds`.
+- **Shared framing**: `integrations/testdata/framing.json` gains the case "the notice of dropped platform messages belongs to no room"
+  (a roomless notice record). The Go `Frame` and the three TypeScript adapters (pi, OpenCode, omp) frame it identically (85 adapter
+  tests, 3 more than before), and `TestNoticeRecordIsTheNotificationWithItsContent` ties the record to the code. No adapter changed.
+- **Older servers and clients**: a server from before this task sends no `dropped`, which decodes to 0; an older CLI ignores the
+  unknown key.
+- **Tests**: `internal/api/agent_pending_platform_test.go` (the count once and anew, with the messages and ending a wait, absent
+  without `platform=1`, the AI's own count and who may not read or take it), `internal/channel/pending_platform_test.go`
+  (`FramePending`, `Pending`, the tool), `internal/cli/hook_platform_test.go` (both hooks, the tool through the real channel,
+  another AI's and another user's hook), `internal/platform/queue_test.go` (one taker), the shared framing case. The two T13 assertions that
+  list the response keys (`items`, `platform`) now list `dropped` too.
+
+## T38: Docs and v0.5.0 release notes (CID-22, CID-27)
+
+- **Files**: `README.md` and `README.pt-BR.md` (same structure and content in both languages) and `docs/agents.md`. Also two
+  files the task did not name, which still described rooms as the routing primitive with chats routed to agents and bridged:
+  `PRODUCT.md` (purpose, positioning, capabilities and principle 3) and the first paragraph of `AGENTS.md`. `docs/claude-code.md` only
+  points at `agents.md` and needed nothing.
+- **README** (both languages): the intro, the feature list and the architecture diagram and paragraph describe the proxy (queue and
+  send worker instead of the room outbox); the tools paragraph names `reply` for connections and `send_message`'s `connection` and
+  `chat`; a new section "Connections" states the rules (operator is an AI of the owner, the idle statuses, arrival and the queue
+  with its 7 days, 5,000, 24 hours and the dropped notice, `deliver` and `groups_mentions_only` and their defaults, a webhook's
+  `mentions_account`, trust and `from_self`, answering with `reply` or `send_message`, `not_operator`, `unknown_chat`, `unsupported`,
+  the retries, what the owner sees, operator change and deletion); "Conversations and contacts" lost the operator signature and
+  notification bullets and says people and their DMs are read-only history; the security model states `trusted` for a message from
+  a connection; the error table gains `not_operator`, `unknown_chat`, `chats_not_members`, `history_only` and `unsupported`, and
+  `no_route_to_person` now says a person cannot be messaged at all.
+- **Breaking-change notes**: the new section "Upgrading from v0.4" (v0.5.0) holds the five points the task lists, each as one
+  bullet: back up the data directory first (the upgrade runs once and deletes chat memberships and the delivery tables); update the
+  CLI on every machine with the server (a v0.4 CLI gets no platform events, which wait in the queue and expire after 7 days); every
+  connection needs an AI operator and owner-operated ones go idle (the status text) until one is chosen; the defaults
+  `deliver=all` and `groups_mentions_only` on stop group messages without a mention; chats leave the rooms with history, people and
+  their DMs kept read-only; the retired features; no platform history in Partyline; app notifications end and web push follows in
+  v0.5.1. "Upgrading from v0.3" now sends readers there and no longer speaks of bridges or the catch-all room.
+- **`docs/agents.md`**: "Accounts and operators" and "Notify me on another app" are replaced by "Connections and operators" (the rules
+  above in detail, and what each harness shows); the Claude Code section shows a platform event and the identity notice's `You
+  operate:` sentence; the pi, OpenCode and omp frame, the Codex and Gemini hooks and `wait_for_messages` (the dropped notice, T39) are
+  described; DMs, groups, contacts, people and merge follow the new model; the tool table, the error table, the trust model, the
+  connection behaviour, the troubleshooting list and the `listen` line are updated, with a "nothing arrives from a platform" entry.
+- **The retired features are named once** per language, in the "Retired" bullet of "Upgrading from v0.4" (the names a v0.4 user knows:
+  bridges, the room switches, `chat_ids` and `recipients`, Route chat to agent, catch-all rooms, auto-routing, platform DMs, member
+  signatures, Settings → Notifications). No other doc or section describes them as current; a search of the docs for the terms finds
+  only that bullet (`no_route_to_person` and `routing` as a word are not the feature).
+- **No private data**: the examples use Atlas, Notes, Rita, the group "Team" and the synthetic id `5511999990000`; nothing else that looks
+  like a name, number, address or host.
+- **Tool text** (`internal/channel/tools.go`): the `react` description said the reaction "appears on the message in its chat", which
+  stopped being true when rooms stopped sending to chats (T33); it now says the reaction stays in the room. No test pins the sentence.

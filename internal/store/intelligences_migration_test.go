@@ -115,22 +115,31 @@ func without(rows []string, drop func(string) bool) []string {
 	return out
 }
 
-// MIG-01, MIG-03, MIG-05: upgrading the v0.3 fixture (0015 and 0016 apply in one transaction)
+// MIG-01, MIG-03, MIG-05: upgrading the v0.3 fixture (0015 to 0018 apply in one transaction)
 // keeps every row of every v0.3 table with all its columns, except what the upgrade replaces on
 // purpose: the project rows the conversion replaces (project members become agent members,
-// project grants, projects and their cursors go, agents lose their project) and the legacy
+// project grants, projects and their cursors go, agents lose their project), the legacy
 // identity columns 0016 drops, whose values live in the intelligences
-// (TestUpgradeV03Identities). Every room is a group whose history counts as read.
+// (TestUpgradeV03Identities), and what the connection proxy retires (0018, CID-21): the chats in
+// rooms, the delivery tables and the catch-all and room switches
+// (TestConnectionProxyUpgradeKeepsHistoryAndDropsTheRest). Every room is a group whose history
+// counts as read.
 func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 	e := v03Fixture(t)
 	all := e.v03Tables()
 	for table, legacy := range legacyColumns {
 		require.Subset(t, all[table], legacy, "fixture sanity: %s has its legacy columns before the upgrade", table)
 	}
-	// The columns the upgrade keeps: every v0.3 column but the legacy ones.
+	// The columns the upgrade keeps: every v0.3 column but the legacy ones, the ones the proxy
+	// upgrade drops and the ones it empties.
 	tables := map[string][]string{}
 	for table, cols := range all {
-		tables[table] = without(cols, func(c string) bool { return slices.Contains(legacyColumns[table], c) })
+		if slices.Contains(droppedTables, table) {
+			continue
+		}
+		tables[table] = without(cols, func(c string) bool {
+			return slices.Contains(legacyColumns[table], c) || slices.Contains(droppedColumns[table], c) || slices.Contains(clearedColumns[table], c)
+		})
 	}
 	before := map[string][]string{}
 	for table, cols := range tables {
@@ -142,17 +151,21 @@ func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 
 	require.NotContains(t, versions(t, e.s), "0015_intelligences", "fixture sanity: the database is a v0.3 one")
 	require.NoError(t, e.s.Migrate(context.Background()))
-	require.Subset(t, versions(t, e.s), []string{"0015_intelligences", "0016_drop_v03_identity"}, "the fixture upgrades through 0015 and 0016")
+	require.Subset(t, versions(t, e.s), []string{"0015_intelligences", "0016_drop_v03_identity", "0018_connection_proxy"}, "the fixture upgrades through 0015, 0016 and 0018")
 
-	// 0016 drops the legacy columns and project_cursors and no other column or table of v0.3.
+	// 0016 drops the legacy columns and project_cursors, 0018 the delivery tables and the catch-all
+	// and room switches, and no other column or table of v0.3.
 	for table, cols := range all {
-		if table == "project_cursors" {
+		if table == "project_cursors" || slices.Contains(droppedTables, table) {
 			continue
 		}
 		after := e.columnsOf(table)
 		require.Subset(t, after, tables[table], "table %s keeps its other v0.3 columns", table)
 		dropped := without(cols, func(c string) bool { return slices.Contains(after, c) })
-		require.ElementsMatch(t, legacyColumns[table], dropped, "table %s loses its legacy columns and no other", table)
+		require.ElementsMatch(t, append(slices.Clone(legacyColumns[table]), droppedColumns[table]...), dropped, "table %s loses its legacy columns and no other", table)
+	}
+	for _, table := range droppedTables {
+		require.Empty(t, e.columnsOf(table), "table %s is dropped", table)
 	}
 	require.Empty(t, e.columnsOf("project_cursors"), "the project cursor table is dropped")
 	require.NotEmpty(t, e.columnsOf("projects"), "the empty projects table stays (agents.project_id references it, AD-012)")
@@ -167,15 +180,15 @@ func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 	}
 
 	newMember := func(r string) bool { return strings.Contains(r, "room_id=r-ops kind=agent member_id=a-pc2 ") }
-	require.Equal(t, without(before["room_members"], func(r string) bool { return strings.Contains(r, "kind=project") }),
+	require.Equal(t, without(before["room_members"], func(r string) bool { return strings.Contains(r, "kind=project") || strings.Contains(r, "kind=chat ") }),
 		without(e.rowsOf("room_members", tables["room_members"]), newMember),
-		"every non-project member keeps every column (the direct dev member of proj-claude-2 keeps its own settings)")
+		"every non-project, non-chat member keeps every column (the direct dev member of proj-claude-2 keeps its own settings)")
 	settings := []string{"room_id", "kind", "member_id", "outbound", "added_by", "created_at", "display_name", "sign_outbound", "delivery", "keywords_json"}
 	require.Equal(t, []string{
 		`room_id=r-ops kind=agent member_id=a-pc2 outbound=0 added_by=u-alice created_at=1790000000025 display_name=Proj Bot sign_outbound=0 delivery=trusted keywords_json=["build","ci"]`,
 	}, without(e.rowsOf("room_members", settings), func(r string) bool { return !newMember(r) }),
 		"Proj's ops membership moves to proj-claude-2 (latest connected) with its settings")
-	require.Equal(t, 11-3+1, e.count(`SELECT COUNT(*) FROM room_members`), "Empty's membership and Proj's dev membership go")
+	require.Equal(t, 11-3+1-3, e.count(`SELECT COUNT(*) FROM room_members`), "Empty's membership and Proj's dev membership go, and the three chats")
 
 	require.Equal(t, without(before["grants"], func(r string) bool { return strings.Contains(r, "resource_kind=project") }),
 		e.rowsOf("grants", tables["grants"]))
@@ -209,7 +222,6 @@ func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 	require.Equal(t, map[string]int{"r-ops": 7, "r-inbox": 3, "r-dev": 2, "r-bob": 1}, baselines, "every room is a group; its history counts as read")
 	require.Zero(t, e.count(`SELECT COUNT(*) FROM rooms WHERE kind = 'dm'`), "no DMs yet")
 	require.Zero(t, e.count(`SELECT COUNT(*) FROM read_cursors`))
-	require.Equal(t, 3, e.count(`SELECT COUNT(*) FROM outbox WHERE purpose = 'room'`))
 }
 
 // MIG-01, MIG-03, MIG-04 on the fixture: handles and names, the converted project member and
@@ -483,7 +495,7 @@ func TestCleanupAloneKeepsEveryRow(t *testing.T) {
 	require.Len(t, before["agents"], 6, "fixture sanity")
 	viewBefore := e.v03AuthorNames()
 
-	require.NoError(t, e.s.Migrate(ctx))
+	require.NoError(t, e.s.MigrateBefore(ctx, "0017")) // 0016 alone: 0017 and 0018 have tests of their own
 
 	for table := range tables {
 		if table == "project_cursors" {

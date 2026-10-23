@@ -280,8 +280,16 @@ func (q *Queue) Ack(ctx context.Context, agentID, itemID string) error {
 }
 
 // TakeDropped returns how many items the AI lost to the bound or to expiry since the last call
-// and resets the count: the next connection of its session tells it (CID-10).
+// and resets the count: the next connection of its session, or the next poll of a harness that
+// has no session, tells it (CID-10).
 func (q *Queue) TakeDropped(ctx context.Context, agentID string) (int64, error) {
+	// Polling is the common case and nothing was dropped: look with a read before taking the write
+	// lock. The write transaction reads the count again, so two takers never both get it.
+	if n, err := q.d.Store.R().GetPlatformDropped(ctx, agentID); errors.Is(err, sql.ErrNoRows) || (err == nil && n == 0) {
+		return 0, nil
+	} else if err != nil {
+		return 0, err
+	}
 	var n int64
 	err := q.d.Store.WithTx(ctx, func(tx *db.Queries) error {
 		var err error

@@ -20,9 +20,9 @@ const MaxWaitSeconds = 300
 const defaultWaitSeconds = 60
 
 // pending fetches the agent's undelivered room messages and platform events (GET
-// /agent/pending?platform=1), waiting up to wait seconds for the first of either; they count as
-// delivered once returned. A server from before platform events answers with the room messages
-// alone.
+// /agent/pending?platform=1), waiting up to wait seconds for the first of either or for a count of
+// dropped platform messages; they count as delivered once returned. A server from before platform
+// events answers with the room messages alone.
 func (c *client) pending(ctx context.Context, wait int) (dto.AgentPending, error) {
 	q := url.Values{"platform": {"1"}}
 	if wait > 0 {
@@ -62,10 +62,10 @@ func (t *tools) waitForMessages(ctx context.Context, args json.RawMessage) (stri
 	if err != nil {
 		return "", err
 	}
-	if len(p.Items) == 0 && len(p.Platform) == 0 {
-		return fmt.Sprintf("no new messages in %d seconds", wait), nil
+	if text := FramePending(p); text != "" {
+		return text, nil
 	}
-	return FrameAll(p.Items, p.Platform...), nil
+	return fmt.Sprintf("no new messages in %d seconds", wait), nil
 }
 
 // PendingOptions configure Pending.
@@ -77,8 +77,9 @@ type PendingOptions struct {
 	HTTPClient *http.Client
 }
 
-// Pending returns the agent's undelivered room messages and platform events without waiting and
-// counts them as delivered (the turn-end hooks, TURN-02, CID-06).
+// Pending returns the agent's undelivered room messages and platform events, and the count of the
+// platform messages the server dropped, without waiting; they count as delivered (the turn-end
+// hooks, TURN-02, CID-06, CID-10).
 func Pending(ctx context.Context, o PendingOptions) (dto.AgentPending, error) {
 	base, err := parseBase(o.URL)
 	if err != nil {

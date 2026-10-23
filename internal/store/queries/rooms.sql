@@ -1,7 +1,7 @@
 -- name: CreateRoom :exec
-INSERT INTO rooms (id, owner_id, name, description, instructions, instructions_by, bridge_chats, retention_days,
+INSERT INTO rooms (id, owner_id, name, description, instructions, instructions_by, retention_days,
                    created_at, updated_at, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetRoom :one
 SELECT * FROM rooms WHERE id = ?;
@@ -10,8 +10,8 @@ SELECT * FROM rooms WHERE id = ?;
 SELECT COUNT(*) FROM room_members WHERE room_id = ? AND kind = ? AND member_id = ?;
 
 -- name: CreateRoomMember :exec
-INSERT INTO room_members (id, room_id, kind, member_id, outbound, added_by, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO room_members (id, room_id, kind, member_id, added_by, created_at)
+VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: GetRoomWithOwner :one
 SELECT sqlc.embed(r), u.username AS owner_username,
@@ -44,7 +44,7 @@ WHERE (r.kind = 'group' AND r.owner_id = sqlc.arg(user_id))
 ORDER BY r.name COLLATE NOCASE, r.id;
 
 -- name: UpdateRoom :exec
-UPDATE rooms SET name = ?, description = ?, instructions = ?, instructions_by = ?, bridge_chats = ?, broadcast = ?,
+UPDATE rooms SET name = ?, description = ?, instructions = ?, instructions_by = ?,
                  retention_days = ?, updated_at = ?, updated_by = ?
 WHERE id = ?;
 
@@ -80,7 +80,7 @@ ORDER BY m.created_at, m.id;
 SELECT * FROM room_members WHERE id = ? AND room_id = ?;
 
 -- name: UpdateRoomMemberSettings :exec
-UPDATE room_members SET outbound = ?, display_name = ?, sign_outbound = ?, delivery = ?, keywords_json = ?
+UPDATE room_members SET display_name = ?, delivery = ?, keywords_json = ?
 WHERE id = ?;
 
 -- name: DeleteRoomMember :exec
@@ -88,14 +88,6 @@ DELETE FROM room_members WHERE id = ?;
 
 -- name: GetRoomMemberByMember :one
 SELECT * FROM room_members WHERE room_id = ? AND kind = ? AND member_id = ?;
-
--- name: CountCatchAllConnectors :one
--- Connectors whose catch-all room is this room (ROUTE-07).
-SELECT COUNT(*) FROM connectors WHERE auto_route_room_id = ?;
-
--- name: SetRoomCatchAllSafety :exec
--- A room chosen as a catch-all room stops broadcasting and bridging (ROUTE-07).
-UPDATE rooms SET broadcast = 0, bridge_chats = 0, updated_at = ? WHERE id = ?;
 
 -- name: CountRoomChatMembers :one
 SELECT COUNT(*) FROM room_members WHERE room_id = ? AND kind = 'chat';

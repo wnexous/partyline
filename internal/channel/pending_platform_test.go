@@ -132,3 +132,59 @@ func TestWaitForMessagesToolShowsPlatformEvents(t *testing.T) {
 	require.False(t, isErr, text)
 	require.Equal(t, "no new messages in 0 seconds", text)
 }
+
+// droppedNotice2 is the notice for two dropped messages as the spec words it (CID-10): the same text the
+// WebSocket sends a session on connect.
+const droppedNotice2 = "2 platform messages were dropped (older than 7 days or over 5,000 queued)"
+
+// framedDropped is that notice framed for a harness, like the adapters frame a notice from Partyline: from
+// nobody's room, not trusted, so its text is data.
+const framedDropped = `<partyline from="Partyline" trusted="false">` + droppedNotice2 + "</partyline>\n" + DataLine
+
+// CID-10: FramePending tells a harness that polls how many platform messages were dropped, first, in the
+// words of the WebSocket's notice, and then frames the room messages and the events as FrameAll does; with
+// nothing to say it is empty, and a count alone is something to say.
+func TestFramePendingTellsAboutDroppedMessagesFirst(t *testing.T) {
+	require.Equal(t, "", FramePending(dto.AgentPending{}))
+	require.Equal(t, framedDropped, FramePending(dto.AgentPending{Dropped: 2}))
+	m1 := pendingMessage("m1", "first", 0)
+	require.Equal(t, framedDropped+"\n\n"+framedRoom+"\n\n"+framedDirect,
+		FramePending(dto.AgentPending{Items: []dto.AgentMessage{m1}, Platform: []dto.PlatformEvent{pendingEvent(directEvent, time.Minute)}, Dropped: 2}))
+	require.Equal(t, framedRoom, FramePending(dto.AgentPending{Items: []dto.AgentMessage{m1}}), "no count, no notice")
+	require.Equal(t, "", FramePending(dto.AgentPending{Dropped: 0, Items: []dto.AgentMessage{}, Platform: []dto.PlatformEvent{}}))
+	one := FramePending(dto.AgentPending{Dropped: 1})
+	require.Contains(t, one, "1 platform messages were dropped (older than 7 days or over 5,000 queued)", "the wording does not change for one")
+}
+
+// CID-10: Pending (the turn-end hooks) returns the count of a server that sends it, and none from an older
+// server that does not.
+func TestPendingReturnsTheDroppedCount(t *testing.T) {
+	url, _ := pendingServer(t, `{"items":[],"platform":[],"dropped":2}`)
+	got, err := Pending(context.Background(), PendingOptions{URL: url, Token: "pl_agent_x", Identity: builderIdentity})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), got.Dropped)
+
+	old, _ := pendingServer(t, `{"items":[]}`)
+	got, err = Pending(context.Background(), PendingOptions{URL: old, Token: "pl_agent_x", Identity: builderIdentity})
+	require.NoError(t, err)
+	require.Zero(t, got.Dropped)
+}
+
+// CID-10, TURN-01: wait_for_messages shows the count first, in the notice's words, with what else
+// arrived, and a count alone is an answer: it does not say that nothing arrived.
+func TestWaitForMessagesToolTellsAboutDroppedMessages(t *testing.T) {
+	alone, _ := pendingServer(t, `{"items":[],"platform":[],"dropped":2}`)
+	s := startSession(t, Options{URL: alone, Token: "pl_agent_x", Machine: "testbox", Folder: "/work/builder", ToolsOnly: true, TempDir: t.TempDir(), timing: fastTiming})
+	s.handshake()
+	text, isErr := s.call("wait_for_messages", map[string]any{"timeout_seconds": 0})
+	require.False(t, isErr, text)
+	require.Equal(t, framedDropped, text)
+
+	with := `{"items":[],"dropped":2,` + pendingBody[len(`{"items":[],`):]
+	together, _ := pendingServer(t, with)
+	s = startSession(t, Options{URL: together, Token: "pl_agent_x", Machine: "testbox", Folder: "/work/builder", ToolsOnly: true, TempDir: t.TempDir(), timing: fastTiming})
+	s.handshake()
+	text, isErr = s.call("wait_for_messages", map[string]any{"timeout_seconds": 0})
+	require.False(t, isErr, text)
+	require.Equal(t, framedDropped+"\n\n"+framedGroup, text)
+}

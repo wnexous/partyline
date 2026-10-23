@@ -49,7 +49,7 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.reply))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "react",
-		Description: "React to a chat message of a room with one emoji; the reaction appears on the message in its chat. Only messages from chats can get reactions; a message from one of your connections cannot (unsupported): answer it with reply.",
+		Description: "React to a chat message of a room with one emoji; the reaction stays in the room, it is not sent to the chat. Only messages from chats can get reactions; a message from one of your connections cannot (unsupported): answer it with reply.",
 		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the chat message"},"emoji":{"type":"string","description":"one emoji, e.g. 👍"}},"required":["message_id","emoji"]}`),
 	}, t.guard(t.react))
 	srv.HandleTool(mcp.ToolDef{
@@ -480,12 +480,11 @@ type roomInfoMember struct {
 	ChatKind dto.ChatKind `json:"chat_kind,omitempty"`
 }
 
-// membershipSettings are the calling agent's settings in the room (MEM-01..04).
+// membershipSettings are the calling agent's settings in the room (MEM-02..05).
 type membershipSettings struct {
-	DisplayName  string           `json:"display_name"`
-	SignOutbound bool             `json:"sign_outbound"`
-	Delivery     dto.DeliveryMode `json:"delivery"`
-	Keywords     []string         `json:"keywords"`
+	DisplayName string           `json:"display_name"`
+	Delivery    dto.DeliveryMode `json:"delivery"`
+	Keywords    []string         `json:"keywords"`
 }
 
 func (t *tools) roomInfo(ctx context.Context, args json.RawMessage) (string, error) {
@@ -506,7 +505,7 @@ func (t *tools) roomInfo(ctx context.Context, args json.RawMessage) (string, err
 		Room: info.Room, Instructions: info.Instructions, InstructionsBy: info.InstructionsBy,
 		InstructionsTrusted: info.InstructionsTrusted, RoomTextTrusted: info.RoomTextTrusted,
 		Members: make([]roomInfoMember, 0, len(info.Members)),
-		Me:      membershipSettings{DisplayName: info.Me.DisplayName, SignOutbound: info.Me.SignOutbound, Delivery: info.Me.Delivery, Keywords: info.Me.Keywords},
+		Me:      membershipSettings{DisplayName: info.Me.DisplayName, Delivery: info.Me.Delivery, Keywords: info.Me.Keywords},
 	}
 	if out.Me.Keywords == nil {
 		out.Me.Keywords = []string{}

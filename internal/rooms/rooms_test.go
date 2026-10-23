@@ -137,7 +137,7 @@ func (f *fixture) dm(t *testing.T, a, b authn.Principal) string {
 	f.exec(t, "INSERT INTO rooms (id, owner_id, name, kind, dm_a, dm_b, created_at, updated_at) VALUES (?, ?, '', 'dm', ?, ?, ?, ?)",
 		id, a.UserID, x, y, t0.UnixMilli(), t0.UnixMilli())
 	for _, p := range []authn.Principal{a, b} {
-		f.exec(t, "INSERT INTO room_members (id, room_id, kind, member_id, outbound, added_by, created_at) VALUES (?, ?, 'user', ?, 1, ?, ?)",
+		f.exec(t, "INSERT INTO room_members (id, room_id, kind, member_id, added_by, created_at) VALUES (?, ?, 'user', ?, ?, ?)",
 			store.NewID(), id, p.UserID, a.UserID, t0.UnixMilli())
 	}
 	return id
@@ -153,13 +153,12 @@ func TestCreateRoomMakesCallerOwner(t *testing.T) {
 	sub, cancel := f.bus.Subscribe(8)
 	defer cancel()
 
-	r, err := f.svc.Create(ctx, alice, CreateInput{Name: "  Ops  ", Description: "on call", BridgeChats: true})
+	r, err := f.svc.Create(ctx, alice, CreateInput{Name: "  Ops  ", Description: "on call"})
 	require.NoError(t, err)
 	require.Equal(t, alice.UserID, r.OwnerID)
 	require.Equal(t, dto.LevelManage, r.Level)
 	require.Equal(t, "Ops", r.Name)
 	require.Equal(t, "on call", r.Description)
-	require.True(t, r.BridgeChats)
 	require.Equal(t, int64(DefaultRetentionDays), r.RetentionDays)
 	require.Equal(t, dto.VisibilityPrivate, r.Visibility)
 	require.Equal(t, "alice", r.OwnerUsername)
@@ -248,7 +247,7 @@ func TestGranteeWithoutManageIsForbidden(t *testing.T) {
 		require.ErrorIs(t, err, access.ErrForbidden)
 		_, err = f.svc.AddMember(ctx, g, r.ID, MemberInput{Kind: dto.MemberKindUser, MemberID: g.UserID})
 		require.ErrorIs(t, err, access.ErrForbidden)
-		_, err = f.svc.UpdateMember(ctx, g, r.ID, members[0].ID, MemberUpdate{Outbound: ptr(false)})
+		_, err = f.svc.UpdateMember(ctx, g, r.ID, members[0].ID, MemberUpdate{DisplayName: ptr("x")})
 		require.ErrorIs(t, err, access.ErrForbidden)
 		require.ErrorIs(t, f.svc.RemoveMember(ctx, g, r.ID, members[0].ID), access.ErrForbidden)
 	}
@@ -309,11 +308,10 @@ func TestManagerUpdatesRoom(t *testing.T) {
 	sub, cancel := f.bus.Subscribe(8)
 	defer cancel()
 
-	got, err := f.svc.Update(ctx, bob, r.ID, UpdateInput{Name: ptr("ops-2"), Description: ptr("d"), BridgeChats: ptr(true), RetentionDays: ptr(7)})
+	got, err := f.svc.Update(ctx, bob, r.ID, UpdateInput{Name: ptr("ops-2"), Description: ptr("d"), RetentionDays: ptr(7)})
 	require.NoError(t, err)
 	require.Equal(t, "ops-2", got.Name)
 	require.Equal(t, "d", got.Description)
-	require.True(t, got.BridgeChats)
 	require.Equal(t, int64(7), got.RetentionDays)
 	require.Equal(t, alice.UserID, got.OwnerID)
 	require.Equal(t, events.RoomChanged{RoomID: r.ID}, <-sub)
@@ -347,7 +345,6 @@ func TestAddAgentRequiresUse(t *testing.T) {
 	require.Equal(t, mine, m.MemberID)
 	require.Equal(t, "builder", m.Name)
 	require.Equal(t, "alice", m.AgentOwner)
-	require.True(t, m.Outbound)
 	require.Equal(t, events.MembersChanged{RoomID: r.ID}, <-sub)
 
 	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: bobs})
@@ -388,7 +385,6 @@ func TestChatsAreNeverMembers(t *testing.T) {
 
 	for name, in := range map[string]MemberInput{
 		"a chat of the caller's connection":   {Kind: dto.MemberKindChat, MemberID: mine},
-		"a listen-only chat":                  {Kind: dto.MemberKindChat, MemberID: mine, Outbound: ptr(false)},
 		"a chat of another user's connection": {Kind: dto.MemberKindChat, MemberID: bobs},
 		"a chat that does not exist":          {Kind: dto.MemberKindChat, MemberID: store.NewID()},
 		"a chat with no member id at all":     {Kind: dto.MemberKindChat},
@@ -458,16 +454,16 @@ func TestUpdateAndRemoveMember(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.user(t, "alice", dto.RoleMember)
-	_, chat := f.chat(t, alice, "family")
+	agent := f.agent(t, alice, "builder")
 	r := f.room(t, alice, "ops")
 	other := f.room(t, alice, "other")
-	m := f.seedChatMember(t, alice, r.ID, chat, true) // a room built before the connection proxy
+	m := f.addMember(t, alice, r.ID, dto.MemberKindAgent, agent)
 	var err error
 
-	m, err = f.svc.UpdateMember(ctx, alice, r.ID, m.ID, MemberUpdate{Outbound: ptr(false)})
+	m, err = f.svc.UpdateMember(ctx, alice, r.ID, m.ID, MemberUpdate{DisplayName: ptr("Builder")})
 	require.NoError(t, err)
-	require.False(t, m.Outbound)
-	_, err = f.svc.UpdateMember(ctx, alice, other.ID, m.ID, MemberUpdate{Outbound: ptr(true)})
+	require.Equal(t, "Builder", m.DisplayName)
+	_, err = f.svc.UpdateMember(ctx, alice, other.ID, m.ID, MemberUpdate{DisplayName: ptr("Elsewhere")})
 	require.ErrorIs(t, err, access.ErrNotFound, "member ids are scoped to their room")
 
 	require.ErrorIs(t, f.svc.RemoveMember(ctx, alice, other.ID, m.ID), access.ErrNotFound)
@@ -478,8 +474,8 @@ func TestUpdateAndRemoveMember(t *testing.T) {
 	require.ErrorIs(t, f.svc.RemoveMember(ctx, alice, r.ID, m.ID), access.ErrNotFound)
 }
 
-// ROOM-02: deleting a room deletes its messages, attachments, cursors, outbox entries,
-// members and grants, and nothing of other rooms.
+// ROOM-02: deleting a room deletes its messages, attachments, cursors, members and grants, and
+// nothing of other rooms.
 func TestDeleteRoomRemovesEverything(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
@@ -490,13 +486,12 @@ func TestDeleteRoomRemovesEverything(t *testing.T) {
 	doomed := f.room(t, alice, "doomed")
 	kept := f.room(t, alice, "kept")
 	for _, r := range []Room{doomed, kept} {
-		f.seedChatMember(t, alice, r.ID, chat, true)
+		f.seedChatMember(t, alice, r.ID, chat)
 		_, err := f.svc.SetSharing(ctx, alice, r.ID, access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: bob.UserID, Level: dto.LevelView}}})
 		require.NoError(t, err)
 		msg := store.NewID()
 		f.exec(t, "INSERT INTO messages (id, room_id, seq, author_kind, author_id, text, created_at) VALUES (?, ?, 1, 'user', ?, 'hi', ?)", msg, r.ID, alice.UserID, t0.UnixMilli())
 		f.exec(t, "INSERT INTO attachments (id, message_id, sha256, mime, name, size, created_at) VALUES (?, ?, 'abc', 'text/plain', 'a.txt', 3, ?)", store.NewID(), msg, t0.UnixMilli())
-		f.exec(t, "INSERT INTO outbox (id, message_id, chat_id, next_attempt_at, updated_at) VALUES (?, ?, ?, ?, ?)", store.NewID(), msg, chat, t0.UnixMilli(), t0.UnixMilli())
 		f.exec(t, "INSERT INTO agent_cursors (agent_id, room_id, seq) VALUES (?, ?, 1)", agent, r.ID)
 	}
 	sub, cancel := f.bus.Subscribe(8)
@@ -512,15 +507,13 @@ func TestDeleteRoomRemovesEverything(t *testing.T) {
 			"grants":      f.count(t, "SELECT COUNT(*) FROM grants WHERE resource_kind = 'room' AND resource_id = ?", roomID),
 			"messages":    f.count(t, "SELECT COUNT(*) FROM messages WHERE room_id = ?", roomID),
 			"attachments": f.count(t, "SELECT COUNT(*) FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.room_id = ?", roomID),
-			"outbox":      f.count(t, "SELECT COUNT(*) FROM outbox o JOIN messages m ON m.id = o.message_id WHERE m.room_id = ?", roomID),
 			"cursors":     f.count(t, "SELECT COUNT(*) FROM agent_cursors WHERE room_id = ?", roomID),
 		}
 	}
-	require.Equal(t, map[string]int{"rooms": 0, "members": 0, "grants": 0, "messages": 0, "attachments": 0, "outbox": 0, "cursors": 0}, countFor(doomed.ID))
-	require.Equal(t, map[string]int{"rooms": 1, "members": 1, "grants": 1, "messages": 1, "attachments": 1, "outbox": 1, "cursors": 1}, countFor(kept.ID))
+	require.Equal(t, map[string]int{"rooms": 0, "members": 0, "grants": 0, "messages": 0, "attachments": 0, "cursors": 0}, countFor(doomed.ID))
+	require.Equal(t, map[string]int{"rooms": 1, "members": 1, "grants": 1, "messages": 1, "attachments": 1, "cursors": 1}, countFor(kept.ID))
 	// Orphaned rows would hide behind the joins above: check the totals too.
 	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM attachments"))
-	require.Equal(t, 1, f.count(t, "SELECT COUNT(*) FROM outbox"))
 
 	_, err := f.svc.Get(ctx, alice, doomed.ID)
 	require.ErrorIs(t, err, access.ErrNotFound)

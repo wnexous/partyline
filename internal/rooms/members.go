@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/access"
@@ -96,11 +95,10 @@ func (s *Service) authorizeMembers(ctx context.Context, p authn.Principal, roomI
 	return nil
 }
 
-// MemberInput names a member to add. Outbound defaults to true.
+// MemberInput names a member to add.
 type MemberInput struct {
 	Kind     dto.MemberKind
 	MemberID string
-	Outbound *bool
 }
 
 // AddMember adds an agent or a user to a room; requires manage. Agents need the caller to own or
@@ -114,10 +112,6 @@ func (s *Service) AddMember(ctx context.Context, p authn.Principal, roomID strin
 	if err := s.checkUse(ctx, p.UserID, in); err != nil {
 		return Member{}, err
 	}
-	outbound := true
-	if in.Outbound != nil {
-		outbound = *in.Outbound
-	}
 	id := store.NewID()
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
 		n, err := q.CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: roomID, Kind: string(in.Kind), MemberID: in.MemberID})
@@ -129,7 +123,7 @@ func (s *Service) AddMember(ctx context.Context, p authn.Principal, roomID strin
 		}
 		return q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
 			ID: id, RoomID: roomID, Kind: string(in.Kind), MemberID: in.MemberID,
-			Outbound: outbound, AddedBy: p.UserID, CreatedAt: s.now().UnixMilli(),
+			AddedBy: p.UserID, CreatedAt: s.now().UnixMilli(),
 		})
 	})
 	if err != nil {
@@ -188,20 +182,17 @@ func (s *Service) checkUse(ctx context.Context, userID string, in MemberInput) e
 	return nil
 }
 
-// MemberUpdate changes a member; nil fields are unchanged. DisplayName, SignOutbound,
-// Delivery and Keywords apply to agent members only (MEM-01..05).
+// MemberUpdate changes a member; nil fields are unchanged. All of them apply to agent members
+// only (MEM-02..05).
 type MemberUpdate struct {
-	Outbound     *bool
-	DisplayName  *string
-	SignOutbound *bool
-	Delivery     *dto.DeliveryMode
-	Keywords     *[]string
+	DisplayName *string
+	Delivery    *dto.DeliveryMode
+	Keywords    *[]string
 }
 
 func (u MemberUpdate) agentSettings() map[string]bool {
 	return map[string]bool{
-		"display_name": u.DisplayName != nil, "sign_outbound": u.SignOutbound != nil,
-		"delivery": u.Delivery != nil, "keywords": u.Keywords != nil,
+		"display_name": u.DisplayName != nil, "delivery": u.Delivery != nil, "keywords": u.Keywords != nil,
 	}
 }
 
@@ -228,18 +219,12 @@ func (u MemberUpdate) apply(m db.RoomMember) (db.RoomMember, error) {
 			return m, err
 		}
 	}
-	if u.Outbound != nil {
-		m.Outbound = *u.Outbound
-	}
 	if u.DisplayName != nil {
 		name := strings.TrimSpace(*u.DisplayName)
 		if utf8.RuneCountInString(name) > dto.MaxMemberDisplayName {
 			check.Add("display_name", "must have at most 64 characters")
 		}
 		m.DisplayName = name
-	}
-	if u.SignOutbound != nil {
-		m.SignOutbound = *u.SignOutbound
 	}
 	if u.Delivery != nil {
 		switch *u.Delivery {
@@ -270,8 +255,8 @@ func (u MemberUpdate) apply(m db.RoomMember) (db.RoomMember, error) {
 	return m, check.Err()
 }
 
-// UpdateMember changes a member's outbound flag and, for agents, its settings (MEM-01..05);
-// requires manage. Invalid settings change nothing.
+// UpdateMember changes an agent member's settings (MEM-02..05); requires manage. Invalid settings
+// change nothing.
 func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, memberRowID string, u MemberUpdate) (Member, error) {
 	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
 		return Member{}, err
@@ -288,8 +273,7 @@ func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, m
 			return err
 		}
 		return q.UpdateRoomMemberSettings(ctx, db.UpdateRoomMemberSettingsParams{
-			Outbound: m.Outbound, DisplayName: m.DisplayName, SignOutbound: m.SignOutbound,
-			Delivery: m.Delivery, KeywordsJson: m.KeywordsJson, ID: m.ID,
+			DisplayName: m.DisplayName, Delivery: m.Delivery, KeywordsJson: m.KeywordsJson, ID: m.ID,
 		})
 	})
 	if err != nil {
@@ -297,29 +281,6 @@ func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, m
 	}
 	s.bus.Publish(events.MembersChanged{RoomID: roomID})
 	return s.member(ctx, roomID, memberRowID)
-}
-
-// AutoRouteSkip is how long a chat removed from its connector's catch-all room stays out of
-// it (ROUTE-02 edge case); a manager may add it back meanwhile.
-const AutoRouteSkip = 24 * time.Hour
-
-// skipAutoRoute keeps a chat removed from its connector's catch-all room, or from a group made
-// for it, out of automatic routing for AutoRouteSkip.
-func (s *Service) skipAutoRoute(ctx context.Context, q *db.Queries, roomID, chatID string) error {
-	r, err := q.GetChatAutoRoute(ctx, chatID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	// The catch-all room, or any room of a connector that gives each new chat a group of its own
-	// (a scope on, no catch-all room): taking the chat out of one is a decision not to undo with
-	// the next message.
-	perChat := !r.AutoRouteRoomID.Valid && r.AutoRouteScope != string(dto.AutoRouteScopeOff)
-	if err != nil || (r.AutoRouteRoomID.String != roomID && !perChat) {
-		return err
-	}
-	return q.UpsertAutoRouteSkip(ctx, db.UpsertAutoRouteSkipParams{
-		ConnectorID: r.ConnectorID, ChatID: chatID, Until: s.now().Add(AutoRouteSkip).UnixMilli(),
-	})
 }
 
 // RemoveMember removes a member; later messages are no longer delivered to it (ROOM-01).
@@ -338,11 +299,6 @@ func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, m
 			return err
 		}
 		removedKind = m.Kind
-		if m.Kind == string(dto.MemberKindChat) {
-			if err := s.skipAutoRoute(ctx, q, roomID, m.MemberID); err != nil {
-				return err
-			}
-		}
 		return q.DeleteRoomMember(ctx, memberRowID)
 	})
 	if err != nil {

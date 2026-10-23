@@ -171,7 +171,7 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	bobs := createRoom(w.bob, "bobs")
 	trusted, mentions, all := dto.DeliveryModeTrusted, dto.DeliveryModeMentions, dto.DeliveryModeAll
 	oldOps := join(t, w.alice, ops.ID, w.old)
-	settle(t, w.alice, ops.ID, oldOps, dto.UpdateMemberRequest{DisplayName: ptr("Old Ops"), Delivery: &trusted, Keywords: &[]string{"deploy"}, SignOutbound: ptr(false)})
+	settle(t, w.alice, ops.ID, oldOps, dto.UpdateMemberRequest{DisplayName: ptr("Old Ops"), Delivery: &trusted, Keywords: &[]string{"deploy"}})
 	oldDev, atlasDev := join(t, w.alice, dev.ID, w.old), join(t, w.alice, dev.ID, w.atlas)
 	settle(t, w.alice, dev.ID, oldDev, dto.UpdateMemberRequest{DisplayName: ptr("Old in dev"), Delivery: &all})
 	settle(t, w.alice, dev.ID, atlasDev, dto.UpdateMemberRequest{DisplayName: ptr("Atlas in dev"), Delivery: &mentions, Keywords: &[]string{"build"}})
@@ -228,7 +228,7 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	require.Len(t, got, 1)
 	moved := got[w.atlas]
 	require.Equal(t, oldOps.ID, moved.ID, "the row moved, it was not recreated")
-	require.Equal(t, []any{"Old Ops", dto.DeliveryModeTrusted, []string{"deploy"}, false}, []any{moved.DisplayName, moved.Delivery, moved.Keywords, moved.SignOutbound})
+	require.Equal(t, []any{"Old Ops", dto.DeliveryModeTrusted, []string{"deploy"}}, []any{moved.DisplayName, moved.Delivery, moved.Keywords})
 	got = agentsOf(dev.ID)
 	require.Len(t, got, 1)
 	kept := got[w.atlas]

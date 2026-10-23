@@ -16,11 +16,9 @@ const chatMember: RoomMember = {
   kind: "chat",
   member_id: "c1",
   name: "Ops on call",
-  outbound: true,
   connector_kind: "telegram",
   chat_kind: "group",
   display_name: "",
-  sign_outbound: true,
   delivery: "all",
   keywords: [],
   created_at: "2026-10-01T12:00:00Z",
@@ -235,19 +233,7 @@ describe("message item (UI-05)", () => {
           text: "restart the pool",
           chat: { id: "c1", title: "Ops on call", kind: "group", platform: "telegram" },
         }),
-        makeMessage({
-          seq: 2,
-          text: "restarted",
-          outbox: [
-            {
-              id: "o1",
-              chat_id: "c1",
-              status: "sent",
-              attempts: 1,
-              updated_at: "2026-10-19T12:00:01Z",
-            },
-          ],
-        }),
+        makeMessage({ seq: 2, text: "restarted" }),
       ]),
     });
     renderTimeline();
