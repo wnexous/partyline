@@ -27,7 +27,7 @@ func (e *chanEnv) chatIn(platform, title string, kind dto.ChatKind) string {
 		}
 		return q.CreateChat(ctx, db.CreateChatParams{ID: chat, ConnectorID: conn, ExternalID: "ext-" + chat, Title: title, Kind: string(kind)})
 	}))
-	e.alice.Post("/api/v1/rooms/"+e.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated)
+	e.alice.SeedChatMember(e.room.ID, chat, true)
 	return chat
 }
 

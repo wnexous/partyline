@@ -242,8 +242,8 @@ func TestOperatorAuthorizationMatrix(t *testing.T) {
 	f.setOperator(f.alice, f.notes).RequireStatus(http.StatusOK)
 }
 
-// CID-24 (the first half, T22 completes it): when the operator AI is deleted the connection has
-// no operator again.
+// CID-24: when the operator AI is deleted the connection has no operator again. Its queue, its
+// status and its session are pinned by TestDeletingTheOperatorRemovesItsQueueAndStopsItsConnection.
 func TestDeletingTheOperatorLeavesTheConnectionWithoutOne(t *testing.T) {
 	f := newOperatorFixture(t)
 	f.operate(t)

@@ -39,7 +39,10 @@ func MergeNotice(handle string) string { return "History merged from @" + handle
 //     had received or read all of the surviving DM, else they stay, so nothing undelivered or
 //     unread is skipped, and the old DM is deleted. A DM between the two goes away with its
 //     history: they are one AI now.
-//   - Their messages, and the connectors they operated, are the second's.
+//   - Their messages, and the connectors they operated, are the second's, with the platform queue
+//     of those connectors (acknowledged items included) and the count of platform messages the
+//     first lost to the bound or to expiry, which the second is told about on its next
+//     connection (CID-05, CID-10).
 //
 // It is one write transaction and is audited as agent.merge. The first AI must be offline
 // (ErrIdentityOnline); another user's AI is not found (access.ErrNotFound) or, when the caller may
@@ -101,6 +104,8 @@ type mergeOutcome struct {
 	// rekeyed are the DMs that became the surviving AI's, appended the DMs that received the
 	// history of another, deleted the DMs that no longer exist.
 	rekeyed, appended, deleted []string
+	// queued is how many platform items changed hands.
+	queued int64
 }
 
 func (s *Service) merge(ctx context.Context, q *db.Queries, ownerID, fromID, intoID string, out *mergeOutcome) error {
@@ -163,6 +168,25 @@ func (s *Service) merge(ctx context.Context, q *db.Queries, ownerID, fromID, int
 	if err != nil {
 		return err
 	}
+	// CID-05: the queue goes with each connection, acknowledged items included, and keeps the
+	// survivor within the bound.
+	for _, id := range connectors {
+		n, err := s.queue.MoveConnector(ctx, q, id, intoID)
+		if err != nil {
+			return err
+		}
+		out.queued += n
+	}
+	// CID-10: what the merged AI lost is the survivor's to be told, as the connections are its own now.
+	dropped, err := q.GetPlatformDropped(ctx, fromID)
+	if err != nil {
+		return err
+	}
+	if dropped > 0 {
+		if err := q.AddPlatformDropped(ctx, db.AddPlatformDroppedParams{N: dropped, AgentID: intoID}); err != nil {
+			return err
+		}
+	}
 
 	left, err := q.DeleteAgentMemberships(ctx, fromID) // nothing should be left; be sure
 	if err != nil {
@@ -177,7 +201,10 @@ func (s *Service) merge(ctx context.Context, q *db.Queries, ownerID, fromID, int
 	}
 	return s.audit.Record(ctx, q, audit.Entry{
 		ActorID: ownerID, Action: audit.ActionAgentMerge, TargetKind: audit.TargetAgent, TargetID: intoID,
-		Detail: map[string]any{"from": fromID, "into": intoID, "from_handle": fromHandle, "into_handle": intoHandle, "connectors": connectors},
+		Detail: map[string]any{
+			"from": fromID, "into": intoID, "from_handle": fromHandle, "into_handle": intoHandle,
+			"connectors": connectors, "platform_items": out.queued,
+		},
 	})
 }
 
@@ -388,6 +415,9 @@ func (s *Service) announceMerge(fromID, intoID string, out mergeOutcome) {
 	}
 	for _, id := range out.deleted {
 		s.bus.Publish(events.RoomChanged{RoomID: id, Deleted: true})
+	}
+	if out.queued > 0 { // the survivor's live session reads the items it was handed
+		s.bus.Publish(events.PlatformQueued{AgentID: intoID})
 	}
 	s.bus.Publish(events.GrantsChanged{ResourceKind: string(access.KindAgent), ResourceID: intoID})
 	s.bus.Publish(events.IntelligenceChanged{ID: fromID})

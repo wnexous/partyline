@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/conversations"
 	"github.com/wnexous/partyline/internal/handles"
@@ -94,18 +93,34 @@ func (e *mergeEnv) mergeAI(t *testing.T, from, into string) {
 	e.alice.Post("/api/v1/agents/"+from+"/merge", dto.MergeAgentRequest{Into: into}).RequireStatus(http.StatusOK)
 }
 
-// say has an AI of alice post in a room, the way its session would.
-func (e *mergeEnv) say(t *testing.T, ai, room, text string) rooms.Message {
+// plantAnswer stores an answer of the AI in its platform DM with the delivery queued for the
+// person's chat, as an older version left it: an AI cannot write in such a DM any more (CID-21),
+// but the history a merge moves holds answers like it. It returns the message's id.
+func (e *mergeEnv) plantAnswer(t *testing.T, ai, roomID, chatID, body string) string {
 	t.Helper()
-	m, err := e.env.App.Rooms.Post(context.Background(), authn.Principal{Kind: authn.KindAgent, UserID: e.alice.User.ID, AgentID: ai}, room, rooms.PostInput{Text: text})
-	require.NoError(t, err)
-	return m
+	ctx := context.Background()
+	id, now := store.NewID(), time.Now().UnixMilli()
+	require.NoError(t, e.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		r, err := q.NextRoomSeq(ctx, db.NextRoomSeqParams{UpdatedAt: now, ID: roomID})
+		if err != nil {
+			return err
+		}
+		if err := q.CreateMessage(ctx, db.CreateMessageParams{
+			ID: id, RoomID: roomID, Seq: r.NextSeq - 1, AuthorKind: string(dto.AuthorKindAgent), AuthorID: ai,
+			AuthorUserID: e.alice.User.ID, AuthorIid: ai, Kind: string(dto.MessageKindText), Text: body, RecipientsJson: "[]", CreatedAt: now,
+		}); err != nil {
+			return err
+		}
+		return q.CreateOutbox(ctx, db.CreateOutboxParams{ID: store.NewID(), MessageID: id, ChatID: chatID, NextAttemptAt: now, UpdatedAt: now})
+	}))
+	return id
 }
 
-// MRG-01 with CID-01: the AI that operates a connector is merged into another: the connector is
-// operated by the survivor, and the person's platform DM history goes on in the same room, with
-// its chat, the survivor now on the other side.
-func TestMergeKeepsAPlatformDMRunning(t *testing.T) {
+// MRG-01 with CID-01, CID-21: the AI that operates a connector is merged into another: the
+// connector is operated by the survivor, and the person's platform DM history stays in the same
+// room, with its chat, the survivor now on the other side. The DM is history: the survivor cannot
+// write in it either.
+func TestMergeKeepsAPlatformDMAsHistory(t *testing.T) {
 	e := newMergeEnv(t)
 	oldID := e.env.NewLegacyAI(e.alice, "old")
 	e.alice.OperateConnector(e.conn.ID, oldID)
@@ -128,12 +143,14 @@ func TestMergeKeepsAPlatformDMRunning(t *testing.T) {
 		kinds[m.Kind] = m
 	}
 	require.Equal(t, e.atlasID, kinds[dto.MemberKindAgent].MemberID)
-	require.True(t, kinds[dto.MemberKindChat].Outbound, "replies still go through the chat")
+	require.True(t, kinds[dto.MemberKindChat].Outbound, "the chat is still in the DM")
 	require.Equal(t, 1, e.dmRooms(t))
 
-	reply := testkit.Decode[dto.Message](e.tok.AsAgent("atlas").Post("/api/v1/agent/rooms/"+room+"/messages", dto.PostMessageRequest{Text: "on it"}).RequireStatus(http.StatusCreated))
-	require.Len(t, reply.Outbox, 1)
-	require.Equal(t, chat, reply.Outbox[0].ChatID, "and the survivor's reply is queued for the person's chat")
+	e.tok.AsAgent("atlas").Post("/api/v1/agent/rooms/"+room+"/messages", dto.PostMessageRequest{Text: "on it"}).
+		RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeHistoryOnly)
+	history := e.messages(t, room)
+	require.Len(t, history, 1, "history is read-only, and still read")
+	require.Equal(t, "to old", history[0].Text)
 }
 
 // MRG-01: both AIs had a platform DM with the person, at different times. The merged AI's history is
@@ -143,13 +160,13 @@ func TestMergeAppendsAPlatformDMAndMovesItsChat(t *testing.T) {
 	e := newMergeEnv(t)
 	oldID := e.env.NewLegacyAI(e.alice, "old")
 
-	// The person wrote to Atlas, then the account moved to old and they wrote to old, whose reply
+	// The person wrote to Atlas, then the account moved to old and they wrote to old, whose answer
 	// waits in the outbox.
 	chat, atlasDM := e.platformDM(t, e.atlasID, "A1", "to atlas")
-	_, oldDM := e.platformDM(t, oldID, "A2", "to old")
+	oldChat, oldDM := e.platformDM(t, oldID, "A2", "to old")
 	require.NotEqual(t, atlasDM, oldDM, "two DMs with the person, one per operator")
-	waiting := e.say(t, oldID, oldDM, "old's answer")
-	require.Len(t, waiting.Outbox, 1)
+	require.Equal(t, chat, oldChat)
+	e.plantAnswer(t, oldID, oldDM, chat, "old's answer")
 	require.Equal(t, 2, e.dmRooms(t))
 
 	e.mergeAI(t, oldID, e.atlasID)

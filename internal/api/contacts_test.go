@@ -383,8 +383,7 @@ func TestContactsPeoplePagesAndSearches(t *testing.T) {
 	require.Equal(t, []string{"Customer"}, names(f.people(f.alice, "&q=CUST").Items))
 	require.Equal(t, []string{"Ida Lopes"}, names(f.people(f.alice, "&q=lopes").Items))
 	require.Equal(t, []string{"Gus"}, names(f.people(f.alice, "&q=5511997000003").Items), "by account id")
-	zed, handle := "Zed", "orange-juice"
-	f.alice.Patch("/api/v1/intelligences/"+all.Items[3].ID, dto.UpdateProfileRequest{DisplayName: &zed, Handle: &handle}).RequireStatus(http.StatusOK)
+	plantProfile(t, f.env, all.Items[3].ID, "Zed", "orange-juice") // chosen before a person's profile became history (CID-21)
 	require.Equal(t, []string{"Zed"}, names(f.people(f.alice, "&q=Orange").Items), "by handle")
 	require.Equal(t, []string{"Customer", "dana", "Eli", "Gus", "Ida Lopes", "Sam", "Sam", "Zed"}, names(f.people(f.alice, "").Items), "Zed sorts last")
 	require.Empty(t, f.people(f.alice, "&q=nobody").Items)

@@ -639,8 +639,8 @@ New frame DTOs are added.
 **Reuses**: existing operator audit, T3
 **Requirement**: CID-05
 **Done when**:
-- [ ] e2e: the new operator's session receives the moved items; the old one's acks are no-ops; exactly one audit entry; a forced failure leaves items and operator unchanged
-- [ ] Gate check passes: `make check`
+- [x] e2e: the new operator's session receives the moved items; the old one's acks are no-ops; exactly one audit entry; a forced failure leaves items and operator unchanged
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors): move the queue with the operator`
@@ -653,8 +653,8 @@ New frame DTOs are added.
 **Reuses**: `ListConnectorsOperatedBy`, `ReassignConnectorOperator`
 **Requirement**: CID-24, CID-05
 **Done when**:
-- [ ] Integration: delete → items gone, `operator_iid` NULL, the connection shows the CID-02 detail; merge → items belong to the surviving AI
-- [ ] Gate check passes: `make check`
+- [x] Integration: delete → items gone, `operator_iid` NULL, the connection shows the CID-02 detail; merge → items belong to the surviving AI
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(agents): stop connections of a deleted operator`
@@ -667,9 +667,9 @@ New frame DTOs are added.
 **Reuses**: `ErrDMMembersFixed` pattern
 **Requirement**: CID-19
 **Done when**:
-- [ ] e2e: `POST /rooms/{id}/members {kind: chat}` with an otherwise valid request → 422 `chats_not_members` (L-017, L-018)
-- [ ] Chat-member tests deleted (ACL-06 chat branch retired)
-- [ ] Gate check passes: `make check`
+- [x] e2e: `POST /rooms/{id}/members {kind: chat}` with an otherwise valid request → 422 `chats_not_members` (L-017, L-018)
+- [x] Chat-member tests deleted (ACL-06 chat branch retired)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(rooms): refuse chats as members`
@@ -682,9 +682,9 @@ New frame DTOs are added.
 **Reuses**: `checkCounterpart`, `intelligences.Service.Update`
 **Requirement**: CID-21, CID-22
 **Done when**:
-- [ ] e2e: AI post in its old platform DM → 422 `history_only`; edit of a person → 422 `history_only`; DM to a person → `no_route_to_person`; reading history still works
-- [ ] DM-05 and PEOP-05/PROF-11 person-edit tests rewritten (retired)
-- [ ] Gate check passes: `make check`
+- [x] e2e: AI post in its old platform DM → 422 `history_only`; edit of a person → 422 `history_only`; DM to a person → `no_route_to_person`; reading history still works
+- [x] DM-05 and PEOP-05/PROF-11 person-edit tests rewritten (retired)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(rooms): platform DMs and people are read-only history`

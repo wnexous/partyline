@@ -34,7 +34,8 @@ func TestProjectsRoutesAreGone(t *testing.T) {
 }
 
 // MIG-03: a project is not a room member kind any more. Adding one is refused with 422 kind,
-// and the unknown-kind message names the three remaining kinds.
+// and the unknown-kind message names the two kinds a request may add (a chat is refused on its
+// own, CID-19).
 func TestProjectMemberKindIsRefused(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
@@ -42,11 +43,11 @@ func TestProjectMemberKindIsRefused(t *testing.T) {
 
 	e := alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: "project", MemberID: "p1"}).
 		RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-	require.Equal(t, "must be agent, chat or user", e.Fields["kind"])
+	require.Equal(t, "must be agent or user", e.Fields["kind"])
 
 	e = alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: "team", MemberID: "x"}).
 		RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-	require.Equal(t, "must be agent, chat or user", e.Fields["kind"])
+	require.Equal(t, "must be agent or user", e.Fields["kind"])
 
 	members := testkit.Decode[dto.List[dto.RoomMember]](alice.Get("/api/v1/rooms/" + room.ID + "/members").RequireStatus(http.StatusOK)).Items
 	require.Empty(t, members, "refused members were not added")

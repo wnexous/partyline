@@ -144,6 +144,18 @@ func (q *Queries) GetConnector(ctx context.Context, id string) (Connector, error
 	return i, err
 }
 
+const getConnectorOperator = `-- name: GetConnectorOperator :one
+SELECT operator_iid FROM connectors WHERE id = ?
+`
+
+// Who operates the connection right now (CID-05); NULL while nobody does (CID-02).
+func (q *Queries) GetConnectorOperator(ctx context.Context, id string) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getConnectorOperator, id)
+	var operator_iid sql.NullString
+	err := row.Scan(&operator_iid)
+	return operator_iid, err
+}
+
 const getConnectorWithOwner = `-- name: GetConnectorWithOwner :one
 SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_scope, c.auto_route_room_id, c.operator_iid, c.account_label, c.deliver, c.groups_mentions_only, u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name

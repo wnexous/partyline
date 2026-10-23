@@ -208,10 +208,14 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeAvatarInvalid, "the avatar must be a PNG, JPEG or WebP image up to 2 MB")
 	case errors.Is(err, intelligences.ErrHandleTaken):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHandleTaken, "handle already taken")
+	case errors.Is(err, access.ErrHistoryOnly):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeHistoryOnly, "this is history: answer people on their platform, through the connection")
 	case errors.Is(err, access.ErrDMNoSharing):
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeDMNoSharing, "a direct message cannot be shared")
 	case errors.Is(err, rooms.ErrDMMembersFixed):
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeDMMembersFixed, "the members of a direct message cannot be changed")
+	case errors.Is(err, rooms.ErrChatsNotMembers):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeChatsNotMembers, "chats cannot be members of a conversation: a chat reaches the AI that operates its connection")
 	case errors.Is(err, rooms.ErrCounterpartDisabled):
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeCounterpartDisabled, "the other participant of this direct message is disabled")
 	case errors.Is(err, conversations.ErrDMSelf):

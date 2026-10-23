@@ -261,6 +261,8 @@ func TestRunPurgesWhenItStartsAndEveryInterval(t *testing.T) {
 		}
 	}
 	require.Eventually(t, gone(first), 5*time.Second, 5*time.Millisecond, "the first pass purged")
+	// The item is gone once the purge commits; the runner hands its files over right after.
+	require.Eventually(t, func() bool { return len(got()) == 1 }, 5*time.Second, 5*time.Millisecond)
 	require.Equal(t, []string{"aa"}, got())
 
 	// Later the clock moves on; the next pass picks up what has expired meanwhile.

@@ -30,6 +30,11 @@ var ErrAlreadyMember = errors.New("already a member of the room")
 // a DM has exactly its two intelligences (422 dm_members_fixed, DM-02).
 var ErrDMMembersFixed = errors.New("the members of a direct message are fixed")
 
+// ErrChatsNotMembers is returned when a chat is added as a member of a conversation: rooms hold
+// users and AIs only, and a chat reaches its operator AI through its connection (422
+// chats_not_members, CID-19).
+var ErrChatsNotMembers = errors.New("chats cannot be members of a conversation")
+
 // ErrCounterpartDisabled is returned when posting in a direct message whose other participant is a
 // disabled user: the DM stays readable (403 counterpart_disabled, DM-02).
 var ErrCounterpartDisabled = errors.New("the other participant of the direct message is disabled")
@@ -196,9 +201,15 @@ func ValidateCreate(in CreateInput) error {
 
 // CreateWithMembers makes a group owned by ownerID with the members in one transaction and
 // returns its id (LAY-04, AGRP-01). The owner gets manage by ownership and is a member only when
-// listed. The members are not checked here: callers check each one with CheckMember first, so
-// that a refused member creates nothing.
+// listed. The members are not checked here, except that a chat is never one (ErrChatsNotMembers,
+// CID-19, and nothing is created): callers check each one with CheckMember first, so that a
+// refused member creates nothing.
 func (s *Service) CreateWithMembers(ctx context.Context, ownerID string, in CreateInput, members []MemberInput) (string, error) {
+	for _, m := range members { // CID-19: before anything is created
+		if m.Kind == dto.MemberKindChat {
+			return "", ErrChatsNotMembers
+		}
+	}
 	retention := DefaultRetentionDays
 	if in.RetentionDays != nil {
 		retention = *in.RetentionDays

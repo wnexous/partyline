@@ -145,7 +145,7 @@ func (e *hookEnv) chats(t *testing.T) []dto.Chat {
 func (e *hookEnv) roomWith(t *testing.T, chatID string) dto.Room {
 	t.Helper()
 	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "builds"}).RequireStatus(http.StatusCreated))
-	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chatID}).RequireStatus(http.StatusCreated)
+	e.alice.SeedChatMember(room.ID, chatID, true)
 	return room
 }
 

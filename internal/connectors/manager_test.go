@@ -368,3 +368,108 @@ func TestManagerStopsAConnectionThatLostItsOperator(t *testing.T) {
 	_, err := f.m.Send(context.Background(), id, connectors.Outbound{ChatID: "chat-1", Text: "x"})
 	require.ErrorIs(t, err, connectors.ErrNotRunning)
 }
+
+// operatorGone is the state deleting the operator AI leaves: the connection has no operator and
+// nothing told the manager yet.
+func (f *managerFixture) operatorGone(t *testing.T, id string) {
+	t.Helper()
+	f.setOperator(t, id, "")
+}
+
+// settled waits until the connection shows the status and detail.
+func (f *managerFixture) settled(t *testing.T, id, status, detail string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		row := f.row(t, id)
+		return row.Status == status && row.LastError == detail
+	}, 2*connectortest.Timeout, 10*time.Millisecond, "the connection never reached %s %q: %s %q", status, detail, f.row(t, id).Status, f.row(t, id).LastError)
+}
+
+// CID-24, CID-02: when the owner deletes the operator AI, the registry tells the bus which
+// connections lost their operator; the manager applies them again, so each stops and shows what to
+// do, and nothing else is touched: a connection that still has its operator keeps its session.
+func TestManagerStopsTheConnectionsNamedByAnOrphanedEvent(t *testing.T) {
+	f := newManagerFixture(t)
+	f.m.Start(context.Background())
+	orphan, other, again := f.insert(t, true), f.insert(t, true), f.insert(t, true)
+	for _, id := range []string{orphan, other, again} {
+		f.m.Apply(id)
+	}
+	orphanInst, otherInst, againInst := f.fake.Instance(t, orphan), f.fake.Instance(t, other), f.fake.Instance(t, again)
+	for _, inst := range []*connectortest.Instance{orphanInst, otherInst, againInst} {
+		inst.WaitRun(t)
+		inst.Connected()
+	}
+	f.operatorGone(t, orphan)
+	f.operatorGone(t, again)
+
+	f.bus.Publish(events.ConnectorsOrphaned{IDs: []string{orphan, again}})
+
+	orphanInst.WaitStop(t)
+	againInst.WaitStop(t)
+	f.settled(t, orphan, "error", connectors.NoOperator)
+	f.settled(t, again, "error", connectors.NoOperator)
+	require.Equal(t, []string{"connected", ""}, []string{f.row(t, other).Status, f.row(t, other).LastError}, "a connection with its operator is not touched")
+	require.Same(t, otherInst, f.fake.Lookup(other), "and keeps its session with the platform")
+	_, err := f.m.Send(context.Background(), orphan, connectors.Outbound{ChatID: "chat-1", Text: "x"})
+	require.ErrorIs(t, err, connectors.ErrNotRunning)
+}
+
+// CID-02: the owner may choose another operator right after the deletion; the connection then runs
+// again with no stale detail, whichever of the two the manager handles first.
+func TestManagerRunsAnOrphanedConnectionThatGotANewOperatorMeanwhile(t *testing.T) {
+	f := newManagerFixture(t)
+	f.m.Start(context.Background())
+	id := f.insert(t, true)
+	f.m.Apply(id)
+	inst := f.fake.Instance(t, id)
+	inst.WaitRun(t)
+	f.operatorGone(t, id)
+	f.setOperator(t, id, f.ai(t)) // chosen before the manager reads the event
+
+	f.bus.Publish(events.ConnectorsOrphaned{IDs: []string{id}})
+
+	inst.WaitStop(t) // applied: the old session is replaced by a new one
+	require.Eventually(t, func() bool { return f.fake.Lookup(id) != inst }, 2*connectortest.Timeout, 10*time.Millisecond, "no new session was started")
+	f.fake.Lookup(id).WaitRun(t)
+	require.Empty(t, f.row(t, id).LastError)
+	require.Equal(t, "connecting", f.row(t, id).Status)
+}
+
+// A bus that lagged may have dropped an orphaned event: the manager looks at what it runs and
+// applies the connections whose operator is gone, and only those.
+func TestManagerReconcilesAfterALaggedBus(t *testing.T) {
+	f := newManagerFixture(t)
+	f.m.Start(context.Background())
+	orphan, kept := f.insert(t, true), f.insert(t, true)
+	f.m.Apply(orphan)
+	f.m.Apply(kept)
+	orphanInst, keptInst := f.fake.Instance(t, orphan), f.fake.Instance(t, kept)
+	orphanInst.WaitRun(t)
+	keptInst.WaitRun(t)
+	f.operatorGone(t, orphan)
+
+	f.bus.Publish(events.Lagged{})
+
+	orphanInst.WaitStop(t)
+	f.settled(t, orphan, "error", connectors.NoOperator)
+	require.Same(t, keptInst, f.fake.Lookup(kept), "a connection that has its operator is not restarted")
+}
+
+// A closed manager applies nothing: an orphaned event published afterwards changes nothing.
+func TestManagerAppliesNothingAfterClose(t *testing.T) {
+	f := newManagerFixture(t)
+	f.m.Start(context.Background())
+	id := f.insert(t, true)
+	f.m.Apply(id)
+	inst := f.fake.Instance(t, id)
+	inst.WaitRun(t)
+	inst.Connected()
+
+	f.m.Close()
+	f.operatorGone(t, id)
+	f.bus.Publish(events.ConnectorsOrphaned{IDs: []string{id}})
+
+	time.Sleep(200 * time.Millisecond)
+	require.NotEqual(t, connectors.NoOperator, f.row(t, id).LastError, "a closed manager applies nothing")
+}

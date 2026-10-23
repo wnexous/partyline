@@ -312,7 +312,7 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, id string) (Profil
 	if !see {
 		return Profile{}, access.ErrNotFound
 	}
-	return s.profile(ctx, p, d, edit)
+	return s.profile(ctx, p, d, edit && Role(d.Role) != RolePerson)
 }
 
 // CanSee reports whether the caller can see the intelligence: itself; any user of the
@@ -334,8 +334,8 @@ func (s *Service) CanSee(ctx context.Context, p authn.Principal, id string) (boo
 
 // CanEdit reports whether the caller can change the intelligence's profile: a user edits
 // their own; an AI is edited by its owner (web) or by itself (an agent caller acting as that
-// AI); a person by the users who own or may use its connector. Grantees of an AI do not
-// edit it.
+// AI). Grantees of an AI do not edit it, and nobody edits a person: a person's profile is
+// history (CID-21).
 func (s *Service) CanEdit(ctx context.Context, p authn.Principal, id string) (bool, error) {
 	d, err := s.detail(ctx, id)
 	if errors.Is(err, access.ErrNotFound) {
@@ -345,7 +345,7 @@ func (s *Service) CanEdit(ctx context.Context, p authn.Principal, id string) (bo
 		return false, err
 	}
 	_, edit, err := s.rights(ctx, p, d)
-	return edit, err
+	return edit && Role(d.Role) != RolePerson, err
 }
 
 func (s *Service) detail(ctx context.Context, id string) (db.GetIntelligenceWithRoleRow, error) {
@@ -388,8 +388,9 @@ func (s *Service) rights(ctx context.Context, p authn.Principal, d db.GetIntelli
 		shared, err := s.sharesConversation(ctx, p.UserID, id)
 		return shared, false, err
 	case RolePerson:
-		// The users of the connector see and edit its people (PEOP-04); a user who can view a
-		// conversation where the person was seen or wrote reads the profile only.
+		// The users of the connector see its people (PEOP-04); a user who can view a conversation
+		// where the person was seen or wrote reads the profile only. A person's profile is history
+		// (CID-21): edit says who would have the right, and editable refuses them all.
 		ok, err := s.az.CanUseConnector(ctx, p.UserID, d.PersonConnectorID)
 		if err != nil || ok {
 			return ok, ok && user, err
@@ -420,7 +421,8 @@ func (s *Service) sharesConversation(ctx context.Context, userID, iid string) (b
 }
 
 // editable resolves the intelligence and requires the caller to edit it: access.ErrNotFound
-// without view, access.ErrForbidden with view but no edit.
+// without view, access.ErrForbidden with view but no edit. A person's profile is history
+// (CID-21): whoever could edit it gets access.ErrHistoryOnly.
 func (s *Service) editable(ctx context.Context, p authn.Principal, id string) (db.GetIntelligenceWithRoleRow, error) {
 	d, err := s.detail(ctx, id)
 	if err != nil {
@@ -434,6 +436,8 @@ func (s *Service) editable(ctx context.Context, p authn.Principal, id string) (d
 		return d, access.ErrNotFound
 	case !edit:
 		return d, access.ErrForbidden
+	case Role(d.Role) == RolePerson:
+		return d, access.ErrHistoryOnly
 	}
 	return d, nil
 }
@@ -483,8 +487,7 @@ func (in ProfileUpdate) validate() (valid, error) {
 // handle in use is ErrHandleTaken (PROF-10). A change announces IntelligenceChanged, and
 // MembersChanged for the rooms the intelligence is a member of when its name or handle changed.
 func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in ProfileUpdate) (Profile, error) {
-	d, err := s.editable(ctx, p, id)
-	if err != nil {
+	if _, err := s.editable(ctx, p, id); err != nil {
 		return Profile{}, err
 	}
 	v, err := in.validate()
@@ -529,11 +532,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in P
 			}
 			return err
 		}
-		if next.DisplayName == cur.DisplayName || Role(d.Role) != RolePerson {
-			return nil
-		}
-		// PEOP-05, PROF-11: a name chosen here is not replaced by platform name changes.
-		return q.SetPersonNameLocked(ctx, db.SetPersonNameLockedParams{NameLocked: true, ID: id})
+		return nil
 	})
 	if err != nil {
 		return Profile{}, err
@@ -541,7 +540,7 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in P
 	if changed {
 		Announce(ctx, s.bus, s.store.R(), id, names)
 	}
-	d, err = s.detail(ctx, id)
+	d, err := s.detail(ctx, id)
 	if err != nil {
 		return Profile{}, err
 	}

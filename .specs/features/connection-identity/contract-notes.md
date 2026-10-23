@@ -666,3 +666,163 @@ The pipeline queues an item with `ReceivedAt` = the time partyline got the messa
   `internal/channel/instructions_test.go` (the goldens, copied from the spec's wording, L-032),
   `internal/api/agent_platform_unsupported_test.go` (the two refusals at their HTTP status, L-017), the shared framing cases and
   the pinned frames of the channel and CLI tests.
+
+## T21: Operator change moves the queue (CID-05)
+
+- **Move**: `Service.Update` (`PATCH /connectors/{id}`, owner only) hands every item of the
+  connection to the new operator inside the transaction that writes the operator and its audit
+  entry: `Queue.MoveConnector` runs between the two, acknowledged items included (a reply to one of
+  them keeps working). The items of the AI's other connections stay where they are, and the
+  connection's `queued` count does not change. A failure of any step (the operator write, the
+  move, the audit entry) rolls everything back: the operator, the items, the other edits of the
+  same request and the audit trail stay as they were (500, nothing changed), and the same request
+  works once the cause is gone. `ServiceDeps.Queue` is the app's `platform.Queue`.
+- **Audit**: one `connector.operator` entry `{kind, name, from, to, moved}`. `moved` is how many
+  items changed hands: 0 for the first choice (a connection without an operator holds none) and for
+  an empty queue. A request that names the operator the connection already has records nothing.
+- **Announce**: after the commit, when `moved > 0`, `events.PlatformQueued{AgentID: new operator}`
+  (no item id) wakes the new operator's live session, which re-reads its queue and sends the moved
+  items, older than what it holds, oldest first (T12). A new operator that is offline gets them on
+  connect. The old operator's session receives nothing; its acknowledgement of an item that moved is
+  a no-op (`Queue.Ack` only touches the AI's own items) and still frees its window slot.
+- **No restart (deviation from the task text "re-applies the connection")**: when one AI replaces
+  another, a running connection is not applied again, as T5 already noted. Nothing the connector
+  instance runs depends on the operator (`Source` carries none and the pipeline reads it per
+  message), and a restart would only cost a reconnect. The first choice (no operator to an AI) still starts the connection (T5). Pinned by
+  `TestOperatorChangeDoesNotRestartARunningConnection`.
+- **`Queue.Enqueue` follows the operator (addition to T3)**: it queues for the AI that operates the
+  connection at the moment of the insert, read inside the write transaction (`GetConnectorOperator`),
+  not for `Item.AgentID` when the connection has an operator. The pipeline reads the operator when
+  a message arrives and queues it after downloading its media; an owner who changes the operator in
+  between would otherwise leave the item with the AI the connection no longer has, after the move
+  that was meant to hand over everything. The bound and the `PlatformQueued` event follow the AI
+  that holds the item. A connection nobody operates (only fixtures; the pipeline drops its
+  messages) queues for the AI named, and an unknown connection is still refused. Pinned by
+  `TestEnqueueQueuesForTheOperatorOfTheConnectionNow` and `TestStaleEnqueueKeepsTheOperatorWithinTheBound`.
+- **Test changed by the spec**: `TestInboundGoesToTheCurrentOperator` (T7) asserted that the first
+  operator keeps the items it held when the owner picks another AI; CID-05 says they go with the
+  connection, so it now asserts that the old operator keeps nothing and that the new one holds the
+  moved item followed by what arrived after.
+- **Authorization** (matrix pinned by `TestRefusedOperatorChangesLeaveTheQueueAlone`): only the
+  owner changes the operator, so only the owner moves a queue. The use grantee gets 403; a
+  stranger, a user who may use the operator but not the connection and the admin get 404;
+  anonymous callers 401; AI tokens (the operator's, the AI that would receive the queue, another
+  owner's) 403; an operator that is not an AI of the owner is a 422 on `operator_id`. Every refusal
+  leaves the items with the operator, the audit trail unchanged and the operator's session without
+  a frame.
+
+## T22: Deleted or merged operator (CID-24, CID-05)
+
+- **Delete** (`Registry.Delete`, `DELETE /agents/{id}`, owner only): the connections the AI operates
+  are read inside the deleting transaction (the foreign key empties `operator_iid` with the AI, and
+  the list would be lost), and `events.ConnectorsOrphaned{IDs}` is published after the commit, only
+  when there are some. The AI's queue goes by the foreign key cascade: its items, their file rows and
+  its `platform_sends`; the blob files wait for the sweep (T4). The connection has no operator
+  (CID-02), as before.
+- **Manager**: `Manager.Start` subscribes to the bus (`operatorEventBuffer`, 64 events; it ends with
+  the start context or `Close`, and `Close` is idempotent).
+  - `ConnectorsOrphaned` applies each named connection: a running one stops and persists status
+    `error` with the CID-02 detail, which reaches the owner's live socket as `connector.status` and
+    the connection page; a disabled one keeps `stopped`; one whose owner already chose a new operator
+    is simply started again (`Apply` reads the stored row), so the order of the two never leaves a
+    stale detail.
+  - `Lagged` (the bus dropped events because `Apply` was busy stopping a connector) applies the
+    running connections whose operator is NULL, and only those: a missed event costs nothing and
+    restarts nothing else.
+  - The owner's other connections keep their session with the platform (same instance, status
+    untouched), and deleting an AI that operates nothing applies nothing.
+- **Merge** (`conversations.Merge`, `POST /agents/{id}/merge`): in the merge transaction each
+  connection `ReassignConnectorOperator` hands to the survivor goes through `Queue.MoveConnector`,
+  acknowledged items included, and the survivor keeps the 5,000 bound. The merged AI's
+  `platform_dropped` count is added to the survivor's (addition to the design: CID-10 tells the
+  operator how many items were dropped, and the counter would be deleted with the merged AI, so
+  nobody would ever be told). The survivor holds its own items and the moved ones in arrival order.
+  The `agent.merge` audit entry gains `platform_items`, the number of items that changed hands. After
+  the commit `PlatformQueued{AgentID: survivor}` wakes its live session. Items and counts roll back
+  with the rest of the merge. `conversations.Deps.Queue` is the app's queue (required for `Merge`
+  when the merged AI operated a connection).
+- **Authorization** (unchanged routes, matrices pinned by `TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone`
+  and `TestRefusedMergesLeaveTheQueueAlone`): deleting and merging need ownership. Use grantees get 403,
+  a stranger and the admin 404, anonymous callers 401, AI tokens (the AI itself, another AI of the
+  owner, another user's AI) 403; every refusal leaves the operator, the connection's session and
+  status, the queue and the dropped counts as they were.
+
+## T23: Chats are never members (CID-19)
+
+- **Refusal**: `rooms.ErrChatsNotMembers` is 422 `chats_not_members` (`dto.ErrorCodeChatsNotMembers`).
+  - `AddMember` refuses kind `chat` after the caller's rights on the room are checked: a user who
+    cannot see the room gets 404, one who can see but not manage it 403 (the view and post
+    grantees), and a direct message still answers `dm_members_fixed` (its members are fixed whatever
+    the kind). Then it refuses before any lookup, so the chat's existence, its connection's owner,
+    a use grant on its connection and `outbound` are never read: a chat of the caller's own
+    connection, one of another user's connection, an unknown chat and a request without an id all
+    get the same 422. The chat branch of ACL-06 is retired with it.
+  - `CreateWithMembers` refuses a member list that holds a chat before it creates anything.
+    `CheckMember` returns the error. `conversations.CreateGroup` names members by intelligence id,
+    so a chat id there is `members_refused` (`not_found`), as for any id that is not an
+    intelligence; that answer is unchanged.
+  - The kind validation now reads `must be agent or user` (a chat is no longer among the kinds a
+    request may add; `TestProjectMemberKindIsRefused` follows).
+- **Authorization** (matrix pinned by `TestAddChatMemberAuthMatrix`): owner 422, view and post
+  grantees 403, a stranger and the admin 404, anonymous callers 401, AI tokens 403 (agent tokens
+  reach agent endpoints only). Nothing is added, no `room.members` event is published and
+  `member_count` stays.
+- **Legacy members**: chat members that rooms built before the connection proxy hold stay listable,
+  updatable and removable until migration 0018 (T36) deletes them; a room's outbound delivery to them
+  works until T33.
+- **`POST /chats/{id}/route` (retired by T34)** creates a room and adds the chat to it, so with this
+  rule it is refused 422 `chats_not_members` after its own checks (an agent id is required and the
+  caller must be allowed to use the agent), and the room it created is deleted again. Its
+  success-path tests are rewritten to say so (`TestRouteChatIsRefusedBecauseChatsAreNeverMembers`,
+  the matrix row now 422 for the owner and the grantee) or deleted:
+  `TestRoutedRoomIsNamedAfterTheChat` (CTX-07, the name of a routed room cannot be observed any
+  more). T34 removes the route, its service and these tests.
+- **Tests that only used a chat member as setup** (chat delivery that T33 retires): the API refuses a
+  chat as member, so `testkit.Client.SeedChatMember(roomID, chatID, outbound)` and the rooms
+  fixture's `addMember` plant the row the way an old room holds it. Assertions did not change. The
+  helper goes when the last of those tests does (T33 to T35).
+- **Deflake (not part of the task)**: `TestRunPurgesWhenItStartsAndEveryInterval` (T4) read the
+  files the runner released right after the item vanished, before the runner had handed them over; it
+  now waits for them. It failed once in a loaded full run.
+
+## T24: Platform DMs and people are history (CID-21, CID-22)
+
+- **Posts**: every way a user or an AI writes into a room goes through `rooms.Service.Post`
+  (`POST /rooms/{id}/messages`, `POST /agent/rooms/{id}/messages`, `reply`, `react`, files).
+  `checkCounterpart` now refuses a post in a DM that has a person among its two participants with
+  `access.ErrHistoryOnly`, 422 `history_only` (`dto.ErrorCodeHistoryOnly`).
+  - It looks at both participants, so it holds whichever side the person sorts on (the ids sit in
+    `rooms.dm_a` and `dm_b` in sorted order); both orderings are tested.
+  - It follows the rights checks. Only a participant may post, so the owner and the use grantees of
+    the AI, who can only view the DM, still get 403, a user who cannot see it 404, a non-member AI
+    403 and anonymous callers 401; the AI that is a participant gets the 422.
+  - Reading stays: the room, its messages and its info, for the AI and for everyone who read them.
+    `PostFromChat` (history seeding) and system messages are not guarded.
+- **Edits**: `intelligences.Service.editable`, the gate of every profile edit (`Update`, `SetAvatar`,
+  `ClearAvatar`; `PATCH`, `PUT` and `DELETE` of the avatar), answers `ErrHistoryOnly` for a person
+  after the rights checks. Who could not edit a person before is refused as before (404 without view,
+  403 for a reader of a shared conversation, 403 for an AI, 401 anonymous); the users of its
+  connection get 422.
+  - `can_edit` is false for a person whoever asks (`Get`, `CanEdit`), so the web app offers no
+    editor (`contacts.$id.tsx` shows it from `can_edit`).
+  - The rename lock (PEOP-05, PROF-11: `SetPersonNameLocked` from `Update`) could no longer run and
+    is removed; the query and `people.name_locked` stay as dead history (`name_locked` is still in
+    the person DTO).
+- **DM to a person (DM-05 retired)**: `conversations.OpenDM` answers `ErrNoRouteToPerson` (422
+  `no_route_to_person`) for every person, also to the operator AI that holds the platform DM with
+  them, which used to get that DM back and could write into it (`platformRoom` is removed). So
+  `send_message to:@person` (`POST /agent/dms`) and `POST /conversations/dm` end there, creating
+  nothing; a person the caller cannot see is still `contact_not_found`. The AI answers people on its
+  connection (T19, T20).
+- **Superseded text of the intelligences spec** (AD-015 amends it; the file is not edited): DM-05's
+  "goes out through the connector account", PEOP-04's "and may edit them", PEOP-05 and PROF-11.
+- **Tests**: rewritten (assertions that a person can be edited, or a platform DM written, are gone):
+  `TestPersonProfileFollowsTheConnector`, `TestPersonProfile`, `TestPersonProfileRoutesAuthMatrix`
+  (the editors now get 422), `TestUpdateAuthorization`, `TestCanSeeAndCanEdit`, `TestGetProfile`,
+  `TestMergeKeepsAPlatformDMAsHistory` and `TestMergeAppendsAPlatformDMAndMovesItsChat` (the answer of
+  the merged AI is planted with its delivery: an AI cannot write in such a DM any more).
+  Deleted: `TestAUsersRenameOfAPersonSurvivesPlatformNames` (PROF-11, PEOP-05). Tests that only used a
+  person's avatar, name or handle as setup plant them (`plantAvatar`, `plantProfile`).
+- **Authorization** (matrices pinned by `TestPlatformDMPostAuthorizationMatrix`,
+  `TestEditingAPersonIsRefusedAsHistory`, `TestDMToAPersonHasNoRoute`): see the bullets above; every
+  refusal changes nothing and announces nothing.

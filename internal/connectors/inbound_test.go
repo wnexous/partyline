@@ -736,8 +736,9 @@ func TestInboundTitleChangeUpdatesTheChat(t *testing.T) {
 	}
 }
 
-// CID-01: the operator of the moment receives what arrives; when the owner picks another AI the
-// next messages go to it.
+// CID-01, CID-05: the operator of the moment receives what arrives; when the owner picks another
+// AI, what was queued and not yet delivered goes with the connection (the old operator keeps
+// nothing of it), and the next messages queue behind it, oldest first.
 func TestInboundGoesToTheCurrentOperator(t *testing.T) {
 	e := newInboundEnv(t)
 	atlas := e.alice.NewAI("Atlas")
@@ -746,6 +747,6 @@ func TestInboundGoesToTheCurrentOperator(t *testing.T) {
 	e.alice.OperateConnector(e.conn.ID, atlas)
 	e.emit(dmText(dmA, "D2", "to atlas"))
 
-	require.Equal(t, []string{"to relay"}, texts(e.queued(t)))
-	require.Equal(t, []string{"to atlas"}, texts(e.queuedFor(t, atlas)))
+	require.Empty(t, texts(e.queued(t)), "the first operator keeps nothing of the connection")
+	require.Equal(t, []string{"to relay", "to atlas"}, texts(e.queuedFor(t, atlas)))
 }

@@ -375,9 +375,11 @@ func TestUpdateHandleTaken(t *testing.T) {
 	require.NoError(t, set(w.alice, w.alice.User.ID, intelligences.ProfileUpdate{Handle: ptr("bob")}), "a freed handle can be taken")
 }
 
-// Edit rights (PROF-03, PROF-04, PROF-05, PROF-11): a user edits their own profile; an AI's
-// owner edits the AI; the AI edits itself; grantees, other users, admins and other AIs do not.
-// Without view the answer is not found, with view but without edit it is forbidden.
+// Edit rights (PROF-03, PROF-04, PROF-05): a user edits their own profile; an AI's owner edits
+// the AI; the AI edits itself; grantees, other users, admins and other AIs do not. Without view
+// the answer is not found, with view but without edit it is forbidden. A person's profile is
+// history (CID-21, PROF-11 is retired): the users of its connector, who could edit it, are told it
+// is read-only; everyone else is answered as before.
 func TestUpdateAuthorization(t *testing.T) {
 	w := newWorld(t)
 	atlas, nova := w.agent(w.alice, "atlas"), w.agent(w.alice, "nova")
@@ -404,8 +406,8 @@ func TestUpdateAuthorization(t *testing.T) {
 		{"the AI itself", asAgent(w.alice, atlas), atlas, nil},
 		{"a sibling AI of the same owner", asAgent(w.alice, nova), atlas, access.ErrForbidden},
 		{"an AI of a stranger", asAgent(w.carol, carolsAI), atlas, access.ErrNotFound},
-		{"person: connector owner", asUser(w.dave), pat, nil},
-		{"person: connector use grantee", asUser(w.erin), pat, nil},
+		{"person: connector owner", asUser(w.dave), pat, access.ErrHistoryOnly},
+		{"person: connector use grantee", asUser(w.erin), pat, access.ErrHistoryOnly},
 		{"person: stranger", asUser(w.carol), pat, access.ErrNotFound},
 		{"person: AI of the connector owner", asAgent(w.dave, w.agent(w.dave, "relay")), pat, access.ErrForbidden},
 		{"unknown id", asUser(w.alice), store.NewID(), access.ErrNotFound},
@@ -425,7 +427,8 @@ func TestUpdateAuthorization(t *testing.T) {
 }
 
 // The design's CanSee / CanEdit cases: self, other user, AI owner, AI grantee, stranger,
-// the AI itself, sibling and foreign AIs, and a person through its connector.
+// the AI itself, sibling and foreign AIs, and a person through its connector, whom the users
+// of the connector see and nobody edits (CID-21).
 func TestCanSeeAndCanEdit(t *testing.T) {
 	w := newWorld(t)
 	atlas, nova := w.agent(w.alice, "atlas"), w.agent(w.alice, "nova")
@@ -453,8 +456,8 @@ func TestCanSeeAndCanEdit(t *testing.T) {
 		{"the AI itself", asAgent(w.alice, atlas), atlas, true, true},
 		{"sibling AI sees through the owner", asAgent(w.alice, nova), atlas, true, false},
 		{"stranger's AI", asAgent(w.carol, carolsAI), atlas, false, false},
-		{"person: connector owner", asUser(w.dave), pat, true, true},
-		{"person: connector use grantee", asUser(w.erin), pat, true, true},
+		{"person: connector owner sees, nobody edits", asUser(w.dave), pat, true, false},
+		{"person: connector use grantee", asUser(w.erin), pat, true, false},
 		{"person: stranger", asUser(w.carol), pat, false, false},
 		{"person: owner of another connector", asUser(w.alice), pat, false, false},
 		{"person: connector owner's AI sees, never edits", asAgent(w.dave, davesAI), pat, true, false},
@@ -544,7 +547,7 @@ func TestGetProfile(t *testing.T) {
 		{"user, other", asUser(w.bob), w.alice.User.ID, intelligences.RoleUser, false},
 		{"AI, owner", asUser(w.alice), atlas, intelligences.RoleAI, true},
 		{"AI, grantee", asUser(w.bob), atlas, intelligences.RoleAI, false},
-		{"person, connector owner", asUser(w.dave), pat, intelligences.RolePerson, true},
+		{"person, connector owner: history, not editable", asUser(w.dave), pat, intelligences.RolePerson, false},
 	} {
 		got, err := w.svc.Get(w.ctx, c.caller, c.target)
 		require.NoError(t, err, c.name)

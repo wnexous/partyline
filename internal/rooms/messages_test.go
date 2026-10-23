@@ -17,6 +17,7 @@ import (
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
 )
 
@@ -24,9 +25,31 @@ func agentPrincipal(owner authn.Principal, agentID string) authn.Principal {
 	return authn.Principal{Kind: authn.KindAgent, UserID: owner.UserID, AgentID: agentID}
 }
 
+// addMember adds the member through the service. A chat is refused as a member (CID-19), so a chat
+// is planted the way a room built before the connection proxy holds it: the tests that use one
+// cover the room's outbound delivery to chats, which T33 retires.
 func (f *fixture) addMember(t *testing.T, owner authn.Principal, roomID string, kind dto.MemberKind, id string, outbound bool) Member {
 	t.Helper()
+	if kind == dto.MemberKindChat {
+		return f.seedChatMember(t, owner, roomID, id, outbound)
+	}
 	m, err := f.svc.AddMember(context.Background(), owner, roomID, MemberInput{Kind: kind, MemberID: id, Outbound: &outbound})
+	require.NoError(t, err)
+	return m
+}
+
+// seedChatMember plants a chat member row and returns the member as the room lists it.
+func (f *fixture) seedChatMember(t *testing.T, owner authn.Principal, roomID, chatID string, outbound bool) Member {
+	t.Helper()
+	ctx := context.Background()
+	rowID := store.NewID()
+	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
+		return q.CreateRoomMember(ctx, db.CreateRoomMemberParams{
+			ID: rowID, RoomID: roomID, Kind: string(dto.MemberKindChat), MemberID: chatID,
+			Outbound: outbound, AddedBy: owner.UserID, CreatedAt: t0.UnixMilli(),
+		})
+	}))
+	m, err := f.svc.member(ctx, roomID, rowID)
 	require.NoError(t, err)
 	return m
 }

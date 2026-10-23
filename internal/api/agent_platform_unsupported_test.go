@@ -77,7 +77,10 @@ func TestQuotingAMessageOfAConnectionInARoomIsUnsupported(t *testing.T) {
 	room := f.supportRoom(t)
 	asked := testkit.Decode[dto.Message](f.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "status?"}).RequireStatus(http.StatusCreated))
 	mine := f.enqueue(t, f.atlas, f.group, "M1", "where is my order?")
-	notes := f.enqueue(t, f.notes, f.group, "M2", "for Notes")
+	// Notes's message comes from a connection Notes operates: the queue gives an item to the
+	// connection's current operator (CID-05), so it cannot be queued for Notes on Atlas's one.
+	notesConn := f.alice.OperateConnector(createFakeIdle(f.alice, "tg", false).ID, f.notes)
+	notes := f.enqueue(t, f.notes, f.chat(t, notesConn, "-1009876543210", "Notes group", "group"), "M2", "for Notes")
 	path := "/api/v1/agent/rooms/" + room.ID + "/messages"
 	post := func(replyTo string) *testkit.Response {
 		return f.token.AsAgent("Atlas").Post(path, dto.PostMessageRequest{Text: "the report", ReplyTo: replyTo})

@@ -126,6 +126,23 @@ func (f *fixture) room(t *testing.T, owner authn.Principal, name string) Room {
 	return r
 }
 
+// dm plants the direct message between two users and returns its room id.
+func (f *fixture) dm(t *testing.T, a, b authn.Principal) string {
+	t.Helper()
+	x, y := a.UserID, b.UserID
+	if x > y {
+		x, y = y, x
+	}
+	id := store.NewID()
+	f.exec(t, "INSERT INTO rooms (id, owner_id, name, kind, dm_a, dm_b, created_at, updated_at) VALUES (?, ?, '', 'dm', ?, ?, ?, ?)",
+		id, a.UserID, x, y, t0.UnixMilli(), t0.UnixMilli())
+	for _, p := range []authn.Principal{a, b} {
+		f.exec(t, "INSERT INTO room_members (id, room_id, kind, member_id, outbound, added_by, created_at) VALUES (?, ?, 'user', ?, 1, ?, ?)",
+			store.NewID(), id, p.UserID, a.UserID, t0.UnixMilli())
+	}
+	return id
+}
+
 func ptr[T any](v T) *T { return &v }
 
 // ACL-01: the creator owns the room with manage.
@@ -210,9 +227,8 @@ func TestGranteeWithoutManageIsForbidden(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.user(t, "alice", dto.RoleMember)
-	_, chat := f.chat(t, alice, "group")
 	r := f.room(t, alice, "shared")
-	_, err := f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: chat})
+	_, err := f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindAgent, MemberID: f.agent(t, alice, "builder")})
 	require.NoError(t, err)
 
 	for _, level := range []dto.Level{dto.LevelView, dto.LevelPost} {
@@ -351,31 +367,68 @@ func TestAddAgentRequiresUse(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// ACL-06: adding a chat needs ownership of its connector or a use grant on it.
-func TestAddChatRequiresConnectorUse(t *testing.T) {
+// CID-19 (L-018: each case isolates its guard): a chat is never a member, whoever owns its
+// connection, whether it exists or not, whatever the member's settings say: AddMember answers
+// ErrChatsNotMembers for a manager of the room, adds nothing and publishes nothing. The caller's
+// rights on the room are checked first: a user who cannot see the room gets not found, a user who
+// can see but not manage it forbidden, and a direct message answers that its members are fixed.
+// Group creation refuses a chat too, and creates no room. The chat branch of ACL-06 (a use grant on
+// the chat's connector) is retired with it.
+func TestChatsAreNeverMembers(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.user(t, "alice", dto.RoleMember)
 	bob := f.user(t, "bob", dto.RoleMember)
+	carol := f.user(t, "carol", dto.RoleMember)
 	_, mine := f.chat(t, alice, "family")
 	bobConn, bobs := f.chat(t, bob, "team")
 	r := f.room(t, alice, "ops")
+	sub, cancel := f.bus.Subscribe(8)
+	defer cancel()
 
-	m, err := f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: mine, Outbound: ptr(false)})
+	for name, in := range map[string]MemberInput{
+		"a chat of the caller's connection":   {Kind: dto.MemberKindChat, MemberID: mine},
+		"a listen-only chat":                  {Kind: dto.MemberKindChat, MemberID: mine, Outbound: ptr(false)},
+		"a chat of another user's connection": {Kind: dto.MemberKindChat, MemberID: bobs},
+		"a chat that does not exist":          {Kind: dto.MemberKindChat, MemberID: store.NewID()},
+		"a chat with no member id at all":     {Kind: dto.MemberKindChat},
+	} {
+		_, err := f.svc.AddMember(ctx, alice, r.ID, in)
+		require.ErrorIs(t, err, ErrChatsNotMembers, name)
+	}
+	f.grant(t, access.KindConnector, bobConn, alice.UserID, dto.LevelUse) // use of the connection does not change it
+	_, err := f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: bobs})
+	require.ErrorIs(t, err, ErrChatsNotMembers)
+	members, err := f.svc.Members(ctx, alice, r.ID)
 	require.NoError(t, err)
-	require.Equal(t, "family", m.Name)
-	require.Equal(t, "telegram", m.ConnectorKind)
-	require.Equal(t, "group", m.ChatKind)
-	require.False(t, m.Outbound)
+	require.Empty(t, members, "nothing was added")
+	require.Empty(t, sub, "and nothing was published")
 
-	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: bobs})
-	require.ErrorIs(t, err, access.ErrForbidden)
-	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: store.NewID()})
-	require.ErrorIs(t, err, access.ErrForbidden)
+	// The rights on the room come first.
+	_, err = f.svc.AddMember(ctx, carol, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: mine})
+	require.ErrorIs(t, err, access.ErrNotFound, "a user who cannot see the room")
+	f.grant(t, access.KindRoom, r.ID, carol.UserID, dto.LevelPost)
+	_, err = f.svc.AddMember(ctx, carol, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: mine})
+	require.ErrorIs(t, err, access.ErrForbidden, "a user who can post in the room but not manage it")
+	dm := f.dm(t, alice, bob)
+	_, err = f.svc.AddMember(ctx, alice, dm, MemberInput{Kind: dto.MemberKindChat, MemberID: mine})
+	require.ErrorIs(t, err, ErrDMMembersFixed, "the members of a direct message are fixed whatever the kind")
 
-	f.grant(t, access.KindConnector, bobConn, alice.UserID, dto.LevelUse)
-	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: bobs})
+	// The other kinds still join, and a chat is as refused next to them.
+	_, err = f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindUser, MemberID: bob.UserID})
 	require.NoError(t, err)
+
+	// Group creation: a chat among the members refuses the whole group.
+	rooms := f.count(t, "SELECT COUNT(*) FROM rooms")
+	_, err = f.svc.CreateWithMembers(ctx, alice.UserID, CreateInput{Name: "team"}, []MemberInput{
+		{Kind: dto.MemberKindUser, MemberID: bob.UserID}, {Kind: dto.MemberKindChat, MemberID: mine},
+	})
+	require.ErrorIs(t, err, ErrChatsNotMembers)
+	require.Equal(t, rooms, f.count(t, "SELECT COUNT(*) FROM rooms"), "no room was created")
+	require.Zero(t, f.count(t, "SELECT COUNT(*) FROM rooms WHERE name = 'team'"))
+	ok, err := f.svc.CheckMember(ctx, alice.UserID, MemberInput{Kind: dto.MemberKindChat, MemberID: mine})
+	require.ErrorIs(t, err, ErrChatsNotMembers)
+	require.False(t, ok)
 }
 
 func TestAddMemberValidationAndDuplicates(t *testing.T) {
@@ -408,8 +461,8 @@ func TestUpdateAndRemoveMember(t *testing.T) {
 	_, chat := f.chat(t, alice, "family")
 	r := f.room(t, alice, "ops")
 	other := f.room(t, alice, "other")
-	m, err := f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: chat})
-	require.NoError(t, err)
+	m := f.seedChatMember(t, alice, r.ID, chat, true) // a room built before the connection proxy
+	var err error
 
 	m, err = f.svc.UpdateMember(ctx, alice, r.ID, m.ID, MemberUpdate{Outbound: ptr(false)})
 	require.NoError(t, err)
@@ -437,9 +490,8 @@ func TestDeleteRoomRemovesEverything(t *testing.T) {
 	doomed := f.room(t, alice, "doomed")
 	kept := f.room(t, alice, "kept")
 	for _, r := range []Room{doomed, kept} {
-		_, err := f.svc.AddMember(ctx, alice, r.ID, MemberInput{Kind: dto.MemberKindChat, MemberID: chat})
-		require.NoError(t, err)
-		_, err = f.svc.SetSharing(ctx, alice, r.ID, access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: bob.UserID, Level: dto.LevelView}}})
+		f.seedChatMember(t, alice, r.ID, chat, true)
+		_, err := f.svc.SetSharing(ctx, alice, r.ID, access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: bob.UserID, Level: dto.LevelView}}})
 		require.NoError(t, err)
 		msg := store.NewID()
 		f.exec(t, "INSERT INTO messages (id, room_id, seq, author_kind, author_id, text, created_at) VALUES (?, ?, 1, 'user', ?, 'hi', ?)", msg, r.ID, alice.UserID, t0.UnixMilli())

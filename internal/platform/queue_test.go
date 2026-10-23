@@ -2,6 +2,8 @@ package platform_test
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -12,6 +14,8 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/handles"
+	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -607,5 +611,74 @@ func TestMoveConnectorKeepsTheNewOperatorWithinTheBound(t *testing.T) {
 	require.Len(t, list, platform.MaxQueued)
 	require.Equal(t, "held-1", list[0].Text, "the oldest item was dropped")
 	require.Equal(t, int64(1), f.takeDropped(t, f.notes), "and counted for the new operator")
+	require.Zero(t, f.takeDropped(t, f.atlas))
+}
+
+// operate makes the AI the operator of the connection, as the connector service does. The
+// fixture's agents have no profile (the operator column points at one), so the first call for an
+// AI gives it one.
+func (f *fixture) operate(t *testing.T, connector, agent string) {
+	t.Helper()
+	ctx := context.Background()
+	name := map[string]string{f.atlas: "atlas", f.notes: "notes"}[agent]
+	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
+		if _, err := q.GetIntelligence(ctx, agent); errors.Is(err, sql.ErrNoRows) {
+			if _, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: agent, Kind: handles.AI, DisplayName: name, HandleBase: name, Now: t0}); err != nil {
+				return err
+			}
+		}
+		return q.SetConnectorOperator(ctx, db.SetConnectorOperatorParams{OperatorIid: sql.NullString{String: agent, Valid: true}, ID: connector})
+	}))
+}
+
+// CID-05: a message that was handled while the owner changed the operator is queued for the
+// operator the connection has when it is queued, not for the one its caller read before: a
+// connection has one operator at a time, and the change already handed over everything queued
+// until then. The bound and the event follow the AI that holds the item.
+func TestEnqueueQueuesForTheOperatorOfTheConnectionNow(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.operate(t, f.tg, f.notes) // the caller still names Atlas, whom it read as the operator before the change
+	ch, cancel := f.bus.Subscribe(16)
+	defer cancel()
+
+	id := f.enqueue(t, f.item("77"))
+
+	require.Equal(t, []string{"hello 77"}, texts(f.unacked(t, f.notes)))
+	require.Empty(t, f.unacked(t, f.atlas), "nothing is left with the AI the connection no longer has")
+	require.Len(t, ch, 1)
+	e := (<-ch).(events.PlatformQueued)
+	require.Equal(t, []string{f.notes, id}, []string{e.AgentID, e.ItemID}, "the session that is woken is the new operator's")
+	_, queued, err := f.q.Enqueue(ctx, f.item("77"))
+	require.NoError(t, err)
+	require.False(t, queued, "a retry of the stale caller is still a repeat")
+
+	// The operator itself, named correctly, is unchanged by the rule.
+	right := f.item("78")
+	right.AgentID = f.notes
+	f.enqueue(t, right)
+	require.Equal(t, []string{"hello 77", "hello 78"}, texts(f.unacked(t, f.notes)))
+
+	// A connection nobody operates (a fixture: the pipeline queues nothing for one) keeps the AI the caller names.
+	wa := f.item("w1")
+	wa.ConnectorID, wa.ChatID = f.wa, f.waGroup
+	f.enqueue(t, wa)
+	require.Equal(t, []string{"hello w1"}, texts(f.unacked(t, f.atlas)))
+}
+
+// CID-11, CID-05: an item queued for a stale operator counts against the bound of the AI that
+// holds it, which drops its own oldest item and is told; the stale AI loses and learns nothing.
+func TestStaleEnqueueKeepsTheOperatorWithinTheBound(t *testing.T) {
+	f := newFixture(t)
+	f.seed(t, f.notes, platform.MaxQueued, "held")
+	f.operate(t, f.tg, f.notes)
+
+	f.enqueue(t, f.item("77")) // names Atlas
+
+	list := f.unacked(t, f.notes)
+	require.Len(t, list, platform.MaxQueued, "exactly 5,000 fit")
+	require.Equal(t, "hello 77", list[len(list)-1].Text)
+	require.Equal(t, "held-1", list[0].Text, "the oldest item of the operator was dropped")
+	require.Equal(t, int64(1), f.takeDropped(t, f.notes))
 	require.Zero(t, f.takeDropped(t, f.atlas))
 }

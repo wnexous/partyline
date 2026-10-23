@@ -124,9 +124,11 @@ type Manager struct {
 	d ManagerDeps
 
 	ops     sync.Mutex // serializes Apply, Stop and Close
-	mu      sync.Mutex // guards base and running
+	mu      sync.Mutex // guards base, running and unwatch
 	base    context.Context
 	running map[string]*supervisor
+	// unwatch ends the manager's listening for operators that went away (watchOperators).
+	unwatch func()
 }
 
 type supervisor struct {
@@ -168,6 +170,7 @@ func (m *Manager) Start(ctx context.Context) {
 	m.mu.Lock()
 	m.base = ctx
 	m.mu.Unlock()
+	m.watchOperators(ctx)
 	ids, err := m.d.Store.R().ListEnabledConnectorIDs(ctx)
 	if err != nil {
 		m.d.Logger.Error("connectors: list enabled", "err", err)
@@ -178,8 +181,73 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 }
 
+// operatorEventBuffer is how many bus events the manager's subscription holds while Apply is busy
+// stopping a connector; a longer burst makes the bus say it lagged (watchOperators).
+const operatorEventBuffer = 64
+
+// watchOperators applies the connections that lose their operator, so that each stops and shows
+// what to do (CID-02, CID-24): the agent registry publishes ConnectorsOrphaned when it deletes an
+// AI that operated some. A bus that lagged may have dropped such an event, so the manager then
+// looks at what it runs. It listens until ctx ends or Close.
+func (m *Manager) watchOperators(ctx context.Context) {
+	if m.d.Bus == nil {
+		return
+	}
+	ch, cancel := m.d.Bus.Subscribe(operatorEventBuffer)
+	m.mu.Lock()
+	previous := m.unwatch
+	m.unwatch = cancel
+	m.mu.Unlock()
+	if previous != nil {
+		previous()
+	}
+	go func() {
+		defer cancel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case e, ok := <-ch:
+				if !ok {
+					return
+				}
+				switch e := e.(type) {
+				case events.ConnectorsOrphaned:
+					for _, id := range e.IDs {
+						m.Apply(id)
+					}
+				case events.Lagged:
+					m.reconcile(ctx)
+				}
+			}
+		}
+	}()
+}
+
+// reconcile applies the running connections whose operator is gone.
+func (m *Manager) reconcile(ctx context.Context) {
+	m.mu.Lock()
+	ids := make([]string, 0, len(m.running))
+	for id := range m.running {
+		ids = append(ids, id)
+	}
+	m.mu.Unlock()
+	for _, id := range ids {
+		if c, err := m.d.Store.R().GetConnector(ctx, id); err == nil && !c.OperatorIid.Valid {
+			m.Apply(id)
+		}
+	}
+}
+
 // Close stops every connector without changing their stored status.
 func (m *Manager) Close() {
+	m.mu.Lock()
+	unwatch := m.unwatch
+	m.unwatch = nil
+	m.mu.Unlock()
+	if unwatch != nil {
+		unwatch()
+	}
 	m.ops.Lock()
 	defer m.ops.Unlock()
 	m.mu.Lock()

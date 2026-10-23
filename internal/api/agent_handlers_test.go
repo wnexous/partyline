@@ -24,7 +24,7 @@ func agentRoomPath(room, suffix string) string { return "/api/v1/agent/rooms/" +
 func (f *agentRoom) chatMember(t *testing.T, title string) string {
 	t.Helper()
 	_, chat := storeChat(t, f.env, f.alice.User.ID, title)
-	f.alice.Post("/api/v1/rooms/"+f.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindChat, MemberID: chat}).RequireStatus(http.StatusCreated)
+	f.alice.SeedChatMember(f.room.ID, chat, true)
 	return chat
 }
 

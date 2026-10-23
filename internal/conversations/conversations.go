@@ -16,6 +16,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
 )
@@ -27,8 +28,8 @@ var (
 	// ErrContactNotFound is a DM with an intelligence that does not exist or that the caller
 	// cannot see; the two cases are indistinguishable (404 contact_not_found).
 	ErrContactNotFound = errors.New("contact not found")
-	// ErrNoRouteToPerson is a DM with an external person that no platform conversation of the
-	// sender reaches (422 no_route_to_person, DM-05).
+	// ErrNoRouteToPerson is a DM with an external person: nobody writes to people through a DM any
+	// more, they are answered on their platform (422 no_route_to_person, CID-22).
 	ErrNoRouteToPerson = errors.New("no route to the person")
 	// ErrRateLimited is an AI that opened too many new conversations (429 rate_limited).
 	ErrRateLimited = errors.New("too many new conversations")
@@ -40,6 +41,9 @@ type Deps struct {
 	Rooms         *rooms.Service
 	Intelligences *intelligences.Service
 	Bus           *events.Bus
+	// Queue takes the platform items of the connections a merged AI operated (CID-05). Required
+	// for Merge.
+	Queue *platform.Queue
 	// Access decides who owns an AI (merge). Required for Merge.
 	Access *access.Authorizer
 	// Online says whether an AI has a live session (merge refuses one that has); nil says none has.
@@ -61,6 +65,7 @@ type Service struct {
 	rooms       *rooms.Service
 	ints        *intelligences.Service
 	bus         *events.Bus
+	queue       *platform.Queue
 	az          *access.Authorizer
 	audit       *audit.Log
 	online      func(agentID string) bool
@@ -75,7 +80,7 @@ func New(d Deps) *Service {
 		d.Now = time.Now
 	}
 	return &Service{
-		store: d.Store, rooms: d.Rooms, ints: d.Intelligences, bus: d.Bus, az: d.Access, audit: audit.New(d.Store, d.Now),
+		store: d.Store, rooms: d.Rooms, ints: d.Intelligences, bus: d.Bus, queue: d.Queue, az: d.Access, audit: audit.New(d.Store, d.Now),
 		online: d.Online, kick: d.Kick, allowCreate: d.AllowCreate, now: d.Now,
 	}
 }

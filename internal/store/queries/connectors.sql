@@ -68,6 +68,10 @@ UPDATE connectors SET account_label = ? WHERE id = ?;
 -- The connectors an AI operates (CID-01, ACC-07).
 SELECT * FROM connectors WHERE operator_iid = ? ORDER BY name, id;
 
+-- name: GetConnectorOperator :one
+-- Who operates the connection right now (CID-05); NULL while nobody does (CID-02).
+SELECT operator_iid FROM connectors WHERE id = ?;
+
 -- name: StopCatchAllConnectors :many
 -- ROUTE-03: the connectors whose catch-all room is going to be deleted stop auto-routing and say
 -- so. The foreign key empties their room on deletion, and an empty room with a scope on reads as

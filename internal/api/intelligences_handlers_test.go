@@ -190,7 +190,8 @@ func TestAIProfileShowsItsSession(t *testing.T) {
 }
 
 // A person's profile shows the platform of its connector; users who own or may use the
-// connector read it, nobody else does (PEOP-04 starts here).
+// connector read it, nobody else does (PEOP-04 starts here). Nobody can edit it: a person's
+// profile is history (CID-21).
 func TestPersonProfile(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
@@ -198,7 +199,7 @@ func TestPersonProfile(t *testing.T) {
 	pat := seedPerson(t, env, connectorID, "5511999990000", "Pat")
 
 	p := profileOf(t, alice, pat)
-	require.Equal(t, []any{dto.IntelligenceKindHuman, dto.IntelligenceRolePerson, "Pat", "pat", "telegram", true},
+	require.Equal(t, []any{dto.IntelligenceKindHuman, dto.IntelligenceRolePerson, "Pat", "pat", "telegram", false},
 		[]any{p.Kind, p.Role, p.DisplayName, p.Handle, p.Platform, p.CanEdit})
 	getProfile(bob, pat).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
@@ -296,8 +297,8 @@ func TestUserProfileRoutesAuthMatrix(t *testing.T) {
 	m.run(t, setup, routes)
 }
 
-// Authorization matrix for a person: the connector's owner and its use grantee read and edit
-// it; the others find nothing.
+// Authorization matrix for a person: the connector's owner and its use grantee read it and are
+// told, when they try to edit it, that it is history (422, CID-21); the others find nothing.
 func TestPersonProfileRoutesAuthMatrix(t *testing.T) {
 	m := newMatrix(t)
 	setup := func(t *testing.T, m *matrix) matrixResource {
@@ -315,7 +316,7 @@ func TestPersonProfileRoutesAuthMatrix(t *testing.T) {
 		}, statuses(200, 200, 404, 404, 404)},
 		{"edit person profile", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
 			return patchProfile(c, res["person"], dto.UpdateProfileRequest{DisplayName: ptr("Patricia")})
-		}, statuses(200, 200, 404, 404, 404)},
+		}, statuses(422, 422, 404, 404, 404)},
 	}
 	m.run(t, setup, routes)
 }
