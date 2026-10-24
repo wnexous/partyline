@@ -1953,3 +1953,21 @@ Sharing is organization membership and nothing else (AD-016). Every path that wr
   `orgFixture` and `MigrateBefore("0020")`.
 - **The dynamic proof of T51**: with the table dropped, the 574 top-level tests of `internal/api` and every other package run against a schema that has no
   grants; a query that still read them would fail with "no such table". T53 repeats it on a database built by the v0.5.0 binary.
+
+## T53: Upgrade end to end from a v0.5 database (OUPG-01, OUPG-02, POS-10)
+
+`checkUpgradedInstallation` (`internal/api/upgrade_test.go`) is the shared proof. It runs on two databases:
+
+- `TestUpgradedV05InstallationBecomesOrganizations` builds a v0.5 database from the store fixtures, with every kind of grant seeded;
+- `TestUpgradedRealV05InstallationBecomesOrganizations` (`upgrade_v05_binary_test.go`) uses a database written by the real v0.5.0 binary, driven over HTTP. It is opt-in: set `PARTYLINE_V05_BINARY` to a v0.5.0 build (the steps are in the file's comment). Without the variable it is skipped, because the gate cannot build an old tag.
+
+Both prove each point:
+
+- every user has a personal organization where they are the admin, and their AIs are members;
+- a former `use` grantee sees the AI and gets 403 deleting it;
+- room history is intact, and a view-only grantee loses the room;
+- the owner's two AIs do not trust each other, and the owner's post is trusted;
+- the owner, as admin, deletes the AI and the history stays;
+- `DELETE /api/v1/me` by the last admin makes the instance admin an admin of her organization (OUPG-02).
+
+The coordinator finished the task after the worker stopped mid-task. Both tests passed on 2026-10-24, the real-binary one against v0.5.0.

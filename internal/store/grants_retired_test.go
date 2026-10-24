@@ -33,7 +33,7 @@ func TestOnlyTheMigrationsAndTheBackfillNameGrants(t *testing.T) {
 			return true
 		case strings.HasPrefix(rel, "store/") && strings.HasSuffix(rel, "_test.go"):
 			return true
-		case rel == "api/upgrade_test.go": // upgrades a v0.5 database that holds grants (T53)
+		case rel == "api/upgrade_test.go", rel == "api/upgrade_v05_binary_test.go": // upgrade a v0.5 database that holds grants (T53)
 			return true
 		}
 		return false

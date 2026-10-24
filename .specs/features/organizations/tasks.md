@@ -1283,8 +1283,8 @@ Rewrite `authmatrix_test.go` on `OrgRoles`.
 **Reuses**: `v04Database` helper
 **Requirement**: OUPG-01, OUPG-02, POS-10
 **Done when**:
-- [ ] The listed assertions pass
-- [ ] Gate check passes: `make check`
+- [x] The listed assertions pass
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(api): upgrade a v0.5 installation into organizations`
