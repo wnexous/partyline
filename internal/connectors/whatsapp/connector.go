@@ -96,6 +96,9 @@ type instance struct {
 	// Connected tells that the WhatsApp session of the instance's number is up; nil when evolution-go
 	// does not say.
 	Connected *flag `json:"connected"`
+	// DisconnectReason is why evolution-go says the number is not connected ("Reconnecting"); empty
+	// when it is, and when evolution-go does not say.
+	DisconnectReason reason `json:"disconnect_reason"`
 	// JID is the WhatsApp account of a connected instance, "<number>:<device>@s.whatsapp.net";
 	// empty for an instance that is not connected and for versions that do not report it.
 	JID string `json:"jid"`
@@ -111,6 +114,19 @@ func (f *flag) UnmarshalJSON(b []byte) error {
 		*f = true
 	default:
 		*f = false
+	}
+	return nil
+}
+
+// reason reads the disconnect_reason of an instance. evolution-go sends text; any other JSON value
+// is no reason, so that a field of an unexpected type never fails the whole instance list, which
+// the connection cannot run without.
+type reason string
+
+func (r *reason) UnmarshalJSON(b []byte) error {
+	var s string
+	if json.Unmarshal(b, &s) == nil {
+		*r = reason(s)
 	}
 	return nil
 }

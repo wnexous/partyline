@@ -225,8 +225,9 @@ um, nada chega por ela e o status diz `choose the AI that operates this connecti
 conexão de WhatsApp que informa zero ou várias instâncias também não recebe nada, e diz `choose the
 instance (number) of this connection`. Uma conexão de WhatsApp em execução também confere o número
 a cada minuto: enquanto o evolution-go o informa como desconectado (reconectando, fechado,
-deslogado), o status é um erro que diz `the WhatsApp number is not connected; reconnect it in
-evolution-go`, e volta a conectado assim que o número volta.
+deslogado), o status é um erro que diz `the WhatsApp number is not connected (Reconnecting);
+reconnect it in evolution-go`, com o motivo que o evolution-go informa entre parênteses (sem nada
+entre eles quando ele não informa), e volta a conectado assim que o número volta.
 
 - **Chegada.** Uma mensagem que chega numa conexão nunca é gravada como mensagem de uma conversa.
   Ela entra na fila do operador e é empurrada para a sessão ao vivo dele como um *evento de

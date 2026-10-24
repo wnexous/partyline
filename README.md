@@ -222,8 +222,9 @@ arrives through it and its status says `choose the AI that operates this connect
 connection that names zero or several instances receives nothing either, and says `choose the
 instance (number) of this connection`. A running WhatsApp connection also checks its number every
 minute: while evolution-go reports it as not connected (reconnecting, closed, logged out) the status
-is an error that says `the WhatsApp number is not connected; reconnect it in evolution-go`, and it
-is connected again as soon as the number is.
+is an error that says `the WhatsApp number is not connected (Reconnecting); reconnect it in
+evolution-go`, with the reason evolution-go gives in parentheses (nothing between them when it gives
+none), and it is connected again as soon as the number is.
 
 - **Arrival.** A message that arrives on a connection is never stored as a message of a
   conversation. It goes into the operator's queue and is pushed to its live session as a

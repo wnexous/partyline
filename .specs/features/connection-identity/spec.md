@@ -120,6 +120,18 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 ---
 
+### P2: Gaps found in production (v0.6.2)
+
+**User Story**: As the operator AI of a connection, I want the gaps I hit while using it in production closed so that I can tell why my number is down and receive and reach the people I work for.
+
+**Acceptance Criteria**:
+
+1. WHEN the WhatsApp number of a connection is not connected and evolution-go gives a reason (the `disconnect_reason` of the instance) THEN the status detail SHALL name it between the fact and what to do: `the WhatsApp number is not connected (Reconnecting); reconnect it in evolution-go`; the status SHALL follow a changed reason, and a number that is connected SHALL show none. (CID-28)
+
+**Independent Test**: evolution-go answers `GET /instance/all` with `{"name":"acme","connected":false,"disconnect_reason":"Reconnecting",...}`; the connection of `acme` is in error with the detail above, and with `connected: true` it is connected without a detail.
+
+---
+
 ## Edge Cases
 
 - IF the operator AI is deleted THEN the connection SHALL have no operator (CID-02) and its queue SHALL be deleted. (CID-24)
@@ -175,8 +187,9 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-25 | Edge cases | Execute | Verified (T12, T14) |
 | CID-26 | Edge cases | Execute | Verified (T2, T3, T7) |
 | CID-27 | P1: Direct delivery | Execute | Verified (T2, T6, T29, T36, T38) |
+| CID-28 | P2: Gaps found in production | Fix | Verified (whatsapp/status_test.go) |
 
-**Coverage:** 27 total, 27 mapped to tasks (`tasks.md` T1-T39), all Verified (validation.md, 2026-10-23).
+**Coverage:** 28 total. CID-01..27 are mapped to tasks (`tasks.md` T1-T39), all Verified (validation.md, 2026-10-23); CID-28 and the ones after it are fixes of v0.6.2 and are Verified by the tests named in their rows.
 
 ---
 

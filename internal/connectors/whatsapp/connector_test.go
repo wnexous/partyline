@@ -822,6 +822,21 @@ func (f *fakeEvolution) setConnected(name string, connected bool) {
 	f.instances = next
 }
 
+// setDisconnectReason sets the disconnect_reason evolution-go reports for an instance: why its number
+// is not connected ("Reconnecting"), or "" for none. Like setConnected it replaces the list.
+func (f *fakeEvolution) setDisconnectReason(name, reason string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	next := make([]map[string]any, len(f.instances))
+	for i, inst := range f.instances {
+		next[i] = maps.Clone(inst)
+		if inst["name"] == name {
+			next[i]["disconnect_reason"] = reason
+		}
+	}
+	f.instances = next
+}
+
 // count returns how many REST calls reached path.
 func (f *fakeEvolution) count(path string) int {
 	f.mu.Lock()
