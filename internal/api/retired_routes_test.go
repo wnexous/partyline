@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -121,4 +123,36 @@ func TestRetiredRoutesChangeNothing(t *testing.T) {
 	for _, named := range []string{"Support group", res["connector"], res["chat"], res["agent"]} {
 		require.NotContains(t, body, named)
 	}
+}
+
+// ORG-02, AD-022 (T57): machines are internal. The route that labelled a machine and the machine tree that
+// `partyline agents` read are gone: both answer 404 not_found to the callers that used them, with a machine and
+// AIs that exist and a request that used to be valid, and nothing is stored. An agent token is still refused
+// on the user route by the rule that AIs reach agent endpoints only (TOK-03); anonymous callers get the 404 of a
+// route that does not exist.
+func TestMachineRoutesAreRetired(t *testing.T) {
+	env := testkit.New(t)
+	alice := env.NewUser("alice")
+	aiAt(t, env, alice, "Atlas", "atlas", "devbox", "/home/alice/atlas", "/home/alice", "claude")
+	agent := alice.Token(dto.TokenKindAgent, "laptop")
+	label := map[string]any{"label": "Studio"}
+
+	alice.Put("/api/v1/machines/devbox", label).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	env.Anon().Put("/api/v1/machines/devbox", label).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	agent.Put("/api/v1/machines/devbox", label).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	agent.Get("/api/v1/agent/contacts/tree").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	alice.Get("/api/v1/agent/contacts/tree").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	env.Anon().Get("/api/v1/agent/contacts/tree").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	for _, other := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/machines/devbox"},
+		{http.MethodDelete, "/api/v1/machines/devbox"},
+		{http.MethodGet, "/api/v1/machines"},
+	} {
+		alice.Do(other.method, other.path, nil).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	}
+
+	m, err := env.App.Store.R().GetMachine(context.Background(), db.GetMachineParams{OwnerID: alice.User.ID, Hostname: "devbox"})
+	require.NoError(t, err)
+	require.Empty(t, m.Label, "no label was stored")
+	require.Equal(t, "/home/alice", m.Home, "the machine stays, for the home folder of the folder labels")
 }

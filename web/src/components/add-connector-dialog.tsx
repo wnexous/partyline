@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { CodeBlock } from "@/components/copy-field";
+import { OrgSelect } from "@/components/org-select";
 import { ConnectorForm } from "@/components/schema-form";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCurrentOrg } from "@/hooks/use-current-org";
 import { isApiError } from "@/lib/api/client";
 import { useConnectorKinds, useCreateConnector } from "@/lib/api/queries";
 import {
@@ -20,7 +22,8 @@ import {
   HeaderSignature,
   HeaderTimestamp,
 } from "@/lib/api/types.gen";
-import { useT } from "@/lib/i18n";
+import { type Translate, useT } from "@/lib/i18n";
+import { isAdminOf } from "@/lib/orgs";
 import { cn } from "@/lib/utils";
 
 /** Secrets the server generated for a new connector, with the labels of their fields. */
@@ -36,9 +39,10 @@ const SIGNING_RECIPE = [
 ].join("\n");
 
 /**
- * Adds a connector (UI-16): pick a platform, fill the form its field schema describes. Secrets
- * the server generates (the webhook's signing secret) are shown once in the secret dialog
- * (UI-19); the new connector's page opens after it closes.
+ * Adds a connector (UI-16): pick the organization it belongs to (one the viewer administers,
+ * ORG-03), pick a platform, fill the form its field schema describes. Secrets the server
+ * generates (the webhook's signing secret) are shown once in the secret dialog (UI-19); the new
+ * connector's page opens after it closes.
  */
 export function AddConnectorDialog({
   open,
@@ -107,6 +111,15 @@ export function AddConnectorDialog({
   );
 }
 
+/** What the dialog says when the server turns the connection down. */
+function failureText(t: Translate, err: unknown): string {
+  if (!isApiError(err)) return t("error.generic");
+  if (err.status === 0) return t("error.network");
+  // Only the admins of an organization add its connections (ORG-03).
+  if (err.status === 403) return t("connectors.addForbidden");
+  return t("error.generic");
+}
+
 function AddConnectorBody({
   onCancel,
   onCreated,
@@ -117,13 +130,32 @@ function AddConnectorBody({
   const t = useT();
   const kinds = useConnectorKinds();
   const create = useCreateConnector();
+  const { org: current, orgs } = useCurrentOrg();
   const [chosen, setChosen] = useState<string | null>(null);
+  const [pickedOrg, setPickedOrg] = useState<string | null>(null);
   const idBase = useId();
   const kindName = chosen ?? (kinds.data?.length === 1 ? kinds.data[0]?.name : null) ?? null;
   const kind = kinds.data?.find((k) => k.name === kindName);
+  // The organization it goes to: the pick, else the current one when the viewer administers it,
+  // else the first they administer. None while their organizations are unknown: the server then
+  // uses their default and decides whether they may.
+  const adminOrgs = orgs.filter(isAdminOf);
+  const org =
+    adminOrgs.find((o) => o.id === pickedOrg) ??
+    adminOrgs.find((o) => o.id === current?.id) ??
+    adminOrgs[0];
 
   return (
     <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pt-4 pb-5">
+      {org ? (
+        <OrgSelect
+          label={t("connectors.org")}
+          hint={t("connectors.orgHint")}
+          orgs={adminOrgs}
+          value={org.id}
+          onChange={setPickedOrg}
+        />
+      ) : null}
       <fieldset className="space-y-2">
         <legend className="mb-2 text-sm font-medium">{t("connectors.platform")}</legend>
         {kinds.isPending ? (
@@ -163,16 +195,14 @@ function AddConnectorBody({
           onCancel={onCancel}
           onSubmit={(values, form) =>
             create.mutate(
-              { kind: kind.name, ...values },
+              { kind: kind.name, ...values, ...(org ? { org_id: org.id } : {}) },
               {
                 onSuccess: (c) => onCreated(c, kind),
                 onError: (err) => {
                   if (isApiError(err) && err.status === 422 && form.applyServerErrors(err.fields)) {
                     return;
                   }
-                  form.setFormError(
-                    isApiError(err) && err.status === 0 ? t("error.network") : t("error.generic"),
-                  );
+                  form.setFormError(failureText(t, err));
                 },
               },
             )

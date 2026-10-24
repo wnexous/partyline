@@ -10,18 +10,19 @@ import (
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/handles"
+	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
 )
 
 // AIRow is an AI as the contacts list it: its profile, where it lives and whether it is
-// online (TREE-03).
+// online (TREE-03). The machine it lives on is not shown (AD-022): only its folder.
 type AIRow struct {
 	Intelligence db.Intelligence
-	// Owner is the AI's owner; set for the AIs of other users.
-	Owner       *db.Intelligence
-	Machine     string
+	// Owner is the user who hosts the AI; set when it is another user than the one listing it.
+	Owner *db.Intelligence
+	// OrgID is the AI's home organization.
+	OrgID       string
 	Folder      string
 	FolderLabel string
 	// App is the id of the harness the AI currently runs in.
@@ -30,30 +31,32 @@ type AIRow struct {
 	LastSeenAt sql.NullInt64
 }
 
-// OwnAIs are a user's own AIs ready to list: the folder tree of each machine (TREE-01..03) and
-// the identities without a folder (TREE-06). Rows holds the details of every AI by id; the
-// tree nodes carry only what the tree needs.
-type OwnAIs struct {
-	Machines []MachineTree
-	Unlinked []AIRow
-	Rows     map[string]AIRow
-}
-
 // PeopleGroup is the people one connector has seen, leaving out the accounts verified as a user.
 type PeopleGroup struct {
 	Connector db.Connector
 	Count     int
 }
 
-// Contacts is everyone a user can reach (CONT-01).
+// OrgGroup is the AIs of one organization a user belongs to (AD-016).
+type OrgGroup struct {
+	Organization db.Organization
+	AIs          []AIRow
+}
+
+// Contacts is everyone a user can reach (CONT-01, AD-016, AD-022): the AIs of the organizations they belong to
+// by organization, the AIs they host that no such group lists, the other enabled users and the people of their
+// connections. The machines are not part of it.
 type Contacts struct {
 	Me db.Intelligence
-	OwnAIs
-	// Shared are the AIs of other users that the user may use, by name.
-	Shared []AIRow
+	// OrgAIs has one group for each organization the user belongs to, by name, empty ones included, with the
+	// AIs that are members of it, by name. An AI that belongs to several of them is listed in each.
+	OrgAIs []OrgGroup
+	// Hosted are the AIs hosted on the user's computers that no group lists, by name: the user belongs to none
+	// of the organizations they belong to, for instance after leaving them.
+	Hosted []AIRow
 	// Users are the other enabled users, by name.
 	Users []db.Intelligence
-	// People has one group for each connector the user owns or may use.
+	// People has one group for each connection of the organizations the user belongs to.
 	People []PeopleGroup
 }
 
@@ -63,7 +66,7 @@ func (s *Service) aiRow(a db.Agent, i db.Intelligence, owner *db.Intelligence, h
 		i = db.Intelligence{ID: a.ID, Kind: "ai", DisplayName: a.Name, Handle: a.Name}
 	}
 	return AIRow{
-		Intelligence: i, Owner: owner, Machine: a.Machine, Folder: a.Folder, FolderLabel: FolderLabel(home, a.Folder),
+		Intelligence: i, Owner: owner, OrgID: a.OrgID.String, Folder: a.Folder, FolderLabel: FolderLabel(home, a.Folder),
 		App: a.Harness, Online: s.online != nil && s.online(a.ID), LastSeenAt: a.LastSeenAt,
 	}
 }
@@ -76,123 +79,73 @@ func byName(a, b AIRow) int {
 	return strings.Compare(a.Intelligence.ID, b.Intelligence.ID)
 }
 
-// OwnAIs lists the user's own AIs: those that live in a folder as a tree per machine, online
-// machines first and then by label (the owner's label, else the hostname), and the identities
-// without a folder, the most recently seen first.
-func (s *Service) OwnAIs(ctx context.Context, userID string) (OwnAIs, error) {
-	q := s.store.R()
-	list, err := q.ListAgentsByOwner(ctx, userID)
-	if err != nil {
-		return OwnAIs{}, err
-	}
-	machines, err := q.ListMachines(ctx, userID)
-	if err != nil {
-		return OwnAIs{}, err
-	}
-	byHost := make(map[string]db.Machine, len(machines))
-	for _, m := range machines {
-		byHost[m.Hostname] = m
-	}
-	ids := make([]string, len(list))
-	for i, a := range list {
-		ids[i] = a.ID
-	}
-	profiles, err := s.Rows(ctx, ids)
-	if err != nil {
-		return OwnAIs{}, err
-	}
-
-	out := OwnAIs{Unlinked: []AIRow{}, Rows: make(map[string]AIRow, len(list))}
-	onMachine := map[string][]AIContact{}
-	var order []string
-	for _, a := range list {
-		row := s.aiRow(a, profiles[a.ID], nil, byHost[a.Machine].Home)
-		out.Rows[a.ID] = row
-		if a.Folder == "" {
-			out.Unlinked = append(out.Unlinked, row)
-			continue
-		}
-		if _, ok := onMachine[a.Machine]; !ok {
-			order = append(order, a.Machine)
-		}
-		onMachine[a.Machine] = append(onMachine[a.Machine], AIContact{
-			ID: a.ID, Name: row.Intelligence.DisplayName, Handle: row.Intelligence.Handle, Machine: a.Machine, Folder: a.Folder, Online: row.Online,
-		})
-	}
-	inputs := make([]MachineInput, len(order))
-	for i, host := range order {
-		m := byHost[host]
-		inputs[i] = MachineInput{Hostname: host, Label: m.Label, Home: m.Home, AIs: onMachine[host]}
-	}
-	out.Machines = BuildMachines(inputs)
-	slices.SortStableFunc(out.Unlinked, func(a, b AIRow) int {
-		switch {
-		case a.LastSeenAt.Valid != b.LastSeenAt.Valid:
-			if a.LastSeenAt.Valid {
-				return -1
-			}
-			return 1
-		case a.LastSeenAt.Valid && a.LastSeenAt.Int64 != b.LastSeenAt.Int64:
-			if a.LastSeenAt.Int64 > b.LastSeenAt.Int64 {
-				return -1
-			}
-			return 1
-		}
-		return byName(a, b)
-	})
-	return out, nil
-}
-
-// Contacts lists everyone the user can reach (CONT-01): their own AIs (OwnAIs), the AIs of
-// others they may use, the other enabled users and, for each connector they own or may use, the
-// people it has seen.
+// Contacts lists everyone the user can reach (CONT-01): the AIs of each organization they belong to, the AIs
+// they host that none of those groups lists, the other enabled users and, for each connection of their
+// organizations, the people it has seen.
 func (s *Service) Contacts(ctx context.Context, userID string) (Contacts, error) {
 	q := s.store.R()
-	own, err := s.OwnAIs(ctx, userID)
-	if err != nil {
-		return Contacts{}, err
-	}
-	out := Contacts{OwnAIs: own, Shared: []AIRow{}, Users: []db.Intelligence{}, People: []PeopleGroup{}}
+	out := Contacts{OrgAIs: []OrgGroup{}, Hosted: []AIRow{}, Users: []db.Intelligence{}, People: []PeopleGroup{}}
+	var err error
 	if out.Me, err = q.GetIntelligence(ctx, userID); err != nil {
 		return Contacts{}, err
 	}
-
-	visible, err := q.ListAgentsForUser(ctx, userID)
+	memberships, err := q.ListOrgsOfMember(ctx, userID)
 	if err != nil {
 		return Contacts{}, err
 	}
-	var theirs []db.Agent
+	inOrgs, err := q.ListOrgAIs(ctx, userID)
+	if err != nil {
+		return Contacts{}, err
+	}
+	hosted, err := q.ListAgentsByOwner(ctx, userID)
+	if err != nil {
+		return Contacts{}, err
+	}
+
+	agents := make([]db.Agent, 0, len(inOrgs)+len(hosted))
 	ids := []string{}
-	for _, v := range visible {
-		if v.Agent.OwnerID != userID {
-			theirs = append(theirs, v.Agent)
-			ids = append(ids, v.Agent.ID, v.Agent.OwnerID)
-		}
+	for _, r := range inOrgs {
+		agents, ids = append(agents, r.Agent), append(ids, r.Agent.ID, r.Agent.OwnerID)
+	}
+	for _, a := range hosted {
+		agents, ids = append(agents, a), append(ids, a.ID)
 	}
 	profiles, err := s.Rows(ctx, ids)
 	if err != nil {
 		return Contacts{}, err
 	}
-	homes := map[[2]string]string{} // (owner, machine) → the owner's home folder on it
-	for _, a := range theirs {
-		key := [2]string{a.OwnerID, a.Machine}
-		if _, ok := homes[key]; ok {
-			continue
-		}
-		m, err := q.GetMachine(ctx, db.GetMachineParams{OwnerID: a.OwnerID, Hostname: a.Machine})
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return Contacts{}, err
-		}
-		homes[key] = m.Home
+	homes, err := s.homeFolders(ctx, agents)
+	if err != nil {
+		return Contacts{}, err
 	}
-	for _, a := range theirs {
-		var owner *db.Intelligence
-		if o, ok := profiles[a.OwnerID]; ok {
-			owner = &o
+	row := func(a db.Agent) AIRow {
+		var host *db.Intelligence // the host is named when it is someone else
+		if h, ok := profiles[a.OwnerID]; ok && a.OwnerID != userID {
+			host = &h
 		}
-		out.Shared = append(out.Shared, s.aiRow(a, profiles[a.ID], owner, homes[[2]string{a.OwnerID, a.Machine}]))
+		return s.aiRow(a, profiles[a.ID], host, homes[[2]string{a.OwnerID, a.Machine}])
 	}
-	slices.SortStableFunc(out.Shared, byName)
+
+	groups := make(map[string][]AIRow, len(memberships))
+	listed := map[string]bool{}
+	for _, r := range inOrgs {
+		groups[r.OrgID] = append(groups[r.OrgID], row(r.Agent))
+		listed[r.Agent.ID] = true
+	}
+	for _, m := range memberships {
+		ais := groups[m.Organization.ID]
+		if ais == nil {
+			ais = []AIRow{}
+		}
+		slices.SortStableFunc(ais, byName)
+		out.OrgAIs = append(out.OrgAIs, OrgGroup{Organization: m.Organization, AIs: ais})
+	}
+	for _, a := range hosted {
+		if !listed[a.ID] {
+			out.Hosted = append(out.Hosted, row(a))
+		}
+	}
+	slices.SortStableFunc(out.Hosted, byName)
 
 	users, err := q.ListContactUsers(ctx, userID)
 	if err != nil {
@@ -202,7 +155,7 @@ func (s *Service) Contacts(ctx context.Context, userID string) (Contacts, error)
 		out.Users = append(out.Users, u.Intelligence)
 	}
 
-	conns, err := q.ListConnectorsForUser(ctx, userID)
+	conns, err := q.ListConnectorsOfMember(ctx, userID) // the connections of my organizations (AD-016)
 	if err != nil {
 		return Contacts{}, err
 	}
@@ -227,6 +180,24 @@ func (s *Service) Contacts(ctx context.Context, userID string) (Contacts, error)
 	return out, nil
 }
 
+// homeFolders returns, for each (host, machine) the agents live on, the host's home folder on it, which
+// lets a folder read "~/x" in the contacts.
+func (s *Service) homeFolders(ctx context.Context, agents []db.Agent) (map[[2]string]string, error) {
+	homes := map[[2]string]string{}
+	for _, a := range agents {
+		key := [2]string{a.OwnerID, a.Machine}
+		if _, ok := homes[key]; ok {
+			continue
+		}
+		m, err := s.store.R().GetMachine(ctx, db.GetMachineParams{OwnerID: a.OwnerID, Hostname: a.Machine})
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+		homes[key] = m.Home
+	}
+	return homes, nil
+}
+
 // PeopleQuery selects a page of the people of one connector.
 type PeopleQuery struct {
 	ConnectorID string
@@ -246,11 +217,11 @@ type PeoplePage struct {
 	More     bool
 }
 
-// People lists the people a connector has seen, for a user who owns or may use it: in name order
+// People lists the people a connection has seen, for a member of its organization (AD-016): in name order
 // (case-insensitively for ASCII), without the accounts verified as a user, matching the search,
-// from the person after the cursor. A connector the user cannot use is access.ErrNotFound; an
+// from the person after the cursor. A connection the caller does not see is access.ErrNotFound; an
 // invalid request is a validation error with nothing read.
-func (s *Service) People(ctx context.Context, userID string, in PeopleQuery) (PeoplePage, error) {
+func (s *Service) People(ctx context.Context, p authn.Principal, in PeopleQuery) (PeoplePage, error) {
 	check := validation.Check{}
 	if in.ConnectorID == "" {
 		check.Add("connector_id", "is required")
@@ -266,7 +237,7 @@ func (s *Service) People(ctx context.Context, userID string, in PeopleQuery) (Pe
 	if err := check.Err(); err != nil {
 		return PeoplePage{}, err
 	}
-	ok, err := s.az.CanUseConnector(ctx, userID, in.ConnectorID)
+	ok, err := s.az.CanSeeConnection(ctx, p, in.ConnectorID)
 	if err != nil {
 		return PeoplePage{}, err
 	}
@@ -314,31 +285,4 @@ func asciiLower(s string) string {
 		}
 		return r
 	}, s)
-}
-
-// MaxMachineLabel is the longest machine label in code points.
-const MaxMachineLabel = handles.MaxDisplayName
-
-// SetMachineLabel names one of the user's machines (TREE-04): 1 to 64 characters after trimming,
-// or none to show the hostname again. A hostname that is not a machine of the user is
-// access.ErrNotFound; a label that is too long is a validation error with nothing changed.
-func (s *Service) SetMachineLabel(ctx context.Context, userID, hostname, label string) (db.Machine, error) {
-	label = clean(label, false)
-	if utf8.RuneCountInString(label) > MaxMachineLabel {
-		check := validation.Check{}
-		check.Add("label", "must have at most 64 characters")
-		return db.Machine{}, check.Err()
-	}
-	var m db.Machine
-	err := s.store.WithTx(ctx, func(q *db.Queries) error {
-		var err error
-		if m, err = q.GetMachine(ctx, db.GetMachineParams{OwnerID: userID, Hostname: hostname}); errors.Is(err, sql.ErrNoRows) {
-			return access.ErrNotFound
-		} else if err != nil {
-			return err
-		}
-		m.Label = label
-		return q.SetMachineLabel(ctx, db.SetMachineLabelParams{Label: label, OwnerID: userID, Hostname: hostname})
-	})
-	return m, err
 }

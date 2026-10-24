@@ -69,31 +69,62 @@ func TestIdentityEndpoints(t *testing.T) {
 	require.Empty(t, user, "IDN-04: a deleted identity resolves to no user")
 }
 
-// IDN-01 (S5): a pairing code is requested for one connector the user owns or may use;
-// another user's connector answers 404 and a missing connector 422.
+// IDN-01 (S5): a pairing code is requested for one connector of an organization the user belongs to;
+// another organization's connector answers 404 and a missing connector 422.
 func TestPairingNeedsAUsableConnector(t *testing.T) {
 	fake := connectortest.New()
 	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()))
 	alice := env.NewUser("alice")
 	bob := env.NewUser("bob")
 	off := false
-	create := func(c *testkit.Client, name string) dto.Connector {
+	create := func(c *testkit.Client, org, name string) dto.Connector {
 		return testkit.Decode[dto.Connector](c.Post("/api/v1/connectors", dto.CreateConnectorRequest{
-			Kind: connectortest.KindName, Name: name, Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &off,
+			OrgID: org, Kind: connectortest.KindName, Name: name, Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &off,
 		}).RequireStatus(http.StatusCreated))
 	}
-	bobs := create(bob, "bob-tg")
-	shared := create(bob, "bob-shared")
-	bob.Put("/api/v1/connectors/"+shared.ID+"/sharing", dto.Sharing{
-		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: alice.User.ID, Level: dto.LevelUse}},
-	}).RequireStatus(http.StatusOK)
+	private, err := env.App.Orgs.Create(context.Background(), bob.User.ID, "bob-private") // alice is not in it
+	require.NoError(t, err)
+	bobs := create(bob, private.ID, "bob-tg")
+	shared := create(bob, "", "bob-shared")       // in bob's default organization
+	shareConnector(bob, shared.ID, alice.User.ID) // alice joins it
 
 	bad := alice.Post("/api/v1/identities/pairing", dto.PairingRequest{}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 	require.Equal(t, map[string]string{"connector_id": "required"}, bad.Fields)
 	alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: bobs.ID}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: "missing"}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	code := testkit.Decode[dto.PairingCode](alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: shared.ID}).RequireStatus(http.StatusCreated))
-	require.Equal(t, shared.ID, code.ConnectorID, "a use grantee may pair through a shared connector")
+	require.Equal(t, shared.ID, code.ConnectorID, "a member of the connection's organization may pair through it")
+}
+
+// IDN-01, IDN-05, AD-008 as amended by AD-016 (design, "Connections", the pairing row): a pairing code is requested
+// for a connection of an organization the user belongs to. Through an ordinary connection every member may -
+// guests included - and through a webhook connection, whose callers choose the sender ids freely, only an admin:
+// a member is refused with 403. A user outside the organization, an admin of the instance included, is told 404
+// whatever the kind. The two cases are tested apart, so the kind rule cannot hide the membership rule.
+func TestPairingFollowsTheConnectionsOrganization(t *testing.T) {
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	off := false
+	create := func(req dto.CreateConnectorRequest) string {
+		req.OrgID, req.Enabled = roles.Org.ID, &off
+		return testkit.Decode[dto.Connector](roles.Admin.Post("/api/v1/connectors", req).RequireStatus(http.StatusCreated)).ID
+	}
+	telegram := create(dto.CreateConnectorRequest{Kind: "telegram", Name: "tg", Config: map[string]any{"bot_token": "123456:synthetic-token"}})
+	hook := create(dto.CreateConnectorRequest{Kind: "webhook", Name: "ci", Config: map[string]any{}})
+	setup := func(*testing.T) map[string]string { return map[string]string{"telegram": telegram, "webhook": hook} }
+	pair := func(kind string) func(*testing.T, *testkit.Client, map[string]string) *testkit.Response {
+		return func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: res[kind]})
+		}
+	}
+	runRoleRoutes(t, roles, setup, []roleRoute{
+		{"pair through an ordinary connection", pair("telegram"), connectionWant(201, 201, 404)},
+		{"pair through a webhook connection", pair("webhook"), connectionWant(201, 403, 404)},
+	})
+
+	// The code is bound to the connection it was issued for.
+	code := testkit.Decode[dto.PairingCode](roles.Member.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: telegram}).RequireStatus(http.StatusCreated))
+	require.Equal(t, telegram, code.ConnectorID)
 }
 
 // S5: whoever controls a connector's endpoint chooses the sender ids it reports, so changing

@@ -16,7 +16,7 @@ type ChatView struct {
 	Connector db.Connector
 }
 
-// Chats lists a connector's chats; requires use.
+// Chats lists a connector's chats; requires use (any member of its organization).
 func (s *Service) Chats(ctx context.Context, p authn.Principal, connectorID string) ([]ChatView, error) {
 	if _, err := s.authorize(ctx, p, connectorID, dto.LevelUse); err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func (s *Service) Chats(ctx context.Context, p authn.Principal, connectorID stri
 }
 
 // RefreshChats asks the running connector for its chats and records them (CON-09);
-// requires ownership (manage). Kinds that cannot list chats get ErrCannotListChats, stopped
+// requires managing the connection (an admin of its organization). Kinds that cannot list chats get ErrCannotListChats, stopped
 // connectors ErrNotRunning.
 func (s *Service) RefreshChats(ctx context.Context, p authn.Principal, connectorID string) error {
 	if _, err := s.authorize(ctx, p, connectorID, dto.LevelManage); err != nil {

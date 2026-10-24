@@ -1,30 +1,30 @@
 import { describe, expect, it } from "vitest";
 import type { AIContact } from "@/lib/api/types.gen";
-import { makeAIContact, makeContacts, makeMachineTree, makeTreeNode } from "@/test/fixtures";
-import { atlas, bob, notes, sampleContacts } from "@/test/sample-contacts";
+import { makeAIContact, makeContacts, makeOrgAIs } from "@/test/fixtures";
+import { atlas, bob, sampleContacts } from "@/test/sample-contacts";
 import {
   allAIs,
-  filterMachines,
-  flattenTree,
+  filterOrgs,
   knowsAI,
-  machineLabels,
-  machineOnlineCount,
   mergeTargets,
+  onlineCount,
   ownAIs,
   pickables,
-  sortMachines,
+  withIntelligence,
+  withoutAI,
 } from "./contacts";
 
 /*
  * The pure functions the contacts page and the pickers share (CONT-01, LAY-03): what can be
- * picked, in which order, and what a search looks in.
+ * picked, in which order, and what a search looks in. The AIs come by organization (AD-016) and
+ * no machine is part of them (AD-022).
  */
 
 describe("pickables (CONT-01, LAY-03)", () => {
   const { ais, users } = pickables(sampleContacts);
 
-  it("lists the user's own AIs with parents before their children, then the unlinked, then the shared", () => {
-    expect(ais.map((p) => p.ref.id)).toEqual(["a1", "a2", "a3", "a4", "a5"]);
+  it("lists the AIs of the organizations group by group, then the hosted ones", () => {
+    expect(ais.map((p) => p.ref.id)).toEqual(["a1", "a2", "a5", "a3", "a4"]);
   });
 
   it("lists the other users apart, and no people: they are reached through a platform account", () => {
@@ -34,242 +34,198 @@ describe("pickables (CONT-01, LAY-03)", () => {
     expect(everyone).not.toContain("p1");
   });
 
-  it("names an own AI's machine as the owner labelled it, and a shared AI's as its hostname", () => {
-    const place = (id: string) => ais.find((p) => p.ref.id === id)?.machineLabel;
-    expect(place("a1")).toBe("devbox");
-    expect(place("a3")).toBe("Laptop");
-    expect(place("a5")).toBe("cloud");
+  it("lists an AI of two organizations once", () => {
+    const twice = makeContacts({
+      org_ais: [
+        makeOrgAIs({ ais: [makeAIContact({ intelligence: atlas })] }),
+        makeOrgAIs({
+          org: { id: "o2", name: "Globex", slug: "globex" },
+          ais: [makeAIContact({ intelligence: atlas })],
+        }),
+      ],
+    });
+    expect(pickables(twice).ais.map((p) => p.ref.id)).toEqual(["a1"]);
   });
 
-  it("searches an AI by name, handle, hostname, machine label, folder and app", () => {
+  it("searches an AI by name, handle, folder and app, and by nothing about a machine", () => {
     const hay = (id: string) => ais.find((p) => p.ref.id === id)?.haystack ?? "";
-    for (const found of [
-      "Lab",
-      "@lab",
-      "notebook-01",
-      "Laptop",
-      "/home/ana/c/d/lab",
-      "~/c/d/lab",
-    ]) {
+    for (const found of ["Lab", "@lab", "/home/ana/c/d/lab", "~/c/d/lab"]) {
       expect(hay("a3")).toContain(found);
     }
     expect(hay("a3")).toContain("Codex");
     expect(hay("a2")).toContain("OpenCode");
     expect(hay("a1")).toContain("Claude Code");
+    expect(hay("a3")).not.toContain("notebook");
+    expect(hay("a1")).not.toContain("devbox");
   });
 
   it("searches a user by name and handle only", () => {
     expect(users[0]?.haystack).toBe("Bob Lima\n@bob");
   });
 
-  it("does not search the owner of a shared AI, who is a different contact", () => {
+  it("does not search the host of an AI, who is a different contact", () => {
     expect(ais.find((p) => p.ref.id === "a5")?.haystack).not.toContain("bob");
   });
 
   it("is empty for a user with no contacts", () => {
     expect(pickables(makeContacts())).toEqual({ ais: [], users: [] });
   });
-
-  it("finds an AI at any depth of the tree", () => {
-    const deep = makeContacts({
-      machines: [
-        makeMachineTree({
-          nodes: [
-            makeTreeNode({
-              ai: makeAIContact({ intelligence: atlas }),
-              children: [
-                makeTreeNode({
-                  ai: makeAIContact({ intelligence: notes }),
-                  children: [
-                    makeTreeNode({
-                      ai: makeAIContact({ intelligence: { ...bob, kind: "ai", role: "ai" } }),
-                    }),
-                  ],
-                }),
-              ],
-            }),
-          ],
-        }),
-      ],
-    });
-    expect(pickables(deep).ais.map((p) => p.ref.id)).toEqual(["a1", "a2", "u2"]);
-  });
 });
 
-describe("machineLabels (TREE-04)", () => {
-  it("maps each of the user's hostnames to the label they gave it", () => {
-    expect([...machineLabels(sampleContacts)]).toEqual([
-      ["devbox", "devbox"],
-      ["notebook-01", "Laptop"],
-    ]);
+describe("pickables of an organization (ORG-03, OMEM-04)", () => {
+  const ids = (list: { ref: { id: string } }[]) => list.map((p) => p.ref.id);
+
+  it("lists the AIs that are members of that organization and no others", () => {
+    expect(ids(pickables(sampleContacts, "o1").ais)).toEqual(["a1", "a2", "a5"]);
+    expect(ids(pickables(sampleContacts, "o2").ais)).toEqual(["a3"]);
+  });
+
+  it("leaves out the hosted AIs no organization lists: they cannot join a group of one", () => {
+    for (const org of ["o1", "o2", "o3"]) {
+      expect(ids(pickables(sampleContacts, org).ais)).not.toContain("a4");
+    }
+  });
+
+  it("lists no AI for an organization the contacts do not group", () => {
+    expect(pickables(sampleContacts, "o9").ais).toEqual([]);
+    expect(pickables(sampleContacts, "o3").ais).toEqual([]);
+  });
+
+  it("keeps every user of the instance: the contacts do not tie them to an organization", () => {
+    expect(ids(pickables(sampleContacts, "o2").users)).toEqual(["u2", "u3"]);
+  });
+
+  it("describes the AIs the way the unscoped list does", () => {
+    const scoped = pickables(sampleContacts, "o1").ais;
+    const all = pickables(sampleContacts).ais;
+    expect(scoped).toEqual(all.filter((p) => ["a1", "a2", "a5"].includes(p.ref.id)));
+  });
+
+  it("is everything the contacts list when no organization is named", () => {
+    expect(pickables(sampleContacts, undefined)).toEqual(pickables(sampleContacts));
   });
 });
 
 describe("ownAIs and mergeTargets (MRG-01)", () => {
-  it("lists the user's own AIs, the tree parents before their children and the unlinked last", () => {
+  it("lists the AIs the user hosts, those no organization lists included", () => {
     expect(ownAIs(sampleContacts).map((c) => c.intelligence.id)).toEqual(["a1", "a2", "a3", "a4"]);
   });
 
-  it("offers the owner's other AIs, never the one being merged away and never a shared one", () => {
-    expect(mergeTargets(sampleContacts, "a1").map((r) => r.id)).toEqual(["a2", "a3", "a4"]);
-    expect(mergeTargets(sampleContacts, "a4").map((r) => r.id)).toEqual(["a1", "a2", "a3"]);
+  it("offers the user's other AIs of the same home organization, never the one being merged away and never another host's", () => {
+    // Atlas and Notes belong to Acme (o1); Lab to Globex (o2); the old helper has no organization left (o3).
+    expect(mergeTargets(sampleContacts, "a1").map((r) => r.id)).toEqual(["a2"]);
+    expect(mergeTargets(sampleContacts, "a2").map((r) => r.id)).toEqual(["a1"]);
+    expect(mergeTargets(sampleContacts, "a3")).toEqual([]);
+    expect(mergeTargets(sampleContacts, "a5").map((r) => r.id)).toEqual(["a1", "a2"]);
   });
 });
 
-describe("flattenTree, allAIs and knowsAI", () => {
-  it("flattens a tree with parents before their children", () => {
-    const tree = sampleContacts.machines[0]?.nodes ?? [];
-    expect(flattenTree(tree).map((c) => c.intelligence.id)).toEqual(["a1", "a2"]);
-  });
-
-  it("lists every AI of the contacts: own, unlinked and shared", () => {
+describe("allAIs and knowsAI", () => {
+  it("lists every AI of the contacts once: the organizations' and the hosted", () => {
     expect(allAIs(sampleContacts).map((c) => c.intelligence.id)).toEqual([
       "a1",
       "a2",
+      "a5",
       "a3",
       "a4",
-      "a5",
     ]);
   });
 
   it("tells whether the contacts list an AI", () => {
     expect(knowsAI(sampleContacts, "a2")).toBe(true);
     expect(knowsAI(sampleContacts, "a5")).toBe(true);
+    expect(knowsAI(sampleContacts, "a4")).toBe(true);
     expect(knowsAI(sampleContacts, "a9")).toBe(false);
   });
 });
 
-describe("filterMachines (TREE-05)", () => {
-  const machines = sampleContacts.machines;
-  const handles = (list: typeof machines) =>
-    list.map((m) => [m.hostname, flattenTree(m.nodes).map((c) => c.intelligence.handle)]);
-
-  it("keeps everything for an empty or blank filter", () => {
-    expect(filterMachines(machines, "")).toBe(machines);
-    expect(filterMachines(machines, "   ")).toBe(machines);
+describe("withIntelligence and withoutAI", () => {
+  it("renames an AI wherever it is listed, and the host that is it", () => {
+    const renamed = { ...atlas, display_name: "Atlas Prime" };
+    const twice = makeContacts({
+      org_ais: [
+        makeOrgAIs({
+          ais: [
+            makeAIContact({ intelligence: atlas }),
+            makeAIContact({ intelligence: bob, owner: atlas }),
+          ],
+        }),
+        makeOrgAIs({
+          org: { id: "o2", name: "Globex", slug: "globex" },
+          ais: [makeAIContact({ intelligence: atlas })],
+        }),
+      ],
+      hosted: [makeAIContact({ intelligence: atlas })],
+    });
+    const next = withIntelligence(twice, renamed);
+    expect(next.org_ais[0]?.ais[0]?.intelligence.display_name).toBe("Atlas Prime");
+    expect(next.org_ais[0]?.ais[1]?.owner?.display_name).toBe("Atlas Prime");
+    expect(next.org_ais[1]?.ais[0]?.intelligence.display_name).toBe("Atlas Prime");
+    expect(next.hosted[0]?.intelligence.display_name).toBe("Atlas Prime");
   });
 
-  it("keeps a match with its ancestors and drops everything else", () => {
-    // Notes lives inside Atlas's folder: Atlas stays as its parent, the other machine goes.
-    expect(handles(filterMachines(machines, "notes"))).toEqual([["devbox", ["atlas", "notes"]]]);
+  it("keeps the object it was given when nothing changes", () => {
+    expect(withIntelligence(sampleContacts, { ...atlas, id: "nobody" })).toBe(sampleContacts);
+    expect(withoutAI(sampleContacts, "nobody")).toBe(sampleContacts);
+  });
+
+  it("removes an AI from every list that holds it", () => {
+    const gone = withoutAI(sampleContacts, "a4");
+    expect(gone.hosted).toEqual([]);
+    const fromGroups = withoutAI(sampleContacts, "a2");
+    expect(fromGroups.org_ais[0]?.ais.map((c) => c.intelligence.id)).toEqual(["a1", "a5"]);
+    expect(fromGroups.hosted).toBe(sampleContacts.hosted);
+  });
+});
+
+describe("filterOrgs (CONT-01)", () => {
+  const groups = sampleContacts.org_ais;
+  const handles = (list: typeof groups) =>
+    list.map((g) => [g.org.name, g.ais.map((c) => c.intelligence.handle)]);
+
+  it("keeps everything for an empty or blank filter", () => {
+    expect(filterOrgs(groups, "")).toBe(groups);
+    expect(filterOrgs(groups, "   ")).toBe(groups);
+  });
+
+  it("keeps the AIs that match and drops the organizations left with none", () => {
+    expect(handles(filterOrgs(groups, "notes"))).toEqual([["Acme", ["notes"]]]);
   });
 
   it("matches the display name, the handle, the folder and the app", () => {
     for (const query of ["Lab", "@lab", "c/d/lab", "~/c/d", "codex"]) {
-      expect(handles(filterMachines(machines, query)), query).toEqual([["notebook-01", ["lab"]]]);
+      expect(handles(filterOrgs(groups, query)), query).toEqual([["Globex", ["lab"]]]);
     }
   });
 
-  it("keeps the collapsed path of a node that is kept", () => {
-    const [kept] = filterMachines(machines, "lab");
-    expect(kept?.nodes[0]).toMatchObject({ path: "c/d", name: "lab" });
+  it("keeps a whole organization when its name or slug matches", () => {
+    expect(handles(filterOrgs(groups, "acme"))).toEqual([["Acme", ["atlas", "notes", "sage"]]]);
+    expect(handles(filterOrgs(groups, "GLOBEX"))).toEqual([["Globex", ["lab"]]]);
   });
 
-  it("drops the children of a match that do not match themselves", () => {
-    // "atlas" is in Atlas's name and in Notes's folder, so both stay; "claude" only Atlas.
-    expect(handles(filterMachines(machines, "atlas"))).toEqual([["devbox", ["atlas", "notes"]]]);
-    expect(handles(filterMachines(machines, "claude"))).toEqual([["devbox", ["atlas"]]]);
-    expect(filterMachines(machines, "claude")[0]?.nodes[0]?.children).toEqual([]);
-  });
-
-  it("keeps a whole machine when its label or its hostname matches", () => {
-    expect(handles(filterMachines(machines, "devbox"))).toEqual([["devbox", ["atlas", "notes"]]]);
-    // The owner's label counts as well as the hostname (TREE-04).
-    expect(handles(filterMachines(machines, "laptop"))).toEqual([["notebook-01", ["lab"]]]);
-    expect(handles(filterMachines(machines, "notebook-01"))).toEqual([["notebook-01", ["lab"]]]);
-  });
-
-  it("finds a node by words that are in its machine and in its own text", () => {
-    expect(handles(filterMachines(machines, "laptop lab"))).toEqual([["notebook-01", ["lab"]]]);
-    expect(handles(filterMachines(machines, "devbox notes"))).toEqual([
-      ["devbox", ["atlas", "notes"]],
-    ]);
-    expect(filterMachines(machines, "laptop notes")).toEqual([]);
+  it("finds an AI by words that are in its organization and in its own text", () => {
+    expect(handles(filterOrgs(groups, "globex lab"))).toEqual([["Globex", ["lab"]]]);
+    expect(filterOrgs(groups, "globex notes")).toEqual([]);
   });
 
   it("ignores case and accents", () => {
-    expect(handles(filterMachines(machines, "ATLAS"))).toEqual([["devbox", ["atlas", "notes"]]]);
-    expect(handles(filterMachines(machines, "LÀB"))).toEqual([["notebook-01", ["lab"]]]);
+    expect(handles(filterOrgs(groups, "ATLAS"))).toEqual([["Acme", ["atlas", "notes"]]]);
+    expect(handles(filterOrgs(groups, "LÀB"))).toEqual([["Globex", ["lab"]]]);
   });
 
-  it("returns nothing when nothing matches", () => {
-    expect(filterMachines(machines, "zzzz")).toEqual([]);
-  });
-
-  it("does not change what it was given", () => {
-    const before = JSON.stringify(machines);
-    filterMachines(machines, "notes");
-    expect(JSON.stringify(machines)).toBe(before);
+  it("returns nothing when nothing matches and does not change what it was given", () => {
+    const before = JSON.stringify(groups);
+    expect(filterOrgs(groups, "zzzz")).toEqual([]);
+    expect(JSON.stringify(groups)).toBe(before);
   });
 });
 
-describe("sortMachines (TREE-03)", () => {
-  const machine = (hostname: string, label: string, ids: string[]) =>
-    makeMachineTree({
-      hostname,
-      label,
-      nodes: ids.map((id) =>
-        makeTreeNode({ ai: makeAIContact({ intelligence: { ...atlas, id }, machine: hostname }) }),
-      ),
-    });
-  const zeta = machine("h1", "Zeta", ["z1"]);
-  const alpha = machine("h2", "alpha", ["a1"]);
-  const mid = machine("h3", "Mid", ["m1"]);
-  const none = (_ai: AIContact) => false;
-  const only = (ids: string[]) => (ai: AIContact) => ids.includes(ai.intelligence.id);
-  const labels = (list: ReturnType<typeof sortMachines>) => list.map((m) => m.label);
-
-  it("lists machines by label, ignoring case", () => {
-    expect(labels(sortMachines([zeta, mid, alpha], none))).toEqual(["alpha", "Mid", "Zeta"]);
-  });
-
-  it("puts machines with an online AI first, then the rest by label", () => {
-    expect(labels(sortMachines([alpha, mid, zeta], only(["z1"])))).toEqual([
-      "Zeta",
-      "alpha",
-      "Mid",
-    ]);
-    expect(labels(sortMachines([alpha, mid, zeta], only(["z1", "m1"])))).toEqual([
-      "Mid",
-      "Zeta",
-      "alpha",
-    ]);
-  });
-
-  it("goes by who is online now, not by the flag the server sent", () => {
-    const stale = { ...alpha, online: true };
-    expect(labels(sortMachines([stale, zeta], only(["z1"])))).toEqual(["Zeta", "alpha"]);
-  });
-
-  it("finds an online AI at any depth of the tree", () => {
-    const deep = makeMachineTree({
-      hostname: "h4",
-      label: "Deep",
-      nodes: [
-        makeTreeNode({
-          ai: makeAIContact({ intelligence: { ...atlas, id: "d1" } }),
-          children: [makeTreeNode({ ai: makeAIContact({ intelligence: { ...atlas, id: "d2" } }) })],
-        }),
-      ],
-    });
-    expect(labels(sortMachines([alpha, deep], only(["d2"])))).toEqual(["Deep", "alpha"]);
-  });
-
-  it("falls back to the hostname for a machine with no label and does not change its input", () => {
-    const bare = makeMachineTree({ hostname: "box", label: "", nodes: [] });
-    const input = [zeta, bare];
-    expect(sortMachines(input, none).map((m) => m.hostname)).toEqual(["box", "h1"]);
-    expect(input).toEqual([zeta, bare]);
-  });
-});
-
-describe("machineOnlineCount", () => {
-  it("counts the AIs online now, at any depth, and all of them", () => {
-    const tree = sampleContacts.machines[0];
-    if (!tree) throw new Error("fixture has no machine");
+describe("onlineCount", () => {
+  it("counts the AIs online now and all of them", () => {
+    const ais = sampleContacts.org_ais[0]?.ais ?? [];
     const online = (ai: AIContact) => ai.intelligence.id === "a2";
-    expect(machineOnlineCount(tree, online)).toEqual({ online: 1, total: 2 });
-    expect(machineOnlineCount(tree, () => true)).toEqual({ online: 2, total: 2 });
-    expect(machineOnlineCount(tree, () => false)).toEqual({ online: 0, total: 2 });
+    expect(onlineCount(ais, online)).toEqual({ online: 1, total: 3 });
+    expect(onlineCount(ais, () => true)).toEqual({ online: 3, total: 3 });
+    expect(onlineCount(ais, () => false)).toEqual({ online: 0, total: 3 });
   });
 });

@@ -6,6 +6,7 @@ import { useLiveStore } from "@/lib/live/store";
 import { LOCALE_KEY, THEME_KEY } from "@/lib/theme";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMe, makeProfile } from "@/test/fixtures";
+import { memberIn } from "@/test/orgs";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
@@ -186,6 +187,291 @@ describe("settings page", () => {
     await user.click(within(items[1] as HTMLElement).getByRole("button", { name: /Log out/ }));
     await waitFor(() =>
       expect(calls.some((c) => c.method === "DELETE" && c.path === "/me/sessions/s2")).toBe(true),
+    );
+  });
+});
+
+/*
+ * The account's two organization settings (ORG-04, POS-06): the organization new AIs join when
+ * they are started without --org, and deleting the account.
+ */
+describe("default organization (ORG-04)", () => {
+  const memberships = [memberIn("o1", "admin"), memberIn("o2", "member"), memberIn("o3", "guest")];
+  const withOrgs = (defaultOrg: string | undefined, extra: Parameters<typeof mockApi>[0] = {}) => ({
+    ...base,
+    "GET /me": json(200, { ...me, ...(defaultOrg ? { default_org_id: defaultOrg } : {}) }),
+    "GET /intelligences/u1": json(200, { ...profile, memberships }),
+    ...extra,
+  });
+  const select = () => screen.findByRole("combobox", { name: "Default organization for new AIs" });
+  const optionsOf = (el: HTMLElement) =>
+    within(el)
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+
+  it("lists every organization the viewer belongs to, guest ones too, and shows the current default", async () => {
+    mockApi(withOrgs("o2"));
+    renderRoute("/settings");
+    const field = await select();
+    expect(optionsOf(field)).toEqual(["Acme", "Globex", "Initech"]);
+    expect(field).toHaveValue("o2");
+  });
+
+  it("says what the default is for", async () => {
+    mockApi(withOrgs("o1"));
+    renderRoute("/settings");
+    await select();
+    expect(
+      screen.getByText("New AIs you start join it, unless you start them with --org."),
+    ).toBeInTheDocument();
+  });
+
+  it("changes it with the id of the organization, and shows the new one", async () => {
+    const { calls } = mockApi(
+      withOrgs("o2", { "PUT /me/default-org": json(200, { ...me, default_org_id: "o1" }) }),
+    );
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    const field = await select();
+    await user.selectOptions(field, "o1");
+    await waitFor(() => expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1));
+    expect(calls.find((c) => c.method === "PUT")?.path).toBe("/me/default-org");
+    expect(calls.find((c) => c.method === "PUT")?.body).toEqual({ org_id: "o1" });
+    expect(await screen.findByText("New AIs now join Acme")).toBeInTheDocument();
+    expect(field).toHaveValue("o1");
+  });
+
+  it("remembers the new default for the rest of the app", async () => {
+    mockApi(withOrgs("o2", { "PUT /me/default-org": json(200, {}) }));
+    const user = userEvent.setup();
+    const { queryClient } = renderRoute("/settings");
+    await user.selectOptions(await select(), "o1");
+    await screen.findByText("New AIs now join Acme");
+    expect(queryClient.getQueryData<{ default_org_id?: string }>(["me"])?.default_org_id).toBe(
+      "o1",
+    );
+  });
+
+  it("shows an error toast and goes back to the old default when the server refuses (403)", async () => {
+    const { calls } = mockApi(
+      withOrgs("o2", { "PUT /me/default-org": apiError(403, "forbidden", "forbidden") }),
+    );
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    const field = await select();
+    await user.selectOptions(field, "o3");
+    expect(
+      await screen.findByText("You can only choose an organization you belong to."),
+    ).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1);
+    await waitFor(() => expect(field).toHaveValue("o2"));
+  });
+
+  it("says so when the default could not be changed for another reason", async () => {
+    mockApi(withOrgs("o2", { "PUT /me/default-org": apiError(500, "internal", "boom") }));
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    const field = await select();
+    await user.selectOptions(field, "o1");
+    expect(
+      await screen.findByText("Couldn’t change the default organization. Try again."),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(field).toHaveValue("o2"));
+  });
+
+  it("does not send the choice again when it is the one already made", async () => {
+    const { calls } = mockApi(withOrgs("o2", { "PUT /me/default-org": json(200, {}) }));
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.selectOptions(await select(), "o2");
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+  });
+
+  it("asks to choose one when the account has none yet, and picks none for the viewer", async () => {
+    mockApi(withOrgs(undefined));
+    renderRoute("/settings");
+    const field = await select();
+    expect(field).toHaveValue("");
+    expect(optionsOf(field)[0]).toBe("Choose an organization");
+    expect(within(field).getByRole("option", { name: "Choose an organization" })).toBeDisabled();
+  });
+
+  it("ignores a default the viewer no longer belongs to", async () => {
+    mockApi(withOrgs("o9"));
+    renderRoute("/settings");
+    expect(await select()).toHaveValue("");
+  });
+
+  it("is not there for someone who belongs to no organization, or while that is unknown", async () => {
+    mockApi({ ...base });
+    renderRoute("/settings");
+    await screen.findByRole("heading", { level: 1, name: "Settings" });
+    await screen.findByLabelText(/Display name/);
+    expect(screen.queryByRole("combobox", { name: "Default organization for new AIs" })).toBeNull();
+    expect(screen.queryByRole("heading", { level: 2, name: "Default organization" })).toBeNull();
+  });
+
+  it("speaks Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mockApi(
+      withOrgs("o2", { "GET /me": json(200, { ...me, locale: "pt-BR", default_org_id: "o2" }) }),
+    );
+    renderRoute("/settings");
+    const field = await screen.findByRole("combobox", {
+      name: "Organização padrão para novas IAs",
+    });
+    expect(field).toHaveValue("o2");
+    expect(
+      screen.getByText("As IAs que você iniciar entram nela, a menos que use --org."),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("deleting the account (POS-06)", () => {
+  const open = async (extra: Parameters<typeof mockApi>[0] = {}) => {
+    const api = mockApi({ ...base, ...extra });
+    const user = userEvent.setup();
+    const view = renderRoute("/settings");
+    await user.click(await screen.findByRole("button", { name: "Delete my account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete your account?" });
+    return { ...api, ...view, user, dialog };
+  };
+  const password = (dialog: HTMLElement) => within(dialog).getByLabelText("Password");
+  const confirm = (dialog: HTMLElement) =>
+    within(dialog).getByRole("button", { name: "Delete my account" });
+  const deletes = (calls: { method: string; path: string }[]) =>
+    calls.filter((c) => c.method === "DELETE" && c.path === "/me");
+
+  it("is a section of its own, with the way in", async () => {
+    mockApi(base);
+    renderRoute("/settings");
+    const section = await screen.findByRole("region", { name: "Delete account" });
+    expect(within(section).getByRole("button", { name: "Delete my account" })).toBeInTheDocument();
+  });
+
+  it("asks for the password and says what stays: AIs, groups and connections stay in their organizations", async () => {
+    const { calls, dialog } = await open();
+    // Literal wording (L-032): what is deleted, and what is not.
+    expect(dialog).toHaveTextContent(
+      "Your account, your sessions and tokens and your direct messages are deleted for good. Your AIs, groups and connections stay in their organizations: your AIs go offline, and an admin of their organization can delete them. This can’t be undone.",
+    );
+    expect(password(dialog)).toHaveAttribute("type", "password");
+    expect(deletes(calls)).toHaveLength(0);
+  });
+
+  it("sends nothing without a password", async () => {
+    const { calls, user, dialog } = await open();
+    await user.click(confirm(dialog));
+    expect(await within(dialog).findByText("Required")).toBeInTheDocument();
+    expect(deletes(calls)).toHaveLength(0);
+  });
+
+  it("shows a wrong password under the field and keeps the dialog open (422)", async () => {
+    const { calls, user, dialog } = await open({
+      "DELETE /me": apiError(422, "invalid", "validation failed", { password: "is incorrect" }),
+    });
+    await user.type(password(dialog), "not-my-password");
+    await user.click(confirm(dialog));
+    expect(await within(dialog).findByText("is incorrect")).toBeInTheDocument();
+    expect(password(dialog)).toHaveAttribute("aria-invalid", "true");
+    expect(deletes(calls)).toHaveLength(1);
+    expect(screen.getByRole("dialog", { name: "Delete your account?" })).toBeInTheDocument();
+  });
+
+  it("says the last admin of the instance cannot delete their account (409 last_instance_admin)", async () => {
+    const { user, dialog } = await open({
+      "DELETE /me": apiError(409, "last_instance_admin", "last instance admin"),
+    });
+    await user.type(password(dialog), "correct-horse-1");
+    await user.click(confirm(dialog));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "You’re the only admin of this instance. Make another user an admin before deleting your account.",
+    );
+    expect(screen.getByRole("dialog", { name: "Delete your account?" })).toBeInTheDocument();
+  });
+
+  it("logs out on success: the password is sent, the session and the cache are gone", async () => {
+    const { calls, queryClient, router, user, dialog } = await open({
+      "DELETE /me": new Response(null, { status: 204 }),
+      // The login page the account leaves for.
+      "GET /setup/status": json(200, { needs_setup: false }),
+    });
+    await user.type(password(dialog), "correct-horse-1");
+    await user.click(confirm(dialog));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
+    expect(deletes(calls)).toHaveLength(1);
+    expect(calls.find((c) => c.method === "DELETE")?.body).toEqual({
+      password: "correct-horse-1",
+    });
+    expect(queryClient.getQueryData(["me"])).toBeUndefined();
+    expect(await screen.findByText("Your account was deleted")).toBeInTheDocument();
+  });
+
+  it("sends the request once while it runs", async () => {
+    let release: () => void = () => {};
+    const { calls, user, dialog } = await open({
+      "DELETE /me": () =>
+        new Promise<Response>((resolve) => {
+          release = () => resolve(new Response(null, { status: 204 }));
+        }),
+    });
+    await user.type(password(dialog), "correct-horse-1");
+    await user.click(confirm(dialog));
+    await waitFor(() => expect(confirm(dialog)).toBeDisabled());
+    await user.keyboard("{Enter}");
+    expect(deletes(calls)).toHaveLength(1);
+    release();
+  });
+
+  it("keeps the account when the dialog is cancelled", async () => {
+    const { calls, user, dialog } = await open({
+      "DELETE /me": new Response(null, { status: 204 }),
+    });
+    await user.type(password(dialog), "correct-horse-1");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(deletes(calls)).toHaveLength(0);
+  });
+
+  it("starts empty each time it opens", async () => {
+    const { user, dialog } = await open();
+    await user.type(password(dialog), "correct-horse-1");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await user.click(screen.getByRole("button", { name: "Delete my account" }));
+    const again = await screen.findByRole("dialog", { name: "Delete your account?" });
+    expect(password(again)).toHaveValue("");
+  });
+
+  it("says so when the account could not be deleted, and when the server cannot be reached", async () => {
+    let attempt = 0;
+    const { user, dialog } = await open({
+      "DELETE /me": () => {
+        attempt += 1;
+        if (attempt === 1) return apiError(500, "internal", "boom");
+        throw new TypeError("failed to fetch");
+      },
+    });
+    await user.type(password(dialog), "correct-horse-1");
+    await user.click(confirm(dialog));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Something went wrong. Try again.",
+    );
+    await user.click(confirm(dialog));
+    await waitFor(() =>
+      expect(within(dialog).getByRole("alert")).toHaveTextContent("Can’t reach the server."),
+    );
+  });
+
+  it("speaks Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mockApi({ ...base, "GET /me": json(200, { ...me, locale: "pt-BR" }) });
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(await screen.findByRole("button", { name: "Excluir minha conta" }));
+    const dialog = await screen.findByRole("dialog", { name: "Excluir sua conta?" });
+    expect(dialog).toHaveTextContent(
+      "Sua conta, suas sessões e tokens e suas mensagens diretas são apagados para sempre. Suas IAs, grupos e conexões continuam nas organizações deles: suas IAs ficam offline, e um administrador da organização pode apagá-las. Isto não pode ser desfeito.",
     );
   });
 });

@@ -4,8 +4,8 @@
 // source: agents.go
 
 /**
- * Agent is an AI as the agents list shows it (GET /agents): its profile, owner, machine, app and
- * presence.
+ * Agent is an AI as the agents list shows it (GET /agents, and GET /agent/agents for the AIs a token's
+ * user hosts): its profile, owner, home organization, folder, app and presence.
  */
 export interface Agent {
   id: string;
@@ -16,8 +16,21 @@ export interface Agent {
   description: string;
   harness: string; // claude, opencode, pi, omp, codex, gemini or agent
   machine: string; // the session's hostname; empty when unknown
+  /**
+   * Organization is the AI's home organization (ORG-02); absent for an AI that has none.
+   */
+  organization?: ContactOrg;
+  /**
+   * Folder is the folder the AI works in on its host's computer; empty for an AI without one.
+   */
+  folder: string;
+  /**
+   * FolderLabel is Folder as the host's home folder reads it: "~", "~/x" under it, the absolute path
+   * elsewhere; empty without a folder.
+   */
+  folder_label: string;
   owner: User;
-  my_level: Level; // manage for the owner, use for grantees
+  my_level: Level; // manage for whoever manages the AI in an organization they share, use otherwise
   online: boolean;
   last_seen_at?: string /* RFC 3339 */;
   created_at: string /* RFC 3339 */;
@@ -61,7 +74,8 @@ export interface AgentRoom {
 }
 /**
  * AgentMessage is a message delivered to an agent. Trusted is computed for the receiving
- * agent: true only when the author resolves to the agent's owner (DLV-06, AD-006).
+ * agent when the message is delivered: true only when its author manages the agent in the
+ * agent's home organization (POS-10, AD-018). Its owner, its other AIs and its peers do not.
  */
 export interface AgentMessage {
   room: RoomRef;
@@ -81,12 +95,13 @@ export interface RoomInfo {
    */
   instructions_by?: string;
   /**
-   * InstructionsTrusted is true only when that user is the calling agent's owner (INS-04).
+   * InstructionsTrusted is true only when that user manages the calling agent in the agent's
+   * home organization (INS-04, POS-10).
    */
   instructions_trusted: boolean;
   /**
-   * RoomTextTrusted is true only when the calling agent's owner created the room or last
-   * changed its name or description (INS-06).
+   * RoomTextTrusted is true only when whoever created the room or last changed its name or
+   * description manages the calling agent in the agent's home organization (INS-06, POS-10).
    */
   room_text_trusted: boolean;
   members: RoomMember[];
@@ -220,7 +235,8 @@ export interface AgentAckFrame {
  * receives it (CID-06): never a message of a Partyline conversation. ID is what the AI answers
  * with (reply); ChatID names the chat for send_message together with ConnectionID. A chat of
  * another connection, a message of the account itself (FromSelf) and a sender whose account is not
- * linked to the AI's owner are never trusted as the owner's (CID-13, CID-14).
+ * linked to a user who manages the AI in its home organization are never trusted (CID-13, CID-14,
+ * POS-10).
  */
 export interface PlatformEvent {
   id: string;
@@ -235,7 +251,9 @@ export interface PlatformEvent {
   sender_name: string;
   sender_id: string;
   /**
-   * Trusted is true only when the sender's account is linked to the AI's owner (AD-006).
+   * Trusted is true only when the sender's account is linked, through this connection, to a user
+   * who manages the AI in its home organization (POS-10, AD-018). It is decided when the message
+   * arrives.
    */
   trusted: boolean;
   /**
@@ -295,12 +313,16 @@ export interface AgentDMRequest {
   chat_ids?: string[];
 }
 /**
- * CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name. Its
- * request is a CreateGroupRequest whose members are "@handle", handle or id.
+ * CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name, and
+ * the organization it belongs to (ORG-02). Its request is a CreateGroupRequest whose members are
+ * "@handle", handle or id.
  */
 export interface CreatedGroup {
   room: string;
   name: string;
+  org_id: string;
+  org_slug: string;
+  org_name: string;
 }
 
 //////////
@@ -717,15 +739,26 @@ export interface Connector {
   id: string;
   kind: string;
   name: string;
+  /**
+   * OrgID is the organization the connection belongs to (ORG-02): its members see it and its admins
+   * manage it.
+   */
+  org_id: string;
+  /**
+   * Owner is the user who created the connection. It grants nothing (AD-019).
+   */
   owner: User;
-  my_level: Level; // manage for the owner, use for grantees
+  /**
+   * MyLevel is manage for the admins of the connection's organization and use for its other members.
+   */
+  my_level: Level;
   enabled: boolean;
   status: ConnectorStatus;
   last_error?: string;
   /**
-   * Operator is the owner's AI the platform account belongs to: what arrives on the account
-   * goes to that AI's session, and only it sends through the account (CID-01). Absent while
-   * nobody operates the connection: it then runs nothing and its status says so (CID-02).
+   * Operator is the AI of the connection's organization the platform account belongs to: what arrives
+   * on the account goes to that AI's session, and only it sends through the account (CID-01, ORG-07).
+   * Absent while nobody operates the connection: it then runs nothing and its status says so (CID-02).
    */
   operator?: IntelligenceRef;
   /**
@@ -761,9 +794,12 @@ export interface Connector {
   updated_at: string /* RFC 3339 */;
 }
 /**
- * CreateConnectorRequest is the body of POST /connectors. Enabled defaults to true.
+ * CreateConnectorRequest is the body of POST /connectors. Enabled defaults to true. OrgID is the id
+ * or slug of the organization the connection belongs to: the caller must be an admin of it, else 403
+ * (ORG-03). Absent, it is the caller's default organization.
  */
 export interface CreateConnectorRequest {
+  org_id?: string;
   kind: string;
   name: string;
   config: { [key: string]: unknown };
@@ -779,14 +815,15 @@ export interface UpdateConnectorRequest {
   enabled?: boolean;
   /**
    * Deliver and GroupsMentionsOnly change what reaches the operator (CID-12): Deliver must be
-   * dms, groups or all (422 on deliver otherwise). Only the owner may change them.
+   * dms, groups or all (422 on deliver otherwise). Only the admins of the connection's organization
+   * may change them.
    */
   deliver?: ConnectorDeliver;
   groups_mentions_only?: boolean;
   /**
-   * OperatorID changes the operator (CID-01): the id of an AI the owner owns; anything else,
-   * the owner's own id and an empty string included, is a 422 on operator_id. Only the owner
-   * may change it. Absent leaves it.
+   * OperatorID changes the operator (CID-01): the id of an AI whose home is the connection's
+   * organization (ORG-07); anything else, an empty string included, is a 422 on operator_id. Only the
+   * admins of the organization may change it. Absent leaves it.
    */
   operator_id?: string;
 }
@@ -802,8 +839,8 @@ export const ConnectorDeliverAll = "all";
  */
 export type ConnectorDeliver = typeof ConnectorDeliverDMs | typeof ConnectorDeliverGroups | typeof ConnectorDeliverAll;
 /**
- * ConnectorNoOperator is the status detail of a connection nobody operates (CID-02): the owner
- * has to choose the AI that operates it before it runs.
+ * ConnectorNoOperator is the status detail of a connection nobody operates (CID-02): an admin of its
+ * organization has to choose the AI that operates it before it runs.
  */
 export const ConnectorNoOperator = "choose the AI that operates this connection";
 /**
@@ -886,8 +923,8 @@ export interface Identity {
   created_at: string /* RFC 3339 */;
 }
 /**
- * PairingRequest is the body of POST /identities/pairing: the connector the code is for.
- * The user must own the connector or hold use on it (IDN-01).
+ * PairingRequest is the body of POST /identities/pairing: the connection the code is for. The user must
+ * be a member of its organization, and an admin of it for a webhook connection (IDN-01, IDN-05, AD-016).
  */
 export interface PairingRequest {
   connector_id: string;
@@ -955,85 +992,61 @@ export interface HookAttachment {
 
 /**
  * Contacts is GET /contacts: everyone the caller can reach, grouped as the contacts page shows
- * them (CONT-01).
+ * them (CONT-01): the AIs by organization, the ones they host that no organization lists, the other users
+ * and the people of their connections. The machines are not part of it (AD-022).
  */
 export interface Contacts {
   me: IntelligenceRef;
   /**
-   * Machines are the caller's own AIs that live in a folder, per machine and as a folder tree
-   * (TREE-01..03): machines with an online AI first, then by label.
+   * OrgAIs has one group for each organization the caller belongs to, by organization name (empty ones
+   * included), with the AIs that are members of it, by name. An AI that belongs to several of them is
+   * listed in each (AD-016).
    */
-  machines: MachineTree[];
+  org_ais: OrgAIs[];
   /**
-   * Unlinked are the caller's AIs without a folder, the identities v0.3 left (TREE-06), the
-   * most recently seen first.
+   * Hosted are the AIs hosted on the caller's computers that no group of OrgAIs lists, by name: they belong
+   * to none of the caller's organizations any more. Every other AI the caller hosts is in its groups.
    */
-  unlinked: AIContact[];
-  /**
-   * Shared are the AIs of other users that the caller may use, by name.
-   */
-  shared: AIContact[];
+  hosted: AIContact[];
   /**
    * Users are the other enabled users of the instance, by name.
    */
   users: IntelligenceRef[];
   /**
-   * People has one group for each connector the caller owns or may use, by connector name;
-   * GET /contacts/people lists the people of one.
+   * People has one group for each connection of the organizations the caller belongs to, by connection
+   * name; GET /contacts/people lists the people of one.
    */
   people: PeopleGroup[];
 }
 /**
- * AgentContactsTree is GET /agent/contacts/tree, the data of `partyline agents` (TREE-07): the
- * token owner's own AIs.
+ * OrgAIs is the AIs of one organization of the caller.
  */
-export interface AgentContactsTree {
-  machines: MachineTree[];
-  unlinked: AIContact[];
+export interface OrgAIs {
+  org: ContactOrg;
+  ais: AIContact[];
 }
 /**
- * MachineTree is one machine with the AIs that live on it (TREE-01).
+ * ContactOrg names an organization in compact form: in the contacts, and as the home of an AI of the
+ * agents list.
  */
-export interface MachineTree {
-  hostname: string;
-  /**
-   * Label is the owner's name for the machine (TREE-04), else the hostname.
-   */
-  label: string;
-  /**
-   * Online tells whether any AI of the machine is online.
-   */
-  online: boolean;
-  nodes: TreeNode[];
-}
-/**
- * TreeNode is one AI in a machine's folder tree. An AI whose folder is inside another AI's
- * folder is that AI's child; folders between two AIs that hold no AI collapse into Path
- * (TREE-02). Render "Path › Name" when Path is not empty, else Name.
- */
-export interface TreeNode {
-  ai: AIContact;
-  /**
-   * Path is the collapsed chain of folders before the node ("c/d"), empty when there is none;
-   * a top-level node outside the home folder starts with "/".
-   */
-  path: string;
-  /**
-   * Name is the folder's own label: its last element, "~" for the home folder, "/" for the root.
-   */
+export interface ContactOrg {
+  id: string;
   name: string;
-  children: TreeNode[];
+  slug: string;
 }
 /**
- * AIContact is an AI as the contacts page and `partyline agents` list it (TREE-03).
+ * AIContact is an AI as the contacts page lists it (TREE-03).
  */
 export interface AIContact {
   intelligence: IntelligenceRef;
   /**
-   * Owner is set for the AIs of other users (Contacts.Shared).
+   * Owner is the user who hosts the AI, set when it is another user than the caller.
    */
   owner?: IntelligenceRef;
-  machine: string;
+  /**
+   * OrgID is the AI's home organization.
+   */
+  org_id: string;
   folder: string;
   folder_label: string;
   /**
@@ -1063,23 +1076,6 @@ export const MaxPeoplePage = 200;
  * MaxPeopleSearch is the longest search text in code points.
  */
 export const MaxPeopleSearch = 100;
-/**
- * Machine is a machine of the caller after its label changed.
- */
-export interface Machine {
-  hostname: string;
-  /**
-   * Label is the owner's name for the machine; empty shows the hostname (TREE-04).
-   */
-  label: string;
-}
-/**
- * SetMachineLabelRequest is the body of PUT /machines/{hostname}: a label of 1 to 64 characters,
- * or an empty one to show the hostname again (TREE-04).
- */
-export interface SetMachineLabelRequest {
-  label: string;
-}
 
 //////////
 // source: conversations.go
@@ -1109,19 +1105,31 @@ export const MaxGroupMembers = 50;
 /**
  * CreateGroupRequest is the body of POST /groups (LAY-04) and of an AI's group creation (AGRP-01).
  * Members are the ids of the users and AIs to put in the group, each checked with the add-member
- * rules of the group's owner before anything is created; the owner is a member only when listed.
- * Repeated ids count once.
+ * rules of the group's creator before anything is created: it must exist, be visible to the creator
+ * and belong to the group's organization. The creator is a member only when listed. Repeated ids
+ * count once.
  */
 export interface CreateGroupRequest {
   name: string;
   description?: string;
   members: string[];
+  /**
+   * OrgID is the organization the group belongs to (ORG-03), by id; the web app sends it. Absent
+   * means the creator's default organization (an AI's is its home). A creator who is not a member
+   * or admin of it, a guest included, is refused with 403 forbidden, and so is an unknown one.
+   */
+  org_id?: string;
+  /**
+   * Org is OrgID by slug or id, for an AI's create_group (POST /agent/groups); both routes read
+   * either field, OrgID first.
+   */
+  org?: string;
 }
 /**
  * RefusedReason says why a member could not be added to a new group.
  */
 /**
- * RefusedReasonNotFound is an id that is no enabled user and no AI the owner may use.
+ * RefusedReasonNotFound is an id that is no enabled user and no AI the creator can see.
  */
 export const RefusedReasonNotFound = "not_found";
 /**
@@ -1129,10 +1137,15 @@ export const RefusedReasonNotFound = "not_found";
  */
 export const RefusedReasonPerson = "person";
 /**
- * Reasons a member is refused. An AI the owner may not use is not_found as well: it must not be
+ * RefusedReasonNotOrgMember is a user or an AI the creator can see that does not belong to the
+ * group's organization: a group is made of the members of its organization (ORG-03).
+ */
+export const RefusedReasonNotOrgMember = "not_org_member";
+/**
+ * Reasons a member is refused. An AI the creator cannot see is not_found as well: it must not be
  * told apart from an id that does not exist.
  */
-export type RefusedReason = typeof RefusedReasonNotFound | typeof RefusedReasonPerson;
+export type RefusedReason = typeof RefusedReasonNotFound | typeof RefusedReasonPerson | typeof RefusedReasonNotOrgMember;
 /**
  * RefusedMember is a member of a new group that was refused (422 members_refused).
  */
@@ -1178,6 +1191,12 @@ export interface Conversation {
    * AIs of a group (the other participant of a DM), for the sidebar search.
    */
   member_names: string[];
+  /**
+   * OrgIDs are the organizations the conversation is filed under (ORG-02): a group's organization;
+   * for a DM the organizations both participants are members of, else the default organization of
+   * the caller; empty when there is none.
+   */
+  org_ids: string[];
 }
 /**
  * MaxConversationMemberNames bounds Conversation.MemberNames.
@@ -1421,7 +1440,7 @@ export interface IntelligenceProfile extends IntelligenceRef {
    */
   ai?: AIDetail;
   /**
-   * Person is set for a person, for the users who own or may use its connector (PEOP-03,
+   * Person is set for a person, for the members of the organization of its connection (PEOP-03,
    * PEOP-04); a user who sees the person through a conversation only gets the summary.
    */
   person?: PersonDetail;
@@ -1436,6 +1455,43 @@ export interface IntelligenceProfile extends IntelligenceRef {
    * (PEOP-03); empty for the other kinds.
    */
   conversations: RoomRef[];
+  /**
+   * Memberships lists, by organization name, the organizations the caller shares with a user or an AI
+   * (all of its own when the caller is the profile), with its permission and position in each and what
+   * the caller may do about it (OMEM-03, CHART-02). Empty for a person.
+   */
+  memberships: ProfileMembership[];
+  /**
+   * CanEndSession tells whether the caller may end the AI's live session: it manages the AI in an
+   * organization they share (POS-04). Always false for users and people.
+   */
+  can_end_session: boolean;
+}
+/**
+ * ProfileMembership is the place of an intelligence in one organization, as a profile shows it.
+ */
+export interface ProfileMembership {
+  org_id: string;
+  org_name: string;
+  org_slug: string;
+  /**
+   * Permission is admin, member or guest.
+   */
+  permission: string;
+  /**
+   * PositionID and PositionName are absent for a member with no position.
+   */
+  position_id?: string;
+  position_name?: string;
+  /**
+   * CanDelete tells whether the caller may delete the intelligence in this organization (POS-05).
+   */
+  can_delete: boolean;
+  /**
+   * DeleteEffect is what deleting it here does (POS-06): "delete" removes an AI for good, because this is its
+   * home organization; "remove" only takes the identity out of this organization.
+   */
+  delete_effect: string;
 }
 /**
  * PersonDetail describes the platform account behind a person (PEOP-03).
@@ -1458,16 +1514,13 @@ export interface PersonDetail {
   name_locked: boolean;
 }
 /**
- * AIDetail describes where an AI lives and who may use it.
+ * AIDetail describes where an AI lives and how the caller stands to it.
  */
 export interface AIDetail {
-  owner: IntelligenceRef;
   /**
-   * Machine is the hostname of the AI's machine and MachineLabel the owner's label for it
-   * (the hostname when there is none).
+   * Owner is the user who hosts the AI: whose computer and token run it. It grants nothing (AD-019).
    */
-  machine: string;
-  machine_label: string;
+  owner: IntelligenceRef;
   /**
    * Folder is the AI's canonical folder; empty for an AI that is not linked to one yet.
    */
@@ -1481,8 +1534,8 @@ export interface AIDetail {
   last_seen_at?: string /* RFC 3339 */;
   connected_at?: string /* RFC 3339 */;
   /**
-   * MyLevel is manage for the owner and use for a grantee; empty for a caller who sees the
-   * AI through a conversation they share.
+   * MyLevel is manage for whoever manages the AI in an organization they share with it (and the AI itself)
+   * and use for whoever only sees it.
    */
   my_level?: Level;
 }
@@ -1625,17 +1678,21 @@ export interface RoomIDData {
   room_id: string;
 }
 /**
- * LiveAccessChanged reports that sharing of a resource changed; refetch it.
+ * LiveAccessChanged reports that who may see a resource, or what an organization is, changed; refetch it.
  */
 export interface LiveAccessChanged {
   type: typeof LiveEventTypeAccessChanged;
   data: AccessChangedData;
 }
 /**
- * AccessChangedData names the resource whose grants changed.
+ * AccessChangedData names the resource whose visibility changed, or the organization that changed.
+ * An organization's members, and a member who has just left it, receive kind organization whenever
+ * something about it changes (its members, positions, chart or invitations) and look at it again; a member
+ * whose own standing in it changed (they joined, or their permission or position did) also receives one
+ * event per AI and connection of the organization, and one per group they gained or lost.
  */
 export interface AccessChangedData {
-  resource_kind: string; // room, agent or connector
+  resource_kind: string; // room, agent, connector or organization
   resource_id: string;
 }
 /**
@@ -1821,6 +1878,15 @@ export interface Room {
    * characters; agents read it with the room_info tool.
    */
   instructions: string;
+  /**
+   * OrgID is the organization a group belongs to (ORG-02); absent for a DM.
+   */
+  org_id?: string;
+  /**
+   * OrgIDs are the organizations the room is filed under, as in Conversation.OrgIDs: a group's
+   * organization; for a DM the organizations both participants belong to, else the caller's default.
+   */
+  org_ids: string[];
   owner: User;
   visibility: Visibility;
   /**

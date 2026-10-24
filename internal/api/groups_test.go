@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -25,20 +27,23 @@ func roomListOf(t *testing.T, c *testkit.Client) []dto.Room {
 	return testkit.Decode[dto.List[dto.Room]](c.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items
 }
 
-// LAY-04: a group is created with the user as owner and every chosen user and AI as a member; the
-// members see it and the chosen users post in it, while the owners of the member AIs, who were not
-// chosen, and strangers do not.
+// LAY-04, ORG-03: a group is created by the user, in their organization, with every chosen user and AI of
+// it as a member; the members see it and the chosen users post in it, while the owners of the member AIs,
+// who were not chosen, and strangers do not.
 func TestCreateGroupWithMembers(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob, carol, dave := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol"), env.NewUser("dave")
 	atlas := env.NewAI(alice, "atlas")
 	orion := env.NewAI(carol, "orion")
-	shareAI(carol, orion, alice)
+	acme := alice.PersonalOrg().ID
+	env.AddMember(acme, bob.User.ID, orgs.PermissionMember, "")
+	env.AddMember(acme, orion, orgs.PermissionMember, "") // carol's AI works in alice's organization; carol does not
 
 	room := testkit.Decode[dto.Room](createGroup(alice, "Launch", bob.User.ID, atlas, orion).RequireStatus(http.StatusCreated))
 	require.Equal(t, dto.ConversationKindGroup, room.Kind)
 	require.Equal(t, "Launch", room.Name)
 	require.Equal(t, alice.User.ID, room.Owner.ID)
+	require.Equal(t, acme, room.OrgID)
 	require.Equal(t, dto.LevelManage, room.MyLevel)
 	require.Equal(t, 3, room.MemberCount)
 	require.Equal(t, dto.VisibilityPrivate, room.Visibility)
@@ -77,16 +82,22 @@ func TestCreateGroupWithMembers(t *testing.T) {
 	require.NotNil(t, testkit.Decode[map[string]any](createGroup(alice, "Nil members").RequireStatus(http.StatusCreated))["participants"])
 }
 
-// LAY-04, AGRP-02: a member the owner may not add refuses the whole group with 422
+// LAY-04, AGRP-02: a member the creator may not add refuses the whole group with 422
 // members_refused and the list of refused ids; nothing is created, for the valid members either.
-// Each reason is tested on its own, so no other refusal can hide the one under test.
-func TestCreateGroupRefusesTheMembersItsOwnerCannotAdd(t *testing.T) {
+// Each reason is tested on its own, so no other refusal can hide the one under test. (not_org_member is
+// tested with the organization roles in groups_org_test.go.)
+func TestCreateGroupRefusesTheMembersItsCreatorCannotAdd(t *testing.T) {
 	env := testkit.New(t)
 	admin := env.SetupAdmin()
 	alice, bob, carol, dave := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol"), env.NewUser("dave")
 	atlas := env.NewAI(alice, "atlas")
-	orion := env.NewAI(bob, "orion") // not shared with alice
-	connector, _ := storeChat(t, env, alice.User.ID, "chat")
+	orion := env.NewAI(bob, "orion") // an AI alice shares no organization with
+	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
+	env.AddMember(alice.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember, "")
+	env.AddMember(alice.PersonalOrg().ID, dave.User.ID, orgs.PermissionMember, "") // then disabled
+	line, err := env.App.Orgs.Create(context.Background(), alice.User.ID, "line")  // carol is not in it
+	require.NoError(t, err)
+	connector, _ := storeChatIn(t, env, alice.User.ID, line.ID, "chat")
 	person := seedPerson(t, env, connector, "5511999990000", "Contact")
 	disableUser(admin, dave.User.ID, true)
 	unknown := store.NewID()
@@ -98,7 +109,7 @@ func TestCreateGroupRefusesTheMembersItsOwnerCannotAdd(t *testing.T) {
 		require.NotEmpty(t, e.Message)
 		return e
 	}
-	t.Run("an AI the user may not use", func(t *testing.T) {
+	t.Run("an AI the creator cannot see", func(t *testing.T) {
 		refuse(t, []dto.RefusedMember{{ID: orion, Reason: dto.RefusedReasonNotFound}}, carol.User.ID, atlas, orion)
 	})
 	t.Run("an id that does not exist", func(t *testing.T) {
@@ -115,7 +126,7 @@ func TestCreateGroupRefusesTheMembersItsOwnerCannotAdd(t *testing.T) {
 		hidden := createGroup(carol, "Launch", person).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
 		missing := createGroup(carol, "Launch", store.NewID()).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
 		require.Equal(t, dto.RefusedReasonPerson, seen.Refused[0].Reason, "the connector's owner is told it is a person")
-		require.Equal(t, dto.RefusedReasonNotFound, hidden.Refused[0].Reason, "carol has no access to that connector")
+		require.Equal(t, dto.RefusedReasonNotFound, hidden.Refused[0].Reason, "carol is in no organization of that connection")
 		require.Equal(t, hidden.Message, missing.Message)
 		require.Empty(t, roomListOf(t, carol), "nothing was created")
 	})
@@ -136,8 +147,10 @@ func TestCreateGroupRefusesTheMembersItsOwnerCannotAdd(t *testing.T) {
 	for _, c := range []*testkit.Client{alice, bob, carol} {
 		require.Empty(t, roomListOf(t, c), "nothing was created")
 	}
-	// A shared AI is addable; so is the same request without the refused ones.
+	// An AI of the organization is addable, a use grant is not enough; so is the same request without the refused ones.
 	shareAI(bob, orion, alice)
+	createGroup(alice, "Launch", bob.User.ID, atlas, orion).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
+	env.AddMember(alice.PersonalOrg().ID, orion, orgs.PermissionMember, "")
 	ok := testkit.Decode[dto.Room](createGroup(alice, "Launch", bob.User.ID, atlas, orion).RequireStatus(http.StatusCreated))
 	require.Equal(t, 3, ok.MemberCount)
 }
@@ -176,7 +189,9 @@ func TestCreateGroupValidation(t *testing.T) {
 	t.Run("member limit", func(t *testing.T) {
 		ids := make([]string, 0, dto.MaxGroupMembers+1)
 		for i := range dto.MaxGroupMembers + 1 {
-			ids = append(ids, env.NewUser(fmt.Sprintf("member%02d", i)).User.ID)
+			member := env.NewUser(fmt.Sprintf("member%02d", i))
+			env.AddMember(alice.PersonalOrg().ID, member.User.ID, orgs.PermissionMember, "")
+			ids = append(ids, member.User.ID)
 		}
 		e := createGroup(alice, "Big", ids...).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 		require.Contains(t, e.Fields, "members")
@@ -188,8 +203,9 @@ func TestCreateGroupValidation(t *testing.T) {
 	})
 }
 
-// Authorization of POST /groups: any user of the instance creates a group, owning it; an agent
-// token is not a user (403) and an anonymous caller is 401.
+// Authorization of POST /groups: any user of the instance creates a group in their own organization,
+// managing it; an agent token is not a user (403) and an anonymous caller is 401. (The organization roles
+// are in groups_org_test.go.)
 func TestCreateGroupAuthorization(t *testing.T) {
 	m := newMatrix(t)
 	for _, role := range matrixRoles {
@@ -216,6 +232,7 @@ func TestCreateGroupAuthorization(t *testing.T) {
 func TestCreateGroupAnnouncesTheRoomLive(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob, carol := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol")
+	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
 	bobLive, carolLive := dialLive(t, bob), dialLive(t, carol)
 
 	room := testkit.Decode[dto.Room](createGroup(alice, "Launch", bob.User.ID).RequireStatus(http.StatusCreated))

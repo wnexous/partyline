@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -18,6 +19,8 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/conversations"
+	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -37,6 +40,7 @@ func newMergeWorld(t *testing.T) *mergeWorld {
 	env, fake := fakeConnectorEnv(t)
 	w := &mergeWorld{env: env, fake: fake, alice: env.NewUser("alice"), bob: env.NewUser("bob"), carol: env.NewUser("carol"), admin: env.NewAdmin("root")}
 	w.old = env.NewLegacyAI(w.alice, "old")
+	env.PlaceInDefaultOrg(w.alice, w.old)
 	w.atlas = env.NewAI(w.alice, "atlas")
 	return w
 }
@@ -164,8 +168,10 @@ func visibleAgents(t *testing.T, c *testkit.Client) []string {
 // (the larger wins), who may use it and the messages it wrote; it is gone and the merge is audited.
 func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	w := newMergeWorld(t)
-	shareAI(w.alice, w.old, w.bob)
-	shareAI(w.alice, w.atlas, w.carol)
+	shareAgent(w.alice, w.old, w.bob.User.ID)
+	shareAgent(w.alice, w.atlas, w.carol.User.ID)
+	// Bob also belongs to alice's organization, which is how his socket hears of the AIs she runs.
+	w.env.AddMember(w.alice.PersonalOrg().ID, w.bob.User.ID, orgs.PermissionMember, "")
 
 	ops, dev, ahead, solo := createRoom(w.alice, "ops"), createRoom(w.alice, "dev"), createRoom(w.alice, "ahead"), createRoom(w.alice, "solo")
 	bobs := createRoom(w.bob, "bobs")
@@ -179,7 +185,8 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	join(t, w.alice, ahead.ID, w.atlas)
 	soloAtlas := join(t, w.alice, solo.ID, w.atlas)
 	settle(t, w.alice, solo.ID, soloAtlas, dto.UpdateMemberRequest{DisplayName: ptr("Solo")})
-	join(t, w.bob, bobs.ID, w.old) // bob may use old
+	w.env.AddMember(w.bob.PersonalOrg().ID, w.old, orgs.PermissionMember, "") // old also belongs to bob's organization
+	join(t, w.bob, bobs.ID, w.old)
 
 	for _, room := range []string{ops.ID, dev.ID, ahead.ID, solo.ID} {
 		for range 6 {
@@ -204,7 +211,8 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	require.Equal(t, w.atlas, survivor.ID, "the answer is the AI that remains")
 
 	// Bob's socket hears that his group has a new member, that who may use the survivor changed and
-	// that the survivor's profile did.
+	// that the survivor's profile did. The organizations the merged AI belonged to are announced to
+	// their members before (T24, T32); bob belongs to two of them.
 	for {
 		var changed dto.RoomIDData
 		bobLive.Expect(dto.LiveEventTypeMembersChanged, &changed, connectortest.Timeout)
@@ -213,7 +221,9 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 		}
 	}
 	var access dto.AccessChangedData
-	bobLive.Expect(dto.LiveEventTypeAccessChanged, &access, connectortest.Timeout)
+	for access.ResourceKind != "agent" {
+		bobLive.Expect(dto.LiveEventTypeAccessChanged, &access, connectortest.Timeout)
+	}
 	require.Equal(t, dto.AccessChangedData{ResourceKind: "agent", ResourceID: w.atlas}, access)
 	var profile dto.IntelligenceRef
 	bobLive.Expect(dto.LiveEventTypeIntelligenceChanged, &profile, connectortest.Timeout)
@@ -581,56 +591,115 @@ func auditActions(t *testing.T, admin *testkit.Client) []string {
 	return actions
 }
 
-// Authorization of POST /agents/{id}/merge: both AIs must be the caller's. Someone who may only use
-// an AI is forbidden, someone who cannot see it gets 404 (also admins), a missing or equal target is
-// 422, and agent tokens and anonymous callers are refused; every refusal changes nothing.
+// POS-04, AD-016: authorization of POST /agents/{id}/merge: the caller must manage both AIs and the AIs
+// must share a home organization. Someone who only sees an AI is forbidden, someone who cannot see it gets
+// 404 (an admin of the instance included), and the checks on the target never answer before the caller's
+// right to the AI in the path. A missing or equal target is 422, an AI of another home organization 403,
+// and agent tokens and anonymous callers are refused; every refusal changes nothing.
 func TestMergeAuthorization(t *testing.T) {
-	w := newMergeWorld(t)
-	shareAI(w.alice, w.old, w.bob)
-	bobs := w.env.NewAI(w.bob, "bobby")   // private to bob
-	shared := w.env.NewAI(w.bob, "sunny") // bob lets alice use it
-	shareAI(w.bob, shared, w.alice)
-	room := createRoom(w.alice, "ops")
-	join(t, w.alice, room.ID, w.old)
-
-	refuse := func(c *testkit.Client, from, into string, status int, code dto.ErrorCode) dto.Error {
-		t.Helper()
-		return merge(c, from, into).RequireError(status, code)
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	manager := roles.Manager
+	pairs := 0
+	// pair makes two AIs the manager created and hosts, positionless in acme: whoever manages the manager manages them.
+	pair := func() (from, into string) {
+		pairs++
+		return env.NewAIIn(manager, roles.Org.ID, fmt.Sprintf("old%d", pairs)), env.NewAIIn(manager, roles.Org.ID, fmt.Sprintf("new%d", pairs))
 	}
-	// alice owns old and atlas
-	refuse(w.alice, w.old, bobs, http.StatusNotFound, dto.ErrorCodeNotFound)     // another owner's AI she cannot use
-	refuse(w.alice, w.old, shared, http.StatusForbidden, dto.ErrorCodeForbidden) // one she may only use
-	refuse(w.alice, bobs, w.atlas, http.StatusNotFound, dto.ErrorCodeNotFound)
-	refuse(w.alice, shared, w.atlas, http.StatusForbidden, dto.ErrorCodeForbidden)
-	refuse(w.alice, "no-such-ai", w.atlas, http.StatusNotFound, dto.ErrorCodeNotFound)
-	refuse(w.alice, w.old, "no-such-ai", http.StatusNotFound, dto.ErrorCodeNotFound)
-	e := refuse(w.alice, w.old, "", http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-	require.Equal(t, map[string]string{"into": "required"}, e.Fields)
-	e = refuse(w.alice, w.old, w.old, http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-	require.Equal(t, map[string]string{"into": "must be a different AI"}, e.Fields)
-	// bob may use old, which is not enough; carol and the admin cannot see it; the checks on the
-	// target never answer before the caller's right to the AI in the path
-	refuse(w.bob, w.old, bobs, http.StatusForbidden, dto.ErrorCodeForbidden)
-	refuse(w.carol, w.old, w.atlas, http.StatusNotFound, dto.ErrorCodeNotFound)
-	refuse(w.carol, w.old, w.old, http.StatusNotFound, dto.ErrorCodeNotFound)
-	refuse(w.admin, w.old, w.atlas, http.StatusNotFound, dto.ErrorCodeNotFound)
-	refuse(w.alice.Token(dto.TokenKindAgent, "bot"), w.old, w.atlas, http.StatusForbidden, dto.ErrorCodeForbidden)
-	refuse(w.env.Anon(), w.old, w.atlas, http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
-	w.alice.DoRaw(http.MethodPost, "/api/v1/agents/"+w.old+"/merge", "application/json", strings.NewReader("{")).RequireError(http.StatusBadRequest, dto.ErrorCodeInvalid)
+	for _, tc := range []struct {
+		role string
+		c    *testkit.Client
+		want int
+	}{
+		{"admin", roles.Admin, http.StatusOK}, // not the host, but above the creator in the chart
+		{"manager", roles.Manager, http.StatusOK},
+		{"target", roles.Target, http.StatusForbidden},
+		{"peer", roles.Peer, http.StatusForbidden},
+		{"member", roles.Member, http.StatusForbidden},
+		{"inviter", roles.Inviter, http.StatusForbidden},
+		{"guest", roles.Guest, http.StatusForbidden},
+		{"outsider", roles.Outsider, http.StatusNotFound},
+		{"instance admin", roles.InstanceAdmin, http.StatusNotFound},
+	} {
+		t.Run(tc.role, func(t *testing.T) {
+			c := *tc.c
+			c.T = t
+			from, into := pair()
+			resp := merge(&c, from, into)
+			switch tc.want {
+			case http.StatusOK:
+				got := testkit.Decode[dto.Agent](resp.RequireStatus(http.StatusOK))
+				require.Equal(t, into, got.ID, "the answer is the AI that remains")
+				require.NotContains(t, visibleAgents(t, &c), from)
+			case http.StatusForbidden:
+				resp.RequireError(tc.want, dto.ErrorCodeForbidden)
+			default:
+				resp.RequireError(tc.want, dto.ErrorCodeNotFound)
+			}
+			if tc.want != http.StatusOK {
+				require.Contains(t, visibleAgents(t, roles.Admin), from, "a refusal changes nothing")
+			}
+		})
+	}
 
-	require.Subset(t, visibleAgents(t, w.alice), []string{w.old, w.atlas, shared})
-	require.Contains(t, members(t, w.alice, room.ID)[dto.MemberKindAgent], w.old)
-	require.NotContains(t, auditActions(t, w.admin), "agent.merge")
-
-	// A user token is the user.
-	w.alice.Token(dto.TokenKindUser, "script").Post("/api/v1/agents/"+w.old+"/merge", dto.MergeAgentRequest{Into: w.atlas}).RequireStatus(http.StatusOK)
+	from, into := pair()
+	t.Run("the target", func(t *testing.T) {
+		c := *manager
+		c.T = t
+		e := merge(&c, from, "").RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+		require.Equal(t, map[string]string{"into": "required"}, e.Fields)
+		e = merge(&c, from, from).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
+		require.Equal(t, map[string]string{"into": "must be a different AI"}, e.Fields)
+		merge(&c, from, "no-such-ai").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+		merge(&c, "no-such-ai", into).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+		// One the manager sees and does not manage (a colleague's, created by the member with no relation to them).
+		strangers := env.NewAIIn(roles.Member, roles.Org.ID, "strangers")
+		merge(&c, from, strangers).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+		merge(&c, strangers, into).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+		// One they cannot see.
+		hidden := env.NewAI(roles.Outsider, "hidden")
+		merge(&c, from, hidden).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	})
+	t.Run("the right to the AI in the path comes before the checks on the target", func(t *testing.T) {
+		peer, outsider := *roles.Peer, *roles.Outsider
+		peer.T, outsider.T = t, t
+		merge(&peer, from, "").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+		merge(&outsider, from, "").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+		merge(&peer, from, from).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	})
+	t.Run("the two AIs must share their home organization", func(t *testing.T) {
+		c := *manager
+		c.T = t
+		side, err := env.App.Orgs.Create(context.Background(), manager.User.ID, "side")
+		require.NoError(t, err)
+		elsewhere := env.NewAIIn(manager, side.ID, "elsewhere") // the manager creates it too, in an organization of their own
+		merge(&c, from, elsewhere).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+		merge(&c, elsewhere, from).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+		require.Subset(t, visibleAgents(t, &c), []string{from, elsewhere})
+	})
+	t.Run("tokens and anonymous callers", func(t *testing.T) {
+		merge(manager.Token(dto.TokenKindAgent, "bot"), from, into).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+		merge(env.Anon(), from, into).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+		manager.DoRaw(http.MethodPost, "/api/v1/agents/"+from+"/merge", "application/json", strings.NewReader("{")).RequireError(http.StatusBadRequest, dto.ErrorCodeInvalid)
+		require.Contains(t, visibleAgents(t, manager), from)
+	})
+	t.Run("a user token is the user", func(*testing.T) {
+		manager.Token(dto.TokenKindUser, "script").Post("/api/v1/agents/"+from+"/merge", dto.MergeAgentRequest{Into: into}).RequireStatus(http.StatusOK)
+	})
+	merges := 0
+	for _, action := range auditActions(t, roles.InstanceAdmin) {
+		if action == "agent.merge" {
+			merges++
+		}
+	}
+	require.Equal(t, 3, merges, "only the merges that happened are audited: the admin's, the manager's and the user token's")
 }
 
 // The merge is one transaction: when its last step fails nothing of it is left, and it works once
 // the cause is gone.
 func TestMergeIsAllOrNothing(t *testing.T) {
 	w := newMergeWorld(t)
-	shareAI(w.alice, w.old, w.bob)
+	shareAgent(w.alice, w.old, w.bob.User.ID)
 	room := createRoom(w.alice, "ops")
 	oldMember := join(t, w.alice, room.ID, w.old)
 	w.say(t, w.old, room.ID, "from old")
@@ -655,7 +724,9 @@ func TestMergeIsAllOrNothing(t *testing.T) {
 	require.Equal(t, int64(1), w.cursor(t, w.old, room.ID))
 	require.Contains(t, members(t, w.alice, dm.ID)[dto.MemberKindAgent], w.old)
 	require.Equal(t, []string{"to old"}, texts(timeline(t, w.alice, dm.ID)))
-	require.NotContains(t, visibleAgents(t, w.bob), w.atlas, "no grant was copied")
+	copied, err := w.env.App.Store.R().ListGrantLevels(context.Background(), db.ListGrantLevelsParams{ResourceKind: "agent", ResourceID: w.atlas, UserID: w.bob.User.ID})
+	require.NoError(t, err)
+	require.Empty(t, copied, "no grant was copied")
 	require.NotContains(t, auditActions(t, w.admin), "agent.merge")
 
 	_, err = raw.ExecContext(context.Background(), "DROP TRIGGER forced_failure")
@@ -687,4 +758,84 @@ func TestMergeEndsASessionThatAttachedAfterTheCheck(t *testing.T) {
 	online = "" // nobody is online at the check
 	require.NoError(t, svc.Merge(ctx, alice, w.old, w.atlas))
 	require.Equal(t, []string{w.old}, kicked)
+}
+
+// POS-04, ORG-02: a merge moves the organizations of the merged AI to the survivor and re-points what the
+// merged AI created to it. The organizations only the merged AI belongs to become the survivor's, with the
+// permission, position and inviter it had there; where both belong, the survivor's membership stays as it
+// is (it wins). The AIs and groups the merged AI created, and the guests it invited, are the survivor's
+// from then on. When the merged AI created the survivor, the survivor's creator is the merged AI's creator,
+// so that it is not left as its own. The merged AI is in no organization afterwards, and the organizations
+// are told.
+func TestMergeMovesOrganizationMembershipsAndWhatTheMergedAICreated(t *testing.T) {
+	ctx := context.Background()
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	mgr := roles.Manager
+	q := env.App.Store.R()
+	side, err := env.App.Orgs.Create(ctx, mgr.User.ID, "side")
+	require.NoError(t, err)
+	bots := env.AddPosition(side.ID, "Bots", side.PositionID)
+
+	alpha := env.NewAIIn(mgr, roles.Org.ID, "alpha") // the merged AI: of acme, and of side with the position Bots
+	env.AddMember(side.ID, alpha, orgs.PermissionMember, bots)
+	beta := env.NewAIIn(mgr, roles.Org.ID, "beta") // the survivor: of acme only, holding Worker there
+	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.UpdateOrgMemberPosition(ctx, db.UpdateOrgMemberPositionParams{
+			PositionID: sql.NullString{String: roles.WorkerPosition, Valid: true}, OrgID: roles.Org.ID, Iid: beta,
+		})
+	}))
+	env.SetCreator(beta, alpha) // alpha created beta
+	gamma := env.NewAIIn(mgr, roles.Org.ID, "gamma")
+	env.SetCreator(gamma, alpha)                                  // and gamma
+	env.AddGuest(roles.Org.ID, roles.Outsider.User.ID, alpha, "") // and invited a guest
+	created := testkit.Decode[dto.CreatedGroup](mgr.Token(dto.TokenKindAgent, "laptop").AsAgent("alpha").
+		Post("/api/v1/agent/groups", dto.CreateGroupRequest{Name: "Made by alpha"}).RequireStatus(http.StatusCreated))
+	creatorOf := func(id string) string {
+		a, err := q.GetAgent(ctx, id)
+		require.NoError(t, err)
+		return a.CreatorIid.String
+	}
+	require.Equal(t, alpha, func() string {
+		r, err := q.GetRoom(ctx, created.Room)
+		require.NoError(t, err)
+		return r.CreatorIid.String
+	}())
+	sub, cancel := env.App.Bus.Subscribe(64)
+	defer cancel()
+
+	merge(mgr, alpha, beta).RequireStatus(http.StatusOK)
+
+	inSide, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: side.ID, Iid: beta})
+	require.NoError(t, err, "the survivor joined the organization only the merged AI belonged to")
+	require.Equal(t, []any{string(orgs.PermissionMember), bots}, []any{inSide.Permission, inSide.PositionID.String}, "with the permission and position it had there")
+	inAcme, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: roles.Org.ID, Iid: beta})
+	require.NoError(t, err)
+	require.Equal(t, roles.WorkerPosition, inAcme.PositionID.String, "where both belong, the survivor's membership wins")
+	for _, orgID := range []string{roles.Org.ID, side.ID} {
+		_, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: orgID, Iid: alpha})
+		require.ErrorIs(t, err, sql.ErrNoRows, "the merged AI is in no organization any more")
+	}
+	require.Equal(t, beta, creatorOf(gamma), "what the merged AI created is the survivor's")
+	require.Equal(t, mgr.User.ID, creatorOf(beta), "the survivor's creator was the merged AI: it takes the creator of the merged AI")
+	group, err := q.GetRoom(ctx, created.Room)
+	require.NoError(t, err)
+	require.Equal(t, beta, group.CreatorIid.String)
+	guest, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: roles.Org.ID, Iid: roles.Outsider.User.ID})
+	require.NoError(t, err)
+	require.Equal(t, beta, guest.InviterIid.String, "the guests it invited answer to the survivor")
+
+	told := map[string]bool{}
+	for {
+		select {
+		case e := <-sub:
+			if oc, ok := e.(events.OrgChanged); ok {
+				told[oc.OrgID] = true
+			}
+			continue
+		default:
+		}
+		break
+	}
+	require.True(t, told[roles.Org.ID] && told[side.ID], "both organizations are announced: %v", told)
 }

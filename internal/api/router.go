@@ -17,6 +17,7 @@ import (
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/conversations"
+	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/intelligences"
@@ -64,6 +65,9 @@ type Deps struct {
 	AgentWS http.Handler
 	// Inbox serves GET /api/v1/agent/pending.
 	Inbox AgentInbox
+	// Trust opens the trust of each request that tells an AI what it may trust: the history tool and the
+	// room's instructions (POS-10). Without it nothing is trusted.
+	Trust delivery.TrustSource
 	// WebUI serves the web app for every other GET path (SPA fallback).
 	WebUI  http.Handler
 	Logger *slog.Logger

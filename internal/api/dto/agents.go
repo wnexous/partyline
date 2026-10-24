@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// Agent is an AI as the agents list shows it (GET /agents): its profile, owner, machine, app and
-// presence.
+// Agent is an AI as the agents list shows it (GET /agents, and GET /agent/agents for the AIs a token's
+// user hosts): its profile, owner, home organization, folder, app and presence.
 type Agent struct {
 	ID string `json:"id"`
 	// Intelligence is the AI's profile: the display name people read, its @handle and avatar.
@@ -14,11 +14,18 @@ type Agent struct {
 	Description  string          `json:"description"`
 	Harness      string          `json:"harness"` // claude, opencode, pi, omp, codex, gemini or agent
 	Machine      string          `json:"machine"` // the session's hostname; empty when unknown
-	Owner        User            `json:"owner"`
-	MyLevel      Level           `json:"my_level"` // manage for the owner, use for grantees
-	Online       bool            `json:"online"`
-	LastSeenAt   *time.Time      `json:"last_seen_at,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
+	// Organization is the AI's home organization (ORG-02); absent for an AI that has none.
+	Organization *ContactOrg `json:"organization,omitempty"`
+	// Folder is the folder the AI works in on its host's computer; empty for an AI without one.
+	Folder string `json:"folder"`
+	// FolderLabel is Folder as the host's home folder reads it: "~", "~/x" under it, the absolute path
+	// elsewhere; empty without a folder.
+	FolderLabel string     `json:"folder_label"`
+	Owner       User       `json:"owner"`
+	MyLevel     Level      `json:"my_level"` // manage for whoever manages the AI in an organization they share, use otherwise
+	Online      bool       `json:"online"`
+	LastSeenAt  *time.Time `json:"last_seen_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 // MaxAgentDisplayName is the longest agent display name in characters (ID-04).
@@ -48,7 +55,8 @@ type AgentRoom struct {
 }
 
 // AgentMessage is a message delivered to an agent. Trusted is computed for the receiving
-// agent: true only when the author resolves to the agent's owner (DLV-06, AD-006).
+// agent when the message is delivered: true only when its author manages the agent in the
+// agent's home organization (POS-10, AD-018). Its owner, its other AIs and its peers do not.
 type AgentMessage struct {
 	Room    RoomRef `json:"room"`
 	Trusted bool    `json:"trusted"`
@@ -63,10 +71,11 @@ type RoomInfo struct {
 	// InstructionsBy is the username of the user who last saved the instructions; empty when
 	// unknown (INS-04).
 	InstructionsBy string `json:"instructions_by,omitempty"`
-	// InstructionsTrusted is true only when that user is the calling agent's owner (INS-04).
+	// InstructionsTrusted is true only when that user manages the calling agent in the agent's
+	// home organization (INS-04, POS-10).
 	InstructionsTrusted bool `json:"instructions_trusted"`
-	// RoomTextTrusted is true only when the calling agent's owner created the room or last
-	// changed its name or description (INS-06).
+	// RoomTextTrusted is true only when whoever created the room or last changed its name or
+	// description manages the calling agent in the agent's home organization (INS-06, POS-10).
 	RoomTextTrusted bool         `json:"room_text_trusted"`
 	Members         []RoomMember `json:"members"`
 	Me              RoomMember   `json:"me"`
@@ -183,7 +192,8 @@ type AgentAckFrame struct {
 // receives it (CID-06): never a message of a Partyline conversation. ID is what the AI answers
 // with (reply); ChatID names the chat for send_message together with ConnectionID. A chat of
 // another connection, a message of the account itself (FromSelf) and a sender whose account is not
-// linked to the AI's owner are never trusted as the owner's (CID-13, CID-14).
+// linked to a user who manages the AI in its home organization are never trusted (CID-13, CID-14,
+// POS-10).
 type PlatformEvent struct {
 	ID           string `json:"id"`
 	Platform     string `json:"platform"` // whatsapp, telegram, discord or webhook
@@ -194,7 +204,9 @@ type PlatformEvent struct {
 	ChatKind   ChatKind `json:"chat_kind"`
 	SenderName string   `json:"sender_name"`
 	SenderID   string   `json:"sender_id"`
-	// Trusted is true only when the sender's account is linked to the AI's owner (AD-006).
+	// Trusted is true only when the sender's account is linked, through this connection, to a user
+	// who manages the AI in its home organization (POS-10, AD-018). It is decided when the message
+	// arrives.
 	Trusted bool `json:"trusted"`
 	// FromSelf is true for a message written from the connection's own account on the platform
 	// itself (typed on its device), which Partyline did not send.
@@ -243,9 +255,13 @@ type AgentDMRequest struct {
 	ChatIDs []string `json:"chat_ids,omitempty"`
 }
 
-// CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name. Its
-// request is a CreateGroupRequest whose members are "@handle", handle or id.
+// CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name, and
+// the organization it belongs to (ORG-02). Its request is a CreateGroupRequest whose members are
+// "@handle", handle or id.
 type CreatedGroup struct {
-	Room string `json:"room"`
-	Name string `json:"name"`
+	Room    string `json:"room"`
+	Name    string `json:"name"`
+	OrgID   string `json:"org_id"`
+	OrgSlug string `json:"org_slug"`
+	OrgName string `json:"org_name"`
 }

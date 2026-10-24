@@ -29,13 +29,14 @@ import {
   makeContacts,
   makeConversation,
   makeIntelligence,
-  makeMachineTree,
   makeMe,
   makeMember,
+  makeMembership,
   makeMessage,
+  makeOrgAIs,
   makePerson,
+  makeProfile,
   makeRoom,
-  makeTreeNode,
 } from "@/test/fixtures";
 import { catchUp, handleLiveEvent, type LiveActions } from "./handlers";
 import { useLiveStore } from "./store";
@@ -547,6 +548,20 @@ describe("live handlers", () => {
       expect(stale()).toBe(false);
     });
 
+    it("room.changed files the conversation under the organizations the frame names (ORG-02)", () => {
+      expect(row("r2")?.org_ids).toEqual(["o1"]);
+      handleLiveEvent(qc, actions(), {
+        type: "room.changed",
+        data: makeRoom({ id: "r2", kind: "dm", name: "", org_ids: ["o1", "o2"] }),
+      });
+      expect(row("r2")?.org_ids).toEqual(["o1", "o2"]);
+      handleLiveEvent(qc, actions(), {
+        type: "room.changed",
+        data: makeRoom({ id: "r2", kind: "dm", name: "", org_ids: [] }),
+      });
+      expect(row("r2")?.org_ids).toEqual([]);
+    });
+
     it("room.changed for a conversation the list does not have refetches it, every time", () => {
       handleLiveEvent(qc, actions(), { type: "room.changed", data: makeRoom({ id: "r7" }) });
       expect(stale()).toBe(true);
@@ -561,7 +576,7 @@ describe("live handlers", () => {
       expect(order()).toEqual(["r1", "r3"]);
     });
 
-    it("member changes, sharing changes and reconnects refresh the list, whose member names feed the search", async () => {
+    it("member changes, access changes and reconnects refresh the list, whose member names feed the search", async () => {
       handleLiveEvent(qc, actions(), { type: "room.members", data: { room_id: "r1" } });
       expect(stale()).toBe(true);
       seed();
@@ -727,6 +742,8 @@ describe("live handlers", () => {
         can_edit: true,
         apps: [],
         conversations: [],
+        memberships: [],
+        can_end_session: false,
       });
       const dm = makeRoom({
         id: "r2",
@@ -755,6 +772,8 @@ describe("live handlers", () => {
         can_edit: true,
         apps: [],
         conversations: [],
+        memberships: [],
+        can_end_session: false,
       });
       const { avatar_url: _gone, ...withoutAvatar } = renamed;
       change(withoutAvatar);
@@ -776,39 +795,37 @@ describe("live handlers", () => {
     const stale = (key: readonly unknown[]) => qc.getQueryState(key)?.isInvalidated;
     const notes = makeAI({ id: "a2", display_name: "Notes", handle: "notes" });
 
-    it("renames an AI everywhere the cached contacts show it: the tree at any depth, unlinked, shared and its owner", () => {
+    it("renames an AI everywhere the cached contacts show it: every organization's group, the hosted AIs and as a host", () => {
       qc.setQueryData<Contacts>(
         queryKeys.contacts,
         makeContacts({
-          machines: [
-            makeMachineTree({
-              nodes: [
-                makeTreeNode({
-                  ai: makeAIContact({ intelligence: notes }),
-                  children: [
-                    makeTreeNode({
-                      ai: makeAIContact({ intelligence: atlas }),
-                      children: [],
-                    }),
-                  ],
-                }),
+          org_ais: [
+            makeOrgAIs({
+              ais: [
+                makeAIContact({ intelligence: notes }),
+                makeAIContact({ intelligence: atlas }),
+                makeAIContact({ intelligence: notes, owner: atlas }),
               ],
             }),
+            makeOrgAIs({
+              org: { id: "o2", name: "Globex", slug: "globex" },
+              ais: [makeAIContact({ intelligence: atlas })],
+            }),
           ],
-          unlinked: [makeAIContact({ intelligence: atlas, folder: "", folder_label: "" })],
-          shared: [makeAIContact({ intelligence: notes, owner: atlas })],
+          hosted: [makeAIContact({ intelligence: atlas, folder: "", folder_label: "" })],
         }),
       );
       change();
       const c = contacts();
-      expect(c?.machines[0]?.nodes[0]?.ai.intelligence).toEqual(notes);
-      expect(c?.machines[0]?.nodes[0]?.children[0]?.ai.intelligence).toEqual(renamed);
-      expect(c?.unlinked[0]?.intelligence).toEqual(renamed);
-      expect(c?.shared[0]?.owner).toEqual(renamed);
-      expect(c?.shared[0]?.intelligence).toEqual(notes);
+      expect(c?.org_ais[0]?.ais[0]?.intelligence).toEqual(notes);
+      expect(c?.org_ais[0]?.ais[1]?.intelligence).toEqual(renamed);
+      expect(c?.org_ais[0]?.ais[2]?.owner).toEqual(renamed);
+      expect(c?.org_ais[0]?.ais[2]?.intelligence).toEqual(notes);
+      expect(c?.org_ais[1]?.ais[0]?.intelligence).toEqual(renamed);
+      expect(c?.hosted[0]?.intelligence).toEqual(renamed);
       // A name change leaves where the AI lives and whether it is online alone.
-      expect(c?.machines[0]?.nodes[0]?.children[0]?.ai).toMatchObject({
-        machine: "devbox",
+      expect(c?.org_ais[0]?.ais[1]).toMatchObject({
+        org_id: "o1",
         folder_label: "~/atlas",
         online: false,
       });
@@ -880,9 +897,7 @@ describe("live handlers", () => {
     it("refetches the contacts when an AI the cache does not know goes online: it was created by its first session", () => {
       qc.setQueryData<Contacts>(
         queryKeys.contacts,
-        makeContacts({
-          machines: [makeMachineTree({ nodes: [makeTreeNode({ ai: makeAIContact() })] })],
-        }),
+        makeContacts({ org_ais: [makeOrgAIs({ ais: [makeAIContact()] })] }),
       );
       handleLiveEvent(qc, actions(), {
         type: "agent.presence",
@@ -898,12 +913,12 @@ describe("live handlers", () => {
       expect(stale(queryKeys.contacts)).toBe(true);
     });
 
-    it("knows the AIs of the unlinked and shared lists too, and does not refetch for them", () => {
+    it("knows the hosted AIs and those of other organizations too, and does not refetch for them", () => {
       qc.setQueryData<Contacts>(
         queryKeys.contacts,
         makeContacts({
-          unlinked: [makeAIContact({ intelligence: notes, folder: "", folder_label: "" })],
-          shared: [makeAIContact({ intelligence: makeAI({ id: "a3" }) })],
+          hosted: [makeAIContact({ intelligence: notes, folder: "", folder_label: "" })],
+          org_ais: [makeOrgAIs({ ais: [makeAIContact({ intelligence: makeAI({ id: "a3" }) })] })],
         }),
       );
       for (const id of ["a2", "a3"]) {
@@ -944,6 +959,51 @@ describe("live handlers", () => {
     it("refreshes the contacts after a reconnect", async () => {
       qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
       await catchUp(qc);
+      expect(stale(queryKeys.contacts)).toBe(true);
+    });
+  });
+
+  describe("access.changed for an organization (OMEM-03, CHART-02)", () => {
+    const stale = (key: readonly unknown[]) => qc.getQueryState(key)?.isInvalidated;
+    const changed = () =>
+      handleLiveEvent(qc, actions(), {
+        type: "access.changed",
+        data: { resource_kind: "organization", resource_id: "o1" },
+      });
+
+    function seed() {
+      qc.setQueryData<Me>(queryKeys.me, makeMe());
+      qc.setQueryData<IntelligenceProfile>(
+        queryKeys.intelligence("u1"),
+        makeProfile({ memberships: [makeMembership()] }),
+      );
+      qc.setQueryData<IntelligenceProfile>(queryKeys.intelligence("a1"), makeProfile({ id: "a1" }));
+      qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
+      qc.setQueryData<Conversation[]>(queryKeys.conversations, [makeConversation()]);
+    }
+
+    it("refreshes the viewer's own profile, where their organizations are listed", () => {
+      seed();
+      changed();
+      expect(stale(queryKeys.intelligence("u1"))).toBe(true);
+    });
+
+    it("leaves the profile of anyone else alone", () => {
+      seed();
+      changed();
+      expect(stale(queryKeys.intelligence("a1"))).toBe(false);
+    });
+
+    it("refreshes the contacts, whose groups are the viewer's organizations, and the conversations, whose DMs are filed under shared ones", () => {
+      seed();
+      changed();
+      expect(stale(queryKeys.contacts)).toBe(true);
+      expect(stale(queryKeys.conversations)).toBe(true);
+    });
+
+    it("still refreshes the rest when the account is not cached yet", () => {
+      qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
+      changed();
       expect(stale(queryKeys.contacts)).toBe(true);
     });
   });

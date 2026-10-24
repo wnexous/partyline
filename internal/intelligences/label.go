@@ -25,3 +25,34 @@ func FolderLabel(home, folder string) string {
 	}
 	return "~/" + strings.Join(segments, "/")
 }
+
+// segmentsUnder splits the folder into the elements under home, and reports whether it is outside it (an
+// absolute path). A folder that is home itself has no element.
+func segmentsUnder(folder, home string) ([]string, bool) {
+	if home != "" {
+		if home == "/" {
+			if folder == "/" {
+				return nil, false
+			}
+			return splitPath(folder), false
+		}
+		if folder == home {
+			return nil, false
+		}
+		if strings.HasPrefix(folder, home+"/") {
+			return splitPath(strings.TrimPrefix(folder, home+"/")), false
+		}
+	}
+	if folder == "/" {
+		return nil, true
+	}
+	return splitPath(folder), true
+}
+
+func splitPath(folder string) []string {
+	folder = strings.Trim(folder, "/")
+	if folder == "" {
+		return nil
+	}
+	return strings.Split(folder, "/")
+}

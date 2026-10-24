@@ -7,19 +7,11 @@ import { formatAbsolute, formatRelative } from "@/lib/time";
 
 /**
  * What tells one AI from another beside its name: whether it is online (and, with `lastSeen`,
- * when it was last seen when it is not), the app it is open in, where it lives (`machine`: the
- * label to show for its machine; the folder as `~/…`) and, for a shared AI, whose it is. Renders
- * spans for a flex-wrap parent. `ai.online` is what to show: fold the live presence in first.
+ * when it was last seen when it is not), the app it is open in, the folder it works in (as `~/…`)
+ * and, for an AI somebody else hosts, who. Renders spans for a flex-wrap parent. `ai.online` is
+ * what to show: fold the live presence in first.
  */
-export function AIMeta({
-  ai,
-  machine,
-  lastSeen = false,
-}: {
-  ai: AIContact;
-  machine?: string;
-  lastSeen?: boolean;
-}) {
+export function AIMeta({ ai, lastSeen = false }: { ai: AIContact; lastSeen?: boolean }) {
   const { t, locale } = useI18n();
   const app = ai.app ? (harnessLabel(ai.app) ?? ai.app) : "";
   return (
@@ -35,12 +27,11 @@ export function AIMeta({
         )
       ) : null}
       {app ? <span>{app}</span> : null}
-      {machine ? <span>{machine}</span> : null}
       {/* A path has no spaces to break at: it may wrap anywhere rather than widen a narrow dialog. */}
       {ai.folder_label ? (
         <span className="min-w-0 font-mono [overflow-wrap:anywhere]">{ai.folder_label}</span>
       ) : null}
-      {ai.owner ? <span>{t("contacts.sharedBy", { handle: ai.owner.handle })}</span> : null}
+      {ai.owner ? <span>{t("contacts.hostedBy", { handle: ai.owner.handle })}</span> : null}
     </>
   );
 }
@@ -48,5 +39,5 @@ export function AIMeta({
 /** The meta line of a picker row: an AI shows where it lives, a user shows nothing. */
 export function PickableMeta({ pickable, online }: { pickable: Pickable; online: boolean }) {
   if (!pickable.ai) return null;
-  return <AIMeta ai={{ ...pickable.ai, online }} machine={pickable.machineLabel} />;
+  return <AIMeta ai={{ ...pickable.ai, online }} />;
 }

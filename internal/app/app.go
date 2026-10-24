@@ -115,6 +115,10 @@ type App struct {
 	Gateway *agents.Gateway
 	Live    *live.Hub
 
+	// trust opens the trust of one operation: a message is trusted by an AI when its author manages
+	// the AI in the AI's home organization (POS-10). Every operation reads each chart at most once.
+	trust delivery.TrustSource
+
 	handler http.Handler
 	ready   atomic.Bool
 	// sendWorker is whether Start runs the worker that retries the sends of Sends.
@@ -163,8 +167,9 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		_ = st.Close()
 		return nil, err
 	}
-	az := access.New(st, bus, access.Options{Now: opts.Now})
 	authz := orgs.NewAuthz(st)
+	az := access.New(st, bus, access.Options{Now: opts.Now, Authz: authz})
+	trust := delivery.TrustSource(func() delivery.Trust { return authz.Session() })
 	auditLog := audit.New(st, opts.Now)
 	a := &App{
 		Config:        cfg,
@@ -190,9 +195,10 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 			a.Presence.Kick(ctx, agentID, agents.CloseDeleted, agents.ReasonDeleted)
 		},
 	})
+	a.trust = trust
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
 		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Platform: a.Platform, Logger: opts.Logger,
-		Bus: bus, Sessions: usersSvc,
+		Bus: bus, Sessions: usersSvc, Trust: trust,
 	})
 	kinds := opts.ConnectorKinds
 	if kinds == nil {
@@ -206,7 +212,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	}
 	sentIDs := connectors.NewSentIDs(opts.Now)
 	pipeline := connectors.NewPipeline(connectors.PipelineDeps{
-		Store: st, Bus: bus, Blobs: blobs, Identities: a.Identities, Queue: a.Platform,
+		Store: st, Bus: bus, Blobs: blobs, Identities: a.Identities, Trust: authz, Queue: a.Platform,
 		Sent: sentIDs, Wait: opts.InboundWait, MaxUploadBytes: cfg.MaxUploadBytes, Logger: opts.Logger, Now: opts.Now,
 	})
 	fileLinks := connectors.NewFileLinks(box, st, cfg.PublicURL, opts.Now)
@@ -224,7 +230,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Queue: a.Platform, Runner: a.ConnectorManager, Now: opts.Now,
 	})
 	a.Live = live.New(live.Deps{
-		Bus: bus, Access: az, Rooms: a.Rooms, Intelligences: a.Intelligences, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
+		Bus: bus, Access: az, Authz: authz, Rooms: a.Rooms, Intelligences: a.Intelligences, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
 		Sessions: usersSvc, SessionCheckInterval: opts.LiveSessionCheck,
 	})
 	a.Devices = devices.New(devices.Deps{Store: st, Users: usersSvc, Box: box, Audit: auditLog, Now: opts.Now})
@@ -248,6 +254,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Live:          a.Live,
 		AgentWS:       a.Gateway,
 		Inbox:         a.Gateway,
+		Trust:         trust,
 		WebUI:         webui.Handler(cfg.PublicURL),
 		Logger:        opts.Logger,
 		Ready:         a.ready.Load,
@@ -277,7 +284,7 @@ func (a *App) Start(ctx context.Context) error {
 	bg, stop := context.WithCancel(context.WithoutCancel(ctx))
 	a.stop = stop
 	dispatcher := delivery.NewAgentDispatcher(delivery.DispatcherOptions{
-		Store: a.Store, Bus: a.Bus, Agents: a.Gateway, Load: a.Gateway.Message, Logger: a.Logger,
+		Store: a.Store, Bus: a.Bus, Agents: a.Gateway, Load: a.Gateway.Message, Trust: a.trust, Logger: a.Logger,
 	})
 	a.background(bg, "agent-dispatcher", dispatcher.Run)
 	if a.sendWorker {

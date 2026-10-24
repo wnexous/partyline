@@ -195,39 +195,39 @@ func TestLiveStreamHasNoOutboxStatus(t *testing.T) {
 
 // CID-22 (T33): naming chats in a post neither grants nor refuses anything: the post keeps the
 // authorization of the route it goes through, and a refused post stores nothing. The user route needs
-// the post level on the room (the owner and a poster 201, a viewer 403, a stranger and the admin 404,
-// anonymous callers 401); the agent route is the AI's own, for a member only: its owner's other AI
-// and another user's AI of the same folder name are refused, and so are users with a session or
-// a token. Each request is otherwise valid and names the room's chat.
+// the post level on the room (the creator, an admin of the organization and the people in the room 201,
+// everybody else 404, anonymous callers 401); the agent route is the AI's own, for a member only: its
+// creator's other AI and another user's AI of the same folder name are refused, and so are users with a
+// session or a token. Each request is otherwise valid and names the room's chat.
 func TestPostsNamingChatsKeepTheAuthorizationOfTheirRoute(t *testing.T) {
 	fake := connectortest.New()
-	m := newMatrix(t, testkit.WithConnectorKinds(fake.Kind()))
-	owner := m.as(t, roleOwner)
-	room := createRoom(owner, "Support")
-	shareRoom(owner, room.ID,
-		dto.SharingUser{UserID: m.clients[roleViewer].User.ID, Level: dto.LevelView},
-		dto.SharingUser{UserID: m.clients[rolePoster].User.ID, Level: dto.LevelPost})
+	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()))
+	roles := env.OrgRoles("acme")
+	owner := roles.Member
+	room := groupIn(t, env, owner, roles.Org.ID, "Support")
+	addToRoom(t, env, owner, room.ID, roles.Target)
+	addToRoom(t, env, owner, room.ID, roles.Guest)
 	conn := createFake(owner, "wa", true)
-	chat := insertChat(t, m.env, conn.ID, "120363000000000001@g.us", "Team")
+	chat := insertChat(t, env, conn.ID, "120363000000000001@g.us", "Team")
 	owner.SeedChatMember(room.ID, chat)
-	member := registerAgent(t, m.env, owner, "builder")
+	member := env.NewAIIn(owner, roles.Org.ID, "builder")
 	owner.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: member}).RequireStatus(http.StatusCreated)
-	registerAgent(t, m.env, owner, "outsider")
-	registerAgent(t, m.env, m.clients[roleStranger], "builder")
+	env.NewAIIn(owner, roles.Org.ID, "outsider")
+	env.NewAI(roles.Outsider, "builder")
 	req := dto.PostMessageRequest{Text: "hello", Recipients: []string{chat}}
 
-	userPost := []matrixRoute{{"post naming a chat", func(_ *testing.T, _ *matrix, c *testkit.Client, _ matrixResource) *testkit.Response {
+	userPost := []roleRoute{{"post naming a chat", func(_ *testing.T, c *testkit.Client, _ map[string]string) *testkit.Response {
 		return c.Post("/api/v1/rooms/"+room.ID+"/messages", req)
-	}, statuses(http.StatusCreated, http.StatusForbidden, http.StatusCreated, http.StatusNotFound, http.StatusNotFound)}}
-	m.run(t, func(*testing.T, *matrix) matrixResource { return matrixResource{} }, userPost)
-	m.env.Anon().Post("/api/v1/rooms/"+room.ID+"/messages", req).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	}, groupWant(http.StatusCreated, http.StatusCreated, http.StatusCreated, http.StatusNotFound)}}
+	runRoleRoutes(t, roles, func(*testing.T) map[string]string { return map[string]string{} }, userPost)
+	env.Anon().Post("/api/v1/rooms/"+room.ID+"/messages", req).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 
 	agentPath := agentRoomPath(room.ID, "/messages")
 	laptop := owner.Token(dto.TokenKindAgent, "laptop")
 	laptop.AsAgent("builder").Post(agentPath, req).RequireStatus(http.StatusCreated)
 	for name, ai := range map[string]*testkit.Client{
-		"another AI of the owner":                   laptop.AsAgent("outsider"),
-		"another user's AI of the same folder name": m.clients[roleStranger].Token(dto.TokenKindAgent, "laptop").AsAgent("builder"),
+		"another AI of the creator":                 laptop.AsAgent("outsider"),
+		"another user's AI of the same folder name": roles.Outsider.Token(dto.TokenKindAgent, "laptop").AsAgent("builder"),
 	} {
 		ai.T = t
 		e := ai.Post(agentPath, req).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
@@ -238,9 +238,9 @@ func TestPostsNamingChatsKeepTheAuthorizationOfTheirRoute(t *testing.T) {
 		e := c.Post(agentPath, req).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 		require.Equal(t, "agent token required", e.Message, name)
 	}
-	m.env.Anon().Post(agentPath, req).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	env.Anon().Post(agentPath, req).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 
-	// Only the three that were allowed stored something: the owner's, the poster's and the member AI's.
-	require.Equal(t, 3, countRows(t, m.env, "SELECT COUNT(*) FROM messages WHERE room_id = ?", room.ID))
-	require.Zero(t, countRows(t, m.env, "SELECT COUNT(*) FROM platform_sends"))
+	// Only the five that were allowed stored something: the four people who may post and the member AI.
+	require.Equal(t, 5, countRows(t, env, "SELECT COUNT(*) FROM messages WHERE room_id = ?", room.ID))
+	require.Zero(t, countRows(t, env, "SELECT COUNT(*) FROM platform_sends"))
 }

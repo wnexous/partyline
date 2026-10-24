@@ -17,6 +17,7 @@ import {
   makeRoom,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
+import { memberIn, viewerIn } from "@/test/orgs";
 import { renderRoute } from "@/test/render";
 import { sampleContacts } from "@/test/sample-contacts";
 
@@ -111,7 +112,8 @@ const hrefs = (list: HTMLElement) =>
 
 stubLayout();
 beforeEach(() => {
-  useLiveStore.setState({ locale: "en", openRoomId: null });
+  useLiveStore.setState({ locale: "en", openRoomId: null, currentOrgId: null });
+  window.localStorage.clear();
   vi.useFakeTimers({ toFake: ["Date"], now: NOW });
 });
 afterEach(() => {
@@ -556,5 +558,196 @@ describe("live messages (LAY-02)", () => {
     expect(within(row("/rooms/r4")).queryByText(/unread/)).toBeNull();
     // The open conversation moved up all the same, just behind the newer one.
     expect(hrefs(list).slice(0, 2)).toEqual(["/rooms/r1", "/rooms/r4"]);
+  });
+});
+
+/*
+ * The list is the current organization's (ORG-02): its groups, and each DM filed under it. A DM is
+ * filed under the organizations both sides belong to, or under the default one of the viewer when
+ * they share none, so every conversation is in at least one list.
+ */
+describe("the current organization (ORG-02)", () => {
+  const eve = makeIntelligence({ id: "u3", display_name: "Eve Dias", handle: "eve" });
+  const items: Conversation[] = [
+    makeConversation({ id: "g1", title: "acme crew", org_ids: ["o1"] }),
+    makeConversation({ id: "g2", title: "globex crew", org_ids: ["o2"] }),
+    // A colleague of Acme, someone of Globex only, and an AI of both.
+    makeConversation({
+      id: "d1",
+      kind: "dm",
+      title: "Bob Lima",
+      counterpart: bob,
+      org_ids: ["o1"],
+    }),
+    makeConversation({
+      id: "d2",
+      kind: "dm",
+      title: "Eve Dias",
+      counterpart: eve,
+      org_ids: ["o2"],
+    }),
+    makeConversation({
+      id: "d3",
+      kind: "dm",
+      title: "Atlas",
+      counterpart: atlas,
+      org_ids: ["o1", "o2"],
+    }),
+    makeConversation({ id: "g3", title: "legacy", org_ids: [] }),
+  ];
+  const acme = memberIn("o1", "member");
+  const globex = memberIn("o2", "admin");
+  const apiIn = (list: Conversation[] = items, ...memberships: ReturnType<typeof memberIn>[]) =>
+    mockApi({
+      "GET /me": json(200, makeMe()),
+      "GET /conversations": json(200, { items: list }),
+      ...viewerIn(...memberships),
+    });
+  const listed = async () => hrefs(await sidebar());
+  const pick = (orgId: string) => act(() => useLiveStore.getState().setCurrentOrg(orgId));
+
+  it("shows the groups of the current organization and hides those of another", async () => {
+    apiIn(items, acme, globex);
+    renderRoute("/");
+    const rows = await listed();
+    expect(rows).toContain("/rooms/g1");
+    expect(rows).not.toContain("/rooms/g2");
+  });
+
+  it("shows a DM with a colleague of the organization and hides a DM with someone of another organization only", async () => {
+    apiIn(items, acme, globex);
+    renderRoute("/");
+    const rows = await listed();
+    expect(rows).toContain("/rooms/d1");
+    expect(rows).not.toContain("/rooms/d2");
+  });
+
+  it("shows a DM both of two shared organizations hold in each of them", async () => {
+    apiIn(items, acme, globex);
+    renderRoute("/");
+    expect(await listed()).toContain("/rooms/d3");
+    pick("o2");
+    await waitFor(async () => expect(await listed()).toContain("/rooms/d2"));
+    expect(await listed()).toContain("/rooms/d3");
+  });
+
+  it("lists what is filed under the current organization, in the order served", async () => {
+    apiIn(items, acme, globex);
+    renderRoute("/");
+    expect(await listed()).toEqual(["/rooms/g1", "/rooms/d1", "/rooms/d3", "/rooms/g3"]);
+  });
+
+  it("follows the organization the viewer picks", async () => {
+    apiIn(items, acme, globex);
+    renderRoute("/");
+    await listed();
+    pick("o2");
+    await waitFor(async () =>
+      expect(await listed()).toEqual(["/rooms/g2", "/rooms/d2", "/rooms/d3", "/rooms/g3"]),
+    );
+  });
+
+  it("starts on the organization picked in an earlier visit", async () => {
+    window.localStorage.setItem("pl.org", "o2");
+    useLiveStore.setState({ currentOrgId: "o2" });
+    apiIn(items, acme, globex);
+    renderRoute("/");
+    expect(await listed()).toEqual(["/rooms/g2", "/rooms/d2", "/rooms/d3", "/rooms/g3"]);
+  });
+
+  it("holds a conversation filed under no organization in every organization", async () => {
+    apiIn(items, acme, globex);
+    renderRoute("/");
+    expect(await listed()).toContain("/rooms/g3");
+    pick("o2");
+    await waitFor(async () => expect(await listed()).toContain("/rooms/g2"));
+    expect(await listed()).toContain("/rooms/g3");
+  });
+
+  it("lists every conversation while the viewer's organizations are unknown", async () => {
+    mockApi({
+      "GET /me": json(200, makeMe()),
+      "GET /conversations": json(200, { items }),
+      "GET /intelligences/u1": apiError(500, "internal", "boom"),
+    });
+    renderRoute("/");
+    expect(await listed()).toEqual(items.map((c) => `/rooms/${c.id}`));
+  });
+
+  it("lists every conversation of a viewer who belongs to no organization", async () => {
+    apiIn(items);
+    renderRoute("/");
+    expect(await listed()).toHaveLength(items.length);
+  });
+
+  it("waits for the organizations, so another organization's conversations never flash first", async () => {
+    let release: () => void = () => {};
+    mockApi({
+      "GET /me": json(200, makeMe()),
+      "GET /conversations": json(200, { items }),
+      "GET /intelligences/u1": () =>
+        new Promise<Response>((resolve) => {
+          release = () => resolve(viewerIn(acme, globex)["GET /intelligences/u1"].clone());
+        }),
+    });
+    renderRoute("/");
+    await waitFor(() => expect(screen.queryByRole("list", { name: "Conversations" })).toBeNull());
+    expect(screen.queryByRole("link", { name: /globex crew/ })).toBeNull();
+    release();
+    expect(await listed()).toEqual(["/rooms/g1", "/rooms/d1", "/rooms/d3", "/rooms/g3"]);
+  });
+
+  it("names the organization when only the others have conversations", async () => {
+    apiIn(
+      items.filter((c) => c.org_ids.includes("o2") && !c.org_ids.includes("o1")),
+      acme,
+      globex,
+    );
+    renderRoute("/");
+    expect(await screen.findByText("No conversations in Acme yet")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Conversations" })).toBeNull();
+    // The way to start one is still there, as in the list that is empty for good.
+    expect(screen.getAllByRole("button", { name: "New group" })).toHaveLength(2);
+  });
+
+  it("keeps saying there are none when the viewer has no conversation at all", async () => {
+    apiIn([], acme, globex);
+    renderRoute("/");
+    expect(await screen.findByText("No conversations yet")).toBeInTheDocument();
+  });
+
+  it("searches among the conversations of the organization only", async () => {
+    apiIn(items, acme, globex);
+    const user = userEvent.setup();
+    renderRoute("/");
+    await listed();
+    await user.type(screen.getByRole("searchbox", { name: "Search conversations" }), "crew");
+    await waitFor(async () => expect(await listed()).toEqual(["/rooms/g1"]));
+  });
+
+  it("brings a conversation in when a live frame files it under the organization", async () => {
+    apiIn(items, acme, globex);
+    const { queryClient } = renderRoute("/");
+    expect(await listed()).not.toContain("/rooms/g2");
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "room.changed",
+        data: makeRoom({ id: "g2", name: "globex crew", org_ids: ["o1", "o2"] }),
+      }),
+    );
+    await waitFor(async () => expect(await listed()).toContain("/rooms/g2"));
+  });
+
+  it("speaks Portuguese when the organization has no conversation", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mockApi({
+      "GET /me": json(200, makeMe({ locale: "pt-BR" })),
+      "GET /conversations": json(200, {
+        items: items.filter((c) => c.org_ids.includes("o2") && !c.org_ids.includes("o1")),
+      }),
+      ...viewerIn(acme, globex),
+    });
+    renderRoute("/");
+    expect(await screen.findByText("Nenhuma conversa em Acme ainda")).toBeInTheDocument();
   });
 });

@@ -12,6 +12,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -73,6 +74,7 @@ func newUpgradedAPI(t *testing.T) *upgradedAPI {
 	add := func(kind dto.MemberKind, id string) dto.RoomMember {
 		return testkit.Decode[dto.RoomMember](f.alice.Post(f.roomPath()+"/members", dto.AddMemberRequest{Kind: kind, MemberID: id}).RequireStatus(http.StatusCreated))
 	}
+	env.AddMember(f.alice.PersonalOrg().ID, f.bob.User.ID, orgs.PermissionMember, "") // a group is made of the members of its organization
 	f.atlasMember, f.bobMember = add(dto.MemberKindAgent, f.atlas), add(dto.MemberKindUser, f.bob.User.ID)
 	f.conn = createFake(f.alice, "wa", true)
 	f.chat = insertChat(t, env, f.conn.ID, teamChat, "Support group")
@@ -202,34 +204,53 @@ func TestDeletingAFormerCatchAllRoomLeavesTheConnectionAlone(t *testing.T) {
 	live.ExpectNone(300*time.Millisecond, dto.LiveEventTypeRoomDeleted, dto.LiveEventTypeAccessChanged)
 }
 
-// retiredFieldSetup prepares the resources the retired fields used to act on: a room of the owner with
-// her AI, shared for viewing with the viewer and for posting with the poster, and a connection shared for
-// use with the viewer.
-func retiredFieldSetup(t *testing.T, m *matrix) matrixResource {
-	owner := m.as(t, roleOwner)
-	room := createRoom(owner, "Atlas HQ")
-	shareRoom(owner, room.ID,
-		dto.SharingUser{UserID: m.clients[roleViewer].User.ID, Level: dto.LevelView},
-		dto.SharingUser{UserID: m.clients[rolePoster].User.ID, Level: dto.LevelPost})
-	member := testkit.Decode[dto.RoomMember](owner.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: owner.NewAI("Atlas")}).RequireStatus(http.StatusCreated))
-	conn := createFake(owner, "wa", true)
-	shareConnector(owner, conn.ID, m.clients[roleViewer].User.ID)
-	return matrixResource{"room": room.ID, "member": member.ID, "ai": owner.NewAI("Nova"), "connector": conn.ID}
+// retiredRoomFieldSetup returns the setup of the room routes the retired fields used to act on: a group of
+// the organization created by the role "member" with her AI Atlas as a member, the roles "target" and
+// "guest" in it, and another AI of hers, Nova, to add.
+func retiredRoomFieldSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T) map[string]string {
+	return func(t *testing.T) map[string]string {
+		owner := *roles.Member
+		owner.T = t
+		room := groupIn(t, env, &owner, roles.Org.ID, "Atlas HQ")
+		addToRoom(t, env, &owner, room.ID, roles.Target)
+		addToRoom(t, env, &owner, room.ID, roles.Guest)
+		member := testkit.Decode[dto.RoomMember](owner.Post("/api/v1/rooms/"+room.ID+"/members",
+			dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: env.NewAIIn(&owner, roles.Org.ID, "Atlas")}).RequireStatus(http.StatusCreated))
+		nova := env.NewAIIn(&owner, roles.Org.ID, "Nova")
+		shareAI(&owner, nova, roles.Admin) // until AIs join groups through their organization, a manager adds an AI it may use
+		return map[string]string{"room": room.ID, "member": member.ID, "ai": nova}
+	}
 }
 
-// retiredFieldRoutes are the requests that used to change a room, a member or a connection through a
-// retired field, each carrying nothing but retired fields.
-func retiredFieldRoutes() []matrixRoute {
-	return []matrixRoute{
-		{"PATCH a room with bridge_chats and broadcast", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+// retiredRoomFieldRoutes are the requests that used to change a room or a member through a retired
+// field, each carrying nothing but retired fields.
+func retiredRoomFieldRoutes() []roleRoute {
+	return []roleRoute{
+		{"PATCH a room with bridge_chats and broadcast", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch("/api/v1/rooms/"+res["room"], map[string]any{"bridge_chats": true, "broadcast": false})
-		}, statuses(200, 403, 403, 404, 404)},
-		{"POST a member with outbound", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(200, 200, 403, 404)},
+		{"POST a member with outbound", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Post("/api/v1/rooms/"+res["room"]+"/members", map[string]any{"kind": "agent", "member_id": res["ai"], "outbound": false})
-		}, statuses(201, 403, 403, 404, 404)},
-		{"PATCH a member with outbound and sign_outbound", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(201, 201, 403, 404)},
+		{"PATCH a member with outbound and sign_outbound", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch("/api/v1/rooms/"+res["room"]+"/members/"+res["member"], map[string]any{"outbound": false, "sign_outbound": false})
-		}, statuses(200, 403, 403, 404, 404)},
+		}, groupWant(200, 200, 403, 404)},
+	}
+}
+
+// retiredConnectorFieldSetup prepares the connection the retired fields used to act on, shared for use
+// with the viewer, and a room to point it at.
+func retiredConnectorFieldSetup(t *testing.T, m *matrix) matrixResource {
+	owner := m.as(t, roleOwner)
+	room := createRoom(owner, "Atlas HQ")
+	conn := createFake(owner, "wa", true)
+	shareConnector(owner, conn.ID, m.clients[roleViewer].User.ID)
+	return matrixResource{"room": room.ID, "connector": conn.ID}
+}
+
+// retiredConnectorFieldRoutes are the requests that used to change a connection through a retired field.
+func retiredConnectorFieldRoutes() []matrixRoute {
+	return []matrixRoute{
 		{"PATCH a connection with auto_route_scope and auto_route_room_id", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
 			return c.Patch("/api/v1/connectors/"+res["connector"], map[string]any{"auto_route_scope": "all", "auto_route_room_id": res["room"]})
 		}, statuses(200, 403, 404, 404, 404)},
@@ -237,12 +258,16 @@ func retiredFieldRoutes() []matrixRoute {
 }
 
 // CID-22 (T35): a request that carries only retired fields keeps the authorization of its route. The
-// owner is answered and changes nothing; the viewer, the poster, the stranger and the admin get the
-// refusal the same route gives them for any other body, so ignoring the fields opens no way in.
+// people who manage the room are answered and change nothing; the people in the room and everybody else
+// get the refusal the same route gives them for any other body, so ignoring the fields opens no way in.
 func TestRetiredFieldRequestsKeepTheAuthorizationOfTheirRoutes(t *testing.T) {
 	fake := connectortest.New()
 	m := newMatrix(t, testkit.WithConnectorKinds(fake.Kind()))
-	m.run(t, retiredFieldSetup, retiredFieldRoutes())
+	m.run(t, retiredConnectorFieldSetup, retiredConnectorFieldRoutes())
+
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	runRoleRoutes(t, roles, retiredRoomFieldSetup(env, roles), retiredRoomFieldRoutes())
 }
 
 // CID-22 (T35): the same requests from anonymous callers and from every kind of AI token are refused:
@@ -251,23 +276,41 @@ func TestRetiredFieldRequestsKeepTheAuthorizationOfTheirRoutes(t *testing.T) {
 func TestRetiredFieldRequestsAreRefusedToAnonymousCallersAndAIs(t *testing.T) {
 	fake := connectortest.New()
 	m := newMatrix(t, testkit.WithConnectorKinds(fake.Kind()))
-	res := retiredFieldSetup(t, m)
+	connRes := retiredConnectorFieldSetup(t, m)
 	owner := m.as(t, roleOwner)
+	registerAgent(t, m.env, owner, "Atlas")
+	registerAgent(t, m.env, owner, "Nova")
+	registerAgent(t, m.env, m.clients[roleStranger], "Atlas")
 	operator := owner.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas")
 	sibling := owner.Token(dto.TokenKindAgent, "desk").AsAgent("Nova")
-	registerAgent(t, m.env, m.clients[roleStranger], "Atlas")
 	strangers := m.clients[roleStranger].Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas")
 
-	for _, rt := range retiredFieldRoutes() {
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	roomRes := retiredRoomFieldSetup(env, roles)(t)
+	roomOperator := roles.Member.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas")
+	roomSibling := roles.Member.Token(dto.TokenKindAgent, "desk").AsAgent("Nova")
+	roomStrangers := roles.Outsider.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas")
+
+	refused := func(t *testing.T, call func(c *testkit.Client) *testkit.Response, anon *testkit.Client, ais map[string]*testkit.Client) {
+		anon.T = t
+		call(anon).RequireStatus(http.StatusUnauthorized)
+		for name, ai := range ais {
+			ai.T = t
+			e := call(ai).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+			require.Equal(t, "agent tokens can only call agent endpoints", e.Message, name)
+		}
+	}
+	for _, rt := range retiredConnectorFieldRoutes() {
 		t.Run(rt.name, func(t *testing.T) {
-			anon := m.env.Anon()
-			anon.T = t
-			rt.call(t, m, anon, res).RequireStatus(http.StatusUnauthorized)
-			for name, ai := range map[string]*testkit.Client{"operator": operator, "another AI of the owner": sibling, "another user's AI": strangers} {
-				ai.T = t
-				e := rt.call(t, m, ai, res).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-				require.Equal(t, "agent tokens can only call agent endpoints", e.Message, name)
-			}
+			refused(t, func(c *testkit.Client) *testkit.Response { return rt.call(t, m, c, connRes) }, m.env.Anon(),
+				map[string]*testkit.Client{"operator": operator, "another AI of the owner": sibling, "another user's AI": strangers})
+		})
+	}
+	for _, rt := range retiredRoomFieldRoutes() {
+		t.Run(rt.name, func(t *testing.T) {
+			refused(t, func(c *testkit.Client) *testkit.Response { return rt.call(t, c, roomRes) }, env.Anon(),
+				map[string]*testkit.Client{"member": roomOperator, "another AI of the creator": roomSibling, "another user's AI": roomStrangers})
 		})
 	}
 }

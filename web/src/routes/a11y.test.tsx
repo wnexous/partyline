@@ -8,11 +8,14 @@ import { json, mockApi } from "@/test/fetch";
 import {
   makeAgent,
   makeAI,
+  makeAIContact,
   makeConnector,
+  makeConnectorKind,
   makeConversation,
   makeIntelligence,
   makeMe,
   makeMember,
+  makeMembership,
   makeMessage,
   makePerson,
   makeProfile,
@@ -21,7 +24,7 @@ import {
 import { stubLayout } from "@/test/layout";
 import { stubViewport } from "@/test/media";
 import { renderRoute } from "@/test/render";
-import { lia, sampleContacts } from "@/test/sample-contacts";
+import { lia, oldHelper, sampleContacts } from "@/test/sample-contacts";
 
 expect.extend(matchers);
 
@@ -45,8 +48,6 @@ const aiProfile = makeProfile({
   can_edit: true,
   ai: {
     owner: makeIntelligence(),
-    machine: "devbox",
-    machine_label: "Build box",
     folder: "/home/dev/atlas",
     folder_label: "~/atlas",
     app: "claude",
@@ -58,10 +59,41 @@ const aiProfile = makeProfile({
     { kind: "discord", label: "Discord: @atlasbot", connector_id: "k9" },
   ],
 });
+// The same AI as its manager sees it: in its home organization, where they may delete it, and as a
+// guest of another one, where they may remove it; and its session may be ended.
+const managedAIProfile = makeProfile({
+  ...aiProfile,
+  can_end_session: true,
+  memberships: [
+    makeMembership({ permission: "member", can_delete: true, delete_effect: "delete" }),
+    makeMembership({
+      org_id: "o2",
+      org_name: "Globex",
+      org_slug: "globex",
+      permission: "guest",
+      position_name: "Worktrees",
+      can_delete: true,
+      delete_effect: "remove",
+    }),
+  ],
+});
 const ownProfile = makeProfile({
   ...makeMe().intelligence,
   bio: "Release captain.",
   can_edit: true,
+});
+/** The viewer's own profile when they belong to organizations: they administer Acme and are a member of Globex. */
+const ownProfileInOrgs = makeProfile({
+  ...ownProfile,
+  memberships: [
+    makeMembership({ permission: "admin", position_name: "Admin" }),
+    makeMembership({
+      org_id: "o2",
+      org_name: "Globex",
+      org_slug: "globex",
+      permission: "member",
+    }),
+  ],
 });
 
 const personProfile = makeProfile({
@@ -79,7 +111,7 @@ const personProfile = makeProfile({
   ],
 });
 
-function appApi(locale: "en" | "pt-BR") {
+function appApi(locale: "en" | "pt-BR", extra: Parameters<typeof mockApi>[0] = {}) {
   return mockApi({
     "GET /me": json(200, makeMe({ role: "admin", locale })),
     "GET /intelligences/u1": json(200, ownProfile),
@@ -231,8 +263,6 @@ function appApi(locale: "en" | "pt-BR") {
       conversations: [],
       ai: {
         owner: makeMe().intelligence,
-        machine: "devbox",
-        machine_label: "devbox",
         folder: "/home/dev/atlas",
         folder_label: "~/atlas",
         app: "claude",
@@ -248,6 +278,7 @@ function appApi(locale: "en" | "pt-BR") {
     "GET /connectors": json(200, {
       items: [makeConnector({ status: "error", last_error: "invalid token" })],
     }),
+    ...extra,
   });
 }
 
@@ -320,18 +351,48 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
   });
 
-  it("the contacts page, with its tree, a connector's people and a machine being renamed, has no axe violations", async () => {
+  it("the new group dialog, with the organization it belongs to, has no axe violations", async () => {
+    appApi(locale, { "GET /intelligences/u1": json(200, ownProfileInOrgs) });
+    const user = userEvent.setup();
+    renderRoute("/");
+    await user.click(
+      await screen.findByRole("button", { name: locale === "en" ? "New group" : "Novo grupo" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("combobox", {
+      name: locale === "en" ? "Organization" : "Organização",
+    });
+    await within(dialog).findByRole("checkbox", { name: "Atlas" });
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the add connector dialog, with the organization it goes to, has no axe violations", async () => {
+    appApi(locale, {
+      "GET /intelligences/u1": json(200, ownProfileInOrgs),
+      "GET /connector-kinds": json(200, { items: [makeConnectorKind()] }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/connectors");
+    await user.click(
+      await screen.findByRole("button", {
+        name: locale === "en" ? "Add connector" : "Adicionar conector",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("combobox", {
+      name: locale === "en" ? "Organization" : "Organização",
+    });
+    await within(dialog).findByRole("radio", { name: /Telegram/ });
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the contacts page, with its organizations, the AIs it hosts and a connector's people, has no axe violations", async () => {
     appApi(locale);
     const user = userEvent.setup();
     const { container } = renderRoute("/contacts");
-    await screen.findByRole("region", { name: "devbox" });
+    await screen.findByRole("region", { name: "Acme" });
     await user.click(screen.getByRole("button", { name: /ops-line/ }));
     await screen.findByTestId("contact-p1");
-    await user.click(
-      screen.getByRole("button", {
-        name: locale === "en" ? "Rename machine devbox" : "Renomear a máquina devbox",
-      }),
-    );
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
@@ -344,8 +405,41 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
-  it("the merge dialog of an unlinked AI has no axe violations", async () => {
+  it("the settings page, with the default organization and the account deletion, has no axe violations", async () => {
+    appApi(locale, {
+      "GET /me": json(200, { ...makeMe({ locale }), default_org_id: "o2" }),
+      "GET /intelligences/u1": json(200, ownProfileInOrgs),
+    });
+    const { container } = renderRoute("/settings");
+    await screen.findByRole("combobox", {
+      name:
+        locale === "en" ? "Default organization for new AIs" : "Organização padrão para novas IAs",
+    });
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the dialog that deletes the account has no axe violations", async () => {
     appApi(locale);
+    const user = userEvent.setup();
+    renderRoute("/settings");
+    await user.click(
+      await screen.findByRole("button", {
+        name: locale === "en" ? "Delete my account" : "Excluir minha conta",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByLabelText(locale === "en" ? "Password" : "Senha");
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the merge dialog of a hosted AI has no axe violations", async () => {
+    // The old helper's home is Acme, where the user hosts Atlas and Notes too: it can be merged into either.
+    appApi(locale, {
+      "GET /contacts": json(200, {
+        ...sampleContacts,
+        hosted: [makeAIContact({ intelligence: oldHelper, folder: "", folder_label: "" })],
+      }),
+    });
     const user = userEvent.setup();
     renderRoute("/contacts");
     await user.click(
@@ -363,7 +457,7 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     stubViewport(360);
     appApi(locale);
     const { container } = renderRoute("/contacts");
-    await screen.findByRole("region", { name: "devbox" });
+    await screen.findByRole("region", { name: "Acme" });
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
@@ -395,6 +489,56 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     );
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByRole("combobox", { name: locale === "en" ? "AI" : "IA" });
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("an AI's profile, with its organizations and the actions its manager has, has no axe violations", async () => {
+    appApi(locale, { "GET /intelligences/a1": json(200, managedAIProfile) });
+    const { container } = renderRoute("/contacts/a1");
+    await screen.findByRole("heading", { name: "Atlas", level: 1 });
+    await screen.findByRole("region", { name: locale === "en" ? "Organizations" : "Organizações" });
+    expect(
+      screen.getByRole("button", {
+        name: locale === "en" ? "Remove from Globex" : "Remover de Globex",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: locale === "en" ? "End session" : "Encerrar sessão" }),
+    ).toBeInTheDocument();
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the same profile on a phone has no axe violations", async () => {
+    stubViewport(360);
+    appApi(locale, { "GET /intelligences/a1": json(200, managedAIProfile) });
+    const { container } = renderRoute("/contacts/a1");
+    await screen.findByRole("region", { name: locale === "en" ? "Organizations" : "Organizações" });
+    expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the dialog that removes an identity from an organization has no axe violations", async () => {
+    appApi(locale, { "GET /intelligences/a1": json(200, managedAIProfile) });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await user.click(
+      await screen.findByRole("button", {
+        name: locale === "en" ? "Remove from Globex" : "Remover de Globex",
+      }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
+  it("the dialog that ends a session has no axe violations", async () => {
+    appApi(locale, { "GET /intelligences/a1": json(200, managedAIProfile) });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await user.click(
+      await screen.findByRole("button", {
+        name: locale === "en" ? "End session" : "Encerrar sessão",
+      }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
     expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
   });
 

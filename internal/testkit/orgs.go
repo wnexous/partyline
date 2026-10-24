@@ -26,6 +26,42 @@ func (c *Client) PersonalOrg() db.Organization {
 	return org
 }
 
+// ShareAI gives the users sight of the AI, as its admin would by inviting them to the organization the AI
+// belongs to (AD-016): they become members of its home organization with no position, unless they already are
+// members of it. The grants a v0.5 AI was shared with give nothing any more.
+func (c *Client) ShareAI(aiID string, users ...*Client) {
+	c.T.Helper()
+	ctx := context.Background()
+	home, err := c.env.App.Store.R().GetAgentOrg(ctx, aiID)
+	require.NoError(c.T, err)
+	require.NotEmpty(c.T, home, "the AI has a home organization")
+	for _, u := range users {
+		_, member, err := c.env.App.Authz.Member(ctx, home, u.User.ID)
+		require.NoError(c.T, err)
+		if !member {
+			c.env.AddMember(home, u.User.ID, orgs.PermissionMember, "")
+		}
+	}
+}
+
+// ShareConnection gives the users sight of the connection, as an admin of its organization would by inviting
+// them: they become members of it with no position, unless they already are members (AD-016). The grants a v0.5
+// connection was shared with give nothing any more.
+func (c *Client) ShareConnection(connectorID string, userIDs ...string) {
+	c.T.Helper()
+	ctx := context.Background()
+	conn, err := c.env.App.Store.R().GetConnector(ctx, connectorID)
+	require.NoError(c.T, err)
+	require.True(c.T, conn.OrgID.Valid, "the connection belongs to an organization")
+	for _, id := range userIDs {
+		_, member, err := c.env.App.Authz.Member(ctx, conn.OrgID.String, id)
+		require.NoError(c.T, err)
+		if !member {
+			c.env.AddMember(conn.OrgID.String, id, orgs.PermissionMember, "")
+		}
+	}
+}
+
 // AddPosition adds a position named name to the organization's chart under parent ("" for a root) and
 // returns its id. It writes the position directly, with no authorization, to set a chart up.
 func (e *Env) AddPosition(org, name, parent string) string {
@@ -88,6 +124,29 @@ func (e *Env) NewAIIn(owner *Client, org, name string) string {
 		return q.SetUserDefaultOrg(ctx, db.SetUserDefaultOrgParams{DefaultOrgID: u.DefaultOrgID, ID: owner.User.ID})
 	}))
 	return id
+}
+
+// PlaceInDefaultOrg gives an AI that has no organization (NewLegacyAI) the home the upgrade gives a v0.3
+// identity (OUPG-01): its owner's default organization, which the owner created it in, as a member with no
+// position, created by the owner.
+func (e *Env) PlaceInDefaultOrg(owner *Client, aiID string) {
+	e.T.Helper()
+	ctx := context.Background()
+	var orgID string
+	require.NoError(e.T, e.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		var err error
+		if orgID, err = orgs.DefaultFor(ctx, q, owner.User.ID); err != nil {
+			return err
+		}
+		if err := q.SetAgentHome(ctx, db.SetAgentHomeParams{OrgID: nullable(orgID), ID: aiID}); err != nil {
+			return err
+		}
+		if err := q.SetAgentCreator(ctx, db.SetAgentCreatorParams{CreatorIid: nullable(owner.User.ID), ID: aiID}); err != nil {
+			return err
+		}
+		return orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: orgID, IID: aiID, Permission: orgs.PermissionMember, Now: time.Now()})
+	}))
+	e.App.Bus.Publish(events.OrgChanged{OrgID: orgID})
 }
 
 // OrgRoles is one organization with an identity in every role of the authorization matrices (design,

@@ -129,6 +129,41 @@ ON CONFLICT (resource_kind, resource_id, subject) DO UPDATE SET level =
               > (CASE grants.level WHEN 'view' THEN 1 WHEN 'post' THEN 2 WHEN 'use' THEN 3 ELSE 4 END)
          THEN excluded.level ELSE grants.level END;
 
+-- name: ReassignInviter :exec
+-- Merge: the guests the merged identity invited answer to the surviving one.
+UPDATE org_members SET inviter_iid = sqlc.arg(into_id) WHERE inviter_iid = sqlc.arg(from_id);
+
+-- name: ClearSelfInviter :exec
+-- Merge: when the merged identity invited the survivor itself, the survivor answers to whoever invited the
+-- merged one in that organization (nobody when it had no inviter), not to itself.
+UPDATE org_members SET inviter_iid = (SELECT f.inviter_iid FROM org_members f
+                                      WHERE f.org_id = org_members.org_id AND f.iid = sqlc.arg(from_id))
+WHERE org_members.iid = sqlc.arg(into_id) AND org_members.inviter_iid = sqlc.arg(into_id);
+
+-- name: ReassignInvitationInviter :exec
+-- Merge: a pending invitation the merged identity sent is the surviving one's.
+UPDATE org_invitations SET invited_by = sqlc.arg(into_id) WHERE invited_by = sqlc.arg(from_id);
+
+-- name: MoveAgentOrgMemberships :many
+-- Merge: the organizations only the merged AI belongs to become the surviving AI's, with the permission,
+-- position and inviter it had there. Where both belong, the survivor's membership stays (it wins).
+UPDATE org_members SET iid = sqlc.arg(into_id)
+WHERE org_members.iid = sqlc.arg(from_id)
+  AND org_members.org_id NOT IN (SELECT o.org_id FROM org_members o WHERE o.iid = sqlc.arg(into_id))
+RETURNING org_id;
+
+-- name: DeleteAgentOrgMemberships :many
+-- Merge: what is left of the merged AI's memberships, the organizations both belong to.
+DELETE FROM org_members WHERE iid = ? RETURNING org_id;
+
+-- name: ReassignAgentCreator :exec
+-- Merge: the AIs the merged AI created are the survivor's.
+UPDATE agents SET creator_iid = sqlc.arg(into_id) WHERE creator_iid = sqlc.arg(from_id);
+
+-- name: ReassignRoomCreator :exec
+-- Merge: the groups the merged AI created are the survivor's.
+UPDATE rooms SET creator_iid = sqlc.arg(into_id) WHERE creator_iid = sqlc.arg(from_id);
+
 -- name: ListRoomMessageOrder :many
 -- A room's messages in the order they were written.
 SELECT id, seq FROM messages WHERE room_id = ? ORDER BY seq;

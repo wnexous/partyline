@@ -49,8 +49,7 @@ func TestAgentToolsCallActsAsTheFoldersAI(t *testing.T) {
 	require.Equal(t, []any{"codex", "devbox", "Acme", false}, []any{ai.Harness, ai.Machine, ai.Intelligence.DisplayName, ai.Online})
 	prof := profileOf(t, alice, ai.ID)
 	require.Equal(t, []any{dto.IntelligenceKindAI, "acme", "Acme"}, []any{prof.Kind, prof.Handle, prof.DisplayName})
-	require.Equal(t, []any{"devbox", "/home/alice/acme", "~/acme", "codex"},
-		[]any{prof.AI.Machine, prof.AI.Folder, prof.AI.FolderLabel, prof.AI.App})
+	require.Equal(t, []any{"/home/alice/acme", "~/acme", "codex"}, []any{prof.AI.Folder, prof.AI.FolderLabel, prof.AI.App})
 
 	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: ai.ID}).RequireStatus(http.StatusCreated)
 	m := testkit.Decode[dto.Message](codex.Post(agentRoomPath(room.ID, "/messages"), dto.PostMessageRequest{Text: "from the folder"}).RequireStatus(http.StatusCreated))
@@ -316,7 +315,8 @@ func TestAgentFolderHeadersAreDecoded(t *testing.T) {
 	w := conn.Welcome(wsWait)
 	require.Equal(t, []any{"Café Órdenes", "cafe-ordenes"}, []any{w.Intelligence.DisplayName, w.Intelligence.Handle})
 	ai := profileOf(t, alice, w.Agent.ID).AI
-	require.Equal(t, []any{"dev box", "/home/alice/the lab/Café Órdenes", "~/the lab/Café Órdenes"}, []any{ai.Machine, ai.Folder, ai.FolderLabel})
+	require.Equal(t, []any{"/home/alice/the lab/Café Órdenes", "~/the lab/Café Órdenes"}, []any{ai.Folder, ai.FolderLabel})
+	require.Equal(t, "dev box", listedAgent(t, alice, w.Agent.ID).Machine, "the machine is decoded too")
 
 	reg := testkit.Decode[dto.AgentInfo](tok.AsFolder(folder).Post("/api/v1/agent/register", nil).RequireStatus(http.StatusOK))
 	require.Equal(t, w.Agent.ID, reg.ID, "the REST call decodes to the same folder as the WebSocket")

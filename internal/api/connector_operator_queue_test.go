@@ -221,10 +221,10 @@ func TestOperatorChangeIsAllOrNothing(t *testing.T) {
 	}
 }
 
-// CID-05, CID-01 (authorization matrix of PATCH /connectors/{id}): only the owner changes the
-// operator and moves its queue. The use grantee gets 403, a stranger, someone who may use the
-// operator but not the connection, and the admin get 404, anonymous callers 401, and AI tokens, the
-// operator's own and another user's included, 403. An operator that is not an AI of the owner is
+// CID-05, CID-01 (authorization matrix of PATCH /connectors/{id}): only the admins of the connection's
+// organization change the operator and move its queue. A member gets 403, a stranger, someone who sees the
+// operator but not the connection, and the admin of the instance get 404, anonymous callers 401, and AI tokens,
+// the operator's own and another user's included, 403. An operator that is not an AI of the organization is
 // a 422. Every refusal leaves the items with the operator, the audit trail untouched, and the
 // operator's session without a frame.
 func TestRefusedOperatorChangesLeaveTheQueueAlone(t *testing.T) {
@@ -241,20 +241,20 @@ func TestRefusedOperatorChangesLeaveTheQueueAlone(t *testing.T) {
 	other := f.notes
 	req := dto.UpdateConnectorRequest{OperatorID: &other}
 	patch := func(c *testkit.Client) *testkit.Response { return c.Patch("/api/v1/connectors/"+f.conn.ID, req) }
-	patch(f.bob).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden) // use grantee
+	patch(f.bob).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden) // a member
 	patch(f.carol).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound) // stranger
-	patch(f.dave).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)  // may use Atlas, not the connection
-	patch(f.admin).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound) // admins get no implicit access
+	patch(f.dave).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)  // sees Atlas, not the connection
+	patch(f.admin).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound) // admins of the instance get no implicit access
 	patch(f.env.Anon()).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	owner := f.alice.Token(dto.TokenKindAgent, "laptop")
 	patch(owner).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	patch(owner.AsAgent("Atlas")).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden) // the operator itself
 	patch(owner.AsAgent("Notes")).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden) // the AI that would receive it
 	patch(f.bob.Token(dto.TokenKindAgent, "laptop").AsAgent("Bobby")).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	for _, bad := range []string{f.bobby, f.alice.User.ID, ""} { // not an AI the owner owns
+	for _, bad := range []string{f.bobby, f.alice.User.ID, ""} { // not an AI of the connection's organization
 		invalid := bad
 		e := f.alice.Patch("/api/v1/connectors/"+f.conn.ID, dto.UpdateConnectorRequest{OperatorID: &invalid}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-		require.Equal(t, map[string]string{"operator_id": "must be an AI you own"}, e.Fields)
+		require.Equal(t, map[string]string{"operator_id": "must be an AI of the connection's organization"}, e.Fields)
 	}
 
 	for _, id := range []string{one, two} {

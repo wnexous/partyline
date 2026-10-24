@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -17,8 +18,8 @@ func activity(t *testing.T, c *testkit.Client, query string) []dto.ActivityItem 
 	return testkit.Decode[dto.List[dto.ActivityItem]](c.Get("/api/v1/activity" + query).RequireStatus(http.StatusOK)).Items
 }
 
-// GET /activity: the latest messages across the rooms the caller can view (ACL-03, ACL-08),
-// newest first, each with its room's id and name.
+// GET /activity: the latest messages across the rooms the caller can view (ACL-03, ACL-08), as a room
+// member or as an admin of the group's organization, newest first, each with its room's id and name.
 func TestActivityFeed(t *testing.T) {
 	clock := testkit.NewClock(time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC))
 	env := testkit.New(t, testkit.WithClock(clock.Now))
@@ -27,10 +28,11 @@ func TestActivityFeed(t *testing.T) {
 
 	private := createRoom(alice, "alice-private")
 	shared := createRoom(alice, "shared-with-bob")
-	shareRoom(alice, shared.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelView})
+	addToRoom(t, env, alice, shared.ID, bob)
 	own := createRoom(bob, "bob-own")
-	public := createRoom(carol, "town-square")
-	carol.Put("/api/v1/rooms/"+public.ID+"/sharing", dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelView}).RequireStatus(http.StatusOK)
+	// carol makes a group in bob's organization, which bob administers without being in the group.
+	env.AddMember(bob.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember, "")
+	public := groupIn(t, env, carol, bob.PersonalOrg().ID, "town-square")
 
 	post := func(c *testkit.Client, room dto.Room, text string) dto.Message {
 		clock.Advance(time.Second)
@@ -47,17 +49,15 @@ func TestActivityFeed(t *testing.T) {
 	for i, it := range got {
 		ids[i] = it.Message.ID
 	}
-	require.Equal(t, []string{m5.ID, m4.ID, m3.ID, m1.ID}, ids, "newest first, only rooms bob can view")
+	require.Equal(t, []string{m5.ID, m4.ID, m3.ID, m1.ID}, ids, "newest first, only rooms bob can view: as a member, as an admin and as the creator")
 	require.Equal(t, dto.RoomRef{ID: shared.ID, Name: "shared-with-bob"}, got[0].Room)
 	require.Equal(t, dto.RoomRef{ID: public.ID, Name: "town-square"}, got[1].Room)
 	require.Equal(t, "five", got[0].Message.Text)
 	require.Equal(t, "alice", got[0].Message.AuthorName, "the message is rendered as in the room")
 	require.Equal(t, shared.ID, got[0].Message.RoomID)
 
-	// An admin without grants sees no private room (ACL-08); only the public one.
-	adminItems := activity(t, admin, "")
-	require.Len(t, adminItems, 1)
-	require.Equal(t, m4.ID, adminItems[0].Message.ID)
+	// An admin of the instance who belongs to none of these organizations sees no room (ACL-08).
+	require.Empty(t, activity(t, admin, ""))
 
 	// Anonymous callers are rejected; agent tokens reach only agent endpoints.
 	env.Anon().Get("/api/v1/activity").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)

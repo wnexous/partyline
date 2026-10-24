@@ -61,17 +61,28 @@ func (s *server) openDM(w http.ResponseWriter, r *http.Request, p authn.Principa
 	return nil
 }
 
-// createGroup creates a group owned by the caller with the chosen users and AIs as members, or
-// refuses it with the members that cannot be added and creates nothing (LAY-04).
+// createGroup creates a group in an organization the caller belongs to (org_id, else their default), with
+// the chosen users and AIs of that organization as members, or refuses it with the members that cannot be
+// added and creates nothing (LAY-04, ORG-03). A caller who is not a member or admin there is 403.
 func (s *server) createGroup(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	var req dto.CreateGroupRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	room, err := s.Conversations.CreateGroup(r.Context(), p, conversations.GroupInput{Name: req.Name, Description: req.Description, Members: req.Members})
+	room, err := s.Conversations.CreateGroup(r.Context(), p, conversations.GroupInput{Name: req.Name, Description: req.Description, Members: req.Members, Org: firstNonEmpty(req.OrgID, req.Org)})
 	if err != nil {
 		return err
 	}
 	httpx.WriteJSON(w, http.StatusCreated, convert.Room(room))
 	return nil
+}
+
+// firstNonEmpty is the first of the strings that is not empty.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

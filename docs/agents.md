@@ -206,26 +206,24 @@ merge or delete.
 
 ### `partyline agents`
 
-`partyline agents` prints your AIs as the machine › folder tree, with online markers:
+`partyline agents` prints the AIs you host, grouped by organization, with online markers:
 
 ```
-workstation
-  ● Atlas                         @atlas       Claude Code  online   ~/atlas
-    ○ Notes                       @notes       OpenCode     2h ago   ~/atlas/notes
-  ○ work/acme/agents › Lab        @lab         Codex        3d ago   ~/work/acme/agents/lab
-laptop
-  ○ Dev                           @dev         Claude Code  5d ago   ~
-Unlinked
-  ○ Old helper                    @old-helper
+Acme Corp (acme-corp)
+  ● Atlas  @atlas  Claude Code  online  ~/atlas
+  ○ Notes  @notes  OpenCode     2h ago  ~/atlas/notes
+alice
+  ○ Dev    @dev    Claude Code  5d ago  ~
+No organization
+  ○ Old helper  @old-helper  Agent
 ```
 
-Machines with an online AI come first, then by label. A machine line is its label; when the
-label differs from the hostname it reads `<label> (<hostname>)`. Within a machine, an AI whose
-folder is inside another AI's folder is nested under it, and folder chains with no AI are
-collapsed into one path label (`work/acme/agents ›`). `~` is the home folder. Each row shows
-the online marker, display name, @handle, app, state (`online` or the relative last seen) and
-folder; Unlinked rows show only the marker, name and @handle. **Unlinked** comes last. With no
-AI at all it prints `No AIs yet: start a session with partyline claude`.
+The organizations come by name; a group's heading is the organization's name, followed by its
+address in parentheses when that differs from the name. The AIs of one organization come by name.
+An AI with no organization comes last, under **No organization**. Each row shows the online
+marker, display name, @handle, app, state (`online` or the relative last seen) and the folder,
+where `~` is the home folder of the computer the AI lives on; the computer itself is not named.
+With no AI at all it prints `No AIs yet: start a session with partyline claude`.
 
 `partyline agents --url <url> --token <token>` uses explicit credentials; otherwise the saved
 config, `PARTYLINE_URL` and `PARTYLINE_TOKEN` are used.

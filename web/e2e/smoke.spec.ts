@@ -21,7 +21,7 @@ test.describe.configure({ mode: "serial" });
 
 const MOBILE_MAX_WIDTH = 767;
 
-/** The machine every fake AI session reports; the contacts page groups AIs by it (TREE-01). */
+/** The machine every fake AI session reports; the server keeps it inside the AI's identity and shows it nowhere (AD-022). */
 const MACHINE = "e2e-box";
 
 /** A 1x1 PNG: the smallest image the avatar upload accepts (PROF-03). */
@@ -473,7 +473,7 @@ test("a group is created from the list with an AI as its member (LAY-01, LAY-04)
   ).toBeVisible();
 });
 
-test("the contacts page groups AIs by machine and nests folders (TREE-01)", async ({
+test("the contacts page groups AIs by organization and names no machine (ORG-02, AD-022)", async ({
   context,
   page,
   instance,
@@ -485,19 +485,16 @@ test("the contacts page groups AIs by machine and nests folders (TREE-01)", asyn
 
   await page.goto("/contacts");
   await expect(page.getByRole("heading", { name: "Contacts", level: 1 })).toBeVisible();
-  const box = page.getByRole("region", { name: MACHINE });
-  const laptop = page.getByRole("region", { name: "e2e-laptop" });
-  await expect(box.getByRole("link", { name: atlas.ai.display_name })).toBeVisible();
-  await expect(laptop.getByRole("link", { name: scribe.ai.display_name })).toBeVisible();
-
-  // An AI whose folder is inside another AI's folder hangs from its row...
-  const atlasItem = box
-    .getByRole("listitem")
-    .filter({ has: page.getByTestId(`contact-${atlas.ai.id}`) });
-  await expect(atlasItem.getByTestId(`contact-${notes.ai.id}`)).toBeVisible();
-  await expect(atlasItem.getByTestId(`contact-${atlas.ai.id}`)).toBeVisible();
-  // ...and an AI of another machine is not part of that tree.
-  await expect(box.getByTestId(`contact-${scribe.ai.id}`)).toHaveCount(0);
+  // The user started the three AIs, so their home is the user's default organization: one section holds them
+  // all, whatever machine each runs on, with the folder it works in.
+  const home = page.getByRole("region").filter({ has: page.getByTestId(`contact-${atlas.ai.id}`) });
+  await expect(home.getByTestId(`contact-${notes.ai.id}`)).toBeVisible();
+  await expect(home.getByTestId(`contact-${scribe.ai.id}`)).toBeVisible();
+  await expect(home.getByTestId(`contact-${atlas.ai.id}`).getByText("/work/atlas")).toBeVisible();
+  // No machine is a group, a label or a hostname.
+  await expect(page.getByRole("region", { name: MACHINE })).toHaveCount(0);
+  await expect(page.getByText(MACHINE)).toHaveCount(0);
+  await expect(page.getByText("e2e-laptop")).toHaveCount(0);
 });
 
 test("a profile photo is uploaded from the profile page and shows across the shell (PROF-03)", async ({

@@ -1,12 +1,5 @@
 import { harnessLabel } from "@/lib/agents";
-import type {
-  AIContact,
-  Contacts,
-  IntelligenceRef,
-  Machine,
-  MachineTree,
-  TreeNode,
-} from "@/lib/api/types.gen";
+import type { AIContact, Contacts, IntelligenceRef, OrgAIs } from "@/lib/api/types.gen";
 import { matchesTerms } from "@/lib/conversations";
 
 /*
@@ -15,7 +8,7 @@ import { matchesTerms } from "@/lib/conversations";
  * the object it was given when it changes nothing, so a cache write that is a no-op is not seen.
  */
 
-/** Replaces the summary of `ref.id` wherever the contacts hold it: the tree at any depth, the unlinked and shared AIs (and their owners), the users and the caller. */
+/** Replaces the summary of `ref.id` wherever the contacts hold it: the AIs of every organization and the hosted ones (and their hosts), the users and the caller. */
 export function withIntelligence(contacts: Contacts, ref: IntelligenceRef): Contacts {
   let hit = false;
   const swap = (r: IntelligenceRef): IntelligenceRef => {
@@ -28,76 +21,59 @@ export function withIntelligence(contacts: Contacts, ref: IntelligenceRef): Cont
     intelligence: swap(c.intelligence),
     ...(c.owner ? { owner: swap(c.owner) } : {}),
   });
-  const node = (n: TreeNode): TreeNode => ({
-    ...n,
-    ai: ai(n.ai),
-    children: n.children.map(node),
-  });
   const next: Contacts = {
     ...contacts,
     me: swap(contacts.me),
-    machines: contacts.machines.map((m) => ({ ...m, nodes: m.nodes.map(node) })),
-    unlinked: contacts.unlinked.map(ai),
-    shared: contacts.shared.map(ai),
+    org_ais: contacts.org_ais.map((g) => ({ ...g, ais: g.ais.map(ai) })),
+    hosted: contacts.hosted.map(ai),
     users: contacts.users.map(swap),
   };
   return hit ? next : contacts;
 }
 
-/** The contacts without the AI in the lists that hold it flat. The machine tree is the server's to rebuild: folders collapse differently without it. */
+/** The contacts without the AI, in every list that holds it. */
 export function withoutAI(contacts: Contacts, id: string): Contacts {
   const keep = (c: AIContact) => c.intelligence.id !== id;
-  if (contacts.unlinked.every(keep) && contacts.shared.every(keep)) return contacts;
-  return {
-    ...contacts,
-    unlinked: contacts.unlinked.filter(keep),
-    shared: contacts.shared.filter(keep),
-  };
-}
-
-/** The contacts with the machine's new label; an empty label shows the hostname again (TREE-04). */
-export function withMachineLabel(contacts: Contacts, machine: Machine): Contacts {
-  const label = machine.label || machine.hostname;
-  if (!contacts.machines.some((m) => m.hostname === machine.hostname && m.label !== label)) {
+  if (contacts.hosted.every(keep) && contacts.org_ais.every((g) => g.ais.every(keep))) {
     return contacts;
   }
   return {
     ...contacts,
-    machines: contacts.machines.map((m) => (m.hostname === machine.hostname ? { ...m, label } : m)),
+    org_ais: contacts.org_ais.map((g) =>
+      g.ais.every(keep) ? g : { ...g, ais: g.ais.filter(keep) },
+    ),
+    hosted: contacts.hosted.every(keep) ? contacts.hosted : contacts.hosted.filter(keep),
   };
 }
 
-/** Every AI of the tree, parents before their children. */
-export function flattenTree(nodes: TreeNode[]): AIContact[] {
-  return nodes.flatMap((n) => [n.ai, ...flattenTree(n.children)]);
-}
-
 /**
- * The caller's own AIs as the contacts list them: the machine trees in order, parents before their
- * children, and the unlinked last. An AI shared with the caller is never one of them.
+ * Every AI the contacts list, once each: those of the caller's organizations, group by group
+ * (an AI that belongs to two of them is listed in the first), then the hosted ones no group lists.
  */
+export function allAIs(contacts: Contacts): AIContact[] {
+  const seen = new Set<string>();
+  return [...contacts.org_ais.flatMap((g) => g.ais), ...contacts.hosted].filter((ai) => {
+    if (seen.has(ai.intelligence.id)) return false;
+    seen.add(ai.intelligence.id);
+    return true;
+  });
+}
+
+/** The AIs the caller hosts: the contacts name the host of the AIs somebody else hosts. */
 export function ownAIs(contacts: Contacts): AIContact[] {
-  return [...contacts.machines.flatMap((m) => flattenTree(m.nodes)), ...contacts.unlinked];
+  return allAIs(contacts).filter((ai) => !ai.owner);
 }
 
 /**
- * The AIs the caller may merge an AI into (MRG-01): their own, the one being merged away left out,
- * wherever the contacts list it. The merge target is always the caller's, so a shared AI is never
- * offered and the owner's own list is enough.
+ * The AIs the caller may merge an AI into (MRG-01): their own that belong to the same home
+ * organization, the one being merged away left out. The server decides what the caller manages.
  */
 export function mergeTargets(contacts: Contacts, from: string): IntelligenceRef[] {
+  const all = allAIs(contacts);
+  const home = all.find((ai) => ai.intelligence.id === from)?.org_id;
   return ownAIs(contacts)
-    .filter((ai) => ai.intelligence.id !== from)
+    .filter((ai) => ai.intelligence.id !== from && (!home || ai.org_id === home))
     .map((ai) => ai.intelligence);
-}
-
-/** Every AI the contacts list: the caller's own (machines, then unlinked) and the shared ones. */
-export function allAIs(contacts: Contacts): AIContact[] {
-  return [
-    ...contacts.machines.flatMap((m) => flattenTree(m.nodes)),
-    ...contacts.unlinked,
-    ...contacts.shared,
-  ];
 }
 
 /** Whether the contacts list the AI: an AI they lack was created by a session that just connected. */
@@ -105,32 +81,22 @@ export function knowsAI(contacts: Contacts, id: string): boolean {
   return allAIs(contacts).some((c) => c.intelligence.id === id);
 }
 
-/** What the owner calls each of their machines, by hostname. Other owners' machines are not in it. */
-export function machineLabels(contacts: Contacts): Map<string, string> {
-  return new Map(contacts.machines.map((m) => [m.hostname, m.label]));
-}
-
 /** An intelligence the user can pick (a new conversation, a group member), with the text a search looks in. */
 export interface Pickable {
   ref: IntelligenceRef;
   /** Set for AIs: where they live and whether they are online. */
   ai?: AIContact;
-  /** The owner's label for the AI's machine; the hostname when it has none or the AI is shared. */
-  machineLabel: string;
   haystack: string;
 }
 
 /**
- * What a search of the contacts looks in for an AI: its name and @handle, the hostname of its
- * machine and the owner's label for it, its folder (as the machine has it and as `~/…`) and the
- * app it is open in.
+ * What a search of the contacts looks in for an AI: its name and @handle, its folder (as the
+ * host has it and as `~/…`) and the app it is open in.
  */
-export function aiText(ai: AIContact, machineLabel: string): string {
+export function aiText(ai: AIContact): string {
   return [
     ai.intelligence.display_name,
     `@${ai.intelligence.handle}`,
-    ai.machine,
-    machineLabel,
     ai.folder,
     ai.folder_label,
     harnessLabel(ai.app) ?? ai.app,
@@ -139,75 +105,56 @@ export function aiText(ai: AIContact, machineLabel: string): string {
     .join("\n");
 }
 
-function pickable(ref: IntelligenceRef, ai?: AIContact, machineLabel = ""): Pickable {
-  const haystack = ai ? aiText(ai, machineLabel) : `${ref.display_name}\n@${ref.handle}`;
-  return { ref, ai, machineLabel, haystack };
+function pickable(ref: IntelligenceRef, ai?: AIContact): Pickable {
+  const haystack = ai ? aiText(ai) : `${ref.display_name}\n@${ref.handle}`;
+  return { ref, ai, haystack };
 }
 
 /**
- * Everyone the user can message or add to a group, as the contacts list them: their own AIs (the
- * tree parents first, then the unlinked), AIs shared with them, and the other users. People are
- * left out: they are reached through a platform account, not picked from this list.
+ * Everyone the user can message or add to a group, as the contacts list them: the AIs of their
+ * organizations and the ones they host, and the other users. People are left out: they are
+ * reached through a platform account, not picked from this list.
+ *
+ * For a group of an organization (ORG-03) name it: the AIs are then those that are members of it,
+ * since a group is made of the members of its organization. The users stay the instance's, because
+ * the contacts do not say which organizations they belong to; the server refuses the ones who are
+ * not members (`not_org_member`).
  */
-export function pickables(contacts: Contacts): { ais: Pickable[]; users: Pickable[] } {
-  const labels = machineLabels(contacts);
+export function pickables(
+  contacts: Contacts,
+  orgId?: string,
+): { ais: Pickable[]; users: Pickable[] } {
+  const ais =
+    orgId === undefined
+      ? allAIs(contacts)
+      : (contacts.org_ais.find((g) => g.org.id === orgId)?.ais ?? []);
   return {
-    ais: [
-      ...ownAIs(contacts).map((ai) =>
-        pickable(ai.intelligence, ai, labels.get(ai.machine) ?? ai.machine),
-      ),
-      ...contacts.shared.map((ai) => pickable(ai.intelligence, ai, ai.machine)),
-    ],
+    ais: ais.map((ai) => pickable(ai.intelligence, ai)),
     users: contacts.users.map((ref) => pickable(ref)),
   };
 }
 
-function filterNodes(nodes: TreeNode[], keep: (ai: AIContact) => boolean): TreeNode[] {
-  return nodes.flatMap((n) => {
-    const children = filterNodes(n.children, keep);
-    return keep(n.ai) || children.length > 0 ? [{ ...n, children }] : [];
-  });
-}
-
 /**
- * The contacts page's filter over the machine trees (TREE-05): a node stays when the text is
- * found in its name, handle, folder, app or machine, with every ancestor it hangs from (and none
- * of its other children); a machine whose own label or hostname matches stays whole. Every word
- * of the text has to be found, each in either place; case and accents are ignored.
+ * The contacts page's filter over the organization groups: an AI stays when the text is found in
+ * its name, handle, folder or app, and a group stays when its organization's name matches (whole)
+ * or one of its AIs does. Every word of the text has to be found, each in either place; case and
+ * accents are ignored. Without text nothing is filtered: empty groups are the page's to hide.
  */
-export function filterMachines(machines: MachineTree[], query: string): MachineTree[] {
+export function filterOrgs(groups: OrgAIs[], query: string): OrgAIs[] {
   const text = query.trim();
-  if (!text) return machines;
-  return machines.flatMap((m) => {
-    if (matchesTerms(`${m.label}\n${m.hostname}`, text)) return [m];
-    const nodes = filterNodes(m.nodes, (ai) => matchesTerms(aiText(ai, m.label), text));
-    return nodes.length > 0 ? [{ ...m, nodes }] : [];
+  if (!text) return groups;
+  return groups.flatMap((g) => {
+    const org = `${g.org.name}\n@${g.org.slug}`;
+    if (matchesTerms(org, text)) return [g];
+    const ais = g.ais.filter((ai) => matchesTerms(`${org}\n${aiText(ai)}`, text));
+    return ais.length > 0 ? [{ ...g, ais }] : [];
   });
 }
 
-/** How many of the machine's AIs are online now (`online` says who is), at any depth, of how many. */
-export function machineOnlineCount(
-  machine: MachineTree,
+/** How many of the AIs are online now (`online` says who is), of how many. */
+export function onlineCount(
+  ais: AIContact[],
   online: (ai: AIContact) => boolean,
 ): { online: number; total: number } {
-  const ais = flattenTree(machine.nodes);
   return { online: ais.filter(online).length, total: ais.length };
-}
-
-/**
- * The machines in the order of TREE-03: those with an AI online now first, then by the owner's
- * label (the hostname when it has none), ignoring case. `online` is the live answer, so the order
- * follows presence frames that arrived after the contacts were fetched.
- */
-export function sortMachines(
-  machines: MachineTree[],
-  online: (ai: AIContact) => boolean,
-): MachineTree[] {
-  const live = new Map(machines.map((m) => [m, machineOnlineCount(m, online).online > 0]));
-  const name = (m: MachineTree) => m.label || m.hostname;
-  return [...machines].sort(
-    (a, b) =>
-      Number(live.get(b)) - Number(live.get(a)) ||
-      name(a).localeCompare(name(b), undefined, { sensitivity: "base" }),
-  );
 }

@@ -58,7 +58,7 @@ const (
 // Kind returns the webhook connector kind. An empty secret is generated on create.
 func Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "Webhook", InboundHook: true, LinkOwnerOnly: true,
+		Name: KindName, Label: "Webhook", InboundHook: true, LinkAdminsOnly: true,
 		Fields: []connectors.Field{
 			{Name: "secret", Label: "Signing secret", Type: dto.FieldTypeSecret, Required: true, Generated: true,
 				Help: "Leave empty to generate one; it is shown once"},

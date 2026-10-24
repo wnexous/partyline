@@ -3,6 +3,7 @@ package channel
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -25,6 +26,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -46,14 +48,10 @@ func newCast(t *testing.T, opts ...testkit.Option) *cast {
 	return &cast{chanEnv: e, bob: bob, carol: carol, helper: e.env.NewAI(e.alice, "helper"), sage: e.env.NewAI(bob, "sage")}
 }
 
-// share gives each grantee use of the AI.
-func (c *cast) share(owner *testkit.Client, aiID string, grantees ...*testkit.Client) {
+// share gives each user sight of the AI, through the organization it belongs to (AD-016).
+func (c *cast) share(owner *testkit.Client, aiID string, users ...*testkit.Client) {
 	c.t.Helper()
-	users := make([]dto.SharingUser, len(grantees))
-	for i, g := range grantees {
-		users[i] = dto.SharingUser{UserID: g.User.ID, Level: dto.LevelUse}
-	}
-	owner.Put("/api/v1/agents/"+aiID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: users}).RequireStatus(http.StatusOK)
+	owner.ShareAI(aiID, users...)
 }
 
 // person stores a person seen by a connector of alice, the way the inbound pipeline will, and
@@ -63,7 +61,13 @@ func (c *cast) person(name string) (id, handle string) {
 	ctx := context.Background()
 	conn, id := store.NewID(), store.NewID()
 	require.NoError(c.t, c.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
-		if err := q.CreateConnector(ctx, db.CreateConnectorParams{ID: conn, OwnerID: c.alice.User.ID, Kind: "telegram", Name: "tg", ConfigJson: "{}", Enabled: true}); err != nil {
+		orgID, err := orgs.DefaultFor(ctx, q, c.alice.User.ID) // the connection belongs to alice's organization, as an upgraded one does
+		if err != nil {
+			return err
+		}
+		if err := q.CreateConnector(ctx, db.CreateConnectorParams{
+			ID: conn, OwnerID: c.alice.User.ID, OrgID: sql.NullString{String: orgID, Valid: true}, Kind: "telegram", Name: "tg", ConfigJson: "{}", Enabled: true,
+		}); err != nil {
 			return err
 		}
 		if _, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: id, Kind: handles.Person, DisplayName: name, HandleBase: name, Now: time.Now()}); err != nil {
@@ -252,12 +256,12 @@ func TestToolSendMessageNeedsExactlyOneOfRoomAndTo(t *testing.T) {
 	}
 }
 
-// DM-04: to reaches the intelligences the AI's owner can see, and nothing else; an unknown
-// target and an invisible one answer alike (contact_not_found). A person without a route and the
-// AI itself are refused with their codes, and nothing is created. Once bob shares sage with alice
-// (a use grant) the same call works; the DM is visible to the owners of both AIs and to nobody
-// else. Any user of the instance can be reached.
-func TestToolSendMessageToRefusalsFollowWhatTheOwnerSees(t *testing.T) {
+// DM-04 (AD-016): to reaches the intelligences the AI itself can see - the users of the instance and the AIs it
+// shares an organization with - and nothing else; an unknown target and an invisible one answer alike
+// (contact_not_found). A person without a route and the AI itself are refused with their codes, and nothing is
+// created. Once sage's organization takes the AI in the same call works; the DM is visible to the managers of
+// both AIs and to nobody else.
+func TestToolSendMessageToRefusalsFollowWhatTheAISees(t *testing.T) {
 	c := newCast(t)
 	_, personHandle := c.person("Contact")
 	s := c.connected(c.options())
@@ -270,14 +274,16 @@ func TestToolSendMessageToRefusalsFollowWhatTheOwnerSees(t *testing.T) {
 
 	ghost := refused("@ghost")
 	require.Contains(t, ghost, "contact_not_found")
-	require.Equal(t, ghost, refused("@sage"), "an AI the owner cannot see answers like a handle that does not exist")
+	require.Equal(t, ghost, refused("@sage"), "an AI that shares no organization with it answers like a handle that does not exist")
 	require.Equal(t, ghost, refused(c.sage))
 	require.Contains(t, refused("@builder"), "dm_self")
 	require.Contains(t, refused(c.agentID), "dm_self")
 	require.Contains(t, refused("@"+personHandle), "no_route_to_person")
 	require.Empty(t, c.listDMs(s), "a refused call creates no DM")
 
-	c.share(c.bob, c.sage, c.alice)
+	c.env.AddMember(c.bob.PersonalOrg().ID, c.alice.User.ID, orgs.PermissionMember, "")
+	refused("@sage") // alice, its owner, in sage's organization gives the AI no reach
+	c.env.AddMember(c.bob.PersonalOrg().ID, c.agentID, orgs.PermissionMember, "")
 	text, isErr := s.call("send_message", toolArgs("to", "@sage", "text", "now visible"))
 	require.False(t, isErr, text)
 	dms := c.listDMs(s)
@@ -424,11 +430,11 @@ func TestToolCreateGroup(t *testing.T) {
 	require.True(t, listed, "list_rooms lists the new group")
 }
 
-// AGRP-02: a member the owner cannot add makes the call fail with members_refused, naming every
-// refused member as the AI wrote it with its reason, and nothing is created. Members the owner
-// may add are not named. Once bob shares sage the same call works. The rules are the owner's: a
-// person of alice's connector is refused as a person, and bob's AI sage is refused as unknown
-// until it is shared.
+// AGRP-02: a member the AI cannot add makes the call fail with members_refused, naming every
+// refused member as the AI wrote it with its reason, and nothing is created. Members it may
+// add are not named. Once sage joins the AI's organization the same call works. The rules are the
+// AI's own: a person of alice's connector is refused as a person, and bob's AI sage is refused as
+// unknown until it shares an organization with the AI.
 func TestToolCreateGroupRefusesAndCreatesNothing(t *testing.T) {
 	c := newCast(t)
 	_, personHandle := c.person("Contact")
@@ -443,7 +449,7 @@ func TestToolCreateGroupRefusesAndCreatesNothing(t *testing.T) {
 	require.Empty(t, c.conversations(c.alice), "nothing was created")
 	require.Len(t, c.listRooms(s), rooms)
 
-	c.share(c.bob, c.sage, c.alice)
+	c.env.AddMember(c.alice.PersonalOrg().ID, c.sage, orgs.PermissionMember, "") // sage joins the organization of builder and helper
 	text, isErr = s.call("create_group", toolArgs("name", "Ops", "members", []string{"@alice", "@sage", c.helper}))
 	require.False(t, isErr, text)
 	group := decodeText[dto.CreatedGroup](t, text)

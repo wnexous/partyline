@@ -13,6 +13,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -133,22 +134,23 @@ func TestPostValidation(t *testing.T) {
 	require.Equal(t, string(dto.AttachmentStatusStored), withFile.Attachments[0].Status)
 }
 
-// ACL-03/ACL-04 for posting: view-only is forbidden, strangers and non-member agents see nothing.
+// ACL-03/ACL-04 for posting: view-only is forbidden, strangers and non-member agents see nothing. A group
+// has no view-only level; the manager of an AI views its DM and cannot post in it (DM-08).
 func TestPostAuthorization(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.user(t, "alice", dto.RoleMember)
-	viewer := f.user(t, "viewer", dto.RoleMember)
-	poster := f.user(t, "poster", dto.RoleMember)
+	acme := f.orgOf(t, alice)
+	poster := f.colleague(t, acme, "poster", orgs.PermissionMember)
+	orgmate := f.colleague(t, acme, "orgmate", orgs.PermissionMember)
 	stranger := f.user(t, "stranger", dto.RoleMember)
 	member, outsider := f.agent(t, alice, "member"), f.agent(t, alice, "outsider")
 	r := f.room(t, alice, "ops")
-	f.grant(t, access.KindRoom, r.ID, viewer.UserID, dto.LevelView)
-	f.grant(t, access.KindRoom, r.ID, poster.UserID, dto.LevelPost)
+	f.addMember(t, alice, r.ID, dto.MemberKindUser, poster.UserID)
 	f.addMember(t, alice, r.ID, dto.MemberKindAgent, member)
 
-	_, err := f.svc.Post(ctx, viewer, r.ID, PostInput{Text: "hi"})
-	require.ErrorIs(t, err, access.ErrForbidden)
+	_, err := f.svc.Post(ctx, orgmate, r.ID, PostInput{Text: "hi"})
+	require.ErrorIs(t, err, access.ErrNotFound, "a member of the organization who is not in the room")
 	_, err = f.svc.Post(ctx, stranger, r.ID, PostInput{Text: "hi"})
 	require.ErrorIs(t, err, access.ErrNotFound)
 	_, err = f.svc.Post(ctx, agentPrincipal(alice, outsider), r.ID, PostInput{Text: "hi"})
@@ -163,9 +165,20 @@ func TestPostAuthorization(t *testing.T) {
 
 	_, _, err = f.svc.Messages(ctx, stranger, r.ID, Page{})
 	require.ErrorIs(t, err, access.ErrNotFound)
-	list, _, err := f.svc.Messages(ctx, viewer, r.ID, Page{})
+	list, _, err := f.svc.Messages(ctx, poster, r.ID, Page{})
 	require.NoError(t, err)
 	require.Len(t, list, 2)
+
+	// View-only: alice created the AI, so she manages it and views its DM with the poster, without posting.
+	dm := f.dmAI(t, poster, member)
+	f.home(t, acme, member, alice)
+	_, err = f.svc.Post(ctx, alice, dm, PostInput{Text: "hi"})
+	require.ErrorIs(t, err, access.ErrForbidden)
+	list, _, err = f.svc.Messages(ctx, alice, dm, Page{})
+	require.NoError(t, err)
+	require.Empty(t, list)
+	_, err = f.svc.Post(ctx, orgmate, dm, PostInput{Text: "hi"})
+	require.ErrorIs(t, err, access.ErrNotFound, "a member of the organization who does not manage the AI")
 }
 
 // CID-22: a room sends nothing to a chat. Whoever posts (a user, an agent, a chat), whatever they
@@ -268,11 +281,11 @@ func TestLoopGuardPauseAndResume(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	alice := f.user(t, "alice", dto.RoleMember)
-	poster := f.user(t, "poster", dto.RoleMember)
+	poster := f.colleague(t, f.orgOf(t, alice), "poster", orgs.PermissionMember)
 	a1, a2 := f.agent(t, alice, "a1"), f.agent(t, alice, "a2")
 	_, chat := f.chat(t, alice, "c1")
 	r := f.room(t, alice, "ops")
-	f.grant(t, access.KindRoom, r.ID, poster.UserID, dto.LevelPost)
+	f.addMember(t, alice, r.ID, dto.MemberKindUser, poster.UserID)
 	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a1)
 	f.addMember(t, alice, r.ID, dto.MemberKindAgent, a2)
 	f.addMember(t, alice, r.ID, dto.MemberKindChat, chat)

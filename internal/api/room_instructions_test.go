@@ -13,7 +13,7 @@ import (
 
 // INS-01: instructions up to 4,000 characters (code points) are stored on create and update
 // and returned by the room endpoints; 4,001 get 422 and change nothing; only managers
-// change them (viewer 403, no access 404).
+// change them (a room member 403, no access 404).
 func TestRoomInstructions(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob, carol := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol")
@@ -43,8 +43,8 @@ func TestRoomInstructions(t *testing.T) {
 	// A later update of another field keeps the instructions.
 	require.Equal(t, text, testkit.Decode[dto.Room](alice.Patch(path, dto.UpdateRoomRequest{Name: ptr("ops 2")}).RequireStatus(http.StatusOK)).Instructions)
 
-	shareRoom(alice, r.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelPost})
-	require.Equal(t, text, testkit.Decode[dto.Room](bob.Get(path).RequireStatus(http.StatusOK)).Instructions, "viewers read them")
+	addToRoom(t, env, alice, r.ID, bob)
+	require.Equal(t, text, testkit.Decode[dto.Room](bob.Get(path).RequireStatus(http.StatusOK)).Instructions, "room members read them")
 	bob.Patch(path, dto.UpdateRoomRequest{Instructions: ptr("hijack")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	carol.Patch(path, dto.UpdateRoomRequest{Instructions: ptr("hijack")}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	require.Equal(t, text, testkit.Decode[dto.Room](alice.Get(path).RequireStatus(http.StatusOK)).Instructions)

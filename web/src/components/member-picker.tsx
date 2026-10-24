@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAutoFocus } from "@/hooks/use-auto-focus";
-import { useAddMember, useContacts } from "@/lib/api/queries";
+import { useAddMember, useContacts, useRoom } from "@/lib/api/queries";
 import type { MemberKind, RoomMember } from "@/lib/api/types.gen";
 import { type Pickable, pickables } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
@@ -27,9 +27,10 @@ import { withContactPresence } from "@/lib/presence";
 
 /*
  * Adds users and AIs to a group (UI-10, CID-20). Only what the user may add is offered (ACL-05):
- * their own AIs and the AIs shared with them, and the other users of the instance. Chats are never
- * members (AD-015): a connection is an AI's own app, not a room participant. External people are
- * not members either: they join through the chat they write in.
+ * the AIs of the group's organization (a group is made of the members of its organization,
+ * ORG-03) and the other users of the instance, whom the server refuses when they are not members
+ * of it. Chats are never members (AD-015): a connection is an AI's own app, not a room
+ * participant. External people are not members either: they join through the chat they write in.
  */
 
 export function MemberPicker({
@@ -61,13 +62,19 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   const { t } = useI18n();
   const autoFocus = useAutoFocus();
   const contacts = useContacts();
+  const room = useRoom(roomId);
   const add = useAddMember(roomId);
   const presence = useLiveStore((s) => s.presence);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState<string | null>(null);
 
   const taken = useMemo(() => new Set(members.map((m) => `${m.kind}:${m.member_id}`)), [members]);
-  const picks = useMemo(() => (contacts.data ? pickables(contacts.data) : null), [contacts.data]);
+  // A room that does not load leaves the AIs unscoped: the server decides who may join.
+  const orgId = room.data?.org_id;
+  const picks = useMemo(
+    () => (contacts.data ? pickables(contacts.data, orgId) : null),
+    [contacts.data, orgId],
+  );
   const agentList = (picks?.ais ?? []).filter(
     (p) => !taken.has(`agent:${p.ref.id}`) && matchesTerms(p.haystack, query),
   );
@@ -86,7 +93,7 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
     );
   };
 
-  const loading = contacts.isPending;
+  const loading = contacts.isPending || room.isPending;
   const nothing = !loading && agentList.length === 0 && userList.length === 0;
 
   return (

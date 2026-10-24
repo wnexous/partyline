@@ -63,14 +63,14 @@ func TestRoomFilesCarryTheirAuthor(t *testing.T) {
 	}, authors)
 }
 
-// FILES-01, FILES-03, FILES-06: a viewer gets every file of the room newest first with its
+// FILES-01, FILES-03, FILES-06: a room member gets every file of the room newest first with its
 // message, author and kind; kind filters by MIME family (document = everything else); files
 // a connector could not store are listed with their status; other rooms' files are not.
 func TestRoomFilesList(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	r := createRoom(alice, "ops")
-	shareRoom(alice, r.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelView})
+	addToRoom(t, env, alice, r.ID, bob)
 	other := createRoom(alice, "elsewhere")
 	postMultipart(alice, other.ID, dto.PostMessageRequest{Text: "not here"}, upload{"other.pdf", "application/pdf", "x"}).RequireStatus(http.StatusCreated)
 
@@ -202,18 +202,19 @@ func evenNames(total int) []string {
 	return out
 }
 
-// FILES-02: the files list follows view access: owner and grantees 200, a member without a
-// grant and an admin without one 404.
+// FILES-02: the files list follows view access: the creator, an admin of the organization and the people in
+// the room 200; everybody else, an instance admin included, 404.
 func TestRoomFilesAuthMatrix(t *testing.T) {
-	m := newMatrix(t)
-	m.run(t, roomSetup, []matrixRoute{
-		{"list files", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	runRoleRoutes(t, roles, roomSetup(env, roles), []roleRoute{
+		{"list files", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get("/api/v1/rooms/" + res["room"] + "/attachments")
-		}, statuses(200, 200, 200, 404, 404)},
-		{"list files with an unknown kind", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(200, 200, 200, 404)},
+		{"list files with an unknown kind", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get("/api/v1/rooms/" + res["room"] + "/attachments?kind=bogus")
-		}, statuses(422, 422, 422, 404, 404)},
+		}, groupWant(422, 422, 422, 404)},
 	})
-	m.as(t, roleOwner).Get("/api/v1/rooms/"+"00000000-0000-7000-8000-000000000000"+"/attachments").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	m.env.Anon().Get("/api/v1/rooms/"+roomSetup(t, m)["room"]+"/attachments").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	roles.Member.Get("/api/v1/rooms/"+"00000000-0000-7000-8000-000000000000"+"/attachments").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	env.Anon().Get("/api/v1/rooms/"+roomSetup(env, roles)(t)["room"]+"/attachments").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }

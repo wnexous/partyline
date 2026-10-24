@@ -108,7 +108,7 @@ func TestDeletingTheOperatorRemovesItsQueueAndStopsItsConnection(t *testing.T) {
 	got := f.connector(f.alice)
 	require.Nil(t, got.Operator, "the connection has no operator")
 	require.Equal(t, []any{dto.ConnectorStatusError, noOperatorDetail, true, int64(0)}, []any{got.Status, got.LastError, got.Enabled, got.Queued})
-	require.Equal(t, noOperatorDetail, f.connector(f.bob).LastError, "a use grantee sees the same")
+	require.Equal(t, noOperatorDetail, f.connector(f.bob).LastError, "a member sees the same")
 	require.Zero(t, countRows(t, f.env, rows, f.conn.ID), "every item of the connection is gone, acknowledged ones included")
 	require.Zero(t, countRows(t, f.env, "SELECT COUNT(*) FROM platform_attachments"), "and their files")
 	for _, id := range []string{one, two} {
@@ -146,25 +146,22 @@ func TestDeletingAnAIThatOperatesNothingTouchesNoConnection(t *testing.T) {
 	require.Equal(t, f.atlas, f.connector(f.alice).Operator.ID)
 }
 
-// CID-24 (authorization matrix of DELETE /agents/{id}): only an admin of the AI's organization, here its
-// owner, deletes the AI, so only they orphan its connection. The members who use Atlas get 403, a stranger and
-// the instance admin 404, anonymous callers 401, and AI tokens, the operator itself and another user's AI
-// included, 403. Every refusal leaves the operator, the connection's session, its status and its queue as they
-// were.
+// CID-24 (authorization matrix of DELETE /agents/{id}): only an admin of the AI's home organization deletes it
+// (POS-05), here its owner, so only they orphan its connection. A member of its organization and someone who
+// sees it through another one get 403; the holder of a use grant, which gives nothing since AD-016, a stranger
+// and the admin of the instance get 404, anonymous callers 401, and AI tokens, the operator itself and another
+// user's AI included, 403. Every refusal leaves the operator, the connection's session, its status and its
+// queue as they were.
 func TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone(t *testing.T) {
 	f := newOperatorFixture(t)
 	inst := f.operate(t)
 	inst.Connected()
 	kept := queueItem(t, f.env, f.conn.ID, f.atlas, teamChat, "m1")
 
-	// bob and dave are members of alice's organization, as the upgrade leaves who was granted something of hers
-	for _, user := range []*testkit.Client{f.bob, f.dave} {
-		ensureMember(t, f.env, f.alice.PersonalOrg().ID, user.User.ID)
-	}
 	del := func(c *testkit.Client) *testkit.Response { return c.Delete("/api/v1/agents/" + f.atlas) }
-	del(f.bob).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)  // may use Atlas and the connection
-	del(f.dave).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden) // may use Atlas only
-	del(f.carol).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	del(f.bob).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)  // a member of Atlas's organization: sees it, manages nothing
+	del(f.dave).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden) // sees Atlas through another organization
+	del(f.carol).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)  // holds a use grant on Atlas only, which gives nothing
 	del(f.admin).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	del(f.env.Anon()).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	owner := f.alice.Token(dto.TokenKindAgent, "laptop")
@@ -296,15 +293,15 @@ func TestMergeLeavesTheQueueAloneWhenItFails(t *testing.T) {
 	require.EqualValues(t, 3, droppedOf(t, w.env, w.atlas))
 }
 
-// CID-05 (authorization matrix of POST /agents/{id}/merge): only the owner of both AIs merges. The
-// use grantee of the merged AI gets 403, a stranger and the admin 404, anonymous callers 401 and AI
+// CID-05 (authorization matrix of POST /agents/{id}/merge): only whoever manages both AIs merges. The
+// holder of a use grant on the merged AI, a stranger and the admin get 404, anonymous callers 401 and AI
 // tokens 403. A refusal leaves the queue with the merged AI, the dropped counts and the connection
 // as they were; a merge the owner makes moves the queue.
 func TestRefusedMergesLeaveTheQueueAlone(t *testing.T) {
 	w := newMergedWorld(t)
-	shareAI(w.alice, w.old, w.bob)
+	shareAgent(w.alice, w.old, w.bob.User.ID)
 
-	merge(w.bob, w.old, w.atlas).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	merge(w.bob, w.old, w.atlas).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound) // a use grant gives nothing
 	merge(w.carol, w.old, w.atlas).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	merge(w.admin, w.old, w.atlas).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	merge(w.env.Anon(), w.old, w.atlas).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)

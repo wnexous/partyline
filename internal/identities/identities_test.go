@@ -68,6 +68,11 @@ func newFixture(t *testing.T) *fixture {
 			if err := q.CreateUser(context.Background(), db.CreateUserParams{ID: id, Username: name, PasswordHash: "x", Role: "member"}); err != nil {
 				return err
 			}
+			if err := q.CreateIntelligence(context.Background(), db.CreateIntelligenceParams{
+				ID: id, Kind: "human", DisplayName: name, Handle: name, CreatedAt: t0.UnixMilli(), UpdatedAt: t0.UnixMilli(),
+			}); err != nil {
+				return err
+			}
 		}
 		for _, c := range []struct{ id, owner, kind string }{{f.wa, f.alice, "whatsapp"}, {f.wa2, f.bob, "whatsapp"}, {f.tg, f.alice, "telegram"}} {
 			if err := q.CreateConnector(context.Background(), db.CreateConnectorParams{ID: c.id, OwnerID: c.owner, Kind: c.kind, Name: c.kind, ConfigJson: "{}"}); err != nil {
@@ -253,23 +258,88 @@ func TestLinkIsPerConnector(t *testing.T) {
 	require.Len(t, list, 1, "the link on bob's connector did not move alice's")
 }
 
-// IDN-05: with a required user, a code of anyone else links nothing and stays usable. The
-// code is issued for that same connector, so only the owner check refuses it.
-func TestLinkOnlyForRequiredUser(t *testing.T) {
+// organization creates an organization whose admin is the first user and whose members are the others, and
+// returns its id.
+func (f *fixture) organization(t *testing.T, name, admin string, members ...string) string {
+	t.Helper()
+	id := store.NewID()
+	require.NoError(t, f.st.WithTx(context.Background(), func(q *db.Queries) error {
+		ctx := context.Background()
+		if err := q.CreateOrganization(ctx, db.CreateOrganizationParams{ID: id, Name: name, Slug: name, CreatedBy: admin, CreatedAt: t0.UnixMilli(), UpdatedAt: t0.UnixMilli()}); err != nil {
+			return err
+		}
+		if err := q.CreateOrgMember(ctx, db.CreateOrgMemberParams{OrgID: id, Iid: admin, Permission: "admin", JoinedAt: t0.UnixMilli()}); err != nil {
+			return err
+		}
+		for _, m := range members {
+			if err := q.CreateOrgMember(ctx, db.CreateOrgMemberParams{OrgID: id, Iid: m, Permission: "member", JoinedAt: t0.UnixMilli()}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	return id
+}
+
+// IDN-05, AD-016: with an organization required (a connection whose callers choose sender ids freely), a code
+// links only when its user is an admin of that organization at the moment the account links; the code of a
+// member, of someone outside it and of a former admin links nothing and stays usable. The code is issued for that
+// same connector, so only the admin check refuses it.
+func TestLinkOnlyForAdminsOfTheOrganization(t *testing.T) {
 	f := newFixture(t)
-	code, _, err := f.svc.CreatePairing(context.Background(), f.alice, f.wa2)
+	ctx := context.Background()
+	org := f.organization(t, "acme", f.bob, f.alice) // bob administers it, alice is a member
+	link := func(code string) (string, bool) {
+		t.Helper()
+		user, ok, err := f.svc.Link(ctx, code, acct(f.wa2, "whatsapp", "alice-id", "", ""), org)
+		require.NoError(t, err)
+		return user, ok
+	}
+
+	code, _, err := f.svc.CreatePairing(ctx, f.alice, f.wa2)
 	require.NoError(t, err)
-	_, ok, err := f.svc.Link(context.Background(), code, acct(f.wa2, "whatsapp", "alice-id", "", ""), f.bob)
-	require.NoError(t, err)
-	require.False(t, ok, "alice's code on bob's owner-only connector")
-	got, err := f.svc.ResolveSender(context.Background(), f.wa2, "alice-id", "")
+	_, ok := link(code)
+	require.False(t, ok, "alice's code, a member's, on a connection that takes admins' only")
+	got, err := f.svc.ResolveSender(ctx, f.wa2, "alice-id", "")
 	require.NoError(t, err)
 	require.Empty(t, got)
 
-	user, ok, err := f.svc.Link(context.Background(), code, acct(f.wa2, "whatsapp", "alice-id", "", ""), "")
-	require.NoError(t, err)
-	require.True(t, ok, "the refused attempt did not consume the code")
+	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
+		return q.UpdateOrgMemberPermission(ctx, db.UpdateOrgMemberPermissionParams{Permission: "admin", OrgID: org, Iid: f.alice})
+	}))
+	user, ok := link(code)
+	require.True(t, ok, "the refused attempt did not consume the code, and alice is an admin now")
 	require.Equal(t, f.alice, user)
+
+	// Someone who is no member of the organization at all, and an admin who was demoted after the code was issued.
+	outsider, _, err := f.svc.CreatePairing(ctx, f.alice, f.wa)
+	require.NoError(t, err)
+	_, ok, err = f.svc.Link(ctx, outsider, acct(f.wa, "whatsapp", "other-id", "", ""), f.organization(t, "side", f.bob))
+	require.NoError(t, err)
+	require.False(t, ok, "alice is not a member of side")
+	bobs, _, err := f.svc.CreatePairing(ctx, f.bob, f.wa2)
+	require.NoError(t, err)
+	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
+		if err := q.UpdateOrgMemberPermission(ctx, db.UpdateOrgMemberPermissionParams{Permission: "admin", OrgID: org, Iid: f.alice}); err != nil {
+			return err
+		}
+		return q.UpdateOrgMemberPermission(ctx, db.UpdateOrgMemberPermissionParams{Permission: "member", OrgID: org, Iid: f.bob})
+	}))
+	_, ok = link(bobs)
+	require.False(t, ok, "bob was demoted before his code linked")
+	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
+		return q.UpdateOrgMemberPermission(ctx, db.UpdateOrgMemberPermissionParams{Permission: "admin", OrgID: org, Iid: f.bob})
+	}))
+	user, ok = link(bobs)
+	require.True(t, ok)
+	require.Equal(t, f.bob, user)
+
+	// With no organization required (every other kind of connection) any code links.
+	free, _, err := f.svc.CreatePairing(ctx, f.alice, f.tg)
+	require.NoError(t, err)
+	_, ok, err = f.svc.Link(ctx, free, acct(f.tg, "telegram", "42", "", ""), "")
+	require.NoError(t, err)
+	require.True(t, ok)
 }
 
 // IDN-02 (S5): a code links only through the connector it was issued for; through any

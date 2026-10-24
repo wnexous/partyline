@@ -55,6 +55,8 @@ const profileOf = (ref = atlas): IntelligenceProfile => ({
   can_edit: true,
   apps: [],
   conversations: [],
+  memberships: [],
+  can_end_session: false,
 });
 const stale = (key: readonly unknown[]) => qc.getQueryState(key)?.isInvalidated;
 

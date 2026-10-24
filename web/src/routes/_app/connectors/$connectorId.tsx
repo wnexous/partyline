@@ -5,7 +5,6 @@ import {
   PlugZapIcon,
   RefreshCwIcon,
   Settings2Icon,
-  Share2Icon,
   TriangleAlertIcon,
 } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
@@ -17,7 +16,6 @@ import { FormAlert } from "@/components/form-fields";
 import { chatTitle, platformLabel } from "@/components/message-item";
 import { NativeSelect } from "@/components/native-select";
 import { ConnectorForm } from "@/components/schema-form";
-import { SharingDialog } from "@/components/sharing-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +38,7 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { useCurrentOrg } from "@/hooks/use-current-org";
 import { isApiError } from "@/lib/api/client";
 import {
   useConnector,
@@ -47,7 +46,6 @@ import {
   useConnectorKinds,
   useContacts,
   useDeleteConnector,
-  useMe,
   useRefreshChats,
   useUpdateConnector,
 } from "@/lib/api/queries";
@@ -61,7 +59,7 @@ import {
   LevelManage,
   type UpdateConnectorRequest,
 } from "@/lib/api/types.gen";
-import { flattenTree } from "@/lib/contacts";
+import { allAIs } from "@/lib/contacts";
 import { type MessageKey, useI18n, useT } from "@/lib/i18n";
 import { formatAbsolute, formatRelative } from "@/lib/time";
 
@@ -120,13 +118,17 @@ function ConnectorPage() {
   return <ConnectorView connector={connector.data} kind={kind} />;
 }
 
+/**
+ * A connection of an organization (ORG-02, ORG-03): its members read it, its admins change it
+ * (`my_level` is manage for them), and nobody shares it one by one.
+ */
 function ConnectorView({ connector: c, kind }: { connector: Connector; kind?: ConnectorKind }) {
   const t = useT();
-  const me = useMe().data;
+  const { orgs } = useCurrentOrg();
   const canManage = c.my_level === LevelManage;
   const { status, lastError } = useConnectorState(c);
   const update = useUpdateConnector(c.id);
-  const foreign = me && c.owner.id !== me.id;
+  const orgName = orgs.find((o) => o.id === c.org_id)?.name;
   const enabledId = useId();
 
   const setEnabled = (enabled: boolean) =>
@@ -156,27 +158,11 @@ function ConnectorView({ connector: c, kind }: { connector: Connector; kind?: Co
               <span title={t("connector.queuedHint")}>
                 {t("connector.queued", { count: c.queued })}
               </span>
-              {foreign ? (
-                <span className="text-xs">
-                  {t("rooms.ownedBy", { username: c.owner.username })}
-                </span>
-              ) : null}
+              {orgName ? <span>{t("connector.org", { name: orgName })}</span> : null}
             </p>
           </div>
           {canManage ? (
             <div className="flex shrink-0 items-center gap-1">
-              <SharingDialog
-                kind="connectors"
-                id={c.id}
-                name={c.name}
-                owner={c.owner}
-                trigger={
-                  <Button variant="outline" size="sm">
-                    <Share2Icon aria-hidden="true" />
-                    {t("room.share")}
-                  </Button>
-                }
-              />
               <ConnectorSettingsSheet connector={c} kind={kind} />
             </div>
           ) : null}
@@ -397,7 +383,8 @@ function ConnectorSettingsSheet({
 
 /**
  * The proxy shape of a connection (CID-23): the AI that operates the account, and what reaches it.
- * Only the owner changes them; a use grantee reads the same values without controls.
+ * Only the admins of its organization change them; every other member reads the same values
+ * without controls.
  */
 function DeliverySection({
   connector: c,
@@ -415,7 +402,7 @@ function DeliverySection({
   );
 }
 
-/** The owner's form: the operator (one of their AIs) and the delivery filters (CID-27). */
+/** The admin's form: the operator (an AI of the connection's organization) and the delivery filters (CID-27). */
 function DeliveryForm({ connector: c }: { connector: Connector }) {
   const t = useT();
   const update = useUpdateConnector(c.id);
@@ -428,10 +415,11 @@ function DeliveryForm({ connector: c }: { connector: Connector }) {
   const [error, setError] = useState<string | null>(null);
   const [operatorError, setOperatorError] = useState<string | null>(null);
   const [deliverError, setDeliverError] = useState<string | null>(null);
-  const own = contacts.data
-    ? [...contacts.data.machines.flatMap((m) => flattenTree(m.nodes)), ...contacts.data.unlinked]
+  // The operator is an AI whose home is the connection's organization (ORG-07).
+  const candidates = contacts.data
+    ? allAIs(contacts.data).filter((a) => a.org_id === c.org_id)
     : [];
-  const missing = current !== "" && !own.some((a) => a.intelligence.id === current);
+  const missing = current !== "" && !candidates.some((a) => a.intelligence.id === current);
   const dirty =
     operatorId !== current || deliver !== c.deliver || mentionsOnly !== c.groups_mentions_only;
   const operatorField = `${id}-operator`;
@@ -510,7 +498,7 @@ function DeliveryForm({ connector: c }: { connector: Connector }) {
             {missing ? (
               <option value={current}>{c.operator?.display_name ?? current}</option>
             ) : null}
-            {own.map((a) => (
+            {candidates.map((a) => (
               <option key={a.intelligence.id} value={a.intelligence.id}>
                 {a.intelligence.display_name} (@{a.intelligence.handle})
               </option>
@@ -582,7 +570,7 @@ function DeliveryForm({ connector: c }: { connector: Connector }) {
   );
 }
 
-/** What the connection does, for someone the owner shared it with: no controls (CID-23). */
+/** What the connection does, for a member who is not an admin of its organization: no controls (CID-23). */
 function DeliverySummary({ connector: c }: { connector: Connector }) {
   const t = useT();
   return (

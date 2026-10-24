@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -45,8 +46,12 @@ func TestFactsCarryTheRoomKind(t *testing.T) {
 	prefs := MemberPrefs{Delivery: dto.DeliveryModeMentions}
 	dm := Facts{Text: "hello", DM: true}
 	group := Facts{Text: "hello"}
-	require.True(t, dm.WantedBy("agent", "owner", prefs))
-	require.False(t, group.WantedBy("agent", "owner", prefs))
+	wanted, _, err := dm.WantedBy(context.Background(), &fakeTrust{}, "agent", prefs)
+	require.NoError(t, err)
+	require.True(t, wanted)
+	wanted, _, err = group.WantedBy(context.Background(), &fakeTrust{}, "agent", prefs)
+	require.NoError(t, err)
+	require.False(t, wanted)
 }
 
 // RoomRef names a DM by the other participant and marks it; a group keeps its name and no kind.

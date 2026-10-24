@@ -41,18 +41,21 @@ func (s *server) agentDM(w http.ResponseWriter, r *http.Request, p authn.Princip
 	return nil
 }
 
-// agentGroup creates a group owned by the AI's owner with the AI and the members it names as
-// members, by the add-member rules of the owner, all or nothing (AGRP-01, AGRP-02): a refused
-// member makes it 422 members_refused listing them as they were named, and nothing is created.
+// agentGroup creates a group in an organization (org, else the AI's home) as the AI itself, with the AI and
+// the members it names as members, by the add-member rules, all or nothing (AGRP-01, AGRP-02, ORG-03): an AI
+// that is not a member or admin of the organization - a guest AI included - is 403, a refused member makes
+// it 422 members_refused listing them as they were named, and nothing is created.
 func (s *server) agentGroup(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	var req dto.CreateGroupRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		return err
 	}
-	room, err := s.Conversations.CreateGroupNamed(r.Context(), p, conversations.GroupInput{Name: req.Name, Description: req.Description, Members: req.Members})
+	room, err := s.Conversations.CreateGroupNamed(r.Context(), p, conversations.GroupInput{
+		Name: req.Name, Description: req.Description, Members: req.Members, Org: firstNonEmpty(req.Org, req.OrgID),
+	})
 	if err != nil {
 		return err
 	}
-	httpx.WriteJSON(w, http.StatusCreated, dto.CreatedGroup{Room: room.ID, Name: room.Name})
+	httpx.WriteJSON(w, http.StatusCreated, dto.CreatedGroup{Room: room.ID, Name: room.Name, OrgID: room.OrgID.String, OrgSlug: room.OrgSlug, OrgName: room.OrgName})
 	return nil
 }

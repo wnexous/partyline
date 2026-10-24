@@ -24,7 +24,10 @@ import (
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
+	"github.com/wnexous/partyline/internal/store"
+	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -154,14 +157,14 @@ func (e *inboundEnv) messages(t *testing.T, roomID string) []dto.Message {
 
 // source is the connection as the manager names it to the pipeline.
 func (e *inboundEnv) source() connectors.Source {
-	return connectors.Source{ConnectorID: e.conn.ID, Kind: connectortest.KindName, OwnerID: e.alice.User.ID}
+	return connectors.Source{ConnectorID: e.conn.ID, Kind: connectortest.KindName}
 }
 
 // pipeline returns a pipeline on the app's store and queue, with its own registry of sent ids.
 func (e *inboundEnv) pipeline(sent *connectors.SentIDs) *connectors.Pipeline {
 	a := e.env.App
 	return connectors.NewPipeline(connectors.PipelineDeps{
-		Store: a.Store, Bus: a.Bus, Blobs: a.Blobs, Identities: a.Identities, Queue: a.Platform, Sent: sent,
+		Store: a.Store, Bus: a.Bus, Blobs: a.Blobs, Identities: a.Identities, Trust: a.Authz, Queue: a.Platform, Sent: sent,
 		MaxUploadBytes: a.Config.MaxUploadBytes, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 }
@@ -292,7 +295,7 @@ func TestChatsAreRecordedForMessagesThatReachNobody(t *testing.T) {
 		Kind: connectortest.KindName, Name: "idle", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: ptr(true),
 	}).RequireStatus(http.StatusCreated))
 	require.Nil(t, idle.Operator)
-	e.pipeline(nil).Handle(context.Background(), connectors.Source{ConnectorID: idle.ID, Kind: connectortest.KindName, OwnerID: e.alice.User.ID}, dmText(dmA, "N1", "anyone there?"))
+	e.pipeline(nil).Handle(context.Background(), connectors.Source{ConnectorID: idle.ID, Kind: connectortest.KindName}, dmText(dmA, "N1", "anyone there?"))
 	idleChats := testkit.Decode[dto.List[dto.Chat]](e.alice.Get("/api/v1/connectors/" + idle.ID + "/chats").RequireStatus(http.StatusOK)).Items
 	require.Len(t, idleChats, 1, "the chat of the idle connection is recorded")
 
@@ -385,20 +388,68 @@ func TestMentionsOnlyKeepsRepliesToRecentSends(t *testing.T) {
 	require.Equal(t, []string{"answering you"}, texts(e.queued(t)))
 }
 
-// CID-13: a message is trusted only when its sender is a verified account of the user who owns
-// the operator AI, through this connection; every other sender, and the account's own typing,
-// is not.
-func TestInboundTrustIsTheOperatorsOwner(t *testing.T) {
+// linkDirect links the sender to the user through the connection without the pairing flow, which the
+// tests of identities cover: what is under test here is what a linked sender is trusted for.
+func (e *inboundEnv) linkDirect(t *testing.T, user *testkit.Client, sender, alt, name string) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, e.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.CreateIdentity(ctx, db.CreateIdentityParams{
+			ID: store.NewID(), UserID: user.User.ID, ConnectorID: e.conn.ID, ConnectorKind: connectortest.KindName,
+			ExternalID: sender, AltExternalID: alt, Display: name, CreatedAt: time.Now().UnixMilli(),
+		})
+	}))
+}
+
+// trustChart builds the organization the operator AI "relay" belongs to: alice created relay and holds
+// the root position Admin, which now sits under Founder, held by boss. mate is a member with no
+// relation to relay. It returns the organization's id and the id of the position Founder.
+func (e *inboundEnv) trustChart(t *testing.T) (org, founder string, boss, mate *testkit.Client) {
+	t.Helper()
+	ctx := context.Background()
+	org = e.alice.PersonalOrg().ID
+	mine, err := e.env.App.Orgs.Get(ctx, e.alice.User.ID, org)
+	require.NoError(t, err)
+	founder = e.env.AddPosition(org, "Founder", "")
+	_, err = e.env.App.Orgs.UpdatePosition(ctx, e.alice.User.ID, org, mine.PositionID, orgs.PositionUpdate{ParentID: &founder})
+	require.NoError(t, err)
+	boss, mate = e.env.NewUser("boss"), e.env.NewUser("mate")
+	e.env.AddMember(org, boss.User.ID, orgs.PermissionMember, founder)
+	e.env.AddMember(org, mate.User.ID, orgs.PermissionMember, "")
+	return org, founder, boss, mate
+}
+
+// CID-13, POS-10, AD-018: a message is trusted only when its sender is a verified account, through this
+// connection, of a user who manages the operator AI in the AI's home organization. Every other sender,
+// and the account's own typing, is not.
+func TestInboundTrustIsWhoManagesTheOperator(t *testing.T) {
+	ctx := context.Background()
 	e := newInboundEnv(t)
-	bob := e.env.NewUser("bob")
-	e.alice.Put("/api/v1/connectors/"+e.conn.ID+"/sharing", dto.Sharing{
-		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: bob.User.ID, Level: dto.LevelUse}},
-	}).RequireStatus(http.StatusOK)
+	org, founder, boss, mate := e.trustChart(t)
+	// The operator is relay, which alice created: she manages it, and so does boss, who is above her.
+
+	// visitor is the admin of an organization other than relay's home, where relay is a worker: visitor
+	// manages relay there, which does not count.
+	visitor := e.env.NewUser("visitor")
+	visitorOrg := visitor.PersonalOrg().ID
+	root, err := e.env.App.Orgs.Get(ctx, visitor.User.ID, visitorOrg)
+	require.NoError(t, err)
+	worker := e.env.AddPosition(visitorOrg, "Worker", root.PositionID)
+	e.env.AddMember(visitorOrg, e.operator, orgs.PermissionMember, worker)
+
+	// ex held Founder, like boss, and has left.
+	ex := e.env.NewUser("former")
+	e.env.AddMember(org, ex.User.ID, orgs.PermissionMember, founder)
+	require.NoError(t, e.env.App.Orgs.Leave(ctx, ex.User.ID, org))
+
 	e.link(t, e.alice, sender2, lid2, "Alice phone")
-	e.link(t, bob, sender3, "", "Bob phone")
+	e.linkDirect(t, boss, "5511999990011@s.whatsapp.net", "", "Boss phone")
+	e.linkDirect(t, mate, sender3, "", "Mate phone")
+	e.linkDirect(t, visitor, "5511999990012@s.whatsapp.net", "", "Visitor phone")
+	e.linkDirect(t, ex, "5511999990013@s.whatsapp.net", "", "Ex phone")
 	require.Empty(t, e.queued(t), "pairing commands are not delivered")
 
-	// Alice also links an account on a second connection of hers.
+	// alice and boss also link an account on a second connection of alice's.
 	second := testkit.Decode[dto.Connector](e.alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 		Kind: connectortest.KindName, Name: "second", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: ptr(true),
 	}).RequireStatus(http.StatusCreated))
@@ -414,15 +465,18 @@ func TestInboundTrustIsTheOperatorsOwner(t *testing.T) {
 		msg     connectors.Inbound
 		trusted bool
 	}{
-		{"the owner's account", as(dmText(dmA, "T1", "from alice"), sender2, "", "Alice phone"), true},
-		{"the owner's account seen under its other id", as(dmText(dmA, "T2", "from alice, lid"), "unrelated-id", lid2, "Alice phone"), true},
-		{"another user's account", as(dmText(dmA, "T3", "from bob"), sender3, "", "Bob phone"), false},
-		{"an account nobody linked", as(dmText(dmA, "T4", "from a stranger"), "5511999990099@s.whatsapp.net", "", "Stranger"), false},
-		{"a sender without an id", as(dmText(dmA, "T5", "from nobody"), "", "", ""), false},
-		{"a sender named like the owner", as(dmText(dmA, "T6", "I am alice"), "5511999990098@s.whatsapp.net", "", "alice"), false},
-		{"the owner's account linked on another connection", as(dmText(dmA, "T7", "from alice, second"), elsewhere, "", "Alice elsewhere"), false},
-		{"the owner's account typing as the connection's own account", func() connectors.Inbound {
-			m := as(dmText(dmA, "T8", "typed on the device"), sender2, "", "Alice phone")
+		{"the account of the user who created the operator", as(dmText(dmA, "T1", "from alice"), sender2, "", "Alice phone"), true},
+		{"that account seen under its other id", as(dmText(dmA, "T2", "from alice, lid"), "unrelated-id", lid2, "Alice phone"), true},
+		{"the account of a user who manages the operator through a position above its creator's", as(dmText(dmA, "T3", "from boss"), "5511999990011@s.whatsapp.net", "", "Boss phone"), true},
+		{"the account of a member who does not manage the operator", as(dmText(dmA, "T4", "from mate"), sender3, "", "Mate phone"), false},
+		{"the account of a user who manages the operator only in another organization", as(dmText(dmA, "T5", "from visitor"), "5511999990012@s.whatsapp.net", "", "Visitor phone"), false},
+		{"the account of a user who left the operator's organization", as(dmText(dmA, "T6", "from ex"), "5511999990013@s.whatsapp.net", "", "Ex phone"), false},
+		{"an account nobody linked", as(dmText(dmA, "T7", "from a stranger"), "5511999990099@s.whatsapp.net", "", "Stranger"), false},
+		{"a sender without an id", as(dmText(dmA, "T8", "from nobody"), "", "", ""), false},
+		{"a sender named like the creator", as(dmText(dmA, "T9", "I am alice"), "5511999990098@s.whatsapp.net", "", "alice"), false},
+		{"the creator's account linked on another connection", as(dmText(dmA, "T10", "from alice, second"), elsewhere, "", "Alice elsewhere"), false},
+		{"a manager's account typing as the connection's own account", func() connectors.Inbound {
+			m := as(dmText(dmA, "T11", "typed on the device"), "5511999990011@s.whatsapp.net", "", "Boss phone")
 			m.FromSelf = true
 			return m
 		}(), false},
@@ -433,6 +487,24 @@ func TestInboundTrustIsTheOperatorsOwner(t *testing.T) {
 		require.Equal(t, c.msg.Text, last.Text, c.name)
 		require.Equal(t, c.trusted, last.Trusted, c.name)
 	}
+}
+
+// AD-018: a platform event is judged when it arrives and keeps that verdict, unlike a message of a room.
+// A manager who leaves afterwards does not turn the events already queued into untrusted ones, and the
+// next event of the same account is untrusted.
+func TestInboundTrustIsDecidedWhenTheMessageArrives(t *testing.T) {
+	e := newInboundEnv(t)
+	org, _, boss, _ := e.trustChart(t)
+	const bossPhone = "5511999990011@s.whatsapp.net"
+	e.linkDirect(t, boss, bossPhone, "", "Boss phone")
+
+	e.emit(as(dmText(dmA, "D1", "before"), bossPhone, "", "Boss phone"))
+	require.NoError(t, e.env.App.Orgs.Leave(context.Background(), boss.User.ID, org))
+	e.emit(as(dmText(dmA, "D2", "after"), bossPhone, "", "Boss phone"))
+
+	got := e.queued(t)
+	require.Len(t, got, 2)
+	require.Equal(t, []any{"before", true, "after", false}, []any{got[0].Text, got[0].Trusted, got[1].Text, got[1].Trusted})
 }
 
 // CID-26: the same platform message arriving twice is queued once, and its media are not

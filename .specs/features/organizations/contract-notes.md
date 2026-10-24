@@ -781,3 +781,753 @@ Where a section refines the design, it says so.
   (`RequireMember`, then one query), `MemberView(actor, org, target)` (one row, `ErrNotFound` for a non-member) and
   `UpdateMember`. **Queries** (`queries/orgs.sql`): `ListOrgMembers`, `GetOrgMemberView`. **Converter**:
   `convert.OrgMember`.
+
+## T22: Room levels from organizations (ORG-02, OMEM-06)
+
+- **Where**: `access.UserRoomLevel` / `RoomLevel` / `GrantedRoomLevels` (`internal/access/access.go`), the queries
+  `ListUserRoomLevels` (moved from `grants.sql` to `rooms.sql`, it reads no grant any more) and
+  `ListRoomsForUser`. `access.Options.Authz` takes the facade the app shares (`App.Authz`); without one
+  `access.New` builds its own over the store.
+- **Group** (AD-016): the level is the highest of
+  - `post` as a **user** member of the room (`room_members`, kind `user`; guests included, an AI member's host gets
+    nothing from it);
+  - `manage` as an **admin** of `rooms.org_id`;
+  - `manage` as the **creator** (`rooms.creator_iid`) while still a member of that organization **other than as a
+    guest**.
+  The last condition is the one refinement of the design table, kept to the least privilege: a creator who
+  left or was removed (OMEM-06 takes them out of the organization's groups) must not keep running the group,
+  and a guest takes part in groups but does not run them (OMEM-04). A creator who is only a guest still posts
+  when they are a room member. Positions, grants, the room row's `owner_id` and the instance admin role give
+  **nothing**. A group of the legacy shape (no `org_id`) gives its room members `post` and nobody `manage`.
+  Disabled users resolve to none (AUTH-10). Nothing is cached: a demotion takes effect on the next call.
+- **DM** (DM-08, AD-016): the two participants (`dm_a`, `dm_b`, the columns alone, member rows are not read)
+  `post`; whoever **manages** an AI participant in that AI's **home** organization (`agents.org_id`, `Chart.Manages`)
+  `view`s; nobody `manage`s. A user or person participant, an AI without a home, a manager in another shared
+  organization, the AI's host (`agents.owner_id`), a position-less admin and a `use` grant all give nothing.
+- **Agent principal**: unchanged, `post` as a member of the room and nothing else (an AI admin or creator does not
+  read rooms it is not in; the channel tools resolve rooms among the AI's own).
+- **Listing**: `rooms.List` / `GET /rooms` lists the groups the user is a member of (`post`), created or administers
+  (`manage`, every group of an organization they administer) and the DMs they take part in; the DMs they only
+  view as the manager of an AI stay reachable by id. `GET /conversations` (T56) builds on the same set.
+- **Grants are inert for rooms**: the sharing routes still write and read `grants` (they go in T51), the `visibility`
+  of a room is still computed from them, and no grant changes any room level (`TestGroupRoomLevel`,
+  `TestRoomSharingGivesNoAccess`). Agents and connectors still resolve through grants until T24 / T26.
+- **Creation (interim until T23)**: `rooms.CreateWithMembers(ctx, creator authn.Principal, in, members)` puts the group
+  in `orgs.DefaultFor(creator.IID())` and records `creator_iid = creator.IID()`; the row's `owner_id` is the
+  principal's `UserID` (the host user for an AI; a dead anchor, AD-019). `rooms.ErrNoOrganization` (an
+  `*httpx.Error`, 422 `organization_required`, field `org_id`) when the creator belongs to no organization;
+  nothing is created. T23 adds the explicit organization, the member/guest checks and the `not_org_member`
+  refusal on top.
+- **Query**: `CreateRoom` takes `org_id` and `creator_iid` (nullable).
+- **Tests**: the grant-based room cases of `access_test.go`, `rooms_test.go`, `messages_test.go`,
+  `rooms_handlers_test.go`, `room_membership_access_test.go`, `activity_test.go`, `message_authors_test.go`,
+  `room_info_test.go` and their neighbours were rewritten on organization membership. `internal/api/room_roles_test.go`
+  holds the helpers the room tests share: `groupIn` (a group in a chosen organization, which is the creator's default
+  while it is made), `addToRoom` / `joinOrgOf` (organization membership plus room membership), and `runRoomRoutes`
+  with `groupWant` / `dmWant`, the role matrix over `testkit.OrgRoles` (9 roles per route).
+
+## T23: Groups belong to an organization (ORG-02, ORG-03, OMEM-04)
+
+- **Creating** (`conversations.Service.CreateGroup`, used by `POST /api/v1/groups` and `POST /api/v1/agent/groups`):
+  - **Who**: the caller acting as itself - a user, or the AI of an agent principal (never through its host, so the
+    group's `creator_iid` is the AI and the host user has no access to it). It must be a **member or an admin**
+    of the organization: a **guest**, someone who is not a member, an instance admin who is not one and an
+    organization that does not exist are all **403 `forbidden`**, and nothing is created. A refusal tells
+    nothing about organizations the caller does not belong to.
+  - **Which organization**: `org_id` (id or slug, any case) or `org` (the same, the field the AI tools use); both
+    routes read either, `org_id` first on `POST /groups` and `org` first on `POST /agent/groups`. Absent means the
+    creator's default organization (`orgs.DefaultFor`: a user's chosen default, else where they have administered
+    longest; an AI's home). A default where the caller is only a guest is 403; a caller with no organization at
+    all is 422 `organization_required` (field `org_id`), nothing created.
+  - **Order of checks**: organization (403) -> name and member-list validation (422 `invalid`) -> members
+    (422 `members_refused`) -> an AI's allowance (429). The authorization comes first, as in the organization
+    services: a guest who sends a bad name is told 403.
+  - **Response**: `POST /groups` answers the `Room`, which now carries `org_id` (absent for a DM; the `Room` of
+    `GET /rooms`, `/rooms/{id}` and the live `room.changed` carry it too). `POST /agent/groups` answers
+    `CreatedGroup{room, name, org_id, org_slug, org_name}` so that the tool result can name the organization.
+  - **Phase 7 (T35, T38)**: the HTTP field the channel sends is **`org`** (a slug or an id); the tool argument the
+    model sees is `organization`. `dto.CreateGroupRequest` has both `org_id` and `org`.
+- **Members** (`rooms.Service.CheckMember(ctx, principal, orgID, member) (reason, error)`, shared by group creation
+  and `POST /rooms/{id}/members`): a member must be a **member of the group's organization with any permission**
+  (a guest added to a group posts in it). Reasons, in the order they are decided:
+  - `not_found`: no such enabled user (a disabled one included); no such AI **or an AI the caller cannot see**.
+    `access.Authorizer.CanSeeAI(principal, aiID)` is the visibility rule: a user sees the AIs they host
+    (`agents.owner_id`) and the AIs they share an organization with; an AI sees itself and the AIs it shares an
+    organization with, never through its host. T25 uses the same rule for `CanSee`.
+  - `person`: an external person (people join groups through bridged chats, CID-19 still holds: a chat is
+    `ErrChatsNotMembers`).
+  - `not_org_member` (`dto.RefusedReasonNotOrgMember`): a user or an AI the caller can see that does not belong to
+    the organization. A use grant gives nothing.
+  `POST /rooms/{id}/members` maps them: `not_org_member` is **422 `members_refused`** with `refused:[{id,reason}]`
+  (`rooms.MembersRefusedError`; `conversations.MembersRefusedError` is the same type), an AI the caller cannot see
+  or that does not exist is **403 `forbidden`** as before, an unknown or disabled user is 422 `invalid` on field
+  `member_id` as before. A group that is a DM answers `dm_members_fixed` first, and the caller needs `manage`.
+- **Guests**: a guest takes part in the groups it is added to (it reads and posts) and sees them in its list; it
+  cannot create a group (403) nor manage the one it is in. It opens a DM with any **user** of the organization
+  and with any **AI** of it: `intelligences.Service` sees (`CanSee`, profile, avatar) an AI through
+  `access.CanSeeAI` besides the grants and shared conversations it still honours; T25 drops those two and
+  keeps this rule, and T28 reads DM targets from it.
+- **Queries and code**: `rooms.CreatorOrg` resolves and authorizes (also used in the creating transaction, so a
+  demotion cannot interleave); `rooms.CreateInput.Org` carries the choice; `access.Authorizer.Authz()` hands services
+  the organization facade; `rooms.Room.OrgName` / `OrgSlug` are filled by `Get`, not by `List`.
+- **Tests**: `groups_test.go` (members and refusals on organizations), `groups_org_test.go` (the matrix over
+  `OrgRoles`: member, manager, admin, inviter create; guest, outsider and an instance admin 403; unknown
+  organization; slug; default; each member reason on its own; add-member; the guest; an AI as itself with a guest
+  AI refused), `agent_conversations_test.go`, `conversations/groups_test.go` and `channel/conversation_tools_test.go`
+  were rewritten; the test helpers `storeAgent`, `registerAgent`-created AIs and `testkit.NewAI` place their AIs in
+  the owner's default organization, which is where the app puts them.
+
+## T24: AI administration on organizations (POS-04, POS-05)
+
+- **Levels** (`agents.Registry.authorize`, user principals only; an agent token is `forbidden`): `use` is *seeing*
+  the AI - `access.CanSeeAI`: the user hosts it (`agents.owner_id`) or shares an organization with it, with any
+  permission, guests included - and `manage` is `Authz.ManagesAnywhere` (POS-03: the identities above it in a shared
+  organization, or its creator). Hosting gives sight, never management: a host who left the AI's organization still
+  lists it, at `use`. No sight is 404, sight without management 403. A use grant gives nothing. `dto.Agent.my_level`
+  carries the level (`manage` or `use`).
+- **Routes**: `GET /api/v1/agents` lists `ListVisibleAgents` (hosted + the AIs of the user's organizations; the
+  grant-based `ListAgentsForUser` stays for the contacts tree until T28), `GET /api/v1/agents/{id}` (new: the design's
+  matrix lists it; 200 for whoever sees the AI, 404 for the rest), `PATCH /api/v1/agents/{id}` (description, display
+  name; a manager), and the inert `/sharing` pair (`GET` sees, `PUT` manages). `DELETE /agents/{id}` and
+  `DELETE /agents/{id}/session` are T21's: `Registry.Delete` still asks `authorize(manage)` here, which T21 replaces by
+  `CanDelete` in the home organization.
+- **Merge** (`conversations.Service.Merge`, `POST /agents/{id}/merge`): the caller must **manage both AIs in their home
+  organization** (`Authz.Manages` with `agents.org_id`), and the two **must share it**. `from` unseen is 404, then the
+  `into` field is validated (422 `into` required / must differ), then `into` unseen is 404, an AI the caller sees and
+  does not manage - or that has no home organization - is 403, **different home organizations are 403**, an online
+  `from` is 409 `identity_online`. The two need not be hosted by the caller or by the same user (the survivor keeps its
+  host). The home organization is checked again inside the transaction.
+- **What a merge moves** (besides groups, cursors, DMs, messages, connectors, grants): the organizations only `from`
+  belongs to become `into`'s with the permission, position and inviter `from` had there (`MoveAgentOrgMemberships`);
+  where both belong, `into`'s membership stays (it wins) and `from`'s is deleted; `agents.creator_iid`,
+  `rooms.creator_iid`, `org_members.inviter_iid` and `org_invitations.invited_by` that named `from` now name `into`.
+  Two repairs avoid self-references: when `from` created `into`, `into`'s creator becomes `from`'s creator (nobody when
+  it had none); when `from` invited `into` as a guest, `into` answers to whoever invited `from` in that organization.
+  `events.OrgChanged` is published for every organization `from` belonged to; the audit entry stays `agent.merge`
+  (actor: the caller).
+- **Tests**: `TestAgentRoutesAuthMatrix` and `TestAgentIdentityRoutesAuthMatrix` (9 roles, `agentWant`),
+  `TestAgentListAndLevelFollowTheChartNotTheHost`, `TestMergeAuthorization` and
+  `TestMergeMovesOrganizationMembershipsAndWhatTheMergedAICreated`. A merge needs both AIs in one home
+  organization, so the tests that merge a `NewLegacyAI` (the v0.3 identity with no folder, which has no home) place it
+  first with **`env.PlaceInDefaultOrg(owner, aiID)`** (`testkit/orgs.go`): the owner's default organization as a member
+  with no position, created by the owner, which is what the upgrade does (OUPG-01). The registry/operator-removal tests
+  that relied on a use grant now expect 404.
+
+## T25: Profiles on organizations (POS-04, POS-05, OMEM-03)
+
+- **Seeing** (`intelligences.Service.CanSee`, `Get`, `Avatar` and so the live `intelligence.changed` frame): the caller
+  acts as itself (`Principal.IID()`); an agent token that names no AI, and the token of a disabled host user, see nothing.
+  - A **user** is seen by every user and every AI (the directory, unchanged).
+  - An **AI** is seen by the people of every organization it belongs to, guests included, and by the user who hosts it
+    (`access.CanSeeAI`). An AI sees itself and the AIs it shares an organization with, never through its host.
+    The two other sources of the v0.5 rule give nothing any more: a use grant, and a viewable conversation where the AI is
+    a member or an author. So the partner of a DM an AI of another organization started reads the DM (its messages carry
+    the AI's name and handle) but gets 404 on the AI's profile and avatar, and cannot open that DM from the contact
+    (`contact_not_found`); joining the AI's organization shows it.
+  - A **person** (external) is unchanged until T27: the users of its connector, or whoever can view a conversation where
+    it wrote.
+- **Editing** (`CanEdit`, `Update`, `SetAvatar`, `ClearAvatar`): the identity itself, and whoever manages it in an
+  organization they share (`Authz.ManagesAnywhere`, POS-03/POS-04), for users and AIs alike. The manager may be an AI (an
+  agent principal acts as itself); the only HTTP route that reaches the service with an agent principal edits that AI
+  itself. Hosting or seeing an AI edits nothing. A person stays read-only (`ErrHistoryOnly`, CID-21). Statuses: no sight is
+  404 (only an AI or a person can be invisible), sight without management is 403, so a stranger who edits a *user* is told
+  403. An admin without a position manages nobody (POS-03), so cannot edit a positionless member either.
+- **`IntelligenceProfile`** (`GET|PATCH /intelligences/{id}`, the avatar `PUT`, `PATCH /agent/profile`) gains, both always
+  present:
+  - `memberships`: `[]ProfileMembership`, a list (empty for a person), by organization name. It holds the organizations the
+    caller **shares** with the identity, with any permission, and all of its own when the caller is the identity (its
+    personal organization too). Nothing is said of other organizations (CHART-02). Each item is
+    `{org_id, org_name, org_slug, permission, position_id?, position_name?, can_delete, delete_effect}`.
+    `can_delete` is `Chart.CanDelete(viewer, identity)` in that organization (POS-05; never true for the identity itself) and
+    `delete_effect` is `"delete"` when the identity is an AI whose home is that organization and `"remove"` otherwise
+    (POS-06), whether or not `can_delete` is true. `permission` and `delete_effect` are plain strings in the DTO (no named
+    Go type) so that Phase 3's DTOs (`Organization`, `OrgMember`, `OrgChart`) merge without a name clash.
+  - `can_end_session`: true only for an AI profile, when the caller manages the AI in an organization they share (POS-04).
+    It does not look at whether the AI is online; the page combines it with `ai.online`. The AI itself never has it.
+- **`ai`** (`AIDetail`): `machine` and `machine_label` are removed (AD-022; the folder and its `~` label stay, the machines
+  table keeps the home folder). `my_level` is `manage` when the caller may edit the AI (manages it, or is it) and `use`
+  otherwise, and is never empty. `owner` is the host user and grants nothing (AD-019).
+- **Queries**: `ListIntelligenceRoomIDs` is gone (nothing asks which rooms an intelligence shares with a caller).
+- **Web**: the profile page loses the machine row and the i18n key `profile.machine`; the fixtures gain
+  `memberships: []` and `can_end_session: false`. Phase 8-9 render the new fields.
+- **Tests**: `TestUpdateAuthorization`, `TestCanSeeAndCanEdit`, `TestCanSeeAnAIOfTheirOrganization`, `TestGetProfile`,
+  `TestAIProfileTellsWhatTheCallerMayDo`, `TestProfileListsTheMembershipsTheCallerShares` and
+  `TestAnAgentTokenThatNamesNoAIActsAsNobody` (service), and, over the API, `TestAIProfileRoutesAuthMatrix`,
+  `TestUserProfileRoutesAuthMatrixOnOrganizations` (a worker, a guest, the manager), `TestAvatarRoutesAuthMatrix`,
+  `TestAIAvatarIsServedToWhoCanSeeTheAI`, `TestProfilesListTheirMemberships`, `TestAIProfileTellsWhoMayEndItsSession`,
+  `TestManagerEditsAIProfile` and `TestLiveIntelligenceChangedFollowsVisibility`.
+- **Test helpers**: `Client.ShareAI(aiID, users...)` (testkit) makes the users members of the AI's home organization; the
+  api test helper `shareAI` uses it, while `shareAgent` stays the raw legacy grant, which the tests that assert "a grant gives
+  nothing" and the merge tests that move grants use. The tests that assumed an AI sees what its owner sees now put the AI itself
+  in the organization (`TestAIDMTargetsAreThoseItSees` in `api` and `conversations`, `TestToolSendMessageToRefusalsFollowWhatTheAISees`);
+  `PlaceInDefaultOrg` came with T24.
+
+## T26: Connections belong to an organization (ORG-03, ORG-07, OMEM-04)
+
+- **Who may do what** (`connectors.Service`, the design's "Connections" matrix): the **admins** of the connection's
+  organization create (below), update, enable and disable, choose the operator of, refresh the chats of and delete it.
+  **Every other member**, guests included, reads it: the connection and its list entry, its chats, operator, status and queue
+  count (never text, CID-23). Everybody else, an admin of the instance without membership included, gets 404; a member who
+  is no admin gets 403 on a write. `my_level` is `manage` for an admin and `use` for the others. A connection with no
+  organization (a fixture; never one the app made) is seen by nobody. `GET /connectors` lists the connections of every
+  organization the caller belongs to, by name (`ListConnectorsOfMember`).
+- **Create**: `POST /connectors` takes `org_id` (`dto.CreateConnectorRequest.OrgID`: an id or a slug, any case, surrounding
+  spaces ignored) or, absent, the creator's default organization (`orgs.DefaultFor`). The creator must be an **admin** of it. A
+  member who is no admin, a guest, an organization the creator is not in and one that does not exist are all 403 `forbidden`
+  with the same body (nothing is told about organizations the caller is not in); a caller who belongs to no organization is
+  422 `organization_required`, field `org_id` (`connectors.ErrNoOrganization`). The organization is checked before the input,
+  so a member who sends a bad config is told 403, and again inside the creating transaction. `connectors.org_id` is the
+  owner; `owner_id` is the creator and a dead anchor (AD-019). The response and every view carry `org_id`; the audit entry
+  `connector.create` gains `org_id`.
+- **Operator (ORG-07)**: `operator_id` must name an AI whose **home** organization (`agents.org_id`) is the connection's. A
+  user, an empty or blank id, a person, an unknown id, an AI of another home organization (also one that is a member of this
+  organization too) and an AI with no home organization are each 422 on `operator_id`, message "must be an AI of the
+  connection's organization" (it was "must be an AI you own"), also next to valid edits, and change nothing.
+- **AIs through a connection**: `Service.Require(ctx, principal, id, want)` takes an agent principal and asks for the AI
+  itself (AD-016), so `POST /agent/connections/{id}/chats/{chat}/messages` no longer asks for the AI's host user. An AI that is
+  a member of the connection's organization and is not its operator is 403 `not_operator`; an AI that is not a member, and an
+  unknown connection, are 404 (`Service.authorize`, the one the user routes use, still refuses anything but a user).
+- **Left for T27 and T32**: `access.ConnectorLevel` / `CanUseConnector` keep reading the creator and the grants; the readers
+  that still use them are the people, the apps of an operator's profile, the linked accounts of a profile
+  (`intelligences/people.go`, `contacts.go`) and the live hub. Pairing already asks `Require` (membership of the connection's
+  organization); T27 adds the rule for webhook kinds (admins only) and moves the people readers to organizations. Until then
+  the api test helper `shareConnector` writes the membership **and** the legacy grant (`Client.ShareConnection` is the
+  membership alone).
+- **Queries**: `CreateConnector` takes `org_id`; `ListConnectorsOfMember(iid)` (connections of the identity's organizations
+  with its permission). `ListConnectorsForUser` stays for the contacts code until T28.
+- **Tests**: `TestConnectorRoutesAuthMatrix` (create, get, chats, refresh, rename, enable, operator, delete and the inert
+  sharing pair over the nine roles), `TestConnectorListFollowsMembership`, `TestCreateConnectorNamesItsOrganization`,
+  `TestOperatorMustBeAnAIOfTheConnectionsOrganization`, `TestOperatorAuthorizationMatrix` (also a second admin),
+  `TestSendToAChatAuthorizationMatrix`; the operator fixture is now an organization (bob a member, dave in a second one that
+  Atlas belongs to, carol with an inert grant), and `storeChat` places its connector in the owner's default organization.
+
+## T27: Pairing and people on organizations (ORG-02, ORG-07)
+
+- **Seeing a connection** (`access.Authorizer.CanSeeConnection(ctx, principal, connectorID)`): the principal is a member of the
+  connection's organization, with any permission. A user acts as themself and an AI as itself, never through its host; a
+  disabled user, a connection with no organization and an unknown one are seen by nobody. It replaces `CanUseConnector` in every
+  reader of the intelligences package; `ConnectorLevel` / `CanUseConnector` stay, grant-based, for the live hub until T32 and are
+  deleted by T51. The people of a connection are therefore for its members:
+  - `GET /contacts/people?connector_id=` and a person's profile with its `person` detail (the account behind it and the user it
+    is linked to) - 404 for everyone else; a user who can view a conversation where the person wrote still reads the profile
+    without the account (unchanged);
+  - the groups of `GET /contacts` `people` (one per connection of my organizations, `ListConnectorsOfMember`; the
+    owner-or-grant query `ListConnectorsForUser` is gone);
+  - the chat accounts a user linked, shown among the user's apps, and the connection that an AI operates, shown among the AI's apps.
+  The managers of the AI that operates a connection belong to its home organization, which is the connection's (ORG-07), so they
+  see the account behind a person too (the v0.5 text "without any access to the connector" no longer holds); a member of that
+  organization who does not manage the AI sees the person but not the AI's DMs.
+- **Pairing**: `POST /identities/pairing` asks `connectors.Service.RequirePairing`: a member of the connection's organization
+  (guests included) gets a code through an ordinary connection; through a kind whose callers choose the sender ids freely
+  (`Kind.LinkAdminsOnly`, the webhook; it was `LinkOwnerOnly`) only an **admin** does and a member is 403; a user outside the
+  organization, an admin of the instance included, is 404 for every kind (AD-008 as amended by AD-016).
+- **Linking** (the second guard, the `!link CODE` message): `identities.Service.Link(ctx, code, account, adminsOf)` takes an
+  organization id instead of a user id. With `adminsOf` set (the pipeline sets it, to the connection's organization, for
+  `LinkAdminsOnly` kinds) the code must belong to an admin of that organization **at the moment the account links**; the code of a
+  member, of someone outside it or of an admin demoted since it was issued links nothing and is not consumed (IDN-05). A
+  connection with no organization links nothing for those kinds. `connectors.Source` loses `OwnerID`.
+- **Tests**: `TestPairingFollowsTheConnectionsOrganization` (nine roles, an ordinary and a webhook connection),
+  `TestLinkOnlyForAdminsOfTheOrganization` (identities), `TestWebhookIdentityCannotBeForgedAcrossConnectors` (issue-time 403, a
+  demoted admin's code refused and kept, then linked), `TestAConnectionsPeopleAreForTheMembersOfItsOrganization` (list, contacts
+  group, person profile and avatar, linked account, operator app over the nine roles). The people fixture now keeps its connection
+  and its operator Atlas in a second organization of alice's ("line") apart from her rooms, so that "a viewer of a room" and "a
+  member of the connection's organization" are different people; `storeChatIn` places a seeded connector in a chosen organization.
+  The api helper `shareConnector` still writes the legacy grant besides the membership for the readers T28 and T32 move.
+
+## T28: Contacts by organization (OMEM-03, ORG-02)
+
+- **`GET /contacts`** is `{me, org_ais, hosted, users, people}`; `machines`, `unlinked` and `shared` are gone.
+  - `org_ais`: one group per organization the caller belongs to, by name, empty groups included: `{org: {id, name, slug}, ais:
+    [...]}`. The AIs are the members of the organization (`ListOrgAIs`), whatever their permission or the caller's, by display
+    name (case-insensitive, then id). An AI that belongs to two of the caller's organizations is listed in both groups.
+  - `hosted`: the AIs the caller hosts (`agents.owner_id`) that no group lists, by name. An AI hosted by me whose organizations I
+    left stays reachable here, so messaging, merging (T24) and deleting it still have an entry point.
+  - `AIContact` is the intelligence, `owner` (set only when **another** user hosts the AI), `org_id` (its home organization),
+    `folder`, `folder_label` (`~/…` against the host's home folder, from the `machines` row that stays), `app`, `online` and
+    `last_seen_at`. It has no machine key: no hostname or label appears anywhere in the response (AD-022).
+  - `people`: one group per connection of my organizations (T27); `users`: unchanged.
+- **DM targets (DM-04)**: `conversations.contact` asks `CanSee` as the caller, which for an AI is the AI itself. `send_message to`
+  reaches every user of the instance and the AIs the sender shares an organization with; any other AI answers 404
+  `contact_not_found`, the same body as an unknown id. Before, an AI saw what its host saw.
+- **Specs amended** (`intelligences/spec.md`): CONT-01 (organizations replace the machine tree, shares and connector grants),
+  DM-04 (the AI sees as itself), DM-08 (a DM of an AI is seen by its two intelligences and the managers of the AI's home
+  organization; grants give nothing) and PEOP-04 (a connection's people are for the members of its organization), each marked
+  "amended by AD-016".
+- **Left in place for T57 and T51**: `intelligences.OwnAIs` (the machine tree, `tree.go`), `GET /agent/contacts/tree` and
+  `SetMachineLabel` with `PUT /machines/{hostname}` still exist; `partyline agents` reads the tree and T57 replaces it by
+  `/agent/agents` (see its note). `ListAgentsForUser` stays for the store tests until the grants go.
+- **Web bridge (kept deliberately small)**: the new response breaks the contacts page, the pickers and the connection page, so
+  they are adapted here and Phase 8 (T48) owns the real organization UI. The contacts page shows one section per organization
+  (filter over names, handles, folders, apps and the organization's name) and a "Hosted by me" section; merging is offered on
+  the hosted AIs only, and only when the user hosts another AI of the same home organization (`mergeTargets`). The pickers
+  (`pickables`) list the organizations' AIs group by group, then the hosted ones, search no machine and show the folder. The
+  operator picker of a connection offers the AIs whose home is the connection's organization (ORG-07). The machine group
+  component and the machine rename mutation are deleted.
+- **Tests**: `TestContactsListTheAIsOfTheCallersOrganizationsByOrganization`, `TestContactsFollowTheOrganizationsOfTheCaller`
+  (another user's AI after joining its organization and not before; an AI hosted by me stays under "hosted" after I leave),
+  `TestContactsShowNoMachines`, `TestContactsOfOtherUsersHoldOnlyTheirOrganizationsData`, `TestContactsLeaveOutDisabledUsers`,
+  `TestContactsListHostedAIsByName`, `TestAIDMsReachUsersAndTheAIsOfItsOrganizations` (a foreign organization's AI → 404
+  `contact_not_found`, a user works); web: `contacts.test.tsx`, `lib/contacts.test.ts`, the pickers, connection and a11y tests.
+
+## T29: Trust for room messages (POS-10, AD-018)
+
+- **The rule.** A message delivered to an AI carries `trusted=true` only when its **author manages the AI in the AI's
+  home organization** (`Authz.Trusts`, T4): the creator of the AI, a position above the creator's, an AI that holds one,
+  and whoever manages any of them. Not trusted: the AI's host as such, its sibling AIs, its peers and subordinates,
+  anyone outside the home organization, an author who left it, and an identity that manages the AI only in another
+  organization it belongs to. It is decided **when the message is delivered**, never stored, so a promotion, a demotion
+  or a departure takes effect on the next message and on what is read later.
+- **The author is the intelligence that wrote it** (`delivery.AuthorOf(db.MessageView)`): `author_iid`, else the user or
+  AI of a row written before authors were recorded; empty for a system message and for a chat sender with no
+  intelligence (never trusted, and the trust is not even asked). An AI's post is its own: `author_user_id` still
+  resolves to the host and is no longer used for trust, which is why a user's AIs stop trusting each other.
+- **`internal/delivery/trust.go`**: `delivery.Trust` (`Trusts(ctx, authorIID, agentID) (bool, error)`, implemented by
+  `*orgs.Session`) and `delivery.TrustSource` (`func() Trust`), which opens the `Trust` of **one operation**. A nil
+  source opens a `Trust` that trusts nobody: a component given none fails closed. `delivery.Trusted(authorUserID,
+  ownerID)` and its test are gone; `trust_test.go` covers the new pieces.
+- **`Facts`** carries `AuthorIID` instead of `AuthorUserID`, and **`Facts.WantedBy(ctx, trust, agentID, prefs) (wanted,
+  trusted bool, err error)`** asks the trust once and returns it, because the trusted delivery mode needs it to decide and
+  the frame that carries the message tells it. A failing trust check is an error; the caller does not deliver on a guess.
+- **Where it runs**, one `TrustSource.Open()` per operation so each home organization's chart is read once (AD-017):
+  - the dispatcher (`DispatcherOptions.Trust`), once per dispatched message, for all its recipients;
+  - the gateway backlog (`GatewayDeps.Trust`), once per connection;
+  - `Gateway.Pending`, once per call;
+  - the history tool, `GET /agent/rooms/{room}/messages` (`api.Deps.Trust`), once per page.
+  `app.New` builds the source from `authz.Session()` and gives it to all four; `App` keeps it for the dispatcher, which
+  `Start` creates.
+- **Load count** (`TestADispatchLoadsEachHomeChartOnce`, through `Authz.Loads()`): a message pushed to 20 AIs whose homes
+  are three organizations reads three charts. The message is planted (stored and announced without the post path), so
+  the count is the dispatcher's alone.
+- **Tests** are `internal/api/delivery_trust_test.go` (the four paths, each in the delivery modes `all` and `trusted`,
+  over the authors of the task: creator, position above, AI above, sibling AI, peer, subordinate, outsider, manager in
+  another organization; delivery-time evaluation; a former manager) and `internal/delivery/trust_test.go`. The
+  mutations "author = the host user", "management in any shared organization" and "no memo" each fail them.
+- **Existing test adapted**: `TestPushCarriesChatContext` (channel) expected `trusted="true"` for a post by alice's other
+  AI, which the owner rule gave it; its subject is the chat-context keys, so only that value changed.
+- **Not changed here**: the wording of the channel instructions and of the instructions notice ("your owner") is stale
+  under this rule; it belongs to T35 and to the release notes (T55). `instructions_trusted` and `room_text_trusted` are T30.
+
+## T30: Trust for room instructions and room text (POS-10, INS-04, INS-06)
+
+- **The rule is T29's**: `instructions_trusted` and `room_text_trusted` of `GET /agent/rooms/{room}/info`, and the
+  notice an AI gets on connect, are true when the identity that last wrote the instructions (`rooms.instructions_by`), or
+  the name and description (`rooms.updated_by`), **manages the AI in its home organization** - `Trust.Trusts(writer,
+  agent)`, the same oracle and the same fail-closed default. A writer who left the organization, a peer, a sibling AI and
+  an identity that manages the AI only in another organization are not trusted. It is evaluated when the room is read, not
+  when it was saved.
+- **Each flag has its own writer.** `instructions_trusted` follows `instructions_by` and is false for a room without
+  instructions; `room_text_trusted` follows `updated_by`. A room can have trusted instructions and untrusted text, or the
+  other way round (`TestInstructionsAndRoomTextAreTrustedByTheirOwnWriter`).
+- **The connect notice** (`Gateway.backlog`, one per room with instructions, before its messages) is
+  `InstructionsNotice` when the writer manages the AI and `InstructionsNoticeUntrusted` otherwise, including when the
+  writer is unknown. Both are asked of the backlog's `Trust`, so the notice costs no extra chart read.
+- **What the columns hold.** Both columns keep the id of the **user** who saved the room, which is also the user's
+  intelligence id, so they are the identities `Trusts` expects. They are not changed here: an AI cannot save a room over
+  REST (the path rule keeps agent tokens to `/api/v1/agent/`), and a group an AI creates names no instructions. T23 makes
+  a group's creator an organization identity; it should record that identity here too.
+- **Wording unchanged.** The two notices keep their INS-03 wording (the untrusted one still says "someone other than
+  your owner"); the sentence is stale under this rule like the channel's trust paragraphs (T35, release notes T55). Only
+  the doc comments and `dto.RoomInfo` fields were reworded.
+- **Tests**: `internal/api/room_instructions_trust_test.go`, over the same authors as T29 (`trustWorld`), for `room_info` and
+  the notice; the writers are recorded by a store write so the rule is the subject, plus one test that saves through
+  `PATCH /rooms/{id}`. The mutations "notice keeps the owner rule", "text flag read from the instructions' writer" and "no
+  empty-instructions check" each fail them.
+
+## T31: Trust for platform events (POS-10, AD-018, CID-13)
+
+- **The rule.** A platform event is `trusted` only when its sender resolves, **through the connection it arrived on**
+  (`identities.ResolveSender`, AD-008), to a user who **manages the operator AI in the AI's home organization**
+  (`Trust.Trusts(user, operator)`, the oracle of T29). The operator's creator qualifies, as does a user whose position is
+  above the creator's, and whoever manages one of them. A member with no relation to the operator, a user who manages
+  it only in another organization it belongs to, a user who left the home organization, a sender nobody linked, one with
+  no id, one who is merely named like a manager and the same account linked on another connection are not trusted.
+- **`from_self` stays untrusted** (CID-14, AD-015): the pipeline does not ask the trust for the account's own typing, so
+  not even a manager's account typed on the device is trusted.
+- **Decided when the message arrives, and stored.** Unlike a room message (T29), which is judged each time it is read,
+  the verdict is written with the queue item (`platform_items.trusted`). A manager who leaves afterwards does not make the
+  events already queued untrusted; the next event of the same account is untrusted
+  (`TestInboundTrustIsDecidedWhenTheMessageArrives`).
+- **Wiring.** `connectors.PipelineDeps.Trust` is the one-method interface `connectors.Trust` (`Trusts(ctx, managerIID,
+  agentID)`), which `*orgs.Authz` satisfies; `app.New` passes `authz`. A pipeline without it trusts nobody. Each event reads
+  the operator's home chart once (no session: an inbound event is one question). The operator's owner is no longer read.
+- **Tests**: `TestInboundTrustIsWhoManagesTheOperator` replaces `TestInboundTrustIsTheOperatorsOwner` (inbound_test.go):
+  eleven senders, each guard alone (L-018), with the identities linked straight into the `identities` table
+  (`inboundEnv.linkDirect`) so the matrix does not depend on who may issue a pairing code, which T26/T27 change. The pairing
+  flow is still covered by `TestInboundPairingCommands`. The mutations "owner of the operator", "from_self judged like any
+  sender" and "management in any shared organization" each fail it.
+- **Not changed**: the sharing PUT the old test used to let bob link is not needed any more; `identities` keeps its own
+  rules (AD-008 pairing), reworked by T27.
+
+## T32: Live visibility from organizations (CHART-02, OMEM-06)
+
+- **Who sees what, decided for each event** (`internal/live/hub.go`; `live.Deps.Authz`, wired by `app.New`, defaults to
+  the facade over the store). `access.AgentLevel` and `access.ConnectorLevel` are no longer asked by the hub, so T51 can
+  delete them.
+  - **An AI** (`agent.presence`, and the `access.changed` of an AI) is seen by its **host** (`agents.owner_id`; a host who
+    left the organization still hears of the AI they run) and by every identity that **shares an organization** with it
+    (`Authz.SharesOrg`; any permission, guests included). An instance admin, an outsider and a user who has not joined hear
+    nothing. Joining an organization starts the events for its AIs and removal stops them, with no state to keep: the
+    check is made for each event.
+  - **A connection** (`connector.status`, `chat.discovered`, and the `access.changed` of a connection) is seen by the
+    **members of its organization**, guests included. **Transitional rule**: a connection whose `org_id` is NULL (every
+    connection made before T26 puts new ones in an organization; the upgrade places the old ones) is its **owner's**
+    (`connectors.owner_id`). With T26 merged the rule can never apply and T51 may drop it.
+- **`events.OrgChanged{OrgID}`** is rendered per connection as follows. The connection remembers the user's **standing**
+  (permission and position) in each organization they belong to, read when it opens and updated by each event.
+  - A user who is not a member and was not at the last look hears **nothing** (CHART-02: an outsider learns nothing of
+    an organization, and the instance admin is an outsider).
+  - A member, and a member who has just left, receive `access.changed` with **`resource_kind: "organization"`** and the
+    organization's id (new kind; `dto.AccessChangedData` documents it). It means: its members, positions, chart,
+    invitations, name or avatar changed - look at them again. The web learns of everything organization-wide from this
+    one frame; T39 (queries) invalidates the organization queries with it.
+  - When the user's **own standing changed** (joined, left, permission or position changed) what they see through the
+    organization may have changed, so the connection also:
+    1. reads the user's rooms again (`Rooms.List`) and compares them with the rooms it knows: a room that is gone from
+       the list **and that the user cannot view** gets `room.deleted` and then `access.changed` kind `room`; a room the
+       connection did not know and the user can now view gets `room.changed` (as the user sees it) and then
+       `access.changed` kind `room`. Both come in id order. A direct message the user only views through an AI is not
+       listed and is not lost (`TestLiveOrganizationChangeKeepsADMTheUserOnlyViewsThroughAnAI`). This is how a removal
+       from an organization reaches **that organization's groups** (OMEM-06 takes the member out of them);
+    2. if the user is still a member, sends `access.changed` kind `agent` for every AI that is a member of the
+       organization and kind `connector` for each of its connections: look at them again (the user is a member, so the
+       ids tell nothing new). A user who **left** is told no ids of what they can no longer see.
+  - An organization change that does not change the user's own standing (a rename, someone else's position, an invitation)
+    sends the organization frame only (`TestLiveMembershipChangesTellTheMemberItsAIsAndConnections`).
+- **Not changed**: `events.GrantsChanged` is still handled (a room's user members, a merge) and still published by the
+  code T51 removes; its agent and connector arms now ask the organization rules. Room access is `access`'s (T22).
+  `events.InvitationReceived` is T15's.
+- **Queries** (`queries/live_orgs.sql`, a file of its own so the other phases' edits of `orgs.sql` do not collide):
+  `ListOrgAgentIDs`, `ListOrgConnectorIDs`, and the test supports `SetRoomHome` and `SetConnectorOrg`, which put a room or a
+  connection in an organization as T23 and T26 do when they create them. `testkit.LiveConn.Drain(d)` reads the frames that
+  arrive within `d`.
+- **Tests**: `internal/api/live_orgs_test.go` (presence by membership, join and removal, the host who left, the real AI
+  session, connector status and chats, the owner's legacy connection, `access.changed` of an AI and a connection, the
+  group-loss frames, the join / promotion / rename frames, rooms gained) and the rewritten `live_test.go`: its room tests
+  now use room membership instead of sharing grants and its status test uses organizations. Each rule above is pinned by a
+  mutation that fails a test (host rule, "every AI seen", "every connection seen", outsiders hearing the organization,
+  re-evaluation on every change, ids sent to the member who left, no `access.changed` for lost groups, "not listed means
+  lost"). `merge_test.go` adds bob to alice's organization where his socket expects to hear of her AI (it asserted that
+  through a `use` grant); T24 rewrites that file.
+
+## T56: Conversations carry their organizations (ORG-02, OMEM-03)
+
+- **`org_ids`** is on every `Conversation` of `GET /conversations` and on the `Room` of `GET /rooms`, `GET /rooms/{id}` and
+  the live `room.changed` frame, with the same value (`rooms.Room.OrgIDs`, filled by `rooms.Service.Get` and `List`). It is
+  always an array, `[]` when there is nothing to file the conversation under, never `null`.
+  - **A group**: its organization (`[org_id]`; a group with none, which only a fixture has, is `[]`).
+  - **A DM**: the organizations **both participants** are members of (`ListSharedOrgIDs`), whatever their permission; an AI
+    is a member of its organizations like a user. The order is the one the caller joined them in, oldest first (ties by
+    organization id); clients that need a display order sort by their own list of organizations.
+  - **A DM that shares none** (a user of another organization, a person, an identity that left): the **caller's default
+    organization** (`orgs.DefaultFor`: the user's chosen default if they still belong to it, else where they administered
+    longest, else the longest membership; an AI's home), gap G1. It is the caller's, so the two sides of one DM may file it
+    differently, and it is `[]` for a caller with no organization. The default is read once per list.
+  - It follows the memberships: when the colleague leaves one of two shared organizations, the next list (and the next frame)
+    names the other.
+- **"The live `conversation` events"** of the task text do not exist: the client builds its conversation list from
+  `GET /conversations` and patches a row from the `room.changed` frame (`Room`), which the hub renders for the socket's own user
+  (`Hub.room` -> `Rooms.Get`). So that frame is the live carrier: `Room.org_ids`, and the web handler copies it into the row
+  (`handlers.ts`, `room.changed`). No new event type, so the hub's tests and Phase 6 stay untouched. **Not done here**: nothing
+  re-emits `room.changed` for the DMs of a user whose organizations changed (a colleague leaving does not push a frame);
+  T32 owns that (`OrgChanged` re-evaluation).
+- **Web**: `Conversation.org_ids` and `Room.org_ids` are required in the generated types; `makeConversation` / `makeRoom`
+  default to `["o1"]`. The sidebar does not filter by organization yet (T46) and the switcher does not sum unread counts by it yet (T39).
+- **Tests**: `TestConversationsCarryTheirOrganizations` (group; DM with a colleague in two shared organizations from both sides;
+  a DM with an AI; a DM sharing none, filed under each side's own default which is not the first organization; `GET /rooms/{id}`
+  and `GET /rooms`; after the colleague left one), `TestRoomChangedFrameCarriesTheOrganizations` (the frame rendered for each
+  socket), and the `room.changed` case of the web live handlers.
+
+## T57: Machines become internal (ORG-02)
+
+- **Removed**: `PUT /api/v1/machines/{hostname}` and `GET /api/v1/agent/contacts/tree` answer 404 `not_found` (an agent token on the
+  first is still refused by TOK-03, 403, like on any non-agent path); the DTOs `AgentContactsTree`, `MachineTree`, `TreeNode`,
+  `Machine` and `SetMachineLabelRequest`; `intelligences.OwnAIs` (the machine tree and its `Rows`), `SetMachineLabel`,
+  `MaxMachineLabel`, and `tree.go` with `BuildTree` / `BuildMachines` and their tests. `segmentsUnder` and `splitPath`, which
+  `FolderLabel` needs, moved to `label.go`; the package comment moved to `service.go`.
+- **Kept**: the `machines` table with its queries (`ListMachines`, `GetMachine`, `UpsertMachine`, `SetMachineLabel`: the label
+  is a dead column, AD-012, and the store schema test still writes it), `X-Partyline-Machine`, and `FolderLabel`, which reads
+  `~` against the home folder the host's machine reported. `dto.Agent.machine` (the session's hostname) is still on
+  `GET /agents`; nothing in the product shows it.
+- **`dto.Agent` gains** `organization` (`{id, name, slug}`: `dto.ContactOrg`, the compact organization of the contacts, now shared;
+  absent for an AI with no home organization), `folder` and `folder_label` (`""` for an AI without a folder). They are on every
+  route that renders an agent - `GET /agent/agents`, `GET /agents`, `GET /agents/{id}` - because `toAgent` is shared, which
+  `TestOwnerAgentsForAgentTokens` keeps equal. `folder_label` is not in the design's one-line description of the route, but
+  `partyline agents` cannot print `~` without it, and nothing else on the agent API knows the host's home folder.
+  `ListVisibleAgents` and `GetAgentWithOwner` join the organization and the host's `machines` row (`agents.Agent.OrgName`,
+  `OrgSlug`, `Home`).
+- **`partyline agents` is rewritten here (T58's behaviour)**: it read the removed tree, so leaving it would ship a command that
+  prints "the server answered 404". It now reads `GET /agent/agents` (the AIs the token's user hosts) and prints them grouped by
+  organization: organizations by name (case-insensitive), a heading that is the name plus ` (address)` when the address differs
+  from the name, the AIs of a group by name, rows `marker name`, `@handle`, app, state, folder label in tab-aligned columns
+  with trailing empty columns dropped, and the AIs without an organization last under `No organization`; no hostname anywhere.
+  The empty message and the exit codes are unchanged (a failing or unreachable server is exit 1 with the reason on stderr,
+  L-045). T58's "Done when" is covered by `TestAgentsPrintsTheHostedAIsByOrganization`, `TestAgentsOrdersTheOrganizationsByName`
+  and `TestAgentsFailsWhenTheServerFails`; the Phase 7 worker should confirm that and extend rather than redo it
+  (`internal/cli/agents.go`, `agents_test.go` and the `partyline agents` section of `docs/agents.md` are the shared files).
+- **Docs**: the `partyline agents` section of `docs/agents.md` and the lines of README / README.pt-BR that describe the command
+  and the Contacts page are corrected. What still talks about "Unlinked" and "Shared with me" (the Contacts section and the
+  v0.3 upgrade paragraph of `docs/agents.md`, the upgrade notes of the README) is left to T55.
+- **Web**: `makeAgent` carries an organization and a folder; the Playwright test of the contacts page now asserts organization
+  sections and no machine (`first run` + that test pass on `desktop-1280`; the rest of the suite fails on grants - the UI-04 test
+  shares a room with `PUT /rooms/{id}/sharing` - which T54 reworks).
+- **Tests**: `TestMachineRoutesAreRetired` (both routes 404 for the callers that used them, nothing stored, the machine row
+  stays), `TestAgentAgentsListsTheHostedAIsWithTheirOrganization` (home organizations, `~` labels, the legacy AI without either,
+  not the AIs an organization shows from other hosts, other hosts list their own, 403/401), the CLI tests above; the machine label
+  and machine tree tests, and `tree_test.go`, are gone with the behaviour.
+
+## Merging Phase 5 (T22-T28, T56, T57) into the integration branch (Phases 1, 2, 4, 6)
+
+Every section above is kept as its task wrote it. This one records what the merge had to decide, for the merges that follow.
+
+- **Tests that two sides rewrote, kept whole.** Each assertion of both sides stands; where a fixture had to give way, it is the
+  one that assumed a rule the other side changed.
+  - `TestDeleteRemovesMembershipsAndCursors` (`agents`): bob is first a grantee with no organization (404, a grant gives nothing:
+    T24) and then a member of the AI's home (403: T21); the stranger likewise (404, then 403 once a colleague).
+  - `TestInboundTrustIsWhoManagesTheOperator` (T31) replaces the old owner test that T27 had touched (`ShareConnection` so that bob
+    could pair): it links every sender but alice's own account straight into `identities`, so who may pair does not matter to it.
+  - `TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone` keeps T26's fixture: bob is a member of Atlas's home through
+    `shareConnector`, dave sees Atlas through a second organization, carol holds only an inert grant. That already gives T21's
+    403, 403 and 404, so T21's loop that made bob and dave members of alice's organization is dropped (it would have changed what
+    the test says about dave).
+  - `TestMergeMovesGroupsCursorsGrantsAndMessages` keeps T24's raw grants (the test is about moving them) and T32's membership of
+    bob in alice's organization. A merge now announces the organizations the merged AI belonged to (T24) and the hub renders them
+    to their members as `access.changed{organization}` (T32), ahead of the `agent` frame: the test reads up to the agent frame.
+- **Helpers.** `agentSetup` and `ensureMember` (T21) are gone: T24's role matrices (`agentWant` over `testkit.OrgRoles`) replaced the
+  matrices that used `agentSetup`, T26's operator fixture made T21's membership loop redundant, and deleting an AI is T21's own
+  matrix (`TestDeletingAnAIOfAnOrganization`). `addUserToRoom` (T32) is `addToRoom` (T22), which first makes the user a member of
+  the group's organization, as T23's `not_org_member` rule asks.
+- **Fixtures that T23 and T26 made invalid** (assertions untouched): the T20 deletion world has `atlas` join Team to be in the Team
+  group Support, and Team's AI `notes` operates the connection (ORG-07: the operator is an AI of the connection's organization);
+  the T29/T30 trust world creates `ops` in acme with `groupIn`; `TestADispatchLoadsEachHomeChartOnce` has each AI join the group's
+  organization besides its home, so the homes (and the charts read) stay three.
+- **`app.New`.** One `authz` is shared by `access` (T22), the trust source, the pipeline and the live hub (T29-T32); `presence` is built
+  before the users service, which kicks the hosted AIs of a deleted account (T20).
+- **Registry.** `Registry.Delete` asks the home organization inside its transaction (T21) and no longer calls `authorize`, which is now
+  T24's sight-and-management rule for the other routes. `authorizeDelete` keeps its own reading of "sees the AI" (host, or a shared
+  organization), which is the rule `access.CanSeeAI` states: the two could be one.
+- **T30 and T23 together (added after the merge commit, in neither branch).** T30 asked T23 to record a group's creating identity in
+  `rooms.updated_by`; T23 recorded the user the principal acts for, which for an AI is its host. On one branch that lets the host's
+  other AIs trust the name and description an AI wrote with `POST /agent/groups` - the trust T30 withholds from sibling AIs.
+  `CreateWithMembers` now records `creator.IID()`: the same for a user, the AI itself for an AI. `instructions_by` stays the user, since
+  no route gives an AI's group instructions. `TestTheTextOfAGroupAnAICreatesIsTrustedOnlyWhenThatAIManagesTheRecipient` pins it (a
+  sibling and an AI the target manages are untrusted, an AI above the target's creator is trusted; recording the host fails it).
+
+## T45: Connection pages owned by the organization (ORG-03, ORG-07, OMEM-04)
+
+Phase 9 runs on a base without Phase 3 (the organization API, T12-T17) and without Phase 8 (T39-T44). It therefore
+reads only what the merged phases serve. The minimal shared pieces below are what T45-T49 need of T39; **Phase 8 reuses
+them** (T39 may replace the source of `useMyOrgs` by `GET /orgs`, and adds the switcher UI on top of `useCurrentOrg`).
+
+- **`useMyOrgs()`** (`web/src/lib/api/queries.ts`): the viewer's organizations, each with their permission and position,
+  `MyOrg{id, name, slug, permission, position?}` (`web/src/lib/orgs.ts`). The source is `memberships` of **the viewer's own
+  profile** (`GET /intelligences/{me.intelligence.id}`, T25: "all of its own when the caller is the identity"), through the
+  profile's cache entry (`queryKeys.intelligence`), so the settings page and this read cost one request. It is not
+  `GET /orgs` because that route is Phase 3's. Order: the server's (by organization name).
+- **`useCurrentOrg()`** (`web/src/hooks/use-current-org.ts`) returns `{org, orgs, loading, select}`. `org` resolves, in
+  order, to the organization the viewer picked (`useLiveStore.currentOrgId`, kept in `localStorage` under **`pl.org`**, every
+  access wrapped in try/catch by `readStorage`/`writeStorage`), the account's default (`me.default_org_id`, read through
+  `defaultOrgIdOf` because `Me` gains it with T17 and this branch does not have it yet), then the first of `orgs`. A pick or
+  default the viewer no longer belongs to counts for nothing. `org` is `undefined` while the organizations load, when they
+  failed to load and for a viewer who belongs to none: **every consumer then behaves as before this feature** (no filtering,
+  server decides), so an unreachable profile never hides data.
+- **`select(id)`** is `useLiveStore.setCurrentOrg`; there is no UI for it yet (the switcher is T39). Until then the pick is
+  the default.
+- **Pure helpers** (`web/src/lib/orgs.ts`): `isAdminOf`, `canCreateGroupsIn` (admin or member, never a guest, OMEM-04),
+  `resolveCurrentOrg`, `inOrg(conversation, orgId)` (a conversation filed under **no** organization belongs to every one),
+  `toMyOrgs`, `defaultOrgIdOf`.
+- **Live**: `access.changed` with `resource_kind: "organization"` (T32) invalidates the viewer's own profile (their
+  organizations), the contacts and the conversations list (DMs are filed under shared organizations). T39 adds the
+  organization pages' own queries to the same branch of `handlers.ts`.
+- **Fixtures**: `makeMembership()` (a `ProfileMembership`, Acme `member`).
+
+Connections:
+
+- **List** (`connectors/index.tsx`): only the current organization's connections (`org_id`), by name. While the organizations
+  are loading the page shows its skeleton; when they are unknown or empty it lists every connection and offers to add one.
+  "Add connector" is offered when the viewer administers at least one organization (or the organizations are unknown); a
+  viewer who administers none sees the empty state "Nothing is connected in {org} yet. Its admins add connections." and no
+  button. The owner label ("by @user") is gone: the organization owns the connection (AD-019).
+- **Add dialog**: an "Organization" select, listing only the organizations the viewer **administers** (ORG-03); it starts on
+  the current one when the viewer administers it, else on the first they administer, and the request carries `org_id`. With the
+  organizations unknown no select is shown and no `org_id` is sent (the server uses the creator's default). A 403 reads "Only
+  admins of the organization can add connections."
+- **Detail page**: names the organization ("Organization: Acme", from `useMyOrgs`), has no sharing control, no owner label.
+  Admins (`my_level: manage`) edit, enable, change the operator and delivery, delete; every other member reads the operator, the
+  delivery settings and **how many** messages wait (never their text, CID-23). The operator choices are the AIs whose home is
+  the connection's organization (ORG-07, unchanged from T28). A 403 on the operator reads "Only admins of the connection’s
+  organization can change its operator."
+- **Texts changed** (en and pt-BR): `page.connectorsBody`, `connector.notFoundBody`, `connector.noOperatorReadOnly` ("An admin
+  of the organization chooses the operator."), `connector.operatorForbidden`; new `connectors.org`, `connectors.orgHint`,
+  `connectors.emptyReadOnly`, `connectors.addForbidden`, `connector.org`.
+- **Tests**: `connectors.test.tsx` (list scoped to the organization and following the pick, unknown organizations, the empty
+  states, adding for admins only with the select and `org_id`, the read-only member view, the operator among the organization's
+  AIs, no sharing control), `use-current-org.test.tsx`, `lib/orgs.test.ts`, the `access.changed` organization cases of
+  `handlers.test.ts`, and an axe test of the add dialog (en and pt-BR).
+
+
+## T46: New group dialog with an organization and the sidebar filter (ORG-03, OMEM-04, ORG-02)
+
+- **Organization select** (`components/org-select.tsx`, shared with the connection dialog of T45): a native select with a label and a
+  hint, listing the organizations in which the viewer can **create groups**: `admin` or `member`, never a `guest` (OMEM-04,
+  `canCreateGroupsIn`). It starts on the pick the viewer made, else the current organization when they can create there, else the
+  first they can. The request carries `org_id`. While the viewer's organizations are unknown (loading, failed, none) there is no
+  select and no `org_id` is sent: the server uses their default and decides, as before this feature. A viewer who is a guest in
+  **every** organization sees "You’re a guest in every organization you belong to, and guests can’t create groups." instead of the
+  form, and "Create group" is disabled.
+- **Members offered** (`pickables(contacts, orgId)`, `lib/contacts.ts`): the **AIs that are members of the organization**
+  (`org_ais[org]`, whatever their permission; the hosted AIs no organization lists are never offered), and **every other user of
+  the instance**. `MemberPicker` (adding to an existing group) offers the same, scoped by the room's `org_id` read from the cached
+  room (`useRoom`); a room that fails to load leaves the AIs unscoped.
+  - **Deviation / gap for the integration.** The contacts say which AIs belong to an organization but not which users do, and
+    `GET /orgs/{org}/members` (T14, Phase 3) is not in this branch. So the users are the instance's directory and the **server's
+    rule decides**: a user who is not a member of the organization is refused with 422 `members_refused`, reason `not_org_member`
+    (T23), and the dialog names them ("Bob Lima: not a member of Acme"), marks their rows and keeps everything else. **When T39's
+    members query exists, replace the `users` of `pickables(contacts, orgId)` by the organization's user members** (and drop the
+    refusal's role as the only guard); nothing else in the dialog changes.
+- **Changing the organization** reloads the offer: the AIs of the new organization replace the old ones, a pick that is not offered
+  there goes (users stay), and a refusal or message about the old choice is cleared.
+- **Messages**: 403 reads "Only members and admins of {org} can create groups in it." (shown only when the dialog knows the
+  organization); 422 `organization_required` reads "You’re not in any organization yet. Create or join one first."; the
+  `not_org_member` refusal reads "not a member of {org}" ("not a member of the group’s organization" if the organization is
+  unknown). New keys, en and pt-BR: `newGroup.org`, `newGroup.orgHint`, `newGroup.refusedNotOrgMember`,
+  `newGroup.refusedNotOrgMemberUnknown`, `newGroup.forbidden`, `newGroup.guestOnly`, `newGroup.noOrg`, `conversations.emptyInOrg`.
+- **After creating** in an organization other than the current one, the dialog calls `select(org.id)` (`useCurrentOrg`): the list is
+  the current organization's, so the group the viewer is taken to would otherwise be missing from it.
+- **Sidebar** (`ConversationList`, which is also the phone's home screen): lists the conversations filed under the current
+  organization (`inOrg`: a group's organization; a DM is filed under the organizations both sides belong to, or under the
+  viewer's default when they share none, T56) and hides the rest; one filed under **no** organization is listed everywhere. The
+  search (LAY-03) looks among those only. While the organizations load the list is its skeleton, so another organization's
+  conversations never flash first; when they are unknown it lists everything. When only other organizations have conversations the
+  empty state says "No conversations in {org} yet" and still offers both ways to start one. A live `room.changed` frame that
+  changes a row's `org_ids` moves it in or out (T56). **Not filtered**: the command palette (a jump-anywhere search over everything
+  the viewer can reach) and the unread totals (T39's switcher counts per organization).
+- **Test helpers**: `test/orgs.ts` (`memberIn(org, permission)`, `viewerIn(...memberships)`) serves the viewer's own profile, which is
+  where the app reads their organizations.
+- **Tests**: `new-group-dialog.test.tsx` (the select and its options, the start, `org_id`, reloading the picker, the refusals and
+  the 403, following the group, guest everywhere, waiting for the organizations, unknown organizations, `organization_required`,
+  Portuguese), `conversation-list.test.tsx` (groups and DMs of the organization, a DM shared by two organizations, none, unknown,
+  waiting, the empty states, search, live frame, Portuguese), `member-picker.test.tsx`, `lib/contacts.test.ts` and an axe test of
+  the dialog with the select (en and pt-BR).
+
+## T47: Profile memberships and manager actions (POS-04, POS-05, POS-06)
+
+What the viewer may do about an identity comes from its profile only (T25): `memberships[].can_delete` / `delete_effect` and
+`can_end_session`. The page adds no rule of its own.
+
+- **Organizations** (`contacts.$id.tsx`, a region "Organizations", hidden when `memberships` is empty): one row per organization the
+  viewer shares with the identity (all of its own on the viewer's own profile) with the organization's name, the permission (Admin,
+  Member, Guest) and the position held, and a "Home organization" tag where `delete_effect` is `"delete"` (an AI's home, POS-06).
+  An unknown permission string is shown as it came.
+- **Delete / Remove from**, per row, only where `can_delete` is true:
+  - `delete_effect: "delete"` -> "Delete" (accessible name "Delete {name}") opens `DeleteAIDialog` (`DELETE /agents/{id}`, then back to
+    the contacts). Its text no longer mentions sharing: "It leaves every group and organization, its direct messages are deleted and
+    the connections it operates are left without an operator. A session that starts again in its folder creates a new AI." A 409
+    `last_admin` (the AI is the only admin of an organization) reads "{name} is the only admin of an organization. Make another member
+    an admin first."
+  - `delete_effect: "remove"` -> "Remove from {org name}" opens `RemoveFromOrgDialog` (`DELETE /orgs/{org_id}/members/{iid}`, by the
+    organization's **id**). It says what stays, literally: for a person "{name} leaves the groups of {org} and loses their position
+    there. Removing someone only takes them out of {org}: their account and their other organizations stay."; for an AI "... loses
+    its position there. Removing an AI from an organization that is not its home only takes it out of {org}: the AI itself stays, in
+    its home organization.". Failures are told inside the dialog, which stays open: `last_admin` ("{name} is the only admin of {org}.
+    Make another member an admin first."), an unreachable server, anything else ("Couldn't remove {name} from {org}. Try again."). On
+    success a toast, and the identity's profile, the contacts and the conversations are marked stale: the row is gone, the page stays.
+- **End session** (header, AIs only): shown when `can_end_session` is true **and** the AI is online (live presence over `ai.online`;
+  the flag alone does not look at it, T25). It asks first ("End {name}'s session?" - "The session stops and {name} goes offline.
+  {name} is not deleted and can connect again."), then `DELETE /agents/{id}/session`; a toast on success and on failure.
+- **Edit** is the editor that was already on the page, shown to `can_edit`: not a new button. **Merge** is unchanged (an AI the
+  viewer hosts and manages, with another of theirs in the same home organization).
+- **Removed from the page**: the sharing dialog and its button (`profile.share`); the machine row went with T25 and a test pins that
+  none renders; the label "Owner" of an AI's host is now "Hosted by" (the organization owns the AI, AD-019).
+- **Queries added** (`queries.ts`): `useEndSession`, `useRemoveFromOrg({orgId, iid})`. Phase 8's members page and chart can use
+  `useRemoveFromOrg` for their "Remove from {org}" action.
+- **Existing tests changed**: in `profile.test.tsx` the three sharing cases of "managing an AI" (offering sharing to the owner,
+  opening the sharing dialog) are replaced by the cases above, which also assert that nothing offers sharing; the delete case now
+  starts from the profile's flags.
+- **Texts** (en and pt-BR): `profile.orgs`, `profile.homeOrg`, `profile.permissionAdmin|Member|Guest`, `profile.removeFrom`,
+  `profile.removeTitle`, `profile.removeBodyPerson`, `profile.removeBodyAI`, `profile.removed`, `profile.removeFailed`,
+  `profile.removeLastAdmin`, `profile.endSession`, `profile.endTitle`, `profile.endBody`, `profile.ended`, `profile.endFailed`,
+  `ai.deleteLastAdmin`; changed `ai.deleteBody`, `profile.owner`; removed `profile.share`.
+- **Tests**: `profile.test.tsx` (the list, home tag, nothing shared, own profile, a non-manager with no action at all, Delete vs Remove
+  per flag, no machine row, "Hosted by", no sharing, ending a session with confirmation / cancel / failure / live presence / flag /
+  AI-only, deleting and `last_admin`, removing with the literal dialog texts, by id, cancel, `last_admin`, failure, unreachable
+  server, Portuguese), and axe tests of the profile with its organizations (desktop and phone) and of both dialogs (en and pt-BR).
+
+## T48: Contacts grouped by organization (OMEM-03)
+
+- **Nothing was left to build.** T28's web bridge already made the page what T48 asks: one section per organization the viewer belongs
+  to, in the server's order (by name), with its AIs; an organization with no AI is not listed; the AIs the viewer hosts that no
+  organization lists are a "Hosted by me" section (merge and delete live there); there is no "Shared AIs" section and no machine ›
+  folder tree; `machine-group.tsx` and the machine rename mutation were deleted. The page lists **every** organization of the viewer,
+  not only the current one (T45): the contacts are where AIs are found across organizations.
+- **What T48 adds is the proof, and a cleanup.** `contacts.test.tsx` already had the Done-when cases (two organizations render two
+  groups with their AIs; an empty one is left out; no hostname or machine label renders). The last one used a fixture that could not
+  carry a hostname, so it could not fail. A new case serves a payload as a server of the machine-tree days would (`machines`, `shared`,
+  and a hostname and label on every AI) and asserts that nothing of it renders and that the organizations are the only sections. The
+  stale comment above `contactsQuery` (the machine tree, shared AIs) now describes what the query returns.
+- **For T50**: the comment on the `access.changed` branch of `handlers.ts` still talks of sharing ("Sharing decides the shared AIs...");
+  T50 rewrites every mention of sharing in `web/src`.
+
+## T49: Default organization setting (ORG-04, POS-06)
+
+- **Default organization** (`DefaultOrgSection`, a section of `settings.tsx`): a select named "Default organization for new AIs" under the
+  heading "Default organization" ("New AIs you start join it, unless you start them with --org."). It lists **every** organization the
+  viewer belongs to, guest ones included (`useMyOrgs`; T9's `SetDefault` takes a member with any permission), and shows the account's
+  default (`me.default_org_id`, read through `defaultOrgIdOf`). An account with no default, or one the viewer no longer belongs to, shows a
+  disabled "Choose an organization" instead of guessing the server's fallback. Choosing sends `PUT /me/default-org` `{org_id}` (the id,
+  `useSetDefaultOrg`), disables the select while it runs and, on success, writes `default_org_id` into the cached account and says "New AIs
+  now join {org}". A 403 reads "You can only choose an organization you belong to.", any other failure "Couldn't change the default
+  organization. Try again."; both put the select back on the old default. The same value again sends nothing. The section is a skeleton while
+  the organizations load and absent when the viewer has none (or they could not be read).
+- **Depends on Phase 3 (T17), which this branch does not have.** `PUT /api/v1/me/default-org` and `default_org_id` on `GET /me` are T17's.
+  On this branch alone the PUT answers 404 and the account has no default, so the select starts on "Choose an organization" and a choice
+  ends in the failure toast; the page needs **no change** once T17 is merged. What the web assumes of T17, from the design: the body
+  `{org_id}`, any 2xx accepts it (the response body is ignored), 403 is "not a member", and `me.default_org_id` carries the default. The
+  request and the field are typed locally (the literal body of `useSetDefaultOrg`, `MeWithDefaultOrg` in `lib/orgs.ts`, T45): **after the
+  merge, type them with the generated DTOs** if tygo produces them.
+- **Delete account** (`DeleteAccountSection`): a section "Delete account" with the button "Delete my account", which opens a dialog with the
+  password field and, literally: "Your account, your sessions and tokens and your direct messages are deleted for good. Your AIs, groups and
+  connections stay in their organizations: your AIs go offline, and an admin of their organization can delete them. This can’t be undone."
+  (what T20 does: the hosted AIs become unlinked identities that stay offline, the groups and connections are re-pointed to the heir, the
+  messages stay). `DELETE /me` `{password}` (`useDeleteAccount`): **204** clears the cache, shows "Your account was deleted" and goes to the
+  login page; **422** with the `password` field shows the server's reason under the field and keeps the dialog; **409 `last_instance_admin`**
+  reads "You’re the only admin of this instance. Make another user an admin before deleting your account."; an unreachable server and any
+  other failure say so inside the dialog. An empty password is refused before asking the server ("Required"). The request is sent once while it
+  runs, cancel sends nothing, and every opening starts with an empty password.
+- **Texts** (en and pt-BR): `account.defaultOrg`, `account.defaultOrgBody`, `account.defaultOrgLabel`, `account.defaultOrgNone`,
+  `account.defaultOrgSaved`, `account.defaultOrgForbidden`, `account.defaultOrgFailed`, `account.delete`, `account.deleteBody`,
+  `account.deleteOpen`, `account.deleteTitle`, `account.deleteDialogBody`, `account.deleteConfirm`, `account.deleteLastAdmin`,
+  `account.deleted`.
+- **Tests**: `settings.test.tsx` (the options and the current default, the hint, changing with the id, the cache, 403 / other failures with the
+  select going back, no resend, no default, a default the viewer left, no organizations, Portuguese; the dialog's wording, no password, 422,
+  409, success with the request body, the cache and the login page, one request at a time, cancel, reopening, 500 and unreachable server,
+  Portuguese) and axe tests of the page and the dialog (en and pt-BR).
+
+## T50: Remove the sharing UI (ORG-02)
+
+- **Deleted**: `sharing-dialog.tsx` and its test, `room-visibility.tsx`, `useSharing`, `useUpdateSharing`, `queryKeys.sharing` and the
+  `SharingResource` type of `queries.ts`; the Share button of the room page (`rooms/$roomId.tsx`); the private / shared / public label
+  of the group header (`conversation-header.tsx`, which now shows a group's description under its name and nothing when it has
+  none); the i18n keys `sharing.*` (34), `rooms.visibility.*` (3) and `room.share`, in en and pt-BR.
+  `rg -n "sharing|Visibility" web/src` now finds only `types.gen.ts`, as the Done-when asks. To get there, the words also left three test
+  titles and a page-visibility helper of the tests (`setVisibility` -> `setTabState`: it sets the browser tab's `visibilityState`, not a room's).
+- **Server side stays until T51**: the `/sharing` routes and their DTOs, `Room.visibility` and the `Sharing`/`Visibility` types in
+  `types.gen.ts` are inert and untouched; nothing in the web app reads or writes them any more. `makeRoom` still sets `visibility` because the
+  generated `Room` requires it.
+- **Wording that described sharing and was rewritten**: the merge dialog ("its conversations, history, connections and organizations", it said
+  "sharing"), the add-members dialog ("The AIs of this group's organization and the users of this instance. Only members of the organization
+  can join."; it said "AIs and users you own or that were shared with you", which T46 had made false), the comments of the `access.changed`
+  branch of `handlers.ts`, and the comments of `useMergeAgent` and `MergeAIDialog`.
+- **Tests**: `room.test.tsx` (the "room sharing entry" case becomes "a room is not shared one by one": a manager has the room settings and
+  no Share button, nor does a member who only posts), `conversation.test.tsx` (the group header shows no private / shared / public label and
+  does show a description), `member-picker.test.tsx` (the new description). The whole web suite and the build pass without the files.
+- **Left alone, for T54 / T55 or the owner of the page**: wording about the old model that is not a sharing control - `pairing.sharedBy`
+  ("{platform} · shared by {owner}") and the empty text of the pairing dialog (identities page), `invites.memberHint` ("... they own or that are
+  shared with them"), and the comment of `useChats` ("owned or shared connectors"). `web/e2e/smoke.spec.ts` still shares a room with
+  `PUT /rooms/{id}/sharing` (T54 reworks the Playwright flows).
+- **Playwright (`make e2e`, before this last Phase 9 commit)**: the suite stops at the UI-04 test, which shares a room with
+  `PUT /rooms/{id}/sharing` (inert since T22, as T57 noted) so its viewer never sees the room; the file is serial, so the 16 runs after it
+  do not run. T54 reworks it and was not touched. Run with that one test excluded (`playwright test --grep-invert UI-04`) the other nine
+  flows pass at 1280 and 360 px: first run, connect an agent, approve a machine, the messenger, a DM with an AI, **creating a group from
+  the list** (the new dialog against the real server), the contacts page by organization, the profile photo, and the no-sideways-scroll
+  check on `/`, a room, the contacts, the viewer's own profile (now with its Organizations section), the connections and the settings (now
+  with the default organization and the account deletion).

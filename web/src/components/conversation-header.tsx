@@ -4,7 +4,6 @@ import { BackToConversations } from "@/components/back-link";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { KindBadge } from "@/components/intelligence/kind-badge";
-import { VisibilityLabel } from "@/components/room-visibility";
 import { ConversationKindDM, type Room } from "@/lib/api/types.gen";
 import { counterpartOf, groupFace } from "@/lib/conversations";
 import { type Translate, useT } from "@/lib/i18n";
@@ -32,8 +31,7 @@ export function historyPlatform(room: Room): string | null {
 
 /**
  * The conversation page's header: avatar, title and kind badge; for a DM the counterpart's
- * @handle and, for an AI, whether it is online and in which app; for a group its visibility and
- * description. A DM the viewer only reads through an AI has no counterpart: both participants are
+ * @handle and, for an AI, whether it is online and in which app; for a group its description. A DM the viewer only reads through an AI has no counterpart: both participants are
  * named, each with its own badge (PROF-09). `actions` are the page's buttons, `back` the way
  * back on a phone.
  */
@@ -97,12 +95,9 @@ export function ConversationHeader({
             ) : (
               <span className="truncate">{t("conversation.directMessage")}</span>
             )
-          ) : (
-            <>
-              <VisibilityLabel visibility={room.visibility} className="shrink-0" />
-              {room.description ? <span className="truncate">{room.description}</span> : null}
-            </>
-          )}
+          ) : room.description ? (
+            <span className="truncate">{room.description}</span>
+          ) : null}
         </p>
       </div>
       {actions}

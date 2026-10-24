@@ -206,6 +206,19 @@ func (e *channelEnv) registered(t *testing.T, folder string) dto.IntelligencePro
 	return found
 }
 
+// machineOf is the machine the server keeps for alice's AI id. The profile does not show it any more
+// (AD-022); the agents list does.
+func (e *channelEnv) machineOf(t *testing.T, id string) string {
+	t.Helper()
+	for _, a := range testkit.Decode[dto.List[dto.Agent]](e.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items {
+		if a.ID == id {
+			return a.Machine
+		}
+	}
+	require.Fail(t, "AI not listed", id)
+	return ""
+}
+
 // folders lists the folders of alice's AIs.
 func (e *channelEnv) folders(t *testing.T) []string {
 	t.Helper()
@@ -243,7 +256,7 @@ func TestChannelEndToEnd(t *testing.T) {
 	prof := e.ai(t, "/home/someone/src/My Project")
 	agent := prof.AI
 	require.Equal(t, []any{"My Project", "my-project", "claude", testMachine, "~/src/My Project"},
-		[]any{prof.DisplayName, prof.Handle, agent.App, agent.Machine, agent.FolderLabel},
+		[]any{prof.DisplayName, prof.Handle, agent.App, e.machineOf(t, prof.ID), agent.FolderLabel},
 		"AID-01: the session's machine, folder and harness reach the server")
 	who := c.identityNotice()["params"].(map[string]any)
 	require.Equal(t, "You are My Project (@my-project). Your owner is alice (@alice).", who["content"],

@@ -78,9 +78,10 @@ func TestPushCarriesChatContext(t *testing.T) {
 	agent := testkit.Decode[dto.Message](e.alice.WithBearer(e.secret).AsAgent("helper").
 		Post("/api/v1/agent/rooms/"+e.room.ID+"/messages", dto.PostMessageRequest{Text: "from helper"}).RequireStatus(http.StatusCreated))
 	n = s.notification()
+	// helper is another AI of alice's, not someone who manages builder: its post is untrusted (POS-10).
 	require.Equal(t, map[string]string{
 		"conversation": "group", "room": e.room.ID, "room_name": "Support", "message_id": agent.ID, "author": "helper",
-		"author_kind": "agent", "author_id": helper, "author_handle": "helper", "sender_name": "", "trusted": "true", "kind": "text",
+		"author_kind": "agent", "author_id": helper, "author_handle": "helper", "sender_name": "", "trusted": "false", "kind": "text",
 	}, n.Meta)
 }
 

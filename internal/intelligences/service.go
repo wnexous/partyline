@@ -1,3 +1,4 @@
+// Package intelligences holds AI profiles, their visibility, the contacts of a user and the labels of folders.
 package intelligences
 
 import (
@@ -19,6 +20,7 @@ import (
 	"github.com/wnexous/partyline/internal/avatars"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/handles"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -216,35 +218,64 @@ type Profile struct {
 	// Operated are the connectors the AI operates (CID-01) that the caller owns or may
 	// use: their platform accounts are apps of the operator (ACC-07).
 	Operated []db.Connector
+	// Memberships are the organizations the caller shares with the intelligence (all of its own when the
+	// caller is it), by name; a person has none (OMEM-03, CHART-02).
+	Memberships []Membership
+	// CanEndSession tells whether the caller may end the AI's live session: it manages the AI in an
+	// organization they share (POS-04). Always false for users and people.
+	CanEndSession bool
+}
+
+// DeleteEffect says what deleting an identity in an organization does (POS-06).
+type DeleteEffect string
+
+// Delete effects.
+const (
+	// DeleteEffectDelete deletes an AI for good: the organization is its home.
+	DeleteEffectDelete DeleteEffect = "delete"
+	// DeleteEffectRemove only removes the identity from the organization: a user, or an AI that belongs to
+	// another one.
+	DeleteEffectRemove DeleteEffect = "remove"
+)
+
+// Membership is the place of an intelligence in one organization, as the caller reads it.
+type Membership struct {
+	Organization db.Organization
+	Permission   orgs.Permission
+	// PositionID and PositionName are empty for a member with no position.
+	PositionID, PositionName string
+	// CanDelete tells whether the caller may delete the intelligence in the organization (POS-05) and
+	// DeleteEffect what that would do to it (POS-06).
+	CanDelete    bool
+	DeleteEffect DeleteEffect
 }
 
 // AgentInfo is what a profile shows about an AI.
 type AgentInfo struct {
 	db.Agent
-	// Owner is the owner's own intelligence.
+	// Owner is the intelligence of the user who hosts the AI: the user whose computer and token run it (AD-019).
 	Owner db.Intelligence
-	// MachineLabel is the owner's label for the AI's machine, else its hostname; Home is the
-	// machine's canonical home folder, empty when unknown.
-	MachineLabel string
-	Home         string
-	// Level is the caller's level on the AI: manage for the owner, use for a grantee, none for
-	// a caller who sees it through a conversation they share.
+	// Home is the canonical home folder of the machine the AI lives on, empty when unknown. The machine
+	// itself is not shown (AD-022); the home folder only lets the folder read "~".
+	Home string
+	// Level is the caller's level on the AI: manage for whoever manages it in an organization they share
+	// with it, and the AI itself; use for whoever only sees it.
 	Level access.Level
 }
 
 // profile builds the profile of d as the caller reads it.
 func (s *Service) profile(ctx context.Context, p authn.Principal, d db.GetIntelligenceWithRoleRow, canEdit bool) (Profile, error) {
-	out := Profile{Intelligence: d.Intelligence, Role: Role(d.Role), CanEdit: canEdit}
+	out := Profile{Intelligence: d.Intelligence, Role: Role(d.Role), CanEdit: canEdit, Memberships: []Membership{}}
 	q := s.store.R()
 	switch out.Role {
 	case RoleUser:
-		accounts, err := s.linkedAccounts(ctx, p.UserID, d.Intelligence.ID)
+		accounts, err := s.linkedAccounts(ctx, p, d.Intelligence.ID)
 		if err != nil {
 			return Profile{}, err
 		}
 		out.Accounts = accounts
 	case RoleAI:
-		operated, err := s.operatedConnectors(ctx, p.UserID, d.Intelligence.ID)
+		operated, err := s.operatedConnectors(ctx, p, d.Intelligence.ID)
 		if err != nil {
 			return Profile{}, err
 		}
@@ -261,23 +292,75 @@ func (s *Service) profile(ctx context.Context, p authn.Principal, d db.GetIntell
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return Profile{}, err
 		}
-		label := m.Label
-		if label == "" {
-			label = a.Machine
+		level := dto.LevelUse
+		if canEdit {
+			level = dto.LevelManage
 		}
-		level, err := s.az.AgentLevel(ctx, p.UserID, a.ID)
-		if err != nil {
-			return Profile{}, err
-		}
-		out.Agent = &AgentInfo{Agent: a, Owner: owner, MachineLabel: label, Home: m.Home, Level: level}
+		out.Agent = &AgentInfo{Agent: a, Owner: owner, Home: m.Home, Level: level}
 	case RolePerson:
-		info, err := s.personInfo(ctx, p.UserID, d.Intelligence.ID)
+		info, err := s.personInfo(ctx, p, d.Intelligence.ID)
 		if err != nil {
 			return Profile{}, err
 		}
 		out.Person, out.Platform = info, info.Connector.Kind
 	}
+	if out.Role != RolePerson {
+		if err := s.memberships(ctx, p.IID(), &out); err != nil {
+			return Profile{}, err
+		}
+	}
 	return out, nil
+}
+
+// memberships fills the organizations the viewer shares with the profile's intelligence (all of its own when
+// the viewer is it), with what the viewer may do about each (POS-05, POS-06), and whether the viewer may end the
+// AI's session because they manage it in one of them (POS-04). Each chart is read once.
+func (s *Service) memberships(ctx context.Context, viewer string, out *Profile) error {
+	q := s.store.R()
+	rows, err := q.ListOrgsOfMember(ctx, out.ID)
+	if err != nil || len(rows) == 0 {
+		return err
+	}
+	shared := map[string]bool{}
+	if viewer == out.ID {
+		for _, r := range rows {
+			shared[r.Organization.ID] = true
+		}
+	} else if viewer != "" {
+		ids, err := q.ListSharedOrgIDs(ctx, db.ListSharedOrgIDsParams{FirstIid: viewer, SecondIid: out.ID})
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			shared[id] = true
+		}
+	}
+	home := ""
+	if out.Agent != nil {
+		home = out.Agent.OrgID.String
+	}
+	z := s.az.Authz().Session()
+	for _, r := range rows {
+		if !shared[r.Organization.ID] {
+			continue
+		}
+		chart, err := z.Chart(ctx, r.Organization.ID)
+		if err != nil {
+			return err
+		}
+		m := Membership{
+			Organization: r.Organization, Permission: orgs.Permission(r.Permission), PositionID: r.PositionID,
+			PositionName: chart.Positions[r.PositionID].Name, CanDelete: chart.CanDelete(viewer, out.ID), DeleteEffect: DeleteEffectRemove,
+		}
+		if out.Role == RoleAI && r.Organization.ID == home {
+			m.DeleteEffect = DeleteEffectDelete
+		}
+		if out.Role == RoleAI && chart.Manages(viewer, out.ID) {
+			out.CanEndSession = true
+		}
+		out.Memberships = append(out.Memberships, m)
+	}
+	return nil
 }
 
 // Rows returns the intelligences with the given ids by id; unknown ids are left out. It does
@@ -315,11 +398,11 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, id string) (Profil
 	return s.profile(ctx, p, d, edit && Role(d.Role) != RolePerson)
 }
 
-// CanSee reports whether the caller can see the intelligence: itself; any user of the
-// instance for user intelligences; an AI when the caller owns it, may use it, or shares a
-// viewable conversation where it is a member or an author; a person when the caller owns or
-// may use its connector. An agent caller sees what its owner sees, and itself. Admins get no
-// implicit access (AD-005).
+// CanSee reports whether the caller can see the intelligence (AD-016): itself; any user of the instance
+// for user intelligences; an AI when the caller hosts it or shares an organization with it, guests included;
+// a person when the caller is a member of the organization of its connection, or can view a conversation where
+// it wrote. An agent caller acts as itself: it sees what it shares an organization with, never what its host
+// sees. Admins get no implicit access.
 func (s *Service) CanSee(ctx context.Context, p authn.Principal, id string) (bool, error) {
 	d, err := s.detail(ctx, id)
 	if errors.Is(err, access.ErrNotFound) {
@@ -332,10 +415,9 @@ func (s *Service) CanSee(ctx context.Context, p authn.Principal, id string) (boo
 	return see, err
 }
 
-// CanEdit reports whether the caller can change the intelligence's profile: a user edits
-// their own; an AI is edited by its owner (web) or by itself (an agent caller acting as that
-// AI). Grantees of an AI do not edit it, and nobody edits a person: a person's profile is
-// history (CID-21).
+// CanEdit reports whether the caller can change the intelligence's profile (POS-04): an identity edits its own,
+// and whoever manages it in an organization they share edits it (POS-03). Seeing it, hosting it or having had a
+// grant on it is not enough. Nobody edits a person: a person's profile is history (CID-21).
 func (s *Service) CanEdit(ctx context.Context, p authn.Principal, id string) (bool, error) {
 	d, err := s.detail(ctx, id)
 	if errors.Is(err, access.ErrNotFound) {
@@ -357,9 +439,11 @@ func (s *Service) detail(ctx context.Context, id string) (db.GetIntelligenceWith
 }
 
 // rights resolves what the caller may do with the intelligence. Disabled and unknown users
-// have no access at all (AUTH-10).
+// have no access at all (AUTH-10), and neither has the agent token of one.
 func (s *Service) rights(ctx context.Context, p authn.Principal, d db.GetIntelligenceWithRoleRow) (see, edit bool, err error) {
-	if p.UserID == "" || (p.Kind != authn.KindUser && p.Kind != authn.KindAgent) {
+	// An AI acts as itself (AD-016): an agent token that names no AI acts as nobody.
+	iid := p.IID()
+	if p.UserID == "" || iid == "" || (p.Kind != authn.KindUser && p.Kind != authn.KindAgent) {
 		return false, false, nil
 	}
 	u, err := s.store.R().GetUser(ctx, p.UserID)
@@ -370,54 +454,35 @@ func (s *Service) rights(ctx context.Context, p authn.Principal, d db.GetIntelli
 		return false, false, err
 	}
 	id := d.Intelligence.ID
-	if (p.Kind == authn.KindUser && p.UserID == id) || (p.Kind == authn.KindAgent && p.AgentID == id) {
+	if iid == id {
 		return true, true, nil
 	}
-	user := p.Kind == authn.KindUser // an agent edits itself only, handled above
 	switch Role(d.Role) {
 	case RoleUser:
-		return true, false, nil
+		// Every user sees every user (the directory); whoever manages one edits it.
+		managed, err := s.az.Authz().ManagesAnywhere(ctx, iid, id)
+		return true, managed, err
 	case RoleAI:
-		level, err := s.az.AgentLevel(ctx, p.UserID, id)
-		if err != nil {
+		// An AI is seen by the people of the organizations it belongs to, and by the user who hosts it. Hosting
+		// is sight, never management.
+		sees, err := s.az.CanSeeAI(ctx, p, id)
+		if err != nil || !sees {
 			return false, false, err
 		}
-		if access.AtLeast(level, dto.LevelUse) {
-			return true, user && level == dto.LevelManage, nil
-		}
-		shared, err := s.sharesConversation(ctx, p.UserID, id)
-		return shared, false, err
+		managed, err := s.az.Authz().ManagesAnywhere(ctx, iid, id)
+		return true, managed, err
 	case RolePerson:
-		// The users of the connector see its people (PEOP-04); a user who can view a conversation
-		// where the person was seen or wrote reads the profile only. A person's profile is history
-		// (CID-21): edit says who would have the right, and editable refuses them all.
-		ok, err := s.az.CanUseConnector(ctx, p.UserID, d.PersonConnectorID)
+		// The members of the connection's organization see its people (PEOP-04, AD-016); a user who can
+		// view a conversation where the person was seen or wrote reads the profile only. A person's profile
+		// is history (CID-21): edit says who would have the right, and editable refuses them all.
+		ok, err := s.az.CanSeeConnection(ctx, p, d.PersonConnectorID)
 		if err != nil || ok {
-			return ok, ok && user, err
+			return ok, ok && p.Kind == authn.KindUser, err
 		}
 		shared, err := s.sharesPersonConversation(ctx, p.UserID, id)
 		return shared, false, err
 	}
 	return false, false, nil
-}
-
-// sharesConversation reports whether the user can view a room where the intelligence is a
-// member or wrote a message.
-func (s *Service) sharesConversation(ctx context.Context, userID, iid string) (bool, error) {
-	roomIDs, err := s.store.R().ListIntelligenceRoomIDs(ctx, iid)
-	if err != nil {
-		return false, err
-	}
-	for _, roomID := range roomIDs {
-		l, err := s.az.UserRoomLevel(ctx, userID, roomID)
-		if err != nil {
-			return false, err
-		}
-		if access.AtLeast(l, dto.LevelView) {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // editable resolves the intelligence and requires the caller to edit it: access.ErrNotFound

@@ -41,10 +41,10 @@ const atlasProfile: IntelligenceProfile = {
   can_edit: false,
   apps: [{ kind: "claude", label: "Claude Code" }],
   conversations: [],
+  memberships: [],
+  can_end_session: false,
   ai: {
     owner: ana,
-    machine: "devbox",
-    machine_label: "devbox",
     folder: "/home/dev/atlas",
     folder_label: "~/atlas",
     app: "claude",
@@ -145,7 +145,7 @@ const header = () => screen.findByTestId("conversation-header");
 const reads = (calls: { method: string; path: string; body: unknown }[], room = "d1") =>
   calls.filter((c) => c.method === "PUT" && c.path === `/rooms/${room}/read`).map((c) => c.body);
 
-function setVisibility(state: "visible" | "hidden") {
+function setTabState(state: "visible" | "hidden") {
   Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
   act(() => {
     document.dispatchEvent(new Event("visibilitychange"));
@@ -238,14 +238,22 @@ describe("conversation header", () => {
     expect(within(second as HTMLElement).getByTestId("kind-badge")).toHaveTextContent("WhatsApp");
   });
 
-  it("titles a group by its name with its visibility and no AI details", async () => {
+  it("titles a group by its name, with no AI details and no visibility label (ORG-02)", async () => {
     api();
     renderRoute("/rooms/g1");
     const bar = within(await header());
     expect(await bar.findByRole("heading", { name: "release-crew", level: 1 })).toBeInTheDocument();
-    expect(bar.getByText("Private")).toBeInTheDocument();
     expect(bar.getByTestId("intelligence-avatar")).toHaveTextContent("R");
     expect(bar.queryByText("Online")).toBeNull();
+    // Who can read a group is who is in it: the header says nothing of private, shared or public.
+    for (const label of ["Private", "Shared", "Public"]) expect(bar.queryByText(label)).toBeNull();
+  });
+
+  it("shows the description of a group under its name", async () => {
+    api({ "GET /rooms/g1": json(200, { ...group, description: "Release coordination" }) });
+    renderRoute("/rooms/g1");
+    const bar = within(await header());
+    expect(await bar.findByText("Release coordination")).toBeInTheDocument();
   });
 
   it("has a back button to the list on a phone", async () => {
@@ -399,7 +407,7 @@ describe("marking read (DM-07)", () => {
     const { queryClient } = renderRoute("/rooms/d1");
     await waitFor(() => expect(reads(calls)).toEqual([{ seq: 5 }]));
 
-    setVisibility("hidden");
+    setTabState("hidden");
     act(() =>
       handleLiveEvent(queryClient, useLiveStore.getState(), {
         type: "room.message",
@@ -409,7 +417,7 @@ describe("marking read (DM-07)", () => {
     await screen.findByText("message 6");
     expect(reads(calls)).toEqual([{ seq: 5 }]);
 
-    setVisibility("visible");
+    setTabState("visible");
     await waitFor(() => expect(reads(calls)).toEqual([{ seq: 5 }, { seq: 6 }]));
   });
 
@@ -417,8 +425,8 @@ describe("marking read (DM-07)", () => {
     const { calls } = api();
     renderRoute("/rooms/d1");
     await waitFor(() => expect(reads(calls)).toEqual([{ seq: 5 }]));
-    setVisibility("hidden");
-    setVisibility("visible");
+    setTabState("hidden");
+    setTabState("visible");
     await screen.findByText("message 5");
     expect(reads(calls)).toEqual([{ seq: 5 }]);
   });
@@ -429,7 +437,7 @@ describe("marking read (DM-07)", () => {
     renderRoute("/rooms/d1");
     await screen.findByText("message 5");
     expect(reads(calls)).toEqual([]);
-    setVisibility("visible");
+    setTabState("visible");
     await waitFor(() => expect(reads(calls)).toEqual([{ seq: 5 }]));
   });
 

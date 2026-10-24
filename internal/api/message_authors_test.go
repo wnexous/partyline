@@ -35,11 +35,7 @@ func membersOf(t *testing.T, c *testkit.Client, roomID string) map[string]dto.Ro
 func TestRenamedAuthorsShowEverywhere(t *testing.T) {
 	f := newAgentRoom(t)
 	bob := f.env.NewUser("bob")
-	f.alice.Put("/api/v1/rooms/"+f.room.ID+"/sharing", dto.Sharing{
-		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: bob.User.ID, Level: dto.LevelPost}},
-	}).RequireStatus(http.StatusOK)
-	f.alice.Post("/api/v1/rooms/"+f.room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).
-		RequireStatus(http.StatusCreated)
+	addToRoom(t, f.env, f.alice, f.room.ID, bob)
 
 	oldAlice := f.post(f.alice, "alice before")
 	oldBob := f.post(bob, "bob before")
@@ -174,7 +170,7 @@ func TestRoomOwnerCarriesItsIntelligence(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	room := createRoom(alice, "ops")
-	shareRoom(alice, room.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelView})
+	addToRoom(t, env, alice, room.ID, bob)
 	patchProfile(alice, alice.User.ID, dto.UpdateProfileRequest{DisplayName: ptr("Alice A."), Handle: ptr("alice-a")}).RequireStatus(http.StatusOK)
 	putAvatar(alice, alice.User.ID, pngBytes(t, bands(300, 300))).RequireStatus(http.StatusOK)
 	pic := profileOf(t, alice, alice.User.ID).AvatarURL

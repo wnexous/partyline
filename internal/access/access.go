@@ -1,7 +1,10 @@
-// Package access authorizes every resource through one grants table (AD-005): it resolves a
-// caller's level on rooms, agents and connectors and replaces grants from visibility presets.
-// Membership is a second source of room access (AD-011): a user member of a group and a
-// participant of a DM post in it. Instance admins get no implicit access (ACL-08).
+// Package access resolves what a caller may do with rooms, agents and connectors. A room's level comes
+// from room membership and from organizations (AD-016): a group is posted to by its members and managed
+// by its creator and by the admins of its organization, and a direct message is posted to by its two
+// participants and viewed by the managers of an AI participant in that AI's home organization. Agents
+// and connectors still resolve through one grants table (AD-005) until their own tasks move them to
+// organizations, and the visibility presets still write grants, which give a room nothing. Instance
+// admins get no implicit access (ACL-08).
 package access
 
 import (
@@ -75,6 +78,9 @@ func maxLevel(a, b Level) Level {
 type Options struct {
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
+	// Authz answers the organization questions the room levels depend on (who is an admin, who
+	// manages whom). The app passes the facade every service shares; the default is one over the store.
+	Authz *orgs.Authz
 }
 
 // Authorizer resolves access levels and manages grants.
@@ -83,6 +89,7 @@ type Authorizer struct {
 	bus   *events.Bus
 	now   func() time.Time
 	audit *audit.Log
+	authz *orgs.Authz
 }
 
 // New returns an Authorizer. GrantsChanged events are published on bus.
@@ -90,14 +97,75 @@ func New(st *store.Store, bus *events.Bus, opts Options) *Authorizer {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	return &Authorizer{store: st, bus: bus, now: opts.Now, audit: audit.New(st, opts.Now)}
+	if opts.Authz == nil {
+		opts.Authz = orgs.NewAuthz(st)
+	}
+	return &Authorizer{store: st, bus: bus, now: opts.Now, audit: audit.New(st, opts.Now), authz: opts.Authz}
 }
 
-// RoomLevel resolves the caller's level on a room (ACL-02). A user gets the highest of
-// ownership (manage), their own grant, the everyone grant and, for a group, a user membership
-// (post); in a DM only the two participants post and an AI participant's owner and users granted
-// use on it view (AD-011). An agent gets post when it is a member of the room. Missing rooms
-// resolve to None.
+// Authz is the organization facade the room levels are computed with. A service that holds the
+// Authorizer asks it the same organization questions (membership, who manages whom) instead of
+// building a second one.
+func (a *Authorizer) Authz() *orgs.Authz { return a.authz }
+
+// CanSeeAI reports whether the caller can see the AI (AD-016): a user sees the AIs hosted on their
+// computers and the AIs of the organizations they belong to; an AI sees itself and the AIs it shares an
+// organization with, and never reaches further through its host, because it acts as itself. A disabled
+// user and an unknown AI see and are seen by nobody.
+func (a *Authorizer) CanSeeAI(ctx context.Context, p authn.Principal, aiID string) (bool, error) {
+	if aiID == "" {
+		return false, nil
+	}
+	agent, err := a.store.R().GetAgent(ctx, aiID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	ok, err := a.activeUser(ctx, p.UserID)
+	if err != nil || !ok {
+		return false, err
+	}
+	if p.Kind == authn.KindAgent {
+		if p.AgentID == aiID {
+			return true, nil
+		}
+		return a.authz.SharesOrg(ctx, p.AgentID, aiID)
+	}
+	if agent.OwnerID == p.UserID {
+		return true, nil
+	}
+	return a.authz.SharesOrg(ctx, p.UserID, aiID)
+}
+
+// CanSeeConnection reports whether the caller can see the connection (AD-016): it is a member of the organization
+// the connection belongs to, with any permission. A user acts as themself and an AI as itself, never through its
+// host; a disabled user, a connection without an organization and an unknown connection are seen by nobody. It is
+// what the people of a connection, the linked accounts and the apps of an operator are shown through.
+func (a *Authorizer) CanSeeConnection(ctx context.Context, p authn.Principal, connectorID string) (bool, error) {
+	c, err := a.store.R().GetConnector(ctx, connectorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	iid := p.IID()
+	if iid == "" || !c.OrgID.Valid {
+		return false, nil
+	}
+	ok, err := a.activeUser(ctx, p.UserID)
+	if err != nil || !ok {
+		return false, err
+	}
+	_, member, err := a.authz.Member(ctx, c.OrgID.String, iid)
+	return member, err
+}
+
+// RoomLevel resolves the caller's level on a room (ACL-02). A user's level comes from room membership
+// and organizations (see UserRoomLevel); an agent gets post when it is a member of the room. Missing
+// rooms resolve to None.
 func (a *Authorizer) RoomLevel(ctx context.Context, p authn.Principal, roomID string) (Level, error) {
 	if p.Kind == authn.KindAgent {
 		return a.AgentRoomLevel(ctx, p.AgentID, roomID)
@@ -107,11 +175,14 @@ func (a *Authorizer) RoomLevel(ctx context.Context, p authn.Principal, roomID st
 
 // UserRoomLevel resolves a user's level on a room; disabled or unknown users resolve to None.
 //
-// Group: the highest of ownership (manage), the user's and everyone's grants and, as a user
-// member, post. DM (AD-011, DM-08): post for a participant; view for the owner of an AI
-// participant and for users granted use on it by name (the everyone grant does not count: a
-// shared AI does not expose the DMs people have with it); none otherwise, admins included.
-// Neither the room's owner column nor grants give access to a DM.
+// Group (AD-016): the highest of post, as a user member of the room, and manage, as the group's
+// creator or as an admin of the group's organization. The creator keeps managing only while still a
+// member of the organization, and not as a guest, who may take part in groups but not run them
+// (OMEM-04, OMEM-06). Neither a position, a grant, the owner column of the room row nor the
+// instance admin role gives anything.
+//
+// DM (AD-011, DM-08): post for a participant; view for whoever manages an AI participant in that AI's
+// home organization (POS-03); none otherwise, admins included. Nobody manages a DM.
 func (a *Authorizer) UserRoomLevel(ctx context.Context, userID, roomID string) (Level, error) {
 	room, err := a.store.R().GetRoom(ctx, roomID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -127,18 +198,31 @@ func (a *Authorizer) UserRoomLevel(ctx context.Context, userID, roomID string) (
 	if room.Kind == string(dto.ConversationKindDM) {
 		return a.dmLevel(ctx, room, userID)
 	}
-	l, err := a.grantLevel(ctx, KindRoom, roomID, room.OwnerID, userID)
-	if err != nil || AtLeast(l, dto.LevelPost) {
-		return l, err
-	}
-	n, err := a.store.R().CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: roomID, Kind: string(dto.MemberKindUser), MemberID: userID})
+	return a.groupLevel(ctx, room, userID)
+}
+
+// groupLevel is an active user's level on a group.
+func (a *Authorizer) groupLevel(ctx context.Context, room db.Room, userID string) (Level, error) {
+	level := None
+	n, err := a.store.R().CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: room.ID, Kind: string(dto.MemberKindUser), MemberID: userID})
 	if err != nil {
 		return None, err
 	}
 	if n > 0 {
-		return maxLevel(l, dto.LevelPost), nil
+		level = dto.LevelPost
 	}
-	return l, nil
+	if !room.OrgID.Valid {
+		return level, nil // a group written before organizations has nobody to manage it
+	}
+	m, member, err := a.authz.Member(ctx, room.OrgID.String, userID)
+	if err != nil || !member {
+		return level, err
+	}
+	creator := room.CreatorIid.Valid && room.CreatorIid.String == userID && m.Permission != orgs.PermissionGuest
+	if m.Permission == orgs.PermissionAdmin || creator {
+		return dto.LevelManage, nil
+	}
+	return level, nil
 }
 
 // dmLevel is an active user's level on a DM, from its participant columns alone.
@@ -147,8 +231,9 @@ func (a *Authorizer) dmLevel(ctx context.Context, room db.Room, userID string) (
 	if userID == participants[0] || userID == participants[1] {
 		return dto.LevelPost, nil
 	}
+	z := a.authz.Session()
 	for _, id := range participants {
-		ok, err := a.viewsAIOf(ctx, userID, id)
+		ok, err := a.managesAI(ctx, z, userID, id)
 		if err != nil {
 			return None, err
 		}
@@ -159,25 +244,20 @@ func (a *Authorizer) dmLevel(ctx context.Context, room db.Room, userID string) (
 	return None, nil
 }
 
-// viewsAIOf reports whether the participant id is an AI the user owns or was granted use on by
-// name.
-func (a *Authorizer) viewsAIOf(ctx context.Context, userID, participantID string) (bool, error) {
+// managesAI reports whether the user manages the participant in its home organization. Only an AI
+// has one: a user, a person and an AI without a home organization are managed by nobody.
+func (a *Authorizer) managesAI(ctx context.Context, z *orgs.Session, userID, participantID string) (bool, error) {
 	if participantID == "" {
 		return false, nil
 	}
-	q := a.store.R()
-	agent, err := q.GetAgent(ctx, participantID)
+	home, err := a.store.R().GetAgentOrg(ctx, participantID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil // a user or a person
 	}
-	if err != nil {
+	if err != nil || home == "" {
 		return false, err
 	}
-	if agent.OwnerID == userID {
-		return true, nil
-	}
-	n, err := q.CountSubjectGrants(ctx, db.CountSubjectGrantsParams{ResourceKind: string(KindAgent), ResourceID: participantID, Subject: userID})
-	return n > 0, err
+	return z.Manages(ctx, userID, participantID, home)
 }
 
 // AgentRoomLevel is post when the agent is a member of the room (it then uses the room's tools
@@ -193,10 +273,11 @@ func (a *Authorizer) AgentRoomLevel(ctx context.Context, agentID, roomID string)
 	return dto.LevelPost, nil
 }
 
-// GrantedRoomLevels returns, per room id, the highest level the user holds next to owning the
-// room: through grants (own or everyone) on groups, as a user member of a group (post) and as a
-// participant of a DM (post). Ownership is not included, and neither are the DMs the user only
-// views through an AI. Disabled users get an empty map.
+// GrantedRoomLevels returns, per room id, the highest level the user holds as a member or a manager
+// (AD-016): post in the groups they are a member of and the DMs they take part in, manage in the groups
+// they created and in every group of the organizations they administer. The DMs they only view as the
+// manager of an AI are not included, and neither is anything a grant names. Disabled users get an empty
+// map.
 func (a *Authorizer) GrantedRoomLevels(ctx context.Context, userID string) (map[string]Level, error) {
 	ok, err := a.activeUser(ctx, userID)
 	if err != nil || !ok {

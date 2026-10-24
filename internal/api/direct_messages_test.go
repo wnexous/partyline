@@ -13,6 +13,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -31,14 +32,11 @@ func dmWith(c *testkit.Client, with string, status int) dto.Room {
 	return testkit.Decode[dto.Room](openDM(c, with).RequireStatus(status))
 }
 
-// shareAI gives user use on the AI, as its owner would from the web app.
+// shareAI gives the users sight of the AI, as its owner would by inviting them to the organization the AI
+// belongs to (AD-016): the owner shares an organization, not an AI.
 func shareAI(owner *testkit.Client, aiID string, users ...*testkit.Client) {
 	owner.T.Helper()
-	shared := make([]dto.SharingUser, len(users))
-	for i, u := range users {
-		shared[i] = dto.SharingUser{UserID: u.User.ID, Level: dto.LevelUse}
-	}
-	owner.Put("/api/v1/agents/"+aiID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: shared}).RequireStatus(http.StatusOK)
+	owner.ShareAI(aiID, users...)
 }
 
 func disableUser(admin *testkit.Client, userID string, disabled bool) {
@@ -155,8 +153,8 @@ func TestOpenDMConcurrentlyCreatesOneRoom(t *testing.T) {
 	require.Len(t, membersOf(t, bob, ids[0]), 2, "one member row per participant")
 }
 
-// DM-01, DM-08: a user opens a DM with an AI they own or may use; the AI is a member that
-// receives everything (delivery all), the participants are a user and an AI, and the AI's owner
+// DM-01, DM-08: a user opens a DM with an AI of an organization they belong to; the AI is a member that
+// receives everything (delivery all), the participants are a user and an AI, and the AI's manager
 // only views a DM somebody else has with it. Each user has their own DM with the AI.
 func TestOpenDMWithAnAI(t *testing.T) {
 	env := testkit.New(t)
@@ -233,44 +231,79 @@ func TestOpenDMWithAPersonHasNoRoute(t *testing.T) {
 	require.Empty(t, testkit.Decode[dto.List[dto.Room]](alice.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items)
 }
 
-// Authorization matrix of POST /conversations/dm against an AI of the owner that the viewer may
-// use: the owner and the grantee open a DM; a user without access, an admin without a grant, an
-// anonymous caller and an agent token do not.
+// DM-01, DM-04 (AD-016): authorization matrix of POST /conversations/dm against an AI of the organization. Every
+// member opens a DM with it - the managers, the workers, a plain member and a guest, who may talk to everyone in the
+// organization - and a user outside it, an admin of the instance included, is told it does not exist: 404
+// contact_not_found. An agent token is refused (403) and anonymous callers get 401.
 func TestOpenDMAuthorizationMatrix(t *testing.T) {
-	m := newMatrix(t)
-	owner, viewer := m.as(t, roleOwner), m.as(t, roleViewer)
-	atlas := m.env.NewAI(owner, "atlas")
-	shareAI(owner, atlas, viewer)
-
-	for _, tc := range []struct {
-		role   matrixRole
-		status int
-		code   dto.ErrorCode
-	}{
-		{roleOwner, http.StatusCreated, ""},
-		{roleViewer, http.StatusCreated, ""},
-		{rolePoster, http.StatusNotFound, dto.ErrorCodeContactNotFound},
-		{roleStranger, http.StatusNotFound, dto.ErrorCodeContactNotFound},
-		{roleAdmin, http.StatusNotFound, dto.ErrorCodeContactNotFound},
-	} {
-		t.Run(string(tc.role), func(t *testing.T) {
-			resp := openDM(m.as(t, tc.role), atlas)
-			if tc.code == "" {
-				resp.RequireStatus(tc.status)
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	for _, role := range roles.All() {
+		t.Run(role.Name, func(t *testing.T) {
+			c := *role.Client
+			c.T = t
+			resp := openDM(&c, roles.TargetAI)
+			if role.Name == "outsider" || role.Name == "instance_admin" {
+				resp.RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
 				return
 			}
-			resp.RequireError(tc.status, tc.code)
+			resp.RequireStatus(http.StatusCreated)
 		})
 	}
-	t.Run("agent token", func(t *testing.T) {
-		agent := m.as(t, roleOwner).Token(dto.TokenKindAgent, "laptop")
-		openDM(agent, m.as(t, roleViewer).User.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	t.Run("agent token", func(*testing.T) {
+		openDM(roles.Manager.Token(dto.TokenKindAgent, "laptop"), roles.Target.User.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	})
 	t.Run("anonymous", func(t *testing.T) {
-		anon := m.env.Anon()
+		anon := env.Anon()
 		anon.T = t
-		openDM(anon, atlas).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+		openDM(anon, roles.TargetAI).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	})
+}
+
+// DM-04 (AD-016, Done when): what an AI can write to by name. The users of the instance, whatever organization
+// they belong to, and the AIs it shares an organization with; an AI of an organization it is not in answers
+// 404 contact_not_found, like an id nobody has, whatever its owner may see. Nothing is created for a refused call
+// and joining the organization is all it takes.
+func TestAIDMsReachUsersAndTheAIsOfItsOrganizations(t *testing.T) {
+	env := testkit.New(t)
+	acme, globex := env.OrgRoles("acme"), env.OrgRoles("globex")
+	scout := env.NewAIIn(acme.Peer, acme.Org.ID, "scout") // another AI of acme
+	handle := func(viewer *testkit.Client, id string) string { return "@" + profileOf(t, viewer, id).Handle }
+	ai := acme.Manager.Token(dto.TokenKindAgent, "laptop").AsAgent("acme-ai") // the session of acme's AI
+
+	sendDM(ai, handle(acme.Manager, scout), "hello scout").RequireStatus(http.StatusCreated)
+	sendDM(ai, "@"+globex.Admin.User.Username, "hello globex").RequireStatus(http.StatusCreated) // a user of the instance
+	sendDM(ai, acme.Outsider.User.ID, "hello by id").RequireStatus(http.StatusCreated)
+
+	foreign := handle(globex.Manager, globex.TargetAI)
+	hidden := sendDM(ai, foreign, "psst").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
+	byID := sendDM(ai, globex.TargetAI, "psst").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
+	ghost := sendDM(ai, "@ghost", "psst").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
+	require.Equal(t, ghost, hidden, "an AI of a foreign organization answers like a handle that does not exist")
+	require.Equal(t, ghost, byID)
+
+	// Its owner reaching globex gives the AI no reach: it acts as itself.
+	env.AddMember(globex.Org.ID, acme.Manager.User.ID, orgs.PermissionMember, "")
+	sendDM(ai, foreign, "psst").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
+	for _, c := range []*testkit.Client{acme.Manager, globex.Manager, globex.Admin} {
+		for _, r := range testkit.Decode[dto.List[dto.Room]](c.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items {
+			require.NotEqual(t, globex.TargetAI, otherParticipant(r, acme.TargetAI), "no DM was created for a refusal")
+		}
+	}
+
+	// Once the AI itself belongs to globex, the same call works.
+	env.AddMember(globex.Org.ID, acme.TargetAI, orgs.PermissionMember, "")
+	sendDM(ai, foreign, "now we share globex").RequireStatus(http.StatusCreated)
+}
+
+// otherParticipant is the participant of the room that is not me, or "".
+func otherParticipant(r dto.Room, me string) string {
+	for _, p := range r.Participants {
+		if p.ID != me {
+			return p.ID
+		}
+	}
+	return ""
 }
 
 // DM-02: nobody adds, changes or removes a member of a DM (422 dm_members_fixed, also for the AI's
@@ -311,6 +344,7 @@ func TestDMMembersAreFixed(t *testing.T) {
 
 	// The same requests on a group are not refused for being a DM.
 	group := createRoom(alice, "ops")
+	joinOrgOf(t, env, group.ID, bob, orgs.PermissionMember)
 	alice.Post("/api/v1/rooms/"+group.ID+"/members", add).RequireStatus(http.StatusCreated)
 }
 
@@ -328,7 +362,7 @@ func TestPostInADMWithADisabledCounterpartIsRefused(t *testing.T) {
 	bob.Post(path+"/messages", dto.PostMessageRequest{Text: "answer"}).RequireStatus(http.StatusCreated)
 
 	group := createRoom(alice, "ops")
-	alice.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, group.ID, bob)
 	withAI := dmWith(alice, atlas, http.StatusCreated)
 
 	disableUser(admin, bob.User.ID, true)

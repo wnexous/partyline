@@ -10,9 +10,9 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 	"github.com/wnexous/partyline/internal/users"
@@ -35,22 +35,25 @@ func dialLive(t *testing.T, c *testkit.Client) *testkit.LiveConn {
 	return conn
 }
 
-// LIVE-01, LIVE-02: a stored message reaches every live connection of users with view on the
-// room, and nobody else.
+// LIVE-01, LIVE-02: a stored message reaches every live connection of users with view on the room - its
+// members and the admins of its organization - and nobody else.
 func TestLiveRoomMessageReachesViewersOnly(t *testing.T) {
 	env := testkit.New(t)
 	alice := env.NewUser("alice")
 	bob := env.NewUser("bob")
 	carol := env.NewUser("carol")
+	dave := env.NewUser("dave")
 	room := createRoom(alice, "ops")
-	shareRoom(alice, room.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelView})
+	addToRoom(t, env, alice, room.ID, bob)
+	joinOrgOf(t, env, room.ID, dave, orgs.PermissionAdmin)
+	joinOrgOf(t, env, room.ID, carol, orgs.PermissionMember) // of the organization, not of the room
 
 	aliceLive, aliceLive2 := dialLive(t, alice), dialLive(t, alice)
-	bobLive, carolLive := dialLive(t, bob), dialLive(t, carol)
+	bobLive, carolLive, daveLive := dialLive(t, bob), dialLive(t, carol), dialLive(t, dave)
 
 	sent := testkit.Decode[dto.Message](alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "deploy at 5"}).RequireStatus(http.StatusCreated))
 
-	for _, c := range []*testkit.LiveConn{aliceLive, aliceLive2, bobLive} {
+	for _, c := range []*testkit.LiveConn{aliceLive, aliceLive2, bobLive, daveLive} {
 		var got dto.Message
 		c.Expect(dto.LiveEventTypeRoomMessage, &got, liveWait)
 		require.Equal(t, sent.ID, got.ID)
@@ -69,10 +72,13 @@ func TestLiveRoomEventsFollowAccess(t *testing.T) {
 	bob := env.NewUser("bob")
 	carol := env.NewUser("carol")
 	room := createRoom(alice, "ops")
+	// bob is in alice's organization before he listens: joining one is announced to a socket that is open and makes
+	// it read its rooms again (T32), which would race the frames this test expects.
+	joinOrgOf(t, env, room.ID, bob, orgs.PermissionMember)
 	aliceLive, bobLive, carolLive := dialLive(t, alice), dialLive(t, bob), dialLive(t, carol)
 
-	// Sharing with bob: bob learns about the room with his own level.
-	shareRoom(alice, room.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelPost})
+	// Adding bob to the room: bob learns about the room with his own level.
+	bobsMembership := addToRoom(t, env, alice, room.ID, bob)
 	var seen dto.Room
 	bobLive.Expect(dto.LiveEventTypeRoomChanged, &seen, liveWait)
 	require.Equal(t, room.ID, seen.ID)
@@ -90,8 +96,8 @@ func TestLiveRoomEventsFollowAccess(t *testing.T) {
 	bobLive.Expect(dto.LiveEventTypeMembersChanged, &ref, liveWait)
 	require.Equal(t, room.ID, ref.RoomID)
 
-	// Revoking bob's access: he gets room.deleted, then nothing about the room.
-	alice.Put("/api/v1/rooms/"+room.ID+"/sharing", dto.Sharing{Mode: dto.VisibilityPrivate}).RequireStatus(http.StatusOK)
+	// Taking bob out of the room: he gets room.deleted, then nothing about the room.
+	alice.Delete("/api/v1/rooms/" + room.ID + "/members/" + bobsMembership.ID).RequireStatus(http.StatusNoContent)
 	bobLive.Expect(dto.LiveEventTypeRoomDeleted, &ref, liveWait)
 	require.Equal(t, room.ID, ref.RoomID)
 	alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "secret"}).RequireStatus(http.StatusCreated)
@@ -106,19 +112,17 @@ func TestLiveRoomEventsFollowAccess(t *testing.T) {
 	carolLive.ExpectNone(quiet)
 }
 
-// LIVE-04: agent presence and connector status reach only users with access.
+// LIVE-04, CHART-02: agent presence and connector status reach only users who belong to the
+// organization of the AI or of the connection (and the AI's host); an outsider hears neither.
 func TestLiveStatusEventsReachUsersWithAccess(t *testing.T) {
 	env := testkit.New(t)
-	ctx := context.Background()
 	alice := env.NewUser("alice")
 	bob := env.NewUser("bob")
 	carol := env.NewUser("carol")
-	agent := storeAgent(t, env, alice.User.ID, "builder")
+	agent := env.NewAI(alice, "builder") // in alice's personal organization
 	conn, _ := storeChat(t, env, alice.User.ID, "group")
-	require.NoError(t, env.App.Access.SetVisibility(ctx, alice.User.ID, access.KindAgent, agent, alice.User.ID,
-		access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: bob.User.ID}}}))
-	require.NoError(t, env.App.Access.SetVisibility(ctx, alice.User.ID, access.KindConnector, conn, alice.User.ID,
-		access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: bob.User.ID}}}))
+	setConnectorOrg(t, env, conn, alice.PersonalOrg().ID)
+	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
 
 	aliceLive, bobLive, carolLive := dialLive(t, alice), dialLive(t, bob), dialLive(t, carol)
 

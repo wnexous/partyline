@@ -4,15 +4,14 @@ import {
   makeAIContact,
   makeContacts,
   makeIntelligence,
-  makeMachineTree,
+  makeOrgAIs,
   makePerson,
-  makeTreeNode,
 } from "./fixtures";
 
 /**
- * One user's contacts, shared by the tests of everything that lists them: two machines (devbox,
- * labelled Laptop for the second), Atlas with Notes nested in its folder, Lab under a collapsed
- * path, an unlinked AI, an AI shared by Bob, two other users and one connector with people.
+ * One user's contacts, shared by the tests of everything that lists them: two organizations (Acme
+ * with Atlas, Notes and Sage, hosted by Bob; Globex with Lab), an AI hosted by the user that no
+ * organization lists, two other users and one connection with people.
  */
 
 export const atlas = makeAI();
@@ -26,56 +25,39 @@ export const lia = makePerson();
 export const liam = makePerson({ id: "p2", display_name: "Liam Reis", handle: "liam" });
 
 export const sampleContacts: Contacts = makeContacts({
-  machines: [
-    makeMachineTree({
-      hostname: "devbox",
-      label: "devbox",
-      online: true,
-      nodes: [
-        makeTreeNode({
-          ai: makeAIContact({ intelligence: atlas, online: true }),
-          children: [
-            makeTreeNode({
-              ai: makeAIContact({
-                intelligence: notes,
-                app: "opencode",
-                folder: "/home/dev/atlas/notes",
-                folder_label: "~/atlas/notes",
-              }),
-              name: "notes",
-            }),
-          ],
+  org_ais: [
+    makeOrgAIs({
+      org: { id: "o1", name: "Acme", slug: "acme" },
+      ais: [
+        makeAIContact({ intelligence: atlas, online: true }),
+        makeAIContact({
+          intelligence: notes,
+          app: "opencode",
+          folder: "/home/dev/atlas/notes",
+          folder_label: "~/atlas/notes",
+        }),
+        makeAIContact({
+          intelligence: sage,
+          owner: bob,
+          folder: "/srv/sage",
+          folder_label: "/srv/sage",
         }),
       ],
     }),
-    makeMachineTree({
-      hostname: "notebook-01",
-      label: "Laptop",
-      nodes: [
-        makeTreeNode({
-          ai: makeAIContact({
-            intelligence: lab,
-            machine: "notebook-01",
-            app: "codex",
-            folder: "/home/ana/c/d/lab",
-            folder_label: "~/c/d/lab",
-          }),
-          path: "c/d",
-          name: "lab",
+    makeOrgAIs({
+      org: { id: "o2", name: "Globex", slug: "globex" },
+      ais: [
+        makeAIContact({
+          intelligence: lab,
+          org_id: "o2",
+          app: "codex",
+          folder: "/home/ana/c/d/lab",
+          folder_label: "~/c/d/lab",
         }),
       ],
     }),
   ],
-  unlinked: [makeAIContact({ intelligence: oldHelper, folder: "", folder_label: "" })],
-  shared: [
-    makeAIContact({
-      intelligence: sage,
-      owner: bob,
-      machine: "cloud",
-      folder: "/srv/sage",
-      folder_label: "/srv/sage",
-    }),
-  ],
+  hosted: [makeAIContact({ intelligence: oldHelper, org_id: "o3", folder: "", folder_label: "" })],
   users: [bob, cora],
   people: [
     { connector: { id: "k1", kind: "whatsapp", name: "ops-line" }, count: 2 },
