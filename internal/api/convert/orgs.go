@@ -29,3 +29,31 @@ func Organization(m orgs.Membership) dto.Organization {
 		CreatedAt: Time(m.CreatedAt), UpdatedAt: Time(m.UpdatedAt),
 	}
 }
+
+// OrgMember renders one membership as the members list shows it: the identity, its permission and
+// position and, for a guest, the identity that invited it (OMEM-01, OMEM-03).
+func OrgMember(r orgs.MemberRow) dto.OrgMember {
+	m := dto.OrgMember{
+		Intelligence: memberRef(r.IID, r.Kind, r.DisplayName, r.Handle, r.AvatarSha256),
+		Permission:   dto.Permission(r.Permission),
+		PositionID:   r.PositionID, PositionName: r.PositionName,
+		JoinedAt: Time(r.JoinedAt),
+	}
+	if r.Permission == string(orgs.PermissionGuest) && r.InviterIID != "" {
+		inviter := memberRef(r.InviterIID, r.InviterKind, r.InviterDisplayName, r.InviterHandle, r.InviterAvatarSha256)
+		m.InvitedBy = &inviter
+	}
+	return m
+}
+
+// memberRef is the summary of an organization member, who is a user or an AI.
+func memberRef(id, kind, displayName, handle, avatarSha string) dto.IntelligenceRef {
+	role := dto.IntelligenceRoleUser
+	if kind == string(dto.IntelligenceKindAI) {
+		role = dto.IntelligenceRoleAI
+	}
+	return dto.IntelligenceRef{
+		ID: id, Kind: dto.IntelligenceKind(kind), Role: role, DisplayName: displayName, Handle: handle,
+		AvatarURL: AvatarURL(id, avatarSha),
+	}
+}

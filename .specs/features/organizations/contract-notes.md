@@ -746,3 +746,38 @@ Where a section refines the design, it says so.
   409 `conflict`; a name outside 1-60 code points or a parent of another organization is the
   service's 422 `invalid` with `name`/`parent_id` in `fields`. Authorization (admin-only) comes
   before validation, so a member sending a bad name still gets 403.
+
+## T14: Member routes (OMEM-03, OMEM-04, OMEM-05, POS-04)
+
+- **Routes** (`internal/api/org_members_handlers.go`, registered by `orgMemberRoutes`; `DELETE …/members/{iid}` stays
+  T21's `identityDeleteRoutes`, so the file holds both sets): `GET /api/v1/orgs/{org}/members` and
+  `PATCH /api/v1/orgs/{org}/members/{iid}`. `{org}` is an id or an address, like T12. Agent tokens never reach them (403,
+  the path rule).
+- **`GET`** → 200 `List[OrgMember]` for every member, **guests included** (CHART-02); an outsider, an instance admin
+  without membership and an unknown organization are 404. Rows are ordered by display name (ignoring case), then identity
+  id. A row is `intelligence` (`IntelligenceRef`: `kind` human|ai, `role` user|ai, handle, name, avatar), `permission`,
+  `position_id`/`position_name` (absent without a position), `invited_by` (an `IntelligenceRef`, **only for a guest** that
+  still has an inviter) and `joined_at`. Persons (external accounts) are never members.
+- **`PATCH`** → 200 with the member as the list shows it. The body is `UpdateOrgMemberRequest{permission?, position_id?}`:
+  - `permission` is admin-only (a member, guest, manager, inviter or the member itself is 403; an outsider 404). An invalid
+    value is 422 on `permission`, told to admins only (authorization first). The last admin cannot step down: 409
+    `last_admin`.
+  - `position_id`: a string moves the member, **`null` or `""` clears** it, an absent field leaves it alone, anything else
+    (a number, a boolean, an object) is 422 on `position_id`. An admin may use any position of the organization or none; a
+    position of another organization or an unknown one is 422 on `position_id`. Anyone else must manage the target
+    (`Chart.Manages`, so not itself, a peer or a superior) **and** move it to a position strictly below its own: its own
+    level, above it, another branch, none, an unknown position and an actor with no position (an inviter without one) are
+    403.
+  - A target that is not a member (an outsider, another organization's identity, an unknown id) is 404 for everyone.
+  - **Both fields in one request are applied together or not at all**, by the new `orgs.Service.UpdateMember(actor, org,
+    target, MemberUpdate{Permission *Permission, PositionID *string})` in one transaction; `SetPermission` and `SetPosition`
+    (T7) now delegate to it, so their behaviour is unchanged. The actor's rights are those it had when it asked: an admin that
+    steps down and moves in the same request may still make the move. A request that changes nothing writes, audits and
+    announces nothing; one that asks for nothing at all needs only a member and answers with the row. One `OrgChanged` per
+    request that changed anything.
+- **DTO**: `UpdateOrgMemberRequest.PositionID` is a `json.RawMessage` (`tstype` `string | null`) because Go cannot tell an absent
+  field from `null` with a pointer.
+- **Service additions** (`internal/orgs/members.go`): `MemberRow` (the read model of the list), `ListMembers(actor, org)`
+  (`RequireMember`, then one query), `MemberView(actor, org, target)` (one row, `ErrNotFound` for a non-member) and
+  `UpdateMember`. **Queries** (`queries/orgs.sql`): `ListOrgMembers`, `GetOrgMemberView`. **Converter**:
+  `convert.OrgMember`.

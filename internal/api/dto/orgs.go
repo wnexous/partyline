@@ -1,6 +1,9 @@
 package dto
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Permission is what a membership allows in an organization itself, independent of the position
 // the identity holds there (OMEM-04).
@@ -60,6 +63,14 @@ type CreatePositionRequest struct {
 type UpdatePositionRequest struct {
 	Name     *string `json:"name,omitempty"`
 	ParentID *string `json:"parent_id,omitempty"`
+}
+
+// UpdateOrgMemberRequest is the body of PATCH /orgs/{org}/members/{iid}. Permission changes the
+// member's permission (admin only); PositionID moves it to a position of the organization, or clears
+// it with null or "" (POS-04). A field that is absent is left alone.
+type UpdateOrgMemberRequest struct {
+	Permission *Permission     `json:"permission,omitempty"`
+	PositionID json.RawMessage `json:"position_id,omitempty" tstype:"string | null"`
 }
 
 // OrgMember is one membership of an organization as the members list shows it (OMEM-01, OMEM-03):

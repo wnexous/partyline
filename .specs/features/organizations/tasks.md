@@ -500,11 +500,11 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: T7 service, `OrgRoles`
 **Requirement**: OMEM-03, OMEM-04, OMEM-05, POS-04
 **Done when**:
-- [ ] e2e: the GET and PATCH rows of the "Members" matrix (Out/M/G/Mgr/A/Self)
-- [ ] The manager's move to its own level → 403, to none → 403, and to a lower level → 200
-- [ ] Demoting the last admin → 409 `last_admin` observed
-- [ ] Setting `guest` on a member → 200 and the list shows it
-- [ ] Gate check passes: `make check`
+- [x] e2e: the GET and PATCH rows of the "Members" matrix (Out/M/G/Mgr/A/Self)
+- [x] The manager's move to its own level → 403, to none → 403, and to a lower level → 200
+- [x] Demoting the last admin → 409 `last_admin` observed
+- [x] Setting `guest` on a member → 200 and the list shows it
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): list members and change their permission and position`

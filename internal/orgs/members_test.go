@@ -603,3 +603,172 @@ func TestAFailedRemovalChangesNothing(t *testing.T) {
 	require.Equal(t, []string{"g1"}, f.roomsOf(a.notes), "its group membership stayed")
 	require.Empty(t, next())
 }
+
+// OMEM-04, POS-04: UpdateMember changes the permission and the position in one transaction: both change,
+// with one audit entry each and one announcement, or neither does.
+func TestUpdateMemberChangesPermissionAndPositionTogether(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	a := f.acme()
+	next := f.events()
+
+	got, err := f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(PermissionGuest), PositionID: ptr(a.designer)})
+	require.NoError(t, err)
+	require.Equal(t, Member{IID: a.bob, Permission: PermissionGuest, PositionID: a.designer}, got)
+	require.Equal(t, got, memberOfOrg(t, f, a.org, a.bob))
+	require.Equal(t, []string{"org.member_permission " + a.org, "org.member_position " + a.org}, f.audited())
+	require.Equal(t, []events.Event{events.OrgChanged{OrgID: a.org}}, next(), "one announcement for the request")
+
+	// Only one of the two changes is a change: only that one is recorded.
+	got, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(PermissionGuest), PositionID: ptr(a.manager)})
+	require.NoError(t, err)
+	require.Equal(t, a.manager, got.PositionID)
+	require.Len(t, f.audited(), 3)
+	require.Len(t, next(), 1)
+	// Nothing changes at all: nothing is recorded or announced.
+	_, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(PermissionGuest), PositionID: ptr(a.manager)})
+	require.NoError(t, err)
+	require.Len(t, f.audited(), 3)
+	require.Empty(t, next())
+}
+
+// A change that is refused changes nothing, not even the half of it that would have been fine.
+func TestAFailedUpdateMemberChangesNothing(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	a := f.acme()
+	other := f.position(f.org("globex"), "Boss", "")
+	next := f.events()
+	unchanged := func(iid string, want Member) {
+		t.Helper()
+		require.Equal(t, want, memberOfOrg(t, f, a.org, iid))
+		require.Empty(t, f.audited())
+		require.Empty(t, next())
+	}
+
+	// The last admin cannot step down, so it does not move either.
+	alice := memberOfOrg(t, f, a.org, a.alice)
+	_, err := f.svc.UpdateMember(ctx, a.alice, a.org, a.alice, MemberUpdate{Permission: ptr(PermissionMember), PositionID: ptr(a.trees)})
+	require.ErrorIs(t, err, ErrLastAdmin)
+	unchanged(a.alice, alice)
+
+	// A position the organization does not have stops the permission change.
+	bob := memberOfOrg(t, f, a.org, a.bob)
+	_, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(PermissionGuest), PositionID: ptr(other)})
+	invalid(t, err, "position_id")
+	unchanged(a.bob, bob)
+
+	// A manager may move a subordinate but not change its permission: the move is not made either.
+	walt := memberOfOrg(t, f, a.org, a.walt)
+	_, err = f.svc.UpdateMember(ctx, a.mia, a.org, a.walt, MemberUpdate{Permission: ptr(PermissionGuest), PositionID: ptr(a.lead)})
+	require.ErrorIs(t, err, ErrForbidden)
+	unchanged(a.walt, walt)
+
+	// A bad permission is told to the admin, and nothing is moved.
+	_, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(Permission("owner")), PositionID: ptr(a.designer)})
+	invalid(t, err, "permission")
+	unchanged(a.bob, bob)
+}
+
+// The actor's rights are the ones it had when it asked: an admin that steps down and moves in the same
+// request is still an admin for the move.
+func TestUpdateMemberJudgesTheActorAsItWasWhenItAsked(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	a := f.acme()
+	f.adminOf(a.org) // a second admin, so alice may step down
+
+	got, err := f.svc.UpdateMember(ctx, a.alice, a.org, a.alice, MemberUpdate{Permission: ptr(PermissionMember), PositionID: ptr("")})
+	require.NoError(t, err)
+	require.Equal(t, Member{IID: a.alice, Permission: PermissionMember}, got, "alice stepped down and left her position")
+	// Now a plain member, she can neither change a permission nor position anybody.
+	_, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{Permission: ptr(PermissionGuest)})
+	require.ErrorIs(t, err, ErrForbidden)
+	_, err = f.svc.UpdateMember(ctx, a.alice, a.org, a.bob, MemberUpdate{PositionID: ptr(a.designer)})
+	require.ErrorIs(t, err, ErrForbidden)
+}
+
+// A request that asks for nothing needs a member and changes nothing; it names the member as it is.
+func TestUpdateMemberWithNothingToChange(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	a := f.acme()
+	out := f.user("out")
+	next := f.events()
+
+	got, err := f.svc.UpdateMember(ctx, a.bob, a.org, a.walt, MemberUpdate{})
+	require.NoError(t, err)
+	require.Equal(t, memberOfOrg(t, f, a.org, a.walt), got)
+	_, err = f.svc.UpdateMember(ctx, out, a.org, a.walt, MemberUpdate{})
+	require.ErrorIs(t, err, ErrNotFound)
+	_, err = f.svc.UpdateMember(ctx, a.bob, a.org, out, MemberUpdate{})
+	require.ErrorIs(t, err, ErrNotFound, "the target is not a member")
+	require.Empty(t, next())
+	require.Empty(t, f.audited())
+}
+
+// OMEM-01, OMEM-03: the list names each member with its profile summary, permission, position and, for a
+// guest, its inviter; every member sees it, a guest included, and only this organization's members are in it.
+func TestListMembersShowsTheProfileThePermissionThePositionAndTheInviter(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	a := f.acme()
+	globex := f.org("globex")
+	stranger := f.user("stranger")
+	f.join(globex, stranger, PermissionAdmin, "", "")
+	f.exec(`UPDATE intelligences SET avatar_sha256 = 'sha-bob' WHERE id = ?`, a.bob)
+
+	list, err := f.svc.ListMembers(ctx, a.gus, a.org) // a guest sees the members (CHART-02)
+	require.NoError(t, err)
+	byID := map[string]MemberRow{}
+	for _, m := range list {
+		byID[m.IID] = m
+	}
+	require.Len(t, byID, len(list))
+	require.Len(t, list, 10, "eight people (one a guest) and two AIs of acme, and not the stranger of globex")
+	require.NotContains(t, byID, stranger)
+
+	require.Equal(t, MemberRow{
+		IID: a.walt, Permission: "member", PositionID: a.trees, PositionName: "Worktrees",
+		Kind: "human", DisplayName: "walt", Handle: "walt", JoinedAt: 1,
+	}, byID[a.walt])
+	require.Equal(t, MemberRow{
+		IID: a.gus, Permission: "guest", Kind: "human", DisplayName: "gus", Handle: "gus", JoinedAt: 1,
+		InviterIID: a.bob, InviterKind: "human", InviterDisplayName: "bob", InviterHandle: "bob", InviterAvatarSha256: "sha-bob",
+	}, byID[a.gus], "a guest carries the identity that invited it")
+	require.Equal(t, "ai", byID[a.w1].Kind)
+	require.Equal(t, "guest", byID[a.w1].Permission)
+	require.Empty(t, byID[a.bob].InviterIID)
+	require.Equal(t, "sha-bob", byID[a.bob].AvatarSha256)
+
+	names := make([]string, len(list))
+	for i, m := range list {
+		names[i] = m.DisplayName
+	}
+	require.IsIncreasing(t, names, "ordered by display name")
+
+	_, err = f.svc.ListMembers(ctx, stranger, a.org)
+	require.ErrorIs(t, err, ErrNotFound, "an outsider")
+	_, err = f.svc.ListMembers(ctx, a.alice, "o-nothing")
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+// MemberView is one row of the list; an outsider or a target that is not a member is not found.
+func TestMemberViewIsOneRowOfTheList(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	a := f.acme()
+	out := f.user("out")
+
+	list, err := f.svc.ListMembers(ctx, a.alice, a.org)
+	require.NoError(t, err)
+	for _, row := range list {
+		got, err := f.svc.MemberView(ctx, a.gus, a.org, row.IID)
+		require.NoError(t, err)
+		require.Equal(t, row, got)
+	}
+	_, err = f.svc.MemberView(ctx, a.alice, a.org, out)
+	require.ErrorIs(t, err, ErrNotFound, "not a member")
+	_, err = f.svc.MemberView(ctx, out, a.org, a.walt)
+	require.ErrorIs(t, err, ErrNotFound, "an outsider")
+}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -79,4 +80,44 @@ func TestMessageAuthor(t *testing.T) {
 func TestAvatarURL(t *testing.T) {
 	require.Equal(t, "", convert.AvatarURL("u1", ""))
 	require.Equal(t, "/api/v1/intelligences/u1/avatar?v="+sha, convert.AvatarURL("u1", sha))
+}
+
+// OMEM-01, POS-05: a member of an organization is a user or an AI with its permission and position, and
+// only a guest shows the identity that invited it - not a member or an admin, whatever the row holds, and
+// not a guest whose inviter is gone.
+func TestOrgMember(t *testing.T) {
+	row := func(over func(*orgs.MemberRow)) orgs.MemberRow {
+		r := orgs.MemberRow{
+			IID: "u1", Permission: "member", Kind: "human", DisplayName: "Ana", Handle: "ana", AvatarSha256: sha,
+			PositionID: "p1", PositionName: "Lead", JoinedAt: 1700000000000,
+			InviterIID: "u2", InviterKind: "human", InviterDisplayName: "Bia", InviterHandle: "bia",
+		}
+		over(&r)
+		return r
+	}
+	inviter := &dto.IntelligenceRef{ID: "u2", Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "Bia", Handle: "bia"}
+
+	got := convert.OrgMember(row(func(r *orgs.MemberRow) { r.Permission = "guest" }))
+	require.Equal(t, dto.OrgMember{
+		Intelligence: dto.IntelligenceRef{
+			ID: "u1", Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "Ana", Handle: "ana",
+			AvatarURL: "/api/v1/intelligences/u1/avatar?v=" + sha,
+		},
+		Permission: dto.PermissionGuest, PositionID: "p1", PositionName: "Lead", InvitedBy: inviter,
+		JoinedAt: convert.Time(1700000000000),
+	}, got, "a guest shows its inviter")
+
+	for _, permission := range []string{"member", "admin"} {
+		require.Nil(t, convert.OrgMember(row(func(r *orgs.MemberRow) { r.Permission = permission })).InvitedBy,
+			"%s: only a guest has an inviter", permission)
+	}
+	require.Nil(t, convert.OrgMember(row(func(r *orgs.MemberRow) {
+		r.Permission, r.InviterIID, r.InviterKind, r.InviterDisplayName, r.InviterHandle = "guest", "", "", "", ""
+	})).InvitedBy, "a guest whose inviter is gone has none")
+
+	ai := convert.OrgMember(row(func(r *orgs.MemberRow) { r.Kind, r.AvatarSha256 = "ai", "" }))
+	require.Equal(t, dto.IntelligenceRef{ID: "u1", Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: "Ana", Handle: "ana"}, ai.Intelligence)
+	withoutPosition := convert.OrgMember(row(func(r *orgs.MemberRow) { r.PositionID, r.PositionName = "", "" }))
+	require.Empty(t, withoutPosition.PositionID)
+	require.Empty(t, withoutPosition.PositionName)
 }

@@ -1771,6 +1771,15 @@ export interface UpdatePositionRequest {
   parent_id?: string;
 }
 /**
+ * UpdateOrgMemberRequest is the body of PATCH /orgs/{org}/members/{iid}. Permission changes the
+ * member's permission (admin only); PositionID moves it to a position of the organization, or clears
+ * it with null or "" (POS-04). A field that is absent is left alone.
+ */
+export interface UpdateOrgMemberRequest {
+  permission?: Permission;
+  position_id?: string | null;
+}
+/**
  * OrgMember is one membership of an organization as the members list shows it (OMEM-01, OMEM-03):
  * the identity, its permission and position, and the inviter of a guest.
  */
