@@ -93,6 +93,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 3. WHEN sending text THEN the connector SHALL call `POST /send/text` with the instance token, and include `quoted` when replying to a message from that chat. (WA-03)
 4. WHEN sending a file THEN the connector SHALL call `POST /send/media` with base64 content and the right type (image, video, audio, document). (WA-04)
 5. WHEN chats are refreshed THEN the connector SHALL list groups via `GET /group/list` for each allowed instance. (WA-05)
+6. WHILE the connector runs it SHALL read whether its instance's number is connected from `GET /instance/all`: when it starts (which is whenever its WebSocket reconnects) and every 60 seconds. WHEN evolution-go reports the number as not connected (reconnecting, closed, logged out) THEN the connector SHALL report the status `error` with the detail `the WhatsApp number is not connected; reconnect it in evolution-go`, keep its WebSocket and deliver what arrives, and SHALL report `connected` again as soon as the number is. An instance that does not say whether it is connected counts as connected. IF a check fails THEN `Run` SHALL end with its error, as a failed check at start does (CON-06). (WA-06)
 
 **Independent Test**: Fake evolution-go (WebSocket + REST) in tests.
 
@@ -202,6 +203,7 @@ Rooms need external chats as members: WhatsApp groups (through an evolution-go s
 | WA-03 | P1: WhatsApp | Execute (T16) | Verified |
 | WA-04 | P1: WhatsApp | Tasks | Verified |
 | WA-05 | P1: WhatsApp | Tasks | Verified |
+| WA-06 | P1: WhatsApp | Fix | Verified |
 | TG-01 | P1: Telegram | Tasks | Verified |
 | TG-02 | P1: Telegram | Execute (T21) | Verified |
 | TG-03 | P1: Telegram | Tasks | Verified |

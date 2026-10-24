@@ -220,7 +220,10 @@ the organization owns it, then chooses its **operator** in **Operator and delive
 home is that organization, and only those. Until then, nothing
 arrives through it and its status says `choose the AI that operates this connection`. A WhatsApp
 connection that names zero or several instances receives nothing either, and says `choose the
-instance (number) of this connection`.
+instance (number) of this connection`. A running WhatsApp connection also checks its number every
+minute: while evolution-go reports it as not connected (reconnecting, closed, logged out) the status
+is an error that says `the WhatsApp number is not connected; reconnect it in evolution-go`, and it
+is connected again as soon as the number is.
 
 - **Arrival.** A message that arrives on a connection is never stored as a message of a
   conversation. It goes into the operator's queue and is pushed to its live session as a

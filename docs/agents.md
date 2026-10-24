@@ -484,7 +484,10 @@ and queues what arrives, hands it to the AI's session and sends what the AI answ
   stops operating. Until there is one the connection runs nothing and its status says
   `choose the AI that operates this connection`. A WhatsApp connection must name exactly one
   instance (one number): with none or several it receives nothing and says `choose the instance
-  (number) of this connection`.
+  (number) of this connection`. It also checks the number every minute: while evolution-go reports
+  it as not connected (reconnecting, closed, logged out) the status is an error that says
+  `the WhatsApp number is not connected; reconnect it in evolution-go`, and it is connected again
+  as soon as the number is.
 - **Arrival.** A message is never stored as a conversation message. It waits in the operator's
   queue and is pushed to its live session as a platform event (see Claude Code above), oldest
   first, at most 50 in flight: each acknowledgement from the session releases the next. The
