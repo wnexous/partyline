@@ -517,11 +517,11 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: T8 service, `live` event fan-out
 **Requirement**: OMEM-01, OMEM-02, OMEM-04, OMEM-07
 **Done when**:
-- [ ] e2e: the "Invitations" matrix (M and G invite guests only: 201 as guest, 403 as member or with a position)
-- [ ] Bob is invited, accepts, and creates a group in acme; Bob's invite attempt → 403 (spec Independent Test)
-- [ ] 409 `already_member`, 429 and 410 observed
-- [ ] Inviting again updates the permission of the pending invitation
-- [ ] Gate check passes: `make check`
+- [x] e2e: the "Invitations" matrix (M and G invite guests only: 201 as guest, 403 as member or with a position)
+- [x] Bob is invited, accepts, and creates a group in acme; Bob's invite attempt → 403 (spec Independent Test)
+- [x] 409 `already_member`, 429 and 410 observed
+- [x] Inviting again updates the permission of the pending invitation
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): invite identities to an organization`

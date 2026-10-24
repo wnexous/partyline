@@ -472,6 +472,11 @@ export const ErrorCodeLastInstanceAdmin = "last_instance_admin";
 export const ErrorCodeLastAdmin = "last_admin";
 export const ErrorCodeHomeOrganization = "home_organization";
 /**
+ * ErrorCodeAlreadyMember is an invitation to, or an acceptance of a place in, an organization the
+ * identity already belongs to (409, OMEM-01).
+ */
+export const ErrorCodeAlreadyMember = "already_member";
+/**
  * ErrorCodeNotOperator is an AI that sends through a connection it does not operate: only the
  * operator sends through it (403, CID-03). ErrorCodeUnknownChat is a chat that is not one of the
  * named connection's chats (404, CID-17).
@@ -573,7 +578,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1597,9 +1602,14 @@ export const LiveEventTypeIdentityLinked = "identity.linked";
 export const LiveEventTypeIntelligenceChanged = "intelligence.changed";
 export const LiveEventTypeLagged = "lagged";
 /**
+ * LiveEventTypeInvitationReceived carries an invitation to an organization sent to the user, or to an AI
+ * the user manages (OMEM-01). Its name is the spec's, not the dotted form of the older types.
+ */
+export const LiveEventTypeInvitationReceived = "invitation_received";
+/**
  * Live event types.
  */
-export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged;
+export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged | typeof LiveEventTypeInvitationReceived;
 export type LiveEvent =
   | LiveHello
   | LiveRoomMessage
@@ -1613,6 +1623,7 @@ export type LiveEvent =
   | LiveChatDiscovered
   | LiveIdentityLinked
   | LiveIntelligenceChanged
+  | LiveInvitationReceived
   | LiveLagged;
 
 /**
@@ -1748,6 +1759,14 @@ export interface LiveIntelligenceChanged {
   data: IntelligenceRef;
 }
 /**
+ * LiveInvitationReceived reports that the user, or an AI the user manages, was invited to an organization,
+ * or invited again with other terms (OMEM-01). Data is the pending invitation, as GET /invitations lists it.
+ */
+export interface LiveInvitationReceived {
+  type: typeof LiveEventTypeInvitationReceived;
+  data: Invitation;
+}
+/**
  * LiveLagged reports that the server dropped events for this connection; refetch visible data.
  */
 export interface LiveLagged {
@@ -1853,6 +1872,47 @@ export interface OrgMember {
    */
   invited_by?: IntelligenceRef;
   joined_at: string /* RFC 3339 */;
+}
+/**
+ * CreateInvitationRequest is the body of POST /orgs/{org}/invitations (OMEM-01). Handle is the @handle of
+ * a user or an AI. Permission is required: an admin gives any, and every other member or guest invites
+ * guests with no position only. PositionID is a position of the organization.
+ */
+export interface CreateInvitationRequest {
+  handle: string;
+  permission: Permission;
+  position_id?: string;
+}
+/**
+ * Invitation is a pending invitation to an organization (OMEM-01) as the invitee, whoever manages an
+ * invited AI, or the organization's admins see it. It expires 14 days after it was sent or sent again
+ * (OMEM-07).
+ */
+export interface Invitation {
+  id: string;
+  /**
+   * OrgID, OrgName and OrgSlug name the organization.
+   */
+  org_id: string;
+  org_name: string;
+  org_slug: string;
+  /**
+   * Invitee is the user or AI invited.
+   */
+  invitee: IntelligenceRef;
+  /**
+   * Permission and the position are what the invitee becomes on accepting; the position is absent when
+   * the invitation carries none.
+   */
+  permission: Permission;
+  position_id?: string;
+  position_name?: string;
+  /**
+   * InvitedBy is the identity that sent it; for a guest it becomes the guest's inviter (POS-05).
+   */
+  invited_by: IntelligenceRef;
+  created_at: string /* RFC 3339 */;
+  expires_at: string /* RFC 3339 */;
 }
 
 //////////

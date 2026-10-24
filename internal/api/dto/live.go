@@ -23,6 +23,9 @@ const (
 	// profile changed.
 	LiveEventTypeIntelligenceChanged LiveEventType = "intelligence.changed"
 	LiveEventTypeLagged              LiveEventType = "lagged"
+	// LiveEventTypeInvitationReceived carries an invitation to an organization sent to the user, or to an AI
+	// the user manages (OMEM-01). Its name is the spec's, not the dotted form of the older types.
+	LiveEventTypeInvitationReceived LiveEventType = "invitation_received"
 )
 
 //tygo:emit
@@ -39,6 +42,7 @@ var _ = `export type LiveEvent =
   | LiveChatDiscovered
   | LiveIdentityLinked
   | LiveIntelligenceChanged
+  | LiveInvitationReceived
   | LiveLagged;
 `
 
@@ -154,6 +158,13 @@ type LiveIdentityLinked struct {
 type LiveIntelligenceChanged struct {
 	Type LiveEventType   `json:"type" tstype:"typeof LiveEventTypeIntelligenceChanged"`
 	Data IntelligenceRef `json:"data"`
+}
+
+// LiveInvitationReceived reports that the user, or an AI the user manages, was invited to an organization,
+// or invited again with other terms (OMEM-01). Data is the pending invitation, as GET /invitations lists it.
+type LiveInvitationReceived struct {
+	Type LiveEventType `json:"type" tstype:"typeof LiveEventTypeInvitationReceived"`
+	Data Invitation    `json:"data"`
 }
 
 // LiveLagged reports that the server dropped events for this connection; refetch visible data.

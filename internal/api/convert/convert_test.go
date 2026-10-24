@@ -2,6 +2,7 @@ package convert_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -120,4 +121,37 @@ func TestOrgMember(t *testing.T) {
 	withoutPosition := convert.OrgMember(row(func(r *orgs.MemberRow) { r.PositionID, r.PositionName = "", "" }))
 	require.Empty(t, withoutPosition.PositionID)
 	require.Empty(t, withoutPosition.PositionName)
+}
+
+// OMEM-01: an invitation names its invitee and inviter as users or AIs, with their avatars, and carries the
+// position only when it has one.
+func TestInvitation(t *testing.T) {
+	created := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	inv := orgs.Invitation{
+		ID: "i1", OrgID: "o1", OrgName: "Acme", OrgSlug: "acme",
+		InviteeIID: "a1", InviteeHandle: "atlas", InviteeName: "Atlas", InviteeKind: "ai", InviteeAvatarSha256: sha,
+		Permission: orgs.PermissionGuest, PositionID: "p1", PositionName: "Lead",
+		InvitedByIID: "u1", InvitedByHandle: "ana", InvitedByName: "Ana", InvitedByKind: "user",
+		CreatedAt: created, ExpiresAt: created.Add(14 * 24 * time.Hour),
+	}
+	require.Equal(t, dto.Invitation{
+		ID: "i1", OrgID: "o1", OrgName: "Acme", OrgSlug: "acme",
+		Invitee: dto.IntelligenceRef{
+			ID: "a1", Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: "Atlas", Handle: "atlas",
+			AvatarURL: "/api/v1/intelligences/a1/avatar?v=" + sha,
+		},
+		Permission: dto.PermissionGuest, PositionID: "p1", PositionName: "Lead",
+		InvitedBy: dto.IntelligenceRef{ID: "u1", Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "Ana", Handle: "ana"},
+		CreatedAt: created, ExpiresAt: created.Add(14 * 24 * time.Hour),
+	}, convert.Invitation(inv))
+
+	// An AI can be the inviter, and a user the invitee; an invitation may carry no position.
+	inv.InviteeKind, inv.InvitedByKind, inv.PositionID, inv.PositionName = "user", "ai", "", ""
+	got := convert.Invitation(inv)
+	require.Equal(t, dto.IntelligenceRoleUser, got.Invitee.Role)
+	require.Equal(t, dto.IntelligenceKindHuman, got.Invitee.Kind)
+	require.Equal(t, dto.IntelligenceRoleAI, got.InvitedBy.Role)
+	require.Equal(t, dto.IntelligenceKindAI, got.InvitedBy.Kind)
+	require.Empty(t, got.PositionID)
+	require.Empty(t, got.PositionName)
 }

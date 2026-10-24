@@ -1531,3 +1531,41 @@ What the viewer may do about an identity comes from its profile only (T25): `mem
   the list** (the new dialog against the real server), the contacts page by organization, the profile photo, and the no-sideways-scroll
   check on `/`, a room, the contacts, the viewer's own profile (now with its Organizations section), the connections and the settings (now
   with the default organization and the account deletion).
+
+## T15: Invitation routes (OMEM-01, OMEM-02, OMEM-04, OMEM-07)
+
+- **Routes** (`internal/api/org_invitations_handlers.go`, registered by `orgInvitationRoutes`), all `authed` (an agent token is 403
+  by the path rule, no credentials 401). `{org}` is an id or an address:
+  - `POST /api/v1/orgs/{org}/invitations` `{handle, permission, position_id?}` → **201** `Invitation`. `permission` is required: an
+    admin gives any permission and a position of the organization (422 on `permission` or `position_id` otherwise); every other
+    member and guest may send **only `guest` with no position**, else 403 (authorization comes before validation, so a member who
+    sends nothing valid is told 403). Sending to an invitee that has a pending invitation **updates it in place** (same id, new
+    terms, the sender becomes the inviter, the 14 days start over) and also answers 201. A plain `@`, case and spaces around the
+    handle are ignored.
+  - `GET /api/v1/orgs/{org}/invitations` → 200 `List[Invitation]`, newest first, expired ones hidden; admins only (403 other members,
+    404 outsiders).
+  - `DELETE /api/v1/orgs/{org}/invitations/{id}` → 204; admins only; an invitation of another organization is 404.
+  - `GET /api/v1/invitations` → 200 `List[Invitation]`: the caller's own, plus those of the AIs it manages in their home
+    organization (`Chart.Manages`), newest first.
+  - `POST /api/v1/invitations/{id}/accept` → **200 with the `Organization`** the invitee now belongs to (its permission and position
+    in it: for an invited AI answered by its manager they are the AI's); `POST …/decline` → 204. Only the invitee answers - the user
+    itself, or for an AI whoever manages it - everybody else, the inviter and the organization's admins included, is **404**.
+- **Statuses and codes** (`mapError`): `orgs.ErrAlreadyMember` → 409 **`already_member`** (new `dto.ErrorCodeAlreadyMember`; a send to a
+  member, and an accept by someone who became a member meanwhile, which also drops the stale invitation), `orgs.ErrGone` → 410
+  `gone` (an accept or decline after 14 days, and an accept whose admin invitation outlived its inviter's admin right),
+  `orgs.ErrRateLimited` → 429 `rate_limited` (31st invitation within the hour for one organization, whoever sends), `orgs.ErrContactNotFound` →
+  404 `contact_not_found` (unknown, blank or `@` handle).
+- **DTOs** (`internal/api/dto/orgs.go`): `CreateInvitationRequest` and `Invitation{id, org_id, org_name, org_slug, invitee, permission,
+  position_id?, position_name?, invited_by, created_at, expires_at}` where `invitee` and `invited_by` are `IntelligenceRef`s (kind,
+  role user|ai, handle, name, avatar). `orgs.Invitation` gained `InviteeAvatarSha256`, `InvitedByKind` and `InvitedByAvatarSha256`
+  for them. Converter: `convert.Invitation`.
+- **Live event `invitation_received`** (`dto.LiveEventTypeInvitationReceived`, frame `LiveInvitationReceived{type, data: Invitation}`).
+  The name is the spec's; it does not follow the dotted form of the older types. `events.InvitationReceived` (published by
+  `Service.Invite` after its commit, also when an invitation is sent again) reaches **the sockets of the invitee, and for an invited
+  AI the sockets of whoever manages it** in its home organization (`orgs.Service.InvitationFor`, the same rule as answering), and
+  nobody else - the inviter, the organization's members, a stranger, the instance admin hear nothing of it. The frame carries the
+  invitation as `GET /invitations` shows it, so the inbox needs no second request; a re-sent invitation sends a new frame with the
+  new terms. `live.Deps.Orgs` carries the service (the app wires it); without it invitations are not announced. `OrgChanged` is
+  still published and reaches the organization's members as `access.changed` kind `organization` (T32).
+- **Service addition**: `InvitationFor(actor, invitationID)` (the invitation for whoever answers it; ErrNotFound for anyone else, an
+  unknown id and an expired invitation).

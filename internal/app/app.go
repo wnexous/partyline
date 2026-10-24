@@ -230,7 +230,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Store: st, Access: az, Bus: bus, Box: box, Kinds: registry, Queue: a.Platform, Runner: a.ConnectorManager, Now: opts.Now,
 	})
 	a.Live = live.New(live.Deps{
-		Bus: bus, Access: az, Authz: authz, Rooms: a.Rooms, Intelligences: a.Intelligences, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
+		Bus: bus, Access: az, Authz: authz, Rooms: a.Rooms, Intelligences: a.Intelligences, Orgs: a.Orgs, Store: st, PublicURL: cfg.PublicURL, Logger: opts.Logger, Now: opts.Now,
 		Sessions: usersSvc, SessionCheckInterval: opts.LiveSessionCheck,
 	})
 	a.Devices = devices.New(devices.Deps{Store: st, Users: usersSvc, Box: box, Audit: auditLog, Now: opts.Now})

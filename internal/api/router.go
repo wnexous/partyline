@@ -108,6 +108,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.orgRoutes(mux)
 	s.positionRoutes(mux)
 	s.orgMemberRoutes(mux)
+	s.orgInvitationRoutes(mux)
 	s.roomRoutes(mux)
 	s.conversationRoutes(mux)
 	s.intelligenceRoutes(mux)
@@ -218,6 +219,14 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeLastInstanceAdmin, "you are the last active admin of this instance: make another user an admin first")
 	case errors.Is(err, orgs.ErrLastAdmin):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeLastAdmin, "an organization needs at least one admin: make someone else an admin first")
+	case errors.Is(err, orgs.ErrAlreadyMember):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeAlreadyMember, "already a member of the organization")
+	case errors.Is(err, orgs.ErrGone):
+		return httpx.NewError(http.StatusGone, dto.ErrorCodeGone, "the invitation has expired or no longer stands")
+	case errors.Is(err, orgs.ErrRateLimited):
+		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many invitations, try again later")
+	case errors.Is(err, orgs.ErrContactNotFound):
+		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeContactNotFound, "contact not found")
 	case errors.Is(err, orgs.ErrHomeOrganization):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHomeOrganization, "an AI cannot leave its home organization: ask an admin to delete it")
 	case errors.Is(err, agents.ErrNotRegistered):

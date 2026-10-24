@@ -57,3 +57,23 @@ func memberRef(id, kind, displayName, handle, avatarSha string) dto.Intelligence
 		AvatarURL: AvatarURL(id, avatarSha),
 	}
 }
+
+// Invitation renders a pending invitation with the identities it names (OMEM-01).
+func Invitation(i orgs.Invitation) dto.Invitation {
+	return dto.Invitation{
+		ID: i.ID, OrgID: i.OrgID, OrgName: i.OrgName, OrgSlug: i.OrgSlug,
+		Invitee:    invitationRef(i.InviteeIID, i.InviteeKind, i.InviteeName, i.InviteeHandle, i.InviteeAvatarSha256),
+		Permission: dto.Permission(i.Permission), PositionID: i.PositionID, PositionName: i.PositionName,
+		InvitedBy: invitationRef(i.InvitedByIID, i.InvitedByKind, i.InvitedByName, i.InvitedByHandle, i.InvitedByAvatarSha256),
+		CreatedAt: i.CreatedAt, ExpiresAt: i.ExpiresAt,
+	}
+}
+
+// invitationRef is the summary of an invitee or inviter, whose role is "user" or "ai".
+func invitationRef(id, role, displayName, handle, avatarSha string) dto.IntelligenceRef {
+	kind := string(dto.IntelligenceKindHuman)
+	if role == string(dto.IntelligenceRoleAI) {
+		kind = string(dto.IntelligenceKindAI)
+	}
+	return memberRef(id, kind, displayName, handle, avatarSha)
+}

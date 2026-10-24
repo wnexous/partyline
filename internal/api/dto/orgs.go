@@ -85,3 +85,34 @@ type OrgMember struct {
 	InvitedBy *IntelligenceRef `json:"invited_by,omitempty"`
 	JoinedAt  time.Time        `json:"joined_at"`
 }
+
+// CreateInvitationRequest is the body of POST /orgs/{org}/invitations (OMEM-01). Handle is the @handle of
+// a user or an AI. Permission is required: an admin gives any, and every other member or guest invites
+// guests with no position only. PositionID is a position of the organization.
+type CreateInvitationRequest struct {
+	Handle     string     `json:"handle"`
+	Permission Permission `json:"permission"`
+	PositionID string     `json:"position_id,omitempty"`
+}
+
+// Invitation is a pending invitation to an organization (OMEM-01) as the invitee, whoever manages an
+// invited AI, or the organization's admins see it. It expires 14 days after it was sent or sent again
+// (OMEM-07).
+type Invitation struct {
+	ID string `json:"id"`
+	// OrgID, OrgName and OrgSlug name the organization.
+	OrgID   string `json:"org_id"`
+	OrgName string `json:"org_name"`
+	OrgSlug string `json:"org_slug"`
+	// Invitee is the user or AI invited.
+	Invitee IntelligenceRef `json:"invitee"`
+	// Permission and the position are what the invitee becomes on accepting; the position is absent when
+	// the invitation carries none.
+	Permission   Permission `json:"permission"`
+	PositionID   string     `json:"position_id,omitempty"`
+	PositionName string     `json:"position_name,omitempty"`
+	// InvitedBy is the identity that sent it; for a guest it becomes the guest's inviter (POS-05).
+	InvitedBy IntelligenceRef `json:"invited_by"`
+	CreatedAt time.Time       `json:"created_at"`
+	ExpiresAt time.Time       `json:"expires_at"`
+}

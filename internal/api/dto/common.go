@@ -102,6 +102,9 @@ const (
 	// leaving the organization it belongs to: it is deleted there, never removed (409, POS-06).
 	ErrorCodeLastAdmin        ErrorCode = "last_admin"
 	ErrorCodeHomeOrganization ErrorCode = "home_organization"
+	// ErrorCodeAlreadyMember is an invitation to, or an acceptance of a place in, an organization the
+	// identity already belongs to (409, OMEM-01).
+	ErrorCodeAlreadyMember ErrorCode = "already_member"
 	// ErrorCodeNotOperator is an AI that sends through a connection it does not operate: only the
 	// operator sends through it (403, CID-03). ErrorCodeUnknownChat is a chat that is not one of the
 	// named connection's chats (404, CID-17).
