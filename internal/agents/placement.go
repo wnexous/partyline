@@ -222,6 +222,45 @@ func checkStart(ctx context.Context, q *db.Queries, host string, a db.Agent, id 
 	return &positionMove{orgID: home, agentID: a.ID, from: cur.PositionID, to: pos.ID}, nil
 }
 
+// CheckStart says whether a session that starts in this folder with this placement (--org, --position, --parent)
+// would be refused, and why, and changes nothing: the launcher asks before it starts the harness, so that the
+// person reads the refusal in the terminal where they typed the command instead of finding a harness that
+// cannot connect (ORG-05, POS-07). It decides with the rules the start itself uses, on a read snapshot:
+//
+//   - the AI of the folder, if there is one, and the unlinked identity a session would adopt (MIG-02) are judged by
+//     the rules of a later start (checkStart: --org may only name the home organization, --position must be
+//     allowed to move the AI, --parent is ignored);
+//   - a folder that would get a new AI is judged by the rules of its creation (place).
+//
+// A start that names none of the three has no rules to check. A folder or machine that cannot be an identity is
+// the caller's to refuse (ValidateFolder), and so are the reasons a start can fail that are not its placement,
+// such as the agent limit: the session reports those when it really starts.
+func (r *Registry) CheckStart(ctx context.Context, ownerID string, id FolderID) error {
+	if id.Org == "" && id.Position == "" && id.Parent == "" {
+		return nil
+	}
+	id.Machine = cleanText(id.Machine, MaxMachineLength)
+	q := r.store.R()
+	a, err := q.GetAgentByFolder(ctx, db.GetAgentByFolderParams{OwnerID: ownerID, Machine: id.Machine, Folder: id.Folder})
+	switch {
+	case err == nil:
+	case errors.Is(err, sql.ErrNoRows):
+		cand, _, found, err := adoptionCandidate(ctx, q, ownerID, id)
+		switch {
+		case err != nil:
+			return err
+		case !found:
+			_, err = place(ctx, q, ownerID, id)
+			return err
+		}
+		a = cand
+	default:
+		return err
+	}
+	_, err = checkStart(ctx, q, ownerID, a, id)
+	return err
+}
+
 // mismatch is the refusal of a start that names an organization other than the AI's home.
 func mismatch(ctx context.Context, q *db.Queries, home string) error {
 	o, err := q.GetOrganization(ctx, home)

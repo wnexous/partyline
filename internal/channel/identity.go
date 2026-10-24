@@ -30,12 +30,18 @@ type Identity struct {
 	// Adopt is the handle or v0.3 agent name of an unlinked AI to link to the folder when it has
 	// none yet (--as, PARTYLINE_AGENT) (MIG-02).
 	Adopt string
+	// Org, Position and Parent are what the session asked for when it started (--org, --position, --parent,
+	// handed on by the launcher as PARTYLINE_LAUNCH_ORG, PARTYLINE_LAUNCH_POSITION and
+	// PARTYLINE_LAUNCH_PARENT): the organization (a slug or an id), the name of the position and the @handle or
+	// id of the AI that starts this one. They place a new AI (ORG-04, POS-07, POS-08); each is sent only when
+	// set, so a session that asks for nothing sends nothing and gets the server's defaults (AD-020).
+	Org, Position, Parent string
 }
 
-// setHeaders sets the identity headers. The folder and the home folder are percent-encoded
-// (spaces, non-ASCII characters and separators), so a header carries any path; the folder
-// header is always sent, so a process that could not tell its folder is refused with
-// folder_required instead of being taken for a client from before folders.
+// setHeaders sets the identity headers. The folder, the home folder and the position are
+// percent-encoded (spaces, non-ASCII characters and separators), so a header carries any path or
+// name; the folder header is always sent, so a process that could not tell its folder is refused
+// with folder_required instead of being taken for a client from before folders.
 func (id Identity) setHeaders(h http.Header) {
 	machine := id.Machine
 	if machine == "" {
@@ -43,7 +49,10 @@ func (id Identity) setHeaders(h http.Header) {
 	}
 	h.Set(dto.HeaderMachine, machine)
 	h.Set(dto.HeaderFolder, url.PathEscape(id.Folder))
-	for k, v := range map[string]string{dto.HeaderHarness: id.Harness, dto.HeaderAdopt: id.Adopt} {
+	for k, v := range map[string]string{
+		dto.HeaderHarness: id.Harness, dto.HeaderAdopt: id.Adopt,
+		dto.HeaderOrg: id.Org, dto.HeaderPosition: escapeHeader(id.Position), dto.HeaderParent: id.Parent,
+	} {
 		if v != "" {
 			h.Set(k, v)
 		}
@@ -52,6 +61,18 @@ func (id Identity) setHeaders(h http.Header) {
 		h.Set(dto.HeaderHome, url.PathEscape(id.Home))
 	}
 }
+
+// escapeHeader percent-encodes a value the way the folder is (url.PathEscape); empty stays empty.
+func escapeHeader(v string) string {
+	if v == "" {
+		return ""
+	}
+	return url.PathEscape(v)
+}
+
+// asksPlacement is whether the session asked for an organization or a position, the two things the
+// server can refuse a start for (403 or 409); a parent it cannot refuse, it ignores one it will not take.
+func (id Identity) asksPlacement() bool { return id.Org != "" || id.Position != "" }
 
 // CanonicalFolder turns dir into the folder the server identifies an AI by (AID-07): absolute,
 // symlinks resolved, cleaned (no trailing separator, no "." or ".." segments; "/" stays "/"). A

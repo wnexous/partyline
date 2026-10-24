@@ -144,15 +144,15 @@ func ptr[T any](v T) *T { return &v }
 // --- the tools' schemas ---
 
 // The schemas tell how to call the tools: send_message takes room, to, or connection with chat,
-// create_group a name, members and a description, update_profile the four profile fields; strings
-// unless noted.
+// create_group a name, members, a description and the organization to create the group in (ORG-03),
+// update_profile the four profile fields; strings unless noted.
 func TestConversationToolSchemas(t *testing.T) {
 	e := newChanEnv(t)
 	s := e.connected(e.options())
 	s.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	want := map[string]map[string]string{
 		"send_message":   {"room": "string", "to": "string", "connection": "string", "chat": "string", "text": "string"},
-		"create_group":   {"name": "string", "description": "string", "members": "array"},
+		"create_group":   {"name": "string", "description": "string", "members": "array", "organization": "string"},
 		"update_profile": {"display_name": "string", "handle": "string", "bio": "string", "avatar_path": "string"},
 	}
 	seen := 0
@@ -174,6 +174,40 @@ func TestConversationToolSchemas(t *testing.T) {
 		}
 	}
 	require.Equal(t, len(want), seen)
+}
+
+// ORG-03, POS-10: create_group takes the organization to create the group in, by its address and optional, and
+// tells that it defaults to the AI's home organization; the refusal for a member of another organization is named.
+// No tool is described as working for the AI's owner (the intelligences "your owner can see", a group "owned by
+// your owner"): the AI acts as itself, in its organizations.
+func TestToolDefinitionsFollowOrganizations(t *testing.T) {
+	e := newChanEnv(t)
+	s := e.connected(e.options())
+	s.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	tools := map[string]map[string]any{}
+	for _, item := range s.response()["result"].(map[string]any)["tools"].([]any) {
+		tool := item.(map[string]any)
+		tools[tool["name"].(string)] = tool
+	}
+
+	group := tools["create_group"]
+	schema := group["inputSchema"].(map[string]any)
+	org, ok := schema["properties"].(map[string]any)["organization"].(map[string]any)
+	require.True(t, ok, "create_group lists organization")
+	require.Equal(t, "string", org["type"])
+	require.Equal(t, "optional: the address (slug) of the organization to create the group in, which you must be a member of and not a guest; your home organization when left out", org["description"])
+	require.Equal(t, []any{"name", "members"}, schema["required"], "the organization is optional")
+	require.Equal(t, "Create a group in an organization, with you and the given members. You are added automatically; everyone else is a member only when listed, and each must belong to the organization. "+
+		"If any member cannot be added nothing is created and the error lists the refused ones with the reason (not_found: unknown, disabled or not one you can see; person: people from chats cannot be members; not_org_member: not a member of the organization).",
+		group["description"])
+
+	require.Contains(t, tools["send_message"]["description"], "for any user of this instance and any intelligence you share an organization with")
+
+	for name, tool := range tools {
+		raw, err := json.Marshal(tool)
+		require.NoError(t, err)
+		require.NotContains(t, strings.ToLower(string(raw)), "owner", name)
+	}
 }
 
 // --- DM-04: send_message to ---
@@ -764,15 +798,17 @@ func TestInstructionsDescribeDMsGroupsAndProfiles(t *testing.T) {
 			require.Contains(t, text, want, name)
 		}
 	}
-	require.Contains(t, instructionsOf(t, e.options()), "who you are and who your owner is")
+	require.Contains(t, instructionsOf(t, e.options()), identityNoticeSentence)
 }
 
 // --- the notice that says who the AI is ---
 
 // The first welcome of the full channel becomes one notice in the words of the design: "You are
-// <display name> (@handle). Your owner is <display name> (@handle)." It is a system notice
-// (type notice, never trusted), built from the AI's and the owner's profiles, not from the folder
-// or the username; a reconnect after a dropped connection is the same session and says nothing.
+// <display name> (@handle), an AI of <organization> (<address>)." and who manages it (POS-10; the
+// organization sentences of the older notice, "Your owner is <display name> (@handle).", are for a server
+// that names no organization). It is a system notice (type notice, never trusted), built from the profiles of
+// the AI and of its managers, not from the folder or the username; a reconnect after a dropped connection is
+// the same session and says nothing.
 func TestChannelTellsTheSessionWhoItIsOnce(t *testing.T) {
 	e := newChanEnv(t)
 	e.alice.Patch("/api/v1/intelligences/"+e.alice.User.ID, dto.UpdateProfileRequest{DisplayName: ptr("Alice Prado"), Handle: ptr("alice-p")}).RequireStatus(http.StatusOK)
@@ -784,7 +820,8 @@ func TestChannelTellsTheSessionWhoItIsOnce(t *testing.T) {
 	s.handshake()
 
 	n := s.identityNotice()
-	require.Equal(t, "You are Atlas (@atlas). Your owner is Alice Prado (@alice-p).", n.Content)
+	require.Equal(t, `You are Atlas (@atlas), an AI of alice (alice). Messages marked trusted="true" come from the identities that manage you: Alice Prado (@alice-p).`, n.Content,
+		"alice created the AI in her own organization, where she is the Admin: she is the one who manages it")
 	require.Equal(t, map[string]string{
 		"type": "notice", "reason": "identity", "author": "Partyline", "author_kind": "system",
 		"sender_name": "", "trusted": "false", "kind": "system",

@@ -921,9 +921,9 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `Chart.ManagersOf`, `welcomeRefs`
 **Requirement**: POS-10, ORG-04
 **Done when**:
-- [ ] e2e: a worker under Lead receives managers [Lead, …, Admin holder] in order; a v0.5-shaped decode (only `owner`) still works
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] e2e: a worker under Lead receives managers [Lead, …, Admin holder] in order; a v0.5-shaped decode (only `owner`) still works
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): tell a session its organization and managers`
@@ -936,8 +936,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `systemNotice`
 **Requirement**: POS-10
 **Done when**:
-- [ ] Channel tests assert the literal spec/design wording (L-032): with managers, without managers, without a position; and with an old server (no org fields), where the org sentence is absent (L-035)
-- [ ] Gate check passes: `make check`
+- [x] Channel tests assert the literal spec/design wording (L-032): with managers, without managers, without a position; and with an old server (no org fields), where the org sentence is absent (L-035)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): announce the organization and who manages the AI`
@@ -950,9 +950,9 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: existing variants (`Instructions`, `ToolsOnlyInstructions`, `OmpInstructions`)
 **Requirement**: POS-10, ORG-03
 **Done when**:
-- [ ] Tests on all three variants: none mentions "owner" for trust, and each states the management rule (L-034)
-- [ ] The `create_group` schema lists `organization`
-- [ ] Gate check passes: `make check`
+- [x] Tests on all three variants: none mentions "owner" for trust, and each states the management rule (L-034)
+- [x] The `create_group` schema lists `organization`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `docs(channel): explain trust as management in the organization`
@@ -965,12 +965,12 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `launcherFlags`, `withLauncherEnv`, `Identity.setHeaders`
 **Requirement**: ORG-04, POS-07, POS-08
 **Done when**:
-- [ ] CLI tests:
+- [x] CLI tests:
   - each flag in both forms reaches the headers; the env fallback works; the flag wins over env;
   - without either, no header is sent (L-035);
   - a nested launch inside a launched session does not inherit the parent's position;
   - a refused start (403/422) exits non-zero and prints the server message (L-045)
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): start AIs in an organization and position`
@@ -983,9 +983,9 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `agentWhoAmI` client pattern, `menu.go` output style
 **Requirement**: ORG-04
 **Done when**:
-- [ ] CLI e2e: the list shows two orgs and marks the default; an unknown slug → non-zero exit; the login prints the line; a failing org call still finishes the login
-- [ ] Route test: a user session cookie on `/agent/orgs` → refused by the path rule
-- [ ] Gate check passes: `make check`
+- [x] CLI e2e: the list shows two orgs and marks the default; an unknown slug → non-zero exit; the login prints the line; a failing org call still finishes the login
+- [x] Route test: a user session cookie on `/agent/orgs` → refused by the path rule
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): list organizations and positions`
@@ -998,8 +998,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: T23 server route
 **Requirement**: ORG-03
 **Done when**:
-- [ ] Channel tests: with `organization` → created there; without it → the home org; a non-member org → the tool error text names the 403
-- [ ] Gate check passes: `make check`
+- [x] Channel tests: with `organization` → created there; without it → the home org; a non-member org → the tool error text names the 403
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): create groups in a chosen organization`
@@ -1012,8 +1012,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `printTreeNodes` indentation style
 **Requirement**: ORG-02
 **Done when**:
-- [ ] CLI e2e: two orgs print two headed groups; the output never contains the hostname; no hosted AI → the empty message; a server error → non-zero exit (L-045)
-- [ ] Gate check passes: `make check`
+- [x] CLI e2e: two orgs print two headed groups; the output never contains the hostname; no hosted AI → the empty message; a server error → non-zero exit (L-045)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): list hosted AIs by organization`

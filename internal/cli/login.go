@@ -39,9 +39,11 @@ func loginCmd(ctx context.Context, args []string, io stdio) int {
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	if _, code := loginFlow(ctx, f, io); code != 0 {
+	cfg, code := loginFlow(ctx, f, io)
+	if code != 0 {
 		return code
 	}
+	printDefaultOrg(ctx, cfg, io)
 	return maybeSetupMenu(ctx, io)
 }
 

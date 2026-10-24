@@ -37,7 +37,8 @@ Commands:
                          --harness omp describes the omp extension's message framing;
                          with --tools-only, --harness codex|gemini|opencode|pi names the harness
   listen                 print incoming messages as JSON lines (used by the pi and OpenCode adapters)
-  agents                 list your AIs as the machine › folder tree with online markers
+  agents                 list the AIs you host, grouped by organization, with online markers
+  orgs [slug]            list your organizations and where you stand in them; with an address, its positions
   hook codex-stop|gemini-after-agent
                          turn-end hook: continue the session with undelivered room messages
   doctor                 check this machine: binary, config file, server, token, harnesses, versions
@@ -56,6 +57,10 @@ Start a session with Partyline (the arguments go to the harness unchanged):
 A session is the AI of the folder it starts in. Put --take-over before the arguments to take the
 AI's live session over from another one, and --as <handle> to adopt an AI that has no folder yet
 (one from before folders).
+A new AI joins your default organization. Put --org <slug> before the arguments to start it in
+another one, --position <name> to give it a position there and --parent <@handle> when one of your
+AIs starts it; PARTYLINE_ORG, PARTYLINE_POSITION and PARTYLINE_PARENT stand in for the flags. An AI
+keeps the organization it was created in. partyline orgs lists the organizations and their positions.
 `
 
 // stdio holds what a command reads and writes; tests replace each part.
@@ -141,6 +146,8 @@ func execute(ctx context.Context, args []string, io stdio) int {
 		return hookCmd(ctx, args[2:], io)
 	case "agents":
 		return agentsCmd(ctx, args[2:], io)
+	case "orgs":
+		return orgsCmd(ctx, args[2:], io)
 	case "update":
 		return updateCmd(ctx, args[2:], io)
 	case "doctor":

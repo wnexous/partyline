@@ -54,7 +54,7 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.react))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_message",
-		Description: "Send a message. Give exactly one target: room (post to a room or DM you belong to), to (message an intelligence directly: the DM is created the first time, for any intelligence your owner can see), or connection together with chat (write to a chat of a connection you operate, from your own account and unsigned: take the connection_id and chat_id of a message from it). A message the platform does not take at once is retried by Partyline: do not send it again.",
+		Description: "Send a message. Give exactly one target: room (post to a room or DM you belong to), to (message an intelligence directly: the DM is created the first time, for any user of this instance and any intelligence you share an organization with), or connection together with chat (write to a chat of a connection you operate, from your own account and unsigned: take the connection_id and chat_id of a message from it). A message the platform does not take at once is retried by Partyline: do not send it again.",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"to":{"type":"string","description":"instead of room: the @handle, handle or id of an intelligence to message directly; the DM is created if you never talked"},"connection":{"type":"string","description":"instead of room and to: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to write to, as a message from that connection carries it"},"text":{"type":"string","description":"message text"}},"required":["text"]}`),
 	}, t.guard(t.sendMessage))
 	srv.HandleTool(mcp.ToolDef{
@@ -84,8 +84,8 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.sendFile))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "create_group",
-		Description: "Create a group owned by your owner, with you and the given members. You are added automatically; your owner is a member only when listed. If any member cannot be added nothing is created and the error lists the refused ones with the reason (not_found: unknown, disabled or not yours to add; person: people from chats cannot be members).",
-		InputSchema: schema(`{"type":"object","properties":{"name":{"type":"string","description":"group name, 1 to 100 characters"},"members":{"type":"array","items":{"type":"string"},"description":"@handle, handle or id of each user or AI to add, at most 50"},"description":{"type":"string","description":"optional description, up to 1000 characters"}},"required":["name","members"]}`),
+		Description: "Create a group in an organization, with you and the given members. You are added automatically; everyone else is a member only when listed, and each must belong to the organization. If any member cannot be added nothing is created and the error lists the refused ones with the reason (not_found: unknown, disabled or not one you can see; person: people from chats cannot be members; not_org_member: not a member of the organization).",
+		InputSchema: schema(`{"type":"object","properties":{"name":{"type":"string","description":"group name, 1 to 100 characters"},"members":{"type":"array","items":{"type":"string"},"description":"@handle, handle or id of each user or AI to add, at most 50"},"description":{"type":"string","description":"optional description, up to 1000 characters"},"organization":{"type":"string","description":"optional: the address (slug) of the organization to create the group in, which you must be a member of and not a guest; your home organization when left out"}},"required":["name","members"]}`),
 	}, t.guard(t.createGroup))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "update_profile",
@@ -273,14 +273,17 @@ func count(flags ...bool) int {
 	return n
 }
 
-// createGroup makes a group of the AI's owner with the AI and the named members (AGRP-01); a
-// member the owner cannot add makes the server refuse the whole group, and the error lists them
-// (AGRP-02).
+// createGroup makes a group, as the AI itself, in the organization the AI names (its address) or else its home
+// organization, with the AI and the named members (AGRP-01, ORG-03); a member the AI cannot add makes the server
+// refuse the whole group, and the error lists them (AGRP-02). The answer names the organization the group belongs
+// to. A 403 means the AI may not create groups there - it is not a member of it, or only a guest -, which the
+// server does not spell out for organizations the caller is not in, so the error does (OMEM-04).
 func (t *tools) createGroup(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
-		Name        string   `json:"name"`
-		Description string   `json:"description"`
-		Members     []string `json:"members"`
+		Name         string   `json:"name"`
+		Description  string   `json:"description"`
+		Members      []string `json:"members"`
+		Organization string   `json:"organization"`
 	}
 	if err := decode(args, &a); err != nil {
 		return "", err
@@ -291,8 +294,17 @@ func (t *tools) createGroup(ctx context.Context, args json.RawMessage) (string, 
 	if len(a.Members) == 0 {
 		return "", errors.New("members is required: list the @handles or ids of the users and AIs to add")
 	}
+	org := strings.TrimSpace(a.Organization)
 	var g dto.CreatedGroup
-	if err := t.api.json(ctx, http.MethodPost, "agent/groups", nil, dto.CreateGroupRequest{Name: a.Name, Description: a.Description, Members: a.Members}, &g); err != nil {
+	err := t.api.json(ctx, http.MethodPost, "agent/groups", nil,
+		dto.CreateGroupRequest{Name: a.Name, Description: a.Description, Members: a.Members, Org: org}, &g)
+	var refusal *statusError
+	switch {
+	case errors.As(err, &refusal) && refusal.status == http.StatusForbidden && org != "":
+		return "", fmt.Errorf("forbidden (403): you cannot create a group in %q: it must be an organization you belong to as a member or an admin, not as a guest", org)
+	case errors.As(err, &refusal) && refusal.status == http.StatusForbidden:
+		return "", errors.New("forbidden (403): you cannot create a group in your home organization: guests cannot create groups, and you must be a member or an admin there")
+	case err != nil:
 		return "", err
 	}
 	return marshal(g)
