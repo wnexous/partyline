@@ -433,13 +433,26 @@ func (s *Service) Messages(ctx context.Context, p authn.Principal, roomID string
 	return list, more, err
 }
 
-// Resume clears the loop guard: resets the agent streak and resumes agent delivery (DLV-09).
-// Requires manage.
+// Resume clears the loop guard: resets the agent streak and resumes agent delivery (DLV-09). A group needs
+// manage. A DM, which nobody manages, is resumed by whoever can see it as a user: its human participants and
+// whoever manages one of its AI participants (access.CanResume). Whoever cannot see the room gets
+// access.ErrNotFound and whoever sees it and may not resume it access.ErrForbidden.
 func (s *Service) Resume(ctx context.Context, p authn.Principal, roomID string) (Room, error) {
-	if _, err := s.authorize(ctx, p, roomID, dto.LevelManage); err != nil {
+	l, err := s.authorize(ctx, p, roomID, dto.LevelView)
+	if err != nil {
 		return Room{}, err
 	}
-	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+	r, err := s.store.R().GetRoom(ctx, roomID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Room{}, access.ErrNotFound
+	}
+	if err != nil {
+		return Room{}, err
+	}
+	if !access.CanResume(r.Kind, p, l) {
+		return Room{}, access.ErrForbidden
+	}
+	err = s.store.WithTx(ctx, func(q *db.Queries) error {
 		return q.ResumeRoom(ctx, db.ResumeRoomParams{UpdatedAt: s.now().UnixMilli(), ID: roomID})
 	})
 	if err != nil {

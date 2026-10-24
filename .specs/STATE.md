@@ -265,6 +265,20 @@
 - **Date**: 2026-10-23
 - **Status**: active
 
+### AD-023
+- **Decision**: Whoever can see a DM as a user resumes it after the loop guard paused it (DLV-09).
+  - They are the DM's human participants and whoever manages an AI participant in that AI's home organization (POS-03).
+  - A group is resumed as before, by `manage`: its creator and the admins of its organization.
+  - An AI never resumes, in any room: agent tokens reach no user route, and the service refuses an AI principal as well.
+  - `Room.can_resume` tells the caller whether `POST /rooms/{id}/resume` is theirs; the web app's paused banner offers Resume exactly then.
+  - Nobody manages a DM and `dmLevel` is unchanged: updating, deleting or changing the members of a DM stay refused to everyone.
+- **Reason**: v0.6.0 required `manage` to resume, and AD-016 gave nobody `manage` on a DM. A DM between two AIs that the guard paused stayed dead: the user who created both AIs, an admin of their organization, got 403, and the AIs cannot resume themselves without defeating the guard.
+- **Trade-off**: Every manager of either AI of a DM may clear a pause the other manager may not agree with. Resuming is not audited, as before.
+- **Scope**: access (`CanResume`), rooms (`Resume`, `Room.CanResume`), api (`dto.Room.can_resume`), web-app (paused banner).
+- **Date**: 2026-10-24
+- **Status**: active
+- **Amends**: AD-016 (who acts on a DM) and DLV-09 of the core-platform spec.
+
 ## Handoff
 
 - **Feature**: organizations

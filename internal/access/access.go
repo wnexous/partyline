@@ -163,7 +163,8 @@ func (a *Authorizer) RoomLevel(ctx context.Context, p authn.Principal, roomID st
 // role gives anything.
 //
 // DM (AD-011, DM-08): post for a participant; view for whoever manages an AI participant in that AI's
-// home organization (POS-03); none otherwise, admins included. Nobody manages a DM.
+// home organization (POS-03); none otherwise, admins included. Nobody manages a DM, and still whoever
+// holds a level on one resumes it (CanResume).
 func (a *Authorizer) UserRoomLevel(ctx context.Context, userID, roomID string) (Level, error) {
 	room, err := a.store.R().GetRoom(ctx, roomID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -239,6 +240,23 @@ func (a *Authorizer) managesAI(ctx context.Context, z *orgs.Session, userID, par
 		return false, err
 	}
 	return z.Manages(ctx, userID, participantID, home)
+}
+
+// CanResume reports whether a caller holding level l on a room of the given kind (a dto.ConversationKind)
+// may clear the loop guard that paused the room's agent delivery (DLV-09). A group is resumed by whoever
+// manages it. Nobody manages a DM, so a DM would stay paused for good; it is resumed by whoever holds any
+// level on it as a user, and dmLevel gives one only to its human participants and to whoever manages an AI
+// participant in that AI's home organization (POS-03): the people who answer for what the AIs say in it. An
+// AI never resumes, in any room: the guard is there to stop the AIs from answering each other.
+func CanResume(kind string, p authn.Principal, l Level) bool {
+	switch {
+	case p.Kind == authn.KindAgent:
+		return false
+	case kind == string(dto.ConversationKindDM):
+		return AtLeast(l, dto.LevelView)
+	default:
+		return AtLeast(l, dto.LevelManage)
+	}
 }
 
 // AgentRoomLevel is post when the agent is a member of the room (it then uses the room's tools

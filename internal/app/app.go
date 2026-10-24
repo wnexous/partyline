@@ -187,7 +187,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Intelligences: intelligences.New(intelligences.Deps{Store: st, Access: az, Bus: bus, Blobs: blobs, Online: presence.Online, Now: opts.Now}),
 	}
 	a.Presence = presence
-	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Audit: auditLog, Now: opts.Now})
+	a.Agents = agents.NewRegistry(agents.Deps{Store: st, Access: az, Bus: bus, Presence: a.Presence, Audit: auditLog, Logger: opts.Logger, Now: opts.Now})
 	a.Conversations = conversations.New(conversations.Deps{
 		Store: st, Rooms: a.Rooms, Intelligences: a.Intelligences, Bus: bus, Queue: a.Platform, Access: az, AllowCreate: a.Agents.AllowCreate,
 		Online: a.Presence.Online, Now: opts.Now,

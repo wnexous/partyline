@@ -66,7 +66,8 @@ func dmRoomSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T) m
 // DM-08, AD-011, AD-016 over HTTP: the participant posts; whoever manages the AI in its home organization
 // (the manager that created it, and the admin whose position is above the creator's) only views;
 // everybody else - a peer, a member, an inviter, a guest, an outsider, an instance admin - gets 404; and
-// nobody manages a DM.
+// nobody manages a DM. Nobody manages it, yet everybody who sees it resumes it after the loop guard (DLV-09):
+// there is no one else to, and the AIs it paused cannot.
 func TestDMRoutesAuthMatrix(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")
@@ -95,7 +96,7 @@ func TestDMRoutesAuthMatrix(t *testing.T) {
 		}, dmWant(403, 403, 404)},
 		{"resume", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Post(room(res, "/resume"), nil)
-		}, dmWant(403, 403, 404)},
+		}, dmWant(200, 200, 404)},
 	})
 
 	// The DM lists for its participant only: the managers view it by id.

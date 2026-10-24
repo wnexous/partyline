@@ -766,6 +766,87 @@ func TestDMRoomLevel(t *testing.T) {
 	require.Equal(t, dto.LevelPost, l)
 }
 
+// DLV-09, DM-08, POS-03: a group is resumed by whoever manages it. Nobody manages a DM, so a DM is resumed by
+// the people who can see it: its human participants and whoever manages one of its AI participants in that AI's
+// home organization - the creator of an AI that holds no position, the holders of the positions above it.
+// Whoever cannot see the DM does not, the AI's host and the admins of the organization and of the instance
+// included, and neither does a member of a group who only posts.
+func TestCanResume(t *testing.T) {
+	f := newFixture(t)
+	c := newDMCast(t, f)
+	withAtlas := f.dm(t, c.alice, c.alice, c.atlas)
+	withOrion := f.dm(t, c.alice, c.alice, c.orion)
+	withNomad := f.dm(t, c.alice, c.alice, c.nomad)
+	aiToAI := f.dm(t, c.host, c.atlas, c.orion)
+	humans := f.dm(t, c.alice, c.alice, c.bob)
+	group := f.group(t, c.acme, c.cara, c.cara)
+	f.addUserMember(t, group, c.alice)
+
+	for _, tc := range []struct {
+		room, who string
+		name      string
+		want      bool
+	}{
+		{withAtlas, c.alice, "the participant of a DM with an AI", true},
+		{withAtlas, c.lead, "the holder of the position above the AI's", true},
+		{withAtlas, c.boss, "the holder of a position two levels above", true},
+		{withAtlas, c.peer, "a holder of the AI's own position", false},
+		{withAtlas, c.bob, "the creator of an AI that holds a position", false},
+		{withAtlas, c.host, "the user that hosts the AI", false},
+		{withAtlas, c.admin, "an admin of the organization without a position", false},
+		{withAtlas, c.plain, "a member of the organization with no relation to the AI", false},
+		{withAtlas, c.gxBoss, "a user of another organization", false},
+		{withAtlas, c.instanceAdmin, "an admin of the instance", false},
+		{withOrion, c.cara, "the creator of an AI without a position", true},
+		{withOrion, c.peer, "a holder of a position, not the creator", false},
+		{withNomad, c.alice, "the participant of a DM with an AI that has no home", true},
+		{withNomad, c.cara, "anyone, for an AI that has no home", false},
+		{aiToAI, c.lead, "the manager of the first AI of a DM between two AIs", true},
+		{aiToAI, c.cara, "the manager of the second AI of a DM between two AIs", true},
+		{aiToAI, c.alice, "a user that manages neither AI", false},
+		{aiToAI, c.host, "the host of both AIs", false},
+		{aiToAI, c.admin, "an admin of the organization that manages neither AI", false},
+		{humans, c.alice, "the first user of a DM between users", true},
+		{humans, c.bob, "the second user of a DM between users", true},
+		{humans, c.boss, "the top of the chart, for a DM between users", false},
+		{group, c.cara, "the creator of a group", true},
+		{group, c.admin, "an admin of the group's organization", true},
+		{group, c.alice, "a member of the group who only posts", false},
+		{group, c.bob, "a member of the organization outside the group", false},
+		{group, c.instanceAdmin, "an admin of the instance", false},
+	} {
+		kind := f.kindOf(t, tc.room)
+		require.Equal(t, tc.want, CanResume(kind, user(tc.who), f.levelOf(t, tc.who, tc.room)), tc.name)
+	}
+
+	// The AI is a member of the rooms it talks in and posts there, and it still never resumes them: the
+	// guard stops the AIs from answering each other.
+	for _, room := range []string{withAtlas, aiToAI} {
+		ai := authn.Principal{Kind: authn.KindAgent, UserID: c.host, AgentID: c.atlas}
+		l, err := f.az.RoomLevel(context.Background(), ai, room)
+		require.NoError(t, err)
+		require.Equal(t, dto.LevelPost, l, "a participant of the DM")
+		require.False(t, CanResume(f.kindOf(t, room), ai, l), "an AI never resumes")
+	}
+	f.addAgentMember(t, group, c.atlas)
+	ai := authn.Principal{Kind: authn.KindAgent, UserID: c.host, AgentID: c.atlas}
+	l, err := f.az.RoomLevel(context.Background(), ai, group)
+	require.NoError(t, err)
+	require.False(t, CanResume(f.kindOf(t, group), ai, l), "nor in a group it is a member of")
+
+	// Without any level there is nothing to resume, whatever the room.
+	require.False(t, CanResume(f.kindOf(t, withAtlas), user(c.peer), None))
+	require.False(t, CanResume(f.kindOf(t, group), user(c.cara), None))
+}
+
+// kindOf is the kind of the stored room.
+func (f *fixture) kindOf(t *testing.T, roomID string) string {
+	t.Helper()
+	r, err := f.st.R().GetRoom(context.Background(), roomID)
+	require.NoError(t, err)
+	return r.Kind
+}
+
 // DM-08, AD-016: viewing follows the chart as it is now: a manager who is demoted, moved or disabled
 // stops viewing at once, and a position that is gained starts it.
 func TestDMViewFollowsTheChart(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -88,6 +89,8 @@ type Deps struct {
 	Presence *Presence
 	// Audit records the adoption of a v0.3 identity (MIG-02); optional.
 	Audit *audit.Log
+	// Logger receives the failures of best-effort work; defaults to slog.Default().
+	Logger *slog.Logger
 	// Now returns the current time; defaults to time.Now.
 	Now func() time.Time
 }
@@ -100,6 +103,7 @@ type Registry struct {
 	bus      *events.Bus
 	presence *Presence
 	audit    *audit.Log
+	log      *slog.Logger
 	now      func() time.Time
 	posts    *postLimiter
 	creates  *postLimiter
@@ -129,8 +133,11 @@ func NewRegistry(d Deps) *Registry {
 	if d.Now == nil {
 		d.Now = time.Now
 	}
+	if d.Logger == nil {
+		d.Logger = slog.Default()
+	}
 	return &Registry{
-		store: d.Store, az: d.Access, bus: d.Bus, presence: d.Presence, audit: d.Audit, now: d.Now,
+		store: d.Store, az: d.Access, bus: d.Bus, presence: d.Presence, audit: d.Audit, log: d.Logger, now: d.Now,
 		posts: newPostLimiter(PostLimit, PostWindow, d.Now), creates: newPostLimiter(CreateLimit, CreateWindow, d.Now),
 		machines: map[machineKey]machineSeen{},
 	}
@@ -386,10 +393,14 @@ func (r *Registry) membersChanged(roomIDs []string) {
 // manager, which stops them and shows what to do (CID-02). The AI that is the only admin of an organization is
 // not deleted (orgs.ErrLastAdmin, OMEM-05). Afterwards its live session ends as that of a deleted AI and every
 // organization it belonged to is told its chart changed: the AIs and guests it created or invited lose that link.
+//
+// The commit is the end of everything that can fail: once the row is gone the delete has happened, and what
+// follows (afterDelete) is best effort that is logged and never returned, so a delete that took effect answers
+// success (204) whatever the live session, the subscribers or the request do after it.
 func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string) error {
-	var roomIDs, orphaned, orgIDs []string
+	var gone deleted
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
-		roomIDs, orphaned, orgIDs = nil, nil, nil
+		gone = deleted{}
 		a, err := authorizeDelete(ctx, q, p, agentID)
 		if err != nil {
 			return err
@@ -406,7 +417,7 @@ func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string
 			return err
 		}
 		for _, m := range memberships {
-			orgIDs = append(orgIDs, m.Organization.ID)
+			gone.orgIDs = append(gone.orgIDs, m.Organization.ID)
 		}
 		// Read before the deletion: the foreign key empties operator_iid with it.
 		operated, err := q.ListConnectorsOperatedBy(ctx, sql.NullString{String: agentID, Valid: true})
@@ -414,7 +425,7 @@ func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string
 			return err
 		}
 		for _, c := range operated {
-			orphaned = append(orphaned, c.ID)
+			gone.connectionIDs = append(gone.connectionIDs, c.ID)
 		}
 		if r.audit != nil {
 			profile, err := q.GetIntelligence(ctx, agentID) // an AI of a fixture may have none
@@ -428,29 +439,77 @@ func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string
 				return err
 			}
 		}
-		if roomIDs, err = q.DeleteAgentMemberships(ctx, agentID); err != nil {
+		memberOf, err := q.DeleteAgentMemberships(ctx, agentID)
+		if err != nil {
 			return err
 		}
-		return q.DeleteAgent(ctx, agentID) // cursors cascade
+		if err := q.DeleteAgent(ctx, agentID); err != nil { // cursors cascade
+			return err
+		}
+		// Which of its rooms went with it (its DMs) is read here, once it is deleted, so that the cleanup after the
+		// commit reads nothing: a room cannot be mistaken for a surviving one because a read failed.
+		for _, id := range memberOf {
+			_, err := q.GetRoom(ctx, id)
+			switch {
+			case errors.Is(err, sql.ErrNoRows):
+				gone.dmIDs = append(gone.dmIDs, id)
+			case err != nil:
+				return err
+			default:
+				gone.groupIDs = append(gone.groupIDs, id)
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return err
 	}
-	r.presence.Kick(ctx, agentID, CloseDeleted, ReasonDeleted)
-	if len(orphaned) > 0 {
-		r.bus.Publish(events.ConnectorsOrphaned{IDs: orphaned})
-	}
-	for _, id := range roomIDs {
-		if _, err := r.store.R().GetRoom(ctx, id); errors.Is(err, sql.ErrNoRows) {
-			r.bus.Publish(events.RoomChanged{RoomID: id, Deleted: true}) // a DM of the agent
-			continue
-		}
-		r.bus.Publish(events.MembersChanged{RoomID: id})
-	}
-	for _, id := range orgIDs {
-		r.bus.Publish(events.OrgChanged{OrgID: id})
-	}
+	r.afterDelete(ctx, agentID, gone)
 	return nil
+}
+
+// deleted is what the transaction of Delete found out about the AI it deleted, for the cleanup that follows.
+type deleted struct {
+	orgIDs        []string // the organizations it belonged to
+	groupIDs      []string // the rooms it was a member of that stay: their member list changed
+	dmIDs         []string // the rooms it was a member of that went with it
+	connectionIDs []string // the connections it operated, which have no operator now
+}
+
+// afterDelete is the cleanup of an AI whose row is gone: its live session ends as that of a deleted AI and the
+// clients and the connector manager are told what changed. It has no result and touches no database: the delete
+// has happened, so a step that fails is logged, the steps after it still run, and nothing here can be turned
+// into an error for the caller (a panic of a session included).
+func (r *Registry) afterDelete(ctx context.Context, agentID string, d deleted) {
+	r.bestEffort(ctx, agentID, "end the live session", func() {
+		r.presence.Drop(agentID, CloseDeleted, ReasonDeleted)
+	})
+	r.bestEffort(ctx, agentID, "announce the deletion", func() {
+		if len(d.connectionIDs) > 0 {
+			r.bus.Publish(events.ConnectorsOrphaned{IDs: d.connectionIDs})
+		}
+		for _, id := range d.groupIDs {
+			r.bus.Publish(events.MembersChanged{RoomID: id})
+		}
+		for _, id := range d.dmIDs {
+			r.bus.Publish(events.RoomChanged{RoomID: id, Deleted: true})
+		}
+		for _, id := range d.orgIDs {
+			r.bus.Publish(events.OrgChanged{OrgID: id})
+		}
+	})
+}
+
+// bestEffort runs a step of work that follows a change that is already committed. A step that panics is logged and
+// recovered, so that it neither fails the caller nor skips the steps after it. Like the API's recoverer, it logs
+// the recovered value.
+func (r *Registry) bestEffort(ctx context.Context, agentID, step string, fn func()) {
+	defer func() {
+		if v := recover(); v != nil {
+			r.log.ErrorContext(ctx, "agents: cleanup after a delete failed", "agent_id", agentID, "step", step, "panic", v)
+		}
+	}()
+	fn()
 }
 
 func nullMillis(t time.Time) sql.NullInt64 { return sql.NullInt64{Int64: t.UnixMilli(), Valid: true} }

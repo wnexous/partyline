@@ -138,6 +138,12 @@ func (p *Presence) Live(agentID string) (Live, bool) {
 // Detach removes s when it is still the agent's session and marks the agent offline. It
 // reports whether s was the current session (false after a takeover or a reconnect).
 func (p *Presence) Detach(ctx context.Context, agentID string, s Session) bool {
+	return p.detach(ctx, agentID, s, true)
+}
+
+// detach is Detach; stamp tells whether the agent's last_seen_at is written, which is a write on the
+// single writer connection.
+func (p *Presence) detach(ctx context.Context, agentID string, s Session, stamp bool) bool {
 	p.mu.Lock()
 	cur, ok := p.sessions[agentID]
 	if !ok || cur.session != s {
@@ -146,7 +152,9 @@ func (p *Presence) Detach(ctx context.Context, agentID string, s Session) bool {
 	}
 	delete(p.sessions, agentID)
 	p.mu.Unlock()
-	_ = p.touch(ctx, agentID) // best effort: the agent row may be gone already
+	if stamp {
+		_ = p.touch(ctx, agentID) // best effort: the agent row may be gone already
+	}
 	p.bus.Publish(events.AgentPresence{AgentID: agentID, OwnerID: cur.ownerID, Online: false})
 	return true
 }
@@ -169,12 +177,25 @@ func (p *Presence) Session(agentID string) (Session, bool) {
 
 // Kick closes the agent's live session, if any, with code and reason and marks it offline.
 func (p *Presence) Kick(ctx context.Context, agentID string, code websocket.StatusCode, reason string) {
+	p.end(ctx, agentID, code, reason, true)
+}
+
+// Drop is Kick for an AI whose row is gone: the session ends and the agent goes offline the same way, and
+// nothing is written, so it never waits for the database. The cleanup of a delete uses it, which must not
+// hold the answer of a delete that has already happened.
+func (p *Presence) Drop(agentID string, code websocket.StatusCode, reason string) {
+	p.end(context.Background(), agentID, code, reason, false)
+}
+
+// end closes the agent's session and detaches it, also when closing it panics: a session that failed to close
+// must not stay in the presence as an agent that is online.
+func (p *Presence) end(ctx context.Context, agentID string, code websocket.StatusCode, reason string, stamp bool) {
 	s, ok := p.Session(agentID)
 	if !ok {
 		return
 	}
+	defer p.detach(ctx, agentID, s, stamp)
 	s.Close(code, reason)
-	p.Detach(ctx, agentID, s)
 }
 
 func (p *Presence) touch(ctx context.Context, agentID string) error {
