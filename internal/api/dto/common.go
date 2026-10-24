@@ -128,6 +128,11 @@ const (
 	// ErrorCodeOrganizationRequired is a session or an AI start that names no usable organization: the
 	// host belongs to none, or --org names one that does not exist (422, ORG-04).
 	ErrorCodeOrganizationRequired ErrorCode = "organization_required"
+	// ErrorCodeOrganizationNotEmpty is the refusal to delete an organization that still owns AIs,
+	// connections or groups; Details counts them (409, ORG-06).
+	ErrorCodeOrganizationNotEmpty ErrorCode = "organization_not_empty"
+	// ErrorCodeLastAdmin is a change that would leave an organization without an admin (409, OMEM-05).
+	ErrorCodeLastAdmin ErrorCode = "last_admin"
 	// ErrorCodeIdentityOnline is a merge of an AI that has a live session: it must be offline
 	// (409, MRG-02).
 	ErrorCodeIdentityOnline ErrorCode = "identity_online"

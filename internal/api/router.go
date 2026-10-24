@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/agents"
@@ -19,6 +20,7 @@ import (
 	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
@@ -35,6 +37,8 @@ type Deps struct {
 	Intelligences *intelligences.Service
 	// Conversations opens direct messages and creates groups.
 	Conversations *conversations.Service
+	// Orgs is the organization use cases: organizations, their chart, members and invitations.
+	Orgs *orgs.Service
 	// Connectors manages connectors and their chats.
 	Connectors *connectors.Service
 	// Hooks finds the running connector of POST /api/v1/hooks/{id}; FileLinks resolves the
@@ -96,6 +100,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /install.sh", s.installScript)
 	s.authRoutes(mux)
 	s.adminRoutes(mux)
+	s.orgRoutes(mux)
 	s.roomRoutes(mux)
 	s.conversationRoutes(mux)
 	s.intelligenceRoutes(mux)
@@ -177,6 +182,7 @@ func (s *server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 func mapError(err error) error {
 	var verr *validation.Error
 	var refused *conversations.MembersRefusedError
+	var notEmpty *orgs.NotEmptyError
 	switch {
 	case errors.As(err, &verr):
 		return httpx.Invalid(verr.Fields)
@@ -202,6 +208,18 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, err.Error())
 	case errors.Is(err, agents.ErrNotRegistered):
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent not registered: connect the channel first")
+	case errors.As(err, &notEmpty):
+		he := httpx.NewError(http.StatusConflict, dto.ErrorCodeOrganizationNotEmpty, "the organization still owns AIs, connections or groups")
+		he.Details = map[string]string{
+			"agents":     strconv.FormatInt(notEmpty.Agents, 10),
+			"connectors": strconv.FormatInt(notEmpty.Connectors, 10),
+			"groups":     strconv.FormatInt(notEmpty.Groups, 10),
+		}
+		return he
+	case errors.Is(err, orgs.ErrLastAdmin):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeLastAdmin, "an organization needs at least one admin")
+	case errors.Is(err, orgs.ErrSlugTaken):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "slug already taken")
 	case errors.Is(err, access.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
 	case errors.Is(err, avatars.ErrInvalid):

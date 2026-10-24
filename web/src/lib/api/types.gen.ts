@@ -494,6 +494,15 @@ export const ErrorCodeMembersRefused = "members_refused";
  */
 export const ErrorCodeOrganizationRequired = "organization_required";
 /**
+ * ErrorCodeOrganizationNotEmpty is the refusal to delete an organization that still owns AIs,
+ * connections or groups; Details counts them (409, ORG-06).
+ */
+export const ErrorCodeOrganizationNotEmpty = "organization_not_empty";
+/**
+ * ErrorCodeLastAdmin is a change that would leave an organization without an admin (409, OMEM-05).
+ */
+export const ErrorCodeLastAdmin = "last_admin";
+/**
  * ErrorCodeIdentityOnline is a merge of an AI that has a live session: it must be offline
  * (409, MRG-02).
  */
@@ -501,7 +510,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodeLastAdmin | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1627,6 +1636,82 @@ export interface LiveIntelligenceChanged {
  */
 export interface LiveLagged {
   type: typeof LiveEventTypeLagged;
+}
+
+//////////
+// source: orgs.go
+
+/**
+ * Permission is what a membership allows in an organization itself, independent of the position
+ * the identity holds there (OMEM-04).
+ */
+export const PermissionAdmin = "admin";
+export const PermissionMember = "member";
+export const PermissionGuest = "guest";
+/**
+ * Organization permissions.
+ */
+export type Permission = typeof PermissionAdmin | typeof PermissionMember | typeof PermissionGuest;
+/**
+ * Organization is an organization as one of its members sees it: its address, its avatar and the
+ * viewer's own permission and position (ORG-01, OMEM-03).
+ */
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  /**
+   * AvatarURL is /api/v1/orgs/{id}/avatar?v=<sha>; absent without an avatar.
+   */
+  avatar_url?: string;
+  /**
+   * Permission and PositionID are the viewer's membership ("" for no position).
+   */
+  permission: Permission;
+  position_id?: string;
+  created_at: string /* RFC 3339 */;
+  updated_at: string /* RFC 3339 */;
+}
+/**
+ * CreateOrganizationRequest is the body of POST /orgs. The creator becomes its admin, holding the
+ * root position (ORG-01).
+ */
+export interface CreateOrganizationRequest {
+  name: string;
+}
+/**
+ * UpdateOrganizationRequest is the body of PATCH /orgs/{org}; absent fields are unchanged. Slug is
+ * the address, lower-cased, 1-40 characters of a-z, 0-9 and single hyphens between them.
+ */
+export interface UpdateOrganizationRequest {
+  name?: string;
+  slug?: string;
+}
+/**
+ * Position is one node of an organization's chart (POS-01). ParentID is absent for a root.
+ */
+export interface Position {
+  id: string;
+  name: string;
+  parent_id?: string;
+}
+/**
+ * OrgMember is one membership of an organization as the members list shows it (OMEM-01, OMEM-03):
+ * the identity, its permission and position, and the inviter of a guest.
+ */
+export interface OrgMember {
+  intelligence: IntelligenceRef;
+  permission: Permission;
+  /**
+   * PositionID and PositionName are absent when the member holds no position.
+   */
+  position_id?: string;
+  position_name?: string;
+  /**
+   * InvitedBy is the identity that invited a guest (POS-05); absent for other permissions.
+   */
+  invited_by?: IntelligenceRef;
+  joined_at: string /* RFC 3339 */;
 }
 
 //////////

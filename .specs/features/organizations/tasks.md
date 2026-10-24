@@ -465,11 +465,11 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: `authed`, `avatar_handlers.go` pattern
 **Requirement**: ORG-01, ORG-06, OMEM-04, CHART-02
 **Done when**:
-- [ ] e2e: the design's "Organizations" matrix for every role, using `OrgRoles`
-- [ ] 409 `organization_not_empty` observed with counts (L-017)
-- [ ] An agent token → 403 on `POST /orgs`
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] e2e: the design's "Organizations" matrix for every role, using `OrgRoles`
+- [x] 409 `organization_not_empty` observed with counts (L-017)
+- [x] An agent token → 403 on `POST /orgs`
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): serve organizations`

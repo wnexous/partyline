@@ -227,6 +227,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Config:        cfg,
 		Users:         usersSvc,
 		Rooms:         a.Rooms,
+		Orgs:          a.Orgs,
 		Agents:        a.Agents,
 		Intelligences: a.Intelligences,
 		Conversations: a.Conversations,

@@ -520,3 +520,24 @@ Where a section refines the design, it says so.
 - **A guest host's AI is a guest.** When the host of a new folder AI is only a guest of the AI's home organization, the AI joins as a `guest` with the host as its inviter, never as a `member` (which only an admin could delete). See `internal/agents/folder.go` and `TestAGuestHostsNewAIJoinsAsTheirGuest`.
 - **Admin invitations lapse with the inviter's admin right.** On accept, an invitation for `member` or `admin` needs its inviter to still be an admin of the organization. Otherwise the invitation is deleted and the answer is `ErrGone`. A guest invitation whose inviter left still stands, and the guest then has no inviter.
 - **Re-inviting a guest keeps the design's rule.** The latest inviter of a pending guest invitation becomes responsible for the guest. The invitee sees who invites them before accepting, so this is not a takeover. The review's third finding is declined.
+
+## T12: Organization routes and DTOs (ORG-01, ORG-06, OMEM-04, CHART-02)
+
+- **Routes** (`internal/api/orgs_handlers.go`, registered by `orgRoutes`): `GET|POST /api/v1/orgs`,
+  `GET|PATCH|DELETE /api/v1/orgs/{org}`, `PUT|DELETE /api/v1/orgs/{org}/avatar` and, added because the
+  DTO's `avatar_url` points at it, `GET /api/v1/orgs/{org}/avatar` (members only, `Cache-Control:
+  private` + `ETag` like an intelligence avatar).
+- **`{org}` is an id or a slug**: the handler resolves it through `orgs.Service.Resolve` and then calls
+  the service with the organization's id. Authorization stays in the service, so an outsider gets 404
+  from it after a successful resolution (the matrix's Out column).
+- **DTOs** (`internal/api/dto/orgs.go`): `Organization`, `CreateOrganizationRequest`,
+  `UpdateOrganizationRequest`, `Position` and `OrgMember` (the last two are filled by T13 and T14).
+  `Organization` carries the viewer's `permission` and `position_id`; `avatar_url` is
+  `/api/v1/orgs/{id}/avatar?v=<sha>` and absent without an avatar.
+- **Error codes**: `organization_not_empty` (409, ORG-06) and `last_admin` (409, OMEM-05).
+  `mapError` renders a `*orgs.NotEmptyError` with `details` `agents`, `connectors` and `groups` as
+  decimal strings, so the settings page can say what to delete first. `orgs.ErrSlugTaken` is 409
+  `conflict`, as `handlers` already answers other uniqueness refusals.
+- **Statuses**: `POST` 201 with the creator's `Organization` (root `position_id` set); `GET` and
+  `PATCH` 200; `DELETE` 204. Agent tokens never reach these paths (the middleware's
+  `/api/v1/agent/` rule answers 403).
