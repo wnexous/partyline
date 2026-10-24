@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 55,
+  "next_id": 57,
   "lessons": [
     {
       "id": "L-001",
@@ -868,17 +868,19 @@
       "text": "When design or contract notes change an AC's observable outcome, amend the spec text in the same change",
       "signal": "spec_deviation",
       "scope": "specs",
-      "status": "candidate",
+      "status": "confirmed",
       "features": [
-        "intelligences"
+        "intelligences",
+        "organizations"
       ],
-      "recurrence": 1,
+      "recurrence": 2,
       "harmful": 0,
       "evidence": [
-        "PEOP-04 service.go:396-401, DM-02 direct_messages_test.go:304, CLI-04 setup_harness.go:233, PEOP-01 contract-notes T26 (specs)"
+        "PEOP-04 service.go:396-401, DM-02 direct_messages_test.go:304, CLI-04 setup_harness.go:233, PEOP-01 contract-notes T26 (specs)",
+        "validation.md Issue 3; internal/agents/placement.go:72; internal/api/agent_default_placement_test.go:177 (specs)"
       ],
       "created": "2026-10-22T18:03:33Z",
-      "last_seen": "2026-10-22T18:03:33Z"
+      "last_seen": "2026-10-24T12:57:08Z"
     },
     {
       "id": "L-049",
@@ -976,17 +978,55 @@
       "text": "State the error code and HTTP status of every refusal an acceptance criterion implies, not only the accepted case",
       "signal": "spec_precision_gap",
       "scope": "spec",
+      "status": "confirmed",
+      "features": [
+        "connection-identity",
+        "organizations"
+      ],
+      "recurrence": 2,
+      "harmful": 0,
+      "evidence": [
+        "CID-01 (validation.md) (spec)",
+        "validation.md Issue 2b; internal/api/org_chart_handlers_test.go:254 (spec)"
+      ],
+      "created": "2026-10-23T08:41:56Z",
+      "last_seen": "2026-10-24T12:56:56Z"
+    },
+    {
+      "id": "L-055",
+      "key": "spec_precision_gap::when design or contract notes change an ac s observable outcome amend the spec text in the same change",
+      "text": "When design or contract notes change an AC's observable outcome, amend the spec text in the same change",
+      "signal": "spec_precision_gap",
+      "scope": "specs",
       "status": "candidate",
       "features": [
-        "connection-identity"
+        "organizations"
       ],
       "recurrence": 1,
       "harmful": 0,
       "evidence": [
-        "CID-01 (validation.md) (spec)"
+        "validation.md Issue 2a/3; design.md:357; internal/agents/placement.go:72 (specs)"
       ],
-      "created": "2026-10-23T08:41:56Z",
-      "last_seen": "2026-10-23T08:41:56Z"
+      "created": "2026-10-24T12:56:56Z",
+      "last_seen": "2026-10-24T12:56:56Z"
+    },
+    {
+      "id": "L-056",
+      "key": "ac_gap::assert where a moved or re parented record ends up not only that it still exists",
+      "text": "Assert where a moved or re-parented record ends up, not only that it still exists",
+      "signal": "ac_gap",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "organizations"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/api/positions_handlers_test.go:114 (tests)"
+      ],
+      "created": "2026-10-24T12:56:56Z",
+      "last_seen": "2026-10-24T12:56:56Z"
     }
   ]
 }

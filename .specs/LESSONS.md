@@ -32,6 +32,18 @@ Corroborated across multiple features. Safe to apply as guidance.
 - evidence: validation.md iteration 3 M33 internal/agents/identity.go:378 (tests) (+1 more)
 - last seen: 2026-10-22T18:03:33Z
 
+### L-048 - When design or contract notes change an AC's observable outcome, amend the spec text in the same change
+- signal: `spec_deviation` · recurrence: 2 feature(s) · scope: `specs` · harmful: 0
+- features: intelligences, organizations
+- evidence: PEOP-04 service.go:396-401, DM-02 direct_messages_test.go:304, CLI-04 setup_harness.go:233, PEOP-01 contract-notes T26 (specs) (+1 more)
+- last seen: 2026-10-24T12:57:08Z
+
+### L-054 - State the error code and HTTP status of every refusal an acceptance criterion implies, not only the accepted case
+- signal: `spec_precision_gap` · recurrence: 2 feature(s) · scope: `spec` · harmful: 0
+- features: connection-identity, organizations
+- evidence: CID-01 (validation.md) (spec) (+1 more)
+- last seen: 2026-10-24T12:56:56Z
+
 ## Candidates (under observation - do NOT load as guidance yet)
 
 Seen once or not yet corroborated. Tracked, not trusted.
@@ -288,12 +300,6 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: PEOP-04 vs DM-08 internal/access/access.go:138-176 (specs)
 - last seen: 2026-10-22T18:03:33Z
 
-### L-048 - When design or contract notes change an AC's observable outcome, amend the spec text in the same change
-- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `specs` · harmful: 0
-- features: intelligences
-- evidence: PEOP-04 service.go:396-401, DM-02 direct_messages_test.go:304, CLI-04 setup_harness.go:233, PEOP-01 contract-notes T26 (specs)
-- last seen: 2026-10-22T18:03:33Z
-
 ### L-049 - Timing ACs about disconnects must state the bound for unclean network loss, not only for clean closes
 - signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `specs` · harmful: 0
 - features: intelligences
@@ -324,11 +330,17 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: X2/X2b internal/agents/gateway.go:106-108,444-446 (SES-06) (delivery)
 - last seen: 2026-10-22T21:32:45Z
 
-### L-054 - State the error code and HTTP status of every refusal an acceptance criterion implies, not only the accepted case
-- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `spec` · harmful: 0
-- features: connection-identity
-- evidence: CID-01 (validation.md) (spec)
-- last seen: 2026-10-23T08:41:56Z
+### L-055 - When design or contract notes change an AC's observable outcome, amend the spec text in the same change
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `specs` · harmful: 0
+- features: organizations
+- evidence: validation.md Issue 2a/3; design.md:357; internal/agents/placement.go:72 (specs)
+- last seen: 2026-10-24T12:56:56Z
+
+### L-056 - Assert where a moved or re-parented record ends up, not only that it still exists
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
+- features: organizations
+- evidence: internal/api/positions_handlers_test.go:114 (tests)
+- last seen: 2026-10-24T12:56:56Z
 
 ## Quarantined (failed when applied - ignore)
 
