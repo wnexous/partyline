@@ -282,7 +282,7 @@ func (q *Queries) GetMessageRoomSeq(ctx context.Context, id string) (GetMessageR
 
 const getUnlinkedAgentByHandle = `-- name: GetUnlinkedAgentByHandle :one
 SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid FROM agents a JOIN intelligences i ON i.id = a.id
-WHERE a.owner_id = ? AND a.folder = '' AND i.handle = ?
+WHERE a.owner_id = ? AND a.folder = '' AND a.creator_iid = a.owner_id AND i.handle = ?
 `
 
 type GetUnlinkedAgentByHandleParams struct {
@@ -291,7 +291,9 @@ type GetUnlinkedAgentByHandleParams struct {
 }
 
 // The owner's agent without a folder (a v0.3 identity) whose intelligence has the handle
-// (MIG-02); handles compare case-insensitively.
+// (MIG-02); handles compare case-insensitively. Only an identity the owner created is the owner's
+// to adopt: the upgrade made every v0.3 owner the creator of their agents, while the AIs left
+// behind by a deleted account (owned by its heir, created by someone else) are not.
 func (q *Queries) GetUnlinkedAgentByHandle(ctx context.Context, arg GetUnlinkedAgentByHandleParams) (Agent, error) {
 	row := q.db.QueryRowContext(ctx, getUnlinkedAgentByHandle, arg.OwnerID, arg.Handle)
 	var i Agent
@@ -315,7 +317,7 @@ func (q *Queries) GetUnlinkedAgentByHandle(ctx context.Context, arg GetUnlinkedA
 }
 
 const getUnlinkedAgentByName = `-- name: GetUnlinkedAgentByName :one
-SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid FROM agents WHERE owner_id = ? AND folder = '' AND name = ?
+SELECT id, owner_id, name, description, created_at, last_seen_at, project_id, harness, machine, connected_at, folder, platform_dropped, org_id, creator_iid FROM agents WHERE owner_id = ? AND folder = '' AND creator_iid = owner_id AND name = ?
 `
 
 type GetUnlinkedAgentByNameParams struct {
@@ -323,7 +325,7 @@ type GetUnlinkedAgentByNameParams struct {
 	Name    string
 }
 
-// The owner's agent without a folder with the v0.3 name (MIG-02).
+// The owner's agent without a folder with the v0.3 name (MIG-02), under the same rule.
 func (q *Queries) GetUnlinkedAgentByName(ctx context.Context, arg GetUnlinkedAgentByNameParams) (Agent, error) {
 	row := q.db.QueryRowContext(ctx, getUnlinkedAgentByName, arg.OwnerID, arg.Name)
 	var i Agent

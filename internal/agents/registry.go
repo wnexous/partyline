@@ -19,6 +19,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -114,6 +115,9 @@ type Registry struct {
 	// afterAppCheck runs after a tools-only call found nobody connected and before it writes the
 	// app; tests use it to attach a session in between. Nil in production.
 	afterAppCheck func()
+	// afterFolderMiss runs when a session found no AI for its folder and before it creates or adopts
+	// one; tests use it to let another session create the AI in between. Nil in production.
+	afterFolderMiss func()
 
 	// machines is the last sighting written per machine (touchMachine), guarded by machinesMu.
 	machinesMu sync.Mutex
@@ -330,19 +334,36 @@ func (r *Registry) membersChanged(roomIDs []string) {
 	}
 }
 
-// Delete removes the agent with its room memberships, grants and cursors and closes its
-// live connection; requires ownership (manage). Its direct messages go with it (DM-08): the
-// intelligence's deletion cascades to every room that names it as a participant. The platform
-// queue goes too (its rows cascade, CID-24), and the connections the agent operated have no
-// operator afterwards: the bus tells the connector manager, which stops them and shows what to
-// do (CID-02).
+// Delete deletes the AI for good in its home organization (POS-05, POS-06): the right is the organization's
+// (authorizeDelete), decided in the transaction that deletes. The AI goes with its memberships in every
+// organization and room, its grants and cursors. Its direct messages go with it (DM-08): the intelligence's
+// deletion cascades to every room that names it as a participant. The platform queue goes too (its rows cascade,
+// CID-24), and the connections the agent operated have no operator afterwards: the bus tells the connector
+// manager, which stops them and shows what to do (CID-02). The AI that is the only admin of an organization is
+// not deleted (orgs.ErrLastAdmin, OMEM-05). Afterwards its live session ends as that of a deleted AI and every
+// organization it belonged to is told its chart changed: the AIs and guests it created or invited lose that link.
 func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string) error {
-	if _, err := r.authorize(ctx, p, agentID, dto.LevelManage); err != nil {
-		return err
-	}
-	var roomIDs, orphaned []string
+	var roomIDs, orphaned, orgIDs []string
 	err := r.store.WithTx(ctx, func(q *db.Queries) error {
-		roomIDs, orphaned = nil, nil
+		roomIDs, orphaned, orgIDs = nil, nil, nil
+		a, err := authorizeDelete(ctx, q, p, agentID)
+		if err != nil {
+			return err
+		}
+		alone, err := q.ListLastAdminOrgIDs(ctx, agentID)
+		if err != nil {
+			return err
+		}
+		if len(alone) > 0 {
+			return orgs.ErrLastAdmin
+		}
+		memberships, err := q.ListOrgsOfMember(ctx, agentID)
+		if err != nil {
+			return err
+		}
+		for _, m := range memberships {
+			orgIDs = append(orgIDs, m.Organization.ID)
+		}
 		// Read before the deletion: the foreign key empties operator_iid with it.
 		operated, err := q.ListConnectorsOperatedBy(ctx, sql.NullString{String: agentID, Valid: true})
 		if err != nil {
@@ -350,6 +371,18 @@ func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string
 		}
 		for _, c := range operated {
 			orphaned = append(orphaned, c.ID)
+		}
+		if r.audit != nil {
+			profile, err := q.GetIntelligence(ctx, agentID) // an AI of a fixture may have none
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			if err := r.audit.Record(ctx, q, audit.Entry{
+				ActorID: p.IID(), Action: audit.ActionAgentDelete, TargetKind: audit.TargetAgent, TargetID: agentID,
+				Detail: map[string]any{"handle": profile.Handle, "org": a.OrgID.String},
+			}); err != nil {
+				return err
+			}
 		}
 		if roomIDs, err = q.DeleteAgentMemberships(ctx, agentID); err != nil {
 			return err
@@ -372,6 +405,9 @@ func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string
 			continue
 		}
 		r.bus.Publish(events.MembersChanged{RoomID: id})
+	}
+	for _, id := range orgIDs {
+		r.bus.Publish(events.OrgChanged{OrgID: id})
 	}
 	return nil
 }

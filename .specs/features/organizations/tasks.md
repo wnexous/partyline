@@ -580,7 +580,7 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: `linkOrCreate` transaction, `orgs.DefaultFor`, `Chart.Above`
 **Requirement**: ORG-04, ORG-05, POS-07, POS-08
 **Done when**:
-- [ ] e2e on the live WebSocket and on a tools-only call (L-034: one test each):
+- [x] e2e on the live WebSocket and on a tools-only call (L-034: one test each):
   - `--org acme` → acme;
   - a parent AI hosted by the same user → creator = parent, home = the parent's home, permission `guest`;
   - a parent hosted by another user → creator = host, permission `member`;
@@ -588,7 +588,7 @@ Phases 3-6 reuse these for their authorization matrices.
   - a position below the creator → held; at the same level → 403; for an admin creator → held;
   - unknown position → 422 `position_unknown`; unknown org → 422 `organization_required`;
   - no headers → the defaults (v0.5 compatibility)
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): place new AIs with --org, --position and --parent`
@@ -604,12 +604,12 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: `orgs.SetPosition` rules
 **Requirement**: ORG-04, POS-07
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - mismatch → 409, observed (L-017);
   - the same `--org` → OK;
   - a later `--position` within the rule moves the AI; outside it → 403 and the position is unchanged;
   - `--parent` on a later start does not change the creator
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): keep an existing AI's organization on later starts`
@@ -630,7 +630,7 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
 **Reuses**: `ChangePassword` password check, `presence.Kick`, `events`
 **Requirement**: POS-06, OUPG-02
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - the user's sessions and tokens fail authentication (401);
   - for every table with a user or intelligence column, the deleted id has no row left;
   - a group and a connection the user created survive in their org;
@@ -638,7 +638,7 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
   - the last admin's org gets the instance admin as admin, while an org with a second admin is unchanged;
   - a wrong password → 422 and nothing changes;
   - the last instance admin → 409 `last_instance_admin` observed
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(users): let users delete their own account`
@@ -655,7 +655,7 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
 **Reuses**: `presence.Kick`, `orgs.Remove`, `OrgRoles`
 **Requirement**: POS-04, POS-05, POS-06, OMEM-06, OMEM-08
 **Done when**:
-- [ ] e2e, Lead developer starts three workers with `--parent @lead --position Worktrees` (guests):
+- [x] e2e, Lead developer starts three workers with `--parent @lead --position Worktrees` (guests):
   - Lead deletes them for good, while Sentinel (not above them) gets 403 (spec Independent Test);
   - a manager deleting a `member` below → 403, while an admin → 204 (L-018);
   - Bob (member) invites guest Carol, who invites guest Dave: Bob deletes Dave → 204; Bob's position manager deletes Carol → 204; a peer of Bob → 403;
@@ -666,7 +666,7 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
   - a manager ends a live session, and the socket closes with 4002;
   - an AI leaving its home org → 409 `home_organization` observed; the last admin leaving → 409 `last_admin`;
   - an invisible target → 404
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): delete identities in an organization and end sessions`

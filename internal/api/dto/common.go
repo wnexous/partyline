@@ -48,6 +48,18 @@ const (
 	// HeaderAdopt names a handle or a v0.3 agent name (--as, PARTYLINE_AGENT): the unlinked AI to
 	// link to the session's folder when the folder has no AI yet (MIG-02).
 	HeaderAdopt = "X-Partyline-Adopt"
+	// HeaderOrg names the organization a new AI joins (--org, PARTYLINE_ORG): a slug or an id. Without
+	// it the AI joins its creator's default organization. An existing AI keeps its home organization
+	// and a different one is refused with organization_mismatch (ORG-04, AD-020).
+	HeaderOrg = "X-Partyline-Org"
+	// HeaderPosition names the position the AI holds in its organization (--position,
+	// PARTYLINE_POSITION): the position's name, percent-encoded with url.PathEscape like the folder.
+	// Without it a new AI holds none (POS-07, AD-020).
+	HeaderPosition = "X-Partyline-Position"
+	// HeaderParent names the AI that starts this one (--parent, PARTYLINE_PARENT): an @handle or an id.
+	// It counts when the token holder may act for that AI (their own, hosted on their machines);
+	// otherwise the token holder is the creator (POS-08, AD-020).
+	HeaderParent = "X-Partyline-Parent"
 	// HeaderFeatures lists, separated by commas, the optional features the client of the agent
 	// WebSocket understands. FeaturePlatform opts in to platform events (CID-06): a session that
 	// does not name it gets room messages only, and its platform queue waits (CID-10).
@@ -82,6 +94,14 @@ const (
 	ErrorCodeUnavailable   ErrorCode = "unavailable"    // 503, or 502 when a connector's platform failed
 	ErrorCodeHandleTaken   ErrorCode = "handle_taken"   // 409, the @handle belongs to another intelligence
 	ErrorCodeAvatarInvalid ErrorCode = "avatar_invalid" // 422, the avatar is not an acceptable image
+	// ErrorCodeLastInstanceAdmin is the last active instance admin deleting their own account: an admin is
+	// needed to inherit the organizations they leave without one (409, OUPG-02).
+	ErrorCodeLastInstanceAdmin ErrorCode = "last_instance_admin"
+	// ErrorCodeLastAdmin is a change that would leave an organization without an admin: the only admin
+	// leaving, or the only admin an AI is deleted from (409, OMEM-05). ErrorCodeHomeOrganization is an AI
+	// leaving the organization it belongs to: it is deleted there, never removed (409, POS-06).
+	ErrorCodeLastAdmin        ErrorCode = "last_admin"
+	ErrorCodeHomeOrganization ErrorCode = "home_organization"
 	// ErrorCodeNotOperator is an AI that sends through a connection it does not operate: only the
 	// operator sends through it (403, CID-03). ErrorCodeUnknownChat is a chat that is not one of the
 	// named connection's chats (404, CID-17).
@@ -95,6 +115,12 @@ const (
 	// (not absolute or canonical, a NUL, longer than 1024 bytes) (AID-05).
 	ErrorCodeFolderRequired ErrorCode = "folder_required" // 422
 	ErrorCodeFolderInvalid  ErrorCode = "folder_invalid"  // 422
+	// ErrorCodePositionUnknown is a start (--position) that names a position the organization does not
+	// have (422, field position, POS-07).
+	ErrorCodePositionUnknown ErrorCode = "position_unknown"
+	// ErrorCodeOrganizationMismatch is a start of an existing AI with --org naming an organization other
+	// than its home: AIs do not move (409, Details name the home organization, ORG-04).
+	ErrorCodeOrganizationMismatch ErrorCode = "organization_mismatch"
 	// ErrorCodeIdentityBusy is a connection for an AI that has a live session in another
 	// process (409); Details say who, in which app and since when (SES-04).
 	ErrorCodeIdentityBusy ErrorCode = "identity_busy" // 409
@@ -144,7 +170,7 @@ type Error struct {
 	Message string            `json:"message"`
 	Fields  map[string]string `json:"fields,omitempty"`
 	// Details carries facts about the refusal that are not request fields: for identity_busy the
-	// BusyDetail keys.
+	// BusyDetail keys, for organization_mismatch the MismatchDetail keys.
 	Details map[string]string `json:"details,omitempty"`
 	// Refused lists the members of members_refused, in the order they were asked for.
 	Refused []RefusedMember `json:"refused,omitempty"`
@@ -157,6 +183,13 @@ const (
 	BusyDetailApp         = "app"
 	BusyDetailAppLabel    = "app_label"
 	BusyDetailConnectedAt = "connected_at"
+)
+
+// Keys of Error.Details for organization_mismatch: the slug (what --org takes) and the name of the
+// organization the AI belongs to.
+const (
+	MismatchDetailOrganization = "organization"
+	MismatchDetailName         = "organization_name"
 )
 
 // List wraps an unpaginated collection.

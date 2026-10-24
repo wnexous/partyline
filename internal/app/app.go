@@ -146,7 +146,13 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		return nil, err
 	}
 	bus := events.NewBus()
-	usersSvc, err := users.NewService(st, users.Options{Now: opts.Now, Bus: bus})
+	presence := agents.NewPresence(st, bus, opts.Now)
+	usersSvc, err := users.NewService(st, users.Options{
+		Now: opts.Now, Bus: bus,
+		Kick: func(ctx context.Context, agentID string) {
+			presence.Kick(ctx, agentID, agents.CloseDeleted, agents.ReasonDeleted)
+		},
+	})
 	if err != nil {
 		_ = st.Close()
 		return nil, err
@@ -157,7 +163,6 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		_ = st.Close()
 		return nil, err
 	}
-	presence := agents.NewPresence(st, bus, opts.Now)
 	az := access.New(st, bus, access.Options{Now: opts.Now})
 	authz := orgs.NewAuthz(st)
 	auditLog := audit.New(st, opts.Now)
@@ -228,6 +233,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Users:         usersSvc,
 		Rooms:         a.Rooms,
 		Agents:        a.Agents,
+		Orgs:          a.Orgs,
 		Intelligences: a.Intelligences,
 		Conversations: a.Conversations,
 		Connectors:    a.Connectors,

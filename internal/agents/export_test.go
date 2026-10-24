@@ -16,3 +16,6 @@ func SetPingTimings(g *Gateway, interval, timeout time.Duration) {
 // SetPingInterval makes g ping every interval and keeps its pong timeout (the production default
 // unless SetPingTimings changed it).
 func SetPingInterval(g *Gateway, interval time.Duration) { g.d.PingInterval = interval }
+
+// SetAfterFolderMiss makes r run f when a session found no AI for its folder, before it creates one.
+func SetAfterFolderMiss(r *Registry, f func()) { r.afterFolderMiss = f }

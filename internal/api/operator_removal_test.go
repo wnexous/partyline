@@ -146,16 +146,21 @@ func TestDeletingAnAIThatOperatesNothingTouchesNoConnection(t *testing.T) {
 	require.Equal(t, f.atlas, f.connector(f.alice).Operator.ID)
 }
 
-// CID-24 (authorization matrix of DELETE /agents/{id}): only the owner deletes the AI, so only the
-// owner orphans its connection. The use grantees get 403, a stranger and the admin 404, anonymous
-// callers 401, and AI tokens, the operator itself and another user's AI included, 403. Every
-// refusal leaves the operator, the connection's session, its status and its queue as they were.
+// CID-24 (authorization matrix of DELETE /agents/{id}): only an admin of the AI's organization, here its
+// owner, deletes the AI, so only they orphan its connection. The members who use Atlas get 403, a stranger and
+// the instance admin 404, anonymous callers 401, and AI tokens, the operator itself and another user's AI
+// included, 403. Every refusal leaves the operator, the connection's session, its status and its queue as they
+// were.
 func TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone(t *testing.T) {
 	f := newOperatorFixture(t)
 	inst := f.operate(t)
 	inst.Connected()
 	kept := queueItem(t, f.env, f.conn.ID, f.atlas, teamChat, "m1")
 
+	// bob and dave are members of alice's organization, as the upgrade leaves who was granted something of hers
+	for _, user := range []*testkit.Client{f.bob, f.dave} {
+		ensureMember(t, f.env, f.alice.PersonalOrg().ID, user.User.ID)
+	}
 	del := func(c *testkit.Client) *testkit.Response { return c.Delete("/api/v1/agents/" + f.atlas) }
 	del(f.bob).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)  // may use Atlas and the connection
 	del(f.dave).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden) // may use Atlas only

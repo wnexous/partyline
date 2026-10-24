@@ -108,13 +108,15 @@ UPDATE agents SET harness = ? WHERE id = ?;
 
 -- name: GetUnlinkedAgentByHandle :one
 -- The owner's agent without a folder (a v0.3 identity) whose intelligence has the handle
--- (MIG-02); handles compare case-insensitively.
+-- (MIG-02); handles compare case-insensitively. Only an identity the owner created is the owner's
+-- to adopt: the upgrade made every v0.3 owner the creator of their agents, while the AIs left
+-- behind by a deleted account (owned by its heir, created by someone else) are not.
 SELECT a.* FROM agents a JOIN intelligences i ON i.id = a.id
-WHERE a.owner_id = ? AND a.folder = '' AND i.handle = ?;
+WHERE a.owner_id = ? AND a.folder = '' AND a.creator_iid = a.owner_id AND i.handle = ?;
 
 -- name: GetUnlinkedAgentByName :one
--- The owner's agent without a folder with the v0.3 name (MIG-02).
-SELECT * FROM agents WHERE owner_id = ? AND folder = '' AND name = ?;
+-- The owner's agent without a folder with the v0.3 name (MIG-02), under the same rule.
+SELECT * FROM agents WHERE owner_id = ? AND folder = '' AND creator_iid = owner_id AND name = ?;
 
 -- name: AdoptAgent :execrows
 -- Links an unlinked agent to a machine and folder; the folder = '' guard makes the link happen

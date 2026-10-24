@@ -183,7 +183,10 @@ func (c *Client) DialAgentHeaders(h http.Header) (*AgentConn, *Response) {
 // process that holds the WebSocket (DialFolder gives every dial its own when it is empty, as
 // every process has its own: pass one to reconnect as the same process) and Takeover asks to
 // take over the AI's live session (SES-02). Features are the optional features the client
-// understands (dto.HeaderFeatures); none is a client from before platform events.
+// understands (dto.HeaderFeatures); none is a client from before platform events. Org, Position and
+// Parent are what --org, --position and --parent send (dto.HeaderOrg, HeaderPosition, HeaderParent): the
+// organization (slug or id), the name of the position, and the @handle or id of the AI that starts this
+// one; empty fields send no header, as a v0.5 CLI does.
 type Folder struct {
 	Machine  string
 	Path     string
@@ -193,6 +196,9 @@ type Folder struct {
 	Live     string
 	Features []string
 	Takeover bool
+	Org      string
+	Position string
+	Parent   string
 }
 
 // WithPlatform returns the folder of a client that understands platform events (CID-06).
@@ -208,14 +214,15 @@ func (c *Client) DialPlatform(name string) (*AgentConn, *Response) {
 	return c.DialFolder(FolderOf(name).WithPlatform())
 }
 
-// Headers returns the folder headers the way the CLI sends them: the folder and the home
-// folder percent-encoded, the others as they are; empty fields are left out.
+// Headers returns the folder headers the way the CLI sends them: the folder, the home folder and the
+// position percent-encoded, the others as they are; empty fields are left out.
 func (f Folder) Headers() http.Header {
 	h := http.Header{}
 	for k, v := range map[string]string{
 		dto.HeaderMachine: f.Machine, dto.HeaderHarness: f.Harness, dto.HeaderAdopt: f.Adopt,
 		dto.HeaderFolder: escapePath(f.Path), dto.HeaderHome: escapePath(f.Home), dto.HeaderLive: f.Live,
 		dto.HeaderFeatures: strings.Join(f.Features, ","),
+		dto.HeaderOrg:      f.Org, dto.HeaderPosition: escapePath(f.Position), dto.HeaderParent: f.Parent,
 	} {
 		if v != "" {
 			h.Set(k, v)
