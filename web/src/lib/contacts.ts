@@ -136,6 +136,31 @@ export function pickables(
   };
 }
 
+const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
+/** Orders identities by display name, then @handle; the id only breaks a tie between twins. */
+export function byName(a: IntelligenceRef, b: IntelligenceRef): number {
+  return (
+    collator.compare(a.display_name, b.display_name) ||
+    collator.compare(a.handle, b.handle) ||
+    collator.compare(a.id, b.id)
+  );
+}
+
+/**
+ * What `pickables` offers as one list, by name: AIs and users side by side, so a picker neither
+ * sorts nor labels its rows by what kind of identity they are (AD-023). The scoping is the one of
+ * `pickables`: the split there is how the candidates are gathered, not how they are shown.
+ */
+export function pickableList(
+  contacts: Contacts,
+  orgId?: string,
+  orgUsers?: readonly IntelligenceRef[],
+): Pickable[] {
+  const { ais, users } = pickables(contacts, orgId, orgUsers);
+  return [...ais, ...users].sort((a, b) => byName(a.ref, b.ref));
+}
+
 /**
  * The contacts page's filter over the organization groups: an AI stays when the text is found in
  * its name, handle, folder or app, and a group stays when its organization's name matches (whole)

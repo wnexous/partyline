@@ -217,7 +217,7 @@ function ContactsPage() {
             ) : null}
 
             {view.users.length > 0 ? (
-              <Section title={t("contacts.users")}>
+              <Section title={t("contacts.instance")}>
                 <ul className="divide-y border-y">
                   {view.users.map((user) => (
                     <li key={user.id}>

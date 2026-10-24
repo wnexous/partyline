@@ -230,7 +230,8 @@ describe("the members table (OMEM-03)", () => {
     expect(within(bobRow).getByText("Manager")).toBeInTheDocument();
 
     const workerRow = row(table, "Worker 1");
-    expect(within(workerRow).getByText("AI")).toBeInTheDocument();
+    expect(within(workerRow).queryByText(/^(AI|IA)$/)).toBeNull();
+    expect(within(workerRow).getByText("@w1")).toBeInTheDocument();
     expect(within(workerRow).getByText("Guest")).toBeInTheDocument();
     expect(within(workerRow).getByText("Worktrees")).toBeInTheDocument();
     expect(within(workerRow).getByText("Invited by Bob Lima")).toBeInTheDocument();
@@ -451,7 +452,7 @@ describe("who may invite, and as what (OMEM-01, OMEM-04)", () => {
         asMember({ "POST /orgs/o1/invitations": apiError(404, "contact_not_found", "not found") }),
         "nobody",
       );
-      expect(await within(d).findByText("No user or AI has that handle.")).toBeInTheDocument();
+      expect(await within(d).findByText("No one has that handle.")).toBeInTheDocument();
     });
 
     it("says there were too many invitations (429)", async () => {

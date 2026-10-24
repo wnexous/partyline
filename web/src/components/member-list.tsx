@@ -1,4 +1,4 @@
-import { BotIcon, EllipsisIcon, MessageSquareIcon, UserIcon, XIcon } from "lucide-react";
+import { CircleUserRoundIcon, EllipsisIcon, MessageSquareIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
@@ -14,21 +14,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useStartConversation } from "@/hooks/use-start-conversation";
 import { useAddMember, useMe, useRemoveMember } from "@/lib/api/queries";
-import type { IntelligenceRef, MemberKind, RoomMember } from "@/lib/api/types.gen";
-import { type MessageKey, useI18n } from "@/lib/i18n";
+import type { IntelligenceRef, RoomMember } from "@/lib/api/types.gen";
+import { useI18n } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 
 /*
- * Room members (UI-10, UI-12, GRP-02): the room's intelligences, shown plainly. AIs and users show
- * their avatar, kind badge and @handle (PROF-09), AIs also live presence. Chats are never members
- * (CID-20, AD-015), so a chat row left in old data is not rendered: there is no outbound switch
- * and no platform badge any more. External people are not listed either: they are not members.
+ * Room members (UI-10, UI-12, GRP-02): the room's intelligences in one list, in the order they
+ * joined. An AI and a user look the same, with their avatar, name and @handle (PROF-09, AD-023);
+ * what only an AI has (live presence, its host, its settings in the room) shows on its own row.
+ * Chats are never members (CID-20, AD-015), so a chat row left in old data is not rendered: there
+ * is no outbound switch and no platform badge any more. External people are not listed either:
+ * they are not members.
  */
-
-const GROUPS: { kind: MemberKind; label: MessageKey }[] = [
-  { kind: "agent", label: "members.agents" },
-  { kind: "user", label: "members.users" },
-];
 
 /** A chat member can still be in the stored data until the upgrade; it is not shown. */
 const visibleMembers = (members: RoomMember[]) =>
@@ -68,32 +65,18 @@ export function MemberList({
   }
 
   return (
-    <div className="space-y-5 py-3">
-      {GROUPS.map(({ kind, label }) => {
-        const list = shown.filter((m) => m.kind === kind);
-        if (list.length === 0) return null;
-        return (
-          <section key={kind} aria-label={t(label)}>
-            <h3 className="flex items-baseline gap-2 px-4 pb-1.5 label-caps text-[0.68rem] text-muted-foreground">
-              {t(label)}
-              <span className="font-mono tabular">{list.length}</span>
-            </h3>
-            <ul>
-              {list.map((m) => (
-                <MemberRow
-                  key={m.id}
-                  roomId={roomId}
-                  member={m}
-                  online={presence[m.member_id]?.online ?? m.online ?? false}
-                  canManage={canManage}
-                  onRemove={() => onRemove(m)}
-                />
-              ))}
-            </ul>
-          </section>
-        );
-      })}
-    </div>
+    <ul aria-label={t("members.title")} className="py-3">
+      {shown.map((m) => (
+        <MemberRow
+          key={m.id}
+          roomId={roomId}
+          member={m}
+          online={presence[m.member_id]?.online ?? m.online ?? false}
+          canManage={canManage}
+          onRemove={() => onRemove(m)}
+        />
+      ))}
+    </ul>
   );
 }
 
@@ -113,14 +96,12 @@ function MemberRow({
   const { t } = useI18n();
   const meId = useMe().data?.id;
   const name = m.name;
-  // The profile of an AI or user member: avatar, name, badge and @handle instead of an icon.
+  // The profile of an AI or user member: avatar, name and @handle instead of an icon.
   const profile = m.kind === "agent" || m.kind === "user" ? m.intelligence : undefined;
   // PDM-04: nobody messages herself; a chat is no intelligence and is never shown here.
   const canMessage = !!profile && !(m.kind === "user" && m.member_id === meId);
-  let icon: ReactNode;
   let meta: ReactNode = null;
   if (m.kind === "agent") {
-    icon = <BotIcon className="size-4 text-muted-foreground" aria-hidden="true" />;
     meta = (
       <>
         <StatusDot online={online} withLabel />
@@ -133,8 +114,6 @@ function MemberRow({
         ))}
       </>
     );
-  } else {
-    icon = <UserIcon className="size-4 text-muted-foreground" aria-hidden="true" />;
   }
 
   return (
@@ -143,7 +122,11 @@ function MemberRow({
       className="group/member relative flex items-start gap-2.5 px-4 py-2 hover:bg-accent/40"
     >
       <span className="mt-0.5 shrink-0">
-        {profile ? <IntelligenceAvatar intelligence={profile} decorative /> : icon}
+        {profile ? (
+          <IntelligenceAvatar intelligence={profile} decorative />
+        ) : (
+          <CircleUserRoundIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+        )}
       </span>
       <div className="min-w-0 flex-1">
         {profile ? (

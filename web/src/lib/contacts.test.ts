@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { AIContact } from "@/lib/api/types.gen";
-import { makeAIContact, makeContacts, makeOrgAIs } from "@/test/fixtures";
+import { makeAI, makeAIContact, makeContacts, makeIntelligence, makeOrgAIs } from "@/test/fixtures";
 import { atlas, bob, cora, notes, sampleContacts } from "@/test/sample-contacts";
 import {
   allAIs,
+  byName,
   filterOrgs,
   inviteCandidates,
   knowsAI,
   mergeTargets,
   onlineCount,
   ownAIs,
+  pickableList,
   pickables,
   withIntelligence,
   withoutAI,
@@ -250,6 +252,68 @@ describe("pickables for the users of an organization (T39)", () => {
       "a2",
       "a5",
     ]);
+  });
+});
+
+describe("pickableList (AD-023)", () => {
+  const ids = (list: { ref: { id: string } }[]) => list.map((p) => p.ref.id);
+
+  it("lists AIs and users together by display name, not the AIs first and the users after", () => {
+    expect(ids(pickableList(sampleContacts))).toEqual(["a1", "u2", "u3", "a3", "a2", "a4", "a5"]);
+  });
+
+  it("offers the same people as pickables, scoped the same way, in the one order", () => {
+    for (const [org, users] of [
+      [undefined, undefined],
+      ["o1", undefined],
+      ["o2", [cora]],
+      ["o1", []],
+    ] as const) {
+      const split = pickables(sampleContacts, org, users);
+      expect(ids(pickableList(sampleContacts, org, users)).sort()).toEqual(
+        ids([...split.ais, ...split.users]).sort(),
+      );
+    }
+    expect(ids(pickableList(sampleContacts, "o1", [cora]))).toEqual(["a1", "u3", "a2", "a5"]);
+    expect(ids(pickableList(sampleContacts, "o2", []))).toEqual(["a3"]);
+  });
+
+  it("keeps what tells an AI from another beside its name, and gives a user nothing extra", () => {
+    const list = pickableList(sampleContacts);
+    expect(list.find((p) => p.ref.id === "a1")?.ai?.folder_label).toBe("~/atlas");
+    expect(list.find((p) => p.ref.id === "u2")?.ai).toBeUndefined();
+  });
+
+  it("is empty for a user with no contacts", () => {
+    expect(pickableList(makeContacts())).toEqual([]);
+  });
+});
+
+describe("byName (AD-023)", () => {
+  const named = (display_name: string, handle = "x", id = "i") =>
+    makeIntelligence({ id, display_name, handle });
+
+  it("orders by display name whatever the case and the accents, and numbers as numbers", () => {
+    const sorted = [named("zed"), named("Ágata"), named("agent 10"), named("Agent 2"), named("Bob")]
+      .sort(byName)
+      .map((r) => r.display_name);
+    expect(sorted).toEqual(["Ágata", "Agent 2", "agent 10", "Bob", "zed"]);
+  });
+
+  it("tells two identities with one name apart by their handle, an AI as any other", () => {
+    const ana = named("Ana Souza", "ana", "u1");
+    const ghost = makeAI({ id: "a1", display_name: "Ana Souza", handle: "atlas" });
+    expect([ghost, ana].sort(byName).map((r) => r.handle)).toEqual(["ana", "atlas"]);
+    expect([ana, ghost].sort(byName).map((r) => r.handle)).toEqual(["ana", "atlas"]);
+  });
+
+  it("never depends on the kind: the same names sort the same as AIs and as users", () => {
+    const names = ["Mia", "Atlas", "Zoe", "Bob"];
+    const asUsers = names.map((n, i) => makeIntelligence({ id: `u${i}`, display_name: n }));
+    const asAIs = names.map((n, i) => makeAI({ id: `a${i}`, display_name: n }));
+    expect(asUsers.sort(byName).map((r) => r.display_name)).toEqual(
+      asAIs.sort(byName).map((r) => r.display_name),
+    );
   });
 });
 

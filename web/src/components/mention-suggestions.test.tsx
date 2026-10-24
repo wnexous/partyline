@@ -153,7 +153,7 @@ describe("mention candidates", () => {
 });
 
 describe("composer mentions", () => {
-  it("MEN-01: typing @ lists participants with avatar, name, kind badge and handle", async () => {
+  it("MEN-01: typing @ lists participants with avatar, name and handle, and no kind badge (AD-023)", async () => {
     const { user, box } = renderComposer();
     await user.type(box, "@");
     const list = listbox();
@@ -161,14 +161,16 @@ describe("composer mentions", () => {
 
     const atlasRow = within(list).getByRole("option", { name: /@atlas$/ });
     expect(within(atlasRow).getByTestId("intelligence-avatar")).toBeInTheDocument();
-    expect(within(atlasRow).getByTestId("kind-badge")).toHaveTextContent("AI");
+    expect(within(atlasRow).queryByTestId("kind-badge")).toBeNull();
+    expect(within(atlasRow).queryByText(/^(AI|IA)$/)).toBeNull();
     expect(within(atlasRow).getByText("Atlas")).toBeInTheDocument();
     expect(within(atlasRow).getByText("@atlas", { exact: true })).toBeInTheDocument();
 
-    // A person comes from the participants the chat member carries, with its platform badge.
+    // A person comes from the participants the chat member carries, and reads like the others.
     const personRow = within(list).getByRole("option", { name: /@lia$/ });
     expect(within(personRow).getByText("Lia Costa")).toBeInTheDocument();
-    expect(within(personRow).getByTestId("kind-badge")).toHaveTextContent("WhatsApp");
+    expect(within(personRow).queryByTestId("kind-badge")).toBeNull();
+    expect(within(personRow).queryByText("WhatsApp")).toBeNull();
 
     // The viewer and a participant without a handle are never suggested.
     expect(within(list).queryByText("@ana")).toBeNull();

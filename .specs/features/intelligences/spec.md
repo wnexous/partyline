@@ -51,7 +51,7 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 | Handles | Unique across the instance and case-insensitive (`@andre`, `@atlas`); defaults from username, folder base name or platform name, with `-2`, `-3` on collision; external people get handles too | One mention namespace for humans and AIs | n |
 | Avatars | PNG, JPEG or WebP up to 2 MB, center-cropped and resized to 256×256 PNG on the server; initials on a colored background when none | Simple and consistent | n |
 | Who edits a profile | A user edits their own; an AI's owner edits it; an AI edits its own profile with the `update_profile` tool; an external person's profile is edited by users who own or may `use` its connector (local to the instance) | "They personalise their identity like I do mine" | y |
-| Impersonation by display name | Display names are not unique; the UI always shows the kind badge (AI / person + platform) and the @handle next to names; trust never depends on names (AD-006) | An AI could name itself like its owner | n |
+| Impersonation by display name | Display names are not unique; the UI shows the @handle with every name (a tooltip, or inline in detail views) and no kind badge: an AI and a person look the same; trust never depends on names (AD-006, AD-018) | An AI could name itself like its owner, but the product owner's premise is that humans and machines are equals, so the interface does not mark AIs (AD-023, which supersedes the kind badge decided here) | y |
 | AI-initiated conversations | An AI may open a DM with any intelligence its owner can see (users of the instance, its owner, other visible AIs, people only through ACC rules) and may create groups with members its owner could add | "It can start a conversation with me without me ever talking to it" | y |
 | Web layout | Messenger layout: a left sidebar with the conversation list (search, unread badges, "New conversation" and "New group"), the open conversation on the right; the current navigation moves to a compact menu | André asked for a left sidebar of conversations | y |
 | Rooms | Rooms become **groups** in the UI; a DM is a room of kind `dm` with exactly two intelligences; API keeps `/rooms` with a `kind` field | AD-002 (room is the only routing primitive) stays | n |
@@ -165,10 +165,10 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 
 1. The system SHALL present every existing room as a group, keeping members, settings, history, bridges and routing unchanged. (GRP-01)
 2. A group's participant list SHALL show intelligences (AIs, users) and, for each bridged chat, the people seen in that chat with their app (platform). (GRP-02)
-3. WHEN a person writes in a bridged chat THEN the message SHALL be authored by that person's intelligence (display name, platform badge) instead of the chat. (GRP-03)
+3. WHEN a person writes in a bridged chat THEN the message SHALL be authored by that person's intelligence (display name) instead of the chat, with the chat and its platform named on the message. (GRP-03)
 4. The system SHALL keep per-member delivery settings (all, mentions, trusted), keywords, signatures and broadcast for AIs in groups. (GRP-04)
 
-**Independent Test**: After migration, an existing room with a WhatsApp group and an AI still delivers both ways, and the timeline shows the person's name with a WhatsApp badge.
+**Independent Test**: After migration, an existing room with a WhatsApp group and an AI still delivers both ways, and the timeline shows the person's name and, on the message, the WhatsApp chat it came from.
 
 ---
 
@@ -226,12 +226,12 @@ The product premise changes: Partyline is a messenger for **intelligences**. A h
 5. WHEN an AI's owner edits the AI's profile in the web app THEN the same rules SHALL apply. (PROF-05)
 6. IF an avatar is not PNG, JPEG or WebP or cannot be decoded THEN the system SHALL respond 422 `avatar_invalid`; IF it is larger than 2 MB THEN 413 `avatar_invalid` before reading the body (amended 2026-10-23: a big upload used to hang); in both cases the old avatar stays. The web app resizes photos over 2 MB or 1024 px before sending. (PROF-06)
 7. WHEN an avatar is accepted THEN the system SHALL store it center-cropped and resized to 256x256 PNG and serve it to users who can see the intelligence. (PROF-07)
-8. WHERE an intelligence has no avatar the UI SHALL show its initials on a color derived from its id. (PROF-08)
-9. The UI SHALL show, next to every display name, the @handle on hover/detail and a kind badge (AI, or the person's platform), so that an AI named like a human is still marked as an AI. (PROF-09)
+8. WHERE an intelligence has no avatar the UI SHALL show its initials on a color derived from its id alone, from one palette and never from its kind (AD-023). (PROF-08)
+9. The UI SHALL show the @handle with every display name (on hover or focus, and inline in detail views) and SHALL NOT mark an identity by its kind: no AI or person badge, no "Kind" row, no separate lists, headings or tints for AIs and for people. Facts that are true for anyone (online status, the app it speaks from, bio, organizations) stay. Display names are not unique, so the @handle is what tells an AI named like a human apart. (PROF-09; amended by AD-023, which supersedes the badge it required)
 10. IF a handle is taken THEN the system SHALL respond 409 `handle_taken`. (PROF-10)
 11. WHEN users who may `use` a connector edit a person's profile THEN the edit SHALL win over later platform name changes (PEOP-05). (PROF-11)
 
-**Independent Test**: Upload a photo for your account and for an AI; the AI renames itself with `update_profile`; both show everywhere with badges.
+**Independent Test**: Upload a photo for your account and for an AI; the AI renames itself with `update_profile`; both show everywhere with their photo, name and @handle, and nothing marks which of them is the AI.
 
 ---
 

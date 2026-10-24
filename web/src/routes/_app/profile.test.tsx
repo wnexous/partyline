@@ -103,23 +103,25 @@ function api(profile: IntelligenceProfile, extra: Parameters<typeof mockApi>[0] 
 }
 
 const name = () => screen.findByRole("heading", { level: 1 });
-/** The page's header: the photo, the name, the badge, the handle and the bio. */
+/** The page's header: the photo, the name, the handle and the bio. */
 const pageHeader = () => screen.getByRole("heading", { level: 1 }).closest("header") as HTMLElement;
 const field = (label: string) => screen.getByRole("textbox", { name: label });
 
 describe("reading a profile (PROF-09)", () => {
-  it("shows an AI's name with its badge, handle and bio, and where it lives", async () => {
+  it("shows an AI's name, handle and bio, and where it lives, with no kind badge or row (AD-023)", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
     api(atlas);
     renderRoute("/contacts/a1");
     expect(await name()).toHaveTextContent("Atlas");
     const header = pageHeader();
-    expect(within(header).getByText("AI")).toBeInTheDocument();
+    expect(within(header).queryByText(/^(AI|IA)$/)).toBeNull();
+    expect(within(header).queryByTestId("kind-badge")).toBeNull();
     expect(within(header).getByText("@atlas")).toBeInTheDocument();
     expect(within(header).getByText("Release captain.")).toBeInTheDocument();
 
     const details = screen.getByRole("region", { name: "Details" });
+    expect(within(details).queryByText("Kind")).toBeNull();
     expect(within(details).getByText("@ana")).toBeInTheDocument();
     expect(within(details).getByText("Claude Code")).toBeInTheDocument();
     expect(within(details).getByText("Offline")).toBeInTheDocument();
@@ -155,7 +157,7 @@ describe("reading a profile (PROF-09)", () => {
     expect(within(details).queryByText(/Last seen/)).toBeNull();
   });
 
-  it("shows another user without a badge, and no AI details", async () => {
+  it("shows another user as it shows an AI, with no badge, and no AI details", async () => {
     const bob = makeProfile({ id: "u2", display_name: "Bob Lima", handle: "bob", bio: "On call." });
     api(bob);
     renderRoute("/contacts/u2");
@@ -163,6 +165,7 @@ describe("reading a profile (PROF-09)", () => {
     const header = pageHeader();
     expect(within(header).getByText("@bob")).toBeInTheDocument();
     expect(within(header).queryByTestId("kind-badge")).toBeNull();
+    expect(within(header).queryByText(/^(Person|User)$/)).toBeNull();
     expect(screen.queryByRole("region", { name: "Details" })).toBeNull();
   });
 
@@ -709,8 +712,10 @@ describe("a person (PEOP-03, PROF-11)", () => {
     renderRoute("/contacts/p1");
     expect(await name()).toHaveTextContent("Lia Costa");
     const header = pageHeader();
-    expect(within(header).getByText("WhatsApp")).toBeInTheDocument();
+    expect(within(header).queryByText("WhatsApp")).toBeNull();
+    expect(within(header).queryByTestId("kind-badge")).toBeNull();
     const details = screen.getByRole("region", { name: "Details" });
+    expect(within(details).getByText("WhatsApp")).toBeInTheDocument();
     expect(within(details).getByText("ops-line")).toBeInTheDocument();
     expect(within(details).getByText("5511999990000")).toBeInTheDocument();
     const linked = within(details).getByRole("link", { name: /Bob Lima/ });
@@ -745,8 +750,10 @@ describe("a person (PEOP-03, PROF-11)", () => {
     expect(screen.queryByLabelText("Display name")).toBeNull();
     expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Message Lia Costa" })).toBeNull();
-    // Reading stays: the account it writes from is still there.
-    expect(within(pageHeader()).getByText("WhatsApp")).toBeInTheDocument();
+    // Reading stays: the account it writes from is still there, in the details.
+    expect(
+      within(screen.getByRole("region", { name: "Details" })).getByText("WhatsApp"),
+    ).toBeInTheDocument();
   });
 
   it("shows only the platform to someone who sees them through a conversation, with no editor", async () => {

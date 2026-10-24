@@ -161,13 +161,14 @@ afterEach(() => {
 });
 
 describe("conversation header", () => {
-  it("titles a DM with its counterpart: avatar, name, AI badge, @handle, app and presence", async () => {
+  it("titles a DM with its counterpart: avatar, name, @handle, app and presence, and no AI badge (AD-023)", async () => {
     api();
     renderRoute("/rooms/d1");
     const bar = within(await header());
     expect(await bar.findByRole("heading", { name: "Atlas", level: 1 })).toBeInTheDocument();
     expect(bar.getByTestId("intelligence-avatar")).toHaveTextContent("A");
-    expect(bar.getByText("AI")).toBeInTheDocument();
+    expect(bar.queryByText(/^(AI|IA)$/)).toBeNull();
+    expect(bar.queryByTestId("kind-badge")).toBeNull();
     expect(bar.getByText("@atlas")).toBeInTheDocument();
     expect(await bar.findByText("Claude Code")).toBeInTheDocument();
     expect(bar.getByText("Online")).toBeInTheDocument();
@@ -204,11 +205,11 @@ describe("conversation header", () => {
     renderRoute("/rooms/d1");
     const bar = within(await header());
     expect(
-      await bar.findByRole("heading", { name: "Atlas AI and Bob Lima", level: 1 }),
+      await bar.findByRole("heading", { name: "Atlas and Bob Lima", level: 1 }),
     ).toBeInTheDocument();
   });
 
-  it("puts each participant's kind badge next to its name when the user only views the DM (PROF-09)", async () => {
+  it("names each participant by its name alone, with no kind badge, when the user only views the DM (PROF-09, AD-023)", async () => {
     const dana = makeIntelligence({
       id: "p1",
       role: "person",
@@ -233,9 +234,10 @@ describe("conversation header", () => {
     const title = within(await header()).getByRole("heading", { level: 1 });
     const [first, second] = await within(title).findAllByTestId("intelligence-name");
     expect(within(first as HTMLElement).getByText("Atlas")).toBeInTheDocument();
-    expect(within(first as HTMLElement).getByTestId("kind-badge")).toHaveTextContent("AI");
+    expect(within(first as HTMLElement).queryByTestId("kind-badge")).toBeNull();
     expect(within(second as HTMLElement).getByText("Dana")).toBeInTheDocument();
-    expect(within(second as HTMLElement).getByTestId("kind-badge")).toHaveTextContent("WhatsApp");
+    expect(within(second as HTMLElement).queryByTestId("kind-badge")).toBeNull();
+    expect(title).not.toHaveTextContent(/\b(AI|WhatsApp)\b/);
   });
 
   it("titles a group by its name, with no AI details and no visibility label (ORG-02)", async () => {
@@ -269,7 +271,7 @@ describe("conversation header", () => {
 });
 
 describe("participants (DM-02, GRP-02)", () => {
-  it("shows the two participants of a DM, with kind badges and handles, and no way to change them", async () => {
+  it("shows the two participants of a DM, with handles and no kind badges, and no way to change them", async () => {
     api();
     renderRoute("/rooms/d1");
     const panel = await screen.findByRole("complementary", { name: "Participants" });
@@ -279,8 +281,9 @@ describe("participants (DM-02, GRP-02)", () => {
     expect(you.getByText("@ana")).toBeInTheDocument();
     const ai = within(within(panel).getByTestId("participant-a1"));
     expect(ai.getByText("Atlas")).toBeInTheDocument();
-    expect(ai.getByText("AI")).toBeInTheDocument();
+    expect(ai.queryByText(/^(AI|IA)$/)).toBeNull();
     expect(ai.getByText("@atlas")).toBeInTheDocument();
+    expect(within(panel).queryByTestId("kind-badge")).toBeNull();
     expect(within(panel).getAllByTestId(/^participant-/)).toHaveLength(2);
 
     // Nobody adds, removes or configures anyone in a DM, and nobody shares or edits it.
@@ -307,14 +310,14 @@ describe("participants (DM-02, GRP-02)", () => {
     }
   });
 
-  it("lists the AIs and users of a group with avatar, badge and handle, and no chat row", async () => {
+  it("lists the AIs and users of a group in one list with avatar and handle, no kind badge and no chat row", async () => {
     api();
     renderRoute("/rooms/g1");
     const panel = await screen.findByRole("complementary", { name: "Members" });
     const ai = within(await within(panel).findByTestId("member-mb-a1"));
     expect(ai.getByTestId("intelligence-avatar")).toHaveTextContent("A");
     expect(ai.getByText("Atlas")).toBeInTheDocument();
-    expect(ai.getByText("AI")).toBeInTheDocument();
+    expect(ai.queryByText(/^(AI|IA)$/)).toBeNull();
     expect(ai.getByText("@atlas")).toBeInTheDocument();
     expect(ai.getByText("Online")).toBeInTheDocument();
     expect(ai.getByText("by @ana")).toBeInTheDocument();
@@ -323,9 +326,11 @@ describe("participants (DM-02, GRP-02)", () => {
     expect(user.getByTestId("intelligence-avatar")).toHaveTextContent("BL");
     expect(user.getByText("Bob Lima")).toBeInTheDocument();
     expect(user.getByText("@bob")).toBeInTheDocument();
-    expect(within(panel).getByRole("region", { name: "Users" })).toContainElement(
-      user.getByText("Bob Lima"),
-    );
+    // One list of members: the AI and the user are in it together, with no AIs and Users sections.
+    const members = within(panel).getByRole("list", { name: "Members" });
+    expect(members).toContainElement(user.getByText("Bob Lima"));
+    expect(members).toContainElement(ai.getByText("Atlas"));
+    expect(within(panel).queryAllByRole("region")).toEqual([]);
 
     // A chat is not a member to show, even when the stored list still holds one (CID-20).
     expect(within(panel).queryByTestId("member-mb-c1")).toBeNull();
@@ -342,12 +347,12 @@ describe("participants (DM-02, GRP-02)", () => {
 });
 
 describe("authors in the timeline (PROF-09)", () => {
-  it("shows an AI's avatar, kind badge and, on focus, its @handle", async () => {
+  it("shows an AI's avatar and name with no kind badge and, on focus, its @handle", async () => {
     api();
     renderRoute("/rooms/d1");
     const row = within(await screen.findByTestId("message-1"));
     expect(row.getByTestId("intelligence-avatar")).toHaveTextContent("A");
-    expect(row.getByText("AI")).toBeInTheDocument();
+    expect(row.queryByText(/^(AI|IA)$/)).toBeNull();
     expect(row.queryByText("@atlas")).toBeNull();
     // The author's name is a link to its profile (PDM-03); the handle stays in its tooltip.
     act(() => row.getByRole("link", { name: "Atlas" }).focus());

@@ -19,8 +19,9 @@ import { sampleContacts as contacts } from "@/test/sample-contacts";
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 
 /*
- * "New group" (LAY-04): a name and members chosen from the users and AIs the user can add; the
- * server applies the add-member rules to each one and refuses the whole group when any fails.
+ * "New group" (LAY-04): a name and members chosen from the AIs and users the user can add, listed
+ * together by name (AD-023); the server applies the add-member rules to each one and refuses the
+ * whole group when any fails.
  */
 
 const group = (id = "g1", name = "release crew") =>
@@ -54,7 +55,7 @@ const filter = (dialog: HTMLElement) =>
 const create = (dialog: HTMLElement) =>
   within(dialog).getByRole("button", { name: "Create group" });
 const box = (dialog: HTMLElement, name: string) => within(dialog).getByRole("checkbox", { name });
-/** The ticked boxes in the order they are listed (the AIs, then the users), not the order they were picked. */
+/** The ticked boxes in the order they are listed (by name, AIs and users together), not the order they were picked. */
 const checked = (dialog: HTMLElement) =>
   within(dialog)
     .getAllByRole("checkbox")
@@ -73,27 +74,24 @@ afterEach(() => vi.unstubAllGlobals());
 describe("who can be a member", () => {
   it("offers the AIs of the user's organizations, the ones they host and the other users, and no one else", async () => {
     const { dialog } = await open();
-    const ais = within(dialog).getByRole("group", { name: "AIs" });
+    // One list by name: AIs and users side by side, not an AIs section and a Users section.
+    const candidates = within(dialog).getByRole("group", { name: "Contacts" });
     expect(
-      within(ais)
+      within(candidates)
         .getAllByRole("checkbox")
         .map((c) => c.getAttribute("data-member")),
-    ).toEqual(["a1", "a2", "a5", "a3", "a4"]);
-    const users = within(dialog).getByRole("group", { name: "Users" });
-    expect(
-      within(users)
-        .getAllByRole("checkbox")
-        .map((c) => c.getAttribute("data-member")),
-    ).toEqual(["u2", "u3"]);
+    ).toEqual(["a1", "u2", "u3", "a3", "a2", "a4", "a5"]);
+    expect(within(dialog).queryByRole("group", { name: /^(AIs|Users)$/ })).toBeNull();
     // People join a group through a bridged chat, never as members.
     expect(within(dialog).queryByRole("group", { name: "People" })).toBeNull();
     expect(within(dialog).queryByText("Lia Costa")).toBeNull();
   });
 
-  it("describes each one the way the conversation picker does: badge, handle, folder, host", async () => {
+  it("describes each one the way the conversation picker does: handle, folder, host, and no kind badge", async () => {
     const { dialog } = await open();
     const atlas = box(dialog, "Atlas").closest("li") as HTMLElement;
-    expect(within(atlas).getByText("AI")).toBeInTheDocument();
+    expect(within(atlas).queryByText(/^(AI|IA)$/)).toBeNull();
+    expect(within(dialog).queryByTestId("kind-badge")).toBeNull();
     expect(within(atlas).getByText("@atlas")).toBeInTheDocument();
     expect(within(atlas).getByText("~/atlas")).toBeInTheDocument();
     const sage = box(dialog, "Sage").closest("li") as HTMLElement;
@@ -247,8 +245,9 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
     within(select)
       .getAllByRole("option")
       .map((o) => o.textContent);
-  const ids = (dialog: HTMLElement, group: string) =>
-    within(within(dialog).getByRole("group", { name: group }))
+  /** Everyone offered, in the order the list shows them. */
+  const ids = (dialog: HTMLElement) =>
+    within(dialog)
       .getAllByRole("checkbox")
       .map((c) => c.getAttribute("data-member"));
 
@@ -272,8 +271,7 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
 
   it("offers the AIs that are members of the organization and the users of the instance, and no hosted AI of none", async () => {
     const { dialog } = await open(viewer);
-    expect(ids(dialog, "AIs")).toEqual(["a1", "a2", "a5"]);
-    expect(ids(dialog, "Users")).toEqual(["u2", "u3"]);
+    expect(ids(dialog)).toEqual(["a1", "u2", "u3", "a2", "a5"]);
     expect(within(dialog).queryByRole("checkbox", { name: "Lab" })).toBeNull();
     expect(within(dialog).queryByRole("checkbox", { name: "Old helper" })).toBeNull();
   });
@@ -301,7 +299,7 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
 
     it("offers the users who are members of the organization instead of every user of the instance", async () => {
       const { dialog } = await open({ ...viewer, ...members });
-      expect(ids(dialog, "Users")).toEqual(["u2"]);
+      expect(ids(dialog)).toEqual(["a1", "u2", "a2", "a5"]);
       expect(within(dialog).queryByRole("checkbox", { name: "Cora Dias" })).toBeNull();
     });
 
@@ -319,8 +317,7 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
         ...viewer,
         "GET /orgs/o1/members": json(200, { items: [anaM, bobM, aiM] }),
       });
-      expect(ids(dialog, "Users")).toEqual(["u2"]);
-      expect(ids(dialog, "AIs")).toEqual(["a1", "a2", "a5"]);
+      expect(ids(dialog)).toEqual(["a1", "u2", "a2", "a5"]);
       expect(within(dialog).queryByRole("checkbox", { name: "Ghost" })).toBeNull();
     });
 
@@ -332,7 +329,7 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
         ...viewer,
         "GET /orgs/o1/members": json(200, { items: [zed, anaM, bobM] }),
       });
-      expect(ids(dialog, "Users")).toEqual(["u2", "u7"]);
+      expect(ids(dialog)).toEqual(["a1", "u2", "a2", "a5", "u7"]);
     });
 
     it("offers the members of the other organization when it changes, and drops a pick who is not one of them", async () => {
@@ -349,7 +346,7 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
       expect(
         await within(dialog).findByRole("checkbox", { name: "Cora Dias" }),
       ).toBeInTheDocument();
-      expect(ids(dialog, "Users")).toEqual(["u3"]);
+      expect(ids(dialog)).toEqual(["u3", "a3"]);
       // Bob, picked for Acme, is not a member of Globex.
       await waitFor(() => expect(checked(dialog)).toEqual([]));
       expect(within(dialog).queryByRole("list", { name: "Selected members" })).toBeNull();
@@ -389,7 +386,7 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
         ...viewer,
         "GET /orgs/o1/members": apiError(500, "internal", "boom"),
       });
-      expect(ids(dialog, "Users")).toEqual(["u2", "u3"]);
+      expect(ids(dialog)).toEqual(["a1", "u2", "u3", "a2", "a5"]);
     });
   });
 
@@ -420,7 +417,7 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
     await user.selectOptions(await orgField(dialog), "o2");
 
     expect(await within(dialog).findByRole("checkbox", { name: "Lab" })).toBeInTheDocument();
-    expect(ids(dialog, "AIs")).toEqual(["a3"]);
+    expect(ids(dialog)).toEqual(["u2", "u3", "a3"]);
     expect(within(dialog).queryByRole("checkbox", { name: "Atlas" })).toBeNull();
     // Atlas, picked for Acme, is not a member of Globex; Bob stays picked.
     expect(checked(dialog)).toEqual(["u2"]);
@@ -569,7 +566,7 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
       "POST /groups": json(201, group()),
     });
     expect(within(dialog).queryByRole("combobox", { name: "Organization" })).toBeNull();
-    expect(ids(dialog, "AIs")).toEqual(["a1", "a2", "a5", "a3", "a4"]);
+    expect(ids(dialog)).toEqual(["a1", "u2", "u3", "a3", "a2", "a4", "a5"]);
     await user.type(nameField(dialog), "release crew");
     await user.click(create(dialog));
     await waitFor(() => expect(posted(calls)).toHaveLength(1));
@@ -617,7 +614,7 @@ describe("a refused member (LAY-04)", () => {
     expect(dialog).toBeInTheDocument();
     // What the user typed and picked is still there to fix.
     expect(nameField(dialog)).toHaveValue("release crew");
-    expect(checked(dialog)).toEqual(["a1", "a4", "u2"]);
+    expect(checked(dialog)).toEqual(["a1", "u2", "a4"]);
     expect(posted(calls)).toHaveLength(1);
   });
 
@@ -657,20 +654,22 @@ describe("a refused member (LAY-04)", () => {
   });
 });
 
-describe("kind badges next to names (PROF-09)", () => {
-  it("marks each picked member with its badge: an AI as AI, a user with none", async () => {
+describe("no kind badges next to names (PROF-09, AD-023)", () => {
+  it("shows each picked member by its name alone, an AI as a user", async () => {
     const { user, dialog } = await open();
     await user.click(box(dialog, "Atlas"));
     await user.click(box(dialog, "Bob Lima"));
     const picked = within(dialog).getByRole("list", { name: "Selected members" });
     const [atlas, bob] = within(picked).getAllByRole("listitem") as [HTMLElement, HTMLElement];
     expect(within(atlas).getByText("Atlas")).toBeInTheDocument();
-    expect(within(atlas).getByTestId("kind-badge")).toHaveTextContent("AI");
     expect(within(bob).getByText("Bob Lima")).toBeInTheDocument();
-    expect(within(bob).queryByTestId("kind-badge")).toBeNull();
+    for (const chip of [atlas, bob]) {
+      expect(within(chip).queryByTestId("kind-badge")).toBeNull();
+      expect(within(chip).queryByText(/^(AI|IA)$/)).toBeNull();
+    }
   });
 
-  it("marks a refused AI as an AI in the list of refused members", async () => {
+  it("lists a refused AI by its name alone in the list of refused members", async () => {
     const { user, dialog } = await open({
       "POST /groups": apiErrorWithRefused([{ id: "a4", reason: "person" }]),
     });
@@ -680,7 +679,8 @@ describe("kind badges next to names (PROF-09)", () => {
     const alert = await within(dialog).findByRole("alert");
     const refused = within(within(alert).getByRole("listitem"));
     expect(refused.getByText("Old helper")).toBeInTheDocument();
-    expect(refused.getByTestId("kind-badge")).toHaveTextContent("AI");
+    expect(refused.queryByTestId("kind-badge")).toBeNull();
+    expect(refused.queryByText(/^(AI|IA)$/)).toBeNull();
   });
 });
 
@@ -739,9 +739,9 @@ describe("the members list", () => {
     expect(await within(dialog).findByRole("checkbox", { name: "Atlas" })).toBeInTheDocument();
   });
 
-  it("says there is no one to add when the user has no AIs or other users", async () => {
+  it("says there is no one to add when the user has no contacts", async () => {
     const { dialog } = await open({ "GET /contacts": json(200, makeContacts()) }, false);
-    expect(await within(dialog).findByText("No AIs or users to add yet.")).toBeInTheDocument();
+    expect(await within(dialog).findByText("No contacts to add yet.")).toBeInTheDocument();
   });
 
   it("stops at the 50 members a new group can start with", async () => {

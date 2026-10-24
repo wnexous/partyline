@@ -78,7 +78,7 @@ describe("message item (UI-05)", () => {
     }
   });
 
-  it("shows author kind, author name, chat and platform, and time", async () => {
+  it("shows author name, chat and platform, and time, and names an AI or a person by no kind (AD-023)", async () => {
     mockApi({
       "GET /rooms/r1/messages": page([
         chat(1, { created_at: "2026-10-19T12:34:00Z" }),
@@ -96,9 +96,14 @@ describe("message item (UI-05)", () => {
     expect(within(row(1)).getByText(/telegram/i)).toBeInTheDocument();
     const time = within(row(1)).getByRole("time");
     expect(time).toHaveAttribute("datetime", "2026-10-19T12:34:00Z");
-    expect(within(row(2)).getByText("Agent")).toBeInTheDocument();
+    // Where a chat or the system speaks says where the text came from; an AI and a person are
+    // just their names, for the eye and for a screen reader.
     expect(within(row(2)).getByText("release-bot")).toBeInTheDocument();
-    expect(within(row(3)).getByText("Person")).toBeInTheDocument();
+    expect(within(row(3)).getByText("Ana Souza")).toBeInTheDocument();
+    for (const seq of [2, 3]) {
+      expect(within(row(seq)).queryByText(/^(Agent|Person|AI|IA)$/)).toBeNull();
+      expect(row(seq).textContent).not.toMatch(/Agent|Person/);
+    }
     expect(within(row(4)).getByText("System")).toBeInTheDocument();
   });
 
@@ -264,7 +269,7 @@ describe("message author (PROF-03, PROF-09, GRP-03)", () => {
   });
   const ana = makeIntelligence();
 
-  it("shows an AI's avatar, AI badge and name, and its @handle on focus (PROF-09)", async () => {
+  it("shows an AI's avatar and name with no AI badge, and its @handle on focus (PROF-09, AD-023)", async () => {
     mockApi({
       "GET /rooms/r1/messages": page([
         makeMessage({
@@ -279,7 +284,8 @@ describe("message author (PROF-03, PROF-09, GRP-03)", () => {
     renderTimeline();
     await screen.findByTestId("message-1");
     expect(within(row(1)).getByTestId("intelligence-avatar")).toHaveTextContent("A");
-    expect(within(row(1)).getByText("AI")).toBeInTheDocument();
+    expect(within(row(1)).queryByText(/^(AI|IA)$/)).toBeNull();
+    expect(within(row(1)).queryByTestId("kind-badge")).toBeNull();
     expect(within(row(1)).queryByText("@atlas")).toBeNull();
     act(() => within(row(1)).getByRole("link", { name: "Atlas" }).focus());
     expect(await screen.findByRole("tooltip")).toHaveTextContent("@atlas");
@@ -550,6 +556,6 @@ describe("timeline (UI-04)", () => {
     mockApi({ "GET /rooms/r1/messages": page([]) });
     renderTimeline();
     expect(await screen.findByRole("heading", { name: "No messages yet" })).toBeInTheDocument();
-    expect(screen.getByText(/Add agents and chats from Members/)).toBeInTheDocument();
+    expect(screen.getByText(/Add members from Members/)).toBeInTheDocument();
   });
 });

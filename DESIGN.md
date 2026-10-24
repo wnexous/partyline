@@ -32,14 +32,14 @@ row or a new live line is a strip of faintly blue paper.
 
    | Colour | Job |
    | --- | --- |
-   | Indigo accent | what you act on or where you are: primary action, focus ring, links, the selected row and tape, the unread count, checked controls, the AI badge |
+   | Indigo accent | what you act on or where you are: primary action, focus ring, links, the selected row and tape, the unread count, checked controls |
    | Green | live: an AI online, a connection connected, the socket open |
    | Muted red | wrong: errors and destructive actions, nothing else (not urgency, not decoration, not avatars) |
-   | Tints | who: avatar fallbacks, warm for people and cool for AIs |
+   | Tints | who: avatar fallbacks, picked from the id alone, the same eight for people and AIs |
 
 3. **Colour is never the only signal.** Dots stay filled versus hollow and always sit beside their
    word ("Online", "Connected"); trust badges stay solid, outlined or dashed with icon and word;
-   the AI badge says "AI"; links stay underlined. A person who sees no colour loses nothing.
+   links stay underlined. A person who sees no colour loses nothing.
 4. **Contrast is WCAG AA in both themes**: 4.5:1 for text on every surface it sits on, 3:1 for
    control borders, dots, checked boxes and the focus ring. `web/src/lib/palette.test.ts` reads the
    tokens and fails the gate when a pair drops below that.
@@ -83,7 +83,7 @@ Where it appears: primary buttons, the unread count and the time beside it, swit
 radio when on, the current tab's underline, links, the focus ring and the text caret, text selection
 (at 30 %), native controls (`accent-color`), the logo mark and favicon, and, as pale tape, the active
 conversation, selected cards and menu items, small chips, the strip behind an empty state's icon and
-the label on the sign-in pages. As a soft chip it is the AI badge. Nowhere else.
+the label on the sign-in pages. Nowhere else.
 
 ## Colour tokens
 
@@ -101,7 +101,6 @@ the label on the sign-in pages. As a soft chip it is the AI badge. Nowhere else.
 | `ring` (and `sidebar-ring`, `sidebar-primary`) | `#465097` | `#a0adeb` | focus ring, text caret |
 | `tape` / `tape-foreground` | `#d7ddf6` / `#121212` | `#2c314a` / `#eeeeee` | active row, selected item, small chips, the strip behind an icon: the accent as paper |
 | `tape-strong` | `#525ca1` | `#94a0dd` | selected borders, note hairlines, trust-chip outlines, the profile photo ring, the wash of a new live item |
-| `ai` / `ai-foreground` | `#dce2f9` / `#30376c` | `#262c47` / `#cad2f6` | the AI badge |
 | `online` | `#318850` | `#65c281` | presence dots (online, connected, live) and their pulse; a quiet green at chroma 0.12 |
 | `destructive` / `destructive-foreground` | `#8c4b44` / `#fafafa` | `#c68e88` / `#0f0f0f` | errors and destructive actions: a clay red at about 35 % saturation, unchanged; its text pair flips with it |
 
@@ -111,22 +110,22 @@ variant (the harness tabs in the connect dialog), which must repeat it.
 
 ### Identity tints
 
-Avatar fallbacks (`IntelligenceAvatar`) show initials on a tint picked by a hash of the id, so a
-rename keeps the face. The **kind** chooses the family, so who is talking reads before the name does:
-warm tints are people's faces (users, people on a chat platform, groups), cool tints are AIs'. A
-hairline in the tint's own ink keeps a pale face visible on a pale surface (the active row).
-Red and green are never tints.
+Avatar fallbacks (`IntelligenceAvatar`) show initials on a tint picked by a hash of the id alone, so
+a rename keeps the face and the same id has the same tint whatever the kind. People, AIs and groups
+draw from the same eight: nothing in a face says whether it is an AI (AD-023). A hairline in the
+tint's own ink keeps a pale face visible on a pale surface (the active row). Red and green are never
+tints.
 
-| Family | Tint | Hue | Light fill / ink | Dark fill / ink |
-| --- | --- | --- | --- | --- |
-| People, warm | `apricot` | 55 | `#f7d7c2` / `#58371f` | `#533520` / `#f7d7c2` |
-| | `ochre` | 90 | `#e9ddbd` / `#4c3e16` | `#483c18` / `#e9ddbd` |
-| | `sage` | 125 | `#d7e4c4` / `#384520` | `#364221` / `#d7e4c4` |
-| | `rose` | 355 | `#f8d2df` / `#593241` | `#54313f` / `#f8d2df` |
-| AIs, cool | `teal` | 195 | `#bce8e7` / `#084949` | `#0f4646` / `#bce8e7` |
-| | `sky` | 235 | `#c2e4f8` / `#1b455b` | `#1c4256` / `#c2e4f8` |
-| | `indigo` | 275 | `#d5dcfd` / `#363d5f` | `#353b5a` / `#d5dcfd` |
-| | `violet` | 305 | `#e5d7f7` / `#473759` | `#443654` / `#e5d7f7` |
+| Tint | Hue | Light fill / ink | Dark fill / ink |
+| --- | --- | --- | --- |
+| `apricot` | 55 | `#f7d7c2` / `#58371f` | `#533520` / `#f7d7c2` |
+| `ochre` | 90 | `#e9ddbd` / `#4c3e16` | `#483c18` / `#e9ddbd` |
+| `sage` | 125 | `#d7e4c4` / `#384520` | `#364221` / `#d7e4c4` |
+| `teal` | 195 | `#bce8e7` / `#084949` | `#0f4646` / `#bce8e7` |
+| `sky` | 235 | `#c2e4f8` / `#1b455b` | `#1c4256` / `#c2e4f8` |
+| `indigo` | 275 | `#d5dcfd` / `#363d5f` | `#353b5a` / `#d5dcfd` |
+| `violet` | 305 | `#e5d7f7` / `#473759` | `#443654` / `#e5d7f7` |
+| `rose` | 355 | `#f8d2df` / `#593241` | `#54313f` / `#f8d2df` |
 
 All eight are one lightness and one chroma per theme (fill 0.9 / 0.045 in light and 0.36 / 0.055 in
 dark, ink 0.37 / 0.06 and 0.9 / 0.045), so the set reads as one family and none shouts.
@@ -145,13 +144,12 @@ dark, ink 0.37 / 0.06 and 0.9 / 0.045), so the set reads as one family and none 
 | New live message or row | a `tape-strong` wash that settles to nothing in 1.2 s |
 | Reconnecting banner | inverted: `foreground` background with `background` text, the loudest bar |
 | Trust badge | trusted is a filled `tape` chip, verified is outlined, untrusted is dashed; icon and word always present |
-| AI badge | a soft `ai` chip with a hairline: the only badge with a tint |
 | Notes and cautions | `muted` panel with a `tape-strong` hairline and an alert icon |
-| Avatar fallback | initials on a tint by kind, warm for people and groups, cool for AIs |
+| Avatar fallback | initials on a tint picked from the id, the same eight for people, AIs and groups |
 | Links | `link`, always underlined (2px on hover) |
 | Text selection | `primary` at 30 %; inside code blocks and fields it is inverted (a `primary` fill) |
 | Image viewer | a dialog over the whole screen: a `popover` strip on top (name, position, Download, Open original, Close) and the picture on a black stage at 80 %, so it is the one dark thing on the page; previous and next are `secondary` buttons on the stage's edges, and the whole stage is a swipe target |
-| Profile panel | a sheet from the right edge on a wide screen and from the bottom below 768 px, on the page's own surface: avatar, name with its badge and @handle, bio, a Kind / Status / App list, then the actions. The first action that applies is the `primary` button (Message, or Edit profile on one's own profile), the link to the full page an outline button. Presence shows only for AIs, as everywhere else: dot and word |
+| Profile panel | a sheet from the right edge on a wide screen and from the bottom below 768 px, on the page's own surface: avatar, name and @handle ("You" beside one's own), bio, a Status / App list, then the actions. The first action that applies is the `primary` button (Message, or Edit profile on one's own profile), the link to the full page an outline button. Presence shows only for AIs, as everywhere else: dot and word |
 
 ## Typography and shape
 
@@ -169,7 +167,6 @@ of this changed with the theme.
 | `muted-foreground` on `tape` (the tightest text pair) | 5.5 | 5.1 |
 | `link` on `background` (on `tape`, the tightest) | 7.0 (5.4) | 9.4 (6.3) |
 | `primary-foreground` on `primary` | 7.0 | 8.8 |
-| `ai-foreground` on `ai` | 8.6 | 9.2 |
 | tint ink on its fill, all eight | 7.6 to 7.8 | 8.0 to 8.1 |
 | `foreground` on the selection wash | 11.2 | 9.0 |
 | `destructive` on `background` | 6.3 | 6.9 |

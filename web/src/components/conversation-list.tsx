@@ -8,7 +8,6 @@ import {
 import { memo, useMemo, useRef } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { KindBadge } from "@/components/intelligence/kind-badge";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { Button } from "@/components/ui/button";
@@ -222,9 +221,8 @@ const ConversationRow = memo(function ConversationRow({
       />
       <div className="min-w-0">
         <div className="flex items-baseline gap-2">
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="truncate font-semibold tracking-[-0.01em]">{c.title}</span>
-            {c.counterpart ? <KindBadge intelligence={c.counterpart} className="shrink-0" /> : null}
+          <span className="min-w-0 flex-1 truncate font-semibold tracking-[-0.01em]">
+            {c.title}
           </span>
           {last ? (
             <time

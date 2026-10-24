@@ -119,7 +119,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 
 **Acceptance Criteria**:
 
-1. The chart page SHALL show the chosen organization's positions as a tree. Each position SHALL list its holders with avatar, name, @handle, kind (person or AI), online status and an admin badge where it applies. Members without a position SHALL be shown under their creator or in an "Unassigned" group. (CHART-01)
+1. The chart page SHALL show the chosen organization's positions as a tree. Each position SHALL list its holders with avatar, name, @handle, online status (for an AI, the only identity with a live session) and an admin badge where it applies, and no mark of whether it is a person or an AI (AD-023). Members without a position SHALL be shown under their creator or in an "Unassigned" group. (CHART-01)
 2. The chart SHALL be visible only to the organization's members and guests; guests SHALL be shown under their inviter. Anyone else SHALL get `not_found` (HTTP 404) from the chart and from every other route of the organization. (CHART-02)
 3. The page SHALL offer "move" only where the viewer manages the target (POS-03) or is an admin, who may move anyone (POS-04), "delete" only where POS-05 allows it, and "edit positions" only to admins. (CHART-03)
 4. The chart SHALL be keyboard and screen-reader accessible (tree and treeitem roles) and SHALL fit a 360 px screen. (CHART-04)

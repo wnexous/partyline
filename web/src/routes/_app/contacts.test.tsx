@@ -115,7 +115,7 @@ describe("the page", () => {
     expect(await screen.findByRole("heading", { name: "Contacts", level: 1 })).toBeInTheDocument();
   });
 
-  it("has its sections in order: the organizations, the hosted AIs, people, users", async () => {
+  it("has its sections in order: the organizations, the hosted AIs, people, the rest of the instance", async () => {
     api();
     renderRoute("/contacts");
     await screen.findByRole("heading", { name: "Acme", level: 2 });
@@ -124,7 +124,7 @@ describe("the page", () => {
       "Globex",
       "Hosted by me",
       "People",
-      "Users",
+      "On this instance",
     ]);
   });
 });
@@ -164,7 +164,7 @@ describe("organizations and their AIs (CONT-01, AD-016)", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows each AI's name, handle and badge, whether it is online, its app and when it was last seen", async () => {
+  it("shows each AI's name and handle, whether it is online, its app and when it was last seen, with no kind badge", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
     api(orgContacts);
@@ -173,7 +173,8 @@ describe("organizations and their AIs (CONT-01, AD-016)", () => {
 
     const a = within(row("a1"));
     expect(a.getByText("@a")).toBeInTheDocument();
-    expect(a.getByText("AI")).toBeInTheDocument();
+    expect(a.queryByText(/^(AI|IA)$/)).toBeNull();
+    expect(a.queryByTestId("kind-badge")).toBeNull();
     expect(a.getByText("Online")).toBeInTheDocument();
     expect(a.getByText("Claude Code")).toBeInTheDocument();
     expect(a.getByText("~/a")).toBeInTheDocument();
@@ -194,7 +195,7 @@ describe("organizations and their AIs (CONT-01, AD-016)", () => {
     const acme = await orgRegion("Acme");
     const sage = within(within(acme).getByTestId("contact-a5"));
     expect(sage.getByText("Sage")).toBeInTheDocument();
-    expect(sage.getByText("AI")).toBeInTheDocument();
+    expect(sage.queryByText(/^(AI|IA)$/)).toBeNull();
     expect(sage.getByText("hosted by @bob")).toBeInTheDocument();
     expect(sage.getByText("/srv/sage")).toBeInTheDocument();
     expect(sage.getByText("Offline")).toBeInTheDocument();
@@ -366,7 +367,7 @@ describe("filtering (CONT-01)", () => {
     await waitFor(() => expect(screen.getByTestId("contact-u2")).toBeInTheDocument());
     expect(screen.queryByTestId("contact-a5")).toBeNull();
     expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
-      "Users",
+      "On this instance",
     ]);
 
     await user.clear(filter());
@@ -615,16 +616,16 @@ describe("merging a hosted AI (MRG-01, MRG-02)", () => {
 });
 
 describe("users and people (CONT-01)", () => {
-  it("lists the other users of the instance", async () => {
+  it("lists the other users of the instance, under a heading that names no kind", async () => {
     api();
     renderRoute("/contacts");
-    const heading = await screen.findByRole("heading", { name: "Users", level: 2 });
+    const heading = await screen.findByRole("heading", { name: "On this instance", level: 2 });
     const users = within(heading.closest("section") as HTMLElement);
     expect(users.getByTestId("contact-u2")).toHaveTextContent("Bob Lima");
     expect(users.getByTestId("contact-u2")).toHaveTextContent("@bob");
     expect(users.getByTestId("contact-u3")).toHaveTextContent("Cora Dias");
-    // A user is not an AI.
-    expect(users.queryByText("AI")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Users" })).toBeNull();
+    expect(users.queryByTestId("kind-badge")).toBeNull();
   });
 
   it("lists the people by connector, with how many each has seen, collapsed until asked", async () => {
@@ -654,7 +655,9 @@ describe("users and people (CONT-01)", () => {
     const lia_ = await screen.findByTestId("contact-p1");
     expect(lia_).toHaveTextContent("Lia Costa");
     expect(lia_).toHaveTextContent("@lia");
-    expect(lia_).toHaveTextContent("WhatsApp");
+    // The platform is the connector's, named once above its people, not a badge on each of them.
+    expect(lia_).not.toHaveTextContent("WhatsApp");
+    expect(within(lia_).queryByTestId("kind-badge")).toBeNull();
     expect(screen.getByTestId("contact-p2")).toHaveTextContent("Liam Reis");
     const asked = calls.filter((c) => c.path === "/contacts/people");
     expect(asked).toHaveLength(1);
@@ -782,7 +785,7 @@ describe("opening a profile", () => {
     renderRoute("/contacts");
     await orgRegion("Acme");
     const link = within(row("a1")).getByRole("link");
-    expect(link).toHaveAccessibleName("A AI @a");
+    expect(link).toHaveAccessibleName("A @a");
   });
 
   it("links a person to their profile too", async () => {

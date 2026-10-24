@@ -257,7 +257,6 @@ function ComposerForm({
             id={mentionListId}
             candidates={candidates}
             activeIndex={active}
-            viewerId={viewerId}
             onPick={completeMention}
           />
         ) : null}

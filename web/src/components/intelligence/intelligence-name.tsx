@@ -1,17 +1,19 @@
-import { KindBadge } from "@/components/intelligence/kind-badge";
+import { YouBadge } from "@/components/intelligence/you-badge";
 import { ProfileLink } from "@/components/profile-link";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { cn } from "@/lib/utils";
 
 /*
- * A display name with its kind badge and @handle (PROF-09). The handle lives in a tooltip that
- * also opens on keyboard focus, or inline in detail views through `showHandle`.
+ * A display name with its @handle (PROF-09). Display names are not unique, so the handle is what
+ * tells two identities with one name apart; it lives in a tooltip that also opens on keyboard
+ * focus, or inline in detail views through `showHandle`. Nothing next to the name says whether the
+ * identity is an AI or a person (AD-023).
  */
 
 export interface IntelligenceNameProps {
   intelligence: IntelligenceRef;
-  /** The viewer's intelligence id: makes the badge say "You". */
+  /** The viewer's intelligence id: marks the viewer's own name with "You". */
   viewerId?: string;
   /** Shows the @handle next to the name instead of only in the tooltip. */
   showHandle?: boolean;
@@ -78,7 +80,7 @@ export function IntelligenceName({
       ) : (
         nameEl
       )}
-      <KindBadge intelligence={intelligence} viewerId={viewerId} />
+      <YouBadge intelligence={intelligence} viewerId={viewerId} />
       {showHandle && handle ? (
         <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{handle}</span>
       ) : null}

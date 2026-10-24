@@ -7,7 +7,7 @@ import {
   initials,
 } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
-import { KindBadge } from "@/components/intelligence/kind-badge";
+import { YouBadge } from "@/components/intelligence/you-badge";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { renderWithProviders } from "@/test/render";
@@ -95,7 +95,7 @@ describe("IntelligenceAvatar (PROF-08)", () => {
 
   it("tints faces from soft tokens: never the red of errors or the green of presence", () => {
     const ids = Array.from({ length: 200 }, (_, i) => `id-${i}`);
-    const tones = new Set(ids.flatMap((id) => [avatarTone(id), avatarTone(id, "ai")]));
+    const tones = new Set(ids.map((id) => avatarTone(id)));
     expect(tones.size).toBe(8);
     for (const tone of tones) {
       expect(tone).toMatch(/^bg-tint-[a-z]+ text-tint-[a-z]+-foreground$/);
@@ -103,33 +103,55 @@ describe("IntelligenceAvatar (PROF-08)", () => {
     }
   });
 
-  it("tells AIs from people by family: cool tints for an AI, warm for everyone else", () => {
+  it("draws every tint from one palette, by id alone (AD-023)", () => {
     const ids = Array.from({ length: 200 }, (_, i) => `id-${i}`);
-    const people = new Set(ids.map((id) => avatarTone(id, "human")));
-    const ais = new Set(ids.map((id) => avatarTone(id, "ai")));
-    expect(people.size).toBe(4);
-    expect(ais.size).toBe(4);
-    expect([...people].filter((tone) => ais.has(tone))).toEqual([]);
-    const names = (tones: Set<string>) =>
-      [...tones].map((tone) => /bg-tint-([a-z]+)/.exec(tone)?.[1]).sort();
-    expect(names(people)).toEqual(["apricot", "ochre", "rose", "sage"]);
-    expect(names(ais)).toEqual(["indigo", "sky", "teal", "violet"]);
-    // The same id keeps its position in the family, whatever the kind.
-    expect(avatarTone("id-7")).toBe(avatarTone("id-7", "human"));
+    const names = [
+      ...new Set(ids.map((id) => /bg-tint-([a-z]+)/.exec(avatarTone(id))?.[1])),
+    ].sort();
+    // The warm tints that used to be people's and the cool ones that used to be AIs' are one set.
+    expect(names).toEqual(["apricot", "indigo", "ochre", "rose", "sage", "sky", "teal", "violet"]);
+    // The tint is a function of the id: the same id keeps it, and the function takes nothing else.
+    expect(avatarTone("id-7")).toBe(avatarTone("id-7"));
+    expect(avatarTone).toHaveLength(1);
   });
 
-  it("paints an AI cool and a person warm, whatever the name looks like", () => {
-    const { container } = renderWithProviders(
-      <>
-        <IntelligenceAvatar intelligence={atlas} />
-        <IntelligenceAvatar intelligence={ana} />
-        <IntelligenceAvatar intelligence={person} />
-      </>,
-    );
-    const [ai, user, chatPerson] = [...container.querySelectorAll('[data-slot="avatar-fallback"]')];
-    expect(ai?.className).toMatch(/bg-tint-(teal|sky|indigo|violet)\b/);
-    expect(user?.className).toMatch(/bg-tint-(apricot|ochre|sage|rose)\b/);
-    expect(chatPerson?.className).toMatch(/bg-tint-(apricot|ochre|sage|rose)\b/);
+  it("gives the same id the same tint whatever the kind, so an AI and a person look alike", () => {
+    const ids = Array.from({ length: 60 }, (_, i) => `id-${i}`);
+    const tintOf = (intelligence: IntelligenceRef) => {
+      const { container } = renderWithProviders(<IntelligenceAvatar intelligence={intelligence} />);
+      return container.querySelector('[data-slot="avatar-fallback"]')?.className;
+    };
+    for (const id of ids) {
+      const asAI = tintOf({ ...atlas, id });
+      expect(tintOf({ ...ana, id })).toBe(asAI);
+      expect(tintOf({ ...person, id })).toBe(asAI);
+    }
+  });
+
+  it("paints an AI, a user and a person from the whole palette, whatever the name looks like", () => {
+    const tints = new Set<string>();
+    for (const [i, kindOf] of [atlas, ana, person].entries()) {
+      for (let n = 0; n < 40; n += 1) {
+        const { container, unmount } = renderWithProviders(
+          <IntelligenceAvatar intelligence={{ ...kindOf, id: `face-${i}-${n}` }} />,
+        );
+        const tint = /bg-tint-([a-z]+)\b/.exec(
+          container.querySelector('[data-slot="avatar-fallback"]')?.className ?? "",
+        )?.[1];
+        tints.add(`${kindOf.kind}:${kindOf.role}:${tint}`);
+        unmount();
+      }
+    }
+    // Each kind reaches warm and cool tints alike: no family is reserved for any of them.
+    for (const kindOf of ["ai:ai", "human:user", "human:person"]) {
+      const reached = [...tints]
+        .filter((t) => t.startsWith(`${kindOf}:`))
+        .map((t) => t.split(":")[2]);
+      expect(reached.some((t) => ["apricot", "ochre", "sage", "rose"].includes(t ?? ""))).toBe(
+        true,
+      );
+      expect(reached.some((t) => ["teal", "sky", "indigo", "violet"].includes(t ?? ""))).toBe(true);
+    }
   });
 
   it("has a 96 px size for the profile page, with its initials larger", () => {
@@ -197,61 +219,75 @@ describe("IntelligenceAvatar next to a name", () => {
   });
 });
 
-describe("KindBadge (PROF-09)", () => {
-  it("marks an AI as AI even when its display name looks like a human's", () => {
-    renderWithProviders(<KindBadge intelligence={atlas} />);
-    expect(screen.getByTestId("kind-badge")).toHaveTextContent(/^AI$/);
-  });
-
-  it("shows a person's platform", () => {
-    renderWithProviders(<KindBadge intelligence={person} />);
-    expect(screen.getByTestId("kind-badge")).toHaveTextContent(/^WhatsApp$/);
-  });
-
+describe("YouBadge (PROF-09)", () => {
   it("shows You for the viewer", () => {
-    renderWithProviders(<KindBadge intelligence={person} viewerId={person.id} />);
-    expect(screen.getByTestId("kind-badge")).toHaveTextContent(/^You$/);
+    renderWithProviders(<YouBadge intelligence={person} viewerId={person.id} />);
+    expect(screen.getByTestId("you-badge")).toHaveTextContent(/^You$/);
   });
 
-  it("tints the AI badge and no other, so an AI stands out in a list of names", () => {
+  it("shows nothing for anyone else, an AI or a person included", () => {
     renderWithProviders(
       <>
-        <KindBadge intelligence={atlas} />
-        <KindBadge intelligence={person} />
-        <KindBadge intelligence={ana} viewerId={ana.id} />
+        <YouBadge intelligence={atlas} viewerId={ana.id} />
+        <YouBadge intelligence={person} viewerId={ana.id} />
+        <YouBadge intelligence={ana} />
       </>,
     );
-    const [ai, platform, you] = screen.getAllByTestId("kind-badge");
-    expect(ai?.className).toMatch(/\bbg-ai\b.*\btext-ai-foreground\b/);
-    expect(platform?.className).not.toMatch(/\bbg-ai\b/);
-    expect(you?.className).not.toMatch(/\bbg-ai\b/);
+    expect(screen.queryByTestId("you-badge")).toBeNull();
+    expect(screen.queryByText(/^(AI|IA|WhatsApp)$/)).toBeNull();
   });
 
-  it("translates the badges in Portuguese", () => {
+  it("translates the badge in Portuguese", () => {
     useLiveStore.setState({ locale: "pt-BR" });
-    renderWithProviders(
-      <>
-        <KindBadge intelligence={atlas} />
-        <KindBadge intelligence={person} viewerId={person.id} />
-      </>,
-    );
-    const badges = screen.getAllByTestId("kind-badge");
-    expect(badges[0]).toHaveTextContent(/^IA$/);
-    expect(badges[1]).toHaveTextContent(/^Você$/);
+    renderWithProviders(<YouBadge intelligence={ana} viewerId={ana.id} />);
+    expect(screen.getByTestId("you-badge")).toHaveTextContent(/^Você$/);
   });
 });
 
 describe("IntelligenceName (PROF-09)", () => {
-  it("keeps the AI badge and @handle for an AI named like a human, on keyboard focus", async () => {
+  it("marks an AI named like a human by its @handle on keyboard focus, not by a kind badge (AD-023)", async () => {
     const user = userEvent.setup();
     renderWithProviders(<IntelligenceName intelligence={atlas} viewerId={ana.id} />);
     expect(screen.getByText("Ana Souza")).toBeInTheDocument();
-    expect(screen.getByTestId("kind-badge")).toHaveTextContent(/^AI$/);
+    expect(screen.queryByTestId("kind-badge")).toBeNull();
+    expect(screen.queryByText(/^(AI|IA)$/)).toBeNull();
     expect(screen.queryByText("@atlas")).toBeNull();
 
     await user.tab();
     expect(screen.getByRole("button", { name: "Ana Souza" })).toHaveFocus();
     expect(await screen.findByRole("tooltip")).toHaveTextContent(/^@atlas$/);
+  });
+
+  it("looks the same for an AI, a user and a person: the name and nothing after it", () => {
+    const { container } = renderWithProviders(
+      <>
+        <IntelligenceName intelligence={atlas} viewerId={ana.id} />
+        <IntelligenceName
+          intelligence={makeIntelligence({ id: "u9", handle: "" })}
+          viewerId={ana.id}
+        />
+        <IntelligenceName intelligence={{ ...person, handle: "" }} viewerId={ana.id} />
+      </>,
+    );
+    const names = screen.getAllByTestId("intelligence-name");
+    expect(names).toHaveLength(3);
+    for (const name of names) {
+      expect(name).toHaveTextContent(/^Ana Souza$/);
+      expect(name.querySelector('[data-slot="badge"]')).toBeNull();
+    }
+    expect(container.querySelector('[data-slot="badge"]')).toBeNull();
+  });
+
+  it("says You after the viewer's own name, and only there", () => {
+    renderWithProviders(
+      <>
+        <IntelligenceName intelligence={ana} viewerId={ana.id} />
+        <IntelligenceName intelligence={atlas} viewerId={ana.id} />
+      </>,
+    );
+    const [mine, theirs] = screen.getAllByTestId("intelligence-name");
+    expect(mine).toHaveTextContent(/^Ana SouzaYou$/);
+    expect(theirs).toHaveTextContent(/^Ana Souza$/);
   });
 
   it("shows the handle inline in detail views", () => {

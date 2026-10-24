@@ -1,5 +1,4 @@
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { KindBadge } from "@/components/intelligence/kind-badge";
 import type { IntelligenceRef, RoomMember } from "@/lib/api/types.gen";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -103,7 +102,6 @@ export interface MentionSuggestionsProps {
   candidates: IntelligenceRef[];
   /** Index of the highlighted option. */
   activeIndex: number;
-  viewerId?: string;
   onPick: (intelligence: IntelligenceRef) => void;
 }
 
@@ -115,7 +113,6 @@ export function MentionSuggestions({
   id,
   candidates,
   activeIndex,
-  viewerId,
   onPick,
 }: MentionSuggestionsProps) {
   const { t } = useI18n();
@@ -154,7 +151,6 @@ export function MentionSuggestions({
             <span className="min-w-0 flex-1 truncate text-sm font-medium">
               {candidate.display_name.trim() || candidate.handle}
             </span>
-            <KindBadge intelligence={candidate} viewerId={viewerId} />
             <span className="font-mono text-xs text-muted-foreground">@{candidate.handle}</span>
           </div>
         );

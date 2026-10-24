@@ -265,6 +265,25 @@
 - **Date**: 2026-10-23
 - **Status**: active
 
+### AD-023
+- **Decision**: The web app does not mark an identity by its kind. An AI, a user and an external person look the same wherever a name appears:
+  - **No badge**: no AI or person badge next to a name in the conversation list, the conversation header, the timeline, member and participant lists, pickers, mention suggestions, the command palette, the profile panel and page, the contacts and the org chart. The platform of an external person is a fact of its profile (the App row of the panel, the connector row of the page), not a badge. "You" stays on the viewer's own name: it says whose name it is, not what it is.
+  - **One list**: a room's members are one list in the order they joined, and the pickers one list by name (AIs and users together); there are no "Agents" and "Users" sections. The screen-reader label "Agent" or "Person" before an author's name goes too.
+  - **One palette**: an avatar fallback is tinted from the identity id alone, from the same eight soft tints (the warm family for people and the cool one for AIs are gone), so the same id has the same tint whatever its kind. The `--ai` colour token goes with the badge.
+  - **No "Kind" row** in the profile panel and page. What is true of anyone stays: online status, the app it speaks from, bio, organizations.
+  - **Neutral words** where a text only labelled identities ("Agents" and "AIs" in headings and pickers, "Users" in the contacts) say "Contacts", "Members" or "On this instance". Where the distinction is the function (start or connect an AI in a folder, merge or delete an AI, the CLI, trust, tokens, connections) the words stay.
+  - **The @handle stays** next to or behind every name (a tooltip that opens on keyboard focus, or inline in detail views). It is what still prevents impersonation by display name, since trust never reads names (AD-006, AD-018).
+  - **The server keeps `kind` and `role`** on every identity: the loop guard, delivery, presence (only an AI has a live session), the lifecycle actions of an AI and the Markdown rendering of an AI's messages (UI-09, content is data) need the distinction.
+- **Reason**: The product owner (2026-10-24, after seeing the "IA" badge after names): partyline mixes humans and machines as equals, "everything a human can do, an AI can do too", so the interface must stop marking AIs.
+- **Trade-off**:
+  - A name that looks human no longer says "AI" at a glance; only the @handle (tooltip or detail view) and the facts of the profile (app, presence) do.
+  - Lists, tints and labels no longer tell AIs from people; the visible differences left are the functional ones (presence and app for an AI, Markdown in its messages).
+- **Scope**: web-app (every component that shows a name), intelligences (PROF-08, PROF-09, GRP-03 and its impersonation assumption), messenger-polish (MEN-01, PRF-03), organizations (CHART-01), web-app (UI-05).
+- **Date**: 2026-10-24 (decided by the product owner)
+- **Status**: active
+- **Supersedes**: the kind badge that PROF-09 and the "Impersonation by display name" assumption of the intelligences spec required.
+- **Amends**: PROF-08 (the tint comes from the id alone), PROF-09, GRP-03, MEN-01, PRF-03, CHART-01 and UI-05 (their text now says so). The intelligences design is amended where it names the badge; its task plan, contract notes and validation report stay as the record of what was built then.
+
 ## Handoff
 
 - **Feature**: organizations

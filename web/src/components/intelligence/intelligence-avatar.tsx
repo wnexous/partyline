@@ -1,27 +1,23 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import type { IntelligenceKind, IntelligenceRef } from "@/lib/api/types.gen";
+import type { IntelligenceRef } from "@/lib/api/types.gen";
 import { cn } from "@/lib/utils";
 
 /*
  * An intelligence's face (PROF-08): its uploaded image, or initials on a soft tint picked from the
- * design tokens by a hash of its id. The kind chooses the family, so who is talking reads before
- * the name does: warm tints are people's faces (users, people on a chat platform, groups), cool
- * tints are AIs'. The hash only picks the tint inside the family, and only the id drives it, so a
- * rename keeps the face. Red is for errors and green for presence, so neither is a tint.
+ * design tokens by a hash of its id. Only the id drives the tint, never the kind: people and AIs
+ * are drawn from the same palette and look alike, and a rename keeps the face. Red is for errors
+ * and green for presence, so neither is a tint.
  */
 
-const PEOPLE_TONES = [
+const TONES = [
   "bg-tint-apricot text-tint-apricot-foreground",
   "bg-tint-ochre text-tint-ochre-foreground",
   "bg-tint-sage text-tint-sage-foreground",
-  "bg-tint-rose text-tint-rose-foreground",
-] as const;
-
-const AI_TONES = [
   "bg-tint-teal text-tint-teal-foreground",
   "bg-tint-sky text-tint-sky-foreground",
   "bg-tint-indigo text-tint-indigo-foreground",
   "bg-tint-violet text-tint-violet-foreground",
+  "bg-tint-rose text-tint-rose-foreground",
 ] as const;
 
 /** First letter of the first and of the last word; the single letter for a one-word name. */
@@ -35,17 +31,13 @@ export function initials(displayName: string): string {
   return `${first}${last}`.toUpperCase();
 }
 
-/**
- * Token classes for the initials: a tint of the kind's family (cool for an AI, warm for anyone or
- * anything else), stable per id.
- */
-export function avatarTone(id: string, kind?: IntelligenceKind): string {
+/** Token classes for the initials: one of the eight tints, stable per id and blind to the kind. */
+export function avatarTone(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i += 1) {
     hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
   }
-  const tones = kind === "ai" ? AI_TONES : PEOPLE_TONES;
-  return tones[hash % tones.length] ?? tones[0];
+  return TONES[hash % TONES.length] ?? TONES[0];
 }
 
 const PIXELS = { sm: 24, default: 32, lg: 40, xl: 96 } as const;
@@ -86,7 +78,7 @@ export function IntelligenceAvatar({
           // The hairline, in the tint's own ink, keeps a pale face visible on a pale surface.
           "text-xs font-semibold tracking-wide uppercase ring-1 ring-current/25 ring-inset select-none",
           size === "xl" && "text-2xl",
-          avatarTone(intelligence.id, intelligence.kind),
+          avatarTone(intelligence.id),
         )}
       >
         {initials(name)}

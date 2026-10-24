@@ -52,13 +52,52 @@ describe("member picker (CID-20)", () => {
     const dialog = await screen.findByRole("dialog", { name: "Add members" });
     expect(await within(dialog).findByTestId("candidate-agent-a1")).toHaveTextContent("Atlas");
     expect(within(dialog).getByTestId("candidate-user-u2")).toHaveTextContent("Bob Lima");
-    expect(
-      within(dialog)
-        .getAllByRole("region")
-        .map((region) => region.getAttribute("aria-label")),
-    ).toEqual(["AIs", "Users"]);
     expect(within(dialog).queryByTestId(/^candidate-chat-/)).toBeNull();
     expect(calls.some((c) => c.path === "/chats")).toBe(false);
+  });
+
+  it("lists AIs and users in one list by name, with no AIs and Users sections or badges (AD-023)", async () => {
+    const cora = makeIntelligence({ id: "u3", display_name: "Cora Dias", handle: "cora" });
+    const zed = makeAI({ id: "a9", display_name: "Zed", handle: "zed" });
+    mockApi({
+      "GET /contacts": json(
+        200,
+        makeContacts({
+          org_ais: [
+            makeOrgAIs({
+              ais: [makeAIContact({ intelligence: zed }), makeAIContact({ intelligence: atlas })],
+            }),
+          ],
+          users: [cora, bob],
+        }),
+      ),
+    });
+    const user = userEvent.setup();
+    renderWithRouter(
+      <MemberPicker
+        roomId="r1"
+        members={[]}
+        trigger={<button type="button">Add members</button>}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Add members" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add members" });
+    const list = await within(dialog).findByRole("list", { name: "Contacts" });
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((row) => row.getAttribute("data-testid")),
+    ).toEqual([
+      "candidate-agent-a1",
+      "candidate-user-u2",
+      "candidate-user-u3",
+      "candidate-agent-a9",
+    ]);
+    expect(within(dialog).queryAllByRole("region")).toEqual([]);
+    expect(within(dialog).queryByText(/^(AIs|Users|IAs)$/)).toBeNull();
+    expect(within(dialog).queryByTestId("kind-badge")).toBeNull();
+    expect(within(dialog).queryByText(/^(AI|IA)$/)).toBeNull();
   });
 });
 
@@ -94,11 +133,11 @@ describe("member picker in a group of an organization (ORG-03)", () => {
     return screen.findByRole("dialog", { name: "Add members" });
   }
 
-  it("says whose AIs it offers: the group's organization's, not what its user owns or was shown", async () => {
+  it("says whose members it offers: the group's organization's, not what its user owns or was shown", async () => {
     const dialog = await open(json(200, makeRoom({ id: "r1", org_id: "o2" })));
     expect(
       within(dialog).getByText(
-        "The AIs and users of this group’s organization. Only members of the organization can join.",
+        "Everyone in this group’s organization. Only members of the organization can join.",
       ),
     ).toBeInTheDocument();
   });

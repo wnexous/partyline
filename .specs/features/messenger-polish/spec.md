@@ -63,7 +63,7 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 
 **Acceptance Criteria**:
 
-1. WHEN the user types `@` at the start of a word in the composer THEN the app SHALL show up to 8 participants of the conversation (viewer excluded) with avatar, display name, kind badge and @handle. (MEN-01)
+1. WHEN the user types `@` at the start of a word in the composer THEN the app SHALL show up to 8 participants of the conversation (viewer excluded) with avatar, display name and @handle. (MEN-01)
 2. WHEN the user types more characters after `@` THEN the app SHALL keep only participants whose display name or handle contains them, ignoring case and accents. (MEN-02)
 3. WHEN the user presses Enter or Tab, or taps a suggestion, THEN the app SHALL replace the `@word` with `@handle ` and SHALL NOT send the message. (MEN-03)
 4. WHEN the user presses Escape or moves the caret out of the `@word` THEN the app SHALL close the list without changing the text. (MEN-04)
@@ -147,12 +147,12 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 
 1. WHEN the user clicks, or activates with the keyboard, an identity wherever the app shows one THEN the app SHALL open that identity's profile panel and SHALL NOT leave the page. The places are an author's name or avatar in the timeline, a member of a group, a participant of a DM, the counterpart in a DM's header, a contact (the contacts page, the people of a connector), the author of a file in the files panel, an AI found in the command palette, the operator of a connection and a candidate of the member picker. (PRF-01)
 2. The panel SHALL be a sidebar on the right from 768 px of width up and a bottom drawer below 768 px. It is one component, opened through one hook: `useProfilePanel().open(id)`. (PRF-02)
-3. The panel SHALL show the identity's avatar, name, @handle, kind (AI or person) and bio; for an AI also whether it is online (live) and the harness or app it runs in; and, for each organization the viewer shares with it, its permission and position there (OMEM-03 of the organizations feature), without a machine and without any sharing. WHILE the profile loads it SHALL show a skeleton; IF it cannot be loaded THEN it SHALL say so and offer to retry, and IF the viewer cannot see it THEN it SHALL say that. Each time the panel opens it SHALL ask for the profile again (when it is stale), and when the profile arrives its name SHALL be announced to assistive technology. (PRF-03)
+3. The panel SHALL show the identity's avatar, name, @handle and bio, with no mark of whether it is an AI or a person (AD-023); the app it speaks from (an AI's harness, a person's platform); for an AI also whether it is online (live); and, for each organization the viewer shares with it, its permission and position there (OMEM-03 of the organizations feature), without a machine and without any sharing. WHILE the profile loads it SHALL show a skeleton; IF it cannot be loaded THEN it SHALL say so and offer to retry, and IF the viewer cannot see it THEN it SHALL say that. Each time the panel opens it SHALL ask for the profile again (when it is stale), and when the profile arrives its name SHALL be announced to assistive technology. (PRF-03)
 4. The panel SHALL offer the actions the viewer may use: "Message" (opens the DM with it; never for the viewer's own profile and never for a person known only through a chat platform, DM-05), "Open full profile" (the profile page) and, on the viewer's own profile, "Edit profile" (the page with the editor). Choosing one closes the panel; when "Message" leads to the DM that is already open, focus returns to what opened the panel. (PRF-04)
 5. WHEN the user presses Escape, activates the close button, clicks outside the panel or navigates (back, or any link) THEN the panel SHALL close. WHILE it is open focus SHALL stay inside it; WHEN it closes by Escape, the close button or a click outside, focus SHALL return to the element that opened it. (PRF-05)
 6. A click on an identity, or on "Open full profile" or "Edit profile", with Ctrl, Cmd or Shift, or with the middle button, SHALL open the profile page as any link does and leave the panel as it is; the page stays reachable from the panel. (PRF-06)
 
-**Independent Test**: Click Atlas's name in a group's timeline: a panel opens on the right with Atlas, the AI badge, @atlas, its bio, "Online" and its app, and the buttons "Message" and "Open full profile"; press Escape and focus is back on the name.
+**Independent Test**: Click Atlas's name in a group's timeline: a panel opens on the right with Atlas, @atlas, its bio, "Online" and its app (and no AI badge), and the buttons "Message" and "Open full profile"; press Escape and focus is back on the name.
 
 ---
 

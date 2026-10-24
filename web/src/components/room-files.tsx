@@ -273,9 +273,9 @@ function FileRow({
 }
 
 /**
- * Who wrote a file: its author's name with the kind badge (PROF-09). The name is the one the
- * timeline shows. A chat account the server could not resolve to an intelligence has no id and
- * keeps only that name.
+ * Who wrote a file: its author's name (PROF-09), the same for an AI as for a person. The name is
+ * the one the timeline shows. A chat account the server could not resolve to an intelligence has
+ * no id and keeps only that name.
  */
 function FileAuthor({ file }: { file: RoomFile }) {
   const { author } = file;

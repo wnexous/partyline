@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ChartTree, type TreeRowState } from "@/components/chart-tree";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
+import { YouBadge } from "@/components/intelligence/you-badge";
 import { MoveMemberDialog, type MoveTarget } from "@/components/move-member-dialog";
 import { OrgNotFound } from "@/components/org-not-found";
 import { PageHeader } from "@/components/page-header";
@@ -262,14 +263,7 @@ function MemberRow({
           className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground"
         >
           <span className="max-w-full truncate font-mono">@{who.handle}</span>
-          <Badge variant="outline" className="px-1.5 py-0 text-[0.68rem] leading-5">
-            {isAI ? t("intelligence.ai") : t("orgs.kindPerson")}
-          </Badge>
-          {who.id === viewerId ? (
-            <Badge variant="secondary" className="px-1.5 py-0 text-[0.68rem] leading-5">
-              {t("intelligence.you")}
-            </Badge>
-          ) : null}
+          <YouBadge intelligence={who} viewerId={viewerId} />
           {m.permission === PermissionAdmin ? (
             <Badge variant="secondary" className="px-1.5 py-0 text-[0.68rem] leading-5">
               {t("profile.permissionAdmin")}

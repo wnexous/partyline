@@ -275,23 +275,24 @@ test("an AI started with --position Worktrees holds it, and the chart draws who 
   await expect(items.nth(1)).toHaveAttribute("aria-setsize", "2");
   await expect(items.nth(2)).toHaveAttribute("aria-posinset", "2");
 
-  // What each holder is: name, @handle, a person or an AI, the admin badge, and "You" on the viewer's own row.
+  // What each holder is: name, @handle, the admin badge, and "You" on the viewer's own row. An AI and a person
+  // carry no mark of their kind (AD-023).
   const alicesRow = items.nth(1).locator('[data-row=""]').first();
   await expect(alicesRow.getByText("Alice", { exact: true })).toBeVisible();
   await expect(alicesRow.getByText(`@${alice.intelligence.handle}`, { exact: true })).toBeVisible();
-  await expect(alicesRow.getByText("Person", { exact: true })).toBeVisible();
+  await expect(alicesRow.getByText("Person", { exact: true })).toHaveCount(0);
   await expect(alicesRow.getByText("Admin", { exact: true })).toBeVisible();
   await expect(alicesRow.getByText("You", { exact: true })).toBeVisible();
   const bobsRow = items.nth(4).locator('[data-row=""]').first();
   await expect(bobsRow.getByText(`@${bob.intelligence.handle}`, { exact: true })).toBeVisible();
-  await expect(bobsRow.getByText("Person", { exact: true })).toBeVisible();
+  await expect(bobsRow.getByText("Person", { exact: true })).toHaveCount(0);
   // A member has no badge of its own.
   await expect(bobsRow.getByText("Admin", { exact: true })).toHaveCount(0);
   await expect(bobsRow.getByText("Guest", { exact: true })).toHaveCount(0);
   const aiRow = items.nth(6).locator('[data-row=""]').first();
   await expect(aiRow.getByText(atlas, { exact: true })).toBeVisible();
   await expect(aiRow.getByText(`@${worker.ai.name}`, { exact: true })).toBeVisible();
-  await expect(aiRow.getByText("AI", { exact: true })).toBeVisible();
+  await expect(aiRow.getByText("AI", { exact: true })).toHaveCount(0);
 
   // Presence follows the AI's session as it opens and closes, without a reload. People show none.
   await expect(aiRow).toContainText("Offline");

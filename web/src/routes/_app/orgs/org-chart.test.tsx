@@ -235,17 +235,17 @@ describe("the tree and its fields (CHART-01)", () => {
     expect(screen.queryByRole("treeitem", { name: "Unassigned" })).toBeNull();
   });
 
-  it("shows each holder's picture, name, @handle, kind and part, and the online dot of an AI", async () => {
+  it("shows each holder's picture, name, @handle and part, and the online dot of an AI, with no kind badge (AD-023)", async () => {
     await open();
     const leadRow = rowOf("Lead");
     expect(within(leadRow).getByTestId("intelligence-avatar")).toHaveTextContent("L");
     expect(within(leadRow).getByText("@lead")).toBeInTheDocument();
-    expect(within(leadRow).getByText("AI")).toBeInTheDocument();
+    expect(within(leadRow).queryByText(/^(AI|IA)$/)).toBeNull();
     expect(within(leadRow).getByText("Online")).toBeInTheDocument();
 
     const anaRow = rowOf("Ana Souza");
     expect(within(anaRow).getByText("@ana")).toBeInTheDocument();
-    expect(within(anaRow).getByText("Person")).toBeInTheDocument();
+    expect(within(anaRow).queryByText(/^(Person|Pessoa)$/)).toBeNull();
     expect(within(anaRow).getByText("Admin")).toBeInTheDocument();
     // A person has no presence: no dot.
     expect(within(anaRow).queryByText("Online")).toBeNull();
@@ -286,10 +286,13 @@ describe("the tree and its fields (CHART-01)", () => {
     );
   });
 
-  it("describes each item for assistive technology with the handle, the kind and the part", async () => {
+  it("describes each item for assistive technology with the handle and the part, and no kind", async () => {
     await open();
-    expect(treeitem("Worker 1")).toHaveAccessibleDescription(/@w1.*AI.*Guest/);
-    expect(treeitem("Ana Souza")).toHaveAccessibleDescription(/@ana.*Person.*Admin/);
+    expect(treeitem("Worker 1")).toHaveAccessibleDescription(/@w1.*Guest/);
+    expect(treeitem("Ana Souza")).toHaveAccessibleDescription(/@ana.*Admin/);
+    for (const name of ["Worker 1", "Ana Souza"]) {
+      expect(treeitem(name)).not.toHaveAccessibleDescription(/\b(AI|Person)\b/);
+    }
   });
 
   it("numbers the items among their siblings", async () => {
@@ -778,7 +781,8 @@ describe("in Portuguese and for assistive technology", () => {
     expect(screen.getByRole("button", { name: "Remover Eli Costa de Acme" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apagar Worker 1" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Editar cargos" })).toBeInTheDocument();
-    expect(within(rowOf("Eli Costa")).getByText("Pessoa")).toBeInTheDocument();
+    expect(within(rowOf("Eli Costa")).queryByText("Pessoa")).toBeNull();
+    expect(within(rowOf("Eli Costa")).getByText("@eli")).toBeInTheDocument();
   });
 
   it("has no axe violations: the tree for each viewer and with a dialog open, in both locales", async () => {

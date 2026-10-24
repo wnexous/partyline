@@ -4,6 +4,7 @@ import type {
   AgentMessage,
   AgentRoom,
   Page as ApiPage,
+  Contacts,
   CreatedInvite,
   CreateInvitationRequest,
   Invitation,
@@ -388,7 +389,7 @@ test("a group is created from the list with an AI as its member (LAY-01, LAY-04)
   if (!isMobile(testInfo)) {
     const panel = page.getByRole("complementary", { name: "Members" });
     await expect(
-      panel.getByRole("region", { name: "Agents" }).getByText(name, { exact: true }),
+      panel.getByRole("list", { name: "Members" }).getByText(name, { exact: true }),
     ).toBeVisible();
   }
 
@@ -399,6 +400,69 @@ test("a group is created from the list with an AI as its member (LAY-01, LAY-04)
   await expect(
     page.getByRole("list", { name: "Conversations" }).getByRole("link", { name: /e2e-crew/ }),
   ).toBeVisible();
+});
+
+test("people and AIs look the same: one member list, no kind badge, the same faces (AD-023)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const me = await apiCall<Me>(context.request, instance, "GET", "/me");
+  const agent = await connectAI(context, instance, "/work/mirror");
+  const name = agent.ai.display_name;
+  // The member the second test of this file made is in the admin's organization: a group of the
+  // admin, that member and the AI has two users and an AI, in the order they joined.
+  const contacts = await apiCall<Contacts>(context.request, instance, "GET", "/contacts");
+  const other = contacts.users.find((u) => u.handle === MEMBER.username);
+  expect(other, "the member created by the live-message test").toBeDefined();
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
+    name: "e2e-mirror",
+    members: [me.id, agent.ai.id, other?.id],
+  });
+  await apiCall(context.request, instance, "POST", "/conversations/dm", { with: agent.ai.id });
+  await agentJSON<AgentMessage>(
+    context,
+    instance,
+    agent,
+    "POST",
+    `/agent/rooms/${room.id}/messages`,
+    { text: "Release is green." },
+  );
+  await apiCall(context.request, instance, "POST", `/rooms/${room.id}/messages`, {
+    text: "Thanks, shipping it.",
+  });
+
+  // The timeline names both authors and marks neither, for the eye or for a screen reader.
+  await page.goto(`/rooms/${room.id}`);
+  const log = page.getByRole("log");
+  await expect(log.getByText("Release is green.")).toBeVisible();
+  await expect(log.getByRole("link", { name, exact: true })).toBeVisible();
+  await expect(log.locator('[data-testid="intelligence-avatar"]')).toHaveCount(2);
+  for (const mark of ["AI", "IA", "Agent", "Person"]) {
+    await expect(log.getByText(mark, { exact: true })).toHaveCount(0);
+  }
+  await shoot(page, "conversation", testInfo);
+
+  // The member list is one list, the AI among the users, with no Agents and Users sections.
+  if (isMobile(testInfo)) await page.getByRole("button", { name: "Members (3)" }).click();
+  const members = page.getByRole("list", { name: "Members" });
+  await expect(members.getByRole("listitem")).toHaveCount(3);
+  await expect(members.getByRole("link", { name, exact: true })).toBeVisible();
+  await expect(members.locator('[data-testid="intelligence-avatar"]')).toHaveCount(3);
+  for (const mark of ["Agents", "Users", "AI", "IA"]) {
+    await expect(page.getByText(mark, { exact: true })).toHaveCount(0);
+  }
+  await shoot(page, "members", testInfo);
+
+  // The sidebar lists the direct message with the AI and the group by name alone.
+  await page.goto("/");
+  const list = page.getByRole("list", { name: "Conversations" });
+  await expect(list.getByRole("link", { name: new RegExp(name) })).toBeVisible();
+  await expect(list.getByRole("link", { name: /e2e-mirror/ })).toBeVisible();
+  for (const mark of ["AI", "IA", "Agent", "Person"]) {
+    await expect(list.getByText(mark, { exact: true })).toHaveCount(0);
+  }
 });
 
 test("the contacts page groups AIs by organization and names no machine (ORG-02, AD-022)", async ({
@@ -748,7 +812,9 @@ test("a click on a name opens the profile panel: a sidebar on a wide screen, a d
   await expect(panel.getByRole("heading", { name })).toBeVisible();
   await expect(panel.getByText(`@${agent.ai.name}`, { exact: true })).toBeVisible();
   await expect(panel.getByText("Keeps the release train on time.")).toBeVisible();
-  await expect(panel.getByText("Kind", { exact: true })).toBeVisible();
+  // An AI is not marked as one (AD-023): no kind row, no badge; what is true of anyone stays.
+  await expect(panel.getByText("Kind", { exact: true })).toHaveCount(0);
+  await expect(panel.getByText("AI", { exact: true })).toHaveCount(0);
   await expect(panel.getByText("Offline", { exact: true })).toBeVisible();
   // The organization the viewer shares with the AI is its home (OMEM-03). Where the AI runs is not
   // shown (AD-022), and nothing is shared one by one (AD-016).
