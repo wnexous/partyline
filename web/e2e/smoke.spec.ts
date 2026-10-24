@@ -1,4 +1,4 @@
-import type { Page, TestInfo } from "@playwright/test";
+import type { BrowserContext, Page, TestInfo } from "@playwright/test";
 import type {
   AddMemberRequest,
   AgentMessage,
@@ -17,6 +17,7 @@ import type {
 import { ADMIN, apiCall, expect, MEMBER, settled, test } from "./fixtures";
 import { agentJSON, connectAI, isMobile, loginAs, MACHINE, trackLive } from "./helpers";
 import { postPictures } from "./images";
+import type { Instance } from "./server";
 import { shoot } from "./shots";
 
 // Smoke suite against the built binary (intelligences T52: LAY-01, LAY-05, DM-01, PROF-03,
@@ -463,6 +464,154 @@ test("people and AIs look the same: one member list, no kind badge, the same fac
   for (const mark of ["AI", "IA", "Agent", "Person"]) {
     await expect(list.getByText(mark, { exact: true })).toHaveCount(0);
   }
+});
+
+/** A group of the admin with these messages, posted as the admin. */
+async function groupWith(
+  context: BrowserContext,
+  instance: Instance,
+  name: string,
+  texts: string[],
+): Promise<Room> {
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
+    name,
+    members: [],
+  });
+  for (const text of texts) {
+    await apiCall(context.request, instance, "POST", `/rooms/${room.id}/messages`, { text });
+  }
+  return room;
+}
+
+/** Opens a conversation from the sidebar's list; on a phone that list is a page of its own. */
+async function openConversation(page: Page, testInfo: TestInfo, name: RegExp | string) {
+  const back = page.getByRole("link", { name: "Back to conversations" });
+  if (isMobile(testInfo) && (await back.count()) > 0) await back.click();
+  await page.getByRole("list", { name: "Conversations" }).getByRole("link", { name }).click();
+}
+
+/** How far the timeline is from its newest message, in pixels. */
+const distanceFromNewest = (page: Page) =>
+  page.getByRole("log").evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+
+/** Where a message sits in the timeline's window, from its top edge. */
+const placeInTimeline = (page: Page, text: string) =>
+  page
+    .getByRole("log")
+    .getByText(text, { exact: true })
+    .evaluate(
+      (el) =>
+        el.getBoundingClientRect().top -
+        (el.closest('[role="log"]') as HTMLElement).getBoundingClientRect().top,
+    );
+
+test("a conversation opens at its newest message whichever one you come from, and older pages keep the reading place (UI-26)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await loginAs(context, instance, ADMIN);
+  // 70 messages are two pages (50 and 20); a few tall ones scroll a little; one room has none.
+  await groupWith(
+    context,
+    instance,
+    "e2e-scroll",
+    Array.from({ length: 70 }, (_, i) => `scroll ${i + 1}`),
+  );
+  await groupWith(
+    context,
+    instance,
+    "e2e-brief",
+    Array.from({ length: 8 }, (_, i) => `brief ${i + 1}\nsecond line\nthird line\nfourth line`),
+  );
+  await groupWith(context, instance, "e2e-bare", []);
+  const log = page.getByRole("log");
+  const atNewest = async (text: string | RegExp) => {
+    await expect(log.getByText(text, { exact: typeof text === "string" })).toBeInViewport();
+    await expect.poll(() => distanceFromNewest(page)).toBeLessThanOrEqual(64);
+  };
+
+  await page.goto("/");
+  await openConversation(page, testInfo, /e2e-scroll/);
+  await atNewest("scroll 70");
+
+  // The short conversation is left wherever its few tall messages scroll to: the router used to
+  // carry that into the long one, cached by now, which opened in its middle, or at its top.
+  await openConversation(page, testInfo, /e2e-brief/);
+  await atNewest(/^brief 8/);
+  await openConversation(page, testInfo, /e2e-scroll/);
+  await atNewest("scroll 70");
+
+  // Reading older messages: the page that arrives above does not move what is being read.
+  const older = page.waitForResponse((res) => res.url().includes("before_seq="));
+  await log.evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await expect(log.getByText("scroll 21", { exact: true })).toBeInViewport();
+  const place = await placeInTimeline(page, "scroll 21");
+  await older;
+  await expect(log.getByText("scroll 20", { exact: true })).toBeAttached();
+  await expect
+    .poll(async () => Math.abs((await placeInTimeline(page, "scroll 21")) - place))
+    .toBeLessThanOrEqual(2);
+
+  // Leaving it up there and coming back, from an empty conversation too, lands on the newest again.
+  await openConversation(page, testInfo, /e2e-bare/);
+  await expect(page.getByRole("heading", { name: "No messages yet" })).toBeVisible();
+  await openConversation(page, testInfo, /e2e-scroll/);
+  await atNewest("scroll 70");
+  await openConversation(page, testInfo, /e2e-brief/);
+  await atNewest(/^brief 8/);
+});
+
+test("a conversation whose pictures load late stays at its newest message (UI-26)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await loginAs(context, instance, ADMIN);
+  const room = await groupWith(
+    context,
+    instance,
+    "e2e-late",
+    Array.from({ length: 12 }, (_, i) => `late ${i + 1}`),
+  );
+  await postPictures(
+    context.request,
+    instance,
+    room.id,
+    [{ name: "late-1.png", hue: 40 }],
+    "late pictures 1",
+  );
+  await postPictures(
+    context.request,
+    instance,
+    room.id,
+    [{ name: "late-2.png", hue: 200 }],
+    "late pictures 2",
+  );
+  await groupWith(context, instance, "e2e-other", ["other 1"]);
+
+  // Every picture takes a second to arrive, after the page has been put at the newest message.
+  await page.route(/\/api\/v1\/attachments\//, async (route) => {
+    await new Promise((done) => setTimeout(done, 1_000));
+    await route.continue();
+  });
+  await page.goto("/");
+  await openConversation(page, testInfo, /e2e-other/);
+  await expect(page.getByRole("log").getByText("other 1", { exact: true })).toBeInViewport();
+  const pictures = page.waitForResponse(
+    (res) => res.url().includes("/api/v1/attachments/") && res.ok(),
+  );
+  await openConversation(page, testInfo, /e2e-late/);
+  const newest = page.getByRole("log").getByText("late pictures 2", { exact: true });
+  await expect(newest).toBeInViewport();
+  await pictures;
+  await page.waitForTimeout(1_500);
+  await expect(newest).toBeInViewport();
+  await expect.poll(() => distanceFromNewest(page)).toBeLessThanOrEqual(64);
 });
 
 test("the contacts page groups AIs by organization and names no machine (ORG-02, AD-022)", async ({

@@ -68,6 +68,7 @@ Users need one place to see and steer everything: who is online, which chats fee
 4. WHERE the user has `post` the app SHALL show the composer; otherwise it SHALL show a read-only notice. (UI-07)
 5. WHEN a room is paused by the loop guard THEN the app SHALL show a banner with a "resume agents" button for managers. (UI-08)
 6. The app SHALL render agent message text as Markdown without raw HTML. (UI-09)
+7. WHEN a conversation opens THEN its timeline SHALL show the newest message, whichever conversation or page it came from and whatever the one before it was scrolled to, and the older pages loaded as the reader scrolls up SHALL keep what is being read in place. (UI-26)
 
 **Independent Test**: Two tabs, post in one, appears in the other in under 1 second.
 
@@ -178,8 +179,9 @@ Users need one place to see and steer everything: who is online, which chats fee
 | UI-23 | P2: Polish | Tasks | ✅ Verified (T20) |
 | UI-24 | P2: Polish | Tasks | ✅ Verified (T22, T31) |
 | UI-25 | P2: Polish | Tasks | ✅ Verified |
+| UI-26 | P1: Live rooms | Tasks | Implemented with unit and Playwright tests; not yet verified independently |
 
-**Coverage:** 25 total, mapped in tasks.md (Phase 6 follow-ups T33-T37 touch UI-02, 04, 06, 07, 10, 12, 16, 19)
+**Coverage:** 26 total, 25 mapped in tasks.md (Phase 6 follow-ups T33-T37 touch UI-02, 04, 06, 07, 10, 12, 16, 19); UI-26 came with a bug fix and is covered by `timeline-scroll.test.tsx` and the timeline scenarios of `smoke.spec.ts`
 
 ---
 
