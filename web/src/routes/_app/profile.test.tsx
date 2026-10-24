@@ -1005,7 +1005,7 @@ describe("what the viewer may do, from the flags of the profile (POS-04, POS-05,
     expect(within(details).queryByText("Owner")).toBeNull();
   });
 
-  it("offers no sharing, to anyone: organizations are the only way to share", async () => {
+  it("offers no way to share it one by one, to anyone: organizations are the only way to share", async () => {
     api(atlasInAcme);
     const manager = renderRoute("/contacts/a1");
     await name();

@@ -576,7 +576,7 @@ describe("live handlers", () => {
       expect(order()).toEqual(["r1", "r3"]);
     });
 
-    it("member changes, sharing changes and reconnects refresh the list, whose member names feed the search", async () => {
+    it("member changes, access changes and reconnects refresh the list, whose member names feed the search", async () => {
       handleLiveEvent(qc, actions(), { type: "room.members", data: { room_id: "r1" } });
       expect(stale()).toBe(true);
       seed();

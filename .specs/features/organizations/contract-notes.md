@@ -1433,3 +1433,33 @@ What the viewer may do about an identity comes from its profile only (T25): `mem
   select going back, no resend, no default, a default the viewer left, no organizations, Portuguese; the dialog's wording, no password, 422,
   409, success with the request body, the cache and the login page, one request at a time, cancel, reopening, 500 and unreachable server,
   Portuguese) and axe tests of the page and the dialog (en and pt-BR).
+
+## T50: Remove the sharing UI (ORG-02)
+
+- **Deleted**: `sharing-dialog.tsx` and its test, `room-visibility.tsx`, `useSharing`, `useUpdateSharing`, `queryKeys.sharing` and the
+  `SharingResource` type of `queries.ts`; the Share button of the room page (`rooms/$roomId.tsx`); the private / shared / public label
+  of the group header (`conversation-header.tsx`, which now shows a group's description under its name and nothing when it has
+  none); the i18n keys `sharing.*` (34), `rooms.visibility.*` (3) and `room.share`, in en and pt-BR.
+  `rg -n "sharing|Visibility" web/src` now finds only `types.gen.ts`, as the Done-when asks. To get there, the words also left three test
+  titles and a page-visibility helper of the tests (`setVisibility` -> `setTabState`: it sets the browser tab's `visibilityState`, not a room's).
+- **Server side stays until T51**: the `/sharing` routes and their DTOs, `Room.visibility` and the `Sharing`/`Visibility` types in
+  `types.gen.ts` are inert and untouched; nothing in the web app reads or writes them any more. `makeRoom` still sets `visibility` because the
+  generated `Room` requires it.
+- **Wording that described sharing and was rewritten**: the merge dialog ("its conversations, history, connections and organizations", it said
+  "sharing"), the add-members dialog ("The AIs of this group's organization and the users of this instance. Only members of the organization
+  can join."; it said "AIs and users you own or that were shared with you", which T46 had made false), the comments of the `access.changed`
+  branch of `handlers.ts`, and the comments of `useMergeAgent` and `MergeAIDialog`.
+- **Tests**: `room.test.tsx` (the "room sharing entry" case becomes "a room is not shared one by one": a manager has the room settings and
+  no Share button, nor does a member who only posts), `conversation.test.tsx` (the group header shows no private / shared / public label and
+  does show a description), `member-picker.test.tsx` (the new description). The whole web suite and the build pass without the files.
+- **Left alone, for T54 / T55 or the owner of the page**: wording about the old model that is not a sharing control - `pairing.sharedBy`
+  ("{platform} · shared by {owner}") and the empty text of the pairing dialog (identities page), `invites.memberHint` ("... they own or that are
+  shared with them"), and the comment of `useChats` ("owned or shared connectors"). `web/e2e/smoke.spec.ts` still shares a room with
+  `PUT /rooms/{id}/sharing` (T54 reworks the Playwright flows).
+- **Playwright (`make e2e`, before this last Phase 9 commit)**: the suite stops at the UI-04 test, which shares a room with
+  `PUT /rooms/{id}/sharing` (inert since T22, as T57 noted) so its viewer never sees the room; the file is serial, so the 16 runs after it
+  do not run. T54 reworks it and was not touched. Run with that one test excluded (`playwright test --grep-invert UI-04`) the other nine
+  flows pass at 1280 and 360 px: first run, connect an agent, approve a machine, the messenger, a DM with an AI, **creating a group from
+  the list** (the new dialog against the real server), the contacts page by organization, the profile photo, and the no-sideways-scroll
+  check on `/`, a room, the contacts, the viewer's own profile (now with its Organizations section), the connections and the settings (now
+  with the default organization and the account deletion).

@@ -92,6 +92,15 @@ describe("member picker in a group of an organization (ORG-03)", () => {
     return screen.findByRole("dialog", { name: "Add members" });
   }
 
+  it("says whose AIs it offers: the group's organization's, not what its user owns or was shown", async () => {
+    const dialog = await open(json(200, makeRoom({ id: "r1", org_id: "o2" })));
+    expect(
+      within(dialog).getByText(
+        "The AIs of this group’s organization and the users of this instance. Only members of the organization can join.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("offers the AIs of the group's organization and not those of another", async () => {
     const dialog = await open(json(200, makeRoom({ id: "r1", org_id: "o2" })));
     expect(await within(dialog).findByTestId("candidate-agent-a3")).toHaveTextContent("Lab");

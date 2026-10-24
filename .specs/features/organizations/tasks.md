@@ -1220,9 +1220,9 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: none
 **Requirement**: ORG-02
 **Done when**:
-- [ ] `rg -n "sharing|Visibility" web/src` finds only generated types
-- [ ] Room page tests updated: no sharing control
-- [ ] Gate check passes: `make check`
+- [x] `rg -n "sharing|Visibility" web/src` finds only generated types
+- [x] Room page tests updated: no sharing control
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `refactor(web): drop per-resource sharing`

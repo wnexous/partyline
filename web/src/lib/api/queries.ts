@@ -67,7 +67,6 @@ import {
   type Session,
   type SetupRequest,
   type SetupStatus,
-  type Sharing,
   type Token,
   type UpdateConnectorRequest,
   type UpdateMemberRequest,
@@ -83,8 +82,6 @@ import {
  * `xQuery(...)` returns options for loaders (`queryClient.ensureQueryData`). Collections are
  * cached as plain arrays (List.items unwrapped); message pages keep their Page shape.
  */
-
-export type SharingResource = "rooms" | "agents" | "connectors";
 
 export const queryKeys = {
   me: ["me"] as const,
@@ -103,7 +100,6 @@ export const queryKeys = {
   roomMembers: (id: string) => ["rooms", id, "members"] as const,
   roomMessages: (id: string) => ["rooms", id, "messages"] as const,
   roomFiles: (id: string, kind: FileFilter) => ["rooms", id, "files", kind] as const,
-  sharing: (kind: SharingResource, id: string) => [kind, id, "sharing"] as const,
   agents: ["agents"] as const,
   connectorKinds: ["connector-kinds"] as const,
   connectors: ["connectors"] as const,
@@ -295,28 +291,6 @@ export function useRevokeToken() {
   return useMutation({
     mutationFn: (id: string) => api<void>("DELETE", `/tokens/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tokens }),
-  });
-}
-
-// ---------------------------------------------------------------------------------------------
-// Sharing (rooms, agents, connectors)
-
-export const useSharing = (kind: SharingResource, id: string) =>
-  useQuery({
-    queryKey: queryKeys.sharing(kind, id),
-    queryFn: () => api<Sharing>("GET", `/${kind}/${id}/sharing`),
-  });
-
-export function useUpdateSharing(kind: SharingResource, id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: Sharing) => api<Sharing>("PUT", `/${kind}/${id}/sharing`, req),
-    onSuccess: (sharing) => {
-      qc.setQueryData(queryKeys.sharing(kind, id), sharing);
-      // Visibility shows on the list and the resource itself; timelines and members are unaffected.
-      qc.invalidateQueries({ queryKey: [kind], exact: true });
-      qc.invalidateQueries({ queryKey: [kind, id], exact: true });
-    },
   });
 }
 
@@ -973,7 +947,7 @@ export const useAgents = () => useQuery(agentsQuery());
 
 /**
  * Merges an AI into another one of the caller's (MRG-01): the survivor keeps its groups, DMs,
- * history, cursors, sharing and connectors, and the AI in `from` is deleted. Refused with 409
+ * history, cursors, organizations and connectors, and the AI in `from` is deleted. Refused with 409
  * `identity_online` while `from` has a live session (MRG-02).
  */
 export function useMergeAgent() {

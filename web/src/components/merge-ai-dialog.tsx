@@ -18,7 +18,7 @@ import { useT } from "@/lib/i18n";
 
 /*
  * Merge one of the caller's AIs into another one (MRG-01, MRG-02): the one picked keeps
- * everything the other had - groups, direct messages, history, sharing and connectors - and the
+ * everything the other had - groups, direct messages, history, organizations and connectors - and the
  * other is deleted. A page that shows the AI afterwards (its profile) passes `onMerged` to open
  * the survivor. An AI with a live session is refused until its session ends.
  */

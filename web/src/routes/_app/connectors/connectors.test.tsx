@@ -778,7 +778,7 @@ describe("the page of a connection in an organization (ORG-03, ORG-07, OMEM-04)"
     expect(await screen.findByText("Organization: Globex")).toBeInTheDocument();
   });
 
-  it("names no owner and offers no sharing, even to an admin", async () => {
+  it("names no owner and offers no way to share it one by one, even to an admin", async () => {
     api({ owner: { id: "u9", username: "bob", display_name: "Bob Lima" } });
     renderRoute("/connectors/k1");
     await screen.findByText("Organization: Acme");

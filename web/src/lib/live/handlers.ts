@@ -273,10 +273,10 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       qc.invalidateQueries({ queryKey: [kind, event.data.resource_id] });
       if (kind === "agents" || kind === "connectors") {
         qc.invalidateQueries({ queryKey: queryKeys.chats });
-        // Sharing decides the shared AIs and the connectors whose people the user sees.
+        // Organization membership decides the AIs and the connections whose people the user sees.
         qc.invalidateQueries({ queryKey: queryKeys.contacts });
       }
-      // Sharing, membership and DM access decide which conversations the user has.
+      // Membership and DM access decide which conversations the user has.
       if (kind === "rooms")
         qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
       return;
