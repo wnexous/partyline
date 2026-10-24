@@ -97,6 +97,11 @@ const (
 	// ErrorCodeLastInstanceAdmin is the last active instance admin deleting their own account: an admin is
 	// needed to inherit the organizations they leave without one (409, OUPG-02).
 	ErrorCodeLastInstanceAdmin ErrorCode = "last_instance_admin"
+	// ErrorCodeLastAdmin is a change that would leave an organization without an admin: the only admin
+	// leaving, or the only admin an AI is deleted from (409, OMEM-05). ErrorCodeHomeOrganization is an AI
+	// leaving the organization it belongs to: it is deleted there, never removed (409, POS-06).
+	ErrorCodeLastAdmin        ErrorCode = "last_admin"
+	ErrorCodeHomeOrganization ErrorCode = "home_organization"
 	// ErrorCodeNotOperator is an AI that sends through a connection it does not operate: only the
 	// operator sends through it (403, CID-03). ErrorCodeUnknownChat is a chat that is not one of the
 	// named connection's chats (404, CID-17).

@@ -210,7 +210,9 @@ func TestListVisibleOwnedAndUseGrants(t *testing.T) {
 	require.ElementsMatch(t, []string{shared, public}, ids)
 }
 
-// Delete removes memberships, grants and cursors; only the owner may delete.
+// Delete removes memberships, grants and cursors, and only the organization lets someone delete the AI (POS-05): an
+// admin of its home. A member who sees it (here the grantee the upgrade made a member) is refused, and a stranger
+// does not see it. Every organization the AI belonged to is told its chart changed (POS-06).
 func TestDeleteRemovesMembershipsAndCursors(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -223,6 +225,7 @@ func TestDeleteRemovesMembershipsAndCursors(t *testing.T) {
 		f.exec(t, "INSERT INTO agent_cursors (agent_id, room_id, seq) VALUES (?, ?, 7)", agent, room)
 	}
 	f.grant(t, agent, bob.UserID)
+	home := f.joinAs(t, alice, bob, orgs.PermissionMember)
 
 	require.ErrorIs(t, f.reg.Delete(ctx, bob, agent), access.ErrForbidden)
 	require.ErrorIs(t, f.reg.Delete(ctx, stranger, agent), access.ErrNotFound)
@@ -238,6 +241,7 @@ func TestDeleteRemovesMembershipsAndCursors(t *testing.T) {
 	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM room_members WHERE kind = 'agent' AND member_id = ?", agent))
 	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM agent_cursors WHERE agent_id = ?", agent))
 	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM grants WHERE resource_kind = 'agent' AND resource_id = ?", agent))
+	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM org_members WHERE iid = ?", agent))
 
 	code, reason, closed := session.state()
 	require.Equal(t, 1, closed)
@@ -248,7 +252,21 @@ func TestDeleteRemovesMembershipsAndCursors(t *testing.T) {
 		events.AgentPresence{AgentID: agent, OwnerID: alice.UserID, Online: false},
 		events.MembersChanged{RoomID: roomA},
 		events.MembersChanged{RoomID: roomB},
+		events.OrgChanged{OrgID: home},
 	}, drain(ch))
+}
+
+// joinAs makes the user a member of the owner's own organization, as the upgrade does for whoever was granted
+// something of the owner (OUPG-01), and returns the organization.
+func (f *fixture) joinAs(t *testing.T, owner, user authn.Principal, perm orgs.Permission) string {
+	t.Helper()
+	ctx := context.Background()
+	org, err := f.st.R().GetPersonalOrg(ctx, owner.UserID)
+	require.NoError(t, err)
+	require.NoError(t, f.st.WithTx(ctx, func(q *db.Queries) error {
+		return orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: org.ID, IID: user.UserID, Permission: perm, Now: t0})
+	}))
+	return org.ID
 }
 
 func mustAgent(t *testing.T, f *fixture, id string) Agent {

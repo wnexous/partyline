@@ -654,3 +654,62 @@ Where a section refines the design, it says so.
 - **Queries** (`queries/account_delete.sql`): `GetHeirAdmin`, `ListLastAdminOrgIDs`, `RepointRoomOwners`,
   `RepointConnectorOwners`, `ListHostedAgentIDs`, `ListHostedAgentOrgIDs`, `RehomeHostedAgents`,
   `DeleteUserRoomMemberships`, `DeleteUser`; audit constants `audit.ActionUserDelete`, `audit.ActionOrgAdminInherited`.
+
+## T21: Delete in an organization and end a session (POS-04, POS-05, POS-06, OMEM-06, OMEM-08)
+
+- **Routes**, all `authed` (user session or user token). An agent token never reaches them: the path rule keeps it to
+  `/api/v1/agent/` (403 before the handler), so the callers are people, and what an AI itself may do is read from the
+  chart (`Authz.CanDelete`). The three are registered by `identityDeleteRoutes` (`internal/api/org_members_handlers.go`).
+  - **`DELETE /api/v1/orgs/{org}/members/{iid}`** → 204. `{org}` is an id or an address in any case
+    (`Orgs.Resolve`). Whoever is not a member of the organization gets **404**, as does a target that is not a member of
+    it (an outsider, an unknown id, an AI of another organization only). Then:
+    - **self** (`iid` is the caller) is **leave**: `Orgs.Leave`, so the only admin gets **409 `last_admin`** and an AI
+      **409 `home_organization`**;
+    - **an AI whose home is the organization** → `Registry.Delete` (deleted for good);
+    - **anyone else** (a person, or an AI of another organization) → `Orgs.Remove` (removed from this organization only,
+      OMEM-06).
+    Both services decide the right in their own transaction (`Chart.CanDelete`, POS-05), so a caller who sees the target
+    and may not delete it gets **403**.
+  - **`DELETE /api/v1/agents/{id}`** → 204: the same rule in the AI's **home** organization, no `{org}` in the path.
+    An AI is seen by its host and by the members of any organization it belongs to (AD-016): whoever sees it and
+    cannot delete it gets 403 (a member, the admin of another organization it only belongs to, its host who left the
+    home organization), anyone else **404**. So an organization route and the AI's own route can answer differently to
+    a host who left (404 and 403, `TestAHostWhoLeftTheOrganizationSeesItsAIButNotTheOrganization`).
+  - **`DELETE /api/v1/agents/{id}/session`** → 204: `Registry.EndSession`. The caller must manage the AI in an
+    organization both belong to (`Chart.Manages`: the chart's, so an admin who holds no position above is no manager);
+    one who sees the AI (shares an organization with it, or hosts it) and does not manage it gets 403, anyone else 404.
+    `Presence.Kick` closes the live session with **4002** (`CloseTakenOver`, which v0.5 CLIs already obey by stopping)
+    and the reason **`ended by @handle`** (`agents.ReasonEndedByPrefix` + the caller's handle). The AI is not deleted and
+    may connect again. An AI that is not live has nothing to end: **204** all the same, no event.
+- **`Registry.Delete(ctx, p, agentID)`** keeps its signature; its check is now the organization's (`authorizeDelete`,
+  `internal/agents/lifecycle.go`), made **inside the deleting transaction** on that transaction's chart:
+  `Chart.CanDelete(p.IID(), agentID)` in the AI's home. An AI no organization owns (only fixtures: the upgrade places
+  every AI) is deleted by its host and found by nobody else. It refuses **`orgs.ErrLastAdmin`** (409 `last_admin`,
+  OMEM-05) when the AI is the **only admin of any organization** it belongs to - deleting it would leave that organization
+  without an admin - and nothing is deleted. The principal is read with `p.IID()`, so an AI acting as itself is a valid
+  actor. In the transaction: audit **`agent.delete`** `{handle, org}` (actor the caller, target the AI; new
+  `audit.ActionAgentDelete`), memberships in every organization and room, grants, cursors, the platform queue (cascade),
+  the connections it operated lose their operator (OMEM-08). After the commit: the live session is kicked with **4001**,
+  `ConnectorsOrphaned`, `MembersChanged`/`RoomChanged{Deleted}` per room, and (new) **`OrgChanged` for every organization
+  it belonged to**: the creator and inviter links it held are gone.
+- **Deviations / decisions.**
+  - **`home_organization` is observed by an internal test**, `TestAnAILeavingItsHomeOrganizationIsRefusedWith409`
+    (`internal/api/org_members_handlers_internal_test.go`): only an AI can leave its home organization, and no AI token
+    reaches an organization route, so the request carries the principal the route would resolve for an AI acting as
+    itself. Deleting an AI by someone else never produces it (that is `Registry.Delete`).
+  - **`ErrorCodeLastAdmin` and `ErrorCodeHomeOrganization`** are in the single `ErrorCode` group of `dto/common.go`, and
+    `mapError` maps `orgs.ErrLastAdmin` (409 `last_admin`) and `orgs.ErrHomeOrganization` (409 `home_organization`). T12 owns
+    `last_admin` too: **on merge keep one definition and one `mapError` case**.
+  - **`api.Deps.Orgs`** (`*orgs.Service`) is added and wired in `app.New`; T12 adds the same field. Only the services' own
+    checks decide: the handler adds just the "caller is a member of `{org}`" check that makes the organization invisible to
+    everyone else (404).
+  - **Merge**: `org_members_handlers.go` is also T14's file (GET and PATCH). Keep both sets of routes and handlers; the
+    DELETE route is registered by `identityDeleteRoutes`, not by T14's `orgMemberRoutes`, so the two merge as a union.
+    `Registry.Delete` is T21's; T24 owns the rest of `registry.go`.
+- **Existing tests adapted** (their assertions are the same; who is "a user that sees the AI" changed from a use grantee to
+  a member of the owner's organization, as the upgrade leaves a grantee, OUPG-01): `TestAgentRoutesAuthMatrix`
+  (`agentSetup` makes the viewer a member), `TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone` and
+  `TestDeleteRemovesMembershipsAndCursors` (which also expects `OrgChanged` now).
+- **Tests**: `internal/api/delete_identities_test.go` (matrices of each kind of target on each route, the Lead/Sentinel
+  independent test, the inviter chain, OMEM-06/08, an AI of another organization, the sole-admin AI),
+  `internal/api/leave_and_end_session_test.go` (leave, 404s, the session matrix), `internal/agents/delete_test.go`.

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -26,12 +27,22 @@ func shareAgent(c *testkit.Client, agentID string, userIDs ...string) {
 	c.Put("/api/v1/agents/"+agentID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: users}).RequireStatus(http.StatusOK)
 }
 
-// agentSetup creates an agent of the owner shared with the viewer (use grant).
+// agentSetup creates an agent of the owner shared with the viewer (use grant). The viewer is also a member of the
+// owner's organization, as the upgrade leaves a grantee (OUPG-01): that is what lets it see the AI to delete it.
 func agentSetup(t *testing.T, m *matrix) matrixResource {
 	owner := m.as(t, roleOwner)
 	id := registerAgent(t, m.env, owner, "builder")
 	shareAgent(owner, id, m.clients[roleViewer].User.ID)
+	ensureMember(t, m.env, owner.PersonalOrg().ID, m.clients[roleViewer].User.ID)
 	return matrixResource{"agent": id}
+}
+
+// ensureMember makes the identity a member of the organization with no position unless it already is one.
+func ensureMember(t *testing.T, env *testkit.Env, org, iid string) {
+	t.Helper()
+	if !isMember(t, env, org, iid) {
+		env.AddMember(org, iid, orgs.PermissionMember, "")
+	}
 }
 
 // Auth matrix for the agent management routes (ACL-05, ACL-07, ACL-08): viewer is the use grantee.

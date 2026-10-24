@@ -655,7 +655,7 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
 **Reuses**: `presence.Kick`, `orgs.Remove`, `OrgRoles`
 **Requirement**: POS-04, POS-05, POS-06, OMEM-06, OMEM-08
 **Done when**:
-- [ ] e2e, Lead developer starts three workers with `--parent @lead --position Worktrees` (guests):
+- [x] e2e, Lead developer starts three workers with `--parent @lead --position Worktrees` (guests):
   - Lead deletes them for good, while Sentinel (not above them) gets 403 (spec Independent Test);
   - a manager deleting a `member` below → 403, while an admin → 204 (L-018);
   - Bob (member) invites guest Carol, who invites guest Dave: Bob deletes Dave → 204; Bob's position manager deletes Carol → 204; a peer of Bob → 403;
@@ -666,7 +666,7 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
   - a manager ends a live session, and the socket closes with 4002;
   - an AI leaving its home org → 409 `home_organization` observed; the last admin leaving → 409 `last_admin`;
   - an invisible target → 404
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): delete identities in an organization and end sessions`

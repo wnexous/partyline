@@ -233,6 +233,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Users:         usersSvc,
 		Rooms:         a.Rooms,
 		Agents:        a.Agents,
+		Orgs:          a.Orgs,
 		Intelligences: a.Intelligences,
 		Conversations: a.Conversations,
 		Connectors:    a.Connectors,

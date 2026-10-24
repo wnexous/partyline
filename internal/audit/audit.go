@@ -50,6 +50,8 @@ const (
 	ActionAgentAdopt = "agent.adopt"
 	// ActionAgentMerge records an AI identity merged into another of the same owner (MRG-01).
 	ActionAgentMerge = "agent.merge"
+	// ActionAgentDelete records an AI deleted for good in its home organization (POS-05, POS-06).
+	ActionAgentDelete = "agent.delete"
 	// Organizations (organizations feature): the organization itself, its org chart and its members.
 	ActionOrgCreate = "org.create"
 	ActionOrgUpdate = "org.update"
