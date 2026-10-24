@@ -1946,8 +1946,9 @@ them, so that module is **gone**: the web reads `Organization`, `Position`, `Org
 
 - **The page** (`orgs/$orgId/members.tsx`, tab "Members"): a real table named "Members of {org}" with the columns Member (the row header:
   picture, name linked to the profile, @handle, the AI badge and "You"), Permission, Position, Invited by (a guest's inviter) and
-  Actions. Admins first, then members, then guests, by name inside each. On a phone the table is stacked (the header row is hidden, each
-  row is a two-column grid), with no horizontal scroll. Anyone who belongs, a guest included, sees it (CHART-02). `GET /orgs/{org}/members`
+  Actions. Admins first, then members, then guests, by name inside each. It is a table from 1280 px (`xl`) and **stacked rows below** (the header row is hidden, each row
+  a grid: the member, then the permission and position side by side, the inviter, the actions): the sidebar leaves a 768 px window only 448 px, which five columns do
+  not fit (T44 looked at it in a real browser). No horizontal scroll at any width from 360 to 1920 px. Anyone who belongs, a guest included, sees it (CHART-02). `GET /orgs/{org}/members`
   gives the rows, and **what the viewer may do about each one comes on the row** (`can_delete`, `delete_effect`, `can_move`, the same values
   as the chart's); the chart is read for the positions the dialogs offer only (without it an admin can still move someone to "No position").
 - **Actions** (only where the flags say so; the page adds no rule of its own):
@@ -1963,6 +1964,9 @@ them, so that module is **gone**: the web reads `Organization`, `Position`, `Org
     `Pick<ProfileMembership, "org_id" | "org_name">`), `DELETE /orgs/{org}/members/{iid}`. It now also answers 409 `home_organization`
     inline ("{name} belongs to {org}. Ask an admin to delete it."); `last_admin` was already there.
   - Each button has the member's name as its description, so a screen reader hears "Remove from Acme, Cora Dias".
+- **A change of a member refreshes the viewer's own part too**: `useUpdateOrgMember` (and the position mutations) mark `GET /orgs/{org}` stale,
+  which carries the viewer's permission and position, so an admin who steps down or moves themselves stops being offered what they can no longer do
+  (`stops offering the admin's controls to an admin who steps down`).
 - **Permission** (OMEM-04, OMEM-05): an admin gets a select in each row (`PATCH {permission}` only); anyone else a badge. 409 `last_admin`
   is told above the table ("{name} is the only admin of {org}. Make another member an admin first."), 403 "Only admins of {org} change
   permissions.", and the select goes back to what the server has. Toast "{name} is now {role}".

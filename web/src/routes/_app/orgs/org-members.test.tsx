@@ -531,6 +531,25 @@ describe("changing a permission (OMEM-04, OMEM-05)", () => {
     }
   });
 
+  it("stops offering the admin's controls to an admin who steps down", async () => {
+    let org = acmeAs("admin", "pos1");
+    const { user, table } = await open(
+      asAdmin({
+        "GET /orgs/o1": () => json(200, org),
+        "PATCH /orgs/o1/members/u1": () => {
+          org = acmeAs("member", "pos1");
+          return json(200, members[0]);
+        },
+      }),
+    );
+    const select = within(row(table, "Ana Souza")).getByRole("combobox", {
+      name: "Permission of Ana Souza",
+    });
+    await user.selectOptions(select, "member");
+    await waitFor(() => expect(within(table).queryByRole("combobox")).toBeNull());
+    expect(await screen.findByText("Ana Souza is now member")).toBeInTheDocument();
+  });
+
   it("tells the only admin to make another member an admin first, and keeps the old permission (409 last_admin)", async () => {
     const { user, table } = await open(
       asAdmin({ "PATCH /orgs/o1/members/u1": apiError(409, "last_admin", "last admin") }),

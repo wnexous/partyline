@@ -980,10 +980,15 @@ export function useDeleteOrg() {
   });
 }
 
-/** What changing the chart touches: the chart itself, and the position names the members list shows. */
+/**
+ * What changing the chart touches: the chart itself, the position names the members list shows, and
+ * the organization as the viewer sees it, which carries their own permission and position (an admin
+ * who moves or demotes themselves changes what the pages offer them).
+ */
 function refreshChart(qc: QueryClient, orgId: string) {
   qc.invalidateQueries({ queryKey: queryKeys.orgChart(orgId) });
   qc.invalidateQueries({ queryKey: queryKeys.orgMembers(orgId) });
+  qc.invalidateQueries({ queryKey: queryKeys.org(orgId), exact: true });
   qc.invalidateQueries({ queryKey: queryKeys.orgs, exact: true });
 }
 

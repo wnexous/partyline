@@ -239,7 +239,7 @@ function PositionRow({
     setMode("idle");
     setFieldError(null);
   };
-  const edit = (changes: Omit<UpdatePositionRequest, never>, done: () => void) => {
+  const edit = (changes: UpdatePositionRequest, done: () => void) => {
     setRowError(null);
     update.mutate(
       { id: position.id, ...changes },
