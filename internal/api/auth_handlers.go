@@ -20,6 +20,7 @@ func (s *server) authRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/me", authed(s.getMe))
 	s.handle(mux, "PATCH /api/v1/me", authed(s.updateMe))
 	s.handle(mux, "DELETE /api/v1/me", authed(s.deleteMe))
+	s.handle(mux, "PUT /api/v1/me/default-org", authed(s.setDefaultOrg))
 	s.handle(mux, "POST /api/v1/me/password", authed(s.changePassword))
 	s.handle(mux, "GET /api/v1/me/sessions", authed(s.listSessions))
 	s.handle(mux, "DELETE /api/v1/me/sessions/{id}", authed(s.deleteSession))
@@ -125,6 +126,25 @@ func (s *server) updateMe(w http.ResponseWriter, r *http.Request, p authn.Princi
 		return err
 	}
 	u, err := s.Users.UpdateProfile(r.Context(), p.UserID, users.ProfileUpdate{DisplayName: req.DisplayName, Locale: req.Locale})
+	if err != nil {
+		return err
+	}
+	return s.writeMe(w, r, http.StatusOK, u)
+}
+
+// setDefaultOrg chooses the organization the caller's new AIs join when they start without --org (ORG-04). It
+// must be one the caller belongs to, with any permission; anything else - an organization the caller is not
+// in, one that does not exist - is 403, which tells nothing about organizations the caller is not in. The
+// answer is the account with its new choice.
+func (s *server) setDefaultOrg(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.SetDefaultOrgRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	if err := s.Orgs.SetDefault(r.Context(), p.UserID, req.OrgID); err != nil {
+		return err
+	}
+	u, err := s.Users.GetUser(r.Context(), p.UserID)
 	if err != nil {
 		return err
 	}

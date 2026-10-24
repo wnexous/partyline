@@ -492,6 +492,68 @@ func (q *Queries) GetOrgMember(ctx context.Context, arg GetOrgMemberParams) (Org
 	return i, err
 }
 
+const getOrgMemberView = `-- name: GetOrgMemberView :one
+SELECT m.iid, m.permission, m.joined_at,
+       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
+       CAST(COALESCE(p.name, '') AS TEXT) AS position_name,
+       i.kind, i.display_name, i.handle, i.avatar_sha256,
+       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
+       CAST(COALESCE(inv.kind, '') AS TEXT) AS inviter_kind,
+       CAST(COALESCE(inv.display_name, '') AS TEXT) AS inviter_display_name,
+       CAST(COALESCE(inv.handle, '') AS TEXT) AS inviter_handle,
+       CAST(COALESCE(inv.avatar_sha256, '') AS TEXT) AS inviter_avatar_sha256
+FROM org_members m
+JOIN intelligences i ON i.id = m.iid
+LEFT JOIN positions p ON p.id = m.position_id AND p.org_id = m.org_id
+LEFT JOIN intelligences inv ON inv.id = m.inviter_iid
+WHERE m.org_id = ?1 AND m.iid = ?2
+`
+
+type GetOrgMemberViewParams struct {
+	OrgID string
+	Iid   string
+}
+
+type GetOrgMemberViewRow struct {
+	Iid                 string
+	Permission          string
+	JoinedAt            int64
+	PositionID          string
+	PositionName        string
+	Kind                string
+	DisplayName         string
+	Handle              string
+	AvatarSha256        string
+	InviterIid          string
+	InviterKind         string
+	InviterDisplayName  string
+	InviterHandle       string
+	InviterAvatarSha256 string
+}
+
+// One row of ListOrgMembers.
+func (q *Queries) GetOrgMemberView(ctx context.Context, arg GetOrgMemberViewParams) (GetOrgMemberViewRow, error) {
+	row := q.db.QueryRowContext(ctx, getOrgMemberView, arg.OrgID, arg.Iid)
+	var i GetOrgMemberViewRow
+	err := row.Scan(
+		&i.Iid,
+		&i.Permission,
+		&i.JoinedAt,
+		&i.PositionID,
+		&i.PositionName,
+		&i.Kind,
+		&i.DisplayName,
+		&i.Handle,
+		&i.AvatarSha256,
+		&i.InviterIid,
+		&i.InviterKind,
+		&i.InviterDisplayName,
+		&i.InviterHandle,
+		&i.InviterAvatarSha256,
+	)
+	return i, err
+}
+
 const getOrgMembership = `-- name: GetOrgMembership :one
 SELECT o.id, o.name, o.slug, o.avatar_sha256, o.created_by, o.created_at, o.updated_at, m.permission, CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id
 FROM org_members m JOIN organizations o ON o.id = m.org_id
@@ -782,6 +844,35 @@ func (q *Queries) ListOrgChartMembers(ctx context.Context, orgID string) ([]List
 	return items, nil
 }
 
+const listOrgHomeAgentIDs = `-- name: ListOrgHomeAgentIDs :many
+SELECT id FROM agents WHERE org_id = ? ORDER BY id
+`
+
+// The AIs whose home is this organization: deleting one of them here deletes it for good, while any other
+// member is only removed (POS-06).
+func (q *Queries) ListOrgHomeAgentIDs(ctx context.Context, orgID sql.NullString) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgHomeAgentIDs, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrgInvitations = `-- name: ListOrgInvitations :many
 SELECT id, org_id, invitee_iid, permission, position_id, invited_by, created_at, expires_at FROM org_invitations WHERE org_id = ?1 AND expires_at > ?2
 ORDER BY created_at DESC, id
@@ -811,6 +902,81 @@ func (q *Queries) ListOrgInvitations(ctx context.Context, arg ListOrgInvitations
 			&i.InvitedBy,
 			&i.CreatedAt,
 			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrgMembers = `-- name: ListOrgMembers :many
+SELECT m.iid, m.permission, m.joined_at,
+       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
+       CAST(COALESCE(p.name, '') AS TEXT) AS position_name,
+       i.kind, i.display_name, i.handle, i.avatar_sha256,
+       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
+       CAST(COALESCE(inv.kind, '') AS TEXT) AS inviter_kind,
+       CAST(COALESCE(inv.display_name, '') AS TEXT) AS inviter_display_name,
+       CAST(COALESCE(inv.handle, '') AS TEXT) AS inviter_handle,
+       CAST(COALESCE(inv.avatar_sha256, '') AS TEXT) AS inviter_avatar_sha256
+FROM org_members m
+JOIN intelligences i ON i.id = m.iid
+LEFT JOIN positions p ON p.id = m.position_id AND p.org_id = m.org_id
+LEFT JOIN intelligences inv ON inv.id = m.inviter_iid
+WHERE m.org_id = ?
+ORDER BY i.display_name COLLATE NOCASE, m.iid
+`
+
+type ListOrgMembersRow struct {
+	Iid                 string
+	Permission          string
+	JoinedAt            int64
+	PositionID          string
+	PositionName        string
+	Kind                string
+	DisplayName         string
+	Handle              string
+	AvatarSha256        string
+	InviterIid          string
+	InviterKind         string
+	InviterDisplayName  string
+	InviterHandle       string
+	InviterAvatarSha256 string
+}
+
+// The members of an organization with the identity, its position name and, for a guest, the identity
+// that invited it: what the members table shows (OMEM-01, OMEM-03).
+func (q *Queries) ListOrgMembers(ctx context.Context, orgID string) ([]ListOrgMembersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgMembers, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgMembersRow
+	for rows.Next() {
+		var i ListOrgMembersRow
+		if err := rows.Scan(
+			&i.Iid,
+			&i.Permission,
+			&i.JoinedAt,
+			&i.PositionID,
+			&i.PositionName,
+			&i.Kind,
+			&i.DisplayName,
+			&i.Handle,
+			&i.AvatarSha256,
+			&i.InviterIid,
+			&i.InviterKind,
+			&i.InviterDisplayName,
+			&i.InviterHandle,
+			&i.InviterAvatarSha256,
 		); err != nil {
 			return nil, err
 		}

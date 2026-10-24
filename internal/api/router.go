@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/agents"
@@ -33,12 +34,13 @@ type Deps struct {
 	Users  *users.Service
 	Rooms  *rooms.Service
 	Agents *agents.Registry
-	// Orgs is the organization use cases: members, positions and invitations.
-	Orgs *orgs.Service
 	// Intelligences serves profiles of users, AIs and people.
 	Intelligences *intelligences.Service
 	// Conversations opens direct messages and creates groups.
 	Conversations *conversations.Service
+	// Orgs is the organization use cases: organizations, their chart, members, positions and
+	// invitations.
+	Orgs *orgs.Service
 	// Connectors manages connectors and their chats.
 	Connectors *connectors.Service
 	// Hooks finds the running connector of POST /api/v1/hooks/{id}; FileLinks resolves the
@@ -103,6 +105,11 @@ func (s *server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /install.sh", s.installScript)
 	s.authRoutes(mux)
 	s.adminRoutes(mux)
+	s.orgRoutes(mux)
+	s.positionRoutes(mux)
+	s.orgMemberRoutes(mux)
+	s.orgInvitationRoutes(mux)
+	s.orgChartRoutes(mux)
 	s.roomRoutes(mux)
 	s.conversationRoutes(mux)
 	s.intelligenceRoutes(mux)
@@ -185,6 +192,7 @@ func (s *server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 func mapError(err error) error {
 	var verr *validation.Error
 	var refused *conversations.MembersRefusedError
+	var notEmpty *orgs.NotEmptyError
 	switch {
 	case errors.As(err, &verr):
 		return httpx.Invalid(verr.Fields)
@@ -212,10 +220,32 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeLastInstanceAdmin, "you are the last active admin of this instance: make another user an admin first")
 	case errors.Is(err, orgs.ErrLastAdmin):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeLastAdmin, "an organization needs at least one admin: make someone else an admin first")
+	case errors.Is(err, orgs.ErrAlreadyMember):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeAlreadyMember, "already a member of the organization")
+	case errors.Is(err, orgs.ErrGone):
+		return httpx.NewError(http.StatusGone, dto.ErrorCodeGone, "the invitation has expired or no longer stands")
+	case errors.Is(err, orgs.ErrRateLimited):
+		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited, "too many invitations, try again later")
+	case errors.Is(err, orgs.ErrContactNotFound):
+		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeContactNotFound, "contact not found")
 	case errors.Is(err, orgs.ErrHomeOrganization):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHomeOrganization, "an AI cannot leave its home organization: ask an admin to delete it")
 	case errors.Is(err, agents.ErrNotRegistered):
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent not registered: connect the channel first")
+	case errors.As(err, &notEmpty):
+		he := httpx.NewError(http.StatusConflict, dto.ErrorCodeOrganizationNotEmpty, "the organization still owns AIs, connections or groups")
+		he.Details = map[string]string{
+			"agents":     strconv.FormatInt(notEmpty.Agents, 10),
+			"connectors": strconv.FormatInt(notEmpty.Connectors, 10),
+			"groups":     strconv.FormatInt(notEmpty.Groups, 10),
+		}
+		return he
+	case errors.Is(err, orgs.ErrSlugTaken):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "slug already taken")
+	case errors.Is(err, orgs.ErrCycle):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodePositionCycle, "a position cannot be moved below itself or one of its descendants")
+	case errors.Is(err, orgs.ErrPositionNameTaken):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "position name already taken")
 	case errors.Is(err, access.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
 	case errors.Is(err, avatars.ErrInvalid):

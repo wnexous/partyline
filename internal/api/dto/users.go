@@ -39,7 +39,16 @@ type Me struct {
 	Intelligence IntelligenceRef `json:"intelligence"`
 	Role         Role            `json:"role"`
 	Locale       string          `json:"locale"`
-	CreatedAt    time.Time       `json:"created_at"`
+	// DefaultOrgID is the organization the user's new AIs join when they start without --org (ORG-04): the one
+	// they chose, while they still belong to it, else the organization they have administered the longest, else
+	// the one they have belonged to the longest. Absent when they belong to none.
+	DefaultOrgID string    `json:"default_org_id,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// SetDefaultOrgRequest is the body of PUT /me/default-org: the id of an organization the user belongs to.
+type SetDefaultOrgRequest struct {
+	OrgID string `json:"org_id"`
 }
 
 // UpdateMeRequest is the body of PATCH /me; absent fields are unchanged.

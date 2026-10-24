@@ -657,3 +657,80 @@ func TestMyInvitations(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, none)
 }
+
+// OMEM-01: InvitationFor gives the invitation to the identity that answers it - the invited user, or for an
+// invited AI whoever manages it - and ErrNotFound to everybody else, to an unknown invitation and, each
+// of these alone, to one that has expired.
+func TestInvitationForIsForWhoAnswersIt(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	a := f.acme()
+	globex := f.org("globex")
+	xi := f.user("xi")
+	boss := f.position(globex, "Boss", "")
+	crew := f.position(globex, "Crew", boss)
+	f.join(globex, xi, PermissionMember, boss, "")
+	bot := f.ai("visitor", xi)
+	f.home(bot, globex, xi, PermissionMember, crew)
+	peer := f.user("peer")
+	f.join(globex, peer, PermissionMember, crew, "")
+	zed := f.user("zed")
+
+	forUser, err := f.invite(a.alice, a.org, "zed", PermissionMember, "")
+	require.NoError(t, err)
+	forAI, err := f.invite(a.alice, a.org, "visitor", PermissionGuest, "")
+	require.NoError(t, err)
+
+	got, err := f.svc.InvitationFor(ctx, zed, forUser.ID)
+	require.NoError(t, err)
+	require.Equal(t, forUser, got, "the invited user")
+	got, err = f.svc.InvitationFor(ctx, xi, forAI.ID)
+	require.NoError(t, err)
+	require.Equal(t, forAI, got, "whoever manages the invited AI")
+	require.Equal(t, "ai", got.InviteeKind)
+
+	for who, id := range map[string]string{
+		a.alice: forUser.ID, // the inviter
+		a.bob:   forUser.ID, // another member
+		xi:      forUser.ID, // answers for an AI, not for another user
+		peer:    forAI.ID,   // does not manage the AI
+		zed:     forAI.ID,   // the other invitee
+		"":      forUser.ID, // nobody
+	} {
+		_, err := f.svc.InvitationFor(ctx, who, id)
+		require.ErrorIs(t, err, ErrNotFound, "%q / %s", who, id)
+	}
+	_, err = f.svc.InvitationFor(ctx, zed, "i-nothing")
+	require.ErrorIs(t, err, ErrNotFound)
+
+	f.clock.Advance(InvitationTTL - time.Millisecond)
+	_, err = f.svc.InvitationFor(ctx, zed, forUser.ID)
+	require.NoError(t, err, "14 days minus a millisecond")
+	f.clock.Advance(time.Millisecond)
+	_, err = f.svc.InvitationFor(ctx, zed, forUser.ID)
+	require.ErrorIs(t, err, ErrNotFound, "an expired invitation is nobody's")
+}
+
+// The view names the invitee and the inviter with their kind and avatar, so a client can draw them.
+func TestAnInvitationNamesItsInviteeAndInviterWithKindAndAvatar(t *testing.T) {
+	f := newFixture(t)
+	a := f.acme()
+	zed := f.user("zed")
+	f.exec(`UPDATE intelligences SET avatar_sha256 = 'sha-zed' WHERE id = ?`, zed)
+	f.exec(`UPDATE intelligences SET avatar_sha256 = 'sha-notes' WHERE id = ?`, a.notes)
+
+	byUser, err := f.invite(a.alice, a.org, "zed", PermissionMember, "")
+	require.NoError(t, err)
+	require.Equal(t, "user", byUser.InviteeKind)
+	require.Equal(t, "sha-zed", byUser.InviteeAvatarSha256)
+	require.Equal(t, "user", byUser.InvitedByKind)
+	require.Empty(t, byUser.InvitedByAvatarSha256)
+
+	other := f.user("amy")
+	byAI, err := f.invite(a.notes, a.org, "amy", PermissionGuest, "") // an AI that is a member invites a guest
+	require.NoError(t, err)
+	require.Equal(t, other, byAI.InviteeIID)
+	require.Equal(t, "ai", byAI.InvitedByKind)
+	require.Equal(t, "sha-notes", byAI.InvitedByAvatarSha256)
+	require.Equal(t, "user", byAI.InviteeKind)
+}

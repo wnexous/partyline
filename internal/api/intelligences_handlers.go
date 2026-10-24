@@ -138,6 +138,9 @@ func (s *server) writeMe(w http.ResponseWriter, r *http.Request, status int, u d
 	}
 	me := toMe(u, row.DisplayName)
 	me.Intelligence = convert.IntelligenceRef(row, dto.IntelligenceRoleUser, "")
+	if me.DefaultOrgID, err = s.Orgs.DefaultOrg(r.Context(), u.ID); err != nil {
+		return err
+	}
 	httpx.WriteJSON(w, status, me)
 	return nil
 }

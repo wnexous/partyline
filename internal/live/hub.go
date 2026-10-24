@@ -68,6 +68,8 @@ type Deps struct {
 	Authz *orgs.Authz
 	// Intelligences decides who sees a profile change; optional.
 	Intelligences *intelligences.Service
+	// Orgs renders an invitation for the identity that answers it; without it invitations are not announced.
+	Orgs *orgs.Service
 	// PublicURL is the instance URL; upgrades must come from its origin (LIVE-03).
 	PublicURL *url.URL
 	Logger    *slog.Logger
@@ -369,6 +371,9 @@ func (c *conn) render(ctx context.Context, e events.Event) ([]frame, error) {
 	case events.OrgChanged:
 		return c.orgChanged(ctx, e.OrgID)
 
+	case events.InvitationReceived:
+		return c.invitationReceived(ctx, e.InvitationID)
+
 	case events.AgentPresence:
 		return c.ifSeen(c.canSeeAgent(ctx, e.AgentID, e.OwnerID))(frame{
 			Type: dto.LiveEventTypeAgentPresence, Data: dto.AgentPresence{AgentID: e.AgentID, Online: e.Online},
@@ -587,6 +592,22 @@ func (c *conn) orgChanged(ctx context.Context, orgID string) ([]frame, error) {
 		out = append(out, accessChanged(string(access.KindConnector), id))
 	}
 	return out, nil
+}
+
+// invitationReceived renders an invitation for the user who answers it: the invitee, or for an invited AI
+// whoever manages it in its home organization (OMEM-01). Everybody else, the inviter included, hears nothing.
+func (c *conn) invitationReceived(ctx context.Context, invitationID string) ([]frame, error) {
+	if c.hub.d.Orgs == nil {
+		return nil, nil
+	}
+	inv, err := c.hub.d.Orgs.InvitationFor(ctx, c.p.UserID, invitationID)
+	if errors.Is(err, orgs.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return []frame{{Type: dto.LiveEventTypeInvitationReceived, Data: convert.Invitation(inv)}}, nil
 }
 
 // rereadRooms compares the rooms the user lists now with those the connection knows: a room that is

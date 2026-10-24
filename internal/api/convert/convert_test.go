@@ -1,12 +1,15 @@
 package convert_test
 
 import (
+	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -79,4 +82,121 @@ func TestMessageAuthor(t *testing.T) {
 func TestAvatarURL(t *testing.T) {
 	require.Equal(t, "", convert.AvatarURL("u1", ""))
 	require.Equal(t, "/api/v1/intelligences/u1/avatar?v="+sha, convert.AvatarURL("u1", sha))
+}
+
+// OMEM-01, POS-05: a member of an organization is a user or an AI with its permission and position, and
+// only a guest shows the identity that invited it - not a member or an admin, whatever the row holds, and
+// not a guest whose inviter is gone.
+func TestOrgMember(t *testing.T) {
+	row := func(over func(*orgs.MemberRow)) orgs.MemberRow {
+		r := orgs.MemberRow{
+			IID: "u1", Permission: "member", Kind: "human", DisplayName: "Ana", Handle: "ana", AvatarSha256: sha,
+			PositionID: "p1", PositionName: "Lead", JoinedAt: 1700000000000,
+			InviterIID: "u2", InviterKind: "human", InviterDisplayName: "Bia", InviterHandle: "bia",
+		}
+		over(&r)
+		return r
+	}
+	inviter := &dto.IntelligenceRef{ID: "u2", Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "Bia", Handle: "bia"}
+
+	got := convert.OrgMember(row(func(r *orgs.MemberRow) { r.Permission = "guest" }))
+	require.Equal(t, dto.OrgMember{
+		Intelligence: dto.IntelligenceRef{
+			ID: "u1", Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "Ana", Handle: "ana",
+			AvatarURL: "/api/v1/intelligences/u1/avatar?v=" + sha,
+		},
+		Permission: dto.PermissionGuest, PositionID: "p1", PositionName: "Lead", InvitedBy: inviter,
+		JoinedAt: convert.Time(1700000000000), DeleteEffect: dto.DeleteEffectRemove,
+	}, got, "a guest shows its inviter")
+
+	// What the viewer may do to the member travels with it; an AI of the organization is deleted for good.
+	rights := convert.OrgMember(row(func(r *orgs.MemberRow) { r.CanDelete, r.CanMove, r.DeletedForGood = true, true, true }))
+	require.True(t, rights.CanDelete)
+	require.True(t, rights.CanMove)
+	require.Equal(t, dto.DeleteEffectDelete, rights.DeleteEffect)
+	require.False(t, got.CanDelete || got.CanMove)
+
+	for _, permission := range []string{"member", "admin"} {
+		require.Nil(t, convert.OrgMember(row(func(r *orgs.MemberRow) { r.Permission = permission })).InvitedBy,
+			"%s: only a guest has an inviter", permission)
+	}
+	require.Nil(t, convert.OrgMember(row(func(r *orgs.MemberRow) {
+		r.Permission, r.InviterIID, r.InviterKind, r.InviterDisplayName, r.InviterHandle = "guest", "", "", "", ""
+	})).InvitedBy, "a guest whose inviter is gone has none")
+
+	ai := convert.OrgMember(row(func(r *orgs.MemberRow) { r.Kind, r.AvatarSha256 = "ai", "" }))
+	require.Equal(t, dto.IntelligenceRef{ID: "u1", Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: "Ana", Handle: "ana"}, ai.Intelligence)
+	withoutPosition := convert.OrgMember(row(func(r *orgs.MemberRow) { r.PositionID, r.PositionName = "", "" }))
+	require.Empty(t, withoutPosition.PositionID)
+	require.Empty(t, withoutPosition.PositionName)
+}
+
+// OMEM-01: an invitation names its invitee and inviter as users or AIs, with their avatars, and carries the
+// position only when it has one.
+func TestInvitation(t *testing.T) {
+	created := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	inv := orgs.Invitation{
+		ID: "i1", OrgID: "o1", OrgName: "Acme", OrgSlug: "acme",
+		InviteeIID: "a1", InviteeHandle: "atlas", InviteeName: "Atlas", InviteeKind: "ai", InviteeAvatarSha256: sha,
+		Permission: orgs.PermissionGuest, PositionID: "p1", PositionName: "Lead",
+		InvitedByIID: "u1", InvitedByHandle: "ana", InvitedByName: "Ana", InvitedByKind: "user",
+		CreatedAt: created, ExpiresAt: created.Add(14 * 24 * time.Hour),
+	}
+	require.Equal(t, dto.Invitation{
+		ID: "i1", OrgID: "o1", OrgName: "Acme", OrgSlug: "acme",
+		Invitee: dto.IntelligenceRef{
+			ID: "a1", Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI, DisplayName: "Atlas", Handle: "atlas",
+			AvatarURL: "/api/v1/intelligences/a1/avatar?v=" + sha,
+		},
+		Permission: dto.PermissionGuest, PositionID: "p1", PositionName: "Lead",
+		InvitedBy: dto.IntelligenceRef{ID: "u1", Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser, DisplayName: "Ana", Handle: "ana"},
+		CreatedAt: created, ExpiresAt: created.Add(14 * 24 * time.Hour),
+	}, convert.Invitation(inv))
+
+	// An AI can be the inviter, and a user the invitee; an invitation may carry no position.
+	inv.InviteeKind, inv.InvitedByKind, inv.PositionID, inv.PositionName = "user", "ai", "", ""
+	got := convert.Invitation(inv)
+	require.Equal(t, dto.IntelligenceRoleUser, got.Invitee.Role)
+	require.Equal(t, dto.IntelligenceKindHuman, got.Invitee.Kind)
+	require.Equal(t, dto.IntelligenceRoleAI, got.InvitedBy.Role)
+	require.Equal(t, dto.IntelligenceKindAI, got.InvitedBy.Kind)
+	require.Empty(t, got.PositionID)
+	require.Empty(t, got.PositionName)
+}
+
+// CHART-01, CHART-03: the chart renders every list as a list - an empty one is [], never null - and asks
+// presence about AIs only, since people have none.
+func TestOrgChart(t *testing.T) {
+	asked := map[string]bool{}
+	online := func(id string) bool { asked[id] = true; return true }
+	chart := convert.OrgChart(orgs.ChartView{
+		ViewerAdmin: true,
+		Positions: []orgs.ChartPosition{{
+			Position: orgs.Position{ID: "p1", Name: "Admin"},
+			Holders: []orgs.MemberRow{
+				{IID: "u1", Kind: "human", DisplayName: "Ana", Handle: "ana", Permission: "admin", CanDelete: false, CanMove: true},
+				{IID: "a1", Kind: "ai", DisplayName: "Atlas", Handle: "atlas", Permission: "guest", CanDelete: true, DeletedForGood: true},
+			},
+		}, {Position: orgs.Position{ID: "p2", Name: "Lead", ParentID: "p1"}, Holders: []orgs.MemberRow{}}},
+		Members: []orgs.MemberRow{{IID: "a2", Kind: "ai", DisplayName: "Vega", Handle: "vega", Permission: "member", Under: "u1"}},
+	}, online)
+
+	require.True(t, chart.Viewer.Admin)
+	require.Equal(t, map[string]bool{"a1": true, "a2": true}, asked, "presence is asked for AIs, not for Ana")
+	ana, atlas := chart.Positions[0].Holders[0], chart.Positions[0].Holders[1]
+	require.False(t, ana.Online)
+	require.True(t, atlas.Online)
+	require.Equal(t, dto.DeleteEffectRemove, ana.DeleteEffect)
+	require.Equal(t, dto.DeleteEffectDelete, atlas.DeleteEffect)
+	require.True(t, ana.CanMove)
+	require.True(t, atlas.CanDelete)
+	require.Equal(t, dto.PermissionGuest, atlas.Permission)
+	require.Equal(t, "p1", chart.Positions[1].ParentID)
+	require.Equal(t, "u1", chart.Members[0].Under)
+
+	raw, err := json.Marshal(chart)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"holders":[]`)
+	require.Contains(t, string(raw), `"unassigned":[]`)
+	require.NotContains(t, string(raw), "null")
 }
