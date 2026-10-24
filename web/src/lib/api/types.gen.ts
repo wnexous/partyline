@@ -2360,7 +2360,19 @@ export interface Me {
   intelligence: IntelligenceRef;
   role: Role;
   locale: string;
+  /**
+   * DefaultOrgID is the organization the user's new AIs join when they start without --org (ORG-04): the one
+   * they chose, while they still belong to it, else the organization they have administered the longest, else
+   * the one they have belonged to the longest. Absent when they belong to none.
+   */
+  default_org_id?: string;
   created_at: string /* RFC 3339 */;
+}
+/**
+ * SetDefaultOrgRequest is the body of PUT /me/default-org: the id of an organization the user belongs to.
+ */
+export interface SetDefaultOrgRequest {
+  org_id: string;
 }
 /**
  * UpdateMeRequest is the body of PATCH /me; absent fields are unchanged.

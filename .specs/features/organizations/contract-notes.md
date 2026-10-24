@@ -1609,3 +1609,23 @@ What the viewer may do about an identity comes from its profile only (T25): `mem
   Members, Unassigned}`; `ListMembers` and `MemberView` now read the rows, the chart and the AIs whose home is the organization in one
   read transaction and fill `MemberRow.CanDelete`, `DeletedForGood`, `CanMove` (and `Under` only in the chart). **Query**:
   `ListOrgHomeAgentIDs`. Converter: `convert.OrgChart`, `convert.OrgMember`.
+
+## T17: Default organization route (ORG-04)
+
+- **`PUT /api/v1/me/default-org`** `{org_id}` (`dto.SetDefaultOrgRequest`, `internal/api/auth_handlers.go`) → **200 with the account** (`Me`, now with
+  the new choice). `org_id` is an organization **id**. The caller must be a **member of it with any permission** (a guest too; a pending invitation
+  is not a membership); anything else - an organization the caller is not in, one that does not exist, an address instead of an id, an empty or
+  missing `org_id` - is **403 `forbidden`**, so a refusal tells nothing about organizations the caller is not in (design: "otherwise 403"). A
+  refusal changes nothing. Choosing the same organization again is 200. Not JSON is 400, no credentials 401, an agent token 403 (path rule:
+  the default stays a user setting, AD-020).
+- **`Me.default_org_id`** (`dto.Me`, in every answer that describes the account: `GET /me`, `PATCH /me`, login, setup, and the answer above) is the
+  **effective** default - where a new AI of the user lands (`orgs.DefaultFor`): the organization they chose while they still belong to it, else
+  the one they have administered the longest, else the one they have belonged to the longest; absent when they belong to none. It is therefore
+  never the stale choice of an organization the user left (leaving clears the stored choice, T7), and a user who never chose one sees their
+  personal organization.
+- **Effect**: the next AI the user's tokens start without `--org` is created in that organization (T10/T18), on a live session and on a tools-only
+  call alike. AIs that exist stay where they are.
+- **Service addition**: `orgs.Service.DefaultOrg(iid)` (the effective default); `SetDefault` is T9's.
+- **Web**: the generated `Me` now has `default_org_id?: string`, so the interim `MeWithDefaultOrg` of `web/src/lib/orgs.ts` (T49, which added the field
+  with `Me & {...}`) became `Omit<Me, "default_org_id"> & { default_org_id?: string | null }`: the same tolerance of a `null`, which the server
+  never sends, without the intersection narrowing the field to `string`.

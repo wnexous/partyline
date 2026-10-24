@@ -558,8 +558,8 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: `orgs.SetDefault` (T9)
 **Requirement**: ORG-04
 **Done when**:
-- [ ] e2e: setting the default to a member org → 200, and the next new AI lands there; a non-member org → 403
-- [ ] Gate check passes: `make check`
+- [x] e2e: setting the default to a member org → 200, and the next new AI lands there; a non-member org → 403
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): let users choose their default organization`
