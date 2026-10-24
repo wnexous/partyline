@@ -1450,3 +1450,25 @@ Every section above is kept as its task wrote it. This one records what the merg
   unknown address, nothing to show, every failure with its exit code, `--help`, and the login line with an organization of her own choice or a failing call behind a
   proxy). Mutations of the star, the default, the sort, the position name, the parent ids, the lookup, the exit codes, the footer, the trailing columns and the
   login behaviour each fail them.
+
+## T38: `create_group` sends the organization (ORG-03)
+
+- **The tool** (`tools.createGroup`, `internal/channel/tools.go`): the optional string `organization` (T35's schema) is trimmed and sent as the `org` field of
+  `POST /agent/groups` (T23: a slug or an id, any case). Left out, blank or empty it is not sent, and the server puts the group in the AI's **home**
+  organization. The answer is the server's `dto.CreatedGroup` as before, which already names the organization - `org_id`, `org_slug`, `org_name` - so the AI
+  reads where the group went; the room's `org_id` agrees (`TestCreateGroupInAChosenOrganization`, `TestCreateGroupWithoutAnOrganizationIsInTheHomeOne`).
+- **Members follow the organization chosen**: each must belong to it, and a refused one comes back as `not_org_member` in the tool's `members_refused` text, with
+  the handle as the AI wrote it. A member who is valid for the home organization only (scout) is refused for Acme, and one who is in Acme only (bob) is refused
+  at home, so the choice is what decides (`TestCreateGroupMembersMustBelongToTheChosenOrganization`).
+- **The 403 says what it is.** An AI that is not a member of the organization it names, is only a guest there, or names one that does not exist gets the server's
+  bare `not allowed` (T23 tells nothing about organizations the caller is not in), which says nothing to a model. The tool answers, naming the 403 and what an AI
+  needs, nothing created:
+  - with an organization: `forbidden (403): you cannot create a group in "<organization>": it must be an organization you belong to as a member or an admin, not
+    as a guest` (the organization as the AI wrote it, trimmed);
+  - without one (a guest AI in its home organization): `forbidden (403): you cannot create a group in your home organization: guests cannot create groups, and you
+    must be a member or an admin there`.
+  Only a 403 is rewritten: a 422 `members_refused`, a 429 and the rest keep the text they had. To tell them apart the client's refusal is now a `*statusError`
+  (status and the same text as before; `apiError`'s message is unchanged for every tool).
+- **Docs**: the `create_group` row of `docs/agents.md` says the answer names the organization and the 403.
+- **Tests**: `internal/channel/create_group_org_test.go`; the earlier `TestToolCreateGroup*` pass unchanged. Mutations "organization not sent", "not trimmed", the
+  named text used for the home organization (and the reverse), "403 keeps the server text" and "every status rewritten" each fail them.

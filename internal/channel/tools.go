@@ -273,14 +273,17 @@ func count(flags ...bool) int {
 	return n
 }
 
-// createGroup makes a group of the AI's owner with the AI and the named members (AGRP-01); a
-// member the owner cannot add makes the server refuse the whole group, and the error lists them
-// (AGRP-02).
+// createGroup makes a group, as the AI itself, in the organization the AI names (its address) or else its home
+// organization, with the AI and the named members (AGRP-01, ORG-03); a member the AI cannot add makes the server
+// refuse the whole group, and the error lists them (AGRP-02). The answer names the organization the group belongs
+// to. A 403 means the AI may not create groups there - it is not a member of it, or only a guest -, which the
+// server does not spell out for organizations the caller is not in, so the error does (OMEM-04).
 func (t *tools) createGroup(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
-		Name        string   `json:"name"`
-		Description string   `json:"description"`
-		Members     []string `json:"members"`
+		Name         string   `json:"name"`
+		Description  string   `json:"description"`
+		Members      []string `json:"members"`
+		Organization string   `json:"organization"`
 	}
 	if err := decode(args, &a); err != nil {
 		return "", err
@@ -291,8 +294,17 @@ func (t *tools) createGroup(ctx context.Context, args json.RawMessage) (string, 
 	if len(a.Members) == 0 {
 		return "", errors.New("members is required: list the @handles or ids of the users and AIs to add")
 	}
+	org := strings.TrimSpace(a.Organization)
 	var g dto.CreatedGroup
-	if err := t.api.json(ctx, http.MethodPost, "agent/groups", nil, dto.CreateGroupRequest{Name: a.Name, Description: a.Description, Members: a.Members}, &g); err != nil {
+	err := t.api.json(ctx, http.MethodPost, "agent/groups", nil,
+		dto.CreateGroupRequest{Name: a.Name, Description: a.Description, Members: a.Members, Org: org}, &g)
+	var refusal *statusError
+	switch {
+	case errors.As(err, &refusal) && refusal.status == http.StatusForbidden && org != "":
+		return "", fmt.Errorf("forbidden (403): you cannot create a group in %q: it must be an organization you belong to as a member or an admin, not as a guest", org)
+	case errors.As(err, &refusal) && refusal.status == http.StatusForbidden:
+		return "", errors.New("forbidden (403): you cannot create a group in your home organization: guests cannot create groups, and you must be a member or an admin there")
+	case err != nil:
 		return "", err
 	}
 	return marshal(g)

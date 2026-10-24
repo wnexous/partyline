@@ -84,8 +84,17 @@ func apiError(resp *http.Response) error {
 		}
 		msg += "; nothing was created (refused: " + strings.Join(parts, ", ") + ")"
 	}
-	return errors.New(msg)
+	return &statusError{status: resp.StatusCode, msg: msg}
 }
+
+// statusError is a refusal of the server that is the caller's to act on (a 4xx other than 401): its text is what the
+// tools show, and the status lets a tool say more about the refusals it knows the reasons of.
+type statusError struct {
+	status int
+	msg    string
+}
+
+func (e *statusError) Error() string { return e.msg }
 
 // namedCodes are the server codes a tool error names, so that the AI can tell the refusals of the
 // conversation and profile tools apart and act on them. The other errors show the server's

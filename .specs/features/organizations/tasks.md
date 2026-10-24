@@ -998,8 +998,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: T23 server route
 **Requirement**: ORG-03
 **Done when**:
-- [ ] Channel tests: with `organization` → created there; without it → the home org; a non-member org → the tool error text names the 403
-- [ ] Gate check passes: `make check`
+- [x] Channel tests: with `organization` → created there; without it → the home org; a non-member org → the tool error text names the 403
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): create groups in a chosen organization`
