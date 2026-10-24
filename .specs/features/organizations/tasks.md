@@ -788,11 +788,11 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `orgs.Authz`
 **Requirement**: ORG-02, ORG-07
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - a member pairs through a Telegram connection of its org; through a webhook connection → 403, while an admin → 201;
   - an outsider → 404;
   - a member sees the connection's people; an outsider does not
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(identities): pair and see people through the connection's organization`

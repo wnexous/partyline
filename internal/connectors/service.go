@@ -151,6 +151,25 @@ func (s *Service) Require(ctx context.Context, p authn.Principal, id string, wan
 	return err
 }
 
+// RequirePairing authorizes the user to pair a chat account through the connection (IDN-01, AD-008 as amended
+// by AD-016): any member of its organization may, except through a kind whose callers choose the sender ids
+// freely (the webhook), which only the admins of the organization may pair through. A connection the user does
+// not see is access.ErrNotFound; a member who may not pair through it is access.ErrForbidden.
+func (s *Service) RequirePairing(ctx context.Context, p authn.Principal, id string) error {
+	l, err := s.authorize(ctx, p, id, dto.LevelUse)
+	if err != nil {
+		return err
+	}
+	c, err := s.d.Store.R().GetConnector(ctx, id)
+	if err != nil {
+		return err
+	}
+	if s.Kind(c.Kind).LinkAdminsOnly && !access.AtLeast(l, dto.LevelManage) {
+		return access.ErrForbidden
+	}
+	return nil
+}
+
 // require resolves the level the principal holds on the connection from its membership of the
 // connection's organization. A connection that does not exist, has no organization, and a principal who
 // is disabled or acts as nobody (an agent token that names no AI) are not found.

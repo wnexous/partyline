@@ -216,8 +216,8 @@ type Identity struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-// PairingRequest is the body of POST /identities/pairing: the connector the code is for.
-// The user must own the connector or hold use on it (IDN-01).
+// PairingRequest is the body of POST /identities/pairing: the connection the code is for. The user must
+// be a member of its organization, and an admin of it for a webhook connection (IDN-01, IDN-05, AD-016).
 type PairingRequest struct {
 	ConnectorID string `json:"connector_id"`
 }

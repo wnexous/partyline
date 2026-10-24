@@ -21,15 +21,15 @@ const MaxConversations = 100
 type PersonInfo struct {
 	db.Person
 	Connector db.Connector
-	// CanUse tells whether the caller owns or may use the connector; only they see the account
-	// and who it is linked to (PEOP-04).
+	// CanUse tells whether the caller sees the connection, as a member of its organization; only they see
+	// the account and who it is linked to (PEOP-04, AD-016).
 	CanUse bool
 	// LinkedUser is the user whose verified account it is (AD-008); set only when CanUse.
 	LinkedUser *db.Intelligence
 }
 
 // personInfo loads the account behind a person for the caller.
-func (s *Service) personInfo(ctx context.Context, userID, personID string) (*PersonInfo, error) {
+func (s *Service) personInfo(ctx context.Context, p authn.Principal, personID string) (*PersonInfo, error) {
 	q := s.store.R()
 	pr, err := q.GetPerson(ctx, personID)
 	if err != nil {
@@ -39,7 +39,7 @@ func (s *Service) personInfo(ctx context.Context, userID, personID string) (*Per
 	if err != nil {
 		return nil, err
 	}
-	canUse, err := s.az.CanUseConnector(ctx, userID, c.ID)
+	canUse, err := s.az.CanSeeConnection(ctx, p, c.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -166,9 +166,9 @@ type LinkedAccount struct {
 }
 
 // linkedAccounts lists the accounts of a user that the viewer may see: the user's own, or those
-// linked through a connector the viewer owns or may use (who can already see which user an
-// account is, PersonDetail.LinkedUser). They are the user's apps (PEOP-02).
-func (s *Service) linkedAccounts(ctx context.Context, viewerID, userID string) ([]LinkedAccount, error) {
+// linked through a connection of an organization the viewer belongs to (who can already see which
+// user an account is, PersonDetail.LinkedUser). They are the user's apps (PEOP-02).
+func (s *Service) linkedAccounts(ctx context.Context, viewer authn.Principal, userID string) ([]LinkedAccount, error) {
 	q := s.store.R()
 	idents, err := q.ListIdentities(ctx, userID)
 	if err != nil {
@@ -176,8 +176,8 @@ func (s *Service) linkedAccounts(ctx context.Context, viewerID, userID string) (
 	}
 	var out []LinkedAccount
 	for _, ident := range idents {
-		if viewerID != userID {
-			ok, err := s.az.CanUseConnector(ctx, viewerID, ident.ConnectorID)
+		if viewer.IID() != userID {
+			ok, err := s.az.CanSeeConnection(ctx, viewer, ident.ConnectorID)
 			if err != nil {
 				return nil, err
 			}
@@ -197,17 +197,17 @@ func (s *Service) linkedAccounts(ctx context.Context, viewerID, userID string) (
 	return out, nil
 }
 
-// operatedConnectors lists the connectors an AI operates that the viewer owns or may use
-// (ACC-07, CID-01): those that name it. A connector the viewer cannot use is not theirs to learn
-// about. Users operate none: a connection nobody operates is nobody's app.
-func (s *Service) operatedConnectors(ctx context.Context, viewerID, aiID string) ([]db.Connector, error) {
+// operatedConnectors lists the connections an AI operates that the viewer sees as a member of their
+// organization (ACC-07, CID-01): those that name it. A connection the viewer cannot see is not theirs
+// to learn about. Users operate none: a connection nobody operates is nobody's app.
+func (s *Service) operatedConnectors(ctx context.Context, viewer authn.Principal, aiID string) ([]db.Connector, error) {
 	list, err := s.store.R().ListConnectorsOperatedBy(ctx, sql.NullString{String: aiID, Valid: true})
 	if err != nil {
 		return nil, err
 	}
 	var out []db.Connector
 	for _, c := range list {
-		ok, err := s.az.CanUseConnector(ctx, viewerID, c.ID)
+		ok, err := s.az.CanSeeConnection(ctx, viewer, c.ID)
 		if err != nil {
 			return nil, err
 		}

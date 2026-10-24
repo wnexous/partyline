@@ -63,7 +63,7 @@ func (s *server) agentContactsTree(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
-// listContactPeople pages through the people of one connector the caller owns or may use:
+// listContactPeople pages through the people of one connection of an organization the caller belongs to:
 // ?connector_id=&q=&after=<id of the last person>&limit= (50 by default, at most 200).
 func (s *server) listContactPeople(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	q := r.URL.Query()
@@ -77,7 +77,7 @@ func (s *server) listContactPeople(w http.ResponseWriter, r *http.Request, p aut
 		}
 		in.Limit = n
 	}
-	page, err := s.Intelligences.People(r.Context(), p.UserID, in)
+	page, err := s.Intelligences.People(r.Context(), p, in)
 	if err != nil {
 		return err
 	}

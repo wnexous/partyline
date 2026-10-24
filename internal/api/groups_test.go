@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"slices"
@@ -94,7 +95,9 @@ func TestCreateGroupRefusesTheMembersItsCreatorCannotAdd(t *testing.T) {
 	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
 	env.AddMember(alice.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember, "")
 	env.AddMember(alice.PersonalOrg().ID, dave.User.ID, orgs.PermissionMember, "") // then disabled
-	connector, _ := storeChat(t, env, alice.User.ID, "chat")
+	line, err := env.App.Orgs.Create(context.Background(), alice.User.ID, "line")  // carol is not in it
+	require.NoError(t, err)
+	connector, _ := storeChatIn(t, env, alice.User.ID, line.ID, "chat")
 	person := seedPerson(t, env, connector, "5511999990000", "Contact")
 	disableUser(admin, dave.User.ID, true)
 	unknown := store.NewID()
@@ -123,7 +126,7 @@ func TestCreateGroupRefusesTheMembersItsCreatorCannotAdd(t *testing.T) {
 		hidden := createGroup(carol, "Launch", person).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
 		missing := createGroup(carol, "Launch", store.NewID()).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
 		require.Equal(t, dto.RefusedReasonPerson, seen.Refused[0].Reason, "the connector's owner is told it is a person")
-		require.Equal(t, dto.RefusedReasonNotFound, hidden.Refused[0].Reason, "carol has no access to that connector")
+		require.Equal(t, dto.RefusedReasonNotFound, hidden.Refused[0].Reason, "carol is in no organization of that connection")
 		require.Equal(t, hidden.Message, missing.Message)
 		require.Empty(t, roomListOf(t, carol), "nothing was created")
 	})

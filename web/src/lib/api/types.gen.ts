@@ -848,8 +848,8 @@ export interface Identity {
   created_at: string /* RFC 3339 */;
 }
 /**
- * PairingRequest is the body of POST /identities/pairing: the connector the code is for.
- * The user must own the connector or hold use on it (IDN-01).
+ * PairingRequest is the body of POST /identities/pairing: the connection the code is for. The user must
+ * be a member of its organization, and an admin of it for a webhook connection (IDN-01, IDN-05, AD-016).
  */
 export interface PairingRequest {
   connector_id: string;
@@ -940,8 +940,8 @@ export interface Contacts {
    */
   users: IntelligenceRef[];
   /**
-   * People has one group for each connector the caller owns or may use, by connector name;
-   * GET /contacts/people lists the people of one.
+   * People has one group for each connection of the organizations the caller belongs to, by connection
+   * name; GET /contacts/people lists the people of one.
    */
   people: PeopleGroup[];
 }
@@ -1389,7 +1389,7 @@ export interface IntelligenceProfile extends IntelligenceRef {
    */
   ai?: AIDetail;
   /**
-   * Person is set for a person, for the users who own or may use its connector (PEOP-03,
+   * Person is set for a person, for the members of the organization of its connection (PEOP-03,
    * PEOP-04); a user who sees the person through a conversation only gets the summary.
    */
   person?: PersonDetail;

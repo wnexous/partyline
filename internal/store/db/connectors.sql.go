@@ -165,66 +165,6 @@ func (q *Queries) GetConnectorWithOwner(ctx context.Context, id string) (GetConn
 	return i, err
 }
 
-const listConnectorsForUser = `-- name: ListConnectorsForUser :many
-SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_room_id, c.operator_iid, c.account_label, c.deliver, c.groups_mentions_only, c.org_id, u.username AS owner_username,
-       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name
-FROM connectors c JOIN users u ON u.id = c.owner_id
-LEFT JOIN intelligences ui ON ui.id = u.id
-WHERE c.owner_id = ?1
-   OR c.id IN (SELECT g.resource_id FROM grants g
-               WHERE g.resource_kind = 'connector' AND g.subject IN (?1, '*'))
-ORDER BY c.name, u.username, c.id
-`
-
-type ListConnectorsForUserRow struct {
-	Connector        Connector
-	OwnerUsername    string
-	OwnerDisplayName string
-}
-
-func (q *Queries) ListConnectorsForUser(ctx context.Context, userID string) ([]ListConnectorsForUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, listConnectorsForUser, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListConnectorsForUserRow
-	for rows.Next() {
-		var i ListConnectorsForUserRow
-		if err := rows.Scan(
-			&i.Connector.ID,
-			&i.Connector.OwnerID,
-			&i.Connector.Kind,
-			&i.Connector.Name,
-			&i.Connector.ConfigJson,
-			&i.Connector.SecretsEnc,
-			&i.Connector.Enabled,
-			&i.Connector.Status,
-			&i.Connector.LastError,
-			&i.Connector.CreatedAt,
-			&i.Connector.UpdatedAt,
-			&i.Connector.AutoRouteRoomID,
-			&i.Connector.OperatorIid,
-			&i.Connector.AccountLabel,
-			&i.Connector.Deliver,
-			&i.Connector.GroupsMentionsOnly,
-			&i.Connector.OrgID,
-			&i.OwnerUsername,
-			&i.OwnerDisplayName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listConnectorsOfMember = `-- name: ListConnectorsOfMember :many
 SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_room_id, c.operator_iid, c.account_label, c.deliver, c.groups_mentions_only, c.org_id, u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,

@@ -35,6 +35,22 @@ func aiAt(t *testing.T, env *testkit.Env, owner *testkit.Client, name, handle, m
 	return a.ID
 }
 
+// aiAtIn is aiAt for an AI whose home is the organization: the owner's default is that organization while it
+// is made, and their own again afterwards.
+func aiAtIn(t *testing.T, env *testkit.Env, owner *testkit.Client, orgID, name, handle, machine, folder, home, harness string) string {
+	t.Helper()
+	ctx := context.Background()
+	before, err := env.App.Store.R().GetUser(ctx, owner.User.ID)
+	require.NoError(t, err)
+	require.NoError(t, env.App.Orgs.SetDefault(ctx, owner.User.ID, orgID))
+	defer func() {
+		require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+			return q.SetUserDefaultOrg(ctx, db.SetUserDefaultOrgParams{DefaultOrgID: before.DefaultOrgID, ID: owner.User.ID})
+		}))
+	}()
+	return aiAt(t, env, owner, name, handle, machine, folder, home, harness)
+}
+
 // contactsFixture extends the people fixture with AIs. alice owns, on the machine devbox (home
 // /home/alice): Atlas (~/atlas, Claude Code, online), Notes (~/atlas/notes, OpenCode) and Lab
 // (~/c/d/lab, Codex, seen once and offline); on notebook: Dev (~, Claude Code). Old is a v0.3

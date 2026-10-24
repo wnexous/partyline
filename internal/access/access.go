@@ -139,6 +139,30 @@ func (a *Authorizer) CanSeeAI(ctx context.Context, p authn.Principal, aiID strin
 	return a.authz.SharesOrg(ctx, p.UserID, aiID)
 }
 
+// CanSeeConnection reports whether the caller can see the connection (AD-016): it is a member of the organization
+// the connection belongs to, with any permission. A user acts as themself and an AI as itself, never through its
+// host; a disabled user, a connection without an organization and an unknown connection are seen by nobody. It is
+// what the people of a connection, the linked accounts and the apps of an operator are shown through.
+func (a *Authorizer) CanSeeConnection(ctx context.Context, p authn.Principal, connectorID string) (bool, error) {
+	c, err := a.store.R().GetConnector(ctx, connectorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	iid := p.IID()
+	if iid == "" || !c.OrgID.Valid {
+		return false, nil
+	}
+	ok, err := a.activeUser(ctx, p.UserID)
+	if err != nil || !ok {
+		return false, err
+	}
+	_, member, err := a.authz.Member(ctx, c.OrgID.String, iid)
+	return member, err
+}
+
 // RoomLevel resolves the caller's level on a room (ACL-02). A user's level comes from room membership
 // and organizations (see UserRoomLevel); an agent gets post when it is a member of the room. Missing
 // rooms resolve to None.

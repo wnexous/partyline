@@ -3,6 +3,7 @@ package channel
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"image"
@@ -60,7 +61,13 @@ func (c *cast) person(name string) (id, handle string) {
 	ctx := context.Background()
 	conn, id := store.NewID(), store.NewID()
 	require.NoError(c.t, c.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
-		if err := q.CreateConnector(ctx, db.CreateConnectorParams{ID: conn, OwnerID: c.alice.User.ID, Kind: "telegram", Name: "tg", ConfigJson: "{}", Enabled: true}); err != nil {
+		orgID, err := orgs.DefaultFor(ctx, q, c.alice.User.ID) // the connection belongs to alice's organization, as an upgraded one does
+		if err != nil {
+			return err
+		}
+		if err := q.CreateConnector(ctx, db.CreateConnectorParams{
+			ID: conn, OwnerID: c.alice.User.ID, OrgID: sql.NullString{String: orgID, Valid: true}, Kind: "telegram", Name: "tg", ConfigJson: "{}", Enabled: true,
+		}); err != nil {
 			return err
 		}
 		if _, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: id, Kind: handles.Person, DisplayName: name, HandleBase: name, Now: time.Now()}); err != nil {

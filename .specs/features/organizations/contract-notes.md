@@ -733,3 +733,36 @@ Where a section refines the design, it says so.
   `TestOperatorMustBeAnAIOfTheConnectionsOrganization`, `TestOperatorAuthorizationMatrix` (also a second admin),
   `TestSendToAChatAuthorizationMatrix`; the operator fixture is now an organization (bob a member, dave in a second one that
   Atlas belongs to, carol with an inert grant), and `storeChat` places its connector in the owner's default organization.
+
+## T27: Pairing and people on organizations (ORG-02, ORG-07)
+
+- **Seeing a connection** (`access.Authorizer.CanSeeConnection(ctx, principal, connectorID)`): the principal is a member of the
+  connection's organization, with any permission. A user acts as themself and an AI as itself, never through its host; a
+  disabled user, a connection with no organization and an unknown one are seen by nobody. It replaces `CanUseConnector` in every
+  reader of the intelligences package; `ConnectorLevel` / `CanUseConnector` stay, grant-based, for the live hub until T32 and are
+  deleted by T51. The people of a connection are therefore for its members:
+  - `GET /contacts/people?connector_id=` and a person's profile with its `person` detail (the account behind it and the user it
+    is linked to) - 404 for everyone else; a user who can view a conversation where the person wrote still reads the profile
+    without the account (unchanged);
+  - the groups of `GET /contacts` `people` (one per connection of my organizations, `ListConnectorsOfMember`; the
+    owner-or-grant query `ListConnectorsForUser` is gone);
+  - the chat accounts a user linked, shown among the user's apps, and the connection that an AI operates, shown among the AI's apps.
+  The managers of the AI that operates a connection belong to its home organization, which is the connection's (ORG-07), so they
+  see the account behind a person too (the v0.5 text "without any access to the connector" no longer holds); a member of that
+  organization who does not manage the AI sees the person but not the AI's DMs.
+- **Pairing**: `POST /identities/pairing` asks `connectors.Service.RequirePairing`: a member of the connection's organization
+  (guests included) gets a code through an ordinary connection; through a kind whose callers choose the sender ids freely
+  (`Kind.LinkAdminsOnly`, the webhook; it was `LinkOwnerOnly`) only an **admin** does and a member is 403; a user outside the
+  organization, an admin of the instance included, is 404 for every kind (AD-008 as amended by AD-016).
+- **Linking** (the second guard, the `!link CODE` message): `identities.Service.Link(ctx, code, account, adminsOf)` takes an
+  organization id instead of a user id. With `adminsOf` set (the pipeline sets it, to the connection's organization, for
+  `LinkAdminsOnly` kinds) the code must belong to an admin of that organization **at the moment the account links**; the code of a
+  member, of someone outside it or of an admin demoted since it was issued links nothing and is not consumed (IDN-05). A
+  connection with no organization links nothing for those kinds. `connectors.Source` loses `OwnerID`.
+- **Tests**: `TestPairingFollowsTheConnectionsOrganization` (nine roles, an ordinary and a webhook connection),
+  `TestLinkOnlyForAdminsOfTheOrganization` (identities), `TestWebhookIdentityCannotBeForgedAcrossConnectors` (issue-time 403, a
+  demoted admin's code refused and kept, then linked), `TestAConnectionsPeopleAreForTheMembersOfItsOrganization` (list, contacts
+  group, person profile and avatar, linked account, operator app over the nine roles). The people fixture now keeps its connection
+  and its operator Atlas in a second organization of alice's ("line") apart from her rooms, so that "a viewer of a room" and "a
+  member of the connection's organization" are different people; `storeChatIn` places a seeded connector in a chosen organization.
+  The api helper `shareConnector` still writes the legacy grant besides the membership for the readers T28 and T32 move.

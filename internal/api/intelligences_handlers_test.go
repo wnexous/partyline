@@ -330,17 +330,14 @@ func TestUserProfileRoutesAuthMatrix(t *testing.T) {
 	m.run(t, setup, routes)
 }
 
-// Authorization matrix for a person: the connector's owner and its use grantee read it and are
+// Authorization matrix for a person: the members of the connection's organization read it and are
 // told, when they try to edit it, that it is history (422, CID-21); the others find nothing.
 func TestPersonProfileRoutesAuthMatrix(t *testing.T) {
 	m := newMatrix(t)
 	setup := func(t *testing.T, m *matrix) matrixResource {
 		owner := m.as(t, roleOwner)
 		connectorID, _ := storeChat(t, m.env, owner.User.ID, "family")
-		grant := m.as(t, roleViewer)
-		owner.Put("/api/v1/connectors/"+connectorID+"/sharing", dto.Sharing{
-			Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: grant.User.ID, Level: dto.LevelUse}},
-		}).RequireStatus(http.StatusOK)
+		shareConnector(owner, connectorID, m.as(t, roleViewer).User.ID) // the viewer joins the connection's organization
 		return matrixResource{"person": seedPerson(t, m.env, connectorID, "5511999990000", "Pat")}
 	}
 	routes := []matrixRoute{

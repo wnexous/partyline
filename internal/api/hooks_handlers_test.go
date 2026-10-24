@@ -22,6 +22,7 @@ import (
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/connectors/webhook"
 	"github.com/wnexous/partyline/internal/identities"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -545,9 +546,11 @@ func identitiesOf(c *testkit.Client) []dto.Identity {
 	return testkit.Decode[dto.List[dto.Identity]](c.Get("/api/v1/identities").RequireStatus(http.StatusOK)).Items
 }
 
-// AD-006, IDN-02, IDN-05 (validation probe S1): an identity linked through alice's webhook
-// connector is trusted only on that connector. Mallory's own webhook connector, which can
-// claim any sender id, neither resolves alice's identity nor links alice's pairing code.
+// AD-006, IDN-02, IDN-05 (validation probe S1, AD-016): an identity linked through alice's webhook
+// connector is trusted only on that connector. Mallory's own webhook connector, which can claim any sender
+// id, neither resolves alice's identity nor links alice's pairing code: it takes only the codes of the
+// admins of its organization, hands a member none, and refuses the code of an admin who lost that right
+// before it linked.
 func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 	e := newHookEnv(t)
 	now := time.Now()
@@ -568,10 +571,21 @@ func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 	mallory.OperateConnector(mconn.ID, malloryAI)
 	waitHookConnected(t, mallory, mconn.ID)
 
-	// IDN-05: a webhook connector links only its owner's codes, even a code issued for it (alice belongs
-	// to mallory's organization); the refused code stays usable.
+	// IDN-05: a webhook connector takes only the codes of the admins of its organization. Alice belongs to
+	// mallory's organization as a member and is given no code through it (403); once she is an admin she is,
+	// and when she is demoted before the code links it links nothing and stays usable.
+	ctx := context.Background()
+	malloryOrg := mallory.PersonalOrg().ID
 	shareConnector(mallory, mconn.ID, e.alice.User.ID)
+	e.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: mconn.ID}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	setPermission := func(permission orgs.Permission) {
+		t.Helper()
+		_, err := e.env.App.Orgs.SetPermission(ctx, mallory.User.ID, malloryOrg, e.alice.User.ID, permission)
+		require.NoError(t, err)
+	}
+	setPermission(orgs.PermissionAdmin)
 	code2 := testkit.Decode[dto.PairingCode](e.alice.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: mconn.ID}).RequireStatus(http.StatusCreated))
+	setPermission(orgs.PermissionMember)
 	signedHook(e.env, mconn.ID, msecret, now, payload(t, map[string]any{"chat_id": "m-chat", "sender_id": "alice-id", "text": "!link " + code2.Code})).
 		RequireStatus(http.StatusAccepted)
 	require.Len(t, identitiesOf(e.alice), 1, "mallory's connector linked nothing")
@@ -595,11 +609,12 @@ func TestWebhookIdentityCannotBeForgedAcrossConnectors(t *testing.T) {
 	require.Equal(t, "it is me", mine[0].Text)
 	require.True(t, mine[0].Trusted)
 
-	// The code mallory's connector refused was not consumed: it still links on its connector
-	// when no owner check applies.
-	_, ok, err := e.env.App.Identities.Link(context.Background(), code2.Code, identities.Account{
+	// The code mallory's connector refused was not consumed: it links on its connector once alice is an
+	// admin of its organization again.
+	setPermission(orgs.PermissionAdmin)
+	_, ok, err := e.env.App.Identities.Link(ctx, code2.Code, identities.Account{
 		ConnectorID: mconn.ID, ConnectorKind: webhook.KindName, SenderID: "alice-phone",
-	}, "")
+	}, malloryOrg)
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Len(t, identitiesOf(e.alice), 2)

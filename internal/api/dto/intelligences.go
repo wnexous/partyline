@@ -59,7 +59,7 @@ type IntelligenceProfile struct {
 	CanEdit bool `json:"can_edit"`
 	// AI is set for AIs.
 	AI *AIDetail `json:"ai,omitempty"`
-	// Person is set for a person, for the users who own or may use its connector (PEOP-03,
+	// Person is set for a person, for the members of the organization of its connection (PEOP-03,
 	// PEOP-04); a user who sees the person through a conversation only gets the summary.
 	Person *PersonDetail `json:"person,omitempty"`
 	// Apps lists where the intelligence speaks: the web app for users, the current harness

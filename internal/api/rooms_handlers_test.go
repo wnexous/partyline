@@ -68,11 +68,19 @@ func storeAgent(t *testing.T, env *testkit.Env, ownerID, name string) string {
 // connector belongs to the creator's default organization, as the upgrade places the connections it finds.
 func storeChat(t *testing.T, env *testkit.Env, ownerID, title string) (string, string) {
 	t.Helper()
+	return storeChatIn(t, env, ownerID, "", title)
+}
+
+// storeChatIn is storeChat for a connector of the organization (the creator's default one when empty).
+func storeChatIn(t *testing.T, env *testkit.Env, ownerID, orgID, title string) (string, string) {
+	t.Helper()
 	conn, chat := store.NewID(), store.NewID()
 	require.NoError(t, env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
-		orgID, err := orgs.DefaultFor(context.Background(), q, ownerID)
-		if err != nil {
-			return err
+		if orgID == "" {
+			var err error
+			if orgID, err = orgs.DefaultFor(context.Background(), q, ownerID); err != nil {
+				return err
+			}
 		}
 		if err := q.CreateConnector(context.Background(), db.CreateConnectorParams{
 			ID: conn, OwnerID: ownerID, OrgID: sql.NullString{String: orgID, Valid: orgID != ""}, Kind: "telegram", Name: "tg", ConfigJson: "{}", Enabled: true,

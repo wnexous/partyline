@@ -16,6 +16,8 @@ import (
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/conversations"
+	"github.com/wnexous/partyline/internal/identities"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -60,10 +62,12 @@ const (
 	peopleSender = "5511999990000@s.whatsapp.net"
 )
 
-// peopleFixture is a fake connector of alice, shared for use with bob. Its chat X is bridged
-// into alice's room A ("Support", with dave in it) and its chat Y into her private
-// room B ("Billing"). The sender "Customer" wrote in both chats, so the connector has one person.
-// carol and the admin have no access to anything; erin is in a room C only, which holds chat X
+// peopleFixture is a fake connector of alice's organization "line", which bob belongs to, operated by
+// Atlas. Alice's rooms live in her personal organization, apart from it: the connector's chat X is bridged
+// into her room A ("Support", with dave in it) and its chat Y into her private room B ("Billing"). The
+// sender "Customer" wrote in both chats, so the connector has one person. dave and erin belong to the
+// personal organization only, so they see the person through the rooms they are in, not through the
+// connection; carol and the admin have no access to anything; erin is in a room C only, which holds chat X
 // since after the person wrote.
 type peopleFixture struct {
 	env                                  *testkit.Env
@@ -71,6 +75,7 @@ type peopleFixture struct {
 	admin, alice, bob, carol, dave, erin *testkit.Client
 	conn                                 dto.Connector
 	inst                                 *connectortest.Instance
+	line                                 string // the organization of the connection
 	roomA, roomB, roomC                  dto.Room
 	chatX, chatY                         string
 	person                               string
@@ -163,9 +168,15 @@ func newPeopleFixture(t *testing.T) *peopleFixture {
 	}
 	// Atlas operates the connection (the contacts fixture names the same AI).
 	f.history = connectortest.NewHistory(connectortest.HistoryDeps{Store: env.App.Store, Bus: env.App.Bus, Now: clock.Now})
-	f.conn = createFakeIdle(f.alice, "wa", true)
-	f.alice.OperateConnector(f.conn.ID, aiAt(t, env, f.alice, "Atlas", "atlas", "devbox", "/home/alice/atlas", "/home/alice", "claude"))
-	shareConnector(f.alice, f.conn.ID, f.bob.User.ID)
+	line, err := env.App.Orgs.Create(context.Background(), f.alice.User.ID, "line")
+	require.NoError(t, err)
+	f.line = line.ID
+	on := true
+	f.conn = testkit.Decode[dto.Connector](f.alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+		OrgID: f.line, Kind: connectortest.KindName, Name: "wa", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &on,
+	}).RequireStatus(http.StatusCreated))
+	f.alice.OperateConnector(f.conn.ID, aiAtIn(t, env, f.alice, f.line, "Atlas", "atlas", "devbox", "/home/alice/atlas", "/home/alice", "claude"))
+	shareConnector(f.alice, f.conn.ID, f.bob.User.ID) // bob joins "line"
 	f.inst = fake.Instance(t, f.conn.ID)
 	f.inst.WaitRun(t)
 
@@ -204,10 +215,11 @@ func newPeopleFixture(t *testing.T) *peopleFixture {
 	return f
 }
 
-// PEOP-04 (L-017, L-018): users who own or may use the connector see its people whatever else they
-// can view; a user who can view a conversation where the person was seen reads the profile too; nobody
-// else, admins included (AD-005), finds it. Nobody edits a person: its profile is history (CID-21), so
-// the users of the connector are told so, and the others are refused as before.
+// PEOP-04 (L-017, L-018, AD-016): the members of the connection's organization see its people whatever
+// else they can view; a user who can view a conversation where the person was seen reads the profile too;
+// nobody else, admins of the instance included, finds it. Nobody edits a person: its profile is history
+// (CID-21), so the members of the connection's organization are told so, and the others are refused as
+// before.
 func TestPersonProfileFollowsTheConnector(t *testing.T) {
 	f := newPeopleFixture(t)
 	path := "/api/v1/intelligences/" + f.person
@@ -220,16 +232,16 @@ func TestPersonProfileFollowsTheConnector(t *testing.T) {
 		[]any{owner.Role, owner.Kind, owner.DisplayName, owner.Handle, owner.Platform, owner.CanEdit})
 	require.NotNil(t, owner.Person)
 
-	// bob may use the connector and can view no room at all: the connector alone gives access.
+	// bob belongs to the connection's organization and can view no room at all: the connection alone gives access.
 	grantee := profileOf(t, f.bob, f.person)
 	require.False(t, grantee.CanEdit)
 	require.NotNil(t, grantee.Person)
 	require.Empty(t, grantee.Conversations)
 
-	// dave can view room A and has no access to the connector.
+	// dave can view room A and is no member of the connection's organization.
 	viewer := profileOf(t, f.dave, f.person)
 	require.Equal(t, []any{"Customer", connectortest.KindName, false}, []any{viewer.DisplayName, viewer.Platform, viewer.CanEdit})
-	require.Nil(t, viewer.Person, "the account behind the person is for the users of the connector")
+	require.Nil(t, viewer.Person, "the account behind the person is for the members of the connection's organization")
 	patchProfile(f.dave, f.person, dto.UpdateProfileRequest{Bio: ptr("Hijacked")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	f.dave.DoRaw(http.MethodPut, path+"/avatar", "image/png", bytes.NewReader([]byte("x"))).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	f.dave.Delete(path+"/avatar").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
@@ -246,7 +258,7 @@ func TestPersonProfileFollowsTheConnector(t *testing.T) {
 	getProfile(f.alice.Token(dto.TokenKindAgent, "laptop"), f.person).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	require.Empty(t, profileOf(t, f.alice, f.person).Bio, "refused edits change nothing")
 
-	// The users of the connector are told the profile is history: nothing changes and nobody hears of a change.
+	// The members of the connection's organization are told the profile is history: nothing changes and nobody hears of a change.
 	patchProfile(f.bob, f.person, dto.UpdateProfileRequest{Bio: ptr("Orders desk")}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeHistoryOnly)
 	patchProfile(f.alice, f.person, dto.UpdateProfileRequest{Bio: ptr("Orders desk")}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeHistoryOnly)
 	require.Empty(t, profileOf(t, f.alice, f.person).Bio)
@@ -256,33 +268,30 @@ func TestPersonProfileFollowsTheConnector(t *testing.T) {
 }
 
 // DM-08, PEOP-04 (AD-016, which supersedes AD-013): the managers of the AI that operates a connector account
-// read the AI's platform DMs with external people and those people's profiles and avatars, without any
-// access to the connector: the user that holds a position above the AI's, and the admin of the
-// organization whose position is above that one; a user granted use on the AI finds neither the DM nor
-// the person, since a grant gives nothing any more; neither does a user with no relation to the AI, an
-// admin of the instance included, and the users of the connector see the person but not the AI's DM.
+// read the AI's platform DMs with external people and those people's profiles and avatars: the user that
+// holds a position above the AI's, and the admin of the organization whose position is above that one. They
+// belong to the AI's home organization, which is the connection's (ORG-07), so they see the account behind
+// the person too. A user granted use on the AI finds neither the DM nor the person, since a grant gives
+// nothing any more; neither does a user with no relation to the AI, an admin of the instance included, and
+// the members of the connection's organization see the person but not the AI's DM.
 func TestManagersOfAnAIReadItsPlatformDMsAndPeople(t *testing.T) {
 	ctx := context.Background()
 	f := newPeopleFixture(t)
-	atlas := f.env.NewAI(f.alice, "atlas")
-	shareAI(f.alice, atlas, f.carol) // carol: use on atlas, which gives her nothing, and nothing on the connector
+	atlas := f.env.NewAIIn(f.alice, f.line, "atlas")
+	shareAgent(f.alice, atlas, f.carol.User.ID) // carol: a use grant on atlas, which gives her nothing, and nothing on the connection
 	f.alice.OperateConnector(f.conn.ID, atlas)
 
-	// alice's chart: she holds the root Admin; dave holds Lead below it and manages Atlas, who holds Worker below him.
-	org := f.alice.PersonalOrg().ID
+	// the chart of "line": alice holds the root Admin; dave holds Lead below it and manages Atlas, who holds Worker below him.
+	org := f.line
 	root, err := f.env.App.Store.R().GetPositionByName(ctx, db.GetPositionByNameParams{OrgID: org, Name: "Admin"})
 	require.NoError(t, err)
 	lead := f.env.AddPosition(org, "Lead", root.ID)
 	worker := f.env.AddPosition(org, "Worker", lead)
-	require.NoError(t, f.env.App.Store.WithTx(ctx, func(q *db.Queries) error { // dave is in alice's organization already, through room A
-		for iid, position := range map[string]string{f.dave.User.ID: lead, atlas: worker} {
-			if err := q.UpdateOrgMemberPosition(ctx, db.UpdateOrgMemberPositionParams{
-				PositionID: sql.NullString{String: position, Valid: true}, OrgID: org, Iid: iid,
-			}); err != nil {
-				return err
-			}
-		}
-		return nil
+	f.env.AddMember(org, f.dave.User.ID, orgs.PermissionMember, lead) // dave works in "line" too
+	require.NoError(t, f.env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.UpdateOrgMemberPosition(ctx, db.UpdateOrgMemberPositionParams{
+			PositionID: sql.NullString{String: worker, Valid: true}, OrgID: org, Iid: atlas,
+		})
 	}))
 
 	f.clock.Advance(time.Minute)
@@ -300,17 +309,17 @@ func TestManagersOfAnAIReadItsPlatformDMsAndPeople(t *testing.T) {
 	}
 	seen := profileOf(t, f.dave, person)
 	require.Equal(t, []any{"Dana", connectortest.KindName, false}, []any{seen.DisplayName, seen.Platform, seen.CanEdit})
-	require.Nil(t, seen.Person, "the account behind the person stays with the users of the connector")
+	require.NotNil(t, seen.Person, "dave belongs to the connection's organization, so he sees the account too")
 	require.Equal(t, []dto.RoomRef{{ID: dm, Kind: dto.ConversationKindDM}}, seen.Conversations, "the DM with Atlas is the one conversation dave can view")
-	patchProfile(f.dave, person, dto.UpdateProfileRequest{Bio: ptr("Hijacked")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	patchProfile(f.dave, person, dto.UpdateProfileRequest{Bio: ptr("Hijacked")}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeHistoryOnly)
 
-	// bob may use the connector: he sees the person, whom nobody edits, but the DM is Atlas's, not his.
+	// bob belongs to the connection's organization: he sees the person, whom nobody edits, but the DM is Atlas's, not his.
 	require.False(t, profileOf(t, f.bob, person).CanEdit)
 	f.bob.Get("/api/v1/rooms/"+dm).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	f.bob.Get("/api/v1/rooms/"+dm+"/messages").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
-	// carol holds a use grant on the AI and has no connector, erin is a user of nothing here, and the
-	// admin of the instance is no exception (AD-016): none of them finds the DM or the person.
+	// carol holds a use grant on the AI and is in no organization of the connection, erin is a user of nothing
+	// here, and the admin of the instance is no exception (AD-016): none of them finds the DM or the person.
 	for _, c := range []*testkit.Client{f.carol, f.erin, f.admin} {
 		f.env.T.Helper()
 		c.Get("/api/v1/rooms/"+dm).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
@@ -550,4 +559,67 @@ func TestMembersOtherThanChatsCarryNoPeople(t *testing.T) {
 	}
 	require.Equal(t, map[dto.MemberKind]int{dto.MemberKindChat: 2, dto.MemberKindAgent: 1, dto.MemberKindUser: 2}, kinds, "two chats, the helper, and the users dave and bob")
 	require.NotEmpty(t, f.chatMember(f.alice, f.roomA.ID, f.chatX).People)
+}
+
+// PEOP-04, ORG-02, AD-016: the people a connection has seen, their profiles, the chat accounts users linked
+// through it and the connection's app on its operator's page are for the members of the connection's
+// organization, guests included, and for nobody else: a user outside it and an admin of the instance find the
+// list, the person, the account and the app nowhere.
+func TestAConnectionsPeopleAreForTheMembersOfItsOrganization(t *testing.T) {
+	env, _ := fakeConnectorEnv(t)
+	roles := env.OrgRoles("acme")
+	off := false
+	conn := testkit.Decode[dto.Connector](roles.Admin.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+		OrgID: roles.Org.ID, Kind: connectortest.KindName, Name: "wa", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &off,
+	}).RequireStatus(http.StatusCreated))
+	roles.Admin.OperateConnector(conn.ID, roles.TargetAI)
+	pat := seedPerson(t, env, conn.ID, "5511999990000", "Pat")
+
+	// The target links a chat account through the connection (any member may pair through an ordinary one).
+	code := testkit.Decode[dto.PairingCode](roles.Target.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: conn.ID}).RequireStatus(http.StatusCreated))
+	_, ok, err := env.App.Identities.Link(context.Background(), code.Code, identities.Account{
+		ConnectorID: conn.ID, ConnectorKind: connectortest.KindName, SenderID: "target-phone", Display: "Target",
+	}, "")
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	account := dto.App{Kind: connectortest.KindName, Label: "Fake: target-phone", ConnectorID: conn.ID}
+	web := dto.App{Kind: "web", Label: "Web app"}
+	operated := dto.App{Kind: connectortest.KindName, Label: "Fake: wa", ConnectorID: conn.ID}
+	for _, role := range roles.All() {
+		inOrg := role.Name != "outsider" && role.Name != "instance_admin"
+		c := role.Client
+
+		peoplePath := "/api/v1/contacts/people?connector_id=" + conn.ID
+		groups := contactsOf(t, c).People
+		person := c.Get("/api/v1/intelligences/" + pat)
+		targetApps := profileOf(t, c, roles.Target.User.ID).Apps
+		if !inOrg {
+			c.Get(peoplePath).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+			person.RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+			getAvatar(c, pat).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+			getProfile(c, roles.TargetAI).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+			for _, g := range groups {
+				require.NotEqual(t, conn.ID, g.Connector.ID, "%s: the connection is not in their contacts", role.Name)
+			}
+			require.Equal(t, []dto.App{web}, targetApps, "%s: the user, not the accounts behind it", role.Name)
+			continue
+		}
+		page := testkit.Decode[dto.Page[dto.IntelligenceRef]](c.Get(peoplePath).RequireStatus(http.StatusOK))
+		require.Len(t, page.Items, 1, role.Name)
+		require.Equal(t, pat, page.Items[0].ID, role.Name)
+		var seen *dto.PeopleGroup
+		for i := range groups {
+			if groups[i].Connector.ID == conn.ID {
+				seen = &groups[i]
+			}
+		}
+		require.NotNil(t, seen, "%s: the connection is in their contacts", role.Name)
+		require.Equal(t, 1, seen.Count, role.Name)
+		profile := testkit.Decode[dto.IntelligenceProfile](person.RequireStatus(http.StatusOK))
+		require.NotNil(t, profile.Person, "%s: the account behind the person", role.Name)
+		require.Equal(t, "5511999990000", profile.Person.ExternalID, role.Name)
+		require.Equal(t, []dto.App{web, account}, targetApps, "%s: the account is an app of the user it was linked to", role.Name)
+		require.Contains(t, profileOf(t, c, roles.TargetAI).Apps, operated, "%s: the connection is an app of its operator", role.Name)
+	}
 }

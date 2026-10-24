@@ -44,8 +44,8 @@ type historyFixture struct {
 func newHistoryFixture(t *testing.T) *historyFixture {
 	t.Helper()
 	f := &historyFixture{peopleFixture: newPeopleFixture(t)}
-	f.atlas = f.env.NewAI(f.alice, "atlas")
-	shareAI(f.alice, f.atlas, f.dave)
+	f.atlas = f.env.NewAIIn(f.alice, f.line, "atlas") // the connection's organization is Atlas's home
+	shareAgent(f.alice, f.atlas, f.dave.User.ID)      // a use grant, which gives dave nothing
 	f.alice.OperateConnector(f.conn.ID, f.atlas)
 	f.clock.Advance(time.Minute)
 	f.chat, f.dm, f.person = f.platformDM(f.atlas, "5511999990009@s.whatsapp.net", "Pat", "hello Atlas")
@@ -128,7 +128,7 @@ func TestPostInAPlatformDMIsRefusedAsHistory(t *testing.T) {
 	f.atlasAI.Get("/api/v1/agent/rooms/" + f.dm + "/info").RequireStatus(http.StatusOK)
 
 	// A DM with a user or an AI is a conversation: the same AI posts there as before.
-	other := f.env.NewAI(f.alice, "orion")
+	other := f.env.NewAIIn(f.alice, f.line, "orion") // an AI of Atlas's organization: Atlas can see it
 	dm := dmWith(f.alice, other, http.StatusCreated)
 	f.atlasAI.Post("/api/v1/agent/dms", dto.AgentDMRequest{To: "@orion", Text: "hello Orion"}).RequireStatus(http.StatusCreated)
 	require.NotEmpty(t, dm.ID)

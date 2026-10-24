@@ -83,10 +83,8 @@ func (k Kind) SecretValues(cfg Config) []string {
 type Source struct {
 	ConnectorID string
 	Kind        string
-	// OwnerID is the connector's owner.
-	OwnerID string
-	// LinkOwnerOnly is the kind's Kind.LinkOwnerOnly.
-	LinkOwnerOnly bool
+	// LinkAdminsOnly is the kind's Kind.LinkAdminsOnly.
+	LinkAdminsOnly bool
 }
 
 // ManagerDeps are the collaborators of the Manager.
@@ -131,7 +129,6 @@ type Manager struct {
 
 type supervisor struct {
 	id        string
-	owner     string
 	kind      Kind
 	conn      Connector
 	secrets   []string
@@ -302,7 +299,7 @@ func (m *Manager) Apply(id string) {
 		return
 	}
 	ctx, cancel := context.WithCancel(base)
-	s := &supervisor{id: id, owner: c.OwnerID, kind: k, conn: conn, secrets: sec, cancel: cancel, done: make(chan struct{})}
+	s := &supervisor{id: id, kind: k, conn: conn, secrets: sec, cancel: cancel, done: make(chan struct{})}
 	m.mu.Lock()
 	m.running[id] = s
 	m.mu.Unlock()
@@ -493,7 +490,7 @@ func cleanAccountLabel(s string) string {
 }
 
 func (h handler) source() Source {
-	return Source{ConnectorID: h.s.id, Kind: h.s.kind.Name, OwnerID: h.s.owner, LinkOwnerOnly: h.s.kind.LinkOwnerOnly}
+	return Source{ConnectorID: h.s.id, Kind: h.s.kind.Name, LinkAdminsOnly: h.s.kind.LinkAdminsOnly}
 }
 
 func (h handler) Status(st Status, detail string) {

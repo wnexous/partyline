@@ -96,6 +96,37 @@ func TestPairingNeedsAUsableConnector(t *testing.T) {
 	require.Equal(t, shared.ID, code.ConnectorID, "a member of the connection's organization may pair through it")
 }
 
+// IDN-01, IDN-05, AD-008 as amended by AD-016 (design, "Connections", the pairing row): a pairing code is requested
+// for a connection of an organization the user belongs to. Through an ordinary connection every member may -
+// guests included - and through a webhook connection, whose callers choose the sender ids freely, only an admin:
+// a member is refused with 403. A user outside the organization, an admin of the instance included, is told 404
+// whatever the kind. The two cases are tested apart, so the kind rule cannot hide the membership rule.
+func TestPairingFollowsTheConnectionsOrganization(t *testing.T) {
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	off := false
+	create := func(req dto.CreateConnectorRequest) string {
+		req.OrgID, req.Enabled = roles.Org.ID, &off
+		return testkit.Decode[dto.Connector](roles.Admin.Post("/api/v1/connectors", req).RequireStatus(http.StatusCreated)).ID
+	}
+	telegram := create(dto.CreateConnectorRequest{Kind: "telegram", Name: "tg", Config: map[string]any{"bot_token": "123456:synthetic-token"}})
+	hook := create(dto.CreateConnectorRequest{Kind: "webhook", Name: "ci", Config: map[string]any{}})
+	setup := func(*testing.T) map[string]string { return map[string]string{"telegram": telegram, "webhook": hook} }
+	pair := func(kind string) func(*testing.T, *testkit.Client, map[string]string) *testkit.Response {
+		return func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: res[kind]})
+		}
+	}
+	runRoleRoutes(t, roles, setup, []roleRoute{
+		{"pair through an ordinary connection", pair("telegram"), connectionWant(201, 201, 404)},
+		{"pair through a webhook connection", pair("webhook"), connectionWant(201, 403, 404)},
+	})
+
+	// The code is bound to the connection it was issued for.
+	code := testkit.Decode[dto.PairingCode](roles.Member.Post("/api/v1/identities/pairing", dto.PairingRequest{ConnectorID: telegram}).RequireStatus(http.StatusCreated))
+	require.Equal(t, telegram, code.ConnectorID)
+}
+
 // S5: whoever controls a connector's endpoint chooses the sender ids it reports, so changing
 // an endpoint field (base_url, api_base, outbound_url) deletes the identities linked through
 // the connector, audited without values; other changes keep them.

@@ -93,24 +93,32 @@ func (w *world) room(owner *testkit.Client, name string, agentIDs ...string) str
 	return r.ID
 }
 
-// connector creates a connector owned by owner and shares it (use) with the given users.
-func (w *world) connector(owner *testkit.Client, grantees ...*testkit.Client) string {
+// connector creates a connection in owner's default organization, as the upgrade places the connections it finds,
+// and makes the given users members of that organization, so they see it (AD-016).
+func (w *world) connector(owner *testkit.Client, members ...*testkit.Client) string {
 	w.t.Helper()
 	id := store.NewID()
+	var orgID string
 	w.tx(func(q *db.Queries) error {
+		var err error
+		if orgID, err = orgs.DefaultFor(w.ctx, q, owner.User.ID); err != nil {
+			return err
+		}
 		return q.CreateConnector(w.ctx, db.CreateConnectorParams{
-			ID: id, OwnerID: owner.User.ID, Kind: "webhook", Name: "hook", ConfigJson: "{}", Enabled: true,
-			CreatedAt: clockStart.UnixMilli(), UpdatedAt: clockStart.UnixMilli(),
+			ID: id, OwnerID: owner.User.ID, OrgID: sql.NullString{String: orgID, Valid: true}, Kind: "webhook", Name: "hook",
+			ConfigJson: "{}", Enabled: true, CreatedAt: clockStart.UnixMilli(), UpdatedAt: clockStart.UnixMilli(),
 		})
 	})
-	if len(grantees) > 0 {
-		v := access.Visibility{Mode: dto.VisibilityShared}
-		for _, g := range grantees {
-			v.Users = append(v.Users, access.UserLevel{UserID: g.User.ID, Level: dto.LevelUse})
-		}
-		require.NoError(w.t, w.env.App.Access.SetVisibility(w.ctx, owner.User.ID, access.KindConnector, id, owner.User.ID, v))
-	}
+	owner.ShareConnection(id, userIDs(members)...)
 	return id
+}
+
+func userIDs(clients []*testkit.Client) []string {
+	out := make([]string, len(clients))
+	for i, c := range clients {
+		out[i] = c.User.ID
+	}
+	return out
 }
 
 // person creates an external person of a connector, as the connectors' inbound pipeline will.
@@ -427,10 +435,10 @@ func TestUpdateAuthorization(t *testing.T) {
 		{"an AI of an outsider", asAgent(r.Outsider, rover), ai, access.ErrNotFound},
 		{"a use grantee", asUser(w.erin), ai, access.ErrNotFound},
 
-		{"person: connector owner", asUser(w.dave), pat, access.ErrHistoryOnly},
-		{"person: connector use grantee", asUser(w.erin), pat, access.ErrHistoryOnly},
+		{"person: creator of the connection", asUser(w.dave), pat, access.ErrHistoryOnly},
+		{"person: member of its organization", asUser(w.erin), pat, access.ErrHistoryOnly},
 		{"person: stranger", asUser(w.carol), pat, access.ErrNotFound},
-		{"person: AI of the connector owner", asAgent(w.dave, w.agent(w.dave, "relay")), pat, access.ErrForbidden},
+		{"person: AI of that organization", asAgent(w.dave, w.agent(w.dave, "relay")), pat, access.ErrForbidden},
 		{"unknown id", asUser(w.alice), store.NewID(), access.ErrNotFound},
 	}
 	for _, c := range cases {
@@ -450,8 +458,8 @@ func TestUpdateAuthorization(t *testing.T) {
 // CanSee and CanEdit (POS-04, AD-016): every user sees every user; an AI is seen by the people of the
 // organizations it belongs to, guests included, and by the user who hosts it, whatever the chart says about
 // them; nobody else sees it, not even an admin of the instance or a user a grant names. Whoever manages the
-// identity edits it, and so does the identity itself. A person is seen by the users of its connector and edited
-// by nobody (CID-21).
+// identity edits it, and so does the identity itself. A person is seen by the members of its connection's
+// organization (and by whoever can view a conversation where it wrote) and edited by nobody (CID-21).
 func TestCanSeeAndCanEdit(t *testing.T) {
 	w := newWorld(t)
 	r := w.env.OrgRoles("acme")
@@ -496,11 +504,11 @@ func TestCanSeeAndCanEdit(t *testing.T) {
 		{"an AI of an outsider", asAgent(r.Outsider, rover), ai, false, false},
 		{"an AI does not see through its host", asAgent(w.dave, davesAI), ai, false, false},
 
-		{"person: connector owner sees, nobody edits", asUser(w.dave), pat, true, false},
-		{"person: connector use grantee", asUser(w.erin), pat, true, false},
+		{"person: creator of the connection sees, nobody edits", asUser(w.dave), pat, true, false},
+		{"person: member of its organization", asUser(w.erin), pat, true, false},
 		{"person: stranger", asUser(w.carol), pat, false, false},
-		{"person: owner of another connector", asUser(w.alice), pat, false, false},
-		{"person: connector owner's AI sees, never edits", asAgent(w.dave, davesAI), pat, true, false},
+		{"person: member of another connection's organization", asUser(w.alice), pat, false, false},
+		{"person: an AI of the connection's organization sees, never edits", asAgent(w.dave, davesAI), pat, true, false},
 		{"person: stranger's AI", asAgent(w.carol, carolsAI), pat, false, false},
 		{"unknown id", asUser(w.alice), store.NewID(), false, false},
 	}
@@ -622,7 +630,7 @@ func TestGetProfile(t *testing.T) {
 		{"user, its manager", asUser(r.Manager), r.Target.User.ID, intelligences.RoleUser, true},
 		{"AI, its manager", asUser(r.Manager), r.TargetAI, intelligences.RoleAI, true},
 		{"AI, a member who does not manage it", asUser(r.Member), r.TargetAI, intelligences.RoleAI, false},
-		{"person, connector owner: history, not editable", asUser(w.dave), pat, intelligences.RolePerson, false},
+		{"person, member of its organization: history, not editable", asUser(w.dave), pat, intelligences.RolePerson, false},
 	} {
 		got, err := w.svc.Get(w.ctx, c.caller, c.target)
 		require.NoError(t, err, c.name)

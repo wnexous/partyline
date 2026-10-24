@@ -16,8 +16,8 @@ type Contacts struct {
 	Shared []AIContact `json:"shared"`
 	// Users are the other enabled users of the instance, by name.
 	Users []IntelligenceRef `json:"users"`
-	// People has one group for each connector the caller owns or may use, by connector name;
-	// GET /contacts/people lists the people of one.
+	// People has one group for each connection of the organizations the caller belongs to, by connection
+	// name; GET /contacts/people lists the people of one.
 	People []PeopleGroup `json:"people"`
 }
 

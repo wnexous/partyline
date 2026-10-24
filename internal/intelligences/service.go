@@ -268,13 +268,13 @@ func (s *Service) profile(ctx context.Context, p authn.Principal, d db.GetIntell
 	q := s.store.R()
 	switch out.Role {
 	case RoleUser:
-		accounts, err := s.linkedAccounts(ctx, p.UserID, d.Intelligence.ID)
+		accounts, err := s.linkedAccounts(ctx, p, d.Intelligence.ID)
 		if err != nil {
 			return Profile{}, err
 		}
 		out.Accounts = accounts
 	case RoleAI:
-		operated, err := s.operatedConnectors(ctx, p.UserID, d.Intelligence.ID)
+		operated, err := s.operatedConnectors(ctx, p, d.Intelligence.ID)
 		if err != nil {
 			return Profile{}, err
 		}
@@ -297,7 +297,7 @@ func (s *Service) profile(ctx context.Context, p authn.Principal, d db.GetIntell
 		}
 		out.Agent = &AgentInfo{Agent: a, Owner: owner, Home: m.Home, Level: level}
 	case RolePerson:
-		info, err := s.personInfo(ctx, p.UserID, d.Intelligence.ID)
+		info, err := s.personInfo(ctx, p, d.Intelligence.ID)
 		if err != nil {
 			return Profile{}, err
 		}
@@ -399,9 +399,9 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, id string) (Profil
 
 // CanSee reports whether the caller can see the intelligence (AD-016): itself; any user of the instance
 // for user intelligences; an AI when the caller hosts it or shares an organization with it, guests included;
-// a person when the caller owns or may use its connector, or can view a conversation where it wrote. An agent
-// caller acts as itself: it sees what it shares an organization with, never what its host sees. Admins get no
-// implicit access.
+// a person when the caller is a member of the organization of its connection, or can view a conversation where
+// it wrote. An agent caller acts as itself: it sees what it shares an organization with, never what its host
+// sees. Admins get no implicit access.
 func (s *Service) CanSee(ctx context.Context, p authn.Principal, id string) (bool, error) {
 	d, err := s.detail(ctx, id)
 	if errors.Is(err, access.ErrNotFound) {
@@ -471,10 +471,10 @@ func (s *Service) rights(ctx context.Context, p authn.Principal, d db.GetIntelli
 		managed, err := s.az.Authz().ManagesAnywhere(ctx, iid, id)
 		return true, managed, err
 	case RolePerson:
-		// The users of the connector see its people (PEOP-04); a user who can view a conversation
-		// where the person was seen or wrote reads the profile only. A person's profile is history
-		// (CID-21): edit says who would have the right, and editable refuses them all.
-		ok, err := s.az.CanUseConnector(ctx, p.UserID, d.PersonConnectorID)
+		// The members of the connection's organization see its people (PEOP-04, AD-016); a user who can
+		// view a conversation where the person was seen or wrote reads the profile only. A person's profile
+		// is history (CID-21): edit says who would have the right, and editable refuses them all.
+		ok, err := s.az.CanSeeConnection(ctx, p, d.PersonConnectorID)
 		if err != nil || ok {
 			return ok, ok && p.Kind == authn.KindUser, err
 		}

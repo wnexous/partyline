@@ -13,16 +13,6 @@ FROM connectors c JOIN users u ON u.id = c.owner_id
 LEFT JOIN intelligences ui ON ui.id = u.id
 WHERE c.id = ?;
 
--- name: ListConnectorsForUser :many
-SELECT sqlc.embed(c), u.username AS owner_username,
-       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name
-FROM connectors c JOIN users u ON u.id = c.owner_id
-LEFT JOIN intelligences ui ON ui.id = u.id
-WHERE c.owner_id = sqlc.arg(user_id)
-   OR c.id IN (SELECT g.resource_id FROM grants g
-               WHERE g.resource_kind = 'connector' AND g.subject IN (sqlc.arg(user_id), '*'))
-ORDER BY c.name, u.username, c.id;
-
 -- name: ListConnectorsOfMember :many
 -- The connections of the organizations an identity belongs to, whatever its permission, with that
 -- permission (AD-016): admins manage them, everybody else uses them.

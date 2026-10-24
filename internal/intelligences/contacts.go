@@ -10,6 +10,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -202,7 +203,7 @@ func (s *Service) Contacts(ctx context.Context, userID string) (Contacts, error)
 		out.Users = append(out.Users, u.Intelligence)
 	}
 
-	conns, err := q.ListConnectorsForUser(ctx, userID)
+	conns, err := q.ListConnectorsOfMember(ctx, userID) // the connections of my organizations (AD-016)
 	if err != nil {
 		return Contacts{}, err
 	}
@@ -246,11 +247,11 @@ type PeoplePage struct {
 	More     bool
 }
 
-// People lists the people a connector has seen, for a user who owns or may use it: in name order
+// People lists the people a connection has seen, for a member of its organization (AD-016): in name order
 // (case-insensitively for ASCII), without the accounts verified as a user, matching the search,
-// from the person after the cursor. A connector the user cannot use is access.ErrNotFound; an
+// from the person after the cursor. A connection the caller does not see is access.ErrNotFound; an
 // invalid request is a validation error with nothing read.
-func (s *Service) People(ctx context.Context, userID string, in PeopleQuery) (PeoplePage, error) {
+func (s *Service) People(ctx context.Context, p authn.Principal, in PeopleQuery) (PeoplePage, error) {
 	check := validation.Check{}
 	if in.ConnectorID == "" {
 		check.Add("connector_id", "is required")
@@ -266,7 +267,7 @@ func (s *Service) People(ctx context.Context, userID string, in PeopleQuery) (Pe
 	if err := check.Err(); err != nil {
 		return PeoplePage{}, err
 	}
-	ok, err := s.az.CanUseConnector(ctx, userID, in.ConnectorID)
+	ok, err := s.az.CanSeeConnection(ctx, p, in.ConnectorID)
 	if err != nil {
 		return PeoplePage{}, err
 	}
