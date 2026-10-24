@@ -2,6 +2,9 @@ package whatsapp
 
 import (
 	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -378,4 +381,57 @@ func TestParseEditOfAWrappedItem(t *testing.T) {
 	p := parse(t, frame(t, testInstance, groupInfo("EDIT1"), msg))
 	require.Equal(t, string(dto.MessageKindEdit), p.Inbound.Kind)
 	require.Equal(t, "fixed caption", p.Inbound.Text)
+}
+
+// CID-30: a contact arrives with the numbers of its card, not with its name only: the text names the
+// contact and puts the numbers between parentheses, as the card gives them (the WhatsApp id with a
+// plus). The name is the one the sharer saw, else the card's; a card without numbers, or without a
+// card, gives the name alone.
+func TestParseContactWithNumbers(t *testing.T) {
+	for name, tc := range map[string]struct{ node, want string }{
+		"one number":            {`{"displayName":"Ana Test","vcard":` + quote(cardAna) + `}`, "Contact: Ana Test (+5511999990000)"},
+		"two numbers":           {`{"displayName":"Bruno Test","vcard":` + quote(cardBruno) + `}`, "Contact: Bruno Test (+5521988880000, 2125550000)"},
+		"the name of the card":  {`{"vcard":` + quote(cardAna) + `}`, "Contact: Ana Test (+5511999990000)"},
+		"the sharer's name":     {`{"displayName":"Aninha","vcard":` + quote(cardAna) + `}`, "Contact: Aninha (+5511999990000)"},
+		"a card without number": {`{"displayName":"No Phone","vcard":"BEGIN:VCARD\nFN:No Phone\nEND:VCARD"}`, "Contact: No Phone"},
+		"no card":               {`{"displayName":"Test Contact"}`, "Contact: Test Contact"},
+		"nothing":               {`{}`, "Contact: (no name)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := parse(t, frame(t, testInstance, dmInfo("CARD1"), `{"contactMessage":`+tc.node+`}`))
+			require.Equal(t, string(dto.MessageKindContact), p.Inbound.Kind)
+			require.Equal(t, tc.want, p.Inbound.Text)
+			require.Nil(t, p.Media)
+		})
+	}
+	p := parse(t, frame(t, testInstance, dmInfo("CARD2"), `{"ephemeralMessage":{"message":{"contactMessage":{"displayName":"Ana Test","vcard":`+quote(cardAna)+`}}}}`))
+	require.Equal(t, "Contact: Ana Test (+5511999990000)", p.Inbound.Text, "wrapped like any message")
+}
+
+// CID-30: several contacts shared at once (a contactsArrayMessage) are one message of kind contact
+// that lists them all with their numbers, each on its own, instead of an unsupported message.
+func TestParseSeveralContacts(t *testing.T) {
+	msg := `{"contactsArrayMessage":{"displayName":"2 contacts","contacts":[` +
+		`{"displayName":"Ana Test","vcard":` + quote(cardAna) + `},{"displayName":"Bruno Test","vcard":` + quote(cardBruno) + `},{"displayName":"Carla Test"}]}}`
+	p := parse(t, frame(t, testInstance, dmInfo("CARDS"), msg))
+	require.Equal(t, string(dto.MessageKindContact), p.Inbound.Kind)
+	require.Equal(t, "Contacts: Ana Test (+5511999990000); Bruno Test (+5521988880000, 2125550000); Carla Test", p.Inbound.Text)
+
+	p = parse(t, frame(t, testInstance, dmInfo("CARDS"), `{"contactsArrayMessage":{"displayName":"1 contact","contacts":[{"displayName":"Ana Test","vcard":`+quote(cardAna)+`}]}}`))
+	require.Equal(t, "Contact: Ana Test (+5511999990000)", p.Inbound.Text, "one contact in a list is a contact")
+
+	p = parse(t, frame(t, testInstance, dmInfo("CARDS"), `{"contactsArrayMessage":{"displayName":"0 contacts"}}`))
+	require.Equal(t, "Contacts: (none)", p.Inbound.Text, "an empty list is still a message of kind contact")
+}
+
+// CID-30: a list of contacts is bounded like a card: the first maxContacts are named and the text says
+// how many more there were.
+func TestParseManyContactsIsBounded(t *testing.T) {
+	var contacts []string
+	for i := range maxContacts + 7 {
+		contacts = append(contacts, `{"displayName":"Person `+strconv.Itoa(i)+`","vcard":"TEL:+5511900000`+fmt.Sprintf("%03d", i)+`"}`)
+	}
+	p := parse(t, frame(t, testInstance, dmInfo("MANY"), `{"contactsArrayMessage":{"contacts":[`+strings.Join(contacts, ",")+`]}}`))
+	require.Equal(t, maxContacts, strings.Count(p.Inbound.Text, "Person "))
+	require.True(t, strings.HasSuffix(p.Inbound.Text, "; and 7 more"), p.Inbound.Text[len(p.Inbound.Text)-30:])
 }

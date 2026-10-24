@@ -239,7 +239,7 @@ entre eles quando ele não informa), e volta a conectado assim que o número vol
   quantas foram descartadas na próxima vez que conectar ou consultar. Uma mensagem que a plataforma
   entrega duas vezes entra na fila uma só vez. Um álbum do WhatsApp (várias fotos ou vídeos enviados
   de uma vez) chega como um evento por foto ou vídeo, na ordem enviada, cada um com sua legenda e
-  seu arquivo.
+  seu arquivo, e um contato do WhatsApp compartilhado chega com os números do seu cartão no texto.
 - **Quais mensagens.** **Entregar** escolhe chats diretos, grupos ou os dois, e **Grupos: só quando
   mencionarem** entrega uma mensagem de grupo só quando ela menciona a conta ou responde a ela.
   Toda conexão, nova ou atualizada, começa com os dois padrões: chats diretos e grupos com

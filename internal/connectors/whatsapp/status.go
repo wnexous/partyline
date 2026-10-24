@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/connectors"
 )
@@ -52,18 +50,10 @@ func disconnectedDetail(why string) string {
 }
 
 // cleanReason makes the reason fit in a status detail. It comes from the server the connection
-// points at, so it is data: white space, control and formatting characters (a newline, an escape
-// sequence, a zero-width space) become single spaces, the full stop that ends a sentence goes because
-// the detail goes on, and more than maxReason characters are cut with an ellipsis.
+// points at, so it is data: it becomes one line (oneLine), the full stop that ends a sentence goes
+// because the detail goes on, and more than maxReason characters are cut with an ellipsis.
 func cleanReason(s string) string {
-	words := strings.FieldsFunc(s, func(r rune) bool {
-		return unicode.IsSpace(r) || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == utf8.RuneError
-	})
-	s = strings.TrimRight(strings.Join(words, " "), ". ")
-	if utf8.RuneCountInString(s) > maxReason {
-		s = strings.TrimRight(string([]rune(s)[:maxReason-1]), " ") + "…"
-	}
-	return s
+	return ellipsize(strings.TrimRight(oneLine(s), ". "), maxReason)
 }
 
 // watch looks at the instance every statusInterval and tells h when what the connection reports

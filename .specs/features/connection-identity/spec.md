@@ -45,6 +45,7 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | Upgrade of existing data | Chat members leave every room; rooms keep history, intelligences and settings; people and platform DMs stay as read-only history; no new person or platform DM is created | Keep history, stop modelling platforms in rooms | n |
 | Retired features | Chats as room members, bridges between chats, broadcast to chats, "route chat to agent", catch-all rooms, auto-route, platform DMs with people (DM-05 sends), copies of AI DMs to a user's app (NOTI-01/02), member signatures | They exist only to carry platforms inside rooms | n |
 | Photo albums (v0.6.2) | Each photo or video of a WhatsApp album is delivered as a platform event of its own, as it arrives; the album header, which only counts, is not delivered. Each item is judged on its own by `deliver` and `groups_mentions_only` | evolution-go reports an album as a header plus one message per item, each with its own id, caption, file and quote, and WhatsApp wraps the items in an `associatedChildMessage`. Grouping them would hold photos in memory until the announced count arrives or a timer ends, delay them, lose them if Partyline restarts meanwhile (the platform does not replay) and leave the AI one id to quote; Telegram albums already arrive item by item. The price: in a group with mentions-only on, only the items whose caption mentions or replies to the account are delivered | n |
+| Shared contacts (v0.6.2) | The numbers of a shared contact's vCard go in the text of the platform event; the event has no structured field for them | A platform event holds text and attachments, and the queue stores them in `platform_items`; a field for contacts would need a column, a DTO field and the channel format, and the text is what the AI reads | n |
 | Release | Breaking server change, shipped as v0.5.0 together with a CLI release (the channel learns the new event and tool arguments) | Old CLIs keep receiving room messages but not platform events | n |
 
 **Open questions:** none - all resolved or logged above.
@@ -129,8 +130,9 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 
 1. WHEN the WhatsApp number of a connection is not connected and evolution-go gives a reason (the `disconnect_reason` of the instance) THEN the status detail SHALL name it between the fact and what to do: `the WhatsApp number is not connected (Reconnecting); reconnect it in evolution-go`; the status SHALL follow a changed reason, and a number that is connected SHALL show none. (CID-28)
 2. WHEN several photos or videos are sent to a WhatsApp number at once (an album) THEN the system SHALL deliver each of them as a platform event of its own, as it arrives, in the order sent, with its platform message id, its caption and its file; the album header, which only counts what is coming, SHALL NOT be delivered, and an item SHALL be delivered as the photo, video or document it is, however WhatsApp wraps it, and never as an unsupported message. (CID-29)
+3. WHEN a contact is shared with a WhatsApp number (one contact or several) THEN the system SHALL deliver a platform event of kind `contact` whose text names each contact and gives the telephone numbers of its vCard, so that the operator can write to them: a number is the WhatsApp id of its line with a plus when it has one, else the number as written with only its digits; a contact without a number is its name alone. (CID-30)
 
-**Independent Test**: evolution-go answers `GET /instance/all` with `{"name":"acme","connected":false,"disconnect_reason":"Reconnecting",...}`; the connection of `acme` is in error with the detail above, and with `connected: true` it is connected without a detail. Two photos and a video are sent to the number at once: the operator's session receives three events, `image`, `image` and `video`, each with its file, and none is `unknown`.
+**Independent Test**: evolution-go answers `GET /instance/all` with `{"name":"acme","connected":false,"disconnect_reason":"Reconnecting",...}`; the connection of `acme` is in error with the detail above, and with `connected: true` it is connected without a detail. Two photos and a video are sent to the number at once: the operator's session receives three events, `image`, `image` and `video`, each with its file, and none is `unknown`. A contact with two numbers is shared with the number: the event is of kind `contact` and reads `Contact: Ana Test (+5511999990000, +5511988880000)`.
 
 ---
 
@@ -191,8 +193,9 @@ Today a platform account (a WhatsApp number, a Telegram or Discord bot) belongs 
 | CID-27 | P1: Direct delivery | Execute | Verified (T2, T6, T29, T36, T38) |
 | CID-28 | P2: Gaps found in production | Fix | Verified (whatsapp/status_test.go) |
 | CID-29 | P2: Gaps found in production | Fix | Verified (whatsapp/parse_test.go, connector_test.go) |
+| CID-30 | P2: Gaps found in production | Fix | Verified (whatsapp/vcard_test.go, parse_test.go) |
 
-**Coverage:** 29 total. CID-01..27 are mapped to tasks (`tasks.md` T1-T39), all Verified (validation.md, 2026-10-23); CID-28 and the ones after it are fixes of v0.6.2 and are Verified by the tests named in their rows.
+**Coverage:** 30 total. CID-01..27 are mapped to tasks (`tasks.md` T1-T39), all Verified (validation.md, 2026-10-23); CID-28 and the ones after it are fixes of v0.6.2 and are Verified by the tests named in their rows.
 
 ---
 

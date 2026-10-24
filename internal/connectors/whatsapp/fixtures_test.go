@@ -58,3 +58,13 @@ func wrappedItem(node, typ string) string {
 func wrappedItemInside(node, typ string) string {
 	return `{"associatedChildMessage":{"message":{` + node + `,` + association(typ) + `}}}`
 }
+
+// Contacts as WhatsApp shares them (CID-30), vCards with synthetic names and numbers: the number is
+// in a TEL line whose waid parameter is the WhatsApp id (digits only) and whose value is the number
+// as the sharer's phone formats it.
+const (
+	// cardAna has one number, with the labelled item1. prefix some phones write.
+	cardAna = "BEGIN:VCARD\nVERSION:3.0\nN:;Ana Test;;;\nFN:Ana Test\nitem1.TEL;waid=5511999990000:+55 11 99999-0000\nitem1.X-ABLabel:Mobile\nEND:VCARD"
+	// cardBruno has two numbers, the second not on WhatsApp (an empty waid), and CRLF line ends.
+	cardBruno = "BEGIN:VCARD\r\nVERSION:3.0\r\nN:Test;Bruno;;;\r\nFN:Bruno Test\r\nTEL;type=CELL;type=VOICE;waid=5521988880000:+55 21 98888-0000\r\nTEL;type=HOME;waid=:(21) 2555-0000\r\nEND:VCARD\r\n"
+)

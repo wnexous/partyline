@@ -231,8 +231,14 @@ func content(p *Parsed, root map[string]json.RawMessage) bool {
 		// each is delivered as it arrives (CID-29).
 		return false
 	}
-	if node := obj(msg["contactMessage"]); node != nil {
-		in.Kind, in.Text = string(dto.MessageKindContact), "Contact: "+str(node["displayName"])
+	if obj(msg["contactMessage"]) != nil {
+		in.Kind, in.Text = string(dto.MessageKindContact), contactsText([]json.RawMessage{msg["contactMessage"]})
+		return true
+	}
+	if node := obj(msg["contactsArrayMessage"]); node != nil {
+		var list []json.RawMessage
+		_ = json.Unmarshal(node["contacts"], &list)
+		in.Kind, in.Text = string(dto.MessageKindContact), contactsText(list)
 		return true
 	}
 	if node := obj(msg["locationMessage"]); node != nil {
@@ -259,6 +265,41 @@ type wrapping struct {
 	// assoc is the type of association the message or an envelope around its content states (the
 	// outermost one that states any), or associationNone.
 	assoc int
+}
+
+// contactsText is the text of a message that shares contacts (CID-30): who they are and the numbers
+// of their cards, between parentheses, under the name the sharer saw (else the card's). One contact is
+// "Contact: Ana (+5511999990000)"; several are "Contacts: Ana (+5511999990000); Bruno (...)", the
+// first maxContacts of them and how many more there were. A contact without a number is its name; a
+// message that shares none says so. Each item is a contactMessage node (displayName and vcard).
+func contactsText(contacts []json.RawMessage) string {
+	if len(contacts) == 0 {
+		return "Contacts: (none)"
+	}
+	var parts []string
+	for _, raw := range contacts[:min(len(contacts), maxContacts)] {
+		c := obj(raw)
+		card := parseVCard(str(c["vcard"]))
+		name := ellipsize(oneLine(str(c["displayName"])), maxContactField)
+		if name == "" {
+			name = card.Name
+		}
+		if name == "" {
+			name = "(no name)"
+		}
+		if len(card.Numbers) > 0 {
+			name += " (" + strings.Join(card.Numbers, ", ") + ")"
+		}
+		parts = append(parts, name)
+	}
+	text := strings.Join(parts, "; ")
+	if more := len(contacts) - maxContacts; more > 0 {
+		text += "; and " + strconv.Itoa(more) + " more"
+	}
+	if len(contacts) == 1 {
+		return "Contact: " + text
+	}
+	return "Contacts: " + text
 }
 
 // unwrap removes up to maxEnvelopes envelope levels and tells what it found around the content.
