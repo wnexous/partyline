@@ -126,6 +126,7 @@ export function makeRoom(over: Partial<Room> = {}): Room {
     my_level: "manage",
     retention_days: 90,
     agents_paused: false,
+    can_resume: true,
     last_seq: 0,
     member_count: 0,
     created_at: "2026-10-01T12:00:00Z",

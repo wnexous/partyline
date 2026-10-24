@@ -61,6 +61,10 @@ const contacts = makeContacts({
   users: [bob, cora],
 });
 
+// The two AIs of a DM the viewer reads without taking part in it (through the people who manage them).
+const atlas = makeAI({ id: "ai-atlas", display_name: "Atlas", handle: "atlas" });
+const orion = makeAI({ id: "ai-orion", display_name: "Orion", handle: "orion" });
+
 function roomApi(room: Partial<Room> = {}, extra: Parameters<typeof mockApi>[0] = {}) {
   return mockApi({
     "GET /me": json(200, makeMe()),
@@ -313,7 +317,59 @@ describe("loop guard banner (UI-08)", () => {
   });
 
   it("shows the banner without the button to non-managers", async () => {
-    roomApi({ agents_paused: true, my_level: "post" });
+    roomApi({ agents_paused: true, my_level: "post", can_resume: false });
+    renderRoute("/rooms/r1");
+    expect(await screen.findByText(/Agents are paused/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume agents" })).toBeNull();
+  });
+
+  // DLV-09: nobody manages a DM, so my_level never says who resumes one; the server does (can_resume).
+  it.each<[string, Room["my_level"]]>([
+    ["the manager of an AI that only views it", "view"],
+    ["a human participant", "post"],
+  ])("offers the resume button of a DM to %s", async (_who, my_level) => {
+    const dm: Partial<Room> = {
+      kind: "dm",
+      name: "",
+      participants: [atlas, orion],
+      member_count: 2,
+      agents_paused: true,
+      my_level,
+      can_resume: true,
+    };
+    const { calls } = roomApi(dm, {
+      "POST /rooms/r1/resume": json(
+        200,
+        makeRoom({ ...dm, id: "r1", name: "", agents_paused: false }),
+      ),
+    });
+    const user = userEvent.setup();
+    renderRoute("/rooms/r1");
+    expect(await screen.findByText(/Agents are paused/)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Resume agents" }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === "POST" && c.path === "/rooms/r1/resume")).toBe(true),
+    );
+    await waitFor(() => expect(screen.queryByText(/Agents are paused/)).toBeNull());
+  });
+
+  it("keeps the button away from a DM the server says the caller cannot resume", async () => {
+    roomApi({
+      kind: "dm",
+      name: "",
+      participants: [atlas, orion],
+      member_count: 2,
+      agents_paused: true,
+      my_level: "view",
+      can_resume: false,
+    });
+    renderRoute("/rooms/r1");
+    expect(await screen.findByText(/Agents are paused/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume agents" })).toBeNull();
+  });
+
+  it("follows can_resume, not the manage level, for a group too", async () => {
+    roomApi({ agents_paused: true, my_level: "manage", can_resume: false });
     renderRoute("/rooms/r1");
     expect(await screen.findByText(/Agents are paused/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Resume agents" })).toBeNull();

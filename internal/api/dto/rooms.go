@@ -24,8 +24,12 @@ type Room struct {
 	MyLevel       Level `json:"my_level"`
 	RetentionDays int   `json:"retention_days"`
 	// AgentsPaused is set by the loop guard (DLV-08) and cleared by POST /rooms/{id}/resume.
-	AgentsPaused bool  `json:"agents_paused"`
-	LastSeq      int64 `json:"last_seq"`
+	AgentsPaused bool `json:"agents_paused"`
+	// CanResume tells whether the caller may call POST /rooms/{id}/resume (DLV-09): whoever manages a
+	// group, and for a DM, which nobody manages, whoever can see it - its human participants and whoever
+	// manages an AI participant. MyLevel alone does not say so for a DM.
+	CanResume bool  `json:"can_resume"`
+	LastSeq   int64 `json:"last_seq"`
 	// MemberCount counts the room's members.
 	MemberCount int       `json:"member_count"`
 	CreatedAt   time.Time `json:"created_at"`

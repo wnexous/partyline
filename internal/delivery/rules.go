@@ -44,7 +44,8 @@ const DefaultLoopLimit = 25
 type LoopState struct {
 	// Streak counts consecutive agent-authored messages.
 	Streak int
-	// Paused stops delivery to agents until a manager resumes the room (DLV-09).
+	// Paused stops delivery to agents until someone who may resumes the room (DLV-09): a group's manager, or
+	// whoever can see a DM as a user.
 	Paused bool
 }
 

@@ -96,6 +96,9 @@ type Room struct {
 	OwnerUsername string
 	// Level is the caller's level (ACL-02).
 	Level access.Level
+	// CanResume tells whether the caller may resume the room's agent delivery once the loop guard paused it
+	// (DLV-09): who manages a group, and who holds any level on a DM (access.CanResume).
+	CanResume bool
 	// MemberCount counts the room's members.
 	MemberCount int64
 	// InstructionsByName is the username of InstructionsBy; empty when unknown (INS-04).
@@ -332,7 +335,7 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, roomID string) (Ro
 		return Room{}, err
 	}
 	owner := ownerIntelligence(row.Room.OwnerID, row.OwnerIkind, row.OwnerIname, row.OwnerHandle, row.OwnerAvatar)
-	room, err := s.view(ctx, s.tagger(p), row.Room, row.OwnerUsername, owner, row.MemberCount, l)
+	room, err := s.view(ctx, p, s.tagger(p), row.Room, row.OwnerUsername, owner, row.MemberCount, l)
 	if err != nil || !row.Room.OrgID.Valid {
 		return room, err
 	}
@@ -353,7 +356,7 @@ func ownerIntelligence(id, kind, name, handle, avatar string) db.Intelligence {
 	return db.Intelligence{ID: id, Kind: kind, DisplayName: name, Handle: handle, AvatarSha256: avatar}
 }
 
-func (s *Service) view(ctx context.Context, tag *orgTagger, r db.Room, ownerUsername string, owner db.Intelligence, members int64, l access.Level) (Room, error) {
+func (s *Service) view(ctx context.Context, p authn.Principal, tag *orgTagger, r db.Room, ownerUsername string, owner db.Intelligence, members int64, l access.Level) (Room, error) {
 	by := ""
 	if r.InstructionsBy != "" {
 		u, err := s.store.R().GetUser(ctx, r.InstructionsBy)
@@ -377,7 +380,7 @@ func (s *Service) view(ctx context.Context, tag *orgTagger, r db.Room, ownerUser
 		return Room{}, err
 	}
 	return Room{
-		Room: r, OwnerUsername: ownerUsername, Level: l,
+		Room: r, OwnerUsername: ownerUsername, Level: l, CanResume: access.CanResume(r.Kind, p, l),
 		MemberCount: members, InstructionsByName: by, OwnerIntelligence: owner,
 		Participants: participants, OrgIDs: orgIDs,
 	}, nil
@@ -457,7 +460,7 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 			continue
 		}
 		owner := ownerIntelligence(row.Room.OwnerID, row.OwnerIkind, row.OwnerIname, row.OwnerHandle, row.OwnerAvatar)
-		r, err := s.view(ctx, tag, row.Room, row.OwnerUsername, owner, row.MemberCount, l)
+		r, err := s.view(ctx, p, tag, row.Room, row.OwnerUsername, owner, row.MemberCount, l)
 		if err != nil {
 			return nil, err
 		}

@@ -125,7 +125,7 @@ People run many Claude Code sessions (some in loops) and want them reachable fro
 8. WHEN a message is delivered to an agent THEN the system SHALL set `trusted=true` only if the author resolves to the recipient agent's owner (as user, as one of the owner's agents, or as one of the owner's verified identities). (DLV-06)
 9. IF a queued outbound send fails THEN the system SHALL retry with exponential backoff starting at 2 seconds for at most 5 attempts and then mark it `failed`. (DLV-07)
 10. WHEN the room's consecutive agent-authored messages reach 25 THEN the system SHALL pause delivery to agents in that room and post a system message. (DLV-08)
-11. WHEN a user with `manage` resumes a paused room THEN the system SHALL reset the counter and resume agent delivery. (DLV-09)
+11. WHEN a user who may resume a paused room resumes it THEN the system SHALL reset the counter and resume agent delivery. A group is resumed by a user with `manage`; a DM, which nobody manages, by any user who can view it (a human participant, or whoever manages an AI participant, AD-023). An AI never resumes. (DLV-09)
 12. WHEN a user or chat message arrives THEN the system SHALL reset the room's consecutive agent counter to 0. (DLV-10)
 
 **Independent Test**: Room with two agents, one chat with outbound on and one off; post from each author type and assert the delivery set.

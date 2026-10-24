@@ -171,7 +171,7 @@ function RoomPage() {
             </>
           }
         />
-        {r.agents_paused ? <PausedBanner room={r} canManage={canManage} /> : null}
+        {r.agents_paused ? <PausedBanner room={r} /> : null}
         <MessageTimeline
           key={roomId}
           roomId={roomId}
@@ -344,9 +344,15 @@ function HistoryNotice({ platform }: { platform: string }) {
   );
 }
 
-function PausedBanner({ room, canManage }: { room: Room; canManage: boolean }) {
+/**
+ * Tells that the loop guard paused the agents of a conversation (DLV-08). Resuming is up to whoever
+ * the server says may (DLV-09): a group's managers and, since nobody manages a DM, the people who
+ * can see it - its human participants and whoever manages one of its AIs.
+ */
+function PausedBanner({ room }: { room: Room }) {
   const t = useT();
   const resume = useResumeRoom(room.id);
+  const canResume = room.can_resume;
   return (
     <div
       role="status"
@@ -356,10 +362,10 @@ function PausedBanner({ room, canManage }: { room: Room; canManage: boolean }) {
       <p className="min-w-0 flex-1">
         <span className="font-semibold">{t("room.pausedTitle")}</span>{" "}
         <span className="text-foreground/80">
-          {canManage ? t("room.pausedBody") : t("room.pausedBodyReadOnly")}
+          {canResume ? t("room.pausedBody") : t("room.pausedBodyReadOnly")}
         </span>
       </p>
-      {canManage ? (
+      {canResume ? (
         <Button
           size="sm"
           disabled={resume.isPending}

@@ -2092,6 +2092,12 @@ export interface Room {
    * AgentsPaused is set by the loop guard (DLV-08) and cleared by POST /rooms/{id}/resume.
    */
   agents_paused: boolean;
+  /**
+   * CanResume tells whether the caller may call POST /rooms/{id}/resume (DLV-09): whoever manages a
+   * group, and for a DM, which nobody manages, whoever can see it - its human participants and whoever
+   * manages an AI participant. MyLevel alone does not say so for a DM.
+   */
+  can_resume: boolean;
   last_seq: number /* int64 */;
   /**
    * MemberCount counts the room's members.
