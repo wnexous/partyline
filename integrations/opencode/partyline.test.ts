@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { FakeTime, fakeSpawn, spawned } from "../testdata/fakes.ts";
+import { FakeTime, fakeSpawn, importAlways, spawned } from "../testdata/fakes.ts";
 import { framingCases, notices } from "../testdata/framing.ts";
 
 mock.module("node:child_process", () => ({ spawn: fakeSpawn }));
 const plugin = await import("./partyline.ts");
+type Api = typeof plugin;
 
 type Prompt = { path: { id: string }; body: { parts: Array<{ type: string; text: string }> } };
 
@@ -36,9 +37,9 @@ function fakeClient(opts: { promptAsync?: boolean; result?: unknown; reject?: bo
 	return { client, prompts, syncPrompts, logs };
 }
 
-async function load(opts: Parameters<typeof fakeClient>[0] = {}) {
+async function load(opts: Parameters<typeof fakeClient>[0] = {}, api: Api = plugin) {
 	const c = fakeClient(opts);
-	const hooks = await plugin.PartylinePlugin({ client: c.client as never, directory: "/work/proj" } as never);
+	const hooks = await api.PartylinePlugin({ client: c.client as never, directory: "/work/proj" } as never);
 	const emit = (type: string, properties: Record<string, unknown>) => hooks.event({ event: { type, properties } });
 	return { ...c, hooks, emit };
 }
@@ -47,16 +48,46 @@ const flush = () => new Promise((resolve) => queueMicrotask(() => resolve(undefi
 const sent = (text: string, id: string): Prompt => ({ path: { id }, body: { parts: [{ type: "text", text }] } });
 
 let time: FakeTime;
+let launched: string | undefined;
 beforeEach(() => {
 	spawned.length = 0;
+	launched = process.env.PARTYLINE_HARNESS;
+	process.env.PARTYLINE_HARNESS = "opencode"; // the launcher's environment
 	time = new FakeTime();
 });
-afterEach(() => time.restore());
+afterEach(() => {
+	if (launched === undefined) delete process.env.PARTYLINE_HARNESS;
+	else process.env.PARTYLINE_HARNESS = launched;
+	time.restore();
+});
 
 describe("OpenCode plugin", () => {
 	test("the plugin file exports only the plugin (OpenCode calls every export)", () => {
 		expect(Object.keys(plugin)).toEqual(["PartylinePlugin"]);
 		expect(typeof plugin.PartylinePlugin).toBe("function");
+	});
+
+	test("launch-only: a plain OpenCode session runs no listen", async () => {
+		delete process.env.PARTYLINE_HARNESS;
+		const oc = await load();
+		expect(spawned).toEqual([]);
+		expect(oc.prompts).toEqual([]);
+		expect(oc.logs).toEqual([]);
+	});
+
+	test("launch-only: the launcher's PARTYLINE_HARNESS runs listen", async () => {
+		await load();
+		expect(spawned.length).toBe(1);
+		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("opencode");
+	});
+
+	test("setup --always: the installed plugin listens without the launcher", async () => {
+		delete process.env.PARTYLINE_HARNESS;
+		const always = (await importAlways("opencode/partyline.ts")) as unknown as Api;
+		await load({}, always);
+		expect(spawned.length).toBe(1);
+		expect(spawned[0].args).toEqual(["listen"]);
+		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("opencode");
 	});
 
 	test("PUSH-05: it runs partyline listen in the project directory", async () => {

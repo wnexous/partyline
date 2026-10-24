@@ -172,14 +172,25 @@ func TestStrippedToolsOnlyChannelRecoversLauncherVariables(t *testing.T) {
 	require.Equal(t, []string{"/work/one", "/work/two"}, e.folders(t), "one AI per session folder")
 }
 
-// Without a launched ancestor a stripped tools-only channel falls back on its own working
-// directory.
-func TestStrippedToolsOnlyChannelWithoutAncestorUsesItsWorkingDirectory(t *testing.T) {
+// launch-only: without a launched ancestor and without PARTYLINE_HARNESS a tools-only channel
+// is idle: no tools, no AI, whatever its working directory is.
+func TestToolsOnlyChannelWithoutLauncherOrAncestorIsIdle(t *testing.T) {
 	e := newChannelEnv(t)
 	c := startChannelWith(t, []string{"--tools-only"}, e.vars(), "/work/plain", map[string]string{})
+	initialize(c)
+	c.send(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
+	require.Equal(t, []any{}, c.next()["result"].(map[string]any)["tools"])
+	require.Empty(t, e.folders(t))
+}
+
+// With PARTYLINE_HARNESS in its own environment a stripped tools-only channel is a launched
+// session, and falls back on its own working directory for the folder.
+func TestStrippedToolsOnlyChannelWithItsHarnessUsesItsWorkingDirectory(t *testing.T) {
+	e := newChannelEnv(t)
+	c := startChannelWith(t, []string{"--tools-only"}, e.launched("codex"), "/work/plain", map[string]string{})
 	initialize(c)
 	c.send(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": map[string]any{"name": "list_rooms", "arguments": map[string]any{}}})
 	require.Equal(t, false, c.next()["result"].(map[string]any)["isError"])
 	require.Equal(t, []string{"/work/plain"}, e.folders(t))
-	require.Equal(t, "agent", e.registered(t, "/work/plain").AI.App, "and its harness is unknown")
+	require.Equal(t, "codex", e.registered(t, "/work/plain").AI.App)
 }

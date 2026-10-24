@@ -14,6 +14,10 @@
 // go one at a time: when a send returns a promise, the next one waits for it, and a rejection
 // keeps the message at the head of the queue, so the order holds.
 
+// `partyline setup --always` changes this to true: the extension runs in every omp session,
+// not only in one started by `partyline omp`.
+const PARTYLINE_ALWAYS = false;
+
 type Ui = { notify?: (message: string, level?: string) => void };
 type Ctx = { isIdle(): boolean; hasUI?: boolean; ui?: Ui; model?: unknown };
 type McpNotification = { server: string; method: string; params?: unknown };
@@ -99,7 +103,15 @@ function isThenable(v: unknown): v is PromiseLike<unknown> {
 	return typeof v === "object" && v !== null && typeof (v as { then?: unknown }).then === "function";
 }
 
+// listening reports whether this omp process was started by `partyline omp` (the launcher sets
+// PARTYLINE_HARNESS) or omp was set up with --always. Without either, a plain omp session stays
+// out of Partyline: the extension subscribes to nothing.
+function listening(always: boolean, env: Record<string, string | undefined> = process.env): boolean {
+	return always || (env.PARTYLINE_HARNESS ?? "").trim() !== "";
+}
+
 export default function partyline(pi: OmpApi): void {
+	if (!listening(PARTYLINE_ALWAYS)) return;
 	const queue: string[] = []; // framed messages not handed to the session yet, oldest first
 	let ctx: Ctx | undefined; // the latest context omp gave us
 	let timer: ReturnType<typeof setTimeout> | undefined;

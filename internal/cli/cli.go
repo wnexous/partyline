@@ -30,9 +30,13 @@ Commands:
                          stdin) and save the instance URL and token
   setup                  choose the harnesses Partyline registers itself in: a checklist on a
                          terminal, --harness a,b / --all-detected / --remove a,b without one;
+                         --always also starts Partyline in sessions not started by
+                         partyline <harness> (--always=false undoes it);
                          --url/--token/--token-stdin/--browser run the login step first;
                          --uninstall undoes it
   channel                run the Claude Code channel (MCP over stdio; PARTYLINE_URL, PARTYLINE_TOKEN or the config file);
+                         without PARTYLINE_HARNESS (set by partyline <harness>) it answers with no tools;
+                         --always runs it anyway, as partyline setup --always records;
                          --tools-only serves the tools without receiving messages;
                          --harness omp describes the omp extension's message framing;
                          with --tools-only, --harness codex|gemini|opencode|pi names the harness

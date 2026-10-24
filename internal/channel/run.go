@@ -145,6 +145,18 @@ func Run(ctx context.Context, o Options) error {
 	return serveErr
 }
 
+// ServeIdle answers MCP on in/out with no tools, no instructions and no channel capability. A
+// harness that starts the server `partyline setup` registered without `partyline <harness>`
+// gets this: the session shows no Partyline tools, and nothing registers an AI or touches the
+// server (launch-only: only the launcher connects a session).
+func ServeIdle(ctx context.Context, in io.Reader, out io.Writer, version string) error {
+	srv := mcp.NewServer(in, out, mcp.ServerInfo{Name: ServerName, Version: version, NoChannel: true})
+	if err := srv.Serve(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
+	return nil
+}
+
 // downloadDirName is the directory name under <TempDir>/partyline where an AI's downloads go
 // (TOOL-06): the slug of the folder's name, "agent" when there is none.
 func downloadDirName(folder string) string {

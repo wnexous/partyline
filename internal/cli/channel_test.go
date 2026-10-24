@@ -223,7 +223,7 @@ func (e *channelEnv) folders(t *testing.T) []string {
 // notification and the reply tool stores the reply in the room.
 func TestChannelEndToEnd(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "HOME": "/home/someone"}, "/home/someone/src/My Project")
+	c := startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "HOME": "/home/someone", "PARTYLINE_HARNESS": "claude"}, "/home/someone/src/My Project")
 
 	c.send(map[string]any{"jsonrpc": "2.0", "id": "server-discover-probe-1", "method": "server/discover", "params": map[string]any{}})
 	m := c.next()
@@ -295,7 +295,7 @@ func TestChannelFlagsOverrideEnvironment(t *testing.T) {
 	flagged := e.legacy(t, "night-shift")
 	ignored := e.legacy(t, "ignored")
 	c := startChannel(t, []string{"--url", e.env.URL, "--token", e.secret, "--as", "Night Shift"},
-		map[string]string{"PARTYLINE_URL": "http://127.0.0.1:1", "PARTYLINE_TOKEN": "pl_agent_wrong", "PARTYLINE_AGENT": "ignored"}, "/tmp/wd")
+		map[string]string{"PARTYLINE_URL": "http://127.0.0.1:1", "PARTYLINE_TOKEN": "pl_agent_wrong", "PARTYLINE_AGENT": "ignored", "PARTYLINE_HARNESS": "claude"}, "/tmp/wd")
 	c.send(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": map[string]any{"protocolVersion": "2025-11-25"}})
 	c.next()
 	c.send(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
@@ -308,15 +308,15 @@ func TestChannelFlagsOverrideEnvironment(t *testing.T) {
 func TestChannelAgentFromEnvironment(t *testing.T) {
 	e := newChannelEnv(t)
 	billing := e.legacy(t, "billing-api")
-	startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_AGENT": "billing-api"}, "/tmp/wd")
+	startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_AGENT": "billing-api", "PARTYLINE_HARNESS": "claude"}, "/tmp/wd")
 	require.Equal(t, billing, e.ai(t, "/tmp/wd").ID)
 }
 
 // Without a URL or token the command fails with usage exit code 2.
 func TestChannelRequiresURLAndToken(t *testing.T) {
 	for name, env := range map[string]map[string]string{
-		"no url":   {"PARTYLINE_TOKEN": "pl_agent_x"},
-		"no token": {"PARTYLINE_URL": "http://127.0.0.1:1"},
+		"no url":   {"PARTYLINE_TOKEN": "pl_agent_x", "PARTYLINE_HARNESS": "claude"},
+		"no token": {"PARTYLINE_URL": "http://127.0.0.1:1", "PARTYLINE_HARNESS": "claude"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var out bytes.Buffer

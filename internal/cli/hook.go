@@ -3,8 +3,10 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	goio "io"
+	"strings"
 	"time"
 
 	"github.com/wnexous/partyline/internal/channel"
@@ -29,14 +31,29 @@ var hookDecisions = map[string]string{
 // reason, or {} (stop as usual) when there is nothing. Problems are reported on stderr and never
 // block the harness.
 func hookCmd(ctx context.Context, args []string, io stdio) int {
-	if len(args) != 1 || hookDecisions[args[0]] == "" {
+	if len(args) < 1 || hookDecisions[args[0]] == "" {
 		fmt.Fprintln(io.stderr, "usage: partyline hook codex-stop|gemini-after-agent")
 		return 2
 	}
-	decision := hookDecisions[args[0]]
+	name := args[0]
+	fs := flag.NewFlagSet("hook", flag.ContinueOnError)
+	fs.SetOutput(io.stderr)
+	always := fs.Bool("always", false, "run even without PARTYLINE_HARNESS, which only `partyline <harness>` sets (partyline setup --always)")
+	if err := fs.Parse(args[1:]); err != nil {
+		return 2
+	}
+	decision := hookDecisions[name]
 	allow := func() int {
 		fmt.Fprintln(io.stdout, "{}")
 		return 0
+	}
+	// Only a session the launcher started joins Partyline (PARTYLINE_HARNESS, which a harness
+	// that strips the hook's environment still has on a launched ancestor) or one installed
+	// with `partyline setup --always`. Anything else allows the stop without touching the
+	// server, so a plain Codex or Gemini session creates no AI (launch-only).
+	io = withLauncherEnv(io)
+	if !*always && strings.TrimSpace(io.getenv("PARTYLINE_HARNESS")) == "" {
+		return allow()
 	}
 	var in struct {
 		Cwd string `json:"cwd"`
@@ -57,7 +74,6 @@ func hookCmd(ctx context.Context, args []string, io stdio) int {
 	// PARTYLINE_FOLDER (set by the launcher; a harness that strips the hook's environment loses
 	// it, and it comes from the nearest launched ancestor, withLauncherEnv), else the cwd the
 	// harness reports on stdin, else this process's working directory (AID-07).
-	io = withLauncherEnv(io)
 	hio := io
 	if in.Cwd != "" {
 		hio.getwd = func() (string, error) { return in.Cwd, nil }

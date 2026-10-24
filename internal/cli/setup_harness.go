@@ -189,12 +189,8 @@ func applyHarnessFlags(ctx context.Context, regs []harness.Registrar, register, 
 		entries, err := r.Entries(ctx)
 		registered := err == nil && len(entries) > 0
 		if inRegister {
-			if registered {
-				if first == "" {
-					first = r.ID()
-				}
-				continue
-			}
+			// Apply updates a registration in place, so naming a harness again refreshes
+			// the extension files and records the current --always choice.
 			if err := r.Apply(ctx); err != nil {
 				fmt.Fprintf(io.stderr, "✗ %s: %v\n", r.Title(), err)
 				ok = false
@@ -203,7 +199,11 @@ func applyHarnessFlags(ctx context.Context, regs []harness.Registrar, register, 
 			if first == "" {
 				first = r.ID()
 			}
-			fmt.Fprintf(io.stdout, "✓ %s: registered\n", r.Title())
+			if registered {
+				fmt.Fprintf(io.stdout, "✓ %s: updated\n", r.Title())
+			} else {
+				fmt.Fprintf(io.stdout, "✓ %s: registered\n", r.Title())
+			}
 			continue
 		}
 		if err == nil && !registered {

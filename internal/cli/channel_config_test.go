@@ -35,7 +35,7 @@ func TestChannelReadsConfigFile(t *testing.T) {
 	home := t.TempDir()
 	writeConfig(t, home, cliconfig.Config{URL: e.env.URL, Token: e.secret})
 
-	c := startChannel(t, nil, map[string]string{"HOME": home}, "/work/from-file")
+	c := startChannel(t, nil, map[string]string{"HOME": home, "PARTYLINE_HARNESS": "claude"}, "/work/from-file")
 	initialize(c)
 	e.ai(t, "/work/from-file")
 }
@@ -45,13 +45,13 @@ func TestChannelEnvironmentOverridesConfigFile(t *testing.T) {
 	e := newChannelEnv(t)
 	home := t.TempDir()
 	writeConfig(t, home, cliconfig.Config{URL: "http://127.0.0.1:1", Token: "pl_agent_saved"})
-	c := startChannel(t, nil, map[string]string{"HOME": home, "PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret}, "/work/env-url")
+	c := startChannel(t, nil, map[string]string{"HOME": home, "PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_HARNESS": "claude"}, "/work/env-url")
 	initialize(c)
 	e.ai(t, "/work/env-url")
 
 	home2 := t.TempDir()
 	writeConfig(t, home2, cliconfig.Config{URL: e.env.URL, Token: "pl_agent_wrong"})
-	c2 := startChannel(t, nil, map[string]string{"HOME": home2, "PARTYLINE_TOKEN": e.secret}, "/work/env-token")
+	c2 := startChannel(t, nil, map[string]string{"HOME": home2, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_HARNESS": "claude"}, "/work/env-token")
 	initialize(c2)
 	e.ai(t, "/work/env-token")
 }
@@ -62,7 +62,7 @@ func TestChannelRefusesSavedTokenForOtherURL(t *testing.T) {
 	home := t.TempDir()
 	writeConfig(t, home, cliconfig.Config{URL: "http://saved.example.test", Token: "pl_agent_saved"})
 	var out bytes.Buffer
-	env := map[string]string{"HOME": home, "PARTYLINE_URL": "http://127.0.0.1:1"}
+	env := map[string]string{"HOME": home, "PARTYLINE_URL": "http://127.0.0.1:1", "PARTYLINE_HARNESS": "claude"}
 	code := execute(context.Background(), []string{"partyline", "channel"}, stdio{
 		stdin: bytes.NewReader(nil), stdout: &out, stderr: &out,
 		getenv: func(k string) string { return env[k] },
@@ -77,7 +77,7 @@ func TestChannelFlagsOverrideConfigFile(t *testing.T) {
 	e := newChannelEnv(t)
 	home := t.TempDir()
 	writeConfig(t, home, cliconfig.Config{URL: "http://127.0.0.1:1", Token: "pl_agent_wrong"})
-	c := startChannel(t, []string{"--url", e.env.URL, "--token", e.secret}, map[string]string{"HOME": home}, "/work/flagged")
+	c := startChannel(t, []string{"--url", e.env.URL, "--token", e.secret}, map[string]string{"HOME": home, "PARTYLINE_HARNESS": "claude"}, "/work/flagged")
 	initialize(c)
 	e.ai(t, "/work/flagged")
 }
@@ -94,7 +94,7 @@ func TestChannelRefusesConfigFileNot0600(t *testing.T) {
 	var out bytes.Buffer
 	code := execute(context.Background(), []string{"partyline", "channel"}, stdio{
 		stdin: bytes.NewReader(nil), stdout: &out, stderr: &out,
-		getenv: func(k string) string { return map[string]string{"HOME": home}[k] },
+		getenv: func(k string) string { return map[string]string{"HOME": home, "PARTYLINE_HARNESS": "claude"}[k] },
 	})
 	require.Equal(t, 1, code)
 	require.Contains(t, out.String(), "chmod 600 "+path)
@@ -105,7 +105,7 @@ func TestChannelRefusesConfigFileNot0600(t *testing.T) {
 // the omp app) with the instructions that describe the omp extension's <partyline …> framing.
 func TestChannelHarnessOmp(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, []string{"--harness", "omp"}, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret}, "/work/omp-proj")
+	c := startChannel(t, []string{"--harness", "omp"}, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_HARNESS": "omp"}, "/work/omp-proj")
 	c.send(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": map[string]any{"protocolVersion": "2025-11-25"}})
 	res, _ := c.next()["result"].(map[string]any)
 	text, _ := res["instructions"].(string)
@@ -139,7 +139,7 @@ func TestToolsOnlyChannelHarnessFlag(t *testing.T) {
 		r := c.next()["result"].(map[string]any)
 		require.Equal(t, false, r["isError"], "result: %v", r)
 	}
-	codex := startChannel(t, []string{"--tools-only", "--harness", "codex"}, e.vars(), "/work/notes")
+	codex := startChannel(t, []string{"--tools-only", "--harness", "codex"}, e.launched("codex"), "/work/notes")
 	initialize(codex)
 	call(codex, 1)
 	require.Equal(t, "codex", e.registered(t, "/work/notes").AI.App)
