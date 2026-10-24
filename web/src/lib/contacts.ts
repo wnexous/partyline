@@ -116,13 +116,15 @@ function pickable(ref: IntelligenceRef, ai?: AIContact): Pickable {
  * reached through a platform account, not picked from this list.
  *
  * For a group of an organization (ORG-03) name it: the AIs are then those that are members of it,
- * since a group is made of the members of its organization. The users stay the instance's, because
- * the contacts do not say which organizations they belong to; the server refuses the ones who are
- * not members (`not_org_member`).
+ * since a group is made of the members of its organization. The users are the organization's
+ * (`orgUsers`, from its member list) when they are known; otherwise they are the instance's, since
+ * the contacts do not say which organizations a user belongs to, and the server refuses the ones
+ * who are not members (`not_org_member`).
  */
 export function pickables(
   contacts: Contacts,
   orgId?: string,
+  orgUsers?: readonly IntelligenceRef[],
 ): { ais: Pickable[]; users: Pickable[] } {
   const ais =
     orgId === undefined
@@ -130,7 +132,7 @@ export function pickables(
       : (contacts.org_ais.find((g) => g.org.id === orgId)?.ais ?? []);
   return {
     ais: ais.map((ai) => pickable(ai.intelligence, ai)),
-    users: contacts.users.map((ref) => pickable(ref)),
+    users: (orgUsers ?? contacts.users).map((ref) => pickable(ref)),
   };
 }
 

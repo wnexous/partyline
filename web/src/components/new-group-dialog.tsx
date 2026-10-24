@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
 import { SearchIcon, XIcon } from "lucide-react";
-import { type ReactNode, useId, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { PickableMeta } from "@/components/contact-meta";
 import { FormAlert, TextField } from "@/components/form-fields";
@@ -23,6 +23,7 @@ import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
+import { useOrgUsers } from "@/hooks/use-org-users";
 import { isApiError } from "@/lib/api/client";
 import { useContacts, useCreateGroup } from "@/lib/api/queries";
 import {
@@ -46,10 +47,10 @@ import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
 /*
  * "New group" (LAY-04): a name, the organization it belongs to, and the users and AIs that join.
  * A group belongs to one organization (ORG-02) the viewer can create groups in: not one they are
- * only a guest of (OMEM-04). Its AIs are the organization's. The server applies the add-member
- * rules of the creator to each member and refuses the whole group when any fails (a user who is
- * not a member of the organization, for one); the dialog then names who was refused and why,
- * marks their rows, and keeps everything else as typed.
+ * only a guest of (OMEM-04). Its AIs and users are the organization's. The server applies the
+ * add-member rules of the creator to each member and refuses the whole group when any fails (a user
+ * who is no longer a member of the organization, for one); the dialog then names who was refused
+ * and why, marks their rows, and keeps everything else as typed.
  */
 
 export function NewGroupDialog({ trigger }: { trigger: ReactNode }) {
@@ -99,9 +100,11 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
     creatable[0];
   const guestEverywhere = orgs.length > 0 && creatable.length === 0;
   const orgId = org?.id;
+  const { users: orgUsers, loading: usersLoading } = useOrgUsers(orgId);
+  // Nothing is offered until the organization's users are known, so the instance's are not listed first.
   const all = useMemo(
-    () => (contacts.data ? pickables(contacts.data, orgId) : null),
-    [contacts.data, orgId],
+    () => (contacts.data && !usersLoading ? pickables(contacts.data, orgId, orgUsers) : null),
+    [contacts.data, orgId, orgUsers, usersLoading],
   );
   const byId = useMemo(
     () => new Map([...(all?.ais ?? []), ...(all?.users ?? [])].map((p) => [p.ref.id, p])),
@@ -119,16 +122,19 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
     );
   };
 
-  // Another organization offers other AIs: whoever is picked and not offered there goes, and what
-  // the server said about the old choice no longer applies.
+  // Another organization offers other AIs and users: whoever is picked and no longer offered goes
+  // (once the new offer is known), and what the server said about the old choice no longer applies.
+  useEffect(() => {
+    if (!all) return;
+    const offered = new Set([...all.ais, ...all.users].map((p) => p.ref.id));
+    setPicked((now) =>
+      now.every((id) => offered.has(id)) ? now : now.filter((id) => offered.has(id)),
+    );
+  }, [all]);
   const changeOrg = (next: string) => {
     setPickedOrg(next);
     setRefused([]);
     setFormError(null);
-    if (!contacts.data) return;
-    const offered = pickables(contacts.data, next);
-    const stays = new Set([...offered.ais, ...offered.users].map((p) => p.ref.id));
-    setPicked((now) => now.filter((id) => stays.has(id)));
   };
 
   const refusalText = (reason: RefusedReason) => {
@@ -272,7 +278,7 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
                   </p>
                 ) : null}
 
-                {contacts.isPending || orgsLoading ? (
+                {contacts.isPending || orgsLoading || usersLoading ? (
                   <div className="space-y-3 py-1" aria-hidden="true">
                     <Skeleton className="h-4 w-40" />
                     <Skeleton className="h-4 w-56" />

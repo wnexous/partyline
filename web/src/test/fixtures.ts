@@ -1,4 +1,13 @@
 import type {
+  ChartMember,
+  ChartPosition,
+  Invitation,
+  Organization,
+  OrgChart,
+  OrgMember,
+  Position,
+} from "@/lib/api/org-types";
+import type {
   Agent,
   AIContact,
   Chat,
@@ -291,4 +300,77 @@ export function makeMembership(over: Partial<ProfileMembership> = {}): ProfileMe
     delete_effect: "remove",
     ...over,
   };
+}
+
+/*
+ * The organization API (lib/api/org-types.ts). Acme (o1), Globex (o2) and Initech (o3) are the
+ * organizations of sample-contacts.ts; positions are pos1, pos2… so that they never clash with
+ * the people (p1…).
+ */
+
+/** An organization as `GET /orgs` lists it: Acme, with the viewer a `member` and no position, unless overridden. */
+export function makeOrg(over: Partial<Organization> = {}): Organization {
+  return {
+    id: "o1",
+    name: "Acme",
+    slug: "acme",
+    permission: "member",
+    created_at: "2026-10-01T12:00:00Z",
+    updated_at: "2026-10-19T12:00:00Z",
+    ...over,
+  };
+}
+
+/** A position of the chart: "Admin", a root, unless overridden. */
+export function makePosition(over: Partial<Position> = {}): Position {
+  return { id: "pos1", name: "Admin", ...over };
+}
+
+/** One row of `GET /orgs/{org}/members`: Ana Souza, a `member` with no position, unless overridden. */
+export function makeOrgMember(over: Partial<OrgMember> = {}): OrgMember {
+  return {
+    intelligence: makeIntelligence(),
+    permission: "member",
+    joined_at: "2026-10-02T12:00:00Z",
+    ...over,
+  };
+}
+
+/** A pending invitation of Ana Souza to Acme as a `member`, from Bob Lima, unless overridden. */
+export function makeInvitation(over: Partial<Invitation> = {}): Invitation {
+  return {
+    id: "inv1",
+    org_id: "o1",
+    org_name: "Acme",
+    org_slug: "acme",
+    invitee: makeIntelligence(),
+    permission: "member",
+    invited_by: makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" }),
+    created_at: "2026-10-20T12:00:00Z",
+    expires_at: "2026-11-03T12:00:00Z",
+    ...over,
+  };
+}
+
+/** A member of the chart, offline, a `member` the viewer may do nothing about, unless overridden. */
+export function makeChartMember(over: Partial<ChartMember> = {}): ChartMember {
+  return {
+    intelligence: makeIntelligence(),
+    permission: "member",
+    online: false,
+    can_delete: false,
+    delete_effect: "remove",
+    can_move: false,
+    ...over,
+  };
+}
+
+/** A position of the chart with its holders: "Admin", a root with nobody, unless overridden. */
+export function makeChartPosition(over: Partial<ChartPosition> = {}): ChartPosition {
+  return { id: "pos1", name: "Admin", holders: [], ...over };
+}
+
+/** `GET /orgs/{org}/chart` for a viewer who is not an admin, with an empty chart, unless overridden. */
+export function makeOrgChart(over: Partial<OrgChart> = {}): OrgChart {
+  return { viewer: { admin: false }, positions: [], ...over };
 }

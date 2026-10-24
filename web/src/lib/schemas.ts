@@ -15,6 +15,7 @@ import {
   UsernamePattern,
 } from "./api/types.gen";
 import type { MessageKey } from "./i18n";
+import { MaxOrgNameLength } from "./orgs";
 
 /*
  * Form schemas built from the generated contract constants (AD-003), so the web app validates
@@ -59,6 +60,15 @@ export const acceptInviteSchema = z.object({
 /** POST /groups: a name is required; the members are picked apart from the form (LAY-04). */
 export const createGroupSchema = z.object({
   name: z.string().trim().min(1, msg("validation.required")),
+});
+
+/** POST /orgs (ORG-01): a name of 1 to 100 characters, counted in code points like the server. */
+export const createOrgSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, msg("validation.required"))
+    .refine((v) => textLength(v) <= MaxOrgNameLength, msg("validation.orgName")),
 });
 
 const handleRe = new RegExp(HandlePattern);
@@ -166,6 +176,7 @@ export type SetupForm = z.input<typeof setupSchema>;
 export type LoginForm = z.input<typeof loginSchema>;
 export type AcceptInviteForm = z.input<typeof acceptInviteSchema>;
 export type CreateGroupForm = z.input<typeof createGroupSchema>;
+export type CreateOrgForm = z.input<typeof createOrgSchema>;
 export type CreateTokenForm = z.input<typeof createTokenSchema>;
 export type ProfileForm = z.input<typeof profileSchema>;
 export type ProfileEditForm = z.input<typeof profileEditSchema>;
@@ -182,4 +193,5 @@ export const validationVars = {
   "validation.keyword": { max: MaxMemberKeyword },
   "validation.instructions": { max: MaxRoomInstructions },
   "validation.bio": { max: MaxProfileBio },
+  "validation.orgName": { max: MaxOrgNameLength },
 } as const;

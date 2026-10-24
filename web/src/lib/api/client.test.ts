@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, api, setUnauthorizedHandler } from "./client";
+import { ApiError, api, hasErrorCode, setUnauthorizedHandler } from "./client";
 
 function jsonResponse(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -47,6 +47,35 @@ describe("api client", () => {
       message: "validation failed",
       fields: { username: "taken" },
     });
+  });
+
+  it("carries the details of a refusal, such as the counts of a non-empty organization", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(409, {
+        error: {
+          code: "organization_not_empty",
+          message: "organization still owns resources",
+          details: { agents: "2", connectors: "0", groups: "1" },
+        },
+      }),
+    );
+    const err = await api("DELETE", "/orgs/o1").catch((e: unknown) => e);
+    expect(err).toMatchObject({
+      status: 409,
+      code: "organization_not_empty",
+      details: { agents: "2", connectors: "0", groups: "1" },
+    });
+    expect(hasErrorCode(err, "organization_not_empty")).toBe(true);
+    expect(hasErrorCode(err, "last_admin")).toBe(false);
+    expect(hasErrorCode(new Error("organization_not_empty"), "organization_not_empty")).toBe(false);
+  });
+
+  it("has no details when the refusal names none", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(404, { error: { code: "not_found", message: "x" } }),
+    );
+    const err = await api("GET", "/orgs/o9").catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 404, details: {} });
   });
 
   it("falls back to a status-derived code when the body is not an envelope", async () => {

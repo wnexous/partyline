@@ -10,7 +10,9 @@ import {
   makeChat,
   makeContacts,
   makeIntelligence,
+  makeMe,
   makeOrgAIs,
+  makeOrgMember,
   makeRoom,
 } from "@/test/fixtures";
 import { renderWithRouter } from "@/test/render";
@@ -62,8 +64,8 @@ describe("member picker (CID-20)", () => {
 
 /*
  * A group is made of the members of its organization (ORG-03): the picker offers the AIs that
- * belong to the group's organization. The users are the instance's, and the server refuses the
- * ones who are not members.
+ * belong to the group's organization and the users who are members of it. When the members cannot
+ * be read it offers the instance's users, and the server refuses the ones who are not members.
  */
 describe("member picker in a group of an organization (ORG-03)", () => {
   const lab = makeAI({ id: "a3", display_name: "Lab", handle: "lab" });
@@ -96,7 +98,7 @@ describe("member picker in a group of an organization (ORG-03)", () => {
     const dialog = await open(json(200, makeRoom({ id: "r1", org_id: "o2" })));
     expect(
       within(dialog).getByText(
-        "The AIs of this group’s organization and the users of this instance. Only members of the organization can join.",
+        "The AIs and users of this group’s organization. Only members of the organization can join.",
       ),
     ).toBeInTheDocument();
   });
@@ -143,5 +145,59 @@ describe("member picker in a group of an organization (ORG-03)", () => {
     release();
     expect(await within(dialog).findByTestId("candidate-agent-a3")).toBeInTheDocument();
     expect(within(dialog).queryByTestId("candidate-agent-a1")).toBeNull();
+  });
+
+  describe("the users offered (T39)", () => {
+    const cora = makeIntelligence({ id: "u3", display_name: "Cora Dias", handle: "cora" });
+    const withUsers = makeContacts({ ...orgs, users: [bob, cora] });
+    const memberOf = (...who: ReturnType<typeof makeIntelligence>[]) =>
+      json(200, { items: who.map((intelligence) => makeOrgMember({ intelligence })) });
+
+    async function openWith(extra: Parameters<typeof mockApi>[0]) {
+      mockApi({
+        "GET /contacts": json(200, withUsers),
+        "GET /rooms/r1": json(200, makeRoom({ id: "r1", org_id: "o1" })),
+        "GET /me": json(200, makeMe()),
+        ...extra,
+      });
+      const user = userEvent.setup();
+      renderWithRouter(
+        <MemberPicker
+          roomId="r1"
+          members={[]}
+          trigger={<button type="button">Add members</button>}
+        />,
+      );
+      await user.click(await screen.findByRole("button", { name: "Add members" }));
+      return screen.findByRole("dialog", { name: "Add members" });
+    }
+
+    it("are the members of the group's organization, not every user of the instance", async () => {
+      const dialog = await openWith({ "GET /orgs/o1/members": memberOf(makeIntelligence(), bob) });
+      expect(await within(dialog).findByTestId("candidate-user-u2")).toHaveTextContent("Bob Lima");
+      expect(within(dialog).queryByTestId("candidate-user-u3")).toBeNull();
+      // The viewer is a member too, and is not offered to themselves.
+      expect(within(dialog).queryByTestId("candidate-user-u1")).toBeNull();
+    });
+
+    it("are those of the instance when the members cannot be read", async () => {
+      const dialog = await openWith({ "GET /orgs/o1/members": apiError(500, "internal", "boom") });
+      expect(await within(dialog).findByTestId("candidate-user-u2")).toBeInTheDocument();
+      expect(within(dialog).getByTestId("candidate-user-u3")).toBeInTheDocument();
+    });
+
+    it("wait for the members, so the whole instance is not listed first", async () => {
+      let release: () => void = () => {};
+      const dialog = await openWith({
+        "GET /orgs/o1/members": () =>
+          new Promise<Response>((resolve) => {
+            release = () => resolve(memberOf(bob));
+          }),
+      });
+      expect(within(dialog).queryByTestId(/^candidate-/)).toBeNull();
+      release();
+      expect(await within(dialog).findByTestId("candidate-user-u2")).toBeInTheDocument();
+      expect(within(dialog).queryByTestId("candidate-user-u3")).toBeNull();
+    });
   });
 });

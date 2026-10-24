@@ -5,13 +5,16 @@ export const API_BASE = "/api/v1";
 
 /**
  * An API failure. `fields` maps request field names to validation reasons (422); `refused` lists
- * the members a new group could not take (422 members_refused), in the order they were asked for.
+ * the members a new group could not take (422 members_refused), in the order they were asked for;
+ * `details` carries the facts of a refusal that are not request fields (the counts of
+ * organization_not_empty).
  */
 export class ApiError extends Error {
   readonly status: number;
   readonly code: ErrorCode;
   readonly fields: Record<string, string>;
   readonly refused: RefusedMember[];
+  readonly details: Record<string, string>;
 
   constructor(
     status: number,
@@ -19,6 +22,7 @@ export class ApiError extends Error {
     message: string,
     fields: Record<string, string> = {},
     refused: RefusedMember[] = [],
+    details: Record<string, string> = {},
   ) {
     super(message);
     this.name = "ApiError";
@@ -26,11 +30,20 @@ export class ApiError extends Error {
     this.code = code;
     this.fields = fields;
     this.refused = refused;
+    this.details = details;
   }
 }
 
 export function isApiError(err: unknown): err is ApiError {
   return err instanceof ApiError;
+}
+
+/**
+ * Whether the error carries this code. The code is typed by the generated contract, which does not
+ * list the codes of the organization routes yet (lib/api/org-types.ts), so they are compared as text.
+ */
+export function hasErrorCode(err: unknown, code: string): err is ApiError {
+  return isApiError(err) && (err.code as string) === code;
 }
 
 type UnauthorizedHandler = (returnTo: string) => void | Promise<void>;
@@ -110,6 +123,7 @@ async function toApiError(res: Response): Promise<ApiError> {
     e?.message || res.statusText || fallback,
     e?.fields ?? {},
     e?.refused ?? [],
+    e?.details ?? {},
   );
 }
 

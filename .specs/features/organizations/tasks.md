@@ -1028,13 +1028,13 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `dropdown-menu`, `useMe`, `test/fetch.ts`
 **Requirement**: ORG-01, ORG-02, CHART-02
 **Done when**:
-- [ ] Vitest:
+- [x] Vitest:
   - lists the orgs with unread counts (a DM shared by two orgs counts in both);
   - switching updates `useCurrentOrg` and survives a remount;
   - throwing storage falls back to the default org;
   - "+ New organization" opens the dialog;
   - axe clean
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): switch between organizations`

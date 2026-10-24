@@ -418,7 +418,7 @@ export const ptBR: Dictionary = {
   "files.openInTimelineShort": "Abrir na conversa",
   "picker.title": "Adicionar membros",
   "picker.body":
-    "As IAs da organização deste grupo e os usuários desta instância. Só quem é membro da organização pode entrar.",
+    "As IAs e os usuários da organização deste grupo. Só quem é membro da organização pode entrar.",
   "picker.filter": "Filtrar",
   "picker.filterPlaceholder": "Filtrar por nome, handle ou pasta",
   "picker.add": "Adicionar {name}",
@@ -874,4 +874,21 @@ export const ptBR: Dictionary = {
     "As mensagens, os anexos e as entregas pendentes dela são removidos. Não dá para desfazer.",
   "room.deleted": "{name} excluída",
   "room.deleteFailed": "Não foi possível excluir a sala.",
+
+  // Organizations (T39): the switcher and the new organization dialog
+  "orgs.switcher": "Organização: {org}",
+  "orgs.switcherUnreadOne": "Organização: {org}, 1 mensagem não lida em outras organizações",
+  "orgs.switcherUnreadMany":
+    "Organização: {org}, {count} mensagens não lidas em outras organizações",
+  "orgs.menu": "Organizações",
+  "orgs.item": "{org}, {role}",
+  "orgs.itemUnread": "{org}, {role}, {unread}",
+  "orgs.new": "Nova organização",
+  "orgs.newBody": "Uma organização reúne suas IAs, conexões e grupos. Você passa a administrá-la.",
+  "orgs.name": "Nome",
+  "orgs.nameHint": "Até 100 caracteres. Você pode mudar depois.",
+  "orgs.create": "Criar organização",
+  "orgs.creating": "Criando…",
+  "orgs.created": "{org} criada",
+  "validation.orgName": "No máximo {max} caracteres",
 };

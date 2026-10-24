@@ -12,8 +12,8 @@ import {
   makeConnectorKind,
   makeMe,
   makeMembership,
-  makeProfile,
 } from "@/test/fixtures";
+import { viewerIn } from "@/test/orgs";
 import { renderRoute } from "@/test/render";
 import { sampleContacts } from "@/test/sample-contacts";
 
@@ -566,9 +566,7 @@ const initech = makeMembership({
   org_slug: "initech",
   permission: "admin",
 });
-const memberOf = (...memberships: ReturnType<typeof makeMembership>[]) => ({
-  "GET /intelligences/u1": json(200, makeProfile({ memberships })),
-});
+const memberOf = (...memberships: ReturnType<typeof makeMembership>[]) => viewerIn(...memberships);
 const optionsOf = (select: HTMLElement) =>
   within(select)
     .getAllByRole("option")
@@ -613,7 +611,7 @@ describe("the connections of the current organization (ORG-02)", () => {
       "GET /me": json(200, me),
       "GET /connector-kinds": kinds,
       "GET /connectors": json(200, { items: all }),
-      "GET /intelligences/u1": apiError(500, "internal", "boom"),
+      "GET /orgs": apiError(500, "internal", "boom"),
     });
     renderRoute("/connectors");
     await screen.findByRole("listitem", { name: "ops-bot" });

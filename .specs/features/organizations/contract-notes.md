@@ -1713,3 +1713,85 @@ extends what T57 left open; the command's output and exit codes are unchanged.
 - **Not done on purpose**: the column order stays T57's (marker and name, handle, app, state, folder); the task text lists "name, @handle, folder label, app and online
   state" as the data, not as the columns. `printTreeNodes`, the indentation style T58 names as a model, went with the machine tree; the groups use two spaces like it did.
 - **Docs**: `docs/agents.md` says the command lists the AIs hosted on the user's computers and no others, and that one folder on two computers is two AIs.
+
+## T39: Organization queries and switcher (ORG-01, ORG-02, CHART-02)
+
+Phase 8 is built before Phase 3 is merged (T14-T17 are being written), so the web talks to a contract that is
+partly **assumed**. All of it is in one interim module, `web/src/lib/api/org-types.ts`: it holds the types with the names
+and shapes tygo gives them. T12/T13 (`Permission`, `Organization`, `Position`, `OrgMember`'s base fields, the create/update
+requests) are exactly what is committed on `wnexous/pl-org-p3`. The rest is marked **ASSUMED** in the file and below. When
+`wnexous/pl-org-g0` carries Phase 3: delete the module, import the same names from `types.gen.ts`, and adapt what differs
+(`lib/org-chart.ts` is the one place that reads the chart's shape, T44).
+
+- **What the web assumes of Phase 3** (sent to the coordinator to relay to the Phase 3 worker):
+  - `GET /orgs` -> `List<Organization>` (T12, committed), `GET /orgs/{org}` -> `Organization`, `POST /orgs {name}` -> 201
+    `Organization`, `PATCH`, `DELETE` (409 `organization_not_empty` with the counts as **strings** in `details`:
+    `agents`, `connectors`, `groups`), `PUT|DELETE /orgs/{org}/avatar` (T12, committed).
+  - `GET /orgs/{org}/members` -> `List<OrgMember>` (base fields only; the per-row actions come from the chart, below).
+  - `PATCH /orgs/{org}/members/{iid}` `{permission?, position_id?}`; an empty `position_id` clears the position.
+  - `Invitation {id, org_id, org_name, org_slug, invitee: IntelligenceRef, permission, position_id?, position_name?,
+    invited_by: IntelligenceRef, created_at, expires_at}`; `POST /orgs/{org}/invitations {handle, permission,
+    position_id?}` -> 201; `GET /orgs/{org}/invitations` and `GET /invitations` -> `List<Invitation>`;
+    `DELETE /orgs/{org}/invitations/{id}`; `POST /invitations/{id}/accept|decline` (the answer's body is ignored).
+  - `GET /orgs/{org}/chart` -> `OrgChart {viewer: {admin}, positions: [{id, name, parent_id?, holders: [ChartMember]}] (flat),
+    members?: [ChartMember] (no position, hanging under `under`), unassigned?: [ChartMember]}` with `ChartMember {intelligence,
+    permission, online, under?, can_delete, delete_effect, can_move}`.
+  - `PUT /me/default-org` and `default_org_id` on `GET /me` (T17), as T49 already assumed.
+- **Taken over from Phase 9** (the pieces the T45-T50 notes left for T39):
+  - **`useMyOrgs()` now reads `GET /orgs`** (`orgsQuery`, key `["orgs"]`), no longer the memberships of the viewer's own
+    profile. `MyOrg` is `{id, name, slug, permission, avatarUrl?, positionId?}` (it lost `position`, a name `GET /orgs` does not
+    carry and nothing read). `test/orgs.ts#viewerIn` serves `GET /orgs` besides the profile, so the Phase 9 tests that use it are
+    unchanged; those that mocked the profile route for the organizations (`use-current-org`, `connectors`, `settings`,
+    `conversation-list`, `new-group-dialog`, `a11y`) now mock `GET /orgs`, with the same assertions.
+  - **`useCurrentOrg()`** gains `failed` (the list could not be read, which is not "belongs to none").
+  - **The pickers' users** (T46's gap): `pickables(contacts, orgId, orgUsers)` and `hooks/use-org-users.ts`
+    (`useOrgUsers(orgId)`, the organization's members of role `user` by name, without the viewer). `NewGroupDialog` and
+    `MemberPicker` offer them instead of the instance's directory, wait for them (a skeleton, so the whole instance is never listed
+    first), prune a pick the new organization does not offer once its members are known, and fall back to the directory when the
+    members cannot be read (the server's `not_org_member` refusal stays the guard, as before). The text of `picker.body` now says
+    "The AIs and users of this group's organization." (it said "...and the users of this instance").
+  - **Live**: `access.changed` with `resource_kind: "organization"` calls `invalidateOrganizations(qc, resource_id)`: the list
+    `["orgs"]`, every query under `["orgs", id]` (the organization, its members, chart and pending invitations), the invitations
+    waiting for the viewer, their own profile, the contacts and the conversations. The pages of other organizations are left alone.
+    **Not handled yet**: the live frame that tells an invitee about a new invitation (T15, name unknown, not in `types.gen.ts`);
+    add its case to `handlers.ts` after the merge so the inbox of T40 updates without a reload.
+- **Queries** (`queries.ts`): keys `orgs`, `org(id)`, `orgMembers(id)`, `orgChart(id)`, `orgInvitations(id)`, `invitations`;
+  reads `useOrgs`, `useMyOrgs`, `useOrg`, `useOrgMembers(id, enabled?)`, `useOrgChart`, `useOrgInvitations(id, enabled?)`,
+  `useMyInvitations`; writes `useCreateOrg`, `useUpdateOrg(id)`, `useUploadOrgAvatar(id)`, `useRemoveOrgAvatar(id)`, `useDeleteOrg`,
+  `useCreatePosition|useUpdatePosition|useDeletePosition(orgId)`, `useUpdateOrgMember(orgId)`, `useInviteToOrg(orgId)`,
+  `useRevokeInvitation(orgId)`, `useAcceptInvitation`, `useDeclineInvitation`. A created or changed organization is written into the
+  cached list where the server will place it (by name, ignoring case, then id) and the list is fetched again, so the switcher never
+  lands on another organization first. An invitation leaves the inbox when answered and when the answer is 410 or 404.
+  `useRemoveFromOrg` and `useDeleteAgent` also mark the organization pages stale (the member and the chart lose the identity).
+- **`ApiError.details`** (`client.ts`): the `details` of the error envelope (the counts of `organization_not_empty`), and
+  `hasErrorCode(err, code)` for the codes `types.gen.ts` does not list yet (`org-types.ts` has
+  `ErrorCodeOrganizationNotEmpty`, `ErrorCodePositionCycle`, `ErrorCodeAlreadyMember`).
+- **The switcher** (`components/org-switcher.tsx`, `OrgAvatar`, `NewOrgDialog`):
+  - Placement: under the brand row of `MessengerPanel` (the wide-screen column and the phone's home screen), and, compact (the
+    organization's picture only), in the top bar of a phone's full-screen pages (`MobileBar`).
+  - The button is named "Organization: {name}" (", {n} unread message(s) in other organizations" when conversations that the
+    current organization does not hold have unread messages: each counted once). The menu "Organizations" has one radio item per
+    organization named "{name}, {role}[, {n} unread message(s)]" with the picture, the name, the role (Admin, Member, Guest) and the
+    count (99+ from a hundred); a DM both sides share with two organizations counts in both (`unreadByOrg`, using `inOrg`, so a
+    conversation filed under none counts everywhere, as the sidebar lists it everywhere). Picking one calls `select` (kept in
+    `localStorage` under `pl.org`, every access in try/catch; a browser that refuses storage still switches for the tab and starts on
+    the account's default). "New organization" opens the dialog.
+  - States: a skeleton while the list loads; nothing when it cannot be read (the rest of the sidebar is untouched); for a viewer who
+    belongs to none, one button "New organization".
+  - **`NewOrgDialog`** (controlled by its caller, so the menu item here and the page button of T40 share it): a name of 1 to 100
+    characters, counted in code points (`createOrgSchema`, "Required" / "At most 100 characters" before any request), the server's
+    422 reason under the field, "Can't reach the server..." above the form. On success the new organization becomes the current
+    one, a toast says "{name} created" and the dialog closes (T40/T44 add the navigation).
+  - No link to the organization pages yet: `/orgs` (T40) and the chart (T44) do not exist in this commit; T40 adds the
+    "Organizations" entry of the account menu and the palette and the switcher's "All organizations" link.
+- **Texts** (en and pt-BR): `orgs.switcher`, `orgs.switcherUnreadOne|Many`, `orgs.menu`, `orgs.item`, `orgs.itemUnread` (reuses
+  `conversations.unreadOne|Many` and `profile.permissionAdmin|Member|Guest`), `orgs.new`, `orgs.newBody`, `orgs.name`,
+  `orgs.nameHint`, `orgs.create`, `orgs.creating`, `orgs.created`, `validation.orgName`; changed `picker.body`.
+- **Tests**: `org-switcher.test.tsx` (the lists and counts, a shared DM in both, the checked item, the 99+ cap, Portuguese,
+  switching and the sidebar following it, the pick kept across a reload, throwing storage in both directions, the default and the
+  first organization, a pick of an organization that was left, the dialog (open, create, at once in the list, 0/101/100 characters
+  counted in characters, the server's reason, the network, reopening empty), none / failed / loading, the phone's two places, axe in
+  both locales), `lib/orgs.test.ts` (`toMyOrgs`, `unreadByOrg`, `unreadOutsideOrg`, the limits), `use-current-org.test.tsx`,
+  `handlers.test.ts` (the organization pages), `client.test.ts` (`details`, `hasErrorCode`), and the pickers' tests
+  (`new-group-dialog.test.tsx`, `member-picker.test.tsx`: the organization's users, by name, without the viewer or the AIs among the
+  members, the other organization's after a change, waiting, the fallback).

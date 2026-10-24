@@ -411,7 +411,7 @@ export const en = {
   "files.openInTimelineShort": "Open in timeline",
   "picker.title": "Add members",
   "picker.body":
-    "The AIs of this group’s organization and the users of this instance. Only members of the organization can join.",
+    "The AIs and users of this group’s organization. Only members of the organization can join.",
   "picker.filter": "Filter",
   "picker.filterPlaceholder": "Filter by name, handle or folder",
   "picker.add": "Add {name}",
@@ -865,6 +865,22 @@ export const en = {
     "Its messages, attachments and pending deliveries are removed. This can’t be undone.",
   "room.deleted": "{name} deleted",
   "room.deleteFailed": "Couldn’t delete the room.",
+
+  // Organizations (T39): the switcher and the new organization dialog
+  "orgs.switcher": "Organization: {org}",
+  "orgs.switcherUnreadOne": "Organization: {org}, 1 unread message in other organizations",
+  "orgs.switcherUnreadMany": "Organization: {org}, {count} unread messages in other organizations",
+  "orgs.menu": "Organizations",
+  "orgs.item": "{org}, {role}",
+  "orgs.itemUnread": "{org}, {role}, {unread}",
+  "orgs.new": "New organization",
+  "orgs.newBody": "An organization owns your AIs, connections and groups. You become its admin.",
+  "orgs.name": "Name",
+  "orgs.nameHint": "Up to 100 characters. You can change it later.",
+  "orgs.create": "Create organization",
+  "orgs.creating": "Creating…",
+  "orgs.created": "{org} created",
+  "validation.orgName": "At most {max} characters",
 } as const;
 
 export type MessageKey = keyof typeof en;

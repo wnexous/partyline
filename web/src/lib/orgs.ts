@@ -1,10 +1,15 @@
-import type { Conversation, Me, ProfileMembership } from "@/lib/api/types.gen";
+import type { Organization, OrgMember } from "@/lib/api/org-types";
+import type { Conversation, IntelligenceRef, Me } from "@/lib/api/types.gen";
 
 /*
  * The viewer's organizations as the web app uses them (ORG-02, OMEM-03, OMEM-04): which one is
  * current, who may create what in it, and which conversations belong under it. Pure functions;
  * hooks/use-current-org.ts reads the data and keeps the choice.
  */
+
+/** The longest an organization's name may be (ORG-01) and a position's (POS-01), in characters. */
+export const MaxOrgNameLength = 100;
+export const MaxPositionNameLength = 60;
 
 /** The three permissions of a membership (OMEM-04). */
 export const PermissionAdmin = "admin";
@@ -22,18 +27,21 @@ export interface MyOrg {
   slug: string;
   /** admin, member or guest. */
   permission: string;
+  /** The picture the organization's admins gave it; initials show without one. */
+  avatarUrl?: string;
   /** The position the viewer holds there; absent for none. */
-  position?: string;
+  positionId?: string;
 }
 
-/** The viewer's organizations from the memberships of their own profile, in the server's order. */
-export function toMyOrgs(memberships: readonly ProfileMembership[]): MyOrg[] {
-  return memberships.map((m) => ({
-    id: m.org_id,
-    name: m.org_name,
-    slug: m.org_slug,
-    permission: m.permission,
-    ...(m.position_name ? { position: m.position_name } : {}),
+/** The viewer's organizations from `GET /orgs`, in the server's order (by name). */
+export function toMyOrgs(orgs: readonly Organization[]): MyOrg[] {
+  return orgs.map((o) => ({
+    id: o.id,
+    name: o.name,
+    slug: o.slug,
+    permission: o.permission,
+    ...(o.avatar_url ? { avatarUrl: o.avatar_url } : {}),
+    ...(o.position_id ? { positionId: o.position_id } : {}),
   }));
 }
 
@@ -74,4 +82,49 @@ export function defaultOrgIdOf(me: MeWithDefaultOrg | undefined): string | undef
  */
 export function inOrg(conversation: Pick<Conversation, "org_ids">, orgId: string): boolean {
   return conversation.org_ids.length === 0 || conversation.org_ids.includes(orgId);
+}
+
+/**
+ * The unread messages each organization holds (the switcher's counts): the sum of the unread of
+ * the conversations it holds, so a DM both sides share with two organizations counts in both.
+ * Every organization of `orgs` has an entry, 0 when nothing waits in it.
+ */
+export function unreadByOrg(
+  conversations: readonly Pick<Conversation, "unread" | "org_ids">[],
+  orgs: readonly Pick<MyOrg, "id">[],
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const org of orgs) {
+    counts[org.id] = conversations
+      .filter((c) => inOrg(c, org.id))
+      .reduce((sum, c) => sum + c.unread, 0);
+  }
+  return counts;
+}
+
+/**
+ * The unread messages the current organization's list does not show: those of the conversations
+ * it does not hold, each counted once however many other organizations hold it. The switcher's
+ * button carries it, so a message waiting elsewhere is not missed.
+ */
+export function unreadOutsideOrg(
+  conversations: readonly Pick<Conversation, "unread" | "org_ids">[],
+  orgId: string,
+): number {
+  return conversations.filter((c) => !inOrg(c, orgId)).reduce((sum, c) => sum + c.unread, 0);
+}
+
+/**
+ * The users among an organization's members, by name and without the viewer: who a group of the
+ * organization can take in besides its AIs (ORG-03). A member list holds users and AIs only.
+ */
+export function userMembers(members: readonly OrgMember[], viewerId?: string): IntelligenceRef[] {
+  return members
+    .map((m) => m.intelligence)
+    .filter((who) => who.role === "user" && who.id !== viewerId)
+    .sort((a, b) => {
+      const [x, y] = [a.display_name.toLowerCase(), b.display_name.toLowerCase()];
+      if (x !== y) return x < y ? -1 : 1;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
 }

@@ -11,7 +11,20 @@ import {
 } from "@tanstack/react-query";
 import { withIntelligence, withoutAI } from "@/lib/contacts";
 import { type MeWithDefaultOrg, toMyOrgs } from "@/lib/orgs";
-import { api } from "./client";
+import { api, isApiError } from "./client";
+import type {
+  CreateInvitationRequest,
+  CreateOrganizationRequest,
+  CreatePositionRequest,
+  Invitation,
+  Organization,
+  OrgChart,
+  OrgMember,
+  Position,
+  UpdateOrganizationRequest,
+  UpdateOrgMemberRequest,
+  UpdatePositionRequest,
+} from "./org-types";
 import {
   type AcceptInviteRequest,
   type ActivityItem,
@@ -96,6 +109,14 @@ export const queryKeys = {
   /** The people one connector has seen, filtered by a search text ("" = all of them). */
   people: (connectorId: string, q: string) => ["contacts", "people", connectorId, q] as const,
   intelligence: (id: string) => ["intelligences", id] as const,
+  /** The viewer's organizations; every query of one organization is under `org(id)`. */
+  orgs: ["orgs"] as const,
+  org: (id: string) => ["orgs", id] as const,
+  orgMembers: (id: string) => ["orgs", id, "members"] as const,
+  orgChart: (id: string) => ["orgs", id, "chart"] as const,
+  orgInvitations: (id: string) => ["orgs", id, "invitations"] as const,
+  /** The invitations waiting for the viewer, or for an AI they manage. */
+  invitations: ["invitations"] as const,
   room: (id: string) => ["rooms", id] as const,
   roomMembers: (id: string) => ["rooms", id, "members"] as const,
   roomMessages: (id: string) => ["rooms", id, "messages"] as const,
@@ -596,22 +617,6 @@ export const intelligenceQuery = (id: string) =>
 
 export const useIntelligence = (id: string) => useQuery(intelligenceQuery(id));
 
-const myOrgsOf = (profile: IntelligenceProfile) => toMyOrgs(profile.memberships);
-
-/**
- * The organizations the viewer belongs to, with what they are in each (OMEM-03): the memberships of
- * their own profile, which lists every one of them, the personal one included. It shares the
- * profile's cache entry, so the settings page and this read cost one request.
- */
-export function useMyOrgs() {
-  const meId = useMe().data?.intelligence.id;
-  return useQuery({
-    ...intelligenceQuery(meId ?? ""),
-    enabled: meId !== undefined,
-    select: myOrgsOf,
-  });
-}
-
 /** The summary every list shows, taken from a full profile. */
 function refOfProfile(p: IntelligenceProfile): IntelligenceRef {
   return {
@@ -790,6 +795,288 @@ export function useRemoveAvatar(id: string) {
     },
   });
 }
+
+// ---------------------------------------------------------------------------------------------
+// Organizations: the viewer's own, and the members, positions, chart and invitations of each
+// (ORG-01, OMEM-01..07, POS-01..09, CHART-01..03)
+
+export const orgsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.orgs,
+    queryFn: () => api<List<Organization>>("GET", "/orgs").then(items),
+  });
+
+export const useOrgs = () => useQuery(orgsQuery());
+
+/**
+ * The organizations the viewer belongs to, with what they are in each (OMEM-03): `GET /orgs`
+ * lists every membership, guests and the personal organization included, by name.
+ */
+export const useMyOrgs = () => useQuery({ ...orgsQuery(), select: toMyOrgs });
+
+export const orgQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.org(id),
+    queryFn: () => api<Organization>("GET", `/orgs/${encodeURIComponent(id)}`),
+  });
+
+/** One organization as the viewer sees it; 404 for anyone who is not a member (CHART-02). */
+export const useOrg = (id: string) => useQuery(orgQuery(id));
+
+export const orgMembersQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.orgMembers(id),
+    queryFn: () =>
+      api<List<OrgMember>>("GET", `/orgs/${encodeURIComponent(id)}/members`).then(items),
+  });
+
+export const useOrgMembers = (id: string, enabled = true) =>
+  useQuery({ ...orgMembersQuery(id), enabled });
+
+export const orgChartQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.orgChart(id),
+    queryFn: () => api<OrgChart>("GET", `/orgs/${encodeURIComponent(id)}/chart`),
+  });
+
+/** The positions as a tree with their holders, and what the viewer may do about each (CHART-01, CHART-03). */
+export const useOrgChart = (id: string) => useQuery(orgChartQuery(id));
+
+/** The pending invitations of one organization; its admins only (OMEM-04). */
+export const useOrgInvitations = (id: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.orgInvitations(id),
+    queryFn: () =>
+      api<List<Invitation>>("GET", `/orgs/${encodeURIComponent(id)}/invitations`).then(items),
+    enabled,
+  });
+
+/** The invitations waiting for the viewer, and for the AIs they manage (OMEM-01). */
+export const useMyInvitations = () =>
+  useQuery({
+    queryKey: queryKeys.invitations,
+    queryFn: () => api<List<Invitation>>("GET", "/invitations").then(items),
+  });
+
+/**
+ * Marks stale everything a change of an organization can have changed (CHART-02): the viewer's
+ * organizations and, when one is named, all its pages (members, chart, invitations); the
+ * invitations waiting for them; their own profile, which lists their organizations; the contacts,
+ * which group the AIs by organization; and the conversations, whose DMs are filed under the
+ * organizations both sides share.
+ */
+export function invalidateOrganizations(qc: QueryClient, orgId?: string) {
+  if (orgId) {
+    qc.invalidateQueries({ queryKey: queryKeys.orgs, exact: true });
+    qc.invalidateQueries({ queryKey: queryKeys.org(orgId) });
+  } else {
+    qc.invalidateQueries({ queryKey: queryKeys.orgs });
+  }
+  qc.invalidateQueries({ queryKey: queryKeys.invitations });
+  const meId = qc.getQueryData<Me>(queryKeys.me)?.intelligence.id;
+  if (meId) qc.invalidateQueries({ queryKey: queryKeys.intelligence(meId), exact: true });
+  qc.invalidateQueries({ queryKey: queryKeys.contacts });
+  qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
+}
+
+/** The server's order for the viewer's organizations: by name, ignoring case, then by id. */
+function byName(a: Organization, b: Organization): number {
+  const [x, y] = [a.name.toLowerCase(), b.name.toLowerCase()];
+  if (x !== y) return x < y ? -1 : 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * An organization the server answered with: cached, and in the viewer's list at once, where the
+ * server will place it (the list is fetched again to confirm).
+ */
+function storeOrg(qc: QueryClient, org: Organization) {
+  qc.setQueryData(queryKeys.org(org.id), org);
+  qc.setQueryData<Organization[]>(
+    queryKeys.orgs,
+    (old) => old && [...old.filter((o) => o.id !== org.id), org].sort(byName),
+  );
+  qc.invalidateQueries({ queryKey: queryKeys.orgs, exact: true });
+}
+
+/** Creates an organization (ORG-01): the creator becomes its admin, holding the root position. */
+export function useCreateOrg() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: CreateOrganizationRequest) => api<Organization>("POST", "/orgs", req),
+    onSuccess: (org) => {
+      storeOrg(qc, org);
+      invalidateOrganizations(qc);
+    },
+  });
+}
+
+/** Renames an organization or changes its address (OMEM-04): 409 `conflict` for an address taken. */
+export function useUpdateOrg(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: UpdateOrganizationRequest) =>
+      api<Organization>("PATCH", `/orgs/${encodeURIComponent(id)}`, req),
+    onSuccess: (org) => {
+      storeOrg(qc, org);
+      qc.invalidateQueries({ queryKey: queryKeys.contacts });
+    },
+  });
+}
+
+/** Uploads the organization's picture: the file goes as the raw body; 422 `avatar_invalid`. */
+export function useUploadOrgAvatar(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (image: Blob) => {
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), AvatarUploadTimeoutMs);
+      try {
+        return await api<Organization>("PUT", `/orgs/${encodeURIComponent(id)}/avatar`, image, {
+          signal: abort.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    onSuccess: (org) => storeOrg(qc, org),
+  });
+}
+
+/** Removes the picture: the initials show again. */
+export function useRemoveOrgAvatar(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<void>("DELETE", `/orgs/${encodeURIComponent(id)}/avatar`),
+    onSuccess: () => {
+      qc.setQueryData<Organization>(queryKeys.org(id), (old) => {
+        if (!old) return old;
+        const { avatar_url: _removed, ...rest } = old;
+        return rest;
+      });
+      qc.invalidateQueries({ queryKey: queryKeys.org(id), exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.orgs, exact: true });
+    },
+  });
+}
+
+/**
+ * Deletes an empty organization (ORG-06). 409 `organization_not_empty` carries the counts of what
+ * it still owns in `ApiError.details`.
+ */
+export function useDeleteOrg() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>("DELETE", `/orgs/${encodeURIComponent(id)}`),
+    onSuccess: (_, id) => {
+      qc.removeQueries({ queryKey: queryKeys.org(id) });
+      qc.setQueryData<Organization[]>(queryKeys.orgs, (old) => old?.filter((o) => o.id !== id));
+      invalidateOrganizations(qc);
+    },
+  });
+}
+
+/** What changing the chart touches: the chart itself, and the position names the members list shows. */
+function refreshChart(qc: QueryClient, orgId: string) {
+  qc.invalidateQueries({ queryKey: queryKeys.orgChart(orgId) });
+  qc.invalidateQueries({ queryKey: queryKeys.orgMembers(orgId) });
+  qc.invalidateQueries({ queryKey: queryKeys.orgs, exact: true });
+}
+
+/** Adds a position under an optional parent (POS-01); an admin only. */
+export function useCreatePosition(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: CreatePositionRequest) =>
+      api<Position>("POST", `/orgs/${encodeURIComponent(orgId)}/positions`, req),
+    onSuccess: () => refreshChart(qc, orgId),
+  });
+}
+
+/** Renames a position or moves it under another; 409 `position_cycle` for a move that closes a loop (POS-02). */
+export function useUpdatePosition(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...req }: UpdatePositionRequest & { id: string }) =>
+      api<Position>("PATCH", `/orgs/${encodeURIComponent(orgId)}/positions/${id}`, req),
+    onSuccess: () => refreshChart(qc, orgId),
+  });
+}
+
+/** Deletes a position: its holders and child positions move to its parent (POS-09). */
+export function useDeletePosition(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<void>("DELETE", `/orgs/${encodeURIComponent(orgId)}/positions/${id}`),
+    onSuccess: () => refreshChart(qc, orgId),
+  });
+}
+
+/**
+ * Changes a member's permission (an admin only; 409 `last_admin` for the only admin, OMEM-05) or
+ * its position (POS-04: an admin to any, a manager to a position below its own).
+ */
+export function useUpdateOrgMember(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ iid, ...req }: UpdateOrgMemberRequest & { iid: string }) =>
+      api<OrgMember>("PATCH", `/orgs/${encodeURIComponent(orgId)}/members/${iid}`, req),
+    onSuccess: (_, { iid }) => {
+      refreshChart(qc, orgId);
+      qc.invalidateQueries({ queryKey: queryKeys.intelligence(iid), exact: true });
+    },
+  });
+}
+
+/** Invites an identity by @handle (OMEM-01); every member may invite guests, only admins more. */
+export function useInviteToOrg(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: CreateInvitationRequest) =>
+      api<Invitation>("POST", `/orgs/${encodeURIComponent(orgId)}/invitations`, req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.orgInvitations(orgId) }),
+  });
+}
+
+/** Withdraws a pending invitation of the organization; an admin only. */
+export function useRevokeInvitation(orgId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<void>("DELETE", `/orgs/${encodeURIComponent(orgId)}/invitations/${id}`),
+    onSuccess: (_, id) => {
+      qc.setQueryData<Invitation[]>(queryKeys.orgInvitations(orgId), (old) =>
+        old?.filter((i) => i.id !== id),
+      );
+      qc.invalidateQueries({ queryKey: queryKeys.orgInvitations(orgId) });
+    },
+  });
+}
+
+/**
+ * Answers an invitation (OMEM-02): the invited user, or whoever manages the invited AI. Answered,
+ * or gone because it expired (410, OMEM-07), it leaves the inbox at once; accepting also adds the
+ * organization to the viewer's.
+ */
+function useAnswerInvitation(verb: "accept" | "decline") {
+  const qc = useQueryClient();
+  const drop = (id: string) =>
+    qc.setQueryData<Invitation[]>(queryKeys.invitations, (old) => old?.filter((i) => i.id !== id));
+  return useMutation({
+    mutationFn: (id: string) => api<unknown>("POST", `/invitations/${id}/${verb}`),
+    onSuccess: (_, id) => {
+      drop(id);
+      if (verb === "accept") invalidateOrganizations(qc);
+    },
+    onError: (err, id) => {
+      if (isApiError(err) && (err.status === 410 || err.status === 404)) drop(id);
+    },
+  });
+}
+
+export const useAcceptInvitation = () => useAnswerInvitation("accept");
+export const useDeclineInvitation = () => useAnswerInvitation("decline");
 
 // ---------------------------------------------------------------------------------------------
 // Contacts: the AIs of the user's organizations and the ones they host, the other users and the
@@ -974,6 +1261,8 @@ export function useDeleteAgent() {
     mutationFn: (id: string) => api<void>("DELETE", `/agents/${id}`),
     onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: queryKeys.agents });
+      // The AI leaves the members and the chart of every organization it was in.
+      qc.invalidateQueries({ queryKey: queryKeys.orgs });
       // Gone from the flat lists at once; the server rebuilds the tree (TREE-06). The profile is
       // marked stale without a refetch: the page showing it is about to leave.
       qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withoutAI(old, id));
@@ -1008,10 +1297,14 @@ export function useRemoveFromOrg() {
   return useMutation({
     mutationFn: ({ orgId, iid }: { orgId: string; iid: string }) =>
       api<void>("DELETE", `/orgs/${orgId}/members/${iid}`),
-    onSuccess: (_, { iid }) => {
+    onSuccess: (_, { orgId, iid }) => {
       qc.invalidateQueries({ queryKey: queryKeys.intelligence(iid), exact: true });
       qc.invalidateQueries({ queryKey: queryKeys.contacts });
       qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
+      // The members and the chart of the organization lose it; leaving (iid is the viewer) also
+      // takes the organization out of the viewer's own list.
+      qc.invalidateQueries({ queryKey: queryKeys.orgs, exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.org(orgId) });
     },
   });
 }

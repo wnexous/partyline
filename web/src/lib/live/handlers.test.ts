@@ -33,7 +33,10 @@ import {
   makeMember,
   makeMembership,
   makeMessage,
+  makeOrg,
   makeOrgAIs,
+  makeOrgChart,
+  makeOrgMember,
   makePerson,
   makeProfile,
   makeRoom,
@@ -1005,6 +1008,60 @@ describe("live handlers", () => {
       qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
       changed();
       expect(stale(queryKeys.contacts)).toBe(true);
+    });
+
+    describe("the pages of the organization (T39)", () => {
+      function seedPages() {
+        seed();
+        qc.setQueryData(queryKeys.orgs, [makeOrg()]);
+        for (const id of ["o1", "o2"]) {
+          qc.setQueryData(queryKeys.org(id), makeOrg({ id }));
+          qc.setQueryData(queryKeys.orgMembers(id), [makeOrgMember()]);
+          qc.setQueryData(queryKeys.orgChart(id), makeOrgChart());
+          qc.setQueryData(queryKeys.orgInvitations(id), []);
+        }
+        qc.setQueryData(queryKeys.invitations, []);
+      }
+
+      it("refreshes the viewer's list of organizations", () => {
+        seedPages();
+        changed();
+        expect(stale(queryKeys.orgs)).toBe(true);
+      });
+
+      it("refreshes the organization itself, its members, its chart and its pending invitations", () => {
+        seedPages();
+        changed();
+        expect(stale(queryKeys.org("o1"))).toBe(true);
+        expect(stale(queryKeys.orgMembers("o1"))).toBe(true);
+        expect(stale(queryKeys.orgChart("o1"))).toBe(true);
+        expect(stale(queryKeys.orgInvitations("o1"))).toBe(true);
+      });
+
+      it("leaves the pages of every other organization alone", () => {
+        seedPages();
+        changed();
+        expect(stale(queryKeys.org("o2"))).toBe(false);
+        expect(stale(queryKeys.orgMembers("o2"))).toBe(false);
+        expect(stale(queryKeys.orgChart("o2"))).toBe(false);
+        expect(stale(queryKeys.orgInvitations("o2"))).toBe(false);
+      });
+
+      it("refreshes the invitations waiting for the viewer, which an admin may have withdrawn", () => {
+        seedPages();
+        changed();
+        expect(stale(queryKeys.invitations)).toBe(true);
+      });
+
+      it("does not refresh the pages when the changed resource is not an organization", () => {
+        seedPages();
+        handleLiveEvent(qc, actions(), {
+          type: "access.changed",
+          data: { resource_kind: "room", resource_id: "r1" },
+        });
+        expect(stale(queryKeys.orgs)).toBe(false);
+        expect(stale(queryKeys.orgChart("o1"))).toBe(false);
+      });
     });
   });
 });
