@@ -43,13 +43,13 @@ func (f *fixture) storedAgent(t *testing.T, id string) db.Agent {
 	return a
 }
 
-// legacy inserts an agent the way the v0.3 upgrade leaves it: with its intelligence and no
-// folder (unlinked, MIG-02).
+// legacy inserts an agent the way the v0.3 upgrade leaves it: with its intelligence, created by its owner
+// (OUPG-01) and no folder (unlinked, MIG-02).
 func (f *fixture) legacy(t *testing.T, owner authn.Principal, name, handle string) string {
 	t.Helper()
 	id := store.NewID()
-	f.exec(t, "INSERT INTO agents (id, owner_id, name, created_at, harness, machine) VALUES (?, ?, ?, ?, 'claude', 'old-host')",
-		id, owner.UserID, name, t0.UnixMilli())
+	f.exec(t, "INSERT INTO agents (id, owner_id, name, created_at, harness, machine, creator_iid) VALUES (?, ?, ?, ?, 'claude', 'old-host', ?)",
+		id, owner.UserID, name, t0.UnixMilli(), owner.UserID)
 	f.exec(t, "INSERT INTO intelligences (id, kind, display_name, handle, created_at, updated_at) VALUES (?, 'ai', ?, ?, ?, ?)",
 		id, name, handle, t0.UnixMilli(), t0.UnixMilli())
 	return id
@@ -438,6 +438,49 @@ func TestResolveFolderDoesNotAdoptWhenTheFolderAlreadyHasAnIdentity(t *testing.T
 	require.Equal(t, own.ID, a.ID)
 	require.Equal(t, "", f.storedAgent(t, old).Folder)
 	require.Equal(t, 0, f.adoptions(t, old))
+}
+
+// MIG-02, POS-06: only an unlinked identity the owner created is the owner's to adopt. The AIs a deleted account
+// leaves behind belong to the heir but were created by someone else (by nobody, once that account is gone), so
+// the heir's sessions never adopt them, however they are asked for. The creator is the only condition that
+// differs between the control and the others (L-042).
+func TestResolveFolderNeverAdoptsAnUnlinkedAIItsOwnerDidNotCreate(t *testing.T) {
+	asks := []struct {
+		name string
+		id   FolderID
+	}{
+		{"by the folder's handle", FolderID{Machine: "devbox", Folder: "/work/leftover"}},
+		{"by --as and the handle", FolderID{Machine: "devbox", Folder: "/work/elsewhere", Adopt: "leftover"}},
+		{"by --as and the v0.3 name", FolderID{Machine: "devbox", Folder: "/work/elsewhere", Adopt: "left-over"}},
+	}
+	for _, ask := range asks {
+		for _, creator := range []string{"the owner", "nobody", "another user"} {
+			t.Run(ask.name+", created by "+creator, func(t *testing.T) {
+				f := newFixture(t)
+				alice, bobby := f.user(t, "alice"), f.user(t, "bobby")
+				left := f.legacy(t, alice, "left-over", "leftover")
+				switch creator {
+				case "nobody":
+					f.exec(t, "UPDATE agents SET creator_iid = NULL WHERE id = ?", left)
+				case "another user":
+					f.exec(t, "UPDATE agents SET creator_iid = ? WHERE id = ?", bobby.UserID, left)
+				}
+
+				a, err := f.reg.ResolveFolder(context.Background(), alice.UserID, ask.id, true)
+				require.NoError(t, err)
+
+				if creator == "the owner" {
+					require.Equal(t, left, a.ID, "the control: the owner's own identity is adopted")
+					require.Equal(t, 1, f.adoptions(t, left))
+					return
+				}
+				require.NotEqual(t, left, a.ID, "a new AI, not the identity someone else created")
+				require.Equal(t, ask.id.Folder, a.Folder)
+				require.Equal(t, "", f.storedAgent(t, left).Folder, "it stays unlinked")
+				require.Equal(t, 0, f.adoptions(t, left))
+			})
+		}
+	}
 }
 
 // Concurrent resolves of one new folder create one identity (alloc lock).

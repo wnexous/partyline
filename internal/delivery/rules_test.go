@@ -78,23 +78,6 @@ func TestPlanExhaustive(t *testing.T) {
 	}
 }
 
-// DLV-06: trusted only when the author resolves to the recipient agent's owner.
-func TestTrusted(t *testing.T) {
-	cases := []struct {
-		authorUser, owner string
-		want              bool
-	}{
-		{"u-owner", "u-owner", true},  // the owner, the owner's agents or verified identities
-		{"u-other", "u-owner", false}, // a teammate or a teammate's agent
-		{"", "u-owner", false},        // unverified chat sender
-		{"", "", false},               // never trusted without a resolved author
-		{"u-owner", "", false},
-	}
-	for _, tc := range cases {
-		require.Equal(t, tc.want, Trusted(tc.authorUser, tc.owner), "author=%q owner=%q", tc.authorUser, tc.owner)
-	}
-}
-
 // DLV-08: the 25th consecutive agent message pauses agent delivery, reported once.
 func TestLoopGuardPausesAtTwentyFifthAgentMessage(t *testing.T) {
 	var g LoopGuard

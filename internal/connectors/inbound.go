@@ -26,12 +26,21 @@ const TruncatedMarker = "…[truncated]"
 // pairingCommand matches "!link CODE" and "/link CODE" (IDN-02), case-insensitively.
 var pairingCommand = regexp.MustCompile(`(?i)^\s*[!/]link\s+([A-Z2-9]{6})\s*$`)
 
+// Trust tells whether the identity manages the AI in the AI's home organization (POS-10, AD-018);
+// orgs.Authz is one.
+type Trust interface {
+	Trusts(ctx context.Context, managerIID, agentID string) (bool, error)
+}
+
 // PipelineDeps are the collaborators of the inbound Pipeline.
 type PipelineDeps struct {
 	Store      *store.Store
 	Bus        *events.Bus
 	Blobs      *attachments.Store
 	Identities *identities.Service
+	// Trust decides which senders are trusted: the user a sender resolves to must manage the operator AI
+	// in its home organization (POS-10). Without it no message is trusted (optional).
+	Trust Trust
 	// Queue takes the messages that pass the connection's filters, for the AI that operates it
 	// (AD-015).
 	Queue *platform.Queue
@@ -77,8 +86,8 @@ func NewPipeline(d PipelineDeps) *Pipeline {
 //  5. the connection's deliver setting drops the chats it excludes;
 //  6. mentions-only drops a group message that neither mentions the account nor replies to a
 //     message Partyline sent (CID-12);
-//  7. the sender is resolved to the operator's owner or not (CID-13), the media are stored as
-//     blobs and the message is queued for the operator, once (CID-26).
+//  7. the sender is resolved to a user who manages the operator or not (CID-13, POS-10), the media
+//     are stored as blobs and the message is queued for the operator, once (CID-26).
 //
 // Nothing becomes a message of a conversation, a person or a DM (CID-07). Failures are logged
 // without message content.
@@ -172,9 +181,10 @@ func (p *Pipeline) repliesToAccount(ctx context.Context, chatID, replyToID strin
 }
 
 // enqueue stores the media as blobs and queues the message for the connection's operator, once
-// (CID-26): a repeat downloads nothing and queues nothing. The sender is trusted only when it is
-// a verified account of the operator's owner on this connector, never the account's own typing
-// (CID-13, CID-14).
+// (CID-26): a repeat downloads nothing and queues nothing. The sender is trusted only when it is a
+// verified account, on this connector, of a user who manages the operator in its home organization,
+// never the account's own typing (CID-13, CID-14, POS-10). That is decided now and stored with the
+// event: a later change of the chart does not change the events already queued (AD-018).
 func (p *Pipeline) enqueue(ctx context.Context, src Source, conn db.Connector, chat db.Chat, m Inbound) error {
 	operator, err := p.d.Store.R().GetAgent(ctx, conn.OperatorIid.String)
 	if errors.Is(err, sql.ErrNoRows) { // the operator was deleted meanwhile: nobody to deliver to
@@ -188,7 +198,7 @@ func (p *Pipeline) enqueue(ctx context.Context, src Source, conn db.Connector, c
 	}
 	trusted := false
 	if !m.FromSelf {
-		if trusted, err = p.trusted(ctx, src, operator.OwnerID, m); err != nil {
+		if trusted, err = p.trusted(ctx, src, operator.ID, m); err != nil {
 			return err
 		}
 	}
@@ -206,11 +216,14 @@ func (p *Pipeline) enqueue(ctx context.Context, src Source, conn db.Connector, c
 	return err
 }
 
-// trusted tells whether the sender resolves, through this connector (AD-008), to owner, the user
-// who owns the operator AI (AD-006, CID-13).
-func (p *Pipeline) trusted(ctx context.Context, src Source, owner string, m Inbound) (bool, error) {
+// trusted tells whether the sender resolves, through this connector (AD-008), to a user who manages
+// the operator AI in the AI's home organization (CID-13, POS-10).
+func (p *Pipeline) trusted(ctx context.Context, src Source, operatorID string, m Inbound) (bool, error) {
 	user, err := p.d.Identities.ResolveSender(ctx, src.ConnectorID, m.SenderID, m.SenderAltID)
-	return user != "" && user == owner, err
+	if err != nil || user == "" || p.d.Trust == nil {
+		return false, err
+	}
+	return p.d.Trust.Trusts(ctx, user, operatorID)
 }
 
 // truncate cuts text longer than the message limit (dto.MaxTextLength code points) to that

@@ -1,5 +1,5 @@
 // Package delivery decides who receives a room message and runs the agent dispatcher. The rules
-// in this file are pure: Plan (DLV-01, DLV-02), Trusted (DLV-06) and LoopGuard (DLV-08, DLV-10).
+// in this file are pure: Plan (DLV-01, DLV-02) and LoopGuard (DLV-08, DLV-10). Trust (POS-10) is in trust.go.
 // A room delivers to intelligences only: chats are never members of a conversation and a room
 // sends nothing to a platform (CID-22).
 package delivery
@@ -35,12 +35,6 @@ func Plan(members []Member, msg Draft) []string {
 		agentIDs = append(agentIDs, m.ID)
 	}
 	return agentIDs
-}
-
-// Trusted reports whether a message is trusted by an agent (DLV-06, AD-006): only when the
-// author resolves to a user (authorUserID, filled at insert) who is the agent's owner.
-func Trusted(authorUserID, recipientOwnerID string) bool {
-	return authorUserID != "" && authorUserID == recipientOwnerID
 }
 
 // DefaultLoopLimit is the number of consecutive agent messages that pauses agent delivery.

@@ -42,7 +42,7 @@ func agentWant(manages, sees, hidden int) map[string]int {
 // Auth matrix for the agent management routes (ACL-05, ACL-07, ACL-08, POS-04, POS-05) over the
 // organization roles (AD-016): an AI is seen by the people of the organizations it belongs to and managed
 // by the identities above it in the chart; the others get 404. (Deleting an AI is covered with the
-// deletion rule, merging with the merge tests.)
+// deletion rule, in TestDeletingAnAIOfAnOrganization, merging with the merge tests.)
 func TestAgentRoutesAuthMatrix(t *testing.T) {
 	env := testkit.New(t)
 	roles := env.OrgRoles("acme")

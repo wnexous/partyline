@@ -170,6 +170,8 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	w := newMergeWorld(t)
 	shareAgent(w.alice, w.old, w.bob.User.ID)
 	shareAgent(w.alice, w.atlas, w.carol.User.ID)
+	// Bob also belongs to alice's organization, which is how his socket hears of the AIs she runs.
+	w.env.AddMember(w.alice.PersonalOrg().ID, w.bob.User.ID, orgs.PermissionMember, "")
 
 	ops, dev, ahead, solo := createRoom(w.alice, "ops"), createRoom(w.alice, "dev"), createRoom(w.alice, "ahead"), createRoom(w.alice, "solo")
 	bobs := createRoom(w.bob, "bobs")
@@ -209,7 +211,8 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	require.Equal(t, w.atlas, survivor.ID, "the answer is the AI that remains")
 
 	// Bob's socket hears that his group has a new member, that who may use the survivor changed and
-	// that the survivor's profile did.
+	// that the survivor's profile did. The organizations the merged AI belonged to are announced to
+	// their members before (T24, T32); bob belongs to two of them.
 	for {
 		var changed dto.RoomIDData
 		bobLive.Expect(dto.LiveEventTypeMembersChanged, &changed, connectortest.Timeout)
@@ -218,7 +221,9 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 		}
 	}
 	var access dto.AccessChangedData
-	bobLive.Expect(dto.LiveEventTypeAccessChanged, &access, connectortest.Timeout)
+	for access.ResourceKind != "agent" {
+		bobLive.Expect(dto.LiveEventTypeAccessChanged, &access, connectortest.Timeout)
+	}
 	require.Equal(t, dto.AccessChangedData{ResourceKind: "agent", ResourceID: w.atlas}, access)
 	var profile dto.IntelligenceRef
 	bobLive.Expect(dto.LiveEventTypeIntelligenceChanged, &profile, connectortest.Timeout)

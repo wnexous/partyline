@@ -10,7 +10,6 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
-	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/orgs"
@@ -110,19 +109,17 @@ func TestLiveRoomEventsFollowAccess(t *testing.T) {
 	carolLive.ExpectNone(quiet)
 }
 
-// LIVE-04: agent presence and connector status reach only users with access.
+// LIVE-04, CHART-02: agent presence and connector status reach only users who belong to the
+// organization of the AI or of the connection (and the AI's host); an outsider hears neither.
 func TestLiveStatusEventsReachUsersWithAccess(t *testing.T) {
 	env := testkit.New(t)
-	ctx := context.Background()
 	alice := env.NewUser("alice")
 	bob := env.NewUser("bob")
 	carol := env.NewUser("carol")
-	agent := storeAgent(t, env, alice.User.ID, "builder")
+	agent := env.NewAI(alice, "builder") // in alice's personal organization
 	conn, _ := storeChat(t, env, alice.User.ID, "group")
-	require.NoError(t, env.App.Access.SetVisibility(ctx, alice.User.ID, access.KindAgent, agent, alice.User.ID,
-		access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: bob.User.ID}}}))
-	require.NoError(t, env.App.Access.SetVisibility(ctx, alice.User.ID, access.KindConnector, conn, alice.User.ID,
-		access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: bob.User.ID}}}))
+	setConnectorOrg(t, env, conn, alice.PersonalOrg().ID)
+	env.AddMember(alice.PersonalOrg().ID, bob.User.ID, orgs.PermissionMember, "")
 
 	aliceLive, bobLive, carolLive := dialLive(t, alice), dialLive(t, bob), dialLive(t, carol)
 

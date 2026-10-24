@@ -158,7 +158,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | ORG-02 | P1: Organizations own resources | Tasks | Implementing |
 | ORG-03 | P1: Organizations own resources | Tasks | Implementing |
 | ORG-04 | P1: Organizations own resources | Tasks | Implementing |
-| ORG-05 | P1: Organizations own resources | Tasks | In Tasks |
+| ORG-05 | P1: Organizations own resources | Tasks | Implementing |
 | ORG-06 | P1: Organizations own resources | Tasks | Implementing |
 | ORG-07 | P1: Organizations own resources | Tasks | Implementing |
 | OMEM-01 | P1: Members and permissions | Tasks | Implementing |
@@ -174,9 +174,9 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | POS-03 | P1: Org chart of positions | Tasks | Implementing |
 | POS-04 | P1: Org chart of positions | Tasks | Implementing |
 | POS-05 | P1: Org chart of positions | Tasks | Implementing |
-| POS-06 | P1: Org chart of positions | Tasks | In Tasks |
-| POS-07 | P1: Org chart of positions | Tasks | In Tasks |
-| POS-08 | P1: Org chart of positions | Tasks | In Tasks |
+| POS-06 | P1: Org chart of positions | Tasks | Implementing |
+| POS-07 | P1: Org chart of positions | Tasks | Implementing |
+| POS-08 | P1: Org chart of positions | Tasks | Implementing |
 | POS-09 | P1: Org chart of positions | Tasks | Implementing |
 | POS-10 | P1: Org chart of positions | Tasks | Implementing |
 | CHART-01 | P1: Org chart view | Tasks | In Tasks |
@@ -184,7 +184,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | CHART-03 | P1: Org chart view | Tasks | In Tasks |
 | CHART-04 | P1: Org chart view | Tasks | In Tasks |
 | OUPG-01 | Edge cases | Tasks | Implementing |
-| OUPG-02 | Edge cases | Tasks | In Tasks |
+| OUPG-02 | Edge cases | Tasks | Implementing |
 
 **Coverage:** 31 total, 31 mapped to tasks.
 

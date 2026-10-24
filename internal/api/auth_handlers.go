@@ -19,6 +19,7 @@ func (s *server) authRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/v1/auth/logout", authed(s.logout))
 	s.handle(mux, "GET /api/v1/me", authed(s.getMe))
 	s.handle(mux, "PATCH /api/v1/me", authed(s.updateMe))
+	s.handle(mux, "DELETE /api/v1/me", authed(s.deleteMe))
 	s.handle(mux, "POST /api/v1/me/password", authed(s.changePassword))
 	s.handle(mux, "GET /api/v1/me/sessions", authed(s.listSessions))
 	s.handle(mux, "DELETE /api/v1/me/sessions/{id}", authed(s.deleteSession))
@@ -128,6 +129,21 @@ func (s *server) updateMe(w http.ResponseWriter, r *http.Request, p authn.Princi
 		return err
 	}
 	return s.writeMe(w, r, http.StatusOK, u)
+}
+
+// deleteMe deletes the caller's own account after checking their password (POS-06). Nobody deletes another
+// account: there is no id in the path.
+func (s *server) deleteMe(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	var req dto.DeleteAccountRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return err
+	}
+	if err := s.Users.DeleteAccount(r.Context(), p.UserID, req.Password); err != nil {
+		return err
+	}
+	s.clearSessionCookie(w)
+	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
 func (s *server) changePassword(w http.ResponseWriter, r *http.Request, p authn.Principal) error {

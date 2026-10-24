@@ -74,7 +74,8 @@ export interface AgentRoom {
 }
 /**
  * AgentMessage is a message delivered to an agent. Trusted is computed for the receiving
- * agent: true only when the author resolves to the agent's owner (DLV-06, AD-006).
+ * agent when the message is delivered: true only when its author manages the agent in the
+ * agent's home organization (POS-10, AD-018). Its owner, its other AIs and its peers do not.
  */
 export interface AgentMessage {
   room: RoomRef;
@@ -94,12 +95,13 @@ export interface RoomInfo {
    */
   instructions_by?: string;
   /**
-   * InstructionsTrusted is true only when that user is the calling agent's owner (INS-04).
+   * InstructionsTrusted is true only when that user manages the calling agent in the agent's
+   * home organization (INS-04, POS-10).
    */
   instructions_trusted: boolean;
   /**
-   * RoomTextTrusted is true only when the calling agent's owner created the room or last
-   * changed its name or description (INS-06).
+   * RoomTextTrusted is true only when whoever created the room or last changed its name or
+   * description manages the calling agent in the agent's home organization (INS-06, POS-10).
    */
   room_text_trusted: boolean;
   members: RoomMember[];
@@ -233,7 +235,8 @@ export interface AgentAckFrame {
  * receives it (CID-06): never a message of a Partyline conversation. ID is what the AI answers
  * with (reply); ChatID names the chat for send_message together with ConnectionID. A chat of
  * another connection, a message of the account itself (FromSelf) and a sender whose account is not
- * linked to the AI's owner are never trusted as the owner's (CID-13, CID-14).
+ * linked to a user who manages the AI in its home organization are never trusted (CID-13, CID-14,
+ * POS-10).
  */
 export interface PlatformEvent {
   id: string;
@@ -248,7 +251,9 @@ export interface PlatformEvent {
   sender_name: string;
   sender_id: string;
   /**
-   * Trusted is true only when the sender's account is linked to the AI's owner (AD-006).
+   * Trusted is true only when the sender's account is linked, through this connection, to a user
+   * who manages the AI in its home organization (POS-10, AD-018). It is decided when the message
+   * arrives.
    */
   trusted: boolean;
   /**
@@ -396,6 +401,24 @@ export const HeaderTakeover = "X-Partyline-Takeover";
  */
 export const HeaderAdopt = "X-Partyline-Adopt";
 /**
+ * HeaderOrg names the organization a new AI joins (--org, PARTYLINE_ORG): a slug or an id. Without
+ * it the AI joins its creator's default organization. An existing AI keeps its home organization
+ * and a different one is refused with organization_mismatch (ORG-04, AD-020).
+ */
+export const HeaderOrg = "X-Partyline-Org";
+/**
+ * HeaderPosition names the position the AI holds in its organization (--position,
+ * PARTYLINE_POSITION): the position's name, percent-encoded with url.PathEscape like the folder.
+ * Without it a new AI holds none (POS-07, AD-020).
+ */
+export const HeaderPosition = "X-Partyline-Position";
+/**
+ * HeaderParent names the AI that starts this one (--parent, PARTYLINE_PARENT): an @handle or an id.
+ * It counts when the token holder may act for that AI (their own, hosted on their machines);
+ * otherwise the token holder is the creator (POS-08, AD-020).
+ */
+export const HeaderParent = "X-Partyline-Parent";
+/**
  * HeaderFeatures lists, separated by commas, the optional features the client of the agent
  * WebSocket understands. FeaturePlatform opts in to platform events (CID-06): a session that
  * does not name it gets room messages only, and its platform queue waits (CID-10).
@@ -437,6 +460,18 @@ export const ErrorCodeUnavailable = "unavailable"; // 503, or 502 when a connect
 export const ErrorCodeHandleTaken = "handle_taken"; // 409, the @handle belongs to another intelligence
 export const ErrorCodeAvatarInvalid = "avatar_invalid"; // 422, the avatar is not an acceptable image
 /**
+ * ErrorCodeLastInstanceAdmin is the last active instance admin deleting their own account: an admin is
+ * needed to inherit the organizations they leave without one (409, OUPG-02).
+ */
+export const ErrorCodeLastInstanceAdmin = "last_instance_admin";
+/**
+ * ErrorCodeLastAdmin is a change that would leave an organization without an admin: the only admin
+ * leaving, or the only admin an AI is deleted from (409, OMEM-05). ErrorCodeHomeOrganization is an AI
+ * leaving the organization it belongs to: it is deleted there, never removed (409, POS-06).
+ */
+export const ErrorCodeLastAdmin = "last_admin";
+export const ErrorCodeHomeOrganization = "home_organization";
+/**
  * ErrorCodeNotOperator is an AI that sends through a connection it does not operate: only the
  * operator sends through it (403, CID-03). ErrorCodeUnknownChat is a chat that is not one of the
  * named connection's chats (404, CID-17).
@@ -455,6 +490,16 @@ export const ErrorCodeUnsupported = "unsupported";
  */
 export const ErrorCodeFolderRequired = "folder_required"; // 422
 export const ErrorCodeFolderInvalid = "folder_invalid"; // 422
+/**
+ * ErrorCodePositionUnknown is a start (--position) that names a position the organization does not
+ * have (422, field position, POS-07).
+ */
+export const ErrorCodePositionUnknown = "position_unknown";
+/**
+ * ErrorCodeOrganizationMismatch is a start of an existing AI with --org naming an organization other
+ * than its home: AIs do not move (409, Details name the home organization, ORG-04).
+ */
+export const ErrorCodeOrganizationMismatch = "organization_mismatch";
 /**
  * ErrorCodeIdentityBusy is a connection for an AI that has a live session in another
  * process (409); Details say who, in which app and since when (SES-04).
@@ -518,7 +563,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -534,7 +579,7 @@ export interface Error {
   fields?: { [key: string]: string};
   /**
    * Details carries facts about the refusal that are not request fields: for identity_busy the
-   * BusyDetail keys.
+   * BusyDetail keys, for organization_mismatch the MismatchDetail keys.
    */
   details?: { [key: string]: string};
   /**
@@ -551,6 +596,13 @@ export const BusyDetailConnectedAt = "connected_at";
  * the app of its live session and when that session connected (RFC 3339, UTC).
  */
 export type BusyDetail = typeof BusyDetailDisplayName | typeof BusyDetailApp | typeof BusyDetailAppLabel | typeof BusyDetailConnectedAt;
+export const MismatchDetailOrganization = "organization";
+export const MismatchDetailName = "organization_name";
+/**
+ * Keys of Error.Details for organization_mismatch: the slug (what --org takes) and the name of the
+ * organization the AI belongs to.
+ */
+export type MismatchDetail = typeof MismatchDetailOrganization | typeof MismatchDetailName;
 /**
  * List wraps an unpaginated collection.
  */
@@ -1185,6 +1237,17 @@ export interface ReadState {
 }
 
 //////////
+// source: delete_account.go
+
+/**
+ * DeleteAccountRequest is the body of DELETE /me: the current password proves it is the person who
+ * deletes their own account (POS-06).
+ */
+export interface DeleteAccountRequest {
+  password: string;
+}
+
+//////////
 // source: devices.go
 
 /**
@@ -1605,17 +1668,21 @@ export interface RoomIDData {
   room_id: string;
 }
 /**
- * LiveAccessChanged reports that sharing of a resource changed; refetch it.
+ * LiveAccessChanged reports that who may see a resource, or what an organization is, changed; refetch it.
  */
 export interface LiveAccessChanged {
   type: typeof LiveEventTypeAccessChanged;
   data: AccessChangedData;
 }
 /**
- * AccessChangedData names the resource whose grants changed.
+ * AccessChangedData names the resource whose visibility changed, or the organization that changed.
+ * An organization's members, and a member who has just left it, receive kind organization whenever
+ * something about it changes (its members, positions, chart or invitations) and look at it again; a member
+ * whose own standing in it changed (they joined, or their permission or position did) also receives one
+ * event per AI and connection of the organization, and one per group they gained or lost.
  */
 export interface AccessChangedData {
-  resource_kind: string; // room, agent or connector
+  resource_kind: string; // room, agent, connector or organization
   resource_id: string;
 }
 /**

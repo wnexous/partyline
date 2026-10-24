@@ -16,9 +16,11 @@ import (
 	"github.com/wnexous/partyline/internal/config"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/conversations"
+	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/devices"
 	"github.com/wnexous/partyline/internal/identities"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/users"
@@ -31,6 +33,8 @@ type Deps struct {
 	Users  *users.Service
 	Rooms  *rooms.Service
 	Agents *agents.Registry
+	// Orgs is the organization use cases: members, positions and invitations.
+	Orgs *orgs.Service
 	// Intelligences serves profiles of users, AIs and people.
 	Intelligences *intelligences.Service
 	// Conversations opens direct messages and creates groups.
@@ -59,6 +63,9 @@ type Deps struct {
 	AgentWS http.Handler
 	// Inbox serves GET /api/v1/agent/pending.
 	Inbox AgentInbox
+	// Trust opens the trust of each request that tells an AI what it may trust: the history tool and the
+	// room's instructions (POS-10). Without it nothing is trusted.
+	Trust delivery.TrustSource
 	// WebUI serves the web app for every other GET path (SPA fallback).
 	WebUI  http.Handler
 	Logger *slog.Logger
@@ -102,6 +109,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.contactRoutes(mux)
 	s.avatarRoutes(mux)
 	s.agentRoutes(mux)
+	s.identityDeleteRoutes(mux)
 	s.agentAPIRoutes(mux)
 	s.agentConversationRoutes(mux)
 	s.connectorRoutes(mux)
@@ -200,6 +208,12 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "revoke the token before deleting it")
 	case errors.Is(err, users.ErrSelfAdminChange), errors.Is(err, users.ErrLastAdmin):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, err.Error())
+	case errors.Is(err, users.ErrLastInstanceAdmin):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeLastInstanceAdmin, "you are the last active admin of this instance: make another user an admin first")
+	case errors.Is(err, orgs.ErrLastAdmin):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeLastAdmin, "an organization needs at least one admin: make someone else an admin first")
+	case errors.Is(err, orgs.ErrHomeOrganization):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHomeOrganization, "an AI cannot leave its home organization: ask an admin to delete it")
 	case errors.Is(err, agents.ErrNotRegistered):
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent not registered: connect the channel first")
 	case errors.Is(err, access.ErrNotFound):

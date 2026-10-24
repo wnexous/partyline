@@ -231,19 +231,7 @@ func (s *Service) Create(ctx context.Context, creatorIID, name string) (Membersh
 // Resolve finds an organization by id or by slug (what --org takes): the id wins, the slug ignores
 // case. An unknown reference is ErrNotFound; it says nothing about who may see the organization.
 func (s *Service) Resolve(ctx context.Context, ref string) (db.Organization, error) {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return db.Organization{}, ErrNotFound
-	}
-	q := s.store.R()
-	o, err := q.GetOrganization(ctx, ref)
-	if errors.Is(err, sql.ErrNoRows) {
-		o, err = q.GetOrganizationBySlug(ctx, ref)
-	}
-	if errors.Is(err, sql.ErrNoRows) {
-		return db.Organization{}, ErrNotFound
-	}
-	return o, err
+	return ResolveRef(ctx, s.store.R(), ref)
 }
 
 func membership(o db.Organization, permission, position string) Membership {

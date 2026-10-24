@@ -23,12 +23,14 @@ type AgentPusher interface {
 // MessageLoader renders a stored message as agents receive it.
 type MessageLoader func(ctx context.Context, messageID string) (dto.Message, error)
 
-// DispatcherOptions configure an AgentDispatcher; all fields but Logger are required.
+// DispatcherOptions configure an AgentDispatcher; all fields but Trust and Logger are required.
 type DispatcherOptions struct {
 	Store  *store.Store
 	Bus    *events.Bus
 	Agents AgentPusher
 	Load   MessageLoader
+	// Trust opens the trust of each dispatch (POS-10); without it no message is trusted.
+	Trust TrustSource
 	// Logger defaults to slog.Default().
 	Logger *slog.Logger
 }
@@ -38,7 +40,9 @@ const dispatcherBuffer = 1024
 
 // AgentDispatcher pushes every new room message to the online agents the delivery plan
 // targets (DLV-02) and whose delivery mode wants it (MEM-03, MEM-04), with a trusted flag
-// computed for each receiving agent (DLV-06). Rooms
+// computed for each receiving agent: true when the author manages it in its home organization
+// (POS-10), decided when the message is dispatched, with one read of each organization's chart for
+// the whole dispatch. Rooms
 // whose agent delivery is paused by the loop guard get no pushes (DLV-08). Offline agents
 // receive the message from their backlog when they reconnect.
 type AgentDispatcher struct {
@@ -130,12 +134,11 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 	if err != nil {
 		return err
 	}
+	trust := d.o.Trust.Open() // one for the dispatch: each home organization's chart is read once
 	for _, agentID := range pushes {
-		agent, err := q.GetAgent(ctx, agentID)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
-		if err != nil {
+		if _, err := q.GetAgent(ctx, agentID); errors.Is(err, sql.ErrNoRows) {
+			continue // deleted meanwhile
+		} else if err != nil {
 			return err
 		}
 		profile, err := IntelligenceOf(ctx, q, agentID)
@@ -143,10 +146,14 @@ func (d *AgentDispatcher) dispatch(ctx context.Context, e events.MessageCreated)
 			return err
 		}
 		m := memberRows[agentID]
-		if !facts.WantedBy(agentID, agent.OwnerID, Prefs(profile, m.DisplayName, m.Delivery, m.KeywordsJson)) {
+		wanted, trusted, err := facts.WantedBy(ctx, trust, agentID, Prefs(profile, m.DisplayName, m.Delivery, m.KeywordsJson))
+		if err != nil {
+			return err
+		}
+		if !wanted {
 			continue // MEM-03, MEM-04: stored, not pushed
 		}
-		d.o.Agents.Push(agentID, dto.AgentMessage{Room: refs.of(agentID), Trusted: Trusted(msg.AuthorUserID, agent.OwnerID), Message: msg})
+		d.o.Agents.Push(agentID, dto.AgentMessage{Room: refs.of(agentID), Trusted: trusted, Message: msg})
 	}
 	return nil
 }

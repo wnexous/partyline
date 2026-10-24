@@ -134,6 +134,22 @@ func (l *LiveConn) ExpectNone(d time.Duration, ignore ...dto.LiveEventType) {
 	}
 }
 
+// Drain returns the frames that arrive within d, in order. Nothing arriving is not a failure: it is how a
+// test reads everything an event made the server send, or checks which frames a socket did not get.
+func (l *LiveConn) Drain(d time.Duration) []Frame {
+	l.T.Helper()
+	var out []Frame
+	deadline := time.Now().Add(d)
+	for {
+		f, err := l.read(time.Until(deadline))
+		if err != nil {
+			require.True(l.T, errors.Is(err, context.DeadlineExceeded), "read: %v", err)
+			return out
+		}
+		out = append(out, f)
+	}
+}
+
 // Closed waits up to timeout for the server to close the connection and returns the close
 // error (nil when still open).
 func (l *LiveConn) Closed(timeout time.Duration) error { return l.s.closed(timeout) }

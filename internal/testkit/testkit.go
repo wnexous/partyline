@@ -12,6 +12,7 @@ package testkit
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -249,6 +250,11 @@ func (e *Env) NewLegacyAI(owner *Client, name string) string {
 	id := store.NewID()
 	require.NoError(e.T, e.App.Store.WithTx(ctx, func(q *db.Queries) error {
 		if err := q.CreateAgent(ctx, db.CreateAgentParams{ID: id, OwnerID: owner.User.ID, Name: name, CreatedAt: time.Now().UnixMilli()}); err != nil {
+			return err
+		}
+		// The upgrade made every v0.3 owner the creator of their agents (OUPG-01): only such an identity is
+		// the owner's to adopt (MIG-02).
+		if err := q.SetAgentCreator(ctx, db.SetAgentCreatorParams{CreatorIid: sql.NullString{String: owner.User.ID, Valid: true}, ID: id}); err != nil {
 			return err
 		}
 		_, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: id, Kind: handles.AI, DisplayName: name, HandleBase: name, Now: time.Now()})
