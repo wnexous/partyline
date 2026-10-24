@@ -221,10 +221,15 @@ SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
        CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
-       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar
+       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar,
+       CAST(COALESCE(o.name, '') AS TEXT) AS org_name,
+       CAST(COALESCE(o.slug, '') AS TEXT) AS org_slug,
+       CAST(COALESCE(mc.home, '') AS TEXT) AS machine_home
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN intelligences i ON i.id = a.id
 LEFT JOIN intelligences ui ON ui.id = u.id
+LEFT JOIN organizations o ON o.id = a.org_id
+LEFT JOIN machines mc ON mc.owner_id = a.owner_id AND mc.hostname = a.machine
 WHERE a.id = ?
 `
 
@@ -235,8 +240,12 @@ type GetAgentWithOwnerRow struct {
 	Handle           string
 	ProfileName      string
 	ProfileAvatar    string
+	OrgName          string
+	OrgSlug          string
+	MachineHome      string
 }
 
+// An AI with its host, profile, home organization and the home folder of the host's machine it lives on.
 func (q *Queries) GetAgentWithOwner(ctx context.Context, id string) (GetAgentWithOwnerRow, error) {
 	row := q.db.QueryRowContext(ctx, getAgentWithOwner, id)
 	var i GetAgentWithOwnerRow
@@ -260,6 +269,9 @@ func (q *Queries) GetAgentWithOwner(ctx context.Context, id string) (GetAgentWit
 		&i.Handle,
 		&i.ProfileName,
 		&i.ProfileAvatar,
+		&i.OrgName,
+		&i.OrgSlug,
+		&i.MachineHome,
 	)
 	return i, err
 }
@@ -770,10 +782,15 @@ SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
        CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
-       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar
+       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar,
+       CAST(COALESCE(o.name, '') AS TEXT) AS org_name,
+       CAST(COALESCE(o.slug, '') AS TEXT) AS org_slug,
+       CAST(COALESCE(mc.home, '') AS TEXT) AS machine_home
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN intelligences i ON i.id = a.id
 LEFT JOIN intelligences ui ON ui.id = u.id
+LEFT JOIN organizations o ON o.id = a.org_id
+LEFT JOIN machines mc ON mc.owner_id = a.owner_id AND mc.hostname = a.machine
 WHERE a.owner_id = ?1
    OR a.id IN (SELECT y.iid FROM org_members x JOIN org_members y ON y.org_id = x.org_id
                WHERE x.iid = ?1)
@@ -787,6 +804,9 @@ type ListVisibleAgentsRow struct {
 	Handle           string
 	ProfileName      string
 	ProfileAvatar    string
+	OrgName          string
+	OrgSlug          string
+	MachineHome      string
 }
 
 // The AIs a user sees (AD-016): those hosted on their computers and those of the organizations they
@@ -820,6 +840,9 @@ func (q *Queries) ListVisibleAgents(ctx context.Context, userID string) ([]ListV
 			&i.Handle,
 			&i.ProfileName,
 			&i.ProfileAvatar,
+			&i.OrgName,
+			&i.OrgSlug,
+			&i.MachineHome,
 		); err != nil {
 			return nil, err
 		}

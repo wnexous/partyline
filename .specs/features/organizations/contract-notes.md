@@ -829,3 +829,41 @@ Where a section refines the design, it says so.
   a DM with an AI; a DM sharing none, filed under each side's own default which is not the first organization; `GET /rooms/{id}`
   and `GET /rooms`; after the colleague left one), `TestRoomChangedFrameCarriesTheOrganizations` (the frame rendered for each
   socket), and the `room.changed` case of the web live handlers.
+
+## T57: Machines become internal (ORG-02)
+
+- **Removed**: `PUT /api/v1/machines/{hostname}` and `GET /api/v1/agent/contacts/tree` answer 404 `not_found` (an agent token on the
+  first is still refused by TOK-03, 403, like on any non-agent path); the DTOs `AgentContactsTree`, `MachineTree`, `TreeNode`,
+  `Machine` and `SetMachineLabelRequest`; `intelligences.OwnAIs` (the machine tree and its `Rows`), `SetMachineLabel`,
+  `MaxMachineLabel`, and `tree.go` with `BuildTree` / `BuildMachines` and their tests. `segmentsUnder` and `splitPath`, which
+  `FolderLabel` needs, moved to `label.go`; the package comment moved to `service.go`.
+- **Kept**: the `machines` table with its queries (`ListMachines`, `GetMachine`, `UpsertMachine`, `SetMachineLabel`: the label
+  is a dead column, AD-012, and the store schema test still writes it), `X-Partyline-Machine`, and `FolderLabel`, which reads
+  `~` against the home folder the host's machine reported. `dto.Agent.machine` (the session's hostname) is still on
+  `GET /agents`; nothing in the product shows it.
+- **`dto.Agent` gains** `organization` (`{id, name, slug}`: `dto.ContactOrg`, the compact organization of the contacts, now shared;
+  absent for an AI with no home organization), `folder` and `folder_label` (`""` for an AI without a folder). They are on every
+  route that renders an agent - `GET /agent/agents`, `GET /agents`, `GET /agents/{id}` - because `toAgent` is shared, which
+  `TestOwnerAgentsForAgentTokens` keeps equal. `folder_label` is not in the design's one-line description of the route, but
+  `partyline agents` cannot print `~` without it, and nothing else on the agent API knows the host's home folder.
+  `ListVisibleAgents` and `GetAgentWithOwner` join the organization and the host's `machines` row (`agents.Agent.OrgName`,
+  `OrgSlug`, `Home`).
+- **`partyline agents` is rewritten here (T58's behaviour)**: it read the removed tree, so leaving it would ship a command that
+  prints "the server answered 404". It now reads `GET /agent/agents` (the AIs the token's user hosts) and prints them grouped by
+  organization: organizations by name (case-insensitive), a heading that is the name plus ` (address)` when the address differs
+  from the name, the AIs of a group by name, rows `marker name`, `@handle`, app, state, folder label in tab-aligned columns
+  with trailing empty columns dropped, and the AIs without an organization last under `No organization`; no hostname anywhere.
+  The empty message and the exit codes are unchanged (a failing or unreachable server is exit 1 with the reason on stderr,
+  L-045). T58's "Done when" is covered by `TestAgentsPrintsTheHostedAIsByOrganization`, `TestAgentsOrdersTheOrganizationsByName`
+  and `TestAgentsFailsWhenTheServerFails`; the Phase 7 worker should confirm that and extend rather than redo it
+  (`internal/cli/agents.go`, `agents_test.go` and the `partyline agents` section of `docs/agents.md` are the shared files).
+- **Docs**: the `partyline agents` section of `docs/agents.md` and the lines of README / README.pt-BR that describe the command
+  and the Contacts page are corrected. What still talks about "Unlinked" and "Shared with me" (the Contacts section and the
+  v0.3 upgrade paragraph of `docs/agents.md`, the upgrade notes of the README) is left to T55.
+- **Web**: `makeAgent` carries an organization and a folder; the Playwright test of the contacts page now asserts organization
+  sections and no machine (`first run` + that test pass on `desktop-1280`; the rest of the suite fails on grants - the UI-04 test
+  shares a room with `PUT /rooms/{id}/sharing` - which T54 reworks).
+- **Tests**: `TestMachineRoutesAreRetired` (both routes 404 for the callers that used them, nothing stored, the machine row
+  stays), `TestAgentAgentsListsTheHostedAIsWithTheirOrganization` (home organizations, `~` labels, the legacy AI without either,
+  not the AIs an organization shows from other hosts, other hosts list their own, 403/401), the CLI tests above; the machine label
+  and machine tree tests, and `tree_test.go`, are gone with the behaviour.

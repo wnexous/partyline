@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
-	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -108,20 +108,6 @@ func aiNames(list []dto.AIContact) []string {
 	out := make([]string, len(list))
 	for i, a := range list {
 		out[i] = a.Intelligence.DisplayName
-	}
-	return out
-}
-
-// shape renders a tree as "Path › Name" lines indented by depth.
-func shape(nodes []dto.TreeNode, depth int) []string {
-	var out []string
-	for _, n := range nodes {
-		label := n.Name
-		if n.Path != "" {
-			label = n.Path + " › " + n.Name
-		}
-		out = append(out, strings.Repeat("  ", depth)+label+" = "+n.AI.Intelligence.DisplayName)
-		out = append(out, shape(n.Children, depth+1)...)
 	}
 	return out
 }
@@ -336,14 +322,6 @@ func TestContactsOfOtherUsersHoldOnlyTheirOrganizationsData(t *testing.T) {
 	f.alice.Token(dto.TokenKindAgent, "laptop").Get("/api/v1/contacts/people?connector_id="+f.conn.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 }
 
-func hostnames(ms []dto.MachineTree) []string {
-	out := make([]string, len(ms))
-	for i, m := range ms {
-		out[i] = m.Hostname
-	}
-	return out
-}
-
 // Disabled users are not contacts.
 func TestContactsLeaveOutDisabledUsers(t *testing.T) {
 	f := newContactsFixture(t)
@@ -361,77 +339,57 @@ func TestContactsListHostedAIsByName(t *testing.T) {
 	require.Equal(t, []string{"alpha-helper", "Beta-helper", "old-helper", "zeta-helper"}, aiNames(contactsOf(t, f.alice).Hosted))
 }
 
-// TREE-04: the owner labels a machine (1 to 64 characters; empty resets it), the label is the owner's own, and
-// its refusals are observable at their status (L-017). The label is shown nowhere any more (AD-022): the
-// contacts and the profiles carry no machine, and T57 retires the route; what is left to observe is the answer
-// and the stored label.
-func TestMachineLabel(t *testing.T) {
+// ORG-02, AD-022 (T57): GET /agent/agents lists each AI the token's user hosts with its home organization and
+// its folder as the host's home folder reads it (`~`, `~/x`, or the absolute path outside it), and never an AI of
+// somebody else that an organization shares; an AI without an organization or a folder says neither.
+func TestAgentAgentsListsTheHostedAIsWithTheirOrganization(t *testing.T) {
 	f := newContactsFixture(t)
-	put := func(c *testkit.Client, host, label string) *testkit.Response {
-		return c.Put("/api/v1/machines/"+url.PathEscape(host), dto.SetMachineLabelRequest{Label: label})
-	}
-	stored := func(owner *testkit.Client, host string) string {
-		t.Helper()
-		m, err := f.env.App.Store.R().GetMachine(context.Background(), db.GetMachineParams{OwnerID: owner.User.ID, Hostname: host})
-		require.NoError(t, err)
-		return m.Label
-	}
-
-	got := testkit.Decode[dto.Machine](put(f.alice, "devbox", "  Alice's desk  ").RequireStatus(http.StatusOK))
-	require.Equal(t, dto.Machine{Hostname: "devbox", Label: "Alice's desk"}, got, "the label is trimmed")
-	require.Equal(t, "Alice's desk", stored(f.alice, "devbox"))
-
-	longest := strings.Repeat("é", 64) // 64 code points, 128 bytes
-	require.Equal(t, longest, testkit.Decode[dto.Machine](put(f.alice, "devbox", longest).RequireStatus(http.StatusOK)).Label)
-	err := put(f.alice, "devbox", longest+"x").RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-	require.Contains(t, err.Fields, "label")
-	require.Equal(t, longest, stored(f.alice, "devbox"), "a refused label changes nothing")
-
-	require.Equal(t, dto.Machine{Hostname: "devbox"}, testkit.Decode[dto.Machine](put(f.alice, "devbox", "").RequireStatus(http.StatusOK)), "empty resets")
-	require.Empty(t, stored(f.alice, "devbox"))
-	put(f.alice, "devbox", "Desk").RequireStatus(http.StatusOK)
-	put(f.alice, "devbox", " \t ").RequireStatus(http.StatusOK)
-	require.Empty(t, stored(f.alice, "devbox"), "a blank label resets too")
-
-	// Another owner's machine and an unknown one are 404; bob's machine of the same name would be his own.
-	put(f.bob, "devbox", "Mine now").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	put(f.alice, "no-such-machine", "x").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	put(f.alice, "bobs-pc", "x").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	require.Empty(t, stored(f.alice, "devbox"))
-	f.env.Anon().Put("/api/v1/machines/devbox", dto.SetMachineLabelRequest{Label: "x"}).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
-	f.alice.Token(dto.TokenKindAgent, "laptop").Put("/api/v1/machines/devbox", dto.SetMachineLabelRequest{Label: "x"}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	f.alice.Do(http.MethodPut, "/api/v1/machines/devbox", "not an object").RequireStatus(http.StatusBadRequest)
-
-	// Two owners may have a machine of the same hostname: each labels their own.
-	aiAt(t, f.env, f.bob, "Twin", "twin", "devbox", "/home/bob/twin", "/home/bob", "claude")
-	put(f.bob, "devbox", "Bob's devbox").RequireStatus(http.StatusOK)
-	require.Empty(t, stored(f.alice, "devbox"))
-	require.Equal(t, "Bob's devbox", stored(f.bob, "devbox"))
-}
-
-// TREE-07 (data): the agent route returns the token owner's own AIs as machines and unlinked
-// ones, with no folder headers and no AI needed; sessions and user tokens are refused.
-func TestAgentContactsTree(t *testing.T) {
-	f := newContactsFixture(t)
-	f.alice.Put("/api/v1/machines/notebook", dto.SetMachineLabelRequest{Label: "Work laptop"}).RequireStatus(http.StatusOK)
+	globex := f.env.OrgRoles("globex")
+	f.env.AddMember(globex.Org.ID, f.alice.User.ID, orgs.PermissionMember, "")
+	rover := aiAtIn(t, f.env, f.alice, globex.Org.ID, "Rover", "rover", "devbox", "/srv/rover", "/home/alice", "claude")
+	home := f.alice.PersonalOrg()
 	tok := f.alice.Token(dto.TokenKindAgent, "laptop")
 
-	tree := testkit.Decode[dto.AgentContactsTree](tok.Get("/api/v1/agent/contacts/tree").RequireStatus(http.StatusOK))
-	require.Equal(t, []string{"devbox", "notebook"}, hostnames(tree.Machines))
-	require.Equal(t, "Work laptop", tree.Machines[1].Label)
-	require.Equal(t, []string{"atlas = Atlas", "  notes = Notes", "c/d › lab = Lab"}, shape(tree.Machines[0].Nodes, 0))
-	require.True(t, tree.Machines[0].Nodes[0].AI.Online)
-	require.Equal(t, []string{"old-helper"}, aiNames(tree.Unlinked))
+	list := testkit.Decode[dto.List[dto.Agent]](tok.Get("/api/v1/agent/agents").RequireStatus(http.StatusOK)).Items
+	byID := map[string]dto.Agent{}
+	for _, a := range list {
+		byID[a.ID] = a
+	}
+	require.Len(t, list, len(byID), "each AI once")
+	require.ElementsMatch(t, []string{f.atlas, f.notes, f.lab, f.dev, f.old, rover}, slices.Collect(maps.Keys(byID)),
+		"the AIs alice hosts: not Bobby, not Globex's own AI that her membership shows her")
 
-	bobTree := testkit.Decode[dto.AgentContactsTree](f.bob.Token(dto.TokenKindAgent, "desktop").Get("/api/v1/agent/contacts/tree").RequireStatus(http.StatusOK))
-	require.Equal(t, []string{"bobs-pc"}, hostnames(bobTree.Machines), "the owner's own AIs only: not alice's, not shared ones")
-	empty := testkit.Decode[dto.AgentContactsTree](f.dave.Token(dto.TokenKindAgent, "laptop").Get("/api/v1/agent/contacts/tree").RequireStatus(http.StatusOK))
-	require.NotNil(t, empty.Machines)
-	require.NotNil(t, empty.Unlinked)
-	require.Empty(t, empty.Machines)
+	want := func(id string, org *dto.ContactOrg, folder, label string) {
+		t.Helper()
+		got := byID[id]
+		require.Equal(t, org, got.Organization, got.Intelligence.DisplayName)
+		require.Equal(t, folder, got.Folder, got.Intelligence.DisplayName)
+		require.Equal(t, label, got.FolderLabel, got.Intelligence.DisplayName)
+	}
+	personal := &dto.ContactOrg{ID: home.ID, Name: home.Name, Slug: home.Slug}
+	line := &dto.ContactOrg{ID: f.line, Name: "line", Slug: "line"} // the fixture made Atlas, to operate the connection, in "line"
+	want(f.atlas, line, "/home/alice/atlas", "~/atlas")
+	want(f.notes, personal, "/home/alice/atlas/notes", "~/atlas/notes")
+	want(f.lab, personal, "/home/alice/c/d/lab", "~/c/d/lab")
+	want(f.dev, personal, "/home/alice", "~")
+	want(rover, &dto.ContactOrg{ID: globex.Org.ID, Name: globex.Org.Name, Slug: globex.Org.Slug}, "/srv/rover", "/srv/rover")
+	want(f.old, nil, "", "") // a v0.3 identity: no organization until the upgrade places it, and no folder
 
-	f.alice.Get("/api/v1/agent/contacts/tree").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	f.env.Anon().Get("/api/v1/agent/contacts/tree").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	// The same rows, with the same organization, are the ones GET /agents shows the user.
+	for _, a := range testkit.Decode[dto.List[dto.Agent]](f.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items {
+		if mine, ok := byID[a.ID]; ok {
+			require.Equal(t, mine, a)
+		}
+	}
+	// Another host lists their own.
+	bobs := testkit.Decode[dto.List[dto.Agent]](f.bob.Token(dto.TokenKindAgent, "desktop").Get("/api/v1/agent/agents").RequireStatus(http.StatusOK)).Items
+	require.ElementsMatch(t, []string{f.bobby, f.secret}, agentIDs(bobs))
+	empty := testkit.Decode[dto.List[dto.Agent]](f.dave.Token(dto.TokenKindAgent, "laptop").Get("/api/v1/agent/agents").RequireStatus(http.StatusOK))
+	require.NotNil(t, empty.Items, "an empty list, not null")
+	require.Empty(t, empty.Items)
+
+	f.alice.Get("/api/v1/agent/agents").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	f.env.Anon().Get("/api/v1/agent/agents").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }
 
 // writeAs makes one new sender per name write in chat X, a second apart, with account ids from

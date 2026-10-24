@@ -142,6 +142,11 @@ type Agent struct {
 	Handle        string
 	ProfileName   string
 	ProfileAvatar string
+	// OrgName and OrgSlug name the AI's home organization; empty when it has none.
+	OrgName, OrgSlug string
+	// Home is the home folder of the host's machine the AI lives on, as the machine reported it; empty
+	// when unknown. It lets a folder read "~/x".
+	Home string
 	// Level is manage for whoever manages the agent in an organization they share with it, use for
 	// whoever only sees it.
 	Level access.Level
@@ -235,7 +240,9 @@ func (r *Registry) Get(ctx context.Context, p authn.Principal, agentID string) (
 	if err != nil {
 		return Agent{}, err
 	}
-	return r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, row.ProfileAvatar, l), nil
+	a := r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, row.ProfileAvatar, l)
+	a.OrgName, a.OrgSlug, a.Home = row.OrgName, row.OrgSlug, row.MachineHome
+	return a, nil
 }
 
 func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, handle, profileName, profileAvatar string, l access.Level) Agent {
@@ -266,7 +273,9 @@ func (r *Registry) ListVisible(ctx context.Context, p authn.Principal) ([]Agent,
 		if managed[row.Agent.ID] {
 			l = dto.LevelManage
 		}
-		out = append(out, r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, row.ProfileAvatar, l))
+		a := r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, row.ProfileAvatar, l)
+		a.OrgName, a.OrgSlug, a.Home = row.OrgName, row.OrgSlug, row.MachineHome
+		out = append(out, a)
 	}
 	return out, nil
 }

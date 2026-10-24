@@ -840,9 +840,9 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `retired_routes_test.go`
 **Requirement**: ORG-02
 **Done when**:
-- [ ] e2e: both removed routes → 404 (retired routes test); `/agent/agents` lists each hosted AI with its organization; folder labels still show `~`
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] e2e: both removed routes → 404 (retired routes test); `/agent/agents` lists each hosted AI with its organization; folder labels still show `~`
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `refactor(api): stop exposing machines`

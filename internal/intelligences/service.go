@@ -1,3 +1,4 @@
+// Package intelligences holds AI profiles, their visibility, the contacts of a user and the labels of folders.
 package intelligences
 
 import (

@@ -27,44 +27,15 @@ type OrgAIs struct {
 	AIs []AIContact `json:"ais"`
 }
 
-// ContactOrg names an organization in the contacts.
+// ContactOrg names an organization in compact form: in the contacts, and as the home of an AI of the
+// agents list.
 type ContactOrg struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Slug string `json:"slug"`
 }
 
-// AgentContactsTree is GET /agent/contacts/tree, the data of `partyline agents` (TREE-07): the
-// token owner's own AIs. It goes with the machines in T57 (AD-022).
-type AgentContactsTree struct {
-	Machines []MachineTree `json:"machines"`
-	Unlinked []AIContact   `json:"unlinked"`
-}
-
-// MachineTree is one machine with the AIs that live on it (TREE-01).
-type MachineTree struct {
-	Hostname string `json:"hostname"`
-	// Label is the owner's name for the machine (TREE-04), else the hostname.
-	Label string `json:"label"`
-	// Online tells whether any AI of the machine is online.
-	Online bool       `json:"online"`
-	Nodes  []TreeNode `json:"nodes"`
-}
-
-// TreeNode is one AI in a machine's folder tree. An AI whose folder is inside another AI's
-// folder is that AI's child; folders between two AIs that hold no AI collapse into Path
-// (TREE-02). Render "Path › Name" when Path is not empty, else Name.
-type TreeNode struct {
-	AI AIContact `json:"ai"`
-	// Path is the collapsed chain of folders before the node ("c/d"), empty when there is none;
-	// a top-level node outside the home folder starts with "/".
-	Path string `json:"path"`
-	// Name is the folder's own label: its last element, "~" for the home folder, "/" for the root.
-	Name     string     `json:"name"`
-	Children []TreeNode `json:"children"`
-}
-
-// AIContact is an AI as the contacts page and `partyline agents` list it (TREE-03).
+// AIContact is an AI as the contacts page lists it (TREE-03).
 type AIContact struct {
 	Intelligence IntelligenceRef `json:"intelligence"`
 	// Owner is the user who hosts the AI, set when it is another user than the caller.
@@ -95,16 +66,3 @@ const (
 	// MaxPeopleSearch is the longest search text in code points.
 	MaxPeopleSearch = 100
 )
-
-// Machine is a machine of the caller after its label changed.
-type Machine struct {
-	Hostname string `json:"hostname"`
-	// Label is the owner's name for the machine; empty shows the hostname (TREE-04).
-	Label string `json:"label"`
-}
-
-// SetMachineLabelRequest is the body of PUT /machines/{hostname}: a label of 1 to 64 characters,
-// or an empty one to show the hostname again (TREE-04).
-type SetMachineLabelRequest struct {
-	Label string `json:"label"`
-}

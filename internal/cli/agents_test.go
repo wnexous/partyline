@@ -5,13 +5,13 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/agents"
-	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/intelligences"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -48,17 +48,38 @@ func (e *channelEnv) seenAgo(t *testing.T, id string, ago time.Duration) {
 	}))
 }
 
-// TREE-07: `partyline agents` prints the owner's AIs as a machine › folder tree, machines in
-// the TREE-03 order, two spaces per level, online markers, tab-aligned columns (name with the
-// collapsed path, handle, app, state and folder) and the unlinked identities last.
-func TestAgentsPrintsTheMachineTree(t *testing.T) {
+// newOrg makes an organization alice administers.
+func (e *channelEnv) newOrg(t *testing.T, name string) db.Organization {
+	t.Helper()
+	created, err := e.env.App.Orgs.Create(context.Background(), e.alice.User.ID, name)
+	require.NoError(t, err)
+	return created.Organization
+}
+
+// aiIn is aiOn for an AI whose home is the organization: alice's default is that organization while it is made,
+// and her personal one again afterwards.
+func (e *channelEnv) aiIn(t *testing.T, orgID, machine, folder, home, harness, name, handle string) db.Agent {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, e.env.App.Orgs.SetDefault(ctx, e.alice.User.ID, orgID))
+	a := e.aiOn(t, machine, folder, home, harness, name, handle)
+	require.NoError(t, e.env.App.Orgs.SetDefault(ctx, e.alice.User.ID, e.alice.PersonalOrg().ID))
+	return a
+}
+
+// ORG-02, AD-022 (T57): `partyline agents` prints the AIs the token's user hosts grouped by organization, the
+// organizations by name, each AI on a line in tab-aligned columns (online marker, name, handle, app, state and
+// the folder as `~` reads it) by name, and an AI that has no organization last. An organization whose address
+// differs from its name shows it. No machine is named anywhere: not the hostname of the computer an AI lives on,
+// and not a folder tree.
+func TestAgentsPrintsTheHostedAIsByOrganization(t *testing.T) {
 	e := newChannelEnv(t)
+	acme := e.newOrg(t, "Acme Corp")
 	atlas := e.aiOn(t, "devbox", "/home/alice/atlas", "/home/alice", "claude", "Atlas", "atlas")
 	notes := e.aiOn(t, "devbox", "/home/alice/atlas/notes", "/home/alice", "opencode", "Notes", "notes")
-	lab := e.aiOn(t, "devbox", "/home/alice/c/d/lab", "/home/alice", "codex", "Lab", "lab")
 	dev := e.aiOn(t, "notebook", "/home/alice", "/home/alice", "claude", "Dev", "dev")
+	lab := e.aiIn(t, acme.ID, "devbox", "/srv/lab", "/home/alice", "codex", "Lab", "lab")
 	e.legacy(t, "Old helper")
-	e.alice.Put("/api/v1/machines/devbox", dto.SetMachineLabelRequest{Label: "Studio"}).RequireStatus(http.StatusOK)
 	e.seenAgo(t, notes.ID, 2*time.Hour)
 	e.seenAgo(t, lab.ID, 3*24*time.Hour)
 	e.seenAgo(t, dev.ID, 5*24*time.Hour)
@@ -69,16 +90,39 @@ func TestAgentsPrintsTheMachineTree(t *testing.T) {
 	conn.Welcome(chanWait)
 	require.Eventually(t, func() bool { return e.env.App.Presence.Online(atlas.ID) }, chanWait, 20*time.Millisecond)
 
+	require.Equal(t, "alice", e.alice.PersonalOrg().Name, "the personal organization is named for its address")
 	code, out, errOut := runAgents(e.vars())
 	require.Equal(t, 0, code, errOut)
-	require.Equal(t, `Studio (devbox)
-  ● Atlas      @atlas  Claude Code  online  ~/atlas
-    ○ Notes    @notes  OpenCode     2h ago  ~/atlas/notes
-  ○ c/d › Lab  @lab    Codex        3d ago  ~/c/d/lab
-notebook
-  ○ Dev  @dev  Claude Code  5d ago  ~
-Unlinked
-  ○ Old helper  @old-helper
+	require.Equal(t, `Acme Corp (acme-corp)
+  ○ Lab  @lab  Codex  3d ago  /srv/lab
+alice
+  ● Atlas  @atlas  Claude Code  online  ~/atlas
+  ○ Dev    @dev    Claude Code  5d ago  ~
+  ○ Notes  @notes  OpenCode     2h ago  ~/atlas/notes
+No organization
+  ○ Old helper  @old-helper  Agent
+`, out)
+	for _, machine := range []string{"devbox", "notebook"} {
+		require.NotContains(t, out, machine, "no machine is named")
+	}
+}
+
+// ORG-02 (T57): the organizations come by name whatever the order they were made or the AIs came in, ignoring
+// case; the AIs of one organization by name.
+func TestAgentsOrdersTheOrganizationsByName(t *testing.T) {
+	e := newChannelEnv(t)
+	zeta, alpha := e.newOrg(t, "Zeta Labs"), e.newOrg(t, "alpha")
+	e.aiIn(t, zeta.ID, "devbox", "/srv/z2", "/home/alice", "claude", "Zoe", "zoe")
+	e.aiIn(t, zeta.ID, "devbox", "/srv/z1", "/home/alice", "claude", "adam", "adam")
+	e.aiIn(t, alpha.ID, "devbox", "/srv/a", "/home/alice", "claude", "Ann", "ann")
+
+	code, out, errOut := runAgents(e.vars())
+	require.Equal(t, 0, code, errOut)
+	require.Equal(t, `alpha
+  ○ Ann  @ann  Claude Code    /srv/a
+Zeta Labs (zeta-labs)
+  ○ adam  @adam  Claude Code    /srv/z1
+  ○ Zoe   @zoe   Claude Code    /srv/z2
 `, out)
 }
 
@@ -122,4 +166,42 @@ func TestAgentsNeedsCredentials(t *testing.T) {
 	code, _, errOut = runAgents(map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": "pl_agent_wrong"})
 	require.Equal(t, 1, code)
 	require.Contains(t, errOut, "partyline agents: the server answered 401")
+}
+
+// ORG-02 (T57, L-045): a server that fails, or that cannot be reached, is a non-zero exit with the reason on stderr
+// and nothing on stdout; a server of an older release that has no such route says so the same way.
+func TestAgentsFailsWhenTheServerFails(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		status int
+		want   string
+	}{
+		{"an internal error", http.StatusInternalServerError, "partyline agents: the server answered 500: boom"},
+		{"an unknown route", http.StatusNotFound, "partyline agents: the server answered 404: not found"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/api/v1/agent/agents", r.URL.Path, "the command reads the agents list")
+				msg := "boom"
+				if c.status == http.StatusNotFound {
+					msg = "not found"
+				}
+				w.WriteHeader(c.status)
+				_, _ = w.Write([]byte(`{"error":{"code":"x","message":"` + msg + `"}}`))
+			}))
+			defer srv.Close()
+			code, out, errOut := runAgents(map[string]string{"PARTYLINE_URL": srv.URL, "PARTYLINE_TOKEN": "pl_agent_x"})
+			require.Equal(t, 1, code)
+			require.Empty(t, out)
+			require.Equal(t, c.want+"\n", errOut)
+		})
+	}
+
+	gone := httptest.NewServer(http.NotFoundHandler())
+	url := gone.URL
+	gone.Close()
+	code, out, errOut := runAgents(map[string]string{"PARTYLINE_URL": url, "PARTYLINE_TOKEN": "pl_agent_x"})
+	require.Equal(t, 1, code)
+	require.Empty(t, out)
+	require.Equal(t, "partyline agents: cannot reach "+url+"\n", errOut)
 }

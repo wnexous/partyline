@@ -8,6 +8,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/intelligences"
 )
 
 // agentRoutes are the management endpoints of agents for users (sessions or user tokens).
@@ -22,16 +23,21 @@ func (s *server) agentRoutes(mux *http.ServeMux) {
 }
 
 func toAgent(a agents.Agent) dto.Agent {
-	return dto.Agent{
+	out := dto.Agent{
 		ID: a.ID,
 		Intelligence: dto.IntelligenceRef{
 			ID: a.ID, Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI,
 			DisplayName: a.ProfileName, Handle: a.Handle, AvatarURL: convert.AvatarURL(a.ID, a.ProfileAvatar),
 		},
 		Description: a.Description, Harness: a.Harness, Machine: a.Machine,
+		Folder: a.Folder, FolderLabel: intelligences.FolderLabel(a.Home, a.Folder),
 		Owner:   dto.User{ID: a.OwnerID, Username: a.OwnerUsername, DisplayName: a.OwnerDisplayName},
 		MyLevel: a.Level, Online: a.Online, LastSeenAt: convert.OptTime(a.LastSeenAt), CreatedAt: convert.Time(a.CreatedAt),
 	}
+	if a.OrgID.Valid {
+		out.Organization = &dto.ContactOrg{ID: a.OrgID.String, Name: a.OrgName, Slug: a.OrgSlug}
+	}
+	return out
 }
 
 func (s *server) listAgents(w http.ResponseWriter, r *http.Request, p authn.Principal) error {

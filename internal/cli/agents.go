@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -19,8 +20,8 @@ import (
 // agentsTimeout bounds the request of `partyline agents`.
 const agentsTimeout = 15 * time.Second
 
-// agentsCmd runs `partyline agents`: it prints the AIs of the token's owner as one machine ›
-// folder tree with online markers (TREE-07).
+// agentsCmd runs `partyline agents`: it prints the AIs the token's user hosts, grouped by the
+// organization they belong to, with online markers (CLI-02, ORG-02). Machines are not shown (AD-022).
 func agentsCmd(ctx context.Context, args []string, io stdio) int {
 	fs := flag.NewFlagSet("agents", flag.ContinueOnError)
 	fs.SetOutput(io.stderr)
@@ -38,89 +39,133 @@ func agentsCmd(ctx context.Context, args []string, io stdio) int {
 		fmt.Fprintln(io.stderr, "partyline agents: set PARTYLINE_URL and PARTYLINE_TOKEN (or --url and --token), or run partyline setup")
 		return 2
 	}
-	tree, err := fetchAgentTree(ctx, creds)
+	list, err := fetchHostedAgents(ctx, creds)
 	if err != nil {
 		fmt.Fprintln(io.stderr, "partyline agents:", err)
 		return 1
 	}
-	if len(tree.Machines) == 0 && len(tree.Unlinked) == 0 {
+	if len(list) == 0 {
 		fmt.Fprintln(io.stdout, "No AIs yet: start a session with partyline claude")
 		return 0
 	}
-	printAgentTree(io.stdout, tree, time.Now())
+	printAgents(io.stdout, list, time.Now())
 	return 0
 }
 
-func fetchAgentTree(ctx context.Context, creds cliconfig.Config) (dto.AgentContactsTree, error) {
+// fetchHostedAgents reads the AIs the token's user hosts from GET /api/v1/agent/agents.
+func fetchHostedAgents(ctx context.Context, creds cliconfig.Config) ([]dto.Agent, error) {
 	ctx, cancel := context.WithTimeout(ctx, agentsTimeout)
 	defer cancel()
-	u := strings.TrimRight(creds.URL, "/") + "/api/v1/agent/contacts/tree"
+	u := strings.TrimRight(creds.URL, "/") + "/api/v1/agent/agents"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return dto.AgentContactsTree{}, err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+creds.Token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return dto.AgentContactsTree{}, fmt.Errorf("cannot reach %s", creds.URL)
+		return nil, fmt.Errorf("cannot reach %s", creds.URL)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		var body dto.ErrorBody
 		if json.NewDecoder(resp.Body).Decode(&body) == nil && body.Error.Message != "" {
-			return dto.AgentContactsTree{}, fmt.Errorf("the server answered %d: %s", resp.StatusCode, body.Error.Message)
+			return nil, fmt.Errorf("the server answered %d: %s", resp.StatusCode, body.Error.Message)
 		}
-		return dto.AgentContactsTree{}, fmt.Errorf("the server answered %d", resp.StatusCode)
+		return nil, fmt.Errorf("the server answered %d", resp.StatusCode)
 	}
-	var tree dto.AgentContactsTree
-	if err := json.NewDecoder(resp.Body).Decode(&tree); err != nil {
-		return dto.AgentContactsTree{}, fmt.Errorf("unexpected answer: %w", err)
+	var list dto.List[dto.Agent]
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, fmt.Errorf("unexpected answer: %w", err)
 	}
-	return tree, nil
+	return list.Items, nil
 }
 
-// printAgentTree writes each machine with its AIs as a folder tree and the unlinked identities
-// last, two spaces per level and tab-aligned columns (TREE-07).
-func printAgentTree(out io.Writer, tree dto.AgentContactsTree, now time.Time) {
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	for _, m := range tree.Machines {
-		fmt.Fprintln(w, machineTitle(m))
-		printTreeNodes(w, m.Nodes, 0, now)
+// agentGroup is the AIs of one organization, as `partyline agents` prints them.
+type agentGroup struct {
+	org    *dto.ContactOrg // nil for the AIs that have no organization
+	agents []dto.Agent
+}
+
+// groupAgents groups the AIs by their home organization, the organizations by name and the AIs that
+// have none last, each group's AIs by name.
+func groupAgents(list []dto.Agent) []agentGroup {
+	byOrg := map[string]*agentGroup{}
+	var groups []*agentGroup
+	for _, a := range list {
+		id := ""
+		if a.Organization != nil {
+			id = a.Organization.ID
+		}
+		g, ok := byOrg[id]
+		if !ok {
+			g = &agentGroup{org: a.Organization}
+			byOrg[id] = g
+			groups = append(groups, g)
+		}
+		g.agents = append(g.agents, a)
 	}
-	if len(tree.Unlinked) > 0 {
-		fmt.Fprintln(w, "Unlinked")
-		for _, a := range tree.Unlinked {
-			fmt.Fprintf(w, "  %s %s\t%s\n", onlineMark(a.Online), a.Intelligence.DisplayName, handle(a))
+	slices.SortStableFunc(groups, func(a, b *agentGroup) int {
+		switch {
+		case a.org == nil && b.org == nil:
+			return 0
+		case a.org == nil:
+			return 1
+		case b.org == nil:
+			return -1
+		}
+		if c := strings.Compare(strings.ToLower(a.org.Name), strings.ToLower(b.org.Name)); c != 0 {
+			return c
+		}
+		return strings.Compare(a.org.ID, b.org.ID)
+	})
+	out := make([]agentGroup, len(groups))
+	for i, g := range groups {
+		slices.SortStableFunc(g.agents, func(a, b dto.Agent) int {
+			if c := strings.Compare(strings.ToLower(a.Intelligence.DisplayName), strings.ToLower(b.Intelligence.DisplayName)); c != 0 {
+				return c
+			}
+			return strings.Compare(a.ID, b.ID)
+		})
+		out[i] = *g
+	}
+	return out
+}
+
+// orgTitle is the heading of a group: the organization's name, with its address in parentheses when the
+// name is not already the address.
+func orgTitle(o *dto.ContactOrg) string {
+	switch {
+	case o == nil:
+		return "No organization"
+	case o.Slug == "" || strings.EqualFold(o.Name, o.Slug):
+		return o.Name
+	}
+	return o.Name + " (" + o.Slug + ")"
+}
+
+// printAgents writes each organization with the AIs it holds, two spaces in, in tab-aligned columns:
+// online marker and name, handle, app, state and the folder as `~` reads it (CLI-02). Trailing empty
+// columns are left out, so an AI without a folder has no trailing spaces.
+func printAgents(out io.Writer, list []dto.Agent, now time.Time) {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	for _, g := range groupAgents(list) {
+		fmt.Fprintln(w, orgTitle(g.org))
+		for _, a := range g.agents {
+			cells := []string{
+				"  " + onlineMark(a.Online) + " " + a.Intelligence.DisplayName,
+				handle(a), appLabel(a.Harness), seenState(a, now), a.FolderLabel,
+			}
+			for len(cells) > 1 && cells[len(cells)-1] == "" {
+				cells = cells[:len(cells)-1]
+			}
+			fmt.Fprintln(w, strings.Join(cells, "\t"))
 		}
 	}
 	_ = w.Flush()
 }
 
-// printTreeNodes writes the nodes of one machine level by level, indenting each level by two
-// more spaces; online AIs and their last seen fill the state column.
-func printTreeNodes(w io.Writer, nodes []dto.TreeNode, depth int, now time.Time) {
-	for _, n := range nodes {
-		name := n.AI.Intelligence.DisplayName
-		if n.Path != "" {
-			name = n.Path + " › " + name
-		}
-		fmt.Fprintf(w, "%s%s %s\t%s\t%s\t%s\t%s\n",
-			strings.Repeat("  ", depth+1), onlineMark(n.AI.Online), name, handle(n.AI),
-			appLabel(n.AI.App), seenState(n.AI, now), n.AI.FolderLabel)
-		printTreeNodes(w, n.Children, depth+1, now)
-	}
-}
-
-// machineTitle is the machine's label, or its hostname when it has none, with the hostname in
-// parentheses when a label is set.
-func machineTitle(m dto.MachineTree) string {
-	if m.Label == "" || m.Label == m.Hostname {
-		return m.Hostname
-	}
-	return m.Label + " (" + m.Hostname + ")"
-}
-
-// onlineMark is the tree's online marker.
+// onlineMark is the online marker of a line.
 func onlineMark(online bool) string {
 	if online {
 		return "●"
@@ -129,7 +174,7 @@ func onlineMark(online bool) string {
 }
 
 // handle is the @handle column; an AI without a handle leaves it empty.
-func handle(a dto.AIContact) string {
+func handle(a dto.Agent) string {
 	if a.Intelligence.Handle == "" {
 		return ""
 	}
@@ -146,7 +191,7 @@ func appLabel(app string) string {
 }
 
 // seenState is "online", the relative last seen, or empty for an AI never seen.
-func seenState(a dto.AIContact, now time.Time) string {
+func seenState(a dto.Agent, now time.Time) string {
 	if a.Online {
 		return "online"
 	}

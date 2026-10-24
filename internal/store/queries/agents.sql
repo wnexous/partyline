@@ -8,14 +8,20 @@ SELECT * FROM agents WHERE id = ?;
 SELECT COUNT(*) FROM agents WHERE owner_id = ?;
 
 -- name: GetAgentWithOwner :one
+-- An AI with its host, profile, home organization and the home folder of the host's machine it lives on.
 SELECT sqlc.embed(a), u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
        CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
-       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar
+       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar,
+       CAST(COALESCE(o.name, '') AS TEXT) AS org_name,
+       CAST(COALESCE(o.slug, '') AS TEXT) AS org_slug,
+       CAST(COALESCE(mc.home, '') AS TEXT) AS machine_home
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN intelligences i ON i.id = a.id
 LEFT JOIN intelligences ui ON ui.id = u.id
+LEFT JOIN organizations o ON o.id = a.org_id
+LEFT JOIN machines mc ON mc.owner_id = a.owner_id AND mc.hostname = a.machine
 WHERE a.id = ?;
 
 -- name: ListAgentsForUser :many
@@ -39,10 +45,15 @@ SELECT sqlc.embed(a), u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
        CAST(COALESCE(i.handle, '') AS TEXT) AS handle,
        CAST(COALESCE(i.display_name, '') AS TEXT) AS profile_name,
-       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar
+       CAST(COALESCE(i.avatar_sha256, '') AS TEXT) AS profile_avatar,
+       CAST(COALESCE(o.name, '') AS TEXT) AS org_name,
+       CAST(COALESCE(o.slug, '') AS TEXT) AS org_slug,
+       CAST(COALESCE(mc.home, '') AS TEXT) AS machine_home
 FROM agents a JOIN users u ON u.id = a.owner_id
 LEFT JOIN intelligences i ON i.id = a.id
 LEFT JOIN intelligences ui ON ui.id = u.id
+LEFT JOIN organizations o ON o.id = a.org_id
+LEFT JOIN machines mc ON mc.owner_id = a.owner_id AND mc.hostname = a.machine
 WHERE a.owner_id = sqlc.arg(user_id)
    OR a.id IN (SELECT y.iid FROM org_members x JOIN org_members y ON y.org_id = x.org_id
                WHERE x.iid = sqlc.arg(user_id))
