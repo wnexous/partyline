@@ -2265,8 +2265,8 @@ Rewrite `authmatrix_test.go` on `OrgRoles`.
 **Reuses**: `e2e/fixtures.ts`
 **Requirement**: CHART-01, CHART-04, ORG-01, OMEM-02
 **Done when**:
-- [ ] `make e2e` passes in both projects
-- [ ] Gate check passes: `make check`
+- [x] `make e2e` passes in both projects
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(web): cover the organization flow end to end`

@@ -2263,3 +2263,46 @@ Both prove each point:
 - `DELETE /api/v1/me` by the last admin makes the instance admin an admin of her organization (OUPG-02).
 
 The coordinator finished the task after the worker stopped mid-task. Both tests passed on 2026-10-24, the real-binary one against v0.5.0.
+
+## T54: Playwright organization flow (ORG-01, POS-01, POS-07, OMEM-01, OMEM-02, CHART-01 to CHART-04)
+
+`make e2e` runs 17 tests at each viewport (desktop-1280 and mobile-360), 34 runs, all passing, with parallel workers and with `--workers=1`.
+Run it with `PLAYWRIGHT_CHROMIUM_EXECUTABLE=$HOME/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell`.
+
+- **`web/e2e/orgs.spec.ts`** (new, serial, 7 tests per project; Alice is the instance admin, Bob joins by an invite of hers):
+  1. *ORG-01*: Alice creates "Acme" from `/orgs`; the list shows its address `acme`, her `Admin` badge and `Current`, the switcher is named "Organization: Acme",
+     and the chart API shows one root position "Admin" held by her.
+  2. *POS-01*: on the positions page she adds Director under Admin, Lead developer under Director and Worktrees under Lead developer, each typed into the inline
+     field and saved with Enter; the chart API has them in that tree.
+  3. *OMEM-01, OMEM-02*: with the chart open (live socket subscribed) she invites Bob from the members page of a second tab as a member holding Lead developer;
+     the pending list shows him. In a second browser context Bob sees the invitation with its sentence ("Alice invited you to Acme as a member."), the position and
+     what it grants ("Identities above Lead developer will manage you."), accepts, and Acme joins his list. Alice's chart shows Bob at level 4 **without a reload**
+     (the same document, `access.changed` of kind `organization`), and her pending list loses him.
+  4. *POS-07, CHART-01*: an AI registered with `X-Partyline-Org: acme` and `X-Partyline-Position: Worktrees` (what `partyline claude --org acme --position Worktrees` sends)
+     holds Worktrees. The chart is a `tree` named "Org chart of Acme" whose `treeitem`s read, with their `aria-level`, `Admin 1, Alice 2, Director 2, Lead developer 3, Bob 4,
+     Worktrees 4, Atlas 5`; `aria-expanded` only on what holds others; `aria-posinset` / `aria-setsize`; each row's name, `@handle`, Person or AI, the Admin badge and "You".
+     Presence is live: the AI reads Offline, then Online when its agent WebSocket opens (`openSession`), then Offline when it closes; people show none.
+  5. *CHART-04*: one `tabindex=0` item, Tab from "Edit positions" lands on it, Down / Up / Home / End, Left closes and keeps the focus, Right opens and then goes inside,
+     Left on a leaf goes to its parent, Enter closes and opens; the page's `scrollWidth <= clientWidth`.
+  6. *CHART-02, CHART-03*: Bob reads the same seven items; he has no "Edit positions" link and no Positions tab; he holds Lead developer above Worktrees, so he is offered
+     "Move Atlas" and nothing else: no "Delete Atlas" (he is not an admin) and no "Remove ... from Acme".
+  7. *CHART-04 (L-009)*: with a 58-character position name and an AI whose folder name is 81 characters, neither with a place to break, `/orgs`, the chart, the members, the
+     positions and the settings pages have `scrollWidth <= clientWidth` at 1280 and 360 px.
+- **The file has its own server** (`orgs` worker fixture, `baseURL` follows it) instead of `instance`: the first-run test of `smoke.spec.ts` needs an instance nobody has set
+  up, and two files of one project can share a worker, so with `--workers=1` (what a small CI runner does) they would share the worker's `instance` too.
+- **UI-04 repaired** (`smoke.spec.ts`): it shared the room with `PUT /rooms/{id}/sharing`, which has answered 404 since T22/T51, and stopped the serial file, so 16 runs did
+  not execute. It now makes the member join the organization that owns the group (invitation by handle, accepted in the member's own context) and the group
+  (`POST /rooms/{id}/members`). The assertions are unchanged. `make e2e` before the repair: 2 failed, 16 did not run.
+- **Real bug found and fixed: the members table widened the page at 1280 px.** A member with a long name or position that has no place to break made the
+  auto-layout table wider than the window (`scrollWidth` 1752 at 1280 px, `members.tsx`). From `xl` the table now has fixed columns that add up to 100%
+  (30 / 16 / 20 / 16 / 18), so a name is cut with an ellipsis and a position or an inviter wraps (`[overflow-wrap:anywhere]`) inside its own column. The stacked rows
+  below `xl` were already fine at 360 px.
+- **Helpers** moved from `smoke.spec.ts` to `web/e2e/helpers.ts` so both files share them: `loginAs`, `trackLive`, `isMobile`, `connectAI` (now with an optional placement:
+  `org`, `position`, `parent` as the CLI sends them; the token's name is cut to the 64 characters the API accepts), `agentCall`, `agentJSON`, and new `openSession` (the agent
+  WebSocket with the folder headers, opened as a plain HTTP upgrade and resolved at the server's first frame, the welcome: the global `WebSocket` of Node takes
+  no request headers before Node 22, and the runner's Node is not pinned) and `expectNoSidewaysScroll` (`documentElement.scrollWidth <=
+  clientWidth`; a failure lists the elements that stick out). `fixtures.ts` gains the `Credentials` type.
+- **Mutations that the new tests kill** (checked by hand against the built binary): every treeitem a tab stop (test 5), `access.changed` of an organization ignored (test 3),
+  the Delete button shown whatever `can_delete` says and "Edit positions" shown to every member (test 6), and the members table without fixed columns (test 7).
+- **Not covered here on purpose**: the web unit tests already pin the chart's keyboard model, the dialogs and the flags row by row; the Playwright tests prove them in a
+  real browser against the real server, which is what happy-dom cannot see.

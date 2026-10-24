@@ -1,8 +1,14 @@
 import { type APIRequestContext, test as base, expect } from "@playwright/test";
 import { type Instance, startInstance } from "./server";
 
-export const ADMIN = { username: "admin", password: "e2e-admin-password" };
-export const MEMBER = { username: "member", password: "e2e-member-password" };
+/** What logging in takes. */
+export interface Credentials {
+  username: string;
+  password: string;
+}
+
+export const ADMIN: Credentials = { username: "admin", password: "e2e-admin-password" };
+export const MEMBER: Credentials = { username: "member", password: "e2e-member-password" };
 
 /** One fresh server per worker; a worker runs a single project, so each viewport gets its own. */
 export const test = base.extend<object, { instance: Instance }>({
