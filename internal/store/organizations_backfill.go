@@ -202,8 +202,9 @@ func (b *orgBackfill) groupMembers(ctx context.Context) error {
 	return nil
 }
 
-// consumeGrants: sharing is organization membership from now on (AD-016); the grants table stays
-// until 0020 drops it.
+// consumeGrants: sharing is organization membership from now on (AD-016). Every grant has become a
+// membership by now; the table is emptied here and 0020, which runs right after this hook in the same
+// transaction, drops it.
 func (b *orgBackfill) consumeGrants(ctx context.Context) error {
 	_, err := b.tx.ExecContext(ctx, `DELETE FROM grants`)
 	return err

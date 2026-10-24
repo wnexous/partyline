@@ -1261,9 +1261,9 @@ Rewrite `authmatrix_test.go` on `OrgRoles`.
 **Reuses**: `openMigratedBefore`
 **Requirement**: OUPG-01
 **Done when**:
-- [ ] Store test: the table is gone after migrating; 0019 and 0020 apply in one transaction from 0018 (a failure in 0020 rolls back 0019)
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] Store test: the table is gone after migrating; 0019 and 0020 apply in one transaction from 0018 (a failure in 0020 rolls back 0019)
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): drop the grants table`

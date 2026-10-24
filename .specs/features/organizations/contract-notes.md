@@ -1931,3 +1931,25 @@ Sharing is organization membership and nothing else (AD-016). Every path that wr
 - **Stale outside `internal/` and `web/`, for T54 and T55**: README.md (lines 32, 332 "Grants", 363 `dm_no_sharing`), README.pt-BR.md (369 and the
   same sections), `docs/agents.md` (383, 436, 537 and the "Shared with me" / "Share" paragraphs), PRODUCT.md (47), and `web/e2e/smoke.spec.ts:192`, which
   still shares a room with `PUT /rooms/{id}/sharing`.
+
+## T52: Migration 0020 drops grants (OUPG-01)
+
+- **File**: `internal/store/migrations/0020_drop_grants.sql`: `DROP INDEX grants_subject; DROP TABLE grants;` (the automatic index of the primary key goes with
+  the table). Nothing references the table - before 0020 the only objects whose definition names it are the table and `grants_subject` - so nothing else
+  is touched, and no Go hook is needed.
+- **One transaction with 0019.** `Store.Migrate` applies every pending file, with its hook, and commits once: a v0.5 database goes through 0019, its hook
+  (which turns the grants into memberships and empties the table) and 0020 together. A failure in 0020 rolls back 0019, its hook and its version row
+  (`TestMigrations0019And0020ApplyInOneTransaction`, snapshot-equal to the v0.5 database, grants included; the next start migrates it in full).
+- **One way.** The upgrade cannot be undone by the file: a database that went through 0020 has no `grants` table, so a v0.5 binary (which reads it) fails on
+  it. Like 0015, 0016 and 0018 it is a one-way upgrade. Release notes (T55) should tell people to copy the database file before the first start of this version.
+- **Generated**: `db.Grant` is gone from `internal/store/db/models.go` (`make generate`).
+- **Tests**: `TestMigration0020DropsTheGrantsTable` (the table, both indexes and every object naming it are gone; before 0020 exactly the table and its index name
+  it), `TestMigration0020ChangesNothingButTheGrantsTable` (on the v0.5 fixture with a row still in the table: the snapshot after 0020 is the one before
+  minus the table, its indexes and its row), `TestMigrations0019And0020ApplyInOneTransaction` (a failing 0020, built with `overlayMigration`).
+- **Tests adapted (the isolation pattern)**: a test whose subject is 0019 stops before 0020 so that it can still read the table: the backfill test of the
+  grants (`MigrateBefore("0020")`), the "schema step alone" test of 0019 (`migrationsBefore("0020")`). `TestUpgradeV03KeepsEveryRow` counts `grants` among the
+  tables the upgrade drops (a local list, `droppedTables` is the 0018 test's), `TestMigrateCreatesEveryDesignTable` moves it from the tables that must exist to the
+  ones that must not, and the rollback test of the hook ends by asserting that the table is gone. A test that needs the grants of a v0.5 database uses
+  `orgFixture` and `MigrateBefore("0020")`.
+- **The dynamic proof of T51**: with the table dropped, the 574 top-level tests of `internal/api` and every other package run against a schema that has no
+  grants; a query that still read them would fail with "no such table". T53 repeats it on a database built by the v0.5.0 binary.

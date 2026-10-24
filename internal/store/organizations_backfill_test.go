@@ -166,7 +166,7 @@ func TestOrganizationsUpgradeMovesEveryResourceIntoTheOwnersOrganization(t *test
 func TestOrganizationsUpgradeTurnsGrantsAndGroupMembersIntoMemberships(t *testing.T) {
 	e := orgFixture(t)
 	roomMembersBefore := e.rowsOf("room_members", e.columnsOf("room_members"))
-	require.NoError(t, e.s.Migrate(context.Background()))
+	require.NoError(t, e.s.MigrateBefore(context.Background(), "0020")) // 0019 and its hook; 0020 drops the table the hook empties
 
 	// The whole membership table: every personal admin, the owners' AIs, and exactly the extra
 	// members the grants and the group members explain.
@@ -356,5 +356,5 @@ func TestOrganizationsUpgradeRollsBackOnHookFailure(t *testing.T) {
 
 	require.NoError(t, e.s.Migrate(ctx))
 	require.Equal(t, 5, e.count(`SELECT COUNT(*) FROM organizations`))
-	require.Zero(t, e.count(`SELECT COUNT(*) FROM grants`))
+	require.Empty(t, e.grantObjects(), "and 0020 dropped the grants table after the hook consumed it")
 }

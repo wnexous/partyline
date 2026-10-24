@@ -45,7 +45,7 @@ func TestMigrateCreatesEveryDesignTable(t *testing.T) {
 	s := openMigrated(t)
 	for _, table := range []string{
 		"users", "sessions", "invites", "api_tokens", "agents", "connectors", "chats", "rooms",
-		"room_members", "grants", "messages", "attachments", "agent_cursors",
+		"room_members", "messages", "attachments", "agent_cursors",
 		"identities", "pairing_codes", "audit_log", "platform_items", "platform_attachments", "platform_sends",
 		"organizations", "positions", "org_members", "org_invitations",
 	} {
@@ -53,8 +53,9 @@ func TestMigrateCreatesEveryDesignTable(t *testing.T) {
 		err := s.write.QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name)
 		require.NoError(t, err, table)
 	}
-	// The tables of the delivery to chats and of the catch-all skips went with the upgrade (0018).
-	for _, table := range []string{"outbox", "auto_route_skips"} {
+	// The tables of the delivery to chats and of the catch-all skips went with the upgrade (0018), and the
+	// grants of the per-resource sharing with the organizations (0020).
+	for _, table := range []string{"outbox", "auto_route_skips", "grants"} {
 		var n int
 		require.NoError(t, s.write.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&n))
 		require.Zero(t, n, table)
