@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import partyline from "./partyline.ts";
-import { FakeTime } from "../testdata/fakes.ts";
+import { FakeTime, importAlways } from "../testdata/fakes.ts";
 import { framingCases, notices, notificationParams } from "../testdata/framing.ts";
+
+type Plugin = typeof partyline;
 
 type Handler = (event: unknown, ctx: unknown) => unknown;
 // What the fake host's sendUserMessage does on a call: deliver, throw, or return a rejected
@@ -10,7 +12,7 @@ type Outcome = "ok" | { throw: string } | { reject: string };
 
 // fakeOmp records what the extension registers and sends, like omp's ExtensionAPI. outcomes
 // are consumed one per sendUserMessage call; when they run out, sends succeed.
-function fakeOmp(opts: { idle?: boolean; hasUI?: boolean; model?: unknown; outcomes?: Outcome[] } = {}) {
+function fakeOmp(opts: { idle?: boolean; hasUI?: boolean; model?: unknown; outcomes?: Outcome[] } = {}, plugin: Plugin = partyline) {
 	const handlers = new Map<string, Handler>();
 	const sent: Array<{ content: string; options?: { deliverAs?: string } }> = [];
 	const notices: Array<{ message: string; level?: string }> = [];
@@ -37,7 +39,7 @@ function fakeOmp(opts: { idle?: boolean; hasUI?: boolean; model?: unknown; outco
 		ui: { notify: (message: string, level?: string) => notices.push({ message, level }) },
 	};
 	if ("model" in opts) ctx.model = opts.model;
-	partyline(api);
+	plugin(api);
 	const emit = (server: string, method: string, params?: unknown) => handlers.get("mcp_notification")?.({ server, method, params }, ctx);
 	const agentEnd = () => handlers.get("agent_end")?.({ type: "agent_end", messages: [] }, ctx);
 	return { handlers, sent, notices, emit, agentEnd, ctx, calls: () => calls, attempts, fail: (...o: Outcome[]) => outcomes.push(...o) };
@@ -48,10 +50,15 @@ const flushPromises = () => new Promise<void>((resolve) => queueMicrotask(resolv
 const CHANNEL = "notifications/claude/channel";
 
 let time: FakeTime;
+let launched: string | undefined;
 beforeEach(() => {
+	launched = process.env.PARTYLINE_HARNESS;
+	process.env.PARTYLINE_HARNESS = "omp"; // the launcher's environment
 	time = new FakeTime();
 });
 afterEach(() => {
+	if (launched === undefined) delete process.env.PARTYLINE_HARNESS;
+	else process.env.PARTYLINE_HARNESS = launched;
 	time.restore();
 });
 
@@ -61,6 +68,25 @@ const held = (reason: string) => ({
 });
 
 describe("omp extension", () => {
+	test("launch-only: a plain omp session is inert", () => {
+		delete process.env.PARTYLINE_HARNESS;
+		const omp = fakeOmp();
+		expect(omp.handlers.size).toBe(0);
+	});
+
+	test("launch-only: the launcher's PARTYLINE_HARNESS subscribes", () => {
+		expect([...fakeOmp().handlers.keys()].sort()).toEqual(["agent_end", "mcp_notification"]);
+	});
+
+	test("setup --always: the installed extension subscribes without the launcher", async () => {
+		delete process.env.PARTYLINE_HARNESS;
+		const always = (await importAlways("omp/partyline.ts")) as { default: Plugin };
+		const omp = fakeOmp({ idle: true }, always.default);
+		expect([...omp.handlers.keys()].sort()).toEqual(["agent_end", "mcp_notification"]);
+		omp.emit("partyline", CHANNEL, notificationParams(framingCases[0].record));
+		expect(omp.sent).toEqual([{ content: framingCases[0].text }]);
+	});
+
 	test("PUSH-03: subscribes to mcp_notification and agent_end", () => {
 		expect([...fakeOmp().handlers.keys()].sort()).toEqual(["agent_end", "mcp_notification"]);
 	});

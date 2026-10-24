@@ -109,6 +109,12 @@ func (e *channelEnv) vars(extra ...string) map[string]string {
 	return env
 }
 
+// launched is vars with the harness `partyline <harness>` sets: only a launched session (or
+// one set up with --always) joins Partyline.
+func (e *channelEnv) launched(harness string, extra ...string) map[string]string {
+	return e.vars(append([]string{"PARTYLINE_HARNESS", harness}, extra...)...)
+}
+
 // PUSH-01: each incoming message is one JSON line with the channel meta fields plus content.
 func TestListenPrintsOneLinePerMessage(t *testing.T) {
 	e := newChannelEnv(t)
@@ -224,7 +230,7 @@ func TestListenRefusesConfigFileNot0600(t *testing.T) {
 // folder is created by its first call, never comes online, and messages are not pushed to it.
 func TestChannelToolsOnlyOpensNoSocket(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, []string{"--tools-only"}, e.vars(), "/work/codex-box")
+	c := startChannel(t, []string{"--tools-only"}, e.launched("codex"), "/work/codex-box")
 	initialize(c)
 	callListRooms := func(id int) string {
 		t.Helper()

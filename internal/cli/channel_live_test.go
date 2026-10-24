@@ -47,7 +47,7 @@ func (e *channelEnv) holder(t *testing.T, folder string) *testkit.AgentConn {
 func TestChannelStaysBusyWithoutTakeover(t *testing.T) {
 	e := newChannelEnv(t)
 	holder := e.holder(t, "/tmp/wd")
-	c := startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret}, "/tmp/wd")
+	c := startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_HARNESS": "claude"}, "/tmp/wd")
 	c.initialize()
 
 	require.Eventually(t, func() bool {
@@ -63,7 +63,7 @@ func TestChannelStaysBusyWithoutTakeover(t *testing.T) {
 func TestChannelTakesOverWithTheEnvironmentVariable(t *testing.T) {
 	e := newChannelEnv(t)
 	holder := e.holder(t, "/tmp/wd")
-	c := startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_TAKEOVER": "1"}, "/tmp/wd")
+	c := startChannel(t, nil, map[string]string{"PARTYLINE_URL": e.env.URL, "PARTYLINE_TOKEN": e.secret, "PARTYLINE_TAKEOVER": "1", "PARTYLINE_HARNESS": "claude"}, "/tmp/wd")
 	c.initialize()
 
 	ce := websocket.CloseStatus(holder.Closed(chanWait))

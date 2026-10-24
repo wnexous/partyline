@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { FakeTime, fakeSpawn, spawned } from "../testdata/fakes.ts";
+import { FakeTime, fakeSpawn, importAlways, spawned } from "../testdata/fakes.ts";
 import { framingCases, notices } from "../testdata/framing.ts";
 
 mock.module("node:child_process", () => ({ spawn: fakeSpawn }));
 const { default: partyline } = await import("./partyline.ts");
 
+type Plugin = typeof partyline;
+
 type Handler = (event: unknown, ctx: unknown) => unknown;
 type Sent = { message: { customType: string; content: string; display: boolean }; options: unknown };
 
-function fakePi(opts: { hasUI?: boolean; throwOnSend?: boolean } = {}) {
+function fakePi(opts: { hasUI?: boolean; throwOnSend?: boolean } = {}, plugin: Plugin = partyline) {
 	const handlers = new Map<string, Handler>();
 	const sent: Sent[] = [];
 	const notices: Array<{ message: string; level?: string }> = [];
@@ -26,7 +28,7 @@ function fakePi(opts: { hasUI?: boolean; throwOnSend?: boolean } = {}) {
 		hasUI: opts.hasUI ?? true,
 		ui: { notify: (message: string, level?: string) => notices.push({ message, level }) },
 	};
-	partyline(api);
+	plugin(api);
 	return {
 		handlers,
 		sent,
@@ -37,11 +39,18 @@ function fakePi(opts: { hasUI?: boolean; throwOnSend?: boolean } = {}) {
 }
 
 let time: FakeTime;
+let launched: string | undefined;
 beforeEach(() => {
 	spawned.length = 0;
+	launched = process.env.PARTYLINE_HARNESS;
+	process.env.PARTYLINE_HARNESS = "pi"; // the launcher's environment
 	time = new FakeTime();
 });
-afterEach(() => time.restore());
+afterEach(() => {
+	if (launched === undefined) delete process.env.PARTYLINE_HARNESS;
+	else process.env.PARTYLINE_HARNESS = launched;
+	time.restore();
+});
 
 const expected = (content: string): Sent => ({
 	message: { customType: "partyline", content, display: true },
@@ -49,6 +58,33 @@ const expected = (content: string): Sent => ({
 });
 
 describe("pi extension", () => {
+	test("launch-only: a plain pi session runs no listen and shows nothing", () => {
+		delete process.env.PARTYLINE_HARNESS;
+		const pi = fakePi();
+		pi.start();
+		pi.shutdown();
+		expect(spawned).toEqual([]);
+		expect(pi.sent).toEqual([]);
+		expect(pi.notices).toEqual([]);
+	});
+
+	test("launch-only: the launcher's PARTYLINE_HARNESS starts listen", () => {
+		const pi = fakePi();
+		pi.start();
+		expect(spawned.length).toBe(1);
+		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("pi");
+	});
+
+	test("setup --always: the installed extension listens without the launcher", async () => {
+		delete process.env.PARTYLINE_HARNESS;
+		const always = (await importAlways("pi/partyline.ts")) as { default: Plugin };
+		const pi = fakePi({}, always.default);
+		pi.start();
+		expect(spawned.length).toBe(1);
+		expect(spawned[0].args).toEqual(["listen"]);
+		expect(spawned[0].options.env?.PARTYLINE_HARNESS).toBe("pi");
+	});
+
 	test("PUSH-04: session_start runs partyline listen in the session directory, once", () => {
 		const pi = fakePi();
 		expect(spawned).toEqual([]);

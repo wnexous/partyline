@@ -74,8 +74,15 @@ func extensionKind(rel string) string {
 // run (`partyline listen`); setup writes the absolute path into it.
 const binaryLine = `const PARTYLINE_BINARY = "partyline";`
 
+// alwaysLine is the switch of every adapter: `partyline setup --always` writes true into it, so
+// the extension also runs outside a session the launcher started.
+const (
+	alwaysLine = `const PARTYLINE_ALWAYS = false;`
+	alwaysTrue = `const PARTYLINE_ALWAYS = true;`
+)
+
 // extensionContent is the file setup installs: the version header and the embedded source,
-// with the absolute binary path in binaryLine.
+// with the absolute binary path in binaryLine and the --always choice in alwaysLine.
 func (h *fileHarness) extensionContent() ([]byte, error) {
 	src, err := integrations.Files.ReadFile(h.source)
 	if err != nil {
@@ -86,6 +93,9 @@ func (h *fileHarness) extensionContent() ([]byte, error) {
 		return nil, err
 	}
 	src = bytes.Replace(src, []byte(binaryLine), []byte("const PARTYLINE_BINARY = "+string(quoted)+";"), 1)
+	if h.env.Always {
+		src = bytes.Replace(src, []byte(alwaysLine), []byte(alwaysTrue), 1)
+	}
 	return append([]byte(extensionHeader(h.env.Version)), src...), nil
 }
 
@@ -236,7 +246,7 @@ func newOpenCode(env Env) Registrar {
 		},
 		config: "opencode.json", keys: []string{"mcp", ServerName},
 		value: func(bin string) any {
-			return opencodeServer{Type: "local", Command: []string{bin, "channel", "--tools-only"}, Enabled: true}
+			return opencodeServer{Type: "local", Command: append([]string{bin, "channel", "--tools-only"}, env.alwaysArgs()...), Enabled: true}
 		},
 		command: opencodeCommand,
 		ext:     filepath.Join("plugins", "partyline.ts"), source: "opencode/partyline.ts",
@@ -250,7 +260,9 @@ func newPi(env Env) Registrar {
 		env: env, id: "pi", title: "pi", cli: "pi",
 		dir:    func() string { return filepath.Join(env.Home, ".pi", "agent") },
 		config: "mcp.json", keys: []string{"mcpServers", ServerName},
-		value:   func(bin string) any { return mcpServer{Command: bin, Args: []string{"channel", "--tools-only"}} },
+		value: func(bin string) any {
+			return mcpServer{Command: bin, Args: append([]string{"channel", "--tools-only"}, env.alwaysArgs()...)}
+		},
 		command: commandField,
 		ext:     filepath.Join("extensions", "partyline.ts"), source: "pi/partyline.ts",
 	}
@@ -264,7 +276,9 @@ func newOmp(env Env) Registrar {
 		env: env, id: "omp", title: "oh-my-pi (omp)", cli: "omp",
 		dir:    func() string { return filepath.Join(env.Home, ".omp", "agent") },
 		config: "mcp.json", keys: []string{"mcpServers", ServerName},
-		value:   func(bin string) any { return mcpServer{Command: bin, Args: []string{"channel", "--harness", "omp"}} },
+		value: func(bin string) any {
+			return mcpServer{Command: bin, Args: append([]string{"channel", "--harness", "omp"}, env.alwaysArgs()...)}
+		},
 		command: commandField,
 		ext:     filepath.Join("extensions", "partyline.ts"), source: "omp/partyline.ts",
 	}

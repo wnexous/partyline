@@ -126,6 +126,42 @@ func TestSetupHarnessFlagAndYes(t *testing.T) {
 	require.NotContains(t, r.stdout, "Start a session", "nothing registered, no launcher to name")
 }
 
+// setup --always: setup records the choice in the installed extension and in the MCP server
+// entry; naming the harness again without it (--always=false) updates both back.
+func TestSetupAlwaysRoundTrip(t *testing.T) {
+	e := newChannelEnv(t)
+	home := t.TempDir()
+	ext := filepath.Join(home, ".pi", "agent", "extensions", "partyline.ts")
+	cfg := filepath.Join(home, ".pi", "agent", "mcp.json")
+	setup := func(flags ...string) setupRun {
+		return runSetup(t, setupOpts{env: map[string]string{"HOME": home}, lookPath: installed("pi")},
+			append([]string{"--url", e.env.URL, "--token", e.secret, "--harness", "pi"}, flags...)...)
+	}
+	read := func(path string) string {
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		return string(data)
+	}
+
+	r := setup()
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, read(ext), "const PARTYLINE_ALWAYS = false;")
+	require.NotContains(t, read(cfg), "--always")
+
+	r = setup("--always")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, r.stdout, "✓ pi: updated")
+	require.Contains(t, read(ext), "const PARTYLINE_ALWAYS = true;")
+	require.NotContains(t, read(ext), "const PARTYLINE_ALWAYS = false;")
+	require.Contains(t, read(cfg), `"--always"`)
+
+	r = setup("--always=false")
+	require.Equal(t, 0, r.code, "stderr: %s", r.stderr)
+	require.Contains(t, r.stdout, "✓ pi: updated")
+	require.Contains(t, read(ext), "const PARTYLINE_ALWAYS = false;")
+	require.NotContains(t, read(cfg), "--always")
+}
+
 // An unknown harness name is a usage error, before anything is written.
 func TestSetupUnknownHarness(t *testing.T) {
 	home := t.TempDir()

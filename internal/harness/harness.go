@@ -32,6 +32,9 @@ type Env struct {
 	Binary string
 	// Version is written into the extension files Partyline installs.
 	Version string
+	// Always is `partyline setup --always`: the extensions, the MCP server and the hooks run in
+	// every session of the harness, not only in one `partyline <harness>` starts.
+	Always bool
 	// Run runs harness CLIs; nil runs them for real.
 	Run Runner
 	// LookPath finds harness CLIs; nil means exec.LookPath.
@@ -118,6 +121,15 @@ func All(env Env) []Registrar {
 	}
 }
 
+// alwaysArgs is the flag that lets a server or hook run outside a launched session
+// (`partyline setup --always`); setup writes it into the registration so the choice survives.
+func (e Env) alwaysArgs() []string {
+	if e.Always {
+		return []string{"--always"}
+	}
+	return nil
+}
+
 // shellQuote quotes s for a POSIX shell when it holds anything but safe characters.
 func shellQuote(s string) string {
 	safe := s != "" && strings.IndexFunc(s, func(r rune) bool {
@@ -129,13 +141,23 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// hookCommand is the shell command of a Partyline hook.
-func hookCommand(binary, hook string) string { return shellQuote(binary) + " hook " + hook }
+// hookCommand is the shell command of a Partyline hook; with Env.Always it carries the flag
+// that lets the hook run outside a launched session.
+func (e Env) hookCommand(hook string) string {
+	cmd := shellQuote(e.Binary) + " hook " + hook
+	if e.Always {
+		cmd += " --always"
+	}
+	return cmd
+}
 
-// ownsHook reports whether cmd is exactly the hook command setup writes for this binary. A
-// hook of any other program, even one named partyline*, is not Partyline's to change.
+// ownsHook reports whether cmd is exactly the hook command setup writes for this binary, with
+// or without --always: a registration from either choice stays Partyline's to update or
+// remove. A hook of any other program, even one named partyline*, is not Partyline's to change.
 func (e Env) ownsHook(cmd, hook string) bool {
-	return strings.TrimSpace(cmd) == hookCommand(e.Binary, hook)
+	cmd = strings.TrimSpace(cmd)
+	base := shellQuote(e.Binary) + " hook " + hook
+	return cmd == base || cmd == base+" --always"
 }
 
 // tildePath shortens a path under home to ~/… for display.

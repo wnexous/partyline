@@ -39,7 +39,7 @@ func (c *claude) configPath() string {
 }
 
 func (c *claude) addArgs() []string {
-	return []string{"mcp", "add", "--scope", "user", ServerName, "--", c.env.Binary, "channel"}
+	return append([]string{"mcp", "add", "--scope", "user", ServerName, "--", c.env.Binary, "channel"}, c.env.alwaysArgs()...)
 }
 
 func (c *claude) removeArgs() []string {
@@ -124,14 +124,14 @@ func (c *codex) home() string {
 func (c *codex) hooksPath() string { return filepath.Join(c.home(), "hooks.json") }
 
 func (c *codex) addArgs() []string {
-	return []string{"mcp", "add", ServerName, "--", c.env.Binary, "channel", "--tools-only", "--harness", c.ID()}
+	return append([]string{"mcp", "add", ServerName, "--", c.env.Binary, "channel", "--tools-only", "--harness", c.ID()}, c.env.alwaysArgs()...)
 }
 
 // hookGroup is the Stop hook group Partyline adds.
 func (c *codex) hookGroup() any {
 	return orderedObject{{"hooks", []any{orderedObject{
 		{"type", "command"},
-		{"command", hookCommand(c.env.Binary, CodexStopHook)},
+		{"command", c.env.hookCommand(CodexStopHook)},
 		{"timeout", codexHookTimeoutSec},
 	}}}}
 }
@@ -249,7 +249,7 @@ func (g *gemini) Detected() bool { _, err := g.env.lookPath("gemini"); return er
 func (g *gemini) settingsPath() string { return filepath.Join(g.env.Home, ".gemini", "settings.json") }
 
 func (g *gemini) addArgs() []string {
-	return []string{"mcp", "add", "-s", "user", ServerName, g.env.Binary, "channel", "--tools-only", "--harness", g.ID()}
+	return append([]string{"mcp", "add", "-s", "user", ServerName, g.env.Binary, "channel", "--tools-only", "--harness", g.ID()}, g.env.alwaysArgs()...)
 }
 
 func (g *gemini) hookGroup() any {
@@ -258,7 +258,7 @@ func (g *gemini) hookGroup() any {
 		{"hooks", []any{orderedObject{
 			{"name", ServerName},
 			{"type", "command"},
-			{"command", hookCommand(g.env.Binary, GeminiAfterAgentHook)},
+			{"command", g.env.hookCommand(GeminiAfterAgentHook)},
 			{"timeout", geminiHookTimeoutMs},
 		}}},
 	}

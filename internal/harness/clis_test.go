@@ -133,6 +133,40 @@ func TestClaudeUpdatesAndRemoves(t *testing.T) {
 	require.Empty(t, cli2.calls)
 }
 
+// setup --always: Claude Code's MCP server, Codex's server and Stop hook and Gemini's server
+// and AfterAgent hook carry --always, so a plain session runs them; applying again without it
+// replaces the same hook group instead of adding a second one.
+func TestAlwaysFlagsCLIRegistrations(t *testing.T) {
+	env, cli := testEnv(t, nil)
+	env.Always = true
+	claude := registrar(t, env, "claude")
+	require.Equal(t, []string{"run: claude mcp add --scope user partyline -- /opt/bin/partyline channel --always"}, claude.Plan())
+	require.NoError(t, claude.Apply(context.Background()))
+	require.Equal(t, []string{"claude mcp add --scope user partyline -- /opt/bin/partyline channel --always"}, cli.calls)
+
+	hooks := filepath.Join(env.Home, ".codex", "hooks.json")
+	writeFile(t, hooks, codexHooksOrig)
+	codex := registrar(t, env, "codex")
+	require.NoError(t, codex.Apply(context.Background()))
+	stop := jsonAt(t, hooks, "hooks", "Stop").([]any)
+	require.Len(t, stop, 2)
+	command := jsonAt(t, hooks, "hooks", "Stop").([]any)[1].(map[string]any)["hooks"].([]any)[0].(map[string]any)["command"]
+	require.Equal(t, "/opt/bin/partyline hook codex-stop --always", command)
+
+	// Without --always the same group is updated in place and the server loses the flag.
+	env.Always = false
+	require.NoError(t, registrar(t, env, "codex").Apply(context.Background()))
+	stop = jsonAt(t, hooks, "hooks", "Stop").([]any)
+	require.Len(t, stop, 2, "the --always group was replaced, not duplicated")
+	command = stop[1].(map[string]any)["hooks"].([]any)[0].(map[string]any)["command"]
+	require.Equal(t, "/opt/bin/partyline hook codex-stop", command)
+
+	env.Always = true
+	gemini := registrar(t, env, "gemini")
+	require.Contains(t, strings.Join(gemini.Plan(), "\n"), "/opt/bin/partyline channel --tools-only --harness gemini --always")
+	require.Contains(t, strings.Join(gemini.Plan(), "\n"), "/opt/bin/partyline hook gemini-after-agent --always")
+}
+
 // HAR-01: $CLAUDE_CONFIG_DIR moves Claude Code's user config.
 func TestClaudeConfigDir(t *testing.T) {
 	dir := t.TempDir()

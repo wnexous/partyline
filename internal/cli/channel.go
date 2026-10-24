@@ -148,6 +148,7 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	f := addAgentFlags(fs)
 	toolsOnly := fs.Bool("tools-only", false, "serve the tools without receiving messages (pair with partyline listen, or for harnesses without push)")
 	harness := fs.String("harness", "", "the harness running the full channel when it is not Claude Code (omp); with --tools-only the session's harness (codex, gemini, opencode, pi)")
+	always := fs.Bool("always", false, "run even without PARTYLINE_HARNESS, which only `partyline <harness>` sets (partyline setup --always)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -162,6 +163,18 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	case !*toolsOnly && *harness != channel.HarnessOmp:
 		fmt.Fprintf(io.stderr, "partyline channel: unknown --harness %q (known: %s)\n", *harness, channel.HarnessOmp)
 		return 2
+	}
+	// Only a session the launcher started joins Partyline (PARTYLINE_HARNESS, which a harness
+	// that strips the server's environment still has on a launched ancestor) or one installed
+	// with `partyline setup --always`. Anything else answers the MCP handshake with no tools and
+	// no instructions and never reaches the server, so a plain harness shows no Partyline tools.
+	io = withLauncherEnv(io)
+	if !*always && strings.TrimSpace(io.getenv("PARTYLINE_HARNESS")) == "" {
+		if err := channel.ServeIdle(ctx, io.stdin, io.stdout, buildVersion()); err != nil {
+			fmt.Fprintln(io.stderr, "partyline channel:", err)
+			return 1
+		}
+		return 0
 	}
 	c, code := resolveAgent("channel", f, io)
 	if code != 0 {

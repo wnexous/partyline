@@ -30,14 +30,14 @@ func TestChannelSendsTheCanonicalFolder(t *testing.T) {
 	link := filepath.Join(t.TempDir(), "link")
 	require.NoError(t, os.Symlink(target, link))
 
-	fromLink := startChannel(t, nil, e.vars(), link)
+	fromLink := startChannel(t, nil, e.launched("claude"), link)
 	initialize(fromLink)
 	prof := e.ai(t, target)
 	require.Equal(t, []any{"Café Órdenes", "cafe-ordenes", testMachine}, []any{prof.DisplayName, prof.Handle, prof.AI.Machine})
 	require.Equal(t, []string{target}, e.folders(t), "the symlink is not another folder")
 
 	// The launcher's PARTYLINE_FOLDER wins over the working directory, whatever its spelling.
-	fromEnv := startChannel(t, []string{"--tools-only"}, e.vars("PARTYLINE_FOLDER", link+"/"), "/tmp/src/elsewhere")
+	fromEnv := startChannel(t, []string{"--tools-only"}, e.launched("claude", "PARTYLINE_FOLDER", link+"/"), "/tmp/src/elsewhere")
 	initialize(fromEnv)
 	fromEnv.send(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": map[string]any{"name": "list_rooms", "arguments": map[string]any{}}})
 	require.Equal(t, false, fromEnv.next()["result"].(map[string]any)["isError"])
@@ -51,7 +51,7 @@ func TestChannelSendsTheHomeFolder(t *testing.T) {
 	home := canonicalDir(t, "home", "alice")
 	work := filepath.Join(home, "src", "acme")
 	require.NoError(t, os.MkdirAll(work, 0o755))
-	initialize(startChannel(t, nil, e.vars("HOME", home), work))
+	initialize(startChannel(t, nil, e.launched("claude", "HOME", home), work))
 	require.Equal(t, "~/src/acme", e.ai(t, work).AI.FolderLabel)
 }
 
@@ -60,13 +60,13 @@ func TestChannelSendsTheHomeFolder(t *testing.T) {
 func TestChannelAsAdoptsTheUnlinkedIdentity(t *testing.T) {
 	e := newChannelEnv(t)
 	old := e.legacy(t, "old")
-	initialize(startChannel(t, []string{"--as", "old"}, e.vars(), "/work/new-home"))
+	initialize(startChannel(t, []string{"--as", "old"}, e.launched("claude"), "/work/new-home"))
 	adopted := e.ai(t, "/work/new-home")
 	require.Equal(t, old, adopted.ID)
 	require.Equal(t, []any{"old", "old"}, []any{adopted.DisplayName, adopted.Handle}, "the profile is kept")
 	require.Equal(t, []string{"/work/new-home"}, e.folders(t))
 
-	initialize(startChannel(t, []string{"--as", "old"}, e.vars(), "/work/another"))
+	initialize(startChannel(t, []string{"--as", "old"}, e.launched("claude"), "/work/another"))
 	other := e.ai(t, "/work/another")
 	require.NotEqual(t, old, other.ID, "an identity is linked once: the stale name creates a new AI")
 	require.Equal(t, []string{"/work/another", "/work/new-home"}, e.folders(t))
@@ -75,7 +75,7 @@ func TestChannelAsAdoptsTheUnlinkedIdentity(t *testing.T) {
 // --project is accepted and ignored with one line on stderr: an AI is identified by its folder.
 func TestChannelIgnoresProject(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, []string{"--project", "Atlas Videos"}, e.vars(), "/work/acme")
+	c := startChannel(t, []string{"--project", "Atlas Videos"}, e.launched("claude"), "/work/acme")
 	initialize(c)
 	e.ai(t, "/work/acme")
 	require.Equal(t, "partyline channel: --project is ignored: an AI is identified by its folder\n", c.stderr.String())

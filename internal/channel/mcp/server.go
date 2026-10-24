@@ -37,6 +37,9 @@ type ServerInfo struct {
 	Name         string
 	Version      string
 	Instructions string
+	// NoChannel leaves the claude/channel capability out of the initialize answer: the server
+	// never pushes messages (the idle server a session that the launcher did not start gets).
+	NoChannel bool
 }
 
 // ToolDef describes a tool in tools/list.
@@ -339,13 +342,14 @@ func (s *Server) initializeResult(params json.RawMessage) map[string]any {
 	}
 	res := map[string]any{
 		"protocolVersion": version,
-		// Only the channel and tools: never claude/channel/permission (MCP-03, AD-006).
-		"capabilities": map[string]any{
-			"experimental": map[string]any{"claude/channel": struct{}{}},
-			"tools":        struct{}{},
-		},
-		"serverInfo": map[string]string{"name": s.info.Name, "version": s.info.Version},
+		"serverInfo":      map[string]string{"name": s.info.Name, "version": s.info.Version},
 	}
+	// Only the channel and tools: never claude/channel/permission (MCP-03, AD-006).
+	capabilities := map[string]any{"tools": struct{}{}}
+	if !s.info.NoChannel {
+		capabilities["experimental"] = map[string]any{"claude/channel": struct{}{}}
+	}
+	res["capabilities"] = capabilities
 	if s.info.Instructions != "" {
 		res["instructions"] = s.info.Instructions
 	}
