@@ -12,6 +12,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -61,7 +62,7 @@ func clockEnv(t *testing.T) (*testkit.Env, *testkit.Clock) {
 	return testkit.New(t, testkit.WithClock(clock.Now)), clock
 }
 
-// DM-06, LAY-01: the list holds the groups a user owns, was granted or is a member of and the DMs
+// DM-06, LAY-01: the list holds the groups a user created, administers or is a member of and the DMs
 // they take part in, newest activity first; a conversation without messages sorts by its creation;
 // each carries its kind, title (the group name, or the other participant's display name), the
 // counterpart of a DM, the user's level and the member names.
@@ -73,11 +74,12 @@ func TestConversationListOrdersByNewestActivity(t *testing.T) {
 	clock.Advance(time.Minute)
 	owned := createRoom(alice, "Owned") // created first, never written to
 	clock.Advance(time.Minute)
-	granted := createRoom(carol, "Granted")
-	shareRoom(carol, granted.ID, dto.SharingUser{UserID: alice.User.ID, Level: dto.LevelView})
+	// carol makes a group in alice's organization, which alice administers without being in the group.
+	env.AddMember(alice.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember, "")
+	granted := groupIn(t, env, carol, alice.PersonalOrg().ID, "Granted")
 	clock.Advance(time.Minute)
 	member := createRoom(bob, "Member of")
-	bob.Post("/api/v1/rooms/"+member.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: alice.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, bob, member.ID, alice)
 	clock.Advance(time.Minute)
 	dm := dmWith(alice, bob.User.ID, http.StatusCreated)
 	hidden := createRoom(carol, "Not for alice")
@@ -101,7 +103,7 @@ func TestConversationListOrdersByNewestActivity(t *testing.T) {
 	require.Equal(t, dto.ConversationKindGroup, g.Kind)
 	require.Equal(t, "Granted", g.Title)
 	require.Nil(t, g.Counterpart)
-	require.Equal(t, dto.LevelView, g.MyLevel)
+	require.Equal(t, dto.LevelManage, g.MyLevel, "an admin of the group's organization manages it")
 	require.True(t, g.ActivityAt.Equal(last.CreatedAt), "activity is the time of the last message")
 
 	d := conversationIn(t, list, dm.ID)
@@ -161,7 +163,7 @@ func TestUnreadCountsPerUser(t *testing.T) {
 	atlas := env.NewAI(alice, "atlas")
 	dm := dmWith(alice, bob.User.ID, http.StatusCreated)
 	group := createRoom(alice, "Ops")
-	alice.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, group.ID, bob)
 	alice.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: atlas}).RequireStatus(http.StatusCreated)
 
 	unread := func(c *testkit.Client, roomID string) int {
@@ -214,7 +216,7 @@ func TestMarkReadIsMonotonicAndPerUser(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	room := createRoom(alice, "Ops")
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, room.ID, bob)
 	unread := func(c *testkit.Client) int {
 		t.Helper()
 		return conversationIn(t, conversationsOf(t, c), room.ID).Unread
@@ -261,13 +263,15 @@ func TestMarkReadIsMonotonicAndPerUser(t *testing.T) {
 	require.Equal(t, dto.ReadState{RoomID: empty.ID}, zero)
 }
 
-// DM-07 authorization: reading needs view; others get 404, an AI's owner may mark the DM it views,
-// an agent token and an anonymous caller are refused.
+// DM-07 authorization: reading needs view - the creator, a member of the room or an admin of its
+// organization (the viewer role here) - and others get 404; the manager of an AI may mark the DM it
+// views; an agent token and an anonymous caller are refused.
 func TestMarkReadAuthorization(t *testing.T) {
 	m := newMatrix(t)
 	owner, viewer, poster := m.as(t, roleOwner), m.as(t, roleViewer), m.as(t, rolePoster)
 	room := createRoom(owner, "Ops")
-	shareRoom(owner, room.ID, dto.SharingUser{UserID: viewer.User.ID, Level: dto.LevelView}, dto.SharingUser{UserID: poster.User.ID, Level: dto.LevelPost})
+	joinOrgOf(t, m.env, room.ID, viewer, orgs.PermissionAdmin)
+	addToRoom(t, m.env, owner, room.ID, poster)
 	say(owner, room.ID, "hello")
 
 	for role, want := range map[matrixRole]int{roleOwner: 200, roleViewer: 200, rolePoster: 200, roleStranger: 404, roleAdmin: 404} {
@@ -309,7 +313,7 @@ func TestMarkReadEmitsRoomReadToTheReaderOnly(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	room := createRoom(alice, "Ops")
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, room.ID, bob)
 	say(bob, room.ID, "one")
 	say(bob, room.ID, "two")
 	aliceTab1, aliceTab2, bobLive := dialLive(t, alice), dialLive(t, alice), dialLive(t, bob)
@@ -338,7 +342,7 @@ func TestConversationPreview(t *testing.T) {
 	patchProfile(bob, bob.User.ID, dto.UpdateProfileRequest{DisplayName: ptr("Bob B.")}).RequireStatus(http.StatusOK)
 	dm := dmWith(alice, bob.User.ID, http.StatusCreated)
 	group := createRoom(alice, "Ops")
-	alice.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, group.ID, bob)
 
 	preview := func(c *testkit.Client, roomID string) dto.MessagePreview {
 		t.Helper()
@@ -392,7 +396,7 @@ func TestConversationMemberNames(t *testing.T) {
 	want := []string{}
 	for i := range 25 {
 		u := env.NewUser(fmt.Sprintf("user%02d", i))
-		alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: u.User.ID}).RequireStatus(http.StatusCreated)
+		addToRoom(t, env, alice, room.ID, u)
 		want = append(want, fmt.Sprintf("user%02d @user%02d", i, i))
 	}
 	got := conversationIn(t, conversationsOf(t, alice), room.ID).MemberNames
@@ -411,7 +415,7 @@ func TestConversationListAfterRetentionPurgesMessages(t *testing.T) {
 	env, clock := clockEnv(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	room := testkit.Decode[dto.Room](alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Short lived", RetentionDays: ptr(1)}).RequireStatus(http.StatusCreated))
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bob.User.ID}).RequireStatus(http.StatusCreated)
+	addToRoom(t, env, alice, room.ID, bob)
 	say(bob, room.ID, "old")
 	clock.Advance(30 * time.Hour)
 	say(bob, room.ID, "recent")
@@ -430,4 +434,85 @@ func TestConversationListAfterRetentionPurgesMessages(t *testing.T) {
 	require.Nil(t, c.LastMessage)
 	require.Zero(t, c.Unread)
 	require.True(t, c.ActivityAt.Equal(room.CreatedAt))
+}
+
+// ORG-02, OMEM-03 (T56, gap G1): a conversation says which organizations it belongs to. A group belongs to its
+// organization; a DM to the organizations both of its participants are members of, so one with a colleague in two
+// of them lists both; a DM whose participants share none is listed under the default organization of whoever lists
+// it; and the tags follow the memberships: once the colleague left one organization, the DM lists the other.
+func TestConversationsCarryTheirOrganizations(t *testing.T) {
+	ctx := context.Background()
+	env := testkit.New(t)
+	ana, bea, cid := env.NewUser("ana"), env.NewUser("bea"), env.NewUser("cid")
+	anas, beas, cids := ana.PersonalOrg().ID, bea.PersonalOrg().ID, cid.PersonalOrg().ID
+	// ana and bea belong to each other's personal organization, so they share two; cid belongs to neither.
+	env.AddMember(anas, bea.User.ID, orgs.PermissionMember, "")
+	env.AddMember(beas, ana.User.ID, orgs.PermissionMember, "")
+	// ana's default is bea's organization, not the first one she has: a default is not "the first organization".
+	require.NoError(t, env.App.Orgs.SetDefault(ctx, ana.User.ID, beas))
+
+	group := groupIn(t, env, ana, anas, "Crew")
+	withBea := dmWith(ana, bea.User.ID, http.StatusCreated)
+	withCid := dmWith(ana, cid.User.ID, http.StatusCreated)
+	scout := env.NewAIIn(ana, anas, "scout")
+	withScout := dmWith(ana, scout, http.StatusCreated)
+	tags := func(c *testkit.Client, roomID string) []string {
+		t.Helper()
+		got := conversationIn(t, conversationsOf(t, c), roomID).OrgIDs
+		require.NotNil(t, got, "no tag reads [], never null")
+		return got
+	}
+
+	require.Equal(t, []string{anas}, tags(ana, group.ID), "a group lists its organization")
+	require.ElementsMatch(t, []string{anas, beas}, tags(ana, withBea.ID), "a DM with a colleague in two shared organizations lists both")
+	require.ElementsMatch(t, []string{anas, beas}, tags(bea, withBea.ID), "from either side")
+	require.Equal(t, []string{anas}, tags(ana, withScout.ID), "an AI is a member of its organization like a user")
+	require.Equal(t, []string{beas}, tags(ana, withCid.ID), "no shared organization: the default organization of who lists the DM")
+	require.Equal(t, []string{cids}, tags(cid, withCid.ID), "each side lists it under their own")
+
+	// GET /rooms/{id} and GET /rooms (and the live room.changed, below) carry the same tags.
+	room := func(c *testkit.Client, id string) dto.Room {
+		return testkit.Decode[dto.Room](c.Get("/api/v1/rooms/" + id).RequireStatus(http.StatusOK))
+	}
+	require.Equal(t, []string{anas}, room(ana, group.ID).OrgIDs)
+	require.ElementsMatch(t, []string{anas, beas}, room(bea, withBea.ID).OrgIDs)
+	require.Equal(t, []string{cids}, room(cid, withCid.ID).OrgIDs)
+	for _, r := range testkit.Decode[dto.List[dto.Room]](ana.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items {
+		if r.ID == withCid.ID {
+			require.Equal(t, []string{beas}, r.OrgIDs)
+		}
+	}
+
+	require.NoError(t, env.App.Orgs.Leave(ctx, bea.User.ID, anas))
+	require.Equal(t, []string{beas}, tags(ana, withBea.ID), "after bea left one organization the DM lists the one they still share")
+	require.Equal(t, []string{beas}, tags(bea, withBea.ID))
+	require.Equal(t, []string{anas}, tags(ana, group.ID), "a group keeps its organization")
+}
+
+// ORG-02 (T56): the live room.changed frame is rendered for the socket's user and carries the same tags as the list,
+// so the sidebar can file a conversation the moment it appears.
+func TestRoomChangedFrameCarriesTheOrganizations(t *testing.T) {
+	env := testkit.New(t)
+	ana, bea, cid := env.NewUser("ana"), env.NewUser("bea"), env.NewUser("cid")
+	anas, beas, cids := ana.PersonalOrg().ID, bea.PersonalOrg().ID, cid.PersonalOrg().ID
+	env.AddMember(anas, bea.User.ID, orgs.PermissionMember, "")
+	env.AddMember(beas, ana.User.ID, orgs.PermissionMember, "")
+	beaLive, cidLive := dialLive(t, bea), dialLive(t, cid)
+
+	room := dmWith(ana, bea.User.ID, http.StatusCreated)
+	var seen dto.Room
+	beaLive.Expect(dto.LiveEventTypeRoomChanged, &seen, liveWait)
+	require.Equal(t, room.ID, seen.ID)
+	require.ElementsMatch(t, []string{anas, beas}, seen.OrgIDs)
+
+	room = dmWith(ana, cid.User.ID, http.StatusCreated)
+	cidLive.Expect(dto.LiveEventTypeRoomChanged, &seen, liveWait)
+	require.Equal(t, room.ID, seen.ID)
+	require.Equal(t, []string{cids}, seen.OrgIDs, "the frame is rendered for cid: no organization is shared, so cid's default")
+
+	group := groupIn(t, env, ana, anas, "Crew")
+	ana.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bea.User.ID}).RequireStatus(http.StatusCreated)
+	beaLive.Expect(dto.LiveEventTypeRoomChanged, &seen, liveWait)
+	require.Equal(t, group.ID, seen.ID)
+	require.Equal(t, []string{anas}, seen.OrgIDs)
 }

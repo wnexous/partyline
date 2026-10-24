@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const countRoomChatMembers = `-- name: CountRoomChatMembers :one
@@ -39,8 +40,8 @@ func (q *Queries) CountRoomMember(ctx context.Context, arg CountRoomMemberParams
 
 const createRoom = `-- name: CreateRoom :exec
 INSERT INTO rooms (id, owner_id, name, description, instructions, instructions_by, retention_days,
-                   created_at, updated_at, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   created_at, updated_at, updated_by, org_id, creator_iid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateRoomParams struct {
@@ -54,8 +55,12 @@ type CreateRoomParams struct {
 	CreatedAt      int64
 	UpdatedAt      int64
 	UpdatedBy      string
+	OrgID          sql.NullString
+	CreatorIid     sql.NullString
 }
 
+// org_id is the organization that owns a group and creator_iid the identity that created it
+// (ORG-02); both are NULL for a row written before organizations.
 func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) error {
 	_, err := q.db.ExecContext(ctx, createRoom,
 		arg.ID,
@@ -68,6 +73,8 @@ func (q *Queries) CreateRoom(ctx context.Context, arg CreateRoomParams) error {
 		arg.CreatedAt,
 		arg.UpdatedAt,
 		arg.UpdatedBy,
+		arg.OrgID,
+		arg.CreatorIid,
 	)
 	return err
 }
@@ -351,11 +358,12 @@ SELECT r.id, r.owner_id, r.name, r.description, r.retention_days, r.next_seq, r.
        (SELECT COUNT(*) FROM room_members rm WHERE rm.room_id = r.id) AS member_count
 FROM rooms r JOIN users u ON u.id = r.owner_id
 LEFT JOIN intelligences oi ON oi.id = r.owner_id
-WHERE (r.kind = 'group' AND r.owner_id = ?1)
-   OR (r.kind = 'group' AND r.id IN (SELECT g.resource_id FROM grants g
-                                     WHERE g.resource_kind = 'room' AND g.subject IN (?1, '*')))
-   OR (r.kind = 'group' AND r.id IN (SELECT m.room_id FROM room_members m
+WHERE (r.kind = 'group' AND r.id IN (SELECT m.room_id FROM room_members m
                                      WHERE m.kind = 'user' AND m.member_id = ?1))
+   OR (r.kind = 'group' AND EXISTS (SELECT 1 FROM org_members om
+                                    WHERE om.org_id = r.org_id AND om.iid = ?1
+                                      AND (om.permission = 'admin'
+                                           OR (om.permission <> 'guest' AND r.creator_iid = ?1))))
    OR (r.kind = 'dm' AND (r.dm_a = ?1 OR r.dm_b = ?1))
 ORDER BY r.name COLLATE NOCASE, r.id
 `
@@ -370,8 +378,9 @@ type ListRoomsForUserRow struct {
 	MemberCount   int64
 }
 
-// The conversations a user may have in a list: the groups they own, are granted or are a member
-// of, and the DMs they take part in. The DMs they only view through an AI are left out.
+// The conversations a user may have in a list (AD-016): the groups they are a member of, create or
+// administer, and the DMs they take part in. The DMs they only view as the manager of an AI are left
+// out. It selects the rooms ListUserRoomLevels gives a level.
 func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRoomsForUserRow, error) {
 	rows, err := q.db.QueryContext(ctx, listRoomsForUser, userID)
 	if err != nil {
@@ -408,6 +417,53 @@ func (q *Queries) ListRoomsForUser(ctx context.Context, userID string) ([]ListRo
 			&i.OwnerAvatar,
 			&i.MemberCount,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserRoomLevels = `-- name: ListUserRoomLevels :many
+SELECT m.room_id AS room_id, CAST('post' AS TEXT) AS level
+FROM room_members m JOIN rooms r ON r.id = m.room_id
+WHERE m.kind = 'user' AND m.member_id = ?1 AND r.kind = 'group'
+UNION ALL
+SELECT r.id, CAST('manage' AS TEXT)
+FROM rooms r JOIN org_members om ON om.org_id = r.org_id AND om.iid = ?1
+WHERE r.kind = 'group'
+  AND (om.permission = 'admin' OR (om.permission <> 'guest' AND r.creator_iid = ?1))
+UNION ALL
+SELECT r.id, CAST('post' AS TEXT)
+FROM rooms r
+WHERE r.kind = 'dm' AND (r.dm_a = ?1 OR r.dm_b = ?1)
+`
+
+type ListUserRoomLevelsRow struct {
+	RoomID string
+	Level  string
+}
+
+// The levels a user holds on rooms (AD-016): post as a user member of a group, manage as the creator
+// of a group (while a member of its organization other than a guest) or as an admin of its
+// organization, and post as a participant of a DM. The DMs the user only views as the manager of an AI
+// are not here, and neither is anything a grant names.
+func (q *Queries) ListUserRoomLevels(ctx context.Context, userID string) ([]ListUserRoomLevelsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUserRoomLevels, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserRoomLevelsRow
+	for rows.Next() {
+		var i ListUserRoomLevelsRow
+		if err := rows.Scan(&i.RoomID, &i.Level); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

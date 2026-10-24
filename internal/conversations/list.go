@@ -18,9 +18,9 @@ import (
 )
 
 // List returns the caller's conversations, newest activity first: the groups they own, were
-// granted or are a member of and the DMs they take part in (DM-06, LAY-01). A DM the caller only
-// views through an AI is reachable by id and not listed. Unread and read positions are per user,
-// so only users have a list.
+// granted or are a member of and the DMs they take part in (DM-06, LAY-01), each filed under its
+// organizations (ORG-02). A DM the caller only views through an AI is reachable by id and not
+// listed. Unread and read positions are per user, so only users have a list.
 func (s *Service) List(ctx context.Context, p authn.Principal) ([]dto.Conversation, error) {
 	if p.Kind != authn.KindUser {
 		return nil, access.ErrForbidden
@@ -63,7 +63,7 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]dto.Conversati
 	for _, r := range listed {
 		c := dto.Conversation{
 			ID: r.ID, Kind: dto.ConversationKind(r.Kind), Title: r.Name, MyLevel: r.Level, Unread: unreadBy[r.ID],
-			ActivityAt: time.UnixMilli(r.CreatedAt).UTC(), MemberNames: []string{},
+			ActivityAt: time.UnixMilli(r.CreatedAt).UTC(), MemberNames: []string{}, OrgIDs: r.OrgIDs,
 		}
 		if c.Kind == dto.ConversationKindDM {
 			for _, part := range r.Participants {

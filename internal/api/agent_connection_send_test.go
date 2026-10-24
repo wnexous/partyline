@@ -12,6 +12,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -73,27 +74,31 @@ func (f *replyFixture) secondConnection(t *testing.T) (dto.Connector, string) {
 	return c, f.chat(t, c, "-1001234567890", "Elsewhere", "group").ID
 }
 
-// CID-03, CID-17: who may write to a chat of a connection, and the refusals. Every refusal is tested
-// with an otherwise valid request, so that no other guard answers first (L-018), and each answers its
-// own code (L-017):
+// CID-03, CID-17, AD-016: who may write to a chat of a connection, and the refusals. An AI acts as itself,
+// so what decides is whether it belongs to the connection's organization. Every refusal is tested with an
+// otherwise valid request, so that no other guard answers first (L-018), and each answers its own code
+// (L-017):
 //   - the operator: 201;
-//   - another AI of the owner and the AI of a user granted use of the connection (the same-named AI
-//     of the operator, as far as it can be): 403 not_operator, because they may see the connection;
-//   - the AI of a stranger and of an admin, who may not: 404 not_found, as for an unknown connection,
-//     so the answer reveals nothing about it;
-//   - the owner, and a user granted use, as users with a session or a token: 403 forbidden (agent
-//     tokens only); anonymous: 401;
+//   - another AI of the organization, and an AI of another user that is a member of it too (named like the
+//     operator, as far as it can be): 403 not_operator, because they may see the connection;
+//   - an AI of a stranger and of an admin of the instance, which are not members: 404 not_found, as for an
+//     unknown connection, so the answer reveals nothing about it; and so is the AI of a member's host
+//     (a user in the organization gives their AIs nothing);
+//   - the owner, and a member, as users with a session or a token: 403 forbidden (agent tokens only);
+//     anonymous: 401;
 //   - the operator naming a chat of another connection, or one nobody has: 404 unknown_chat.
 func TestSendToAChatAuthorizationMatrix(t *testing.T) {
 	f := newReplyFixture(t)
 	bob, carol, root := f.env.NewUser("bob"), f.env.NewUser("carol"), f.env.NewAdmin("root")
-	shareConnector(f.alice, f.conn.ID, bob.User.ID)
+	shareConnector(f.alice, f.conn.ID, bob.User.ID) // bob is a member of the organization; his AI is not yet
 	_, foreignChat := f.secondConnection(t)
 	path := connectionChatPath(f.conn.ID, f.group.ID)
 	body := dto.SendToChatRequest{Text: "x"}
 	asAI := func(u *testkit.Client) *testkit.Client { return u.Token(dto.TokenKindAgent, "desk").AsAgent("Atlas") }
 
 	f.sendToChat("Notes", f.conn.ID, f.group.ID, "x").RequireError(http.StatusForbidden, dto.ErrorCodeNotOperator)
+	asAI(bob).Post(path, body).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.env.NewAI(bob, "Atlas"), orgs.PermissionMember, "") // bob's AI joins it
 	asAI(bob).Post(path, body).RequireError(http.StatusForbidden, dto.ErrorCodeNotOperator)
 	asAI(carol).Post(path, body).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	asAI(root).Post(path, body).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
@@ -111,7 +116,7 @@ func TestSendToAChatAuthorizationMatrix(t *testing.T) {
 	require.Equal(t, []string{"from the operator"}, outboundTexts(f.inst.Sent()))
 }
 
-// CID-03: the message of the refusals. A use grantee who is no operator is told so, and the answer of
+// CID-03: the message of the refusals. A member AI that is no operator is told so, and the answer of
 // a stranger is the very answer for a connection that does not exist.
 func TestSendToAChatRefusalMessages(t *testing.T) {
 	f := newReplyFixture(t)
@@ -129,7 +134,7 @@ func TestSendToAChatRefusalMessages(t *testing.T) {
 }
 
 // CID-02, CID-03: a connection nobody operates has no operator to send, not even the AI that used to
-// operate it: its owner's AIs are refused with not_operator.
+// operate it: the AIs of its organization are refused with not_operator.
 func TestSendToAChatOfAConnectionNobodyOperatesIsRefused(t *testing.T) {
 	f := newReplyFixture(t)
 	idle := createFakeIdle(f.alice, "idle", false)

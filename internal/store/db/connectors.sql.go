@@ -11,13 +11,14 @@ import (
 )
 
 const createConnector = `-- name: CreateConnector :exec
-INSERT INTO connectors (id, owner_id, kind, name, config_json, secrets_enc, enabled, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO connectors (id, owner_id, org_id, kind, name, config_json, secrets_enc, enabled, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateConnectorParams struct {
 	ID         string
 	OwnerID    string
+	OrgID      sql.NullString
 	Kind       string
 	Name       string
 	ConfigJson string
@@ -27,10 +28,12 @@ type CreateConnectorParams struct {
 	UpdatedAt  int64
 }
 
+// owner_id is the creator and a dead anchor since AD-019; org_id is the owning organization (ORG-02).
 func (q *Queries) CreateConnector(ctx context.Context, arg CreateConnectorParams) error {
 	_, err := q.db.ExecContext(ctx, createConnector,
 		arg.ID,
 		arg.OwnerID,
+		arg.OrgID,
 		arg.Kind,
 		arg.Name,
 		arg.ConfigJson,
@@ -162,32 +165,35 @@ func (q *Queries) GetConnectorWithOwner(ctx context.Context, id string) (GetConn
 	return i, err
 }
 
-const listConnectorsForUser = `-- name: ListConnectorsForUser :many
+const listConnectorsOfMember = `-- name: ListConnectorsOfMember :many
 SELECT c.id, c.owner_id, c.kind, c.name, c.config_json, c.secrets_enc, c.enabled, c.status, c.last_error, c.created_at, c.updated_at, c.auto_route_room_id, c.operator_iid, c.account_label, c.deliver, c.groups_mentions_only, c.org_id, u.username AS owner_username,
-       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name
-FROM connectors c JOIN users u ON u.id = c.owner_id
+       CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,
+       m.permission
+FROM connectors c
+JOIN org_members m ON m.org_id = c.org_id AND m.iid = ?1
+JOIN users u ON u.id = c.owner_id
 LEFT JOIN intelligences ui ON ui.id = u.id
-WHERE c.owner_id = ?1
-   OR c.id IN (SELECT g.resource_id FROM grants g
-               WHERE g.resource_kind = 'connector' AND g.subject IN (?1, '*'))
 ORDER BY c.name, u.username, c.id
 `
 
-type ListConnectorsForUserRow struct {
+type ListConnectorsOfMemberRow struct {
 	Connector        Connector
 	OwnerUsername    string
 	OwnerDisplayName string
+	Permission       string
 }
 
-func (q *Queries) ListConnectorsForUser(ctx context.Context, userID string) ([]ListConnectorsForUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, listConnectorsForUser, userID)
+// The connections of the organizations an identity belongs to, whatever its permission, with that
+// permission (AD-016): admins manage them, everybody else uses them.
+func (q *Queries) ListConnectorsOfMember(ctx context.Context, iid string) ([]ListConnectorsOfMemberRow, error) {
+	rows, err := q.db.QueryContext(ctx, listConnectorsOfMember, iid)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListConnectorsForUserRow
+	var items []ListConnectorsOfMemberRow
 	for rows.Next() {
-		var i ListConnectorsForUserRow
+		var i ListConnectorsOfMemberRow
 		if err := rows.Scan(
 			&i.Connector.ID,
 			&i.Connector.OwnerID,
@@ -208,6 +214,7 @@ func (q *Queries) ListConnectorsForUser(ctx context.Context, userID string) ([]L
 			&i.Connector.OrgID,
 			&i.OwnerUsername,
 			&i.OwnerDisplayName,
+			&i.Permission,
 		); err != nil {
 			return nil, err
 		}

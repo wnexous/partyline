@@ -15,7 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// dmEnv is alice with her AI atlas and bob, who may use it, with atlas connected.
+// dmEnv is alice with her AI atlas and bob, a member of her organization, with atlas connected.
 type dmEnv struct {
 	env        *testkit.Env
 	alice, bob *testkit.Client
@@ -78,7 +78,7 @@ func TestUserDMReachesALiveAIAsADM(t *testing.T) {
 	}
 	require.Empty(t, timelineOf(t, f.bob, his.ID), "bob's DM with atlas is another conversation")
 
-	// Bob may use atlas: his DM arrives in his own DM, untrusted, and the reply goes there.
+	// Bob belongs to atlas's organization: his DM arrives in his own DM, untrusted, and the reply goes there.
 	asked := say(f.bob, his.ID, "hi atlas, it is bob")
 	got = f.conn.Message(wsWait)
 	require.Equal(t, dto.RoomRef{ID: his.ID, Name: "bob", Kind: dto.ConversationKindDM}, got.Room)
@@ -144,7 +144,7 @@ func TestDMPassesAllAndMentionsDelivery(t *testing.T) {
 	his := dmWith(f.bob, f.atlas, http.StatusCreated)
 	group := createRoom(f.alice, "Ops")
 	f.alice.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: f.atlas}).RequireStatus(http.StatusCreated)
-	shareRoom(f.alice, group.ID, dto.SharingUser{UserID: f.bob.User.ID, Level: dto.LevelPost})
+	addToRoom(t, f.env, f.alice, group.ID, f.bob)
 	members := membersOf(t, f.alice, group.ID)
 	f.alice.Patch("/api/v1/rooms/"+group.ID+"/members/"+members[f.atlas].ID, dto.UpdateMemberRequest{Delivery: ptr(dto.DeliveryModeMentions)}).RequireStatus(http.StatusOK)
 	setDelivery(t, f.env, hers.ID, f.atlas, dto.DeliveryModeMentions)

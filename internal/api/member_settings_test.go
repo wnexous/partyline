@@ -11,8 +11,8 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// settingsRoom is a room of alice with her agent and a chat as members, shared with bob as
-// a viewer; carol has no access.
+// settingsRoom is a room of alice with her agent and a chat as members, and bob as a member of the
+// room and of her organization; carol has no access.
 type settingsRoom struct {
 	env               *testkit.Env
 	alice, bob, carol *testkit.Client
@@ -25,7 +25,7 @@ func newSettingsRoom(t *testing.T) *settingsRoom {
 	env := testkit.New(t)
 	f := &settingsRoom{env: env, alice: env.NewUser("alice"), bob: env.NewUser("bob"), carol: env.NewUser("carol")}
 	f.room = createRoom(f.alice, "ops")
-	shareRoom(f.alice, f.room.ID, dto.SharingUser{UserID: f.bob.User.ID, Level: dto.LevelPost})
+	addToRoom(t, env, f.alice, f.room.ID, f.bob)
 	agentID := storeAgent(t, env, f.alice.User.ID, "builder")
 	_, chatID := storeChat(t, env, f.alice.User.ID, "family")
 	f.agent = testkit.Decode[dto.RoomMember](f.alice.Post(f.members(), dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: agentID}).RequireStatus(http.StatusCreated))

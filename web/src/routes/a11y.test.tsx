@@ -8,6 +8,7 @@ import { json, mockApi } from "@/test/fetch";
 import {
   makeAgent,
   makeAI,
+  makeAIContact,
   makeConnector,
   makeConversation,
   makeIntelligence,
@@ -21,7 +22,7 @@ import {
 import { stubLayout } from "@/test/layout";
 import { stubViewport } from "@/test/media";
 import { renderRoute } from "@/test/render";
-import { lia, sampleContacts } from "@/test/sample-contacts";
+import { lia, oldHelper, sampleContacts } from "@/test/sample-contacts";
 
 expect.extend(matchers);
 
@@ -45,8 +46,6 @@ const aiProfile = makeProfile({
   can_edit: true,
   ai: {
     owner: makeIntelligence(),
-    machine: "devbox",
-    machine_label: "Build box",
     folder: "/home/dev/atlas",
     folder_label: "~/atlas",
     app: "claude",
@@ -79,7 +78,7 @@ const personProfile = makeProfile({
   ],
 });
 
-function appApi(locale: "en" | "pt-BR") {
+function appApi(locale: "en" | "pt-BR", extra: Parameters<typeof mockApi>[0] = {}) {
   return mockApi({
     "GET /me": json(200, makeMe({ role: "admin", locale })),
     "GET /intelligences/u1": json(200, ownProfile),
@@ -231,8 +230,6 @@ function appApi(locale: "en" | "pt-BR") {
       conversations: [],
       ai: {
         owner: makeMe().intelligence,
-        machine: "devbox",
-        machine_label: "devbox",
         folder: "/home/dev/atlas",
         folder_label: "~/atlas",
         app: "claude",
@@ -248,6 +245,7 @@ function appApi(locale: "en" | "pt-BR") {
     "GET /connectors": json(200, {
       items: [makeConnector({ status: "error", last_error: "invalid token" })],
     }),
+    ...extra,
   });
 }
 
@@ -320,18 +318,13 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
   });
 
-  it("the contacts page, with its tree, a connector's people and a machine being renamed, has no axe violations", async () => {
+  it("the contacts page, with its organizations, the AIs it hosts and a connector's people, has no axe violations", async () => {
     appApi(locale);
     const user = userEvent.setup();
     const { container } = renderRoute("/contacts");
-    await screen.findByRole("region", { name: "devbox" });
+    await screen.findByRole("region", { name: "Acme" });
     await user.click(screen.getByRole("button", { name: /ops-line/ }));
     await screen.findByTestId("contact-p1");
-    await user.click(
-      screen.getByRole("button", {
-        name: locale === "en" ? "Rename machine devbox" : "Renomear a máquina devbox",
-      }),
-    );
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
@@ -344,8 +337,14 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 
-  it("the merge dialog of an unlinked AI has no axe violations", async () => {
-    appApi(locale);
+  it("the merge dialog of a hosted AI has no axe violations", async () => {
+    // The old helper's home is Acme, where the user hosts Atlas and Notes too: it can be merged into either.
+    appApi(locale, {
+      "GET /contacts": json(200, {
+        ...sampleContacts,
+        hosted: [makeAIContact({ intelligence: oldHelper, folder: "", folder_label: "" })],
+      }),
+    });
     const user = userEvent.setup();
     renderRoute("/contacts");
     await user.click(
@@ -363,7 +362,7 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     stubViewport(360);
     appApi(locale);
     const { container } = renderRoute("/contacts");
-    await screen.findByRole("region", { name: "devbox" });
+    await screen.findByRole("region", { name: "Acme" });
     expect(await axe(container, AXE_OPTIONS)).toHaveNoViolations();
   });
 

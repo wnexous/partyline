@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// Agent is an AI as the agents list shows it (GET /agents): its profile, owner, machine, app and
-// presence.
+// Agent is an AI as the agents list shows it (GET /agents, and GET /agent/agents for the AIs a token's
+// user hosts): its profile, owner, home organization, folder, app and presence.
 type Agent struct {
 	ID string `json:"id"`
 	// Intelligence is the AI's profile: the display name people read, its @handle and avatar.
@@ -14,11 +14,18 @@ type Agent struct {
 	Description  string          `json:"description"`
 	Harness      string          `json:"harness"` // claude, opencode, pi, omp, codex, gemini or agent
 	Machine      string          `json:"machine"` // the session's hostname; empty when unknown
-	Owner        User            `json:"owner"`
-	MyLevel      Level           `json:"my_level"` // manage for the owner, use for grantees
-	Online       bool            `json:"online"`
-	LastSeenAt   *time.Time      `json:"last_seen_at,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
+	// Organization is the AI's home organization (ORG-02); absent for an AI that has none.
+	Organization *ContactOrg `json:"organization,omitempty"`
+	// Folder is the folder the AI works in on its host's computer; empty for an AI without one.
+	Folder string `json:"folder"`
+	// FolderLabel is Folder as the host's home folder reads it: "~", "~/x" under it, the absolute path
+	// elsewhere; empty without a folder.
+	FolderLabel string     `json:"folder_label"`
+	Owner       User       `json:"owner"`
+	MyLevel     Level      `json:"my_level"` // manage for whoever manages the AI in an organization they share, use otherwise
+	Online      bool       `json:"online"`
+	LastSeenAt  *time.Time `json:"last_seen_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 // MaxAgentDisplayName is the longest agent display name in characters (ID-04).
@@ -248,9 +255,13 @@ type AgentDMRequest struct {
 	ChatIDs []string `json:"chat_ids,omitempty"`
 }
 
-// CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name. Its
-// request is a CreateGroupRequest whose members are "@handle", handle or id.
+// CreatedGroup is the answer of POST /agent/groups (AGRP-01): the new group's room id and name, and
+// the organization it belongs to (ORG-02). Its request is a CreateGroupRequest whose members are
+// "@handle", handle or id.
 type CreatedGroup struct {
-	Room string `json:"room"`
-	Name string `json:"name"`
+	Room    string `json:"room"`
+	Name    string `json:"name"`
+	OrgID   string `json:"org_id"`
+	OrgSlug string `json:"org_slug"`
+	OrgName string `json:"org_name"`
 }

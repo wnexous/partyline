@@ -12,6 +12,7 @@ import (
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -62,8 +63,21 @@ func createBot(c *testkit.Client, name string) dto.Connector {
 	}).RequireStatus(http.StatusCreated))
 }
 
+// createBotIn creates a disabled bot connector in the organization (org may be an id or a slug) as c.
+func createBotIn(c *testkit.Client, org, name string) dto.Connector {
+	c.T.Helper()
+	return testkit.Decode[dto.Connector](c.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+		OrgID: org, Kind: "bot", Name: name, Config: map[string]any{"bot_token": botToken}, Enabled: disabled(),
+	}).RequireStatus(http.StatusCreated))
+}
+
+// shareConnector gives the users sight of the connection, as an admin of its organization would by inviting
+// them to it (AD-016): the connection is shared with an organization, not with users. The profile and people
+// code still reads the grant the sharing routes write until T27 moves it to organizations, so the helper
+// writes it too (c must manage the connection).
 func shareConnector(c *testkit.Client, id string, userIDs ...string) {
 	c.T.Helper()
+	c.ShareConnection(id, userIDs...)
 	users := make([]dto.SharingUser, len(userIDs))
 	for i, uid := range userIDs {
 		users[i] = dto.SharingUser{UserID: uid, Level: dto.LevelUse}
@@ -208,55 +222,145 @@ func TestConnectorInboundURL(t *testing.T) {
 	require.Empty(t, createBot(alice, "ops").InboundURL)
 }
 
-// Auth matrix (ACL-06, ACL-07, ACL-08): viewer is the use grantee.
+// connectionWant is the expected status of a route on a connection of the organization by role: the admin
+// of the organization, the other members of it - a manager, workers, a plain member, an inviter and a guest
+// all use it - and everybody else, an outsider and an admin of the instance included.
+func connectionWant(admin, member, hidden int) map[string]int {
+	return map[string]int{
+		"admin": admin, "manager": member, "target": member, "peer": member, "member": member, "inviter": member, "guest": member,
+		"outsider": hidden, "instance_admin": hidden,
+	}
+}
+
+// ORG-03, OMEM-04 (design, "Connections" matrix): a connection is created, changed, enabled, given its
+// operator and deleted by the admins of its organization only (403 for its other members, 404 for those
+// outside it, an admin of the instance included), and read - the connection, its chats - by every member.
 func TestConnectorRoutesAuthMatrix(t *testing.T) {
-	m := newMatrix(t, testkit.WithConnectorKinds(botKind(), hookKind()))
-	conn := func(res matrixResource, suffix string) string {
+	env := connectorEnv(t)
+	roles := env.OrgRoles("acme")
+	conn := func(res map[string]string, suffix string) string {
 		return "/api/v1/connectors/" + res["connector"] + suffix
 	}
-	setup := func(t *testing.T, m *matrix) matrixResource {
-		owner := m.as(t, roleOwner)
-		c := createBot(owner, "ops")
-		shareConnector(owner, c.ID, m.clients[roleViewer].User.ID)
-		return matrixResource{"connector": c.ID}
+	setup := func(*testing.T) map[string]string {
+		return map[string]string{"connector": createBotIn(roles.Admin, roles.Org.ID, "ops").ID}
 	}
-	name := "renamed"
-	routes := []matrixRoute{
-		{"get connector", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+	name, enabled, operator := "renamed", true, roles.TargetAI
+	runRoleRoutes(t, roles, setup, []roleRoute{
+		{"create connector", func(_ *testing.T, c *testkit.Client, _ map[string]string) *testkit.Response {
+			return c.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+				OrgID: roles.Org.ID, Kind: "bot", Name: "new", Config: map[string]any{"bot_token": botToken}, Enabled: disabled(),
+			})
+		}, connectionWant(201, 403, 403)},
+		{"get connector", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get(conn(res, ""))
-		}, statuses(200, 200, 404, 404, 404)},
-		{"update connector", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, connectionWant(200, 200, 404)},
+		{"list chats", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Get(conn(res, "/chats"))
+		}, connectionWant(200, 200, 404)},
+		{"refresh chats", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Post(conn(res, "/chats/refresh"), nil)
+		}, connectionWant(409, 403, 404)}, // the admin may ask; the disabled connection is not running (409)
+		{"rename connector", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch(conn(res, ""), dto.UpdateConnectorRequest{Name: &name})
-		}, statuses(200, 403, 404, 404, 404)},
-		{"delete connector", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, connectionWant(200, 403, 404)},
+		{"enable connector", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Patch(conn(res, ""), dto.UpdateConnectorRequest{Enabled: &enabled})
+		}, connectionWant(200, 403, 404)},
+		{"choose the operator", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Patch(conn(res, ""), dto.UpdateConnectorRequest{OperatorID: &operator})
+		}, connectionWant(200, 403, 404)},
+		{"delete connector", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Delete(conn(res, ""))
-		}, statuses(204, 403, 404, 404, 404)},
-		{"get sharing", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, connectionWant(204, 403, 404)},
+		{"get sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get(conn(res, "/sharing"))
-		}, statuses(200, 200, 404, 404, 404)},
-		{"put sharing", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, connectionWant(200, 200, 404)},
+		{"put sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Put(conn(res, "/sharing"), dto.Sharing{Mode: dto.VisibilityPrivate})
-		}, statuses(200, 403, 404, 404, 404)},
-	}
-	m.run(t, setup, routes)
+		}, connectionWant(200, 403, 404)},
+	})
 
-	// Listing: owner and grantee see the connector with their level, nobody else does.
-	res := setup(t, m)
-	wantLevel := map[matrixRole]dto.Level{roleOwner: dto.LevelManage, roleViewer: dto.LevelUse}
-	for _, role := range matrixRoles {
-		list := testkit.Decode[dto.List[dto.Connector]](m.as(t, role).Get("/api/v1/connectors").RequireStatus(http.StatusOK))
-		var levels []dto.Level
-		for _, c := range list.Items {
-			if c.ID == res["connector"] {
-				levels = append(levels, c.MyLevel)
-			}
+	// An AI token reaches no connection route (TOK-03), and anonymous callers are 401.
+	res := setup(t)
+	ai := roles.Admin.Token(dto.TokenKindAgent, "bot")
+	ai.Get(conn(res, "")).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	ai.Post("/api/v1/connectors", dto.CreateConnectorRequest{OrgID: roles.Org.ID, Kind: "bot", Name: "x"}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	env.Anon().Get(conn(res, "")).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	env.Anon().Post("/api/v1/connectors", dto.CreateConnectorRequest{OrgID: roles.Org.ID, Kind: "bot", Name: "x"}).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+}
+
+// ORG-02, AD-016: GET /connectors lists the connections of the organizations the caller belongs to, whatever their
+// permission there, and none of any other: the admins manage them, the other members use them.
+func TestConnectorListFollowsMembership(t *testing.T) {
+	env := connectorEnv(t)
+	acme, globex := env.OrgRoles("acme"), env.OrgRoles("globex")
+	inAcme := createBotIn(acme.Admin, acme.Org.ID, "in-acme")
+	inGlobex := createBotIn(globex.Admin, globex.Org.ID, "in-globex")
+	env.AddMember(globex.Org.ID, acme.Member.User.ID, orgs.PermissionMember, "") // acme's Member works in globex too
+
+	levels := func(c *testkit.Client) map[string]dto.Level {
+		t.Helper()
+		out := map[string]dto.Level{}
+		for _, item := range testkit.Decode[dto.List[dto.Connector]](c.Get("/api/v1/connectors").RequireStatus(http.StatusOK)).Items {
+			out[item.Name] = item.MyLevel
 		}
-		if want, ok := wantLevel[role]; ok {
-			require.Equal(t, []dto.Level{want}, levels, string(role))
-		} else {
-			require.Empty(t, levels, string(role))
-		}
+		return out
 	}
+	require.Equal(t, map[string]dto.Level{"in-acme": dto.LevelManage}, levels(acme.Admin))
+	require.Equal(t, map[string]dto.Level{"in-acme": dto.LevelUse}, levels(acme.Manager))
+	require.Equal(t, map[string]dto.Level{"in-acme": dto.LevelUse}, levels(acme.Guest), "a guest uses the connections of the organization too")
+	require.Equal(t, map[string]dto.Level{"in-acme": dto.LevelUse, "in-globex": dto.LevelUse}, levels(acme.Member), "an identity in two organizations sees both")
+	require.Equal(t, map[string]dto.Level{"in-globex": dto.LevelManage}, levels(globex.Admin))
+	require.Empty(t, levels(acme.Outsider))
+	require.Empty(t, levels(acme.InstanceAdmin), "an admin of the instance has no implicit access")
+	require.Equal(t, acme.Org.ID, inAcme.OrgID)
+	require.Equal(t, globex.Org.ID, inGlobex.OrgID)
+}
+
+// ORG-02, ORG-03: a connection belongs to the organization the creator names - by id or by slug, in any case - or,
+// when none is named, to the creator's default organization, and the creator must be an admin there. Anything else
+// is forbidden: a member who is not an admin, a guest, an organization the creator is not in and one that does not
+// exist, all answered alike so that nothing is told about organizations the caller does not belong to.
+func TestCreateConnectorNamesItsOrganization(t *testing.T) {
+	env := connectorEnv(t)
+	roles := env.OrgRoles("acme")
+	create := func(c *testkit.Client, org string) *testkit.Response {
+		return c.Post("/api/v1/connectors", dto.CreateConnectorRequest{
+			OrgID: org, Kind: "bot", Name: "ops", Config: map[string]any{"bot_token": botToken}, Enabled: disabled(),
+		})
+	}
+
+	byID := testkit.Decode[dto.Connector](create(roles.Admin, roles.Org.ID).RequireStatus(http.StatusCreated))
+	require.Equal(t, roles.Org.ID, byID.OrgID)
+	require.Equal(t, []any{dto.LevelManage, roles.Admin.User.ID}, []any{byID.MyLevel, byID.Owner.ID})
+	require.Equal(t, roles.Org.ID, testkit.Decode[dto.Connector](create(roles.Admin, " ACME ").RequireStatus(http.StatusCreated)).OrgID, "by slug, in any case")
+	personal := roles.Admin.PersonalOrg()
+	require.Equal(t, personal.ID, testkit.Decode[dto.Connector](create(roles.Admin, "").RequireStatus(http.StatusCreated)).OrgID,
+		"no organization named: the creator's default, which is their personal one")
+
+	// The default organization is the creator's to choose; where they are no admin they cannot create.
+	require.NoError(t, env.App.Orgs.SetDefault(context.Background(), roles.Member.User.ID, roles.Org.ID))
+	create(roles.Member, "").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	create(roles.Member, roles.Org.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	create(roles.Guest, roles.Org.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	denied := create(roles.Outsider, roles.Org.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	missing := create(roles.Outsider, "no-such-organization").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	require.Equal(t, denied, missing, "an organization that does not exist answers like one the caller is not in")
+	create(roles.InstanceAdmin, roles.Org.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	// A refusal creates nothing.
+	require.Empty(t, testkit.Decode[dto.List[dto.Connector]](roles.Outsider.Get("/api/v1/connectors").RequireStatus(http.StatusOK)).Items)
+
+	// Whoever belongs to no organization has nowhere to put one: 422, and nothing is created.
+	nobody := env.NewUser("nobody")
+	require.NoError(t, env.App.Orgs.Delete(context.Background(), nobody.User.ID, nobody.PersonalOrg().ID))
+	e := create(nobody, "").RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeOrganizationRequired)
+	require.Contains(t, e.Fields, "org_id")
+	require.Empty(t, testkit.Decode[dto.List[dto.Connector]](nobody.Get("/api/v1/connectors").RequireStatus(http.StatusOK)).Items)
+
+	// The invalid-input errors still come with the organization: a member with a bad config is told 403, not 422.
+	badConfig := dto.CreateConnectorRequest{OrgID: roles.Org.ID, Kind: "bot", Name: "ops"}
+	roles.Member.Post("/api/v1/connectors", badConfig).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	roles.Admin.Post("/api/v1/connectors", badConfig).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 }
 
 // insertChat stores a chat of the connector, as its inbound pipeline would.
@@ -300,13 +404,12 @@ func TestConnectorChangesAreAudited(t *testing.T) {
 	alice.Patch("/api/v1/connectors/"+c.ID, dto.UpdateConnectorRequest{Name: &name, Config: map[string]any{"bot_token": botToken2}}).RequireStatus(http.StatusOK)
 	alice.Patch("/api/v1/connectors/"+c.ID, dto.UpdateConnectorRequest{Enabled: &enabled}).RequireStatus(http.StatusOK)
 	alice.Patch("/api/v1/connectors/"+c.ID, dto.UpdateConnectorRequest{Enabled: &off}).RequireStatus(http.StatusOK)
-	shareConnector(alice, c.ID, admin.User.ID)
 	alice.Delete("/api/v1/connectors/" + c.ID).RequireStatus(http.StatusNoContent)
 
 	resp := admin.Get("/api/v1/admin/audit").RequireStatus(http.StatusOK)
 	requireNoSecret(t, resp)
 	entries := testkit.Decode[dto.Page[dto.AuditEntry]](resp).Items
-	for _, action := range []string{"connector.create", "connector.update", "connector.enable", "connector.disable", "grants.set", "connector.delete"} {
+	for _, action := range []string{"connector.create", "connector.update", "connector.enable", "connector.disable", "connector.delete"} {
 		e := findAudit(t, entries, action)
 		require.Equal(t, "connector", e.TargetKind, action)
 		require.Equal(t, c.ID, e.TargetID, action)
@@ -316,5 +419,6 @@ func TestConnectorChangesAreAudited(t *testing.T) {
 	update := findAudit(t, entries, "connector.update")
 	require.Equal(t, []any{"name", "config"}, update.Detail["changed"])
 	require.Equal(t, "bot", findAudit(t, entries, "connector.create").Detail["kind"])
+	require.Equal(t, alice.PersonalOrg().ID, findAudit(t, entries, "connector.create").Detail["org_id"], "the audit names the organization")
 	require.False(t, strings.Contains(string(resp.Body), "bot_token\":\""), "config values are not in the audit detail")
 }

@@ -59,7 +59,7 @@ type IntelligenceProfile struct {
 	CanEdit bool `json:"can_edit"`
 	// AI is set for AIs.
 	AI *AIDetail `json:"ai,omitempty"`
-	// Person is set for a person, for the users who own or may use its connector (PEOP-03,
+	// Person is set for a person, for the members of the organization of its connection (PEOP-03,
 	// PEOP-04); a user who sees the person through a conversation only gets the summary.
 	Person *PersonDetail `json:"person,omitempty"`
 	// Apps lists where the intelligence speaks: the web app for users, the current harness
@@ -69,6 +69,30 @@ type IntelligenceProfile struct {
 	// rooms with a chat where it was seen, or where it wrote), the most recently active first
 	// (PEOP-03); empty for the other kinds.
 	Conversations []RoomRef `json:"conversations"`
+	// Memberships lists, by organization name, the organizations the caller shares with a user or an AI
+	// (all of its own when the caller is the profile), with its permission and position in each and what
+	// the caller may do about it (OMEM-03, CHART-02). Empty for a person.
+	Memberships []ProfileMembership `json:"memberships"`
+	// CanEndSession tells whether the caller may end the AI's live session: it manages the AI in an
+	// organization they share (POS-04). Always false for users and people.
+	CanEndSession bool `json:"can_end_session"`
+}
+
+// ProfileMembership is the place of an intelligence in one organization, as a profile shows it.
+type ProfileMembership struct {
+	OrgID   string `json:"org_id"`
+	OrgName string `json:"org_name"`
+	OrgSlug string `json:"org_slug"`
+	// Permission is admin, member or guest.
+	Permission string `json:"permission"`
+	// PositionID and PositionName are absent for a member with no position.
+	PositionID   string `json:"position_id,omitempty"`
+	PositionName string `json:"position_name,omitempty"`
+	// CanDelete tells whether the caller may delete the intelligence in this organization (POS-05).
+	CanDelete bool `json:"can_delete"`
+	// DeleteEffect is what deleting it here does (POS-06): "delete" removes an AI for good, because this is its
+	// home organization; "remove" only takes the identity out of this organization.
+	DeleteEffect string `json:"delete_effect"`
 }
 
 // PersonDetail describes the platform account behind a person (PEOP-03).
@@ -84,13 +108,10 @@ type PersonDetail struct {
 	NameLocked bool `json:"name_locked"`
 }
 
-// AIDetail describes where an AI lives and who may use it.
+// AIDetail describes where an AI lives and how the caller stands to it.
 type AIDetail struct {
+	// Owner is the user who hosts the AI: whose computer and token run it. It grants nothing (AD-019).
 	Owner IntelligenceRef `json:"owner"`
-	// Machine is the hostname of the AI's machine and MachineLabel the owner's label for it
-	// (the hostname when there is none).
-	Machine      string `json:"machine"`
-	MachineLabel string `json:"machine_label"`
 	// Folder is the AI's canonical folder; empty for an AI that is not linked to one yet.
 	Folder      string `json:"folder"`
 	FolderLabel string `json:"folder_label"`
@@ -99,8 +120,8 @@ type AIDetail struct {
 	Online      bool       `json:"online"`
 	LastSeenAt  *time.Time `json:"last_seen_at,omitempty"`
 	ConnectedAt *time.Time `json:"connected_at,omitempty"`
-	// MyLevel is manage for the owner and use for a grantee; empty for a caller who sees the
-	// AI through a conversation they share.
+	// MyLevel is manage for whoever manages the AI in an organization they share with it (and the AI itself)
+	// and use for whoever only sees it.
 	MyLevel Level `json:"my_level,omitempty"`
 }
 

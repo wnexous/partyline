@@ -66,14 +66,14 @@ beforeEach(() => useLiveStore.setState({ locale: "en", presence: {}, paletteOpen
 afterEach(() => vi.unstubAllGlobals());
 
 describe("who can be a member", () => {
-  it("offers the user's AIs and the other users, and no one else", async () => {
+  it("offers the AIs of the user's organizations, the ones they host and the other users, and no one else", async () => {
     const { dialog } = await open();
     const ais = within(dialog).getByRole("group", { name: "AIs" });
     expect(
       within(ais)
         .getAllByRole("checkbox")
         .map((c) => c.getAttribute("data-member")),
-    ).toEqual(["a1", "a2", "a3", "a4", "a5"]);
+    ).toEqual(["a1", "a2", "a5", "a3", "a4"]);
     const users = within(dialog).getByRole("group", { name: "Users" });
     expect(
       within(users)
@@ -85,17 +85,18 @@ describe("who can be a member", () => {
     expect(within(dialog).queryByText("Lia Costa")).toBeNull();
   });
 
-  it("describes each one the way the conversation picker does: badge, handle, place", async () => {
+  it("describes each one the way the conversation picker does: badge, handle, folder, host", async () => {
     const { dialog } = await open();
     const atlas = box(dialog, "Atlas").closest("li") as HTMLElement;
     expect(within(atlas).getByText("AI")).toBeInTheDocument();
     expect(within(atlas).getByText("@atlas")).toBeInTheDocument();
-    expect(within(atlas).getByText("devbox")).toBeInTheDocument();
+    expect(within(atlas).getByText("~/atlas")).toBeInTheDocument();
     const sage = box(dialog, "Sage").closest("li") as HTMLElement;
-    expect(within(sage).getByText("by @bob")).toBeInTheDocument();
+    expect(within(sage).getByText("hosted by @bob")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/devbox|notebook-01|Laptop/)).toBeNull();
   });
 
-  it("filters by name, handle, machine or folder, and keeps what was picked while hidden", async () => {
+  it("filters by name, handle, app or folder, and keeps what was picked while hidden", async () => {
     const { user, dialog } = await open();
     await user.click(box(dialog, "Atlas"));
     await user.type(filter(dialog), "bob");

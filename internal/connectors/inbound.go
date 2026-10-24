@@ -135,18 +135,21 @@ func (p *Pipeline) handle(ctx context.Context, src Source, m Inbound) error {
 	return p.enqueue(ctx, src, conn, chat, m)
 }
 
-// pair links the sender to the user whose pairing code the message carries (IDN-02, IDN-03).
+// pair links the sender to the user whose pairing code the message carries (IDN-02, IDN-03). Through a
+// kind whose callers choose the sender ids freely, only the code of an admin of the connection's
+// organization links (IDN-05, AD-016), and a connection without an organization links nothing.
 func (p *Pipeline) pair(ctx context.Context, src Source, m Inbound, code string) error {
-	onlyUser := ""
-	if src.LinkOwnerOnly {
-		if src.OwnerID == "" {
-			return nil
+	adminsOf := ""
+	if src.LinkAdminsOnly {
+		conn, err := p.d.Store.R().GetConnector(ctx, src.ConnectorID)
+		if err != nil || !conn.OrgID.Valid {
+			return err
 		}
-		onlyUser = src.OwnerID
+		adminsOf = conn.OrgID.String
 	}
 	_, _, err := p.d.Identities.Link(ctx, code, identities.Account{
 		ConnectorID: src.ConnectorID, ConnectorKind: src.Kind, SenderID: m.SenderID, AltID: m.SenderAltID, Display: m.SenderName,
-	}, onlyUser)
+	}, adminsOf)
 	return err
 }
 

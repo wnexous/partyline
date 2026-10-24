@@ -146,7 +146,13 @@ type Agent struct {
 	Handle        string
 	ProfileName   string
 	ProfileAvatar string
-	// Level is manage for the owner and use for grantees.
+	// OrgName and OrgSlug name the AI's home organization; empty when it has none.
+	OrgName, OrgSlug string
+	// Home is the home folder of the host's machine the AI lives on, as the machine reported it; empty
+	// when unknown. It lets a folder read "~/x".
+	Home string
+	// Level is manage for whoever manages the agent in an organization they share with it, use for
+	// whoever only sees it.
 	Level access.Level
 	// Online tells whether the agent has a live connection.
 	Online bool
@@ -197,18 +203,27 @@ func (r *Registry) AllowCreate(agentID string) bool { return r.creates.allow(age
 // messages within PostWindow (TOOL-08).
 func (r *Registry) AllowPost(agentID string) bool { return r.posts.allow(agentID) }
 
-// authorize requires the user to hold want on the agent: no access is access.ErrNotFound,
-// use without manage is access.ErrForbidden.
+// authorize requires the user to hold want on the agent (AD-016): use is seeing it - hosting it, or sharing
+// an organization with it - and manage is managing it in an organization they share with it (POS-03).
+// No access is access.ErrNotFound; use without manage is access.ErrForbidden.
 func (r *Registry) authorize(ctx context.Context, p authn.Principal, agentID string, want access.Level) (access.Level, error) {
 	if p.Kind != authn.KindUser {
 		return access.None, access.ErrForbidden
 	}
-	l, err := r.az.AgentLevel(ctx, p.UserID, agentID)
+	see, err := r.az.CanSeeAI(ctx, p, agentID)
 	if err != nil {
 		return access.None, err
 	}
-	if !access.AtLeast(l, dto.LevelUse) {
+	if !see {
 		return access.None, access.ErrNotFound
+	}
+	l := dto.LevelUse
+	managed, err := r.az.Authz().ManagesAnywhere(ctx, p.UserID, agentID)
+	if err != nil {
+		return access.None, err
+	}
+	if managed {
+		l = dto.LevelManage
 	}
 	if !access.AtLeast(l, want) {
 		return l, access.ErrForbidden
@@ -216,7 +231,7 @@ func (r *Registry) authorize(ctx context.Context, p authn.Principal, agentID str
 	return l, nil
 }
 
-// Get returns an agent the user owns or may use.
+// Get returns an agent the user hosts or shares an organization with.
 func (r *Registry) Get(ctx context.Context, p authn.Principal, agentID string) (Agent, error) {
 	l, err := r.authorize(ctx, p, agentID, dto.LevelUse)
 	if err != nil {
@@ -229,7 +244,9 @@ func (r *Registry) Get(ctx context.Context, p authn.Principal, agentID string) (
 	if err != nil {
 		return Agent{}, err
 	}
-	return r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, row.ProfileAvatar, l), nil
+	a := r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, row.ProfileAvatar, l)
+	a.OrgName, a.OrgSlug, a.Home = row.OrgName, row.OrgSlug, row.MachineHome
+	return a, nil
 }
 
 func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, handle, profileName, profileAvatar string, l access.Level) Agent {
@@ -240,23 +257,50 @@ func (r *Registry) view(a db.Agent, ownerUsername, ownerDisplay, handle, profile
 	}
 }
 
-// ListVisible returns the agents the user owns plus those shared with the user (use grants,
-// own or everyone), by name.
+// ListVisible returns the agents the user hosts plus those of the organizations they belong to, by name,
+// each at manage when the user manages it in an organization they share with it and at use otherwise.
 func (r *Registry) ListVisible(ctx context.Context, p authn.Principal) ([]Agent, error) {
 	if p.Kind != authn.KindUser {
 		return nil, access.ErrForbidden
 	}
-	rows, err := r.store.R().ListAgentsForUser(ctx, p.UserID)
+	rows, err := r.store.R().ListVisibleAgents(ctx, p.UserID)
+	if err != nil {
+		return nil, err
+	}
+	managed, err := r.managedBy(ctx, p.UserID)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]Agent, 0, len(rows))
 	for _, row := range rows {
 		l := dto.LevelUse
-		if row.Agent.OwnerID == p.UserID {
+		if managed[row.Agent.ID] {
 			l = dto.LevelManage
 		}
-		out = append(out, r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, row.ProfileAvatar, l))
+		a := r.view(row.Agent, row.OwnerUsername, row.OwnerDisplayName, row.Handle, row.ProfileName, row.ProfileAvatar, l)
+		a.OrgName, a.OrgSlug, a.Home = row.OrgName, row.OrgSlug, row.MachineHome
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+// managedBy is the set of identities the user manages in the organizations they belong to (POS-03),
+// reading the chart of each organization once.
+func (r *Registry) managedBy(ctx context.Context, iid string) (map[string]bool, error) {
+	memberships, err := r.store.R().ListOrgsOfMember(ctx, iid)
+	if err != nil {
+		return nil, err
+	}
+	z := r.az.Authz().Session()
+	out := map[string]bool{}
+	for _, m := range memberships {
+		chart, err := z.Chart(ctx, m.Organization.ID)
+		if err != nil {
+			return nil, err
+		}
+		for id := range chart.ManagedBy(iid) {
+			out[id] = true
+		}
 	}
 	return out, nil
 }
@@ -271,7 +315,7 @@ type AgentUpdate struct {
 	Fixed *bool
 }
 
-// Update changes the agent's description or display name; requires ownership (manage). An
+// Update changes the agent's description or display name; requires managing it (POS-04). An
 // invalid field changes nothing (422).
 func (r *Registry) Update(ctx context.Context, p authn.Principal, agentID string, u AgentUpdate) (Agent, error) {
 	if _, err := r.authorize(ctx, p, agentID, dto.LevelManage); err != nil {
@@ -412,7 +456,8 @@ func (r *Registry) Delete(ctx context.Context, p authn.Principal, agentID string
 	return nil
 }
 
-// Sharing returns the agent's visibility preset; requires use.
+// Sharing returns the agent's visibility preset; requires seeing the agent. (The presets are inert since
+// AD-016: a grant gives nothing, and they go in T51.)
 func (r *Registry) Sharing(ctx context.Context, p authn.Principal, agentID string) (access.Visibility, error) {
 	if _, err := r.authorize(ctx, p, agentID, dto.LevelUse); err != nil {
 		return access.Visibility{}, err
@@ -420,8 +465,8 @@ func (r *Registry) Sharing(ctx context.Context, p authn.Principal, agentID strin
 	return r.az.Sharing(ctx, access.KindAgent, agentID)
 }
 
-// SetSharing replaces the agent's use grants with a visibility preset (ACL-07); requires
-// ownership (manage).
+// SetSharing replaces the agent's use grants with a visibility preset (ACL-07); requires managing the
+// agent.
 func (r *Registry) SetSharing(ctx context.Context, p authn.Principal, agentID string, v access.Visibility) (access.Visibility, error) {
 	if _, err := r.authorize(ctx, p, agentID, dto.LevelManage); err != nil {
 		return access.Visibility{}, err

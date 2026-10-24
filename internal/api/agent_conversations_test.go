@@ -11,6 +11,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/channel"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -110,15 +111,16 @@ func participantIDs(r dto.Room) []string {
 	return out
 }
 
-// DM-04: an AI reaches the intelligences its owner can see, and nothing else, with one answer for
-// an unknown target and an invisible one; and nothing is created or counted for a refused request.
-func TestAIDMTargetsAreThoseItsOwnerSees(t *testing.T) {
+// DM-04 (AD-016): an AI reaches the intelligences it can see - the users of the instance and the AIs it shares an
+// organization with, never through its owner - and nothing else, with one answer for an unknown target and an
+// invisible one; and nothing is created or counted for a refused request.
+func TestAIDMTargetsAreThoseItSees(t *testing.T) {
 	f := newAIEnv(t)
 	connector, _ := storeChat(t, f.env, f.alice.User.ID, "chat")
 	person := seedPerson(t, f.env, connector, "5511999990000", "Contact")
 
-	// What an AI sees is what its owner sees: bob cannot see atlas yet, so neither can his AI.
-	sendDM(f.bobAI, "@atlas", "bob's AI cannot see atlas").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
+	// An AI sees what it shares an organization with: sage shares none with atlas.
+	sendDM(f.bobAI, "@atlas", "sage cannot see atlas").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
 
 	// Visible: the owner's other AI and another user.
 	sendDM(f.aliceAI, "@orion", "hello orion").RequireStatus(http.StatusCreated)
@@ -137,10 +139,12 @@ func TestAIDMTargetsAreThoseItsOwnerSees(t *testing.T) {
 	sendDM(f.aliceAI, f.atlas, "me").RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeDMSelf)
 	sendDM(f.aliceAI, person, "hello").RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeNoRouteToPerson)
 
-	// Bob shares sage: now alice's AI sees it; and what sage sees is bob's to decide.
-	shareAI(f.bob, f.sage, f.alice)
+	// Sage's organization takes atlas in: atlas sees sage, and sage atlas. Seeing the owner's AIs is no reach:
+	// alice being a member there would give atlas nothing.
+	f.env.AddMember(f.bob.PersonalOrg().ID, f.alice.User.ID, orgs.PermissionMember, "")
+	sendDM(f.aliceAI, "@sage", "alice's reach is not atlas's").RequireError(http.StatusNotFound, dto.ErrorCodeContactNotFound)
+	f.env.AddMember(f.bob.PersonalOrg().ID, f.atlas, orgs.PermissionMember, "")
 	sendDM(f.aliceAI, "@sage", "now visible").RequireStatus(http.StatusCreated)
-	// Atlas wrote to bob, so bob now shares a conversation with it and sees it: so does his AI.
 	sendDM(f.bobAI, "@atlas", "now it can").RequireStatus(http.StatusCreated)
 
 	// atlas's DMs are atlas's: alice, its owner, views them and lists none; bob is a participant
@@ -193,7 +197,7 @@ func TestAIDMValidation(t *testing.T) {
 // untrusted when the two have different owners, and the answer goes back into the same DM.
 func TestAIDMReachesALiveAI(t *testing.T) {
 	f := newAIEnv(t)
-	shareAI(f.alice, f.atlas, f.bob)
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.sage, orgs.PermissionMember, "") // sage shares an organization with atlas
 	conn, resp := f.aliceTok.DialAgent("atlas")
 	require.NotNil(t, conn, "upgrade refused: %d", resp.Status)
 	conn.Welcome(wsWait)
@@ -252,7 +256,7 @@ func TestAICreatesAGroup(t *testing.T) {
 	require.Equal(t, 1, testkit.Decode[dto.Room](f.alice.Get("/api/v1/rooms/"+alone.Room).RequireStatus(http.StatusOK)).MemberCount)
 }
 
-// AGRP-02: a member the owner may not add refuses the AI's group: 422 members_refused listing every
+// AGRP-02: a member the AI may not add refuses its group: 422 members_refused listing every
 // refused member as the AI named it, nothing created, and the request costs no allowance.
 func TestAIGroupRefusesAndCreatesNothing(t *testing.T) {
 	f := newAIEnv(t)
@@ -273,8 +277,10 @@ func TestAIGroupRefusesAndCreatesNothing(t *testing.T) {
 	hiddenPerson := agentGroup(f.bobAI, "Ops", "@"+personHandle).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
 	require.Equal(t, []dto.RefusedMember{{ID: "@" + personHandle, Reason: dto.RefusedReasonNotFound}}, hiddenPerson.Refused)
 
-	// Once bob shares sage the same request works for it.
+	// Once sage joins the organization of atlas the same request works for it; a use grant is not enough.
 	shareAI(f.bob, f.sage, f.alice)
+	agentGroup(f.aliceAI, "Ops", "@alice", "@sage", f.orion).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.sage, orgs.PermissionMember, "")
 	ok := agentGroup(f.aliceAI, "Ops", "@alice", "@sage", f.orion).RequireStatus(http.StatusCreated)
 	require.Equal(t, 4, testkit.Decode[dto.Room](f.alice.Get("/api/v1/rooms/"+testkit.Decode[dto.CreatedGroup](ok).Room).RequireStatus(http.StatusOK)).MemberCount)
 

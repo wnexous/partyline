@@ -1,13 +1,13 @@
 package api_test
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -27,62 +27,100 @@ func shareAgent(c *testkit.Client, agentID string, userIDs ...string) {
 	c.Put("/api/v1/agents/"+agentID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: users}).RequireStatus(http.StatusOK)
 }
 
-// agentSetup creates an agent of the owner shared with the viewer (use grant). The viewer is also a member of the
-// owner's organization, as the upgrade leaves a grantee (OUPG-01): that is what lets it see the AI to delete it.
-func agentSetup(t *testing.T, m *matrix) matrixResource {
-	owner := m.as(t, roleOwner)
-	id := registerAgent(t, m.env, owner, "builder")
-	shareAgent(owner, id, m.clients[roleViewer].User.ID)
-	ensureMember(t, m.env, owner.PersonalOrg().ID, m.clients[roleViewer].User.ID)
-	return matrixResource{"agent": id}
-}
-
-// ensureMember makes the identity a member of the organization with no position unless it already is one.
-func ensureMember(t *testing.T, env *testkit.Env, org, iid string) {
-	t.Helper()
-	if !isMember(t, env, org, iid) {
-		env.AddMember(org, iid, orgs.PermissionMember, "")
+// agentWant is the expected status of a route on the AI that the role "manager" created and hosts, by role:
+// whoever manages it (its creator and the admin whose position is above the creator's), whoever only sees
+// it (the other people of the organization, guests included) and whoever cannot see it (an outsider and an
+// admin of the instance).
+func agentWant(manages, sees, hidden int) map[string]int {
+	return map[string]int{
+		"admin": manages, "manager": manages,
+		"target": sees, "peer": sees, "member": sees, "inviter": sees, "guest": sees,
+		"outsider": hidden, "instance_admin": hidden,
 	}
 }
 
-// Auth matrix for the agent management routes (ACL-05, ACL-07, ACL-08): viewer is the use grantee.
+// Auth matrix for the agent management routes (ACL-05, ACL-07, ACL-08, POS-04, POS-05) over the
+// organization roles (AD-016): an AI is seen by the people of the organizations it belongs to and managed
+// by the identities above it in the chart; the others get 404. (Deleting an AI is covered with the
+// deletion rule, in TestDeletingAnAIOfAnOrganization, merging with the merge tests.)
 func TestAgentRoutesAuthMatrix(t *testing.T) {
-	m := newMatrix(t)
-	agent := func(res matrixResource, suffix string) string { return "/api/v1/agents/" + res["agent"] + suffix }
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	agent := func(res map[string]string, suffix string) string { return "/api/v1/agents/" + res["agent"] + suffix }
 	desc := "Builds the project"
-	routes := []matrixRoute{
-		{"update agent", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+	setup := func(*testing.T) map[string]string { return map[string]string{"agent": roles.TargetAI} }
+	runRoleRoutes(t, roles, setup, []roleRoute{
+		{"get agent", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Get(agent(res, ""))
+		}, agentWant(200, 200, 404)},
+		{"update agent", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch(agent(res, ""), dto.UpdateAgentRequest{Description: &desc})
-		}, statuses(200, 403, 404, 404, 404)},
-		{"delete agent", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Delete(agent(res, ""))
-		}, statuses(204, 403, 404, 404, 404)},
-		{"get sharing", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, agentWant(200, 403, 404)},
+		{"get sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get(agent(res, "/sharing"))
-		}, statuses(200, 200, 404, 404, 404)},
-		{"put sharing", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, agentWant(200, 200, 404)},
+		{"put sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Put(agent(res, "/sharing"), dto.Sharing{Mode: dto.VisibilityPrivate})
-		}, statuses(200, 403, 404, 404, 404)},
-	}
-	m.run(t, agentSetup, routes)
+		}, agentWant(200, 403, 404)},
+	})
 
-	// Listing: everyone gets 200, only owner and grantee see the agent, with their level.
-	res := agentSetup(t, m)
-	wantLevel := map[matrixRole]dto.Level{roleOwner: dto.LevelManage, roleViewer: dto.LevelUse}
-	for _, role := range matrixRoles {
-		list := testkit.Decode[dto.List[dto.Agent]](m.as(t, role).Get("/api/v1/agents").RequireStatus(http.StatusOK))
+	// Listing: everyone gets 200, only the people of the organization see the AI, and the level says
+	// whether they manage it.
+	for _, role := range roles.All() {
+		list := testkit.Decode[dto.List[dto.Agent]](role.Client.Get("/api/v1/agents").RequireStatus(http.StatusOK))
 		var levels []dto.Level
 		for _, a := range list.Items {
-			if a.ID == res["agent"] {
+			if a.ID == roles.TargetAI {
 				levels = append(levels, a.MyLevel)
 			}
 		}
-		if want, ok := wantLevel[role]; ok {
-			require.Equal(t, []dto.Level{want}, levels, string(role))
-		} else {
-			require.Empty(t, levels, string(role))
+		switch role.Name {
+		case "admin", "manager":
+			require.Equal(t, []dto.Level{dto.LevelManage}, levels, role.Name)
+		case "outsider", "instance_admin":
+			require.Empty(t, levels, role.Name)
+		default:
+			require.Equal(t, []dto.Level{dto.LevelUse}, levels, role.Name)
 		}
 	}
+
+	// The tools of an AI are agent calls, not a way to manage AIs (TOK-03); anonymous callers are 401.
+	ai := roles.Manager.Token(dto.TokenKindAgent, "tools").AsAgent("acme-ai")
+	ai.Get("/api/v1/agents").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	ai.Patch("/api/v1/agents/"+roles.TargetAI, dto.UpdateAgentRequest{Description: &desc}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	env.Anon().Get("/api/v1/agents").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+}
+
+// POS-04: the AIs a user hosts stay in their list whatever the chart says, but hosting is no management:
+// a host who left the organization of the AI lists it with the level of someone who only sees it, and
+// cannot change it. Seeing an AI is hosting it or sharing an organization with it.
+func TestAgentListAndLevelFollowTheChartNotTheHost(t *testing.T) {
+	ctx := context.Background()
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	host := roles.Manager // hosts and created roles.TargetAI
+	levelOf := func(c *testkit.Client, id string) (dto.Level, bool) {
+		list := testkit.Decode[dto.List[dto.Agent]](c.Get("/api/v1/agents").RequireStatus(http.StatusOK))
+		for _, a := range list.Items {
+			if a.ID == id {
+				return a.MyLevel, true
+			}
+		}
+		return "", false
+	}
+	level, listed := levelOf(host, roles.TargetAI)
+	require.True(t, listed)
+	require.Equal(t, dto.LevelManage, level, "the creator manages the AI it started")
+
+	require.NoError(t, env.App.Orgs.Remove(ctx, roles.Admin.User.ID, roles.Org.ID, host.User.ID), "the host leaves the organization")
+	level, listed = levelOf(host, roles.TargetAI)
+	require.True(t, listed, "the AIs a user hosts stay in their list")
+	require.Equal(t, dto.LevelUse, level, "but hosting is no management")
+	desc := "no longer mine"
+	host.Patch("/api/v1/agents/"+roles.TargetAI, dto.UpdateAgentRequest{Description: &desc}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	host.Get("/api/v1/agents/" + roles.TargetAI).RequireStatus(http.StatusOK)
+	_, listed = levelOf(roles.Peer, roles.TargetAI)
+	require.True(t, listed, "and the AI stays in the organization")
 }
 
 // GET /agents renders the agent; PATCH changes the description; DELETE removes it from rooms.

@@ -61,13 +61,6 @@ func setRoomHome(t *testing.T, env *testkit.Env, roomID, orgID, creatorIID strin
 	}))
 }
 
-// addUserToRoom makes the user a member of the group, as its creator would, and returns the member row id.
-func addUserToRoom(t *testing.T, owner *testkit.Client, roomID, userID string) string {
-	t.Helper()
-	return testkit.Decode[dto.RoomMember](owner.Post("/api/v1/rooms/"+roomID+"/members",
-		dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: userID}).RequireStatus(http.StatusCreated)).ID
-}
-
 // frameKey names a live frame by what it is about: "access:<kind>:<id>" for access.changed, "<type>:<id>" for the
 // frames of a room or an AI, and the type alone for the others.
 func frameKey(t *testing.T, f testkit.Frame) string {
@@ -257,8 +250,8 @@ func TestLiveRemovalFromAnOrganizationTellsThatOrganizationsGroups(t *testing.T)
 	acme, org := w.acme, w.acme.Org.ID
 	ops := createRoom(acme.Manager, "ops")
 	setRoomHome(t, w.env, ops.ID, org, acme.Manager.User.ID)
-	addUserToRoom(t, acme.Manager, ops.ID, acme.Target.User.ID)
-	addUserToRoom(t, acme.Manager, ops.ID, acme.Peer.User.ID)
+	addToRoom(t, w.env, acme.Manager, ops.ID, acme.Target)
+	addToRoom(t, w.env, acme.Manager, ops.ID, acme.Peer)
 	targetLive, peerLive, adminLive, outsiderLive := dialLive(t, acme.Target), dialLive(t, acme.Peer), dialLive(t, acme.Admin), dialLive(t, acme.Outsider)
 
 	require.NoError(t, w.env.App.Orgs.Remove(ctx, acme.Admin.User.ID, org, acme.Target.User.ID))

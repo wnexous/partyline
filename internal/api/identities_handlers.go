@@ -31,8 +31,10 @@ func (s *server) listIdentities(w http.ResponseWriter, r *http.Request, p authn.
 	return nil
 }
 
-// createPairing issues a code bound to one connector the user owns or may use (IDN-01);
-// another user's connector answers 404.
+// createPairing issues a code bound to one connection of an organization the user belongs to (IDN-01);
+// a connection of another organization answers 404, and so does one that does not exist. Through a webhook
+// connection, whose callers choose the sender ids, only an admin of its organization is given a code: a
+// member is refused with 403 (AD-008 as amended by AD-016).
 func (s *server) createPairing(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	var req dto.PairingRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
@@ -42,7 +44,7 @@ func (s *server) createPairing(w http.ResponseWriter, r *http.Request, p authn.P
 	if connectorID == "" {
 		return &validation.Error{Fields: map[string]string{"connector_id": "required"}}
 	}
-	if err := s.Connectors.Require(r.Context(), p, connectorID, dto.LevelUse); err != nil {
+	if err := s.Connectors.RequirePairing(r.Context(), p, connectorID); err != nil {
 		return err
 	}
 	code, expires, err := s.Identities.CreatePairing(r.Context(), p.UserID, connectorID)

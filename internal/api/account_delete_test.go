@@ -78,11 +78,11 @@ func sortedKeys(m map[string]int) []string {
 //
 //	Team  ── alice is its only admin; bob is a member; carol is alice's guest; notes holds "Dev"
 //	Pair  ── alice and bob are both admins
-//	Alice's own organization ── she is its only admin; her AI atlas lives there
+//	Alice's own organization ── she is its only admin; her AI atlas lives there (and works in Team too)
 //
 // alice hosts the AIs atlas (live: it has an open session) and notes, owns the group Support and the
-// connection "wa" of Team, talks to bob, has a pending invitation and the usual credentials. The first admin,
-// root, is the oldest active instance admin: the heir.
+// connection "wa" of Team, which notes operates, talks to bob, has a pending invitation and the usual
+// credentials. The first admin, root, is the oldest active instance admin: the heir.
 type deletionWorld struct {
 	env                     *testkit.Env
 	root, alice, bob, carol *testkit.Client
@@ -132,6 +132,7 @@ func newDeletionWorld(t *testing.T) *deletionWorld {
 
 	w.support = createRoom(w.alice, "Support")
 	execSQL(t, env, `UPDATE rooms SET org_id = ?, creator_iid = ? WHERE id = ?`, w.team.ID, w.alice.User.ID, w.support.ID)
+	env.AddMember(w.team.ID, w.atlas, orgs.PermissionMember, "") // an AI joins a group of an organization it belongs to
 	for _, m := range []dto.AddMemberRequest{
 		{Kind: dto.MemberKindUser, MemberID: w.bob.User.ID}, {Kind: dto.MemberKindAgent, MemberID: w.atlas},
 	} {
@@ -143,7 +144,7 @@ func newDeletionWorld(t *testing.T) *deletionWorld {
 
 	w.conn = createFakeIdle(w.alice, "wa", true)
 	execSQL(t, env, `UPDATE connectors SET org_id = ? WHERE id = ?`, w.team.ID, w.conn.ID)
-	w.alice.OperateConnector(w.conn.ID, w.atlas)
+	w.alice.OperateConnector(w.conn.ID, w.notes) // ORG-07: the operator is an AI of the connection's organization
 
 	globex, err := env.App.Orgs.Create(ctx, w.root.User.ID, "Globex")
 	require.NoError(t, err)
@@ -240,7 +241,7 @@ func TestDeletingYourAccountLeavesTheOrganizationsTheirThings(t *testing.T) {
 	msgs := testkit.Decode[dto.Page[dto.Message]](w.bob.Get("/api/v1/rooms/" + w.support.ID + "/messages").RequireStatus(http.StatusOK)).Items
 	require.Len(t, msgs, 1)
 	require.Equal(t, "welcome to support", msgs[0].Text, "what she wrote in the group stays")
-	require.Equal(t, 1, countRows(t, w.env, `SELECT COUNT(*) FROM connectors WHERE id = ? AND org_id = ? AND owner_id = ? AND operator_iid = ?`, w.conn.ID, w.team.ID, w.root.User.ID, w.atlas), "the connection stays in Team with its operator")
+	require.Equal(t, 1, countRows(t, w.env, `SELECT COUNT(*) FROM connectors WHERE id = ? AND org_id = ? AND owner_id = ? AND operator_iid = ?`, w.conn.ID, w.team.ID, w.root.User.ID, w.notes), "the connection stays in Team with its operator")
 	require.Zero(t, countRows(t, w.env, `SELECT COUNT(*) FROM rooms WHERE id = ?`, w.dm.ID), "her DM went with the account")
 	w.bob.Get("/api/v1/rooms/" + w.dm.ID).RequireStatus(http.StatusNotFound)
 

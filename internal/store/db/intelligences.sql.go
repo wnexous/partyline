@@ -153,37 +153,6 @@ func (q *Queries) GetIntelligenceWithRole(ctx context.Context, id string) (GetIn
 	return i, err
 }
 
-const listIntelligenceRoomIDs = `-- name: ListIntelligenceRoomIDs :many
-SELECT room_id FROM room_members WHERE kind IN ('agent', 'user') AND member_id = ?1
-UNION
-SELECT room_id FROM messages WHERE author_iid = ?1 AND author_iid <> ''
-`
-
-// The rooms where the intelligence is a member or wrote a message: the conversations it can
-// share with a caller (CanSee).
-func (q *Queries) ListIntelligenceRoomIDs(ctx context.Context, id string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listIntelligenceRoomIDs, id)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var room_id string
-		if err := rows.Scan(&room_id); err != nil {
-			return nil, err
-		}
-		items = append(items, room_id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listIntelligencesByIDs = `-- name: ListIntelligencesByIDs :many
 SELECT id, kind, display_name, handle, avatar_sha256, bio, created_at, updated_at FROM intelligences WHERE id IN (/*SLICE:ids*/?)
 `

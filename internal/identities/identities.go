@@ -16,6 +16,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 )
@@ -100,16 +101,17 @@ type Account struct {
 	Display       string
 }
 
-// errWrongUser rolls back a Link whose code belongs to another user than the required one.
-var errWrongUser = errors.New("pairing code of another user")
+// errWrongUser rolls back a Link whose code belongs to a user the connection does not take.
+var errWrongUser = errors.New("pairing code of a user the connection does not take")
 
 // Link consumes a valid code of the account's connector and links the account (sender id
 // and alternate id) to the code's user, on that connector only, replacing an earlier link
 // of that account there (IDN-02). ok is false for unknown or expired codes (IDN-03) and for
-// codes of another connector, which are not consumed (IDN-02). When onlyUser is set
-// the code must belong to that user: a code of anyone else links nothing and is not
-// consumed (IDN-05, connectors whose callers choose sender ids freely).
-func (s *Service) Link(ctx context.Context, code string, acct Account, onlyUser string) (userID string, ok bool, err error) {
+// codes of another connector, which are not consumed (IDN-02). When adminsOf is set (an
+// organization id) the code must belong to an admin of that organization at this moment: a code of
+// anyone else links nothing and is not consumed (IDN-05, AD-016: connectors whose callers choose
+// sender ids freely link only the codes of the admins of the connection's organization).
+func (s *Service) Link(ctx context.Context, code string, acct Account, adminsOf string) (userID string, ok bool, err error) {
 	if acct.SenderID == "" || acct.ConnectorID == "" {
 		return "", false, nil
 	}
@@ -126,8 +128,14 @@ func (s *Service) Link(ctx context.Context, code string, acct Account, onlyUser 
 		if row.ExpiresAt <= now {
 			return nil
 		}
-		if onlyUser != "" && row.UserID != onlyUser {
-			return errWrongUser
+		if adminsOf != "" {
+			m, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: adminsOf, Iid: row.UserID})
+			if errors.Is(err, sql.ErrNoRows) || (err == nil && m.Permission != string(orgs.PermissionAdmin)) {
+				return errWrongUser
+			}
+			if err != nil {
+				return err
+			}
 		}
 		if err := q.DeleteIdentitiesForSender(ctx, db.DeleteIdentitiesForSenderParams{ConnectorID: acct.ConnectorID, SenderID: acct.SenderID, AltID: acct.AltID}); err != nil {
 			return err

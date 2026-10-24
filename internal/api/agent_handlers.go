@@ -610,10 +610,11 @@ func (s *server) sendOnConnection(w http.ResponseWriter, r *http.Request, p auth
 }
 
 // agentConnectionSend writes to a chat of a connection the AI operates: the connection and the chat
-// are Partyline's ids, as a platform event carries them (CID-16). An AI whose owner owns the connection
-// or may use it, and that is not its operator, is refused with 403 not_operator (CID-03); an AI whose
-// owner cannot see the connection gets 404, as for a connection that does not exist, so the answer
-// reveals nothing about it. A chat of another connection is 404 unknown_chat (CID-17).
+// are Partyline's ids, as a platform event carries them (CID-16). An AI that is a member of the
+// connection's organization and is not its operator is refused with 403 not_operator (CID-03); an AI that
+// is no member of it gets 404, as for a connection that does not exist, so the answer reveals nothing about
+// it (AD-016: the AI acts as itself, not through its host). A chat of another connection is 404
+// unknown_chat (CID-17).
 func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	var req dto.SendToChatRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
@@ -623,9 +624,8 @@ func (s *server) agentConnectionSend(w http.ResponseWriter, r *http.Request, p a
 		return access.ErrNotFound
 	}
 	connectionID := r.PathValue("id")
-	owner := authn.Principal{Kind: authn.KindUser, UserID: p.UserID}
-	if err := s.Connectors.Require(r.Context(), owner, connectionID, dto.LevelUse); err != nil {
-		return err // access.ErrNotFound: the owner may not use it (or it does not exist)
+	if err := s.Connectors.Require(r.Context(), p, connectionID, dto.LevelUse); err != nil {
+		return err // access.ErrNotFound: the AI is no member of its organization (or it does not exist)
 	}
 	return s.sendOnConnection(w, r, p, connectors.SendInput{
 		AgentID: p.AgentID, ConnectorID: connectionID, ChatID: r.PathValue("chat"), Text: req.Text,

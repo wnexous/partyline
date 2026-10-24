@@ -70,14 +70,14 @@ beforeEach(() => useLiveStore.setState({ locale: "en", presence: {}, paletteOpen
 afterEach(() => vi.unstubAllGlobals());
 
 describe("who can be picked (LAY-03)", () => {
-  it("lists the user's AIs at any depth of the tree, the unlinked and shared AIs, and the other users", async () => {
+  it("lists the AIs of the user's organizations group by group, then the ones they host, and the other users", async () => {
     const { dialog } = await open();
     expect(ids(within(dialog).getByRole("group", { name: "AIs" }))).toEqual([
       "contact-a1",
       "contact-a2",
+      "contact-a5",
       "contact-a3",
       "contact-a4",
-      "contact-a5",
     ]);
     expect(ids(within(dialog).getByRole("group", { name: "Users" }))).toEqual([
       "contact-u2",
@@ -87,7 +87,7 @@ describe("who can be picked (LAY-03)", () => {
     expect(within(dialog).queryByText("Ana Souza")).toBeNull();
   });
 
-  it("tells AIs from users and from each other: badge, handle, state, app and place", async () => {
+  it("tells AIs from users and from each other: badge, handle, state, app and folder, and no machine", async () => {
     const { dialog } = await open();
     const row = (id: string) => within(within(dialog).getByTestId(`contact-${id}`));
     expect(row("a1").getByText("Atlas")).toBeInTheDocument();
@@ -95,13 +95,15 @@ describe("who can be picked (LAY-03)", () => {
     expect(row("a1").getByText("@atlas")).toBeInTheDocument();
     expect(row("a1").getByText("Online")).toBeInTheDocument();
     expect(row("a1").getByText("Claude Code")).toBeInTheDocument();
-    expect(row("a1").getByText("devbox")).toBeInTheDocument();
+    expect(row("a1").getByText("~/atlas")).toBeInTheDocument();
     expect(row("a2").getByText("Offline")).toBeInTheDocument();
     expect(row("a2").getByText("OpenCode")).toBeInTheDocument();
-    // A machine shows the owner's label, not its hostname.
-    expect(row("a3").getByText("Laptop")).toBeInTheDocument();
-    // A shared AI says whose it is.
-    expect(row("a5").getByText("by @bob")).toBeInTheDocument();
+    expect(row("a2").getByText("~/atlas/notes")).toBeInTheDocument();
+    expect(row("a3").getByText("Codex")).toBeInTheDocument();
+    expect(row("a3").getByText("~/c/d/lab")).toBeInTheDocument();
+    // An AI another user hosts says who (AD-022: the machine it runs on is not shown).
+    expect(row("a5").getByText("hosted by @bob")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/devbox|notebook-01|Laptop/)).toBeNull();
     // A user carries no AI badge.
     expect(row("u2").queryByText("AI")).toBeNull();
     expect(row("u2").getByText("@bob")).toBeInTheDocument();
@@ -121,10 +123,9 @@ describe("searching contacts (LAY-03)", () => {
     ["a name", "cora", ["contact-u3"]],
     ["a name, whatever the case", "BOB", ["contact-u2"]],
     ["a handle with @", "@lab", ["contact-a3"]],
-    ["a machine label", "laptop", ["contact-a3"]],
-    ["a hostname", "notebook-01", ["contact-a3"]],
+    ["an app", "codex", ["contact-a3"]],
     ["a folder", "atlas/notes", ["contact-a2"]],
-    ["words that are found in different places", "atlas devbox", ["contact-a1", "contact-a2"]],
+    ["words that are found in different places", "atlas opencode", ["contact-a2"]],
   ])("finds a contact by %s", async (_what, query, expected) => {
     const { user, dialog } = await open();
     await user.type(search(dialog), query);
@@ -175,9 +176,9 @@ describe("opening the conversation (DM-01)", () => {
 
   it.each([
     ["a user", "u2"],
-    ["an AI in the tree", "a2"],
-    ["an unlinked AI", "a4"],
-    ["a shared AI", "a5"],
+    ["an AI of an organization", "a2"],
+    ["an AI no organization lists", "a4"],
+    ["an AI another user hosts", "a5"],
   ])("opens a DM with %s the same way", async (_what, id) => {
     const { calls, router, user, dialog } = await open({
       "POST /conversations/dm": json(200, dm()),

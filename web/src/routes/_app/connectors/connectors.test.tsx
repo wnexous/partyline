@@ -403,18 +403,12 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     expect(screen.getByText("Connected")).toBeInTheDocument();
     const operator = await screen.findByRole("combobox", { name: "Operator" });
     expect(operator).toHaveValue(atlas.id);
-    // Only the owner's AIs: no user, and nothing shared by another owner (CID-01).
+    // Only the AIs whose home is the connection's organization (ORG-07): no user, none of another organization.
     expect(
       within(operator)
         .getAllByRole("option")
         .map((o) => o.textContent),
-    ).toEqual([
-      "Choose an AI",
-      "Atlas (@atlas)",
-      "Notes (@notes)",
-      "Lab (@lab)",
-      "Old helper (@old-helper)",
-    ]);
+    ).toEqual(["Choose an AI", "Atlas (@atlas)", "Notes (@notes)", "Sage (@sage)"]);
     expect(screen.getByRole("combobox", { name: "Deliver" })).toHaveValue("dms");
     expect(screen.getByRole("switch", { name: "Groups: only when mentioned" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "Save delivery" })).toBeDisabled();

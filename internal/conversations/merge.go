@@ -26,8 +26,9 @@ var ErrIdentityOnline = errors.New("the AI is online: end its session before mer
 // the handle names the AI the history came from.
 func MergeNotice(handle string) string { return "History merged from @" + handle }
 
-// Merge merges the AI fromID into the AI intoID, both owned by the caller: everything the first
-// had becomes the second's and the first is deleted (MRG-01).
+// Merge merges the AI fromID into the AI intoID, which the caller manages and which share their home
+// organization: everything the first had becomes the second's and the first is deleted (MRG-01, POS-04,
+// AD-016).
 //
 //   - Group memberships move; where both are members, the surviving AI's settings win.
 //   - Delivery cursors in groups become the larger of the two.
@@ -43,15 +44,21 @@ func MergeNotice(handle string) string { return "History merged from @" + handle
 //     of those connectors (acknowledged items included) and the count of platform messages the
 //     first lost to the bound or to expiry, which the second is told about on its next
 //     connection (CID-05, CID-10).
+//   - The organizations only the first belongs to become the second's, with the permission, position
+//     and inviter it had there; where both belong, the second's membership stays. What the first
+//     created - AIs, groups - and the guests it invited are the second's. If the first created the
+//     second, the second's creator is the first's creator, so that it is not left as its own.
 //
 // It is one write transaction and is audited as agent.merge. The first AI must be offline
-// (ErrIdentityOnline); another user's AI is not found (access.ErrNotFound) or, when the caller may
-// only use it, forbidden; fromID and intoID must differ.
+// (ErrIdentityOnline). An AI the caller cannot see is access.ErrNotFound; one they see and do not
+// manage - in its home organization, where management is decided - or an AI of another home
+// organization than the first's is access.ErrForbidden; fromID and intoID must differ.
 func (s *Service) Merge(ctx context.Context, p authn.Principal, fromID, intoID string) error {
 	if p.Kind != authn.KindUser {
 		return access.ErrForbidden
 	}
-	if err := s.owns(ctx, p.UserID, fromID); err != nil {
+	fromHome, err := s.manages(ctx, p, fromID)
+	if err != nil {
 		return err
 	}
 	switch {
@@ -60,14 +67,18 @@ func (s *Service) Merge(ctx context.Context, p authn.Principal, fromID, intoID s
 	case intoID == fromID:
 		return &validation.Error{Fields: map[string]string{"into": "must be a different AI"}}
 	}
-	if err := s.owns(ctx, p.UserID, intoID); err != nil {
+	intoHome, err := s.manages(ctx, p, intoID)
+	if err != nil {
 		return err
+	}
+	if fromHome != intoHome { // an AI belongs to one organization (ORG-02): merging across them would move it
+		return access.ErrForbidden
 	}
 	if s.online != nil && s.online(fromID) {
 		return ErrIdentityOnline
 	}
 	var out mergeOutcome
-	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+	err = s.store.WithTx(ctx, func(q *db.Queries) error {
 		out = mergeOutcome{}
 		return s.merge(ctx, q, p.UserID, fromID, intoID, &out)
 	})
@@ -81,20 +92,32 @@ func (s *Service) Merge(ctx context.Context, p authn.Principal, fromID, intoID s
 	return nil
 }
 
-// owns requires the user to own the AI: no access to it is access.ErrNotFound, use without
-// ownership access.ErrForbidden.
-func (s *Service) owns(ctx context.Context, userID, agentID string) error {
-	l, err := s.az.AgentLevel(ctx, userID, agentID)
+// manages requires the user to manage the AI in its home organization (POS-03) and returns that
+// organization: an AI the user cannot see is access.ErrNotFound; one they see and do not manage, or one
+// that has no home organization and so no manager, access.ErrForbidden.
+func (s *Service) manages(ctx context.Context, p authn.Principal, agentID string) (string, error) {
+	see, err := s.az.CanSeeAI(ctx, p, agentID)
 	if err != nil {
-		return err
+		return "", err
 	}
-	switch {
-	case !access.AtLeast(l, dto.LevelUse):
-		return access.ErrNotFound
-	case !access.AtLeast(l, dto.LevelManage):
-		return access.ErrForbidden
+	if !see {
+		return "", access.ErrNotFound
 	}
-	return nil
+	home, err := s.store.R().GetAgentOrg(ctx, agentID)
+	if err != nil {
+		return "", err
+	}
+	if home == "" {
+		return "", access.ErrForbidden
+	}
+	ok, err := s.az.Authz().Manages(ctx, p.IID(), agentID, home)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", access.ErrForbidden
+	}
+	return home, nil
 }
 
 // mergeOutcome is what changed, for the events published once the merge committed.
@@ -106,9 +129,11 @@ type mergeOutcome struct {
 	rekeyed, appended, deleted []string
 	// queued is how many platform items changed hands.
 	queued int64
+	// orgs are the organizations whose members changed: the merged AI's.
+	orgs []string
 }
 
-func (s *Service) merge(ctx context.Context, q *db.Queries, ownerID, fromID, intoID string, out *mergeOutcome) error {
+func (s *Service) merge(ctx context.Context, q *db.Queries, actorID, fromID, intoID string, out *mergeOutcome) error {
 	from, err := q.GetAgent(ctx, fromID)
 	if err != nil {
 		return notFound(err)
@@ -117,8 +142,8 @@ func (s *Service) merge(ctx context.Context, q *db.Queries, ownerID, fromID, int
 	if err != nil {
 		return notFound(err)
 	}
-	if from.OwnerID != ownerID || into.OwnerID != ownerID {
-		return access.ErrNotFound
+	if !from.OrgID.Valid || from.OrgID != into.OrgID { // checked again inside the transaction
+		return access.ErrForbidden
 	}
 	fromHandle, err := handleOf(ctx, q, fromID)
 	if err != nil {
@@ -193,6 +218,9 @@ func (s *Service) merge(ctx context.Context, q *db.Queries, ownerID, fromID, int
 		return err
 	}
 	out.groups = append(out.groups, left...)
+	if err := s.mergeOrganizations(ctx, q, from, into, out); err != nil {
+		return err
+	}
 	if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(access.KindAgent), ResourceID: fromID}); err != nil {
 		return err
 	}
@@ -200,12 +228,49 @@ func (s *Service) merge(ctx context.Context, q *db.Queries, ownerID, fromID, int
 		return err
 	}
 	return s.audit.Record(ctx, q, audit.Entry{
-		ActorID: ownerID, Action: audit.ActionAgentMerge, TargetKind: audit.TargetAgent, TargetID: intoID,
+		ActorID: actorID, Action: audit.ActionAgentMerge, TargetKind: audit.TargetAgent, TargetID: intoID,
 		Detail: map[string]any{
 			"from": fromID, "into": intoID, "from_handle": fromHandle, "into_handle": intoHandle,
 			"connectors": connectors, "platform_items": out.queued,
 		},
 	})
+}
+
+// mergeOrganizations moves what the merged AI is in the organizations to the surviving one: its
+// memberships (the survivor's win), and who it created or invited.
+func (s *Service) mergeOrganizations(ctx context.Context, q *db.Queries, from, into db.Agent, out *mergeOutcome) error {
+	// What the merged AI created and invited is the survivor's. This also makes the survivor its own
+	// creator or inviter when the merged AI had made it; those two are repaired below.
+	if err := q.ReassignAgentCreator(ctx, db.ReassignAgentCreatorParams{FromID: sql.NullString{String: from.ID, Valid: true}, IntoID: sql.NullString{String: into.ID, Valid: true}}); err != nil {
+		return err
+	}
+	if into.CreatorIid.Valid && into.CreatorIid.String == from.ID {
+		if err := q.SetAgentCreator(ctx, db.SetAgentCreatorParams{CreatorIid: from.CreatorIid, ID: into.ID}); err != nil {
+			return err
+		}
+	}
+	if err := q.ReassignRoomCreator(ctx, db.ReassignRoomCreatorParams{FromID: sql.NullString{String: from.ID, Valid: true}, IntoID: sql.NullString{String: into.ID, Valid: true}}); err != nil {
+		return err
+	}
+	if err := q.ReassignInviter(ctx, db.ReassignInviterParams{FromID: sql.NullString{String: from.ID, Valid: true}, IntoID: sql.NullString{String: into.ID, Valid: true}}); err != nil {
+		return err
+	}
+	if err := q.ClearSelfInviter(ctx, db.ClearSelfInviterParams{FromID: from.ID, IntoID: into.ID}); err != nil {
+		return err
+	}
+	if err := q.ReassignInvitationInviter(ctx, db.ReassignInvitationInviterParams{FromID: from.ID, IntoID: into.ID}); err != nil {
+		return err
+	}
+	moved, err := q.MoveAgentOrgMemberships(ctx, db.MoveAgentOrgMembershipsParams{FromID: from.ID, IntoID: into.ID})
+	if err != nil {
+		return err
+	}
+	left, err := q.DeleteAgentOrgMemberships(ctx, from.ID) // the organizations both belong to
+	if err != nil {
+		return err
+	}
+	out.orgs = append(out.orgs, slices.Concat(moved, left)...)
+	return nil
 }
 
 func notFound(err error) error {
@@ -418,6 +483,9 @@ func (s *Service) announceMerge(fromID, intoID string, out mergeOutcome) {
 	}
 	if out.queued > 0 { // the survivor's live session reads the items it was handed
 		s.bus.Publish(events.PlatformQueued{AgentID: intoID})
+	}
+	for _, id := range slices.Compact(slices.Sorted(slices.Values(out.orgs))) {
+		s.bus.Publish(events.OrgChanged{OrgID: id})
 	}
 	s.bus.Publish(events.GrantsChanged{ResourceKind: string(access.KindAgent), ResourceID: intoID})
 	s.bus.Publish(events.IntelligenceChanged{ID: fromID})

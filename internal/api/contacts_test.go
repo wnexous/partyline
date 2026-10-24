@@ -2,10 +2,11 @@ package api_test
 
 import (
 	"context"
-	"database/sql"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
-	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -33,6 +35,22 @@ func aiAt(t *testing.T, env *testkit.Env, owner *testkit.Client, name, handle, m
 	_, err = env.App.Intelligences.Update(ctx, p, a.ID, intelligences.ProfileUpdate{DisplayName: &name, Handle: &handle})
 	require.NoError(t, err)
 	return a.ID
+}
+
+// aiAtIn is aiAt for an AI whose home is the organization: the owner's default is that organization while it
+// is made, and their own again afterwards.
+func aiAtIn(t *testing.T, env *testkit.Env, owner *testkit.Client, orgID, name, handle, machine, folder, home, harness string) string {
+	t.Helper()
+	ctx := context.Background()
+	before, err := env.App.Store.R().GetUser(ctx, owner.User.ID)
+	require.NoError(t, err)
+	require.NoError(t, env.App.Orgs.SetDefault(ctx, owner.User.ID, orgID))
+	defer func() {
+		require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+			return q.SetUserDefaultOrg(ctx, db.SetUserDefaultOrgParams{DefaultOrgID: before.DefaultOrgID, ID: owner.User.ID})
+		}))
+	}()
+	return aiAt(t, env, owner, name, handle, machine, folder, home, harness)
 }
 
 // contactsFixture extends the people fixture with AIs. alice owns, on the machine devbox (home
@@ -94,230 +112,284 @@ func aiNames(list []dto.AIContact) []string {
 	return out
 }
 
-// shape renders a tree as "Path › Name" lines indented by depth.
-func shape(nodes []dto.TreeNode, depth int) []string {
-	var out []string
-	for _, n := range nodes {
-		label := n.Name
-		if n.Path != "" {
-			label = n.Path + " › " + n.Name
+// rawContacts is the body of GET /contacts as the generic JSON a client reads, to say which keys it has.
+func rawContacts(t *testing.T, c *testkit.Client) map[string]any {
+	t.Helper()
+	var out map[string]any
+	require.NoError(t, json.Unmarshal(c.Get("/api/v1/contacts").RequireStatus(http.StatusOK).Body, &out))
+	return out
+}
+
+// orgGroup returns the group of the organization with that name, failing the test without one.
+func orgGroup(t *testing.T, c dto.Contacts, org string) dto.OrgAIs {
+	t.Helper()
+	for _, g := range c.OrgAIs {
+		if g.Org.Name == org {
+			return g
 		}
-		out = append(out, strings.Repeat("  ", depth)+label+" = "+n.AI.Intelligence.DisplayName)
-		out = append(out, shape(n.Children, depth+1)...)
+	}
+	require.FailNow(t, "no group for the organization", org)
+	return dto.OrgAIs{}
+}
+
+func orgNames(c dto.Contacts) []string {
+	out := make([]string, len(c.OrgAIs))
+	for i, g := range c.OrgAIs {
+		out[i] = g.Org.Name
 	}
 	return out
 }
 
-// CONT-01, TREE-01, TREE-03, TREE-06: the contacts of a user are their own AIs as a tree per
-// machine (an online machine first), the AIs of others shared with them, the other users and the
-// people of the connectors they may use; every AI row carries its online state, app and last seen.
-func TestContactsListWhatTheCallerCanReach(t *testing.T) {
-	f := newContactsFixture(t)
-	c := contactsOf(t, f.alice)
-
-	require.Equal(t, f.alice.User.ID, c.Me.ID)
-	require.Equal(t, []any{dto.IntelligenceRoleUser, "alice"}, []any{c.Me.Role, c.Me.Handle})
-
-	require.Len(t, c.Machines, 2)
-	devbox, notebook := c.Machines[0], c.Machines[1]
-	require.Equal(t, []any{"devbox", "devbox", true}, []any{devbox.Hostname, devbox.Label, devbox.Online}, "the machine with an online AI comes first")
-	require.Equal(t, []any{"notebook", "notebook", false}, []any{notebook.Hostname, notebook.Label, notebook.Online})
-	require.Equal(t, []string{"atlas = Atlas", "  notes = Notes", "c/d › lab = Lab"}, shape(devbox.Nodes, 0), "TREE-01, TREE-02: nesting and collapsed chains")
-	require.Equal(t, []string{"~ = Dev"}, shape(notebook.Nodes, 0), "the home folder is ~")
-
-	atlas := devbox.Nodes[0].AI
-	require.Equal(t, []any{f.atlas, dto.IntelligenceRoleAI, "atlas", "devbox", "/home/alice/atlas", "~/atlas", "claude", true},
-		[]any{atlas.Intelligence.ID, atlas.Intelligence.Role, atlas.Intelligence.Handle, atlas.Machine, atlas.Folder, atlas.FolderLabel, atlas.App, atlas.Online})
-	require.Nil(t, atlas.Owner, "your own AI names no owner")
-	require.Equal(t, dto.IntelligenceKindAI, atlas.Intelligence.Kind)
-	notes := devbox.Nodes[0].Children[0].AI
-	require.Equal(t, []any{f.notes, "opencode", false, "~/atlas/notes"}, []any{notes.Intelligence.ID, notes.App, notes.Online, notes.FolderLabel})
-	require.Nil(t, notes.LastSeenAt, "never connected: no last seen")
-	lab := devbox.Nodes[1].AI
-	require.Equal(t, []any{f.lab, "codex", false, "~/c/d/lab"}, []any{lab.Intelligence.ID, lab.App, lab.Online, lab.FolderLabel})
-	require.NotNil(t, lab.LastSeenAt, "it was online, so it was seen")
-	require.WithinDuration(t, f.clock.Now(), *lab.LastSeenAt, time.Minute, "when it went offline, by the app clock")
-
-	require.Equal(t, []string{"old-helper"}, aiNames(c.Unlinked), "TREE-06: the identity without a folder")
-	require.Equal(t, []any{f.old, "", ""}, []any{c.Unlinked[0].Intelligence.ID, c.Unlinked[0].Folder, c.Unlinked[0].FolderLabel})
-
-	require.Equal(t, []string{"Bobby", "Public"}, aiNames(c.Shared), "bob's shared AI and carol's public one, not bob's Secret")
-	require.Equal(t, []any{f.bobby, f.bob.User.ID, "bob", "bobs-pc", "~/bobby"}, []any{c.Shared[0].Intelligence.ID, c.Shared[0].Owner.ID, c.Shared[0].Owner.Handle, c.Shared[0].Machine, c.Shared[0].FolderLabel},
-		"a shared AI names its owner and shows its folder as the owner's machine does")
-	require.Equal(t, "/srv/public", c.Shared[1].FolderLabel, "outside the owner's home")
-
-	require.Equal(t, []string{"Admin", "bob", "carol", "dave", "erin"}, names(c.Users), "the other enabled users, by name")
-	for _, u := range c.Users {
-		require.Equal(t, dto.IntelligenceRoleUser, u.Role)
-		require.NotEqual(t, f.alice.User.ID, u.ID)
+func aiIDs(list []dto.AIContact) []string {
+	out := make([]string, len(list))
+	for i, a := range list {
+		out[i] = a.Intelligence.ID
 	}
-
-	require.Equal(t, []dto.PeopleGroup{{Connector: dto.ConnectorRef{ID: f.conn.ID, Kind: connectortest.KindName, Name: "wa"}, Count: 1}}, c.People)
+	return out
 }
 
-// CONT-01 (authorization): each user lists their own data; what is not theirs or shared with them
-// is absent, and a connector is a people group for those who own or may use it.
-func TestContactsOfOtherUsersHoldOnlyTheirOwnData(t *testing.T) {
+// CONT-01, OMEM-03, ORG-02 (AD-016, AD-022): the contacts of a user are the AIs of each organization they
+// belong to, by organization name, with the other users and the people of their connections. An AI that
+// belongs to two of the user's organizations is listed under both, with its home; the user's own AIs name no
+// host and the others name theirs; every AI carries its state, app and folder, and the response has no machine
+// anywhere.
+func TestContactsListTheAIsOfTheCallersOrganizationsByOrganization(t *testing.T) {
+	env := testkit.New(t)
+	acme, globex := env.OrgRoles("acme"), env.OrgRoles("globex")
+	scout := env.NewAIIn(acme.Peer, acme.Org.ID, "scout")                        // acme's second AI, hosted by Peer
+	rover := env.NewAIIn(globex.Manager, globex.Org.ID, "rover")                 // globex's second AI
+	env.AddMember(globex.Org.ID, acme.Member.User.ID, orgs.PermissionMember, "") // Member works in both
+	env.AddMember(globex.Org.ID, scout, orgs.PermissionMember, "")               // and scout works in both too
+
+	member := contactsOf(t, acme.Member)
+	require.Equal(t, []string{"acme", "acme-member", "globex"}, orgNames(member),
+		"every organization of the user, by name: their personal one too, empty")
+	inAcme := orgGroup(t, member, "acme")
+	require.ElementsMatch(t, []string{acme.TargetAI, scout}, aiIDs(inAcme.AIs))
+	require.Equal(t, acme.Org.ID, inAcme.Org.ID)
+	require.Equal(t, "acme", inAcme.Org.Slug)
+	require.Empty(t, orgGroup(t, member, "acme-member").AIs, "a group is listed empty")
+	require.NotNil(t, orgGroup(t, member, "acme-member").AIs, "an empty list, not null")
+	inGlobex := orgGroup(t, member, "globex")
+	require.ElementsMatch(t, []string{globex.TargetAI, rover, scout}, aiIDs(inGlobex.AIs), "scout is listed under both")
+	require.True(t, slices.IsSortedFunc(inAcme.AIs, func(a, b dto.AIContact) int {
+		return strings.Compare(strings.ToLower(a.Intelligence.DisplayName), strings.ToLower(b.Intelligence.DisplayName))
+	}), "by name")
+	for _, ai := range append(inAcme.AIs, inGlobex.AIs...) {
+		require.Equal(t, dto.IntelligenceRoleAI, ai.Intelligence.Role)
+		if ai.Intelligence.ID == scout {
+			require.Equal(t, acme.Org.ID, ai.OrgID, "its home is acme whichever group lists it")
+		}
+	}
+
+	// A host is named when it is someone else, never for the caller's own AIs.
+	peer := contactsOf(t, acme.Peer)
+	var theirs, mine dto.AIContact
+	for _, ai := range orgGroup(t, peer, "acme").AIs {
+		switch ai.Intelligence.ID {
+		case acme.TargetAI:
+			theirs = ai
+		case scout:
+			mine = ai
+		}
+	}
+	require.NotNil(t, theirs.Owner)
+	require.Equal(t, acme.Manager.User.ID, theirs.Owner.ID, "Manager hosts the AI")
+	require.Nil(t, mine.Owner, "your own AI names no host")
+
+	// Users and the groups of connections come as before: everybody else, and the connections of my organizations.
+	require.Contains(t, names(member.Users), acme.Admin.User.Username)
+	require.NotContains(t, names(member.Users), acme.Member.User.Username)
+	require.NotNil(t, member.People, "an empty list, not null")
+
+	// Presence and the app show: Manager's session connects the AI, and any member sees it online.
+	conn, resp := acme.Manager.Token(dto.TokenKindAgent, "laptop").DialAgent("acme-ai")
+	require.NotNil(t, conn, "upgrade refused: %d", resp.Status)
+	conn.Welcome(wsWait)
+	online := func() bool {
+		for _, ai := range orgGroup(t, contactsOf(t, acme.Member), "acme").AIs {
+			if ai.Intelligence.ID == acme.TargetAI {
+				return ai.Online
+			}
+		}
+		return false
+	}
+	require.True(t, online())
+	conn.Close()
+	require.Eventually(t, func() bool { return !online() }, wsWait, 20*time.Millisecond)
+}
+
+// OMEM-03 (Done when): contacts list another user's AI after the user joins its organization and not before;
+// leaving the organization takes the AI away again, but an AI the user hosts stays in their list, under "hosted".
+func TestContactsFollowTheOrganizationsOfTheCaller(t *testing.T) {
+	env := testkit.New(t)
+	acme := env.OrgRoles("acme")
+	listed := func(c *testkit.Client, id string) (inGroup, inHosted bool) {
+		t.Helper()
+		got := contactsOf(t, c)
+		for _, g := range got.OrgAIs {
+			if slices.Contains(aiIDs(g.AIs), id) {
+				inGroup = true
+			}
+		}
+		return inGroup, slices.Contains(aiIDs(got.Hosted), id)
+	}
+
+	inGroup, inHosted := listed(acme.Outsider, acme.TargetAI)
+	require.False(t, inGroup || inHosted, "not before joining its organization")
+	env.AddMember(acme.Org.ID, acme.Outsider.User.ID, orgs.PermissionMember, "")
+	inGroup, inHosted = listed(acme.Outsider, acme.TargetAI)
+	require.True(t, inGroup, "after joining it")
+	require.False(t, inHosted, "somebody else's AI is not hosted by the outsider")
+	require.NoError(t, env.App.Orgs.Leave(context.Background(), acme.Outsider.User.ID, acme.Org.ID))
+	inGroup, inHosted = listed(acme.Outsider, acme.TargetAI)
+	require.False(t, inGroup || inHosted, "and not after leaving it")
+
+	// The AI Manager hosts is listed under acme while Manager belongs to it, and under "hosted" once Manager left:
+	// the AIs a user runs do not vanish from their contacts.
+	inGroup, inHosted = listed(acme.Manager, acme.TargetAI)
+	require.True(t, inGroup)
+	require.False(t, inHosted, "no group lists it twice")
+	require.NoError(t, env.App.Orgs.Leave(context.Background(), acme.Manager.User.ID, acme.Org.ID))
+	inGroup, inHosted = listed(acme.Manager, acme.TargetAI)
+	require.False(t, inGroup, "Manager left its organization")
+	require.True(t, inHosted, "but still hosts it")
+	left := contactsOf(t, acme.Manager).Hosted[0]
+	require.Equal(t, acme.TargetAI, left.Intelligence.ID)
+	require.Nil(t, left.Owner, "hosted by the caller")
+	require.Equal(t, acme.Org.ID, left.OrgID, "its home organization is the one the caller left")
+}
+
+// AD-022: the contacts show no machine: not as a grouping, not as a hostname or a label on an AI, and the
+// pieces v0.5 had for them (machines, unlinked, shared) are gone from the response.
+func TestContactsShowNoMachines(t *testing.T) {
 	f := newContactsFixture(t)
+	raw := rawContacts(t, f.alice)
+	keys := make([]string, 0, len(raw))
+	for k := range raw {
+		keys = append(keys, k)
+	}
+	require.ElementsMatch(t, []string{"me", "org_ais", "hosted", "users", "people"}, keys)
+	body := string(f.alice.Get("/api/v1/contacts").RequireStatus(http.StatusOK).Body)
+	for _, hostname := range []string{"devbox", "notebook", "bobs-pc", "machine"} {
+		require.NotContains(t, body, hostname, "no hostname, label or machine key anywhere")
+	}
+	// The folders still read relative to the host's home folder.
+	var labels []string
+	for _, g := range contactsOf(t, f.alice).OrgAIs {
+		for _, ai := range g.AIs {
+			labels = append(labels, ai.FolderLabel)
+		}
+	}
+	require.Contains(t, labels, "~/atlas")
+	require.Contains(t, labels, "~/atlas/notes")
+}
+
+// CONT-01 (authorization): each user lists what their organizations hold and what they host; what belongs to
+// other organizations is absent, and a connection is a people group for the members of its organization only.
+func TestContactsOfOtherUsersHoldOnlyTheirOrganizationsData(t *testing.T) {
+	f := newContactsFixture(t)
+	f.bob.Put("/api/v1/agents/"+f.secret+"/sharing", dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelUse}).RequireStatus(http.StatusOK) // a grant gives nothing
 	carolConn := createFakeIdle(f.carol, "carol-wa", true)
 
+	// bob belongs to "line" (alice's organization with the connection "wa") and to his own: his two AIs are
+	// in the second, Atlas in the first; his private one is no secret from his own organization.
 	bob := contactsOf(t, f.bob)
-	require.Equal(t, []string{"bobs-pc"}, hostnames(bob.Machines))
-	require.Equal(t, []string{"~/bobby", "~/secret"}, folderLabels(bob.Machines[0].Nodes), "bob's own AIs, shared or not")
-	require.Equal(t, []string{"Public"}, aiNames(bob.Shared), "bob sees carol's public AI; his own AIs are not 'shared'")
-	require.Empty(t, bob.Unlinked)
+	require.ElementsMatch(t, []string{"bob", "line"}, orgNames(bob))
+	require.ElementsMatch(t, []string{f.bobby, f.secret}, aiIDs(orgGroup(t, bob, "bob").AIs), "bob's own AIs")
+	require.Equal(t, []string{f.atlas}, aiIDs(orgGroup(t, bob, "line").AIs), "the AI of the organization that holds the connection")
+	require.Empty(t, bob.Hosted)
 	require.Equal(t, []dto.PeopleGroup{{Connector: dto.ConnectorRef{ID: f.conn.ID, Kind: connectortest.KindName, Name: "wa"}, Count: 1}}, bob.People,
-		"bob may use alice's connector")
+		"bob belongs to the organization of alice's connection")
 
 	carol := contactsOf(t, f.carol)
-	require.Equal(t, []string{"carols-pc"}, hostnames(carol.Machines))
-	require.Empty(t, carol.Shared, "nobody shared an AI with carol; her own is hers")
+	require.Equal(t, []string{"carol"}, orgNames(carol))
+	require.Equal(t, []string{f.public}, aiIDs(orgGroup(t, carol, "carol").AIs))
+	require.NotContains(t, aiIDs(orgGroup(t, carol, "carol").AIs), f.secret, "bob's public grant gives carol nothing")
 	require.Equal(t, []dto.PeopleGroup{{Connector: dto.ConnectorRef{ID: carolConn.ID, Kind: connectortest.KindName, Name: "carol-wa"}, Count: 0}}, carol.People,
-		"her connector has seen nobody; alice's is not hers to use")
+		"her connection has seen nobody; alice's is not hers")
 	require.NotContains(t, names(carol.Users), "carol")
 
 	dave := contactsOf(t, f.dave)
-	require.NotNil(t, dave.Machines, "empty lists, not null")
-	require.Empty(t, dave.Machines)
-	require.NotNil(t, dave.Unlinked)
-	require.Equal(t, []string{"Public"}, aiNames(dave.Shared))
+	require.NotNil(t, dave.Hosted, "empty lists, not null")
+	require.Empty(t, dave.Hosted)
 	require.NotNil(t, dave.People)
 	require.Empty(t, dave.People)
+	require.Empty(t, orgGroup(t, dave, "dave").AIs, "dave's own organization holds no AI")
 
 	f.env.Anon().Get("/api/v1/contacts").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	f.alice.Token(dto.TokenKindAgent, "laptop").Get("/api/v1/contacts").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	f.alice.Token(dto.TokenKindAgent, "laptop").Get("/api/v1/contacts/people?connector_id="+f.conn.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 }
 
-func hostnames(ms []dto.MachineTree) []string {
-	out := make([]string, len(ms))
-	for i, m := range ms {
-		out[i] = m.Hostname
-	}
-	return out
-}
-
-func folderLabels(nodes []dto.TreeNode) []string {
-	var out []string
-	for _, n := range nodes {
-		out = append(out, n.AI.FolderLabel)
-		out = append(out, folderLabels(n.Children)...)
-	}
-	return out
-}
-
-// Disabled users are not contacts, and a machine whose AIs are all gone does not linger.
-func TestContactsLeaveOutDisabledUsersAndEmptyMachines(t *testing.T) {
+// Disabled users are not contacts.
+func TestContactsLeaveOutDisabledUsers(t *testing.T) {
 	f := newContactsFixture(t)
 	f.admin.Patch("/api/v1/admin/users/"+f.erin.User.ID, dto.UpdateUserRequest{Disabled: new(true)}).RequireStatus(http.StatusOK)
 	require.NotContains(t, names(contactsOf(t, f.alice).Users), "erin")
-	f.alice.Delete("/api/v1/agents/" + f.dev).RequireStatus(http.StatusNoContent)
-	require.Equal(t, []string{"devbox"}, hostnames(contactsOf(t, f.alice).Machines))
 }
 
-// TREE-06: the identities without a folder are listed the most recently seen first, the ones
-// never seen after them by name.
-func TestContactsOrderUnlinkedByLastSeen(t *testing.T) {
+// The AIs a user hosts that none of their organizations lists come by name, case-insensitively.
+func TestContactsListHostedAIsByName(t *testing.T) {
 	f := newContactsFixture(t)
-	seen := func(id string, ago time.Duration) {
-		t.Helper()
-		at := f.clock.Now().Add(-ago).UnixMilli()
-		require.NoError(t, f.env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
-			return q.TouchAgent(context.Background(), db.TouchAgentParams{LastSeenAt: sql.NullInt64{Int64: at, Valid: true}, ID: id})
-		}))
+	// A v0.3 identity belongs to no organization until the upgrade places it (OUPG-01): it is not listed by one.
+	for _, name := range []string{"zeta-helper", "alpha-helper", "Beta-helper"} {
+		f.env.NewLegacyAI(f.alice, name)
 	}
-	older := f.env.NewLegacyAI(f.alice, "alpha-helper")
-	newer := f.env.NewLegacyAI(f.alice, "zeta-helper")
-	f.env.NewLegacyAI(f.alice, "beta-helper")
-	seen(older, 2*time.Hour)
-	seen(newer, time.Hour)
-
-	require.Equal(t, []string{"zeta-helper", "alpha-helper", "beta-helper", "old-helper"}, aiNames(contactsOf(t, f.alice).Unlinked))
+	require.Equal(t, []string{"alpha-helper", "Beta-helper", "old-helper", "zeta-helper"}, aiNames(contactsOf(t, f.alice).Hosted))
 }
 
-// TREE-03: the machine order is online first, then by label (the owner's label, else the
-// hostname), and the label shows in the tree.
-func TestContactsOrderMachinesByStateAndLabel(t *testing.T) {
+// ORG-02, AD-022 (T57): GET /agent/agents lists each AI the token's user hosts with its home organization and
+// its folder as the host's home folder reads it (`~`, `~/x`, or the absolute path outside it), and never an AI of
+// somebody else that an organization shares; an AI without an organization or a folder says neither.
+func TestAgentAgentsListsTheHostedAIsWithTheirOrganization(t *testing.T) {
 	f := newContactsFixture(t)
-	f.alice.Put("/api/v1/machines/notebook", dto.SetMachineLabelRequest{Label: "Aardvark"}).RequireStatus(http.StatusOK)
-	c := contactsOf(t, f.alice)
-	require.Equal(t, []string{"devbox", "notebook"}, hostnames(c.Machines), "online first even though 'Aardvark' sorts before 'devbox'")
-	require.Equal(t, "Aardvark", c.Machines[1].Label)
-
-	f.atlasConn.Close()
-	require.Eventually(t, func() bool { return !f.env.App.Presence.Online(f.atlas) }, wsWait, 20*time.Millisecond)
-	c = contactsOf(t, f.alice)
-	require.Equal(t, []string{"notebook", "devbox"}, hostnames(c.Machines), "nobody online: by label, case-insensitively")
-	require.False(t, c.Machines[0].Online)
-}
-
-// TREE-04: the owner labels a machine (1 to 64 characters; empty resets it); the label replaces
-// the hostname in the tree and in an AI's profile, is the owner's own, and its refusals are
-// observable at their status (L-017).
-func TestMachineLabel(t *testing.T) {
-	f := newContactsFixture(t)
-	put := func(c *testkit.Client, host, label string) *testkit.Response {
-		return c.Put("/api/v1/machines/"+url.PathEscape(host), dto.SetMachineLabelRequest{Label: label})
-	}
-
-	got := testkit.Decode[dto.Machine](put(f.alice, "devbox", "  Alice's desk  ").RequireStatus(http.StatusOK))
-	require.Equal(t, dto.Machine{Hostname: "devbox", Label: "Alice's desk"}, got, "the label is trimmed")
-	c := contactsOf(t, f.alice)
-	require.Equal(t, []any{"devbox", "Alice's desk"}, []any{c.Machines[0].Hostname, c.Machines[0].Label})
-	require.Equal(t, "Alice's desk", profileOf(t, f.alice, f.atlas).AI.MachineLabel, "the AI's profile shows it")
-	require.Equal(t, "devbox", profileOf(t, f.alice, f.atlas).AI.Machine)
-
-	longest := strings.Repeat("é", 64) // 64 code points, 128 bytes
-	require.Equal(t, longest, testkit.Decode[dto.Machine](put(f.alice, "devbox", longest).RequireStatus(http.StatusOK)).Label)
-	err := put(f.alice, "devbox", longest+"x").RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
-	require.Contains(t, err.Fields, "label")
-	require.Equal(t, longest, contactsOf(t, f.alice).Machines[0].Label, "a refused label changes nothing")
-
-	require.Equal(t, dto.Machine{Hostname: "devbox"}, testkit.Decode[dto.Machine](put(f.alice, "devbox", "").RequireStatus(http.StatusOK)), "empty resets")
-	require.Equal(t, "devbox", contactsOf(t, f.alice).Machines[0].Label)
-	put(f.alice, "devbox", "Desk").RequireStatus(http.StatusOK)
-	put(f.alice, "devbox", " \t ").RequireStatus(http.StatusOK)
-	require.Equal(t, "devbox", contactsOf(t, f.alice).Machines[0].Label, "a blank label resets too")
-
-	// Another owner's machine and an unknown one are 404; bob's machine of the same name would be his own.
-	put(f.bob, "devbox", "Mine now").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	put(f.alice, "no-such-machine", "x").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	put(f.alice, "bobs-pc", "x").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	require.Equal(t, "devbox", contactsOf(t, f.alice).Machines[0].Label)
-	f.env.Anon().Put("/api/v1/machines/devbox", dto.SetMachineLabelRequest{Label: "x"}).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
-	f.alice.Token(dto.TokenKindAgent, "laptop").Put("/api/v1/machines/devbox", dto.SetMachineLabelRequest{Label: "x"}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	f.alice.Do(http.MethodPut, "/api/v1/machines/devbox", "not an object").RequireStatus(http.StatusBadRequest)
-
-	// Two owners may have a machine of the same hostname: each labels their own.
-	aiAt(t, f.env, f.bob, "Twin", "twin", "devbox", "/home/bob/twin", "/home/bob", "claude")
-	put(f.bob, "devbox", "Bob's devbox").RequireStatus(http.StatusOK)
-	require.Equal(t, "devbox", contactsOf(t, f.alice).Machines[0].Label)
-	require.Equal(t, "Bob's devbox", contactsOf(t, f.bob).Machines[0].Label)
-}
-
-// TREE-07 (data): the agent route returns the token owner's own AIs as machines and unlinked
-// ones, with no folder headers and no AI needed; sessions and user tokens are refused.
-func TestAgentContactsTree(t *testing.T) {
-	f := newContactsFixture(t)
-	f.alice.Put("/api/v1/machines/notebook", dto.SetMachineLabelRequest{Label: "Work laptop"}).RequireStatus(http.StatusOK)
+	globex := f.env.OrgRoles("globex")
+	f.env.AddMember(globex.Org.ID, f.alice.User.ID, orgs.PermissionMember, "")
+	rover := aiAtIn(t, f.env, f.alice, globex.Org.ID, "Rover", "rover", "devbox", "/srv/rover", "/home/alice", "claude")
+	home := f.alice.PersonalOrg()
 	tok := f.alice.Token(dto.TokenKindAgent, "laptop")
 
-	tree := testkit.Decode[dto.AgentContactsTree](tok.Get("/api/v1/agent/contacts/tree").RequireStatus(http.StatusOK))
-	require.Equal(t, []string{"devbox", "notebook"}, hostnames(tree.Machines))
-	require.Equal(t, "Work laptop", tree.Machines[1].Label)
-	require.Equal(t, []string{"atlas = Atlas", "  notes = Notes", "c/d › lab = Lab"}, shape(tree.Machines[0].Nodes, 0))
-	require.True(t, tree.Machines[0].Nodes[0].AI.Online)
-	require.Equal(t, []string{"old-helper"}, aiNames(tree.Unlinked))
+	list := testkit.Decode[dto.List[dto.Agent]](tok.Get("/api/v1/agent/agents").RequireStatus(http.StatusOK)).Items
+	byID := map[string]dto.Agent{}
+	for _, a := range list {
+		byID[a.ID] = a
+	}
+	require.Len(t, list, len(byID), "each AI once")
+	require.ElementsMatch(t, []string{f.atlas, f.notes, f.lab, f.dev, f.old, rover}, slices.Collect(maps.Keys(byID)),
+		"the AIs alice hosts: not Bobby, not Globex's own AI that her membership shows her")
 
-	bobTree := testkit.Decode[dto.AgentContactsTree](f.bob.Token(dto.TokenKindAgent, "desktop").Get("/api/v1/agent/contacts/tree").RequireStatus(http.StatusOK))
-	require.Equal(t, []string{"bobs-pc"}, hostnames(bobTree.Machines), "the owner's own AIs only: not alice's, not shared ones")
-	empty := testkit.Decode[dto.AgentContactsTree](f.dave.Token(dto.TokenKindAgent, "laptop").Get("/api/v1/agent/contacts/tree").RequireStatus(http.StatusOK))
-	require.NotNil(t, empty.Machines)
-	require.NotNil(t, empty.Unlinked)
-	require.Empty(t, empty.Machines)
+	want := func(id string, org *dto.ContactOrg, folder, label string) {
+		t.Helper()
+		got := byID[id]
+		require.Equal(t, org, got.Organization, got.Intelligence.DisplayName)
+		require.Equal(t, folder, got.Folder, got.Intelligence.DisplayName)
+		require.Equal(t, label, got.FolderLabel, got.Intelligence.DisplayName)
+	}
+	personal := &dto.ContactOrg{ID: home.ID, Name: home.Name, Slug: home.Slug}
+	line := &dto.ContactOrg{ID: f.line, Name: "line", Slug: "line"} // the fixture made Atlas, to operate the connection, in "line"
+	want(f.atlas, line, "/home/alice/atlas", "~/atlas")
+	want(f.notes, personal, "/home/alice/atlas/notes", "~/atlas/notes")
+	want(f.lab, personal, "/home/alice/c/d/lab", "~/c/d/lab")
+	want(f.dev, personal, "/home/alice", "~")
+	want(rover, &dto.ContactOrg{ID: globex.Org.ID, Name: globex.Org.Name, Slug: globex.Org.Slug}, "/srv/rover", "/srv/rover")
+	want(f.old, nil, "", "") // a v0.3 identity: no organization until the upgrade places it, and no folder
 
-	f.alice.Get("/api/v1/agent/contacts/tree").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	f.env.Anon().Get("/api/v1/agent/contacts/tree").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+	// The same rows, with the same organization, are the ones GET /agents shows the user.
+	for _, a := range testkit.Decode[dto.List[dto.Agent]](f.alice.Get("/api/v1/agents").RequireStatus(http.StatusOK)).Items {
+		if mine, ok := byID[a.ID]; ok {
+			require.Equal(t, mine, a)
+		}
+	}
+	// Another host lists their own.
+	bobs := testkit.Decode[dto.List[dto.Agent]](f.bob.Token(dto.TokenKindAgent, "desktop").Get("/api/v1/agent/agents").RequireStatus(http.StatusOK)).Items
+	require.ElementsMatch(t, []string{f.bobby, f.secret}, agentIDs(bobs))
+	empty := testkit.Decode[dto.List[dto.Agent]](f.dave.Token(dto.TokenKindAgent, "laptop").Get("/api/v1/agent/agents").RequireStatus(http.StatusOK))
+	require.NotNil(t, empty.Items, "an empty list, not null")
+	require.Empty(t, empty.Items)
+
+	f.alice.Get("/api/v1/agent/agents").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	f.env.Anon().Get("/api/v1/agent/agents").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }
 
 // writeAs makes one new sender per name write in chat X, a second apart, with account ids from

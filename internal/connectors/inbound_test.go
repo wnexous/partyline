@@ -157,7 +157,7 @@ func (e *inboundEnv) messages(t *testing.T, roomID string) []dto.Message {
 
 // source is the connection as the manager names it to the pipeline.
 func (e *inboundEnv) source() connectors.Source {
-	return connectors.Source{ConnectorID: e.conn.ID, Kind: connectortest.KindName, OwnerID: e.alice.User.ID}
+	return connectors.Source{ConnectorID: e.conn.ID, Kind: connectortest.KindName}
 }
 
 // pipeline returns a pipeline on the app's store and queue, with its own registry of sent ids.
@@ -295,7 +295,7 @@ func TestChatsAreRecordedForMessagesThatReachNobody(t *testing.T) {
 		Kind: connectortest.KindName, Name: "idle", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: ptr(true),
 	}).RequireStatus(http.StatusCreated))
 	require.Nil(t, idle.Operator)
-	e.pipeline(nil).Handle(context.Background(), connectors.Source{ConnectorID: idle.ID, Kind: connectortest.KindName, OwnerID: e.alice.User.ID}, dmText(dmA, "N1", "anyone there?"))
+	e.pipeline(nil).Handle(context.Background(), connectors.Source{ConnectorID: idle.ID, Kind: connectortest.KindName}, dmText(dmA, "N1", "anyone there?"))
 	idleChats := testkit.Decode[dto.List[dto.Chat]](e.alice.Get("/api/v1/connectors/" + idle.ID + "/chats").RequireStatus(http.StatusOK)).Items
 	require.Len(t, idleChats, 1, "the chat of the idle connection is recorded")
 

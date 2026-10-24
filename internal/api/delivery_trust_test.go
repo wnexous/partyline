@@ -63,7 +63,7 @@ func newTrustWorld(t *testing.T) *trustWorld {
 	worker := env.AddPosition(globex.ID, "Worker", globex.PositionID)
 	env.AddMember(globex.ID, w.ai, orgs.PermissionMember, worker)
 
-	w.ops = createRoom(acme.Manager, "ops")
+	w.ops = groupIn(t, env, acme.Manager, org, "ops")
 	add := func(kind dto.MemberKind, id string) dto.RoomMember {
 		return testkit.Decode[dto.RoomMember](acme.Manager.Post("/api/v1/rooms/"+w.ops.ID+"/members",
 			dto.AddMemberRequest{Kind: kind, MemberID: id}).RequireStatus(http.StatusCreated))
@@ -333,6 +333,9 @@ func TestADispatchLoadsEachHomeChartOnce(t *testing.T) {
 	for i := range 20 {
 		name := fmt.Sprintf("bot%02d", i)
 		id := env.NewAIIn(alice, homes[i%len(homes)], name)
+		if home := homes[i%len(homes)]; home != homes[0] {
+			env.AddMember(homes[0], id, orgs.PermissionMember, "") // the group is alice's own, and its members belong to its organization
+		}
 		alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: id}).RequireStatus(http.StatusCreated)
 		conn, resp := token.DialAgent(name)
 		require.NotNil(t, conn, "upgrade refused: %d %s", resp.Status, resp.Body)

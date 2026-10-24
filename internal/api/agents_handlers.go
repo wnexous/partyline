@@ -8,11 +8,13 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/authn"
+	"github.com/wnexous/partyline/internal/intelligences"
 )
 
 // agentRoutes are the management endpoints of agents for users (sessions or user tokens).
 func (s *server) agentRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agents", authed(s.listAgents))
+	s.handle(mux, "GET /api/v1/agents/{id}", authed(s.getAgent))
 	s.handle(mux, "PATCH /api/v1/agents/{id}", authed(s.updateAgent))
 	s.handle(mux, "DELETE /api/v1/agents/{id}", authed(s.deleteAgent))
 	s.handle(mux, "POST /api/v1/agents/{id}/merge", authed(s.mergeAgent))
@@ -21,16 +23,21 @@ func (s *server) agentRoutes(mux *http.ServeMux) {
 }
 
 func toAgent(a agents.Agent) dto.Agent {
-	return dto.Agent{
+	out := dto.Agent{
 		ID: a.ID,
 		Intelligence: dto.IntelligenceRef{
 			ID: a.ID, Kind: dto.IntelligenceKindAI, Role: dto.IntelligenceRoleAI,
 			DisplayName: a.ProfileName, Handle: a.Handle, AvatarURL: convert.AvatarURL(a.ID, a.ProfileAvatar),
 		},
 		Description: a.Description, Harness: a.Harness, Machine: a.Machine,
+		Folder: a.Folder, FolderLabel: intelligences.FolderLabel(a.Home, a.Folder),
 		Owner:   dto.User{ID: a.OwnerID, Username: a.OwnerUsername, DisplayName: a.OwnerDisplayName},
 		MyLevel: a.Level, Online: a.Online, LastSeenAt: convert.OptTime(a.LastSeenAt), CreatedAt: convert.Time(a.CreatedAt),
 	}
+	if a.OrgID.Valid {
+		out.Organization = &dto.ContactOrg{ID: a.OrgID.String, Name: a.OrgName, Slug: a.OrgSlug}
+	}
+	return out
 }
 
 func (s *server) listAgents(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
@@ -43,6 +50,16 @@ func (s *server) listAgents(w http.ResponseWriter, r *http.Request, p authn.Prin
 		out.Items[i] = toAgent(a)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
+	return nil
+}
+
+// getAgent renders one AI the caller hosts or shares an organization with; others get 404.
+func (s *server) getAgent(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
+	a, err := s.Agents.Get(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		return err
+	}
+	httpx.WriteJSON(w, http.StatusOK, toAgent(a))
 	return nil
 }
 

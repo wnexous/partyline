@@ -167,8 +167,8 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		_ = st.Close()
 		return nil, err
 	}
-	az := access.New(st, bus, access.Options{Now: opts.Now})
 	authz := orgs.NewAuthz(st)
+	az := access.New(st, bus, access.Options{Now: opts.Now, Authz: authz})
 	trust := delivery.TrustSource(func() delivery.Trust { return authz.Session() })
 	auditLog := audit.New(st, opts.Now)
 	a := &App{

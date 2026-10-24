@@ -83,7 +83,8 @@ func (s *Service) OpenDM(ctx context.Context, p authn.Principal, withID string) 
 }
 
 // contact resolves the target of a DM: the intelligence must exist and be visible to the caller
-// (the caller's owner for an AI).
+// (AD-016): every user of the instance, and the AIs the caller shares an organization with; an AI
+// sees what it sees itself, not what its owner does.
 func (s *Service) contact(ctx context.Context, p authn.Principal, id string) (db.GetIntelligenceWithRoleRow, error) {
 	see, err := s.ints.CanSee(ctx, p, id)
 	if err != nil {

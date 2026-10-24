@@ -53,10 +53,11 @@ type Kind struct {
 	// InboundHook tells whether its connectors receive messages at POST /api/v1/hooks/{id};
 	// the API then reports that URL as the connector's inbound_url.
 	InboundHook bool
-	// LinkOwnerOnly tells that whoever holds the connector's credentials chooses the sender
-	// ids of its messages (the webhook): pairing commands then link only codes of the
-	// connector's owner (IDN-05), so nobody else's identity can be claimed through it.
-	LinkOwnerOnly bool
+	// LinkAdminsOnly tells that whoever holds the connector's credentials chooses the sender
+	// ids of its messages (the webhook): pairing commands then link only codes of the admins of
+	// the connection's organization (IDN-05, AD-008 as amended by AD-016), and only they are given
+	// such a code, so nobody else's identity can be claimed through it.
+	LinkAdminsOnly bool
 	// New builds a connector from a validated config.
 	New func(cfg Config, d Deps) (Connector, error)
 	// Prepare, when set, completes the config of a new connector before validation (e.g.

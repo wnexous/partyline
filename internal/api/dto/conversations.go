@@ -24,24 +24,35 @@ const MaxGroupMembers = 50
 
 // CreateGroupRequest is the body of POST /groups (LAY-04) and of an AI's group creation (AGRP-01).
 // Members are the ids of the users and AIs to put in the group, each checked with the add-member
-// rules of the group's owner before anything is created; the owner is a member only when listed.
-// Repeated ids count once.
+// rules of the group's creator before anything is created: it must exist, be visible to the creator
+// and belong to the group's organization. The creator is a member only when listed. Repeated ids
+// count once.
 type CreateGroupRequest struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
 	Members     []string `json:"members"`
+	// OrgID is the organization the group belongs to (ORG-03), by id; the web app sends it. Absent
+	// means the creator's default organization (an AI's is its home). A creator who is not a member
+	// or admin of it, a guest included, is refused with 403 forbidden, and so is an unknown one.
+	OrgID string `json:"org_id,omitempty"`
+	// Org is OrgID by slug or id, for an AI's create_group (POST /agent/groups); both routes read
+	// either field, OrgID first.
+	Org string `json:"org,omitempty"`
 }
 
 // RefusedReason says why a member could not be added to a new group.
 type RefusedReason string
 
-// Reasons a member is refused. An AI the owner may not use is not_found as well: it must not be
+// Reasons a member is refused. An AI the creator cannot see is not_found as well: it must not be
 // told apart from an id that does not exist.
 const (
-	// RefusedReasonNotFound is an id that is no enabled user and no AI the owner may use.
+	// RefusedReasonNotFound is an id that is no enabled user and no AI the creator can see.
 	RefusedReasonNotFound RefusedReason = "not_found"
 	// RefusedReasonPerson is an external person, who joins a group through a bridged chat only.
 	RefusedReasonPerson RefusedReason = "person"
+	// RefusedReasonNotOrgMember is a user or an AI the creator can see that does not belong to the
+	// group's organization: a group is made of the members of its organization (ORG-03).
+	RefusedReasonNotOrgMember RefusedReason = "not_org_member"
 )
 
 // RefusedMember is a member of a new group that was refused (422 members_refused).
@@ -72,6 +83,10 @@ type Conversation struct {
 	// MemberNames are up to MaxConversationMemberNames "Name @handle" entries of the users and
 	// AIs of a group (the other participant of a DM), for the sidebar search.
 	MemberNames []string `json:"member_names"`
+	// OrgIDs are the organizations the conversation is filed under (ORG-02): a group's organization;
+	// for a DM the organizations both participants are members of, else the default organization of
+	// the caller; empty when there is none.
+	OrgIDs []string `json:"org_ids"`
 }
 
 // MaxConversationMemberNames bounds Conversation.MemberNames.

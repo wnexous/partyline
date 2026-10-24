@@ -71,28 +71,28 @@ func (s *Service) member(ctx context.Context, roomID, memberRowID string) (Membe
 	return Member{}, access.ErrNotFound
 }
 
-// authorizeMembers authorizes a change of the room's members: a caller without view gets
-// ErrNotFound; whoever can view a DM gets ErrDMMembersFixed, since a DM has exactly its two
+// authorizeMembers authorizes a change of the room's members and returns the room: a caller without
+// view gets ErrNotFound; whoever can view a DM gets ErrDMMembersFixed, since a DM has exactly its two
 // intelligences (DM-02); the others need manage.
-func (s *Service) authorizeMembers(ctx context.Context, p authn.Principal, roomID string) error {
+func (s *Service) authorizeMembers(ctx context.Context, p authn.Principal, roomID string) (db.Room, error) {
 	l, err := s.authorize(ctx, p, roomID, dto.LevelView)
 	if err != nil {
-		return err
+		return db.Room{}, err
 	}
 	r, err := s.store.R().GetRoom(ctx, roomID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return access.ErrNotFound
+		return db.Room{}, access.ErrNotFound
 	}
 	if err != nil {
-		return err
+		return db.Room{}, err
 	}
 	if r.Kind == string(dto.ConversationKindDM) {
-		return ErrDMMembersFixed
+		return r, ErrDMMembersFixed
 	}
 	if !access.AtLeast(l, dto.LevelManage) {
-		return access.ErrForbidden
+		return r, access.ErrForbidden
 	}
-	return nil
+	return r, nil
 }
 
 // MemberInput names a member to add.
@@ -101,19 +101,37 @@ type MemberInput struct {
 	MemberID string
 }
 
-// AddMember adds an agent or a user to a room; requires manage. Agents need the caller to own or
-// use the agent (ACL-05); otherwise ErrForbidden. A chat is never a member (ErrChatsNotMembers,
-// CID-19): the check follows the caller's rights on the room, so a stranger still gets not found
-// and a direct message still answers ErrDMMembersFixed.
+// MembersRefusedError is a request to put members in a group that cannot be granted: nothing was created
+// or added (422 members_refused, LAY-04, AGRP-02, ORG-03). Refused lists them in the order they were
+// asked for, each with its reason.
+type MembersRefusedError struct{ Refused []dto.RefusedMember }
+
+func (e *MembersRefusedError) Error() string { return "some members cannot be added" }
+
+// AddMember adds an agent or a user to a group; requires manage. The member must belong to the group's
+// organization (ORG-03): a user or AI of another one is refused with a *MembersRefusedError
+// (not_org_member). An AI the caller cannot see, and one that does not exist, are ErrForbidden, and an
+// unknown or disabled user a validation error. A chat is never a member (ErrChatsNotMembers, CID-19):
+// the check follows the caller's rights on the room, so a stranger still gets not found and a direct
+// message still answers ErrDMMembersFixed.
 func (s *Service) AddMember(ctx context.Context, p authn.Principal, roomID string, in MemberInput) (Member, error) {
-	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
+	room, err := s.authorizeMembers(ctx, p, roomID)
+	if err != nil {
 		return Member{}, err
 	}
-	if err := s.checkUse(ctx, p.UserID, in); err != nil {
+	reason, err := s.CheckMember(ctx, p, room.OrgID.String, in)
+	switch {
+	case err != nil:
 		return Member{}, err
+	case reason == dto.RefusedReasonNotOrgMember:
+		return Member{}, &MembersRefusedError{Refused: []dto.RefusedMember{{ID: in.MemberID, Reason: reason}}}
+	case reason != "" && in.Kind == dto.MemberKindUser:
+		return Member{}, &validation.Error{Fields: map[string]string{"member_id": "unknown user"}}
+	case reason != "":
+		return Member{}, access.ErrForbidden
 	}
 	id := store.NewID()
-	err := s.store.WithTx(ctx, func(q *db.Queries) error {
+	err = s.store.WithTx(ctx, func(q *db.Queries) error {
 		n, err := q.CountRoomMember(ctx, db.CountRoomMemberParams{RoomID: roomID, Kind: string(in.Kind), MemberID: in.MemberID})
 		if err != nil {
 			return err
@@ -142,44 +160,36 @@ func (s *Service) accessChanged(roomID string) {
 	s.bus.Publish(events.GrantsChanged{ResourceKind: string(access.KindRoom), ResourceID: roomID})
 }
 
-// CheckMember reports whether ownerID may put the member in a group they own, by the rules of
-// AddMember: an AI needs ownership or use, a user must exist and be enabled. False means the
-// member is refused; an unknown AI and one the owner may not use are the same answer.
-func (s *Service) CheckMember(ctx context.Context, ownerID string, in MemberInput) (bool, error) {
-	err := s.checkUse(ctx, ownerID, in)
-	var invalid *validation.Error
-	switch {
-	case err == nil:
-		return true, nil
-	case errors.Is(err, access.ErrForbidden), errors.As(err, &invalid):
-		return false, nil
-	}
-	return false, err
-}
-
-// checkUse verifies the caller may put the agent or user in a room; a chat is refused (CID-19).
-func (s *Service) checkUse(ctx context.Context, userID string, in MemberInput) error {
+// CheckMember says why the principal may not put the member in a group of the organization, "" when it
+// may (ORG-03, AGRP-02). A user must exist and be enabled, and an AI must exist and be one the
+// principal can see; both are dto.RefusedReasonNotFound otherwise, so that an AI the principal cannot
+// see is not told apart from an id that does not exist. Then the member must belong to the organization,
+// with any permission - a guest in a group posts in it - or it is dto.RefusedReasonNotOrgMember. A chat
+// is refused with ErrChatsNotMembers (CID-19) and a kind that is not one with a validation error.
+func (s *Service) CheckMember(ctx context.Context, p authn.Principal, orgID string, in MemberInput) (dto.RefusedReason, error) {
 	switch in.Kind {
 	case dto.MemberKindAgent:
-		ok, err := s.az.CanUseAgent(ctx, userID, in.MemberID)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return access.ErrForbidden
+		see, err := s.az.CanSeeAI(ctx, p, in.MemberID)
+		if err != nil || !see {
+			return dto.RefusedReasonNotFound, err
 		}
 	case dto.MemberKindChat:
-		return ErrChatsNotMembers
+		return "", ErrChatsNotMembers
 	case dto.MemberKindUser:
 		u, err := s.store.R().GetUser(ctx, in.MemberID)
 		if errors.Is(err, sql.ErrNoRows) || (err == nil && u.DisabledAt.Valid) {
-			return &validation.Error{Fields: map[string]string{"member_id": "unknown user"}}
+			return dto.RefusedReasonNotFound, nil
 		}
-		return err
+		if err != nil {
+			return "", err
+		}
 	default:
-		return &validation.Error{Fields: map[string]string{"kind": "must be agent or user"}}
+		return "", &validation.Error{Fields: map[string]string{"kind": "must be agent or user"}}
 	}
-	return nil
+	if _, ok, err := s.az.Authz().Member(ctx, orgID, in.MemberID); err != nil || !ok {
+		return dto.RefusedReasonNotOrgMember, err
+	}
+	return "", nil
 }
 
 // MemberUpdate changes a member; nil fields are unchanged. All of them apply to agent members
@@ -258,7 +268,7 @@ func (u MemberUpdate) apply(m db.RoomMember) (db.RoomMember, error) {
 // UpdateMember changes an agent member's settings (MEM-02..05); requires manage. Invalid settings
 // change nothing.
 func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, memberRowID string, u MemberUpdate) (Member, error) {
-	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
+	if _, err := s.authorizeMembers(ctx, p, roomID); err != nil {
 		return Member{}, err
 	}
 	err := s.store.WithTx(ctx, func(q *db.Queries) error {
@@ -286,7 +296,7 @@ func (s *Service) UpdateMember(ctx context.Context, p authn.Principal, roomID, m
 // RemoveMember removes a member; later messages are no longer delivered to it (ROOM-01).
 // Requires manage.
 func (s *Service) RemoveMember(ctx context.Context, p authn.Principal, roomID, memberRowID string) error {
-	if err := s.authorizeMembers(ctx, p, roomID); err != nil {
+	if _, err := s.authorizeMembers(ctx, p, roomID); err != nil {
 		return err
 	}
 	var removedKind string

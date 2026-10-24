@@ -10,6 +10,7 @@ import (
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/conversations"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/testkit"
 )
@@ -81,9 +82,9 @@ func TestAIOpensADMWithItsOwner(t *testing.T) {
 	require.Equal(t, room.ID, again.ID)
 }
 
-// DM-04: the target of an AI must be visible to its owner; a user always is, an AI of another owner
-// only when shared, and the AI cannot DM itself.
-func TestAIDMTargetsAreThoseItsOwnerSees(t *testing.T) {
+// DM-04 (AD-016): the target of an AI must be visible to the AI itself, not to its owner; a user always is, an
+// AI only when it shares an organization with it, and the AI cannot DM itself.
+func TestAIDMTargetsAreThoseItSees(t *testing.T) {
 	f := newFixture(t)
 	f.allowed = 10
 	ctx := context.Background()
@@ -92,15 +93,16 @@ func TestAIDMTargetsAreThoseItsOwnerSees(t *testing.T) {
 	_, _, err := f.svc.OpenDM(ctx, atlas, f.atlas)
 	require.ErrorIs(t, err, conversations.ErrDMSelf)
 	_, _, err = f.svc.OpenDM(ctx, atlas, f.orion)
-	require.ErrorIs(t, err, conversations.ErrContactNotFound, "bob's AI is not shared with alice")
+	require.ErrorIs(t, err, conversations.ErrContactNotFound, "bob's AI shares no organization with atlas")
 	_, _, err = f.svc.OpenDM(ctx, atlas, store.NewID())
 	require.ErrorIs(t, err, conversations.ErrContactNotFound)
 	_, _, err = f.svc.OpenDM(ctx, atlas, "")
 	require.Error(t, err)
 
-	f.bob.Put("/api/v1/agents/"+f.orion+"/sharing", dto.Sharing{
-		Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: f.alice.User.ID, Level: dto.LevelUse}},
-	}).RequireStatus(http.StatusOK)
+	f.env.AddMember(f.bob.PersonalOrg().ID, f.alice.User.ID, orgs.PermissionMember, "")
+	_, _, err = f.svc.OpenDM(ctx, atlas, f.orion)
+	require.ErrorIs(t, err, conversations.ErrContactNotFound, "alice in bob's organization gives her AI no reach")
+	f.env.AddMember(f.bob.PersonalOrg().ID, f.atlas, orgs.PermissionMember, "")
 	room, created, err := f.svc.OpenDM(ctx, atlas, f.orion)
 	require.NoError(t, err)
 	require.True(t, created)
@@ -130,11 +132,13 @@ func TestOnlyNewDMsOfAnAICountAgainstTheLimit(t *testing.T) {
 	require.True(t, created)
 	require.Len(t, f.askedIDs, 2)
 
-	// The limit is exhausted, yet the existing DM opens (from either side) without asking.
+	// The limit is exhausted, yet the existing DM opens (from either side, bob seeing atlas through an
+	// organization they share) without asking.
 	again, created, err := f.svc.OpenDM(ctx, atlas, f.bob.User.ID)
 	require.NoError(t, err)
 	require.False(t, created)
 	require.Equal(t, room.ID, again.ID)
+	f.env.AddMember(f.alice.PersonalOrg().ID, f.bob.User.ID, orgs.PermissionMember, "")
 	_, created, err = f.svc.OpenDM(ctx, f.user(f.bob), f.atlas)
 	require.NoError(t, err)
 	require.False(t, created)

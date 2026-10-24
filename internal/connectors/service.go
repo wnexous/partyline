@@ -4,15 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/api/httpx"
 	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/secrets"
 	"github.com/wnexous/partyline/internal/store"
@@ -22,6 +25,15 @@ import (
 
 // MaxNameLength is the longest connector name in characters.
 const MaxNameLength = 100
+
+// ErrNoOrganization answers the creation of a connection by someone who belongs to no organization: a
+// connection belongs to exactly one (422 organization_required, ORG-02) and there is nowhere to put it.
+// Nothing is created.
+var ErrNoOrganization = &httpx.Error{
+	Status: http.StatusUnprocessableEntity, Code: dto.ErrorCodeOrganizationRequired,
+	Message: "you belong to no organization: create or join one first",
+	Fields:  map[string]string{"org_id": "you belong to no organization"},
+}
 
 // Runner starts and stops running connectors; the Manager implements it.
 type Runner interface {
@@ -48,8 +60,9 @@ type ServiceDeps struct {
 	Now func() time.Time
 }
 
-// Service manages connectors for users: CRUD, enable/disable and sharing through grants
-// (AD-005). Secrets are stored only in secrets_enc (SEC-04) and never returned (CON-03).
+// Service manages connectors for the people of an organization (AD-016): every connection belongs to
+// one, its admins create, change and delete it and every member uses it. Secrets are stored only in
+// secrets_enc (SEC-04) and never returned (CON-03).
 type Service struct {
 	d     ServiceDeps
 	audit *audit.Log
@@ -80,7 +93,7 @@ type View struct {
 	db.Connector
 	OwnerUsername    string
 	OwnerDisplayName string
-	// Level is manage for the owner and use for grantees.
+	// Level is manage for the admins of the connection's organization and use for its other members.
 	Level access.Level
 	// Config has secrets masked (CON-03).
 	Config map[string]any
@@ -88,16 +101,18 @@ type View struct {
 	InboundHook bool
 	// Generated holds the values Kind.Prepare generated, set only by Create (shown once).
 	Generated map[string]string
-	// Operator is the owner's AI the platform account belongs to (CID-01); the zero value, with
-	// HasOperator false, while nobody operates the connection (CID-02).
+	// Operator is the AI of the connection's organization the platform account belongs to (CID-01,
+	// ORG-07); the zero value, with HasOperator false, while nobody operates the connection (CID-02).
 	Operator    db.Intelligence
 	HasOperator bool
 	// Queued is the number of the connection's unacknowledged queue items (CID-23).
 	Queued int64
 }
 
-// CreateInput is a new connector.
+// CreateInput is a new connector. Org is the id or the slug of its organization, empty for the
+// creator's default one (ORG-03).
 type CreateInput struct {
+	Org     string
 	Kind    string
 	Name    string
 	Config  Config
@@ -109,8 +124,8 @@ type UpdateInput struct {
 	Name    *string
 	Config  Config // nil = unchanged; merged into the stored config (Kind.Merge)
 	Enabled *bool
-	// OperatorID names the connector's operator (CID-01): an AI the owner owns. Any other value
-	// is a validation error on operator_id.
+	// OperatorID names the connector's operator (CID-01): an AI whose home is the connection's
+	// organization (ORG-07). Any other value is a validation error on operator_id.
 	OperatorID *string
 	// Deliver (dms, groups or all) and GroupsMentionsOnly change what reaches the operator
 	// (CID-12); any other Deliver is a validation error on deliver.
@@ -118,13 +133,55 @@ type UpdateInput struct {
 	GroupsMentionsOnly *bool
 }
 
-// authorize requires the user to hold want on the connector: no access is
-// access.ErrNotFound, use without manage is access.ErrForbidden.
+// authorize requires the user to hold want on the connection (AD-016): the admins of its organization
+// manage it, its other members - guests included - use it. Anyone else, an admin of the instance
+// without membership included, is access.ErrNotFound; use without manage is access.ErrForbidden. Only
+// users manage connections: an AI reaches one through Require.
 func (s *Service) authorize(ctx context.Context, p authn.Principal, id string, want access.Level) (access.Level, error) {
 	if p.Kind != authn.KindUser {
 		return access.None, access.ErrForbidden
 	}
-	l, err := s.d.Access.ConnectorLevel(ctx, p.UserID, id)
+	return s.require(ctx, p, id, want)
+}
+
+// Require authorizes the principal - a user, or an AI acting as itself - for want on the connection up
+// front.
+func (s *Service) Require(ctx context.Context, p authn.Principal, id string, want access.Level) error {
+	_, err := s.require(ctx, p, id, want)
+	return err
+}
+
+// RequirePairing authorizes the user to pair a chat account through the connection (IDN-01, AD-008 as amended
+// by AD-016): any member of its organization may, except through a kind whose callers choose the sender ids
+// freely (the webhook), which only the admins of the organization may pair through. A connection the user does
+// not see is access.ErrNotFound; a member who may not pair through it is access.ErrForbidden.
+func (s *Service) RequirePairing(ctx context.Context, p authn.Principal, id string) error {
+	l, err := s.authorize(ctx, p, id, dto.LevelUse)
+	if err != nil {
+		return err
+	}
+	c, err := s.d.Store.R().GetConnector(ctx, id)
+	if err != nil {
+		return err
+	}
+	if s.Kind(c.Kind).LinkAdminsOnly && !access.AtLeast(l, dto.LevelManage) {
+		return access.ErrForbidden
+	}
+	return nil
+}
+
+// require resolves the level the principal holds on the connection from its membership of the
+// connection's organization. A connection that does not exist, has no organization, and a principal who
+// is disabled or acts as nobody (an agent token that names no AI) are not found.
+func (s *Service) require(ctx context.Context, p authn.Principal, id string, want access.Level) (access.Level, error) {
+	c, err := s.d.Store.R().GetConnector(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return access.None, access.ErrNotFound
+	}
+	if err != nil {
+		return access.None, err
+	}
+	l, err := s.levelIn(ctx, s.d.Store.R(), p, c.OrgID)
 	if err != nil {
 		return access.None, err
 	}
@@ -137,10 +194,69 @@ func (s *Service) authorize(ctx context.Context, p authn.Principal, id string, w
 	return l, nil
 }
 
-// Require authorizes the user for want on the connector up front.
-func (s *Service) Require(ctx context.Context, p authn.Principal, id string, want access.Level) error {
-	_, err := s.authorize(ctx, p, id, want)
-	return err
+// levelIn is the level the principal holds on the connections of the organization: manage as an admin
+// of it, use as any other member, none otherwise (also without an organization, for a disabled user and
+// for an agent token that names no AI).
+func (s *Service) levelIn(ctx context.Context, q *db.Queries, p authn.Principal, orgID sql.NullString) (access.Level, error) {
+	iid := p.IID()
+	if iid == "" || !orgID.Valid {
+		return access.None, nil
+	}
+	u, err := q.GetUser(ctx, p.UserID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && u.DisabledAt.Valid) {
+		return access.None, nil
+	}
+	if err != nil {
+		return access.None, err
+	}
+	m, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: orgID.String, Iid: iid})
+	if errors.Is(err, sql.ErrNoRows) {
+		return access.None, nil
+	}
+	if err != nil {
+		return access.None, err
+	}
+	if m.Permission == string(orgs.PermissionAdmin) {
+		return dto.LevelManage, nil
+	}
+	return dto.LevelUse, nil
+}
+
+// creatorOrg resolves the organization a connection created by the user belongs to and checks that they
+// may create it there (ORG-03, OMEM-04): requested is an id or a slug, empty meaning the creator's default
+// organization (ErrNoOrganization when they have none). The creator must be an admin of it; an organization
+// that does not exist, one they are not in and one where they are no admin are all access.ErrForbidden, so
+// that a refusal tells nothing about organizations the creator does not belong to.
+func creatorOrg(ctx context.Context, q *db.Queries, creator authn.Principal, requested string) (string, error) {
+	iid := creator.IID()
+	var orgID string
+	if requested = strings.TrimSpace(requested); requested == "" {
+		def, err := orgs.DefaultFor(ctx, q, iid)
+		if err != nil {
+			return "", err
+		}
+		if def == "" {
+			return "", ErrNoOrganization
+		}
+		orgID = def
+	} else {
+		o, err := q.GetOrganization(ctx, requested)
+		if errors.Is(err, sql.ErrNoRows) {
+			o, err = q.GetOrganizationBySlug(ctx, requested)
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", access.ErrForbidden
+		}
+		if err != nil {
+			return "", err
+		}
+		orgID = o.ID
+	}
+	m, err := q.GetOrgMember(ctx, db.GetOrgMemberParams{OrgID: orgID, Iid: iid})
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && m.Permission != string(orgs.PermissionAdmin)) {
+		return "", access.ErrForbidden
+	}
+	return orgID, err
 }
 
 func validName(name string) bool {
@@ -168,10 +284,15 @@ func (s *Service) validate(kindKnown bool, name string, cfg Config, k Kind) (Con
 	return out, check.Err()
 }
 
-// Create adds a connector owned by the caller and starts it when enabled (CON-04).
+// Create adds a connection to the organization the caller names, where they must be an admin (ORG-03), and
+// starts it when enabled (CON-04). The organization is checked before the input, so that a caller who may
+// not create one is told so whatever they sent.
 func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput) (View, error) {
 	if p.Kind != authn.KindUser {
 		return View{}, access.ErrForbidden
+	}
+	if _, err := creatorOrg(ctx, s.d.Store.R(), p, in.Org); err != nil {
+		return View{}, err
 	}
 	k, known := s.d.Kinds.Lookup(in.Kind)
 	name := strings.TrimSpace(in.Name)
@@ -195,15 +316,20 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	id := store.NewID()
 	now := s.d.Now().UnixMilli()
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		orgID, err := creatorOrg(ctx, q, p, in.Org) // again in the transaction: a demotion cannot interleave
+		if err != nil {
+			return err
+		}
+		// owner_id is the creator and a dead anchor (AD-019): the organization owns the connection.
 		if err := q.CreateConnector(ctx, db.CreateConnectorParams{
-			ID: id, OwnerID: p.UserID, Kind: k.Name, Name: name, ConfigJson: public, SecretsEnc: sealed,
-			Enabled: enabled, CreatedAt: now, UpdatedAt: now,
+			ID: id, OwnerID: p.UserID, OrgID: sql.NullString{String: orgID, Valid: true}, Kind: k.Name, Name: name,
+			ConfigJson: public, SecretsEnc: sealed, Enabled: enabled, CreatedAt: now, UpdatedAt: now,
 		}); err != nil {
 			return err
 		}
 		return s.audit.Record(ctx, q, audit.Entry{
 			ActorID: p.UserID, Action: audit.ActionConnectorCreate, TargetKind: audit.TargetConnector, TargetID: id,
-			Detail: map[string]any{"kind": k.Name, "name": name, "enabled": enabled},
+			Detail: map[string]any{"kind": k.Name, "name": name, "enabled": enabled, "org_id": orgID},
 		})
 	})
 	if err != nil {
@@ -223,7 +349,7 @@ func (s *Service) Create(ctx context.Context, p authn.Principal, in CreateInput)
 	return v, nil
 }
 
-// Get returns a connector the user owns or may use.
+// Get returns a connection of an organization the principal belongs to.
 func (s *Service) Get(ctx context.Context, p authn.Principal, id string) (View, error) {
 	l, err := s.authorize(ctx, p, id, dto.LevelUse)
 	if err != nil {
@@ -322,19 +448,20 @@ func (s *Service) view(c db.Connector, ownerUsername, ownerDisplay string, l acc
 	}, nil
 }
 
-// List returns the connectors the user owns plus those shared with them, by name.
+// List returns the connections of the organizations the user belongs to, by name: the admins of an
+// organization manage its connections, its other members use them.
 func (s *Service) List(ctx context.Context, p authn.Principal) ([]View, error) {
 	if p.Kind != authn.KindUser {
 		return nil, access.ErrForbidden
 	}
-	rows, err := s.d.Store.R().ListConnectorsForUser(ctx, p.UserID)
+	rows, err := s.d.Store.R().ListConnectorsOfMember(ctx, p.IID())
 	if err != nil {
 		return nil, err
 	}
 	out := make([]View, 0, len(rows))
 	for _, row := range rows {
 		l := dto.LevelUse
-		if row.Connector.OwnerID == p.UserID {
+		if row.Permission == string(orgs.PermissionAdmin) {
 			l = dto.LevelManage
 		}
 		v, err := s.view(row.Connector, row.OwnerUsername, row.OwnerDisplayName, l)
@@ -352,7 +479,8 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]View, error) {
 	return out, nil
 }
 
-// Update changes name, config and enabled flag; requires ownership (manage). A config change
+// Update changes name, config, enabled flag, operator and delivery; requires managing the connection (an admin
+// of its organization). A config change
 // or enabling restarts the connector, disabling stops it (CON-04, CON-05). A change of an
 // endpoint field deletes the identities linked through the connector (S5, audited).
 func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in UpdateInput) (View, error) {
@@ -494,21 +622,21 @@ func (s *Service) Update(ctx context.Context, p authn.Principal, id string, in U
 	return s.Get(ctx, p, id)
 }
 
-// operator returns the connector's operator_iid after the request (CID-01): unchanged when none
-// is given, else an AI the owner owns. Anything else is a validation error on operator_id: an
-// empty id, the owner's own, another owner's AI (also one shared with the owner), a person, a user
-// and an id that does not exist.
+// operator returns the connector's operator_iid after the request (CID-01): unchanged when none is given,
+// else an AI whose home organization is the connection's (ORG-07). Anything else is a validation error on
+// operator_id: an empty id, a user, a person, an id that does not exist and an AI of another home organization,
+// also one that is a member of this organization too.
 func (s *Service) operator(ctx context.Context, c db.Connector, requested *string) (sql.NullString, error) {
 	if requested == nil {
 		return c.OperatorIid, nil
 	}
 	id := strings.TrimSpace(*requested)
-	a, err := s.d.Store.R().GetAgent(ctx, id)
+	home, err := s.d.Store.R().GetAgentOrg(ctx, id) // sql.ErrNoRows: not an AI; empty: an AI with no home
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return sql.NullString{}, err
 	}
-	if err != nil || a.OwnerID != c.OwnerID {
-		return sql.NullString{}, &validation.Error{Fields: map[string]string{"operator_id": "must be an AI you own"}}
+	if err != nil || home == "" || !c.OrgID.Valid || home != c.OrgID.String {
+		return sql.NullString{}, &validation.Error{Fields: map[string]string{"operator_id": "must be an AI of the connection's organization"}}
 	}
 	return sql.NullString{String: id, Valid: true}, nil
 }
@@ -533,7 +661,7 @@ func (s *Service) delivery(c db.Connector, in UpdateInput) (dto.ConnectorDeliver
 }
 
 // Delete stops and removes the connector with its chats (and their room memberships), its queue and
-// its grants; requires ownership (manage).
+// its grants; requires managing the connection (an admin of its organization).
 func (s *Service) Delete(ctx context.Context, p authn.Principal, id string) error {
 	if _, err := s.authorize(ctx, p, id, dto.LevelManage); err != nil {
 		return err
@@ -575,7 +703,8 @@ func (s *Service) Delete(ctx context.Context, p authn.Principal, id string) erro
 	return nil
 }
 
-// Sharing returns the connector's visibility preset; requires use.
+// Sharing returns the connector's visibility preset; requires use. The presets are inert since AD-016: a
+// grant gives nothing, and they go in T51.
 func (s *Service) Sharing(ctx context.Context, p authn.Principal, id string) (access.Visibility, error) {
 	if _, err := s.authorize(ctx, p, id, dto.LevelUse); err != nil {
 		return access.Visibility{}, err
@@ -583,8 +712,8 @@ func (s *Service) Sharing(ctx context.Context, p authn.Principal, id string) (ac
 	return s.d.Access.Sharing(ctx, access.KindConnector, id)
 }
 
-// SetSharing replaces the connector's use grants with a visibility preset (ACL-07); requires
-// ownership (manage). The change is audited as grants.set.
+// SetSharing replaces the connector's use grants with a visibility preset (ACL-07); requires managing the
+// connection. The change is audited as grants.set.
 func (s *Service) SetSharing(ctx context.Context, p authn.Principal, id string, v access.Visibility) (access.Visibility, error) {
 	if _, err := s.authorize(ctx, p, id, dto.LevelManage); err != nil {
 		return access.Visibility{}, err

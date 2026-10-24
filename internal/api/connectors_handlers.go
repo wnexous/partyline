@@ -35,7 +35,7 @@ func toConnectorKind(k connectors.Kind) dto.ConnectorKind {
 
 func (s *server) toConnector(v connectors.View) dto.Connector {
 	out := dto.Connector{
-		ID: v.ID, Kind: v.Kind, Name: v.Name,
+		ID: v.ID, Kind: v.Kind, Name: v.Name, OrgID: v.OrgID.String,
 		Owner:   dto.User{ID: v.OwnerID, Username: v.OwnerUsername, DisplayName: v.OwnerDisplayName},
 		MyLevel: v.Level, Enabled: v.Enabled, Status: dto.ConnectorStatus(v.Status), LastError: v.LastError,
 		AccountLabel: v.AccountLabel, Deliver: dto.ConnectorDeliver(v.Deliver), GroupsMentionsOnly: v.GroupsMentionsOnly, Queued: v.Queued,
@@ -84,7 +84,7 @@ func (s *server) createConnector(w http.ResponseWriter, r *http.Request, p authn
 		return err
 	}
 	v, err := s.Connectors.Create(r.Context(), p, connectors.CreateInput{
-		Kind: req.Kind, Name: req.Name, Config: req.Config, Enabled: req.Enabled,
+		Org: req.OrgID, Kind: req.Kind, Name: req.Name, Config: req.Config, Enabled: req.Enabled,
 	})
 	if err != nil {
 		return err

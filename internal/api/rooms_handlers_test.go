@@ -3,6 +3,7 @@ package api_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
@@ -18,6 +19,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/handles"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -34,27 +36,55 @@ func shareRoom(c *testkit.Client, roomID string, users ...dto.SharingUser) {
 	c.Put("/api/v1/rooms/"+roomID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: users}).RequireStatus(http.StatusOK)
 }
 
-// storeAgent inserts an agent row with its profile (the display name and handle are name).
+// storeAgent inserts an agent row with its profile (the display name and handle are name), placed as the app
+// places a new AI: in its owner's default organization, which is its home, as a member the owner created.
 func storeAgent(t *testing.T, env *testkit.Env, ownerID, name string) string {
 	t.Helper()
 	ctx := context.Background()
 	id := store.NewID()
 	require.NoError(t, env.App.Store.WithTx(ctx, func(q *db.Queries) error {
+		orgID, err := orgs.DefaultFor(ctx, q, ownerID)
+		if err != nil {
+			return err
+		}
 		if err := q.CreateAgent(ctx, db.CreateAgentParams{ID: id, OwnerID: ownerID, Name: name}); err != nil {
 			return err
 		}
-		_, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: id, Kind: handles.AI, DisplayName: name, HandleBase: name, Now: time.Now()})
-		return err
+		if _, err := intelligences.Create(ctx, q, intelligences.NewParams{ID: id, Kind: handles.AI, DisplayName: name, HandleBase: name, Now: time.Now()}); err != nil {
+			return err
+		}
+		if err := q.SetAgentHome(ctx, db.SetAgentHomeParams{OrgID: sql.NullString{String: orgID, Valid: true}, ID: id}); err != nil {
+			return err
+		}
+		if err := q.SetAgentCreator(ctx, db.SetAgentCreatorParams{CreatorIid: sql.NullString{String: ownerID, Valid: true}, ID: id}); err != nil {
+			return err
+		}
+		return orgs.AddMember(ctx, q, orgs.AddMemberInput{OrgID: orgID, IID: id, Permission: orgs.PermissionMember, Now: time.Now()})
 	}))
 	return id
 }
 
-// storeChat inserts a connector owned by ownerID with one chat and returns (connectorID, chatID).
+// storeChat inserts a connector created by ownerID with one chat and returns (connectorID, chatID). The
+// connector belongs to the creator's default organization, as the upgrade places the connections it finds.
 func storeChat(t *testing.T, env *testkit.Env, ownerID, title string) (string, string) {
+	t.Helper()
+	return storeChatIn(t, env, ownerID, "", title)
+}
+
+// storeChatIn is storeChat for a connector of the organization (the creator's default one when empty).
+func storeChatIn(t *testing.T, env *testkit.Env, ownerID, orgID, title string) (string, string) {
 	t.Helper()
 	conn, chat := store.NewID(), store.NewID()
 	require.NoError(t, env.App.Store.WithTx(context.Background(), func(q *db.Queries) error {
-		if err := q.CreateConnector(context.Background(), db.CreateConnectorParams{ID: conn, OwnerID: ownerID, Kind: "telegram", Name: "tg", ConfigJson: "{}", Enabled: true}); err != nil {
+		if orgID == "" {
+			var err error
+			if orgID, err = orgs.DefaultFor(context.Background(), q, ownerID); err != nil {
+				return err
+			}
+		}
+		if err := q.CreateConnector(context.Background(), db.CreateConnectorParams{
+			ID: conn, OwnerID: ownerID, OrgID: sql.NullString{String: orgID, Valid: orgID != ""}, Kind: "telegram", Name: "tg", ConfigJson: "{}", Enabled: true,
+		}); err != nil {
 			return err
 		}
 		return q.CreateChat(context.Background(), db.CreateChatParams{ID: chat, ConnectorID: conn, ExternalID: "-100" + chat[len(chat)-6:], Title: title, Kind: "group"})
@@ -93,83 +123,103 @@ func postMultipartTo(c *testkit.Client, path string, msg dto.PostMessageRequest,
 	return c.DoRaw(http.MethodPost, path, mw.FormDataContentType(), &buf)
 }
 
-// roomSetup creates, as the owner, a room shared with the viewer (view) and the poster (post),
-// with a chat member and a message carrying an attachment.
-func roomSetup(t *testing.T, m *matrix) matrixResource {
-	owner := m.as(t, roleOwner)
-	r := createRoom(owner, "matrix")
-	shareRoom(owner, r.ID,
-		dto.SharingUser{UserID: m.clients[roleViewer].User.ID, Level: dto.LevelView},
-		dto.SharingUser{UserID: m.clients[rolePoster].User.ID, Level: dto.LevelPost})
-	_, chat := storeChat(t, m.env, owner.User.ID, "group")
-	member := owner.SeedChatMember(r.ID, chat)
-	ai := testkit.Decode[dto.RoomMember](owner.Post("/api/v1/rooms/"+r.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: owner.NewAI("builder")}).RequireStatus(http.StatusCreated))
-	msg := testkit.Decode[dto.Message](postMultipart(owner, r.ID, dto.PostMessageRequest{Text: "file"},
-		upload{"a.txt", "text/plain", "hello"}).RequireStatus(http.StatusCreated))
-	return matrixResource{"room": r.ID, "member": member.ID, "ai": ai.ID, "attachment": msg.Attachments[0].ID}
+// roomSetup returns the setup of the group matrices: a fresh group of the organization created by its
+// creator (the role "member" of roles), with the roles "target" and "guest" in it as room members, a
+// chat member, an AI of the creator and a message carrying an attachment. It returns the ids the routes
+// use: "room", "chat" (the member row of the chat), "ai" and "user" (the member rows of the AI and of
+// the role "target") and "attachment".
+func roomSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T) map[string]string {
+	return func(t *testing.T) map[string]string {
+		creator := *roles.Member
+		creator.T = t
+		r := groupIn(t, env, &creator, roles.Org.ID, "matrix")
+		target := addToRoom(t, env, &creator, r.ID, roles.Target)
+		addToRoom(t, env, &creator, r.ID, roles.Guest)
+		_, chat := storeChat(t, env, creator.User.ID, "group")
+		member := creator.SeedChatMember(r.ID, chat)
+		ai := testkit.Decode[dto.RoomMember](creator.Post("/api/v1/rooms/"+r.ID+"/members",
+			dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: env.NewAIIn(&creator, roles.Org.ID, "builder")}).RequireStatus(http.StatusCreated))
+		msg := testkit.Decode[dto.Message](postMultipart(&creator, r.ID, dto.PostMessageRequest{Text: "file"},
+			upload{"a.txt", "text/plain", "hello"}).RequireStatus(http.StatusCreated))
+		return map[string]string{"room": r.ID, "chat": member.ID, "ai": ai.ID, "user": target.ID, "attachment": msg.Attachments[0].ID}
+	}
 }
 
-// Auth matrix for every room route (ACL-01..04, ACL-07, ACL-08, ROOM-01).
+// Auth matrix for every room route (ACL-01..04, ACL-07, ACL-08, ROOM-01) over the organization roles
+// (AD-016): the creator and the admins of the organization manage a group, the people in the room post, and
+// everybody else - a manager above the creator, a peer, an inviter, an outsider, an instance admin - gets 404.
 func TestRoomRoutesAuthMatrix(t *testing.T) {
-	m := newMatrix(t)
-	room := func(res matrixResource, suffix string) string { return "/api/v1/rooms/" + res["room"] + suffix }
-	routes := []matrixRoute{
-		{"get room", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	room := func(res map[string]string, suffix string) string { return "/api/v1/rooms/" + res["room"] + suffix }
+	routes := []roleRoute{
+		{"get room", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get(room(res, ""))
-		}, statuses(200, 200, 200, 404, 404)},
-		{"update room", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(200, 200, 200, 404)},
+		{"update room", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch(room(res, ""), dto.UpdateRoomRequest{Name: ptr("renamed")})
-		}, statuses(200, 403, 403, 404, 404)},
-		{"delete room", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(200, 200, 403, 404)},
+		{"delete room", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Delete(room(res, ""))
-		}, statuses(204, 403, 403, 404, 404)},
-		{"get sharing", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(204, 204, 403, 404)},
+		{"get sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get(room(res, "/sharing"))
-		}, statuses(200, 200, 200, 404, 404)},
-		{"put sharing", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(200, 200, 200, 404)},
+		{"put sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Put(room(res, "/sharing"), dto.Sharing{Mode: dto.VisibilityPrivate})
-		}, statuses(200, 403, 403, 404, 404)},
-		{"list members", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(200, 200, 403, 404)},
+		{"list members", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get(room(res, "/members"))
-		}, statuses(200, 200, 200, 404, 404)},
-		{"add member", func(_ *testing.T, m *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Post(room(res, "/members"), dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: m.clients[roleStranger].User.ID})
-		}, statuses(201, 403, 403, 404, 404)},
-		{"update member", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(200, 200, 200, 404)},
+		{"add member", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Post(room(res, "/members"), dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: roles.Peer.User.ID})
+		}, groupWant(201, 201, 403, 404)},
+		{"update member", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch(room(res, "/members/"+res["ai"]), dto.UpdateMemberRequest{DisplayName: ptr("Builder bot")})
-		}, statuses(200, 403, 403, 404, 404)},
-		{"remove member", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
-			return c.Delete(room(res, "/members/"+res["member"]))
-		}, statuses(204, 403, 403, 404, 404)},
-		{"list messages", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(200, 200, 403, 404)},
+		{"remove member", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Delete(room(res, "/members/"+res["user"]))
+		}, groupWant(204, 204, 403, 404)},
+		{"remove a chat member", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Delete(room(res, "/members/"+res["chat"]))
+		}, groupWant(204, 204, 403, 404)},
+		{"list messages", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get(room(res, "/messages"))
-		}, statuses(200, 200, 200, 404, 404)},
-		{"post message", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(200, 200, 200, 404)},
+		{"post message", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Post(room(res, "/messages"), dto.PostMessageRequest{Text: "hello"})
-		}, statuses(201, 403, 201, 404, 404)},
-		{"post multipart message", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(201, 201, 201, 404)},
+		{"post multipart message", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return postMultipart(c, res["room"], dto.PostMessageRequest{Text: "file"}, upload{"b.txt", "text/plain", "data"})
-		}, statuses(201, 403, 201, 404, 404)},
-		{"resume", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(201, 201, 201, 404)},
+		{"resume", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Post(room(res, "/resume"), nil)
-		}, statuses(200, 403, 403, 404, 404)},
-		{"download attachment", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, groupWant(200, 200, 403, 404)},
+		{"download attachment", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get("/api/v1/attachments/" + res["attachment"])
-		}, statuses(200, 200, 200, 404, 404)},
+		}, groupWant(200, 200, 200, 404)},
+		{"mark read", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return c.Put(room(res, "/read"), dto.MarkReadRequest{})
+		}, groupWant(200, 200, 200, 404)},
 	}
-	m.run(t, roomSetup, routes)
+	runRoleRoutes(t, roles, roomSetup(env, roles), routes)
 
-	// Listing: everyone gets 200, but only owner and grantees see the room.
-	res := roomSetup(t, m)
-	for _, role := range matrixRoles {
-		list := testkit.Decode[dto.List[dto.Room]](m.clients[role].Get("/api/v1/rooms").RequireStatus(http.StatusOK))
+	// Listing: everyone gets 200, but only the people who can view the group list it.
+	res := roomSetup(env, roles)(t)
+	for _, role := range roles.All() {
+		list := testkit.Decode[dto.List[dto.Room]](role.Client.Get("/api/v1/rooms").RequireStatus(http.StatusOK))
 		ids := []string{}
 		for _, r := range list.Items {
 			ids = append(ids, r.ID)
 		}
-		visible := role == roleOwner || role == roleViewer || role == rolePoster
-		require.Equal(t, visible, contains(ids, res["room"]), string(role))
+		visible := role.Name == "member" || role.Name == "admin" || role.Name == "target" || role.Name == "guest"
+		require.Equal(t, visible, contains(ids, res["room"]), role.Name)
 	}
+
+	// The tools of an AI reach agent routes only: its token is no way into the user routes of a group.
+	ai := roles.Manager.Token(dto.TokenKindAgent, "tools").AsAgent("acme-ai")
+	ai.Get("/api/v1/rooms/"+res["room"]).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	ai.Patch("/api/v1/rooms/"+res["room"], dto.UpdateRoomRequest{Name: ptr("renamed")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 }
 
 func contains(ids []string, id string) bool {
@@ -208,30 +258,33 @@ func TestCreateRoomEndpoint(t *testing.T) {
 	require.Equal(t, "Ops", got.Name)
 }
 
-// ACL-07 over HTTP: presets replace grants; ACL-04: view cannot post, public post can.
-func TestRoomSharingEndpoint(t *testing.T) {
+// ACL-07 over HTTP (inert since AD-016): a visibility preset still replaces the room's grants and reads back
+// as a preset, but a grant gives no access to a group: the user it names and everybody, for a public preset,
+// still get 404.
+func TestRoomSharingGivesNoAccess(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob, carol := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol")
 	r := createRoom(alice, "ops")
 	path := "/api/v1/rooms/" + r.ID
 
 	shareRoom(alice, r.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelView})
-	s := testkit.Decode[dto.Sharing](bob.Get(path + "/sharing").RequireStatus(http.StatusOK))
+	s := testkit.Decode[dto.Sharing](alice.Get(path + "/sharing").RequireStatus(http.StatusOK))
 	require.Equal(t, dto.VisibilityShared, s.Mode)
 	require.Equal(t, []dto.SharingUser{{UserID: bob.User.ID, Level: dto.LevelView, Username: "bob", DisplayName: "bob"}}, s.Users,
 		"an account that chose no name goes by its username")
-	require.Equal(t, dto.LevelView, testkit.Decode[dto.Room](bob.Get(path).RequireStatus(http.StatusOK)).MyLevel)
-	bob.Post(path+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	bob.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	bob.Get(path+"/sharing").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	carol.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	require.Empty(t, testkit.Decode[dto.List[dto.Room]](bob.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items)
 
 	s = testkit.Decode[dto.Sharing](alice.Put(path+"/sharing", dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost}).RequireStatus(http.StatusOK))
 	require.Equal(t, dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost, Users: []dto.SharingUser{}}, s)
-	carol.Post(path+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireStatus(http.StatusCreated)
-	require.Equal(t, dto.VisibilityPublic, testkit.Decode[dto.Room](carol.Get(path).RequireStatus(http.StatusOK)).Visibility)
+	carol.Post(path+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	carol.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	require.Equal(t, dto.VisibilityPublic, testkit.Decode[dto.Room](alice.Get(path).RequireStatus(http.StatusOK)).Visibility)
 
 	alice.Put(path+"/sharing", dto.Sharing{Mode: dto.VisibilityPrivate}).RequireStatus(http.StatusOK)
 	bob.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	carol.Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
 	e := alice.Put(path+"/sharing", dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelManage}).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid)
 	require.Contains(t, e.Fields, "public_level")
@@ -336,9 +389,10 @@ func seqs(list []dto.Message) []int64 {
 // rooms; safe images display inline, everything else downloads.
 func TestMultipartUploadAndDownload(t *testing.T) {
 	env := testkit.New(t, testkit.WithEnv(map[string]string{"PARTYLINE_MAX_UPLOAD_MB": "1"}))
-	alice, bob, carol := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol")
+	alice, bob, carol, dave := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol"), env.NewUser("dave")
 	r := createRoom(alice, "ops")
-	shareRoom(alice, r.ID, dto.SharingUser{UserID: bob.User.ID, Level: dto.LevelView})
+	addToRoom(t, env, alice, r.ID, bob)
+	joinOrgOf(t, env, r.ID, dave, orgs.PermissionMember) // of the organization, not of the room
 
 	png := "\x89PNG\r\n\x1a\nfake"
 	msg := testkit.Decode[dto.Message](postMultipart(alice, r.ID, dto.PostMessageRequest{Text: "files"},
@@ -358,6 +412,7 @@ func TestMultipartUploadAndDownload(t *testing.T) {
 	require.Equal(t, `attachment; filename=page.html`, html.Header.Get("Content-Disposition"))
 
 	carol.Get("/api/v1/attachments/"+msg.Attachments[0].ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	dave.Get("/api/v1/attachments/"+msg.Attachments[0].ID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	alice.Get("/api/v1/attachments/"+store.NewID()).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
 	// Only a file: no text needed (MSG-02).
@@ -369,8 +424,10 @@ func TestMultipartUploadAndDownload(t *testing.T) {
 		RequireError(http.StatusRequestEntityTooLarge, dto.ErrorCodeTooLarge)
 	page := testkit.Decode[dto.Page[dto.Message]](alice.Get("/api/v1/rooms/" + r.ID + "/messages").RequireStatus(http.StatusOK))
 	require.Len(t, page.Items, 2, "the oversized upload stored no message")
-	postMultipart(bob, r.ID, dto.PostMessageRequest{Text: "nope"}, upload{"a.txt", "text/plain", "x"}).
-		RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+	postMultipart(dave, r.ID, dto.PostMessageRequest{Text: "nope"}, upload{"a.txt", "text/plain", "x"}).
+		RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	postMultipart(bob, r.ID, dto.PostMessageRequest{Text: "a room member posts"}, upload{"b.txt", "text/plain", "x"}).
+		RequireStatus(http.StatusCreated)
 }
 
 // DLV-09 over HTTP: a manager resumes a room paused by the loop guard.

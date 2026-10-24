@@ -685,13 +685,13 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
 **Reuses**: `orgs.Authz`, `OrgRoles`
 **Requirement**: ORG-02, OMEM-06
 **Done when**:
-- [ ] e2e: the "Groups and DMs" matrix:
+- [x] e2e: the "Groups and DMs" matrix:
   - an org admin who is not a member manages a group;
   - a member who is not in the room → 404;
   - the manager of an AI views its DM, a non-manager org member → 404;
   - an instance admin → 404
-- [ ] A grant row (still writable) gives nothing
-- [ ] Gate check passes: `make check`
+- [x] A grant row (still writable) gives nothing
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(access): derive room access from organizations`
@@ -704,13 +704,13 @@ After commit: hosted AIs' sessions are kicked (4001), `SessionsRevoked`, `OrgCha
 **Reuses**: `rooms.CreateWithMembers`, `MembersRefusedError`
 **Requirement**: ORG-02, ORG-03, OMEM-04
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - a user group in acme → 201 with `org_id`; in a foreign org → 403;
   - a guest user and a guest AI each → 403, while a guest added to a group posts in it and can DM any member of the org;
   - an AI's `create_group` without `org` → its home org; with an org where it is not a member → 403;
   - adding a non-member → 422 `members_refused`/`not_org_member`;
   - rewrite `groups_test.go` and `conversation_tools_test.go`
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): create groups inside an organization`
@@ -729,10 +729,10 @@ Merge moves org memberships (B wins) and re-points `creator_iid` from A to B. `D
 **Reuses**: `orgs.Authz`, `conversations/merge.go`
 **Requirement**: POS-04, POS-05
 **Done when**:
-- [ ] e2e: the "Intelligences" matrix rows for `/agents*`
-- [ ] Merge across home orgs → 403
-- [ ] After a merge, A's created AIs have B as their creator
-- [ ] Gate check passes: `make check`
+- [x] e2e: the "Intelligences" matrix rows for `/agents*`
+- [x] Merge across home orgs → 403
+- [x] After a merge, A's created AIs have B as their creator
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): administer AIs through the org chart`
@@ -749,11 +749,11 @@ Merge moves org memberships (B wins) and re-points `creator_iid` from A to B. `D
 **Reuses**: `orgs.Authz`
 **Requirement**: POS-04, POS-05, OMEM-03
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - a manager edits a subordinate's profile (person and AI) → 200;
   - a peer → 403; an outsider viewing an AI → 404;
   - the profile lists two memberships for an identity in two orgs
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(intelligences): see and edit profiles through organizations`
@@ -772,10 +772,10 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `orgs.Authz`
 **Requirement**: ORG-03, ORG-07, OMEM-04
 **Done when**:
-- [ ] e2e: the "Connections" matrix
-- [ ] A member creating → 403; an outsider viewing → 404
-- [ ] An operator from another org → 422 `operator_id`, from the same org → 200
-- [ ] Gate check passes: `make check`
+- [x] e2e: the "Connections" matrix
+- [x] A member creating → 403; an outsider viewing → 404
+- [x] An operator from another org → 422 `operator_id`, from the same org → 200
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors): own connections by organization`
@@ -788,11 +788,11 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `orgs.Authz`
 **Requirement**: ORG-02, ORG-07
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - a member pairs through a Telegram connection of its org; through a webhook connection → 403, while an admin → 201;
   - an outsider → 404;
   - a member sees the connection's people; an outsider does not
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(identities): pair and see people through the connection's organization`
@@ -805,11 +805,11 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `CanSee`
 **Requirement**: OMEM-03, ORG-02
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - contacts list another user's AI after joining its org and not before;
   - the response has no machine grouping; an AI hosted by me but in an org I left is still listed under "hosted by me";
   - an AI's `send_message to` an AI of a foreign org → 404 `contact_not_found`, while a user of the instance works
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(intelligences): list contacts by organization`
@@ -822,12 +822,12 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `orgs.Authz`, `ListRoomsForUser`
 **Requirement**: ORG-02, OMEM-03
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - a group lists its org;
   - a DM with a colleague in two shared orgs lists both;
   - a DM with a user who shares no org lists the viewer's default org;
   - after the colleague leaves one org, the DM lists only the remaining one
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): tag conversations with their organizations`
@@ -840,9 +840,9 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `retired_routes_test.go`
 **Requirement**: ORG-02
 **Done when**:
-- [ ] e2e: both removed routes → 404 (retired routes test); `/agent/agents` lists each hosted AI with its organization; folder labels still show `~`
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] e2e: both removed routes → 404 (retired routes test); `/agent/agents` lists each hosted AI with its organization; folder labels still show `~`
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `refactor(api): stop exposing machines`

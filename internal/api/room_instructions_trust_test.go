@@ -135,3 +135,28 @@ func TestInstructionsSavedByTheManagerThroughTheAPIAreTrusted(t *testing.T) {
 	require.True(t, info.RoomTextTrusted)
 	require.Equal(t, noticeFromManager, w.connectNotice(t))
 }
+
+// A group an AI creates is written by that AI, not by the user who hosts it (T23 records the creator's identity, as T30
+// asks): its name and description are trusted by an AI only when the creating AI manages it. A sibling of the same host,
+// which a rule on the host would have let through, is not trusted, nor is an AI the target manages itself; an AI above the
+// creator of the target in the chart is. The group of a user is unchanged: the manager who created ops manages the AI.
+func TestTheTextOfAGroupAnAICreatesIsTrustedOnlyWhenThatAIManagesTheRecipient(t *testing.T) {
+	w := newTrustWorld(t)
+	require.True(t, w.roomInfo(t).RoomTextTrusted, "ops was created by the manager of the AI")
+
+	for _, c := range []struct {
+		creator string
+		trusted bool
+	}{
+		{"sibling", false}, // another AI of the host: neither manages the other
+		{"sub", false},     // created by the target, so the target manages it and not the other way round
+		{"lead", true},     // at the root position, above the creator of the target
+	} {
+		t.Run(c.creator, func(t *testing.T) {
+			created := testkit.Decode[dto.CreatedGroup](w.asAI(c.creator).Post("/api/v1/agent/groups",
+				dto.CreateGroupRequest{Name: "made by " + c.creator, Members: []string{w.ai}}).RequireStatus(http.StatusCreated))
+			info := testkit.Decode[dto.RoomInfo](w.asAI(trustAI).Get(agentRoomPath(created.Room, "/info")).RequireStatus(http.StatusOK))
+			require.Equal(t, c.trusted, info.RoomTextTrusted)
+		})
+	}
+}

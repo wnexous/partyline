@@ -9,10 +9,9 @@ import {
   makeAIContact,
   makeContacts,
   makeIntelligence,
-  makeMachineTree,
+  makeOrgAIs,
   makePerson,
   makeProfile,
-  makeTreeNode,
 } from "@/test/fixtures";
 import { ApiError } from "./client";
 import {
@@ -22,7 +21,6 @@ import {
   useIntelligence,
   useMergeAgent,
   usePeople,
-  useSetMachineLabel,
 } from "./queries";
 import type { Contacts, IntelligenceProfile, IntelligenceRef } from "./types.gen";
 
@@ -50,11 +48,15 @@ afterEach(() => {
 describe("contacts (CONT-01)", () => {
   it("loads GET /contacts with every section as the server sent it", async () => {
     const contacts = makeContacts({
-      machines: [
-        makeMachineTree({ nodes: [makeTreeNode({ children: [makeTreeNode({ name: "notes" })] })] }),
+      org_ais: [
+        makeOrgAIs({
+          ais: [
+            makeAIContact(),
+            makeAIContact({ owner: makeIntelligence({ id: "u2", handle: "bob" }) }),
+          ],
+        }),
       ],
-      unlinked: [makeAIContact({ folder: "", folder_label: "" })],
-      shared: [makeAIContact({ owner: makeIntelligence({ id: "u2", handle: "bob" }) })],
+      hosted: [makeAIContact({ folder: "", folder_label: "" })],
       users: [makeIntelligence({ id: "u2", handle: "bob", display_name: "Bob Lima" })],
       people: [{ connector: { id: "k1", kind: "whatsapp", name: "ops-line" }, count: 3 }],
     });
@@ -155,90 +157,6 @@ describe("the people of a connector (CONT-01)", () => {
   });
 });
 
-describe("renaming a machine (TREE-04)", () => {
-  const seeded = () =>
-    makeContacts({
-      machines: [
-        makeMachineTree({ hostname: "devbox", label: "devbox", online: true }),
-        makeMachineTree({ hostname: "notebook", label: "Laptop" }),
-      ],
-    });
-
-  it("puts the label on the machine's hostname and shows it in the cached tree", async () => {
-    const { calls } = mockApi({
-      "PUT /machines/devbox": json(200, { hostname: "devbox", label: "Build box" }),
-    });
-    qc.setQueryData(queryKeys.contacts, seeded());
-    const { result } = renderHook(() => useSetMachineLabel(), { wrapper });
-
-    await act(async () => {
-      await result.current.mutateAsync({ hostname: "devbox", label: "Build box" });
-    });
-
-    expect(calls[0]).toMatchObject({
-      method: "PUT",
-      path: "/machines/devbox",
-      body: { label: "Build box" },
-    });
-    expect(qc.getQueryData<Contacts>(queryKeys.contacts)?.machines.map((m) => m.label)).toEqual([
-      "Build box",
-      "Laptop",
-    ]);
-  });
-
-  it("falls back to the hostname when the label is cleared", async () => {
-    mockApi({ "PUT /machines/notebook": json(200, { hostname: "notebook", label: "" }) });
-    qc.setQueryData(queryKeys.contacts, seeded());
-    const { result } = renderHook(() => useSetMachineLabel(), { wrapper });
-    await act(async () => {
-      await result.current.mutateAsync({ hostname: "notebook", label: "" });
-    });
-    expect(qc.getQueryData<Contacts>(queryKeys.contacts)?.machines.map((m) => m.label)).toEqual([
-      "devbox",
-      "notebook",
-    ]);
-  });
-
-  it("encodes the hostname in the path", async () => {
-    const { calls } = mockApi({
-      "PUT /machines/ana's%20box": json(200, { hostname: "ana's box", label: "x" }),
-    });
-    const { result } = renderHook(() => useSetMachineLabel(), { wrapper });
-    await act(async () => {
-      await result.current.mutateAsync({ hostname: "ana's box", label: "x" });
-    });
-    expect(calls[0]?.url.pathname).toBe("/api/v1/machines/ana's%20box");
-  });
-
-  it("refreshes the cached AI profiles, which show the label of their machine", async () => {
-    mockApi({ "PUT /machines/devbox": json(200, { hostname: "devbox", label: "Build box" }) });
-    qc.setQueryData(queryKeys.intelligence("a1"), makeProfile());
-    const { result } = renderHook(() => useSetMachineLabel(), { wrapper });
-    await act(async () => {
-      await result.current.mutateAsync({ hostname: "devbox", label: "Build box" });
-    });
-    expect(stale(queryKeys.intelligence("a1"))).toBe(true);
-  });
-
-  it("rejects with the field reason and leaves the cached label alone", async () => {
-    mockApi({
-      "PUT /machines/devbox": apiError(422, "invalid", "invalid", {
-        label: "must have at most 64 characters",
-      }),
-    });
-    qc.setQueryData(queryKeys.contacts, seeded());
-    const { result } = renderHook(() => useSetMachineLabel(), { wrapper });
-    const failure = await act(() =>
-      result.current.mutateAsync({ hostname: "devbox", label: "x".repeat(65) }).catch((e) => e),
-    );
-    expect(failure).toMatchObject({
-      status: 422,
-      fields: { label: "must have at most 64 characters" },
-    });
-    expect(qc.getQueryData<Contacts>(queryKeys.contacts)?.machines[0]?.label).toBe("devbox");
-  });
-});
-
 describe("another intelligence's profile (PROF-05, PROF-11, PEOP-03)", () => {
   it("loads a profile by id with what the caller may do with it", async () => {
     const profile: IntelligenceProfile = {
@@ -268,8 +186,8 @@ describe("another intelligence's profile (PROF-05, PROF-11, PEOP-03)", () => {
   });
 });
 
-describe("deleting an AI from the contacts (TREE-06)", () => {
-  it("sends DELETE, drops the AI from the unlinked and shared lists, and refreshes the rest", async () => {
+describe("deleting an AI from the contacts", () => {
+  it("sends DELETE, drops the AI from the hosted list and the organization groups, and refreshes the rest", async () => {
     const old = makeAIContact({
       intelligence: makeAI({ id: "a7", display_name: "Old helper", handle: "old-helper" }),
       folder: "",
@@ -277,7 +195,10 @@ describe("deleting an AI from the contacts (TREE-06)", () => {
     });
     const keep = makeAIContact({ intelligence: makeAI({ id: "a8", handle: "keeper" }) });
     const { calls } = mockApi({ "DELETE /agents/a7": new Response(null, { status: 204 }) });
-    qc.setQueryData(queryKeys.contacts, makeContacts({ unlinked: [old, keep], shared: [old] }));
+    qc.setQueryData(
+      queryKeys.contacts,
+      makeContacts({ hosted: [old, keep], org_ais: [makeOrgAIs({ ais: [old] })] }),
+    );
     qc.setQueryData(queryKeys.intelligence("a7"), makeProfile({ id: "a7" }));
     const { result } = renderHook(() => useDeleteAgent(), { wrapper });
 
@@ -287,9 +208,9 @@ describe("deleting an AI from the contacts (TREE-06)", () => {
 
     expect(calls[0]).toMatchObject({ method: "DELETE", path: "/agents/a7" });
     const contacts = qc.getQueryData<Contacts>(queryKeys.contacts);
-    expect(contacts?.unlinked.map((c) => c.intelligence.id)).toEqual(["a8"]);
-    expect(contacts?.shared).toEqual([]);
-    // The machine tree is rebuilt by the server (folders collapse differently without the AI).
+    expect(contacts?.hosted.map((c) => c.intelligence.id)).toEqual(["a8"]);
+    expect(contacts?.org_ais[0]?.ais).toEqual([]);
+    // The contacts are the server's to rebuild.
     expect(stale(queryKeys.contacts)).toBe(true);
     // The deleted AI's profile is stale but not refetched into a 404 under the page that shows it.
     expect(stale(queryKeys.intelligence("a7"))).toBe(true);
@@ -298,7 +219,7 @@ describe("deleting an AI from the contacts (TREE-06)", () => {
   it("changes nothing when the server refuses", async () => {
     mockApi({ "DELETE /agents/a7": apiError(403, "forbidden") });
     const contacts = makeContacts({
-      unlinked: [makeAIContact({ intelligence: makeAI({ id: "a7" }) })],
+      hosted: [makeAIContact({ intelligence: makeAI({ id: "a7" }) })],
     });
     qc.setQueryData(queryKeys.contacts, contacts);
     const { result } = renderHook(() => useDeleteAgent(), { wrapper });
@@ -308,7 +229,7 @@ describe("deleting an AI from the contacts (TREE-06)", () => {
   });
 });
 
-describe("merging an unlinked AI (MRG-01, MRG-02)", () => {
+describe("merging an AI (MRG-01, MRG-02)", () => {
   const old = makeAIContact({
     intelligence: makeAI({ id: "a7", display_name: "Old helper", handle: "old-helper" }),
     folder: "",
@@ -316,10 +237,13 @@ describe("merging an unlinked AI (MRG-01, MRG-02)", () => {
   });
   const keep = makeAIContact({ intelligence: makeAI({ id: "a8", handle: "atlas" }) });
 
-  it("sends POST with the AI it merges into, drops it from the cached lists and refreshes the tree", async () => {
+  it("sends POST with the AI it merges into, drops it from the cached lists and refreshes the contacts", async () => {
     const survivor = makeAgent({ id: "a8", name: "Atlas" });
     const { calls } = mockApi({ "POST /agents/a7/merge": json(200, survivor) });
-    qc.setQueryData(queryKeys.contacts, makeContacts({ unlinked: [old, keep], shared: [old] }));
+    qc.setQueryData(
+      queryKeys.contacts,
+      makeContacts({ hosted: [old, keep], org_ais: [makeOrgAIs({ ais: [old] })] }),
+    );
     qc.setQueryData(queryKeys.rooms, []);
     qc.setQueryData(queryKeys.conversations, []);
     qc.setQueryData(queryKeys.intelligence("a7"), makeProfile({ id: "a7" }));
@@ -332,9 +256,9 @@ describe("merging an unlinked AI (MRG-01, MRG-02)", () => {
     expect(calls[0]).toMatchObject({ method: "POST", path: "/agents/a7/merge" });
     expect(calls[0]?.body).toEqual({ into: "a8" });
     const contacts = qc.getQueryData<Contacts>(queryKeys.contacts);
-    expect(contacts?.unlinked.map((c) => c.intelligence.id)).toEqual(["a8"]);
-    expect(contacts?.shared).toEqual([]);
-    // The tree, the conversations and the rooms the merged AI was in are the server's to rebuild.
+    expect(contacts?.hosted.map((c) => c.intelligence.id)).toEqual(["a8"]);
+    expect(contacts?.org_ais[0]?.ais).toEqual([]);
+    // The contacts, the conversations and the rooms the merged AI was in are the server's to rebuild.
     expect(stale(queryKeys.contacts)).toBe(true);
     expect(stale(queryKeys.conversations)).toBe(true);
     expect(stale(queryKeys.rooms)).toBe(true);
@@ -344,7 +268,7 @@ describe("merging an unlinked AI (MRG-01, MRG-02)", () => {
 
   it("leaves the cached contacts alone when the AI is online (409 identity_online)", async () => {
     mockApi({ "POST /agents/a7/merge": apiError(409, "identity_online") });
-    const contacts = makeContacts({ unlinked: [old, keep] });
+    const contacts = makeContacts({ hosted: [old, keep] });
     qc.setQueryData(queryKeys.contacts, contacts);
     const { result } = renderHook(() => useMergeAgent(), { wrapper });
     await act(() => result.current.mutateAsync({ from: "a7", into: "a8" }).catch(() => undefined));
