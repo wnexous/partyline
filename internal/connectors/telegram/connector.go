@@ -50,6 +50,7 @@ func Kind() connectors.Kind {
 			{Name: "api_base", Label: "Bot API URL", Type: dto.FieldTypeURL, Default: DefaultAPIBase, Endpoint: true,
 				Help: "Change only for a self-hosted Bot API server"},
 		},
+		Address: address,
 		New: func(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {
 			return New(cfg, d)
 		},

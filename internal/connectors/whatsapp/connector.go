@@ -56,6 +56,7 @@ func Kind() connectors.Kind {
 			{Name: "instances", Label: "Instances", Type: dto.FieldTypeStringList, Required: true,
 				Help: "exactly one instance: the number of this connection"},
 		},
+		Address: address,
 		New: func(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {
 			return New(cfg, d)
 		},

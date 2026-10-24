@@ -18,6 +18,15 @@ const (
 	CreateWindow = time.Hour
 )
 
+// Agent new-chat rate limit: an AI starts at most NewChatLimit chats on its connections per
+// NewChatWindow, by writing to an address no chat of the connection has been seen at (CID-31). It is
+// apart from the conversations above: writing to a stranger is what gets a number banned, and the
+// 30 posts a minute would allow thirty strangers a minute.
+const (
+	NewChatLimit  = 10
+	NewChatWindow = time.Hour
+)
+
 // postLimiter allows at most limit events per agent within a sliding window.
 type postLimiter struct {
 	limit  int

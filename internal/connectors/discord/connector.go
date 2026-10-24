@@ -37,6 +37,7 @@ func Kind() connectors.Kind {
 			{Name: "bot_token", Label: "Bot token", Type: dto.FieldTypeSecret, Required: true,
 				Help: "Developer Portal → Bot; enable the Message Content intent"},
 		},
+		Address: address,
 		New: func(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {
 			return New(cfg, d)
 		},

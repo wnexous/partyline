@@ -224,6 +224,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	})
 	a.Sends = connectors.NewSends(connectors.SendsDeps{
 		Store: st, Transport: a.ConnectorManager, Sent: sentIDs, Now: opts.Now, Logger: opts.Logger,
+		Kinds: registry, Bus: bus, AllowNewChat: a.Agents.AllowNewChat,
 	})
 	a.sendWorker = !opts.DisableOutbox
 	a.Connectors = connectors.NewService(connectors.ServiceDeps{

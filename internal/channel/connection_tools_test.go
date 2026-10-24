@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -304,4 +305,56 @@ func TestToolReactAndSendFileOnAMessageOfAConnectionAreUnsupported(t *testing.T)
 	require.Equal(t, "message not found", text)
 	require.Empty(t, c.inst.Sent())
 	require.Empty(t, c.messages(c.room.ID), "nothing was posted")
+}
+
+// CID-31: send_message with connection and, as chat, the address of someone the connection never
+// heard from starts the chat: the text goes to that address through the connection, unsigned, and the
+// tool says it was sent. What is no address stays an unknown chat, and the 11th chat started in an
+// hour is the server's "rate limited" in its own words.
+func TestToolSendMessageStartsAChatAtAnAddress(t *testing.T) {
+	c := newConnectionChan(t)
+	s := c.connected(c.options())
+
+	text, isErr := s.call("send_message", toolArgs("connection", c.conn, "chat", "5541999990000", "text", "good morning"))
+	require.False(t, isErr, text)
+	require.Equal(t, "sent", text)
+	sent := c.inst.WaitSend(t)
+	require.Equal(t, []any{"5541999990000", "good morning", true}, []any{sent.ChatID, sent.Text, sent.Unsigned})
+
+	text, isErr = s.call("send_message", toolArgs("connection", c.conn, "chat", "hello", "text", "x"))
+	require.True(t, isErr, text)
+	require.Equal(t, "unknown_chat: the chat does not belong to this connection", text)
+
+	for i := range 9 {
+		text, isErr = s.call("send_message", toolArgs("connection", c.conn, "chat", fmt.Sprintf("55429999900%02d", i), "text", "good morning"))
+		require.False(t, isErr, text)
+	}
+	text, isErr = s.call("send_message", toolArgs("connection", c.conn, "chat", "5541999990099", "text", "one too many"))
+	require.True(t, isErr, text)
+	require.Equal(t, "rate limited: at most 10 new chats an hour", text)
+	text, isErr = s.call("send_message", toolArgs("connection", c.conn, "chat", "5541999990000", "text", "an address it wrote to is free"))
+	require.False(t, isErr, text)
+	require.Len(t, c.inst.Sent(), 11)
+}
+
+// CID-31: the tool says that chat may also be the address of a chat the AI has not heard from, which
+// the schema of the tool tells where it comes from: the platform's own address, and what it is for
+// each platform.
+func TestToolSendMessageTellsHowToStartAChat(t *testing.T) {
+	c := newConnectionChan(t)
+	s := c.connected(c.options())
+	s.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	for _, item := range s.response()["result"].(map[string]any)["tools"].([]any) {
+		tool := item.(map[string]any)
+		if tool["name"] != "send_message" {
+			continue
+		}
+		chat := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["chat"].(map[string]any)["description"].(string)
+		for _, want := range []string{"chat_id", "address", "WhatsApp", "country code", "Telegram chat id", "Discord channel id", "10"} {
+			require.Contains(t, chat, want)
+		}
+		require.Contains(t, tool["description"], "never wrote to you", "the description says a conversation can be started")
+		return
+	}
+	t.Fatal("send_message is not listed")
 }

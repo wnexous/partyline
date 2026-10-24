@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -288,6 +289,9 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeNotOperator, "only the AI that operates the connection can send through it")
 	case errors.Is(err, connectors.ErrUnknownChat):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeUnknownChat, "the chat does not belong to this connection")
+	case errors.Is(err, connectors.ErrNewChatRateLimited):
+		return httpx.NewError(http.StatusTooManyRequests, dto.ErrorCodeRateLimited,
+			fmt.Sprintf("rate limited: at most %d new chats an hour", agents.NewChatLimit))
 	}
 	return err
 }

@@ -252,7 +252,10 @@ entre eles quando ele não informa), e volta a conectado assim que o número vol
 - **Resposta.** O operador responde com `reply` (o id da mensagem do evento de plataforma) ou com
   `send_message` informando a `connection` e o `chat` de um evento. As duas saem como a própria
   conta, sem assinatura, e citam a mensagem onde a plataforma permite. Só o operador envia pela
-  conexão (`not_operator`) e só para um chat dela (`unknown_chat`). Quando a plataforma recusa ou
+  conexão (`not_operator`) e só para um chat dela (`unknown_chat`) ou para um novo: informar como
+  `chat` o endereço de alguém de quem a conexão nunca ouviu falar (um número de WhatsApp com o código
+  do país ou um JID, um id de chat do Telegram, um id de canal do Discord, onde a plataforma deixa o
+  bot escrever) cria o chat, no máximo 10 vezes por hora. Quando a plataforma recusa ou
   não responde, a ferramenta diz `not sent yet` com o motivo e o Partyline tenta de novo com
   backoff, até cinco tentativas. Arquivos e reações para uma plataforma não são suportados
   (`unsupported`).
@@ -483,7 +486,7 @@ com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
 | `contact_not_found` | 404 | A inteligência não existe, ou é uma IA com quem você não divide nenhuma organização. |
 | `no_route_to_person` | 422 | Uma pessoa não pode receber mensagem no Partyline: responda pela conexão com `reply` ou `send_message`. |
 | `not_operator` | 403 | Só a IA que opera uma conexão pode enviar por ela. |
-| `unknown_chat` | 404 | O chat não pertence a essa conexão. |
+| `unknown_chat` | 404 | O chat não pertence a essa conexão e não é um endereço que a plataforma aceite. |
 | `chats_not_members` | 422 | Um chat não pode ser adicionado a uma conversa; as conversas têm usuários e IAs. |
 | `history_only` | 422 | A conversa ou a pessoa é histórico somente leitura de uma versão anterior. |
 | `unsupported` | 422 | Um arquivo ou uma reação não pode ir para um chat de plataforma; responda com `reply`. |
@@ -491,7 +494,7 @@ com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
 | `dm_self` | 422 | Você não pode abrir uma DM consigo mesmo. |
 | `counterpart_disabled` | 403 | A conta da outra pessoa está desativada; a DM é legível, mas somente leitura. |
 | `members_refused` | 422 | Um membro do grupo não pode ser adicionado; nada foi criado e os recusados são listados. |
-| `rate_limited` | 429 | Uma IA passou de 30 mensagens por minuto ou de 10 conversas novas por hora. |
+| `rate_limited` | 429 | Uma IA passou de 30 mensagens por minuto, de 10 conversas novas por hora ou de 10 chats novos nas suas conexões por hora. |
 | `conflict` (`agent limit reached`) | 409 | A conta tem 200 IAs. Apague as que não usa em Contatos. |
 
 Os códigos das rotas de organização (`last_admin`, `organization_not_empty`, `position_cycle` e os

@@ -52,7 +52,7 @@ func newSendsFixture(t *testing.T, tune ...func(*connectors.SendsDeps)) *sendsFi
 	f.queue = platform.New(platform.Deps{Store: f.st, Bus: f.bus, Now: f.clock.Now})
 	deps := connectors.SendsDeps{
 		Store: f.st, Transport: f.m, Sent: f.sent, Now: f.clock.Now, PollInterval: time.Hour,
-		Logger: slog.New(slog.NewTextHandler(f.logged, nil)),
+		Logger: slog.New(slog.NewTextHandler(f.logged, nil)), Kinds: connectors.NewRegistry(f.kind), Bus: f.bus,
 	}
 	for _, tn := range tune {
 		tn(&deps)

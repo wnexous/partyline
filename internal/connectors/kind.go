@@ -58,6 +58,13 @@ type Kind struct {
 	// the connection's organization (IDN-05, AD-008 as amended by AD-016), and only they are given
 	// such a code, so nobody else's identity can be claimed through it.
 	LinkAdminsOnly bool
+	// Address, when set, lets the AI that operates a connection of the kind write to a chat the
+	// connection has not heard from yet (CID-31): it turns what the operator names (a phone number
+	// or JID, a Telegram chat id, a Discord channel id) into the chat to create, or reports false
+	// for something the platform could not address. cfg holds the public fields of the connector's
+	// config (never a secret) and the function touches nothing else, so it works whether or not the
+	// connection runs. A kind without it only sends to chats it has seen.
+	Address func(cfg Config, raw string) (ChatInfo, bool)
 	// New builds a connector from a validated config.
 	New func(cfg Config, d Deps) (Connector, error)
 	// Prepare, when set, completes the config of a new connector before validation (e.g.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
+	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/validation"
@@ -22,8 +23,11 @@ import (
 var (
 	// ErrNotOperator means the AI that sends is not the operator of the connection (CID-03).
 	ErrNotOperator = errors.New("only the AI that operates the connection can send through it")
-	// ErrUnknownChat means the chat is not a chat of the connection (CID-17).
+	// ErrUnknownChat means the chat is not a chat of the connection (CID-17), and not an address its
+	// platform lets the operator start a chat at either (CID-31).
 	ErrUnknownChat = errors.New("the chat does not belong to the connection")
+	// ErrNewChatRateLimited means the AI started too many chats on its connections lately (CID-31).
+	ErrNewChatRateLimited = errors.New("too many new chats")
 )
 
 const (
@@ -67,6 +71,15 @@ type SendsDeps struct {
 	// echo of a send from something typed on the account (CID-14); nil remembers nothing, and
 	// only the record of the sends then tells them apart.
 	Sent *SentIDs
+	// Kinds are the connector kinds: the Address of a connection's kind says which names it takes as a
+	// chat it has not heard from yet (CID-31). Without it a send goes only to chats the connection has.
+	Kinds *Registry
+	// Bus announces the chats a send creates; defaults to a bus nobody listens to.
+	Bus *events.Bus
+	// AllowNewChat says whether an AI may start one more chat now, and counts it; the API wires the
+	// registry's limit of 10 an hour. Nil allows everything. It is asked only when a chat is about to
+	// be created, never for a chat the connection has.
+	AllowNewChat func(agentID string) bool
 	// Now returns the current time; defaults to time.Now.
 	Now    func() time.Time
 	Logger *slog.Logger
@@ -95,6 +108,9 @@ func NewSends(d SendsDeps) *Sends {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
+	if d.Bus == nil {
+		d.Bus = events.NewBus()
+	}
 	if d.AttemptTimeout <= 0 {
 		d.AttemptTimeout = SendAttemptTimeout
 	}
@@ -109,7 +125,9 @@ type SendInput struct {
 	// AgentID is the AI that sends: it must operate the connection (CID-03).
 	AgentID     string
 	ConnectorID string
-	// ChatID is Partyline's id of the chat, a chat of ConnectorID (CID-17).
+	// ChatID is Partyline's id of the chat, a chat of ConnectorID (CID-17); or else the address of a
+	// chat the connection has not heard from yet (a phone number, a Telegram chat id, ...), which the
+	// kind of the connection accepts and which the send then creates (CID-31).
 	ChatID string
 	Text   string
 	// ReplyTo is the platform's id of the message to quote, empty for a plain message; a platform
@@ -119,44 +137,103 @@ type SendInput struct {
 
 // Check refuses what Send would refuse before it stores or sends anything, and changes nothing: a
 // connection that does not exist is access.ErrNotFound, an AI that does not operate it (also while
-// nobody does) ErrNotOperator, a chat that is not one of its chats ErrUnknownChat and an unusable text
-// a *validation.Error on text. A caller that limits how much an AI sends calls it first, so that a
-// refused request does not count against the limit and the AI keeps seeing why it was refused.
+// nobody does) ErrNotOperator, a chat that is neither one of its chats nor an address its platform
+// accepts ErrUnknownChat and an unusable text a *validation.Error on text. A caller that limits how
+// much an AI sends calls it first, so that a refused request does not count against the limit and the
+// AI keeps seeing why it was refused.
 func (s *Sends) Check(ctx context.Context, in SendInput) error {
+	_, err := s.plan(ctx, in)
+	return err
+}
+
+// sendPlan is what a send is going to do: the chat it goes to, or the chat to create first.
+type sendPlan struct {
+	chat   db.Chat
+	create *ChatInfo
+}
+
+// plan makes the checks of Check, in its order, and says where the send goes (CID-03, CID-17, CID-31).
+func (s *Sends) plan(ctx context.Context, in SendInput) (sendPlan, error) {
 	conn, err := s.d.Store.R().GetConnector(ctx, in.ConnectorID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return access.ErrNotFound
+		return sendPlan{}, access.ErrNotFound
 	}
 	if err != nil {
-		return err
+		return sendPlan{}, err
 	}
 	if !conn.OperatorIid.Valid || conn.OperatorIid.String != in.AgentID {
-		return ErrNotOperator
+		return sendPlan{}, ErrNotOperator
 	}
-	chat, err := s.d.Store.R().GetChat(ctx, in.ChatID)
+	p, err := s.destination(ctx, conn, in.ChatID)
+	if err != nil {
+		return sendPlan{}, err
+	}
+	return p, validateAnswer(in.Text)
+}
+
+// destination finds the chat a send to ref goes to: a chat of the connection by its id, else an
+// address the kind of the connection accepts, which is the chat of that address when the connection
+// has one and otherwise a chat to create. Anything else, the id of a chat of another connection
+// included, is an unknown chat.
+func (s *Sends) destination(ctx context.Context, conn db.Connector, ref string) (sendPlan, error) {
+	chat, err := s.d.Store.R().GetChat(ctx, ref)
 	switch {
-	case errors.Is(err, sql.ErrNoRows), err == nil && chat.ConnectorID != in.ConnectorID:
-		return ErrUnknownChat
-	case err != nil:
-		return err
+	case err == nil && chat.ConnectorID == conn.ID:
+		return sendPlan{chat: chat}, nil
+	case err != nil && !errors.Is(err, sql.ErrNoRows):
+		return sendPlan{}, err
 	}
-	return validateAnswer(in.Text)
+	info, ok := s.address(conn, ref)
+	if !ok {
+		return sendPlan{}, ErrUnknownChat
+	}
+	chat, err = s.d.Store.R().GetChatByExternalID(ctx, db.GetChatByExternalIDParams{ConnectorID: conn.ID, ExternalID: info.ID})
+	switch {
+	case err == nil:
+		return sendPlan{chat: chat}, nil
+	case !errors.Is(err, sql.ErrNoRows):
+		return sendPlan{}, err
+	}
+	return sendPlan{create: &info}, nil
+}
+
+// address asks the connection's kind whether ref is an address it can start a chat at (CID-31). The
+// kind sees the public fields of the connection's config only.
+func (s *Sends) address(conn db.Connector, ref string) (ChatInfo, bool) {
+	if s.d.Kinds == nil {
+		return ChatInfo{}, false
+	}
+	kind, ok := s.d.Kinds.Lookup(conn.Kind)
+	if !ok || kind.Address == nil {
+		return ChatInfo{}, false
+	}
+	cfg, err := Decode(nil, conn.ConfigJson, nil)
+	if err != nil {
+		return ChatInfo{}, false
+	}
+	return kind.Address(cfg, ref)
 }
 
 // Send stores the answer after the checks of Check and makes one attempt at once, under
 // SendAttemptTimeout, through the connection. The result is sent when the platform took the message;
 // when it refused or did not answer in time the send is pending, the result carries the reason and the
 // worker retries it (CID-18). The attempt is not abandoned when ctx is done: the caller going away
-// does not unsend a message in flight.
+// does not unsend a message in flight. A send to an address the connection has no chat for first
+// creates the chat, unless the AI started too many lately (ErrNewChatRateLimited, CID-31).
 func (s *Sends) Send(ctx context.Context, in SendInput) (dto.PlatformSendResult, error) {
-	if err := s.Check(ctx, in); err != nil {
+	p, err := s.plan(ctx, in)
+	if err != nil {
+		return dto.PlatformSendResult{}, err
+	}
+	chat, err := s.chatOf(ctx, in, p)
+	if err != nil {
 		return dto.PlatformSendResult{}, err
 	}
 	id, now := store.NewID(), s.d.Now().UnixMilli()
 	// The row is created claimed (sending): the worker only takes pending sends.
-	err := s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		return q.InsertPlatformSend(ctx, db.InsertPlatformSendParams{
-			ID: id, ConnectorID: in.ConnectorID, ChatID: in.ChatID, AgentID: in.AgentID, Text: in.Text,
+			ID: id, ConnectorID: in.ConnectorID, ChatID: chat.ID, AgentID: in.AgentID, Text: in.Text,
 			ReplyToExternalID: in.ReplyTo, NextAttemptAt: now, CreatedAt: now, UpdatedAt: now,
 		})
 	})
@@ -164,6 +241,19 @@ func (s *Sends) Send(ctx context.Context, in SendInput) (dto.PlatformSendResult,
 		return dto.PlatformSendResult{}, err
 	}
 	return s.attempt(context.WithoutCancel(ctx), id)
+}
+
+// chatOf is the chat a planned send goes to, created now when it is a new one (CID-31): the AI's
+// allowance for new chats is spent first, and the chat is announced like any discovered chat. The
+// chat is kept whatever becomes of the first message: the platform refusing it does not unmake it.
+func (s *Sends) chatOf(ctx context.Context, in SendInput, p sendPlan) (db.Chat, error) {
+	if p.create == nil {
+		return p.chat, nil
+	}
+	if s.d.AllowNewChat != nil && !s.d.AllowNewChat(in.AgentID) {
+		return db.Chat{}, ErrNewChatRateLimited
+	}
+	return UpsertChat(ctx, s.d.Store, s.d.Bus, in.ConnectorID, *p.create, time.Time{}, s.d.Now())
 }
 
 // validateAnswer applies the message limits (MSG-02): at least one character that is not white

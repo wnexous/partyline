@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -65,13 +66,24 @@ func New() *Fake {
 // Kind returns the fake kind: a required secret "token", an optional "label" and chat listing.
 func (f *Fake) Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "Fake", CanListChats: true,
+		Name: KindName, Label: "Fake", CanListChats: true, Address: Address,
 		Fields: []connectors.Field{
 			{Name: "token", Label: "Token", Type: dto.FieldTypeSecret, Required: true},
 			{Name: "label", Label: "Label", Type: dto.FieldTypeString},
 		},
 		New: f.newInstance,
 	}
+}
+
+// Address is the fake kind's Address (CID-31): a phone number of 8 to 15 digits is a direct chat
+// that the platform names by the same digits; anything else is no address. Chat ids of Partyline and
+// the ids the tests give their chats ("120363000000000001@g.us", "-1001234567890") are not.
+func Address(_ connectors.Config, raw string) (connectors.ChatInfo, bool) {
+	raw = strings.TrimSpace(raw)
+	if n := len(raw); n < 8 || n > 15 || strings.Trim(raw, "0123456789") != "" {
+		return connectors.ChatInfo{}, false
+	}
+	return connectors.ChatInfo{ID: raw, Kind: "dm"}, true
 }
 
 func (f *Fake) newInstance(cfg connectors.Config, d connectors.Deps) (connectors.Connector, error) {

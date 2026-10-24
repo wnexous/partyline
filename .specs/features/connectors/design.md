@@ -25,7 +25,7 @@ graph LR
 ## Components
 
 ### internal/connectors (framework)
-- **Kind registry**: `Register(Kind)`; `Kinds() []Kind`; `Kind{Name, Label, Fields []Field, CanListChats bool, New func(Config, Deps) (Connector, error)}`.
+- **Kind registry**: `Register(Kind)`; `Kinds() []Kind`; `Kind{Name, Label, Fields []Field, CanListChats bool, Address func(Config, string) (ChatInfo, bool), New func(Config, Deps) (Connector, error)}`. `Address`, optional, is the kind's rule for the address of a chat the connection has not heard from (CID-31): WhatsApp, Telegram and Discord have one, the webhook does not.
 - **Field**: `{Name, Label, Type: "string"|"url"|"secret"|"bool"|"string_list", Required bool, Help string, Default any}` - served as `dto.ConnectorKind` (CON-01).
 - **Config**: `map[string]any`; `Validate(kind, cfg) map[string]string` (CON-02); secrets split into `secrets_enc` via `secrets.Box`, masked as `"********"` on read (CON-03); a PATCH with `"********"` keeps the stored secret.
 - **Connector interface**:

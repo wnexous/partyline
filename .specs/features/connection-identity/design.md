@@ -233,6 +233,7 @@ type AgentPlatformAckFrame struct { Type AgentFrameType `json:"type"`; ItemID st
     Not found → 404.
   - `POST /api/v1/agent/connections/{id}/chats/{chat}/messages {text}` (CID-16, CID-17, CID-03).
   - Both answer `PlatformSendResult {id, status, error?}`: 201 when sent, 202 when queued.
+- **New chats** (CID-31, v0.6.2): the `{chat}` of that endpoint, and `chat` of the tool, may also be the *address* of a chat the connection has not heard from. `Sends.destination` looks the value up as a chat id of the connection first; anything else is offered to `Kind.Address(cfg, raw)` of the connection's kind, a pure function of its public config: WhatsApp takes a phone number with its country code (7 to 15 digits, an optional `+`) or a JID (personal, `@lid`, group; the device suffix is dropped) on the connection's one instance, and titles a DM with the masked number; Telegram a canonical 64-bit chat id (negative: group); Discord a snowflake (17 to 20 digits, kind channel); the webhook has no rule. An address of a chat the connection already has is that chat. Otherwise the chat is created (`UpsertChat`, announced as `ChatDiscovered`) after `AllowNewChat`, 10 per AI per hour (`agents.Registry.AllowNewChat`, a limiter of its own: 429 `rate_limited`), and the send goes on as any other, so a platform that refuses the first message leaves a pending send that the worker retries and a chat that stays. The order of the checks is the same (connection, operator, chat, text): only the operator creates a chat, a refused request creates nothing and spends no allowance.
 - **Tool `send_message`**: new optional `connection` and `chat`. Exactly one of `room`, `to` or
   (`connection` + `chat`). `chat_ids` leaves the schema and is still accepted and ignored.
 - Files and reactions toward platforms are outside this feature. `send_file` and `react` work in
@@ -338,7 +339,8 @@ No Go hook is needed; the file runs inside the single migration transaction (MIG
 | --- | --- | --- |
 | Caller is not the operator, but its owner can see the connection | `ErrNotOperator` | 403 `not_operator` |
 | Caller cannot see the connection | `ErrNotFound` | 404 `not_found` |
-| Chat not of the connection | `ErrUnknownChat` | 404 `unknown_chat` |
+| Chat not of the connection and not an address its platform accepts | `ErrUnknownChat` | 404 `unknown_chat` |
+| More than 10 chats started in an hour | `ErrNewChatRateLimited` | 429 `rate_limited`; nothing is created |
 | Reply id unknown or expired | not found | 404; the AI uses `send_message` with the chat |
 | Platform refuses or times out | Send stays pending, worker retries | 202 with `error`; the tool text says it retries |
 | Connection without operator | Not run | Status error "choose the AI that operates this connection" |
@@ -385,6 +387,10 @@ No Go hook is needed; the file runs inside the single migration transaction (MIG
 | CID-15 | e2e | Reply to an item: the fake connector gets the text, `Unsigned`, `ReplyToID` = the item's external id |
 | CID-16 | e2e + channel | `send_message` with connection+chat is sent unsigned; exactly-one-target validation |
 | CID-17 | e2e | A chat of another connection → 404 `unknown_chat`, nothing sent |
+| CID-28 | adapter | A fake evolution-go answers the instance as production does (`connected: false`, `disconnect_reason: "Reconnecting"`): the detail names the reason; a changed reason is reported; a connected number shows none |
+| CID-29 | adapter | A header and wrapped, plain and nested items of an album: each item is the media it holds, the header nothing; an HD copy stays unsupported |
+| CID-30 | adapter | `contactMessage` and `contactsArrayMessage` with real-shaped vCards: names and numbers in the text, bounded |
+| CID-31 | unit + e2e + channel | Each kind's address rule; a new address creates the chat and sends; an existing one reuses it; invalid, foreign and non-operator are refused with nothing created; the 11th chat in an hour is 429 and refused requests spend nothing |
 | CID-18 | e2e | Failing fake platform → 202 with the reason; the worker retries and succeeds; text cleared after `sent` |
 | CID-19 | e2e | `POST /rooms/{id}/members {kind: chat}` → 422 `chats_not_members` (L-018) |
 | CID-20 | web unit | Picker without chats |
