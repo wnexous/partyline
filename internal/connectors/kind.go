@@ -50,6 +50,10 @@ type Kind struct {
 	Fields []Field
 	// CanListChats tells whether its connectors implement ChatLister (CON-09).
 	CanListChats bool
+	// CanReact tells whether an AI may react to a message that arrived on a connection of the kind:
+	// its platform has reactions (CID-33). The webhook's connector can post a reaction to its
+	// outbound URL, but a webhook has no message to react to.
+	CanReact bool
 	// CanSendFiles tells whether an AI may send a file through a connection of the kind: its
 	// platform has a media send (CID-32). The webhook has none: its attachments are links to files
 	// that Partyline keeps, and a file sent through a connection is not kept.

@@ -49,7 +49,7 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.reply))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "react",
-		Description: "React to a chat message of a room with one emoji; the reaction stays in the room, it is not sent to the chat. Only messages from chats can get reactions; a message from one of your connections cannot (unsupported): answer it with reply.",
+		Description: "React to a message with one emoji. A message from one of your connections (WhatsApp, Telegram or Discord) gets the reaction on the platform, from your own account: take its message_id as for reply; Telegram accepts only its own set of reaction emoji, and a webhook connection cannot (unsupported): answer with reply. A chat message of a room gets the reaction in the room, which does not send it to the chat; other messages of a room cannot get reactions.",
 		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the chat message"},"emoji":{"type":"string","description":"one emoji, e.g. 👍"}},"required":["message_id","emoji"]}`),
 	}, t.guard(t.react))
 	srv.HandleTool(mcp.ToolDef{
@@ -196,11 +196,14 @@ func (t *tools) react(ctx context.Context, args json.RawMessage) (string, error)
 	if err := required("message_id", a.MessageID, "emoji", a.Emoji); err != nil {
 		return "", err
 	}
-	var m dto.Message
-	if err := t.api.json(ctx, http.MethodPost, "agent/messages/"+url.PathEscape(a.MessageID)+"/react", nil, dto.ReactRequest{Emoji: a.Emoji}, &m); err != nil {
+	var out replyAnswer // the reaction message of a room, or the state of the send through a connection (CID-33)
+	if err := t.api.json(ctx, http.MethodPost, "agent/messages/"+url.PathEscape(a.MessageID)+"/react", nil, dto.ReactRequest{Emoji: a.Emoji}, &out); err != nil {
 		return "", err
 	}
-	return "reacted (message_id " + m.ID + ")", nil
+	if out.Status != "" {
+		return "reacted", nil
+	}
+	return "reacted (message_id " + out.ID + ")", nil
 }
 
 // The refusals of send_message about where a message goes.

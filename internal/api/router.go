@@ -289,6 +289,12 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeNotOperator, "only the AI that operates the connection can send through it")
 	case errors.Is(err, connectors.ErrUnknownChat):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeUnknownChat, "the chat does not belong to this connection")
+	case errors.Is(err, connectors.ErrReactionsUnsupported):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeUnsupported,
+			"the platform of this connection does not take reactions: answer the message with reply")
+	case errors.Is(err, connectors.ErrNoReactionTarget):
+		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeUnsupported,
+			"the platform gave this message no id, so it cannot get a reaction: answer it with reply")
 	case errors.Is(err, connectors.ErrFilesUnsupported):
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeUnsupported,
 			"the platform of this connection cannot be sent files: write to the chat with send_message")

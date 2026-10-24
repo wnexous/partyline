@@ -293,29 +293,55 @@ func TestToolSendMessageToAConnectionChatRefusals(t *testing.T) {
 	require.Equal(t, "not sent yet: platform unavailable; partyline retries", text)
 }
 
-// CID-22: react and send_file work in rooms only: given a message that arrived on one of the AI's
-// connections they answer unsupported, with the way out, and do nothing; an id the AI does not hold
-// is still "message not found" (so another AI's messages cannot be probed).
-func TestToolReactAndSendFileOnAMessageOfAConnectionAreUnsupported(t *testing.T) {
+// CID-22, CID-33: react works on a message that arrived on one of the AI's connections: the reaction goes
+// through the platform from the account and the tool says so, and posts nothing to a room. A message of a
+// connection cannot be quoted in a room (send_file with reply_to is unsupported, with the way out); an id
+// the AI does not hold is still "message not found" (so another AI's messages cannot be probed).
+func TestToolReactToAMessageOfAConnection(t *testing.T) {
 	c := newConnectionChan(t)
 	id := c.enqueue(c.group, "M1", "where is my order?")
 	s := c.connected(c.options())
-	file := filepath.Join(t.TempDir(), "report.txt")
-	require.NoError(t, os.WriteFile(file, []byte("synthetic report"), 0o600))
 
 	text, isErr := s.call("react", toolArgs("message_id", id, "emoji", "👍"))
-	require.True(t, isErr, text)
-	require.Equal(t, "unsupported: reactions work on room messages only; a message from a connection cannot get one, answer it with reply", text)
+	require.False(t, isErr, text)
+	require.Equal(t, "reacted", text)
+	r := c.inst.WaitReact(t)
+	require.Equal(t, []any{groupChatExternal, "M1", "5511999990000", "👍"}, []any{r.ChatID, r.TargetID, r.TargetSenderID, r.Emoji})
 
-	text, isErr = s.call("send_file", toolArgs("room", "Support", "path", file, "reply_to", id))
+	text, isErr = s.call("send_file", toolArgs("room", "Support", "path", reportFile(t, "report.txt", "synthetic report"), "reply_to", id))
 	require.True(t, isErr, text)
-	require.Equal(t, "unsupported: a message from a connection cannot be quoted in a room (files go to rooms only); answer it with reply, or with send_message naming the connection and the chat", text)
+	require.Equal(t, "unsupported: a message from a connection cannot be quoted in a room; answer it with reply, or with send_message or send_file naming the connection and the chat", text)
 
 	text, isErr = s.call("react", toolArgs("message_id", "no-such-message", "emoji", "👍"))
 	require.True(t, isErr, text)
 	require.Equal(t, "message not found", text)
 	require.Empty(t, c.inst.Sent())
 	require.Empty(t, c.messages(c.room.ID), "nothing was posted")
+}
+
+// CID-33: what the server refuses reaches the tool in its own words: more than one emoji is a field
+// error, a platform that refuses the reaction (Telegram, for an emoji outside its set) a tool error with the
+// reason, and a platform without reactions (the webhook) unsupported with the way out.
+func TestToolReactRefusals(t *testing.T) {
+	c := newConnectionChan(t)
+	id := c.enqueue(c.group, "M1", "where is my order?")
+	s := c.connected(c.options())
+
+	text, isErr := s.call("react", toolArgs("message_id", id, "emoji", "👍👍"))
+	require.True(t, isErr, text)
+	require.Equal(t, "validation failed (emoji: must be one emoji)", text)
+
+	c.inst.SetReactError(errors.New("setMessageReaction: emoji is not one of Telegram's allowed reactions"))
+	text, isErr = s.call("react", toolArgs("message_id", id, "emoji", "🤖"))
+	require.True(t, isErr, text)
+	require.Equal(t, "the platform did not take the reaction: setMessageReaction: emoji is not one of Telegram's allowed reactions", text)
+
+	webhook := newConnectionChanOfKind(t, func(k *connectors.Kind) { k.CanReact = false })
+	wid := webhook.enqueue(webhook.group, "M1", "where is my order?")
+	ws := webhook.connected(webhook.options())
+	text, isErr = ws.call("react", toolArgs("message_id", wid, "emoji", "👍"))
+	require.True(t, isErr, text)
+	require.Equal(t, "unsupported: the platform of this connection does not take reactions: answer the message with reply", text)
 }
 
 // CID-31: send_message with connection and, as chat, the address of someone the connection never

@@ -39,12 +39,10 @@ var (
 	errAmbiguousRoom    = httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "ambiguous room name")
 	errMessageNotFound  = httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "message not found")
 	errReactNotChat     = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeInvalid, "can only react to chat messages")
-	// Reactions and files work in rooms only (CID-22): the two answers for a message that arrived on
-	// one of the AI's connections, which say how to answer it.
-	errUnsupportedReaction = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeUnsupported,
-		"reactions work on room messages only; a message from a connection cannot get one, answer it with reply")
+	// A message that arrived on one of the AI's connections is no message of a room (CID-22): it cannot be
+	// quoted in one, and the answer says how to answer it.
 	errUnsupportedQuote = httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeUnsupported,
-		"a message from a connection cannot be quoted in a room (files go to rooms only); answer it with reply, or with send_message naming the connection and the chat")
+		"a message from a connection cannot be quoted in a room; answer it with reply, or with send_message or send_file naming the connection and the chat")
 )
 
 // errNotMember answers a room reference the agent is not a member of (TOOL-04).
@@ -692,6 +690,35 @@ func (s *server) sendOnConnection(w http.ResponseWriter, r *http.Request, p auth
 	return nil
 }
 
+// reactOnConnection reacts to a message of the AI's platform queue through its connection (CID-33). A
+// request that is refused (not the operator, a platform without reactions, a message without a platform
+// id, not one emoji) is refused before the AI's posting limit is looked at; a valid one counts like every
+// other post (TOOL-08). A reaction is attempted once: a platform that refuses it is 502 with the reason.
+func (s *server) reactOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, ev platform.Event, emoji string) error {
+	if s.Sends == nil {
+		return errMessageNotFound
+	}
+	in := connectors.ReactInput{
+		AgentID: p.AgentID, ConnectorID: ev.ConnectionID, ChatID: ev.ChatID,
+		TargetID: ev.ExternalID, TargetSenderID: ev.SenderID, TargetFromSelf: ev.FromSelf, Emoji: emoji,
+	}
+	if err := s.Sends.CheckReaction(r.Context(), in); err != nil {
+		return err
+	}
+	if !s.Agents.AllowPost(p.AgentID) {
+		return errAgentRateLimited
+	}
+	res, err := s.Sends.React(r.Context(), in)
+	if err != nil {
+		return err
+	}
+	if res.Status == dto.PlatformSendStatusFailed {
+		return httpx.NewError(http.StatusBadGateway, dto.ErrorCodeUnavailable, "the platform did not take the reaction: "+res.Error)
+	}
+	writePlatformSend(w, res)
+	return nil
+}
+
 // agentConnectionSend writes to a chat of a connection the AI operates: the connection and the chat
 // are Partyline's ids, as a platform event carries them (CID-16), or the address of a chat the connection
 // has not heard from (CID-31). The body is JSON with the text, or multipart with a caption and one file
@@ -796,24 +823,30 @@ func writePlatformSend(w http.ResponseWriter, res dto.PlatformSendResult) {
 	httpx.WriteJSON(w, status, res)
 }
 
-// isPlatformMessage tells whether id is a message of the AI's own platform queue, one that arrived on
-// a connection it operates, acknowledged or not. Another AI's messages are not: nothing is revealed
+// platformMessage returns the message id of the AI's own platform queue, one that arrived on a
+// connection it operates, acknowledged or not. Another AI's messages are not found: nothing is revealed
 // about queues that are not the caller's.
-func (s *server) isPlatformMessage(ctx context.Context, agentID, id string) (bool, error) {
+func (s *server) platformMessage(ctx context.Context, agentID, id string) (platform.Event, bool, error) {
 	if s.Platform == nil {
-		return false, nil
+		return platform.Event{}, false, nil
 	}
-	_, err := s.Platform.Get(ctx, agentID, id)
+	ev, err := s.Platform.Get(ctx, agentID, id)
 	if errors.Is(err, platform.ErrNotFound) {
-		return false, nil
+		return platform.Event{}, false, nil
 	}
-	return err == nil, err
+	return ev, err == nil, err
 }
 
-// agentReact reacts to a chat message with one emoji (REACT-01): the reaction is stored as a
-// message of kind reaction (text = emoji, reply_to = target) whose only recipient is the
-// target's chat; the connectors' sender turns it into a platform reaction. Non-chat targets
-// answer 422 "can only react to chat messages" (REACT-02).
+// isPlatformMessage tells whether id is a message of the AI's own platform queue.
+func (s *server) isPlatformMessage(ctx context.Context, agentID, id string) (bool, error) {
+	_, found, err := s.platformMessage(ctx, agentID, id)
+	return found, err
+}
+
+// agentReact reacts to a message with one emoji (REACT-01). A message of the AI's own platform queue, one
+// that arrived on a connection it operates, is reacted to on its platform, from the account (CID-33).
+// Otherwise the reaction is stored as a message of kind reaction (text = emoji, reply_to = target) of the
+// target's room; non-chat targets answer 422 "can only react to chat messages" (REACT-02).
 func (s *server) agentReact(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	var req dto.ReactRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
@@ -822,11 +855,10 @@ func (s *server) agentReact(w http.ResponseWriter, r *http.Request, p authn.Prin
 	id := r.PathValue("id")
 	orig, err := s.agentTarget(r.Context(), p, id)
 	if errors.Is(err, errMessageNotFound) {
-		// A message of the AI's own platform queue is no room message: it cannot get a reaction (CID-22).
-		if mine, perr := s.isPlatformMessage(r.Context(), p.AgentID, id); perr != nil {
+		if ev, mine, perr := s.platformMessage(r.Context(), p.AgentID, id); perr != nil {
 			return perr
 		} else if mine {
-			return errUnsupportedReaction
+			return s.reactOnConnection(w, r, p, ev, req.Emoji)
 		}
 	}
 	if err != nil {

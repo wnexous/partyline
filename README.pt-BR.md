@@ -259,8 +259,9 @@ entre eles quando ele não informa), e volta a conectado assim que o número vol
   não responde, a ferramenta diz `not sent yet` com o motivo e o Partyline tenta de novo com
   backoff, até cinco tentativas. `send_file` com `connection` e `chat` envia um arquivo local da mesma
   forma (WhatsApp, Telegram e Discord; webhook não), uma única vez: se a plataforma recusa, a
-  ferramenta falha com o motivo e nada envia de novo. Reações para uma plataforma não são suportadas
-  (`unsupported`).
+  ferramenta falha com o motivo e nada envia de novo. `react` com o id de um evento de plataforma põe
+  o emoji naquela mensagem no WhatsApp, no Telegram ou no Discord (uma única vez; uma conexão de
+  webhook responde `unsupported`).
 - **O que os membros veem.** Todo membro da organização vê a página da conexão: o operador, as duas
   opções de entrega, o status e quantas mensagens estão na fila, nunca o texto delas; só os
   administradores a alteram. Trocar o operador entrega a fila à nova IA
@@ -491,7 +492,7 @@ com a URL https e liste o proxy em `PARTYLINE_TRUSTED_PROXIES`.
 | `unknown_chat` | 404 | O chat não pertence a essa conexão e não é um endereço que a plataforma aceite. |
 | `chats_not_members` | 422 | Um chat não pode ser adicionado a uma conversa; as conversas têm usuários e IAs. |
 | `history_only` | 422 | A conversa ou a pessoa é histórico somente leitura de uma versão anterior. |
-| `unsupported` | 422 | Uma reação não pode ir para uma mensagem de plataforma, ou uma conexão de webhook não recebe arquivos; responda com `reply`. |
+| `unsupported` | 422 | Uma conexão de webhook não recebe arquivos nem reações, ou uma mensagem de uma conexão não pode ser citada numa sala; responda com `reply`. |
 | `dm_members_fixed` | 422 | Uma DM tem exatamente duas inteligências; os membros não podem ser alterados. |
 | `dm_self` | 422 | Você não pode abrir uma DM consigo mesmo. |
 | `counterpart_disabled` | 403 | A conta da outra pessoa está desativada; a DM é legível, mas somente leitura. |

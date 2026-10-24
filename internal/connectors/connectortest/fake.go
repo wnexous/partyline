@@ -66,7 +66,7 @@ func New() *Fake {
 // Kind returns the fake kind: a required secret "token", an optional "label" and chat listing.
 func (f *Fake) Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "Fake", CanListChats: true, CanSendFiles: true, Address: Address,
+		Name: KindName, Label: "Fake", CanListChats: true, CanReact: true, CanSendFiles: true, Address: Address,
 		Fields: []connectors.Field{
 			{Name: "token", Label: "Token", Type: dto.FieldTypeSecret, Required: true},
 			{Name: "label", Label: "Label", Type: dto.FieldTypeString},
@@ -155,6 +155,11 @@ type Instance struct {
 	// failAfter, when set, makes a send create its first message and then fail with it
 	// (SetSendErrorAfterFirst).
 	failAfter error
+	// reactErr fails reactions (SetReactError); nextReact numbers the messages they create and
+	// reacted records the ones that went out.
+	reactErr  error
+	nextReact int
+	reacted   []connectors.Reaction
 
 	runs    chan struct{}
 	stops   chan struct{}
@@ -264,10 +269,49 @@ func (i *Instance) SetSendParts(n int) {
 	i.mu.Unlock()
 }
 
-// React implements connectors.Reactor; it records r (see WaitReact).
-func (i *Instance) React(_ context.Context, r connectors.Reaction) error {
+// React implements connectors.Reactor; it records r (see WaitReact) and tells r.Created the id of the
+// message the reaction created, "react-<n>", as a platform that reports the account's own messages does.
+// A reaction fails with SetReactError's error, and waits while HoldSends is on, like a send.
+func (i *Instance) React(ctx context.Context, r connectors.Reaction) error {
+	i.mu.Lock()
+	err := i.reactErr
+	i.nextReact++
+	id := "react-" + strconv.Itoa(i.nextReact)
+	gate, quiet := i.gate, i.quiet
+	i.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if gate != nil {
+		i.sending <- struct{}{}
+		select {
+		case <-gate:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if r.Created != nil && !quiet {
+		r.Created(id)
+	}
+	i.mu.Lock()
+	i.reacted = append(i.reacted, r)
+	i.mu.Unlock()
 	i.reacts <- r
 	return nil
+}
+
+// Reactions returns every reaction that went out so far.
+func (i *Instance) Reactions() []connectors.Reaction {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return append([]connectors.Reaction(nil), i.reacted...)
+}
+
+// SetReactError makes later reactions fail with err (nil restores success).
+func (i *Instance) SetReactError(err error) {
+	i.mu.Lock()
+	i.reactErr = err
+	i.mu.Unlock()
 }
 
 // WaitReact waits for the next reaction and returns it.

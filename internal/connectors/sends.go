@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
@@ -33,6 +34,9 @@ var (
 	ErrNewChatRateLimited = errors.New("too many new chats")
 	// ErrFilesUnsupported means the platform of the connection has no media send (CID-32).
 	ErrFilesUnsupported = errors.New("the platform of the connection cannot be sent files")
+	// ErrNoReactionTarget means the message to react to has no platform id: the platform gave it none
+	// (CID-33).
+	ErrNoReactionTarget = errors.New("the message has no platform id to react to")
 )
 
 const (
@@ -75,6 +79,8 @@ func sendBackoff(attempt int) time.Duration {
 // carry no secrets (the Manager redacts them).
 type Transport interface {
 	Send(ctx context.Context, connectorID string, m Outbound) (platformID string, err error)
+	// React sends a reaction; ErrReactionsUnsupported when the platform has none (CID-33).
+	React(ctx context.Context, connectorID string, r Reaction) error
 }
 
 // SendsDeps are the collaborators of Sends.
@@ -282,7 +288,7 @@ func (s *Sends) Send(ctx context.Context, in SendInput) (dto.PlatformSendResult,
 	if err != nil {
 		return dto.PlatformSendResult{}, err
 	}
-	return s.attempt(context.WithoutCancel(ctx), id, in.File)
+	return s.attempt(context.WithoutCancel(ctx), id, delivery{file: in.File})
 }
 
 // chatOf is the chat a planned send goes to, created now when it is a new one (CID-31): the AI's
@@ -296,6 +302,97 @@ func (s *Sends) chatOf(ctx context.Context, in SendInput, p sendPlan) (db.Chat, 
 		return db.Chat{}, ErrNewChatRateLimited
 	}
 	return UpsertChat(ctx, s.d.Store, s.d.Bus, in.ConnectorID, *p.create, time.Time{}, s.d.Now())
+}
+
+// ReactInput is a reaction of an AI to a message that arrived on its connection (CID-33).
+type ReactInput struct {
+	// AgentID is the AI that reacts: it must operate the connection (CID-03).
+	AgentID     string
+	ConnectorID string
+	// ChatID is Partyline's id of the chat the message arrived in, a chat of ConnectorID.
+	ChatID string
+	// TargetID is the platform's id of the message reacted to, TargetSenderID the platform's id of whoever
+	// wrote it, and TargetFromSelf tells that the account itself did.
+	TargetID       string
+	TargetSenderID string
+	TargetFromSelf bool
+	// Emoji is one emoji; surrounding white space is dropped.
+	Emoji string
+}
+
+// CheckReaction refuses what React would refuse before it records or sends anything, and changes nothing:
+// a connection that does not exist is access.ErrNotFound, an AI that does not operate it ErrNotOperator,
+// a platform without reactions ErrReactionsUnsupported, a chat that is not one of its chats ErrUnknownChat,
+// a message without a platform id ErrNoReactionTarget and anything but one emoji a *validation.Error on
+// emoji (CID-33). A caller that limits how much an AI sends calls it first, as for a send.
+func (s *Sends) CheckReaction(ctx context.Context, in ReactInput) error {
+	_, err := s.planReaction(ctx, in)
+	return err
+}
+
+func (s *Sends) planReaction(ctx context.Context, in ReactInput) (ReactInput, error) {
+	conn, err := s.d.Store.R().GetConnector(ctx, in.ConnectorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return in, access.ErrNotFound
+	}
+	if err != nil {
+		return in, err
+	}
+	if !conn.OperatorIid.Valid || conn.OperatorIid.String != in.AgentID {
+		return in, ErrNotOperator
+	}
+	if !s.canReact(conn) {
+		return in, ErrReactionsUnsupported
+	}
+	chat, err := s.d.Store.R().GetChat(ctx, in.ChatID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows), err == nil && chat.ConnectorID != conn.ID:
+		return in, ErrUnknownChat
+	case err != nil:
+		return in, err
+	}
+	if in.TargetID == "" {
+		return in, ErrNoReactionTarget
+	}
+	in.Emoji = strings.TrimSpace(in.Emoji)
+	if !validation.OneEmoji(in.Emoji) { // REACT-05
+		check := validation.Check{}
+		check.Add("emoji", "must be one emoji")
+		return in, check.Err()
+	}
+	return in, nil
+}
+
+// canReact tells whether the connection's kind has reactions (CID-33).
+func (s *Sends) canReact(conn db.Connector) bool {
+	if s.d.Kinds == nil {
+		return false
+	}
+	kind, ok := s.d.Kinds.Lookup(conn.Kind)
+	return ok && kind.CanReact
+}
+
+// React sends the reaction after the checks of CheckReaction, once: it is recorded as a send of the AI
+// without text, attempted at once under AttemptTimeout through the connection, and a platform that
+// refuses it, or does not answer in time, fails it with the reason; nothing tries again (CID-33). The
+// record is what makes the echo of the reaction, which a platform that reports the account's own messages
+// sends back, recognizable (CID-14).
+func (s *Sends) React(ctx context.Context, in ReactInput) (dto.PlatformSendResult, error) {
+	in, err := s.planReaction(ctx, in)
+	if err != nil {
+		return dto.PlatformSendResult{}, err
+	}
+	id, now := store.NewID(), s.d.Now().UnixMilli()
+	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
+		return q.InsertPlatformSend(ctx, db.InsertPlatformSendParams{
+			ID: id, ConnectorID: in.ConnectorID, ChatID: in.ChatID, AgentID: in.AgentID, ReplyToExternalID: in.TargetID,
+			Once: true, NextAttemptAt: now, CreatedAt: now, UpdatedAt: now,
+		})
+	})
+	if err != nil {
+		return dto.PlatformSendResult{}, err
+	}
+	return s.attempt(context.WithoutCancel(ctx), id, delivery{react: &in})
 }
 
 // validateContent checks what a send holds: a text, or a file with an optional caption (CID-32).
@@ -338,10 +435,17 @@ func validateAnswer(text string) error {
 	return check.Err()
 }
 
+// delivery is what one attempt of a send does besides the text: it sends a file (CID-32) or reacts
+// (CID-33). Both are attempted once, with the data the request brought and nothing keeps.
+type delivery struct {
+	file  *SendFile
+	react *ReactInput
+}
+
 // attempt sends the claimed send once and records the outcome, also when ctx ends meanwhile, so that
-// the send is not left in flight. A send with a file (once) is attempted only here, with the file the
-// request brought: it is never retried, so a refusal fails it (CID-32).
-func (s *Sends) attempt(ctx context.Context, id string, file *SendFile) (dto.PlatformSendResult, error) {
+// the send is not left in flight. A send of a file or a reaction (once) is attempted only here, by the
+// request that made it: it is never retried, so a refusal fails it.
+func (s *Sends) attempt(ctx context.Context, id string, d delivery) (dto.PlatformSendResult, error) {
 	row, err := s.d.Store.R().GetPlatformSendAttempt(ctx, id)
 	if err != nil {
 		return dto.PlatformSendResult{}, err
@@ -353,27 +457,37 @@ func (s *Sends) attempt(ctx context.Context, id string, file *SendFile) (dto.Pla
 		// while this send waited for its retry. Nothing was tried, so the attempts stay.
 		return s.fail(rec, send, int(send.Attempts), noLongerOperator, true)
 	}
-	if send.Once && file == nil { // nothing keeps a file: this is a retry that should not exist
+	if send.Once && d.file == nil && d.react == nil { // nothing keeps a file: this is a retry that should not exist
 		return s.fail(rec, send, int(send.Attempts)+1, interruptedFile, true)
 	}
-	var created atomic.Int32
+	created := &createdIDs{}
 	out := Outbound{
 		ChatID: row.ChatExternalID, Text: send.Text, ReplyToID: send.ReplyToExternalID, ReplyToSenderID: row.ReplyToSenderID,
 		MessageID: send.ID, AuthorName: row.AgentName, CreatedAt: time.UnixMilli(send.CreatedAt).UTC(),
 		// The account is the AI's own: no author line, whoever the AI is (CID-15, CID-16).
 		Unsigned: true,
 		Created: func(platformID string) {
-			created.Add(1)
+			created.add(platformID)
 			s.d.Sent.Add(send.ChatID, platformID)
 		},
 	}
 	timeout := s.d.AttemptTimeout
-	if file != nil {
-		out.Files = []OutFile{outFile(file)}
+	if d.file != nil {
+		out.Files = []OutFile{outFile(d.file)}
 		timeout = s.d.FileAttemptTimeout
 	}
 	sendCtx, cancel := context.WithTimeout(ctx, timeout)
-	platformID, err := s.d.Transport.Send(sendCtx, send.ConnectorID, out)
+	var platformID string
+	if d.react != nil {
+		err = s.d.Transport.React(sendCtx, send.ConnectorID, Reaction{
+			ChatID: row.ChatExternalID, TargetID: d.react.TargetID, TargetSenderID: d.react.TargetSenderID,
+			TargetFromMe: d.react.TargetFromSelf, Emoji: d.react.Emoji, MessageID: send.ID,
+			CreatedAt: out.CreatedAt, Created: out.Created,
+		})
+		platformID = created.first()
+	} else {
+		platformID, err = s.d.Transport.Send(sendCtx, send.ConnectorID, out)
+	}
 	timedOut := errors.Is(sendCtx.Err(), context.DeadlineExceeded)
 	cancel()
 
@@ -387,14 +501,43 @@ func (s *Sends) attempt(ctx context.Context, id string, file *SendFile) (dto.Pla
 	reason := err.Error()
 	if timedOut {
 		reason = fmt.Sprintf("the platform did not answer within %s", timeout)
-		if file != nil {
+		if d.file != nil {
 			reason += "; the file may or may not have arrived"
 		}
 	}
-	if file != nil && send.Text != "" && created.Load() > 0 && !timedOut {
+	if d.file != nil && send.Text != "" && created.count() > 0 && !timedOut {
 		reason += "; the caption was sent, the file was not"
 	}
 	return s.fail(rec, send, int(send.Attempts)+1, reason, send.Once)
+}
+
+// createdIDs collects the platform ids of the messages one attempt created, as the connector reports
+// them.
+type createdIDs struct {
+	mu  sync.Mutex
+	ids []string
+}
+
+func (c *createdIDs) add(id string) {
+	c.mu.Lock()
+	c.ids = append(c.ids, id)
+	c.mu.Unlock()
+}
+
+func (c *createdIDs) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.ids)
+}
+
+// first is the id of the first message created, "" when none was reported.
+func (c *createdIDs) first() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.ids) == 0 {
+		return ""
+	}
+	return c.ids[0]
 }
 
 // outFile is the file of a send as a connector reads it: from memory, as often as it asks.
@@ -532,7 +675,7 @@ func (s *Sends) retry(ctx context.Context, id string) error {
 	if err != nil || claimed == 0 {
 		return err
 	}
-	if _, err := s.attempt(ctx, id, nil); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if _, err := s.attempt(ctx, id, delivery{}); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	return ctx.Err()

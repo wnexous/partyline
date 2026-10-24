@@ -48,7 +48,7 @@ const instanceChoiceDetail = "choose the instance (number) of this connection"
 // Kind returns the WhatsApp (evolution-go) connector kind.
 func Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true, CanSendFiles: true,
+		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true, CanReact: true, CanSendFiles: true,
 		Fields: []connectors.Field{
 			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Endpoint: true,
 				Help: "e.g. https://evolution.example.com"},
@@ -646,10 +646,17 @@ func (c *Connector) callWith(ctx context.Context, client *http.Client, key, meth
 		return nil
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		if _, ok := out.(bestEffort); ok {
+			return nil
+		}
 		return fmt.Errorf("%s %s: invalid response (%s)", method, path, decodeReason(err))
 	}
 	return nil
 }
+
+// bestEffort marks the destination of an answer the caller can do without: a body that is empty or
+// not what is expected is then no failure of a call evolution-go answered with a success status.
+type bestEffort interface{ bestEffort() }
 
 // decodeReason describes a JSON decode failure without echoing response content: the field
 // and the types for a type mismatch, otherwise only that the body is not the expected JSON.

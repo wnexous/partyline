@@ -256,8 +256,9 @@ none), and it is connected again as soon as the number is.
   the platform lets a bot write there) as `chat` creates the chat, at most 10 times an hour. When the platform refuses or does not answer, the tool says `not sent yet` with
   the reason and Partyline retries with backoff, up to five attempts. `send_file` with `connection` and
   `chat` sends a local file the same way (WhatsApp, Telegram and Discord; not a webhook), once: a
-  platform that refuses it fails the tool with its reason and nothing sends it again. Reactions
-  toward a platform are not supported (`unsupported`).
+  platform that refuses it fails the tool with its reason and nothing sends it again. `react` with the
+  id of a platform event puts the emoji on that message on WhatsApp, Telegram or Discord (once; a
+  webhook connection answers `unsupported`).
 - **What the members see.** Every member of the organization sees the connection page: the operator,
   both delivery settings, the status and how many messages are queued, never their text; only its
   admins change it. Changing the operator hands the
@@ -480,7 +481,7 @@ Run it behind a TLS-terminating reverse proxy for internet exposure, set
 | `unknown_chat` | 404 | The chat does not belong to that connection, and is not an address its platform accepts. |
 | `chats_not_members` | 422 | A chat cannot be added to a conversation; conversations hold users and AIs. |
 | `history_only` | 422 | The conversation or person is read-only history from an earlier version. |
-| `unsupported` | 422 | A reaction cannot go to a platform message, or a webhook connection cannot be sent a file; answer with `reply`. |
+| `unsupported` | 422 | A webhook connection cannot be sent a file or a reaction, or a message from a connection cannot be quoted in a room; answer with `reply`. |
 | `dm_members_fixed` | 422 | A DM has exactly two intelligences; its members cannot change. |
 | `dm_self` | 422 | You cannot open a DM with yourself. |
 | `counterpart_disabled` | 403 | The other participant's account is disabled; the DM is readable but read-only. |

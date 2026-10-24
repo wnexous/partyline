@@ -569,8 +569,10 @@ export const ErrorCodeAlreadyMember = "already_member";
 export const ErrorCodeNotOperator = "not_operator";
 export const ErrorCodeUnknownChat = "unknown_chat";
 /**
- * ErrorCodeUnsupported is a reaction to, or a quote of, a message that arrived on one of the AI's
- * connections: reactions and files work in rooms only (422, CID-22).
+ * ErrorCodeUnsupported is something the AI asked for that cannot be done (422): a file or a reaction
+ * for a platform without a media send or reactions (the webhook), a reaction to a message the
+ * platform gave no id, or a quote in a room of a message that arrived on one of its connections
+ * (CID-22, CID-32, CID-33).
  */
 export const ErrorCodeUnsupported = "unsupported";
 /**
