@@ -1296,3 +1296,47 @@ Connections:
   AIs, no sharing control), `use-current-org.test.tsx`, `lib/orgs.test.ts`, the `access.changed` organization cases of
   `handlers.test.ts`, and an axe test of the add dialog (en and pt-BR).
 
+
+## T46: New group dialog with an organization and the sidebar filter (ORG-03, OMEM-04, ORG-02)
+
+- **Organization select** (`components/org-select.tsx`, shared with the connection dialog of T45): a native select with a label and a
+  hint, listing the organizations in which the viewer can **create groups**: `admin` or `member`, never a `guest` (OMEM-04,
+  `canCreateGroupsIn`). It starts on the pick the viewer made, else the current organization when they can create there, else the
+  first they can. The request carries `org_id`. While the viewer's organizations are unknown (loading, failed, none) there is no
+  select and no `org_id` is sent: the server uses their default and decides, as before this feature. A viewer who is a guest in
+  **every** organization sees "You’re a guest in every organization you belong to, and guests can’t create groups." instead of the
+  form, and "Create group" is disabled.
+- **Members offered** (`pickables(contacts, orgId)`, `lib/contacts.ts`): the **AIs that are members of the organization**
+  (`org_ais[org]`, whatever their permission; the hosted AIs no organization lists are never offered), and **every other user of
+  the instance**. `MemberPicker` (adding to an existing group) offers the same, scoped by the room's `org_id` read from the cached
+  room (`useRoom`); a room that fails to load leaves the AIs unscoped.
+  - **Deviation / gap for the integration.** The contacts say which AIs belong to an organization but not which users do, and
+    `GET /orgs/{org}/members` (T14, Phase 3) is not in this branch. So the users are the instance's directory and the **server's
+    rule decides**: a user who is not a member of the organization is refused with 422 `members_refused`, reason `not_org_member`
+    (T23), and the dialog names them ("Bob Lima: not a member of Acme"), marks their rows and keeps everything else. **When T39's
+    members query exists, replace the `users` of `pickables(contacts, orgId)` by the organization's user members** (and drop the
+    refusal's role as the only guard); nothing else in the dialog changes.
+- **Changing the organization** reloads the offer: the AIs of the new organization replace the old ones, a pick that is not offered
+  there goes (users stay), and a refusal or message about the old choice is cleared.
+- **Messages**: 403 reads "Only members and admins of {org} can create groups in it." (shown only when the dialog knows the
+  organization); 422 `organization_required` reads "You’re not in any organization yet. Create or join one first."; the
+  `not_org_member` refusal reads "not a member of {org}" ("not a member of the group’s organization" if the organization is
+  unknown). New keys, en and pt-BR: `newGroup.org`, `newGroup.orgHint`, `newGroup.refusedNotOrgMember`,
+  `newGroup.refusedNotOrgMemberUnknown`, `newGroup.forbidden`, `newGroup.guestOnly`, `newGroup.noOrg`, `conversations.emptyInOrg`.
+- **After creating** in an organization other than the current one, the dialog calls `select(org.id)` (`useCurrentOrg`): the list is
+  the current organization's, so the group the viewer is taken to would otherwise be missing from it.
+- **Sidebar** (`ConversationList`, which is also the phone's home screen): lists the conversations filed under the current
+  organization (`inOrg`: a group's organization; a DM is filed under the organizations both sides belong to, or under the
+  viewer's default when they share none, T56) and hides the rest; one filed under **no** organization is listed everywhere. The
+  search (LAY-03) looks among those only. While the organizations load the list is its skeleton, so another organization's
+  conversations never flash first; when they are unknown it lists everything. When only other organizations have conversations the
+  empty state says "No conversations in {org} yet" and still offers both ways to start one. A live `room.changed` frame that
+  changes a row's `org_ids` moves it in or out (T56). **Not filtered**: the command palette (a jump-anywhere search over everything
+  the viewer can reach) and the unread totals (T39's switcher counts per organization).
+- **Test helpers**: `test/orgs.ts` (`memberIn(org, permission)`, `viewerIn(...memberships)`) serves the viewer's own profile, which is
+  where the app reads their organizations.
+- **Tests**: `new-group-dialog.test.tsx` (the select and its options, the start, `org_id`, reloading the picker, the refusals and
+  the 403, following the group, guest everywhere, waiting for the organizations, unknown organizations, `organization_required`,
+  Portuguese), `conversation-list.test.tsx` (groups and DMs of the organization, a DM shared by two organizations, none, unknown,
+  waiting, the empty states, search, live frame, Portuguese), `member-picker.test.tsx`, `lib/contacts.test.ts` and an axe test of
+  the dialog with the select (en and pt-BR).

@@ -145,6 +145,7 @@ export const ptBR: Dictionary = {
   "conversations.emptyTitle": "Nenhuma conversa ainda",
   "conversations.emptyBody":
     "Comece uma conversa com uma IA ou uma pessoa, ou crie um grupo e adicione IAs e chats a ele.",
+  "conversations.emptyInOrg": "Nenhuma conversa em {org} ainda",
   "conversations.noMessages": "Nenhuma mensagem ainda",
   "conversations.unreadOne": "1 mensagem não lida",
   "conversations.unreadMany": "{count} mensagens não lidas",
@@ -291,8 +292,17 @@ export const ptBR: Dictionary = {
   "newGroup.refusedNotFound":
     "indisponível: desconhecido, desativado ou não compartilhado com você",
   "newGroup.refusedPerson": "pessoas entram por um chat ligado ao grupo, não como membros",
+  "newGroup.refusedNotOrgMember": "não é membro de {org}",
+  "newGroup.refusedNotOrgMemberUnknown": "não é membro da organização do grupo",
   "newGroup.refusedHint": "Nada foi criado. Tire-os da lista, ou peça acesso, e tente de novo.",
   "newGroup.failed": "Não foi possível criar o grupo. Tente de novo.",
+  "newGroup.org": "Organização",
+  "newGroup.orgHint": "Só quem é membro da organização entra no grupo.",
+  "newGroup.forbidden": "Só membros e administradores de {org} podem criar grupos nela.",
+  "newGroup.guestOnly":
+    "Você é convidado em todas as organizações de que faz parte, e convidados não criam grupos.",
+  "newGroup.noOrg":
+    "Você ainda não faz parte de nenhuma organização. Crie ou entre em uma primeiro.",
   "home.title": "Escolha uma conversa",
   "home.body": "Abra uma da lista ou comece uma nova.",
 

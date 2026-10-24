@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { CodeBlock } from "@/components/copy-field";
-import { NativeSelect } from "@/components/native-select";
+import { OrgSelect } from "@/components/org-select";
 import { ConnectorForm } from "@/components/schema-form";
 import { SecretOnceDialog } from "@/components/secret-once-dialog";
 import {
@@ -148,26 +148,13 @@ function AddConnectorBody({
   return (
     <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pt-4 pb-5">
       {org ? (
-        <div className="space-y-1">
-          <label htmlFor={`${idBase}-org`} className="block text-sm font-medium">
-            {t("connectors.org")}
-          </label>
-          <NativeSelect
-            id={`${idBase}-org`}
-            value={org.id}
-            onChange={(e) => setPickedOrg(e.target.value)}
-            aria-describedby={`${idBase}-org-hint`}
-          >
-            {adminOrgs.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </NativeSelect>
-          <p id={`${idBase}-org-hint`} className="text-xs text-muted-foreground">
-            {t("connectors.orgHint")}
-          </p>
-        </div>
+        <OrgSelect
+          label={t("connectors.org")}
+          hint={t("connectors.orgHint")}
+          orgs={adminOrgs}
+          value={org.id}
+          onChange={setPickedOrg}
+        />
       ) : null}
       <fieldset className="space-y-2">
         <legend className="mb-2 text-sm font-medium">{t("connectors.platform")}</legend>

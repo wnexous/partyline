@@ -72,6 +72,40 @@ describe("pickables (CONT-01, LAY-03)", () => {
   });
 });
 
+describe("pickables of an organization (ORG-03, OMEM-04)", () => {
+  const ids = (list: { ref: { id: string } }[]) => list.map((p) => p.ref.id);
+
+  it("lists the AIs that are members of that organization and no others", () => {
+    expect(ids(pickables(sampleContacts, "o1").ais)).toEqual(["a1", "a2", "a5"]);
+    expect(ids(pickables(sampleContacts, "o2").ais)).toEqual(["a3"]);
+  });
+
+  it("leaves out the hosted AIs no organization lists: they cannot join a group of one", () => {
+    for (const org of ["o1", "o2", "o3"]) {
+      expect(ids(pickables(sampleContacts, org).ais)).not.toContain("a4");
+    }
+  });
+
+  it("lists no AI for an organization the contacts do not group", () => {
+    expect(pickables(sampleContacts, "o9").ais).toEqual([]);
+    expect(pickables(sampleContacts, "o3").ais).toEqual([]);
+  });
+
+  it("keeps every user of the instance: the contacts do not tie them to an organization", () => {
+    expect(ids(pickables(sampleContacts, "o2").users)).toEqual(["u2", "u3"]);
+  });
+
+  it("describes the AIs the way the unscoped list does", () => {
+    const scoped = pickables(sampleContacts, "o1").ais;
+    const all = pickables(sampleContacts).ais;
+    expect(scoped).toEqual(all.filter((p) => ["a1", "a2", "a5"].includes(p.ref.id)));
+  });
+
+  it("is everything the contacts list when no organization is named", () => {
+    expect(pickables(sampleContacts, undefined)).toEqual(pickables(sampleContacts));
+  });
+});
+
 describe("ownAIs and mergeTargets (MRG-01)", () => {
   it("lists the AIs the user hosts, those no organization lists included", () => {
     expect(ownAIs(sampleContacts).map((c) => c.intelligence.id)).toEqual(["a1", "a2", "a3", "a4"]);

@@ -333,6 +333,21 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
     expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
   });
 
+  it("the new group dialog, with the organization it belongs to, has no axe violations", async () => {
+    appApi(locale, { "GET /intelligences/u1": json(200, ownProfileInOrgs) });
+    const user = userEvent.setup();
+    renderRoute("/");
+    await user.click(
+      await screen.findByRole("button", { name: locale === "en" ? "New group" : "Novo grupo" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("combobox", {
+      name: locale === "en" ? "Organization" : "Organização",
+    });
+    await within(dialog).findByRole("checkbox", { name: "Atlas" });
+    expect(await axe(dialog, AXE_OPTIONS)).toHaveNoViolations();
+  });
+
   it("the add connector dialog, with the organization it goes to, has no axe violations", async () => {
     appApi(locale, {
       "GET /intelligences/u1": json(200, ownProfileInOrgs),

@@ -8,9 +8,11 @@ import {
   makeConversation,
   makeIntelligence,
   makeMe,
+  makeProfile,
   makeRoom,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
+import { memberIn, viewerIn } from "@/test/orgs";
 import { renderRoute } from "@/test/render";
 import { sampleContacts as contacts } from "@/test/sample-contacts";
 
@@ -62,7 +64,10 @@ const posted = (calls: { method: string; path: string; body: unknown }[]) =>
   calls.filter((c) => c.method === "POST" && c.path === "/groups");
 
 stubLayout();
-beforeEach(() => useLiveStore.setState({ locale: "en", presence: {}, paletteOpen: false }));
+beforeEach(() => {
+  useLiveStore.setState({ locale: "en", presence: {}, paletteOpen: false, currentOrgId: null });
+  window.localStorage.clear();
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("who can be a member", () => {
@@ -221,6 +226,260 @@ describe("creating the group (LAY-04)", () => {
     await within(again).findByRole("checkbox", { name: "Atlas" });
     expect(nameField(again)).toHaveValue("");
     expect(checked(again)).toEqual([]);
+  });
+});
+
+/*
+ * A group belongs to an organization (ORG-02, ORG-03): the dialog asks for it among the ones the
+ * viewer can create groups in (a guest cannot, OMEM-04) and offers that organization's AIs. The
+ * server refuses a user who is not a member of it, and the dialog says so.
+ */
+describe("the organization of the group (ORG-03, OMEM-04)", () => {
+  // Ana is a member of Acme, an admin of Globex and a guest of Initech.
+  const viewer = viewerIn(
+    memberIn("o1", "member"),
+    memberIn("o2", "admin"),
+    memberIn("o3", "guest"),
+  );
+  const orgField = (dialog: HTMLElement) =>
+    within(dialog).findByRole("combobox", { name: "Organization" });
+  const optionsOf = (select: HTMLElement) =>
+    within(select)
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+  const ids = (dialog: HTMLElement, group: string) =>
+    within(within(dialog).getByRole("group", { name: group }))
+      .getAllByRole("checkbox")
+      .map((c) => c.getAttribute("data-member"));
+
+  it("asks for the organization among those the viewer can create groups in, never one they are only a guest of", async () => {
+    const { dialog } = await open(viewer);
+    expect(optionsOf(await orgField(dialog))).toEqual(["Acme", "Globex"]);
+  });
+
+  it("starts on the current organization", async () => {
+    useLiveStore.setState({ currentOrgId: "o2" });
+    const { dialog } = await open(viewer, false);
+    expect(await orgField(dialog)).toHaveValue("o2");
+    expect(await within(dialog).findByRole("checkbox", { name: "Lab" })).toBeInTheDocument();
+  });
+
+  it("starts on the first organization they can create in when the current one is a guest one", async () => {
+    useLiveStore.setState({ currentOrgId: "o3" });
+    const { dialog } = await open(viewer);
+    expect(await orgField(dialog)).toHaveValue("o1");
+  });
+
+  it("offers the AIs that are members of the organization and the users of the instance, and no hosted AI of none", async () => {
+    const { dialog } = await open(viewer);
+    expect(ids(dialog, "AIs")).toEqual(["a1", "a2", "a5"]);
+    expect(ids(dialog, "Users")).toEqual(["u2", "u3"]);
+    expect(within(dialog).queryByRole("checkbox", { name: "Lab" })).toBeNull();
+    expect(within(dialog).queryByRole("checkbox", { name: "Old helper" })).toBeNull();
+  });
+
+  it("says that only members of the organization can join", async () => {
+    const { dialog } = await open(viewer);
+    expect(
+      await within(dialog).findByText("Only members of the organization can join the group."),
+    ).toBeInTheDocument();
+  });
+
+  it("creates the group in the organization, and sends it with the members", async () => {
+    const { calls, router, user, dialog } = await open({
+      ...viewer,
+      "POST /groups": json(201, group()),
+    });
+    await user.type(nameField(dialog), "release crew");
+    await user.click(box(dialog, "Atlas"));
+    await user.click(box(dialog, "Bob Lima"));
+    await user.click(create(dialog));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/rooms/g1"));
+    expect(posted(calls)).toHaveLength(1);
+    expect(posted(calls)[0]?.body).toEqual({
+      name: "release crew",
+      members: ["a1", "u2"],
+      org_id: "o1",
+    });
+  });
+
+  it("reloads the picker when the organization changes: its AIs replace the old ones, and a pick that is not its member goes", async () => {
+    const { calls, user, dialog } = await open({ ...viewer, "POST /groups": json(201, group()) });
+    await user.click(box(dialog, "Atlas"));
+    await user.click(box(dialog, "Bob Lima"));
+    expect(checked(dialog)).toEqual(["a1", "u2"]);
+
+    await user.selectOptions(await orgField(dialog), "o2");
+
+    expect(await within(dialog).findByRole("checkbox", { name: "Lab" })).toBeInTheDocument();
+    expect(ids(dialog, "AIs")).toEqual(["a3"]);
+    expect(within(dialog).queryByRole("checkbox", { name: "Atlas" })).toBeNull();
+    // Atlas, picked for Acme, is not a member of Globex; Bob stays picked.
+    expect(checked(dialog)).toEqual(["u2"]);
+    const summary = within(dialog).getByRole("list", { name: "Selected members" });
+    expect(summary).not.toHaveTextContent("Atlas");
+
+    await user.type(nameField(dialog), "release crew");
+    await user.click(box(dialog, "Lab"));
+    await user.click(create(dialog));
+    await waitFor(() => expect(posted(calls)).toHaveLength(1));
+    expect(posted(calls)[0]?.body).toEqual({
+      name: "release crew",
+      members: ["u2", "a3"],
+      org_id: "o2",
+    });
+  });
+
+  it("clears a refusal that was about another organization when it changes", async () => {
+    const { user, dialog } = await open({
+      ...viewer,
+      "POST /groups": apiErrorWithRefused([{ id: "u2", reason: "not_org_member" }]),
+    });
+    await user.type(nameField(dialog), "release crew");
+    await user.click(box(dialog, "Bob Lima"));
+    await user.click(create(dialog));
+    await within(dialog).findByRole("alert");
+
+    await user.selectOptions(await orgField(dialog), "o2");
+    await waitFor(() => expect(within(dialog).queryByRole("alert")).toBeNull());
+    expect(box(dialog, "Bob Lima")).not.toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("names the user the server says is not a member of the organization", async () => {
+    const { calls, user, dialog } = await open({
+      ...viewer,
+      "POST /groups": apiErrorWithRefused([{ id: "u2", reason: "not_org_member" }]),
+    });
+    await user.type(nameField(dialog), "release crew");
+    await user.click(box(dialog, "Bob Lima"));
+    await user.click(box(dialog, "Atlas"));
+    await user.click(create(dialog));
+    const alert = await within(dialog).findByRole("alert");
+    const refused = within(alert).getAllByRole("listitem");
+    expect(refused).toHaveLength(1);
+    expect(refused[0]).toHaveTextContent("Bob Lima");
+    expect(refused[0]).toHaveTextContent("not a member of Acme");
+    expect(box(dialog, "Bob Lima")).toHaveAttribute("aria-invalid", "true");
+    expect(box(dialog, "Atlas")).not.toHaveAttribute("aria-invalid", "true");
+    expect(posted(calls)).toHaveLength(1);
+  });
+
+  it("speaks Portuguese: the field, its hint and the refusal that names the organization", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    mocks({
+      ...viewer,
+      "GET /me": json(200, makeMe({ locale: "pt-BR" })),
+      "POST /groups": apiErrorWithRefused([{ id: "u2", reason: "not_org_member" }]),
+    });
+    const user = userEvent.setup();
+    renderRoute("/");
+    await user.click(await screen.findByRole("button", { name: "Novo grupo" }));
+    const dialog = await screen.findByRole("dialog", { name: "Novo grupo" });
+    const field = await within(dialog).findByRole("combobox", { name: "Organização" });
+    expect(optionsOf(field)).toEqual(["Acme", "Globex"]);
+    expect(
+      within(dialog).getByText("Só quem é membro da organização entra no grupo."),
+    ).toBeInTheDocument();
+    await user.type(within(dialog).getByRole("textbox", { name: "Nome" }), "equipe");
+    await user.click(await within(dialog).findByRole("checkbox", { name: "Bob Lima" }));
+    await user.click(within(dialog).getByRole("button", { name: "Criar grupo" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("não é membro de Acme");
+  });
+
+  it("tells a viewer the server turns down that only members and admins create groups", async () => {
+    const { user, dialog } = await open({
+      ...viewer,
+      "POST /groups": apiError(403, "forbidden", "forbidden"),
+    });
+    await user.type(nameField(dialog), "release crew");
+    await user.click(create(dialog));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Only members and admins of Acme can create groups in it.",
+    );
+    expect(nameField(dialog)).toHaveValue("release crew");
+  });
+
+  it("makes the organization the group was created in the current one, so the group is in the list", async () => {
+    const { user, dialog } = await open({ ...viewer, "POST /groups": json(201, group()) });
+    await user.selectOptions(await orgField(dialog), "o2");
+    await user.type(nameField(dialog), "release crew");
+    await user.click(create(dialog));
+    await waitFor(() => expect(useLiveStore.getState().currentOrgId).toBe("o2"));
+    expect(window.localStorage.getItem("pl.org")).toBe("o2");
+  });
+
+  it("leaves the pick alone when the group is created in the current organization", async () => {
+    const { router, user, dialog } = await open({ ...viewer, "POST /groups": json(201, group()) });
+    await user.type(nameField(dialog), "release crew");
+    await user.click(create(dialog));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/rooms/g1"));
+    expect(useLiveStore.getState().currentOrgId).toBeNull();
+  });
+
+  it("offers no group to a viewer who is a guest everywhere, and says why", async () => {
+    const { calls, dialog } = await open(
+      {
+        ...viewerIn(memberIn("o1", "guest"), memberIn("o3", "guest")),
+        "POST /groups": json(201, group()),
+      },
+      false,
+    );
+    expect(
+      await within(dialog).findByText(
+        "You’re a guest in every organization you belong to, and guests can’t create groups.",
+      ),
+    ).toBeInTheDocument();
+    // Nothing to fill in: no name, no organization, no one to pick.
+    expect(within(dialog).queryByRole("combobox", { name: "Organization" })).toBeNull();
+    expect(within(dialog).queryByRole("textbox", { name: "Name" })).toBeNull();
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+    expect(create(dialog)).toBeDisabled();
+    expect(posted(calls)).toHaveLength(0);
+  });
+
+  it("shows the members only once the organizations are known, so the list does not jump", async () => {
+    let release: () => void = () => {};
+    const { dialog } = await open(
+      {
+        "GET /intelligences/u1": () =>
+          new Promise<Response>((resolve) => {
+            release = () =>
+              resolve(json(200, makeProfile({ memberships: [memberIn("o2", "admin")] })));
+          }),
+      },
+      false,
+    );
+    // Not the whole list of the instance first and Globex's afterwards.
+    expect(within(dialog).queryByRole("checkbox")).toBeNull();
+    release();
+    expect(await within(dialog).findByRole("checkbox", { name: "Lab" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox", { name: "Atlas" })).toBeNull();
+  });
+
+  it("asks nothing about organizations while the viewer's are unknown, and sends none: the server uses their default", async () => {
+    const { calls, user, dialog } = await open({
+      "GET /intelligences/u1": apiError(500, "internal", "boom"),
+      "POST /groups": json(201, group()),
+    });
+    expect(within(dialog).queryByRole("combobox", { name: "Organization" })).toBeNull();
+    expect(ids(dialog, "AIs")).toEqual(["a1", "a2", "a5", "a3", "a4"]);
+    await user.type(nameField(dialog), "release crew");
+    await user.click(create(dialog));
+    await waitFor(() => expect(posted(calls)).toHaveLength(1));
+    expect(posted(calls)[0]?.body).toEqual({ name: "release crew", members: [] });
+  });
+
+  it("says to create or join an organization first when the server finds the viewer in none", async () => {
+    const { user, dialog } = await open({
+      "POST /groups": apiError(422, "organization_required", "no organization", {
+        org_id: "you belong to no organization",
+      }),
+    });
+    await user.type(nameField(dialog), "release crew");
+    await user.click(create(dialog));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "You’re not in any organization yet. Create or join one first.",
+    );
   });
 });
 

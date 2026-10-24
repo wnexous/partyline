@@ -143,6 +143,7 @@ export const en = {
   "conversations.emptyTitle": "No conversations yet",
   "conversations.emptyBody":
     "Start a conversation with an AI or a person, or make a group and add AIs and chats to it.",
+  "conversations.emptyInOrg": "No conversations in {org} yet",
   "conversations.noMessages": "No messages yet",
   "conversations.unreadOne": "1 unread message",
   "conversations.unreadMany": "{count} unread messages",
@@ -288,8 +289,16 @@ export const en = {
   "newGroup.refusedTitle": "These members can’t be added",
   "newGroup.refusedNotFound": "not available: unknown, disabled, or not shared with you",
   "newGroup.refusedPerson": "people join through a bridged chat, not as members",
+  "newGroup.refusedNotOrgMember": "not a member of {org}",
+  "newGroup.refusedNotOrgMemberUnknown": "not a member of the group’s organization",
   "newGroup.refusedHint": "Nothing was created. Take them out, or ask for access, and try again.",
   "newGroup.failed": "Couldn’t create the group. Try again.",
+  "newGroup.org": "Organization",
+  "newGroup.orgHint": "Only members of the organization can join the group.",
+  "newGroup.forbidden": "Only members and admins of {org} can create groups in it.",
+  "newGroup.guestOnly":
+    "You’re a guest in every organization you belong to, and guests can’t create groups.",
+  "newGroup.noOrg": "You’re not in any organization yet. Create or join one first.",
   "home.title": "Pick a conversation",
   "home.body": "Open one from the list, or start a new one.",
 

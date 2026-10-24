@@ -1154,12 +1154,12 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `MemberPicker`, `useCurrentOrg`
 **Requirement**: ORG-03, OMEM-04, ORG-02
 **Done when**:
-- [ ] Vitest:
+- [x] Vitest:
   - creating sends `org_id`, and changing the org reloads the picker;
   - a guest org is absent from the select;
   - the sidebar hides a group of another org;
   - it shows a DM with a colleague of the selected org and hides a DM with someone of another org only
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): create groups in an organization`
