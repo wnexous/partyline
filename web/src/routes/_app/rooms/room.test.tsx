@@ -626,7 +626,7 @@ describe("DM from a participant (PDM-01..PDM-04)", () => {
     expect(screen.queryByTestId("member-mb-ops")).toBeNull();
   });
 
-  it("opens an author's profile from the timeline, where Message is available (PDM-03)", async () => {
+  it("opens an author's profile panel from the timeline, where Message is available (PDM-03, PRF-01)", async () => {
     const { calls } = roomApi(
       {},
       {
@@ -651,12 +651,19 @@ describe("DM from a participant (PDM-01..PDM-04)", () => {
     await screen.findByText("ready");
     await user.click(within(screen.getByTestId("message-1")).getByRole("link", { name: "Atlas" }));
 
-    await waitFor(() => expect(router.state.location.pathname).toBe("/contacts/a1"));
-    expect(await screen.findByRole("button", { name: "Message Atlas" })).toBeInTheDocument();
+    // The profile opens beside the conversation, which stays where it is, with the actions the
+    // viewer may use: the DM and the full page.
+    const panel = await screen.findByRole("dialog", { name: "Atlas" });
+    expect(router.state.location.pathname).toBe("/rooms/r1");
+    expect(within(panel).getByRole("button", { name: "Message" })).toBeInTheDocument();
+    expect(within(panel).getByRole("link", { name: "Open full profile" })).toHaveAttribute(
+      "href",
+      "/contacts/a1",
+    );
     expect(calls.some((c) => c.path === "/intelligences/a1")).toBe(true);
   });
 
-  it("opens an author's profile from the timeline avatar (PDM-03)", async () => {
+  it("opens an author's profile panel from the timeline avatar (PDM-03, PRF-01)", async () => {
     roomApi(
       {},
       {
@@ -685,7 +692,8 @@ describe("DM from a participant (PDM-01..PDM-04)", () => {
       }),
     );
 
-    await waitFor(() => expect(router.state.location.pathname).toBe("/contacts/a1"));
-    expect(await screen.findByRole("button", { name: "Message Atlas" })).toBeInTheDocument();
+    const panel = await screen.findByRole("dialog", { name: "Atlas" });
+    expect(router.state.location.pathname).toBe("/rooms/r1");
+    expect(within(panel).getByRole("button", { name: "Message" })).toBeInTheDocument();
   });
 });

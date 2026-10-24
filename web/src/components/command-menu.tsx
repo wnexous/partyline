@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { BotIcon, MessagesSquareIcon, PlugZapIcon } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from "react";
 import { NAV_GROUPS } from "@/components/app-sidebar";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
 import { KindBadge } from "@/components/intelligence/kind-badge";
@@ -15,6 +15,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { useProfilePanel } from "@/hooks/use-profile-panel";
 import { useAgents, useConnectors, useConversations } from "@/lib/api/queries";
 import { type Connector, type Me, RoleAdmin } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
@@ -22,14 +23,23 @@ import { useLiveStore } from "@/lib/live/store";
 import { cn } from "@/lib/utils";
 
 /*
- * Command palette (UI-22): Ctrl/Cmd+K from anywhere in the app jumps to a conversation, an agent,
- * a connector or a page. The open flag lives in the live store so any trigger can open it.
+ * Command palette (UI-22): Ctrl/Cmd+K from anywhere in the app jumps to a conversation, a connector
+ * or a page, and shows the profile panel of an agent (PRF-01). The open flag lives in the live
+ * store so any trigger can open it.
  */
 
 export function CommandMenu({ me }: { me: Me }) {
   const t = useT();
   const open = useLiveStore((s) => s.paletteOpen);
   const setOpen = useLiveStore((s) => s.setPaletteOpen);
+
+  // What had focus before the palette: the profile panel an agent opens gives focus back to it.
+  const before = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (open)
+      before.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }, [open]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -52,15 +62,24 @@ export function CommandMenu({ me }: { me: Me }) {
         <DialogTitle className="sr-only">{t("palette.title")}</DialogTitle>
         <DialogDescription className="sr-only">{t("palette.description")}</DialogDescription>
         {/* Mounted only while open: lists load on demand and the search starts empty. */}
-        {open ? <PaletteBody me={me} onDone={() => setOpen(false)} /> : null}
+        {open ? <PaletteBody me={me} returnFocusTo={before} onDone={() => setOpen(false)} /> : null}
       </DialogContent>
     </Dialog>
   );
 }
 
-function PaletteBody({ me, onDone }: { me: Me; onDone: () => void }) {
+function PaletteBody({
+  me,
+  returnFocusTo,
+  onDone,
+}: {
+  me: Me;
+  returnFocusTo: RefObject<HTMLElement | null>;
+  onDone: () => void;
+}) {
   const t = useT();
   const navigate = useNavigate();
+  const profilePanel = useProfilePanel();
   const conversations = useConversations();
   const agents = useAgents();
   const connectors = useConnectors();
@@ -118,7 +137,10 @@ function PaletteBody({ me, onDone }: { me: Me; onDone: () => void }) {
                   agent.intelligence.display_name,
                   agent.description,
                 ]}
-                onSelect={() => go("/contacts/$id", { id: agent.id })}
+                onSelect={() => {
+                  onDone();
+                  profilePanel.open(agent.id, returnFocusTo.current);
+                }}
                 icon={<BotIcon aria-hidden="true" />}
                 label={agent.intelligence.display_name}
                 badge={<KindBadge intelligence={agent.intelligence} />}

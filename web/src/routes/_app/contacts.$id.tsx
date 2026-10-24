@@ -19,6 +19,7 @@ import { EndSessionDialog } from "@/components/end-session-dialog";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { KindBadge } from "@/components/intelligence/kind-badge";
+import { MembershipSummary } from "@/components/membership-summary";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
 import { platformLabel } from "@/components/message-item";
@@ -40,7 +41,7 @@ import {
   type ProfileMembership,
 } from "@/lib/api/types.gen";
 import { mergeTargets } from "@/lib/contacts";
-import { type MessageKey, useI18n, useT } from "@/lib/i18n";
+import { useI18n, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { formatAbsolute, formatRelative } from "@/lib/time";
 
@@ -85,7 +86,7 @@ function BackToContacts() {
   return (
     <Link
       to="/contacts"
-      className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-1 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-1 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/70"
     >
       <ArrowLeftIcon className="size-4" aria-hidden="true" />
       {t("profile.back")}
@@ -286,12 +287,6 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
   );
 }
 
-const PERMISSION_LABELS: Record<string, MessageKey> = {
-  admin: "profile.permissionAdmin",
-  member: "profile.permissionMember",
-  guest: "profile.permissionGuest",
-};
-
 /**
  * One organization the viewer shares with the identity: what it is there and, where the server
  * allows it (POS-05), the way to take it out. The organization an AI belongs to deletes it for
@@ -310,24 +305,10 @@ function MembershipRow({
 }) {
   const t = useT();
   const home = m.delete_effect === "delete";
-  const permission = PERMISSION_LABELS[m.permission];
   return (
     <li aria-label={m.org_name}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-        <div className="min-w-0 flex-1 basis-48 space-y-0.5">
-          <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-            <span className="font-medium [overflow-wrap:anywhere]">{m.org_name}</span>
-            {home ? (
-              <span className="shrink-0 rounded-[3px] border px-1.5 py-px text-[0.7rem] text-muted-foreground">
-                {t("profile.homeOrg")}
-              </span>
-            ) : null}
-          </p>
-          <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
-            {permission ? t(permission) : m.permission}
-            {m.position_name ? ` · ${m.position_name}` : ""}
-          </p>
-        </div>
+        <MembershipSummary membership={m} />
         {m.can_delete ? (
           home ? (
             <Button

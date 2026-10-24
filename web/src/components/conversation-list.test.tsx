@@ -173,6 +173,20 @@ describe("conversation list (LAY-01, DM-06)", () => {
     expect(within(rows[3] as HTMLElement).queryByText(/unread/)).toBeNull();
   });
 
+  it("gives an unread row the accent twice, its count and its time, and a read row neither", async () => {
+    api();
+    renderRoute("/");
+    const rows = within(await sidebar()).getAllByRole("link");
+    const unread = rows[0] as HTMLElement;
+    const read = rows[1] as HTMLElement;
+    expect(
+      within(unread).getByText("3", { selector: "[aria-hidden=true]" }).parentElement,
+    ).toHaveClass("bg-primary");
+    expect(unread.querySelector("time")).toHaveClass("text-link");
+    expect(read.querySelector("time")).toHaveClass("text-muted-foreground");
+    expect(read.querySelector("time")).not.toHaveClass("text-link");
+  });
+
   it("caps a long count at 99+ on screen and keeps the full count for screen readers", async () => {
     api([
       makeConversation({ id: "r1", title: "busy", unread: 120 }),

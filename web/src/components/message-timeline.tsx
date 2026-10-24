@@ -4,6 +4,7 @@ import { ArrowDownIcon, MessagesSquareIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";
+import { collectImages, ImageViewer } from "@/components/image-viewer";
 import { MessageItem } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -137,6 +138,38 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
     [items, virtualizer],
   );
 
+  // The image viewer (IMG-01..IMG-06) walks the conversation's images as far as they are loaded.
+  // The timeline behind it follows the image on show, so closing it lands on that image's
+  // thumbnail and focus can go back to it (IMG-03).
+  const images = useMemo(() => collectImages(items), [items]);
+  const [viewing, setViewing] = useState<string | null>(null);
+  // On the oldest image loaded, Previous would stop at the edge of what happens to be loaded: the
+  // older pages are fetched meanwhile (page after page while they hold no image), until one brings
+  // an image, the history ends or a request fails.
+  const viewingOldest = viewing !== null && images[0]?.id === viewing;
+  const olderFailed = query.isFetchNextPageError;
+  const oldestSeq = items[0]?.seq;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: it runs again when a page arrives (the oldest message changes), even one with no image, and React may never render the fetch in between
+  useEffect(() => {
+    if (viewingOldest && hasNextPage && !isFetchingNextPage && !olderFailed) void fetchNextPage();
+  }, [viewingOldest, hasNextPage, isFetchingNextPage, olderFailed, fetchNextPage, oldestSeq]);
+  const openImage = useCallback((attachmentId: string) => setViewing(attachmentId), []);
+  const showImage = useCallback(
+    (attachmentId: string | null) => {
+      setViewing(attachmentId);
+      const image = images.find((i) => i.id === attachmentId);
+      if (image) jumpTo(image.messageId);
+    },
+    [images, jumpTo],
+  );
+  const thumbnailOf = useCallback(
+    (attachmentId: string) =>
+      Array.from(
+        scrollRef.current?.querySelectorAll<HTMLElement>("[data-attachment-id]") ?? [],
+      ).find((el) => el.dataset.attachmentId === attachmentId) ?? scrollRef.current,
+    [],
+  );
+
   // Bring a focused message into view, loading older pages until its seq is reached; it then
   // gets the tape highlight. A message no longer stored (retention) ends the search.
   const [pending, setPending] = useState<MessageFocus | null>(null);
@@ -169,7 +202,9 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
 
   if (query.isPending) return <TimelineSkeleton className={className} />;
 
-  if (query.isError) {
+  // A refresh that fails (an older page that cannot be loaded) keeps the messages on screen, as the
+  // conversation list does: only a timeline that never loaded is an error.
+  if (query.isError && !query.data) {
     return (
       <div className={cn("flex-1 px-4 py-10 text-sm md:px-6", className)} role="alert">
         <p className="text-destructive">{t("timeline.loadError")}</p>
@@ -203,7 +238,7 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
         // biome-ignore lint/a11y/noNoninteractiveTabindex: the log scrolls; keyboard users need to reach it
         tabIndex={0}
         onScroll={onScroll}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-inset"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-inset"
       >
         <div className="flex min-h-full flex-col">
           <div className="flex-1" />
@@ -251,6 +286,7 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
                       (flash?.id === m.id && now - flash.at < FRESH_MS)
                     }
                     onJumpTo={jumpTo}
+                    onOpenImage={openImage}
                   />
                 </div>
               );
@@ -259,6 +295,13 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
           <div className="h-3" />
         </div>
       </div>
+      <ImageViewer
+        images={images}
+        currentId={viewing}
+        onCurrentChange={showImage}
+        returnFocusTo={thumbnailOf}
+        more={hasNextPage}
+      />
       {!atEnd ? (
         <Button
           size="sm"

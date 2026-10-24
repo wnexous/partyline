@@ -252,7 +252,7 @@ function MemberRow({
             to="/contacts/$id"
             params={{ id: who.id }}
             tabIndex={tab}
-            className="min-w-0 truncate rounded-sm font-semibold tracking-[-0.01em] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="min-w-0 truncate rounded-sm font-semibold tracking-[-0.01em] outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring/70"
           >
             {name}
           </Link>

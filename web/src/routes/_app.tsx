@@ -7,6 +7,7 @@ import { Wordmark } from "@/components/brand";
 import { CommandMenu } from "@/components/command-menu";
 import { LiveBanner } from "@/components/live-status";
 import { OrgSwitcher } from "@/components/org-switcher";
+import { ProfilePanel } from "@/components/profile-panel";
 import { Button } from "@/components/ui/button";
 import { SidebarInset } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -58,7 +59,7 @@ function AppLayout() {
     <div className="flex min-h-svh w-full">
       <a
         href="#main"
-        className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="sr-only z-50 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:px-3 focus:py-2 focus-visible:ring-[3px] focus-visible:ring-ring/70"
       >
         {t("nav.skip")}
       </a>
@@ -74,6 +75,7 @@ function AppLayout() {
         <Outlet />
       </SidebarInset>
       <CommandMenu me={me} />
+      <ProfilePanel />
     </div>
   );
 }

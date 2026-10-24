@@ -96,7 +96,7 @@ function ConnectorRow({ connector: c }: { connector: Connector }) {
       <Link
         to="/connectors/$connectorId"
         params={{ connectorId: c.id }}
-        className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 outline-none transition-colors hover:bg-accent/60 focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset md:px-8"
+        className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 outline-none transition-colors hover:bg-accent/60 focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-inset md:px-8"
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate font-semibold tracking-[-0.01em]">{c.name}</span>

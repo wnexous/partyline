@@ -72,7 +72,7 @@ function OrgLayout() {
 }
 
 const TAB =
-  "-mb-px inline-flex h-11 shrink-0 items-center border-b-2 border-transparent px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset data-[status=active]:border-primary data-[status=active]:text-foreground md:h-10";
+  "-mb-px inline-flex h-11 shrink-0 items-center border-b-2 border-transparent px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-inset data-[status=active]:border-primary data-[status=active]:text-foreground md:h-10";
 
 /** The organization's name and the viewer's part in it, with the sections of it. */
 function OrgBar({ org }: { org: Organization }) {
@@ -81,7 +81,7 @@ function OrgBar({ org }: { org: Organization }) {
     <div data-testid="org-bar" className="border-b bg-background px-4 pt-4 md:px-8 md:pt-6">
       <Link
         to="/orgs"
-        className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-1 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-1 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/70"
       >
         <ArrowLeftIcon className="size-4" aria-hidden="true" />
         {t("orgs.backToList")}

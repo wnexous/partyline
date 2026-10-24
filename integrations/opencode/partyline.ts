@@ -16,6 +16,10 @@ import { spawn } from "node:child_process";
 // `partyline setup` writes the absolute path of the partyline binary here.
 const PARTYLINE_BINARY = "partyline";
 
+// `partyline setup --always` changes this to true: the plugin runs in every OpenCode session,
+// not only in one started by `partyline opencode`.
+const PARTYLINE_ALWAYS = false;
+
 type Result = { error?: unknown } | undefined;
 type PromptOptions = { path: { id: string }; body: { parts: Array<{ type: "text"; text: string }> } };
 type Client = {
@@ -178,7 +182,17 @@ function superviseListen(opts: {
 
 // --- end listen supervision ---
 
+// listening reports whether this OpenCode process was started by `partyline opencode` (the
+// launcher sets PARTYLINE_HARNESS) or OpenCode was set up with --always. Without either, a
+// plain session stays out of Partyline: no listen process, no notice, no error.
+function listening(always: boolean, env: Record<string, string | undefined> = process.env): boolean {
+	return always || (env.PARTYLINE_HARNESS ?? "").trim() !== "";
+}
+
 export const PartylinePlugin = async ({ client, directory }: { client: Client; directory?: string }) => {
+	if (!listening(PARTYLINE_ALWAYS)) {
+		return { event: async () => undefined, dispose: async () => undefined };
+	}
 	const log = (message: string) => {
 		const sent = client.app?.log?.({ body: { service: "partyline", level: "warn", message } });
 		if (sent) sent.catch(() => console.error(message));

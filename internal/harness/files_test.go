@@ -84,6 +84,46 @@ func TestExtensionsNameTheAbsoluteBinary(t *testing.T) {
 	}
 }
 
+// setup --always: every file harness records the choice twice, in the extension constant and in
+// the --always flag of the MCP server entry; applying again without it removes both.
+func TestFileHarnessesRecordAlways(t *testing.T) {
+	for _, c := range fileCases {
+		t.Run(c.id, func(t *testing.T) {
+			env, _ := testEnv(t, nil)
+			env.Always = true
+			cfg, ext := filepath.Join(env.Home, c.config), filepath.Join(env.Home, c.ext)
+			r := registrar(t, env, c.id)
+			require.Contains(t, strings.Join(r.Plan(), "\n"), "--always")
+			require.NoError(t, r.Apply(context.Background()))
+			require.Contains(t, readFile(t, ext), "const PARTYLINE_ALWAYS = true;")
+			require.NotContains(t, readFile(t, ext), "const PARTYLINE_ALWAYS = false;")
+			args := argsAt(t, cfg, strings.Split(c.keys, ".")...)
+			require.NotEmpty(t, args)
+			require.Equal(t, "--always", args[len(args)-1])
+
+			env.Always = false
+			require.NoError(t, registrar(t, env, c.id).Apply(context.Background()))
+			require.Contains(t, readFile(t, ext), "const PARTYLINE_ALWAYS = false;")
+			require.NotContains(t, readFile(t, ext), "const PARTYLINE_ALWAYS = true;")
+			require.NotContains(t, argsAt(t, cfg, strings.Split(c.keys, ".")...), "--always")
+		})
+	}
+}
+
+// argsAt returns the command-line arguments of the MCP server entry at keys of the JSON file at
+// path: args for mcp.json, command[1:] for OpenCode.
+func argsAt(t *testing.T, path string, keys ...string) []any {
+	t.Helper()
+	entry, ok := jsonAt(t, path, keys...).(map[string]any)
+	require.True(t, ok)
+	if args, ok := entry["args"].([]any); ok {
+		return args
+	}
+	command, ok := entry["command"].([]any)
+	require.True(t, ok)
+	return command[1:]
+}
+
 // HAR-01, HAR-02, HAR-04 (OpenCode, pi, omp): setup adds one entry with the absolute binary
 // path, keeps every other byte of the config, installs the extension with a version header
 // and keeps a backup; applying again changes nothing; uninstall restores the original file

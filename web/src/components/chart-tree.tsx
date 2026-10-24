@@ -153,7 +153,7 @@ export function ChartTree({
         >
           <div
             data-row=""
-            className="flex min-w-0 items-start gap-1 rounded-md py-1 pr-1 [[role=treeitem]:focus-visible>&]:bg-accent/60 [[role=treeitem]:focus-visible>&]:ring-2 [[role=treeitem]:focus-visible>&]:ring-ring/50"
+            className="flex min-w-0 items-start gap-1 rounded-md py-1 pr-1 [[role=treeitem]:focus-visible>&]:bg-accent/60 [[role=treeitem]:focus-visible>&]:ring-2 [[role=treeitem]:focus-visible>&]:ring-ring/70"
           >
             {holds ? (
               <button

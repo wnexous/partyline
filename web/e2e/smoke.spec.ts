@@ -1,4 +1,4 @@
-import type { TestInfo } from "@playwright/test";
+import type { Page, TestInfo } from "@playwright/test";
 import type {
   AddMemberRequest,
   AgentMessage,
@@ -13,11 +13,14 @@ import type {
   Room,
   Token,
 } from "../src/lib/api/types.gen";
-import { ADMIN, apiCall, expect, MEMBER, test } from "./fixtures";
+import { ADMIN, apiCall, expect, MEMBER, settled, test } from "./fixtures";
 import { agentJSON, connectAI, isMobile, loginAs, MACHINE, trackLive } from "./helpers";
+import { postPictures } from "./images";
+import { shoot } from "./shots";
 
 // Smoke suite against the built binary (intelligences T52: LAY-01, LAY-05, DM-01, PROF-03,
-// TREE-01; web-app UI-01, UI-02, UI-04, UI-14, UI-24; harness-onboarding WIZ-02). The tests share
+// TREE-01; web-app UI-01, UI-02, UI-04, UI-14, UI-24; harness-onboarding WIZ-02; messenger-polish
+// IMG-01..IMG-06). Set E2E_SHOTS_DIR to also save screenshots of those flows. The tests share
 // one fresh instance per project and run in order: the first one creates the admin. The organization
 // flow has its own file and its own instance (orgs.spec.ts).
 test.describe.configure({ mode: "serial" });
@@ -508,4 +511,307 @@ test("main pages fit the viewport with no horizontal page scroll (UI-24, LAY-05)
     }));
     expect(width.scroll, `${path} scrolls sideways`).toBeLessThanOrEqual(width.viewport);
   }
+});
+
+test("an image opens in the viewer inside the app, the others are an arrow away and focus comes back (IMG-01..IMG-06)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
+    name: "e2e-gallery",
+    members: [],
+  });
+  await postPictures(
+    context.request,
+    instance,
+    room.id,
+    [
+      { name: "harbour.png", hue: 200 },
+      { name: "market.png", hue: 30 },
+    ],
+    "Two from the trip",
+  );
+  await postPictures(context.request, instance, room.id, [{ name: "sunset.png", hue: 340 }]);
+  const tabs: string[] = [];
+  context.on("page", (opened) => tabs.push(opened.url()));
+
+  await page.goto(`/rooms/${room.id}`);
+  const timeline = page.getByRole("log");
+  const thumbnail = (name: string) => timeline.getByRole("button", { name: `Open ${name}` });
+  await thumbnail("market.png").click();
+
+  // IMG-01, IMG-02: a dialog over the conversation, the picture fitted to the screen, no new tab.
+  const viewer = page.getByRole("dialog", { name: "market.png" });
+  await expect(viewer).toBeVisible();
+  await expect(viewer.getByText("2 of 3")).toBeVisible();
+  expect(tabs).toEqual([]);
+  await expect(page).toHaveURL(`${instance.url}/rooms/${room.id}`);
+  const picture = viewer.getByRole("img", { name: "market.png" });
+  await expect
+    .poll(() => picture.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))
+    .toBe(1500);
+  const screen = page.viewportSize() ?? { width: 0, height: 0 };
+  const box = await picture.boundingBox();
+  expect(box?.width).toBeLessThanOrEqual(screen.width);
+  expect(box?.height).toBeLessThanOrEqual(screen.height);
+  // Scaled down, not cropped: the whole 3:2 picture is on screen.
+  expect(box?.width).toBeLessThan(1500);
+  expect((box?.width ?? 0) / (box?.height ?? 1)).toBeCloseTo(1.5, 1);
+  await expect(viewer.getByRole("link", { name: "Download" })).toHaveAttribute(
+    "download",
+    "market.png",
+  );
+  await expect(viewer.getByRole("link", { name: "Open original" })).toHaveAttribute(
+    "target",
+    "_blank",
+  );
+
+  // IMG-06: everything fits a phone, and every control is a finger wide.
+  const width = await page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    viewport: window.innerWidth,
+  }));
+  expect(width.scroll, "the viewer scrolls sideways").toBeLessThanOrEqual(width.viewport);
+  const controls = [
+    ...(await viewer.getByRole("button").all()),
+    ...(await viewer.getByRole("link").all()),
+  ];
+  // Close, Previous, Next, Download and Open original.
+  expect(controls).toHaveLength(5);
+  await settled(page);
+  const finger = isMobile(testInfo) ? 44 : 32;
+  for (const control of controls) {
+    const label = (await control.getAttribute("aria-label")) ?? (await control.textContent());
+    const size = await control.boundingBox();
+    expect(size?.width, `${label} is too narrow`).toBeGreaterThanOrEqual(finger);
+    expect(size?.height, `${label} is too short`).toBeGreaterThanOrEqual(finger);
+  }
+  await shoot(page, "lightbox", testInfo);
+
+  // IMG-04: the arrows walk the other images and stop at both ends; so does a swipe.
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("dialog", { name: "sunset.png" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next image" })).toBeDisabled();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByRole("dialog", { name: "market.png" })).toBeVisible();
+  const stage = page.getByTestId("image-viewer-backdrop");
+  const swipe = async (from: number, to: number) => {
+    await stage.dispatchEvent("pointerdown", { pointerType: "touch", clientX: from, clientY: 300 });
+    await stage.dispatchEvent("pointerup", { pointerType: "touch", clientX: to, clientY: 306 });
+  };
+  await swipe(60, 240);
+  await expect(page.getByRole("dialog", { name: "harbour.png" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Previous image" })).toBeDisabled();
+
+  // IMG-03: Escape closes it and focus is on the thumbnail of the image it showed last, which is
+  // not the one that opened it.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(thumbnail("harbour.png")).toBeFocused();
+
+  // The close button and the backdrop close it too.
+  await thumbnail("sunset.png").click();
+  await page
+    .getByRole("dialog", { name: "sunset.png" })
+    .getByRole("button", { name: "Close" })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(thumbnail("sunset.png")).toBeFocused();
+  await thumbnail("sunset.png").click();
+  await expect(page.getByRole("dialog", { name: "sunset.png" })).toBeVisible();
+  await page.getByTestId("image-viewer-backdrop").click({ position: { x: 4, y: 4 } });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(tabs).toEqual([]);
+});
+
+test("Enter sends with a mouse and adds a line on a phone, where only Send sends (ENT-01..ENT-04)", async ({
+  browser,
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
+    name: "e2e-enter",
+    members: [],
+  });
+  const message = (on: Page) => on.locator('[data-testid^="message-"]');
+
+  // A mouse: Enter sends, Shift+Enter adds a line, and the Return key of a screen keyboard says send.
+  await page.goto(`/rooms/${room.id}`);
+  const box = page.getByRole("textbox", { name: "Message e2e-enter" });
+  await expect(box).toHaveAttribute("enterkeyhint", "send");
+  if (!isMobile(testInfo)) {
+    await expect(page.getByText("Enter to send · Shift+Enter for a new line")).toBeVisible();
+  }
+  await box.fill("first line");
+  await box.press("Shift+Enter");
+  await box.pressSequentially("second line");
+  await expect(box).toHaveValue("first line\nsecond line");
+  await box.press("Enter");
+  await expect(message(page)).toContainText("second line");
+  await expect(box).toHaveValue("");
+
+  // A phone: Enter writes, Send sends, and the hint says so at 360 px without breaking the row.
+  const phone = await browser.newContext({
+    viewport: { width: 360, height: 780 },
+    hasTouch: true,
+    isMobile: true,
+  });
+  try {
+    await loginAs(phone, instance, ADMIN);
+    const touch = await phone.newPage();
+    await touch.goto(`/rooms/${room.id}`);
+    const field = touch.getByRole("textbox", { name: "Message e2e-enter" });
+    await expect(field).toHaveAttribute("enterkeyhint", "enter");
+    const hint = touch.getByText("Enter for a new line · tap Send to send");
+    await expect(hint).toBeVisible();
+    const send = touch.getByRole("button", { name: "Send" });
+    const [hintBox, sendBox] = [await hint.boundingBox(), await send.boundingBox()];
+    expect((hintBox?.x ?? 0) + (hintBox?.width ?? 0)).toBeLessThanOrEqual(sendBox?.x ?? 0);
+
+    await field.tap();
+    await touch.keyboard.type("one");
+    await touch.keyboard.press("Enter");
+    await touch.keyboard.type("two");
+    await expect(field).toHaveValue("one\ntwo");
+    // Enter wrote a line: nothing was sent besides the mouse's message above.
+    await expect(message(touch)).toHaveCount(1);
+    await send.tap();
+    await expect(message(touch).last()).toContainText("two");
+    await expect(field).toHaveValue("");
+  } finally {
+    await phone.close();
+  }
+});
+
+test("a click on a name opens the profile panel: a sidebar on a wide screen, a drawer on a phone (PRF-01..PRF-05)", async ({
+  context,
+  page,
+  instance,
+}, testInfo) => {
+  await loginAs(context, instance, ADMIN);
+  const me = await apiCall<Me>(context.request, instance, "GET", "/me");
+  const agent = await connectAI(context, instance, "/work/panel");
+  const name = agent.ai.display_name;
+  await apiCall(context.request, instance, "PATCH", `/intelligences/${agent.ai.id}`, {
+    bio: "Keeps the release train on time. Answers in the room, or in a DM.",
+  });
+  const room = await apiCall<Room>(context.request, instance, "POST", "/groups", {
+    name: "e2e-panel",
+    members: [],
+  });
+  await apiCall(context.request, instance, "POST", `/rooms/${room.id}/members`, {
+    kind: "agent",
+    member_id: agent.ai.id,
+  });
+  await agentJSON<AgentMessage>(
+    context,
+    instance,
+    agent,
+    "POST",
+    `/agent/rooms/${room.id}/messages`,
+    { text: "Release is green." },
+  );
+  await apiCall(context.request, instance, "POST", `/rooms/${room.id}/messages`, {
+    text: "Thanks, shipping it.",
+  });
+
+  // PRF-01: a click on the author's name opens the panel, and the page stays where it is.
+  await page.goto(`/rooms/${room.id}`);
+  const author = page.getByRole("log").getByRole("link", { name, exact: true });
+  await author.click();
+  const panel = page.getByRole("dialog", { name });
+  await expect(panel).toBeVisible();
+  await expect(page).toHaveURL(`${instance.url}/rooms/${room.id}`);
+
+  // PRF-02: the right edge of a wide screen, the bottom of a phone's.
+  await settled(page);
+  const screen = page.viewportSize() ?? { width: 0, height: 0 };
+  const box = await panel.boundingBox();
+  if (isMobile(testInfo)) {
+    await expect(panel).toHaveAttribute("data-layout", "drawer");
+    expect(box?.x).toBe(0);
+    expect(box?.width).toBe(screen.width);
+    expect((box?.y ?? 0) + (box?.height ?? 0)).toBeCloseTo(screen.height, 0);
+    expect(box?.y ?? 0).toBeGreaterThan(0);
+  } else {
+    await expect(panel).toHaveAttribute("data-layout", "sidebar");
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeCloseTo(screen.width, 0);
+    expect(box?.height).toBeCloseTo(screen.height, 0);
+    expect(box?.width ?? 0).toBeLessThanOrEqual(384);
+  }
+
+  // PRF-03: who it is, and what it can do.
+  await expect(panel.getByRole("heading", { name })).toBeVisible();
+  await expect(panel.getByText(`@${agent.ai.name}`, { exact: true })).toBeVisible();
+  await expect(panel.getByText("Keeps the release train on time.")).toBeVisible();
+  await expect(panel.getByText("Kind", { exact: true })).toBeVisible();
+  await expect(panel.getByText("Offline", { exact: true })).toBeVisible();
+  // The organization the viewer shares with the AI is its home (OMEM-03). Where the AI runs is not
+  // shown (AD-022), and nothing is shared one by one (AD-016).
+  const orgs = panel.getByRole("region", { name: "Organizations" });
+  await expect(orgs).toBeVisible();
+  await expect(orgs.getByText("Home organization")).toBeVisible();
+  await expect(panel.getByText(MACHINE)).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: /share/i })).toHaveCount(0);
+  const message = panel.getByRole("button", { name: "Message", exact: true });
+  const full = panel.getByRole("link", { name: "Open full profile" });
+  await expect(message).toBeVisible();
+  await expect(full).toHaveAttribute("href", `/contacts/${agent.ai.id}`);
+  // The viewer manages this AI, and still edits it from its page, not from here.
+  await expect(panel.getByRole("link", { name: "Edit profile" })).toHaveCount(0);
+  if (isMobile(testInfo)) {
+    for (const control of [message, full, panel.getByRole("button", { name: "Close" })]) {
+      const size = await control.boundingBox();
+      expect(size?.height ?? 0).toBeGreaterThanOrEqual(44);
+      expect(size?.width ?? 0).toBeGreaterThanOrEqual(44);
+    }
+  }
+  await shoot(page, "profile-panel", testInfo);
+
+  // PRF-05: Escape closes it and focus is back on the name.
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(author).toBeFocused();
+
+  // The viewer's own profile offers Edit profile, not Message.
+  const mine = page
+    .getByRole("log")
+    .getByRole("link", { name: me.intelligence.display_name, exact: true });
+  await mine.click();
+  const own = page.getByRole("dialog", { name: me.intelligence.display_name });
+  await expect(own.getByRole("link", { name: "Edit profile" })).toBeVisible();
+  await expect(own.getByRole("button", { name: "Message", exact: true })).toHaveCount(0);
+  await own.getByRole("button", { name: "Close" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(mine).toBeFocused();
+
+  // A member of the list opens it too (wide screens show the list beside the conversation).
+  if (!isMobile(testInfo)) {
+    await page
+      .getByRole("complementary", { name: "Members" })
+      .getByRole("link", { name, exact: true })
+      .click();
+    await expect(page.getByRole("dialog", { name })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+
+  // The contacts page shows it instead of leaving the list.
+  await page.goto("/contacts");
+  await page
+    .getByTestId(`contact-${agent.ai.id}`)
+    .getByRole("link", { name: new RegExp(name) })
+    .click();
+  await expect(page.getByRole("dialog", { name })).toBeVisible();
+  await expect(page).toHaveURL(`${instance.url}/contacts`);
+
+  // PRF-04: the full page is one action away, and the panel makes way for it.
+  await page.getByRole("dialog", { name }).getByRole("link", { name: "Open full profile" }).click();
+  await expect(page).toHaveURL(`${instance.url}/contacts/${agent.ai.id}`);
+  await expect(page.getByRole("heading", { name, level: 1 })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });

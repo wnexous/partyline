@@ -281,7 +281,7 @@ function FilterBox({ value, onChange }: { value: string; onChange: (value: strin
             type="button"
             aria-label={t("contacts.filterClear")}
             onClick={() => onChange("")}
-            className="absolute top-1/2 right-0.5 grid size-10 -translate-y-1/2 place-items-center rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 md:size-8"
+            className="absolute top-1/2 right-0.5 grid size-10 -translate-y-1/2 place-items-center rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/70 md:size-8"
           >
             <XIcon className="size-4" aria-hidden="true" />
           </button>

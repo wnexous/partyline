@@ -13,6 +13,10 @@ import { spawn } from "node:child_process";
 // `partyline setup` writes the absolute path of the partyline binary here.
 const PARTYLINE_BINARY = "partyline";
 
+// `partyline setup --always` changes this to true: the extension runs in every pi session, not
+// only in one started by `partyline pi`.
+const PARTYLINE_ALWAYS = false;
+
 type Ui = { notify?: (message: string, level?: string) => void };
 type Ctx = { cwd?: string; hasUI?: boolean; ui?: Ui };
 type PiApi = {
@@ -170,10 +174,17 @@ function superviseListen(opts: {
 
 // --- end listen supervision ---
 
+// listening reports whether this pi process was started by `partyline pi` (the launcher sets
+// PARTYLINE_HARNESS) or pi was set up with --always. Without either, a plain pi session stays
+// out of Partyline: no listen process, no notice, no error.
+function listening(always: boolean, env: Record<string, string | undefined> = process.env): boolean {
+	return always || (env.PARTYLINE_HARNESS ?? "").trim() !== "";
+}
+
 export default function partyline(pi: PiApi): void {
 	let listener: Listener | undefined;
 	pi.on("session_start", (_event, ctx) => {
-		if (listener) return;
+		if (listener || !listening(PARTYLINE_ALWAYS)) return;
 		const log = (message: string) => {
 			if (ctx.hasUI && ctx.ui?.notify) ctx.ui.notify(message, "warning");
 			else console.error(message);

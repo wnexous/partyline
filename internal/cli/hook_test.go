@@ -20,6 +20,11 @@ func runHook(name, stdin string, env map[string]string) (code int, stdout, stder
 // runHookWith is runHook for a process whose nearest launched ancestor has the launcher
 // variables ancestor (nil: none).
 func runHookWith(name, stdin string, env, ancestor map[string]string) (code int, stdout, stderr string) {
+	return runHookFlags(name, stdin, env, ancestor)
+}
+
+// runHookFlags runs the hook with extra command-line flags (`--always`).
+func runHookFlags(name, stdin string, env, ancestor map[string]string, flags ...string) (code int, stdout, stderr string) {
 	var out, errOut bytes.Buffer
 	std := stdio{
 		stdin: strings.NewReader(stdin), stdout: &out, stderr: &errOut,
@@ -30,7 +35,7 @@ func runHookWith(name, stdin string, env, ancestor map[string]string) (code int,
 	if ancestor != nil {
 		std.launcherEnv = func() map[string]string { return ancestor }
 	}
-	code = execute(context.Background(), []string{"partyline", "hook", name}, std)
+	code = execute(context.Background(), append([]string{"partyline", "hook", name}, flags...), std)
 	return code, out.String(), errOut.String()
 }
 
@@ -57,7 +62,7 @@ func TestHookContinuesWithPendingMessages(t *testing.T) {
 			m1 := e.post(t, room.ID, "build <red> & failing")
 			m2 := e.post(t, room.ID, "now green")
 
-			code, out, errOut := runHook(hook, `{"session_id":"s1","cwd":"/work/proj","hook_event_name":"Stop","stop_hook_active":false}`, e.vars())
+			code, out, errOut := runHook(hook, `{"session_id":"s1","cwd":"/work/proj","hook_event_name":"Stop","stop_hook_active":false}`, e.launched("codex"))
 			require.Equal(t, 0, code, errOut)
 			require.True(t, strings.HasSuffix(out, "}\n") && strings.Count(out, "\n") == 1, "stdout is one JSON line: %q", out)
 			var got map[string]string
@@ -66,11 +71,34 @@ func TestHookContinuesWithPendingMessages(t *testing.T) {
 				"\n\n" + `<partyline room="Builds" conversation="group" from="` + m2.AuthorName + `" trusted="true" message_id="` + m2.ID + `">now green</partyline>` + "\n" + trustedLine
 			require.Equal(t, map[string]string{"decision": decision, "reason": reason}, got)
 
-			code, out, _ = runHook(hook, `{"cwd":"/work/proj"}`, e.vars())
+			code, out, _ = runHook(hook, `{"cwd":"/work/proj"}`, e.launched("codex"))
 			require.Equal(t, 0, code)
 			require.Equal(t, "{}\n", out, "delivered messages are not repeated: the stop is allowed")
 		})
 	}
+}
+
+// launch-only: the Stop hook of a plain Codex or Gemini session does nothing: it allows the
+// stop without credentials and without creating an AI.
+func TestHookWithoutLauncherIsIdle(t *testing.T) {
+	e := newChannelEnv(t)
+	for _, hook := range []string{"codex-stop", "gemini-after-agent"} {
+		code, out, errOut := runHook(hook, `{"cwd":"/work/plain"}`, e.vars())
+		require.Equal(t, 0, code)
+		require.Equal(t, "{}\n", out)
+		require.Empty(t, errOut)
+	}
+	require.Empty(t, e.folders(t))
+}
+
+// setup --always: the hook setup registered with the flag runs without the launcher.
+func TestHookWithAlwaysRunsWithoutLauncher(t *testing.T) {
+	e := newChannelEnv(t)
+	code, out, errOut := runHookFlags("codex-stop", `{"cwd":"/work/always"}`, e.vars(), nil, "--always")
+	require.Equal(t, 0, code)
+	require.Equal(t, "{}\n", out)
+	require.Empty(t, errOut)
+	require.Equal(t, []string{"/work/always"}, e.folders(t), "the hook acts as the folder's AI")
 }
 
 // TURN-02: without pending messages the hook allows the stop with an empty JSON object.
@@ -78,7 +106,7 @@ func TestHookAllowsStopWithoutMessages(t *testing.T) {
 	e := newChannelEnv(t)
 	e.hookRoom(t, "/work/proj")
 	for _, hook := range []string{"codex-stop", "gemini-after-agent"} {
-		code, out, errOut := runHook(hook, `{"cwd":"/work/proj"}`, e.vars())
+		code, out, errOut := runHook(hook, `{"cwd":"/work/proj"}`, e.launched("codex"))
 		require.Equal(t, 0, code)
 		require.Equal(t, "{}\n", out)
 		require.Empty(t, errOut)
@@ -92,7 +120,7 @@ func TestHookUsesTheLaunchersFolder(t *testing.T) {
 	launched := e.hookRoom(t, "/work/launched")
 	e.hookRoom(t, "/work/reported")
 	msg := e.post(t, launched.ID, "for the launched folder")
-	_, out, errOut := runHook("gemini-after-agent", `{"cwd":"/work/reported"}`, e.vars("PARTYLINE_FOLDER", "/work/launched/"))
+	_, out, errOut := runHook("gemini-after-agent", `{"cwd":"/work/reported"}`, e.launched("codex", "PARTYLINE_FOLDER", "/work/launched/"))
 	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`, errOut)
 }
 
@@ -112,7 +140,7 @@ func TestHookNamesTheAppOfTheFoldersAI(t *testing.T) {
 // and allows the stop.
 func TestHookInAnUnseenFolderAllowsTheStop(t *testing.T) {
 	e := newChannelEnv(t)
-	code, out, errOut := runHook("codex-stop", `{"cwd":"/work/new"}`, e.vars())
+	code, out, errOut := runHook("codex-stop", `{"cwd":"/work/new"}`, e.launched("codex"))
 	require.Equal(t, 0, code)
 	require.Equal(t, "{}\n", out)
 	require.Empty(t, errOut)
@@ -122,18 +150,18 @@ func TestHookInAnUnseenFolderAllowsTheStop(t *testing.T) {
 // Problems never block the harness: they go to stderr and the stop is allowed.
 func TestHookFailuresAllowTheStop(t *testing.T) {
 	e := newChannelEnv(t)
-	code, out, errOut := runHook("codex-stop", `{"cwd":"/work/proj"}`, map[string]string{"PARTYLINE_URL": "http://127.0.0.1:1", "PARTYLINE_TOKEN": e.secret})
+	code, out, errOut := runHook("codex-stop", `{"cwd":"/work/proj"}`, map[string]string{"PARTYLINE_URL": "http://127.0.0.1:1", "PARTYLINE_TOKEN": e.secret, "PARTYLINE_HARNESS": "codex"})
 	require.Equal(t, 0, code)
 	require.Equal(t, "{}\n", out)
 	require.Contains(t, errOut, "partyline hook: partyline: server unreachable")
 
-	code, out, errOut = runHook("codex-stop", `{"cwd":"/work/a\u0000b"}`, e.vars())
+	code, out, errOut = runHook("codex-stop", `{"cwd":"/work/a\u0000b"}`, e.launched("codex"))
 	require.Equal(t, 0, code)
 	require.Equal(t, "{}\n", out)
 	require.Contains(t, errOut, "partyline hook: the folder must not contain a NUL character")
 	require.Empty(t, e.folders(t))
 
-	code, out, errOut = runHook("codex-stop", `{}`, map[string]string{})
+	code, out, errOut = runHook("codex-stop", `{}`, map[string]string{"PARTYLINE_HARNESS": "codex"})
 	require.Equal(t, 0, code)
 	require.Equal(t, "{}\n", out)
 	require.Contains(t, errOut, "partyline hook: not configured; run partyline setup")
@@ -150,7 +178,7 @@ func TestHookRequiresAKnownHarness(t *testing.T) {
 // messages, or says none arrived after timeout_seconds. The full channel does not offer it.
 func TestWaitForMessagesTool(t *testing.T) {
 	e := newChannelEnv(t)
-	c := startChannel(t, []string{"--tools-only"}, e.vars(), "/work/codex-box")
+	c := startChannel(t, []string{"--tools-only"}, e.launched("codex"), "/work/codex-box")
 	initialize(c)
 	c.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	var names []string
@@ -176,7 +204,7 @@ func TestWaitForMessagesTool(t *testing.T) {
 	require.False(t, isErr, text)
 	require.Equal(t, `<partyline room="Builds" conversation="group" from="`+msg.AuthorName+`" trusted="true" message_id="`+msg.ID+`">ship it</partyline>`+"\n"+trustedLine, text)
 
-	full := startChannel(t, nil, e.vars(), "/work/claude-box")
+	full := startChannel(t, nil, e.launched("claude"), "/work/claude-box")
 	initialize(full)
 	full.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	for _, tool := range full.next()["result"].(map[string]any)["tools"].([]any) {
@@ -190,7 +218,7 @@ func TestWaitForMessagesWithListen(t *testing.T) {
 	e := newChannelEnv(t)
 	startListen(t, e.vars(), "/work/pi-box", nil)
 	e.ai(t, "/work/pi-box")
-	c := startChannel(t, []string{"--tools-only"}, e.vars(), "/work/pi-box")
+	c := startChannel(t, []string{"--tools-only"}, e.launched("pi"), "/work/pi-box")
 	initialize(c)
 	c.send(map[string]any{"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": map[string]any{"name": "wait_for_messages", "arguments": map[string]any{"timeout_seconds": 1}}})
 	r := c.next()["result"].(map[string]any)
@@ -219,10 +247,10 @@ func TestToolsOnlyAndItsHookAreOneIdentity(t *testing.T) {
 	msg := e.post(t, room.ID, "for everyone")
 	require.Equal(t, []string{"/work/lab", "/work/notes"}, e.folders(t))
 
-	_, out, errOut := runHook("codex-stop", `{"cwd":"/tmp/src/anywhere"}`, e.vars("PARTYLINE_FOLDER", "/work/notes"))
+	_, out, errOut := runHook("codex-stop", `{"cwd":"/tmp/src/anywhere"}`, e.launched("codex", "PARTYLINE_FOLDER", "/work/notes"))
 	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`, "the hook acts as the AI of its session's folder: %s", errOut)
-	_, out, _ = runHook("codex-stop", `{"cwd":"/work/notes"}`, e.vars())
+	_, out, _ = runHook("codex-stop", `{"cwd":"/work/notes"}`, e.launched("codex"))
 	require.Equal(t, "{}\n", out, "what the hook delivered to the folder's AI is not delivered again")
-	_, out, errOut = runHook("codex-stop", `{"cwd":"/work/lab"}`, e.vars())
+	_, out, errOut = runHook("codex-stop", `{"cwd":"/work/lab"}`, e.launched("codex"))
 	require.Contains(t, out, `message_id=\"`+msg.ID+`\"`, "the other folder's AI has its own copy: %s", errOut)
 }

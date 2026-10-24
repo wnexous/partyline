@@ -197,7 +197,16 @@ function PickableCandidate({
     <Candidate
       testId={testId}
       icon={<IntelligenceAvatar intelligence={pickable.ref} decorative />}
-      title={<IntelligenceName intelligence={pickable.ref} showHandle className="text-sm" />}
+      title={
+        // The name opens the profile panel (PRF-01) and covers the row, the Add button stays above.
+        <IntelligenceName
+          intelligence={pickable.ref}
+          showHandle
+          profileLink
+          stretch
+          className="text-sm"
+        />
+      }
       name={pickable.ref.display_name}
       meta={<PickableMeta pickable={pickable} online={online} />}
       busy={busy}
@@ -227,7 +236,10 @@ function Candidate({
 }) {
   const { t } = useI18n();
   return (
-    <li data-testid={testId} className="flex items-center gap-3 px-5 py-2 hover:bg-accent/40">
+    <li
+      data-testid={testId}
+      className="relative flex items-center gap-3 px-5 py-2 hover:bg-accent/40"
+    >
       <span className="shrink-0">{icon}</span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{title}</p>
@@ -236,6 +248,7 @@ function Candidate({
       <Button
         size="sm"
         variant="outline"
+        className="relative"
         disabled={busy}
         aria-label={t("picker.add", { name })}
         onClick={onAdd}

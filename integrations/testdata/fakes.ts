@@ -1,6 +1,10 @@
 // Fakes shared by the adapter tests: a spawn that records `partyline listen` processes and
 // manual timers and clock, so restarts are tested without waiting.
 import { EventEmitter } from "node:events";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export class FakeChild extends EventEmitter {
 	stdout = new EventEmitter();
@@ -30,6 +34,23 @@ export class FakeChild extends EventEmitter {
 }
 
 export const spawned: FakeChild[] = [];
+
+// importAlways imports a copy of an adapter with PARTYLINE_ALWAYS = true, the way
+// `partyline setup --always` installs it. The adapter is one self-contained file, so a copy
+// outside integrations keeps the test honest: it exercises the installed constant, not a flag.
+export async function importAlways(file: string): Promise<Record<string, unknown>> {
+	const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+	const marker = "const PARTYLINE_ALWAYS = false;";
+	if (!source.includes(marker)) throw new Error(`${file} does not carry ${marker}`);
+	const dir = mkdtempSync(join(tmpdir(), "partyline-always-"));
+	const path = join(dir, "partyline.ts");
+	writeFileSync(path, source.replace(marker, "const PARTYLINE_ALWAYS = true;"));
+	try {
+		return await import(pathToFileURL(path).href);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
 
 export function fakeSpawn(command: string, args: string[], options: FakeChild["options"]) {
 	const c = new FakeChild(command, args, options);

@@ -170,7 +170,7 @@ function InviteForm({
                     onClick={() =>
                       form.setValue("handle", `@${p.ref.handle}`, { shouldDirty: true })
                     }
-                    className="flex w-full min-w-0 items-center gap-2 rounded-md px-1 py-1.5 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50"
+                    className="flex w-full min-w-0 items-center gap-2 rounded-md px-1 py-1.5 text-left outline-none hover:bg-accent/60 focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-ring/70"
                   >
                     <IntelligenceAvatar intelligence={p.ref} size="sm" decorative />
                     <IntelligenceName intelligence={p.ref} showHandle className="text-sm" />

@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/empty-state";
 import { FormAlert } from "@/components/form-fields";
 import { chatTitle, platformLabel } from "@/components/message-item";
 import { NativeSelect } from "@/components/native-select";
+import { NamedSentence } from "@/components/profile-link";
 import { ConnectorForm } from "@/components/schema-form";
 import {
   AlertDialog,
@@ -139,7 +140,7 @@ function ConnectorView({ connector: c, kind }: { connector: Connector; kind?: Co
       <header className="border-b px-4 pt-5 pb-5 md:px-8 md:pt-6">
         <Link
           to="/connectors"
-          className="mb-3 inline-flex items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="mb-3 inline-flex items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/70"
         >
           <ArrowLeftIcon className="size-3.5" aria-hidden="true" />
           {t("page.connectorsTitle")}
@@ -151,7 +152,13 @@ function ConnectorView({ connector: c, kind }: { connector: Connector; kind?: Co
               <span>{kind?.label ?? platformLabel(c.kind)}</span>
               <ConnectorStatusBadge status={status} enabled={c.enabled} />
               {c.operator ? (
-                <span>{t("connector.operatedBy", { name: c.operator.display_name })}</span>
+                <span>
+                  <NamedSentence
+                    id={c.operator.id}
+                    name={c.operator.display_name}
+                    sentence={(name) => t("connector.operatedBy", { name })}
+                  />
+                </span>
               ) : (
                 <span className="font-medium text-destructive">{t("connector.noOperator")}</span>
               )}
@@ -589,12 +596,17 @@ function DeliverySummary({ connector: c }: { connector: Connector }) {
             {t("connector.operatorPick")}
           </dt>
           <dd>
-            {c.operator
-              ? t("connector.operatorNamed", {
-                  name: c.operator.display_name,
-                  handle: c.operator.handle,
-                })
-              : t("connector.noOperator")}
+            {c.operator ? (
+              <NamedSentence
+                id={c.operator.id}
+                name={c.operator.display_name}
+                sentence={(name) =>
+                  t("connector.operatorNamed", { name, handle: c.operator?.handle ?? "" })
+                }
+              />
+            ) : (
+              t("connector.noOperator")
+            )}
           </dd>
         </div>
         <div className="space-y-0.5">

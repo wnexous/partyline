@@ -20,6 +20,7 @@ import { conversationMatches, groupFace } from "@/lib/conversations";
 import { useI18n, useT } from "@/lib/i18n";
 import { inOrg } from "@/lib/orgs";
 import { formatAbsolute, formatListTime } from "@/lib/time";
+import { cn } from "@/lib/utils";
 
 /*
  * The sidebar's conversation list (LAY-01, DM-06): direct messages and groups together, newest
@@ -229,7 +230,11 @@ const ConversationRow = memo(function ConversationRow({
             <time
               dateTime={last.created_at}
               title={formatAbsolute(last.created_at, locale)}
-              className="shrink-0 font-mono text-[0.7rem] text-muted-foreground tabular"
+              className={cn(
+                "shrink-0 font-mono text-[0.7rem] tabular",
+                // An unread row wears the accent twice: its count and its time.
+                c.unread > 0 ? "text-link" : "text-muted-foreground",
+              )}
             >
               {formatListTime(last.created_at, locale)}
             </time>

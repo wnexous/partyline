@@ -66,6 +66,7 @@ type setupFlags struct {
 	remove      string
 	uninstall   bool
 	keepBackup  bool
+	always      bool
 }
 
 func newPrompter(io stdio) *prompter { return &prompter{in: bufio.NewReader(io.stdin), out: io.stdout} }
@@ -84,6 +85,7 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 	flags.BoolVar(&f.browser, "browser", false, "approve this machine in the web app instead of using a saved token")
 	flags.BoolVar(&f.yes, "yes", false, "do not ask; apply the selection as given")
 	flags.StringVar(&f.harness, "harness", "", "harnesses to register, comma-separated: claude, codex, gemini, opencode, pi, omp, or none")
+	flags.BoolVar(&f.always, "always", false, "also start Partyline in sessions not started by `partyline <harness>` (records the choice in the harness config; --always=false undoes it)")
 	flags.BoolVar(&f.allDetected, "all-detected", false, "register every harness installed on this machine")
 	flags.StringVar(&f.remove, "remove", "", "harnesses to remove Partyline from, comma-separated")
 	flags.BoolVar(&f.uninstall, "uninstall", false, "remove what setup added: harness entries, extension files and the config file")
@@ -107,6 +109,7 @@ func setupCmd(ctx context.Context, args []string, io stdio) int {
 		fmt.Fprintln(io.stderr, "partyline setup:", err)
 		return 1
 	}
+	env.Always = f.always
 	regs := harness.All(env)
 	// A mistyped harness name must not write credentials, so validate the flags first.
 	register, err := namedHarnesses(env, f.harness)

@@ -12,6 +12,7 @@ import {
   makeConnectorKind,
   makeMe,
   makeMembership,
+  makeProfile,
 } from "@/test/fixtures";
 import { viewerIn } from "@/test/orgs";
 import { renderRoute } from "@/test/render";
@@ -46,6 +47,11 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const row = (name: string) => screen.getByRole("listitem", { name });
+
+/** The element holding exactly this text, even when part of it (a name) is a link of its own. */
+const sentence = (text: string) => (_content: string, element: Element | null) =>
+  element?.textContent === text &&
+  Array.from(element.children).every((c) => c.textContent !== text);
 
 describe("connectors list (UI-17)", () => {
   it("shows each connector's status and last error", async () => {
@@ -390,7 +396,11 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     groups_mentions_only: false,
     queued: 4,
   });
-  const api = (over: Partial<Connector> = {}, patch?: Response) =>
+  const api = (
+    over: Partial<Connector> = {},
+    patch?: Response,
+    extra: Parameters<typeof mockApi>[0] = {},
+  ) =>
     mockApi({
       "GET /me": json(200, me),
       "GET /connector-kinds": kinds,
@@ -400,7 +410,9 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
       "PATCH /connectors/k1":
         patch ??
         ((_url, init) => json(200, { ...base, ...over, ...JSON.parse(String(init?.body)) })),
+      ...extra,
     });
+  const atlasProfile = json(200, makeProfile({ ...atlas, bio: "Answers the support line." }));
   const patches = (calls: ReturnType<typeof mockApi>["calls"]) =>
     calls.filter((c) => c.method === "PATCH");
 
@@ -409,7 +421,7 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     renderRoute("/connectors/k1");
     await screen.findByRole("heading", { name: "support-line" });
     // CID-23: the header names the operator and the queue, the status is live.
-    expect(screen.getByText("Operated by Atlas")).toBeInTheDocument();
+    expect(screen.getByText(sentence("Operated by Atlas"))).toBeInTheDocument();
     expect(screen.getByText("4 queued")).toBeInTheDocument();
     expect(screen.getByText("Connected")).toBeInTheDocument();
     const operator = await screen.findByRole("combobox", { name: "Operator" });
@@ -501,11 +513,36 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     expect(calls.some((c) => c.path === "/chats/c1/route")).toBe(false);
   });
 
+  it("opens the operator's profile panel from the header, without leaving the page (PRF-01)", async () => {
+    api({}, undefined, { "GET /intelligences/a1": atlasProfile });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/connectors/k1");
+    const header = (await screen.findByRole("heading", { name: "support-line" })).closest(
+      "header",
+    ) as HTMLElement;
+
+    await user.click(within(header).getByRole("link", { name: "Atlas" }));
+    const panel = await screen.findByRole("dialog", { name: "Atlas" });
+    expect(within(panel).getByText("Answers the support line.")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/connectors/k1");
+  });
+
+  it("opens it from the read-only summary of a member of the organization too", async () => {
+    api({ my_level: "use" }, undefined, { "GET /intelligences/a1": atlasProfile });
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const summary = (await screen.findByText("Operator", { selector: "dt" }))
+      .parentElement as HTMLElement;
+
+    await user.click(within(summary).getByRole("link", { name: "Atlas" }));
+    expect(await screen.findByRole("dialog", { name: "Atlas" })).toBeInTheDocument();
+  });
+
   it("reads the delivery settings without controls as a member of the organization", async () => {
     api({ my_level: "use", operator: atlas, deliver: "all", groups_mentions_only: true });
     renderRoute("/connectors/k1");
-    expect(await screen.findByText("Operated by Atlas")).toBeInTheDocument();
-    expect(screen.getByText("Atlas (@atlas)")).toBeInTheDocument();
+    expect(await screen.findByText(sentence("Operated by Atlas"))).toBeInTheDocument();
+    expect(screen.getByText(sentence("Atlas (@atlas)"))).toBeInTheDocument();
     expect(screen.getByText("Direct chats and groups")).toBeInTheDocument();
     expect(screen.getByText("Yes")).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Operator" })).toBeNull();
@@ -532,7 +569,7 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
       "GET /contacts": json(200, sampleContacts),
     });
     renderRoute("/connectors/k1");
-    expect(await screen.findByText("Operado por Atlas")).toBeInTheDocument();
+    expect(await screen.findByText(sentence("Operado por Atlas"))).toBeInTheDocument();
     expect(screen.getByText("4 na fila")).toBeInTheDocument();
     expect(await screen.findByRole("combobox", { name: "Operador" })).toHaveValue(atlas.id);
     expect(screen.getByRole("combobox", { name: "Entregar" })).toHaveValue("dms");
@@ -788,9 +825,9 @@ describe("the page of a connection in an organization (ORG-03, ORG-07, OMEM-04)"
   it("lets a member who is not an admin read it all and change nothing", async () => {
     api({ org_id: "o2", my_level: "use" });
     renderRoute("/connectors/k1");
-    expect(await screen.findByText("Operated by Atlas")).toBeInTheDocument();
+    expect(await screen.findByText(sentence("Operated by Atlas"))).toBeInTheDocument();
     // Read-only: the operator and the delivery settings are text.
-    expect(screen.getByText("Atlas (@atlas)")).toBeInTheDocument();
+    expect(screen.getByText(sentence("Atlas (@atlas)"))).toBeInTheDocument();
     expect(screen.getByText("Direct chats only")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.queryByRole("switch")).toBeNull();

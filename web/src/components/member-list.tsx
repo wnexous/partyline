@@ -140,14 +140,22 @@ function MemberRow({
   return (
     <li
       data-testid={`member-${m.id}`}
-      className="group/member flex items-start gap-2.5 px-4 py-2 hover:bg-accent/40"
+      className="group/member relative flex items-start gap-2.5 px-4 py-2 hover:bg-accent/40"
     >
       <span className="mt-0.5 shrink-0">
         {profile ? <IntelligenceAvatar intelligence={profile} decorative /> : icon}
       </span>
       <div className="min-w-0 flex-1">
         {profile ? (
-          <IntelligenceName intelligence={profile} viewerId={meId} showHandle className="text-sm" />
+          // The name opens the profile panel (PRF-01) and covers the row; the actions sit above it.
+          <IntelligenceName
+            intelligence={profile}
+            viewerId={meId}
+            showHandle
+            profileLink
+            stretch
+            className="text-sm"
+          />
         ) : (
           <p className="truncate text-sm font-medium">{name}</p>
         )}
@@ -157,19 +165,21 @@ function MemberRow({
           </p>
         ) : null}
       </div>
-      {canMessage && profile ? <MemberDmActions member={m} profile={profile} /> : null}
-      {canManage && m.kind === "agent" ? <MemberSettings roomId={roomId} member={m} /> : null}
-      {canManage ? (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="shrink-0 text-muted-foreground opacity-60 group-hover/member:opacity-100 focus-visible:opacity-100"
-          aria-label={t("members.remove", { name })}
-          onClick={onRemove}
-        >
-          <XIcon aria-hidden="true" />
-        </Button>
-      ) : null}
+      <div className="relative flex shrink-0 items-start gap-2.5 empty:hidden">
+        {canMessage && profile ? <MemberDmActions member={m} profile={profile} /> : null}
+        {canManage && m.kind === "agent" ? <MemberSettings roomId={roomId} member={m} /> : null}
+        {canManage ? (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="shrink-0 text-muted-foreground opacity-60 group-hover/member:opacity-100 focus-visible:opacity-100"
+            aria-label={t("members.remove", { name })}
+            onClick={onRemove}
+          >
+            <XIcon aria-hidden="true" />
+          </Button>
+        ) : null}
+      </div>
     </li>
   );
 }
