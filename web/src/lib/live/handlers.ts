@@ -225,6 +225,7 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
           ...c,
           title: c.kind === "group" ? room.name : c.title,
           my_level: room.my_level,
+          org_ids: room.org_ids,
         }));
       }
       return;

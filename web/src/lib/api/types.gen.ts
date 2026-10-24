@@ -1173,6 +1173,12 @@ export interface Conversation {
    * AIs of a group (the other participant of a DM), for the sidebar search.
    */
   member_names: string[];
+  /**
+   * OrgIDs are the organizations the conversation is filed under (ORG-02): a group's organization;
+   * for a DM the organizations both participants are members of, else the default organization of
+   * the caller; empty when there is none.
+   */
+  org_ids: string[];
 }
 /**
  * MaxConversationMemberNames bounds Conversation.MemberNames.
@@ -1742,6 +1748,11 @@ export interface Room {
    * OrgID is the organization a group belongs to (ORG-02); absent for a DM.
    */
   org_id?: string;
+  /**
+   * OrgIDs are the organizations the room is filed under, as in Conversation.OrgIDs: a group's
+   * organization; for a DM the organizations both participants belong to, else the caller's default.
+   */
+  org_ids: string[];
   owner: User;
   visibility: Visibility;
   /**

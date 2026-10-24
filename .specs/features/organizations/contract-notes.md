@@ -801,3 +801,31 @@ Where a section refines the design, it says so.
   `TestContactsShowNoMachines`, `TestContactsOfOtherUsersHoldOnlyTheirOrganizationsData`, `TestContactsLeaveOutDisabledUsers`,
   `TestContactsListHostedAIsByName`, `TestAIDMsReachUsersAndTheAIsOfItsOrganizations` (a foreign organization's AI → 404
   `contact_not_found`, a user works); web: `contacts.test.tsx`, `lib/contacts.test.ts`, the pickers, connection and a11y tests.
+
+## T56: Conversations carry their organizations (ORG-02, OMEM-03)
+
+- **`org_ids`** is on every `Conversation` of `GET /conversations` and on the `Room` of `GET /rooms`, `GET /rooms/{id}` and
+  the live `room.changed` frame, with the same value (`rooms.Room.OrgIDs`, filled by `rooms.Service.Get` and `List`). It is
+  always an array, `[]` when there is nothing to file the conversation under, never `null`.
+  - **A group**: its organization (`[org_id]`; a group with none, which only a fixture has, is `[]`).
+  - **A DM**: the organizations **both participants** are members of (`ListSharedOrgIDs`), whatever their permission; an AI
+    is a member of its organizations like a user. The order is the one the caller joined them in, oldest first (ties by
+    organization id); clients that need a display order sort by their own list of organizations.
+  - **A DM that shares none** (a user of another organization, a person, an identity that left): the **caller's default
+    organization** (`orgs.DefaultFor`: the user's chosen default if they still belong to it, else where they administered
+    longest, else the longest membership; an AI's home), gap G1. It is the caller's, so the two sides of one DM may file it
+    differently, and it is `[]` for a caller with no organization. The default is read once per list.
+  - It follows the memberships: when the colleague leaves one of two shared organizations, the next list (and the next frame)
+    names the other.
+- **"The live `conversation` events"** of the task text do not exist: the client builds its conversation list from
+  `GET /conversations` and patches a row from the `room.changed` frame (`Room`), which the hub renders for the socket's own user
+  (`Hub.room` -> `Rooms.Get`). So that frame is the live carrier: `Room.org_ids`, and the web handler copies it into the row
+  (`handlers.ts`, `room.changed`). No new event type, so the hub's tests and Phase 6 stay untouched. **Not done here**: nothing
+  re-emits `room.changed` for the DMs of a user whose organizations changed (a colleague leaving does not push a frame);
+  T32 owns that (`OrgChanged` re-evaluation).
+- **Web**: `Conversation.org_ids` and `Room.org_ids` are required in the generated types; `makeConversation` / `makeRoom`
+  default to `["o1"]`. The sidebar does not filter by organization yet (T46) and the switcher does not sum unread counts by it yet (T39).
+- **Tests**: `TestConversationsCarryTheirOrganizations` (group; DM with a colleague in two shared organizations from both sides;
+  a DM with an AI; a DM sharing none, filed under each side's own default which is not the first organization; `GET /rooms/{id}`
+  and `GET /rooms`; after the colleague left one), `TestRoomChangedFrameCarriesTheOrganizations` (the frame rendered for each
+  socket), and the `room.changed` case of the web live handlers.

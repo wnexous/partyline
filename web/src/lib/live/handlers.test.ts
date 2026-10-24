@@ -546,6 +546,20 @@ describe("live handlers", () => {
       expect(stale()).toBe(false);
     });
 
+    it("room.changed files the conversation under the organizations the frame names (ORG-02)", () => {
+      expect(row("r2")?.org_ids).toEqual(["o1"]);
+      handleLiveEvent(qc, actions(), {
+        type: "room.changed",
+        data: makeRoom({ id: "r2", kind: "dm", name: "", org_ids: ["o1", "o2"] }),
+      });
+      expect(row("r2")?.org_ids).toEqual(["o1", "o2"]);
+      handleLiveEvent(qc, actions(), {
+        type: "room.changed",
+        data: makeRoom({ id: "r2", kind: "dm", name: "", org_ids: [] }),
+      });
+      expect(row("r2")?.org_ids).toEqual([]);
+    });
+
     it("room.changed for a conversation the list does not have refetches it, every time", () => {
       handleLiveEvent(qc, actions(), { type: "room.changed", data: makeRoom({ id: "r7" }) });
       expect(stale()).toBe(true);

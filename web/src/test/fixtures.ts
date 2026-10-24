@@ -53,7 +53,7 @@ export function makePerson(over: Partial<IntelligenceRef> = {}): IntelligenceRef
   });
 }
 
-/** A conversation list row: a quiet group with no messages unless overridden. */
+/** A conversation list row: a quiet group of Acme (o1) with no messages unless overridden. */
 export function makeConversation(over: Partial<Conversation> = {}): Conversation {
   return {
     id: "r1",
@@ -63,6 +63,7 @@ export function makeConversation(over: Partial<Conversation> = {}): Conversation
     unread: 0,
     activity_at: "2026-10-19T12:00:00Z",
     member_names: [],
+    org_ids: ["o1"],
     ...over,
   };
 }
@@ -112,6 +113,7 @@ export function makeRoom(over: Partial<Room> = {}): Room {
     name: "general",
     description: "",
     instructions: "",
+    org_ids: ["o1"],
     owner: { id: "u1", username: "ana", display_name: "Ana Souza" },
     visibility: "private",
     my_level: "manage",

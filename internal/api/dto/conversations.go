@@ -83,6 +83,10 @@ type Conversation struct {
 	// MemberNames are up to MaxConversationMemberNames "Name @handle" entries of the users and
 	// AIs of a group (the other participant of a DM), for the sidebar search.
 	MemberNames []string `json:"member_names"`
+	// OrgIDs are the organizations the conversation is filed under (ORG-02): a group's organization;
+	// for a DM the organizations both participants are members of, else the default organization of
+	// the caller; empty when there is none.
+	OrgIDs []string `json:"org_ids"`
 }
 
 // MaxConversationMemberNames bounds Conversation.MemberNames.

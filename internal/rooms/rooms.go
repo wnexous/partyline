@@ -108,6 +108,10 @@ type Room struct {
 	Participants []Participant
 	// OrgName and OrgSlug name the organization a group belongs to; Get fills them, List does not.
 	OrgName, OrgSlug string
+	// OrgIDs are the organizations the room is filed under for the caller (ORG-02): a group's
+	// organization; for a DM the organizations both participants are members of, oldest membership of
+	// the caller first, else the caller's default organization. Never nil.
+	OrgIDs []string
 }
 
 // Participant is one of the two intelligences of a DM.
@@ -330,7 +334,7 @@ func (s *Service) Get(ctx context.Context, p authn.Principal, roomID string) (Ro
 		return Room{}, err
 	}
 	owner := ownerIntelligence(row.Room.OwnerID, row.OwnerIkind, row.OwnerIname, row.OwnerHandle, row.OwnerAvatar)
-	room, err := s.view(ctx, row.Room, row.OwnerUsername, owner, row.MemberCount, l)
+	room, err := s.view(ctx, s.tagger(p), row.Room, row.OwnerUsername, owner, row.MemberCount, l)
 	if err != nil || !row.Room.OrgID.Valid {
 		return room, err
 	}
@@ -351,7 +355,7 @@ func ownerIntelligence(id, kind, name, handle, avatar string) db.Intelligence {
 	return db.Intelligence{ID: id, Kind: kind, DisplayName: name, Handle: handle, AvatarSha256: avatar}
 }
 
-func (s *Service) view(ctx context.Context, r db.Room, ownerUsername string, owner db.Intelligence, members int64, l access.Level) (Room, error) {
+func (s *Service) view(ctx context.Context, tag *orgTagger, r db.Room, ownerUsername string, owner db.Intelligence, members int64, l access.Level) (Room, error) {
 	v, err := s.az.Sharing(ctx, access.KindRoom, r.ID)
 	if err != nil {
 		return Room{}, err
@@ -374,11 +378,66 @@ func (s *Service) view(ctx context.Context, r db.Room, ownerUsername string, own
 			participants = append(participants, Participant{Intelligence: row.Intelligence, Role: row.Role, Platform: row.Platform})
 		}
 	}
+	orgIDs, err := tag.of(ctx, r, participants)
+	if err != nil {
+		return Room{}, err
+	}
 	return Room{
 		Room: r, OwnerUsername: ownerUsername, Level: l, Visibility: v.Mode,
 		MemberCount: members, InstructionsByName: by, OwnerIntelligence: owner,
-		Participants: participants,
+		Participants: participants, OrgIDs: orgIDs,
 	}, nil
+}
+
+// orgTagger decides the organizations rooms are filed under for one caller (ORG-02). It reads the
+// caller's default organization at most once, which a list needs for every DM that shares none.
+type orgTagger struct {
+	store  *store.Store
+	viewer string
+	def    string
+	known  bool
+}
+
+// tagger returns the tagger of the principal's rooms: an AI is filed as itself, and a token that names
+// no AI as nobody, who has no default organization.
+func (s *Service) tagger(p authn.Principal) *orgTagger {
+	return &orgTagger{store: s.store, viewer: p.IID()}
+}
+
+// of returns the organizations the room is filed under (gap G1): a group is filed under its own; a DM
+// under those both participants are members of, oldest membership of the caller's first, else under
+// the caller's default organization. The result is never nil.
+func (t *orgTagger) of(ctx context.Context, r db.Room, participants []Participant) ([]string, error) {
+	if r.Kind != string(dto.ConversationKindDM) {
+		if r.OrgID.Valid {
+			return []string{r.OrgID.String}, nil
+		}
+		return []string{}, nil
+	}
+	if len(participants) == 2 {
+		first, second := participants[0].ID, participants[1].ID
+		if second == t.viewer {
+			first, second = second, first // the caller's memberships order the tags
+		}
+		shared, err := t.store.R().ListSharedOrgIDs(ctx, db.ListSharedOrgIDsParams{FirstIid: first, SecondIid: second})
+		if err != nil {
+			return nil, err
+		}
+		if len(shared) > 0 {
+			return shared, nil
+		}
+	}
+	if !t.known {
+		def, err := orgs.DefaultFor(ctx, t.store.R(), t.viewer)
+		if err != nil {
+			return nil, err
+		}
+		t.def, t.known = def, true
+	}
+	if t.def == "" {
+		return []string{}, nil
+	}
+	return []string{t.def}, nil
 }
 
 // List returns the conversations the calling user lists, by name: the groups they are a member of,
@@ -397,13 +456,14 @@ func (s *Service) List(ctx context.Context, p authn.Principal) ([]Room, error) {
 		return nil, err
 	}
 	out := make([]Room, 0, len(rows))
+	tag := s.tagger(p)
 	for _, row := range rows {
 		l := granted[row.Room.ID]
 		if l == access.None {
 			continue
 		}
 		owner := ownerIntelligence(row.Room.OwnerID, row.OwnerIkind, row.OwnerIname, row.OwnerHandle, row.OwnerAvatar)
-		r, err := s.view(ctx, row.Room, row.OwnerUsername, owner, row.MemberCount, l)
+		r, err := s.view(ctx, tag, row.Room, row.OwnerUsername, owner, row.MemberCount, l)
 		if err != nil {
 			return nil, err
 		}

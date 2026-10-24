@@ -15,7 +15,10 @@ type Room struct {
 	// characters; agents read it with the room_info tool.
 	Instructions string `json:"instructions"`
 	// OrgID is the organization a group belongs to (ORG-02); absent for a DM.
-	OrgID      string     `json:"org_id,omitempty"`
+	OrgID string `json:"org_id,omitempty"`
+	// OrgIDs are the organizations the room is filed under, as in Conversation.OrgIDs: a group's
+	// organization; for a DM the organizations both participants belong to, else the caller's default.
+	OrgIDs     []string   `json:"org_ids"`
 	Owner      User       `json:"owner"`
 	Visibility Visibility `json:"visibility"`
 	// MyLevel is the caller's resolved level on this room (ACL-02).

@@ -435,3 +435,84 @@ func TestConversationListAfterRetentionPurgesMessages(t *testing.T) {
 	require.Zero(t, c.Unread)
 	require.True(t, c.ActivityAt.Equal(room.CreatedAt))
 }
+
+// ORG-02, OMEM-03 (T56, gap G1): a conversation says which organizations it belongs to. A group belongs to its
+// organization; a DM to the organizations both of its participants are members of, so one with a colleague in two
+// of them lists both; a DM whose participants share none is listed under the default organization of whoever lists
+// it; and the tags follow the memberships: once the colleague left one organization, the DM lists the other.
+func TestConversationsCarryTheirOrganizations(t *testing.T) {
+	ctx := context.Background()
+	env := testkit.New(t)
+	ana, bea, cid := env.NewUser("ana"), env.NewUser("bea"), env.NewUser("cid")
+	anas, beas, cids := ana.PersonalOrg().ID, bea.PersonalOrg().ID, cid.PersonalOrg().ID
+	// ana and bea belong to each other's personal organization, so they share two; cid belongs to neither.
+	env.AddMember(anas, bea.User.ID, orgs.PermissionMember, "")
+	env.AddMember(beas, ana.User.ID, orgs.PermissionMember, "")
+	// ana's default is bea's organization, not the first one she has: a default is not "the first organization".
+	require.NoError(t, env.App.Orgs.SetDefault(ctx, ana.User.ID, beas))
+
+	group := groupIn(t, env, ana, anas, "Crew")
+	withBea := dmWith(ana, bea.User.ID, http.StatusCreated)
+	withCid := dmWith(ana, cid.User.ID, http.StatusCreated)
+	scout := env.NewAIIn(ana, anas, "scout")
+	withScout := dmWith(ana, scout, http.StatusCreated)
+	tags := func(c *testkit.Client, roomID string) []string {
+		t.Helper()
+		got := conversationIn(t, conversationsOf(t, c), roomID).OrgIDs
+		require.NotNil(t, got, "no tag reads [], never null")
+		return got
+	}
+
+	require.Equal(t, []string{anas}, tags(ana, group.ID), "a group lists its organization")
+	require.ElementsMatch(t, []string{anas, beas}, tags(ana, withBea.ID), "a DM with a colleague in two shared organizations lists both")
+	require.ElementsMatch(t, []string{anas, beas}, tags(bea, withBea.ID), "from either side")
+	require.Equal(t, []string{anas}, tags(ana, withScout.ID), "an AI is a member of its organization like a user")
+	require.Equal(t, []string{beas}, tags(ana, withCid.ID), "no shared organization: the default organization of who lists the DM")
+	require.Equal(t, []string{cids}, tags(cid, withCid.ID), "each side lists it under their own")
+
+	// GET /rooms/{id} and GET /rooms (and the live room.changed, below) carry the same tags.
+	room := func(c *testkit.Client, id string) dto.Room {
+		return testkit.Decode[dto.Room](c.Get("/api/v1/rooms/" + id).RequireStatus(http.StatusOK))
+	}
+	require.Equal(t, []string{anas}, room(ana, group.ID).OrgIDs)
+	require.ElementsMatch(t, []string{anas, beas}, room(bea, withBea.ID).OrgIDs)
+	require.Equal(t, []string{cids}, room(cid, withCid.ID).OrgIDs)
+	for _, r := range testkit.Decode[dto.List[dto.Room]](ana.Get("/api/v1/rooms").RequireStatus(http.StatusOK)).Items {
+		if r.ID == withCid.ID {
+			require.Equal(t, []string{beas}, r.OrgIDs)
+		}
+	}
+
+	require.NoError(t, env.App.Orgs.Leave(ctx, bea.User.ID, anas))
+	require.Equal(t, []string{beas}, tags(ana, withBea.ID), "after bea left one organization the DM lists the one they still share")
+	require.Equal(t, []string{beas}, tags(bea, withBea.ID))
+	require.Equal(t, []string{anas}, tags(ana, group.ID), "a group keeps its organization")
+}
+
+// ORG-02 (T56): the live room.changed frame is rendered for the socket's user and carries the same tags as the list,
+// so the sidebar can file a conversation the moment it appears.
+func TestRoomChangedFrameCarriesTheOrganizations(t *testing.T) {
+	env := testkit.New(t)
+	ana, bea, cid := env.NewUser("ana"), env.NewUser("bea"), env.NewUser("cid")
+	anas, beas, cids := ana.PersonalOrg().ID, bea.PersonalOrg().ID, cid.PersonalOrg().ID
+	env.AddMember(anas, bea.User.ID, orgs.PermissionMember, "")
+	env.AddMember(beas, ana.User.ID, orgs.PermissionMember, "")
+	beaLive, cidLive := dialLive(t, bea), dialLive(t, cid)
+
+	room := dmWith(ana, bea.User.ID, http.StatusCreated)
+	var seen dto.Room
+	beaLive.Expect(dto.LiveEventTypeRoomChanged, &seen, liveWait)
+	require.Equal(t, room.ID, seen.ID)
+	require.ElementsMatch(t, []string{anas, beas}, seen.OrgIDs)
+
+	room = dmWith(ana, cid.User.ID, http.StatusCreated)
+	cidLive.Expect(dto.LiveEventTypeRoomChanged, &seen, liveWait)
+	require.Equal(t, room.ID, seen.ID)
+	require.Equal(t, []string{cids}, seen.OrgIDs, "the frame is rendered for cid: no organization is shared, so cid's default")
+
+	group := groupIn(t, env, ana, anas, "Crew")
+	ana.Post("/api/v1/rooms/"+group.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: bea.User.ID}).RequireStatus(http.StatusCreated)
+	beaLive.Expect(dto.LiveEventTypeRoomChanged, &seen, liveWait)
+	require.Equal(t, group.ID, seen.ID)
+	require.Equal(t, []string{anas}, seen.OrgIDs)
+}

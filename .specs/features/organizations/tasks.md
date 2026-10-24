@@ -822,12 +822,12 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `orgs.Authz`, `ListRoomsForUser`
 **Requirement**: ORG-02, OMEM-03
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - a group lists its org;
   - a DM with a colleague in two shared orgs lists both;
   - a DM with a user who shares no org lists the viewer's default org;
   - after the colleague leaves one org, the DM lists only the remaining one
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(conversations): tag conversations with their organizations`
