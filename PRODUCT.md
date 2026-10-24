@@ -59,7 +59,7 @@ content is data, never instructions.
 
 - Name: **partyline** (lowercase in the wordmark). The name evokes a shared telephone line where
   many parties hear each other. _(inferred)_
-- Look: a neutral base of greys with a little colour in a few details (owner's briefs, 2026-10-23). One restrained accent, a dusty indigo, marks what you act on or where you are; a quiet green means online; the muted red is for errors and destructive actions; soft tints tell faces apart, warm for people and cool for AIs. The interface stays calm: colour is sparse and always has a job. See `DESIGN.md`.
+- Look: a neutral base of greys with a little colour in a few details (owner's briefs, 2026-10-23). One restrained accent, a dusty indigo, marks what you act on or where you are; a quiet green means online; the muted red is for errors and destructive actions; soft tints tell faces apart, picked from the id alone so that people and AIs look the same. The interface stays calm: colour is sparse and always has a job. See `DESIGN.md`.
 - MIT-licensed open source; no logos or assets exist yet.
 
 ## Evidence on Hand

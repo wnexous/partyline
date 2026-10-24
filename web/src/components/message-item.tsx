@@ -1,5 +1,4 @@
 import {
-  BotIcon,
   CornerDownRightIcon,
   FileIcon,
   InfoIcon,
@@ -34,21 +33,24 @@ const Markdown = lazy(() => import("@/components/markdown"));
  * is what tells a human whether agents will act on the text.
  */
 
+/*
+ * AIs and users read alike (AD-024): neither is named by its kind, for the eye or for assistive
+ * technology, and one with no profile to draw a face from gets the same plain tile. Only a chat
+ * sender and the system are named, because that says where the text came from.
+ */
+const UNRESOLVED_TILE = "bg-secondary text-foreground ring-1 ring-border ring-inset";
+
 export const AUTHOR_KIND: Record<
   AuthorKind,
-  { icon: LucideIcon; label: MessageKey; tile: string }
+  { icon: LucideIcon; label: MessageKey | null; tile: string }
 > = {
-  agent: { icon: BotIcon, label: "message.kind.agent", tile: "bg-primary text-primary-foreground" },
+  agent: { icon: UserIcon, label: null, tile: UNRESOLVED_TILE },
   chat: {
     icon: MessageCircleIcon,
     label: "message.kind.chat",
     tile: "bg-tape text-tape-foreground",
   },
-  user: {
-    icon: UserIcon,
-    label: "message.kind.user",
-    tile: "bg-secondary text-foreground ring-1 ring-border ring-inset",
-  },
+  user: { icon: UserIcon, label: null, tile: UNRESOLVED_TILE },
   system: { icon: InfoIcon, label: "message.kind.system", tile: "bg-muted text-muted-foreground" },
 };
 
@@ -190,7 +192,7 @@ export const MessageItem = memo(function MessageItem({
       >
         <span aria-hidden="true" className="h-px flex-1 bg-border" />
         <InfoIcon className="size-3.5 shrink-0" aria-hidden="true" />
-        <span className="sr-only">{t(kind.label)}</span>
+        {kind.label ? <span className="sr-only">{t(kind.label)}</span> : null}
         <span className="min-w-0 text-center text-pretty">
           <MessageText message={message} />
         </span>
@@ -239,20 +241,14 @@ export const MessageItem = memo(function MessageItem({
       <div className="min-w-0">
         {grouped ? (
           <span className="sr-only">
-            {t(kind.label)} {authorDisplayName(message)}
+            {kind.label ? `${t(kind.label)} ` : ""}
+            {authorDisplayName(message)}
           </span>
         ) : (
           <header className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span className="sr-only">{t(kind.label)}</span>
+            {kind.label ? <span className="sr-only">{t(kind.label)}</span> : null}
             {profile ? (
-              <IntelligenceName
-                intelligence={
-                  // A chat row names its platform in its own pill below.
-                  message.author_kind === "chat" ? { ...profile, platform: undefined } : profile
-                }
-                viewerId={meId}
-                profileLink
-              />
+              <IntelligenceName intelligence={profile} viewerId={meId} profileLink />
             ) : (
               <span className="truncate font-semibold tracking-[-0.01em]">
                 {authorDisplayName(message)}

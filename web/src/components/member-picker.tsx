@@ -20,18 +20,19 @@ import { useAutoFocus } from "@/hooks/use-auto-focus";
 import { useOrgUsers } from "@/hooks/use-org-users";
 import { useAddMember, useContacts, useRoom } from "@/lib/api/queries";
 import type { MemberKind, RoomMember } from "@/lib/api/types.gen";
-import { type Pickable, pickables } from "@/lib/contacts";
+import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { useI18n } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { withContactPresence } from "@/lib/presence";
 
 /*
- * Adds users and AIs to a group (UI-10, CID-20). Only what the user may add is offered (ACL-05):
- * the AIs and the users of the group's organization (a group is made of the members of its
- * organization, ORG-03). While the organization's users cannot be read, the instance's users are
- * offered and the server refuses the ones who are not members. Chats are never members (AD-015): a connection is an AI's own app, not a room
- * participant. External people are not members either: they join through the chat they write in.
+ * Adds members to a group (UI-10, CID-20), AIs and users in one list by name (AD-024). Only what
+ * the user may add is offered (ACL-05): the AIs and the users of the group's organization (a group
+ * is made of the members of its organization, ORG-03). While the organization's users cannot be
+ * read, the instance's users are offered and the server refuses the ones who are not members.
+ * Chats are never members (AD-015): a connection is an AI's own app, not a room participant.
+ * External people are not members either: they join through the chat they write in.
  */
 
 export function MemberPicker({
@@ -74,14 +75,11 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   const orgId = room.data?.org_id;
   const { users: orgUsers, loading: usersLoading } = useOrgUsers(orgId);
   const picks = useMemo(
-    () => (contacts.data ? pickables(contacts.data, orgId, orgUsers) : null),
+    () => (contacts.data ? pickableList(contacts.data, orgId, orgUsers) : null),
     [contacts.data, orgId, orgUsers],
   );
-  const agentList = (picks?.ais ?? []).filter(
-    (p) => !taken.has(`agent:${p.ref.id}`) && matchesTerms(p.haystack, query),
-  );
-  const userList = (picks?.users ?? []).filter(
-    (p) => !taken.has(`user:${p.ref.id}`) && matchesTerms(p.haystack, query),
+  const candidates = (picks ?? []).filter(
+    (p) => !taken.has(`${memberKindOf(p)}:${p.ref.id}`) && matchesTerms(p.haystack, query),
   );
   const onAdd = (kind: MemberKind, id: string, name: string) => {
     setAdding(`${kind}:${id}`);
@@ -96,7 +94,7 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   };
 
   const loading = contacts.isPending || room.isPending || usersLoading;
-  const nothing = !loading && agentList.length === 0 && userList.length === 0;
+  const nothing = !loading && candidates.length === 0;
 
   return (
     <>
@@ -134,52 +132,31 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
             ) : null}
           </div>
         ) : (
-          <>
-            {agentList.length > 0 ? (
-              <CandidateGroup label={t("contacts.ais")}>
-                {agentList.map((p) => (
-                  <PickableCandidate
-                    key={p.ref.id}
-                    testId={`candidate-agent-${p.ref.id}`}
-                    pickable={p}
-                    online={p.ai ? withContactPresence(p.ai, presence[p.ref.id]).online : false}
-                    busy={adding === `agent:${p.ref.id}`}
-                    onAdd={() => onAdd("agent", p.ref.id, p.ref.display_name)}
-                  />
-                ))}
-              </CandidateGroup>
-            ) : null}
-            {userList.length > 0 ? (
-              <CandidateGroup label={t("contacts.users")}>
-                {userList.map((p) => (
-                  <PickableCandidate
-                    key={p.ref.id}
-                    testId={`candidate-user-${p.ref.id}`}
-                    pickable={p}
-                    online={false}
-                    busy={adding === `user:${p.ref.id}`}
-                    onAdd={() => onAdd("user", p.ref.id, p.ref.display_name)}
-                  />
-                ))}
-              </CandidateGroup>
-            ) : null}
-          </>
+          <ul aria-label={t("picker.contacts")}>
+            {candidates.map((p) => {
+              const kind = memberKindOf(p);
+              return (
+                <PickableCandidate
+                  key={p.ref.id}
+                  testId={`candidate-${kind}-${p.ref.id}`}
+                  pickable={p}
+                  online={p.ai ? withContactPresence(p.ai, presence[p.ref.id]).online : false}
+                  busy={adding === `${kind}:${p.ref.id}`}
+                  onAdd={() => onAdd(kind, p.ref.id, p.ref.display_name)}
+                />
+              );
+            })}
+          </ul>
         )}
       </div>
     </>
   );
 }
 
-function CandidateGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <section aria-label={label} className="py-1">
-      <h3 className="px-5 pt-2 pb-1 text-xs font-semibold text-muted-foreground">{label}</h3>
-      <ul>{children}</ul>
-    </section>
-  );
-}
+/** What the server calls the member a pick becomes: the pick of an AI joins as an agent. */
+const memberKindOf = (p: Pickable): MemberKind => (p.ai ? "agent" : "user");
 
-/** An AI or a user the room can take in: avatar, name with its badge and handle, and where it lives. */
+/** An AI or a user the room can take in: avatar, name and handle, and where it lives. */
 function PickableCandidate({
   testId,
   pickable,

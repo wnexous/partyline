@@ -1,9 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
-import { BotIcon, MessagesSquareIcon, PlugZapIcon } from "lucide-react";
+import { ContactRoundIcon, MessagesSquareIcon, PlugZapIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from "react";
 import { NAV_GROUPS } from "@/components/app-sidebar";
 import { ConnectorStatusBadge, useConnectorState } from "@/components/connector-status";
-import { KindBadge } from "@/components/intelligence/kind-badge";
 import { platformLabel } from "@/components/message-item";
 import { StatusDot } from "@/components/status-dot";
 import {
@@ -24,7 +23,7 @@ import { cn } from "@/lib/utils";
 
 /*
  * Command palette (UI-22): Ctrl/Cmd+K from anywhere in the app jumps to a conversation, a connector
- * or a page, and shows the profile panel of an agent (PRF-01). The open flag lives in the live
+ * or a page, and shows the profile panel of a contact (PRF-01). The open flag lives in the live
  * store so any trigger can open it.
  */
 
@@ -33,7 +32,7 @@ export function CommandMenu({ me }: { me: Me }) {
   const open = useLiveStore((s) => s.paletteOpen);
   const setOpen = useLiveStore((s) => s.setPaletteOpen);
 
-  // What had focus before the palette: the profile panel an agent opens gives focus back to it.
+  // What had focus before the palette: the profile panel a contact opens gives focus back to it.
   const before = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
     if (open)
@@ -127,7 +126,7 @@ function PaletteBody({
         ) : null}
 
         {agents.data?.length ? (
-          <CommandGroup heading={t("palette.agents")}>
+          <CommandGroup heading={t("palette.contacts")}>
             {agents.data.map((agent) => (
               <PaletteItem
                 key={agent.id}
@@ -141,9 +140,8 @@ function PaletteBody({
                   onDone();
                   profilePanel.open(agent.id, returnFocusTo.current);
                 }}
-                icon={<BotIcon aria-hidden="true" />}
+                icon={<ContactRoundIcon aria-hidden="true" />}
                 label={agent.intelligence.display_name}
-                badge={<KindBadge intelligence={agent.intelligence} />}
                 hint={`@${agent.intelligence.handle}`}
                 trailing={<StatusDot online={presence[agent.id]?.online ?? agent.online} />}
               />
@@ -201,7 +199,6 @@ function PaletteItem({
   onSelect,
   icon,
   label,
-  badge,
   hint,
   trailing,
 }: {
@@ -210,8 +207,6 @@ function PaletteItem({
   onSelect: () => void;
   icon: ReactNode;
   label: string;
-  /** Marks what the name belongs to (PROF-09), e.g. the AI badge. */
-  badge?: ReactNode;
   hint?: string;
   trailing?: ReactNode;
 }) {
@@ -227,7 +222,6 @@ function PaletteItem({
     >
       {icon}
       <span className="max-w-[70%] shrink-0 truncate font-medium">{label}</span>
-      {badge}
       {hint ? <span className="min-w-0 truncate text-xs text-muted-foreground">{hint}</span> : null}
       {trailing ? <span className="ml-auto shrink-0">{trailing}</span> : null}
     </CommandItem>

@@ -8,10 +8,10 @@
  * the sidebar and "tape" for what is live or selected. Surfaces and ink are neutral greys
  * (chroma 0). Colour is a small, fixed vocabulary that only these tokens may carry:
  *   - one accent, a dusty indigo (the ink of an operator's stamp): the primary action, the focus
- *     ring, links, the selected row and strip of tape, the unread count and the AI badge;
+ *     ring, links, the selected row and strip of tape and the unread count;
  *   - a quiet green, --online, for presence and live connections;
  *   - a muted red, --destructive, for errors and destructive actions only;
- *   - soft identity tints for avatar fallbacks: warm for people, cool for AIs.
+ *   - soft identity tints for avatar fallbacks, picked from the id alone.
  * Hierarchy still comes from lightness, weight, borders and filled versus hollow shapes; colour
  * adds identity and a few signals on top. Every component reads the tokens through the Tailwind
  * theme below, never as literals. DESIGN.md explains the roles; src/lib/palette.test.ts pins the
@@ -51,11 +51,7 @@
   --tape-strong: oklch(0.5 0.11 275);
   --tape-foreground: oklch(0.18 0 0);
 
-  /* The AI badge next to a name. */
-  --ai: oklch(0.915 0.032 275);
-  --ai-foreground: oklch(0.36 0.09 275);
-
-  /* Identity tints, picked from an id: warm for people, cool for AIs. A pale fill, dark ink. */
+  /* Identity tints, picked from an id and blind to what the identity is. A pale fill, dark ink. */
   --tint-apricot: oklch(0.9 0.045 55);
   --tint-apricot-foreground: oklch(0.37 0.06 55);
   --tint-ochre: oklch(0.9 0.045 90);
@@ -119,9 +115,6 @@
   --tape-strong: oklch(0.72 0.09 275);
   --tape-foreground: oklch(0.95 0 0);
 
-  --ai: oklch(0.3 0.05 275);
-  --ai-foreground: oklch(0.87 0.05 275);
-
   --tint-apricot: oklch(0.36 0.055 55);
   --tint-apricot-foreground: oklch(0.9 0.045 55);
   --tint-ochre: oklch(0.36 0.055 90);
@@ -184,8 +177,6 @@
   --color-tape: var(--tape);
   --color-tape-strong: var(--tape-strong);
   --color-tape-foreground: var(--tape-foreground);
-  --color-ai: var(--ai);
-  --color-ai-foreground: var(--ai-foreground);
   --color-tint-apricot: var(--tint-apricot);
   --color-tint-apricot-foreground: var(--tint-apricot-foreground);
   --color-tint-ochre: var(--tint-ochre);

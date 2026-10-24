@@ -35,7 +35,7 @@ import {
   RefusedReasonNotOrgMember,
   RefusedReasonPerson,
 } from "@/lib/api/types.gen";
-import { type Pickable, pickables } from "@/lib/contacts";
+import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { applyFieldErrors } from "@/lib/forms";
 import { useT } from "@/lib/i18n";
@@ -45,12 +45,12 @@ import { withContactPresence } from "@/lib/presence";
 import { type CreateGroupForm, createGroupSchema } from "@/lib/schemas";
 
 /*
- * "New group" (LAY-04): a name, the organization it belongs to, and the users and AIs that join.
- * A group belongs to one organization (ORG-02) the viewer can create groups in: not one they are
- * only a guest of (OMEM-04). Its AIs and users are the organization's. The server applies the
- * add-member rules of the creator to each member and refuses the whole group when any fails (a user
- * who is no longer a member of the organization, for one); the dialog then names who was refused
- * and why, marks their rows, and keeps everything else as typed.
+ * "New group" (LAY-04): a name, the organization it belongs to, and the members that join, AIs and
+ * users in one list by name (AD-024). A group belongs to one organization (ORG-02) the viewer can
+ * create groups in: not one they are only a guest of (OMEM-04). Its members are the organization's.
+ * The server applies the add-member rules of the creator to each member and refuses the whole group
+ * when any fails (a user who is no longer a member of the organization, for one); the dialog then
+ * names who was refused and why, marks their rows, and keeps everything else as typed.
  */
 
 export function NewGroupDialog({ trigger }: { trigger: ReactNode }) {
@@ -103,17 +103,13 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
   const { users: orgUsers, loading: usersLoading } = useOrgUsers(orgId);
   // Nothing is offered until the organization's users are known, so the instance's are not listed first.
   const all = useMemo(
-    () => (contacts.data && !usersLoading ? pickables(contacts.data, orgId, orgUsers) : null),
+    () => (contacts.data && !usersLoading ? pickableList(contacts.data, orgId, orgUsers) : null),
     [contacts.data, orgId, orgUsers, usersLoading],
   );
-  const byId = useMemo(
-    () => new Map([...(all?.ais ?? []), ...(all?.users ?? [])].map((p) => [p.ref.id, p])),
-    [all],
-  );
+  const byId = useMemo(() => new Map((all ?? []).map((p) => [p.ref.id, p])), [all]);
   const text = filter.trim();
-  const ais = (all?.ais ?? []).filter((p) => matchesTerms(p.haystack, text));
-  const users = (all?.users ?? []).filter((p) => matchesTerms(p.haystack, text));
-  const total = (all?.ais.length ?? 0) + (all?.users.length ?? 0);
+  const found = (all ?? []).filter((p) => matchesTerms(p.haystack, text));
+  const total = all?.length ?? 0;
   const full = picked.length >= MaxGroupMembers;
 
   const toggle = (id: string, on: boolean) => {
@@ -126,7 +122,7 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
   // (once the new offer is known), and what the server said about the old choice no longer applies.
   useEffect(() => {
     if (!all) return;
-    const offered = new Set([...all.ais, ...all.users].map((p) => p.ref.id));
+    const offered = new Set(all.map((p) => p.ref.id));
     setPicked((now) =>
       now.every((id) => offered.has(id)) ? now : now.filter((id) => offered.has(id)),
     );
@@ -320,29 +316,20 @@ function GroupForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => v
                         className="pl-9"
                       />
                     </div>
-                    {ais.length === 0 && users.length === 0 ? (
+                    {found.length === 0 ? (
                       <p role="status" className="py-2 text-sm text-muted-foreground">
                         {t("newGroup.noMatch")}
                       </p>
                     ) : null}
                     <Candidates
-                      label={t("contacts.ais")}
-                      items={ais}
+                      label={t("picker.contacts")}
+                      items={found}
                       picked={picked}
                       flagged={flagged}
                       full={full}
                       online={(p) =>
                         p.ai ? withContactPresence(p.ai, presence[p.ref.id]).online : false
                       }
-                      onToggle={toggle}
-                    />
-                    <Candidates
-                      label={t("contacts.users")}
-                      items={users}
-                      picked={picked}
-                      flagged={flagged}
-                      full={full}
-                      online={() => false}
                       onToggle={toggle}
                     />
                   </>
@@ -386,8 +373,7 @@ function Candidates({
   if (items.length === 0) return null;
   return (
     <fieldset className="min-w-0">
-      {/* Not the uppercase label voice: it would turn "AIs" into "AIS". */}
-      <legend className="pb-1 text-xs font-semibold text-muted-foreground">{label}</legend>
+      <legend className="sr-only">{label}</legend>
       <ul className="-mx-2">
         {items.map((p) => {
           const on = picked.includes(p.ref.id);

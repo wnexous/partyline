@@ -4,13 +4,7 @@ import { FormAlert } from "@/components/form-fields";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
+import { Command, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useStartConversation } from "@/hooks/use-start-conversation";
 import { useContacts } from "@/lib/api/queries";
 import type { IntelligenceRef } from "@/lib/api/types.gen";
-import { type Pickable, pickables } from "@/lib/contacts";
+import { type Pickable, pickableList } from "@/lib/contacts";
 import { matchesTerms } from "@/lib/conversations";
 import { useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
@@ -31,14 +25,10 @@ import { withContactPresence } from "@/lib/presence";
 
 /*
  * "New conversation" (LAY-03, DM-01): pick an intelligence the user can see and open the one DM
- * between them, creating it when there is none. Users and AIs (the user's own, then the shared
- * ones) are listed as the contacts give them and filtered as the user types. External people are
- * not offered: a platform DM with a person is history and the person answers on their platform
- * (CID-21, CID-22; DM-05 retired).
+ * between them, creating it when there is none. AIs and users are one list by name (AD-024),
+ * filtered as the user types. External people are not offered: a platform DM with a person is
+ * history and the person answers on their platform (CID-21, CID-22; DM-05 retired).
  */
-
-/** Group headings are not in the uppercase label voice: it would turn "AIs" into "AIS". */
-const GROUP = "[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:font-semibold";
 
 export function NewConversationDialog({
   trigger,
@@ -74,17 +64,16 @@ function ContactPicker({ initialQuery, onDone }: { initialQuery: string; onDone:
 
   const text = query.trim();
 
-  const picks = useMemo(() => (contacts.data ? pickables(contacts.data) : null), [contacts.data]);
-  const ais = useMemo(
-    () => (picks?.ais ?? []).filter((p) => matchesTerms(p.haystack, text)),
-    [picks, text],
+  const picks = useMemo(
+    () => (contacts.data ? pickableList(contacts.data) : null),
+    [contacts.data],
   );
-  const users = useMemo(
-    () => (picks?.users ?? []).filter((p) => matchesTerms(p.haystack, text)),
+  const found = useMemo(
+    () => (picks ?? []).filter((p) => matchesTerms(p.haystack, text)),
     [picks, text],
   );
 
-  const hasResults = ais.length + users.length > 0;
+  const hasResults = found.length > 0;
 
   const pick = async (target: IntelligenceRef) => {
     if (await conversation.start(target)) onDone();
@@ -108,32 +97,15 @@ function ContactPicker({ initialQuery, onDone }: { initialQuery: string; onDone:
         aria-busy={conversation.pending || undefined}
         className="max-h-none min-h-0 flex-1 px-1.5 py-1.5"
       >
-        {ais.length > 0 ? (
-          <CommandGroup heading={t("contacts.ais")} className={GROUP}>
-            {ais.map((p) => (
-              <ContactRow
-                key={p.ref.id}
-                pickable={p}
-                online={p.ai ? withContactPresence(p.ai, presence[p.ref.id]).online : false}
-                disabled={conversation.pending}
-                onPick={pick}
-              />
-            ))}
-          </CommandGroup>
-        ) : null}
-        {users.length > 0 ? (
-          <CommandGroup heading={t("contacts.users")} className={GROUP}>
-            {users.map((p) => (
-              <ContactRow
-                key={p.ref.id}
-                pickable={p}
-                online={false}
-                disabled={conversation.pending}
-                onPick={pick}
-              />
-            ))}
-          </CommandGroup>
-        ) : null}
+        {found.map((p) => (
+          <ContactRow
+            key={p.ref.id}
+            pickable={p}
+            online={p.ai ? withContactPresence(p.ai, presence[p.ref.id]).online : false}
+            disabled={conversation.pending}
+            onPick={pick}
+          />
+        ))}
       </CommandList>
 
       <div className="shrink-0 space-y-2 px-5 empty:hidden">

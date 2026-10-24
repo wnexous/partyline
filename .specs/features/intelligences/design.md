@@ -910,14 +910,14 @@ Unlinked
   (users, own/shared AIs, people with a route) → `POST /conversations/dm` → navigate.
 - **New group** (`components/new-group-dialog.tsx`, LAY-04): name + member multi-select (users
   and AIs) → `POST /groups`; `members_refused` lists the refused members in the form.
-- **Conversation page** (`routes/_app/rooms/$roomId.tsx`): header with avatar, title, kind badge
-  and (DM) counterpart @handle and app; on mount and when the newest seq changes while visible →
+- **Conversation page** (`routes/_app/rooms/$roomId.tsx`): header with avatar and title (no kind
+  badge, AD-024) and (DM) counterpart @handle and app; on mount and when the newest seq changes while visible →
   `PUT /rooms/{id}/read` (DM-07); timeline author avatars + `IntelligenceName`; side panel
   participants: intelligences, then each chat with its people and platform badge (GRP-02).
 - **Components** (`components/intelligence/`): `IntelligenceAvatar` (img when `avatar_url`, else
   initials on a background picked from 8 token colours by a hash of the id, PROF-08),
-  `KindBadge` (`AI`, or the platform for people, `You` for self), `IntelligenceName` (display name
-  + badge, `@handle` in a tooltip and in detail views, PROF-09).
+  `YouBadge` (`You` for self; the former `KindBadge` is gone, AD-024), `IntelligenceName` (display
+  name, `@handle` in a tooltip and in detail views, PROF-09).
 - **Contacts** (`routes/_app/contacts.index.tsx`, CONT-01, TREE-01..06): sections "My AIs"
   (machine groups with the tree, inline machine rename, filter input), "Unlinked" (merge into… /
   delete with `alert-dialog`), "Shared with me", "People" (per connector, paged, search) and
@@ -1030,8 +1030,8 @@ DMs and groups.
 - **DM privacy**: only participants post; owners/grantees of an AI participant read; grants on
   DMs refused; AI DMs are not listed in the owner's sidebar; admins excluded.
 - **Impersonation**: display names are free text; handles are unique and reserved words are
-  refused; every name in the UI carries the kind badge and `@handle`; trust never reads names
-  (AD-006). Operator-authored platform messages are trusted only as the connector owner's own
+  refused; every name in the UI carries its `@handle` (tooltip or inline) and no kind badge, so an
+  AI and a person look the same (AD-024); trust never reads names (AD-006). Operator-authored platform messages are trusted only as the connector owner's own
   account.
 - **AI-initiated conversations**: DMs only to intelligences the owner can see; people only through
   an existing platform DM where the AI is operator (no cold outreach); groups only with members the

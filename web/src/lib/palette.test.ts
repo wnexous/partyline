@@ -61,27 +61,27 @@ interface Family {
   tokens: string[];
 }
 
-/** Warm tints are people's faces, cool ones are AIs' (`avatarTone`); the hue is its name's colour. */
-const PEOPLE_TINTS = { apricot: 55, ochre: 90, sage: 125, rose: 355 } as const;
-const AI_TINTS = { teal: 195, sky: 235, indigo: 275, violet: 305 } as const;
-const TINT_HUES: Record<string, number> = { ...PEOPLE_TINTS, ...AI_TINTS };
+/**
+ * The identity tints of `avatarTone`, all drawn from by id alone: the hue is its name's colour. No
+ * tint belongs to people or to AIs.
+ */
+const TINT_HUES: Record<string, number> = {
+  apricot: 55,
+  ochre: 90,
+  sage: 125,
+  teal: 195,
+  sky: 235,
+  indigo: 275,
+  violet: 305,
+  rose: 355,
+};
 
 const FAMILIES: Record<string, Family> = {
-  // The accent: a dusty indigo for the primary action, focus, links, selection and the AI badge.
+  // The accent: a dusty indigo for the primary action, focus, links and selection.
   accent: {
     hue: 275,
     maxChroma: 0.13,
-    tokens: [
-      "primary",
-      "sidebar-primary",
-      "link",
-      "ring",
-      "sidebar-ring",
-      "tape",
-      "tape-strong",
-      "ai",
-      "ai-foreground",
-    ],
+    tokens: ["primary", "sidebar-primary", "link", "ring", "sidebar-ring", "tape", "tape-strong"],
   },
   online: { hue: 152, maxChroma: 0.14, tokens: ["online"] },
   destructive: { hue: 26, maxChroma: 0.1, tokens: ["destructive"] },
@@ -152,7 +152,7 @@ describe("palette tokens", () => {
 
   it("uses a bounded number of hues, kept apart on the wheel", () => {
     const hues = Object.entries(FAMILIES).map(([name, family]) => ({ name, hue: family.hue }));
-    // The accent and the indigo tint are one hue on purpose: the AI badge and the AI faces agree.
+    // The accent and the indigo tint are one hue on purpose: the tint is the accent, softened.
     const distinct = [...new Set(hues.map(({ hue }) => hue))];
     expect(distinct.length).toBeLessThanOrEqual(MAX_HUES);
     const crowded = hues.flatMap((a, i) =>
@@ -202,7 +202,7 @@ describe("palette tokens", () => {
   it("tunes the dark accent instead of inverting the light one: lighter and quieter", () => {
     const light = tokens(":root");
     const dark = tokens(".dark");
-    const wrong = ["primary", "link", "ring", "tape-strong", "ai-foreground"].flatMap((name) => {
+    const wrong = ["primary", "link", "ring", "tape-strong"].flatMap((name) => {
       const [on, off] = [light[name], dark[name]];
       if (!on || !off) return [`${name}: missing`];
       const problems: string[] = [];
@@ -275,7 +275,6 @@ const INK_ON_FILL: [fill: string, ink: string][] = [
   ["sidebar-accent", "sidebar-accent-foreground"],
   ["sidebar-primary", "sidebar-primary-foreground"],
   ["tape", "tape-foreground"],
-  ["ai", "ai-foreground"],
   ["destructive", "destructive-foreground"],
   ...Object.keys(TINT_HUES).map((name): [string, string] => [
     `tint-${name}`,

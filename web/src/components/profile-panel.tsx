@@ -4,8 +4,9 @@ import { CompassIcon, Maximize2Icon, MessageSquareIcon, PencilIcon, XIcon } from
 import { type MouseEvent, useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { KindBadge } from "@/components/intelligence/kind-badge";
+import { YouBadge } from "@/components/intelligence/you-badge";
 import { MembershipSummary } from "@/components/membership-summary";
+import { platformName } from "@/components/message-item";
 import { opensElsewhere } from "@/components/profile-link";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
@@ -29,14 +30,15 @@ import { cn } from "@/lib/utils";
  * drawer from the bottom below it, built on the shared Sheet: focus is trapped inside, Escape and
  * the close button close it, and focus goes back to what opened it.
  *
- * It shows the avatar, name, @handle, kind and bio; for an AI also whether it is online and the
- * app it runs in; and the organizations the viewer shares with it, with its permission and
- * position in each (OMEM-03), as the page does. No machine is shown anywhere (AD-022), and nothing
- * here shares or removes: those actions belong to the page. The actions are the ones the viewer
- * may use: Message (DM-01, never for the viewer or for a person known only through a chat
- * platform: PDM-04, DM-05), Edit profile (the viewer's own profile, when it says they may edit it)
- * and Open full profile (the page, which also has the editor of an AI the viewer manages and the
- * ways to delete or remove an identity, POS-05).
+ * It shows the avatar, name, @handle and bio, the same for an AI as for a person (AD-024); the app
+ * it speaks from (an AI's harness, a person's platform) and, for an AI, whether it is online; and
+ * the organizations the viewer shares with it, with its permission and position in each (OMEM-03),
+ * as the page does. No machine is shown anywhere (AD-022), and nothing here shares or removes:
+ * those actions belong to the page. The actions are the ones the viewer may use: Message (DM-01,
+ * never for the viewer or for a person known only through a chat platform: PDM-04, DM-05), Edit
+ * profile (the viewer's own profile, when it says they may edit it) and Open full profile (the
+ * page, which also has the editor of an AI the viewer manages and the ways to delete or remove an
+ * identity, POS-05).
  */
 
 const BUTTON = "w-full max-md:h-11";
@@ -204,54 +206,61 @@ function ProfileCard({ profile }: { profile: IntelligenceProfile }) {
   const orgsId = useId();
   const me = useMe().data;
   const presence = useLiveStore((state) => state.presence[profile.id]);
-  const { ai } = profile;
+  const { ai, person } = profile;
   const online = presence?.online ?? ai?.online ?? false;
-  const app = ai ? profile.apps[0]?.label || harnessLabel(ai.app) || ai.app : "";
+  // Where it speaks from: the app an AI runs in, the platform a person writes from.
+  const app = ai
+    ? profile.apps[0]?.label || harnessLabel(ai.app) || ai.app
+    : person
+      ? platformName(person.connector.kind)
+      : "";
   const name = profile.display_name.trim() || profile.handle;
 
   return (
     <>
-      <div className="flex items-start gap-4 px-5 pt-5 pr-12">
-        <IntelligenceAvatar intelligence={profile} size="xl" decorative />
-        <div className="min-w-0 flex-1 space-y-1.5 pt-1">
-          <SheetTitle className="text-xl leading-tight font-semibold tracking-[-0.015em] text-balance [overflow-wrap:anywhere]">
-            {name}
-          </SheetTitle>
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <KindBadge intelligence={profile} viewerId={me?.intelligence.id} />
-            {profile.handle ? (
-              <span className="font-mono text-sm text-muted-foreground [overflow-wrap:anywhere]">
-                @{profile.handle}
-              </span>
-            ) : null}
-          </p>
+      <div className="pb-5">
+        <div className="flex items-start gap-4 px-5 pt-5 pr-12">
+          <IntelligenceAvatar intelligence={profile} size="xl" decorative />
+          <div className="min-w-0 flex-1 space-y-1.5 pt-1">
+            <SheetTitle className="text-xl leading-tight font-semibold tracking-[-0.015em] text-balance [overflow-wrap:anywhere]">
+              {name}
+            </SheetTitle>
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <YouBadge intelligence={profile} viewerId={me?.intelligence.id} />
+              {profile.handle ? (
+                <span className="font-mono text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                  @{profile.handle}
+                </span>
+              ) : null}
+            </p>
+          </div>
         </div>
-      </div>
 
-      {profile.bio ? (
-        <p className="mt-4 px-5 text-sm leading-relaxed text-pretty whitespace-pre-wrap [overflow-wrap:anywhere]">
-          {profile.bio}
-        </p>
-      ) : null}
+        {profile.bio ? (
+          <p className="mt-4 px-5 text-sm leading-relaxed text-pretty whitespace-pre-wrap [overflow-wrap:anywhere]">
+            {profile.bio}
+          </p>
+        ) : null}
 
-      <dl className="mt-5 grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5 px-5 pb-5 text-sm">
-        <dt className="text-muted-foreground">{t("profilePanel.kind")}</dt>
-        <dd>{t(profile.kind === "ai" ? "intelligence.ai" : "profilePanel.kindPerson")}</dd>
-        {ai ? (
-          <>
-            <dt className="text-muted-foreground">{t("profilePanel.status")}</dt>
-            <dd>
-              <StatusDot online={online} withLabel labelClassName="text-sm text-foreground" />
-            </dd>
+        {ai || app ? (
+          <dl className="mt-5 grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-x-4 gap-y-2.5 px-5 text-sm">
+            {ai ? (
+              <>
+                <dt className="text-muted-foreground">{t("profilePanel.status")}</dt>
+                <dd>
+                  <StatusDot online={online} withLabel labelClassName="text-sm text-foreground" />
+                </dd>
+              </>
+            ) : null}
             {app ? (
               <>
                 <dt className="text-muted-foreground">{t("profile.app")}</dt>
                 <dd className="[overflow-wrap:anywhere]">{app}</dd>
               </>
             ) : null}
-          </>
+          </dl>
         ) : null}
-      </dl>
+      </div>
 
       {profile.memberships.length > 0 ? (
         <section aria-labelledby={orgsId} className="border-t px-5 py-4">

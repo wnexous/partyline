@@ -3,7 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
-import { makeAgent, makeConnector, makeConversation, makeMe, makeProfile } from "@/test/fixtures";
+import {
+  makeAgent,
+  makeAI,
+  makeConnector,
+  makeConversation,
+  makeMe,
+  makeProfile,
+} from "@/test/fixtures";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
@@ -33,13 +40,20 @@ const options = (dialog: HTMLElement) =>
     .map((o) => o.textContent ?? "");
 
 describe("command palette (UI-22)", () => {
-  it("marks an AI with a human-looking name as an AI (PROF-09)", async () => {
+  it("lists an AI with a human-looking name by its @handle, with no AI badge (PROF-09, AD-024)", async () => {
     mockApi({
       "GET /me": json(200, makeMe({ role: "member" })),
       "GET /conversations": json(200, {
         items: [makeConversation({ id: "r1", title: "general" })],
       }),
-      "GET /agents": json(200, { items: [makeAgent({ id: "a9", name: "Ana Lima" })] }),
+      "GET /agents": json(200, {
+        items: [
+          makeAgent({
+            id: "a9",
+            intelligence: makeAI({ id: "a9", display_name: "Ana Lima", handle: "atlas" }),
+          }),
+        ],
+      }),
       "GET /connectors": json(200, { items: [makeConnector({ id: "k1", name: "ops-bot" })] }),
     });
     const user = userEvent.setup();
@@ -48,10 +62,18 @@ describe("command palette (UI-22)", () => {
     await user.keyboard("{Control>}k{/Control}");
     const dialog = await palette();
     const option = await within(dialog).findByRole("option", { name: /Ana Lima/ });
-    expect(within(option).getByText("AI")).toBeInTheDocument();
+    // The handle tells it from a person called Ana Lima; nothing in the row says "AI".
+    expect(within(option).getByText("@atlas")).toBeInTheDocument();
+    expect(within(option).queryByText(/^(AI|IA)$/)).toBeNull();
+    expect(within(option).queryByTestId("kind-badge")).toBeNull();
+    // The group is named for what it holds, not for the kind of the identities in it.
+    expect(
+      within(dialog).getByText("Contacts", { selector: "[cmdk-group-heading]" }),
+    ).toBeVisible();
+    expect(within(dialog).queryByText("Agents")).toBeNull();
   });
 
-  it("opens with Ctrl+K and with Cmd+K, listing conversations, agents, connectors and pages", async () => {
+  it("opens with Ctrl+K and with Cmd+K, listing conversations, contacts, connectors and pages", async () => {
     api();
     const user = userEvent.setup();
     renderRoute("/");

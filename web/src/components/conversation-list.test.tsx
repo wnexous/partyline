@@ -153,14 +153,19 @@ describe("conversation list (LAY-01, DM-06)", () => {
     expect(within(rows[3] as HTMLElement).getByText("No messages yet")).toBeInTheDocument();
   });
 
-  it("marks an AI and a platform person next to their names (PROF-09)", async () => {
+  it("puts no kind badge next to a name: an AI, a platform person and a group read alike (PROF-09, AD-024)", async () => {
     api();
     renderRoute("/");
     const rows = within(await sidebar()).getAllByRole("link");
-    expect(within(rows[0] as HTMLElement).getByText("AI")).toBeInTheDocument();
-    expect(within(rows[2] as HTMLElement).getByText("WhatsApp")).toBeInTheDocument();
-    // A group has no kind to show.
-    expect(within(rows[1] as HTMLElement).queryByTestId("kind-badge")).toBeNull();
+    const at = (index: number) => within(rows[index] as HTMLElement);
+    const [ai, group, person] = [at(0), at(1), at(2)];
+    expect(ai.getByText("Atlas")).toBeInTheDocument();
+    expect(person.getByText("Lia Costa")).toBeInTheDocument();
+    expect(group.getByText("deploys")).toBeInTheDocument();
+    for (const row of [ai, group, person]) {
+      expect(row.queryByTestId("kind-badge")).toBeNull();
+      expect(row.queryByText(/^(AI|IA|WhatsApp)$/)).toBeNull();
+    }
   });
 
   it("shows the unread count of each conversation, and none for a read one (DM-06)", async () => {

@@ -60,38 +60,34 @@ const shown = (dialog: HTMLElement) =>
   within(dialog)
     .queryAllByRole("option")
     .map((o) => o.getAttribute("data-testid"));
-const ids = (group: HTMLElement) =>
-  within(group)
-    .getAllByRole("option")
-    .map((o) => o.getAttribute("data-testid"));
 
 stubLayout();
 beforeEach(() => useLiveStore.setState({ locale: "en", presence: {}, paletteOpen: false }));
 afterEach(() => vi.unstubAllGlobals());
 
 describe("who can be picked (LAY-03)", () => {
-  it("lists the AIs of the user's organizations group by group, then the ones they host, and the other users", async () => {
+  it("lists the AIs of the user's organizations, the ones they host and the other users in one list by name (AD-024)", async () => {
     const { dialog } = await open();
-    expect(ids(within(dialog).getByRole("group", { name: "AIs" }))).toEqual([
+    expect(shown(dialog)).toEqual([
       "contact-a1",
-      "contact-a2",
-      "contact-a5",
-      "contact-a3",
-      "contact-a4",
-    ]);
-    expect(ids(within(dialog).getByRole("group", { name: "Users" }))).toEqual([
       "contact-u2",
       "contact-u3",
+      "contact-a3",
+      "contact-a2",
+      "contact-a4",
+      "contact-a5",
     ]);
+    // One list: no AIs and Users sections.
+    expect(within(dialog).queryAllByRole("group")).toEqual([]);
+    expect(within(dialog).queryByText(/^(AIs|Users)$/)).toBeNull();
     // The user is not a contact of their own.
     expect(within(dialog).queryByText("Ana Souza")).toBeNull();
   });
 
-  it("tells AIs from users and from each other: badge, handle, state, app and folder, and no machine", async () => {
+  it("tells contacts from each other by handle, state, app and folder, with no kind badge and no machine", async () => {
     const { dialog } = await open();
     const row = (id: string) => within(within(dialog).getByTestId(`contact-${id}`));
     expect(row("a1").getByText("Atlas")).toBeInTheDocument();
-    expect(row("a1").getByText("AI")).toBeInTheDocument();
     expect(row("a1").getByText("@atlas")).toBeInTheDocument();
     expect(row("a1").getByText("Online")).toBeInTheDocument();
     expect(row("a1").getByText("Claude Code")).toBeInTheDocument();
@@ -104,8 +100,9 @@ describe("who can be picked (LAY-03)", () => {
     // An AI another user hosts says who (AD-022: the machine it runs on is not shown).
     expect(row("a5").getByText("hosted by @bob")).toBeInTheDocument();
     expect(within(dialog).queryByText(/devbox|notebook-01|Laptop/)).toBeNull();
-    // A user carries no AI badge.
-    expect(row("u2").queryByText("AI")).toBeNull();
+    // Nobody, AI or user, carries a badge for what it is.
+    expect(within(dialog).queryByTestId("kind-badge")).toBeNull();
+    expect(within(dialog).queryByText(/^(AI|IA)$/)).toBeNull();
     expect(row("u2").getByText("@bob")).toBeInTheDocument();
   });
 

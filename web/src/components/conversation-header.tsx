@@ -3,7 +3,6 @@ import { AiStatusLine } from "@/components/ai-status";
 import { BackToConversations } from "@/components/back-link";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
-import { KindBadge } from "@/components/intelligence/kind-badge";
 import { ProfileLink } from "@/components/profile-link";
 import { ConversationKindDM, type Room } from "@/lib/api/types.gen";
 import { counterpartOf, groupFace } from "@/lib/conversations";
@@ -31,11 +30,12 @@ export function historyPlatform(room: Room): string | null {
 }
 
 /**
- * The conversation page's header: avatar, title and kind badge; for a DM the counterpart's
- * @handle and, for an AI, whether it is online and in which app (the face and the name open its
- * profile panel, PRF-01); for a group its description. A DM the viewer only reads through an AI
- * has no counterpart: both participants are named, each with its own badge (PROF-09). `actions`
- * are the page's buttons, `back` the way back on a phone.
+ * The conversation page's header: avatar and title; for a DM the counterpart's @handle and, for
+ * an AI, whether it is online and in which app (the face and the name open its profile panel,
+ * PRF-01); for a group its description. A DM the viewer only reads through an AI has no
+ * counterpart: both participants are named (PROF-09). Nothing beside the title says whether the
+ * counterpart is an AI or a person (AD-024). `actions` are the page's buttons, `back` the way back
+ * on a phone.
  */
 export function ConversationHeader({
   room,
@@ -101,9 +101,6 @@ export function ConversationHeader({
               )}
             </h1>
           )}
-          {counterpart ? (
-            <KindBadge intelligence={counterpart} viewerId={viewerId} className="shrink-0" />
-          ) : null}
         </div>
         <p className="flex min-w-0 items-center gap-x-2 text-sm text-muted-foreground">
           {isDM ? (

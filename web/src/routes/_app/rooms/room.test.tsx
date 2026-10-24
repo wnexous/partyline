@@ -215,17 +215,18 @@ describe("member picker (UI-10)", () => {
     expect(within(dialog).queryByTestId("candidate-agent-a1")).toBeNull();
     expect(within(dialog).queryByTestId("candidate-user-u3")).toBeNull();
 
-    const sections = within(dialog).getAllByRole("region");
-    expect(sections.map((r) => r.getAttribute("aria-label"))).toEqual(["AIs", "Users"]);
-    expect(testIds(sections[0] as HTMLElement)).toEqual([
-      "candidate-agent-a2",
+    // One list by name, AIs and users together (AD-024): no AIs and Users sections.
+    expect(within(dialog).queryAllByRole("region")).toEqual([]);
+    expect(testIds(within(dialog).getByRole("list", { name: "Contacts" }))).toEqual([
+      "candidate-user-u2",
       "candidate-agent-a3",
+      "candidate-agent-a2",
     ]);
 
     const filter = within(dialog).getByRole("searchbox", { name: "Filter" });
     await user.type(filter, "BOB");
     expect(within(dialog).queryByTestId("candidate-agent-a2")).toBeNull();
-    expect(testIds(within(dialog).getByRole("region", { name: "Users" }))).toEqual([
+    expect(testIds(within(dialog).getByRole("list", { name: "Contacts" }))).toEqual([
       "candidate-user-u2",
     ]);
   });

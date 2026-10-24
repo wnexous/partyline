@@ -138,7 +138,7 @@ function roomApi(extra: Parameters<typeof mockApi>[0] = {}) {
 /** The panel once the profile of `name` has loaded. */
 const panelOf = (name: string) => screen.findByRole("dialog", { name });
 
-/** The value shown next to a label of the panel's details (Kind, Status, App), if there is one. */
+/** The value shown next to a label of the panel's details (Status, App), if there is one. */
 const detail = (panel: HTMLElement, label: string) =>
   within(panel).queryByText(label, { selector: "dt" })?.nextElementSibling ?? null;
 
@@ -537,7 +537,7 @@ describe("what the panel shows (PRF-03)", () => {
     expect(asked()).toBeGreaterThan(before);
   });
 
-  it("shows an AI's avatar, name, handle, kind, bio, status and app", async () => {
+  it("shows an AI's avatar, name, handle, bio, status and app, and no kind (AD-024)", async () => {
     roomApi();
     const user = userEvent.setup();
     renderRoute("/rooms/r1");
@@ -550,12 +550,14 @@ describe("what the panel shows (PRF-03)", () => {
     expect(within(panel).getByTestId("intelligence-avatar")).toHaveTextContent("A");
     expect(within(panel).getByText("@atlas")).toBeInTheDocument();
     expect(within(panel).getByText(BIO)).toBeInTheDocument();
-    expect(detail(panel, "Kind")).toHaveTextContent("AI");
+    expect(detail(panel, "Kind")).toBeNull();
+    expect(within(panel).queryByText(/^(AI|IA)$/)).toBeNull();
+    expect(within(panel).queryByTestId("kind-badge")).toBeNull();
     expect(detail(panel, "Status")).toHaveTextContent("Online");
     expect(detail(panel, "App")).toHaveTextContent("Claude Code");
   });
 
-  it("shows a user as a person, with no status or app", async () => {
+  it("shows a user like an AI, with no kind, and no status or app of its own", async () => {
     roomApi();
     const user = userEvent.setup();
     renderRoute("/rooms/r1");
@@ -566,7 +568,8 @@ describe("what the panel shows (PRF-03)", () => {
 
     expect(within(panel).getByText("@bob")).toBeInTheDocument();
     expect(within(panel).getByText("Runs the infrastructure.")).toBeInTheDocument();
-    expect(detail(panel, "Kind")).toHaveTextContent("Person");
+    expect(detail(panel, "Kind")).toBeNull();
+    expect(within(panel).queryByText(/^(Person|User)$/)).toBeNull();
     expect(detail(panel, "Status")).toBeNull();
     expect(detail(panel, "App")).toBeNull();
     expect(within(panel).queryByText("Online")).toBeNull();
@@ -589,7 +592,7 @@ describe("what the panel shows (PRF-03)", () => {
     await waitFor(() => expect(within(panel).getByText("Online")).toBeInTheDocument());
   });
 
-  it("names the platform of a person who writes from one", async () => {
+  it("names the platform of a person who writes from one, as the app it speaks from", async () => {
     mockApi({ "GET /me": json(200, me), ...profileRoutes });
     function Somewhere() {
       const profilePanel = useProfilePanel();
@@ -608,7 +611,8 @@ describe("what the panel shows (PRF-03)", () => {
     );
     await user.click(await screen.findByRole("button", { name: "Open Lia" }));
     const panel = await panelOf("Lia Costa");
-    expect(within(panel).getByText("WhatsApp")).toBeInTheDocument();
+    expect(detail(panel, "App")).toHaveTextContent("WhatsApp");
+    expect(detail(panel, "Kind")).toBeNull();
     expect(within(panel).queryByText("Online")).toBeNull();
   });
 
@@ -748,12 +752,12 @@ describe("the organizations it shares with the viewer (OMEM-03)", () => {
   it("shows no machine and offers no sharing (AD-022, AD-016)", async () => {
     const { panel } = await openAtlas(atlasIn(acme));
 
-    // The details are the kind, the status and the app: no row for where it runs.
+    // The details are the status and the app: no row for the kind, none for where it runs.
     expect(
       within(panel)
         .getAllByRole("term")
         .map((term) => term.textContent),
-    ).toEqual(["Kind", "Status", "App"]);
+    ).toEqual(["Status", "App"]);
     expect(within(panel).queryByText(/machine/i)).toBeNull();
     expect(within(panel).queryByRole("button", { name: /share/i })).toBeNull();
     expect(within(panel).queryByRole("link", { name: /share/i })).toBeNull();
@@ -785,7 +789,8 @@ describe("in Portuguese", () => {
     );
     const panel = await panelOf("Atlas");
 
-    expect(detail(panel, "Tipo")).toHaveTextContent("IA");
+    expect(detail(panel, "Tipo")).toBeNull();
+    expect(within(panel).queryByText(/^IA$/)).toBeNull();
     expect(detail(panel, "Status")).toHaveTextContent("Online");
     expect(detail(panel, "App")).toHaveTextContent("Claude Code");
     expect(within(panel).getByRole("button", { name: "Mensagem" })).toBeInTheDocument();

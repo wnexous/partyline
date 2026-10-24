@@ -155,8 +155,8 @@ describe("room files (FILES-04)", () => {
   });
 });
 
-describe("kind badges next to authors (PROF-09)", () => {
-  it("marks an AI's file as AI and a person's with its platform; a user and an unresolved sender get none", async () => {
+describe("authors read alike (PROF-09, AD-024)", () => {
+  it("names the author of a file by name alone, whether an AI, a person, a user or an unresolved sender", async () => {
     mockApi({
       "GET /rooms/r1/attachments": page([
         makeFile({
@@ -181,10 +181,12 @@ describe("kind badges next to authors (PROF-09)", () => {
 
     const ai = within(await screen.findByTestId("file-f5"));
     expect(ai.getByText("release-bot")).toBeInTheDocument();
-    expect(ai.getByTestId("kind-badge")).toHaveTextContent("AI");
+    expect(ai.queryByTestId("kind-badge")).toBeNull();
+    expect(ai.queryByText(/^(AI|IA)$/)).toBeNull();
     const person = within(screen.getByTestId("file-f6"));
     expect(person.getByText("Lia Costa")).toBeInTheDocument();
-    expect(person.getByTestId("kind-badge")).toHaveTextContent("WhatsApp");
+    expect(person.queryByTestId("kind-badge")).toBeNull();
+    expect(person.queryByText("WhatsApp")).toBeNull();
     expect(within(screen.getByTestId("file-f1")).getByText("Ana")).toBeInTheDocument();
     expect(within(screen.getByTestId("file-f1")).queryByTestId("kind-badge")).toBeNull();
     // A chat account nobody resolved keeps only the name it shows.
@@ -274,9 +276,7 @@ describe("live files (FILES-05)", () => {
       "file-f1",
     ]);
     expect(screen.getByTestId("file-f21")).toHaveTextContent("release-bot");
-    expect(within(screen.getByTestId("file-f21")).getByTestId("kind-badge")).toHaveTextContent(
-      "AI",
-    );
+    expect(within(screen.getByTestId("file-f21")).queryByTestId("kind-badge")).toBeNull();
     expect(screen.getByTestId("file-f21").querySelector("img")?.getAttribute("src")).toBe(
       "/api/v1/attachments/f21",
     );

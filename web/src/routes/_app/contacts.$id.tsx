@@ -18,7 +18,7 @@ import { EmptyState } from "@/components/empty-state";
 import { EndSessionDialog } from "@/components/end-session-dialog";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
-import { KindBadge } from "@/components/intelligence/kind-badge";
+import { YouBadge } from "@/components/intelligence/you-badge";
 import { MembershipSummary } from "@/components/membership-summary";
 import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
@@ -157,7 +157,7 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
             {name}
           </h1>
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <KindBadge intelligence={profile} viewerId={me?.intelligence.id} />
+            <YouBadge intelligence={profile} viewerId={me?.intelligence.id} />
             <span className="font-mono text-sm text-muted-foreground">@{profile.handle}</span>
           </p>
           {profile.bio ? (
