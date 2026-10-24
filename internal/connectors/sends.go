@@ -1,14 +1,17 @@
 package connectors
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/wnexous/partyline/internal/access"
@@ -28,12 +31,17 @@ var (
 	ErrUnknownChat = errors.New("the chat does not belong to the connection")
 	// ErrNewChatRateLimited means the AI started too many chats on its connections lately (CID-31).
 	ErrNewChatRateLimited = errors.New("too many new chats")
+	// ErrFilesUnsupported means the platform of the connection has no media send (CID-32).
+	ErrFilesUnsupported = errors.New("the platform of the connection cannot be sent files")
 )
 
 const (
 	// SendAttemptTimeout bounds one attempt to send through a connection: the synchronous one
 	// Send makes and each retry of the worker (CID-18).
 	SendAttemptTimeout = 15 * time.Second
+	// SendFileTimeout bounds the one attempt to send a file: an upload takes longer than a text
+	// (CID-32).
+	SendFileTimeout = 90 * time.Second
 	// SendRetention is how long a finished send keeps its row, which holds no text: long enough
 	// for a reply to a message the account sent to be recognized under mentions-only (CID-12),
 	// short enough not to be a log of what the AI sends.
@@ -45,6 +53,12 @@ const (
 
 	// maxSendAttempts is how many attempts a send gets before it is failed (CID-18).
 	maxSendAttempts = 5
+
+	// interruptedFile is why a send of a file fails when the process that was sending it died (CID-32).
+	interruptedFile = "interrupted by a restart: the file was not kept"
+
+	// maxFileName is the longest file name a send takes, in bytes.
+	maxFileName = 255
 
 	sendPoll     = time.Second
 	sendBatch    = 50
@@ -83,8 +97,10 @@ type SendsDeps struct {
 	// Now returns the current time; defaults to time.Now.
 	Now    func() time.Time
 	Logger *slog.Logger
-	// AttemptTimeout bounds one attempt; defaults to SendAttemptTimeout.
-	AttemptTimeout time.Duration
+	// AttemptTimeout bounds one attempt; defaults to SendAttemptTimeout. FileAttemptTimeout bounds the
+	// attempt of a send with a file; defaults to SendFileTimeout.
+	AttemptTimeout     time.Duration
+	FileAttemptTimeout time.Duration
 	// PollInterval is how often the worker looks for retries that are due; defaults to 1 s.
 	PollInterval time.Duration
 }
@@ -114,6 +130,9 @@ func NewSends(d SendsDeps) *Sends {
 	if d.AttemptTimeout <= 0 {
 		d.AttemptTimeout = SendAttemptTimeout
 	}
+	if d.FileAttemptTimeout <= 0 {
+		d.FileAttemptTimeout = SendFileTimeout
+	}
 	if d.PollInterval <= 0 {
 		d.PollInterval = sendPoll
 	}
@@ -133,6 +152,17 @@ type SendInput struct {
 	// ReplyTo is the platform's id of the message to quote, empty for a plain message; a platform
 	// that cannot quote sends the text alone (CID-15).
 	ReplyTo string
+	// File, when set, is a file sent with the text as its caption (CID-32). It is held in memory for
+	// the one attempt and never stored, so the send is attempted once and a platform that refuses it
+	// fails it.
+	File *SendFile
+}
+
+// SendFile is the file of a send (CID-32).
+type SendFile struct {
+	Name string
+	Mime string
+	Data []byte
 }
 
 // Check refuses what Send would refuse before it stores or sends anything, and changes nothing: a
@@ -164,11 +194,23 @@ func (s *Sends) plan(ctx context.Context, in SendInput) (sendPlan, error) {
 	if !conn.OperatorIid.Valid || conn.OperatorIid.String != in.AgentID {
 		return sendPlan{}, ErrNotOperator
 	}
+	if in.File != nil && !s.canSendFiles(conn) {
+		return sendPlan{}, ErrFilesUnsupported
+	}
 	p, err := s.destination(ctx, conn, in.ChatID)
 	if err != nil {
 		return sendPlan{}, err
 	}
-	return p, validateAnswer(in.Text)
+	return p, validateContent(in.Text, in.File)
+}
+
+// canSendFiles tells whether the connection's kind has a media send (CID-32).
+func (s *Sends) canSendFiles(conn db.Connector) bool {
+	if s.d.Kinds == nil {
+		return false
+	}
+	kind, ok := s.d.Kinds.Lookup(conn.Kind)
+	return ok && kind.CanSendFiles
 }
 
 // destination finds the chat a send to ref goes to: a chat of the connection by its id, else an
@@ -234,13 +276,13 @@ func (s *Sends) Send(ctx context.Context, in SendInput) (dto.PlatformSendResult,
 	err = s.d.Store.WithTx(ctx, func(q *db.Queries) error {
 		return q.InsertPlatformSend(ctx, db.InsertPlatformSendParams{
 			ID: id, ConnectorID: in.ConnectorID, ChatID: chat.ID, AgentID: in.AgentID, Text: in.Text,
-			ReplyToExternalID: in.ReplyTo, NextAttemptAt: now, CreatedAt: now, UpdatedAt: now,
+			ReplyToExternalID: in.ReplyTo, Once: in.File != nil, NextAttemptAt: now, CreatedAt: now, UpdatedAt: now,
 		})
 	})
 	if err != nil {
 		return dto.PlatformSendResult{}, err
 	}
-	return s.attempt(context.WithoutCancel(ctx), id)
+	return s.attempt(context.WithoutCancel(ctx), id, in.File)
 }
 
 // chatOf is the chat a planned send goes to, created now when it is a new one (CID-31): the AI's
@@ -254,6 +296,33 @@ func (s *Sends) chatOf(ctx context.Context, in SendInput, p sendPlan) (db.Chat, 
 		return db.Chat{}, ErrNewChatRateLimited
 	}
 	return UpsertChat(ctx, s.d.Store, s.d.Bus, in.ConnectorID, *p.create, time.Time{}, s.d.Now())
+}
+
+// validateContent checks what a send holds: a text, or a file with an optional caption (CID-32).
+func validateContent(text string, file *SendFile) error {
+	if file == nil {
+		return validateAnswer(text)
+	}
+	check := validation.Check{}
+	if utf8.RuneCountInString(text) > dto.MaxTextLength {
+		check.Add("text", "must have at most 16000 characters")
+	}
+	switch {
+	case len(file.Data) == 0:
+		check.Add("file", "must not be empty")
+	case !plainFileName(file.Name):
+		check.Add("file", "must have a name of at most 255 bytes without a path or control characters")
+	}
+	return check.Err()
+}
+
+// plainFileName reports whether name is a file name and not a path: something, at most maxFileName bytes,
+// without a separator or a control character.
+func plainFileName(name string) bool {
+	if name == "" || len(name) > maxFileName || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return false
+	}
+	return strings.IndexFunc(name, unicode.IsControl) < 0
 }
 
 // validateAnswer applies the message limits (MSG-02): at least one character that is not white
@@ -270,8 +339,9 @@ func validateAnswer(text string) error {
 }
 
 // attempt sends the claimed send once and records the outcome, also when ctx ends meanwhile, so that
-// the send is not left in flight.
-func (s *Sends) attempt(ctx context.Context, id string) (dto.PlatformSendResult, error) {
+// the send is not left in flight. A send with a file (once) is attempted only here, with the file the
+// request brought: it is never retried, so a refusal fails it (CID-32).
+func (s *Sends) attempt(ctx context.Context, id string, file *SendFile) (dto.PlatformSendResult, error) {
 	row, err := s.d.Store.R().GetPlatformSendAttempt(ctx, id)
 	if err != nil {
 		return dto.PlatformSendResult{}, err
@@ -283,14 +353,26 @@ func (s *Sends) attempt(ctx context.Context, id string) (dto.PlatformSendResult,
 		// while this send waited for its retry. Nothing was tried, so the attempts stay.
 		return s.fail(rec, send, int(send.Attempts), noLongerOperator, true)
 	}
+	if send.Once && file == nil { // nothing keeps a file: this is a retry that should not exist
+		return s.fail(rec, send, int(send.Attempts)+1, interruptedFile, true)
+	}
+	var created atomic.Int32
 	out := Outbound{
 		ChatID: row.ChatExternalID, Text: send.Text, ReplyToID: send.ReplyToExternalID, ReplyToSenderID: row.ReplyToSenderID,
 		MessageID: send.ID, AuthorName: row.AgentName, CreatedAt: time.UnixMilli(send.CreatedAt).UTC(),
 		// The account is the AI's own: no author line, whoever the AI is (CID-15, CID-16).
 		Unsigned: true,
-		Created:  func(platformID string) { s.d.Sent.Add(send.ChatID, platformID) },
+		Created: func(platformID string) {
+			created.Add(1)
+			s.d.Sent.Add(send.ChatID, platformID)
+		},
 	}
-	sendCtx, cancel := context.WithTimeout(ctx, s.d.AttemptTimeout)
+	timeout := s.d.AttemptTimeout
+	if file != nil {
+		out.Files = []OutFile{outFile(file)}
+		timeout = s.d.FileAttemptTimeout
+	}
+	sendCtx, cancel := context.WithTimeout(ctx, timeout)
 	platformID, err := s.d.Transport.Send(sendCtx, send.ConnectorID, out)
 	timedOut := errors.Is(sendCtx.Err(), context.DeadlineExceeded)
 	cancel()
@@ -304,9 +386,26 @@ func (s *Sends) attempt(ctx context.Context, id string) (dto.PlatformSendResult,
 	}
 	reason := err.Error()
 	if timedOut {
-		reason = fmt.Sprintf("the platform did not answer within %s", s.d.AttemptTimeout)
+		reason = fmt.Sprintf("the platform did not answer within %s", timeout)
+		if file != nil {
+			reason += "; the file may or may not have arrived"
+		}
 	}
-	return s.fail(rec, send, int(send.Attempts)+1, reason, false)
+	if file != nil && send.Text != "" && created.Load() > 0 && !timedOut {
+		reason += "; the caption was sent, the file was not"
+	}
+	return s.fail(rec, send, int(send.Attempts)+1, reason, send.Once)
+}
+
+// outFile is the file of a send as a connector reads it: from memory, as often as it asks.
+func outFile(f *SendFile) OutFile {
+	mime := f.Mime
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	return OutFile{Name: f.Name, Mime: mime, Size: int64(len(f.Data)), Open: func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(f.Data)), nil
+	}}
 }
 
 // fail records that attempt number n did not send the message: the send waits for the next attempt
@@ -346,16 +445,23 @@ func shorten(s string, n int) string {
 // Running reports whether Run finished its start-up pass and is waiting for work.
 func (s *Sends) Running() bool { return s.running.Load() }
 
-// Recover makes the sends a previous process left in flight due again. It runs once: the app calls
-// it before the server accepts requests, so a send started by a request is never taken for one a
-// previous process left behind and sent twice; Run calls it too, for a Sends started on its own.
+// Recover makes the sends a previous process left in flight due again, except those attempted once
+// (a file is not kept, CID-32), which it fails. It runs once: the app calls it before the server accepts
+// requests, so a send started by a request is never taken for one a previous process left behind and
+// sent twice; Run calls it too, for a Sends started on its own.
 func (s *Sends) Recover(ctx context.Context) error {
 	if s.recovered.Load() {
 		return nil
 	}
 	var ids []string
 	err := s.d.Store.WithTx(ctx, func(q *db.Queries) (err error) {
-		ids, err = q.RequeueSendingPlatformSends(ctx, s.d.Now().UnixMilli())
+		now := s.d.Now().UnixMilli()
+		ids, err = q.RequeueSendingPlatformSends(ctx, now)
+		if err != nil {
+			return err
+		}
+		// A file is not kept: the send that was sending one cannot be sent again (CID-32).
+		_, err = q.FailSendingOncePlatformSends(ctx, db.FailSendingOncePlatformSendsParams{LastError: interruptedFile, UpdatedAt: now})
 		return err
 	})
 	if err != nil {
@@ -426,7 +532,7 @@ func (s *Sends) retry(ctx context.Context, id string) error {
 	if err != nil || claimed == 0 {
 		return err
 	}
-	if _, err := s.attempt(ctx, id); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if _, err := s.attempt(ctx, id, nil); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	return ctx.Err()

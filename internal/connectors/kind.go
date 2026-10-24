@@ -50,6 +50,10 @@ type Kind struct {
 	Fields []Field
 	// CanListChats tells whether its connectors implement ChatLister (CON-09).
 	CanListChats bool
+	// CanSendFiles tells whether an AI may send a file through a connection of the kind: its
+	// platform has a media send (CID-32). The webhook has none: its attachments are links to files
+	// that Partyline keeps, and a file sent through a connection is not kept.
+	CanSendFiles bool
 	// InboundHook tells whether its connectors receive messages at POST /api/v1/hooks/{id};
 	// the API then reports that URL as the connector's inbound_url.
 	InboundHook bool

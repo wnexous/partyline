@@ -65,6 +65,11 @@ func apiError(resp *http.Response) error {
 	if json.Unmarshal(data, &body) != nil || body.Error.Message == "" {
 		return fmt.Errorf("partyline: server answered %d", resp.StatusCode)
 	}
+	if resp.StatusCode == http.StatusBadGateway {
+		// The platform behind a connection refused what was sent through it (CID-32): the message
+		// says what, in words for the AI, and is no failure of Partyline's.
+		return &statusError{status: resp.StatusCode, msg: body.Error.Message}
+	}
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("partyline: server error (%d): %s", resp.StatusCode, body.Error.Message)
 	}

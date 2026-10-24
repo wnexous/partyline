@@ -79,8 +79,8 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.downloadAttachment))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_file",
-		Description: "Upload a local file to a room, with an optional caption and reply_to. Files go to rooms only: a message from one of your connections cannot be quoted or answered with a file (unsupported); answer it with reply or send_message.",
-		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"path":{"type":"string","description":"local file path"},"caption":{"type":"string","description":"optional text sent with the file"},"reply_to":{"type":"string","description":"optional message_id this file answers"}},"required":["room","path"]}`),
+		Description: "Send a local file. Give exactly one target: room (upload it to a room or DM you belong to, with an optional reply_to), or connection together with chat (send it to a chat of a connection you operate, from your own account and unsigned, as a WhatsApp, Telegram or Discord file; chat is a chat_id, or the address of someone who never wrote to you, as for send_message). A file sent through a connection is sent once and never kept: when the platform does not take it the tool fails and says why, and you may send it again. A webhook connection cannot be sent files (unsupported). A message from one of your connections cannot be quoted in a room (unsupported); to answer it with a file give its connection and chat.",
+		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"connection":{"type":"string","description":"instead of room: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to send the file to, as a message from that connection carries it, or the address of a chat you have not heard from (see send_message)"},"path":{"type":"string","description":"local file path"},"caption":{"type":"string","description":"optional text sent with the file (just before it, for a connection)"},"reply_to":{"type":"string","description":"with room: optional message_id this file answers"}},"required":["path"]}`),
 	}, t.guard(t.sendFile))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "create_group",
@@ -665,18 +665,42 @@ func safeName(s string) string {
 	return s
 }
 
+// The refusals of send_file about where a file goes.
+const (
+	msgFileSeveralTargets = "give either room, or connection with chat, not both: room uploads the file to a room or DM you belong to, connection with chat sends it to a chat of a connection you operate"
+	msgFileNoTarget       = "room, or connection with chat, is required: name the room to upload the file to, or the connection and the chat to send it to"
+	msgFileQuote          = "reply_to applies to rooms: a file sent through a connection is not a quote; to answer a message from a connection with a file, give its connection and chat"
+)
+
+// sendFile uploads a local file to a room, or sends it to a chat of a connection the AI operates
+// (connection and chat, CID-32). It reads the file only once the target is known to be one.
 func (t *tools) sendFile(ctx context.Context, args json.RawMessage) (string, error) {
 	var a struct {
-		Room    string `json:"room"`
-		Path    string `json:"path"`
-		Caption string `json:"caption"`
-		ReplyTo string `json:"reply_to"`
+		Room       string `json:"room"`
+		Connection string `json:"connection"`
+		Chat       string `json:"chat"`
+		Path       string `json:"path"`
+		Caption    string `json:"caption"`
+		ReplyTo    string `json:"reply_to"`
 	}
 	if err := decode(args, &a); err != nil {
 		return "", err
 	}
-	if err := required("room", a.Room, "path", a.Path); err != nil {
+	// An empty value is not given, as models that send every parameter do (DM-04).
+	hasRoom, hasConnection, hasChat := strings.TrimSpace(a.Room) != "", strings.TrimSpace(a.Connection) != "", strings.TrimSpace(a.Chat) != ""
+	switch {
+	case hasConnection != hasChat:
+		return "", errors.New(msgHalfTarget)
+	case hasRoom && hasConnection:
+		return "", errors.New(msgFileSeveralTargets)
+	case !hasRoom && !hasConnection:
+		return "", errors.New(msgFileNoTarget)
+	}
+	if err := required("path", a.Path); err != nil {
 		return "", err
+	}
+	if hasConnection && strings.TrimSpace(a.ReplyTo) != "" {
+		return "", errors.New(msgFileQuote)
 	}
 	data, err := os.ReadFile(a.Path) // #nosec G304 -- the session asks to share this local file
 	if err != nil {
@@ -688,7 +712,14 @@ func (t *tools) sendFile(ctx context.Context, args json.RawMessage) (string, err
 	if err != nil {
 		return "", err
 	}
-	if err := json.NewEncoder(part).Encode(dto.PostMessageRequest{Text: a.Caption, ReplyTo: a.ReplyTo}); err != nil {
+	// The message part is a PostMessageRequest for a room and a SendToChatRequest for a chat; the
+	// caption is the text of both.
+	if hasConnection {
+		err = json.NewEncoder(part).Encode(dto.SendToChatRequest{Text: a.Caption})
+	} else {
+		err = json.NewEncoder(part).Encode(dto.PostMessageRequest{Text: a.Caption, ReplyTo: a.ReplyTo})
+	}
+	if err != nil {
 		return "", err
 	}
 	name := filepath.Base(a.Path)
@@ -709,11 +740,22 @@ func (t *tools) sendFile(ctx context.Context, args json.RawMessage) (string, err
 	if err := mw.Close(); err != nil {
 		return "", err
 	}
-	resp, err := t.api.do(ctx, http.MethodPost, roomPath(a.Room, "/messages"), nil, mw.FormDataContentType(), &body)
+	path := roomPath(a.Room, "/messages")
+	if hasConnection {
+		path = "agent/connections/" + url.PathEscape(strings.TrimSpace(a.Connection)) + "/chats/" + url.PathEscape(strings.TrimSpace(a.Chat)) + "/messages"
+	}
+	resp, err := t.api.do(ctx, http.MethodPost, path, nil, mw.FormDataContentType(), &body)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if hasConnection {
+		var res dto.PlatformSendResult
+		if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+			return "", fmt.Errorf("partyline: unexpected answer: %w", err)
+		}
+		return platformSent(res), nil
+	}
 	var m dto.Message
 	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
 		return "", fmt.Errorf("partyline: unexpected answer: %w", err)

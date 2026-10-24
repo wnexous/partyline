@@ -110,8 +110,9 @@ const (
 	// named connection's chats (404, CID-17).
 	ErrorCodeNotOperator ErrorCode = "not_operator"
 	ErrorCodeUnknownChat ErrorCode = "unknown_chat"
-	// ErrorCodeUnsupported is a reaction to, or a quote of, a message that arrived on one of the AI's
-	// connections: reactions and files work in rooms only (422, CID-22).
+	// ErrorCodeUnsupported is something the AI asked for that cannot be done (422): a reaction to, or a
+	// quote in a room of, a message that arrived on one of its connections (CID-22), or a file for a
+	// platform without a media send (CID-32).
 	ErrorCodeUnsupported ErrorCode = "unsupported"
 	// ErrorCodeFolderRequired is a session that did not say which machine and folder it works in
 	// (an old CLI sends none); ErrorCodeFolderInvalid one whose folder cannot be an identity

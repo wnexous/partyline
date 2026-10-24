@@ -48,7 +48,7 @@ const instanceChoiceDetail = "choose the instance (number) of this connection"
 // Kind returns the WhatsApp (evolution-go) connector kind.
 func Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true,
+		Name: KindName, Label: "WhatsApp (evolution-go)", CanListChats: true, CanSendFiles: true,
 		Fields: []connectors.Field{
 			{Name: "base_url", Label: "evolution-go URL", Type: dto.FieldTypeURL, Required: true, Endpoint: true,
 				Help: "e.g. https://evolution.example.com"},

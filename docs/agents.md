@@ -545,7 +545,13 @@ and queues what arrives, hands it to the AI's session and sends what the AI answ
   chats an hour (`rate_limited`); writing to a chat the connection has is free. When the platform refuses or times out the tool answers `not sent yet: <reason>;
   partyline retries` and Partyline retries with backoff (2, 4, 8 and 16 seconds, five attempts in
   all): do not send the text again. A retry can repeat a message the platform already took.
-  Files and reactions toward a platform are not supported (`unsupported`).
+  `send_file` with `connection` and `chat` sends a local file the same way: through the platform's
+  media send (WhatsApp, Telegram, Discord; a webhook connection cannot be sent files and answers
+  `unsupported`), as the account, with the optional `caption` as a text sent just before it, under the
+  upload limit (`PARTYLINE_MAX_UPLOAD_MB`, 25 MB by default; `413` over it). A file is sent once and not
+  kept: if the platform does not take it the tool fails with `the platform did not take the file:
+  <reason>` and nothing sends it again, so you may send it again (when the caption had gone out the
+  message says so). Reactions toward a platform are not supported (`unsupported`).
 - **Changes.** Choosing another operator hands every message of the connection, acknowledged ones
   included so that `reply` keeps working, to the new AI, and its live session receives the ones it
   has not acknowledged. Deleting the operator AI leaves the connection with no operator and deletes
@@ -567,7 +573,7 @@ and queues what arrives, hands it to the AI's session and sends what the AI answ
 | `room_info` | A room's instructions, members and your settings there. |
 | `history` | Earlier messages of a conversation, oldest first, 20 by default and at most 100, before an optional `message_id`. |
 | `download_attachment` | Save an attachment under `$TMPDIR/partyline/<folder name>/` (mode 0600) and return its path. The directory must be yours and private (0700, not a symlink); on a shared `/tmp`, set `TMPDIR` to a private directory. |
-| `send_file` | Upload a local file to a room or DM, with an optional caption and `reply_to`. Files go to conversations only: a connection cannot be sent one (`unsupported`). |
+| `send_file` | Send a local file to exactly one target: `room` (upload it to a room or DM, with an optional caption and `reply_to`), or `connection` with `chat` (send it to a chat of a connection you operate, or to a new address as in `send_message`; unsigned, once and not kept: the tool fails with the platform's reason when it refuses, a webhook connection answers `unsupported`, and `reply_to` does not apply). |
 | `wait_for_messages` | Sessions without push (Codex, Gemini): wait up to the given seconds for messages of your conversations and of the connections you operate, or for the notice of dropped platform messages. |
 
 An AI can post at most 30 messages per minute; beyond that the tools answer `rate_limited`. It
@@ -595,7 +601,7 @@ has is free too.
 | `unknown_chat` | 404 | The chat does not belong to the connection you named, and is not an address its platform accepts. |
 | `chats_not_members` | 422 | A chat cannot be a member of a conversation; conversations hold users and AIs. |
 | `history_only` | 422 | The DM with a person, or the person's profile, is read-only history from an earlier version. |
-| `unsupported` | 422 | A file or a reaction cannot go to a platform chat. Answer with `reply` (or `send_message`). |
+| `unsupported` | 422 | A reaction cannot go to a platform message, a webhook connection cannot be sent a file, or a message from a connection cannot be quoted in a room. Answer with `reply` (or `send_message`). |
 | `dm_members_fixed` | 422 | A DM has exactly two intelligences; its members cannot be added, changed or removed. |
 | `dm_self` | 422 | You cannot open a DM with yourself. |
 | `identity_online` | 409 | The AI you are merging has a live session. End it first and merge again. |

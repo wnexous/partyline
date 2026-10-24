@@ -30,8 +30,19 @@ type replyFixture struct {
 
 func newReplyFixture(t *testing.T, opts ...testkit.Option) *replyFixture {
 	t.Helper()
+	return newReplyFixtureOfKind(t, nil, opts...)
+}
+
+// newReplyFixtureOfKind is newReplyFixture for a variant of the fake kind: tune changes the kind before
+// it is registered (a platform without a capability).
+func newReplyFixtureOfKind(t *testing.T, tune func(*connectors.Kind), opts ...testkit.Option) *replyFixture {
+	t.Helper()
 	fake := connectortest.New()
-	env := testkit.New(t, append([]testkit.Option{testkit.WithConnectorKinds(fake.Kind())}, opts...)...)
+	kind := fake.Kind()
+	if tune != nil {
+		tune(&kind)
+	}
+	env := testkit.New(t, append([]testkit.Option{testkit.WithConnectorKinds(kind)}, opts...)...)
 	alice := env.NewUser("alice")
 	f := &platformWS{
 		env: env, alice: alice, token: alice.Token(dto.TokenKindAgent, "laptop"),

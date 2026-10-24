@@ -44,7 +44,7 @@ var ErrUnauthorized = errors.New("unauthorized")
 // Kind returns the Telegram connector kind.
 func Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "Telegram bot",
+		Name: KindName, Label: "Telegram bot", CanSendFiles: true,
 		Fields: []connectors.Field{
 			{Name: "bot_token", Label: "Bot token", Type: dto.FieldTypeSecret, Required: true, Help: "From @BotFather"},
 			{Name: "api_base", Label: "Bot API URL", Type: dto.FieldTypeURL, Default: DefaultAPIBase, Endpoint: true,

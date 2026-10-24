@@ -42,7 +42,7 @@ func TestPlatformQueueTablesAndColumnsExist(t *testing.T) {
 	require.Equal(t, []string{"id", "item_id", "sha256", "name", "mime", "size", "status"}, e.columnsOf("platform_attachments"))
 	require.Equal(t, []string{
 		"id", "connector_id", "chat_id", "agent_id", "text", "reply_to_external_id", "status", "attempts",
-		"next_attempt_at", "last_error", "external_id", "created_at", "updated_at",
+		"next_attempt_at", "last_error", "external_id", "created_at", "updated_at", "once",
 	}, e.columnsOf("platform_sends"))
 	require.Contains(t, e.columnsOf("agents"), "platform_dropped")
 	require.Subset(t, e.columnsOf("connectors"), []string{"deliver", "groups_mentions_only"})
@@ -406,4 +406,37 @@ func TestPlatformAttachmentListQuery(t *testing.T) {
 	none, err := e.s.R().ListPlatformAttachmentsForItems(ctx, []string{"item-none"})
 	require.NoError(t, err)
 	require.Empty(t, none)
+}
+
+// CID-32 (data): migration 0021 adds the flag of a send that is attempted once (a file is not kept).
+// The sends that exist keep the default, so they are retried as before, and the flag takes 0 or 1 only.
+func TestMigration0021MarksNoExistingSendAsAttemptedOnce(t *testing.T) {
+	ctx := context.Background()
+	s := openMigratedBefore(t, "0021")
+	exec := func(query string, args ...any) error {
+		_, err := s.write.ExecContext(ctx, query, args...)
+		return err
+	}
+	require.NoError(t, exec(`INSERT INTO users (id, username, password_hash, role, created_at) VALUES ('u1', 'alice', 'x', 'member', 1)`))
+	require.NoError(t, exec(`INSERT INTO agents (id, owner_id, name, created_at) VALUES ('a1', 'u1', 'atlas', 1)`))
+	require.NoError(t, exec(`INSERT INTO connectors (id, owner_id, kind, name, operator_iid, created_at, updated_at) VALUES ('k1', 'u1', 'telegram', 'tg', NULL, 1, 1)`))
+	require.NoError(t, exec(`INSERT INTO chats (id, connector_id, external_id, created_at) VALUES ('c1', 'k1', '42', 1)`))
+	require.NoError(t, exec(`INSERT INTO platform_sends (id, connector_id, chat_id, agent_id, text, next_attempt_at, created_at, updated_at)
+		VALUES ('s0', 'k1', 'c1', 'a1', 'hello', 1, 1, 1)`))
+	var columns int
+	require.NoError(t, s.write.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('platform_sends') WHERE name = 'once'`).Scan(&columns))
+	require.Zero(t, columns, "fixture sanity: the column does not exist before 0021")
+
+	require.NoError(t, s.Migrate(ctx))
+
+	var once int
+	require.NoError(t, s.write.QueryRowContext(ctx, `SELECT once FROM platform_sends WHERE id = 's0'`).Scan(&once))
+	require.Zero(t, once, "a send from before is retried as it was")
+	require.NoError(t, exec(`INSERT INTO platform_sends (id, connector_id, chat_id, agent_id, text, next_attempt_at, created_at, updated_at)
+		VALUES ('s1', 'k1', 'c1', 'a1', 'hello', 1, 1, 1)`))
+	require.NoError(t, s.write.QueryRowContext(ctx, `SELECT once FROM platform_sends WHERE id = 's1'`).Scan(&once))
+	require.Zero(t, once, "and a new one is, unless it says otherwise")
+	require.NoError(t, exec(`UPDATE platform_sends SET once = 1 WHERE id = 's1'`))
+	require.Error(t, exec(`UPDATE platform_sends SET once = 2 WHERE id = 's1'`))
+	require.Error(t, exec(`UPDATE platform_sends SET once = NULL WHERE id = 's1'`))
 }

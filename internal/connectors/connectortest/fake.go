@@ -66,7 +66,7 @@ func New() *Fake {
 // Kind returns the fake kind: a required secret "token", an optional "label" and chat listing.
 func (f *Fake) Kind() connectors.Kind {
 	return connectors.Kind{
-		Name: KindName, Label: "Fake", CanListChats: true, Address: Address,
+		Name: KindName, Label: "Fake", CanListChats: true, CanSendFiles: true, Address: Address,
 		Fields: []connectors.Field{
 			{Name: "token", Label: "Token", Type: dto.FieldTypeSecret, Required: true},
 			{Name: "label", Label: "Label", Type: dto.FieldTypeString},
@@ -152,6 +152,9 @@ type Instance struct {
 	parts int
 	// quiet makes sends skip Created (QuietSends).
 	quiet bool
+	// failAfter, when set, makes a send create its first message and then fail with it
+	// (SetSendErrorAfterFirst).
+	failAfter error
 
 	runs    chan struct{}
 	stops   chan struct{}
@@ -185,10 +188,16 @@ func (i *Instance) Send(ctx context.Context, m connectors.Outbound) (string, err
 	err := i.sendErr
 	i.nextID++
 	id := "ext-" + strconv.Itoa(i.nextID)
-	gate, parts, quiet := i.gate, i.parts, i.quiet
+	gate, parts, quiet, failAfter := i.gate, i.parts, i.quiet, i.failAfter
 	i.mu.Unlock()
 	if err != nil {
 		return "", err
+	}
+	if failAfter != nil {
+		if m.Created != nil {
+			m.Created(id)
+		}
+		return "", failAfter
 	}
 	if gate != nil {
 		i.sending <- struct{}{}
@@ -295,6 +304,15 @@ func (i *Instance) SetListError(err error) {
 func (i *Instance) SetChats(chats ...connectors.ChatInfo) {
 	i.mu.Lock()
 	i.chats = chats
+	i.mu.Unlock()
+}
+
+// SetSendErrorAfterFirst makes later sends create their first message (telling Created its id, as a
+// platform that took the text of a send and refused its file does) and then fail with err (nil
+// restores success).
+func (i *Instance) SetSendErrorAfterFirst(err error) {
+	i.mu.Lock()
+	i.failAfter = err
 	i.mu.Unlock()
 }
 

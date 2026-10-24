@@ -39,8 +39,19 @@ type connectionChan struct {
 
 func newConnectionChan(t *testing.T, opts ...testkit.Option) *connectionChan {
 	t.Helper()
+	return newConnectionChanOfKind(t, nil, opts...)
+}
+
+// newConnectionChanOfKind is newConnectionChan for a variant of the fake kind: tune changes the kind
+// before it is registered (a platform without a capability).
+func newConnectionChanOfKind(t *testing.T, tune func(*connectors.Kind), opts ...testkit.Option) *connectionChan {
+	t.Helper()
 	fake := connectortest.New()
-	e := newChanEnv(t, append([]testkit.Option{testkit.WithConnectorKinds(fake.Kind())}, opts...)...)
+	kind := fake.Kind()
+	if tune != nil {
+		tune(&kind)
+	}
+	e := newChanEnv(t, append([]testkit.Option{testkit.WithConnectorKinds(kind)}, opts...)...)
 	on := true
 	conn := testkit.Decode[dto.Connector](e.alice.Post("/api/v1/connectors", dto.CreateConnectorRequest{
 		Kind: connectortest.KindName, Name: "wa", Config: map[string]any{"token": "fake-token-not-real"}, Enabled: &on,
@@ -357,4 +368,145 @@ func TestToolSendMessageTellsHowToStartAChat(t *testing.T) {
 		return
 	}
 	t.Fatal("send_message is not listed")
+}
+
+// reportFile writes a file for the AI to send and returns its path.
+func reportFile(t *testing.T, name, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+	return path
+}
+
+// CID-32: send_file with connection and chat sends a local file to a chat of a connection the AI
+// operates: the platform gets the file under its name, with its type from the extension, and the caption as
+// the text, unsigned; the tool says it was sent. The chat may be an address the connection never heard
+// from (CID-31).
+func TestToolSendFileSendsAFileThroughAConnection(t *testing.T) {
+	c := newConnectionChan(t)
+	s := c.connected(c.options())
+	path := reportFile(t, "report.txt", "synthetic report")
+
+	text, isErr := s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path, "caption", "the report"))
+	require.False(t, isErr, text)
+	require.Equal(t, "sent", text)
+	sent := c.inst.WaitSend(t)
+	require.Equal(t, []any{groupChatExternal, "the report", true}, []any{sent.ChatID, sent.Text, sent.Unsigned})
+	require.Len(t, sent.Files, 1)
+	require.Equal(t, []any{"report.txt", "text/plain; charset=utf-8", int64(16)}, []any{sent.Files[0].Name, sent.Files[0].Mime, sent.Files[0].Size})
+
+	text, isErr = s.call("send_file", toolArgs("room", " ", "connection", c.conn, "chat", "5541999990000", "path", path))
+	require.False(t, isErr, text)
+	require.Equal(t, "sent", text)
+	sent = c.inst.WaitSend(t)
+	require.Equal(t, []string{"5541999990000", ""}, []string{sent.ChatID, sent.Text}, "a new address, and no caption")
+	require.Empty(t, c.messages(c.room.ID), "nothing was posted to a room")
+}
+
+// CID-32: send_file still takes a room, and exactly one of room or connection with chat says where the
+// file goes: both, neither, a connection or a chat alone, and a quote for a file sent through a connection
+// are tool errors that read the file nowhere and send nothing.
+func TestToolSendFileNeedsExactlyOneTarget(t *testing.T) {
+	c := newConnectionChan(t)
+	s := c.connected(c.options())
+	path := reportFile(t, "report.txt", "x")
+
+	for name, tc := range map[string]struct {
+		args map[string]any
+		want string
+	}{
+		"a room and a connection chat": {toolArgs("room", "Support", "connection", c.conn, "chat", c.group.ID, "path", path),
+			"give either room, or connection with chat, not both: room uploads the file to a room or DM you belong to, connection with chat sends it to a chat of a connection you operate"},
+		"none":                        {toolArgs("path", path), "room, or connection with chat, is required: name the room to upload the file to, or the connection and the chat to send it to"},
+		"blank everything":            {toolArgs("room", " ", "connection", "", "chat", " ", "path", path), "room, or connection with chat, is required: name the room to upload the file to, or the connection and the chat to send it to"},
+		"a connection without chat":   {toolArgs("connection", c.conn, "path", path), halfTarget},
+		"a chat without a connection": {toolArgs("chat", c.group.ID, "path", path), halfTarget},
+		"a quote through a connection": {toolArgs("connection", c.conn, "chat", c.group.ID, "path", path, "reply_to", "some-message"),
+			"reply_to applies to rooms: a file sent through a connection is not a quote; to answer a message from a connection with a file, give its connection and chat"},
+		"no path": {toolArgs("connection", c.conn, "chat", c.group.ID), "path is required"},
+	} {
+		text, isErr := s.call("send_file", tc.args)
+		require.True(t, isErr, "%s: %s", name, text)
+		require.Equal(t, tc.want, text, name)
+	}
+	text, isErr := s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", filepath.Join(t.TempDir(), "missing.txt")))
+	require.True(t, isErr, text)
+	require.Contains(t, text, "read ")
+	require.Empty(t, c.inst.Sent())
+}
+
+// CID-03, CID-17, CID-32: what the server refuses reaches the tool in its own words with the code
+// named, as for send_message: a connection another AI operates, a chat of another connection, and a
+// platform without a media send (unsupported, with what to do instead).
+func TestToolSendFileRefusals(t *testing.T) {
+	c := newConnectionChan(t)
+	s := c.connected(c.options())
+	path := reportFile(t, "report.txt", "x")
+	notes := c.env.NewAI(c.alice, "notes")
+	theirs, theirChat := c.anotherConnection(c.alice, notes)
+
+	for name, tc := range map[string]struct{ connection, chat, want string }{
+		"a connection another AI operates": {theirs, theirChat.ID, "not_operator: only the AI that operates the connection can send through it"},
+		"a chat of another connection":     {c.conn, theirChat.ID, "unknown_chat: the chat does not belong to this connection"},
+		"a connection nobody has":          {"no-such-connection", c.group.ID, "not found"},
+	} {
+		text, isErr := s.call("send_file", toolArgs("connection", tc.connection, "chat", tc.chat, "path", path))
+		require.True(t, isErr, "%s: %s", name, text)
+		require.Equal(t, tc.want, text, name)
+	}
+	require.Empty(t, c.inst.Sent())
+
+	webhook := newConnectionChanOfKind(t, func(k *connectors.Kind) { k.CanSendFiles = false })
+	ws := webhook.connected(webhook.options())
+	text, isErr := ws.call("send_file", toolArgs("connection", webhook.conn, "chat", webhook.group.ID, "path", path))
+	require.True(t, isErr, text)
+	require.Equal(t, "unsupported: the platform of this connection cannot be sent files: write to the chat with send_message", text)
+}
+
+// CID-32: a platform that refuses the file is a tool error with the reason, and the AI is told nothing
+// will send it again; when the caption went out and the file did not, it says so.
+func TestToolSendFileThePlatformRefuses(t *testing.T) {
+	c := newConnectionChan(t)
+	s := c.connected(c.options())
+	path := reportFile(t, "report.txt", "x")
+
+	c.inst.SetSendError(errors.New("sendDocument: error 413"))
+	text, isErr := s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path, "caption", "the report"))
+	require.True(t, isErr, text)
+	require.Equal(t, "the platform did not take the file: sendDocument: error 413", text)
+
+	c.inst.SetSendError(nil)
+	c.inst.SetSendErrorAfterFirst(errors.New("sendDocument: error 413"))
+	text, isErr = s.call("send_file", toolArgs("connection", c.conn, "chat", c.group.ID, "path", path, "caption", "the report"))
+	require.True(t, isErr, text)
+	require.Equal(t, "the platform did not take the file: sendDocument: error 413; the caption was sent, the file was not", text)
+}
+
+// CID-32: the schema of send_file names both ways to say where the file goes and requires only the path
+// (the schema cannot say "exactly one of"); the description says a file through a connection is sent once.
+func TestToolSendFileSchemaHasConnectionAndChat(t *testing.T) {
+	c := newConnectionChan(t)
+	s := c.connected(c.options())
+	s.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	for _, item := range s.response()["result"].(map[string]any)["tools"].([]any) {
+		tool := item.(map[string]any)
+		if tool["name"] != "send_file" {
+			continue
+		}
+		schema := tool["inputSchema"].(map[string]any)
+		props := schema["properties"].(map[string]any)
+		names := make([]string, 0, len(props))
+		for name := range props {
+			names = append(names, name)
+		}
+		require.ElementsMatch(t, []string{"room", "connection", "chat", "path", "caption", "reply_to"}, names)
+		require.Equal(t, []any{"path"}, schema["required"])
+		require.Contains(t, props["connection"].(map[string]any)["description"], "connection_id")
+		require.Contains(t, props["chat"].(map[string]any)["description"], "address")
+		require.Contains(t, tool["description"], "connection")
+		require.Contains(t, tool["description"], "sent once")
+		require.NotContains(t, tool["description"], "rooms only")
+		return
+	}
+	t.Fatal("send_file is not listed")
 }
