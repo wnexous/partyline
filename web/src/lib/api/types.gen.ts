@@ -61,7 +61,8 @@ export interface AgentRoom {
 }
 /**
  * AgentMessage is a message delivered to an agent. Trusted is computed for the receiving
- * agent: true only when the author resolves to the agent's owner (DLV-06, AD-006).
+ * agent when the message is delivered: true only when its author manages the agent in the
+ * agent's home organization (POS-10, AD-018). Its owner, its other AIs and its peers do not.
  */
 export interface AgentMessage {
   room: RoomRef;
@@ -81,12 +82,13 @@ export interface RoomInfo {
    */
   instructions_by?: string;
   /**
-   * InstructionsTrusted is true only when that user is the calling agent's owner (INS-04).
+   * InstructionsTrusted is true only when that user manages the calling agent in the agent's
+   * home organization (INS-04, POS-10).
    */
   instructions_trusted: boolean;
   /**
-   * RoomTextTrusted is true only when the calling agent's owner created the room or last
-   * changed its name or description (INS-06).
+   * RoomTextTrusted is true only when whoever created the room or last changed its name or
+   * description manages the calling agent in the agent's home organization (INS-06, POS-10).
    */
   room_text_trusted: boolean;
   members: RoomMember[];
@@ -220,7 +222,8 @@ export interface AgentAckFrame {
  * receives it (CID-06): never a message of a Partyline conversation. ID is what the AI answers
  * with (reply); ChatID names the chat for send_message together with ConnectionID. A chat of
  * another connection, a message of the account itself (FromSelf) and a sender whose account is not
- * linked to the AI's owner are never trusted as the owner's (CID-13, CID-14).
+ * linked to a user who manages the AI in its home organization are never trusted (CID-13, CID-14,
+ * POS-10).
  */
 export interface PlatformEvent {
   id: string;
@@ -235,7 +238,9 @@ export interface PlatformEvent {
   sender_name: string;
   sender_id: string;
   /**
-   * Trusted is true only when the sender's account is linked to the AI's owner (AD-006).
+   * Trusted is true only when the sender's account is linked, through this connection, to a user
+   * who manages the AI in its home organization (POS-10, AD-018). It is decided when the message
+   * arrives.
    */
   trusted: boolean;
   /**
@@ -1615,17 +1620,21 @@ export interface RoomIDData {
   room_id: string;
 }
 /**
- * LiveAccessChanged reports that sharing of a resource changed; refetch it.
+ * LiveAccessChanged reports that who may see a resource, or what an organization is, changed; refetch it.
  */
 export interface LiveAccessChanged {
   type: typeof LiveEventTypeAccessChanged;
   data: AccessChangedData;
 }
 /**
- * AccessChangedData names the resource whose grants changed.
+ * AccessChangedData names the resource whose visibility changed, or the organization that changed.
+ * An organization's members, and a member who has just left it, receive kind organization whenever
+ * something about it changes (its members, positions, chart or invitations) and look at it again; a member
+ * whose own standing in it changed (they joined, or their permission or position did) also receives one
+ * event per AI and connection of the organization, and one per group they gained or lost.
  */
 export interface AccessChangedData {
-  resource_kind: string; // room, agent or connector
+  resource_kind: string; // room, agent, connector or organization
   resource_id: string;
 }
 /**

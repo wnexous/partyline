@@ -857,11 +857,11 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `orgs.Authz.Session`
 **Requirement**: POS-10
 **Done when**:
-- [ ] e2e on live push, backlog, pending and history, one test each (L-034):
+- [x] e2e on live push, backlog, pending and history, one test each (L-034):
   - a manager's post → `trusted=true`;
   - untrusted for a sibling AI of the same user, a peer, a subordinate, an outsider, and a manager in a non-home shared org
-- [ ] Load-count test: a dispatch to 20 AIs in 3 home orgs loads 3 charts
-- [ ] Gate check passes: `make check`
+- [x] Load-count test: a dispatch to 20 AIs in 3 home orgs loads 3 charts
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(delivery): trust the identities that manage the recipient`
@@ -874,8 +874,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `delivery.Trust`
 **Requirement**: POS-10
 **Done when**:
-- [ ] e2e: instructions written by the manager → trusted in `room_info` and on the connect notice; by a member peer → untrusted
-- [ ] Gate check passes: `make check`
+- [x] e2e: instructions written by the manager → trusted in `room_info` and on the connect notice; by a member peer → untrusted
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): trust room instructions from managers`
@@ -888,8 +888,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `identities.ResolveSender`, `orgs.Authz`
 **Requirement**: POS-10
 **Done when**:
-- [ ] e2e: a sender linked to the operator's manager → trusted; linked to a peer → untrusted; `from_self` → untrusted (rewrite the `inbound_test.go` owner cases)
-- [ ] Gate check passes: `make check`
+- [x] e2e: a sender linked to the operator's manager → trusted; linked to a peer → untrusted; `from_self` → untrusted (rewrite the `inbound_test.go` owner cases)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors): trust platform senders who manage the operator`
@@ -902,11 +902,11 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `canViewRoom`, `orgs.Authz`
 **Requirement**: CHART-02, OMEM-06
 **Done when**:
-- [ ] Live e2e:
+- [x] Live e2e:
   - joining an org starts AI presence events for its AIs, and removal stops them;
   - removal from an org emits `access_changed` for that org's groups;
   - an outsider receives no connector status
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(live): follow organization membership in live events`

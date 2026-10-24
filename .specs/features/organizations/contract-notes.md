@@ -713,3 +713,144 @@ Where a section refines the design, it says so.
 - **Tests**: `internal/api/delete_identities_test.go` (matrices of each kind of target on each route, the Lead/Sentinel
   independent test, the inviter chain, OMEM-06/08, an AI of another organization, the sole-admin AI),
   `internal/api/leave_and_end_session_test.go` (leave, 404s, the session matrix), `internal/agents/delete_test.go`.
+
+## T29: Trust for room messages (POS-10, AD-018)
+
+- **The rule.** A message delivered to an AI carries `trusted=true` only when its **author manages the AI in the AI's
+  home organization** (`Authz.Trusts`, T4): the creator of the AI, a position above the creator's, an AI that holds one,
+  and whoever manages any of them. Not trusted: the AI's host as such, its sibling AIs, its peers and subordinates,
+  anyone outside the home organization, an author who left it, and an identity that manages the AI only in another
+  organization it belongs to. It is decided **when the message is delivered**, never stored, so a promotion, a demotion
+  or a departure takes effect on the next message and on what is read later.
+- **The author is the intelligence that wrote it** (`delivery.AuthorOf(db.MessageView)`): `author_iid`, else the user or
+  AI of a row written before authors were recorded; empty for a system message and for a chat sender with no
+  intelligence (never trusted, and the trust is not even asked). An AI's post is its own: `author_user_id` still
+  resolves to the host and is no longer used for trust, which is why a user's AIs stop trusting each other.
+- **`internal/delivery/trust.go`**: `delivery.Trust` (`Trusts(ctx, authorIID, agentID) (bool, error)`, implemented by
+  `*orgs.Session`) and `delivery.TrustSource` (`func() Trust`), which opens the `Trust` of **one operation**. A nil
+  source opens a `Trust` that trusts nobody: a component given none fails closed. `delivery.Trusted(authorUserID,
+  ownerID)` and its test are gone; `trust_test.go` covers the new pieces.
+- **`Facts`** carries `AuthorIID` instead of `AuthorUserID`, and **`Facts.WantedBy(ctx, trust, agentID, prefs) (wanted,
+  trusted bool, err error)`** asks the trust once and returns it, because the trusted delivery mode needs it to decide and
+  the frame that carries the message tells it. A failing trust check is an error; the caller does not deliver on a guess.
+- **Where it runs**, one `TrustSource.Open()` per operation so each home organization's chart is read once (AD-017):
+  - the dispatcher (`DispatcherOptions.Trust`), once per dispatched message, for all its recipients;
+  - the gateway backlog (`GatewayDeps.Trust`), once per connection;
+  - `Gateway.Pending`, once per call;
+  - the history tool, `GET /agent/rooms/{room}/messages` (`api.Deps.Trust`), once per page.
+  `app.New` builds the source from `authz.Session()` and gives it to all four; `App` keeps it for the dispatcher, which
+  `Start` creates.
+- **Load count** (`TestADispatchLoadsEachHomeChartOnce`, through `Authz.Loads()`): a message pushed to 20 AIs whose homes
+  are three organizations reads three charts. The message is planted (stored and announced without the post path), so
+  the count is the dispatcher's alone.
+- **Tests** are `internal/api/delivery_trust_test.go` (the four paths, each in the delivery modes `all` and `trusted`,
+  over the authors of the task: creator, position above, AI above, sibling AI, peer, subordinate, outsider, manager in
+  another organization; delivery-time evaluation; a former manager) and `internal/delivery/trust_test.go`. The
+  mutations "author = the host user", "management in any shared organization" and "no memo" each fail them.
+- **Existing test adapted**: `TestPushCarriesChatContext` (channel) expected `trusted="true"` for a post by alice's other
+  AI, which the owner rule gave it; its subject is the chat-context keys, so only that value changed.
+- **Not changed here**: the wording of the channel instructions and of the instructions notice ("your owner") is stale
+  under this rule; it belongs to T35 and to the release notes (T55). `instructions_trusted` and `room_text_trusted` are T30.
+
+## T30: Trust for room instructions and room text (POS-10, INS-04, INS-06)
+
+- **The rule is T29's**: `instructions_trusted` and `room_text_trusted` of `GET /agent/rooms/{room}/info`, and the
+  notice an AI gets on connect, are true when the identity that last wrote the instructions (`rooms.instructions_by`), or
+  the name and description (`rooms.updated_by`), **manages the AI in its home organization** - `Trust.Trusts(writer,
+  agent)`, the same oracle and the same fail-closed default. A writer who left the organization, a peer, a sibling AI and
+  an identity that manages the AI only in another organization are not trusted. It is evaluated when the room is read, not
+  when it was saved.
+- **Each flag has its own writer.** `instructions_trusted` follows `instructions_by` and is false for a room without
+  instructions; `room_text_trusted` follows `updated_by`. A room can have trusted instructions and untrusted text, or the
+  other way round (`TestInstructionsAndRoomTextAreTrustedByTheirOwnWriter`).
+- **The connect notice** (`Gateway.backlog`, one per room with instructions, before its messages) is
+  `InstructionsNotice` when the writer manages the AI and `InstructionsNoticeUntrusted` otherwise, including when the
+  writer is unknown. Both are asked of the backlog's `Trust`, so the notice costs no extra chart read.
+- **What the columns hold.** Both columns keep the id of the **user** who saved the room, which is also the user's
+  intelligence id, so they are the identities `Trusts` expects. They are not changed here: an AI cannot save a room over
+  REST (the path rule keeps agent tokens to `/api/v1/agent/`), and a group an AI creates names no instructions. T23 makes
+  a group's creator an organization identity; it should record that identity here too.
+- **Wording unchanged.** The two notices keep their INS-03 wording (the untrusted one still says "someone other than
+  your owner"); the sentence is stale under this rule like the channel's trust paragraphs (T35, release notes T55). Only
+  the doc comments and `dto.RoomInfo` fields were reworded.
+- **Tests**: `internal/api/room_instructions_trust_test.go`, over the same authors as T29 (`trustWorld`), for `room_info` and
+  the notice; the writers are recorded by a store write so the rule is the subject, plus one test that saves through
+  `PATCH /rooms/{id}`. The mutations "notice keeps the owner rule", "text flag read from the instructions' writer" and "no
+  empty-instructions check" each fail them.
+
+## T31: Trust for platform events (POS-10, AD-018, CID-13)
+
+- **The rule.** A platform event is `trusted` only when its sender resolves, **through the connection it arrived on**
+  (`identities.ResolveSender`, AD-008), to a user who **manages the operator AI in the AI's home organization**
+  (`Trust.Trusts(user, operator)`, the oracle of T29). The operator's creator qualifies, as does a user whose position is
+  above the creator's, and whoever manages one of them. A member with no relation to the operator, a user who manages
+  it only in another organization it belongs to, a user who left the home organization, a sender nobody linked, one with
+  no id, one who is merely named like a manager and the same account linked on another connection are not trusted.
+- **`from_self` stays untrusted** (CID-14, AD-015): the pipeline does not ask the trust for the account's own typing, so
+  not even a manager's account typed on the device is trusted.
+- **Decided when the message arrives, and stored.** Unlike a room message (T29), which is judged each time it is read,
+  the verdict is written with the queue item (`platform_items.trusted`). A manager who leaves afterwards does not make the
+  events already queued untrusted; the next event of the same account is untrusted
+  (`TestInboundTrustIsDecidedWhenTheMessageArrives`).
+- **Wiring.** `connectors.PipelineDeps.Trust` is the one-method interface `connectors.Trust` (`Trusts(ctx, managerIID,
+  agentID)`), which `*orgs.Authz` satisfies; `app.New` passes `authz`. A pipeline without it trusts nobody. Each event reads
+  the operator's home chart once (no session: an inbound event is one question). The operator's owner is no longer read.
+- **Tests**: `TestInboundTrustIsWhoManagesTheOperator` replaces `TestInboundTrustIsTheOperatorsOwner` (inbound_test.go):
+  eleven senders, each guard alone (L-018), with the identities linked straight into the `identities` table
+  (`inboundEnv.linkDirect`) so the matrix does not depend on who may issue a pairing code, which T26/T27 change. The pairing
+  flow is still covered by `TestInboundPairingCommands`. The mutations "owner of the operator", "from_self judged like any
+  sender" and "management in any shared organization" each fail it.
+- **Not changed**: the sharing PUT the old test used to let bob link is not needed any more; `identities` keeps its own
+  rules (AD-008 pairing), reworked by T27.
+
+## T32: Live visibility from organizations (CHART-02, OMEM-06)
+
+- **Who sees what, decided for each event** (`internal/live/hub.go`; `live.Deps.Authz`, wired by `app.New`, defaults to
+  the facade over the store). `access.AgentLevel` and `access.ConnectorLevel` are no longer asked by the hub, so T51 can
+  delete them.
+  - **An AI** (`agent.presence`, and the `access.changed` of an AI) is seen by its **host** (`agents.owner_id`; a host who
+    left the organization still hears of the AI they run) and by every identity that **shares an organization** with it
+    (`Authz.SharesOrg`; any permission, guests included). An instance admin, an outsider and a user who has not joined hear
+    nothing. Joining an organization starts the events for its AIs and removal stops them, with no state to keep: the
+    check is made for each event.
+  - **A connection** (`connector.status`, `chat.discovered`, and the `access.changed` of a connection) is seen by the
+    **members of its organization**, guests included. **Transitional rule**: a connection whose `org_id` is NULL (every
+    connection made before T26 puts new ones in an organization; the upgrade places the old ones) is its **owner's**
+    (`connectors.owner_id`). With T26 merged the rule can never apply and T51 may drop it.
+- **`events.OrgChanged{OrgID}`** is rendered per connection as follows. The connection remembers the user's **standing**
+  (permission and position) in each organization they belong to, read when it opens and updated by each event.
+  - A user who is not a member and was not at the last look hears **nothing** (CHART-02: an outsider learns nothing of
+    an organization, and the instance admin is an outsider).
+  - A member, and a member who has just left, receive `access.changed` with **`resource_kind: "organization"`** and the
+    organization's id (new kind; `dto.AccessChangedData` documents it). It means: its members, positions, chart,
+    invitations, name or avatar changed - look at them again. The web learns of everything organization-wide from this
+    one frame; T39 (queries) invalidates the organization queries with it.
+  - When the user's **own standing changed** (joined, left, permission or position changed) what they see through the
+    organization may have changed, so the connection also:
+    1. reads the user's rooms again (`Rooms.List`) and compares them with the rooms it knows: a room that is gone from
+       the list **and that the user cannot view** gets `room.deleted` and then `access.changed` kind `room`; a room the
+       connection did not know and the user can now view gets `room.changed` (as the user sees it) and then
+       `access.changed` kind `room`. Both come in id order. A direct message the user only views through an AI is not
+       listed and is not lost (`TestLiveOrganizationChangeKeepsADMTheUserOnlyViewsThroughAnAI`). This is how a removal
+       from an organization reaches **that organization's groups** (OMEM-06 takes the member out of them);
+    2. if the user is still a member, sends `access.changed` kind `agent` for every AI that is a member of the
+       organization and kind `connector` for each of its connections: look at them again (the user is a member, so the
+       ids tell nothing new). A user who **left** is told no ids of what they can no longer see.
+  - An organization change that does not change the user's own standing (a rename, someone else's position, an invitation)
+    sends the organization frame only (`TestLiveMembershipChangesTellTheMemberItsAIsAndConnections`).
+- **Not changed**: `events.GrantsChanged` is still handled (a room's user members, a merge) and still published by the
+  code T51 removes; its agent and connector arms now ask the organization rules. Room access is `access`'s (T22).
+  `events.InvitationReceived` is T15's.
+- **Queries** (`queries/live_orgs.sql`, a file of its own so the other phases' edits of `orgs.sql` do not collide):
+  `ListOrgAgentIDs`, `ListOrgConnectorIDs`, and the test supports `SetRoomHome` and `SetConnectorOrg`, which put a room or a
+  connection in an organization as T23 and T26 do when they create them. `testkit.LiveConn.Drain(d)` reads the frames that
+  arrive within `d`.
+- **Tests**: `internal/api/live_orgs_test.go` (presence by membership, join and removal, the host who left, the real AI
+  session, connector status and chats, the owner's legacy connection, `access.changed` of an AI and a connection, the
+  group-loss frames, the join / promotion / rename frames, rooms gained) and the rewritten `live_test.go`: its room tests
+  now use room membership instead of sharing grants and its status test uses organizations. Each rule above is pinned by a
+  mutation that fails a test (host rule, "every AI seen", "every connection seen", outsiders hearing the organization,
+  re-evaluation on every change, ids sent to the member who left, no `access.changed` for lost groups, "not listed means
+  lost"). `merge_test.go` adds bob to alice's organization where his socket expects to hear of her AI (it asserted that
+  through a `use` grant); T24 rewrites that file.
+

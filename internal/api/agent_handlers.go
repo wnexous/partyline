@@ -402,14 +402,23 @@ func (s *server) agentRoomInfo(w http.ResponseWriter, r *http.Request, p authn.P
 	if err != nil {
 		return err
 	}
+	// INS-04, INS-06, POS-10: the instructions, and the name and description, are trusted only when
+	// the identity that last wrote them manages the calling agent in its home organization.
+	trust := s.Trust.Open()
+	instructionsTrusted, err := trust.Trusts(r.Context(), room.InstructionsBy, p.AgentID)
+	if err != nil {
+		return err
+	}
+	textTrusted, err := trust.Trusts(r.Context(), room.UpdatedBy, p.AgentID)
+	if err != nil {
+		return err
+	}
 	out := dto.RoomInfo{
 		Room: delivery.RoomRef(st.ID, st.Name, st.Kind), Instructions: room.Instructions,
-		InstructionsBy: room.InstructionsByName,
-		// INS-04: trusted only when the calling agent's owner saved them.
-		InstructionsTrusted: room.Instructions != "" && room.InstructionsBy == p.UserID,
-		// INS-06: the name and description are trusted only when the owner last wrote them.
-		RoomTextTrusted: room.UpdatedBy == p.UserID,
-		Members:         make([]dto.RoomMember, len(members)),
+		InstructionsBy:      room.InstructionsByName,
+		InstructionsTrusted: room.Instructions != "" && instructionsTrusted,
+		RoomTextTrusted:     textTrusted,
+		Members:             make([]dto.RoomMember, len(members)),
 	}
 	for i, m := range members {
 		out.Members[i] = s.toMember(m)
@@ -483,17 +492,22 @@ func (s *server) agentHistory(w http.ResponseWriter, r *http.Request, p authn.Pr
 		return err
 	}
 	out := dto.Page[dto.AgentMessage]{Items: make([]dto.AgentMessage, len(list)), HasMore: more}
+	trust := s.Trust.Open() // one for the page: the AI's home chart is read once (POS-10)
 	for i, m := range list {
-		out.Items[i] = agentMessage(room, m, p.UserID)
+		trusted, err := trust.Trusts(r.Context(), delivery.AuthorOf(m.MessageView), p.AgentID)
+		if err != nil {
+			return err
+		}
+		out.Items[i] = agentMessage(room, m, trusted)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
 }
 
-func agentMessage(room agents.RoomState, m rooms.Message, ownerID string) dto.AgentMessage {
+func agentMessage(room agents.RoomState, m rooms.Message, trusted bool) dto.AgentMessage {
 	return dto.AgentMessage{
 		Room:    delivery.RoomRef(room.ID, room.Name, room.Kind),
-		Trusted: delivery.Trusted(m.AuthorUserID, ownerID),
+		Trusted: trusted,
 		Message: convert.Message(m),
 	}
 }

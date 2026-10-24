@@ -48,7 +48,8 @@ type AgentRoom struct {
 }
 
 // AgentMessage is a message delivered to an agent. Trusted is computed for the receiving
-// agent: true only when the author resolves to the agent's owner (DLV-06, AD-006).
+// agent when the message is delivered: true only when its author manages the agent in the
+// agent's home organization (POS-10, AD-018). Its owner, its other AIs and its peers do not.
 type AgentMessage struct {
 	Room    RoomRef `json:"room"`
 	Trusted bool    `json:"trusted"`
@@ -63,10 +64,11 @@ type RoomInfo struct {
 	// InstructionsBy is the username of the user who last saved the instructions; empty when
 	// unknown (INS-04).
 	InstructionsBy string `json:"instructions_by,omitempty"`
-	// InstructionsTrusted is true only when that user is the calling agent's owner (INS-04).
+	// InstructionsTrusted is true only when that user manages the calling agent in the agent's
+	// home organization (INS-04, POS-10).
 	InstructionsTrusted bool `json:"instructions_trusted"`
-	// RoomTextTrusted is true only when the calling agent's owner created the room or last
-	// changed its name or description (INS-06).
+	// RoomTextTrusted is true only when whoever created the room or last changed its name or
+	// description manages the calling agent in the agent's home organization (INS-06, POS-10).
 	RoomTextTrusted bool         `json:"room_text_trusted"`
 	Members         []RoomMember `json:"members"`
 	Me              RoomMember   `json:"me"`
@@ -183,7 +185,8 @@ type AgentAckFrame struct {
 // receives it (CID-06): never a message of a Partyline conversation. ID is what the AI answers
 // with (reply); ChatID names the chat for send_message together with ConnectionID. A chat of
 // another connection, a message of the account itself (FromSelf) and a sender whose account is not
-// linked to the AI's owner are never trusted as the owner's (CID-13, CID-14).
+// linked to a user who manages the AI in its home organization are never trusted (CID-13, CID-14,
+// POS-10).
 type PlatformEvent struct {
 	ID           string `json:"id"`
 	Platform     string `json:"platform"` // whatsapp, telegram, discord or webhook
@@ -194,7 +197,9 @@ type PlatformEvent struct {
 	ChatKind   ChatKind `json:"chat_kind"`
 	SenderName string   `json:"sender_name"`
 	SenderID   string   `json:"sender_id"`
-	// Trusted is true only when the sender's account is linked to the AI's owner (AD-006).
+	// Trusted is true only when the sender's account is linked, through this connection, to a user
+	// who manages the AI in its home organization (POS-10, AD-018). It is decided when the message
+	// arrives.
 	Trusted bool `json:"trusted"`
 	// FromSelf is true for a message written from the connection's own account on the platform
 	// itself (typed on its device), which Partyline did not send.

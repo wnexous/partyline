@@ -18,6 +18,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/conversations"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store/db"
 	"github.com/wnexous/partyline/internal/testkit"
@@ -166,6 +167,8 @@ func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	w := newMergeWorld(t)
 	shareAI(w.alice, w.old, w.bob)
 	shareAI(w.alice, w.atlas, w.carol)
+	// Bob also belongs to alice's organization, which is how his socket hears of the AIs she runs.
+	w.env.AddMember(w.alice.PersonalOrg().ID, w.bob.User.ID, orgs.PermissionMember, "")
 
 	ops, dev, ahead, solo := createRoom(w.alice, "ops"), createRoom(w.alice, "dev"), createRoom(w.alice, "ahead"), createRoom(w.alice, "solo")
 	bobs := createRoom(w.bob, "bobs")
