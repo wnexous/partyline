@@ -541,3 +541,195 @@ Where a section refines the design, it says so.
 - **Statuses**: `POST` 201 with the creator's `Organization` (root `position_id` set); `GET` and
   `PATCH` 200; `DELETE` 204. Agent tokens never reach these paths (the middleware's
   `/api/v1/agent/` rule answers 403).
+## T18: Placement headers on creation (ORG-04, ORG-05, POS-07, POS-08)
+
+- **Headers** (`dto.HeaderOrg`, `HeaderPosition`, `HeaderParent`): `X-Partyline-Org` (a slug or an id),
+  `X-Partyline-Position` (the position's name, percent-encoded with `url.PathEscape`) and
+  `X-Partyline-Parent` (an `@handle`, a handle or an id). `agents.FolderID` gains `Org`, `Position` and
+  `Parent`; `FolderIDFromHeader` trims them and a blank value is no value. A position that is not valid
+  percent-encoding is **422 `position_unknown`** (field `position`), like a folder that is not is
+  `folder_invalid`. Every route that reads the folder headers reads these too (WebSocket, tools-only calls,
+  `GET /agent/session`, `POST /agent/register`).
+- **`agents.place(ctx, q, host, id)`** (`internal/agents/placement.go`) decides where a *new* AI goes, in the
+  creation transaction (`createFolderAgent`, so it runs for the live WebSocket and for tools-only calls alike).
+  Order of the decisions, and the refusal each can give (all `*httpx.Error`, so the WebSocket handshake renders
+  them like the REST routes):
+  1. **Creator (POS-08).** `Parent` names an identity by id first, then by handle (case-insensitive, `@`
+     optional). It counts only when it is an **AI hosted by the token holder** (`agents.owner_id` = host); any
+     other parent (unknown, a user - the host included -, a person, an AI hosted by someone else) is ignored
+     without a word and the token holder is the creator.
+  2. **Home organization (ORG-04).** `Org` when given (`orgs.ResolveRef`: id first, then slug ignoring case);
+     one that does not exist is **422 `organization_required`** (field `org`). Else `orgs.DefaultFor(creator)`:
+     the host's default, or an AI parent's home organization; none at all is the T10 `ErrNoOrganization`.
+  3. **ORG-05.** The *creator* must be a member of the home organization - the parent AI when there is one,
+     whatever the host is - else **403 `forbidden`**.
+  4. **Position (POS-07).** `Position` is looked up in the home organization, ignoring case (the NOCASE
+     unique index decides what "the same name" is); a position that does not exist there, including one that
+     exists only in another organization, is **422 `position_unknown`** (field `position`). It is allowed when
+     the creator is an `admin` there or the creator's own position is **strictly above** it (`Chart.Above`);
+     otherwise **403 `forbidden`**. The **creator's** standing counts, never the host's: an admin host whose
+     parent AI sits lower cannot place the worker above the parent. A creator without a position (and not
+     admin), and a guest creator, therefore cannot hold a position on a new AI.
+  5. **Permission (ORG-04).** The AI joins as a **`guest` with `inviter_iid` = its creator** when the creator is
+     an AI *or* is itself only a guest of the organization (the T10 fix), else as a `member`. It holds the
+     requested position in either case. Nothing is created when any step refuses (no AI row, profile,
+     membership or audit entry; `TestStartInAnOrganizationTheCreatorIsNotInIsRefused` and friends count them).
+- **Audit.** `org.member_join` `{iid, by: "start", permission}` - `permission` is now what the AI really joined as
+  (T10 wrote `member` even for a guest host's AI) - plus `creator` when an AI parent started it and
+  `position_id` when it holds one. The actor is the token holder.
+- **v0.5 CLIs** send none of the headers: the defaults of T10 apply unchanged (pinned by
+  `TestSessionsWithoutPlacementHeadersKeepTheDefaults`).
+- **Helpers.** `orgs.ResolveRef(ctx, q, ref)` is the transaction-friendly form of `Service.Resolve` (which now
+  delegates to it). `testkit.Folder` gains `Org`, `Position` and `Parent` and sends them as the CLI would.
+- **Error codes.** `position_unknown` is declared in the one `ErrorCode` group of `internal/api/dto/common.go`,
+  next to the folder codes (a second group would make tygo emit a second `ErrorCode` union). Each later task of
+  Phase 4 adds its own codes to that group.
+
+## T19: Start rules for an existing AI (ORG-04, POS-07)
+
+- **Where.** `agents.Registry.ResolveFolder` applies them to an AI that already exists - found before any
+  transaction, found inside the creating transaction (it was created while this call waited) or adopted (MIG-02)
+  - through `checkStart` (decides, writes nothing), `restart` (the fast path) and `startExisting` (inside a
+  transaction), all in `internal/agents/placement.go`. A refusal changes nothing, an adoption included: the rules
+  run in the adopting transaction. `LookupFolder` (`GET /agent/session`) still changes nothing and applies no
+  rules.
+- **`--org`** may only name the AI's home organization (id or slug, any case). Any other value - another
+  organization of the host, one the host is not in, one that does not exist - is **409
+  `organization_mismatch`** with `Details` `organization` (the home slug, what `--org` takes) and
+  `organization_name` (`dto.MismatchDetailOrganization`, `MismatchDetailName`), and a message that names it. An
+  unknown `--org` on an existing AI is therefore a mismatch, not `organization_required` (that is for creation).
+- **`--parent`** is ignored: the creator is fixed when the AI is created and the token holder acts for
+  themselves (design R6, "`--parent` counts at creation only"). The design's sentence "the creator rule of step 1
+  holds for the starter" is read that way too: the starter is the token holder. An admin host therefore can move
+  an AI whatever AI they name as parent.
+- **`--position`**, when it names a position other than the one the AI holds, moves it iff the token holder is an
+  **admin** of the home organization, or **manages the AI** there *and* holds a position **strictly above** the
+  new one - the rule of `orgs.Service.SetPosition` (POS-04), which the registry cannot call inside the starting
+  transaction. Otherwise **403 `forbidden`** and the position stays; a position the organization does not have is
+  **422 `position_unknown`** (also for a token holder who may not move anything). The position the AI already
+  holds is nothing, whoever asks (no write, no audit, no event); a start without `--position` never clears it.
+  A move writes `org_members.position_id`, audits `org.member_position` `{iid, from, to, by: "start"}` (the actor is
+  the token holder) and publishes `OrgChanged` after the commit.
+- **Cost.** A start without `--org` and `--position` runs no query for these rules. With them, the rules are
+  decided on a read snapshot (`GetOrganization`, and the chart for a position); only a move opens a write
+  transaction, which decides it again under the write lock.
+- **An AI without a home organization** (a v0.3 identity no upgrade placed - only test fixtures) has no rules.
+- **Test hook.** `Registry.afterFolderMiss` (`agents.SetAfterFolderMiss` in `export_test.go`) lets a test hold a
+  first session after it found no AI, so another session can create it first.
+- **Error code and detail keys** are in `dto/common.go`: `ErrorCodeOrganizationMismatch` and
+  `MismatchDetailOrganization`/`MismatchDetailName`.
+
+
+## T20: Self-deletion of an account (POS-06, OUPG-02)
+
+- **Route.** `DELETE /api/v1/me` `{password}` → **204** and the session cookie is cleared. There is no id in the
+  path: nobody deletes another account, a person is only ever removed from an organization (T21). The caller is a
+  user principal (cookie session or user token); an agent token is **403** (path rule), no credentials **401**, a
+  body that is not JSON **400**. `dto.DeleteAccountRequest{Password}`.
+- **`users.Service.DeleteAccount(ctx, userID, password)`**, in this order:
+  1. **Password** (before the transaction, nothing to undo): a wrong or empty password is a `*ValidationError` on the
+     field `password` (**422** `invalid`, "is incorrect"), told to everyone, the last instance admin included. Like
+     a password change, the failed attempts are not rate limited (an argon2id check each).
+  2. **Heir** (first thing in the transaction): the oldest **active** instance admin other than the user. None -
+     the user is the last active admin - is `users.ErrLastInstanceAdmin`: **409 `last_instance_admin`**
+     (`dto.ErrorCodeLastInstanceAdmin`). Nothing has changed at that point.
+  3. **OUPG-02**: in each organization where the user is the only `admin` the heir becomes `admin`: a new membership
+     with no position, an existing `member` or `guest` one is raised to `admin` keeping its position and losing its
+     inviter. An organization with another admin is untouched. Audit `org.admin_inherited` `{heir, user}`, target the
+     organization, actor the leaving user.
+  4. **Anchors**: `rooms.owner_id` and `connectors.owner_id` equal to the user are re-pointed to the heir (AD-019), so
+     the foreign keys that cascade from the owner cannot delete groups and connections an organization owns. Their
+     `creator_iid` becomes NULL with the user's intelligence: from then on the org's admins manage them.
+  5. **Hosted AIs** (`agents.owner_id` = the user): `owner_id` → the heir, `folder` → `''` (unlinked, no key left to
+     collide with the heir's own folders) and **`name` → their id** (`UNIQUE (owner_id, name)` would refuse an AI whose
+     v0.3 name the heir also uses; a folder AI's name is only a label). They keep their organization, membership,
+     position and history. After the deletion their `creator_iid` is NULL, so nobody manages them but the org's admins
+     (and positions above theirs).
+  6. **The user**: their `user` room memberships (`room_members` has no foreign key to cascade, DMs included), their
+     sessions (deleted explicitly to know which to announce), the audit entry **`user.delete`** `{username,
+     hosted_ais, heir}` (actor and target the user; recorded **inside** the transaction, so the deletion and its record
+     stand or fall together) and finally the `users` row. What cascades from it: tokens, device requests, linked chat
+     accounts, pairing codes, invites they created, read cursors, machines and the dead `projects`; the
+     `users_intelligence_delete` trigger deletes the intelligence, which takes their organization memberships,
+     invitations to them and DMs with it and sets `creator_iid`/`inviter_iid`/`operator_iid` references to NULL.
+- **After the commit**, in this order: the hosted AIs' live sessions are kicked with **4001** `deleted`
+  (`users.Options.Kick`, the app wires `presence.Kick(CloseDeleted, ReasonDeleted)`: to the channel the AI is a deleted
+  one and stops), `events.SessionsRevoked{UserID, SessionIDs, UserDisabled: true}` (the user's sockets close),
+  `events.OrgChanged` for each organization the user belonged to **and** each one a hosted AI belongs to (its creator
+  link is gone), and `MembersChanged{RoomID}` for each group the user left or `RoomChanged{RoomID, Deleted: true}` for
+  each DM that vanished. A failure anywhere changes nothing and publishes nothing.
+- **MIG-02 adoption** (`GetUnlinkedAgentByHandle`, `GetUnlinkedAgentByName`) now needs **`creator_iid = owner_id`**: only
+  an unlinked identity the owner created is the owner's to adopt (the upgrade made every v0.3 owner the creator of their
+  agents). The AIs a deleted account leaves behind are owned by the heir but created by nobody, so no session of the
+  heir adopts them, by the folder's handle, `--as` handle or `--as` name (each guard pinned alone by
+  `TestResolveFolderNeverAdoptsAnUnlinkedAIItsOwnerDidNotCreate`). `testkit.NewLegacyAI` and the `agents` fixture create
+  legacy AIs the way the upgrade leaves them (creator = owner).
+- **"No row left"** is asserted over every column of the schema named like an id (`user_id`, `owner_id`, `iid`,
+  `member_id`, `agent_id`, `creator_iid`, `inviter_iid`, `invitee_iid`, `operator_iid`, `dm_a`, `dm_b`, `used_by`,
+  `created_by`, plus `users.id` and `intelligences.id`), read from the schema so a later table is covered too. What keeps
+  the id on purpose is **history, not reference**: who wrote a message (`messages.author_*`), who did what
+  (`audit_log.actor_id`, `room_members.added_by`, `rooms.updated_by`/`instructions_by`, `org_invitations.invited_by`),
+  `organizations.created_by`, and the inert `grants` table (dropped by 0020). Messages stay readable (AD-015).
+- **Wiring.** `app.New` builds `agents.Presence` before the users service, which takes it as `Options.Kick`.
+- **Queries** (`queries/account_delete.sql`): `GetHeirAdmin`, `ListLastAdminOrgIDs`, `RepointRoomOwners`,
+  `RepointConnectorOwners`, `ListHostedAgentIDs`, `ListHostedAgentOrgIDs`, `RehomeHostedAgents`,
+  `DeleteUserRoomMemberships`, `DeleteUser`; audit constants `audit.ActionUserDelete`, `audit.ActionOrgAdminInherited`.
+
+## T21: Delete in an organization and end a session (POS-04, POS-05, POS-06, OMEM-06, OMEM-08)
+
+- **Routes**, all `authed` (user session or user token). An agent token never reaches them: the path rule keeps it to
+  `/api/v1/agent/` (403 before the handler), so the callers are people, and what an AI itself may do is read from the
+  chart (`Authz.CanDelete`). The three are registered by `identityDeleteRoutes` (`internal/api/org_members_handlers.go`).
+  - **`DELETE /api/v1/orgs/{org}/members/{iid}`** → 204. `{org}` is an id or an address in any case
+    (`Orgs.Resolve`). Whoever is not a member of the organization gets **404**, as does a target that is not a member of
+    it (an outsider, an unknown id, an AI of another organization only). Then:
+    - **self** (`iid` is the caller) is **leave**: `Orgs.Leave`, so the only admin gets **409 `last_admin`** and an AI
+      **409 `home_organization`**;
+    - **an AI whose home is the organization** → `Registry.Delete` (deleted for good);
+    - **anyone else** (a person, or an AI of another organization) → `Orgs.Remove` (removed from this organization only,
+      OMEM-06).
+    Both services decide the right in their own transaction (`Chart.CanDelete`, POS-05), so a caller who sees the target
+    and may not delete it gets **403**.
+  - **`DELETE /api/v1/agents/{id}`** → 204: the same rule in the AI's **home** organization, no `{org}` in the path.
+    An AI is seen by its host and by the members of any organization it belongs to (AD-016): whoever sees it and
+    cannot delete it gets 403 (a member, the admin of another organization it only belongs to, its host who left the
+    home organization), anyone else **404**. So an organization route and the AI's own route can answer differently to
+    a host who left (404 and 403, `TestAHostWhoLeftTheOrganizationSeesItsAIButNotTheOrganization`).
+  - **`DELETE /api/v1/agents/{id}/session`** → 204: `Registry.EndSession`. The caller must manage the AI in an
+    organization both belong to (`Chart.Manages`: the chart's, so an admin who holds no position above is no manager);
+    one who sees the AI (shares an organization with it, or hosts it) and does not manage it gets 403, anyone else 404.
+    `Presence.Kick` closes the live session with **4002** (`CloseTakenOver`, which v0.5 CLIs already obey by stopping)
+    and the reason **`ended by @handle`** (`agents.ReasonEndedByPrefix` + the caller's handle). The AI is not deleted and
+    may connect again. An AI that is not live has nothing to end: **204** all the same, no event.
+- **`Registry.Delete(ctx, p, agentID)`** keeps its signature; its check is now the organization's (`authorizeDelete`,
+  `internal/agents/lifecycle.go`), made **inside the deleting transaction** on that transaction's chart:
+  `Chart.CanDelete(p.IID(), agentID)` in the AI's home. An AI no organization owns (only fixtures: the upgrade places
+  every AI) is deleted by its host and found by nobody else. It refuses **`orgs.ErrLastAdmin`** (409 `last_admin`,
+  OMEM-05) when the AI is the **only admin of any organization** it belongs to - deleting it would leave that organization
+  without an admin - and nothing is deleted. The principal is read with `p.IID()`, so an AI acting as itself is a valid
+  actor. In the transaction: audit **`agent.delete`** `{handle, org}` (actor the caller, target the AI; new
+  `audit.ActionAgentDelete`), memberships in every organization and room, grants, cursors, the platform queue (cascade),
+  the connections it operated lose their operator (OMEM-08). After the commit: the live session is kicked with **4001**,
+  `ConnectorsOrphaned`, `MembersChanged`/`RoomChanged{Deleted}` per room, and (new) **`OrgChanged` for every organization
+  it belonged to**: the creator and inviter links it held are gone.
+- **Deviations / decisions.**
+  - **`home_organization` is observed by an internal test**, `TestAnAILeavingItsHomeOrganizationIsRefusedWith409`
+    (`internal/api/org_members_handlers_internal_test.go`): only an AI can leave its home organization, and no AI token
+    reaches an organization route, so the request carries the principal the route would resolve for an AI acting as
+    itself. Deleting an AI by someone else never produces it (that is `Registry.Delete`).
+  - **`ErrorCodeLastAdmin` and `ErrorCodeHomeOrganization`** are in the single `ErrorCode` group of `dto/common.go`, and
+    `mapError` maps `orgs.ErrLastAdmin` (409 `last_admin`) and `orgs.ErrHomeOrganization` (409 `home_organization`). T12 owns
+    `last_admin` too: **on merge keep one definition and one `mapError` case**.
+  - **`api.Deps.Orgs`** (`*orgs.Service`) is added and wired in `app.New`; T12 adds the same field. Only the services' own
+    checks decide: the handler adds just the "caller is a member of `{org}`" check that makes the organization invisible to
+    everyone else (404).
+  - **Merge**: `org_members_handlers.go` is also T14's file (GET and PATCH). Keep both sets of routes and handlers; the
+    DELETE route is registered by `identityDeleteRoutes`, not by T14's `orgMemberRoutes`, so the two merge as a union.
+    `Registry.Delete` is T21's; T24 owns the rest of `registry.go`.
+- **Existing tests adapted** (their assertions are the same; who is "a user that sees the AI" changed from a use grantee to
+  a member of the owner's organization, as the upgrade leaves a grantee, OUPG-01): `TestAgentRoutesAuthMatrix`
+  (`agentSetup` makes the viewer a member), `TestRefusedAgentDeletesLeaveTheOperatorsConnectionAlone` and
+  `TestDeleteRemovesMembershipsAndCursors` (which also expects `OrgChanged` now).
+- **Tests**: `internal/api/delete_identities_test.go` (matrices of each kind of target on each route, the Lead/Sentinel
+  independent test, the inviter chain, OMEM-06/08, an AI of another organization, the sole-admin AI),
+  `internal/api/leave_and_end_session_test.go` (leave, 404s, the session matrix), `internal/agents/delete_test.go`.

@@ -37,7 +37,8 @@ type Deps struct {
 	Intelligences *intelligences.Service
 	// Conversations opens direct messages and creates groups.
 	Conversations *conversations.Service
-	// Orgs is the organization use cases: organizations, their chart, members and invitations.
+	// Orgs is the organization use cases: organizations, their chart, members, positions and
+	// invitations.
 	Orgs *orgs.Service
 	// Connectors manages connectors and their chats.
 	Connectors *connectors.Service
@@ -107,6 +108,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.contactRoutes(mux)
 	s.avatarRoutes(mux)
 	s.agentRoutes(mux)
+	s.identityDeleteRoutes(mux)
 	s.agentAPIRoutes(mux)
 	s.agentConversationRoutes(mux)
 	s.connectorRoutes(mux)
@@ -206,6 +208,12 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "revoke the token before deleting it")
 	case errors.Is(err, users.ErrSelfAdminChange), errors.Is(err, users.ErrLastAdmin):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, err.Error())
+	case errors.Is(err, users.ErrLastInstanceAdmin):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeLastInstanceAdmin, "you are the last active admin of this instance: make another user an admin first")
+	case errors.Is(err, orgs.ErrLastAdmin):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeLastAdmin, "an organization needs at least one admin: make someone else an admin first")
+	case errors.Is(err, orgs.ErrHomeOrganization):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHomeOrganization, "an AI cannot leave its home organization: ask an admin to delete it")
 	case errors.Is(err, agents.ErrNotRegistered):
 		return httpx.NewError(http.StatusForbidden, dto.ErrorCodeForbidden, "agent not registered: connect the channel first")
 	case errors.As(err, &notEmpty):
@@ -216,8 +224,6 @@ func mapError(err error) error {
 			"groups":     strconv.FormatInt(notEmpty.Groups, 10),
 		}
 		return he
-	case errors.Is(err, orgs.ErrLastAdmin):
-		return httpx.NewError(http.StatusConflict, dto.ErrorCodeLastAdmin, "an organization needs at least one admin")
 	case errors.Is(err, orgs.ErrSlugTaken):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "slug already taken")
 	case errors.Is(err, access.ErrNotFound):
