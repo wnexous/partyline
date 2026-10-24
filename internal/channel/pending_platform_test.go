@@ -31,8 +31,8 @@ const (
 	framedGroup = `<partyline room="WhatsApp · Team" chat="Team" platform="whatsapp" from="Pat" trusted="false" message_id="01HITEM1" connection_id="01HCONN" chat_id="01HCHAT">` +
 		"look at this\n[attachment 01HFILE: photo.png, image/png]</partyline>\n" + DataLine
 	framedDirect = `<partyline room="Telegram · André" chat="André" platform="telegram" from="André" trusted="true" message_id="01HITEM2" connection_id="01HCONN2" chat_id="01HCHAT2">` +
-		"pode publicar</partyline>\n" + OwnerLine
-	framedRoom = `<partyline room="Support" conversation="group" from="Alice" trusted="true" message_id="m1">first</partyline>` + "\n" + OwnerLine
+		"pode publicar</partyline>\n" + TrustedLine
+	framedRoom = `<partyline room="Support" conversation="group" from="Alice" trusted="true" message_id="m1">first</partyline>` + "\n" + TrustedLine
 )
 
 // CID-06: FrameAll frames platform events with the same framing and the same trust line as room
@@ -44,7 +44,7 @@ func TestFrameAllFramesPlatformEventsWithMessages(t *testing.T) {
 	require.Equal(t, "", FrameAll(nil))
 
 	m1, m2 := pendingMessage("m1", "first", 0), pendingMessage("m2", "second", 2*time.Hour)
-	framedSecond := `<partyline room="Support" conversation="group" from="Alice" trusted="true" message_id="m2">second</partyline>` + "\n" + OwnerLine
+	framedSecond := `<partyline room="Support" conversation="group" from="Alice" trusted="true" message_id="m2">second</partyline>` + "\n" + TrustedLine
 	require.Equal(t, framedRoom+"\n\n"+framedSecond, FrameAll([]dto.AgentMessage{m1, m2}))
 
 	// Between the two messages an event arrived, and one before and one after both.

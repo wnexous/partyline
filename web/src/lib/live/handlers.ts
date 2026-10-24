@@ -264,7 +264,6 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       qc.invalidateQueries({ queryKey: [kind], exact: true });
       qc.invalidateQueries({ queryKey: [kind, event.data.resource_id] });
       if (kind === "agents" || kind === "connectors") {
-        qc.invalidateQueries({ queryKey: queryKeys.chats });
         // Organization membership decides the AIs and the connections whose people the user sees.
         qc.invalidateQueries({ queryKey: queryKeys.contacts });
       }
@@ -318,7 +317,6 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
 
     case "chat.discovered":
       qc.invalidateQueries({ queryKey: queryKeys.connectorChats(event.data.connector_id) });
-      qc.invalidateQueries({ queryKey: queryKeys.chats });
       return;
 
     case "identity.linked":

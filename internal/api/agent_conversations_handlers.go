@@ -16,9 +16,9 @@ func (s *server) agentConversationRoutes(mux *http.ServeMux) {
 	s.handle(mux, "POST /api/v1/agent/groups", s.agentOnly(s.agentGroup))
 }
 
-// agentDM writes to an intelligence the AI's owner can see, opening the DM first when the pair has
-// none (DM-04). The target is the "@handle", handle or id in to; one the owner cannot see, or that
-// does not exist, is 404 contact_not_found. Posting counts against the AI's 30 messages a minute
+// agentDM writes to a user or to an AI the sending AI shares an organization with, opening the DM first
+// when the pair has none (DM-04). The target is the "@handle", handle or id in to; one the AI cannot see,
+// or that does not exist, is 404 contact_not_found. Posting counts against the AI's 30 messages a minute
 // and a DM it has to create against its 10 new conversations an hour (429 rate_limited).
 func (s *server) agentDM(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	var req dto.AgentDMRequest

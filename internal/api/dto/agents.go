@@ -31,7 +31,7 @@ type Agent struct {
 // MaxAgentDisplayName is the longest agent display name in characters (ID-04).
 const MaxAgentDisplayName = 64
 
-// UpdateAgentRequest is the body of PATCH /agents/{id} (owner only); absent fields are
+// UpdateAgentRequest is the body of PATCH /agents/{id} (whoever manages the AI); absent fields are
 // unchanged.
 type UpdateAgentRequest struct {
 	Description *string `json:"description,omitempty"`
@@ -302,8 +302,8 @@ type AgentPending struct {
 	Dropped int64 `json:"dropped"`
 }
 
-// AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to an intelligence its
-// owner can see, opening the DM when there is none. To is the target's "@handle", handle or id;
+// AgentDMRequest is the body of POST /agent/dms (DM-04): the AI writes to a user, or to an AI it
+// shares an organization with, opening the DM when there is none. To is the target's "@handle", handle or id;
 // ChatIDs, sent by v0.4 CLIs, are accepted and ignored: a DM sends nothing to a chat (CID-22).
 type AgentDMRequest struct {
 	To      string   `json:"to"`

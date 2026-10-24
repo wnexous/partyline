@@ -28,9 +28,10 @@ func (s *server) getIntelligence(w http.ResponseWriter, r *http.Request, p authn
 	return s.writeProfile(w, r, p, prof)
 }
 
-// updateIntelligence changes the profile of a user (their own), an AI (its owner) or a
-// person (the users of its connector): 403 for a caller who can see but not edit, 404 for one
-// who cannot see, 422 per invalid field, 409 handle_taken (PROF-10).
+// updateIntelligence changes the profile of a user or an AI: the identity itself and whoever manages it
+// in an organization they share (POS-04). A person is history and cannot be edited (history_only). 403
+// for a caller who can see but not edit, 404 for one who cannot see, 422 per invalid field, 409
+// handle_taken (PROF-10).
 func (s *server) updateIntelligence(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	var req dto.UpdateProfileRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {

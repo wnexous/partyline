@@ -2306,3 +2306,52 @@ Run it with `PLAYWRIGHT_CHROMIUM_EXECUTABLE=$HOME/.cache/ms-playwright/chromium_
   the Delete button shown whatever `can_delete` says and "Edit positions" shown to every member (test 6), and the members table without fixed columns (test 7).
 - **Not covered here on purpose**: the web unit tests already pin the chart's keyboard model, the dialogs and the flags row by row; the Playwright tests prove them in a
   real browser against the real server, which is what happy-dom cannot see.
+
+## T55: Docs and the wording the other tasks left (ORG-04, POS-10)
+
+- **`docs/api.md` is new.** AD-003 and the design name it as the reader's guide for the API, but it never existed. It holds the conventions (credentials,
+  the error envelope, 404 against 403), the three permissions, the management rule, the delete rule and what delete removes, trust, every route of
+  organizations (organizations, members, positions, the chart, invitations, the default organization, self-deletion, the AI and profile routes
+  that changed, groups, connections, pairing, contacts and the agent API), the session headers `X-Partyline-Org`, `X-Partyline-Position` and
+  `X-Partyline-Parent` with the order in which a new AI is placed, the welcome frame, the close codes, the live events, every error code with its
+  status, what was removed (the `/sharing` routes, the machine routes, `visibility`, `dm_no_sharing`) and the v0.5 CLI compatibility table.
+- **README.md and README.pt-BR.md**: an Organizations feature and section (permissions, the chart, who manages whom, deleting, trust), the
+  `--org`, `--position` and `--parent` flags and `partyline orgs`, connections owned by an organization, the security model rewritten on
+  management instead of ownership and grants, the errors table, and **the release notes as a section "Upgrading from v0.5"**: back up first
+  (0019 and 0020 are one transaction and one way, the v0.5 server cannot open the result), personal organizations, sharing becomes membership
+  (a view-only group and anything shared with everyone are not carried over), **a user's AIs stop trusting each other**, the v0.5 CLI keeps
+  working but its words still say "your owner" and its `partyline agents` prints "not found", machines are gone, accounts can be deleted.
+  The two "Upgrading from v0.4 / v0.3" sections lost their "Unlinked" and owner wording. **No version number is named** (the heading is "from
+  v0.5" and the text says "this release"): the release was not numbered when this was written.
+- **`docs/agents.md`**: the Contacts section is rewritten (organization sections, Hosted by me, People, Users; no machine, no "Unlinked", no
+  "Shared with me"), as are merging (the caller manages both AIs, same home organization), DMs (users and AIs one shares an organization with,
+  managers read an AI's DMs), groups (their organization), connections (the organization owns them, admins change them, members see them) and the
+  adoption paragraph; a Trust bullet explains the older CLIs; `dm_no_sharing` is out of the error table. PRODUCT.md says organizations.
+- **Trust wording, in code** (each with a test first, the literal text against the spec, L-032):
+  - `channel.OwnerLine` is `channel.TrustedLine`: "This message comes from an identity that manages you in your organization (or from a chat account
+    such an identity verified). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply /
+    send_message)." The same bytes are in `integrations/{omp,pi,opencode}/partyline.ts` (`TRUSTED_LINE`) and in the four trusted cases of
+    `integrations/testdata/framing.json`, whose case names no longer say "owner".
+  - The INS-03 notice for instructions written by someone who does not manage the AI reads "written by someone who does not manage you"
+    (`agents.InstructionsNoticeUntrusted`), and the `room_info` notes (`UntrustedInstructionsNote`, `UntrustedRoomTextNote`) read "not written by
+    an identity that manages you".
+  - **Specs amended** (L-048): routing-context INS-03 to INS-06 (the trust rule and the three texts) and harness-onboarding PUSH-06 (the line), each
+    marked "amended by AD-018". The older design and UAT documents of those features keep the words they had.
+  - Left on purpose: the notice of a server from before organizations (`You are … Your owner is …`, `channel.identityText`), which is what an old server
+    sends; a v0.5 CLI's own words, which only an update changes.
+- **Web wording** (en and pt-BR, each with a test):
+  - The pairing dialog names the organization of each connection, `{platform} · {organization}`, instead of "shared by {owner}" (`pairing.inOrg`), and only the
+    platform while the organizations are unknown; its empty text says that connections belong to organizations and who adds one.
+  - `invites.memberHint`: "Gets an organization of their own and joins the ones they are invited to."
+  - `memberSettings.delivery.trustedHint`: "Only identities that manage it, or chat accounts they verified." `newGroup.refusedNotFound` says "not in an organization you share".
+  - The identity texts say "the AIs you manage" where they said "your agents" (`page.identitiesBody`, `identities.emptyBody`, `identities.removeBody`, `pairing.linkedBody`,
+    `message.trustedHint`, `message.verifiedHint`), because that is who trusts a linked account (AD-018).
+  - **`useChats` is deleted**, with `queryKeys.chats` and its three invalidations: it was unused, and it called `GET /chats`, a route retired with the chats of the rooms. Its comment
+    ("owned or shared connectors") was the leftover.
+  - Doc comments that said an AI's owner sees or edits (`UpdateAgentRequest`, `AgentDMRequest`, `agentDM`, `updateIntelligence`, `OpenDM`) now say who does; `make generate` carried the
+    first two into `types.gen.ts`.
+- **Seen, not changed** (other features' wording): `newGroup.refusedPerson` ("people join through a bridged chat") and the `RefusedReasonPerson` comment still describe the bridges AD-015
+  retired; `message.untrustedHint` and the timeline labels describe chat senders of old room history.
+- **Tests**: `internal/channel/frame_test.go` (`TestFrameLineFollowsTrust`), `room_info_test.go` of channel and api, `room_instructions_trust_test.go`, `internal/cli/hook_test.go`, the shared
+  `framing.json` for the three adapters, `identities.test.tsx` (the label for an admin and for a member, organizations that fail, the empty text, the removal and success texts),
+  `admin.test.tsx`, `member-settings.test.tsx`, `new-group-dialog.test.tsx`. The pages carry no version number and no real name or number.

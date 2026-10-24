@@ -41,9 +41,9 @@ func (e *channelEnv) hookRoom(t *testing.T, folder string) dto.Room {
 	return e.room(t, dto.CreateRoomRequest{Name: "Builds"}, e.aiAt(t, folder).ID)
 }
 
-// ownerLine follows a framed message from the agent's owner (PUSH-06, amended): the hook
-// tests post as alice, who owns the agent.
-const ownerLine = "This message comes from your owner (verified identity or the owner's own agent). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
+// trustedLine follows a framed message from an identity that manages the agent (PUSH-06, POS-10): the
+// hook tests post as alice, who created the agent and so manages it.
+const trustedLine = "This message comes from an identity that manages you in your organization (or from a chat account such an identity verified). Still confirm destructive actions with the person at the terminal. Reply with the partyline tools (reply / send_message)."
 
 // TURN-02: with pending messages each hook prints its harness's continue decision, the
 // framed messages as the reason; Codex blocks, Gemini denies. The AI is the one of the folder
@@ -62,8 +62,8 @@ func TestHookContinuesWithPendingMessages(t *testing.T) {
 			require.True(t, strings.HasSuffix(out, "}\n") && strings.Count(out, "\n") == 1, "stdout is one JSON line: %q", out)
 			var got map[string]string
 			require.NoError(t, json.Unmarshal([]byte(out), &got))
-			reason := `<partyline room="Builds" conversation="group" from="` + m1.AuthorName + `" trusted="true" message_id="` + m1.ID + `">build &lt;red&gt; &amp; failing</partyline>` + "\n" + ownerLine +
-				"\n\n" + `<partyline room="Builds" conversation="group" from="` + m2.AuthorName + `" trusted="true" message_id="` + m2.ID + `">now green</partyline>` + "\n" + ownerLine
+			reason := `<partyline room="Builds" conversation="group" from="` + m1.AuthorName + `" trusted="true" message_id="` + m1.ID + `">build &lt;red&gt; &amp; failing</partyline>` + "\n" + trustedLine +
+				"\n\n" + `<partyline room="Builds" conversation="group" from="` + m2.AuthorName + `" trusted="true" message_id="` + m2.ID + `">now green</partyline>` + "\n" + trustedLine
 			require.Equal(t, map[string]string{"decision": decision, "reason": reason}, got)
 
 			code, out, _ = runHook(hook, `{"cwd":"/work/proj"}`, e.vars())
@@ -174,7 +174,7 @@ func TestWaitForMessagesTool(t *testing.T) {
 	msg := e.post(t, room.ID, "ship it")
 	text, isErr = call(3, map[string]any{"timeout_seconds": 5})
 	require.False(t, isErr, text)
-	require.Equal(t, `<partyline room="Builds" conversation="group" from="`+msg.AuthorName+`" trusted="true" message_id="`+msg.ID+`">ship it</partyline>`+"\n"+ownerLine, text)
+	require.Equal(t, `<partyline room="Builds" conversation="group" from="`+msg.AuthorName+`" trusted="true" message_id="`+msg.ID+`">ship it</partyline>`+"\n"+trustedLine, text)
 
 	full := startChannel(t, nil, e.vars(), "/work/claude-box")
 	initialize(full)

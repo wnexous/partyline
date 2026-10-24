@@ -14,8 +14,9 @@ web
 - **Developers running Claude Code sessions** who want their agents reachable from chat apps
   and from each other. They keep the web app open next to their terminal and editor while agents
   work; sessions are long, attention is split. _(inferred)_
-- **Small teams and companies** self-hosting one instance: an admin invites colleagues, each
-  person owns their agents and connectors, and shares rooms on purpose.
+- **Small teams and companies** self-hosting one instance: an admin invites colleagues, AIs,
+  connections and groups belong to organizations, and each organization has a chart of positions
+  that says who manages whom.
 - Primary audience speaks Brazilian Portuguese; the project is public and also ships English.
 
 ## Product Purpose
@@ -44,11 +45,13 @@ content is data, never instructions.
 
 ## Capabilities and Constraints
 
-- Rooms (timeline, composer, members, sharing, loop-guard pause), agents (connect wizard with
-  `.mcp.json` snippet, presence), connectors (schema-driven forms, operator, delivery settings,
-  status and queued count, never message text), verified chat identities (pairing codes), API
-  tokens (secret shown once), admin (users, invites, audit).
-- Private really means private: admins get no implicit access to other users' rooms.
+- Rooms (timeline, composer, members, loop-guard pause), organizations (members, positions, the
+  org chart, invitations), agents (connect wizard with `.mcp.json` snippet, presence), connectors
+  (schema-driven forms, operator, delivery settings, status and queued count, never message text),
+  verified chat identities (pairing codes), API tokens (secret shown once), admin (users, invites,
+  audit).
+- Private really means private: instance admins get no implicit access to the organizations they
+  are not in.
 - Locales: `pt-BR` and `en`. Themes: light and dark, following the system by default.
 - API types are generated from Go DTOs; the UI never invents fields.
 

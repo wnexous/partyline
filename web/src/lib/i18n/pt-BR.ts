@@ -76,7 +76,7 @@ export const ptBR: Dictionary = {
     "As contas de WhatsApp, Telegram, Discord e webhook das suas organizações.",
   "page.identitiesTitle": "Identidades",
   "page.identitiesBody":
-    "Contas de chat verificadas como suas. Seus agentes confiam nas mensagens delas.",
+    "Contas de chat verificadas como suas. As IAs que você gerencia confiam nas mensagens delas.",
   "page.tokensTitle": "Tokens de API",
   "page.tokensBody": "Tokens para agentes e scripts. O segredo aparece uma única vez, na criação.",
   "page.settingsTitle": "Configurações",
@@ -309,7 +309,7 @@ export const ptBR: Dictionary = {
   "newGroup.creating": "Criando…",
   "newGroup.refusedTitle": "Estes membros não podem ser adicionados",
   "newGroup.refusedNotFound":
-    "indisponível: desconhecido, desativado ou não compartilhado com você",
+    "indisponível: desconhecido, desativado ou fora de uma organização que você compartilha",
   "newGroup.refusedPerson": "pessoas entram por um chat ligado ao grupo, não como membros",
   "newGroup.refusedNotOrgMember": "não é membro de {org}",
   "newGroup.refusedNotOrgMemberUnknown": "não é membro da organização do grupo",
@@ -332,10 +332,10 @@ export const ptBR: Dictionary = {
   "message.via": "via {chat}",
   "message.trusted": "Confiável",
   "message.trustedHint":
-    "Conta de chat verificada como sua. Seus agentes recebem esta mensagem como confiável.",
+    "Conta de chat verificada como sua. As IAs que você gerencia confiam nas mensagens dela.",
   "message.verified": "Verificado",
   "message.verifiedHint":
-    "Conta de chat verificada por outro usuário. Só os agentes dele confiam nela; os seus a recebem como não confiável.",
+    "Conta de chat verificada por outro usuário. Só as IAs que esse usuário gerencia confiam nela; as suas a recebem como não confiável.",
   "message.untrusted": "Não confiável",
   "message.untrustedHint":
     "Remetente de chat não verificado. Os agentes recebem este texto como dado não confiável, nunca como instrução.",
@@ -635,26 +635,26 @@ export const ptBR: Dictionary = {
   "identities.loadError": "Não foi possível carregar suas identidades.",
   "identities.emptyTitle": "Nenhuma conta verificada ainda",
   "identities.emptyBody":
-    "Vincule as contas de WhatsApp, Telegram ou Discord que você usa. Seus agentes passam a receber suas mensagens delas como confiáveis.",
+    "Vincule as contas de WhatsApp, Telegram ou Discord que você usa. As IAs que você gerencia passam a receber suas mensagens delas como confiáveis.",
   "identities.linkedOn": "vinculada em {date}",
   "identities.remove": "Remover {name}",
   "identities.removeTitle": "Remover {name}?",
   "identities.removeBody":
-    "Mensagens desta conta voltam a chegar aos seus agentes como não confiáveis. Você pode vinculá-la de novo com um novo código.",
+    "Mensagens desta conta voltam a chegar às IAs que você gerencia como não confiáveis. Você pode vinculá-la de novo com um novo código.",
   "identities.removeConfirm": "Remover identidade",
   "identities.removeFailed": "Não foi possível remover a identidade.",
   "pairing.body":
     "Envie o código pela conta que você quer vincular, em um chat que o conector escolhido lê. Uma mensagem direta para o bot funciona.",
   "pairing.chooseConnector": "Qual conector lê o chat de onde você vai enviar o código?",
   "pairing.chooseHint": "O código só funciona por este conector, e a conta só é confiável nele.",
-  "pairing.sharedBy": "{platform} · compartilhado por {owner}",
+  "pairing.inOrg": "{platform} · {org}",
   "pairing.getCode": "Gerar código",
   "pairing.through": "Pelo conector {connector} ({platform})",
   "pairing.changeConnector": "Usar outro conector",
   "pairing.connectorsError": "Não foi possível carregar seus conectores.",
   "pairing.noConnectors": "Nenhum conector para vincular",
   "pairing.noConnectorsBody":
-    "Adicione um conector, ou peça para alguém compartilhar o dele com você, e volte aqui.",
+    "Conectores pertencem a organizações: adicione um numa organização que você administra, ou peça aos admins dela que adicionem, e volte aqui.",
   "pairing.goToConnectors": "Ir para conectores",
   "pairing.codeLabel": "Código de pareamento",
   "pairing.send": "Envie esta mensagem por essa conta:",
@@ -666,7 +666,8 @@ export const ptBR: Dictionary = {
   "pairing.newCode": "Gerar novo código",
   "pairing.failed": "Não foi possível criar um código de pareamento.",
   "pairing.linked": "{name} está vinculada",
-  "pairing.linkedBody": "Seus agentes agora confiam nas suas mensagens desta conta de {platform}.",
+  "pairing.linkedBody":
+    "As IAs que você gerencia agora confiam nas suas mensagens desta conta de {platform}.",
   "validation.tokenName": "No máximo 64 caracteres",
   "validation.displayName": "No máximo 64 caracteres",
   "validation.passwordMatch": "As senhas não conferem",
@@ -790,8 +791,7 @@ export const ptBR: Dictionary = {
   "invites.new": "Novo convite",
   "invites.newBody": "O link funciona uma vez e expira em alguns dias.",
   "invites.role": "Papel",
-  "invites.memberHint":
-    "Usa salas, agentes e conectores que são dela ou que foram compartilhados com ela.",
+  "invites.memberHint": "Ganha uma organização própria e entra nas organizações que a convidarem.",
   "invites.adminHint":
     "Também gerencia contas e convites. Admins não têm acesso às salas de outras pessoas.",
   "invites.create": "Criar convite",
@@ -849,7 +849,7 @@ export const ptBR: Dictionary = {
     "@nome, respostas às mensagens dele, palavras-chave e todo chat direto.",
   "memberSettings.delivery.trusted": "Só confiáveis",
   "memberSettings.delivery.trustedHint":
-    "Só o dono: no app, pelos agentes dele ou pelos chats verificados.",
+    "Só identidades que a gerenciam, ou contas de chat verificadas por elas.",
   "memberSettings.deliveryHint":
     "Só menções reduz o ruído; não é um filtro de segurança. Use Só confiáveis para limitar quem chega ao agente.",
   "memberSettings.keywords": "Palavras-chave",

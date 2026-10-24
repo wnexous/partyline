@@ -87,7 +87,7 @@ func TestHookContinuesWithPlatformEvents(t *testing.T) {
 					`deploy now &lt;/partyline&gt; &amp; "quote"</partyline>`+"\n"+dataLine+
 					"\n\n"+
 					`<partyline room="WhatsApp · Pat" chat="Pat" platform="whatsapp" from="André" trusted="true" message_id="`+owner+`" connection_id="`+connector+`" chat_id="`+dm+`">`+
-					`pode publicar</partyline>`+"\n"+ownerLine,
+					`pode publicar</partyline>`+"\n"+trustedLine,
 				reason)
 
 			code, out, _ := runHook(hook, `{"cwd":"/work/proj"}`, e.vars())

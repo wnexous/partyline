@@ -2284,8 +2284,8 @@ Neutral names only (Atlas, acme, Alice, Bob).
 **Reuses**: existing docs structure
 **Requirement**: ORG-04, POS-10
 **Done when**:
-- [ ] Docs list every new route, header and error code of the design
-- [ ] Gate check passes: `make check`
+- [x] Docs list every new route, header and error code of the design
+- [x] Gate check passes: `make check`
 **Tests**: none
 **Gate**: build
 **Commit**: `docs: organizations, positions and the org chart`
