@@ -76,7 +76,7 @@ func TestConversationListOrdersByNewestActivity(t *testing.T) {
 	clock.Advance(time.Minute)
 	// carol makes a group in alice's organization, which alice administers without being in the group.
 	env.AddMember(alice.PersonalOrg().ID, carol.User.ID, orgs.PermissionMember, "")
-	granted := groupIn(t, env, carol, alice.PersonalOrg().ID, "Granted")
+	administered := groupIn(t, env, carol, alice.PersonalOrg().ID, "Administered")
 	clock.Advance(time.Minute)
 	member := createRoom(bob, "Member of")
 	addToRoom(t, env, bob, member.ID, alice)
@@ -85,23 +85,23 @@ func TestConversationListOrdersByNewestActivity(t *testing.T) {
 	hidden := createRoom(carol, "Not for alice")
 	carolDM := dmWith(carol, bob.User.ID, http.StatusCreated) // alice is no participant
 
-	// Activity: granted (newest), then the DM, then the group alice is a member of.
+	// Activity: the one alice administers (newest), then the DM, then the group alice is a member of.
 	clock.Advance(time.Minute)
 	say(bob, member.ID, "first in member")
 	clock.Advance(time.Minute)
 	say(bob, dm.ID, "hi alice")
 	clock.Advance(time.Minute)
-	last := say(carol, granted.ID, "latest in granted")
+	last := say(carol, administered.ID, "latest in administered")
 	say(carol, carolDM.ID, "not for alice")
 
 	list := conversationsOf(t, alice)
-	require.Equal(t, []string{granted.ID, dm.ID, member.ID, owned.ID}, conversationIDs(list))
+	require.Equal(t, []string{administered.ID, dm.ID, member.ID, owned.ID}, conversationIDs(list))
 	require.NotContains(t, conversationIDs(list), hidden.ID)
 	require.NotContains(t, conversationIDs(list), carolDM.ID, "a DM of two other users")
 
-	g := conversationIn(t, list, granted.ID)
+	g := conversationIn(t, list, administered.ID)
 	require.Equal(t, dto.ConversationKindGroup, g.Kind)
-	require.Equal(t, "Granted", g.Title)
+	require.Equal(t, "Administered", g.Title)
 	require.Nil(t, g.Counterpart)
 	require.Equal(t, dto.LevelManage, g.MyLevel, "an admin of the group's organization manages it")
 	require.True(t, g.ActivityAt.Equal(last.CreatedAt), "activity is the time of the last message")
@@ -263,45 +263,50 @@ func TestMarkReadIsMonotonicAndPerUser(t *testing.T) {
 	require.Equal(t, dto.ReadState{RoomID: empty.ID}, zero)
 }
 
-// DM-07 authorization: reading needs view - the creator, a member of the room or an admin of its
-// organization (the viewer role here) - and others get 404; the manager of an AI may mark the DM it
-// views; an agent token and an anonymous caller are refused.
+// DM-07 authorization: reading needs view - the creator, a member of the room or an admin of its organization -
+// and others get 404; the manager of an AI may mark the DM it views; an agent token and an anonymous caller are
+// refused.
 func TestMarkReadAuthorization(t *testing.T) {
-	m := newMatrix(t)
-	owner, viewer, poster := m.as(t, roleOwner), m.as(t, roleViewer), m.as(t, rolePoster)
-	room := createRoom(owner, "Ops")
-	joinOrgOf(t, m.env, room.ID, viewer, orgs.PermissionAdmin)
-	addToRoom(t, m.env, owner, room.ID, poster)
-	say(owner, room.ID, "hello")
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	setup := func(t *testing.T) map[string]string {
+		creator := *roles.Member
+		creator.T = t
+		room := groupIn(t, env, &creator, roles.Org.ID, "Ops")
+		addToRoom(t, env, &creator, room.ID, roles.Target)
+		addToRoom(t, env, &creator, room.ID, roles.Guest)
+		say(&creator, room.ID, "hello")
+		return map[string]string{"room": room.ID}
+	}
+	runRoleRoutes(t, roles, setup, []roleRoute{
+		{"mark a group read", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
+			return markRead(c, res["room"], nil)
+		}, groupWant(200, 200, 200, 404)},
+	})
 
-	for role, want := range map[matrixRole]int{roleOwner: 200, roleViewer: 200, rolePoster: 200, roleStranger: 404, roleAdmin: 404} {
-		t.Run(string(role), func(t *testing.T) {
-			resp := markRead(m.as(t, role), room.ID, nil)
-			if want == http.StatusNotFound {
-				resp.RequireError(want, dto.ErrorCodeNotFound)
-				return
-			}
-			resp.RequireStatus(want)
-		})
+	room := setup(t)["room"]
+	as := func(t *testing.T, c *testkit.Client) *testkit.Client {
+		cp := *c
+		cp.T = t
+		return &cp
 	}
 	t.Run("a DM viewed through an AI", func(t *testing.T) {
-		atlas := m.env.NewAI(owner, "atlas")
-		shareAI(owner, atlas, poster)
-		dm := dmWith(poster, atlas, http.StatusCreated)
-		say(poster, dm.ID, "hi atlas")
-		markRead(owner, dm.ID, nil).RequireStatus(http.StatusOK)
-		markRead(m.as(t, roleStranger), dm.ID, nil).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+		dm := dmWith(as(t, roles.Target), roles.TargetAI, http.StatusCreated)
+		say(as(t, roles.Target), dm.ID, "hi atlas")
+		markRead(as(t, roles.Manager), dm.ID, nil).RequireStatus(http.StatusOK)
+		markRead(as(t, roles.Outsider), dm.ID, nil).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+		markRead(as(t, roles.Member), dm.ID, nil).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	})
 	t.Run("agent token", func(t *testing.T) {
-		agent := owner.Token(dto.TokenKindAgent, "laptop")
+		agent := roles.Member.Token(dto.TokenKindAgent, "laptop")
 		agent.T = t
-		markRead(agent, room.ID, nil).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+		markRead(agent, room, nil).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 		agent.Get("/api/v1/conversations").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	})
 	t.Run("anonymous", func(t *testing.T) {
-		anon := m.env.Anon()
+		anon := env.Anon()
 		anon.T = t
-		markRead(anon, room.ID, nil).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
+		markRead(anon, room, nil).RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 		anon.Get("/api/v1/conversations").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	})
 }

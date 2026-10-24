@@ -74,18 +74,18 @@ func TestPlatformFileIsGoneAfterTheAcknowledgementWindow(t *testing.T) {
 }
 
 // Authorization of the download: only the AI that holds the message. Another AI of the same owner,
-// the AI of a user granted use of Atlas and the AI of a stranger get 404, as for an unknown file;
+// the AI of a colleague who sees Atlas and the AI of a stranger get 404, as for an unknown file;
 // users, with a session or a token, get 403 on the agent route and 404 on the user route, which
 // never serves a platform file; anonymous callers get 401.
 func TestPlatformFilesAreForTheOperatorOnly(t *testing.T) {
 	f := newPlatformWS(t)
 	bob, carol := f.env.NewUser("bob"), f.env.NewUser("carol")
-	shareAgent(f.alice, f.atlas, bob.User.ID)
+	shareAI(f.alice, f.atlas, bob) // bob joins Atlas's organization: he sees it
 	_, file := f.file(t, "report.txt", "text/plain", "quarterly numbers")
 	path := "/api/v1/agent/attachments/" + file
 
 	f.token.AsAgent("Notes").Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	for name, u := range map[string]*testkit.Client{"use grantee": bob, "stranger": carol} {
+	for name, u := range map[string]*testkit.Client{"colleague": bob, "stranger": carol} {
 		u.Token(dto.TokenKindAgent, "desk").AsAgent("Atlas").Get(path).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 		_ = name
 	}

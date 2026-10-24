@@ -51,7 +51,7 @@ ORDER BY r.name COLLATE NOCASE, r.id;
 -- The levels a user holds on rooms (AD-016): post as a user member of a group, manage as the creator
 -- of a group (while a member of its organization other than a guest) or as an admin of its
 -- organization, and post as a participant of a DM. The DMs the user only views as the manager of an AI
--- are not here, and neither is anything a grant names.
+-- are not here.
 SELECT m.room_id AS room_id, CAST('post' AS TEXT) AS level
 FROM room_members m JOIN rooms r ON r.id = m.room_id
 WHERE m.kind = 'user' AND m.member_id = sqlc.arg(user_id) AND r.kind = 'group'

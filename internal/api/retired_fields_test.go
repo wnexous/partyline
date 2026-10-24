@@ -238,55 +238,54 @@ func retiredRoomFieldRoutes() []roleRoute {
 	}
 }
 
-// retiredConnectorFieldSetup prepares the connection the retired fields used to act on, shared for use
-// with the viewer, and a room to point it at.
-func retiredConnectorFieldSetup(t *testing.T, m *matrix) matrixResource {
-	owner := m.as(t, roleOwner)
-	room := createRoom(owner, "Atlas HQ")
-	conn := createFake(owner, "wa", true)
-	shareConnector(owner, conn.ID, m.clients[roleViewer].User.ID)
-	return matrixResource{"room": room.ID, "connector": conn.ID}
+// retiredConnectorFieldSetup returns the setup of the connection the retired fields used to act on: acme's
+// connection "wa", made by its admin and operated by the AI that the role "manager" created, and a group of
+// acme to point it at.
+func retiredConnectorFieldSetup(env *testkit.Env, roles *testkit.OrgRoles) func(t *testing.T) map[string]string {
+	return func(t *testing.T) map[string]string {
+		admin := *roles.Admin
+		admin.T = t
+		room := groupIn(t, env, &admin, roles.Org.ID, "Atlas HQ")
+		conn := createFakeIn(&admin, roles.Org.ID, "wa", true, roles.TargetAI)
+		return map[string]string{"room": room.ID, "connector": conn.ID}
+	}
 }
 
 // retiredConnectorFieldRoutes are the requests that used to change a connection through a retired field.
-func retiredConnectorFieldRoutes() []matrixRoute {
-	return []matrixRoute{
-		{"PATCH a connection with auto_route_scope and auto_route_room_id", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+func retiredConnectorFieldRoutes() []roleRoute {
+	return []roleRoute{
+		{"PATCH a connection with auto_route_scope and auto_route_room_id", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Patch("/api/v1/connectors/"+res["connector"], map[string]any{"auto_route_scope": "all", "auto_route_room_id": res["room"]})
-		}, statuses(200, 403, 404, 404, 404)},
+		}, connectionWant(200, 403, 404)},
 	}
 }
 
 // CID-22 (T35): a request that carries only retired fields keeps the authorization of its route. The
-// people who manage the room are answered and change nothing; the people in the room and everybody else
-// get the refusal the same route gives them for any other body, so ignoring the fields opens no way in.
+// people who manage the room or the connection are answered and change nothing; the people in the room, the
+// other members of the organization and everybody else get the refusal the same route gives them for any other
+// body, so ignoring the fields opens no way in.
 func TestRetiredFieldRequestsKeepTheAuthorizationOfTheirRoutes(t *testing.T) {
 	fake := connectortest.New()
-	m := newMatrix(t, testkit.WithConnectorKinds(fake.Kind()))
-	m.run(t, retiredConnectorFieldSetup, retiredConnectorFieldRoutes())
-
-	env := testkit.New(t)
+	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()))
 	roles := env.OrgRoles("acme")
+	runRoleRoutes(t, roles, retiredConnectorFieldSetup(env, roles), retiredConnectorFieldRoutes())
 	runRoleRoutes(t, roles, retiredRoomFieldSetup(env, roles), retiredRoomFieldRoutes())
 }
 
 // CID-22 (T35): the same requests from anonymous callers and from every kind of AI token are refused:
-// 401 without a login, and 403 for the AI that operates the connection, another AI of the owner and an
-// AI of another user alike, since AI tokens reach agent endpoints only (TOK-03).
+// 401 without a login, and 403 for the AI that operates the connection, another AI of its organization and an
+// AI of another organization alike, since AI tokens reach agent endpoints only (TOK-03).
 func TestRetiredFieldRequestsAreRefusedToAnonymousCallersAndAIs(t *testing.T) {
 	fake := connectortest.New()
-	m := newMatrix(t, testkit.WithConnectorKinds(fake.Kind()))
-	connRes := retiredConnectorFieldSetup(t, m)
-	owner := m.as(t, roleOwner)
-	registerAgent(t, m.env, owner, "Atlas")
-	registerAgent(t, m.env, owner, "Nova")
-	registerAgent(t, m.env, m.clients[roleStranger], "Atlas")
-	operator := owner.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas")
-	sibling := owner.Token(dto.TokenKindAgent, "desk").AsAgent("Nova")
-	strangers := m.clients[roleStranger].Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas")
-
-	env := testkit.New(t)
+	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()))
 	roles := env.OrgRoles("acme")
+	connRes := retiredConnectorFieldSetup(env, roles)(t)
+	operator := roles.Manager.Token(dto.TokenKindAgent, "laptop").AsAgent("acme-ai")
+	env.NewAIIn(roles.Manager, roles.Org.ID, "Nova")
+	sibling := roles.Manager.Token(dto.TokenKindAgent, "desk").AsAgent("Nova")
+	registerAgent(t, env, roles.Outsider, "Atlas")
+	strangers := roles.Outsider.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas")
+
 	roomRes := retiredRoomFieldSetup(env, roles)(t)
 	roomOperator := roles.Member.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas")
 	roomSibling := roles.Member.Token(dto.TokenKindAgent, "desk").AsAgent("Nova")
@@ -303,8 +302,8 @@ func TestRetiredFieldRequestsAreRefusedToAnonymousCallersAndAIs(t *testing.T) {
 	}
 	for _, rt := range retiredConnectorFieldRoutes() {
 		t.Run(rt.name, func(t *testing.T) {
-			refused(t, func(c *testkit.Client) *testkit.Response { return rt.call(t, m, c, connRes) }, m.env.Anon(),
-				map[string]*testkit.Client{"operator": operator, "another AI of the owner": sibling, "another user's AI": strangers})
+			refused(t, func(c *testkit.Client) *testkit.Response { return rt.call(t, c, connRes) }, env.Anon(),
+				map[string]*testkit.Client{"operator": operator, "another AI of the organization": sibling, "another organization's AI": strangers})
 		})
 	}
 	for _, rt := range retiredRoomFieldRoutes() {

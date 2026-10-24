@@ -18,9 +18,8 @@ type Room struct {
 	OrgID string `json:"org_id,omitempty"`
 	// OrgIDs are the organizations the room is filed under, as in Conversation.OrgIDs: a group's
 	// organization; for a DM the organizations both participants belong to, else the caller's default.
-	OrgIDs     []string   `json:"org_ids"`
-	Owner      User       `json:"owner"`
-	Visibility Visibility `json:"visibility"`
+	OrgIDs []string `json:"org_ids"`
+	Owner  User     `json:"owner"`
 	// MyLevel is the caller's resolved level on this room (ACL-02).
 	MyLevel       Level `json:"my_level"`
 	RetentionDays int   `json:"retention_days"`

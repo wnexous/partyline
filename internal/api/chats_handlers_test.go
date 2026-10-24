@@ -13,28 +13,29 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// Auth matrix of the chat routes that are left (the list of a connection's chats and its refresh):
-// viewer is the connector's use grantee. Routing a chat to an agent and the list of every usable chat
-// are retired (retired_routes_test.go).
+// Auth matrix of the chat routes that are left (the list of a connection's chats and its refresh) over the
+// organization roles (design, "Connections" matrix): every member of the connection's organization lists the
+// chats, only its admins refresh them, and everybody else - an outsider, an admin of the instance - finds
+// nothing. Routing a chat to an agent and the list of every usable chat are retired (retired_routes_test.go).
 func TestChatRoutesAuthMatrix(t *testing.T) {
 	fake := connectortest.New()
-	m := newMatrix(t, testkit.WithConnectorKinds(fake.Kind()))
-	setup := func(t *testing.T, m *matrix) matrixResource {
-		owner := m.as(t, roleOwner)
-		c := createFake(owner, "wa", true)
-		shareConnector(owner, c.ID, m.clients[roleViewer].User.ID)
-		chat := insertChat(t, m.env, c.ID, "120363000000000001@g.us", "Support group")
-		return matrixResource{"connector": c.ID, "chat": chat}
+	env := testkit.New(t, testkit.WithConnectorKinds(fake.Kind()))
+	roles := env.OrgRoles("acme")
+	setup := func(t *testing.T) map[string]string {
+		admin := *roles.Admin
+		admin.T = t
+		c := createFakeIn(&admin, roles.Org.ID, "wa", true, roles.TargetAI)
+		chat := insertChat(t, env, c.ID, "120363000000000001@g.us", "Support group")
+		return map[string]string{"connector": c.ID, "chat": chat}
 	}
-	routes := []matrixRoute{
-		{"list connector chats", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+	runRoleRoutes(t, roles, setup, []roleRoute{
+		{"list connector chats", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Get("/api/v1/connectors/" + res["connector"] + "/chats")
-		}, statuses(200, 200, 404, 404, 404)},
-		{"refresh chats", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, connectionWant(200, 200, 404)},
+		{"refresh chats", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Post("/api/v1/connectors/"+res["connector"]+"/chats/refresh", nil)
-		}, statuses(204, 403, 404, 404, 404)},
-	}
-	m.run(t, setup, routes)
+		}, connectionWant(204, 403, 404)},
+	})
 }
 
 // CON-09: refresh records the chats the platform lists; it needs a running connector of

@@ -125,15 +125,6 @@ type DeviceRequest struct {
 	LastPollAt     sql.NullInt64
 }
 
-type Grant struct {
-	ResourceKind string
-	ResourceID   string
-	Subject      string
-	Level        string
-	CreatedBy    string
-	CreatedAt    int64
-}
-
 type Identity struct {
 	ID            string
 	UserID        string

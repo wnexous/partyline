@@ -46,7 +46,6 @@ func TestCreateGroupWithMembers(t *testing.T) {
 	require.Equal(t, acme, room.OrgID)
 	require.Equal(t, dto.LevelManage, room.MyLevel)
 	require.Equal(t, 3, room.MemberCount)
-	require.Equal(t, dto.VisibilityPrivate, room.Visibility)
 	require.Empty(t, room.Participants)
 	require.Equal(t, 90, room.RetentionDays, "the defaults of POST /rooms")
 
@@ -147,7 +146,8 @@ func TestCreateGroupRefusesTheMembersItsCreatorCannotAdd(t *testing.T) {
 	for _, c := range []*testkit.Client{alice, bob, carol} {
 		require.Empty(t, roomListOf(t, c), "nothing was created")
 	}
-	// An AI of the organization is addable, a use grant is not enough; so is the same request without the refused ones.
+	// An AI of the organization is addable, and seeing it through another one is not enough; so is the same request
+	// without the refused ones.
 	shareAI(bob, orion, alice)
 	createGroup(alice, "Launch", bob.User.ID, atlas, orion).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeMembersRefused)
 	env.AddMember(alice.PersonalOrg().ID, orion, orgs.PermissionMember, "")
@@ -204,24 +204,29 @@ func TestCreateGroupValidation(t *testing.T) {
 }
 
 // Authorization of POST /groups: any user of the instance creates a group in their own organization,
-// managing it; an agent token is not a user (403) and an anonymous caller is 401. (The organization roles
-// are in groups_org_test.go.)
+// managing it, whatever they are in other organizations (a guest, an outsider of acme, the admin of the
+// instance); an agent token is not a user (403) and an anonymous caller is 401. (The organization roles are
+// in groups_org_test.go.)
 func TestCreateGroupAuthorization(t *testing.T) {
-	m := newMatrix(t)
-	for _, role := range matrixRoles {
-		t.Run(string(role), func(t *testing.T) {
-			c := m.as(t, role)
-			room := testkit.Decode[dto.Room](createGroup(c, "Group of "+string(role)).RequireStatus(http.StatusCreated))
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	for _, role := range roles.All() {
+		t.Run(role.Name, func(t *testing.T) {
+			c := *role.Client
+			c.T = t
+			room := testkit.Decode[dto.Room](createGroup(&c, "Group of "+role.Name).RequireStatus(http.StatusCreated))
 			require.Equal(t, c.User.ID, room.Owner.ID)
 			require.Equal(t, dto.LevelManage, room.MyLevel)
+			require.Equal(t, c.PersonalOrg().ID, room.OrgID, "in their own organization")
 		})
 	}
 	t.Run("agent token", func(t *testing.T) {
-		agent := m.as(t, roleOwner).Token(dto.TokenKindAgent, "laptop")
+		agent := roles.Member.Token(dto.TokenKindAgent, "laptop")
+		agent.T = t
 		createGroup(agent, "From an AI token").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	})
 	t.Run("anonymous", func(t *testing.T) {
-		anon := m.env.Anon()
+		anon := env.Anon()
 		anon.T = t
 		createGroup(anon, "Nobody").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 	})

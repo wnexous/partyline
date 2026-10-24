@@ -2213,10 +2213,10 @@ Rewrite `authmatrix_test.go` on `OrgRoles`.
 **Reuses**: `retired_routes_test.go` pattern
 **Requirement**: ORG-02
 **Done when**:
-- [ ] e2e: the three sharing routes → 404 (retired routes test)
-- [ ] `rg -n "grants|Sharing|SetVisibility" internal` finds only migrations and the backfill
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] e2e: the three sharing routes → 404 (retired routes test)
+- [x] `rg -n "grants|Sharing|SetVisibility" internal` finds only migrations and the backfill
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `refactor(access): remove per-resource grants`
@@ -2229,9 +2229,9 @@ Rewrite `authmatrix_test.go` on `OrgRoles`.
 **Reuses**: `openMigratedBefore`
 **Requirement**: OUPG-01
 **Done when**:
-- [ ] Store test: the table is gone after migrating; 0019 and 0020 apply in one transaction from 0018 (a failure in 0020 rolls back 0019)
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] Store test: the table is gone after migrating; 0019 and 0020 apply in one transaction from 0018 (a failure in 0020 rolls back 0019)
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: integration
 **Gate**: build
 **Commit**: `feat(store): drop the grants table`
@@ -2251,8 +2251,8 @@ Rewrite `authmatrix_test.go` on `OrgRoles`.
 **Reuses**: `v04Database` helper
 **Requirement**: OUPG-01, OUPG-02, POS-10
 **Done when**:
-- [ ] The listed assertions pass
-- [ ] Gate check passes: `make check`
+- [x] The listed assertions pass
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(api): upgrade a v0.5 installation into organizations`

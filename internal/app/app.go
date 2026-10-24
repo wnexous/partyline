@@ -102,7 +102,7 @@ type App struct {
 	// Presence tracks connected agents; Agents is the agent registry.
 	Presence *agents.Presence
 	Agents   *agents.Registry
-	// Connectors manages connectors (CRUD, sharing); ConnectorManager runs them.
+	// Connectors manages connectors (CRUD); ConnectorManager runs them.
 	Connectors       *connectors.Service
 	ConnectorManager *connectors.Manager
 	// Sends sends what an AI answers through a connection it operates (AD-015).
@@ -168,7 +168,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		return nil, err
 	}
 	authz := orgs.NewAuthz(st)
-	az := access.New(st, bus, access.Options{Now: opts.Now, Authz: authz})
+	az := access.New(st, access.Options{Authz: authz})
 	trust := delivery.TrustSource(func() delivery.Trust { return authz.Session() })
 	auditLog := audit.New(st, opts.Now)
 	a := &App{

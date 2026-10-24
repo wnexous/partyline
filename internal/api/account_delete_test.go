@@ -24,8 +24,8 @@ import (
 // historyColumns are the scanned columns that keep the deleted id on purpose, because they say who did something
 // (history), not what belongs to whom. The author and actor columns (messages.author_*, audit_log.actor_id,
 // room_members.added_by, rooms.updated_by, org_invitations.invited_by) are provenance too and are not scanned at
-// all: messages stay readable after their author is gone (AD-015). `grants` is the inert table 0020 drops.
-var historyColumns = []string{"organizations.created_by", "grants.created_by"}
+// all: messages stay readable after their author is gone (AD-015).
+var historyColumns = []string{"organizations.created_by"}
 
 // idColumns are the columns of the schema that can hold a user's or an intelligence's id as a reference.
 var idColumns = []string{

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/convert"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/api/httpx"
@@ -26,8 +25,6 @@ func (s *server) roomRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/rooms/{id}", authed(s.getRoom))
 	s.handle(mux, "PATCH /api/v1/rooms/{id}", authed(s.updateRoom))
 	s.handle(mux, "DELETE /api/v1/rooms/{id}", authed(s.deleteRoom))
-	s.handle(mux, "GET /api/v1/rooms/{id}/sharing", authed(s.getRoomSharing))
-	s.handle(mux, "PUT /api/v1/rooms/{id}/sharing", authed(s.putRoomSharing))
 	s.handle(mux, "GET /api/v1/rooms/{id}/members", authed(s.listMembers))
 	s.handle(mux, "POST /api/v1/rooms/{id}/members", authed(s.addMember))
 	s.handle(mux, "PATCH /api/v1/rooms/{id}/members/{mid}", authed(s.updateMember))
@@ -60,23 +57,6 @@ func (s *server) toMember(m rooms.Member) dto.RoomMember {
 		out.Intelligence = &ref
 	}
 	return out
-}
-
-func toSharing(v access.Visibility) dto.Sharing {
-	out := dto.Sharing{Mode: v.Mode, Users: make([]dto.SharingUser, len(v.Users)), PublicLevel: v.PublicLevel}
-	for i, u := range v.Users {
-		out.Users[i] = dto.SharingUser{UserID: u.UserID, Level: u.Level, Username: u.Username, DisplayName: u.DisplayName}
-	}
-	return out
-}
-
-// visibilityFrom reads a sharing request (rooms, agents, connectors).
-func visibilityFrom(req dto.Sharing) access.Visibility {
-	v := access.Visibility{Mode: req.Mode, PublicLevel: req.PublicLevel, Users: make([]access.UserLevel, len(req.Users))}
-	for i, u := range req.Users {
-		v.Users[i] = access.UserLevel{UserID: u.UserID, Level: u.Level}
-	}
-	return v
 }
 
 func (s *server) listRooms(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
@@ -137,29 +117,6 @@ func (s *server) deleteRoom(w http.ResponseWriter, r *http.Request, p authn.Prin
 		return err
 	}
 	w.WriteHeader(http.StatusNoContent)
-	return nil
-}
-
-func (s *server) getRoomSharing(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	v, err := s.Rooms.Sharing(r.Context(), p, r.PathValue("id"))
-	if err != nil {
-		return err
-	}
-	httpx.WriteJSON(w, http.StatusOK, toSharing(v))
-	return nil
-}
-
-// putRoomSharing replaces the room's grants with a visibility preset (ACL-07).
-func (s *server) putRoomSharing(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
-	var req dto.Sharing
-	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		return err
-	}
-	v, err := s.Rooms.SetSharing(r.Context(), p, r.PathValue("id"), visibilityFrom(req))
-	if err != nil {
-		return err
-	}
-	httpx.WriteJSON(w, http.StatusOK, toSharing(v))
 	return nil
 }
 

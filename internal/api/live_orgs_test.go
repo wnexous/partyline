@@ -228,14 +228,14 @@ func TestLiveConnectionWithoutAnOrganizationIsItsOwners(t *testing.T) {
 	memberLive.ExpectNone(quiet)
 }
 
-// The access.changed of an AI or a connection (a merge, a change of who may use it) is told to the same
-// users: the members of its organization.
+// The access.changed of an AI or a connection (a merge) is told to the same users: the members of its
+// organization.
 func TestLiveAccessChangedOfAnAIOrAConnectionReachesItsViewersOnly(t *testing.T) {
 	w := newLiveWorld(t)
 	member, outsider := dialLive(t, w.acme.Member), dialLive(t, w.acme.Outsider)
 
-	w.env.App.Bus.Publish(events.GrantsChanged{ResourceKind: "agent", ResourceID: w.acme.TargetAI})
-	w.env.App.Bus.Publish(events.GrantsChanged{ResourceKind: "connector", ResourceID: w.connector})
+	w.env.App.Bus.Publish(events.AccessChanged{ResourceKind: "agent", ResourceID: w.acme.TargetAI})
+	w.env.App.Bus.Publish(events.AccessChanged{ResourceKind: "connector", ResourceID: w.connector})
 	require.Equal(t, []string{"access:agent:" + w.acme.TargetAI, "access:connector:" + w.connector},
 		keysUntil(t, member, "access:agent:"+w.acme.TargetAI, "access:connector:"+w.connector))
 	outsider.ExpectNone(quiet)

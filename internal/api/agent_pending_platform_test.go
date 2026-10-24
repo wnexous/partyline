@@ -226,18 +226,18 @@ func TestPendingPlatformRefusesPushedSessions(t *testing.T) {
 }
 
 // Authorization of GET /agent/pending?platform=1: agent tokens only, and an AI reads its own queue.
-// The operator gets its events; another AI of the same owner, the AI of a user granted use of the
+// The operator gets its events; another AI of the same owner, the AI of a colleague who sees the
 // operator and the AI of a stranger (each with the same folder name where it can be) get none of
 // them and take nothing; users, with a session or a token, and anonymous callers are refused.
 func TestPendingPlatformAuthorizationMatrix(t *testing.T) {
 	f := newPlatformWS(t)
 	bob, carol := f.env.NewUser("bob"), f.env.NewUser("carol")
-	shareAgent(f.alice, f.atlas, bob.User.ID)
+	shareAI(f.alice, f.atlas, bob) // bob joins Atlas's organization: he sees it
 	id := f.enqueue(t, f.atlas, f.group, "m1", "for Atlas only")
 
 	none := dto.AgentPending{Items: []dto.AgentMessage{}, Platform: []dto.PlatformEvent{}}
 	require.Equal(t, none, f.pendingPlatform(t, "Notes", "?platform=1"), "another AI of the owner")
-	for name, u := range map[string]*testkit.Client{"use grantee": bob, "stranger": carol} {
+	for name, u := range map[string]*testkit.Client{"colleague": bob, "stranger": carol} {
 		got := testkit.Decode[dto.AgentPending](u.Token(dto.TokenKindAgent, "desk").AsAgent("Atlas").
 			Get("/api/v1/agent/pending?platform=1").RequireStatus(http.StatusOK))
 		require.Equal(t, none, got, "%s's own AI of the same folder", name)
@@ -311,20 +311,20 @@ func TestPendingWithoutThePlatformParameterLeavesTheDroppedCount(t *testing.T) {
 }
 
 // CID-10 (authorization matrix): the count is the AI's own. The AI that was told reads it; another AI of
-// the owner, the AI of the same folder name of another user (who may use the first AI, or nothing) and
-// every caller that is not an AI see none of it and take none of it.
+// the owner, the AI of the same folder name of another user (a colleague who sees the first AI, or nothing)
+// and every caller that is not an AI see none of it and take none of it.
 func TestPendingDroppedCountBelongsToTheAI(t *testing.T) {
 	f := newPlatformWS(t)
 	bob, carol := f.env.NewUser("bob"), f.env.NewUser("carol")
-	shareAgent(f.alice, f.atlas, bob.User.ID) // bob may use Atlas
-	f.env.NewAI(bob, "Atlas")                 // and has an AI of the same name
+	shareAI(f.alice, f.atlas, bob) // bob sees Atlas
+	f.env.NewAI(bob, "Atlas")      // and has an AI of the same name
 	f.env.NewAI(carol, "Atlas")
 	f.expire(t, 2, "old")
 
 	for name, c := range map[string]*testkit.Client{
-		"another AI of the owner":            f.token.AsAgent("Notes"),
-		"the same-named AI of a use grantee": bob.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas"),
-		"the same-named AI of a stranger":    carol.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas"),
+		"another AI of the owner":          f.token.AsAgent("Notes"),
+		"the same-named AI of a colleague": bob.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas"),
+		"the same-named AI of a stranger":  carol.Token(dto.TokenKindAgent, "laptop").AsAgent("Atlas"),
 	} {
 		c.T = t
 		require.Zero(t, testkit.Decode[dto.AgentPending](c.Get("/api/v1/agent/pending?platform=1").RequireStatus(http.StatusOK)).Dropped, name)
@@ -332,7 +332,7 @@ func TestPendingDroppedCountBelongsToTheAI(t *testing.T) {
 	}
 	for name, c := range map[string]*testkit.Client{
 		"the owner's session": f.alice, "the owner's user token": f.alice.Token(dto.TokenKindUser, "script"),
-		"a grantee": bob, "a stranger": carol, "an admin": f.env.NewAdmin("root"),
+		"a colleague": bob, "a stranger": carol, "an admin": f.env.NewAdmin("root"),
 	} {
 		c.T = t
 		c.Get("/api/v1/agent/pending?platform=1").RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)

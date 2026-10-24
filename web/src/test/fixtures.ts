@@ -123,7 +123,6 @@ export function makeRoom(over: Partial<Room> = {}): Room {
     instructions: "",
     org_ids: ["o1"],
     owner: { id: "u1", username: "ana", display_name: "Ana Souza" },
-    visibility: "private",
     my_level: "manage",
     retention_days: 90,
     agents_paused: false,

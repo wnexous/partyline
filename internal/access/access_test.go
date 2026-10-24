@@ -5,28 +5,23 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
-	"sort"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/wnexous/partyline/internal/api/dto"
-	"github.com/wnexous/partyline/internal/audit"
 	"github.com/wnexous/partyline/internal/authn"
-	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
-	"github.com/wnexous/partyline/internal/validation"
 )
 
 var t0 = time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
 
 type fixture struct {
-	st  *store.Store
-	bus *events.Bus
-	az  *Authorizer
+	st *store.Store
+	az *Authorizer
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -35,8 +30,7 @@ func newFixture(t *testing.T) *fixture {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	require.NoError(t, st.Migrate(context.Background()))
-	bus := events.NewBus()
-	return &fixture{st: st, bus: bus, az: New(st, bus, Options{Now: func() time.Time { return t0 }})}
+	return &fixture{st: st, az: New(st, Options{})}
 }
 
 func (f *fixture) exec(t *testing.T, fn func(q *db.Queries) error) {
@@ -148,20 +142,18 @@ func (f *fixture) agent(t *testing.T, ownerID string) string {
 	return id
 }
 
-func (f *fixture) connector(t *testing.T, ownerID string) string {
+// connector stores a connection of the organization ("" for none, the shape of a row written before
+// organizations); ownerID is the creator, a dead anchor that gives no access (AD-019).
+func (f *fixture) connector(t *testing.T, orgID, ownerID string) string {
 	t.Helper()
 	id := store.NewID()
 	f.exec(t, func(q *db.Queries) error {
-		return q.CreateConnector(context.Background(), db.CreateConnectorParams{ID: id, OwnerID: ownerID, Kind: "webhook", Name: "hook", ConfigJson: "{}", Enabled: true, CreatedAt: t0.UnixMilli(), UpdatedAt: t0.UnixMilli()})
+		return q.CreateConnector(context.Background(), db.CreateConnectorParams{
+			ID: id, OwnerID: ownerID, OrgID: nullable(orgID), Kind: "webhook", Name: "hook", ConfigJson: "{}", Enabled: true,
+			CreatedAt: t0.UnixMilli(), UpdatedAt: t0.UnixMilli(),
+		})
 	})
 	return id
-}
-
-func (f *fixture) grant(t *testing.T, kind Kind, id, subject string, level Level) {
-	t.Helper()
-	f.exec(t, func(q *db.Queries) error {
-		return q.CreateGrant(context.Background(), db.CreateGrantParams{ResourceKind: string(kind), ResourceID: id, Subject: subject, Level: string(level), CreatedAt: t0.UnixMilli()})
-	})
 }
 
 func (f *fixture) addAgentMember(t *testing.T, roomID, agentID string) {
@@ -174,19 +166,6 @@ func (f *fixture) addAgentMember(t *testing.T, roomID, agentID string) {
 }
 
 func user(id string) authn.Principal { return authn.Principal{Kind: authn.KindUser, UserID: id} }
-
-// grantRows returns the stored grants of a resource as "subject=level" strings, sorted.
-func (f *fixture) grantRows(t *testing.T, kind Kind, id string) []string {
-	t.Helper()
-	rows, err := f.st.R().ListGrantsWithUsers(context.Background(), db.ListGrantsWithUsersParams{ResourceKind: string(kind), ResourceID: id})
-	require.NoError(t, err)
-	out := []string{}
-	for _, r := range rows {
-		out = append(out, r.Subject+"="+r.Level)
-	}
-	sort.Strings(out)
-	return out
-}
 
 // intelligence gives an existing user or agent its intelligence row, which a DM's participant
 // columns and an organization's membership reference.
@@ -269,8 +248,8 @@ func (f *fixture) levelOf(t *testing.T, userID, roomID string) Level {
 
 // AD-016, ORG-02: a group is posted to by its room members, guests included, and managed by its creator
 // and by the admins of its organization. Nobody else has any access: not a member of the organization
-// whatever their position, not the user the room row names as its owner, not the holder of a grant, not
-// an admin of another organization, not an admin of the instance. A disabled user has none either.
+// whatever their position, not the user the room row names as its owner, not an admin of another
+// organization, not an admin of the instance. A disabled user has none either.
 func TestGroupRoomLevel(t *testing.T) {
 	f := newFixture(t)
 	acme, globex := f.org(t, "acme"), f.org(t, "globex")
@@ -351,16 +330,8 @@ func TestGroupRoomLevel(t *testing.T) {
 			f.join(t, acme, u, orgs.PermissionAdmin, "")
 			return groupOf(t), u
 		}},
-		{"grants of every level, to the user and to everyone, give nothing", None, func(t *testing.T) (string, string) {
-			g, u := groupOf(t), member(t, "grantee", orgs.PermissionMember, "")
-			f.grant(t, KindRoom, g, u, dto.LevelManage)
-			f.grant(t, KindRoom, g, Everyone, dto.LevelPost)
-			return g, u
-		}},
-		{"a grant to a user of no organization gives nothing", None, func(t *testing.T) (string, string) {
-			g, u := groupOf(t), f.human(t, uniq("outsider"), dto.RoleMember)
-			f.grant(t, KindRoom, g, u, dto.LevelView)
-			return g, u
+		{"a user of no organization has none", None, func(t *testing.T) (string, string) {
+			return groupOf(t), f.human(t, uniq("outsider"), dto.RoleMember)
 		}},
 		{"a creator who left the organization has none", None, func(t *testing.T) (string, string) {
 			u := member(t, "leaver", orgs.PermissionMember, "")
@@ -437,7 +408,7 @@ func TestLevelOrder(t *testing.T) {
 	require.False(t, AtLeast(None, dto.LevelUse))
 }
 
-// ACL-08, AD-016: instance admins get no implicit access to rooms, agents or connectors; what an
+// ACL-08, AD-016: instance admins get no implicit access to rooms, AIs or connections; what an
 // organization gives them it gives like anyone else.
 func TestAdminWithoutMembershipHasNoAccess(t *testing.T) {
 	ctx := context.Background()
@@ -446,33 +417,33 @@ func TestAdminWithoutMembershipHasNoAccess(t *testing.T) {
 	admin := f.human(t, "admin", dto.RoleAdmin)
 	acme := f.org(t, "acme")
 	f.join(t, acme, owner, orgs.PermissionAdmin, "")
-	room, agent, conn := f.group(t, acme, owner, owner), f.agent(t, owner), f.connector(t, owner)
+	room, agent, conn := f.group(t, acme, owner, owner), f.ai(t, owner), f.connector(t, acme, owner)
+	f.home(t, agent, acme, owner, orgs.PermissionMember, "")
+	principal := authn.Principal{Kind: authn.KindUser, UserID: admin, Role: string(dto.RoleAdmin)}
 
-	l, err := f.az.RoomLevel(ctx, authn.Principal{Kind: authn.KindUser, UserID: admin, Role: string(dto.RoleAdmin)}, room)
+	l, err := f.az.RoomLevel(ctx, principal, room)
 	require.NoError(t, err)
 	require.Equal(t, None, l)
-	l, err = f.az.AgentLevel(ctx, admin, agent)
-	require.NoError(t, err)
-	require.Equal(t, None, l)
-	l, err = f.az.ConnectorLevel(ctx, admin, conn)
-	require.NoError(t, err)
-	require.Equal(t, None, l)
-	ok, err := f.az.CanUseAgent(ctx, admin, agent)
+	ok, err := f.az.CanSeeAI(ctx, principal, agent)
 	require.NoError(t, err)
 	require.False(t, ok)
-	ok, err = f.az.CanUseConnector(ctx, admin, conn)
+	ok, err = f.az.CanSeeConnection(ctx, principal, conn)
 	require.NoError(t, err)
 	require.False(t, ok)
-	levels, err := f.az.GrantedRoomLevels(ctx, admin)
+	levels, err := f.az.RoomLevels(ctx, admin)
 	require.NoError(t, err)
 	require.Empty(t, levels)
 
-	// A grant gives an admin nothing on a room, like anyone else.
-	f.grant(t, KindRoom, room, admin, dto.LevelManage)
-	require.Equal(t, None, f.levelOf(t, admin, room))
-	// Membership of the organization does.
+	// Membership of the organization gives what it gives anyone: the group to its admins, the AI and the
+	// connection to its members.
 	f.join(t, acme, admin, orgs.PermissionAdmin, "")
 	require.Equal(t, dto.LevelManage, f.levelOf(t, admin, room))
+	ok, err = f.az.CanSeeAI(ctx, principal, agent)
+	require.NoError(t, err)
+	require.True(t, ok)
+	ok, err = f.az.CanSeeConnection(ctx, principal, conn)
+	require.NoError(t, err)
+	require.True(t, ok)
 }
 
 // AUTH-10: a disabled user has no access, whatever they hold; enabling restores it.
@@ -484,28 +455,39 @@ func TestDisabledUserResolvesToNone(t *testing.T) {
 	u := f.human(t, "user", dto.RoleMember)
 	f.join(t, acme, owner, orgs.PermissionAdmin, "")
 	f.join(t, acme, u, orgs.PermissionAdmin, "")
-	room, agent, conn := f.group(t, acme, owner, owner), f.agent(t, owner), f.connector(t, owner)
-	f.grant(t, KindAgent, agent, u, dto.LevelUse)
-	f.grant(t, KindConnector, conn, u, dto.LevelUse)
+	room, agent, conn := f.group(t, acme, owner, owner), f.ai(t, owner), f.connector(t, acme, owner)
+	f.home(t, agent, acme, owner, orgs.PermissionMember, "")
+	sees := func(who string) (ai, connection bool) {
+		t.Helper()
+		p := user(who)
+		ai, err := f.az.CanSeeAI(ctx, p, agent)
+		require.NoError(t, err)
+		connection, err = f.az.CanSeeConnection(ctx, p, conn)
+		require.NoError(t, err)
+		return ai, connection
+	}
 	require.Equal(t, dto.LevelManage, f.levelOf(t, u, room))
+	ai, connection := sees(u)
+	require.True(t, ai && connection)
 
 	f.disable(t, u, true)
 	require.Equal(t, None, f.levelOf(t, u, room), "an admin of the organization")
-	levels, err := f.az.GrantedRoomLevels(ctx, u)
+	levels, err := f.az.RoomLevels(ctx, u)
 	require.NoError(t, err)
 	require.Empty(t, levels)
-	ok, err := f.az.CanUseAgent(ctx, u, agent)
-	require.NoError(t, err)
-	require.False(t, ok)
-	ok, err = f.az.CanUseConnector(ctx, u, conn)
-	require.NoError(t, err)
-	require.False(t, ok)
+	ai, connection = sees(u)
+	require.False(t, ai, "a disabled member sees no AI of the organization")
+	require.False(t, connection, "and no connection of it")
 
 	f.disable(t, owner, true)
 	require.Equal(t, None, f.levelOf(t, owner, room), "a disabled creator has no access either")
+	ai, _ = sees(owner)
+	require.False(t, ai, "a disabled host sees no AI")
 
 	f.disable(t, u, false)
 	require.Equal(t, dto.LevelManage, f.levelOf(t, u, room), "enabling restores the access")
+	ai, connection = sees(u)
+	require.True(t, ai && connection)
 }
 
 // Design (access.RoomLevel): an agent principal posts in rooms where it is a member, else has no access.
@@ -531,158 +513,156 @@ func TestAgentRoomLevel(t *testing.T) {
 	require.Equal(t, None, l)
 }
 
-// ACL-05, ACL-06: agents and connectors are usable by their owner (manage) and by use grantees.
-func TestUseLevelsOnAgentsAndConnectors(t *testing.T) {
+// ACL-05, AD-016: an AI is seen by the user who hosts it and by the members of any organization it belongs
+// to, with any permission, guests included; an AI sees itself and the AIs it shares an organization with,
+// and never reaches further through its host. Nobody else sees it: not an outsider, not another
+// organization's admin, not an admin of the instance, not the creator of the row who left, not a
+// disabled user; and an AI that does not exist is seen by nobody.
+func TestCanSeeAI(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
-	owner := f.user(t, "owner", dto.RoleMember)
-	grantee := f.user(t, "grantee", dto.RoleMember)
-	stranger := f.user(t, "stranger", dto.RoleMember)
-	agent, conn := f.agent(t, owner), f.connector(t, owner)
-	publicAgent, publicConn := f.agent(t, owner), f.connector(t, owner)
-	f.grant(t, KindAgent, agent, grantee, dto.LevelUse)
-	f.grant(t, KindConnector, conn, grantee, dto.LevelUse)
-	f.grant(t, KindAgent, publicAgent, Everyone, dto.LevelUse)
-	f.grant(t, KindConnector, publicConn, Everyone, dto.LevelUse)
+	acme, globex := f.org(t, "acme"), f.org(t, "globex")
+	host := f.human(t, "host", dto.RoleMember)
+	f.join(t, globex, host, orgs.PermissionMember, "") // the host belongs to globex, and not to acme
+	atlas := f.ai(t, host)
+	f.home(t, atlas, acme, host, orgs.PermissionMember, "")
+	sibling := f.ai(t, host) // hosted by the same user, in globex
+	f.home(t, sibling, globex, host, orgs.PermissionMember, "")
+	colleague := f.ai(t, f.human(t, "other-host", dto.RoleMember))
+	f.home(t, colleague, acme, "", orgs.PermissionMember, "")
 
-	cases := []struct {
-		user, agent, conn string
-		want              Level
+	member := func(name string, perm orgs.Permission) string {
+		u := f.human(t, name, dto.RoleMember)
+		f.join(t, acme, u, perm, "")
+		return u
+	}
+	outsider := f.human(t, "outsider", dto.RoleMember)
+	root := f.human(t, "root", dto.RoleAdmin)
+	foreignAdmin := f.human(t, "foreign-admin", dto.RoleMember)
+	f.join(t, globex, foreignAdmin, orgs.PermissionAdmin, "")
+	disabled := member("disabled", orgs.PermissionMember)
+	f.disable(t, disabled, true)
+
+	for _, tc := range []struct {
+		name string
+		who  string
+		want bool
 	}{
-		{owner, agent, conn, dto.LevelManage},
-		{grantee, agent, conn, dto.LevelUse},
-		{stranger, agent, conn, None},
-		{stranger, publicAgent, publicConn, dto.LevelUse},
-		{grantee, store.NewID(), store.NewID(), None},
+		{"the host", host, true},
+		{"a member of the organization", member("member", orgs.PermissionMember), true},
+		{"an admin of the organization", member("admin", orgs.PermissionAdmin), true},
+		{"a guest of the organization", member("guest", orgs.PermissionGuest), true},
+		{"a user of no organization", outsider, false},
+		{"an admin of another organization", foreignAdmin, false},
+		{"an admin of the instance", root, false},
+		{"a disabled member", disabled, false},
+	} {
+		ok, err := f.az.CanSeeAI(ctx, user(tc.who), atlas)
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.want, ok, tc.name)
 	}
-	for _, tc := range cases {
-		l, err := f.az.AgentLevel(ctx, tc.user, tc.agent)
-		require.NoError(t, err)
-		require.Equal(t, tc.want, l)
-		ok, err := f.az.CanUseAgent(ctx, tc.user, tc.agent)
-		require.NoError(t, err)
-		require.Equal(t, tc.want != None, ok)
 
-		l, err = f.az.ConnectorLevel(ctx, tc.user, tc.conn)
-		require.NoError(t, err)
-		require.Equal(t, tc.want, l)
-		ok, err = f.az.CanUseConnector(ctx, tc.user, tc.conn)
-		require.NoError(t, err)
-		require.Equal(t, tc.want != None, ok)
+	ai := func(id string) authn.Principal {
+		return authn.Principal{Kind: authn.KindAgent, UserID: host, AgentID: id}
 	}
+	for _, tc := range []struct {
+		name   string
+		who    authn.Principal
+		target string
+		want   bool
+	}{
+		{"an AI sees itself", ai(atlas), atlas, true},
+		{"an AI sees an AI of its organization", ai(atlas), colleague, true},
+		{"an AI does not see an AI of its host's organization, which shares none with it", ai(atlas), sibling, false},
+		{"an agent token that names no AI sees nothing", ai(""), atlas, false},
+	} {
+		ok, err := f.az.CanSeeAI(ctx, tc.who, tc.target)
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.want, ok, tc.name)
+	}
+
+	ok, err := f.az.CanSeeAI(ctx, user(host), store.NewID())
+	require.NoError(t, err)
+	require.False(t, ok, "an AI that does not exist")
+	ok, err = f.az.CanSeeAI(ctx, user(host), "")
+	require.NoError(t, err)
+	require.False(t, ok, "no AI named")
+
+	// Leaving an organization ends the sight it gave, and hosting never depends on one.
+	leaver := member("leaver", orgs.PermissionMember)
+	ok, err = f.az.CanSeeAI(ctx, user(leaver), atlas)
+	require.NoError(t, err)
+	require.True(t, ok)
+	f.leave(t, acme, leaver)
+	ok, err = f.az.CanSeeAI(ctx, user(leaver), atlas)
+	require.NoError(t, err)
+	require.False(t, ok, "a member who left")
+	f.leave(t, acme, atlas) // the AI is in no organization any more
+	ok, err = f.az.CanSeeAI(ctx, user(host), atlas)
+	require.NoError(t, err)
+	require.True(t, ok, "a host sees the AI it runs whatever its organizations")
 }
 
-// ACL-07 (inert since AD-016): a visibility preset still replaces the room's grants - none; the listed
-// users at their level; everyone at view or post - and still announces it, but a grant gives no access to
-// a room any more, so no preset changes anyone's level.
-func TestSetVisibilityReplacesGrantsButGivesNoRoomAccess(t *testing.T) {
+// ACL-06, AD-016: a connection is seen by the members of its organization, with any permission, and by nobody
+// else: an outsider, an admin of the instance, the user the row names as its owner (a dead anchor), a
+// disabled member. An AI is a member like anyone and sees as itself, never through its host. A connection
+// without an organization (a row written before them) and one that does not exist are seen by nobody.
+func TestCanSeeConnection(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	acme := f.org(t, "acme")
-	owner := f.human(t, "owner", dto.RoleMember)
-	f.join(t, acme, owner, orgs.PermissionAdmin, "")
-	b := f.human(t, "bob", dto.RoleMember)
-	c := f.human(t, "carol", dto.RoleMember)
-	d := f.human(t, "dave", dto.RoleMember)
-	for _, u := range []string{b, c, d} {
-		f.join(t, acme, u, orgs.PermissionMember, "")
+	creator := f.human(t, "creator", dto.RoleMember) // named as the owner by the row, and not a member
+	conn := f.connector(t, acme, creator)
+	legacy := f.connector(t, "", creator)
+
+	member := func(name string, perm orgs.Permission) string {
+		u := f.human(t, name, dto.RoleMember)
+		f.join(t, acme, u, perm, "")
+		return u
 	}
-	room := f.group(t, acme, owner, owner)
-	sub, cancel := f.bus.Subscribe(16)
-	defer cancel()
-
-	noOneElse := func() {
-		t.Helper()
-		require.Equal(t, []Level{None, None, None, dto.LevelManage},
-			[]Level{f.levelOf(t, b, room), f.levelOf(t, c, room), f.levelOf(t, d, room), f.levelOf(t, owner, room)})
-	}
-	set := func(v Visibility) {
-		t.Helper()
-		require.NoError(t, f.az.SetVisibility(ctx, owner, KindRoom, room, owner, v))
-		require.Equal(t, events.GrantsChanged{ResourceKind: "room", ResourceID: room}, <-sub)
-		noOneElse()
-	}
-
-	set(Visibility{Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: b, Level: dto.LevelView}, {UserID: c, Level: dto.LevelPost}, {UserID: owner, Level: dto.LevelView}}})
-	require.ElementsMatch(t, []string{b + "=view", c + "=post"}, f.grantRows(t, KindRoom, room), "owner entry is skipped")
-	v, err := f.az.Sharing(ctx, KindRoom, room)
-	require.NoError(t, err)
-	require.Equal(t, dto.VisibilityShared, v.Mode)
-	require.Equal(t, []UserLevel{
-		{UserID: b, Level: dto.LevelView, Username: "bob", DisplayName: "n-" + b[len(b)-6:]},
-		{UserID: c, Level: dto.LevelPost, Username: "carol", DisplayName: "n-" + c[len(c)-6:]},
-	}, v.Users)
-
-	set(Visibility{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost})
-	require.Equal(t, []string{"*=post"}, f.grantRows(t, KindRoom, room))
-	v, err = f.az.Sharing(ctx, KindRoom, room)
-	require.NoError(t, err)
-	require.Equal(t, Visibility{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost, Users: []UserLevel{}}, v)
-
-	set(Visibility{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelView})
-	require.Equal(t, []string{"*=view"}, f.grantRows(t, KindRoom, room))
-
-	set(Visibility{Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: d, Level: dto.LevelManage}}})
-	require.Equal(t, []string{d + "=manage"}, f.grantRows(t, KindRoom, room))
-
-	set(Visibility{Mode: dto.VisibilityPrivate, Users: []UserLevel{{UserID: b, Level: dto.LevelView}}})
-	require.Empty(t, f.grantRows(t, KindRoom, room), "private removes every grant, even when users are sent")
-	v, err = f.az.Sharing(ctx, KindRoom, room)
-	require.NoError(t, err)
-	require.Equal(t, Visibility{Mode: dto.VisibilityPrivate, Users: []UserLevel{}}, v)
-}
-
-// ACL-07 for agents and connectors: shared and public grant use.
-func TestSetVisibilityOnAgentsAndConnectors(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	owner := f.user(t, "owner", dto.RoleMember)
-	b := f.user(t, "bob", dto.RoleMember)
-	agent, conn := f.agent(t, owner), f.connector(t, owner)
-
-	require.NoError(t, f.az.SetVisibility(ctx, owner, KindAgent, agent, owner, Visibility{Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: b, Level: dto.LevelUse}}}))
-	require.Equal(t, []string{b + "=use"}, f.grantRows(t, KindAgent, agent))
-	require.NoError(t, f.az.SetVisibility(ctx, owner, KindConnector, conn, owner, Visibility{Mode: dto.VisibilityPublic}))
-	require.Equal(t, []string{"*=use"}, f.grantRows(t, KindConnector, conn), "public defaults to use")
-}
-
-// ACL-07: invalid presets are rejected with field errors and leave the grants unchanged.
-func TestSetVisibilityValidation(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	owner := f.user(t, "owner", dto.RoleMember)
-	b := f.user(t, "bob", dto.RoleMember)
-	room, agent := f.room(t, owner), f.agent(t, owner)
-	require.NoError(t, f.az.SetVisibility(ctx, owner, KindRoom, room, owner, Visibility{Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: b, Level: dto.LevelView}}}))
-
-	cases := []struct {
-		name  string
-		kind  Kind
-		id    string
-		v     Visibility
-		field string
+	root := f.human(t, "root", dto.RoleAdmin)
+	disabled := member("disabled", orgs.PermissionMember)
+	f.disable(t, disabled, true)
+	for _, tc := range []struct {
+		name string
+		who  string
+		want bool
 	}{
-		{"unknown mode", KindRoom, room, Visibility{Mode: "secret"}, "mode"},
-		{"public manage", KindRoom, room, Visibility{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelManage}, "public_level"},
-		{"public without level", KindRoom, room, Visibility{Mode: dto.VisibilityPublic}, "public_level"},
-		{"public use on room", KindRoom, room, Visibility{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelUse}, "public_level"},
-		{"shared without users", KindRoom, room, Visibility{Mode: dto.VisibilityShared}, "users"},
-		{"shared unknown user", KindRoom, room, Visibility{Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: store.NewID(), Level: dto.LevelView}}}, "users"},
-		{"shared bad level", KindRoom, room, Visibility{Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: b, Level: "admin"}}}, "users"},
-		{"shared duplicate", KindRoom, room, Visibility{Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: b, Level: dto.LevelView}, {UserID: b, Level: dto.LevelPost}}}, "users"},
-		{"agent view level", KindAgent, agent, Visibility{Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: b, Level: dto.LevelView}}}, "users"},
-		{"agent public post", KindAgent, agent, Visibility{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost}, "public_level"},
+		{"a member", member("member", orgs.PermissionMember), true},
+		{"an admin", member("admin", orgs.PermissionAdmin), true},
+		{"a guest", member("guest", orgs.PermissionGuest), true},
+		{"the user the row names as its owner, who is no member", creator, false},
+		{"an admin of the instance who is no member", root, false},
+		{"a disabled member", disabled, false},
+	} {
+		ok, err := f.az.CanSeeConnection(ctx, user(tc.who), conn)
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.want, ok, tc.name)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			before := f.grantRows(t, tc.kind, tc.id)
-			err := f.az.SetVisibility(ctx, owner, tc.kind, tc.id, owner, tc.v)
-			var verr *validation.Error
-			require.ErrorAs(t, err, &verr)
-			require.Contains(t, verr.Fields, tc.field)
-			require.Equal(t, before, f.grantRows(t, tc.kind, tc.id))
-		})
+
+	host := member("host", orgs.PermissionMember) // hosts two AIs: one in acme and one elsewhere
+	atlas, elsewhere := f.ai(t, host), f.ai(t, host)
+	f.home(t, atlas, acme, host, orgs.PermissionMember, "")
+	f.home(t, elsewhere, f.org(t, "globex"), host, orgs.PermissionMember, "")
+	ai := func(id string) authn.Principal {
+		return authn.Principal{Kind: authn.KindAgent, UserID: host, AgentID: id}
 	}
+	ok, err := f.az.CanSeeConnection(ctx, ai(atlas), conn)
+	require.NoError(t, err)
+	require.True(t, ok, "an AI of the organization")
+	ok, err = f.az.CanSeeConnection(ctx, ai(elsewhere), conn)
+	require.NoError(t, err)
+	require.False(t, ok, "an AI of another organization, though its host is a member of this one")
+	ok, err = f.az.CanSeeConnection(ctx, ai(""), conn)
+	require.NoError(t, err)
+	require.False(t, ok, "an agent token that names no AI acts as nobody")
+
+	ok, err = f.az.CanSeeConnection(ctx, user(host), legacy)
+	require.NoError(t, err)
+	require.False(t, ok, "a connection with no organization")
+	ok, err = f.az.CanSeeConnection(ctx, user(host), store.NewID())
+	require.NoError(t, err)
+	require.False(t, ok, "a connection that does not exist")
 }
 
 // dmCast is the people and AIs of the DM tests: acme's chart is Admin > Lead > Worker; alice writes to
@@ -691,7 +671,7 @@ func TestSetVisibilityValidation(t *testing.T) {
 type dmCast struct {
 	acme, globex                                            string
 	alice, bob, cara, host, boss, lead, peer, admin, gxBoss string
-	instanceAdmin, grantee                                  string
+	instanceAdmin, plain                                    string
 	atlas, orion, vega, nomad                               string
 }
 
@@ -714,7 +694,7 @@ func newDMCast(t *testing.T, f *fixture) dmCast {
 	c.gxBoss = f.human(t, "gxboss", dto.RoleMember)
 	f.join(t, c.globex, c.gxBoss, orgs.PermissionMember, gxRoot)
 	c.instanceAdmin = f.human(t, "root", dto.RoleAdmin)
-	c.grantee = in("dave", orgs.PermissionMember, "")
+	c.plain = in("dave", orgs.PermissionMember, "") // a member with no position and no relation to any AI
 
 	c.atlas = f.ai(t, c.host)
 	f.home(t, c.atlas, c.acme, c.bob, orgs.PermissionMember, worker)
@@ -724,16 +704,14 @@ func newDMCast(t *testing.T, f *fixture) dmCast {
 	f.home(t, c.vega, c.acme, c.cara, orgs.PermissionMember, "")
 	f.join(t, c.globex, c.vega, orgs.PermissionMember, gxHand)
 	c.nomad = f.ai(t, c.host) // no home organization, no creator
-	f.grant(t, KindAgent, c.atlas, c.grantee, dto.LevelUse)
-	f.grant(t, KindAgent, c.atlas, Everyone, dto.LevelUse)
 	return c
 }
 
 // DM-08, AD-016, POS-03: a DM is posted to by its two participants and viewed by whoever manages one of
 // its AI participants in that AI's home organization. Everybody else has none: not the AI's host, not the
 // creator of an AI that holds a position, not a peer, not an admin without a position, not a manager in an
-// organization that is not the AI's home, not the holder of a grant, not an admin of the instance. Nobody
-// manages a DM.
+// organization that is not the AI's home, not a plain member of the organization, not an admin of the
+// instance. Nobody manages a DM.
 func TestDMRoomLevel(t *testing.T) {
 	f := newFixture(t)
 	c := newDMCast(t, f)
@@ -756,7 +734,7 @@ func TestDMRoomLevel(t *testing.T) {
 		{withAtlas, c.bob, "the creator of an AI that holds a position", None},
 		{withAtlas, c.host, "the user that hosts the AI", None},
 		{withAtlas, c.admin, "an admin of the organization without a position", None},
-		{withAtlas, c.grantee, "a user granted use on the AI, and everyone", None},
+		{withAtlas, c.plain, "a member of the organization with no relation to the AI", None},
 		{withAtlas, c.gxBoss, "a user of another organization", None},
 		{withAtlas, c.instanceAdmin, "an admin of the instance", None},
 		{withOrion, c.alice, "the participant of the DM with a positionless AI", dto.LevelPost},
@@ -813,21 +791,18 @@ func TestDMViewFollowsTheChart(t *testing.T) {
 	require.Equal(t, None, f.levelOf(t, c.peer, room), "a manager who left the organization")
 }
 
-// DM-08: grants never give access to a DM, and neither does the owner column of the room row.
-func TestDMRoomLevelIgnoresGrantsAndOwnerColumn(t *testing.T) {
+// DM-08: neither the owner column of the room row nor a member row of someone who is no participant gives
+// access to a DM.
+func TestDMRoomLevelIgnoresTheOwnerColumnAndStrayMembers(t *testing.T) {
 	f := newFixture(t)
 	c := newDMCast(t, f)
 	stranger := f.human(t, "stranger", dto.RoleMember)
 	room := f.dm(t, stranger, c.alice, c.atlas) // stranger created the row but is no participant
 
-	// A grant row on a DM can only exist by writing around the API, which refuses them.
-	f.grant(t, KindRoom, room, Everyone, dto.LevelManage)
-	f.grant(t, KindRoom, room, stranger, dto.LevelManage)
-	f.grant(t, KindRoom, room, c.host, dto.LevelManage)
-	require.Equal(t, None, f.levelOf(t, stranger, room), "neither the owner column nor a manage grant")
-	require.Equal(t, None, f.levelOf(t, c.host, room), "a grant does not make the AI's host a viewer")
-	require.Equal(t, dto.LevelView, f.levelOf(t, c.lead, room), "a grant does not change the manager's view")
-	require.Equal(t, dto.LevelPost, f.levelOf(t, c.alice, room), "a grant does not raise the participant's post")
+	require.Equal(t, None, f.levelOf(t, stranger, room), "the owner column gives nothing")
+	require.Equal(t, None, f.levelOf(t, c.host, room), "the AI's host is no viewer")
+	require.Equal(t, dto.LevelView, f.levelOf(t, c.lead, room), "the manager's view")
+	require.Equal(t, dto.LevelPost, f.levelOf(t, c.alice, room), "the participant's post")
 
 	// A user member row of someone who is no participant gives no access either.
 	f.addUserMember(t, room, stranger)
@@ -895,10 +870,10 @@ func TestGroupMembershipAccessEnds(t *testing.T) {
 	require.Equal(t, None, f.levelOf(t, member, group), "removed")
 }
 
-// DM-06 source: GrantedRoomLevels lists the groups the user is a member of (post) or manages as their
+// DM-06 source: RoomLevels lists the groups the user is a member of (post) or manages as their
 // creator or as an admin of their organization (manage), and the DMs the user takes part in (post); the
-// DMs a user only views through an AI are not listed, and neither are the rooms only a grant names.
-func TestGrantedRoomLevels(t *testing.T) {
+// DMs a user only views through an AI are not listed.
+func TestRoomLevels(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	c := newDMCast(t, f)
@@ -906,90 +881,47 @@ func TestGrantedRoomLevels(t *testing.T) {
 	f.join(t, c.acme, creator, orgs.PermissionMember, "")
 
 	inRoom, made, both, administered := f.group(t, c.acme, creator, creator), f.group(t, c.acme, c.alice, c.alice), f.group(t, c.acme, c.alice, c.alice), f.group(t, c.acme, creator, creator)
-	foreign, granted, notMine := f.group(t, c.globex, creator, creator), f.group(t, c.acme, creator, creator), f.group(t, c.acme, creator, creator)
+	foreign, notMine := f.group(t, c.globex, creator, creator), f.group(t, c.acme, creator, creator)
 	f.addUserMember(t, inRoom, c.alice)
 	f.addUserMember(t, both, c.alice)
 	f.addUserMember(t, foreign, c.alice) // a stale membership of a group of an organization alice is not in
-	f.grant(t, KindRoom, granted, c.alice, dto.LevelManage)
 	f.addUserMember(t, notMine, c.bob)
 	withBob := f.dm(t, c.alice, c.alice, c.bob)
 	viaAI := f.dm(t, c.alice, c.alice, c.atlas)
 	viewed := f.dm(t, c.bob, c.bob, c.atlas) // lead manages atlas: a DM lead only views
-	stray := f.dm(t, c.bob, c.bob, c.cara)
-	f.grant(t, KindRoom, stray, c.alice, dto.LevelManage) // written around the API
+	stray := f.dm(t, c.bob, c.bob, c.cara)   // a DM alice has nothing to do with
 
-	got, err := f.az.GrantedRoomLevels(ctx, c.alice)
+	got, err := f.az.RoomLevels(ctx, c.alice)
 	require.NoError(t, err)
 	require.Equal(t, map[string]Level{
 		inRoom: dto.LevelPost, made: dto.LevelManage, both: dto.LevelManage, foreign: dto.LevelPost,
 		withBob: dto.LevelPost, viaAI: dto.LevelPost,
-	}, got, "a creator manages, a member posts, a participant posts; a grant lists nothing")
+	}, got, "a creator manages, a member posts, a participant posts")
 	require.NotContains(t, got, administered)
-	require.NotContains(t, got, granted)
+	require.NotContains(t, got, notMine)
 	require.NotContains(t, got, stray)
 
 	// An admin of the organization manages every group of it, and lists none of its DMs.
 	ada := f.human(t, "ada", dto.RoleMember)
 	f.join(t, c.acme, ada, orgs.PermissionAdmin, "")
-	adminLevels, err := f.az.GrantedRoomLevels(ctx, ada)
+	adminLevels, err := f.az.RoomLevels(ctx, ada)
 	require.NoError(t, err)
 	require.Equal(t, map[string]Level{
 		inRoom: dto.LevelManage, made: dto.LevelManage, both: dto.LevelManage, administered: dto.LevelManage,
-		granted: dto.LevelManage, notMine: dto.LevelManage,
+		notMine: dto.LevelManage,
 	}, adminLevels, "the groups of acme, and not globex's, nor any DM")
 
 	// A manager of an AI lists the DMs he takes part in and not the ones he views.
-	leadLevels, err := f.az.GrantedRoomLevels(ctx, c.lead)
+	leadLevels, err := f.az.RoomLevels(ctx, c.lead)
 	require.NoError(t, err)
 	require.Empty(t, leadLevels)
 	require.Equal(t, dto.LevelView, f.levelOf(t, c.lead, viewed))
 	require.Equal(t, dto.LevelPost, f.levelOf(t, c.bob, viewed))
 
 	f.disable(t, c.alice, true)
-	got, err = f.az.GrantedRoomLevels(ctx, c.alice)
+	got, err = f.az.RoomLevels(ctx, c.alice)
 	require.NoError(t, err)
 	require.Empty(t, got, "a disabled user")
-}
-
-// DM-08: sharing a DM is refused whatever the preset, with nothing written: no grant, no audit
-// entry, no event.
-func TestSetVisibilityRefusesDM(t *testing.T) {
-	ctx := context.Background()
-	f := newFixture(t)
-	alice := f.human(t, "alice", dto.RoleMember)
-	bob := f.human(t, "bob", dto.RoleMember)
-	carol := f.human(t, "carol", dto.RoleMember)
-	atlas := f.ai(t, bob)
-	room := f.dm(t, alice, alice, atlas)
-	sub, cancel := f.bus.Subscribe(8)
-	defer cancel()
-
-	for name, v := range map[string]Visibility{
-		"private": {Mode: dto.VisibilityPrivate},
-		"shared":  {Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: carol, Level: dto.LevelView}}},
-		"public":  {Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost},
-		"invalid": {Mode: "secret"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			err := f.az.SetVisibility(ctx, alice, KindRoom, room, alice, v)
-			require.ErrorIs(t, err, ErrDMNoSharing)
-		})
-	}
-	require.Empty(t, f.grantRows(t, KindRoom, room), "no grant was written")
-	require.Equal(t, None, f.levelOf(t, carol, room))
-	entries, _, err := audit.New(f.st, nil).List(ctx, "")
-	require.NoError(t, err)
-	require.Empty(t, entries, "no audit entry")
-	select {
-	case e := <-sub:
-		t.Fatalf("unexpected event %#v", e)
-	default:
-	}
-
-	// The same call on a group keeps working.
-	group := f.room(t, alice)
-	require.NoError(t, f.az.SetVisibility(ctx, alice, KindRoom, group, alice, Visibility{Mode: dto.VisibilityShared, Users: []UserLevel{{UserID: carol, Level: dto.LevelView}}}))
-	require.Equal(t, []string{carol + "=view"}, f.grantRows(t, KindRoom, group))
 }
 
 // The organization checks and the room checks report the same errors: the sentinels of package orgs

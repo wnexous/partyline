@@ -123,19 +123,20 @@ func without(rows []string, drop func(string) bool) []string {
 // (TestUpgradeV03Identities), what the connection proxy retires (0018, CID-21): the chats in
 // rooms, the delivery tables and the catch-all and room switches
 // (TestConnectionProxyUpgradeKeepsHistoryAndDropsTheRest), and the grants, which the organizations
-// upgrade (0019, OUPG-01) turns into memberships (TestOrganizationsUpgrade...). Every room is a
-// group whose history counts as read.
+// upgrade (0019, OUPG-01) turns into memberships (TestOrganizationsUpgrade...) before 0020 drops their
+// table. Every room is a group whose history counts as read.
 func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 	e := v03Fixture(t)
 	all := e.v03Tables()
 	for table, legacy := range legacyColumns {
 		require.Subset(t, all[table], legacy, "fixture sanity: %s has its legacy columns before the upgrade", table)
 	}
+	gone := append(slices.Clone(droppedTables), "grants") // 0018 drops the delivery tables, 0020 the grants table
 	// The columns the upgrade keeps: every v0.3 column but the legacy ones, the ones the proxy
 	// upgrade drops and the ones it empties.
 	tables := map[string][]string{}
 	for table, cols := range all {
-		if slices.Contains(droppedTables, table) {
+		if slices.Contains(gone, table) {
 			continue
 		}
 		tables[table] = without(cols, func(c string) bool {
@@ -152,12 +153,12 @@ func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 
 	require.NotContains(t, versions(t, e.s), "0015_intelligences", "fixture sanity: the database is a v0.3 one")
 	require.NoError(t, e.s.Migrate(context.Background()))
-	require.Subset(t, versions(t, e.s), []string{"0015_intelligences", "0016_drop_v03_identity", "0018_connection_proxy", "0019_organizations"}, "the fixture upgrades through 0015, 0016, 0018 and 0019")
+	require.Subset(t, versions(t, e.s), []string{"0015_intelligences", "0016_drop_v03_identity", "0018_connection_proxy", "0019_organizations", "0020_drop_grants"}, "the fixture upgrades through 0015, 0016, 0018, 0019 and 0020")
 
 	// 0016 drops the legacy columns and project_cursors, 0018 the delivery tables and the catch-all
 	// and room switches, and no other column or table of v0.3.
 	for table, cols := range all {
-		if table == "project_cursors" || slices.Contains(droppedTables, table) {
+		if table == "project_cursors" || slices.Contains(gone, table) {
 			continue
 		}
 		after := e.columnsOf(table)
@@ -165,14 +166,14 @@ func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 		dropped := without(cols, func(c string) bool { return slices.Contains(after, c) })
 		require.ElementsMatch(t, append(slices.Clone(legacyColumns[table]), droppedColumns[table]...), dropped, "table %s loses its legacy columns and no other", table)
 	}
-	for _, table := range droppedTables {
+	for _, table := range gone {
 		require.Empty(t, e.columnsOf(table), "table %s is dropped", table)
 	}
 	require.Empty(t, e.columnsOf("project_cursors"), "the project cursor table is dropped")
 	require.NotEmpty(t, e.columnsOf("projects"), "the empty projects table stays (agents.project_id references it, AD-012)")
 	require.Subset(t, e.columnsOf("agents"), []string{"name", "project_id"}, "dead columns SQLite cannot drop stay (AD-012)")
 
-	changed := map[string]bool{"room_members": true, "grants": true, "projects": true, "project_cursors": true, "agents": true, "agent_cursors": true}
+	changed := map[string]bool{"room_members": true, "projects": true, "project_cursors": true, "agents": true, "agent_cursors": true}
 	for table, cols := range tables {
 		if changed[table] {
 			continue
@@ -191,7 +192,6 @@ func TestUpgradeV03KeepsEveryRow(t *testing.T) {
 		"Proj's ops membership moves to proj-claude-2 (latest connected) with its settings")
 	require.Equal(t, 11-3+1-3, e.count(`SELECT COUNT(*) FROM room_members`), "Empty's membership and Proj's dev membership go, and the three chats")
 
-	require.Empty(t, e.rowsOf("grants", tables["grants"]), "the project grants went with 0015 and the others became organization memberships (0019)")
 	require.Empty(t, e.rowsOf("projects", tables["projects"]))
 
 	require.Equal(t, agentsBefore, e.rowsOf("agents", agentCols), "agents keep every other column")
@@ -391,7 +391,7 @@ func TestUpgradeV03KeepsEveryNameInTheIntelligence(t *testing.T) {
 func TestUpgradeV03ListsEveryAgent(t *testing.T) {
 	e := v03Fixture(t)
 	require.NoError(t, e.s.Migrate(context.Background()))
-	rows, err := e.s.R().ListAgentsForUser(context.Background(), "u-alice")
+	rows, err := e.s.R().ListVisibleAgents(context.Background(), "u-alice")
 	require.NoError(t, err)
 	got := map[string]string{}
 	for _, r := range rows {

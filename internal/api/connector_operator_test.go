@@ -19,7 +19,7 @@ const noOperatorDetail = "choose the AI that operates this connection"
 // operatorFixture is alice's organization, which she administers, with her fake connection "wa" (created
 // without an operator), her AIs Atlas and Notes, and bob as a member; bob has his own AI, Bobby, whose home
 // is his own organization. Dave sees Atlas through "side", a second organization it belongs to, and so sees
-// no connection; carol holds a use grant on Atlas, which gives nothing, and the admin of the instance has no
+// no connection; carol belongs to no organization of Atlas's, and the admin of the instance has no
 // membership: they see nothing.
 type operatorFixture struct {
 	env                      *testkit.Env
@@ -46,7 +46,6 @@ func newOperatorFixture(t *testing.T) *operatorFixture {
 	side, err := env.App.Orgs.Create(context.Background(), f.dave.User.ID, "side")
 	require.NoError(t, err)
 	env.AddMember(side.ID, f.atlas, orgs.PermissionMember, "")
-	shareAgent(f.alice, f.atlas, f.carol.User.ID)
 	ref := func(c *testkit.Client, id string) *dto.IntelligenceRef {
 		r := profileOf(t, c, id).IntelligenceRef
 		return &r

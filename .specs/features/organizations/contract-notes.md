@@ -2171,3 +2171,95 @@ them, so that module is **gone**: the web reads `Organization`, `Position`, `Org
   item; the actions for a member, Lead, an inviter, a manager above a member, an inviter with no position and an admin, "Edit positions", remove / delete / move
   through the dialogs; a guest sees it, 404 twice, failure; the redirect, the tabs in order, the list link and the switcher link; the indentation cap and
   truncation; Portuguese; axe for each viewer, with an item closed, with a dialog open, and in Portuguese) and `lib/org-chart.test.ts` (the tree).
+
+## T51: Remove grant code, sharing routes and DTOs (ORG-02)
+
+Sharing is organization membership and nothing else (AD-016). Every path that wrote or read a grant is gone; the table itself is dropped by
+`0020` (T52).
+
+- **Removed**:
+  - `access.Authorizer`: `AgentLevel`, `ConnectorLevel`, `CanUseAgent`, `CanUseConnector`, `grantLevel`, `Sharing`, `SetVisibility`, the preset
+    validation, `access.Everyone`, `UserLevel`, `Visibility`, `ErrDMNoSharing`. `access.Options` is `{Authz}` and `access.New(st, opts)` no longer
+    takes a bus or a clock: the Authorizer publishes and records nothing. `GrantedRoomLevels` is now `RoomLevels` (it never read grants after T22).
+  - The routes `GET|PUT /rooms|agents|connectors/{id}/sharing` and the services behind them (`Rooms.Sharing/SetSharing`, `Agents.Sharing/SetSharing`,
+    `Connectors.Sharing/SetSharing`). Every method on those paths is the router's 404 `not_found`; a DM that answered 422 `dm_no_sharing` is as unknown.
+  - DTOs: `Sharing`, `SharingUser`, `Visibility` (and its three constants), `Room.visibility`, `ErrorCodeDMNoSharing`. A room carries no preset any
+    more. `make generate` ran: `types.gen.ts` loses them and rewords three "grants nothing" comments.
+  - SQL: `queries/grants.sql` (`ListGrantLevels`, `CountSubjectGrants`, `ListGrantsWithUsers`, `CreateGrant`, `DeleteGrants`), `ListAgentsForUser` and
+    `MergeAgentGrants`. **sqlc does not delete the generated file of a deleted query file: `internal/store/db/grants.sql.go` was `git rm`-ed by hand.**
+    Deleting a room, an AI or a connection and merging two AIs no longer touch grants.
+  - `audit.ActionGrantsSet`. Old audit rows keep their `grants.set` action string; nothing writes it any more.
+- **`events.GrantsChanged` is renamed `events.AccessChanged{ResourceKind, ResourceID}`**, the event the design names (AD-016 table, "Live hub"). It is still
+  published for a group's **user members** (`rooms.Service.accessChanged`) and for a **merge** (the surviving AI), and the hub renders it exactly as
+  before: `access.changed` for room, agent or connector, after the same visibility check. Only the name and the doc changed. A change of an
+  organization's own members is `OrgChanged` (T32).
+- **Deviation: `dto.LevelUse` stays.** tasks.md lists "`LevelUse`" among the types to delete, but it is no grant level any more: it is `my_level` of an AI,
+  a connection and a profile for whoever sees without managing (T24, T25, T26), which the web reads (`my_level === LevelManage`, the `"use"` fixtures of
+  T45/T47). Removing it would change that contract and the web. `Level` is documented as `view < post < manage` for rooms and `use < manage` for AIs and
+  connections.
+- **Deviation: one line of `web/`.** `web/src/test/fixtures.ts` loses `visibility: "private"` of `makeRoom`: the regenerated `Room` has no such field and
+  `tsc` refuses the literal (TS2353). T50 had left it for this. Nothing else of `web/` changed besides `types.gen.ts`.
+- **Nothing reads grants (the proof).** `TestOnlyTheMigrationsAndTheBackfillNameGrants` (`internal/store/grants_retired_test.go`) is the Done-when
+  `rg -n "grants|Sharing|SetVisibility" internal` as a test: it walks every `.go` and `.sql` file under `internal/` (the embedded web app aside) and fails on a
+  hit outside the allowed set: the migrations, `store/testdata`, `organizations_backfill.go`, the tests of `internal/store` and `api/upgrade_test.go`
+  (T53), which build older databases to upgrade them. Reword a comment that only says the word. With the table dropped by `0020` (T52), a reader the scan
+  missed would fail every e2e test.
+- **Tests**:
+  - `TestShareRoutesAreRetired` (`retired_routes_test.go`): the three paths plus a DM's, for every role of `OrgRoles`, anonymous callers and AI tokens (403
+    by TOK-03), with the request bodies that used to be valid (private, shared with a user, public) and four other methods; nothing is opened, nothing
+    is audited and no room JSON has a `visibility` key.
+  - `authmatrix_test.go` is rewritten on `OrgRoles`: `roleRoute`, `runRoleRoutes` (moved from `room_roles_test.go`) and `everyRole(status)`. The five-role
+    `matrix` (owner, viewer, poster, stranger, admin; `statuses`, `newMatrix`) is gone, and so is `TestUserProfileRoutesAuthMatrix`, which
+    `TestUserProfileRoutesAuthMatrixOnOrganizations` already covered with nine roles. Their users moved to the organization roles: the retired chat and
+    notify routes, the retired fields, the chat routes, the person profile, mark read and `POST /groups` (`createFakeIdleIn`, `createFakeIn`).
+  - `access_test.go`: `TestCanSeeAI` and `TestCanSeeConnection` replace the `AgentLevel` / `ConnectorLevel` tests (host, member, admin, guest, outsider,
+    foreign admin, instance admin, disabled user, an AI acting as itself and never through its host, a connection with no organization).
+  - Deleted with what they tested: `TestSetVisibility*` (4), `TestUseLevelsOnAgentsAndConnectors`, `TestRoomSharingGivesNoAccess`,
+    `TestDMSharingIsRefusedWithItsOwnCode`, `TestMergeKeepsTheHigherGrantLevel` and the "get/put sharing" rows of the room, DM, agent and connection
+    matrices. The merge test keeps its all-or-nothing check on organization memberships instead of copied grants.
+  - A "use grantee" of a test is now a colleague: `shareAI` / `shareConnector` make the user a member of the resource's organization, which is the
+    relation the grant stood for. Where a grant only decorated the fixture it is dropped. `TestRefusedMergesLeaveTheQueueAlone` now expects 403 for such a
+    colleague (sees both AIs, manages neither), the design's answer, where the grant holder used to get 404.
+- **Stale outside `internal/` and `web/`, for T54 and T55**: README.md (lines 32, 332 "Grants", 363 `dm_no_sharing`), README.pt-BR.md (369 and the
+  same sections), `docs/agents.md` (383, 436, 537 and the "Shared with me" / "Share" paragraphs), PRODUCT.md (47), and `web/e2e/smoke.spec.ts:192`, which
+  still shares a room with `PUT /rooms/{id}/sharing`.
+
+## T52: Migration 0020 drops grants (OUPG-01)
+
+- **File**: `internal/store/migrations/0020_drop_grants.sql`: `DROP INDEX grants_subject; DROP TABLE grants;` (the automatic index of the primary key goes with
+  the table). Nothing references the table - before 0020 the only objects whose definition names it are the table and `grants_subject` - so nothing else
+  is touched, and no Go hook is needed.
+- **One transaction with 0019.** `Store.Migrate` applies every pending file, with its hook, and commits once: a v0.5 database goes through 0019, its hook
+  (which turns the grants into memberships and empties the table) and 0020 together. A failure in 0020 rolls back 0019, its hook and its version row
+  (`TestMigrations0019And0020ApplyInOneTransaction`, snapshot-equal to the v0.5 database, grants included; the next start migrates it in full).
+- **One way.** The upgrade cannot be undone by the file: a database that went through 0020 has no `grants` table, so a v0.5 binary (which reads it) fails on
+  it. Like 0015, 0016 and 0018 it is a one-way upgrade. Release notes (T55) should tell people to copy the database file before the first start of this version.
+- **Generated**: `db.Grant` is gone from `internal/store/db/models.go` (`make generate`).
+- **Tests**: `TestMigration0020DropsTheGrantsTable` (the table, both indexes and every object naming it are gone; before 0020 exactly the table and its index name
+  it), `TestMigration0020ChangesNothingButTheGrantsTable` (on the v0.5 fixture with a row still in the table: the snapshot after 0020 is the one before
+  minus the table, its indexes and its row), `TestMigrations0019And0020ApplyInOneTransaction` (a failing 0020, built with `overlayMigration`).
+- **Tests adapted (the isolation pattern)**: a test whose subject is 0019 stops before 0020 so that it can still read the table: the backfill test of the
+  grants (`MigrateBefore("0020")`), the "schema step alone" test of 0019 (`migrationsBefore("0020")`). `TestUpgradeV03KeepsEveryRow` counts `grants` among the
+  tables the upgrade drops (a local list, `droppedTables` is the 0018 test's), `TestMigrateCreatesEveryDesignTable` moves it from the tables that must exist to the
+  ones that must not, and the rollback test of the hook ends by asserting that the table is gone. A test that needs the grants of a v0.5 database uses
+  `orgFixture` and `MigrateBefore("0020")`.
+- **The dynamic proof of T51**: with the table dropped, the 574 top-level tests of `internal/api` and every other package run against a schema that has no
+  grants; a query that still read them would fail with "no such table". T53 repeats it on a database built by the v0.5.0 binary.
+
+## T53: Upgrade end to end from a v0.5 database (OUPG-01, OUPG-02, POS-10)
+
+`checkUpgradedInstallation` (`internal/api/upgrade_test.go`) is the shared proof. It runs on two databases:
+
+- `TestUpgradedV05InstallationBecomesOrganizations` builds a v0.5 database from the store fixtures, with every kind of grant seeded;
+- `TestUpgradedRealV05InstallationBecomesOrganizations` (`upgrade_v05_binary_test.go`) uses a database written by the real v0.5.0 binary, driven over HTTP. It is opt-in: set `PARTYLINE_V05_BINARY` to a v0.5.0 build (the steps are in the file's comment). Without the variable it is skipped, because the gate cannot build an old tag.
+
+Both prove each point:
+
+- every user has a personal organization where they are the admin, and their AIs are members;
+- a former `use` grantee sees the AI and gets 403 deleting it;
+- room history is intact, and a view-only grantee loses the room;
+- the owner's two AIs do not trust each other, and the owner's post is trusted;
+- the owner, as admin, deletes the AI and the history stays;
+- `DELETE /api/v1/me` by the last admin makes the instance admin an admin of her organization (OUPG-02).
+
+The coordinator finished the task after the worker stopped mid-task. Both tests passed on 2026-10-24, the real-binary one against v0.5.0.

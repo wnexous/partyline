@@ -63,7 +63,6 @@ func TestOpenDMReturnsOneRoomPerPair(t *testing.T) {
 	require.Equal(t, dto.ConversationKindDM, created.Kind)
 	require.Empty(t, created.Name, "a DM has no name; the other participant titles it")
 	require.Equal(t, dto.LevelPost, created.MyLevel)
-	require.Equal(t, dto.VisibilityPrivate, created.Visibility)
 	require.Equal(t, 2, created.MemberCount)
 	require.Equal(t, alice.User.ID, created.Owner.ID, "the user who opened it")
 	want := []string{alice.User.ID, bob.User.ID}

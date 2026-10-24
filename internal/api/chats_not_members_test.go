@@ -55,16 +55,15 @@ func TestAddChatMemberAuthMatrix(t *testing.T) {
 
 // CID-19 (L-017, L-018): a manager of a room who asks to add a chat, a request that is valid in every
 // other way, gets 422 chats_not_members, whoever owns the chat's connection, whether the chat
-// exists or not, whether it asks for outbound delivery or not (the chat branch of ACL-06, a use
-// grant on the chat's connection, is retired). Nothing is added, nothing is announced, and users
-// and AIs still join as before.
+// exists or not, whether it asks for outbound delivery or not (the chat branch of ACL-06 is
+// retired). Nothing is added, nothing is announced, and users and AIs still join as before.
 func TestAddingAChatAsAMemberIsRefused(t *testing.T) {
 	env := testkit.New(t)
 	alice, bob := env.NewUser("alice"), env.NewUser("bob")
 	atlas := env.NewAI(alice, "atlas")
 	_, mine := storeChat(t, env, alice.User.ID, "family")
 	bobConn, bobs := storeChat(t, env, bob.User.ID, "team")
-	shareConnector(bob, bobConn, alice.User.ID) // alice may use the connection of that chat
+	shareConnector(bob, bobConn, alice.User.ID) // alice joins the organization of that chat's connection
 	room := createRoom(alice, "ops")
 	live, _ := alice.DialLive("")
 	live.Expect(dto.LiveEventTypeHello, nil, wsWait)

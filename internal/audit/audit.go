@@ -1,4 +1,4 @@
-// Package audit records security events (logins, invites, tokens, grants, account changes,
+// Package audit records security events (logins, invites, tokens, organizations, account changes,
 // connectors) and lists them for admins (AUD-01, AUD-02). Entries never hold secrets.
 package audit
 
@@ -30,8 +30,7 @@ const (
 	ActionTokenCreate    = "token.create"
 	ActionTokenRevoke    = "token.revoke"
 	ActionTokenPurge     = "token.purge"
-	ActionGrantsSet      = "grants.set"
-	// Connector changes (AUD-01); sharing changes are grants.set.
+	// Connector changes (AUD-01).
 	ActionConnectorCreate  = "connector.create"
 	ActionConnectorUpdate  = "connector.update"
 	ActionConnectorDelete  = "connector.delete"

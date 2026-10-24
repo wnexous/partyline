@@ -72,7 +72,7 @@ func TestOwnerChangesTheDeliverySettings(t *testing.T) {
 		got := patch(dto.UpdateConnectorRequest{Deliver: &d})
 		require.Equal(t, []any{d, true}, read(got), "deliver %s: the response, the mentions setting untouched", d)
 		require.Equal(t, []any{d, true}, read(f.connector(f.alice)), "stored")
-		require.Equal(t, []any{d, true}, read(f.connector(f.bob)), "a use grantee sees it too")
+		require.Equal(t, []any{d, true}, read(f.connector(f.bob)), "a member of the organization sees it too")
 	}
 	off, on := false, true
 	require.Equal(t, []any{dto.ConnectorDeliverAll, false}, read(patch(dto.UpdateConnectorRequest{GroupsMentionsOnly: &off})), "mentions-only off, deliver untouched")
@@ -119,9 +119,10 @@ func TestInvalidDeliverIsRefused(t *testing.T) {
 	require.Equal(t, []any{"wa", dto.ConnectorDeliverAll, true}, []any{got.Name, got.Deliver, got.GroupsMentionsOnly}, "nothing changed")
 }
 
-// CID-23 (authorization matrix): only the owner changes the delivery settings. The use grantee
-// may not manage the connection (403); a stranger and the admin get 404; anonymous callers 401;
-// AI tokens, the connection's own operator included, 403. A refusal changes nothing.
+// CID-23 (authorization matrix): only an admin of the connection's organization changes the delivery
+// settings. A member of the organization may not manage the connection (403); a stranger and the admin
+// of the instance get 404; anonymous callers 401; AI tokens, the connection's own operator included,
+// 403. A refusal changes nothing.
 func TestDeliverySettingsAuthorizationMatrix(t *testing.T) {
 	f := newOperatorFixture(t)
 	f.operate(t)
@@ -189,11 +190,11 @@ func TestConnectorViewsCarryNoMessageText(t *testing.T) {
 	require.NoError(t, f.env.App.Platform.Ack(context.Background(), f.atlas, acked))
 
 	bodies := map[string][]byte{
-		"get":     f.alice.Get("/api/v1/connectors/" + f.conn.ID).RequireStatus(http.StatusOK).Body,
-		"grantee": f.bob.Get("/api/v1/connectors/" + f.conn.ID).RequireStatus(http.StatusOK).Body,
-		"list":    f.alice.Get("/api/v1/connectors").RequireStatus(http.StatusOK).Body,
-		"chats":   f.alice.Get("/api/v1/connectors/" + f.conn.ID + "/chats").RequireStatus(http.StatusOK).Body,
-		"patch":   f.alice.Patch("/api/v1/connectors/"+f.conn.ID, dto.UpdateConnectorRequest{Name: ptr("renamed")}).RequireStatus(http.StatusOK).Body,
+		"get":    f.alice.Get("/api/v1/connectors/" + f.conn.ID).RequireStatus(http.StatusOK).Body,
+		"member": f.bob.Get("/api/v1/connectors/" + f.conn.ID).RequireStatus(http.StatusOK).Body,
+		"list":   f.alice.Get("/api/v1/connectors").RequireStatus(http.StatusOK).Body,
+		"chats":  f.alice.Get("/api/v1/connectors/" + f.conn.ID + "/chats").RequireStatus(http.StatusOK).Body,
+		"patch":  f.alice.Patch("/api/v1/connectors/"+f.conn.ID, dto.UpdateConnectorRequest{Name: ptr("renamed")}).RequireStatus(http.StatusOK).Body,
 	}
 	for name, body := range bodies {
 		require.False(t, strings.Contains(string(body), queueText), "%s must not carry the text of a queued message", name)

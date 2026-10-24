@@ -127,9 +127,6 @@ const (
 	// ErrorCodeIdentityBusy is a connection for an AI that has a live session in another
 	// process (409); Details say who, in which app and since when (SES-04).
 	ErrorCodeIdentityBusy ErrorCode = "identity_busy" // 409
-	// ErrorCodeDMNoSharing is an attempt to share a direct message: a DM is visible to its two
-	// intelligences only (422, DM-08).
-	ErrorCodeDMNoSharing ErrorCode = "dm_no_sharing"
 	// ErrorCodeDMMembersFixed is an attempt to add, change or remove a member of a direct
 	// message: it has exactly its two intelligences (422, DM-02).
 	ErrorCodeDMMembersFixed ErrorCode = "dm_members_fixed"
@@ -213,7 +210,7 @@ type Page[T any] struct {
 	HasMore bool `json:"has_more"`
 }
 
-// Level is an access level on a room (view < post < manage) or on an agent or connector (use).
+// Level is an access level on a room (view < post < manage) or on an AI or a connection (use < manage).
 type Level string
 
 // Access levels.
@@ -223,29 +220,3 @@ const (
 	LevelManage Level = "manage"
 	LevelUse    Level = "use"
 )
-
-// Visibility is a sharing preset; the server stores it as a set of grants (AD-005).
-type Visibility string
-
-// Visibility presets (ACL-07).
-const (
-	VisibilityPrivate Visibility = "private" // owner only
-	VisibilityShared  Visibility = "shared"  // owner plus the listed users
-	VisibilityPublic  Visibility = "public"  // every user of the instance
-)
-
-// Sharing is the body of GET and PUT /{rooms|agents|connectors}/{id}/sharing.
-type Sharing struct {
-	Mode  Visibility    `json:"mode"`
-	Users []SharingUser `json:"users"`
-	// PublicLevel is the level everyone gets when Mode is public: view or post for rooms, use otherwise.
-	PublicLevel Level `json:"public_level,omitempty"`
-}
-
-// SharingUser is one user grant. Username and DisplayName are filled in responses only.
-type SharingUser struct {
-	UserID      string `json:"user_id"`
-	Level       Level  `json:"level"`
-	Username    string `json:"username,omitempty"`
-	DisplayName string `json:"display_name,omitempty"`
-}

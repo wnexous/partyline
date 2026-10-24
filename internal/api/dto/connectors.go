@@ -65,7 +65,7 @@ type Connector struct {
 	// OrgID is the organization the connection belongs to (ORG-02): its members see it and its admins
 	// manage it.
 	OrgID string `json:"org_id"`
-	// Owner is the user who created the connection. It grants nothing (AD-019).
+	// Owner is the user who created the connection. It gives nothing (AD-019).
 	Owner User `json:"owner"`
 	// MyLevel is manage for the admins of the connection's organization and use for its other members.
 	MyLevel   Level           `json:"my_level"`

@@ -416,8 +416,8 @@ func (s *Service) CanSee(ctx context.Context, p authn.Principal, id string) (boo
 }
 
 // CanEdit reports whether the caller can change the intelligence's profile (POS-04): an identity edits its own,
-// and whoever manages it in an organization they share edits it (POS-03). Seeing it, hosting it or having had a
-// grant on it is not enough. Nobody edits a person: a person's profile is history (CID-21).
+// and whoever manages it in an organization they share edits it (POS-03). Seeing it or hosting it is not
+// enough. Nobody edits a person: a person's profile is history (CID-21).
 func (s *Service) CanEdit(ctx context.Context, p authn.Principal, id string) (bool, error) {
 	d, err := s.detail(ctx, id)
 	if errors.Is(err, access.ErrNotFound) {

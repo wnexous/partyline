@@ -170,22 +170,21 @@ func TestReplyToAPlatformMessageOfAnotherAIIsNotFound(t *testing.T) {
 }
 
 // Authorization of POST /agent/messages/{id}/reply for a platform message: only agent tokens, and an
-// AI answers its own queue only. The operator is answered; another AI of the owner, the AI of a user
-// granted use of the connection and of the operator, the AI of a stranger and of an admin (each with
+// AI answers its own queue only. The operator is answered; another AI of the owner, the AI of a colleague
+// of the connection's organization (which is the operator's), the AI of a stranger and of an admin (each with
 // the same folder name where it can be) all get 404 and send nothing; users, with a session or a
 // token, are refused with 403 and anonymous callers with 401 (L-018: each refusal has a valid
 // request otherwise).
 func TestPlatformReplyAuthorizationMatrix(t *testing.T) {
 	f := newReplyFixture(t)
 	bob, carol, root := f.env.NewUser("bob"), f.env.NewUser("carol"), f.env.NewAdmin("root")
-	shareConnector(f.alice, f.conn.ID, bob.User.ID)
-	shareAgent(f.alice, f.atlas, bob.User.ID)
+	shareConnector(f.alice, f.conn.ID, bob.User.ID) // bob joins the organization of the connection and of Atlas
 	id := f.enqueue(t, f.atlas, f.group, "M1", "for Atlas only")
 	path := replyPath + id + "/reply"
 	body := dto.ReplyRequest{Text: "x"}
 
 	f.reply("Notes", id, "x").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	for name, u := range map[string]*testkit.Client{"use grantee": bob, "stranger": carol, "admin": root} {
+	for name, u := range map[string]*testkit.Client{"colleague": bob, "stranger": carol, "admin": root} {
 		res := u.Token(dto.TokenKindAgent, "desk").AsAgent("Atlas").Post(path, body)
 		require.Equal(t, http.StatusNotFound, res.Status, "%s's own AI of the same folder: %s", name, res.Body)
 		require.Equal(t, "message not found", testkit.Decode[dto.ErrorBody](res).Error.Message, name)

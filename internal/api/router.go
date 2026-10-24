@@ -254,8 +254,6 @@ func mapError(err error) error {
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeHandleTaken, "handle already taken")
 	case errors.Is(err, access.ErrHistoryOnly):
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeHistoryOnly, "this is history: answer people on their platform, through the connection")
-	case errors.Is(err, access.ErrDMNoSharing):
-		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeDMNoSharing, "a direct message cannot be shared")
 	case errors.Is(err, rooms.ErrDMMembersFixed):
 		return httpx.NewError(http.StatusUnprocessableEntity, dto.ErrorCodeDMMembersFixed, "the members of a direct message cannot be changed")
 	case errors.Is(err, rooms.ErrChatsNotMembers):

@@ -678,8 +678,8 @@ func TestToolUpdateProfileRefusesAvatarFiles(t *testing.T) {
 }
 
 // PROF-04 with authorization: the tool edits the profile of the AI that calls and no other, an id
-// in its arguments names nothing; the owner and a user the AI is shared with read the new profile,
-// the grantee without the right to edit it, and a stranger does not see the AI at all.
+// in its arguments names nothing; the owner and a colleague of the AI's organization read the new
+// profile, the colleague without the right to edit it, and a stranger does not see the AI at all.
 func TestToolUpdateProfileOnlyChangesTheCallingAI(t *testing.T) {
 	c := newCast(t)
 	c.share(c.alice, c.agentID, c.bob)
@@ -690,9 +690,9 @@ func TestToolUpdateProfileOnlyChangesTheCallingAI(t *testing.T) {
 	require.Equal(t, c.agentID, decodeText[profileAnswer](t, text).ID)
 	require.Equal(t, "helper", c.profile(c.alice, c.helper).DisplayName, "the other AI of the owner is untouched")
 
-	owner, grantee := c.profile(c.alice, c.agentID), c.profile(c.bob, c.agentID)
+	owner, colleague := c.profile(c.alice, c.agentID), c.profile(c.bob, c.agentID)
 	require.Equal(t, []any{"Renamed", true}, []any{owner.DisplayName, owner.CanEdit})
-	require.Equal(t, []any{"Renamed", false}, []any{grantee.DisplayName, grantee.CanEdit})
+	require.Equal(t, []any{"Renamed", false}, []any{colleague.DisplayName, colleague.CanEdit})
 	c.carol.Get("/api/v1/intelligences/"+c.agentID).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 }
 

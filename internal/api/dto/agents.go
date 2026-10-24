@@ -146,7 +146,7 @@ type AgentWelcomeFrame struct {
 	// works for.
 	Intelligence IntelligenceRef `json:"intelligence"`
 	// Owner is the user who hosts the AI, whose computer and token run it. It is deprecated since
-	// organizations: it grants and means nothing, and the identities an AI answers to are its
+	// organizations: it gives nothing, and the identities an AI answers to are its
 	// Managers. It stays so that v0.5 CLIs, which print it, keep working.
 	Owner IntelligenceRef `json:"owner"`
 	// Organization is the AI's home organization (ORG-02); absent for an AI that has none.

@@ -110,7 +110,7 @@ type PersonDetail struct {
 
 // AIDetail describes where an AI lives and how the caller stands to it.
 type AIDetail struct {
-	// Owner is the user who hosts the AI: whose computer and token run it. It grants nothing (AD-019).
+	// Owner is the user who hosts the AI: whose computer and token run it. It gives nothing (AD-019).
 	Owner IntelligenceRef `json:"owner"`
 	// Folder is the AI's canonical folder; empty for an AI that is not linked to one yet.
 	Folder      string `json:"folder"`

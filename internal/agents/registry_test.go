@@ -67,7 +67,7 @@ func newFixture(t *testing.T) *fixture {
 	clock := &fixtureClock{now: t0}
 	now := clock.Now
 	bus := events.NewBus()
-	az := access.New(st, bus, access.Options{Now: now})
+	az := access.New(st, access.Options{})
 	presence := NewPresence(st, bus, now)
 	reg := NewRegistry(Deps{Store: st, Access: az, Bus: bus, Presence: presence, Audit: audit.New(st, now), Now: now})
 	return &fixture{st: st, raw: raw, bus: bus, az: az, presence: presence, reg: reg, clock: clock}
@@ -102,12 +102,6 @@ func (f *fixture) user(t *testing.T, name string) authn.Principal {
 		return err
 	}))
 	return authn.Principal{Kind: authn.KindUser, UserID: id, Role: string(dto.RoleMember)}
-}
-
-func (f *fixture) grant(t *testing.T, agentID, subject string) {
-	t.Helper()
-	f.exec(t, "INSERT INTO grants (resource_kind, resource_id, subject, level, created_at) VALUES ('agent', ?, ?, 'use', ?)",
-		agentID, subject, t0.UnixMilli())
 }
 
 // orgOf is the personal organization of the user (AD-021), where their first AIs go.
@@ -196,19 +190,15 @@ func TestSlug(t *testing.T) {
 }
 
 // AD-016: the visible list is the AIs the user hosts plus those of the organizations they belong to, each at
-// manage when the user manages it in an organization they share with it and at use otherwise; a use grant
-// (own or everyone) lists nothing.
+// manage when the user manages it in an organization they share with it and at use otherwise.
 func TestListVisibleHostedAndOrganizationAIs(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	alice, bob, carol := f.user(t, "alice"), f.user(t, "bobby"), f.user(t, "carol")
 	own := f.upsert(t, alice, "own")
 	shared := f.upsert(t, bob, "shared") // bob's AI, which also works in alice's organization
-	granted := f.upsert(t, carol, "granted")
 	f.upsert(t, carol, "private")
 	f.join(t, f.orgOf(t, alice), shared, orgs.PermissionMember)
-	f.grant(t, granted, alice.UserID)
-	f.grant(t, granted, access.Everyone)
 
 	list, err := f.reg.ListVisible(ctx, alice)
 	require.NoError(t, err)
@@ -228,10 +218,9 @@ func TestListVisibleHostedAndOrganizationAIs(t *testing.T) {
 	require.ElementsMatch(t, []string{shared}, ids, "bob hosts one AI and belongs to no organization of the others")
 }
 
-// Delete removes memberships, grants and cursors, and only the organization lets someone delete the AI (POS-05): an
-// admin of its home. A member who sees it (here the grantee the upgrade made a member) is refused, and a stranger
-// does not see it, nor does a use grant alone (AD-016). Every organization the AI belonged to is told its chart
-// changed (POS-06).
+// Delete removes memberships and cursors, and only the organization lets someone delete the AI (POS-05): an
+// admin of its home. A member who sees it (here the colleague the upgrade made a member) is refused, and a stranger
+// does not see it (AD-016). Every organization the AI belonged to is told its chart changed (POS-06).
 func TestDeleteRemovesMembershipsAndCursors(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -243,12 +232,11 @@ func TestDeleteRemovesMembershipsAndCursors(t *testing.T) {
 			store.NewID(), room, agent, alice.UserID, t0.UnixMilli())
 		f.exec(t, "INSERT INTO agent_cursors (agent_id, room_id, seq) VALUES (?, ?, 7)", agent, room)
 	}
-	f.grant(t, agent, bob.UserID)
 
-	require.ErrorIs(t, f.reg.Delete(ctx, bob, agent), access.ErrNotFound, "a use grant gives nothing")
+	require.ErrorIs(t, f.reg.Delete(ctx, bob, agent), access.ErrNotFound, "a user of no organization of the AI does not see it")
 	require.ErrorIs(t, f.reg.Delete(ctx, stranger, agent), access.ErrNotFound)
 	home := f.joinAs(t, alice, bob, orgs.PermissionMember)
-	require.ErrorIs(t, f.reg.Delete(ctx, bob, agent), access.ErrForbidden, "the grantee the upgrade made a member sees the AI and does not manage it")
+	require.ErrorIs(t, f.reg.Delete(ctx, bob, agent), access.ErrForbidden, "the colleague the upgrade made a member sees the AI and does not manage it")
 	f.join(t, home, stranger.UserID, orgs.PermissionMember)
 	require.ErrorIs(t, f.reg.Delete(ctx, stranger, agent), access.ErrForbidden, "a colleague who sees the AI and does not manage it")
 
@@ -262,7 +250,6 @@ func TestDeleteRemovesMembershipsAndCursors(t *testing.T) {
 	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM agents WHERE id = ?", agent))
 	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM room_members WHERE kind = 'agent' AND member_id = ?", agent))
 	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM agent_cursors WHERE agent_id = ?", agent))
-	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM grants WHERE resource_kind = 'agent' AND resource_id = ?", agent))
 	require.Equal(t, 0, f.count(t, "SELECT COUNT(*) FROM org_members WHERE iid = ?", agent))
 
 	code, reason, closed := session.state()
@@ -278,8 +265,8 @@ func TestDeleteRemovesMembershipsAndCursors(t *testing.T) {
 	}, drain(ch))
 }
 
-// joinAs makes the user a member of the owner's own organization, as the upgrade does for whoever was granted
-// something of the owner (OUPG-01), and returns the organization.
+// joinAs makes the user a member of the owner's own organization, as the upgrade does for whoever the owner
+// shared something with (OUPG-01), and returns the organization.
 func (f *fixture) joinAs(t *testing.T, owner, user authn.Principal, perm orgs.Permission) string {
 	t.Helper()
 	ctx := context.Background()
@@ -304,7 +291,6 @@ func TestUpdateDescription(t *testing.T) {
 	ctx := context.Background()
 	alice, bob := f.user(t, "alice"), f.user(t, "bobby")
 	agent := f.upsert(t, alice, "builder")
-	f.grant(t, agent, bob.UserID)
 
 	a, err := f.reg.Update(ctx, alice, agent, AgentUpdate{Description: ptr("Builds things")})
 	require.NoError(t, err)
@@ -312,7 +298,7 @@ func TestUpdateDescription(t *testing.T) {
 	require.Equal(t, dto.LevelManage, a.Level)
 
 	_, err = f.reg.Update(ctx, bob, agent, AgentUpdate{Description: ptr("hijack")})
-	require.ErrorIs(t, err, access.ErrNotFound, "a use grant gives nothing")
+	require.ErrorIs(t, err, access.ErrNotFound, "a user of no organization of the AI does not see it")
 	f.join(t, f.orgOf(t, alice), bob.UserID, orgs.PermissionMember)
 	_, err = f.reg.Update(ctx, bob, agent, AgentUpdate{Description: ptr("hijack")})
 	require.ErrorIs(t, err, access.ErrForbidden, "a colleague sees the AI and does not manage it")

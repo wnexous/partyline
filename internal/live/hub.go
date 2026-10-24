@@ -356,7 +356,7 @@ func (c *conn) render(ctx context.Context, e events.Event) ([]frame, error) {
 		}
 		return []frame{{Type: dto.LiveEventTypeMembersChanged, Data: dto.RoomIDData{RoomID: e.RoomID}}}, nil
 
-	case events.GrantsChanged:
+	case events.AccessChanged:
 		changed := frame{Type: dto.LiveEventTypeAccessChanged, Data: dto.AccessChangedData{ResourceKind: e.ResourceKind, ResourceID: e.ResourceID}}
 		switch access.Kind(e.ResourceKind) {
 		case access.KindRoom:

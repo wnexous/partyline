@@ -33,7 +33,7 @@ func findAudit(t *testing.T, entries []dto.AuditEntry, action string) dto.AuditE
 	return dto.AuditEntry{}
 }
 
-// AUD-01: login, logout, invite, token, grant and user-state changes append entries with
+// AUD-01: login, logout, invite, token, organization and user-state changes append entries with
 // actor, action, target and time, and no secrets.
 func TestAuditRecordsSecurityEvents(t *testing.T) {
 	env := testkit.New(t)
@@ -51,8 +51,9 @@ func TestAuditRecordsSecurityEvents(t *testing.T) {
 	bob := env.LoginAs("bob", testkit.Password)
 	tok := testkit.Decode[dto.CreatedToken](bob.Post("/api/v1/tokens", dto.CreateTokenRequest{Kind: dto.TokenKindAgent, Name: "laptop"}).RequireStatus(http.StatusCreated))
 	bob.Delete("/api/v1/tokens/" + tok.Token.ID).RequireStatus(http.StatusNoContent)
-	room := createRoom(bob, "ops")
-	shareRoom(bob, room.ID, dto.SharingUser{UserID: admin.User.ID, Level: dto.LevelView})
+	// Organization membership is how things are shared (AD-016): bob invites the admin to his personal organization.
+	bobOrg := bob.PersonalOrg().ID
+	bob.Post("/api/v1/orgs/"+bobOrg+"/invitations", dto.CreateInvitationRequest{Handle: "admin", Permission: dto.PermissionMember}).RequireStatus(http.StatusCreated)
 	newPassword := "brand-new-password-9"
 	bob.Post("/api/v1/me/password", dto.ChangePasswordRequest{CurrentPassword: testkit.Password, NewPassword: newPassword}).RequireStatus(http.StatusNoContent)
 	bob.Post("/api/v1/auth/logout", nil).RequireStatus(http.StatusNoContent)
@@ -99,11 +100,12 @@ func TestAuditRecordsSecurityEvents(t *testing.T) {
 	tr := findAudit(t, entries, "token.revoke")
 	require.Equal(t, tok.Token.ID, tr.TargetID)
 
-	grants := findAudit(t, entries, "grants.set")
-	require.Equal(t, bob.User.ID, grants.Actor.ID)
-	require.Equal(t, "room", grants.TargetKind)
-	require.Equal(t, room.ID, grants.TargetID)
-	require.Equal(t, "shared", grants.Detail["mode"])
+	invited := findAudit(t, entries, "org.invite")
+	require.Equal(t, bob.User.ID, invited.Actor.ID)
+	require.Equal(t, "organization", invited.TargetKind)
+	require.Equal(t, bobOrg, invited.TargetID)
+	require.Equal(t, admin.User.ID, invited.Detail["invitee"])
+	require.Equal(t, "member", invited.Detail["permission"])
 
 	pw := findAudit(t, entries, "user.password_change")
 	require.Equal(t, bob.User.ID, pw.Actor.ID)

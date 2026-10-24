@@ -226,7 +226,7 @@ func TestAGuestTakesPartInGroupsAndTalksToTheOrganization(t *testing.T) {
 		say(guest, dm.ID, "hi")
 		say(other, dm.ID, "hello guest")
 	}
-	// ... and with the AIs of the organization, which belong to nobody's grants.
+	// ... and with the AIs of the organization, whoever hosts them.
 	withAI := dmWith(guest, roles.TargetAI, http.StatusCreated)
 	say(guest, withAI.ID, "hello AI")
 	// A stranger to the organization gets nothing of the kind.

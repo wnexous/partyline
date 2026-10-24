@@ -17,8 +17,8 @@ import (
 	"github.com/wnexous/partyline/internal/validation"
 )
 
-// List returns the caller's conversations, newest activity first: the groups they own, were
-// granted or are a member of and the DMs they take part in (DM-06, LAY-01), each filed under its
+// List returns the caller's conversations, newest activity first: the groups they created, administer
+// or are a member of and the DMs they take part in (DM-06, LAY-01), each filed under its
 // organizations (ORG-02). A DM the caller only views through an AI is reachable by id and not
 // listed. Unread and read positions are per user, so only users have a list.
 func (s *Service) List(ctx context.Context, p authn.Principal) ([]dto.Conversation, error) {

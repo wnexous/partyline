@@ -233,10 +233,10 @@ func TestPersonProfileFollowsTheConnector(t *testing.T) {
 	require.NotNil(t, owner.Person)
 
 	// bob belongs to the connection's organization and can view no room at all: the connection alone gives access.
-	grantee := profileOf(t, f.bob, f.person)
-	require.False(t, grantee.CanEdit)
-	require.NotNil(t, grantee.Person)
-	require.Empty(t, grantee.Conversations)
+	colleague := profileOf(t, f.bob, f.person)
+	require.False(t, colleague.CanEdit)
+	require.NotNil(t, colleague.Person)
+	require.Empty(t, colleague.Conversations)
 
 	// dave can view room A and is no member of the connection's organization.
 	viewer := profileOf(t, f.dave, f.person)
@@ -271,14 +271,12 @@ func TestPersonProfileFollowsTheConnector(t *testing.T) {
 // read the AI's platform DMs with external people and those people's profiles and avatars: the user that
 // holds a position above the AI's, and the admin of the organization whose position is above that one. They
 // belong to the AI's home organization, which is the connection's (ORG-07), so they see the account behind
-// the person too. A user granted use on the AI finds neither the DM nor the person, since a grant gives
-// nothing any more; neither does a user with no relation to the AI, an admin of the instance included, and
-// the members of the connection's organization see the person but not the AI's DM.
+// the person too. A user with no relation to the AI finds neither the DM nor the person, an admin of the
+// instance included, and the members of the connection's organization see the person but not the AI's DM.
 func TestManagersOfAnAIReadItsPlatformDMsAndPeople(t *testing.T) {
 	ctx := context.Background()
 	f := newPeopleFixture(t)
 	atlas := f.env.NewAIIn(f.alice, f.line, "atlas")
-	shareAgent(f.alice, atlas, f.carol.User.ID) // carol: a use grant on atlas, which gives her nothing, and nothing on the connection
 	f.alice.OperateConnector(f.conn.ID, atlas)
 
 	// the chart of "line": alice holds the root Admin; dave holds Lead below it and manages Atlas, who holds Worker below him.
@@ -318,8 +316,8 @@ func TestManagersOfAnAIReadItsPlatformDMsAndPeople(t *testing.T) {
 	f.bob.Get("/api/v1/rooms/"+dm).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	f.bob.Get("/api/v1/rooms/"+dm+"/messages").RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
-	// carol holds a use grant on the AI and is in no organization of the connection, erin is a user of nothing
-	// here, and the admin of the instance is no exception (AD-016): none of them finds the DM or the person.
+	// carol is in no organization of the connection, erin is a user of nothing here, and the admin of the
+	// instance is no exception (AD-016): none of them finds the DM or the person.
 	for _, c := range []*testkit.Client{f.carol, f.erin, f.admin} {
 		f.env.T.Helper()
 		c.Get("/api/v1/rooms/"+dm).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)

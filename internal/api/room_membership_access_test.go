@@ -10,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/wnexous/partyline/internal/access"
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/store"
 	"github.com/wnexous/partyline/internal/store/db"
@@ -49,21 +48,6 @@ func storeDM(t *testing.T, env *testkit.Env, ownerID, a, b string) string {
 }
 
 var dmFixtureCounter atomic.Int32
-
-// dmSetup creates a DM between the poster and a new AI of the owner, which the viewer holds a use grant
-// on: the matrix roles read as the AI's creator (it manages the AI, so it views the DM), a use grantee
-// (a grant gives nothing any more, AD-016), a participant (post), a stranger and an admin.
-func dmSetup(t *testing.T, m *matrix) matrixResource {
-	t.Helper()
-	owner, viewer, poster := m.as(t, roleOwner), m.as(t, roleViewer), m.as(t, rolePoster)
-	ai := m.env.NewAI(owner, fmt.Sprintf("atlas%d", dmFixtureCounter.Add(1)))
-	require.NoError(t, m.env.App.Access.SetVisibility(context.Background(), owner.User.ID, access.KindAgent, ai, owner.User.ID,
-		access.Visibility{Mode: dto.VisibilityShared, Users: []access.UserLevel{{UserID: viewer.User.ID}}}))
-	room := storeDM(t, m.env, poster.User.ID, poster.User.ID, ai)
-	// A message of the participant, so that reading has something to return.
-	poster.Post("/api/v1/rooms/"+room+"/messages", dto.PostMessageRequest{Text: "hi"}).RequireStatus(http.StatusCreated)
-	return matrixResource{"room": room, "ai": ai}
-}
 
 // dmRoomSetup returns the setup of the DM matrix: a fresh DM between the role "target" and a new AI that
 // the role "manager" created and hosts, like the AI of testkit.OrgRoles (a pair has one DM, so every
@@ -112,12 +96,6 @@ func TestDMRoutesAuthMatrix(t *testing.T) {
 		{"resume", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Post(room(res, "/resume"), nil)
 		}, dmWant(403, 403, 404)},
-		{"get sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
-			return c.Get(room(res, "/sharing"))
-		}, dmWant(200, 200, 404)},
-		{"put sharing", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
-			return c.Put(room(res, "/sharing"), dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost})
-		}, dmWant(422, 422, 404)},
 	})
 
 	// The DM lists for its participant only: the managers view it by id.
@@ -136,66 +114,40 @@ func TestDMRoutesAuthMatrix(t *testing.T) {
 	token.Get("/api/v1/rooms/"+res["room"]).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 }
 
-// DM-08: sharing a DM is 422 dm_no_sharing for whoever can view it, with nothing written; those who
-// cannot view it get 404, so its existence stays private.
-func TestDMSharingIsRefusedWithItsOwnCode(t *testing.T) {
-	m := newMatrix(t)
-	res := dmSetup(t, m)
-	path := "/api/v1/rooms/" + res["room"] + "/sharing"
-	for _, role := range []matrixRole{roleOwner, rolePoster} {
-		for _, preset := range []dto.Sharing{
-			{Mode: dto.VisibilityPrivate},
-			{Mode: dto.VisibilityShared, Users: []dto.SharingUser{{UserID: m.clients[roleStranger].User.ID, Level: dto.LevelView}}},
-			{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost},
-		} {
-			e := m.as(t, role).Put(path, preset).RequireError(http.StatusUnprocessableEntity, dto.ErrorCodeDMNoSharing)
-			require.NotEmpty(t, e.Message)
-		}
-	}
-	m.as(t, roleStranger).Put(path, dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	m.as(t, roleViewer).Put(path, dto.Sharing{Mode: dto.VisibilityPublic, PublicLevel: dto.LevelPost}).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-
-	// Nothing was written: no grants, the stranger still has no access.
-	s := testkit.Decode[dto.Sharing](m.as(t, rolePoster).Get(path).RequireStatus(http.StatusOK))
-	require.Equal(t, dto.VisibilityPrivate, s.Mode)
-	require.Empty(t, s.Users)
-	m.as(t, roleStranger).Get("/api/v1/rooms/"+res["room"]).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-	m.as(t, roleAdmin).Get("/api/v1/rooms/"+res["room"]).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-}
-
 // DM-06 source: the room list holds the DMs a user takes part in, with the level they have, and
-// not the DMs they only view through an AI, also when the row names the AI's owner as its owner
+// not the DMs they only view through an AI, also when the row names the AI's host as its owner
 // (an AI opened it).
 func TestRoomListHoldsOwnDMsOnly(t *testing.T) {
-	m := newMatrix(t)
-	res := dmSetup(t, m)
-	owner, viewer := m.as(t, roleOwner), m.as(t, roleViewer)
-	byAI := storeDM(t, m.env, owner.User.ID, m.env.NewAI(owner, "solo"), viewer.User.ID)
-	for _, c := range []*testkit.Client{owner, viewer} {
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	res := dmRoomSetup(env, roles)(t) // the role "target" and an AI of the role "manager"
+	// A DM an AI of the manager opened with a plain member of the organization: its row names the host.
+	byAI := storeDM(t, env, roles.Manager.User.ID, roles.TargetAI, roles.Member.User.ID)
+
+	listed := func(c *testkit.Client, id string) *dto.Room {
+		t.Helper()
 		list := testkit.Decode[dto.List[dto.Room]](c.Get("/api/v1/rooms").RequireStatus(http.StatusOK))
-		ids := []string{}
-		for _, r := range list.Items {
-			ids = append(ids, r.ID)
-		}
-		require.Equal(t, c == viewer, contains(ids, byAI), "only its participant lists the DM an AI opened")
-		require.NotContains(t, ids, res["room"])
-	}
-	owner.Get("/api/v1/rooms/" + byAI).RequireStatus(http.StatusOK) // viewed, by id
-	for _, role := range matrixRoles {
-		list := testkit.Decode[dto.List[dto.Room]](m.as(t, role).Get("/api/v1/rooms").RequireStatus(http.StatusOK))
-		var got *dto.Room
 		for i, r := range list.Items {
-			if r.ID == res["room"] {
-				got = &list.Items[i]
+			if r.ID == id {
+				return &list.Items[i]
 			}
 		}
-		if role != rolePoster {
-			require.Nil(t, got, "%s does not list the DM", role)
+		return nil
+	}
+	require.NotNil(t, listed(roles.Member, byAI), "only its participant lists the DM an AI opened")
+	require.Nil(t, listed(roles.Manager, byAI), "the AI's manager views it and does not list it")
+	require.Nil(t, listed(roles.Admin, byAI), "neither does the admin above the manager")
+	roles.Manager.Get("/api/v1/rooms/" + byAI).RequireStatus(http.StatusOK) // viewed, by id
+	roles.Admin.Get("/api/v1/rooms/" + byAI).RequireStatus(http.StatusOK)
+
+	for _, role := range roles.All() {
+		got := listed(role.Client, res["room"])
+		if role.Name != "target" {
+			require.Nil(t, got, "%s does not list the DM", role.Name)
 			continue
 		}
 		require.NotNil(t, got, "the participant lists the DM")
 		require.Equal(t, dto.LevelPost, got.MyLevel)
-		require.Equal(t, dto.VisibilityPrivate, got.Visibility)
 	}
 }
 
@@ -224,7 +176,6 @@ func TestUserMemberOfAGroupPosts(t *testing.T) {
 	// Not a manager.
 	bob.Patch(path, dto.UpdateRoomRequest{Name: ptr("mine")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	bob.Delete(path).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
-	bob.Put(path+"/sharing", dto.Sharing{Mode: dto.VisibilityPrivate}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	bob.Post(path+"/members", dto.AddMemberRequest{Kind: dto.MemberKindUser, MemberID: carol.User.ID}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	bob.Delete(path+"/members/"+member.ID).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 	bob.Post(path+"/resume", nil).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
@@ -276,20 +227,22 @@ func TestLiveUserMembershipFollowsAccess(t *testing.T) {
 	bobLive.ExpectNone(quiet)
 }
 
-// DM-08, LIVE-02: a DM's messages reach its participant and, as a view, the AI's owner; a stranger
-// receives nothing.
+// DM-08, LIVE-02: a DM's messages reach its participant and, as a view, the managers of its AI; a member with no
+// relation to the AI and an outsider receive nothing.
 func TestLiveDMMessagesReachParticipantsAndViewers(t *testing.T) {
-	m := newMatrix(t)
-	res := dmSetup(t, m)
-	owner, poster, stranger := m.as(t, roleOwner), m.as(t, rolePoster), m.as(t, roleStranger)
-	ownerLive, posterLive, strangerLive := dialLive(t, owner), dialLive(t, poster), dialLive(t, stranger)
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	res := dmRoomSetup(env, roles)(t)
+	participant, manager, admin := dialLive(t, roles.Target), dialLive(t, roles.Manager), dialLive(t, roles.Admin)
+	member, outsider := dialLive(t, roles.Member), dialLive(t, roles.Outsider)
 
-	poster.Post("/api/v1/rooms/"+res["room"]+"/messages", dto.PostMessageRequest{Text: "ping"}).RequireStatus(http.StatusCreated)
-	for _, c := range []*testkit.LiveConn{posterLive, ownerLive} {
+	roles.Target.Post("/api/v1/rooms/"+res["room"]+"/messages", dto.PostMessageRequest{Text: "ping"}).RequireStatus(http.StatusCreated)
+	for _, c := range []*testkit.LiveConn{participant, manager, admin} {
 		var got dto.Message
 		c.Expect(dto.LiveEventTypeRoomMessage, &got, liveWait)
 		require.Equal(t, "ping", got.Text)
 		require.Equal(t, res["room"], got.RoomID)
 	}
-	strangerLive.ExpectNone(quiet)
+	member.ExpectNone(quiet)
+	outsider.ExpectNone(quiet)
 }

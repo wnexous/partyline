@@ -32,7 +32,9 @@ func MergeNotice(handle string) string { return "History merged from @" + handle
 //
 //   - Group memberships move; where both are members, the surviving AI's settings win.
 //   - Delivery cursors in groups become the larger of the two.
-//   - Who may use the first may use the second (the higher level where both grant).
+//   - The organizations only the first belongs to become the second's, with the permission, position and
+//     inviter it had there; where both belong, the surviving AI's membership wins. Whoever the first
+//     created or invited is the second's.
 //   - A DM of the first with someone the second has no DM with becomes the second's DM, kept as it
 //     is. Where the second has a DM with that someone too, the first's messages (with their files
 //     and deliveries) are appended to it after a system message naming the first, its chats join
@@ -178,9 +180,6 @@ func (s *Service) merge(ctx context.Context, q *db.Queries, actorID, fromID, int
 		}
 	}
 
-	if err := q.MergeAgentGrants(ctx, db.MergeAgentGrantsParams{FromID: fromID, IntoID: intoID}); err != nil {
-		return err
-	}
 	if err := q.ReassignAgentMessages(ctx, db.ReassignAgentMessagesParams{FromID: fromID, IntoID: intoID}); err != nil {
 		return err
 	}
@@ -219,9 +218,6 @@ func (s *Service) merge(ctx context.Context, q *db.Queries, actorID, fromID, int
 	}
 	out.groups = append(out.groups, left...)
 	if err := s.mergeOrganizations(ctx, q, from, into, out); err != nil {
-		return err
-	}
-	if err := q.DeleteGrants(ctx, db.DeleteGrantsParams{ResourceKind: string(access.KindAgent), ResourceID: fromID}); err != nil {
 		return err
 	}
 	if err := q.DeleteAgent(ctx, fromID); err != nil { // its intelligence and cursors go with it
@@ -487,7 +483,7 @@ func (s *Service) announceMerge(fromID, intoID string, out mergeOutcome) {
 	for _, id := range slices.Compact(slices.Sorted(slices.Values(out.orgs))) {
 		s.bus.Publish(events.OrgChanged{OrgID: id})
 	}
-	s.bus.Publish(events.GrantsChanged{ResourceKind: string(access.KindAgent), ResourceID: intoID})
+	s.bus.Publish(events.AccessChanged{ResourceKind: string(access.KindAgent), ResourceID: intoID})
 	s.bus.Publish(events.IntelligenceChanged{ID: fromID})
 	s.bus.Publish(events.IntelligenceChanged{ID: intoID})
 }

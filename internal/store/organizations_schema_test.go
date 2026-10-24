@@ -314,7 +314,7 @@ func TestOrganizationsMigrationKeepsEveryRowOfAV05Database(t *testing.T) {
 	require.NotEmpty(t, before["agents"], "fixture sanity")
 	require.NotEmpty(t, before["connectors"], "fixture sanity")
 
-	require.NoError(t, e.s.migrate(ctx, migrations, nil), "the schema step alone")
+	require.NoError(t, e.s.migrate(ctx, migrationsBefore("0020"), nil), "the schema step of 0019 alone")
 
 	require.Contains(t, versions(t, e.s), "0019_organizations")
 	for table, cols := range tables {
