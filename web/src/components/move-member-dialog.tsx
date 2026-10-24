@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { isApiError } from "@/lib/api/client";
-import type { Position } from "@/lib/api/org-types";
 import { useUpdateOrgMember } from "@/lib/api/queries";
+import type { Position } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
 import { movablePositions, type PositionOption } from "@/lib/org-chart";
 

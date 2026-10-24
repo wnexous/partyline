@@ -1,5 +1,4 @@
-import type { Organization, Permission } from "@/lib/api/org-types";
-import type { ProfileMembership } from "@/lib/api/types.gen";
+import type { Organization, Permission, ProfileMembership } from "@/lib/api/types.gen";
 import { json } from "./fetch";
 import { makeMembership, makeOrg, makeProfile } from "./fixtures";
 

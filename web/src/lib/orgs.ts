@@ -1,5 +1,10 @@
-import type { Organization, OrgMember } from "@/lib/api/org-types";
-import type { Conversation, IntelligenceRef, Me } from "@/lib/api/types.gen";
+import type {
+  Conversation,
+  IntelligenceRef,
+  Me,
+  Organization,
+  OrgMember,
+} from "@/lib/api/types.gen";
 import type { MessageKey, Translate } from "@/lib/i18n";
 
 /*

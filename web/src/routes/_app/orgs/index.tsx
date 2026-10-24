@@ -10,8 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
-import { hasErrorCode, isApiError } from "@/lib/api/client";
-import { ErrorCodeAlreadyMember, type Invitation } from "@/lib/api/org-types";
+import { isApiError } from "@/lib/api/client";
 import {
   useAcceptInvitation,
   useDeclineInvitation,
@@ -19,6 +18,7 @@ import {
   useMyInvitations,
   useOrgs,
 } from "@/lib/api/queries";
+import { ErrorCodeAlreadyMember, type Invitation } from "@/lib/api/types.gen";
 import { type MessageKey, type Translate, useI18n, useT } from "@/lib/i18n";
 import { type MyOrg, PermissionGuest, permissionLabel } from "@/lib/orgs";
 import { formatAbsolute, formatRelative } from "@/lib/time";
@@ -215,7 +215,7 @@ function InvitationItem({ invitation: inv }: { invitation: Invitation }) {
   const failed = (err: unknown) => {
     if (isApiError(err) && (err.status === 410 || err.status === 404)) {
       toast.error(t("orgs.expired", { org }));
-    } else if (hasErrorCode(err, ErrorCodeAlreadyMember)) {
+    } else if (isApiError(err) && err.code === ErrorCodeAlreadyMember) {
       toast(t("orgs.alreadyIn", { org }));
     } else {
       toast.error(t("orgs.answerFailed", { org }));

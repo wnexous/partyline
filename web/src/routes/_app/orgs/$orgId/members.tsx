@@ -13,8 +13,7 @@ import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { hasErrorCode, isApiError } from "@/lib/api/client";
-import type { ChartMember, Invitation, OrgMember, Permission } from "@/lib/api/org-types";
+import { isApiError } from "@/lib/api/client";
 import {
   useMe,
   useOrg,
@@ -24,9 +23,14 @@ import {
   useRevokeInvitation,
   useUpdateOrgMember,
 } from "@/lib/api/queries";
-import { ErrorCodeLastAdmin } from "@/lib/api/types.gen";
+import {
+  DeleteEffectDelete,
+  ErrorCodeLastAdmin,
+  type Invitation,
+  type OrgMember,
+  type Permission,
+} from "@/lib/api/types.gen";
 import { useI18n, useT } from "@/lib/i18n";
-import { chartMembers } from "@/lib/org-chart";
 import { PermissionAdmin, PermissionGuest, PermissionMember, permissionLabel } from "@/lib/orgs";
 import { formatAbsolute, formatRelative } from "@/lib/time";
 
@@ -76,13 +80,6 @@ function OrgMembersPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const admin = org?.permission === PermissionAdmin;
-  const flags = useMemo(
-    () =>
-      new Map<string, ChartMember>(
-        (chart.data ? chartMembers(chart.data) : []).map((m) => [m.intelligence.id, m]),
-      ),
-    [chart.data],
-  );
   const positions = useMemo(
     () => (chart.data?.positions ?? []).map(({ id, name, parent_id }) => ({ id, name, parent_id })),
     [chart.data],
@@ -109,14 +106,6 @@ function OrgMembersPage() {
           {notice}
         </p>
       ) : null}
-      {chart.isError && !chart.data ? (
-        <p role="status" className="border-b px-4 py-2.5 text-sm text-muted-foreground md:px-8">
-          {t("orgs.flagsError")}{" "}
-          <button type="button" className="underline" onClick={() => chart.refetch()}>
-            {t("common.retry")}
-          </button>
-        </p>
-      ) : null}
       {members.isPending ? (
         <div aria-hidden="true" className="space-y-3 px-4 py-6 md:px-8">
           <Skeleton className="h-5 w-56" />
@@ -135,7 +124,6 @@ function OrgMembersPage() {
           orgId={org.id}
           orgName={org.name}
           members={inOrder(members.data ?? [])}
-          flags={flags}
           admin={admin}
           viewerId={me?.intelligence.id}
           onNotice={setNotice}
@@ -190,7 +178,6 @@ function MembersTable({
   orgId,
   orgName,
   members,
-  flags,
   admin,
   viewerId,
   onNotice,
@@ -201,7 +188,6 @@ function MembersTable({
   orgId: string;
   orgName: string;
   members: OrgMember[];
-  flags: Map<string, ChartMember>;
   admin: boolean;
   viewerId: string | undefined;
   onNotice: (message: string | null) => void;
@@ -243,7 +229,6 @@ function MembersTable({
             orgId={orgId}
             orgName={orgName}
             member={m}
-            flag={flags.get(m.intelligence.id)}
             admin={admin}
             viewerId={viewerId}
             onNotice={onNotice}
@@ -262,7 +247,6 @@ function MemberRow({
   orgId,
   orgName,
   member: m,
-  flag,
   admin,
   viewerId,
   onNotice,
@@ -274,7 +258,6 @@ function MemberRow({
   orgId: string;
   orgName: string;
   member: OrgMember;
-  flag: ChartMember | undefined;
   admin: boolean;
   viewerId: string | undefined;
   onNotice: (message: string | null) => void;
@@ -299,7 +282,7 @@ function MemberRow({
             }),
           ),
         onError: (err) => {
-          if (hasErrorCode(err, ErrorCodeLastAdmin)) {
+          if (isApiError(err) && err.code === ErrorCodeLastAdmin) {
             onNotice(t("profile.removeLastAdmin", { name: who.display_name, org: orgName }));
           } else if (isApiError(err) && err.status === 403) {
             onNotice(t("orgs.permissionForbidden", { org: orgName }));
@@ -359,13 +342,13 @@ function MemberRow({
       </td>
       <td className="max-md:col-span-2 md:px-8 md:py-3">
         <div className="flex flex-wrap gap-2 md:justify-end">
-          {flag?.can_move ? (
+          {m.can_move ? (
             <Button variant="outline" size="sm" aria-describedby={nameId} onClick={() => onMove(m)}>
               <MoveRightIcon aria-hidden="true" />
               {t("orgs.move")}
             </Button>
           ) : null}
-          {flag?.can_delete && flag.delete_effect === "delete" ? (
+          {m.can_delete && m.delete_effect === DeleteEffectDelete ? (
             <Button
               variant="outline"
               size="sm"
@@ -377,7 +360,7 @@ function MemberRow({
               {t("orgs.deleteMember")}
             </Button>
           ) : null}
-          {flag?.can_delete && flag.delete_effect !== "delete" ? (
+          {m.can_delete && m.delete_effect !== DeleteEffectDelete ? (
             <Button
               variant="outline"
               size="sm"

@@ -987,7 +987,6 @@ export const ptBR: Dictionary = {
   "orgs.membersBody": "Todo mundo em {org}, o que cada um é nela e onde fica no organograma.",
   "orgs.membersLabel": "Membros de {org}",
   "orgs.membersError": "Não foi possível carregar os membros.",
-  "orgs.flagsError": "Não foi possível carregar o que você pode fazer aqui.",
   "orgs.colMember": "Membro",
   "orgs.colPermission": "Permissão",
   "orgs.colPosition": "Cargo",

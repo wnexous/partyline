@@ -1,5 +1,3 @@
-import type { ChartMember, OrgChart } from "@/lib/api/org-types";
-
 /*
  * The positions of an organization as the pages read them (POS-01, POS-02, POS-04): in tree order,
  * the subtree of one, and the ones a member may be moved to. Pure functions of the list the chart
@@ -91,21 +89,4 @@ export function movablePositions(
   return positionOptions(positions)
     .filter((o) => below.has(o.id))
     .map((o) => ({ ...o, depth: o.depth - own - 1 }));
-}
-
-/**
- * Every member the chart lists, once each, with what the viewer may do about them (CHART-03): the
- * holders of the positions, then the members with no position.
- */
-export function chartMembers(chart: OrgChart): ChartMember[] {
-  const seen = new Set<string>();
-  return [
-    ...chart.positions.flatMap((p) => p.holders),
-    ...(chart.members ?? []),
-    ...(chart.unassigned ?? []),
-  ].filter((m) => {
-    if (seen.has(m.intelligence.id)) return false;
-    seen.add(m.intelligence.id);
-    return true;
-  });
 }

@@ -974,7 +974,6 @@ export const en = {
   "orgs.membersBody": "Everyone in {org}, what they are in it and where they sit in the chart.",
   "orgs.membersLabel": "Members of {org}",
   "orgs.membersError": "Couldn’t load the members.",
-  "orgs.flagsError": "Couldn’t load what you can do here.",
   "orgs.colMember": "Member",
   "orgs.colPermission": "Permission",
   "orgs.colPosition": "Position",

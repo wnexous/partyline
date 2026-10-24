@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, api, hasErrorCode, setUnauthorizedHandler } from "./client";
+import { ApiError, api, setUnauthorizedHandler } from "./client";
 
 function jsonResponse(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -65,9 +65,6 @@ describe("api client", () => {
       code: "organization_not_empty",
       details: { agents: "2", connectors: "0", groups: "1" },
     });
-    expect(hasErrorCode(err, "organization_not_empty")).toBe(true);
-    expect(hasErrorCode(err, "last_admin")).toBe(false);
-    expect(hasErrorCode(new Error("organization_not_empty"), "organization_not_empty")).toBe(false);
   });
 
   it("has no details when the refusal names none", async () => {

@@ -1784,27 +1784,24 @@ extends what T57 left open; the command's output and exit codes are unchanged.
 
 ## T39: Organization queries and switcher (ORG-01, ORG-02, CHART-02)
 
-Phase 8 is built before Phase 3 is merged (T14-T17 are being written), so the web talks to a contract that is
-partly **assumed**. All of it is in one interim module, `web/src/lib/api/org-types.ts`: it holds the types with the names
-and shapes tygo gives them. T12/T13 (`Permission`, `Organization`, `Position`, `OrgMember`'s base fields, the create/update
-requests) are exactly what is committed on `wnexous/pl-org-p3`. The rest is marked **ASSUMED** in the file and below. When
-`wnexous/pl-org-g0` carries Phase 3: delete the module, import the same names from `types.gen.ts`, and adapt what differs
-(`lib/org-chart.ts` is the one place that reads the chart's shape, T44).
+Phase 8 was written while Phase 3 (T12-T17) was being built, against a contract the web **assumed** and sent to the coordinator to
+relay; the shapes were typed in one interim module, `web/src/lib/api/org-types.ts`. Phase 3 landed in `wnexous/pl-org-g0` and matched
+them, so that module is **gone**: the web reads `Organization`, `Position`, `OrgMember`, `OrgChart`, `ChartMember`, `Invitation`,
+`DeleteEffect`, the requests and the error codes from `types.gen.ts`. What the final contract added or settled, as the web uses it:
 
-- **What the web assumes of Phase 3** (sent to the coordinator to relay to the Phase 3 worker):
-  - `GET /orgs` -> `List<Organization>` (T12, committed), `GET /orgs/{org}` -> `Organization`, `POST /orgs {name}` -> 201
-    `Organization`, `PATCH`, `DELETE` (409 `organization_not_empty` with the counts as **strings** in `details`:
-    `agents`, `connectors`, `groups`), `PUT|DELETE /orgs/{org}/avatar` (T12, committed).
-  - `GET /orgs/{org}/members` -> `List<OrgMember>` (base fields only; the per-row actions come from the chart, below).
-  - `PATCH /orgs/{org}/members/{iid}` `{permission?, position_id?}`; an empty `position_id` clears the position.
-  - `Invitation {id, org_id, org_name, org_slug, invitee: IntelligenceRef, permission, position_id?, position_name?,
-    invited_by: IntelligenceRef, created_at, expires_at}`; `POST /orgs/{org}/invitations {handle, permission,
-    position_id?}` -> 201; `GET /orgs/{org}/invitations` and `GET /invitations` -> `List<Invitation>`;
-    `DELETE /orgs/{org}/invitations/{id}`; `POST /invitations/{id}/accept|decline` (the answer's body is ignored).
-  - `GET /orgs/{org}/chart` -> `OrgChart {viewer: {admin}, positions: [{id, name, parent_id?, holders: [ChartMember]}] (flat),
-    members?: [ChartMember] (no position, hanging under `under`), unassigned?: [ChartMember]}` with `ChartMember {intelligence,
-    permission, online, under?, can_delete, delete_effect, can_move}`.
-  - `PUT /me/default-org` and `default_org_id` on `GET /me` (T17), as T49 already assumed.
+- `OrgMember` carries the viewer's `can_delete`, `delete_effect` and `can_move` (the same values as the chart's), so the members page
+  needs no chart for them; the chart still gives the positions the dialogs offer.
+- `PATCH /orgs/{org}/members/{iid}` takes `{permission?, position_id?}` where `position_id` is `string | null`: `null` or `""` clears
+  the position (the web sends `""`).
+- `POST /invitations/{id}/accept` answers **200 with the `Organization`** the invitee now belongs to (the web puts it in the cached
+  list at once); `decline` answers 204.
+- The live frame is **`invitation_received`** (`LiveInvitationReceived`, `data` = the `Invitation`): the cached inbox gets it first
+  (an invitation sent again replaces its earlier terms); an inbox nobody opened is left alone, its first fetch has it.
+- `ErrorCodeOrganizationNotEmpty`, `ErrorCodePositionCycle` and `ErrorCodeAlreadyMember` are in the generated `ErrorCode`, so the
+  pages compare `err.code` as everywhere else (the interim `hasErrorCode` helper was removed).
+- `GET /orgs/{org}/chart` is `OrgChart {viewer: {admin}, positions (flat, tree order, each with its holders), members (no position,
+  hanging under `under`), unassigned}`, every member in exactly one of the three places.
+
 - **Taken over from Phase 9** (the pieces the T45-T50 notes left for T39):
   - **`useMyOrgs()` now reads `GET /orgs`** (`orgsQuery`, key `["orgs"]`), no longer the memberships of the viewer's own
     profile. `MyOrg` is `{id, name, slug, permission, avatarUrl?, positionId?}` (it lost `position`, a name `GET /orgs` does not
@@ -1829,11 +1826,10 @@ requests) are exactly what is committed on `wnexous/pl-org-p3`. The rest is mark
   `useCreatePosition|useUpdatePosition|useDeletePosition(orgId)`, `useUpdateOrgMember(orgId)`, `useInviteToOrg(orgId)`,
   `useRevokeInvitation(orgId)`, `useAcceptInvitation`, `useDeclineInvitation`. A created or changed organization is written into the
   cached list where the server will place it (by name, ignoring case, then id) and the list is fetched again, so the switcher never
-  lands on another organization first. An invitation leaves the inbox when answered and when the answer is 410 or 404.
+  lands on another organization first. An invitation leaves the inbox when answered and when the answer is 410, 404 or 409
+  `already_member`.
   `useRemoveFromOrg` and `useDeleteAgent` also mark the organization pages stale (the member and the chart lose the identity).
-- **`ApiError.details`** (`client.ts`): the `details` of the error envelope (the counts of `organization_not_empty`), and
-  `hasErrorCode(err, code)` for the codes `types.gen.ts` does not list yet (`org-types.ts` has
-  `ErrorCodeOrganizationNotEmpty`, `ErrorCodePositionCycle`, `ErrorCodeAlreadyMember`).
+- **`ApiError.details`** (`client.ts`): the `details` of the error envelope (the counts of `organization_not_empty`).
 - **The switcher** (`components/org-switcher.tsx`, `OrgAvatar`, `NewOrgDialog`):
   - Placement: under the brand row of `MessengerPanel` (the wide-screen column and the phone's home screen), and, compact (the
     organization's picture only), in the top bar of a phone's full-screen pages (`MobileBar`).
@@ -1860,7 +1856,7 @@ requests) are exactly what is committed on `wnexous/pl-org-p3`. The rest is mark
   first organization, a pick of an organization that was left, the dialog (open, create, at once in the list, 0/101/100 characters
   counted in characters, the server's reason, the network, reopening empty), none / failed / loading, the phone's two places, axe in
   both locales), `lib/orgs.test.ts` (`toMyOrgs`, `unreadByOrg`, `unreadOutsideOrg`, the limits), `use-current-org.test.tsx`,
-  `handlers.test.ts` (the organization pages), `client.test.ts` (`details`, `hasErrorCode`), and the pickers' tests
+  `handlers.test.ts` (the organization pages, the live invitation), `client.test.ts` (`details`), and the pickers' tests
   (`new-group-dialog.test.tsx`, `member-picker.test.tsx`: the organization's users, by name, without the viewer or the AIs among the
   members, the other organization's after a change, waiting, the fallback).
 
@@ -1952,9 +1948,8 @@ requests) are exactly what is committed on `wnexous/pl-org-p3`. The rest is mark
   picture, name linked to the profile, @handle, the AI badge and "You"), Permission, Position, Invited by (a guest's inviter) and
   Actions. Admins first, then members, then guests, by name inside each. On a phone the table is stacked (the header row is hidden, each
   row is a two-column grid), with no horizontal scroll. Anyone who belongs, a guest included, sees it (CHART-02). `GET /orgs/{org}/members`
-  gives the rows; **what the viewer may do about each one comes from the chart** (`GET /orgs/{org}/chart`, `chartMembers`): the `OrgMember`
-  rows of T12 carry no flags, and T16 guarantees them (`can_delete`, `delete_effect`, `can_move`) - see the assumptions in T39. While the
-  chart cannot be read there is no action and the page says "Couldn't load what you can do here." with a retry (fail closed).
+  gives the rows, and **what the viewer may do about each one comes on the row** (`can_delete`, `delete_effect`, `can_move`, the same values
+  as the chart's); the chart is read for the positions the dialogs offer only (without it an admin can still move someone to "No position").
 - **Actions** (only where the flags say so; the page adds no rule of its own):
   - **Move** (`can_move`): `MoveMemberDialog` (new, shared with the chart in T44). It starts on where the member is now and sends nothing
     until another position is picked (the button is off, and a submit without a change is ignored). An admin picks any position or "No
@@ -1982,19 +1977,19 @@ requests) are exactly what is committed on `wnexous/pl-org-p3`. The rest is mark
   reasons under their fields; the network. Success: toast "Invitation sent to {name}" and the pending list refreshes.
 - **Pending invitations** (admins only; nobody else asks for them): the list "Pending invitations of {org}" with the invitee, permission,
   position, inviter and expiry, and **Revoke** (`DELETE /orgs/{org}/invitations/{id}`), toast "Invitation to {name} revoked" or the failure.
-- **Shared code**: `lib/org-chart.ts` (`positionOptions`, `descendantsOf`, `movablePositions`, `chartMembers`), `inviteCandidates` and
+- **Shared code**: `lib/org-chart.ts` (`positionOptions`, `descendantsOf`, `movablePositions`), `inviteCandidates` and
   `pickables` in `lib/contacts.ts`, `SelectField` in `form-fields.tsx`, `inviteSchema` (`InviteFormValues`) in `schemas.ts`.
-- **`home_organization` is not reachable from this page** in practice: the chart gives an AI of this organization `delete_effect:
-  "delete"`, which routes to `Registry.Delete`. The inline message is there because the task asks for it and for any chart the server
+- **`home_organization` is not reachable from this page** in practice: a member row gives an AI of this organization `delete_effect:
+  "delete"`, which routes to `Registry.Delete`. The inline message is there because the task asks for it and for any row the server
   may serve.
-- **Texts** (en and pt-BR): `orgs.tabMembers`, `orgs.members*`, `orgs.flagsError`, `orgs.col*`, `orgs.noPosition`, `orgs.invitedBy`,
+- **Texts** (en and pt-BR): `orgs.tabMembers`, `orgs.members*`, `orgs.col*`, `orgs.noPosition`, `orgs.invitedBy`,
   `orgs.permission*`, `orgs.move*`, `orgs.deleteMember`, `profile.removeHome`, `orgs.invite*`, `orgs.pending*`, `orgs.revoke*`.
 - **Tests**: `orgs/org-members.test.tsx` (50: the table and its order, the viewer's row, a guest's view, failure, the live refresh; who
   invites and as what for a member, a guest and an admin, the suggestions and what is never suggested, every refusal; permission changes
   with `last_admin` and 403; the actions for an admin, a manager, a member and a guest (flags isolated: an AI the viewer may not delete
   shows nothing), removing, deleting, moving (a manager's options, an admin's, the unchanged case, clearing, 403); the pending list, revoke,
   failure and who never sees it; Portuguese; axe for each viewer and for the dialogs), `lib/org-chart.test.ts` (positions in order,
-  subtrees, movable positions, chart members), `lib/contacts.test.ts` (`inviteCandidates`, `pickables` with an organization's users).
+  subtrees, movable positions), `lib/contacts.test.ts` (`inviteCandidates`, `pickables` with an organization's users).
 ## T15: Invitation routes (OMEM-01, OMEM-02, OMEM-04, OMEM-07)
 
 - **Routes** (`internal/api/org_invitations_handlers.go`, registered by `orgInvitationRoutes`), all `authed` (an agent token is 403

@@ -20,6 +20,7 @@ import type {
   Connector,
   Contacts,
   Conversation,
+  Invitation,
   LiveEvent,
   Me,
   Message,
@@ -328,6 +329,17 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
     case "intelligence.changed":
       patchIntelligence(qc, event.data);
       return;
+
+    case "invitation_received": {
+      // Newest first, as GET /invitations lists them; one sent again replaces the earlier terms.
+      // An inbox nobody has opened is not cached: its first fetch has the invitation.
+      const inv = event.data;
+      qc.setQueryData<Invitation[]>(
+        queryKeys.invitations,
+        (old) => old && [inv, ...old.filter((i) => i.id !== inv.id)],
+      );
+      return;
+    }
 
     case "lagged":
       // The server dropped events for us: everything visible may be stale.

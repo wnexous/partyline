@@ -15,15 +15,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Form } from "@/components/ui/form";
-import { hasErrorCode, isApiError } from "@/lib/api/client";
+import { isApiError } from "@/lib/api/client";
+import { useContacts, useInviteToOrg } from "@/lib/api/queries";
 import {
   ErrorCodeAlreadyMember,
+  ErrorCodeContactNotFound,
   type OrgMember,
   type Permission,
   type Position,
-} from "@/lib/api/org-types";
-import { useContacts, useInviteToOrg } from "@/lib/api/queries";
-import { ErrorCodeContactNotFound } from "@/lib/api/types.gen";
+} from "@/lib/api/types.gen";
 import { inviteCandidates } from "@/lib/contacts";
 import { applyFieldErrors } from "@/lib/forms";
 import { useT } from "@/lib/i18n";
@@ -125,9 +125,9 @@ function InviteForm({
           onDone();
         },
         onError: (err) => {
-          if (hasErrorCode(err, ErrorCodeContactNotFound)) {
+          if (isApiError(err) && err.code === ErrorCodeContactNotFound) {
             form.setError("handle", { type: "server", message: t("orgs.inviteUnknown") });
-          } else if (hasErrorCode(err, ErrorCodeAlreadyMember)) {
+          } else if (isApiError(err) && err.code === ErrorCodeAlreadyMember) {
             form.setError("handle", {
               type: "server",
               message: t("orgs.inviteAlready", { handle: `@${next.handle}`, org: org.name }),

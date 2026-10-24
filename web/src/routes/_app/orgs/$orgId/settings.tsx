@@ -20,12 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
-import { hasErrorCode, isApiError } from "@/lib/api/client";
-import {
-  ErrorCodeOrganizationNotEmpty,
-  type Organization,
-  type UpdateOrganizationRequest,
-} from "@/lib/api/org-types";
+import { isApiError } from "@/lib/api/client";
 import {
   useDeleteOrg,
   useMe,
@@ -35,7 +30,12 @@ import {
   useUpdateOrg,
   useUploadOrgAvatar,
 } from "@/lib/api/queries";
-import { ErrorCodeLastAdmin } from "@/lib/api/types.gen";
+import {
+  ErrorCodeLastAdmin,
+  ErrorCodeOrganizationNotEmpty,
+  type Organization,
+  type UpdateOrganizationRequest,
+} from "@/lib/api/types.gen";
 import { applyFieldErrors } from "@/lib/forms";
 import { useI18n, useT } from "@/lib/i18n";
 import { ownedThings, PermissionAdmin } from "@/lib/orgs";
@@ -258,7 +258,7 @@ function LeaveSection({ org }: { org: Organization }) {
                       void navigate({ to: "/orgs" });
                     },
                     onError: (err) => {
-                      if (hasErrorCode(err, ErrorCodeLastAdmin)) {
+                      if (isApiError(err) && err.code === ErrorCodeLastAdmin) {
                         setError(t("orgs.leaveLastAdmin", { org: org.name }));
                       } else if (isApiError(err) && err.status === 0) {
                         setError(t("error.network"));
@@ -294,7 +294,7 @@ function DeleteSection({ org }: { org: Organization }) {
   };
 
   const refusal = (err: unknown): string => {
-    if (hasErrorCode(err, ErrorCodeOrganizationNotEmpty)) {
+    if (isApiError(err) && err.code === ErrorCodeOrganizationNotEmpty) {
       const things = ownedThings(t, locale, err.details);
       return things
         ? t("orgs.notEmpty", { org: org.name, things })

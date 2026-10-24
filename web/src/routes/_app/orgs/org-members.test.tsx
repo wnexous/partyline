@@ -3,14 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import * as matchers from "vitest-axe/matchers";
-import type { ChartMember, Organization } from "@/lib/api/org-types";
+import type { Organization, OrgMember } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
 import {
   makeAI,
   makeAIContact,
-  makeChartMember,
   makeChartPosition,
   makeContacts,
   makeIntelligence,
@@ -30,7 +29,7 @@ vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
 /*
  * The members of an organization and who may invite and manage them (T42: OMEM-01, OMEM-03,
  * OMEM-04, OMEM-05, OMEM-06, POS-05, POS-06). Read through the route, with what the viewer may do
- * about each member as the server's chart says it (CHART-03).
+ * about each member as the server's member rows say it (CHART-03).
  */
 
 const AXE_OPTIONS = { rules: { "color-contrast": { enabled: false } } };
@@ -51,116 +50,56 @@ const POSITIONS = [
   { id: "pos4", name: "Worktrees", parent_id: "pos3" },
 ];
 
-const members = [
-  makeOrgMember({
-    intelligence: ana,
-    permission: "admin",
-    position_id: "pos1",
-    position_name: "Admin",
-  }),
-  makeOrgMember({
-    intelligence: bob,
-    permission: "member",
-    position_id: "pos2",
-    position_name: "Manager",
-  }),
-  makeOrgMember({ intelligence: cora, permission: "member" }),
-  makeOrgMember({ intelligence: dev, permission: "guest", invited_by: bob }),
-  makeOrgMember({
-    intelligence: worker,
-    permission: "guest",
-    position_id: "pos4",
-    position_name: "Worktrees",
-    invited_by: bob,
-  }),
-  makeOrgMember({ intelligence: sentinel, permission: "member" }),
-];
+type Flags = Partial<Pick<OrgMember, "can_delete" | "delete_effect" | "can_move">>;
 
-type Flags = Partial<Pick<ChartMember, "can_delete" | "delete_effect" | "can_move">>;
-const NONE: Flags = {};
-const person = (
-  who: ReturnType<typeof makeIntelligence>,
-  permission: string,
-  flags: Flags = NONE,
-) =>
-  makeChartMember({
-    intelligence: who,
-    permission: permission as ChartMember["permission"],
-    ...flags,
+/** The rows `GET /orgs/o1/members` serves, with what the viewer may do about each one. */
+const rows = (flags: Record<string, Flags> = {}): OrgMember[] =>
+  [
+    makeOrgMember({
+      intelligence: ana,
+      permission: "admin",
+      position_id: "pos1",
+      position_name: "Admin",
+    }),
+    makeOrgMember({
+      intelligence: bob,
+      permission: "member",
+      position_id: "pos2",
+      position_name: "Manager",
+    }),
+    makeOrgMember({ intelligence: cora, permission: "member" }),
+    makeOrgMember({ intelligence: dev, permission: "guest", invited_by: bob }),
+    makeOrgMember({
+      intelligence: worker,
+      permission: "guest",
+      position_id: "pos4",
+      position_name: "Worktrees",
+      invited_by: bob,
+    }),
+    makeOrgMember({ intelligence: sentinel, permission: "member" }),
+  ].map((m) => ({
+    ...m,
+    // An AI of the organization is deleted for good, anyone else is removed from it.
+    delete_effect: m.intelligence.kind === "ai" ? ("delete" as const) : ("remove" as const),
+    ...flags[m.intelligence.id],
+  }));
+
+const members = rows();
+
+const MAY = { can_delete: true, can_move: true } as const;
+/** An admin may delete and move everyone but themselves. */
+const adminRows = rows({ u2: MAY, u3: MAY, u4: MAY, a1: MAY, a2: MAY });
+/** Bob, a manager, answers for the guests he invited, and for nobody else. */
+const managerRows = rows({ u4: MAY, a1: MAY });
+/** A member or a guest may do nothing about anyone. */
+const plainRows = rows();
+
+/** The chart gives the positions the dialogs offer. */
+const chart = (admin: boolean) =>
+  makeOrgChart({
+    viewer: { admin },
+    positions: POSITIONS.map((p) => makeChartPosition(p)),
   });
-
-/** The chart as an admin sees it: every member but themselves can be moved or deleted. */
-const adminChart = makeOrgChart({
-  viewer: { admin: true },
-  positions: [
-    makeChartPosition({
-      id: "pos1",
-      name: "Admin",
-      holders: [person(ana, "admin")],
-    }),
-    makeChartPosition({
-      id: "pos2",
-      name: "Manager",
-      parent_id: "pos1",
-      holders: [
-        person(bob, "member", { can_delete: true, delete_effect: "remove", can_move: true }),
-      ],
-    }),
-    makeChartPosition({ id: "pos3", name: "Lead developer", parent_id: "pos2" }),
-    makeChartPosition({
-      id: "pos4",
-      name: "Worktrees",
-      parent_id: "pos3",
-      holders: [
-        person(worker, "guest", { can_delete: true, delete_effect: "delete", can_move: true }),
-      ],
-    }),
-  ],
-  members: [
-    person(cora, "member", { can_delete: true, delete_effect: "remove", can_move: true }),
-    person(dev, "guest", { can_delete: true, delete_effect: "remove", can_move: true }),
-    person(sentinel, "member", { can_delete: true, delete_effect: "delete", can_move: true }),
-  ],
-});
-
-/** The chart as Bob, the manager, sees it: the guests he invited are his, nobody else is. */
-const managerChart = makeOrgChart({
-  viewer: { admin: false },
-  positions: [
-    makeChartPosition({ id: "pos1", name: "Admin", holders: [person(ana, "admin")] }),
-    makeChartPosition({
-      id: "pos2",
-      name: "Manager",
-      parent_id: "pos1",
-      holders: [person(bob, "member")],
-    }),
-    makeChartPosition({ id: "pos3", name: "Lead developer", parent_id: "pos2" }),
-    makeChartPosition({
-      id: "pos4",
-      name: "Worktrees",
-      parent_id: "pos3",
-      holders: [
-        person(worker, "guest", { can_delete: true, delete_effect: "delete", can_move: true }),
-      ],
-    }),
-  ],
-  members: [
-    person(cora, "member"),
-    person(dev, "guest", { can_delete: true, delete_effect: "remove", can_move: true }),
-    // An AI of the organization: deleting it would delete it for good, and the manager may not.
-    person(sentinel, "member", { delete_effect: "delete" }),
-  ],
-});
-
-const plainChart = makeOrgChart({
-  positions: POSITIONS.map((p) => makeChartPosition(p)),
-  members: members.map((m) =>
-    makeChartMember({
-      intelligence: m.intelligence,
-      delete_effect: m.intelligence.kind === "ai" ? "delete" : "remove",
-    }),
-  ),
-});
 
 const acmeAs = (permission: Organization["permission"], position_id?: string) =>
   makeOrg({
@@ -174,32 +113,37 @@ const acmeAs = (permission: Organization["permission"], position_id?: string) =>
 interface World {
   org: Organization;
   me: ReturnType<typeof makeMe>;
-  chart: ReturnType<typeof makeOrgChart>;
+  rows: OrgMember[];
+  admin: boolean;
   over: Parameters<typeof mockApi>[0];
 }
 
 const asAdmin = (over: Parameters<typeof mockApi>[0] = {}): World => ({
   org: acmeAs("admin", "pos1"),
   me: makeMe(),
-  chart: adminChart,
+  rows: adminRows,
+  admin: true,
   over,
 });
 const asManager = (over: Parameters<typeof mockApi>[0] = {}): World => ({
   org: acmeAs("member", "pos2"),
   me: makeMe({ id: "u2", intelligence: bob, display_name: "Bob Lima", username: "bob" }),
-  chart: managerChart,
+  rows: managerRows,
+  admin: false,
   over,
 });
 const asMember = (over: Parameters<typeof mockApi>[0] = {}): World => ({
   org: acmeAs("member"),
   me: makeMe({ id: "u3", intelligence: cora, display_name: "Cora Dias", username: "cora" }),
-  chart: plainChart,
+  rows: plainRows,
+  admin: false,
   over,
 });
 const asGuest = (over: Parameters<typeof mockApi>[0] = {}): World => ({
   org: acmeAs("guest"),
   me: makeMe({ id: "u4", intelligence: dev, display_name: "Dev Reis", username: "dev" }),
-  chart: plainChart,
+  rows: plainRows,
+  admin: false,
   over,
 });
 
@@ -224,8 +168,8 @@ function api(world: World) {
     "GET /me": json(200, world.me),
     "GET /orgs": json(200, { items: [world.org] }),
     "GET /orgs/o1": json(200, world.org),
-    "GET /orgs/o1/members": json(200, { items: members }),
-    "GET /orgs/o1/chart": json(200, world.chart),
+    "GET /orgs/o1/members": json(200, { items: world.rows }),
+    "GET /orgs/o1/chart": json(200, chart(world.admin)),
     "GET /orgs/o1/invitations": json(200, { items: [] }),
     "GET /contacts": json(200, contacts),
     "GET /conversations": json(200, { items: [] }),
@@ -328,7 +272,7 @@ describe("the members table (OMEM-03)", () => {
       "GET /orgs": json(200, { items: [asMember().org] }),
       "GET /orgs/o1": json(200, asMember().org),
       "GET /orgs/o1/members": json(200, { items: joined }),
-      "GET /orgs/o1/chart": json(200, plainChart),
+      "GET /orgs/o1/chart": json(200, chart(false)),
       "GET /conversations": json(200, { items: [] }),
     });
     act(() =>
@@ -644,22 +588,34 @@ describe("what the viewer may do about each member (POS-04, POS-05, POS-06)", ()
     expect(within(table).queryByRole("button", { name: /Move|Delete|Remove/ })).toBeNull();
   });
 
-  it("shows no action while the chart that says what is allowed cannot be read, and says so", async () => {
+  it("still shows the actions when the chart cannot be read: they come with the members", async () => {
     api(asAdmin({ "GET /orgs/o1/chart": apiError(500, "internal", "boom") }));
     renderRoute("/orgs/o1/members");
     const table = await screen.findByRole("table", { name: "Members of Acme" });
-    expect(within(table).queryByRole("button", { name: /Move|Delete|Remove/ })).toBeNull();
-    expect(await screen.findByText("Couldn’t load what you can do here.")).toBeInTheDocument();
+    expect(labelled(row(table, "Cora Dias"))).toEqual(["Move", "Remove from Acme"]);
+  });
+
+  it("offers an admin only 'No position' to move to while the chart that holds the positions cannot be read", async () => {
+    const { user, table } = await open(
+      asAdmin({ "GET /orgs/o1/chart": apiError(500, "internal", "boom") }),
+    );
+    await user.click(within(row(table, "Cora Dias")).getByRole("button", { name: "Move" }));
+    const d = await screen.findByRole("dialog", { name: "Move Cora Dias" });
+    expect(
+      within(within(d).getByRole("combobox", { name: "Position" }))
+        .getAllByRole("option")
+        .map((o) => o.textContent?.trim()),
+    ).toEqual(["No position"]);
   });
 
   describe("removing someone from the organization (POS-06)", () => {
     it("asks first, saying what stays, then removes them by id and refreshes the table", async () => {
-      let list = members;
+      let list = adminRows;
       const { calls, user, table } = await open(
         asAdmin({
           "GET /orgs/o1/members": () => json(200, { items: list }),
           "DELETE /orgs/o1/members/u3": () => {
-            list = members.filter((m) => m.intelligence.id !== "u3");
+            list = adminRows.filter((m) => m.intelligence.id !== "u3");
             return new Response(null, { status: 204 });
           },
         }),
@@ -715,12 +671,12 @@ describe("what the viewer may do about each member (POS-04, POS-05, POS-06)", ()
 
   describe("deleting an AI of the organization (POS-06)", () => {
     it("asks first, then deletes it for good and refreshes the table", async () => {
-      let list = members;
+      let list = managerRows;
       const { calls, user, table } = await open(
         asManager({
           "GET /orgs/o1/members": () => json(200, { items: list }),
           "DELETE /agents/a1": () => {
-            list = members.filter((m) => m.intelligence.id !== "a1");
+            list = managerRows.filter((m) => m.intelligence.id !== "a1");
             return new Response(null, { status: 204 });
           },
         }),
@@ -769,12 +725,12 @@ describe("what the viewer may do about each member (POS-04, POS-05, POS-06)", ()
     });
 
     it("moves them: the request carries the position, the table shows it and a toast says so", async () => {
-      let list = members;
+      let list = managerRows;
       const { calls, user, table } = await open(
         asManager({
           "GET /orgs/o1/members": () => json(200, { items: list }),
           "PATCH /orgs/o1/members/u4": () => {
-            list = members.map((m) =>
+            list = managerRows.map((m) =>
               m.intelligence.id === "u4"
                 ? { ...m, position_id: "pos3", position_name: "Lead developer" }
                 : m,

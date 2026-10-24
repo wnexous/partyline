@@ -214,7 +214,7 @@ describe("the invitations waiting for the viewer (OMEM-01, OMEM-02)", () => {
       "GET /invitations": () => json(200, { items: joined ? [] : [toGlobex] }),
       "POST /invitations/i1/accept": () => {
         joined = true;
-        return json(200, {});
+        return json(200, globex);
       },
     });
     const user = userEvent.setup();
@@ -233,6 +233,56 @@ describe("the invitations waiting for the viewer (OMEM-01, OMEM-02)", () => {
     expect(await screen.findByText("You joined Globex")).toBeInTheDocument();
     // Nothing waits any more, so the section goes.
     expect(screen.queryByRole("heading", { name: "Invitations" })).toBeNull();
+  });
+
+  it("lists the organization the answer names at once, before the list is fetched again", async () => {
+    let held = false;
+    let release: () => void = () => {};
+    api({
+      "GET /orgs": () =>
+        held
+          ? new Promise<Response>((resolve) => {
+              release = () => resolve(json(200, { items: [acme, globex, initech] }));
+            })
+          : json(200, { items: [acme, initech] }),
+      "GET /invitations": () =>
+        json(200, {
+          items: held
+            ? []
+            : [makeInvitation({ id: "i1", org_id: "o2", org_name: "Globex", invited_by: bob })],
+        }),
+      "POST /invitations/i1/accept": () => {
+        held = true;
+        return json(200, globex);
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/orgs");
+    await user.click(within(await invitation("Globex")).getByRole("button", { name: "Accept" }));
+    // The list is still on its way: the answer put the organization in it, in name order.
+    const list = await screen.findByRole("list", { name: "Your organizations" });
+    await waitFor(() =>
+      expect(
+        within(list)
+          .getAllByRole("listitem")
+          .map((i) => i.getAttribute("aria-label")),
+      ).toEqual(["Acme", "Globex", "Initech"]),
+    );
+    release();
+  });
+
+  it("shows an invitation that arrives live, without a reload", async () => {
+    api({ "GET /invitations": json(200, { items: [] }) });
+    const { queryClient } = renderRoute("/orgs");
+    await screen.findByRole("list", { name: "Your organizations" });
+    expect(screen.queryByRole("list", { name: "Pending invitations" })).toBeNull();
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "invitation_received",
+        data: makeInvitation({ id: "i9", org_name: "Hooli", org_id: "o9", invited_by: bob }),
+      }),
+    );
+    expect(await invitation("Hooli")).toBeInTheDocument();
   });
 
   it("declining calls the API, removes the invitation and adds no organization", async () => {
@@ -314,7 +364,7 @@ describe("the invitations waiting for the viewer (OMEM-01, OMEM-02)", () => {
       "GET /invitations": json(200, { items: [forMe] }),
       "POST /invitations/i1/accept": () =>
         new Promise<Response>((resolve) => {
-          release = () => resolve(json(200, {}));
+          release = () => resolve(json(200, acme));
         }),
     });
     const user = userEvent.setup();
@@ -432,7 +482,7 @@ describe("the invitations of the AIs the viewer manages (OMEM-01)", () => {
   it("names the AI, accepts for it and says it joined", async () => {
     const { calls } = api({
       "GET /invitations": json(200, { items: [forAtlas] }),
-      "POST /invitations/i7/accept": json(200, {}),
+      "POST /invitations/i7/accept": json(200, makeOrg({ ...globex, permission: "guest" })),
     });
     const user = userEvent.setup();
     renderRoute("/orgs");

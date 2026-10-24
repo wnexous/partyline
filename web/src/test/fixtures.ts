@@ -1,15 +1,8 @@
 import type {
-  ChartMember,
-  ChartPosition,
-  Invitation,
-  Organization,
-  OrgChart,
-  OrgMember,
-  Position,
-} from "@/lib/api/org-types";
-import type {
   Agent,
   AIContact,
+  ChartMember,
+  ChartPosition,
   Chat,
   Connector,
   ConnectorKind,
@@ -17,9 +10,14 @@ import type {
   Conversation,
   IntelligenceProfile,
   IntelligenceRef,
+  Invitation,
   Me,
   Message,
   OrgAIs,
+  Organization,
+  OrgChart,
+  OrgMember,
+  Position,
   ProfileMembership,
   Room,
   RoomMember,
@@ -303,7 +301,7 @@ export function makeMembership(over: Partial<ProfileMembership> = {}): ProfileMe
 }
 
 /*
- * The organization API (lib/api/org-types.ts). Acme (o1), Globex (o2) and Initech (o3) are the
+ * The organization API (types.gen.ts). Acme (o1), Globex (o2) and Initech (o3) are the
  * organizations of sample-contacts.ts; positions are pos1, pos2… so that they never clash with
  * the people (p1…).
  */
@@ -326,12 +324,15 @@ export function makePosition(over: Partial<Position> = {}): Position {
   return { id: "pos1", name: "Admin", ...over };
 }
 
-/** One row of `GET /orgs/{org}/members`: Ana Souza, a `member` with no position, unless overridden. */
+/** One row of `GET /orgs/{org}/members`: Ana Souza, a `member` with no position and nothing the viewer may do about her, unless overridden. */
 export function makeOrgMember(over: Partial<OrgMember> = {}): OrgMember {
   return {
     intelligence: makeIntelligence(),
     permission: "member",
     joined_at: "2026-10-02T12:00:00Z",
+    can_delete: false,
+    delete_effect: "remove",
+    can_move: false,
     ...over,
   };
 }
@@ -372,5 +373,5 @@ export function makeChartPosition(over: Partial<ChartPosition> = {}): ChartPosit
 
 /** `GET /orgs/{org}/chart` for a viewer who is not an admin, with an empty chart, unless overridden. */
 export function makeOrgChart(over: Partial<OrgChart> = {}): OrgChart {
-  return { viewer: { admin: false }, positions: [], ...over };
+  return { viewer: { admin: false }, positions: [], members: [], unassigned: [], ...over };
 }

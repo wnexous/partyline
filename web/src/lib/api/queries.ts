@@ -11,20 +11,7 @@ import {
 } from "@tanstack/react-query";
 import { withIntelligence, withoutAI } from "@/lib/contacts";
 import { type MeWithDefaultOrg, toMyOrgs } from "@/lib/orgs";
-import { api, hasErrorCode, isApiError } from "./client";
-import type {
-  CreateInvitationRequest,
-  CreateOrganizationRequest,
-  CreatePositionRequest,
-  Invitation,
-  Organization,
-  OrgChart,
-  OrgMember,
-  Position,
-  UpdateOrganizationRequest,
-  UpdateOrgMemberRequest,
-  UpdatePositionRequest,
-} from "./org-types";
+import { api, isApiError } from "./client";
 import {
   type AcceptInviteRequest,
   type ActivityItem,
@@ -43,7 +30,10 @@ import {
   type CreatedInvite,
   type CreatedToken,
   type CreateGroupRequest,
+  type CreateInvitationRequest,
   type CreateInviteRequest,
+  type CreateOrganizationRequest,
+  type CreatePositionRequest,
   type CreateRoomRequest,
   type CreateTokenRequest,
   DefaultActivityLimit,
@@ -51,11 +41,13 @@ import {
   DefaultPeoplePage,
   type DeleteAccountRequest,
   type DeviceRequest,
+  ErrorCodeAlreadyMember,
   type FileKind,
   FileKindDocument,
   type Identity,
   type IntelligenceProfile,
   type IntelligenceRef,
+  type Invitation,
   type Invite,
   type InviteInfo,
   type List,
@@ -69,9 +61,13 @@ import {
   MultipartFileField,
   MultipartMessageField,
   type OpenDMRequest,
+  type Organization,
+  type OrgChart,
+  type OrgMember,
   type Page,
   type PairingCode,
   type PairingRequest,
+  type Position,
   type PostMessageRequest,
   type ReadState,
   type Room,
@@ -84,6 +80,9 @@ import {
   type UpdateConnectorRequest,
   type UpdateMemberRequest,
   type UpdateMeRequest,
+  type UpdateOrganizationRequest,
+  type UpdateOrgMemberRequest,
+  type UpdatePositionRequest,
   type UpdateProfileRequest,
   type UpdateRoomRequest,
   type UpdateUserRequest,
@@ -1069,16 +1068,20 @@ function useAnswerInvitation(verb: "accept" | "decline") {
   const drop = (id: string) =>
     qc.setQueryData<Invitation[]>(queryKeys.invitations, (old) => old?.filter((i) => i.id !== id));
   return useMutation({
-    mutationFn: (id: string) => api<unknown>("POST", `/invitations/${id}/${verb}`),
-    onSuccess: (_, id) => {
+    // Accepting answers with the organization the invitee now belongs to; declining with nothing.
+    mutationFn: (id: string) => api<Organization | undefined>("POST", `/invitations/${id}/${verb}`),
+    onSuccess: (org, id) => {
       drop(id);
-      if (verb === "accept") invalidateOrganizations(qc);
+      if (verb === "accept") {
+        if (org?.id) storeOrg(qc, org);
+        invalidateOrganizations(qc);
+      }
     },
     onError: (err, id) => {
       // Gone, expired, or answered another way (the invitee became a member meanwhile).
       if (
         isApiError(err) &&
-        (err.status === 410 || err.status === 404 || hasErrorCode(err, "already_member"))
+        (err.status === 410 || err.status === 404 || err.code === ErrorCodeAlreadyMember)
       ) {
         drop(id);
       }

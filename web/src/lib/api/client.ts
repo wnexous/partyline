@@ -38,14 +38,6 @@ export function isApiError(err: unknown): err is ApiError {
   return err instanceof ApiError;
 }
 
-/**
- * Whether the error carries this code. The code is typed by the generated contract, which does not
- * list the codes of the organization routes yet (lib/api/org-types.ts), so they are compared as text.
- */
-export function hasErrorCode(err: unknown, code: string): err is ApiError {
-  return isApiError(err) && (err.code as string) === code;
-}
-
 type UnauthorizedHandler = (returnTo: string) => void | Promise<void>;
 
 let onUnauthorized: UnauthorizedHandler | null = null;

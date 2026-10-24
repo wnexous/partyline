@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ChartMember, Position } from "@/lib/api/org-types";
-import {
-  makeChartMember,
-  makeChartPosition,
-  makeIntelligence,
-  makeOrgChart,
-} from "@/test/fixtures";
-import { chartMembers, descendantsOf, movablePositions, positionOptions } from "./org-chart";
+import type { Position } from "@/lib/api/types.gen";
+import { descendantsOf, movablePositions, positionOptions } from "./org-chart";
 
 /*
  * The positions of an organization as the pages use them (POS-01, POS-02, POS-04): in tree order,
@@ -130,37 +124,5 @@ describe("where a member may be moved (POS-04)", () => {
       "1:Worktrees",
       "0:Sentinel",
     ]);
-  });
-});
-
-describe("the members a chart lists", () => {
-  const who = (id: string): ChartMember =>
-    makeChartMember({ intelligence: makeIntelligence({ id, display_name: id, handle: id }) });
-
-  it("are the holders of the positions, then the members with no position, once each", () => {
-    const chart = makeOrgChart({
-      positions: [
-        makeChartPosition({ id: "p1", holders: [who("a"), who("b")] }),
-        makeChartPosition({ id: "p2", holders: [who("c")] }),
-      ],
-      members: [who("d")],
-      unassigned: [who("e")],
-    });
-    expect(chartMembers(chart).map((m) => m.intelligence.id)).toEqual(["a", "b", "c", "d", "e"]);
-  });
-
-  it("lists a member who appears twice only once, with the first entry's flags", () => {
-    const first = makeChartMember({ ...who("a"), can_delete: true });
-    const chart = makeOrgChart({
-      positions: [makeChartPosition({ holders: [first] })],
-      members: [who("a")],
-    });
-    const all = chartMembers(chart);
-    expect(all).toHaveLength(1);
-    expect(all[0]?.can_delete).toBe(true);
-  });
-
-  it("are none for a chart with nothing in it", () => {
-    expect(chartMembers(makeOrgChart())).toEqual([]);
   });
 });

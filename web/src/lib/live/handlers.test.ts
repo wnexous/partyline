@@ -16,6 +16,7 @@ import type {
   Identity,
   IntelligenceProfile,
   IntelligenceRef,
+  Invitation,
   LiveEvent,
   Me,
   Message,
@@ -29,6 +30,7 @@ import {
   makeContacts,
   makeConversation,
   makeIntelligence,
+  makeInvitation,
   makeMe,
   makeMember,
   makeMembership,
@@ -963,6 +965,36 @@ describe("live handlers", () => {
       qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
       await catchUp(qc);
       expect(stale(queryKeys.contacts)).toBe(true);
+    });
+  });
+
+  describe("invitation_received (OMEM-01)", () => {
+    const received = (inv = makeInvitation()) =>
+      handleLiveEvent(qc, actions(), { type: "invitation_received", data: inv });
+    const cached = () => qc.getQueryData<Invitation[]>(queryKeys.invitations);
+
+    it("puts the invitation first in the inbox the page has cached", () => {
+      qc.setQueryData<Invitation[]>(queryKeys.invitations, [makeInvitation({ id: "i1" })]);
+      received(makeInvitation({ id: "i2", org_name: "Globex" }));
+      expect(cached()?.map((i) => i.id)).toEqual(["i2", "i1"]);
+    });
+
+    it("replaces an invitation that was sent again, with its new terms, instead of listing it twice", () => {
+      qc.setQueryData<Invitation[]>(queryKeys.invitations, [
+        makeInvitation({ id: "i1", permission: "guest" }),
+        makeInvitation({ id: "i3" }),
+      ]);
+      received(makeInvitation({ id: "i1", permission: "member" }));
+      expect(cached()?.map((i) => [i.id, i.permission])).toEqual([
+        ["i1", "member"],
+        ["i3", "member"],
+      ]);
+    });
+
+    it("leaves an inbox nobody has opened alone: its first fetch has the invitation", () => {
+      received();
+      expect(cached()).toBeUndefined();
+      expect(qc.getQueryState(queryKeys.invitations)).toBeUndefined();
     });
   });
 
