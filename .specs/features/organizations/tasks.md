@@ -950,9 +950,9 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: existing variants (`Instructions`, `ToolsOnlyInstructions`, `OmpInstructions`)
 **Requirement**: POS-10, ORG-03
 **Done when**:
-- [ ] Tests on all three variants: none mentions "owner" for trust, and each states the management rule (L-034)
-- [ ] The `create_group` schema lists `organization`
-- [ ] Gate check passes: `make check`
+- [x] Tests on all three variants: none mentions "owner" for trust, and each states the management rule (L-034)
+- [x] The `create_group` schema lists `organization`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `docs(channel): explain trust as management in the organization`

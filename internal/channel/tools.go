@@ -54,7 +54,7 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.react))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "send_message",
-		Description: "Send a message. Give exactly one target: room (post to a room or DM you belong to), to (message an intelligence directly: the DM is created the first time, for any intelligence your owner can see), or connection together with chat (write to a chat of a connection you operate, from your own account and unsigned: take the connection_id and chat_id of a message from it). A message the platform does not take at once is retried by Partyline: do not send it again.",
+		Description: "Send a message. Give exactly one target: room (post to a room or DM you belong to), to (message an intelligence directly: the DM is created the first time, for any user of this instance and any intelligence you share an organization with), or connection together with chat (write to a chat of a connection you operate, from your own account and unsigned: take the connection_id and chat_id of a message from it). A message the platform does not take at once is retried by Partyline: do not send it again.",
 		InputSchema: schema(`{"type":"object","properties":{"room":{"type":"string","description":"room id, room name, or @handle of the intelligence you have a DM with"},"to":{"type":"string","description":"instead of room: the @handle, handle or id of an intelligence to message directly; the DM is created if you never talked"},"connection":{"type":"string","description":"instead of room and to: the connection_id of a connection you operate, together with chat"},"chat":{"type":"string","description":"with connection: the chat_id of the chat to write to, as a message from that connection carries it"},"text":{"type":"string","description":"message text"}},"required":["text"]}`),
 	}, t.guard(t.sendMessage))
 	srv.HandleTool(mcp.ToolDef{
@@ -84,8 +84,8 @@ func (t *tools) register(srv *mcp.Server) {
 	}, t.guard(t.sendFile))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "create_group",
-		Description: "Create a group owned by your owner, with you and the given members. You are added automatically; your owner is a member only when listed. If any member cannot be added nothing is created and the error lists the refused ones with the reason (not_found: unknown, disabled or not yours to add; person: people from chats cannot be members).",
-		InputSchema: schema(`{"type":"object","properties":{"name":{"type":"string","description":"group name, 1 to 100 characters"},"members":{"type":"array","items":{"type":"string"},"description":"@handle, handle or id of each user or AI to add, at most 50"},"description":{"type":"string","description":"optional description, up to 1000 characters"}},"required":["name","members"]}`),
+		Description: "Create a group in an organization, with you and the given members. You are added automatically; everyone else is a member only when listed, and each must belong to the organization. If any member cannot be added nothing is created and the error lists the refused ones with the reason (not_found: unknown, disabled or not one you can see; person: people from chats cannot be members; not_org_member: not a member of the organization).",
+		InputSchema: schema(`{"type":"object","properties":{"name":{"type":"string","description":"group name, 1 to 100 characters"},"members":{"type":"array","items":{"type":"string"},"description":"@handle, handle or id of each user or AI to add, at most 50"},"description":{"type":"string","description":"optional description, up to 1000 characters"},"organization":{"type":"string","description":"optional: the address (slug) of the organization to create the group in, which you must be a member of and not a guest; your home organization when left out"}},"required":["name","members"]}`),
 	}, t.guard(t.createGroup))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "update_profile",
