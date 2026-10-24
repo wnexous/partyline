@@ -102,6 +102,7 @@ func (s *server) routes(mux *http.ServeMux) {
 	s.authRoutes(mux)
 	s.adminRoutes(mux)
 	s.orgRoutes(mux)
+	s.positionRoutes(mux)
 	s.roomRoutes(mux)
 	s.conversationRoutes(mux)
 	s.intelligenceRoutes(mux)
@@ -226,6 +227,10 @@ func mapError(err error) error {
 		return he
 	case errors.Is(err, orgs.ErrSlugTaken):
 		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "slug already taken")
+	case errors.Is(err, orgs.ErrCycle):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodePositionCycle, "a position cannot be moved below itself or one of its descendants")
+	case errors.Is(err, orgs.ErrPositionNameTaken):
+		return httpx.NewError(http.StatusConflict, dto.ErrorCodeConflict, "position name already taken")
 	case errors.Is(err, access.ErrNotFound):
 		return httpx.NewError(http.StatusNotFound, dto.ErrorCodeNotFound, "not found")
 	case errors.Is(err, avatars.ErrInvalid):

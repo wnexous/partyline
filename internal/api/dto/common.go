@@ -157,6 +157,9 @@ const (
 	// ErrorCodeOrganizationNotEmpty is the refusal to delete an organization that still owns AIs,
 	// connections or groups; Details counts them (409, ORG-06).
 	ErrorCodeOrganizationNotEmpty ErrorCode = "organization_not_empty"
+	// ErrorCodePositionCycle is a parent change that would make a position its own ancestor (409,
+	// POS-02).
+	ErrorCodePositionCycle ErrorCode = "position_cycle"
 	// ErrorCodeIdentityOnline is a merge of an AI that has a live session: it must be offline
 	// (409, MRG-02).
 	ErrorCodeIdentityOnline ErrorCode = "identity_online"

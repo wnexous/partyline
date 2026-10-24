@@ -733,3 +733,16 @@ Where a section refines the design, it says so.
 - **Tests**: `internal/api/delete_identities_test.go` (matrices of each kind of target on each route, the Lead/Sentinel
   independent test, the inviter chain, OMEM-06/08, an AI of another organization, the sole-admin AI),
   `internal/api/leave_and_end_session_test.go` (leave, 404s, the session matrix), `internal/agents/delete_test.go`.
+
+## T13: Position routes (POS-01, POS-02, POS-09, OMEM-04)
+
+- **Routes** (`internal/api/positions_handlers.go`, registered by `positionRoutes`):
+  `POST /api/v1/orgs/{org}/positions` (201 `Position`), `PATCH …/positions/{id}` (200 `Position`) and
+  `DELETE …/positions/{id}` (204). `{org}` is resolved like T12 (id or slug); the position id must
+  belong to that organization, else the service answers 404.
+- **DTOs**: `CreatePositionRequest{name, parent_id}` (`parent_id` empty or absent makes a root) and
+  `UpdatePositionRequest{name?, parent_id?}` (absent leaves a field alone; `""` makes a root).
+- **Errors**: `orgs.ErrCycle` is 409 `position_cycle`; `ErrPositionNameTaken` and `ErrSlugTaken` are
+  409 `conflict`; a name outside 1-60 code points or a parent of another organization is the
+  service's 422 `invalid` with `name`/`parent_id` in `fields`. Authorization (admin-only) comes
+  before validation, so a member sending a bad name still gets 403.

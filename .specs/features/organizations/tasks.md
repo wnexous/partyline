@@ -482,12 +482,12 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: T6 service
 **Requirement**: POS-01, POS-02, POS-09, OMEM-04
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - admin 201/200/204; member 403; outsider 404;
   - 409 `position_cycle` observed;
   - 422 for a name of 61 chars and for a parent from another org;
   - 409 `conflict` for a duplicate name
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): edit an organization's positions`

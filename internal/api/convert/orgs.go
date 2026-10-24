@@ -14,6 +14,11 @@ func OrgAvatarURL(id, sha string) string {
 	return "/api/v1/orgs/" + id + "/avatar?v=" + sha
 }
 
+// Position renders one node of an organization's chart (POS-01).
+func Position(p orgs.Position) dto.Position {
+	return dto.Position{ID: p.ID, Name: p.Name, ParentID: p.ParentID}
+}
+
 // Organization renders an organization as one of its members sees it, with the viewer's own
 // permission and position.
 func Organization(m orgs.Membership) dto.Organization {

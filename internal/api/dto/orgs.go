@@ -48,6 +48,20 @@ type Position struct {
 	ParentID string `json:"parent_id,omitempty"`
 }
 
+// CreatePositionRequest is the body of POST /orgs/{org}/positions (POS-01); ParentID is empty for a
+// root position.
+type CreatePositionRequest struct {
+	Name     string `json:"name"`
+	ParentID string `json:"parent_id,omitempty"`
+}
+
+// UpdatePositionRequest is the body of PATCH /orgs/{org}/positions/{id}; absent fields are
+// unchanged, and an empty ParentID makes the position a root.
+type UpdatePositionRequest struct {
+	Name     *string `json:"name,omitempty"`
+	ParentID *string `json:"parent_id,omitempty"`
+}
+
 // OrgMember is one membership of an organization as the members list shows it (OMEM-01, OMEM-03):
 // the identity, its permission and position, and the inviter of a guest.
 type OrgMember struct {
