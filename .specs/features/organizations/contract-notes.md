@@ -1877,3 +1877,53 @@ requests) are exactly what is committed on `wnexous/pl-org-p3`. The rest is mark
   refusal (six malformed addresses, 40 characters), the server's reasons, the photo, leaving, deleting with the literal texts and
   every count combination, the 404 and failure of the layout, the address-to-id replacement, the redirect of `/orgs/{id}`, the link
   from the list, Portuguese, axe for an admin, a member, both dialogs and Portuguese).
+
+## T42: Members page and invite dialog (OMEM-01, OMEM-03, OMEM-04, OMEM-05, OMEM-06, POS-05, POS-06)
+
+- **The page** (`orgs/$orgId/members.tsx`, tab "Members"): a real table named "Members of {org}" with the columns Member (the row header:
+  picture, name linked to the profile, @handle, the AI badge and "You"), Permission, Position, Invited by (a guest's inviter) and
+  Actions. Admins first, then members, then guests, by name inside each. On a phone the table is stacked (the header row is hidden, each
+  row is a two-column grid), with no horizontal scroll. Anyone who belongs, a guest included, sees it (CHART-02). `GET /orgs/{org}/members`
+  gives the rows; **what the viewer may do about each one comes from the chart** (`GET /orgs/{org}/chart`, `chartMembers`): the `OrgMember`
+  rows of T12 carry no flags, and T16 guarantees them (`can_delete`, `delete_effect`, `can_move`) - see the assumptions in T39. While the
+  chart cannot be read there is no action and the page says "Couldn't load what you can do here." with a retry (fail closed).
+- **Actions** (only where the flags say so; the page adds no rule of its own):
+  - **Move** (`can_move`): `MoveMemberDialog` (new, shared with the chart in T44). It starts on where the member is now and sends nothing
+    until another position is picked (the button is off, and a submit without a change is ignored). An admin picks any position or "No
+    position" (`position_id: ""`); anyone else only the positions strictly below their own (`movablePositions`, from the viewer's position
+    in `GET /orgs/{org}`), and where the member is now is shown first, disabled, when the viewer could not pick it (a member with no position
+    shows "No position"). Toast "{name} moved to {position}" / "{name} no longer holds a position"; 403 "You can only move people to a
+    position below yours." inside the dialog, which stays open.
+  - **Delete** (`can_delete` and `delete_effect: "delete"`, an AI whose home is this organization): the existing `DeleteAIDialog`
+    (`DELETE /agents/{id}`).
+  - **Remove from {org}** (`can_delete` and any other effect): the existing `RemoveFromOrgDialog` (its `membership` prop is now
+    `Pick<ProfileMembership, "org_id" | "org_name">`), `DELETE /orgs/{org}/members/{iid}`. It now also answers 409 `home_organization`
+    inline ("{name} belongs to {org}. Ask an admin to delete it."); `last_admin` was already there.
+  - Each button has the member's name as its description, so a screen reader hears "Remove from Acme, Cora Dias".
+- **Permission** (OMEM-04, OMEM-05): an admin gets a select in each row (`PATCH {permission}` only); anyone else a badge. 409 `last_admin`
+  is told above the table ("{name} is the only admin of {org}. Make another member an admin first."), 403 "Only admins of {org} change
+  permissions.", and the select goes back to what the server has. Toast "{name} is now {role}".
+- **Invite** (`components/invite-dialog.tsx`, the "Invite" button of the header, for every member and guest): a Handle field with
+  suggestions (the users and AIs of `GET /contacts` that are not members, not the viewer and not the exact handle already typed, found by
+  name or @handle, users first, at most five; picking one writes `@handle`). **An admin** also gets Permission (Admin, Member, Guest,
+  starting on Member) and Position (No position, then the chart's positions in tree order, indented) and sends `{handle, permission,
+  position_id?}`; **everyone else** gets neither field, an explanation ("You can only invite guests. A guest is your responsibility: you,
+  and the identities above you, may manage them and remove them from {org}.") and sends `{handle, permission: "guest"}`. The handle is sent
+  without `@`, lower case. Refusals: 404 `contact_not_found` "No user or AI has that handle." and 409 `already_member` "@bob is already a
+  member of Acme." under the field; 429 "Too many invitations in the last hour. Try again later."; 403 "You can only invite guests."; 422
+  reasons under their fields; the network. Success: toast "Invitation sent to {name}" and the pending list refreshes.
+- **Pending invitations** (admins only; nobody else asks for them): the list "Pending invitations of {org}" with the invitee, permission,
+  position, inviter and expiry, and **Revoke** (`DELETE /orgs/{org}/invitations/{id}`), toast "Invitation to {name} revoked" or the failure.
+- **Shared code**: `lib/org-chart.ts` (`positionOptions`, `descendantsOf`, `movablePositions`, `chartMembers`), `inviteCandidates` and
+  `pickables` in `lib/contacts.ts`, `SelectField` in `form-fields.tsx`, `inviteSchema` (`InviteFormValues`) in `schemas.ts`.
+- **`home_organization` is not reachable from this page** in practice: the chart gives an AI of this organization `delete_effect:
+  "delete"`, which routes to `Registry.Delete`. The inline message is there because the task asks for it and for any chart the server
+  may serve.
+- **Texts** (en and pt-BR): `orgs.tabMembers`, `orgs.members*`, `orgs.flagsError`, `orgs.col*`, `orgs.noPosition`, `orgs.invitedBy`,
+  `orgs.permission*`, `orgs.move*`, `orgs.deleteMember`, `profile.removeHome`, `orgs.invite*`, `orgs.pending*`, `orgs.revoke*`.
+- **Tests**: `orgs/org-members.test.tsx` (50: the table and its order, the viewer's row, a guest's view, failure, the live refresh; who
+  invites and as what for a member, a guest and an admin, the suggestions and what is never suggested, every refusal; permission changes
+  with `last_admin` and 403; the actions for an admin, a manager, a member and a guest (flags isolated: an AI the viewer may not delete
+  shows nothing), removing, deleting, moving (a manager's options, an admin's, the unchanged case, clearing, 403); the pending list, revoke,
+  failure and who never sees it; Portuguese; axe for each viewer and for the dialogs), `lib/org-chart.test.ts` (positions in order,
+  subtrees, movable positions, chart members), `lib/contacts.test.ts` (`inviteCandidates`, `pickables` with an organization's users).

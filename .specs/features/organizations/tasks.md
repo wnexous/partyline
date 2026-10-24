@@ -1079,14 +1079,14 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `MemberPicker`, `table`, `select`
 **Requirement**: OMEM-01, OMEM-03, OMEM-04, OMEM-05, OMEM-06, POS-05, POS-06
 **Done when**:
-- [ ] Vitest through the route (L-007):
+- [x] Vitest through the route (L-007):
   - a member and a guest see the invite button with no permission or position fields, and their request sends `guest`;
   - an admin invites with a position;
   - the 409 messages render;
   - a manager sees "move" only on subordinates and "Delete" only on guests below;
   - the label is "Remove from acme" for a person;
   - axe clean
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): organization members and invitations`

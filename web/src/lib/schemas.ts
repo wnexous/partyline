@@ -82,6 +82,16 @@ const handleRe = new RegExp(HandlePattern);
 /** The handle as the server reads it: no leading @, no spaces around it, lower case. */
 export const normalizeHandle = (text: string) => text.trim().replace(/^@+/, "").toLowerCase();
 
+/** POST /orgs/{org}/invitations (OMEM-01): whom, with what permission and in which position (none: empty). */
+export const inviteSchema = z.object({
+  handle: z
+    .string()
+    .transform(normalizeHandle)
+    .refine((v) => v.length > 0, msg("validation.required")),
+  permission: z.enum(["admin", "member", "guest"]),
+  position_id: z.string(),
+});
+
 /**
  * The profile of any intelligence (PROF-03, PROF-05, PROF-11): a display name, a handle and a
  * bio, with the limits of the contract counted in code points like the server counts them.
@@ -184,6 +194,7 @@ export type AcceptInviteForm = z.input<typeof acceptInviteSchema>;
 export type CreateGroupForm = z.input<typeof createGroupSchema>;
 export type CreateOrgForm = z.input<typeof createOrgSchema>;
 export type UpdateOrgForm = z.input<typeof updateOrgSchema>;
+export type InviteFormValues = z.input<typeof inviteSchema>;
 export type CreateTokenForm = z.input<typeof createTokenSchema>;
 export type ProfileForm = z.input<typeof profileSchema>;
 export type ProfileEditForm = z.input<typeof profileEditSchema>;

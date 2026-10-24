@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { AIContact } from "@/lib/api/types.gen";
 import { makeAIContact, makeContacts, makeOrgAIs } from "@/test/fixtures";
-import { atlas, bob, sampleContacts } from "@/test/sample-contacts";
+import { atlas, bob, cora, notes, sampleContacts } from "@/test/sample-contacts";
 import {
   allAIs,
   filterOrgs,
+  inviteCandidates,
   knowsAI,
   mergeTargets,
   onlineCount,
@@ -227,5 +228,91 @@ describe("onlineCount", () => {
     expect(onlineCount(ais, online)).toEqual({ online: 1, total: 3 });
     expect(onlineCount(ais, () => true)).toEqual({ online: 3, total: 3 });
     expect(onlineCount(ais, () => false)).toEqual({ online: 0, total: 3 });
+  });
+});
+
+describe("pickables for the users of an organization (T39)", () => {
+  it("lists the users it is given instead of the instance's", () => {
+    expect(pickables(sampleContacts, "o1", [cora]).users.map((p) => p.ref.id)).toEqual(["u3"]);
+  });
+
+  it("lists none when it is given none, which is not the instance's users", () => {
+    expect(pickables(sampleContacts, "o1", []).users).toEqual([]);
+  });
+
+  it("lists the instance's users when it is given nothing", () => {
+    expect(pickables(sampleContacts, "o1").users.map((p) => p.ref.id)).toEqual(["u2", "u3"]);
+  });
+
+  it("does not change which AIs it lists", () => {
+    expect(pickables(sampleContacts, "o1", [cora]).ais.map((p) => p.ref.id)).toEqual([
+      "a1",
+      "a2",
+      "a5",
+    ]);
+  });
+});
+
+describe("who an invitation suggests (OMEM-01)", () => {
+  const none = new Set<string>();
+  const ids = (query: string, members: ReadonlySet<string> = none) =>
+    inviteCandidates(sampleContacts, members, query).map((p) => p.ref.id);
+
+  it("finds users and AIs by name or @handle, users first", () => {
+    // "o": Bob Lima, Cora Dias, Notes and Old helper have one; Atlas, Sage and Lab do not.
+    expect(ids("o")).toEqual(["u2", "u3", "a2", "a4"]);
+    expect(ids("@atl")).toEqual(["a1"]);
+    expect(ids("lima")).toEqual(["u2"]);
+  });
+
+  it("leaves out the viewer", () => {
+    expect(ids("ana")).toEqual([]);
+  });
+
+  it("leaves out whoever belongs to the organization already", () => {
+    expect(ids("o", new Set(["u2", "a2"]))).toEqual(["u3", "a4"]);
+  });
+
+  it("leaves out the one whose handle is exactly what was typed, because it is chosen already", () => {
+    expect(ids("bob")).toEqual([]);
+    expect(ids("@BOB")).toEqual([]);
+    // A longer handle that starts with it is still suggested.
+    expect(
+      inviteCandidates(
+        makeContacts({
+          users: [bob, { ...cora, id: "u9", handle: "bobby", display_name: "Bobby" }],
+        }),
+        none,
+        "bob",
+      ).map((p) => p.ref.id),
+    ).toEqual(["u9"]);
+  });
+
+  it("looks at names and handles only, not at the folder or app of an AI", () => {
+    // Every AI of the sample lives under /home or /srv; none is named that.
+    expect(ids("home")).toEqual([]);
+    expect(ids("opencode")).toEqual([]);
+  });
+
+  it("suggests nothing for an empty or blank field, and at most five otherwise", () => {
+    expect(ids("")).toEqual([]);
+    expect(ids("   ")).toEqual([]);
+    expect(ids("@")).toEqual([]);
+    const many = makeContacts({
+      users: Array.from({ length: 8 }, (_, i) => ({
+        ...cora,
+        id: `x${i}`,
+        handle: `person${i}`,
+        display_name: `Person ${i}`,
+      })),
+    });
+    expect(inviteCandidates(many, none, "person")).toHaveLength(5);
+  });
+
+  it("marks the AIs, so the dialog can show what they are", () => {
+    const [first] = inviteCandidates(sampleContacts, none, "note");
+    expect(first?.ref.id).toBe(notes.id);
+    expect(first?.ai).toBeDefined();
+    expect(inviteCandidates(sampleContacts, none, "bo")[0]?.ai).toBeUndefined();
   });
 });

@@ -160,3 +160,35 @@ export function onlineCount(
 ): { online: number; total: number } {
   return { online: ais.filter(online).length, total: ais.length };
 }
+
+/**
+ * Who the invitation dialog suggests for what is typed in the handle field (OMEM-01): the users of
+ * the instance and the AIs the contacts list, found by name or @handle, without the viewer, without
+ * anyone who already belongs to the organization and without the one whose handle is exactly what
+ * was typed (it is chosen already). Users first, the first few that match.
+ */
+export function inviteCandidates(
+  contacts: Contacts,
+  memberIds: ReadonlySet<string>,
+  query: string,
+  limit = 5,
+): Pickable[] {
+  const text = query.trim().replace(/^@+/, "");
+  if (!text) return [];
+  const skip = (ref: IntelligenceRef) =>
+    ref.id === contacts.me.id ||
+    memberIds.has(ref.id) ||
+    ref.handle.toLowerCase() === text.toLowerCase();
+  const byNameAndHandle = (ref: IntelligenceRef): Pickable => ({
+    ref,
+    haystack: `${ref.display_name}\n@${ref.handle}`,
+  });
+  return [
+    ...contacts.users.filter((u) => !skip(u)).map(byNameAndHandle),
+    ...allAIs(contacts)
+      .filter((ai) => !skip(ai.intelligence))
+      .map((ai) => ({ ...byNameAndHandle(ai.intelligence), ai })),
+  ]
+    .filter((p) => matchesTerms(p.haystack, text))
+    .slice(0, limit);
+}

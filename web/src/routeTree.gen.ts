@@ -33,6 +33,7 @@ import { Route as AppOrgsOrgIdRouteRouteImport } from './routes/_app/orgs/$orgId
 import { Route as AppRoomsIndexRouteImport } from './routes/_app/rooms/index'
 import { Route as AppRoomsRoomIdRouteImport } from './routes/_app/rooms/$roomId'
 import { Route as AppOrgsOrgIdIndexRouteImport } from './routes/_app/orgs/$orgId/index'
+import { Route as AppOrgsOrgIdMembersRouteImport } from './routes/_app/orgs/$orgId/members'
 import { Route as AppOrgsOrgIdSettingsRouteImport } from './routes/_app/orgs/$orgId/settings'
 
 const AppRoute = AppRouteImport.update({
@@ -155,6 +156,11 @@ const AppOrgsOrgIdIndexRoute = AppOrgsOrgIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppOrgsOrgIdRouteRoute,
 } as any)
+const AppOrgsOrgIdMembersRoute = AppOrgsOrgIdMembersRouteImport.update({
+  id: '/members',
+  path: '/members',
+  getParentRoute: () => AppOrgsOrgIdRouteRoute,
+} as any)
 const AppOrgsOrgIdSettingsRoute = AppOrgsOrgIdSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -184,6 +190,7 @@ export interface FileRoutesByFullPath {
   '/devices/': typeof AppDevicesIndexRoute
   '/orgs/': typeof AppOrgsIndexRoute
   '/rooms/': typeof AppRoomsIndexRoute
+  '/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
   '/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
 }
@@ -209,6 +216,7 @@ export interface FileRoutesByTo {
   '/devices': typeof AppDevicesIndexRoute
   '/orgs': typeof AppOrgsIndexRoute
   '/rooms': typeof AppRoomsIndexRoute
+  '/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
   '/orgs/$orgId': typeof AppOrgsOrgIdIndexRoute
 }
@@ -237,6 +245,7 @@ export interface FileRoutesById {
   '/_app/devices/': typeof AppDevicesIndexRoute
   '/_app/orgs/': typeof AppOrgsIndexRoute
   '/_app/rooms/': typeof AppRoomsIndexRoute
+  '/_app/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
   '/_app/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
   '/_app/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
 }
@@ -265,6 +274,7 @@ export interface FileRouteTypes {
     | '/devices/'
     | '/orgs/'
     | '/rooms/'
+    | '/orgs/$orgId/members'
     | '/orgs/$orgId/settings'
     | '/orgs/$orgId/'
   fileRoutesByTo: FileRoutesByTo
@@ -290,6 +300,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/orgs'
     | '/rooms'
+    | '/orgs/$orgId/members'
     | '/orgs/$orgId/settings'
     | '/orgs/$orgId'
   id:
@@ -317,6 +328,7 @@ export interface FileRouteTypes {
     | '/_app/devices/'
     | '/_app/orgs/'
     | '/_app/rooms/'
+    | '/_app/orgs/$orgId/members'
     | '/_app/orgs/$orgId/settings'
     | '/_app/orgs/$orgId/'
   fileRoutesById: FileRoutesById
@@ -498,6 +510,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgsOrgIdIndexRouteImport
       parentRoute: typeof AppOrgsOrgIdRouteRoute
     }
+    '/_app/orgs/$orgId/members': {
+      id: '/_app/orgs/$orgId/members'
+      path: '/members'
+      fullPath: '/orgs/$orgId/members'
+      preLoaderRoute: typeof AppOrgsOrgIdMembersRouteImport
+      parentRoute: typeof AppOrgsOrgIdRouteRoute
+    }
     '/_app/orgs/$orgId/settings': {
       id: '/_app/orgs/$orgId/settings'
       path: '/settings'
@@ -525,11 +544,13 @@ const AppAdminRouteRouteWithChildren = AppAdminRouteRoute._addFileChildren(
 )
 
 interface AppOrgsOrgIdRouteRouteChildren {
+  AppOrgsOrgIdMembersRoute: typeof AppOrgsOrgIdMembersRoute
   AppOrgsOrgIdSettingsRoute: typeof AppOrgsOrgIdSettingsRoute
   AppOrgsOrgIdIndexRoute: typeof AppOrgsOrgIdIndexRoute
 }
 
 const AppOrgsOrgIdRouteRouteChildren: AppOrgsOrgIdRouteRouteChildren = {
+  AppOrgsOrgIdMembersRoute: AppOrgsOrgIdMembersRoute,
   AppOrgsOrgIdSettingsRoute: AppOrgsOrgIdSettingsRoute,
   AppOrgsOrgIdIndexRoute: AppOrgsOrgIdIndexRoute,
 }

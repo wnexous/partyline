@@ -121,6 +121,9 @@ function OrgBar({ org }: { org: Organization }) {
         aria-label={t("orgs.sections", { org: org.name })}
         className={cn("-mx-1 mt-2 flex overflow-x-auto px-1")}
       >
+        <Link to="/orgs/$orgId/members" params={{ orgId: org.id }} className={TAB}>
+          {t("orgs.tabMembers")}
+        </Link>
         <Link to="/orgs/$orgId/settings" params={{ orgId: org.id }} className={TAB}>
           {t("orgs.tabSettings")}
         </Link>
