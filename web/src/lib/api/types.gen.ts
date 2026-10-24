@@ -171,22 +171,66 @@ export interface AgentConnection {
   account_label: string;
 }
 /**
+ * MaxManagers is the most managers the welcome frame and GET /agent/whoami list: the nearest ones.
+ */
+export const MaxManagers = 10;
+/**
  * AgentWelcomeFrame is the first frame after the agent WebSocket opens.
  */
 export interface AgentWelcomeFrame {
   type: typeof AgentFrameTypeWelcome;
   agent: AgentInfo;
   /**
-   * Intelligence is the AI the session is, and Owner its owner: the channel tells the harness
-   * who it is and who it works for.
+   * Intelligence is the AI the session is: the channel tells the harness who it is and who it
+   * works for.
    */
   intelligence: IntelligenceRef;
+  /**
+   * Owner is the user who hosts the AI, whose computer and token run it. It is deprecated since
+   * organizations: it grants and means nothing, and the identities an AI answers to are its
+   * Managers. It stays so that v0.5 CLIs, which print it, keep working.
+   */
   owner: IntelligenceRef;
+  /**
+   * Organization is the AI's home organization (ORG-02); absent for an AI that has none.
+   */
+  organization?: ContactOrg;
+  /**
+   * Position is the name of the position the AI holds in its home organization; empty for none.
+   */
+  position: string;
+  /**
+   * Managers are the identities that manage the AI in its home organization, the ones whose
+   * messages are marked trusted (POS-10): nearest first, at most MaxManagers, always present and
+   * empty when nobody manages it.
+   */
+  managers: IntelligenceRef[];
   /**
    * Connections are the connections the AI operates, by name; always present, empty when it
    * operates none (CID-01).
    */
   connections: AgentConnection[];
+}
+/**
+ * AgentWhoAmI is GET /agent/whoami: the intelligence of the user the agent token belongs to - the
+ * fields of an IntelligenceRef, as before organizations - and the same three facts about the user
+ * that the welcome frame tells an AI, read in the user's default organization (the one a new AI of
+ * theirs joins when --org is not given): where they stand and who manages them there.
+ */
+export interface AgentWhoAmI extends IntelligenceRef {
+  /**
+   * Organization is the user's default organization; absent when they belong to none.
+   */
+  organization?: ContactOrg;
+  /**
+   * Position is the name of the position the user holds there; empty for none.
+   */
+  position: string;
+  /**
+   * Managers are the identities that manage the user there, nearest first, at most MaxManagers;
+   * always present.
+   */
+  managers: IntelligenceRef[];
 }
 /**
  * SessionState is GET /agent/session: what the server knows about the AI of the machine and

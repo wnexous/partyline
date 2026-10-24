@@ -179,6 +179,25 @@ func IntelligenceRef(i db.Intelligence, role dto.IntelligenceRole, platform stri
 	}
 }
 
+// ManagerRefs renders the identities ids, in that order, as the refs of the users and AIs they are (the
+// role follows the kind); rows holds their intelligences by id and an id with no row is left out. The
+// result is never nil.
+func ManagerRefs(ids []string, rows map[string]db.Intelligence) []dto.IntelligenceRef {
+	out := make([]dto.IntelligenceRef, 0, len(ids))
+	for _, id := range ids {
+		row, ok := rows[id]
+		if !ok {
+			continue
+		}
+		role := dto.IntelligenceRoleUser
+		if dto.IntelligenceKind(row.Kind) == dto.IntelligenceKindAI {
+			role = dto.IntelligenceRoleAI
+		}
+		out = append(out, IntelligenceRef(row, role, ""))
+	}
+	return out
+}
+
 // ProfileRef renders the summary of a profile.
 func ProfileRef(p intelligences.Profile) dto.IntelligenceRef {
 	return IntelligenceRef(p.Intelligence, dto.IntelligenceRole(p.Role), p.Platform)

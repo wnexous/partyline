@@ -921,9 +921,9 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `Chart.ManagersOf`, `welcomeRefs`
 **Requirement**: POS-10, ORG-04
 **Done when**:
-- [ ] e2e: a worker under Lead receives managers [Lead, …, Admin holder] in order; a v0.5-shaped decode (only `owner`) still works
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] e2e: a worker under Lead receives managers [Lead, …, Admin holder] in order; a v0.5-shaped decode (only `owner`) still works
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(agents): tell a session its organization and managers`

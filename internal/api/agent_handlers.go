@@ -114,22 +114,36 @@ func (s *server) agentSession(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// agentWhoAmI returns the intelligence of the token's owner, for `partyline login`; it needs no
-// folder and no registered AI.
+// agentWhoAmI returns the intelligence of the token's owner, for `partyline login`, and where the owner
+// stands in their default organization: the organization, their position there and who manages them. It
+// needs no folder and no registered AI.
 func (s *server) agentWhoAmI(w http.ResponseWriter, r *http.Request) error {
 	p, err := agentToken(r)
 	if err != nil {
 		return err
 	}
-	ref := dto.IntelligenceRef{ID: p.UserID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser}
-	rows, err := s.Intelligences.Rows(r.Context(), []string{p.UserID})
+	ctx := r.Context()
+	st, inOrg, err := s.Orgs.Authz().DefaultStandingOf(ctx, p.UserID, dto.MaxManagers)
 	if err != nil {
 		return err
 	}
-	if row, ok := rows[p.UserID]; ok {
-		ref = convert.IntelligenceRef(row, dto.IntelligenceRoleUser, "")
+	rows, err := s.Intelligences.Rows(ctx, append([]string{p.UserID}, st.Managers...))
+	if err != nil {
+		return err
 	}
-	httpx.WriteJSON(w, http.StatusOK, ref)
+	out := dto.AgentWhoAmI{
+		IntelligenceRef: dto.IntelligenceRef{ID: p.UserID, Kind: dto.IntelligenceKindHuman, Role: dto.IntelligenceRoleUser},
+		Managers:        []dto.IntelligenceRef{},
+	}
+	if row, ok := rows[p.UserID]; ok {
+		out.IntelligenceRef = convert.IntelligenceRef(row, dto.IntelligenceRoleUser, "")
+	}
+	if inOrg {
+		out.Organization = &dto.ContactOrg{ID: st.Org.ID, Name: st.Org.Name, Slug: st.Org.Slug}
+		out.Position = st.Position
+		out.Managers = convert.ManagerRefs(st.Managers, rows)
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
 }
 

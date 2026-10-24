@@ -1243,3 +1243,37 @@ Every section above is kept as its task wrote it. This one records what the merg
   `CreateWithMembers` now records `creator.IID()`: the same for a user, the AI itself for an AI. `instructions_by` stays the user, since
   no route gives an AI's group instructions. `TestTheTextOfAGroupAnAICreatesIsTrustedOnlyWhenThatAIManagesTheRecipient` pins it (a
   sibling and an AI the target manages are untrusted, an AI above the target's creator is trusted; recording the host fails it).
+
+## T33: Welcome frame and whoami carry the organization (POS-10, ORG-04)
+
+- **`dto.AgentWelcomeFrame`** gains, all additive (a v0.5 client decodes the frame as before and ignores them):
+  - `organization` (`dto.ContactOrg{id, name, slug}`, the compact organization the contacts already use; **absent** for an AI with no
+    home organization: a fixture, never one the app placed);
+  - `position`: the name of the position the AI holds in its home organization, `""` for none (always present);
+  - `managers`: `[]IntelligenceRef`, **nearest first**, at most `dto.MaxManagers` (10), from `Chart.ManagersOf` in the AI's **home**
+    organization and no other (POS-10). **Always present**, `[]` when nobody manages the AI (the holder of a root position, a
+    positionless AI with no creator, an AI with no home). A manager is a user (`kind` human, `role` user) or an AI (`ai`, `ai`).
+  - `owner` stays and still holds the **host user** (`agents.owner_id`), not the AI that started this one with `--parent`
+    (`TestWelcomeTellsTheOrganizationPositionAndManagers` pins both). Its doc comment says it is deprecated and the managers are who
+    the AI answers to; the canonical `Deprecated:` marker is left out on purpose, it would make `staticcheck` flag the gateway that
+    sets the field and the channel that reads it.
+- **`orgs.Authz.StandingOf(ctx, orgID, iid, limit) (Standing{Org, Position, Managers}, ok, error)`** is the one reading both the frame
+  and whoami use: the organization row and the chart in **one read snapshot**, the position's name and the nearest `limit` managers
+  (negative: all). `ok` is false for an unknown organization or a non-member. `Authz.DefaultStandingOf(ctx, iid, limit)` is the same in
+  the organization `DefaultFor` names. Each call counts as one chart load (`Authz.Loads`).
+- **Where it runs**: `agents.Gateway.placement` (the frame, once per connection, so a reconnect tells the current standing) with the new
+  optional `GatewayDeps.Authz` (default: the facade over the store; the app passes its shared one), and `convert.ManagerRefs(ids, rows)`
+  renders the ids in the order given.
+- **Deviation (whoami)**: the design's compatibility table lists `/agent/whoami` as unchanged, T33's text says it gains the three fields.
+  Both hold: `GET /agent/whoami` answers `dto.AgentWhoAmI`, an `IntelligenceRef` (the token user's fields stay at the top level, so
+  `partyline login` and every v0.5 CLI decode it unchanged) plus `organization` (absent when the user belongs to none), `position` and
+  `managers`, **read in the user's default organization** (`DefaultFor`: the chosen default if they still belong to it, else where they have
+  administered longest, else where they have belonged longest), because whoami names the token's user, not an AI, and that is the
+  organization a new AI of theirs joins when `--org` is not given. It still needs no folder and creates nothing. `partyline login` does
+  not use these fields: its default-organization line comes from `GET /agent/orgs` (T37).
+- **Generated**: `web/src/lib/api/types.gen.ts` (`MaxManagers`, `AgentWelcomeFrame`, `AgentWhoAmI`). Phase 7 does not otherwise touch `web/`.
+- **Tests**: `internal/api/agent_welcome_org_test.go` (the Lead/Worktrees worker with managers `[lead, bob, alice]` and the v0.5 decode,
+  the root holder and a positionless AI with `managers: []`, home-organization-only, the bound of ten with the nearest ten kept, an AI with
+  no home, whoami for an admin, a director, a positionless member, a guest, a changed default and a user in no organization),
+  `internal/orgs/standing_test.go`. Mutations "no limit", "farthest first", "nil instead of an empty list" and "the host's default instead
+  of the home organization" each fail them.
