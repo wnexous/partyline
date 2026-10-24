@@ -80,7 +80,10 @@ func agentToken(r *http.Request) (authn.Principal, error) {
 
 // agentSession reports whether the machine and folder named in the headers have an AI, whether
 // it is online, its app and when its live session connected, and changes nothing (SES-01): the
-// launcher asks before taking over a live session.
+// launcher asks before taking over a live session. When the headers also name an organization, a
+// position or a parent (--org, --position, --parent), it answers with the refusal the session itself
+// would get for them - 403, 409 or 422, in the same words - so that the launcher can tell the person
+// before it starts the harness (ORG-05, POS-07); that check changes nothing either.
 func (s *server) agentSession(w http.ResponseWriter, r *http.Request) error {
 	p, err := agentToken(r)
 	if err != nil {
@@ -92,6 +95,9 @@ func (s *server) agentSession(w http.ResponseWriter, r *http.Request) error {
 	}
 	a, found, err := s.Agents.LookupFolder(r.Context(), p.UserID, id)
 	if err != nil {
+		return err
+	}
+	if err := s.Agents.CheckStart(r.Context(), p.UserID, id); err != nil {
 		return err
 	}
 	out := dto.SessionState{}

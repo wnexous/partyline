@@ -21,6 +21,8 @@ type ListenOptions struct {
 	Home    string
 	Harness string
 	Adopt   string
+	// Org, Position and Parent mean what they mean for Run.
+	Org, Position, Parent string
 	// Takeover means what it means for Run.
 	Takeover bool
 
@@ -64,7 +66,10 @@ func Listen(ctx context.Context, o ListenOptions) error {
 		}()
 	}
 
-	id := Identity{Machine: o.Machine, Folder: o.Folder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt}
+	id := Identity{
+		Machine: o.Machine, Folder: o.Folder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
+		Org: o.Org, Position: o.Position, Parent: o.Parent,
+	}
 	out := &lineWriter{w: o.Stdout}
 	l := newLink(base, o.Token, id, o.HTTPClient, out, o.Stderr, o.timing)
 	l.takeover, l.zone = o.Takeover, o.zone

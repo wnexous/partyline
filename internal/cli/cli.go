@@ -56,6 +56,10 @@ Start a session with Partyline (the arguments go to the harness unchanged):
 A session is the AI of the folder it starts in. Put --take-over before the arguments to take the
 AI's live session over from another one, and --as <handle> to adopt an AI that has no folder yet
 (one from before folders).
+A new AI joins your default organization. Put --org <slug> before the arguments to start it in
+another one, --position <name> to give it a position there and --parent <@handle> when one of your
+AIs starts it; PARTYLINE_ORG, PARTYLINE_POSITION and PARTYLINE_PARENT stand in for the flags. An AI
+keeps the organization it was created in.
 `
 
 // stdio holds what a command reads and writes; tests replace each part.

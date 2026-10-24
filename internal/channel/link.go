@@ -398,7 +398,7 @@ const (
 	outLagged
 	outBusy      // the AI is live in another session and this connection did not take over
 	outTakenOver // another session took the AI over from this one
-	outInvalid   // the server cannot use the machine or folder
+	outInvalid   // the server cannot use the machine, folder or placement the session asked for
 	outDeleted
 	outAgentLimit
 )
@@ -491,22 +491,38 @@ func (l *link) refused(resp *http.Response) outcome {
 		defer func() { _ = resp.Body.Close() }()
 	}
 	switch resp.StatusCode {
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return outInvalidToken // a bad, revoked or non-agent token
+	case http.StatusUnauthorized:
+		return outInvalidToken // a bad or revoked token
+	case http.StatusForbidden:
+		// A session that asked for an organization or a position and is told 403 was refused for that: the creator is
+		// not in the organization or may not give the position (ORG-05, POS-07). Without such a request a 403 is a
+		// token the server will not take (a user's, not an agent's).
+		if e := refusalBody(resp); l.identity.asksPlacement() && e.Message != "" {
+			return l.refusedFor(e.Message)
+		}
+		return outInvalidToken
 	case http.StatusConflict:
 		e := refusalBody(resp)
-		if e.Code == dto.ErrorCodeIdentityBusy {
+		switch e.Code {
+		case dto.ErrorCodeIdentityBusy:
 			l.rememberBusy(e.Details)
 			return outBusy
+		case dto.ErrorCodeOrganizationMismatch: // --org names an organization other than the AI's home (ORG-04)
+			return l.refusedFor(e.Message)
 		}
 		return outAgentLimit // the owner already has the maximum number of agents
 	case http.StatusUnprocessableEntity:
-		l.mu.Lock()
-		l.reason = refusalBody(resp).Message
-		l.mu.Unlock()
-		return outInvalid
+		return l.refusedFor(refusalBody(resp).Message)
 	}
 	return outDialFailed
+}
+
+// refusedFor remembers why the server cannot use this session, in its own words, and reports the refusal.
+func (l *link) refusedFor(reason string) outcome {
+	l.mu.Lock()
+	l.reason = reason
+	l.mu.Unlock()
+	return outInvalid
 }
 
 // rememberBusy keeps what a refusal says about the session that holds the AI.

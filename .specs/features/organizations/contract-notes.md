@@ -1355,3 +1355,57 @@ Every section above is kept as its task wrote it. This one records what the merg
 - **Existing tests adapted** (the assertions are the same, the words are the design's): the trust, framing and room-trust sentences in
   `TestToolsOnlyInstructions`, `TestChannelInstructionsDescribeChannelEvents`, `TestOmpInstructions`; `platformEventsSentence`;
   `TestInstructionsDescribeDMsGroupsAndProfiles` (the connect-notice sentence); `TestConversationToolSchemas` (`create_group` lists `organization`).
+
+## T36: Launcher flags --org, --position and --parent (ORG-04, POS-07, POS-08)
+
+- **Flags** (`launcherFlags`, `internal/cli/launcher.go`): the leading `--org <slug|id>`, `--position <name>` and `--parent <@handle|id>`, as
+  `--x v` and `--x=v`, in any order among the leading flags (`--take-over`, `--as`, `--name`, `--project` too), are taken off the harness's
+  arguments; a flag without a value exits 2 (`partyline claude: --org needs a value`); one after the harness's own first argument is the
+  harness's. A value is trimmed, and a blank one is no flag.
+- **Variables**: each flag falls back on `PARTYLINE_ORG`, `PARTYLINE_POSITION` or `PARTYLINE_PARENT` (trimmed, blank = absent); a flag wins over its
+  variable, field by field. The launcher **consumes** them: neither the three variables nor any inherited `PARTYLINE_LAUNCH_*` are in the harness's
+  environment; the resolved values are exported as `PARTYLINE_LAUNCH_ORG`, `_POSITION` and `_PARENT` (only the ones that are set, after
+  `PARTYLINE_AGENT` in the harness's environment). The launcher **never reads `PARTYLINE_LAUNCH_*` as input**, so a launch from a shell inside a launched
+  session is another AI: with no flags it asks for nothing (the server's defaults), with `--position Worktrees` it asks for that position and not its
+  parent's organization or parent AI (`TestANestedLaunchDoesNotInheritThePlacementOfItsParent`, and end to end `TestANestedLaunchStartsAnAIWithoutTheSessionsPlacement`).
+  `PARTYLINE_LAUNCH_*` are in `launcherVars` (`procenv.go`), so a Codex-style harness that filters the MCP server's environment still gets them from the
+  launched ancestor (`TestStrippedToolsOnlyChannelRecoversThePlacement`).
+- **The headers**: `channel.Identity` gains `Org`, `Position` and `Parent`; `setHeaders` sends `X-Partyline-Org`, `X-Partyline-Position` (percent-encoded with
+  `url.PathEscape` like the folder) and `X-Partyline-Parent`, each only when set, on the WebSocket and on every REST call. `cli.sessionIdentity` fills them from
+  `PARTYLINE_LAUNCH_*` only (never from `PARTYLINE_ORG` & co: those are the launcher's input), and `channel.Options` / `ListenOptions` carry them to the
+  `Identity` (`channel`, `listen`, the tools-only server and the turn-end hook all send them). `setIdentityHeaders`, the launcher's own copy for its request, is
+  pinned to the channel's by `TestTheLauncherSendsTheHeadersTheSessionSends`.
+- **Deviation from tasks.md ("Where": `launcher.go` only, "a refused start exits non-zero")**: only the launcher runs in the person's terminal, but the
+  refusals come from the server when the session connects, inside the harness, where nobody reads stderr. So the launcher asks first, with the request it
+  already makes for the takeover question:
+  - **`GET /agent/session` applies the start rules read-only** when the request names an organization, a position or a parent (`agents.Registry.CheckStart`,
+    called by `agentSession`, `internal/agents/placement.go`). It uses the very functions of the start on a read snapshot - `place` for a folder that would get a
+    new AI, `checkStart` for the AI of the folder or the unlinked identity (MIG-02) the session would adopt - and answers with the refusal the session would get:
+    403 `forbidden` (ORG-05, POS-07), 409 `organization_mismatch` (with the home organization in the details), 422 `organization_required` or
+    `position_unknown`, in the same words. It creates, adopts, moves, audits and announces nothing (SES-01 holds), and a request with none of the three headers
+    is unchanged. T19's "`LookupFolder` applies no rules" still holds: the rules are applied by the new method, not by the lookup.
+    Authorization is the route's: an agent token only (a user session or user token is 403, no credentials 401), judged as the token's host
+    (`TestTheSessionCheckIsForTheHostOfTheToken`). The agent limit is not checked: the real start reports it.
+  - **The launcher** (`lookupSession`, now `sessionLookup{state, ok, refusal}` behind a one-shot closure) makes that one request when it has a placement
+    (before the "not registered" warning, which says "Starting anyway") and, if it also needs the takeover answer, reuses it: one request for both. A 403, 409
+    or 422 with a message is printed as `partyline <harness>: <server message>` and the launcher **exits 1 without starting the harness**, for live and tools-only
+    harnesses alike. Any other answer - unreachable, a rejected token, 404, 5xx, a refusal without a message or not JSON, no credentials - never stops a launch (the
+    session reports its own trouble). The request carries this launch's placement, never an inherited one. Without a placement the launcher asks only when it
+    needs the takeover answer, as before.
+- **The channel reads a placement refusal correctly** (`link.refused`): on the WebSocket handshake a 403 used to mean "token rejected" and a 409 "agent limit".
+  Now a 403 with a message from a session that asked for an organization or a position (`Identity.asksPlacement`; a parent alone cannot be refused) and a 409
+  `organization_mismatch` are `outInvalid`: told once, in the server's words, not retried (`the server refused this session: <message>`); every other 403 / 409
+  keeps its meaning (`TestLinkReportsARefusedPlacementWithoutRetrying`, `TestLinkKeepsTheOtherMeaningsOfForbiddenAndConflict`). `partyline listen` and the full
+  channel still keep running after a refusal (they did for 422 folder errors): the launcher's check is what ends a start in the terminal.
+- **Known limitation (design R6)**: the headers go on every connection and call, so a session started with `--position X` asks for X again when it reconnects. If
+  an admin moved the AI in the meantime and the host may move it (admin there, or manages it and holds a position above X), the reconnect puts it back. Starting
+  without `--position` never clears or moves a position.
+- **Help and docs**: `partyline --help` explains the three flags and the variables (`TestHelpDocumentsThePlacementFlags`); `docs/agents.md` has the section "Where a
+  new AI goes" and the `organization_required`, `position_unknown`, `forbidden` and `organization_mismatch` rows; README / README.pt-BR are T55's.
+- **Tests**: `internal/cli/launcher_placement_test.go` (flags, variables, consumption, nested launches, the request, every refusal for a live and a tools-only
+  harness, the answers that must not stop a launch, one request for placement and takeover), `launcher_placement_e2e_test.go` (the launcher's environment handed to
+  the real `partyline channel` against the real server: flags, variables, a worker under a parent AI, a nested launch, the refusals with the server's real words),
+  `procenv_test.go`, `channel_identity_test.go`; `internal/channel/identity_test.go` and `link_placement_test.go`;
+  `internal/api/agent_session_start_test.go` (the check for a new AI, the AI of the folder and an adoption, that it changes nothing and publishes nothing, the
+  authorization). Mutations of each rule above fail them (flag lists, precedence, consumption, inheritance, the refusal, the order against the warning, the
+  statuses that count, header names, encoding and omission).

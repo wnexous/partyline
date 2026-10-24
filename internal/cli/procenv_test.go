@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,15 +39,21 @@ func (f fakeProc) add(pid, ppid int, comm string, env []string) {
 	}
 }
 
-// AID-07: only the four launcher variables are taken from an environment block; empty values
-// and every other variable (URL, token, PATH, the v0.3 session and project ones …) are left out.
+// AID-07, AD-020: only the launcher variables are taken from an environment block - the four of a session and the
+// three PARTYLINE_LAUNCH_* ones that carry what it asked for (--org, --position, --parent); empty values and
+// every other variable (URL, token, PATH, the v0.3 session and project ones, and the user-facing PARTYLINE_ORG,
+// PARTYLINE_POSITION and PARTYLINE_PARENT, which the launcher consumes) are left out.
 func TestLauncherEnvironKeepsOnlyLauncherVariables(t *testing.T) {
 	block := []byte("PATH=/usr/bin\x00PARTYLINE_FOLDER=/work/my notes\x00PARTYLINE_TOKEN=pl_agent_secret\x00" +
 		"PARTYLINE_URL=https://pl.example\x00PARTYLINE_HARNESS=codex\x00PARTYLINE_TAKEOVER=1\x00PARTYLINE_SESSION=pl-old\x00" +
-		"PARTYLINE_PROJECT=Old\x00PARTYLINE_AGENT=\x00NOEQUALS\x00PARTYLINE_FOLDERX=no\x00")
+		"PARTYLINE_PROJECT=Old\x00PARTYLINE_AGENT=\x00NOEQUALS\x00PARTYLINE_FOLDERX=no\x00" +
+		"PARTYLINE_LAUNCH_ORG=acme\x00PARTYLINE_LAUNCH_POSITION=Lead developer\x00PARTYLINE_LAUNCH_PARENT=@lead\x00" +
+		"PARTYLINE_ORG=globex\x00PARTYLINE_POSITION=Director\x00PARTYLINE_PARENT=@boss\x00PARTYLINE_LAUNCH_X=no\x00")
 	require.Equal(t, map[string]string{
 		"PARTYLINE_FOLDER": "/work/my notes", "PARTYLINE_HARNESS": "codex", "PARTYLINE_TAKEOVER": "1",
+		"PARTYLINE_LAUNCH_ORG": "acme", "PARTYLINE_LAUNCH_POSITION": "Lead developer", "PARTYLINE_LAUNCH_PARENT": "@lead",
 	}, launcherEnviron(block))
+	require.Empty(t, launcherEnviron([]byte("PARTYLINE_LAUNCH_ORG=\x00PARTYLINE_LAUNCH_POSITION=  \x00")), "empty values are left out")
 	require.Empty(t, launcherEnviron(nil))
 }
 
@@ -105,7 +112,10 @@ func TestAncestorLauncherEnvReadsRealProc(t *testing.T) {
 // AID-07: the process's own variables win; the ancestor's fill only the launcher variables that
 // are missing, and only when PARTYLINE_FOLDER itself is missing.
 func TestWithLauncherEnv(t *testing.T) {
-	ancestor := map[string]string{"PARTYLINE_FOLDER": "/work/anc", "PARTYLINE_HARNESS": "codex", "PARTYLINE_TAKEOVER": "1", "PARTYLINE_AGENT": "anc-bot"}
+	ancestor := map[string]string{
+		"PARTYLINE_FOLDER": "/work/anc", "PARTYLINE_HARNESS": "codex", "PARTYLINE_TAKEOVER": "1", "PARTYLINE_AGENT": "anc-bot",
+		"PARTYLINE_LAUNCH_ORG": "acme", "PARTYLINE_LAUNCH_POSITION": "Worktrees",
+	}
 	std := func(own map[string]string) stdio {
 		return stdio{getenv: func(k string) string { return own[k] }, launcherEnv: func() map[string]string { return ancestor }}
 	}
@@ -115,9 +125,14 @@ func TestWithLauncherEnv(t *testing.T) {
 		[]string{got.getenv("PARTYLINE_FOLDER"), got.getenv("PARTYLINE_HARNESS"), got.getenv("PARTYLINE_TAKEOVER"),
 			got.getenv("PARTYLINE_AGENT"), got.getenv("PARTYLINE_URL"), got.getenv("PARTYLINE_TOKEN")})
 
+	got = withLauncherEnv(std(map[string]string{"PARTYLINE_LAUNCH_POSITION": "Director"}))
+	require.Equal(t, []string{"acme", "Director", ""},
+		[]string{got.getenv("PARTYLINE_LAUNCH_ORG"), got.getenv("PARTYLINE_LAUNCH_POSITION"), got.getenv("PARTYLINE_LAUNCH_PARENT")},
+		"what the session asked for comes from the ancestor too, and the process's own value wins")
+
 	got = withLauncherEnv(std(map[string]string{"PARTYLINE_FOLDER": "/work/own"}))
-	require.Equal(t, []string{"/work/own", "", ""},
-		[]string{got.getenv("PARTYLINE_FOLDER"), got.getenv("PARTYLINE_HARNESS"), got.getenv("PARTYLINE_TAKEOVER")},
+	require.Equal(t, []string{"/work/own", "", "", ""},
+		[]string{got.getenv("PARTYLINE_FOLDER"), got.getenv("PARTYLINE_HARNESS"), got.getenv("PARTYLINE_TAKEOVER"), got.getenv("PARTYLINE_LAUNCH_ORG")},
 		"a process that has its folder takes nothing from an ancestor")
 
 	got = withLauncherEnv(stdio{getenv: func(string) string { return "" }})
@@ -170,6 +185,31 @@ func TestStrippedToolsOnlyChannelRecoversLauncherVariables(t *testing.T) {
 	require.NotContains(t, out, msg1.ID)
 
 	require.Equal(t, []string{"/work/one", "/work/two"}, e.folders(t), "one AI per session folder")
+}
+
+// ORG-04, POS-07 (AD-020): Codex starts its MCP servers with a filtered environment, so what the session asked
+// for with --org and --position reaches the tools-only channel through the launched ancestor
+// (PARTYLINE_LAUNCH_*), like the folder does: the AI it registers is created in that organization holding that
+// position. The ancestor's user-facing PARTYLINE_ORG, which the launcher consumes, is not what it sends.
+func TestStrippedToolsOnlyChannelRecoversThePlacement(t *testing.T) {
+	e := newChannelEnv(t)
+	acme, err := e.env.App.Orgs.Create(context.Background(), e.alice.User.ID, "Acme")
+	require.NoError(t, err)
+	e.env.AddPosition(acme.ID, "Worktrees", acme.PositionID)
+
+	launched := map[string]string{
+		"PARTYLINE_FOLDER": "/work/placed", "PARTYLINE_HARNESS": "codex",
+		"PARTYLINE_LAUNCH_ORG": "acme", "PARTYLINE_LAUNCH_POSITION": "Worktrees", "PARTYLINE_ORG": "no-such-organization",
+	}
+	c := startChannelWith(t, []string{"--tools-only"}, e.vars(), "/tmp/src/other", launched)
+	initialize(c)
+	c.send(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": map[string]any{"name": "list_rooms", "arguments": map[string]any{}}})
+	require.Equal(t, false, c.next()["result"].(map[string]any)["isError"])
+
+	prof := e.registered(t, "/work/placed")
+	require.Len(t, prof.Memberships, 1)
+	got := prof.Memberships[0]
+	require.Equal(t, []any{acme.ID, "acme", "member", "Worktrees"}, []any{got.OrgID, got.OrgSlug, got.Permission, got.PositionName})
 }
 
 // Without a launched ancestor a stripped tools-only channel falls back on its own working

@@ -965,12 +965,12 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `launcherFlags`, `withLauncherEnv`, `Identity.setHeaders`
 **Requirement**: ORG-04, POS-07, POS-08
 **Done when**:
-- [ ] CLI tests:
+- [x] CLI tests:
   - each flag in both forms reaches the headers; the env fallback works; the flag wins over env;
   - without either, no header is sent (L-035);
   - a nested launch inside a launched session does not inherit the parent's position;
   - a refused start (403/422) exits non-zero and prints the server message (L-045)
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): start AIs in an organization and position`

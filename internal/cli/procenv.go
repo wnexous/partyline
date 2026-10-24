@@ -12,10 +12,28 @@ import (
 // process whose environment has it was launched by `partyline <harness>`.
 const folderEnvVar = "PARTYLINE_FOLDER"
 
+// What a session asked for when it was launched (--org, --position, --parent; ORG-04, POS-07, POS-08). The
+// launcher reads PARTYLINE_ORG, PARTYLINE_POSITION and PARTYLINE_PARENT when the flag is absent, and hands the
+// values to the session's own processes as PARTYLINE_LAUNCH_ORG, PARTYLINE_LAUNCH_POSITION and
+// PARTYLINE_LAUNCH_PARENT. It consumes the first three and never reads the second three as input: a launch from
+// inside a launched session is another AI and does not inherit its placement (AD-020).
+const (
+	orgEnvVar      = "PARTYLINE_ORG"
+	positionEnvVar = "PARTYLINE_POSITION"
+	parentEnvVar   = "PARTYLINE_PARENT"
+
+	launchOrgVar      = "PARTYLINE_LAUNCH_ORG"
+	launchPositionVar = "PARTYLINE_LAUNCH_POSITION"
+	launchParentVar   = "PARTYLINE_LAUNCH_PARENT"
+)
+
 // launcherVars are the variables `partyline <harness>` sets for its session (see launch).
 // PARTYLINE_TAKEOVER is the one a launcher sets when the user agreed to take the AI's live
-// session over.
-var launcherVars = []string{folderEnvVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT"}
+// session over; the PARTYLINE_LAUNCH_* ones carry what the session asked for.
+var launcherVars = []string{
+	folderEnvVar, "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT",
+	launchOrgVar, launchPositionVar, launchParentVar,
+}
 
 // maxAncestors is how many processes, starting at the parent, the lookup reads.
 const maxAncestors = 4

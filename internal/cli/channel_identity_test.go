@@ -105,6 +105,19 @@ func TestSessionIdentity(t *testing.T) {
 	id = sessionIdentity("", std(map[string]string{"USERPROFILE": home}, target))
 	require.Equal(t, home, id.Home, "USERPROFILE is the home folder where HOME is not set")
 
+	// AD-020: what the session asked for comes from the PARTYLINE_LAUNCH_* variables the launcher set, trimmed ...
+	id = sessionIdentity("", std(map[string]string{
+		"PARTYLINE_FOLDER": target, "PARTYLINE_LAUNCH_ORG": " acme ", "PARTYLINE_LAUNCH_POSITION": " Lead developer ", "PARTYLINE_LAUNCH_PARENT": " @lead ",
+	}, "/ignored"))
+	require.Equal(t, channel.Identity{Machine: "devbox", Folder: target, Org: "acme", Position: "Lead developer", Parent: "@lead"}, id)
+	// ... and only from there: the user-facing variables are the launcher's input, not the session's, and an empty
+	// or blank launch variable asks for nothing (L-035)
+	id = sessionIdentity("", std(map[string]string{
+		"PARTYLINE_FOLDER": target, "PARTYLINE_ORG": "acme", "PARTYLINE_POSITION": "Worktrees", "PARTYLINE_PARENT": "@lead",
+		"PARTYLINE_LAUNCH_ORG": "  ", "PARTYLINE_LAUNCH_POSITION": "",
+	}, "/ignored"))
+	require.Equal(t, channel.Identity{Machine: "devbox", Folder: target}, id)
+
 	unknown := stdio{
 		getenv:   func(string) string { return "" },
 		getwd:    func() (string, error) { return "", errors.New("no working directory") },
