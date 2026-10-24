@@ -1172,12 +1172,12 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `delete-ai-dialog.tsx`, `alert-dialog`
 **Requirement**: POS-04, POS-05, POS-06
 **Done when**:
-- [ ] Vitest through the route (L-007):
+- [x] Vitest through the route (L-007):
   - a non-manager sees no actions;
   - a manager ends a session (API called);
   - an admin sees "Remove from acme" for a person, and the dialog text (removal only, the account stays) is asserted literally;
   - no machine row renders
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): let managers act on identities below them`

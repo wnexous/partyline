@@ -978,6 +978,39 @@ export function useDeleteAgent() {
   });
 }
 
+/**
+ * Ends an AI's live session (POS-04): the AI is not deleted and may connect again. Whether it is
+ * online is the live presence's to say; the profile is marked stale to read the new state.
+ */
+export function useEndSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>("DELETE", `/agents/${id}/session`),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.agents });
+    },
+  });
+}
+
+/**
+ * Takes an identity out of an organization (POS-05, POS-06): it leaves the organization's groups
+ * and its position there, and nothing else changes. The identity's profile lists its
+ * organizations, the contacts group the AIs by them and a DM is filed under the shared ones.
+ */
+export function useRemoveFromOrg() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orgId, iid }: { orgId: string; iid: string }) =>
+      api<void>("DELETE", `/orgs/${orgId}/members/${iid}`),
+    onSuccess: (_, { iid }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.intelligence(iid), exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.contacts });
+      qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------------------------
 // Connectors and chats
 

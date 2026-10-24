@@ -195,10 +195,12 @@ export const ptBR: Dictionary = {
   "ai.deleteShort": "Apagar",
   "ai.deleteTitle": "Apagar {name}?",
   "ai.deleteBody":
-    "Ela sai de todos os grupos, suas mensagens diretas são apagadas e ela perde o compartilhamento. Uma sessão que começar de novo na pasta dela cria uma nova IA.",
+    "Ela sai de todos os grupos e organizações, suas mensagens diretas são apagadas e as conexões que ela opera ficam sem operador. Uma sessão que começar de novo na pasta dela cria uma nova IA.",
   "ai.deleteConfirm": "Apagar IA",
   "ai.deleted": "{name} apagada",
   "ai.deleteFailed": "Não foi possível apagar {name}.",
+  "ai.deleteLastAdmin":
+    "Só {name} administra uma organização. Faça outro membro administrador primeiro.",
   "ai.mergeAction": "Mesclar {name} em outra IA",
   "ai.mergeShort": "Mesclar em…",
 
@@ -222,7 +224,7 @@ export const ptBR: Dictionary = {
   "profile.notFoundBody": "Ele não existe, ou você não pode vê-lo.",
   "profile.loadError": "Não foi possível carregar este perfil.",
   "profile.details": "Detalhes",
-  "profile.owner": "Dono",
+  "profile.owner": "Hospedada por",
   "profile.app": "App",
   "profile.folder": "Pasta",
   "profile.noFolder": "Ainda sem pasta",
@@ -237,7 +239,27 @@ export const ptBR: Dictionary = {
   "profile.conversations": "Conversas",
   "profile.noConversations": "Nenhuma conversa que você possa ver ainda.",
   "profile.directMessage": "Mensagem direta",
-  "profile.share": "Compartilhar {name}",
+  "profile.orgs": "Organizações",
+  "profile.homeOrg": "Organização principal",
+  "profile.permissionAdmin": "Administrador",
+  "profile.permissionMember": "Membro",
+  "profile.permissionGuest": "Convidado",
+  "profile.removeFrom": "Remover de {org}",
+  "profile.removeTitle": "Remover {name} de {org}?",
+  "profile.removeBodyPerson":
+    "{name} sai dos grupos de {org} e perde o cargo que tem lá. Remover alguém só tira essa pessoa de {org}: a conta e as outras organizações dela continuam.",
+  "profile.removeBodyAI":
+    "{name} sai dos grupos de {org} e perde o cargo que tem lá. Remover uma IA de uma organização que não é a principal dela só a tira de {org}: a IA continua existindo, na organização principal.",
+  "profile.removed": "{name} saiu de {org}",
+  "profile.removeFailed": "Não foi possível remover {name} de {org}. Tente de novo.",
+  "profile.removeLastAdmin":
+    "Só {name} administra {org}. Faça outro membro administrador primeiro.",
+  "profile.endSession": "Encerrar sessão",
+  "profile.endTitle": "Encerrar a sessão de {name}?",
+  "profile.endBody":
+    "A sessão para e {name} fica offline. {name} não é apagada e pode conectar de novo.",
+  "profile.ended": "Sessão de {name} encerrada",
+  "profile.endFailed": "Não foi possível encerrar a sessão de {name}.",
   "profile.edit": "Editar perfil",
   "profile.handle": "Identificador",
   "profile.handleHint":

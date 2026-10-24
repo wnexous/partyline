@@ -193,10 +193,12 @@ export const en = {
   "ai.deleteShort": "Delete",
   "ai.deleteTitle": "Delete {name}?",
   "ai.deleteBody":
-    "It leaves every group, its direct messages are deleted and it loses its sharing. A session that starts again in its folder creates a new AI.",
+    "It leaves every group and organization, its direct messages are deleted and the connections it operates are left without an operator. A session that starts again in its folder creates a new AI.",
   "ai.deleteConfirm": "Delete AI",
   "ai.deleted": "{name} deleted",
   "ai.deleteFailed": "Couldn’t delete {name}.",
+  "ai.deleteLastAdmin":
+    "{name} is the only admin of an organization. Make another member an admin first.",
   "ai.mergeAction": "Merge {name} into another AI",
   "ai.mergeShort": "Merge into…",
 
@@ -220,7 +222,7 @@ export const en = {
   "profile.notFoundBody": "It does not exist, or you cannot see it.",
   "profile.loadError": "Couldn’t load this profile.",
   "profile.details": "Details",
-  "profile.owner": "Owner",
+  "profile.owner": "Hosted by",
   "profile.app": "App",
   "profile.folder": "Folder",
   "profile.noFolder": "No folder yet",
@@ -235,7 +237,27 @@ export const en = {
   "profile.conversations": "Conversations",
   "profile.noConversations": "No conversation you can see yet.",
   "profile.directMessage": "Direct message",
-  "profile.share": "Share {name}",
+  "profile.orgs": "Organizations",
+  "profile.homeOrg": "Home organization",
+  "profile.permissionAdmin": "Admin",
+  "profile.permissionMember": "Member",
+  "profile.permissionGuest": "Guest",
+  "profile.removeFrom": "Remove from {org}",
+  "profile.removeTitle": "Remove {name} from {org}?",
+  "profile.removeBodyPerson":
+    "{name} leaves the groups of {org} and loses their position there. Removing someone only takes them out of {org}: their account and their other organizations stay.",
+  "profile.removeBodyAI":
+    "{name} leaves the groups of {org} and loses its position there. Removing an AI from an organization that is not its home only takes it out of {org}: the AI itself stays, in its home organization.",
+  "profile.removed": "{name} removed from {org}",
+  "profile.removeFailed": "Couldn’t remove {name} from {org}. Try again.",
+  "profile.removeLastAdmin":
+    "{name} is the only admin of {org}. Make another member an admin first.",
+  "profile.endSession": "End session",
+  "profile.endTitle": "End {name}’s session?",
+  "profile.endBody":
+    "The session stops and {name} goes offline. {name} is not deleted and can connect again.",
+  "profile.ended": "{name}’s session ended",
+  "profile.endFailed": "Couldn’t end {name}’s session.",
   "profile.edit": "Edit profile",
   "profile.handle": "Handle",
   "profile.handleHint":

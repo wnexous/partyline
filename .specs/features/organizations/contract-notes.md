@@ -1340,3 +1340,46 @@ Connections:
   Portuguese), `conversation-list.test.tsx` (groups and DMs of the organization, a DM shared by two organizations, none, unknown,
   waiting, the empty states, search, live frame, Portuguese), `member-picker.test.tsx`, `lib/contacts.test.ts` and an axe test of
   the dialog with the select (en and pt-BR).
+
+## T47: Profile memberships and manager actions (POS-04, POS-05, POS-06)
+
+What the viewer may do about an identity comes from its profile only (T25): `memberships[].can_delete` / `delete_effect` and
+`can_end_session`. The page adds no rule of its own.
+
+- **Organizations** (`contacts.$id.tsx`, a region "Organizations", hidden when `memberships` is empty): one row per organization the
+  viewer shares with the identity (all of its own on the viewer's own profile) with the organization's name, the permission (Admin,
+  Member, Guest) and the position held, and a "Home organization" tag where `delete_effect` is `"delete"` (an AI's home, POS-06).
+  An unknown permission string is shown as it came.
+- **Delete / Remove from**, per row, only where `can_delete` is true:
+  - `delete_effect: "delete"` -> "Delete" (accessible name "Delete {name}") opens `DeleteAIDialog` (`DELETE /agents/{id}`, then back to
+    the contacts). Its text no longer mentions sharing: "It leaves every group and organization, its direct messages are deleted and
+    the connections it operates are left without an operator. A session that starts again in its folder creates a new AI." A 409
+    `last_admin` (the AI is the only admin of an organization) reads "{name} is the only admin of an organization. Make another member
+    an admin first."
+  - `delete_effect: "remove"` -> "Remove from {org name}" opens `RemoveFromOrgDialog` (`DELETE /orgs/{org_id}/members/{iid}`, by the
+    organization's **id**). It says what stays, literally: for a person "{name} leaves the groups of {org} and loses their position
+    there. Removing someone only takes them out of {org}: their account and their other organizations stay."; for an AI "... loses
+    its position there. Removing an AI from an organization that is not its home only takes it out of {org}: the AI itself stays, in
+    its home organization.". Failures are told inside the dialog, which stays open: `last_admin` ("{name} is the only admin of {org}.
+    Make another member an admin first."), an unreachable server, anything else ("Couldn't remove {name} from {org}. Try again."). On
+    success a toast, and the identity's profile, the contacts and the conversations are marked stale: the row is gone, the page stays.
+- **End session** (header, AIs only): shown when `can_end_session` is true **and** the AI is online (live presence over `ai.online`;
+  the flag alone does not look at it, T25). It asks first ("End {name}'s session?" - "The session stops and {name} goes offline.
+  {name} is not deleted and can connect again."), then `DELETE /agents/{id}/session`; a toast on success and on failure.
+- **Edit** is the editor that was already on the page, shown to `can_edit`: not a new button. **Merge** is unchanged (an AI the
+  viewer hosts and manages, with another of theirs in the same home organization).
+- **Removed from the page**: the sharing dialog and its button (`profile.share`); the machine row went with T25 and a test pins that
+  none renders; the label "Owner" of an AI's host is now "Hosted by" (the organization owns the AI, AD-019).
+- **Queries added** (`queries.ts`): `useEndSession`, `useRemoveFromOrg({orgId, iid})`. Phase 8's members page and chart can use
+  `useRemoveFromOrg` for their "Remove from {org}" action.
+- **Existing tests changed**: in `profile.test.tsx` the three sharing cases of "managing an AI" (offering sharing to the owner,
+  opening the sharing dialog) are replaced by the cases above, which also assert that nothing offers sharing; the delete case now
+  starts from the profile's flags.
+- **Texts** (en and pt-BR): `profile.orgs`, `profile.homeOrg`, `profile.permissionAdmin|Member|Guest`, `profile.removeFrom`,
+  `profile.removeTitle`, `profile.removeBodyPerson`, `profile.removeBodyAI`, `profile.removed`, `profile.removeFailed`,
+  `profile.removeLastAdmin`, `profile.endSession`, `profile.endTitle`, `profile.endBody`, `profile.ended`, `profile.endFailed`,
+  `ai.deleteLastAdmin`; changed `ai.deleteBody`, `profile.owner`; removed `profile.share`.
+- **Tests**: `profile.test.tsx` (the list, home tag, nothing shared, own profile, a non-manager with no action at all, Delete vs Remove
+  per flag, no machine row, "Hosted by", no sharing, ending a session with confirmation / cancel / failure / live presence / flag /
+  AI-only, deleting and `last_admin`, removing with the literal dialog texts, by id, cancel, `last_admin`, failure, unreachable
+  server, Portuguese), and axe tests of the profile with its organizations (desktop and phone) and of both dialogs (en and pt-BR).

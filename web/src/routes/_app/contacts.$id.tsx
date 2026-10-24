@@ -7,13 +7,15 @@ import {
   GlobeIcon,
   MessageCircleIcon,
   PlugZapIcon,
-  Share2Icon,
+  PowerOffIcon,
   TerminalIcon,
   Trash2Icon,
+  UserMinusIcon,
 } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { DeleteAIDialog } from "@/components/delete-ai-dialog";
 import { EmptyState } from "@/components/empty-state";
+import { EndSessionDialog } from "@/components/end-session-dialog";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
 import { IntelligenceName } from "@/components/intelligence/intelligence-name";
 import { KindBadge } from "@/components/intelligence/kind-badge";
@@ -21,7 +23,7 @@ import { MergeAIDialog } from "@/components/merge-ai-dialog";
 import { MessageButton } from "@/components/message-button";
 import { platformLabel } from "@/components/message-item";
 import { ProfileEditor } from "@/components/profile-editor";
-import { SharingDialog } from "@/components/sharing-dialog";
+import { RemoveFromOrgDialog } from "@/components/remove-from-org-dialog";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,9 +37,10 @@ import {
   IntelligenceRolePerson,
   LevelManage,
   type PersonDetail,
+  type ProfileMembership,
 } from "@/lib/api/types.gen";
 import { mergeTargets } from "@/lib/contacts";
-import { useI18n, useT } from "@/lib/i18n";
+import { type MessageKey, useI18n, useT } from "@/lib/i18n";
 import { useLiveStore } from "@/lib/live/store";
 import { formatAbsolute, formatRelative } from "@/lib/time";
 
@@ -47,10 +50,12 @@ export const Route = createFileRoute("/_app/contacts/$id")({
 
 /*
  * The profile of an intelligence (PROF-03, PROF-05, PROF-11, PEOP-03, ACC-07): who it is, where
- * it lives (an AI: its machine, folder and app; a person: the account it writes from), the apps
- * it speaks through (the connectors it operates among them) and, for a person, the conversations
- * the viewer can see with it. Whoever may edit it gets the editor; the owner of an AI can also
- * share, merge or delete it.
+ * it lives (an AI: its folder and app; a person: the account it writes from), the organizations
+ * the viewer shares with it, the apps it speaks through (the connectors it operates among them)
+ * and, for a person, the conversations the viewer can see with it. What the viewer may do about it
+ * comes from the profile's flags (POS-04, POS-05, POS-06): whoever may edit it gets the editor,
+ * whoever manages an AI may end its session or merge it, and each organization offers "Delete"
+ * (an AI in its home organization) or "Remove from" (anyone else) where the server allows it.
  */
 
 function ProfilePage() {
@@ -126,6 +131,9 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
   const [merging, setMerging] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const [removing, setRemoving] = useState<ProfileMembership | null>(null);
+  const presence = useLiveStore((s) => s.presence[profile.id]);
   const own = me?.intelligence.id === profile.id;
   const isPerson = profile.role === IntelligenceRolePerson;
   const manages = profile.ai?.my_level === LevelManage;
@@ -134,6 +142,8 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
   const contacts = useQuery({ ...contactsQuery(), enabled: manages });
   const mergeCandidates = contacts.data ? mergeTargets(contacts.data, profile.id) : [];
   const canMerge = manages && mergeCandidates.length > 0;
+  // There is a session to end only while the AI is connected.
+  const canEnd = profile.can_end_session && (presence?.online ?? profile.ai?.online ?? false);
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-5 md:px-8 md:py-8">
@@ -168,35 +178,11 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
               <span className="max-sm:hidden">{t("ai.mergeShort")}</span>
             </Button>
           ) : null}
-          {manages ? (
-            <>
-              <SharingDialog
-                kind="agents"
-                id={profile.id}
-                name={name}
-                owner={{
-                  id: profile.ai?.owner.id ?? "",
-                  username: profile.ai?.owner.handle ?? "",
-                  display_name: profile.ai?.owner.display_name ?? "",
-                }}
-                trigger={
-                  <Button variant="outline" size="sm" aria-label={t("profile.share", { name })}>
-                    <Share2Icon aria-hidden="true" />
-                    {t("room.share")}
-                  </Button>
-                }
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-destructive hover:text-destructive"
-                aria-label={t("ai.delete", { name })}
-                onClick={() => setDeleting(true)}
-              >
-                <Trash2Icon aria-hidden="true" />
-                {t("ai.deleteShort")}
-              </Button>
-            </>
+          {canEnd ? (
+            <Button variant="outline" size="sm" onClick={() => setEnding(true)}>
+              <PowerOffIcon aria-hidden="true" />
+              {t("profile.endSession")}
+            </Button>
           ) : null}
         </div>
       </header>
@@ -213,6 +199,22 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
           {profile.person?.name_locked ? (
             <p className="text-xs text-muted-foreground">{t("profile.nameLocked")}</p>
           ) : null}
+        </Section>
+      ) : null}
+
+      {profile.memberships.length > 0 ? (
+        <Section title={t("profile.orgs")}>
+          <ul className="divide-y rounded-lg border">
+            {profile.memberships.map((m) => (
+              <MembershipRow
+                key={m.org_id}
+                membership={m}
+                name={name}
+                onDelete={() => setDeleting(true)}
+                onRemove={() => setRemoving(m)}
+              />
+            ))}
+          </ul>
         </Section>
       ) : null}
 
@@ -266,6 +268,12 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
         onClose={() => setDeleting(false)}
         onDeleted={() => void navigate({ to: "/contacts" })}
       />
+      <RemoveFromOrgDialog
+        identity={profile}
+        membership={removing}
+        onClose={() => setRemoving(null)}
+      />
+      <EndSessionDialog ai={ending ? profile : null} onClose={() => setEnding(false)} />
       <MergeAIDialog
         ai={merging ? profile : null}
         candidates={mergeCandidates}
@@ -275,6 +283,77 @@ function ProfileView({ profile }: { profile: IntelligenceProfile }) {
         }
       />
     </div>
+  );
+}
+
+const PERMISSION_LABELS: Record<string, MessageKey> = {
+  admin: "profile.permissionAdmin",
+  member: "profile.permissionMember",
+  guest: "profile.permissionGuest",
+};
+
+/**
+ * One organization the viewer shares with the identity: what it is there and, where the server
+ * allows it (POS-05), the way to take it out. The organization an AI belongs to deletes it for
+ * good; anywhere else the identity is only removed from that organization (POS-06).
+ */
+function MembershipRow({
+  membership: m,
+  name,
+  onDelete,
+  onRemove,
+}: {
+  membership: ProfileMembership;
+  name: string;
+  onDelete: () => void;
+  onRemove: () => void;
+}) {
+  const t = useT();
+  const home = m.delete_effect === "delete";
+  const permission = PERMISSION_LABELS[m.permission];
+  return (
+    <li aria-label={m.org_name}>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+        <div className="min-w-0 flex-1 basis-48 space-y-0.5">
+          <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+            <span className="font-medium [overflow-wrap:anywhere]">{m.org_name}</span>
+            {home ? (
+              <span className="shrink-0 rounded-[3px] border px-1.5 py-px text-[0.7rem] text-muted-foreground">
+                {t("profile.homeOrg")}
+              </span>
+            ) : null}
+          </p>
+          <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+            {permission ? t(permission) : m.permission}
+            {m.position_name ? ` · ${m.position_name}` : ""}
+          </p>
+        </div>
+        {m.can_delete ? (
+          home ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              aria-label={t("ai.delete", { name })}
+              onClick={onDelete}
+            >
+              <Trash2Icon aria-hidden="true" />
+              {t("ai.deleteShort")}
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={onRemove}
+            >
+              <UserMinusIcon aria-hidden="true" />
+              {t("profile.removeFrom", { org: m.org_name })}
+            </Button>
+          )
+        ) : null}
+      </div>
+    </li>
   );
 }
 
