@@ -917,24 +917,22 @@ export interface HookAttachment {
 
 /**
  * Contacts is GET /contacts: everyone the caller can reach, grouped as the contacts page shows
- * them (CONT-01).
+ * them (CONT-01): the AIs by organization, the ones they host that no organization lists, the other users
+ * and the people of their connections. The machines are not part of it (AD-022).
  */
 export interface Contacts {
   me: IntelligenceRef;
   /**
-   * Machines are the caller's own AIs that live in a folder, per machine and as a folder tree
-   * (TREE-01..03): machines with an online AI first, then by label.
+   * OrgAIs has one group for each organization the caller belongs to, by organization name (empty ones
+   * included), with the AIs that are members of it, by name. An AI that belongs to several of them is
+   * listed in each (AD-016).
    */
-  machines: MachineTree[];
+  org_ais: OrgAIs[];
   /**
-   * Unlinked are the caller's AIs without a folder, the identities v0.3 left (TREE-06), the
-   * most recently seen first.
+   * Hosted are the AIs hosted on the caller's computers that no group of OrgAIs lists, by name: they belong
+   * to none of the caller's organizations any more. Every other AI the caller hosts is in its groups.
    */
-  unlinked: AIContact[];
-  /**
-   * Shared are the AIs of other users that the caller may use, by name.
-   */
-  shared: AIContact[];
+  hosted: AIContact[];
   /**
    * Users are the other enabled users of the instance, by name.
    */
@@ -946,8 +944,23 @@ export interface Contacts {
   people: PeopleGroup[];
 }
 /**
+ * OrgAIs is the AIs of one organization of the caller.
+ */
+export interface OrgAIs {
+  org: ContactOrg;
+  ais: AIContact[];
+}
+/**
+ * ContactOrg names an organization in the contacts.
+ */
+export interface ContactOrg {
+  id: string;
+  name: string;
+  slug: string;
+}
+/**
  * AgentContactsTree is GET /agent/contacts/tree, the data of `partyline agents` (TREE-07): the
- * token owner's own AIs.
+ * token owner's own AIs. It goes with the machines in T57 (AD-022).
  */
 export interface AgentContactsTree {
   machines: MachineTree[];
@@ -992,10 +1005,13 @@ export interface TreeNode {
 export interface AIContact {
   intelligence: IntelligenceRef;
   /**
-   * Owner is set for the AIs of other users (Contacts.Shared).
+   * Owner is the user who hosts the AI, set when it is another user than the caller.
    */
   owner?: IntelligenceRef;
-  machine: string;
+  /**
+   * OrgID is the AI's home organization.
+   */
+  org_id: string;
   folder: string;
   folder_label: string;
   /**

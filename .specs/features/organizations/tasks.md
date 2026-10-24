@@ -805,11 +805,11 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `CanSee`
 **Requirement**: OMEM-03, ORG-02
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - contacts list another user's AI after joining its org and not before;
   - the response has no machine grouping; an AI hosted by me but in an org I left is still listed under "hosted by me";
   - an AI's `send_message to` an AI of a foreign org → 404 `contact_not_found`, while a user of the instance works
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(intelligences): list contacts by organization`

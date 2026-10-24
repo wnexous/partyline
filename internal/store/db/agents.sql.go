@@ -710,6 +710,61 @@ func (q *Queries) ListAgentsForUser(ctx context.Context, userID string) ([]ListA
 	return items, nil
 }
 
+const listOrgAIs = `-- name: ListOrgAIs :many
+SELECT m.org_id AS org_id, a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid
+FROM org_members me
+JOIN org_members m ON m.org_id = me.org_id
+JOIN agents a ON a.id = m.iid
+WHERE me.iid = ?
+ORDER BY m.org_id, a.id
+`
+
+type ListOrgAIsRow struct {
+	OrgID string
+	Agent Agent
+}
+
+// The AIs that are members of the organizations an identity belongs to, each with the organization it is
+// listed under (AD-016): an AI of two of them comes twice.
+func (q *Queries) ListOrgAIs(ctx context.Context, iid string) ([]ListOrgAIsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgAIs, iid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgAIsRow
+	for rows.Next() {
+		var i ListOrgAIsRow
+		if err := rows.Scan(
+			&i.OrgID,
+			&i.Agent.ID,
+			&i.Agent.OwnerID,
+			&i.Agent.Name,
+			&i.Agent.Description,
+			&i.Agent.CreatedAt,
+			&i.Agent.LastSeenAt,
+			&i.Agent.ProjectID,
+			&i.Agent.Harness,
+			&i.Agent.Machine,
+			&i.Agent.ConnectedAt,
+			&i.Agent.Folder,
+			&i.Agent.PlatformDropped,
+			&i.Agent.OrgID,
+			&i.Agent.CreatorIid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listVisibleAgents = `-- name: ListVisibleAgents :many
 SELECT a.id, a.owner_id, a.name, a.description, a.created_at, a.last_seen_at, a.project_id, a.harness, a.machine, a.connected_at, a.folder, a.platform_dropped, a.org_id, a.creator_iid, u.username AS owner_username,
        CAST(COALESCE(ui.display_name, '') AS TEXT) AS owner_display_name,

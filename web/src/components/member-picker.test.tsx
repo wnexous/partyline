@@ -10,8 +10,7 @@ import {
   makeChat,
   makeContacts,
   makeIntelligence,
-  makeMachineTree,
-  makeTreeNode,
+  makeOrgAIs,
 } from "@/test/fixtures";
 import { renderWithRouter } from "@/test/render";
 
@@ -24,11 +23,7 @@ const atlas = makeAI({ id: "a1", display_name: "Atlas", handle: "atlas" });
 const bob = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
 
 const contacts = makeContacts({
-  machines: [
-    makeMachineTree({
-      nodes: [makeTreeNode({ ai: makeAIContact({ intelligence: atlas }) })],
-    }),
-  ],
+  org_ais: [makeOrgAIs({ ais: [makeAIContact({ intelligence: atlas })] })],
   users: [bob],
 });
 

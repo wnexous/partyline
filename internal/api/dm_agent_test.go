@@ -15,7 +15,7 @@ import (
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
-// dmEnv is alice with her AI atlas and bob, who may use it, with atlas connected.
+// dmEnv is alice with her AI atlas and bob, a member of her organization, with atlas connected.
 type dmEnv struct {
 	env        *testkit.Env
 	alice, bob *testkit.Client
@@ -78,7 +78,7 @@ func TestUserDMReachesALiveAIAsADM(t *testing.T) {
 	}
 	require.Empty(t, timelineOf(t, f.bob, his.ID), "bob's DM with atlas is another conversation")
 
-	// Bob may use atlas: his DM arrives in his own DM, untrusted, and the reply goes there.
+	// Bob belongs to atlas's organization: his DM arrives in his own DM, untrusted, and the reply goes there.
 	asked := say(f.bob, his.ID, "hi atlas, it is bob")
 	got = f.conn.Message(wsWait)
 	require.Equal(t, dto.RoomRef{ID: his.ID, Name: "bob", Kind: dto.ConversationKindDM}, got.Room)

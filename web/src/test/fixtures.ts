@@ -8,12 +8,11 @@ import type {
   Conversation,
   IntelligenceProfile,
   IntelligenceRef,
-  MachineTree,
   Me,
   Message,
+  OrgAIs,
   Room,
   RoomMember,
-  TreeNode,
 } from "@/lib/api/types.gen";
 
 /** Synthetic fixtures; never real names, numbers or chat ids. */
@@ -228,11 +227,11 @@ export function makeConnectorKind(over: Partial<ConnectorKind> = {}): ConnectorK
   };
 }
 
-/** An AI as the contacts page lists it: Atlas, offline, in ~/atlas on devbox unless overridden. */
+/** An AI as the contacts page lists it: Atlas, offline, in ~/atlas, home organization o1, unless overridden. */
 export function makeAIContact(over: Partial<AIContact> = {}): AIContact {
   return {
     intelligence: makeAI(),
-    machine: "devbox",
+    org_id: "o1",
     folder: "/home/dev/atlas",
     folder_label: "~/atlas",
     app: "claude",
@@ -241,23 +240,17 @@ export function makeAIContact(over: Partial<AIContact> = {}): AIContact {
   };
 }
 
-/** One AI in a machine's tree; `path` is the collapsed chain before it, `name` its own folder. */
-export function makeTreeNode(over: Partial<TreeNode> = {}): TreeNode {
-  return { ai: makeAIContact(), path: "", name: "atlas", children: [], ...over };
-}
-
-/** A machine of the contacts tree: devbox, offline, without AIs unless overridden. */
-export function makeMachineTree(over: Partial<MachineTree> = {}): MachineTree {
-  return { hostname: "devbox", label: "devbox", online: false, nodes: [], ...over };
+/** The AIs of one organization of the contacts: Acme (o1), without AIs unless overridden. */
+export function makeOrgAIs(over: Partial<OrgAIs> = {}): OrgAIs {
+  return { org: { id: "o1", name: "Acme", slug: "acme" }, ais: [], ...over };
 }
 
 /** GET /contacts for the default user: nothing to show until a test adds it. */
 export function makeContacts(over: Partial<Contacts> = {}): Contacts {
   return {
     me: makeMe().intelligence,
-    machines: [],
-    unlinked: [],
-    shared: [],
+    org_ais: [],
+    hosted: [],
     users: [],
     people: [],
     ...over,

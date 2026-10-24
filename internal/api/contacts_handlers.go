@@ -21,20 +21,25 @@ func (s *server) contactRoutes(mux *http.ServeMux) {
 	s.handle(mux, "GET /api/v1/agent/contacts/tree", s.agentContactsTree)
 }
 
-// getContacts lists the caller's own AIs as trees per machine, the identities without a folder,
-// the AIs shared with them, the other users and the people groups of their connectors.
+// getContacts lists the AIs of the caller's organizations by organization, the AIs they host that none of
+// those lists, the other users and the people groups of their connections.
 func (s *server) getContacts(w http.ResponseWriter, r *http.Request, p authn.Principal) error {
 	c, err := s.Intelligences.Contacts(r.Context(), p.UserID)
 	if err != nil {
 		return err
 	}
 	out := dto.Contacts{
-		Me:       convert.IntelligenceRef(c.Me, dto.IntelligenceRoleUser, ""),
-		Machines: toMachineTrees(c.Machines, c.Rows),
-		Unlinked: toAIContacts(c.Unlinked),
-		Shared:   toAIContacts(c.Shared),
-		Users:    make([]dto.IntelligenceRef, len(c.Users)),
-		People:   make([]dto.PeopleGroup, len(c.People)),
+		Me:     convert.IntelligenceRef(c.Me, dto.IntelligenceRoleUser, ""),
+		OrgAIs: make([]dto.OrgAIs, len(c.OrgAIs)),
+		Hosted: toAIContacts(c.Hosted),
+		Users:  make([]dto.IntelligenceRef, len(c.Users)),
+		People: make([]dto.PeopleGroup, len(c.People)),
+	}
+	for i, g := range c.OrgAIs {
+		out.OrgAIs[i] = dto.OrgAIs{
+			Org: dto.ContactOrg{ID: g.Organization.ID, Name: g.Organization.Name, Slug: g.Organization.Slug},
+			AIs: toAIContacts(g.AIs),
+		}
 	}
 	for i, u := range c.Users {
 		out.Users[i] = convert.IntelligenceRef(u, dto.IntelligenceRoleUser, "")
@@ -107,7 +112,7 @@ func (s *server) putMachine(w http.ResponseWriter, r *http.Request, p authn.Prin
 func toAIContact(row intelligences.AIRow) dto.AIContact {
 	out := dto.AIContact{
 		Intelligence: convert.IntelligenceRef(row.Intelligence, dto.IntelligenceRoleAI, ""),
-		Machine:      row.Machine, Folder: row.Folder, FolderLabel: row.FolderLabel,
+		OrgID:        row.OrgID, Folder: row.Folder, FolderLabel: row.FolderLabel,
 		App: row.App, Online: row.Online, LastSeenAt: convert.OptTime(row.LastSeenAt),
 	}
 	if row.Owner != nil {

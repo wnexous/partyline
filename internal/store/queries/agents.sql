@@ -48,6 +48,16 @@ WHERE a.owner_id = sqlc.arg(user_id)
                WHERE x.iid = sqlc.arg(user_id))
 ORDER BY a.name, u.username, a.id;
 
+-- name: ListOrgAIs :many
+-- The AIs that are members of the organizations an identity belongs to, each with the organization it is
+-- listed under (AD-016): an AI of two of them comes twice.
+SELECT m.org_id AS org_id, sqlc.embed(a)
+FROM org_members me
+JOIN org_members m ON m.org_id = me.org_id
+JOIN agents a ON a.id = m.iid
+WHERE me.iid = ?
+ORDER BY m.org_id, a.id;
+
 -- name: UpdateAgentDescription :exec
 UPDATE agents SET description = ? WHERE id = ?;
 

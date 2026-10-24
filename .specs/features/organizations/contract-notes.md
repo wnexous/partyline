@@ -766,3 +766,38 @@ Where a section refines the design, it says so.
   and its operator Atlas in a second organization of alice's ("line") apart from her rooms, so that "a viewer of a room" and "a
   member of the connection's organization" are different people; `storeChatIn` places a seeded connector in a chosen organization.
   The api helper `shareConnector` still writes the legacy grant besides the membership for the readers T28 and T32 move.
+
+## T28: Contacts by organization (OMEM-03, ORG-02)
+
+- **`GET /contacts`** is `{me, org_ais, hosted, users, people}`; `machines`, `unlinked` and `shared` are gone.
+  - `org_ais`: one group per organization the caller belongs to, by name, empty groups included: `{org: {id, name, slug}, ais:
+    [...]}`. The AIs are the members of the organization (`ListOrgAIs`), whatever their permission or the caller's, by display
+    name (case-insensitive, then id). An AI that belongs to two of the caller's organizations is listed in both groups.
+  - `hosted`: the AIs the caller hosts (`agents.owner_id`) that no group lists, by name. An AI hosted by me whose organizations I
+    left stays reachable here, so messaging, merging (T24) and deleting it still have an entry point.
+  - `AIContact` is the intelligence, `owner` (set only when **another** user hosts the AI), `org_id` (its home organization),
+    `folder`, `folder_label` (`~/…` against the host's home folder, from the `machines` row that stays), `app`, `online` and
+    `last_seen_at`. It has no machine key: no hostname or label appears anywhere in the response (AD-022).
+  - `people`: one group per connection of my organizations (T27); `users`: unchanged.
+- **DM targets (DM-04)**: `conversations.contact` asks `CanSee` as the caller, which for an AI is the AI itself. `send_message to`
+  reaches every user of the instance and the AIs the sender shares an organization with; any other AI answers 404
+  `contact_not_found`, the same body as an unknown id. Before, an AI saw what its host saw.
+- **Specs amended** (`intelligences/spec.md`): CONT-01 (organizations replace the machine tree, shares and connector grants),
+  DM-04 (the AI sees as itself), DM-08 (a DM of an AI is seen by its two intelligences and the managers of the AI's home
+  organization; grants give nothing) and PEOP-04 (a connection's people are for the members of its organization), each marked
+  "amended by AD-016".
+- **Left in place for T57 and T51**: `intelligences.OwnAIs` (the machine tree, `tree.go`), `GET /agent/contacts/tree` and
+  `SetMachineLabel` with `PUT /machines/{hostname}` still exist; `partyline agents` reads the tree and T57 replaces it by
+  `/agent/agents` (see its note). `ListAgentsForUser` stays for the store tests until the grants go.
+- **Web bridge (kept deliberately small)**: the new response breaks the contacts page, the pickers and the connection page, so
+  they are adapted here and Phase 8 (T48) owns the real organization UI. The contacts page shows one section per organization
+  (filter over names, handles, folders, apps and the organization's name) and a "Hosted by me" section; merging is offered on
+  the hosted AIs only, and only when the user hosts another AI of the same home organization (`mergeTargets`). The pickers
+  (`pickables`) list the organizations' AIs group by group, then the hosted ones, search no machine and show the folder. The
+  operator picker of a connection offers the AIs whose home is the connection's organization (ORG-07). The machine group
+  component and the machine rename mutation are deleted.
+- **Tests**: `TestContactsListTheAIsOfTheCallersOrganizationsByOrganization`, `TestContactsFollowTheOrganizationsOfTheCaller`
+  (another user's AI after joining its organization and not before; an AI hosted by me stays under "hosted" after I leave),
+  `TestContactsShowNoMachines`, `TestContactsOfOtherUsersHoldOnlyTheirOrganizationsData`, `TestContactsLeaveOutDisabledUsers`,
+  `TestContactsListHostedAIsByName`, `TestAIDMsReachUsersAndTheAIsOfItsOrganizations` (a foreign organization's AI → 404
+  `contact_not_found`, a user works); web: `contacts.test.tsx`, `lib/contacts.test.ts`, the pickers, connection and a11y tests.

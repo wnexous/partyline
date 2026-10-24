@@ -3,17 +3,17 @@ package dto
 import "time"
 
 // Contacts is GET /contacts: everyone the caller can reach, grouped as the contacts page shows
-// them (CONT-01).
+// them (CONT-01): the AIs by organization, the ones they host that no organization lists, the other users
+// and the people of their connections. The machines are not part of it (AD-022).
 type Contacts struct {
 	Me IntelligenceRef `json:"me"`
-	// Machines are the caller's own AIs that live in a folder, per machine and as a folder tree
-	// (TREE-01..03): machines with an online AI first, then by label.
-	Machines []MachineTree `json:"machines"`
-	// Unlinked are the caller's AIs without a folder, the identities v0.3 left (TREE-06), the
-	// most recently seen first.
-	Unlinked []AIContact `json:"unlinked"`
-	// Shared are the AIs of other users that the caller may use, by name.
-	Shared []AIContact `json:"shared"`
+	// OrgAIs has one group for each organization the caller belongs to, by organization name (empty ones
+	// included), with the AIs that are members of it, by name. An AI that belongs to several of them is
+	// listed in each (AD-016).
+	OrgAIs []OrgAIs `json:"org_ais"`
+	// Hosted are the AIs hosted on the caller's computers that no group of OrgAIs lists, by name: they belong
+	// to none of the caller's organizations any more. Every other AI the caller hosts is in its groups.
+	Hosted []AIContact `json:"hosted"`
 	// Users are the other enabled users of the instance, by name.
 	Users []IntelligenceRef `json:"users"`
 	// People has one group for each connection of the organizations the caller belongs to, by connection
@@ -21,8 +21,21 @@ type Contacts struct {
 	People []PeopleGroup `json:"people"`
 }
 
+// OrgAIs is the AIs of one organization of the caller.
+type OrgAIs struct {
+	Org ContactOrg  `json:"org"`
+	AIs []AIContact `json:"ais"`
+}
+
+// ContactOrg names an organization in the contacts.
+type ContactOrg struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
 // AgentContactsTree is GET /agent/contacts/tree, the data of `partyline agents` (TREE-07): the
-// token owner's own AIs.
+// token owner's own AIs. It goes with the machines in T57 (AD-022).
 type AgentContactsTree struct {
 	Machines []MachineTree `json:"machines"`
 	Unlinked []AIContact   `json:"unlinked"`
@@ -54,11 +67,12 @@ type TreeNode struct {
 // AIContact is an AI as the contacts page and `partyline agents` list it (TREE-03).
 type AIContact struct {
 	Intelligence IntelligenceRef `json:"intelligence"`
-	// Owner is set for the AIs of other users (Contacts.Shared).
-	Owner       *IntelligenceRef `json:"owner,omitempty"`
-	Machine     string           `json:"machine"`
-	Folder      string           `json:"folder"`
-	FolderLabel string           `json:"folder_label"`
+	// Owner is the user who hosts the AI, set when it is another user than the caller.
+	Owner *IntelligenceRef `json:"owner,omitempty"`
+	// OrgID is the AI's home organization.
+	OrgID       string `json:"org_id"`
+	Folder      string `json:"folder"`
+	FolderLabel string `json:"folder_label"`
 	// App is the id of the harness the AI currently runs in.
 	App        string     `json:"app"`
 	Online     bool       `json:"online"`

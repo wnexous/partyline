@@ -12,13 +12,12 @@ import {
   makeContacts,
   makeConversation,
   makeIntelligence,
-  makeMachineTree,
   makeMe,
   makeMember,
   makeMessage,
+  makeOrgAIs,
   makeProfile,
   makeRoom,
-  makeTreeNode,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { makeQueryClient, renderRoute } from "@/test/render";
@@ -39,28 +38,26 @@ const members: RoomMember[] = [
   }),
 ];
 
-// What the user may add to a room (UI-10): their own AIs, AIs shared with them and other users.
+// What the user may add to a room (UI-10): the AIs of their organizations and other users.
 const releaseBot = makeAI({ id: "a1", display_name: "release-bot", handle: "release-bot" });
 const triage = makeAI({ id: "a2", display_name: "triage", handle: "triage" });
 const docsWriter = makeAI({ id: "a3", display_name: "docs-writer", handle: "docs-writer" });
 const bob = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
 const cora = makeIntelligence({ id: "u3", display_name: "Cora Dias", handle: "cora" });
 const contacts = makeContacts({
-  machines: [
-    makeMachineTree({
-      nodes: [
-        makeTreeNode({ ai: makeAIContact({ intelligence: releaseBot, online: true }) }),
-        makeTreeNode({
-          ai: makeAIContact({
-            intelligence: triage,
-            folder: "/home/dev/triage",
-            folder_label: "~/triage",
-          }),
+  org_ais: [
+    makeOrgAIs({
+      ais: [
+        makeAIContact({ intelligence: releaseBot, online: true }),
+        makeAIContact({
+          intelligence: triage,
+          folder: "/home/dev/triage",
+          folder_label: "~/triage",
         }),
+        makeAIContact({ intelligence: docsWriter, owner: bob, online: true }),
       ],
     }),
   ],
-  shared: [makeAIContact({ intelligence: docsWriter, owner: bob, online: true, machine: "cloud" })],
   users: [bob, cora],
 });
 

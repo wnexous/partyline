@@ -4,14 +4,7 @@ import { queryKeys } from "@/lib/api/queries";
 import { useLiveStore } from "@/lib/live/store";
 import { FakeSocket } from "@/test/fake-socket";
 import { json, mockApi } from "@/test/fetch";
-import {
-  makeAI,
-  makeAIContact,
-  makeContacts,
-  makeMachineTree,
-  makeMe,
-  makeTreeNode,
-} from "@/test/fixtures";
+import { makeAI, makeAIContact, makeContacts, makeMe, makeOrgAIs } from "@/test/fixtures";
 import { renderRoute } from "@/test/render";
 
 /*
@@ -35,11 +28,7 @@ describe("revoked session on the live socket (UI-02)", () => {
       "GET /contacts": json(
         200,
         makeContacts({
-          machines: [
-            makeMachineTree({
-              nodes: [makeTreeNode({ ai: makeAIContact({ intelligence: bot }) })],
-            }),
-          ],
+          org_ais: [makeOrgAIs({ ais: [makeAIContact({ intelligence: bot })] })],
         }),
       ),
     });

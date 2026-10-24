@@ -61,7 +61,7 @@ import {
   LevelManage,
   type UpdateConnectorRequest,
 } from "@/lib/api/types.gen";
-import { flattenTree } from "@/lib/contacts";
+import { allAIs } from "@/lib/contacts";
 import { type MessageKey, useI18n, useT } from "@/lib/i18n";
 import { formatAbsolute, formatRelative } from "@/lib/time";
 
@@ -428,9 +428,8 @@ function DeliveryForm({ connector: c }: { connector: Connector }) {
   const [error, setError] = useState<string | null>(null);
   const [operatorError, setOperatorError] = useState<string | null>(null);
   const [deliverError, setDeliverError] = useState<string | null>(null);
-  const own = contacts.data
-    ? [...contacts.data.machines.flatMap((m) => flattenTree(m.nodes)), ...contacts.data.unlinked]
-    : [];
+  // The operator is an AI whose home is the connection's organization (ORG-07).
+  const own = contacts.data ? allAIs(contacts.data).filter((a) => a.org_id === c.org_id) : [];
   const missing = current !== "" && !own.some((a) => a.intelligence.id === current);
   const dirty =
     operatorId !== current || deliver !== c.deliver || mentionsOnly !== c.groups_mentions_only;

@@ -12,12 +12,11 @@ import {
   makeAIContact,
   makeContacts,
   makeIntelligence,
-  makeMachineTree,
   makeMe,
+  makeOrgAIs,
   makePerson,
   makeProfile,
   makeRoom,
-  makeTreeNode,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
 import { renderRoute } from "@/test/render";
@@ -830,14 +829,7 @@ describe("managing an AI", () => {
   it("deletes the AI after confirmation and returns to the contacts", async () => {
     const { calls } = api(atlas, {
       "DELETE /agents/a1": new Response(null, { status: 204 }),
-      "GET /contacts": json(200, {
-        me: ana,
-        machines: [],
-        unlinked: [],
-        shared: [],
-        users: [],
-        people: [],
-      }),
+      "GET /contacts": json(200, { me: ana, org_ais: [], hosted: [], users: [], people: [] }),
     });
     const user = userEvent.setup();
     const { router } = renderRoute("/contacts/a1");
@@ -894,12 +886,13 @@ describe("merging an AI from its profile (MRG-01, MRG-02)", () => {
     await user.click(await screen.findByRole("button", { name: "Merge Atlas into another AI" }));
     const dialog = await screen.findByRole("dialog", { name: "Merge Atlas into…" });
     const picker = within(dialog).getByRole("combobox", { name: "AI" });
-    // The owner's AIs only: not the one being merged away and never one shared with the user.
+    // The user's AIs of the same home organization only: not the one being merged away, none of
+    // another organization (Lab, the old helper) and none that another user hosts (Sage).
     expect(
       within(picker)
         .getAllByRole("option")
         .map((o) => o.textContent),
-    ).toEqual(["Pick an AI", "Notes (@notes)", "Lab (@lab)", "Old helper (@old-helper)"]);
+    ).toEqual(["Pick an AI", "Notes (@notes)"]);
     await user.selectOptions(picker, "a2");
     await user.click(within(dialog).getByRole("button", { name: "Merge AI" }));
 
@@ -950,11 +943,7 @@ describe("merging an AI from its profile (MRG-01, MRG-02)", () => {
       "GET /contacts": json(
         200,
         makeContacts({
-          machines: [
-            makeMachineTree({
-              nodes: [makeTreeNode({ ai: makeAIContact({ intelligence: atlasRef }) })],
-            }),
-          ],
+          org_ais: [makeOrgAIs({ ais: [makeAIContact({ intelligence: atlasRef })] })],
         }),
       ),
     });

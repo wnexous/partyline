@@ -9,7 +9,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { withIntelligence, withMachineLabel, withoutAI } from "@/lib/contacts";
+import { withIntelligence, withoutAI } from "@/lib/contacts";
 import { api } from "./client";
 import {
   type AcceptInviteRequest,
@@ -45,7 +45,6 @@ import {
   type InviteInfo,
   type List,
   type LoginRequest,
-  type Machine,
   type MarkReadRequest,
   MaxPreviewLength,
   type Me,
@@ -64,7 +63,6 @@ import {
   type RoomFile,
   type RoomMember,
   type Session,
-  type SetMachineLabelRequest,
   type SetupRequest,
   type SetupStatus,
   type Sharing,
@@ -811,24 +809,6 @@ export const peopleQuery = (connectorId: string, q = "") =>
 
 export const usePeople = (connectorId: string, q = "", enabled = true) =>
   useInfiniteQuery({ ...peopleQuery(connectorId, q), enabled, placeholderData: keepPreviousData });
-
-/**
- * Names a machine (TREE-04): the label replaces the hostname in the tree; an empty one brings the
- * hostname back. Cached AI profiles show the label of their machine, so they are refetched.
- */
-export function useSetMachineLabel() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ hostname, label }: { hostname: string; label: string }) =>
-      api<Machine>("PUT", `/machines/${encodeURIComponent(hostname)}`, {
-        label,
-      } satisfies SetMachineLabelRequest),
-    onSuccess: (machine) => {
-      qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withMachineLabel(old, machine));
-      qc.invalidateQueries({ queryKey: ["intelligences"] });
-    },
-  });
-}
 
 // ---------------------------------------------------------------------------------------------
 // Room files (FILES-01, FILES-04)
