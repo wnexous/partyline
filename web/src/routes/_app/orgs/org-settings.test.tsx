@@ -6,7 +6,7 @@ import * as matchers from "vitest-axe/matchers";
 import type { Organization } from "@/lib/api/types.gen";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeMe, makeOrg } from "@/test/fixtures";
+import { makeMe, makeOrg, makeOrgChart } from "@/test/fixtures";
 import { renderRoute } from "@/test/render";
 
 expect.extend(matchers);
@@ -515,11 +515,11 @@ describe("the organization's page for someone who cannot see it (CHART-02)", () 
     await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/o1/settings"));
   });
 
-  it("opens /orgs/{id} on the settings, the one page of the organization there is", async () => {
-    api();
+  it("opens /orgs/{id} on the org chart, the first page of an organization", async () => {
+    api(acme, { "GET /orgs/o1/chart": json(200, makeOrgChart()) });
     const { router } = renderRoute("/orgs/o1");
-    await page();
-    expect(router.state.location.pathname).toBe("/orgs/o1/settings");
+    await screen.findByRole("tree", { name: "Org chart of Acme" });
+    expect(router.state.location.pathname).toBe("/orgs/o1/chart");
   });
 });
 

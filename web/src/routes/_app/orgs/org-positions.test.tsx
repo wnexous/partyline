@@ -188,10 +188,11 @@ describe("only admins edit the chart (OMEM-04)", () => {
   it.each([
     ["member", "member"],
     ["guest", "guest"],
-  ] as const)("sends a %s to the members page", async (_, permission) => {
+  ] as const)("sends a %s to the org chart", async (_, permission) => {
     api({}, permission);
     const { router } = renderRoute("/orgs/o1/positions");
-    await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/o1/members"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/orgs/o1/chart"));
+    expect(await screen.findByRole("tree", { name: "Org chart of Acme" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 1, name: "Positions" })).toBeNull();
   });
 

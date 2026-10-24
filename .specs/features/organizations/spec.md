@@ -182,7 +182,7 @@ André wants partyline to mirror a company (2026-10-23, with a hand-drawn org ch
 | CHART-01 | P1: Org chart view | Tasks | Implementing |
 | CHART-02 | P1: Org chart view | Tasks | Implementing |
 | CHART-03 | P1: Org chart view | Tasks | Implementing |
-| CHART-04 | P1: Org chart view | Tasks | In Tasks |
+| CHART-04 | P1: Org chart view | Tasks | Implementing |
 | OUPG-01 | Edge cases | Tasks | Implementing |
 | OUPG-02 | Edge cases | Tasks | Implementing |
 

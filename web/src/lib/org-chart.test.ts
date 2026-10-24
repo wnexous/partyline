@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { Position } from "@/lib/api/types.gen";
-import { descendantsOf, movablePositions, positionOptions, positionTree } from "./org-chart";
+import {
+  makeChartMember,
+  makeChartPosition,
+  makeIntelligence,
+  makeOrgChart,
+} from "@/test/fixtures";
+import {
+  buildChartTree,
+  type ChartTreeNode,
+  descendantsOf,
+  movablePositions,
+  positionOptions,
+  positionTree,
+  visibleNodes,
+} from "./org-chart";
 
 /*
  * The positions of an organization as the pages use them (POS-01, POS-02, POS-04): in tree order,
@@ -168,5 +182,145 @@ describe("the positions as a forest", () => {
     const all = (nodes: ReturnType<typeof positionTree>): string[] =>
       nodes.flatMap((n) => [n.position.id, ...all(n.children)]);
     expect(all(positionTree(looped)).sort()).toEqual(["a", "b", "c"]);
+  });
+});
+
+/*
+ * The chart as one tree to draw (CHART-01, CHART-02): the positions with their holders, the
+ * members with no position under the member they hang under, and the rest under "Unassigned".
+ */
+describe("the chart as one tree (CHART-01, CHART-02)", () => {
+  const who = (id: string, name: string) =>
+    makeChartMember({ intelligence: makeIntelligence({ id, display_name: name, handle: id }) });
+  const ana = who("u1", "Ana");
+  const bob = who("u2", "Bob");
+  const cora = who("u3", "Cora");
+  const gus = { ...who("u4", "Gus"), under: "u2" };
+  const hal = { ...who("u5", "Hal"), under: "u4" };
+  const eli = who("u6", "Eli");
+
+  /** A tree as nested [label, children] pairs: positions by name, members by name, "Unassigned". */
+  const shape = (nodes: ChartTreeNode[]): unknown[] =>
+    nodes.map((n) => [
+      n.kind === "position"
+        ? `position ${n.position?.name}`
+        : n.kind === "member"
+          ? `member ${n.member?.intelligence.display_name}`
+          : "unassigned",
+      shape(n.children),
+    ]);
+
+  it("draws the holders of a position, then the positions below it", () => {
+    const chart = makeOrgChart({
+      positions: [
+        makeChartPosition({ id: "p1", name: "Admin", holders: [ana] }),
+        makeChartPosition({ id: "p2", name: "Manager", parent_id: "p1", holders: [cora, bob] }),
+      ],
+    });
+    expect(shape(buildChartTree(chart))).toEqual([
+      [
+        "position Admin",
+        [
+          ["member Ana", []],
+          [
+            "position Manager",
+            [
+              ["member Bob", []],
+              ["member Cora", []],
+            ],
+          ],
+        ],
+      ],
+    ]);
+  });
+
+  it("hangs a member with no position under the member it names, however deep the chain", () => {
+    const chart = makeOrgChart({
+      positions: [makeChartPosition({ id: "p1", name: "Manager", holders: [bob] })],
+      members: [hal, gus],
+    });
+    expect(shape(buildChartTree(chart))).toEqual([
+      ["position Manager", [["member Bob", [["member Gus", [["member Hal", []]]]]]]],
+    ]);
+  });
+
+  it("puts the members nobody hangs them under in an Unassigned group after the positions", () => {
+    const chart = makeOrgChart({
+      positions: [makeChartPosition({ id: "p1", name: "Admin", holders: [ana] })],
+      unassigned: [eli],
+    });
+    expect(shape(buildChartTree(chart))).toEqual([
+      ["position Admin", [["member Ana", []]]],
+      ["unassigned", [["member Eli", []]]],
+    ]);
+  });
+
+  it("has no Unassigned group when everyone has a place", () => {
+    const chart = makeOrgChart({
+      positions: [makeChartPosition({ id: "p1", name: "Admin", holders: [ana] })],
+    });
+    expect(buildChartTree(chart).map((n) => n.kind)).toEqual(["position"]);
+  });
+
+  it("files a member whose 'under' names no one the chart lists under Unassigned instead of losing it", () => {
+    const stray = { ...who("u7", "Stray"), under: "gone" };
+    const chart = makeOrgChart({ members: [stray] });
+    expect(shape(buildChartTree(chart))).toEqual([["unassigned", [["member Stray", []]]]]);
+  });
+
+  it("draws each member once even when two members name each other (a loop)", () => {
+    const a = { ...who("u8", "A"), under: "u9" };
+    const b = { ...who("u9", "B"), under: "u8" };
+    const chart = makeOrgChart({ members: [a, b] });
+    const ids = (nodes: ChartTreeNode[]): string[] =>
+      nodes.flatMap((n) => [n.id, ...ids(n.children)]);
+    const all = ids(buildChartTree(chart)).filter((id) => id.startsWith("member:"));
+    expect(all.sort()).toEqual(["member:u8", "member:u9"]);
+  });
+
+  it("gives every node an id that tells its kind and that nothing else shares", () => {
+    const chart = makeOrgChart({
+      positions: [makeChartPosition({ id: "u1", name: "Admin", holders: [ana] })],
+      unassigned: [eli],
+    });
+    const ids = (nodes: ChartTreeNode[]): string[] =>
+      nodes.flatMap((n) => [n.id, ...ids(n.children)]);
+    expect(ids(buildChartTree(chart))).toEqual([
+      "position:u1",
+      "member:u1",
+      "unassigned",
+      "member:u6",
+    ]);
+  });
+
+  it("lists what is visible, in tree order, leaving out what a collapsed node hides", () => {
+    const chart = makeOrgChart({
+      positions: [
+        makeChartPosition({ id: "p1", name: "Admin", holders: [ana] }),
+        makeChartPosition({ id: "p2", name: "Manager", parent_id: "p1", holders: [bob] }),
+      ],
+      members: [gus],
+    });
+    const tree = buildChartTree(chart);
+    expect(visibleNodes(tree, new Set()).map((v) => v.node.id)).toEqual([
+      "position:p1",
+      "member:u1",
+      "position:p2",
+      "member:u2",
+      "member:u4",
+    ]);
+    expect(visibleNodes(tree, new Set(["position:p2"])).map((v) => v.node.id)).toEqual([
+      "position:p1",
+      "member:u1",
+      "position:p2",
+    ]);
+    const v = visibleNodes(tree, new Set());
+    expect(v.map((x) => [x.node.id, x.level, x.parent])).toEqual([
+      ["position:p1", 1, null],
+      ["member:u1", 2, "position:p1"],
+      ["position:p2", 2, "position:p1"],
+      ["member:u2", 3, "position:p2"],
+      ["member:u4", 4, "member:u2"],
+    ]);
   });
 });

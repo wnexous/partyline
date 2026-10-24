@@ -200,11 +200,11 @@ function MembersTable({
   return (
     <table
       aria-label={t("orgs.membersLabel", { org: orgName })}
-      className="w-full text-sm max-md:block"
+      className="w-full text-sm max-xl:block"
     >
-      <thead className="max-md:sr-only">
+      <thead className="max-xl:sr-only">
         <tr className="border-b text-left text-xs text-muted-foreground">
-          <th scope="col" className="px-4 py-2 font-medium md:px-8">
+          <th scope="col" className="px-4 py-2 font-medium xl:px-8">
             {t("orgs.colMember")}
           </th>
           <th scope="col" className="px-3 py-2 font-medium">
@@ -213,15 +213,15 @@ function MembersTable({
           <th scope="col" className="px-3 py-2 font-medium">
             {t("orgs.colPosition")}
           </th>
-          <th scope="col" className="px-3 py-2 font-medium">
+          <th scope="col" className="px-3 py-2 font-medium whitespace-nowrap">
             {t("orgs.colInvitedBy")}
           </th>
-          <th scope="col" className="px-4 py-2 text-right font-medium md:px-8">
+          <th scope="col" className="px-4 py-2 text-right font-medium xl:px-8">
             {t("orgs.colActions")}
           </th>
         </tr>
       </thead>
-      <tbody className="max-md:block">
+      <tbody className="max-xl:block">
         {members.map((m) => (
           <MemberRow
             key={m.intelligence.id}
@@ -297,21 +297,21 @@ function MemberRow({
   };
 
   return (
-    <tr className="border-b max-md:grid max-md:grid-cols-2 max-md:gap-x-3 max-md:gap-y-2 max-md:px-4 max-md:py-3">
-      <th scope="row" className="min-w-0 text-left font-normal max-md:col-span-2 md:px-8 md:py-3">
+    <tr className="border-b max-xl:grid max-xl:grid-cols-[auto_minmax(0,1fr)] max-xl:gap-x-3 max-xl:gap-y-2 max-xl:px-4 max-xl:py-3 md:max-xl:px-8">
+      <th scope="row" className="min-w-0 text-left font-normal max-xl:col-span-2 xl:px-8 xl:py-3">
         <span id={nameId} className="flex min-w-0 items-center gap-3">
           <IntelligenceAvatar intelligence={who} decorative />
           <IntelligenceName intelligence={who} viewerId={viewerId} showHandle profileLink />
         </span>
       </th>
-      <td className="md:px-3 md:py-3">
+      <td className="xl:px-3 xl:py-3">
         {admin ? (
           <NativeSelect
             aria-label={t("orgs.permissionOf", { name: who.display_name })}
             value={m.permission}
             disabled={update.isPending}
             onChange={(e) => setPermission(e.target.value as Permission)}
-            className="h-8 max-w-40"
+            className="h-8 w-32"
           >
             {[PermissionAdmin, PermissionMember, PermissionGuest].map((p) => (
               <option key={p} value={p}>
@@ -325,7 +325,7 @@ function MemberRow({
           </Badge>
         )}
       </td>
-      <td className="min-w-0 md:px-3 md:py-3">
+      <td className="min-w-0 xl:px-3 xl:py-3">
         {m.position_name ? (
           <span className="break-words">{m.position_name}</span>
         ) : (
@@ -337,11 +337,11 @@ function MemberRow({
           </>
         )}
       </td>
-      <td className="min-w-0 text-muted-foreground max-md:col-span-2 md:px-3 md:py-3">
+      <td className="min-w-0 text-muted-foreground max-xl:col-span-2 xl:px-3 xl:py-3">
         {m.invited_by ? t("orgs.invitedBy", { name: m.invited_by.display_name }) : null}
       </td>
-      <td className="max-md:col-span-2 md:px-8 md:py-3">
-        <div className="flex flex-wrap gap-2 md:justify-end">
+      <td className="max-xl:col-span-2 xl:px-8 xl:py-3">
+        <div className="flex flex-wrap gap-2 xl:justify-end">
           {m.can_move ? (
             <Button variant="outline" size="sm" aria-describedby={nameId} onClick={() => onMove(m)}>
               <MoveRightIcon aria-hidden="true" />

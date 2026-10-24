@@ -201,7 +201,6 @@ function InviteForm({
               <option value="">{t("orgs.noPosition")}</option>
               {tree.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {"  ".repeat(p.depth)}
                   {p.name}
                 </option>
               ))}

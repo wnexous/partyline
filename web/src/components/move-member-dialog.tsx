@@ -146,7 +146,6 @@ function MoveForm({
         >
           {choices.map((c) => (
             <option key={c.id || "none"} value={c.id} disabled={c.disabled}>
-              {"  ".repeat(c.depth)}
               {c.name}
             </option>
           ))}

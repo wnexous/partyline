@@ -1909,7 +1909,7 @@ them, so that module is **gone**: the web reads `Organization`, `Position`, `Org
   and the viewer's part in it (Admin, Member, Guest), then the sections as a `nav` named "Sections of {name}" (T41: Settings; T42-T44
   add Members, Positions, Org chart). `{orgId}` may be the id or the address: once the organization is read, an address in the URL is
   replaced (history replace) by the id, which every page and the live refresh key on. `/orgs/{id}` redirects to the first page there is
-  (T41: settings; T44 makes it the chart). The list of organizations (T40) links each row to "Settings of {name}".
+  (T41: settings; since T44 it is the chart). The list of organizations (T40) links each row to "Settings of {name}".
 - **The page** (`orgs/$orgId/settings.tsx`): "Organization settings", then three sections. All text and behaviour below is for the
   viewer's own permission as `GET /orgs/{org}` reports it.
   - **Details**: an admin gets the **photo** (`PhotoEditor`, new shared component extracted from the profile editor with the behaviour
@@ -2107,9 +2107,8 @@ them, so that module is **gone**: the web reads `Organization`, `Position`, `Org
   - **Delete** (POS-09), with the literal text: "Its holders and its child positions move to {parent}. Nobody is removed from the
     organization." (the parent's name), or for a root "It has no parent, so its holders are left with no position and its child positions
     become roots. Nobody is removed from the organization.". Failures are told inside the dialog, which stays open.
-  - A member or guest who opens the page is **sent to the members page** (`Navigate`, replace). **Deviation / hand-over to T44**: the task says
-    "to the chart", which does not exist in this commit and a typed route cannot point at it; T44 changes the target to the chart and the test with it.
-    The tab is shown only to admins (`OrgBar`).
+  - A member or guest who opens the page is **sent to the org chart** (`Navigate`, replace; in the T43 commit, before the chart existed, it was the
+    members page, and T44 pointed it at the chart as the task says). The tab is shown only to admins (`OrgBar`).
 - **Shared code**: `positionTree` (new; `positionOptions` is built on it) in `lib/org-chart.ts`.
 - **Texts** (en and pt-BR): `orgs.tabPositions`, `orgs.positions*`, `orgs.addRoot|addChild|positionNameLabel|rename|renameLabel|positionRule|parentOf|noParent`,
   `orgs.holders*`, `orgs.deletePosition*`, `orgs.position{Created,Renamed,Moved,Deleted,Taken,Cycle,Forbidden,Failed}`.
@@ -2118,3 +2117,53 @@ them, so that module is **gone**: the web reads `Organization`, `Position`, `Org
   a root, the new place shown, the cycle message, 403 and failure; adding a root and a child, 61 / 60 / 60 accented characters, blank, taken, 422, Escape;
   renaming, unchanged, 61 characters, taken; deleting a middle position and a root with the literal texts, the chart after it, 403, cancel; Portuguese;
   axe for the tree, both editors, the dialog and Portuguese) and `lib/org-chart.test.ts` (the forest).
+
+## T44: Org chart page (CHART-01, CHART-02, CHART-03, CHART-04)
+
+- **The page** (`orgs/$orgId/chart.tsx`, the first tab and where `/orgs/{id}` opens): the tree of `GET /orgs/{org}/chart`. Every member sees it, guests
+  included (CHART-02); anyone else gets the layout's not-found page, and so does a chart that answers 404 while the organization read succeeded
+  (`OrgNotFound`, now a component shared with the layout). A failure says so with a retry. Admins (the chart's `viewer.admin`) also get **"Edit positions"**,
+  a link to the editor.
+- **The model** (`lib/org-chart.ts`, pure, 11 tests): `buildChartTree(chart)` makes one tree of nodes `position:<id>`, `member:<iid>` and `unassigned`:
+  the positions as a forest (siblings by name) with, in each, its holders by name and then the positions below it; under each member the members
+  with no position that name it in `under` (a guest under its inviter, an AI under its creator), however deep; and last an **"Unassigned"** group for the
+  members nobody hangs under, those whose `under` names someone the chart does not list, and any a loop left out. Every member is drawn exactly once.
+  `visibleNodes(tree, collapsed)` lists what shows, with each node's level and parent.
+- **The tree** (`components/chart-tree.tsx`): `role="tree"` (named "Org chart of {org}") of `treeitem`s, each named by its own name element
+  (`aria-labelledby`, so a branch is not named after everything inside it) and described by its details (`aria-describedby`: @handle, kind, parts), with
+  `aria-level`, `aria-setsize`, `aria-posinset` and, only on items that hold others, `aria-expanded`; their children are in a `role="group"`. They are
+  `div`s: the roles carry the structure, and Biome's rules keep an interactive role off a list. **Roving tabindex**: one item has `tabindex=0`, the one
+  last focused while it still shows, else the first; its own link and buttons are tab stops only then (`tabbable`), so Tab leaves the tree after them.
+  Keys (the ARIA authoring practices'): Down/Up the next/previous item showing; Right opens a closed item, on an open one goes to its first child; Left
+  closes an open item (the focus stays on it), on a closed one or a leaf goes to its parent; Home/End the first/last showing; **Enter and Space toggle an
+  item that holds others and, on one that holds nothing, open that member's profile** (a position or the group with nothing in it does nothing). A link or button
+  inside an item keeps its own keys. Everything starts **open** (each item's own arrow button, `tabindex=-1`, toggles it with the mouse); what the viewer
+  closes stays closed when the chart refreshes live, a new item shows open. The focus follows a click.
+- **A row** (`ChartRow`): a position shows its name and how many hold it; a member the picture, the name (a link to the profile), @handle, the kind
+  ("AI" or "Person"), "You", the **Admin** / **Guest** badge (a plain member has none), and for an AI the online dot (live presence over the chart's `online`;
+  people have none). **Actions only where the flags say so** (CHART-03), as short words with the member in the accessible name: **Move** ("Move {name}",
+  `can_move`), **Delete** ("Delete {name}", `can_delete` and `delete_effect: "delete"`, an AI of this organization) and **Remove** ("Remove {name} from
+  {org}", `can_delete` otherwise). They open the dialogs of the members page: `MoveMemberDialog` (starting on the position the member holds in the chart),
+  `DeleteAIDialog` and `RemoveFromOrgDialog`; the chart refreshes through the same queries. The tests isolate each flag (an AI the viewer manages but
+  may not delete shows Move only; an inviter with no position shows Remove only; a manager above a member shows Move only).
+- **Small screens** (CHART-04): the children of an item are indented by 0.75 rem (1 rem from `md`) and a vertical rule, for four levels; deeper ones
+  stop moving right. Names truncate, the handle and badges wrap under the name, and the actions wrap below. Navigation: the chart is the first tab
+  (Org chart, Members, Positions for admins, Settings); `/orgs/{id}` opens it; each row of the organizations list links to it ("Org chart of {org}"); the
+  switcher menu has an "Org chart" item; the positions editor sends non-admins to it.
+- **Looked at in a real browser** (Chromium through Playwright, against the built binary and the merged Phase 3 API, with an organization seeded through
+  the API: a five-level chart, a very long position name, a long display name, AIs, an invited user): every organization page, the account settings and
+  the sidebar at **360, 480, 768, 900, 1024, 1280, 1440 and 1920 px have no sideways scroll** (`scrollWidth <= clientWidth`). It found and fixed
+  what happy-dom cannot see: the members table needs more room than the 448 px a 768 px window leaves beside the sidebar, so **it is a table from 1280 px
+  (`xl`) and stacked rows (a two-column grid per row) below**; the settings sections are **two columns only from `lg`** (they overflowed at 768 px,
+  the account settings page too, which shares `PageSection`); a row of the organizations list squeezed the name to "A.." so its links wrap below it; the positions
+  rows put the controls on a line of their own on a phone; the chart keeps a member's picture and name on one line; and the position selects show no
+  indentation (the closed select showed the indent of the chosen option). No Playwright test was added here: the organization flow and the 360 px check are T54's.
+- **Texts** (en and pt-BR): `orgs.tabChart|chart*`, `orgs.editPositions|unassigned|unassignedHint|kindPerson|expand|collapse|chartMove|chartDelete|chartRemove|removeShort`,
+  `orgs.chartLink`.
+- **Tests**: `orgs/org-chart.test.tsx` (53: the tree order and levels, a guest inside its inviter's item and an AI inside its creator's, Unassigned and
+  its absence, every field of a row, the viewer, the holder counts, live presence, profile links, descriptions, set sizes, expandability, the live refresh;
+  the keyboard: the one tab stop, Tab, Up/Down, Home/End, the ends, Left/Right close/open/descend/ascend, Enter and Space, Enter on a leaf opens the profile,
+  the focus when a collapsed item held it, a vanished tab stop, click, the arrow buttons, a button keeps its keys, the actions are tab stops only on the focused
+  item; the actions for a member, Lead, an inviter, a manager above a member, an inviter with no position and an admin, "Edit positions", remove / delete / move
+  through the dialogs; a guest sees it, 404 twice, failure; the redirect, the tabs in order, the list link and the switcher link; the indentation cap and
+  truncation; Portuguese; axe for each viewer, with an item closed, with a dialog open, and in Portuguese) and `lib/org-chart.test.ts` (the tree).

@@ -117,41 +117,57 @@ function OrgRow({
 }) {
   const t = useT();
   return (
-    <li aria-label={org.name} className="flex items-center gap-3 px-4 py-3.5 md:px-8">
-      <OrgAvatar org={org} size="lg" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-semibold tracking-[-0.01em]">{org.name}</p>
-        <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <span className="truncate font-mono">{org.slug}</span>
-          <Badge variant="secondary" className="px-1.5 py-0 text-[0.68rem] leading-5">
-            {permissionLabel(t, org.permission)}
-          </Badge>
-        </p>
+    <li
+      aria-label={org.name}
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3.5 md:px-8"
+    >
+      <div className="flex min-w-0 flex-1 basis-44 items-center gap-3">
+        <OrgAvatar org={org} size="lg" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold tracking-[-0.01em]">{org.name}</p>
+          <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span className="truncate font-mono">{org.slug}</span>
+            <Badge variant="secondary" className="px-1.5 py-0 text-[0.68rem] leading-5">
+              {permissionLabel(t, org.permission)}
+            </Badge>
+          </p>
+        </div>
       </div>
-      <Button asChild variant="ghost" size="sm" className="shrink-0">
-        <Link
-          to="/orgs/$orgId/settings"
-          params={{ orgId: org.id }}
-          aria-label={t("orgs.settingsLink", { org: org.name })}
-        >
-          {t("orgs.tabSettings")}
-        </Link>
-      </Button>
-      {current ? (
-        <Badge variant="outline" className="shrink-0">
-          {t("orgs.current")}
-        </Badge>
-      ) : (
-        <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          aria-label={t("orgs.switchTo", { org: org.name })}
-          onClick={onSwitch}
-        >
-          {t("orgs.switch")}
+      <div className="flex shrink-0 flex-wrap items-center gap-1">
+        <Button asChild variant="ghost" size="sm">
+          <Link
+            to="/orgs/$orgId/chart"
+            params={{ orgId: org.id }}
+            aria-label={t("orgs.chartLink", { org: org.name })}
+          >
+            {t("orgs.tabChart")}
+          </Link>
         </Button>
-      )}
+        <Button asChild variant="ghost" size="sm">
+          <Link
+            to="/orgs/$orgId/settings"
+            params={{ orgId: org.id }}
+            aria-label={t("orgs.settingsLink", { org: org.name })}
+          >
+            {t("orgs.tabSettings")}
+          </Link>
+        </Button>
+        {current ? (
+          <Badge variant="outline" className="shrink-0">
+            {t("orgs.current")}
+          </Badge>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            aria-label={t("orgs.switchTo", { org: org.name })}
+            onClick={onSwitch}
+          >
+            {t("orgs.switch")}
+          </Button>
+        )}
+      </div>
     </li>
   );
 }

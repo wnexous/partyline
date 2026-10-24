@@ -1056,6 +1056,26 @@ export const en = {
   "orgs.positionCycle": "A position can’t go below itself or one of its own positions.",
   "orgs.positionForbidden": "Only admins of {org} edit the positions.",
   "orgs.positionFailed": "Couldn’t save the change. Try again.",
+
+  // Organizations (T44): the org chart
+  "orgs.tabChart": "Org chart",
+  "orgs.chartTitle": "Org chart",
+  "orgs.chartBody":
+    "Who is where in {org}. Whoever holds a position manages the identities below it, and a guest sits under whoever invited it.",
+  "orgs.chartLabel": "Org chart of {org}",
+  "orgs.chartError": "Couldn’t load the org chart.",
+  "orgs.editPositions": "Edit positions",
+  "orgs.unassigned": "Unassigned",
+  "orgs.kindPerson": "Person",
+  "orgs.expand": "Expand {name}",
+  "orgs.collapse": "Collapse {name}",
+  "orgs.chartMove": "Move {name}",
+  "orgs.chartDelete": "Delete {name}",
+  "orgs.chartRemove": "Remove {name} from {org}",
+  "orgs.removeShort": "Remove",
+
+  "orgs.chartLink": "Org chart of {org}",
+  "orgs.unassignedHint": "No position, and no one to hang them under.",
 } as const;
 
 export type MessageKey = keyof typeof en;

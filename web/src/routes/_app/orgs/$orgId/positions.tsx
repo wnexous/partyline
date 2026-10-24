@@ -43,7 +43,7 @@ export const Route = createFileRoute("/_app/orgs/$orgId/positions")({
  * The org chart's positions, for admins (POS-01, POS-02, POS-09): a tree where each position can
  * get a position under it, be renamed, be moved under another one or none, and be deleted. The
  * server decides the rest: a name must be unique, and a move that would close a loop is refused.
- * Anyone who is not an admin is sent to the members page.
+ * Anyone who is not an admin is sent to the chart.
  */
 
 /** What an edit that failed says, whichever the edit was. */
@@ -76,7 +76,7 @@ function OrgPositionsPage() {
 
   if (!org) return null;
   if (org.permission !== PermissionAdmin) {
-    return <Navigate to="/orgs/$orgId/members" params={{ orgId: org.id }} replace />;
+    return <Navigate to="/orgs/$orgId/chart" params={{ orgId: org.id }} replace />;
   }
 
   const add = (
@@ -256,36 +256,39 @@ function PositionRow({
 
   return (
     <li aria-label={position.name}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
-        {mode === "rename" ? (
-          <InlineRename
-            label={t("orgs.renameLabel", { name: position.name })}
-            initial={position.name}
-            max={MaxPositionNameLength}
-            pending={update.isPending}
-            rule={t("orgs.positionRule")}
-            error={fieldError}
-            onSave={(name) =>
-              edit({ name }, () => {
-                toast.success(t("orgs.positionRenamed", { name }));
-                close();
-              })
-            }
-            onCancel={close}
-          />
-        ) : (
-          <>
-            <span id={nameId} className="min-w-0 font-semibold tracking-[-0.01em] break-words">
-              {position.name}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {held === 0
-                ? t("orgs.holdersNone")
-                : t(held === 1 ? "orgs.holdersOne" : "orgs.holdersMany", { count: held })}
-            </span>
-          </>
-        )}
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+        {/* The name takes its own line on a phone, so the controls get the line below. */}
+        <div className="flex min-w-0 basis-full flex-wrap items-baseline gap-x-3 gap-y-0.5 md:flex-1 md:basis-0">
+          {mode === "rename" ? (
+            <InlineRename
+              label={t("orgs.renameLabel", { name: position.name })}
+              initial={position.name}
+              max={MaxPositionNameLength}
+              pending={update.isPending}
+              rule={t("orgs.positionRule")}
+              error={fieldError}
+              onSave={(name) =>
+                edit({ name }, () => {
+                  toast.success(t("orgs.positionRenamed", { name }));
+                  close();
+                })
+              }
+              onCancel={close}
+            />
+          ) : (
+            <>
+              <span id={nameId} className="min-w-0 font-semibold tracking-[-0.01em] break-words">
+                {position.name}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {held === 0
+                  ? t("orgs.holdersNone")
+                  : t(held === 1 ? "orgs.holdersOne" : "orgs.holdersMany", { count: held })}
+              </span>
+            </>
+          )}
+        </div>
+        <div className="flex w-full items-center gap-1 md:w-auto md:gap-1.5">
           <NativeSelect
             aria-label={t("orgs.parentOf", { name: position.name })}
             value={position.parent_id ?? ""}
@@ -295,12 +298,11 @@ function PositionRow({
                 toast(t("orgs.positionMoved", { name: position.name }));
               })
             }
-            className="h-9 w-44 max-w-full"
+            className="h-9 min-w-0 flex-1 md:w-44 md:flex-none"
           >
             <option value="">{t("orgs.noParent")}</option>
             {parents.map((o) => (
               <option key={o.id} value={o.id}>
-                {"  ".repeat(o.depth)}
                 {o.name}
               </option>
             ))}
@@ -308,7 +310,7 @@ function PositionRow({
           <Button
             variant="ghost"
             size="icon"
-            className="size-11 md:size-9"
+            className="size-11 shrink-0 md:size-9"
             aria-label={t("orgs.rename", { name: position.name })}
             onClick={() => {
               setRowError(null);
@@ -321,7 +323,7 @@ function PositionRow({
           <Button
             variant="ghost"
             size="icon"
-            className="size-11 md:size-9"
+            className="size-11 shrink-0 md:size-9"
             aria-label={t("orgs.addChild", { name: position.name })}
             onClick={() => {
               setRowError(null);
@@ -334,7 +336,7 @@ function PositionRow({
           <Button
             variant="ghost"
             size="icon"
-            className="size-11 text-destructive hover:text-destructive md:size-9"
+            className="size-11 shrink-0 text-destructive hover:text-destructive md:size-9"
             aria-label={t("orgs.deletePosition", { name: position.name })}
             onClick={() => onDelete(position)}
           >

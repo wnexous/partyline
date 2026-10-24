@@ -1070,4 +1070,24 @@ export const ptBR: Dictionary = {
     "Um cargo não pode ficar abaixo de si mesmo nem dos cargos que estão abaixo dele.",
   "orgs.positionForbidden": "Só quem administra {org} edita os cargos.",
   "orgs.positionFailed": "Não foi possível salvar a mudança. Tente de novo.",
+
+  // Organizations (T44): the org chart
+  "orgs.tabChart": "Organograma",
+  "orgs.chartTitle": "Organograma",
+  "orgs.chartBody":
+    "Quem está onde em {org}. Quem tem um cargo gerencia as identidades abaixo dele, e um convidado fica sob quem o convidou.",
+  "orgs.chartLabel": "Organograma de {org}",
+  "orgs.chartError": "Não foi possível carregar o organograma.",
+  "orgs.editPositions": "Editar cargos",
+  "orgs.unassigned": "Sem lugar definido",
+  "orgs.kindPerson": "Pessoa",
+  "orgs.expand": "Expandir {name}",
+  "orgs.collapse": "Recolher {name}",
+  "orgs.chartMove": "Mover {name}",
+  "orgs.chartDelete": "Apagar {name}",
+  "orgs.chartRemove": "Remover {name} de {org}",
+  "orgs.removeShort": "Remover",
+
+  "orgs.chartLink": "Organograma de {org}",
+  "orgs.unassignedHint": "Sem cargo e sem ninguém sob quem ficar.",
 };

@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { BuildingIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
+import { BuildingIcon, ChevronsUpDownIcon, NetworkIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { NewOrgDialog } from "@/components/new-org-dialog";
 import { OrgAvatar } from "@/components/org-avatar";
@@ -142,6 +142,12 @@ export function OrgSwitcher({
             ))}
           </DropdownMenuRadioGroup>
           <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link to="/orgs/$orgId/chart" params={{ orgId: org.id }}>
+              <NetworkIcon aria-hidden="true" />
+              {t("orgs.tabChart")}
+            </Link>
+          </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link to="/orgs">
               <BuildingIcon aria-hidden="true" />

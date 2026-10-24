@@ -1,8 +1,8 @@
 import { createFileRoute, Link, Outlet, useRouter } from "@tanstack/react-router";
-import { ArrowLeftIcon, CompassIcon } from "lucide-react";
+import { ArrowLeftIcon } from "lucide-react";
 import { useEffect } from "react";
-import { EmptyState } from "@/components/empty-state";
 import { OrgAvatar } from "@/components/org-avatar";
+import { OrgNotFound } from "@/components/org-not-found";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -40,19 +40,7 @@ function OrgLayout() {
   }, [id, orgId, router]);
 
   if (org.isError && isApiError(org.error) && org.error.status === 404) {
-    return (
-      <EmptyState
-        icon={CompassIcon}
-        title={t("orgs.notFoundTitle")}
-        action={
-          <Button asChild variant="outline">
-            <Link to="/orgs">{t("orgs.notFoundBack")}</Link>
-          </Button>
-        }
-      >
-        <p>{t("orgs.notFoundBody")}</p>
-      </EmptyState>
-    );
+    return <OrgNotFound />;
   }
   if (org.isError && !org.data) {
     return (
@@ -121,6 +109,9 @@ function OrgBar({ org }: { org: Organization }) {
         aria-label={t("orgs.sections", { org: org.name })}
         className={cn("-mx-1 mt-2 flex overflow-x-auto px-1")}
       >
+        <Link to="/orgs/$orgId/chart" params={{ orgId: org.id }} className={TAB}>
+          {t("orgs.tabChart")}
+        </Link>
         <Link to="/orgs/$orgId/members" params={{ orgId: org.id }} className={TAB}>
           {t("orgs.tabMembers")}
         </Link>
