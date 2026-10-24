@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Contacts } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
@@ -210,6 +211,31 @@ describe("organizations and their AIs (CONT-01, AD-016)", () => {
     }
     expect(screen.queryByRole("heading", { level: 3 })).toBeNull();
     expect(screen.queryByRole("button", { name: /Rename/ })).toBeNull();
+  });
+
+  it("renders no hostname or machine label even when a server still sends them (AD-022)", async () => {
+    // What a server of the machine-tree days answered: a hostname and a label on every AI, the
+    // machines as a list of their own, the AIs shared with the user apart.
+    const stale = {
+      ...orgContacts,
+      machines: [{ hostname: "devbox", label: "Laptop", folders: [] }],
+      shared: [makeAIContact({ intelligence: makeAI({ id: "a9", display_name: "Shared one" }) })],
+      org_ais: orgContacts.org_ais.map((group) => ({
+        ...group,
+        ais: group.ais.map((ai) => ({ ...ai, machine: "devbox", machine_label: "Laptop" })),
+      })),
+    } as unknown as Contacts;
+    api(stale);
+    renderRoute("/contacts");
+    await orgRegion("Acme");
+    expect(screen.queryByText(/devbox|Laptop/)).toBeNull();
+    expect(screen.queryByText("Shared one")).toBeNull();
+    expect(screen.queryByRole("heading", { name: /shared|machine/i })).toBeNull();
+    // Organizations, in the order served, are the only way the AIs are grouped.
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      "Acme",
+      "Globex",
+    ]);
   });
 
   it("counts the AIs online in each organization and follows presence", async () => {

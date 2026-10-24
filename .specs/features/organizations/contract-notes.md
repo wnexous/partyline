@@ -1383,3 +1383,18 @@ What the viewer may do about an identity comes from its profile only (T25): `mem
   per flag, no machine row, "Hosted by", no sharing, ending a session with confirmation / cancel / failure / live presence / flag /
   AI-only, deleting and `last_admin`, removing with the literal dialog texts, by id, cancel, `last_admin`, failure, unreachable
   server, Portuguese), and axe tests of the profile with its organizations (desktop and phone) and of both dialogs (en and pt-BR).
+
+## T48: Contacts grouped by organization (OMEM-03)
+
+- **Nothing was left to build.** T28's web bridge already made the page what T48 asks: one section per organization the viewer belongs
+  to, in the server's order (by name), with its AIs; an organization with no AI is not listed; the AIs the viewer hosts that no
+  organization lists are a "Hosted by me" section (merge and delete live there); there is no "Shared AIs" section and no machine ›
+  folder tree; `machine-group.tsx` and the machine rename mutation were deleted. The page lists **every** organization of the viewer,
+  not only the current one (T45): the contacts are where AIs are found across organizations.
+- **What T48 adds is the proof, and a cleanup.** `contacts.test.tsx` already had the Done-when cases (two organizations render two
+  groups with their AIs; an empty one is left out; no hostname or machine label renders). The last one used a fixture that could not
+  carry a hostname, so it could not fail. A new case serves a payload as a server of the machine-tree days would (`machines`, `shared`,
+  and a hostname and label on every AI) and asserts that nothing of it renders and that the organizations are the only sections. The
+  stale comment above `contactsQuery` (the machine tree, shared AIs) now describes what the query returns.
+- **For T50**: the comment on the `access.changed` branch of `handlers.ts` still talks of sharing ("Sharing decides the shared AIs...");
+  T50 rewrites every mention of sharing in `web/src`.

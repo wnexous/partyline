@@ -787,8 +787,8 @@ export function useRemoveAvatar(id: string) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Contacts: the machine tree, shared AIs, users and the people of the user's connectors
-// (CONT-01, TREE-01..06)
+// Contacts: the AIs of the user's organizations and the ones they host, the other users and the
+// people of the connections of their organizations (CONT-01, AD-016, AD-022)
 
 /** Everyone the caller can reach, grouped as the contacts page shows them (GET /contacts). */
 export const contactsQuery = () =>

@@ -1190,8 +1190,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `machine-group.tsx`
 **Requirement**: OMEM-03
 **Done when**:
-- [ ] Vitest: two orgs render two groups with their AIs; an empty org group is hidden; no hostname or machine label renders
-- [ ] Gate check passes: `make check`
+- [x] Vitest: two orgs render two groups with their AIs; an empty org group is hidden; no hostname or machine label renders
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): group contacts by organization`
