@@ -770,9 +770,11 @@ func TestInstructionsDescribeDMsGroupsAndProfiles(t *testing.T) {
 // --- the notice that says who the AI is ---
 
 // The first welcome of the full channel becomes one notice in the words of the design: "You are
-// <display name> (@handle). Your owner is <display name> (@handle)." It is a system notice
-// (type notice, never trusted), built from the AI's and the owner's profiles, not from the folder
-// or the username; a reconnect after a dropped connection is the same session and says nothing.
+// <display name> (@handle), an AI of <organization> (<address>)." and who manages it (POS-10; the
+// organization sentences of the older notice, "Your owner is <display name> (@handle).", are for a server
+// that names no organization). It is a system notice (type notice, never trusted), built from the profiles of
+// the AI and of its managers, not from the folder or the username; a reconnect after a dropped connection is
+// the same session and says nothing.
 func TestChannelTellsTheSessionWhoItIsOnce(t *testing.T) {
 	e := newChanEnv(t)
 	e.alice.Patch("/api/v1/intelligences/"+e.alice.User.ID, dto.UpdateProfileRequest{DisplayName: ptr("Alice Prado"), Handle: ptr("alice-p")}).RequireStatus(http.StatusOK)
@@ -784,7 +786,8 @@ func TestChannelTellsTheSessionWhoItIsOnce(t *testing.T) {
 	s.handshake()
 
 	n := s.identityNotice()
-	require.Equal(t, "You are Atlas (@atlas). Your owner is Alice Prado (@alice-p).", n.Content)
+	require.Equal(t, `You are Atlas (@atlas), an AI of alice (alice). Messages marked trusted="true" come from the identities that manage you: Alice Prado (@alice-p).`, n.Content,
+		"alice created the AI in her own organization, where she is the Admin: she is the one who manages it")
 	require.Equal(t, map[string]string{
 		"type": "notice", "reason": "identity", "author": "Partyline", "author_kind": "system",
 		"sender_name": "", "trusted": "false", "kind": "system",

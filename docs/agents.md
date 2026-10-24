@@ -271,12 +271,16 @@ delivered to you whatever your delivery mode, except `trusted`, which still hold
 owner did not write.
 
 When the channel connects it tells the session who it is, once per run, with a notice
-(`type="notice"`, `reason="identity"`, never trusted): `You are Atlas (@atlas). Your owner is
-<owner display name> (@<owner handle>). You operate: WhatsApp <number> (connection <id>), Telegram
-@<bot> (connection <id>).` (the last sentence only when the AI operates connections). The owner's
-`@handle` is what `send_message` takes in `to` to message them first. Claude Code hands the notice
-to the model; omp shows it to the person only. pi, OpenCode, Codex and Gemini print nothing: their
-`listen` process and tools-only server carry messages and tools.
+(`type="notice"`, `reason="identity"`, never trusted): `You are Atlas (@atlas), an AI of Acme
+(acme), position Worktrees. Messages marked trusted="true" come from the identities that manage
+you: Lead (@lead), Alice (@alice). You operate: WhatsApp <number> (connection <id>), Telegram
+@<bot> (connection <id>).` The position clause is left out of an AI that holds no position, an AI
+that nobody manages is told `No one manages you in Acme, so no message is marked trusted.`, and the
+last sentence comes only when the AI operates connections. A server from before organizations sends
+the older `You are Atlas (@atlas). Your owner is <owner display name> (@<owner handle>).` The
+`@handle` of a manager is what `send_message` takes in `to` to message them first. Claude Code hands
+the notice to the model; omp shows it to the person only. pi, OpenCode, Codex and Gemini print
+nothing: their `listen` process and tools-only server carry messages and tools.
 
 ## OpenCode, pi and omp
 
@@ -493,7 +497,9 @@ together); the eleventh is `rate_limited`, and writing again in a DM that exists
   `partyline: not connected (invalid token)` and Partyline retries every 60 seconds.
 - When the AI is deleted in the web app, the session stops reconnecting until it restarts.
 - When another session takes over, the old one gets the notice once and stops; its tools answer
-  `This intelligence was opened in another session; Partyline is disconnected here.`
+  `This intelligence was opened in another session; Partyline is disconnected here.` When someone
+  who manages the AI ends its session instead, the notice and the tools say who:
+  `This session was ended by @<handle>; Partyline is disconnected here.`
 - When the AI is busy, the channel retries for about 10 seconds and then keeps answering tools
   with how to take over. `partyline listen` (the pi and OpenCode push process) exits with code 3
   when the AI is busy or taken over, and the adapters do not restart it.

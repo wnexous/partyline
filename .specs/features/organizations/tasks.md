@@ -936,8 +936,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `systemNotice`
 **Requirement**: POS-10
 **Done when**:
-- [ ] Channel tests assert the literal spec/design wording (L-032): with managers, without managers, without a position; and with an old server (no org fields), where the org sentence is absent (L-035)
-- [ ] Gate check passes: `make check`
+- [x] Channel tests assert the literal spec/design wording (L-032): with managers, without managers, without a position; and with an old server (no org fields), where the org sentence is absent (L-035)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(channel): announce the organization and who manages the AI`

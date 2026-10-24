@@ -1277,3 +1277,39 @@ Every section above is kept as its task wrote it. This one records what the merg
   no home, whoami for an admin, a director, a positionless member, a guest, a changed default and a user in no organization),
   `internal/orgs/standing_test.go`. Mutations "no limit", "farthest first", "nil instead of an empty list" and "the host's default instead
   of the home organization" each fail them.
+
+## T34: Channel identity notice (POS-10)
+
+- **Wording** (`channel.identityText`, `internal/channel/link.go`; the design's, written out in
+  `identity_org_test.go` against literals, L-032). With `organization` in the welcome:
+  - `You are Worker 1 (@w1), an AI of Acme (acme), position Worktrees. Messages marked trusted="true" come from the identities that manage you: Lead (@lead), Alice (@alice).`
+  - an AI that holds no position: the `, position …` clause is left out;
+  - an AI nobody manages (`managers` empty or absent): `No one manages you in Acme, so no message is marked trusted.` in place of the
+    managers sentence - with the organization's **name**, not its address;
+  - the connections sentence is unchanged and last: ` You operate: WhatsApp +55 … (connection <id>), ….`;
+  - **no "Your owner is …"**: with an organization the host user is not who the AI answers to (AD-018); `owner` stays in the frame only
+    for v0.5 CLIs.
+  Without `organization` (an older server; an AI no organization owns) the notice is **exactly the one it was**: `You are <name> (@handle).
+  Your owner is <name> (@handle).` plus the connections. A `position` or `managers` without an `organization` is ignored (there is no
+  organization to read them in) - `TestIdentityNoticeWithoutOrganizationFieldsIsUnchanged`, with a negative assertion for each new phrase (L-035).
+- **The 4002 close** (`link.rememberEnded`, `endedByReason`): a session a manager ended is closed with 4002 and the reason `ended by @handle`
+  (T21). The channel keeps that reason **only when it has exactly that form** (`ended by @` + a handle of `dto.HandlePattern`); then the
+  harness is told once, the tools answer from then on, `partyline listen` prints its notice line and stderr gets
+  `This session was ended by @lead; Partyline is disconnected here.` Any other reason - `taken_over` from every server, an empty one, an
+  upper-case or over-long handle, text after the handle, a different prefix - is a takeover by another session and keeps the sentence of SES-05
+  (`This intelligence was opened in another session; …`). The strict form keeps text the server did not write out of the harness (message
+  content is data, AD-006), and each way to be wrong has its own case (L-018).
+  - The notice keeps `reason: "taken_over"` (the close code is the same), so the adapters in `integrations/`, which know the reason, need no change.
+  - Only a 4002 close reads the reason; 4001 stays a deletion whatever the reason says.
+  - `errTakenOver` is gone: `link.Err()` builds the sentence from the state (`takenOverTextLocked`).
+- **Existing tests adapted** (same subject, new words, because the real server now sends an organization): `TestChannelTellsTheSessionWhoItIsOnce`,
+  `TestChannelTellsTheAIWhichConnectionsItOperates` (channel) and `TestChannelEndToEnd` (cli) now expect `You are … , an AI of alice (alice).
+  Messages marked trusted="true" come from the identities that manage you: …` - alice created the AI in her own organization, where she is the
+  Admin. The tests that feed a welcome with no organization (`TestChannelIdentityNoticeFollowsTheWelcome`,
+  `TestIdentityNoticeListsTheConnectionsTheAIOperates`) are untouched and still pass: that is the older server.
+- **Docs**: the identity-notice paragraph and the taken-over bullet of `docs/agents.md` say the new words; the rest of that page's trust wording
+  is T35 and T55.
+- **Tests**: `internal/channel/identity_org_test.go` (the wording matrix, the old-server notice, the notice once with its meta, ten reasons on a
+  4002 close at link level, `listen` printing the line, a fake gateway holding the close until the channel is initialized, and the real server:
+  `DELETE /agents/{id}/session` by the creator is told to the harness). Mutations "address instead of name", "any reason accepted", "reason not
+  remembered" and "position always printed" each fail them.

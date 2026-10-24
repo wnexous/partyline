@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -147,7 +148,10 @@ type link struct {
 	state  linkState
 	reason string   // what the server said about a refusal (stateInvalid)
 	busy   busyInfo // what the server said about the session that holds the AI (stateBusy)
-	seen   *idRing
+	// endedBy is the close reason ("ended by @lead") of a session that someone who manages the AI ended;
+	// empty when it was taken over by another session (stateTakenOver).
+	endedBy string
+	seen    *idRing
 	// announced is set once the identity notice was sent: a reconnect is the same session.
 	announced bool
 }
@@ -200,7 +204,7 @@ func (l *link) Err() error {
 	case stateBusy:
 		return sentence(l.busyTextLocked())
 	case stateTakenOver:
-		return errTakenOver
+		return sentence(l.takenOverTextLocked())
 	case stateInvalid:
 		return fmt.Errorf("partyline: the server refused this session: %s", cmp.Or(l.reason, unusableSession))
 	case stateDeleted:
@@ -220,7 +224,38 @@ var errAgentLimit = errors.New("partyline: agent limit reached for this account;
 // what every tool answers from then on (SES-05).
 const takenOverText = "This intelligence was opened in another session; Partyline is disconnected here."
 
-var errTakenOver error = sentence(takenOverText)
+// endedByReason is the close reason of a session that someone who manages the AI ended (POS-04): the
+// server closes it with the code of a takeover, which v0.5 channels already obey, and says who in the
+// reason, "ended by @lead". Only a reason of exactly this form is repeated to the harness: anything else
+// is a takeover by another session.
+var endedByReason = regexp.MustCompile(`^ended by @` + strings.TrimSuffix(strings.TrimPrefix(dto.HandlePattern, "^"), "$") + `$`)
+
+// rememberEnded keeps who ended the session when a 4002 close says so, and forgets it when it does not.
+func (l *link) rememberEnded(err error) {
+	var ce websocket.CloseError
+	reason := ""
+	if errors.As(err, &ce) && endedByReason.MatchString(ce.Reason) {
+		reason = ce.Reason
+	}
+	l.mu.Lock()
+	l.endedBy = reason
+	l.mu.Unlock()
+}
+
+// takenOverTextLocked is what the harness is told when the session is over without a fault of its own: that
+// someone ended it, or that another session took the AI over. The caller holds l.mu.
+func (l *link) takenOverTextLocked() string {
+	if l.endedBy != "" {
+		return "This session was " + l.endedBy + "; Partyline is disconnected here."
+	}
+	return takenOverText
+}
+
+func (l *link) takenOverText() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.takenOverTextLocked()
+}
 
 // sentence is an error whose text is a full sentence told to the person as it is, so it ends with
 // a full stop, which Go error strings do not.
@@ -270,19 +305,40 @@ func systemNotice(reason, text string) Notification {
 	}}
 }
 
-// identityText is what the first welcome tells the session: "You are <name> (@handle). Your owner
-// is <name> (@handle). You operate: <Platform> <account> (connection <id>), ...". It is empty when
-// the server named no AI, as an older one does, has no second sentence when it named no owner and
-// no third when the AI operates no connection (CID-06): the ids are what platform events name
-// their connection by.
+// identityText is what the first welcome tells the session, in the words of the design: "You are Worker 1
+// (@w1), an AI of Acme (acme), position Worktrees. Messages marked trusted="true" come from the identities that
+// manage you: Lead (@lead), Alice (@alice). You operate: <Platform> <account> (connection <id>), ...". The
+// position clause is left out of an AI that holds none, and an AI nobody manages is told "No one manages you
+// in Acme, so no message is marked trusted." (POS-10). A welcome that names no organization - an older
+// server - gets the sentences it always had: "You are <name> (@handle). Your owner is <name> (@handle)."
+// The text is empty when the server named no AI, and has no operate sentence when the AI operates no
+// connection (CID-06): the ids are what platform events name their connection by.
 func identityText(w dto.AgentWelcomeFrame) string {
 	named := func(r dto.IntelligenceRef) string { return r.DisplayName + " (@" + r.Handle + ")" }
 	if w.Intelligence.Handle == "" {
 		return ""
 	}
-	text := "You are " + named(w.Intelligence) + "."
-	if w.Owner.Handle != "" {
-		text += " Your owner is " + named(w.Owner) + "."
+	var text string
+	if org := w.Organization; org != nil {
+		text = "You are " + named(w.Intelligence) + ", an AI of " + orgLabel(*org)
+		if w.Position != "" {
+			text += ", position " + w.Position
+		}
+		text += "."
+		if len(w.Managers) == 0 {
+			text += " No one manages you in " + cmp.Or(org.Name, org.Slug) + ", so no message is marked trusted."
+		} else {
+			managers := make([]string, len(w.Managers))
+			for i, m := range w.Managers {
+				managers[i] = named(m)
+			}
+			text += ` Messages marked trusted="true" come from the identities that manage you: ` + strings.Join(managers, ", ") + "."
+		}
+	} else {
+		text = "You are " + named(w.Intelligence) + "."
+		if w.Owner.Handle != "" {
+			text += " Your owner is " + named(w.Owner) + "."
+		}
 	}
 	if len(w.Connections) > 0 {
 		operated := make([]string, len(w.Connections))
@@ -292,6 +348,14 @@ func identityText(w dto.AgentWelcomeFrame) string {
 		text += " You operate: " + strings.Join(operated, ", ") + "."
 	}
 	return text
+}
+
+// orgLabel is an organization as the notice names it: "Acme (acme)", its name and its address.
+func orgLabel(o dto.ContactOrg) string {
+	if o.Name == "" || o.Slug == "" {
+		return cmp.Or(o.Name, o.Slug)
+	}
+	return o.Name + " (" + o.Slug + ")"
 }
 
 // announceIdentity sends the notice that says who the AI is, once per process: the welcome of a
@@ -379,7 +443,7 @@ func (l *link) run(ctx context.Context) error {
 			busyTries++
 		case outTakenOver:
 			l.setState(stateTakenOver)
-			l.lost(lostTakenOver, takenOverText)
+			l.lost(lostTakenOver, l.takenOverText())
 			<-ctx.Done()
 			return nil
 		case outInvalid:
@@ -531,6 +595,7 @@ func (l *link) session(ctx context.Context) (outcome, error) {
 			}
 			switch websocket.CloseStatus(err) {
 			case closeTakenOver:
+				l.rememberEnded(err)
 				return outTakenOver, nil
 			case closeBusy:
 				return outBusy, nil // lost the race to another session between the check and the attach
