@@ -2087,3 +2087,34 @@ them, so that module is **gone**: the web reads `Organization`, `Position`, `Org
 - **Web**: the generated `Me` now has `default_org_id?: string`, so the interim `MeWithDefaultOrg` of `web/src/lib/orgs.ts` (T49, which added the field
   with `Me & {...}`) became `Omit<Me, "default_org_id"> & { default_org_id?: string | null }`: the same tolerance of a `null`, which the server
   never sends, without the intersection narrowing the field to `string`.
+
+## T43: Positions editor (POS-01, POS-02, POS-09)
+
+- **The page** (`orgs/$orgId/positions.tsx`, tab "Positions", admins only): the positions of `GET /orgs/{org}/chart` as a nested list named "Positions of {org}"
+  (siblings by name, parents before children; a position whose parent is missing, or that a loop hides, is a root: `positionTree`). Past four
+  levels the rows stop moving right so a deep chart fits a phone. Each position shows its name, how many hold it ("No one holds it", "1 holder",
+  "{n} holders") and, for an admin: a **parent select** ("Parent of {name}"), **Rename {name}**, **Add a position under {name}** and **Delete
+  {name}**. "Add position" (header, or the empty state of an organization that has none) adds a root.
+  - **Parent select**: "No parent (a root)" and every position except the position itself and everything below it (`descendantsOf`), so the
+    select cannot ask for a loop; it starts on the position's own parent, sends `{parent_id}` alone (`""` for a root) when another is picked
+    and goes back to the server's value if the answer is a refusal. Toast "{name} moved". **409 `position_cycle`** (a chart that changed under
+    the admin) says "A position can't go below itself or one of its own positions." under the row.
+  - **Names**: `InlineRename` (Enter or the check saves, Escape or the cross cancels) with the limit of 60 characters counted in characters
+    (`MaxPositionNameLength`): "1 to 60 characters" appears as the text goes over it or is blank and Save is off, so nothing is sent; an unchanged
+    name sends nothing. Add sends `{name}` or `{name, parent_id}`; rename sends `{name}`. **409 `conflict`** is "A position with that name
+    already exists." (names are unique ignoring case); a **422** shows the server's reason for the field; 403 "Only admins of {org} edit the
+    positions."; the network. The field stays open on every failure.
+  - **Delete** (POS-09), with the literal text: "Its holders and its child positions move to {parent}. Nobody is removed from the
+    organization." (the parent's name), or for a root "It has no parent, so its holders are left with no position and its child positions
+    become roots. Nobody is removed from the organization.". Failures are told inside the dialog, which stays open.
+  - A member or guest who opens the page is **sent to the members page** (`Navigate`, replace). **Deviation / hand-over to T44**: the task says
+    "to the chart", which does not exist in this commit and a typed route cannot point at it; T44 changes the target to the chart and the test with it.
+    The tab is shown only to admins (`OrgBar`).
+- **Shared code**: `positionTree` (new; `positionOptions` is built on it) in `lib/org-chart.ts`.
+- **Texts** (en and pt-BR): `orgs.tabPositions`, `orgs.positions*`, `orgs.addRoot|addChild|positionNameLabel|rename|renameLabel|positionRule|parentOf|noParent`,
+  `orgs.holders*`, `orgs.deletePosition*`, `orgs.position{Created,Renamed,Moved,Deleted,Taken,Cycle,Forbidden,Failed}`.
+- **Tests**: `orgs/org-positions.test.tsx` (36: the nesting and the holder counts, several roots, the empty and failed states, the live refresh;
+  the redirect of a member and a guest and the tab for admins only; the parent select without the position and its subtree, its starting value, moving, making
+  a root, the new place shown, the cycle message, 403 and failure; adding a root and a child, 61 / 60 / 60 accented characters, blank, taken, 422, Escape;
+  renaming, unchanged, 61 characters, taken; deleting a middle position and a root with the literal texts, the chart after it, 403, cancel; Portuguese;
+  axe for the tree, both editors, the dialog and Portuguese) and `lib/org-chart.test.ts` (the forest).

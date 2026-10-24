@@ -1099,13 +1099,13 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `select`, `alert-dialog`
 **Requirement**: POS-01, POS-02, POS-09
 **Done when**:
-- [ ] Vitest:
+- [x] Vitest:
   - the parent select excludes the position and its descendants;
   - names of 61 chars are refused;
   - a 409 cycle message renders;
   - the delete dialog text is asserted literally;
   - a member is redirected
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): edit the organization's positions`

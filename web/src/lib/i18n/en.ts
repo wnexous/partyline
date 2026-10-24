@@ -1020,6 +1020,42 @@ export const en = {
   "orgs.revoke": "Revoke",
   "orgs.revoked": "Invitation to {name} revoked",
   "orgs.revokeFailed": "Couldn’t revoke the invitation to {name}. Try again.",
+
+  // Organizations (T43): the positions editor
+  "orgs.tabPositions": "Positions",
+  "orgs.positionsTitle": "Positions",
+  "orgs.positionsBody":
+    "The org chart of {org}. Whoever holds a position manages the identities in the positions below it.",
+  "orgs.positionsLabel": "Positions of {org}",
+  "orgs.positionsError": "Couldn’t load the positions.",
+  "orgs.positionsEmptyTitle": "No position yet",
+  "orgs.positionsEmptyBody": "Add the first one: it is the top of {org}’s chart.",
+  "orgs.addRoot": "Add position",
+  "orgs.addChild": "Add a position under {name}",
+  "orgs.positionNameLabel": "Name of the new position",
+  "orgs.rename": "Rename {name}",
+  "orgs.renameLabel": "New name for {name}",
+  "orgs.positionRule": "1 to 60 characters",
+  "orgs.parentOf": "Parent of {name}",
+  "orgs.noParent": "No parent (a root)",
+  "orgs.holdersNone": "No one holds it",
+  "orgs.holdersOne": "1 holder",
+  "orgs.holdersMany": "{count} holders",
+  "orgs.deletePosition": "Delete {name}",
+  "orgs.deletePositionTitle": "Delete {name}?",
+  "orgs.deletePositionBody":
+    "Its holders and its child positions move to {parent}. Nobody is removed from the organization.",
+  "orgs.deletePositionBodyRoot":
+    "It has no parent, so its holders are left with no position and its child positions become roots. Nobody is removed from the organization.",
+  "orgs.deletePositionConfirm": "Delete position",
+  "orgs.positionCreated": "Position {name} added",
+  "orgs.positionRenamed": "Renamed to {name}",
+  "orgs.positionMoved": "{name} moved",
+  "orgs.positionDeleted": "Position {name} deleted",
+  "orgs.positionTaken": "A position with that name already exists.",
+  "orgs.positionCycle": "A position can’t go below itself or one of its own positions.",
+  "orgs.positionForbidden": "Only admins of {org} edit the positions.",
+  "orgs.positionFailed": "Couldn’t save the change. Try again.",
 } as const;
 
 export type MessageKey = keyof typeof en;

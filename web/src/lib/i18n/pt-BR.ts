@@ -1033,4 +1033,41 @@ export const ptBR: Dictionary = {
   "orgs.revoke": "Revogar",
   "orgs.revoked": "Convite para {name} revogado",
   "orgs.revokeFailed": "Não foi possível revogar o convite para {name}. Tente de novo.",
+
+  // Organizations (T43): the positions editor
+  "orgs.tabPositions": "Cargos",
+  "orgs.positionsTitle": "Cargos",
+  "orgs.positionsBody":
+    "O organograma de {org}. Quem tem um cargo gerencia as identidades dos cargos abaixo dele.",
+  "orgs.positionsLabel": "Cargos de {org}",
+  "orgs.positionsError": "Não foi possível carregar os cargos.",
+  "orgs.positionsEmptyTitle": "Nenhum cargo ainda",
+  "orgs.positionsEmptyBody": "Crie o primeiro: ele é o topo do organograma de {org}.",
+  "orgs.addRoot": "Adicionar cargo",
+  "orgs.addChild": "Adicionar um cargo abaixo de {name}",
+  "orgs.positionNameLabel": "Nome do novo cargo",
+  "orgs.rename": "Renomear {name}",
+  "orgs.renameLabel": "Novo nome para {name}",
+  "orgs.positionRule": "De 1 a 60 caracteres",
+  "orgs.parentOf": "Cargo acima de {name}",
+  "orgs.noParent": "Nenhum (cargo do topo)",
+  "orgs.holdersNone": "Ninguém ocupa",
+  "orgs.holdersOne": "1 pessoa ou IA",
+  "orgs.holdersMany": "{count} pessoas ou IAs",
+  "orgs.deletePosition": "Excluir {name}",
+  "orgs.deletePositionTitle": "Excluir {name}?",
+  "orgs.deletePositionBody":
+    "Quem ocupa o cargo e os cargos abaixo dele passam para {parent}. Ninguém sai da organização.",
+  "orgs.deletePositionBodyRoot":
+    "Ele não tem cargo acima, então quem o ocupa fica sem cargo e os cargos abaixo viram cargos do topo. Ninguém sai da organização.",
+  "orgs.deletePositionConfirm": "Excluir cargo",
+  "orgs.positionCreated": "Cargo {name} criado",
+  "orgs.positionRenamed": "Agora se chama {name}",
+  "orgs.positionMoved": "{name} mudou de lugar",
+  "orgs.positionDeleted": "Cargo {name} excluído",
+  "orgs.positionTaken": "Já existe um cargo com esse nome.",
+  "orgs.positionCycle":
+    "Um cargo não pode ficar abaixo de si mesmo nem dos cargos que estão abaixo dele.",
+  "orgs.positionForbidden": "Só quem administra {org} edita os cargos.",
+  "orgs.positionFailed": "Não foi possível salvar a mudança. Tente de novo.",
 };

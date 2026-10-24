@@ -21,38 +21,49 @@ export interface PositionOption {
 const byName = (a: PositionLike, b: PositionLike) =>
   a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || (a.id < b.id ? -1 : 1);
 
-/** The children of each position, siblings by name. A parent that is not in the list makes a root. */
-function childrenOf(positions: readonly PositionLike[]): Map<string | undefined, PositionLike[]> {
+/** A position with the positions directly below it, in order. */
+export interface PositionNode<T extends PositionLike = PositionLike> {
+  position: T;
+  children: PositionNode<T>[];
+}
+
+/**
+ * The positions as a forest, siblings by name. A position whose parent is not in the list is a
+ * root, and so is one a parent cycle leaves unreachable (it is the first of its loop by name), so
+ * every position appears exactly once.
+ */
+export function positionTree<T extends PositionLike>(positions: readonly T[]): PositionNode<T>[] {
   const known = new Set(positions.map((p) => p.id));
-  const children = new Map<string | undefined, PositionLike[]>();
-  for (const p of [...positions].sort(byName)) {
+  const sorted = [...positions].sort(byName);
+  const children = new Map<string | undefined, T[]>();
+  for (const p of sorted) {
     const parent = p.parent_id && known.has(p.parent_id) ? p.parent_id : undefined;
     children.set(parent, [...(children.get(parent) ?? []), p]);
   }
-  return children;
+  const seen = new Set<string>();
+  const build = (p: T): PositionNode<T> => {
+    seen.add(p.id);
+    return {
+      position: p,
+      children: (children.get(p.id) ?? []).filter((c) => !seen.has(c.id)).map(build),
+    };
+  };
+  const roots = (children.get(undefined) ?? []).map(build);
+  // A parent cycle has no root: what the walk did not reach is still listed, once, as a root.
+  for (const p of sorted) if (!seen.has(p.id)) roots.push(build(p));
+  return roots;
 }
 
 /** The positions in tree order: parents before their children, siblings by name, each with its depth. */
 export function positionOptions(positions: readonly PositionLike[]): PositionOption[] {
-  const children = childrenOf(positions);
   const out: PositionOption[] = [];
-  const seen = new Set<string>();
-  const walk = (parent: string | undefined, depth: number) => {
-    for (const p of children.get(parent) ?? []) {
-      if (seen.has(p.id)) continue;
-      seen.add(p.id);
-      out.push({ id: p.id, name: p.name, depth });
-      walk(p.id, depth + 1);
+  const walk = (nodes: PositionNode[], depth: number) => {
+    for (const n of nodes) {
+      out.push({ id: n.position.id, name: n.position.name, depth });
+      walk(n.children, depth + 1);
     }
   };
-  walk(undefined, 0);
-  // A parent cycle has no root: what the walk did not reach is still listed, once, as a root.
-  for (const p of [...positions].sort(byName)) {
-    if (seen.has(p.id)) continue;
-    seen.add(p.id);
-    out.push({ id: p.id, name: p.name, depth: 0 });
-    walk(p.id, 1);
-  }
+  walk(positionTree(positions), 0);
   return out;
 }
 

@@ -10,7 +10,7 @@ import { isApiError } from "@/lib/api/client";
 import { useOrg } from "@/lib/api/queries";
 import type { Organization } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
-import { permissionLabel } from "@/lib/orgs";
+import { PermissionAdmin, permissionLabel } from "@/lib/orgs";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/orgs/$orgId")({
@@ -124,6 +124,11 @@ function OrgBar({ org }: { org: Organization }) {
         <Link to="/orgs/$orgId/members" params={{ orgId: org.id }} className={TAB}>
           {t("orgs.tabMembers")}
         </Link>
+        {org.permission === PermissionAdmin ? (
+          <Link to="/orgs/$orgId/positions" params={{ orgId: org.id }} className={TAB}>
+            {t("orgs.tabPositions")}
+          </Link>
+        ) : null}
         <Link to="/orgs/$orgId/settings" params={{ orgId: org.id }} className={TAB}>
           {t("orgs.tabSettings")}
         </Link>

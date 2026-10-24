@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Position } from "@/lib/api/types.gen";
-import { descendantsOf, movablePositions, positionOptions } from "./org-chart";
+import { descendantsOf, movablePositions, positionOptions, positionTree } from "./org-chart";
 
 /*
  * The positions of an organization as the pages use them (POS-01, POS-02, POS-04): in tree order,
@@ -124,5 +124,49 @@ describe("where a member may be moved (POS-04)", () => {
       "1:Worktrees",
       "0:Sentinel",
     ]);
+  });
+});
+
+describe("the positions as a forest", () => {
+  const shape = (nodes: ReturnType<typeof positionTree>): unknown[] =>
+    nodes.map((n) => [n.position.name, shape(n.children)]);
+
+  it("nests each position under its parent, siblings by name", () => {
+    expect(shape(positionTree(chart))).toEqual([
+      [
+        "Admin",
+        [
+          [
+            "Director",
+            [
+              ["Designer", []],
+              [
+                "Manager",
+                [
+                  ["Lead developer", [["Worktrees", []]]],
+                  ["Sentinel", []],
+                ],
+              ],
+            ],
+          ],
+        ],
+      ],
+    ]);
+  });
+
+  it("keeps whatever the positions carry, so a page can hang its own data on them", () => {
+    const [root] = positionTree([{ id: "a", name: "A", holders: 3 }]);
+    expect(root?.position.holders).toBe(3);
+  });
+
+  it("lists a position once even when a parent cycle hides it from every root", () => {
+    const looped = [
+      { id: "a", name: "A", parent_id: "b" },
+      { id: "b", name: "B", parent_id: "a" },
+      { id: "c", name: "C" },
+    ];
+    const all = (nodes: ReturnType<typeof positionTree>): string[] =>
+      nodes.flatMap((n) => [n.position.id, ...all(n.children)]);
+    expect(all(positionTree(looped)).sort()).toEqual(["a", "b", "c"]);
   });
 });
