@@ -116,13 +116,15 @@ function pickable(ref: IntelligenceRef, ai?: AIContact): Pickable {
  * reached through a platform account, not picked from this list.
  *
  * For a group of an organization (ORG-03) name it: the AIs are then those that are members of it,
- * since a group is made of the members of its organization. The users stay the instance's, because
- * the contacts do not say which organizations they belong to; the server refuses the ones who are
- * not members (`not_org_member`).
+ * since a group is made of the members of its organization. The users are the organization's
+ * (`orgUsers`, from its member list) when they are known; otherwise they are the instance's, since
+ * the contacts do not say which organizations a user belongs to, and the server refuses the ones
+ * who are not members (`not_org_member`).
  */
 export function pickables(
   contacts: Contacts,
   orgId?: string,
+  orgUsers?: readonly IntelligenceRef[],
 ): { ais: Pickable[]; users: Pickable[] } {
   const ais =
     orgId === undefined
@@ -130,7 +132,7 @@ export function pickables(
       : (contacts.org_ais.find((g) => g.org.id === orgId)?.ais ?? []);
   return {
     ais: ais.map((ai) => pickable(ai.intelligence, ai)),
-    users: contacts.users.map((ref) => pickable(ref)),
+    users: (orgUsers ?? contacts.users).map((ref) => pickable(ref)),
   };
 }
 
@@ -157,4 +159,36 @@ export function onlineCount(
   online: (ai: AIContact) => boolean,
 ): { online: number; total: number } {
   return { online: ais.filter(online).length, total: ais.length };
+}
+
+/**
+ * Who the invitation dialog suggests for what is typed in the handle field (OMEM-01): the users of
+ * the instance and the AIs the contacts list, found by name or @handle, without the viewer, without
+ * anyone who already belongs to the organization and without the one whose handle is exactly what
+ * was typed (it is chosen already). Users first, the first few that match.
+ */
+export function inviteCandidates(
+  contacts: Contacts,
+  memberIds: ReadonlySet<string>,
+  query: string,
+  limit = 5,
+): Pickable[] {
+  const text = query.trim().replace(/^@+/, "");
+  if (!text) return [];
+  const skip = (ref: IntelligenceRef) =>
+    ref.id === contacts.me.id ||
+    memberIds.has(ref.id) ||
+    ref.handle.toLowerCase() === text.toLowerCase();
+  const byNameAndHandle = (ref: IntelligenceRef): Pickable => ({
+    ref,
+    haystack: `${ref.display_name}\n@${ref.handle}`,
+  });
+  return [
+    ...contacts.users.filter((u) => !skip(u)).map(byNameAndHandle),
+    ...allAIs(contacts)
+      .filter((ai) => !skip(ai.intelligence))
+      .map((ai) => ({ ...byNameAndHandle(ai.intelligence), ai })),
+  ]
+    .filter((p) => matchesTerms(p.haystack, text))
+    .slice(0, limit);
 }

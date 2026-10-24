@@ -1,6 +1,7 @@
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { type ComponentProps, type ReactNode, useState } from "react";
 import type { Control, FieldPath, FieldValues } from "react-hook-form";
+import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import {
   FormControl,
@@ -186,5 +187,44 @@ export function FormAlert({ children }: { children: ReactNode }) {
     >
       {children}
     </div>
+  );
+}
+
+/** A native select in a form: the platform's own picker opens on a phone (UI-24). */
+export function SelectField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  description,
+  children,
+  className,
+}: {
+  control: Control<T>;
+  name: FieldPath<T>;
+  label: ReactNode;
+  description?: ReactNode;
+  /** The `<option>`s. */
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem className={className}>
+          <FormLabel>{label}</FormLabel>
+          <FormControl>
+            <NativeSelect {...field} value={field.value ?? ""}>
+              {children}
+            </NativeSelect>
+          </FormControl>
+          {description ? (
+            <FormDescription className="text-xs">{description}</FormDescription>
+          ) : null}
+          <FieldError />
+        </FormItem>
+      )}
+    />
   );
 }

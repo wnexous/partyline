@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAutoFocus } from "@/hooks/use-auto-focus";
+import { useOrgUsers } from "@/hooks/use-org-users";
 import { useAddMember, useContacts, useRoom } from "@/lib/api/queries";
 import type { MemberKind, RoomMember } from "@/lib/api/types.gen";
 import { type Pickable, pickables } from "@/lib/contacts";
@@ -27,9 +28,9 @@ import { withContactPresence } from "@/lib/presence";
 
 /*
  * Adds users and AIs to a group (UI-10, CID-20). Only what the user may add is offered (ACL-05):
- * the AIs of the group's organization (a group is made of the members of its organization,
- * ORG-03) and the other users of the instance, whom the server refuses when they are not members
- * of it. Chats are never members (AD-015): a connection is an AI's own app, not a room
+ * the AIs and the users of the group's organization (a group is made of the members of its
+ * organization, ORG-03). While the organization's users cannot be read, the instance's users are
+ * offered and the server refuses the ones who are not members. Chats are never members (AD-015): a connection is an AI's own app, not a room
  * participant. External people are not members either: they join through the chat they write in.
  */
 
@@ -71,9 +72,10 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
   const taken = useMemo(() => new Set(members.map((m) => `${m.kind}:${m.member_id}`)), [members]);
   // A room that does not load leaves the AIs unscoped: the server decides who may join.
   const orgId = room.data?.org_id;
+  const { users: orgUsers, loading: usersLoading } = useOrgUsers(orgId);
   const picks = useMemo(
-    () => (contacts.data ? pickables(contacts.data, orgId) : null),
-    [contacts.data, orgId],
+    () => (contacts.data ? pickables(contacts.data, orgId, orgUsers) : null),
+    [contacts.data, orgId, orgUsers],
   );
   const agentList = (picks?.ais ?? []).filter(
     (p) => !taken.has(`agent:${p.ref.id}`) && matchesTerms(p.haystack, query),
@@ -93,7 +95,7 @@ function PickerBody({ roomId, members }: { roomId: string; members: RoomMember[]
     );
   };
 
-  const loading = contacts.isPending || room.isPending;
+  const loading = contacts.isPending || room.isPending || usersLoading;
   const nothing = !loading && agentList.length === 0 && userList.length === 0;
 
   return (

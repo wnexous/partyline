@@ -17,6 +17,7 @@ import {
   makeMember,
   makeMembership,
   makeMessage,
+  makeOrg,
   makePerson,
   makeProfile,
   makeRoom,
@@ -82,17 +83,11 @@ const ownProfile = makeProfile({
   bio: "Release captain.",
   can_edit: true,
 });
-/** The viewer's own profile when they belong to organizations: they administer Acme and are a member of Globex. */
-const ownProfileInOrgs = makeProfile({
-  ...ownProfile,
-  memberships: [
-    makeMembership({ permission: "admin", position_name: "Admin" }),
-    makeMembership({
-      org_id: "o2",
-      org_name: "Globex",
-      org_slug: "globex",
-      permission: "member",
-    }),
+/** The viewer's organizations as `GET /orgs` lists them: they administer Acme and are a member of Globex. */
+const ownOrgs = json(200, {
+  items: [
+    makeOrg({ permission: "admin" }),
+    makeOrg({ id: "o2", name: "Globex", slug: "globex", permission: "member" }),
   ],
 });
 
@@ -352,7 +347,7 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
   });
 
   it("the new group dialog, with the organization it belongs to, has no axe violations", async () => {
-    appApi(locale, { "GET /intelligences/u1": json(200, ownProfileInOrgs) });
+    appApi(locale, { "GET /orgs": ownOrgs });
     const user = userEvent.setup();
     renderRoute("/");
     await user.click(
@@ -368,7 +363,7 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
 
   it("the add connector dialog, with the organization it goes to, has no axe violations", async () => {
     appApi(locale, {
-      "GET /intelligences/u1": json(200, ownProfileInOrgs),
+      "GET /orgs": ownOrgs,
       "GET /connector-kinds": json(200, { items: [makeConnectorKind()] }),
     });
     const user = userEvent.setup();
@@ -408,7 +403,7 @@ describe.each(["en", "pt-BR"] as const)("accessibility (%s)", (locale) => {
   it("the settings page, with the default organization and the account deletion, has no axe violations", async () => {
     appApi(locale, {
       "GET /me": json(200, { ...makeMe({ locale }), default_org_id: "o2" }),
-      "GET /intelligences/u1": json(200, ownProfileInOrgs),
+      "GET /orgs": ownOrgs,
     });
     const { container } = renderRoute("/settings");
     await screen.findByRole("combobox", {

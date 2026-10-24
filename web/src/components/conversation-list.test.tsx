@@ -668,7 +668,7 @@ describe("the current organization (ORG-02)", () => {
     mockApi({
       "GET /me": json(200, makeMe()),
       "GET /conversations": json(200, { items }),
-      "GET /intelligences/u1": apiError(500, "internal", "boom"),
+      "GET /orgs": apiError(500, "internal", "boom"),
     });
     renderRoute("/");
     expect(await listed()).toEqual(items.map((c) => `/rooms/${c.id}`));
@@ -685,9 +685,9 @@ describe("the current organization (ORG-02)", () => {
     mockApi({
       "GET /me": json(200, makeMe()),
       "GET /conversations": json(200, { items }),
-      "GET /intelligences/u1": () =>
+      "GET /orgs": () =>
         new Promise<Response>((resolve) => {
-          release = () => resolve(viewerIn(acme, globex)["GET /intelligences/u1"].clone());
+          release = () => resolve(viewerIn(acme, globex)["GET /orgs"].clone());
         }),
     });
     renderRoute("/");

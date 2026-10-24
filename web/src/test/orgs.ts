@@ -1,6 +1,6 @@
-import type { ProfileMembership } from "@/lib/api/types.gen";
+import type { Organization, Permission, ProfileMembership } from "@/lib/api/types.gen";
 import { json } from "./fetch";
-import { makeMembership, makeProfile } from "./fixtures";
+import { makeMembership, makeOrg, makeProfile } from "./fixtures";
 
 /*
  * The viewer's organizations in the tests of the pages that are about them. The names and ids are
@@ -22,10 +22,24 @@ export function memberIn(
   return makeMembership({ ...ORGS[org], permission, ...over });
 }
 
+/** The organization `GET /orgs` lists for a membership of the viewer's own profile. */
+function organizationOf(m: ProfileMembership): Organization {
+  return makeOrg({
+    id: m.org_id,
+    name: m.org_name,
+    slug: m.org_slug,
+    permission: m.permission as Permission,
+    ...(m.position_id ? { position_id: m.position_id } : {}),
+  });
+}
+
 /**
- * The route that serves the viewer's own profile with these memberships, which is where the app
- * reads the organizations they belong to (useMyOrgs). Spread it into a `mockApi` table.
+ * The routes that serve the viewer's organizations: `GET /orgs`, which is where the app reads them
+ * (useMyOrgs), and their own profile, which lists the same memberships. Spread it into a `mockApi` table.
  */
 export function viewerIn(...memberships: ProfileMembership[]) {
-  return { "GET /intelligences/u1": json(200, makeProfile({ memberships })) };
+  return {
+    "GET /orgs": json(200, { items: memberships.map(organizationOf) }),
+    "GET /intelligences/u1": json(200, makeProfile({ memberships })),
+  };
 }

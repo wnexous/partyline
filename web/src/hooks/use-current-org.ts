@@ -12,14 +12,16 @@ export interface CurrentOrg {
   orgs: MyOrg[];
   /** True while the viewer's organizations are being fetched for the first time. */
   loading: boolean;
+  /** True when the viewer's organizations could not be read: none, as opposed to not known. */
+  failed: boolean;
   /** Picks an organization and remembers the pick in this browser. */
   select: (orgId: string) => void;
 }
 
 /**
  * The organization the app is about right now (ORG-02): the one the viewer picked, else their
- * account's default, else the first they belong to. The organization switcher (T39) and every page
- * that is scoped to an organization read and change it here.
+ * account's default, else the first they belong to. The organization switcher and every page that
+ * is scoped to an organization read and change it here.
  */
 export function useCurrentOrg(): CurrentOrg {
   const mine = useMyOrgs();
@@ -32,5 +34,5 @@ export function useCurrentOrg(): CurrentOrg {
     () => resolveCurrentOrg(orgs, pickedId, defaultId),
     [orgs, pickedId, defaultId],
   );
-  return { org, orgs, loading: mine.isLoading, select };
+  return { org, orgs, loading: mine.isLoading, failed: mine.isError && !mine.data, select };
 }

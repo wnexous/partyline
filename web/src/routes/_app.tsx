@@ -6,6 +6,7 @@ import { BackToConversations } from "@/components/back-link";
 import { Wordmark } from "@/components/brand";
 import { CommandMenu } from "@/components/command-menu";
 import { LiveBanner } from "@/components/live-status";
+import { OrgSwitcher } from "@/components/org-switcher";
 import { Button } from "@/components/ui/button";
 import { SidebarInset } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -78,7 +79,8 @@ function AppLayout() {
 }
 
 /**
- * The top bar of a phone's full-screen pages: a way back to the list, the brand and the search.
+ * The top bar of a phone's full-screen pages: a way back to the list, the brand, the organization
+ * switcher and the search.
  * The list itself (`/`) and a conversation (`/rooms/…`, whose header carries the back button)
  * have none. It follows the route itself, so the layout does not render again on navigation.
  */
@@ -91,15 +93,18 @@ function MobileBar() {
     <div className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-1 border-b bg-background/95 px-1 backdrop-blur">
       <BackToConversations />
       <Wordmark />
-      <Button
-        variant="ghost"
-        size="icon"
-        className="ml-auto size-11"
-        aria-label={t("palette.open")}
-        onClick={() => useLiveStore.getState().setPaletteOpen(true)}
-      >
-        <SearchIcon aria-hidden="true" />
-      </Button>
+      <div className="ml-auto flex items-center">
+        <OrgSwitcher compact />
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-11"
+          aria-label={t("palette.open")}
+          onClick={() => useLiveStore.getState().setPaletteOpen(true)}
+        >
+          <SearchIcon aria-hidden="true" />
+        </Button>
+      </div>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { useLiveStore } from "@/lib/live/store";
 import { LOCALE_KEY, THEME_KEY } from "@/lib/theme";
 import { apiError, json, mockApi } from "@/test/fetch";
 import { makeMe, makeProfile } from "@/test/fixtures";
-import { memberIn } from "@/test/orgs";
+import { memberIn, viewerIn } from "@/test/orgs";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
@@ -201,6 +201,7 @@ describe("default organization (ORG-04)", () => {
     ...base,
     "GET /me": json(200, { ...me, ...(defaultOrg ? { default_org_id: defaultOrg } : {}) }),
     "GET /intelligences/u1": json(200, { ...profile, memberships }),
+    "GET /orgs": viewerIn(...memberships)["GET /orgs"],
     ...extra,
   });
   const select = () => screen.findByRole("combobox", { name: "Default organization for new AIs" });

@@ -8,7 +8,7 @@ import {
   makeConversation,
   makeIntelligence,
   makeMe,
-  makeProfile,
+  makeOrgMember,
   makeRoom,
 } from "@/test/fixtures";
 import { stubLayout } from "@/test/layout";
@@ -285,6 +285,114 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
     ).toBeInTheDocument();
   });
 
+  describe("the users offered are the organization's members (T39)", () => {
+    // Bob belongs to Acme and Cora to Globex; Ana, the viewer, to both. Dev is only in the directory.
+    const bobM = makeOrgMember({
+      intelligence: makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" }),
+    });
+    const coraM = makeOrgMember({
+      intelligence: makeIntelligence({ id: "u3", display_name: "Cora Dias", handle: "cora" }),
+    });
+    const anaM = makeOrgMember({ intelligence: makeIntelligence(), permission: "admin" });
+    const members = {
+      "GET /orgs/o1/members": json(200, { items: [anaM, bobM] }),
+      "GET /orgs/o2/members": json(200, { items: [anaM, coraM] }),
+    };
+
+    it("offers the users who are members of the organization instead of every user of the instance", async () => {
+      const { dialog } = await open({ ...viewer, ...members });
+      expect(ids(dialog, "Users")).toEqual(["u2"]);
+      expect(within(dialog).queryByRole("checkbox", { name: "Cora Dias" })).toBeNull();
+    });
+
+    it("does not offer the viewer to themselves, nor the AIs among the members: those come from the contacts", async () => {
+      const aiM = makeOrgMember({
+        intelligence: makeIntelligence({
+          id: "a9",
+          kind: "ai",
+          role: "ai",
+          display_name: "Ghost",
+          handle: "ghost",
+        }),
+      });
+      const { dialog } = await open({
+        ...viewer,
+        "GET /orgs/o1/members": json(200, { items: [anaM, bobM, aiM] }),
+      });
+      expect(ids(dialog, "Users")).toEqual(["u2"]);
+      expect(ids(dialog, "AIs")).toEqual(["a1", "a2", "a5"]);
+      expect(within(dialog).queryByRole("checkbox", { name: "Ghost" })).toBeNull();
+    });
+
+    it("lists the members by name", async () => {
+      const zed = makeOrgMember({
+        intelligence: makeIntelligence({ id: "u7", display_name: "Zed Alves", handle: "zed" }),
+      });
+      const { dialog } = await open({
+        ...viewer,
+        "GET /orgs/o1/members": json(200, { items: [zed, anaM, bobM] }),
+      });
+      expect(ids(dialog, "Users")).toEqual(["u2", "u7"]);
+    });
+
+    it("offers the members of the other organization when it changes, and drops a pick who is not one of them", async () => {
+      const { calls, user, dialog } = await open({
+        ...viewer,
+        ...members,
+        "POST /groups": json(201, group()),
+      });
+      await user.click(box(dialog, "Bob Lima"));
+      expect(checked(dialog)).toEqual(["u2"]);
+
+      await user.selectOptions(await orgField(dialog), "o2");
+
+      expect(
+        await within(dialog).findByRole("checkbox", { name: "Cora Dias" }),
+      ).toBeInTheDocument();
+      expect(ids(dialog, "Users")).toEqual(["u3"]);
+      // Bob, picked for Acme, is not a member of Globex.
+      await waitFor(() => expect(checked(dialog)).toEqual([]));
+      expect(within(dialog).queryByRole("list", { name: "Selected members" })).toBeNull();
+
+      await user.type(nameField(dialog), "release crew");
+      await user.click(box(dialog, "Cora Dias"));
+      await user.click(create(dialog));
+      await waitFor(() => expect(posted(calls)).toHaveLength(1));
+      expect(posted(calls)[0]?.body).toEqual({
+        name: "release crew",
+        members: ["u3"],
+        org_id: "o2",
+      });
+    });
+
+    it("waits for the members, so the whole instance is not listed first", async () => {
+      let release: () => void = () => {};
+      const { dialog } = await open(
+        {
+          ...viewer,
+          "GET /orgs/o1/members": () =>
+            new Promise<Response>((resolve) => {
+              release = () => resolve(json(200, { items: [anaM, bobM] }));
+            }),
+        },
+        false,
+      );
+      await within(dialog).findByRole("textbox", { name: "Name" });
+      expect(within(dialog).queryByRole("checkbox")).toBeNull();
+      release();
+      expect(await within(dialog).findByRole("checkbox", { name: "Bob Lima" })).toBeInTheDocument();
+      expect(within(dialog).queryByRole("checkbox", { name: "Cora Dias" })).toBeNull();
+    });
+
+    it("offers every user of the instance when the members cannot be read, and the server still refuses non-members", async () => {
+      const { dialog } = await open({
+        ...viewer,
+        "GET /orgs/o1/members": apiError(500, "internal", "boom"),
+      });
+      expect(ids(dialog, "Users")).toEqual(["u2", "u3"]);
+    });
+  });
+
   it("creates the group in the organization, and sends it with the members", async () => {
     const { calls, router, user, dialog } = await open({
       ...viewer,
@@ -441,10 +549,9 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
     let release: () => void = () => {};
     const { dialog } = await open(
       {
-        "GET /intelligences/u1": () =>
+        "GET /orgs": () =>
           new Promise<Response>((resolve) => {
-            release = () =>
-              resolve(json(200, makeProfile({ memberships: [memberIn("o2", "admin")] })));
+            release = () => resolve(viewerIn(memberIn("o2", "admin"))["GET /orgs"].clone());
           }),
       },
       false,
@@ -458,7 +565,7 @@ describe("the organization of the group (ORG-03, OMEM-04)", () => {
 
   it("asks nothing about organizations while the viewer's are unknown, and sends none: the server uses their default", async () => {
     const { calls, user, dialog } = await open({
-      "GET /intelligences/u1": apiError(500, "internal", "boom"),
+      "GET /orgs": apiError(500, "internal", "boom"),
       "POST /groups": json(201, group()),
     });
     expect(within(dialog).queryByRole("combobox", { name: "Organization" })).toBeNull();

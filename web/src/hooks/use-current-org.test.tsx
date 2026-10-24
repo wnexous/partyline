@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useLiveStore } from "@/lib/live/store";
 import { CURRENT_ORG_KEY, type MeWithDefaultOrg } from "@/lib/orgs";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeMe, makeMembership, makeProfile } from "@/test/fixtures";
+import { makeMe, makeOrg } from "@/test/fixtures";
 import { useCurrentOrg } from "./use-current-org";
 
 /*
@@ -13,35 +13,26 @@ import { useCurrentOrg } from "./use-current-org";
  * profile, the one they picked (kept in this browser) and the fallbacks when there is none.
  */
 
-const acme = makeMembership({
-  org_id: "o1",
-  org_name: "Acme",
-  org_slug: "acme",
+const acme = makeOrg({
+  id: "o1",
+  name: "Acme",
+  slug: "acme",
   permission: "admin",
-  position_name: "Admin",
+  position_id: "pos1",
+  avatar_url: "/api/v1/orgs/o1/avatar?v=abc",
 });
-const globex = makeMembership({
-  org_id: "o2",
-  org_name: "Globex",
-  org_slug: "globex",
-  permission: "member",
-});
-const initech = makeMembership({
-  org_id: "o3",
-  org_name: "Initech",
-  org_slug: "initech",
-  permission: "guest",
-});
+const globex = makeOrg({ id: "o2", name: "Globex", slug: "globex", permission: "member" });
+const initech = makeOrg({ id: "o3", name: "Initech", slug: "initech", permission: "guest" });
 
 let qc: QueryClient;
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={qc}>{children}</QueryClientProvider>
 );
 
-function api(memberships = [acme, globex, initech], me: MeWithDefaultOrg = makeMe()) {
+function api(orgs = [acme, globex, initech], me: MeWithDefaultOrg = makeMe()) {
   return mockApi({
     "GET /me": json(200, me),
-    "GET /intelligences/u1": json(200, makeProfile({ memberships })),
+    "GET /orgs": json(200, { items: orgs }),
   });
 }
 
@@ -67,27 +58,31 @@ afterEach(() => {
 });
 
 describe("the viewer's organizations", () => {
-  it("are those of their own profile, each with the permission and position they hold", async () => {
+  it("are those GET /orgs lists, each with the permission, position and picture the viewer has", async () => {
     const { calls } = api();
     const { result } = await current();
     expect(result.current.orgs).toEqual([
-      { id: "o1", name: "Acme", slug: "acme", permission: "admin", position: "Admin" },
+      {
+        id: "o1",
+        name: "Acme",
+        slug: "acme",
+        permission: "admin",
+        positionId: "pos1",
+        avatarUrl: "/api/v1/orgs/o1/avatar?v=abc",
+      },
       { id: "o2", name: "Globex", slug: "globex", permission: "member" },
       { id: "o3", name: "Initech", slug: "initech", permission: "guest" },
     ]);
-    expect(calls.map((c) => `${c.method} ${c.path}`).sort()).toEqual([
-      "GET /intelligences/u1",
-      "GET /me",
-    ]);
+    expect(calls.map((c) => `${c.method} ${c.path}`).sort()).toEqual(["GET /me", "GET /orgs"]);
   });
 
-  it("are none, and not loading, when the profile can't be read", async () => {
+  it("are none, and not loading, when the list can't be read", async () => {
     mockApi({
       "GET /me": json(200, makeMe()),
-      "GET /intelligences/u1": apiError(500, "internal", "boom"),
+      "GET /orgs": apiError(500, "internal", "boom"),
     });
     const view = renderHook(() => useCurrentOrg(), { wrapper });
-    await waitFor(() => expect(qc.getQueryState(["intelligences", "u1"])?.status).toBe("error"));
+    await waitFor(() => expect(qc.getQueryState(["orgs"])?.status).toBe("error"));
     expect(view.result.current.orgs).toEqual([]);
     expect(view.result.current.org).toBeUndefined();
     expect(view.result.current.loading).toBe(false);

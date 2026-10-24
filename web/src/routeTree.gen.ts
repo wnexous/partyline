@@ -28,8 +28,15 @@ import { Route as AppContactsIndexRouteImport } from './routes/_app/contacts.ind
 import { Route as AppContactsIdRouteImport } from './routes/_app/contacts.$id'
 import { Route as AppDevicesIndexRouteImport } from './routes/_app/devices.index'
 import { Route as AppDevicesCodeRouteImport } from './routes/_app/devices.$code'
+import { Route as AppOrgsIndexRouteImport } from './routes/_app/orgs/index'
+import { Route as AppOrgsOrgIdRouteRouteImport } from './routes/_app/orgs/$orgId/route'
 import { Route as AppRoomsIndexRouteImport } from './routes/_app/rooms/index'
 import { Route as AppRoomsRoomIdRouteImport } from './routes/_app/rooms/$roomId'
+import { Route as AppOrgsOrgIdIndexRouteImport } from './routes/_app/orgs/$orgId/index'
+import { Route as AppOrgsOrgIdChartRouteImport } from './routes/_app/orgs/$orgId/chart'
+import { Route as AppOrgsOrgIdMembersRouteImport } from './routes/_app/orgs/$orgId/members'
+import { Route as AppOrgsOrgIdPositionsRouteImport } from './routes/_app/orgs/$orgId/positions'
+import { Route as AppOrgsOrgIdSettingsRouteImport } from './routes/_app/orgs/$orgId/settings'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -126,6 +133,16 @@ const AppDevicesCodeRoute = AppDevicesCodeRouteImport.update({
   path: '/devices/$code',
   getParentRoute: () => AppRoute,
 } as any)
+const AppOrgsIndexRoute = AppOrgsIndexRouteImport.update({
+  id: '/orgs/',
+  path: '/orgs/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOrgsOrgIdRouteRoute = AppOrgsOrgIdRouteRouteImport.update({
+  id: '/orgs/$orgId',
+  path: '/orgs/$orgId',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppRoomsIndexRoute = AppRoomsIndexRouteImport.update({
   id: '/rooms/',
   path: '/rooms/',
@@ -135,6 +152,31 @@ const AppRoomsRoomIdRoute = AppRoomsRoomIdRouteImport.update({
   id: '/rooms/$roomId',
   path: '/rooms/$roomId',
   getParentRoute: () => AppRoute,
+} as any)
+const AppOrgsOrgIdIndexRoute = AppOrgsOrgIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppOrgsOrgIdRouteRoute,
+} as any)
+const AppOrgsOrgIdChartRoute = AppOrgsOrgIdChartRouteImport.update({
+  id: '/chart',
+  path: '/chart',
+  getParentRoute: () => AppOrgsOrgIdRouteRoute,
+} as any)
+const AppOrgsOrgIdMembersRoute = AppOrgsOrgIdMembersRouteImport.update({
+  id: '/members',
+  path: '/members',
+  getParentRoute: () => AppOrgsOrgIdRouteRoute,
+} as any)
+const AppOrgsOrgIdPositionsRoute = AppOrgsOrgIdPositionsRouteImport.update({
+  id: '/positions',
+  path: '/positions',
+  getParentRoute: () => AppOrgsOrgIdRouteRoute,
+} as any)
+const AppOrgsOrgIdSettingsRoute = AppOrgsOrgIdSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppOrgsOrgIdRouteRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -147,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/tokens': typeof AppTokensRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/orgs/$orgId': typeof AppOrgsOrgIdRouteRouteWithChildren
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/invites': typeof AppAdminInvitesRoute
   '/admin/users': typeof AppAdminUsersRoute
@@ -157,7 +200,13 @@ export interface FileRoutesByFullPath {
   '/connectors/': typeof AppConnectorsIndexRoute
   '/contacts/': typeof AppContactsIndexRoute
   '/devices/': typeof AppDevicesIndexRoute
+  '/orgs/': typeof AppOrgsIndexRoute
   '/rooms/': typeof AppRoomsIndexRoute
+  '/orgs/$orgId/chart': typeof AppOrgsOrgIdChartRoute
+  '/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
+  '/orgs/$orgId/positions': typeof AppOrgsOrgIdPositionsRoute
+  '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -179,7 +228,13 @@ export interface FileRoutesByTo {
   '/connectors': typeof AppConnectorsIndexRoute
   '/contacts': typeof AppContactsIndexRoute
   '/devices': typeof AppDevicesIndexRoute
+  '/orgs': typeof AppOrgsIndexRoute
   '/rooms': typeof AppRoomsIndexRoute
+  '/orgs/$orgId/chart': typeof AppOrgsOrgIdChartRoute
+  '/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
+  '/orgs/$orgId/positions': typeof AppOrgsOrgIdPositionsRoute
+  '/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/orgs/$orgId': typeof AppOrgsOrgIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -193,6 +248,7 @@ export interface FileRoutesById {
   '/_app/tokens': typeof AppTokensRoute
   '/invite/$token': typeof InviteTokenRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/orgs/$orgId': typeof AppOrgsOrgIdRouteRouteWithChildren
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/invites': typeof AppAdminInvitesRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
@@ -203,7 +259,13 @@ export interface FileRoutesById {
   '/_app/connectors/': typeof AppConnectorsIndexRoute
   '/_app/contacts/': typeof AppContactsIndexRoute
   '/_app/devices/': typeof AppDevicesIndexRoute
+  '/_app/orgs/': typeof AppOrgsIndexRoute
   '/_app/rooms/': typeof AppRoomsIndexRoute
+  '/_app/orgs/$orgId/chart': typeof AppOrgsOrgIdChartRoute
+  '/_app/orgs/$orgId/members': typeof AppOrgsOrgIdMembersRoute
+  '/_app/orgs/$orgId/positions': typeof AppOrgsOrgIdPositionsRoute
+  '/_app/orgs/$orgId/settings': typeof AppOrgsOrgIdSettingsRoute
+  '/_app/orgs/$orgId/': typeof AppOrgsOrgIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -217,6 +279,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tokens'
     | '/invite/$token'
+    | '/orgs/$orgId'
     | '/admin/audit'
     | '/admin/invites'
     | '/admin/users'
@@ -227,7 +290,13 @@ export interface FileRouteTypes {
     | '/connectors/'
     | '/contacts/'
     | '/devices/'
+    | '/orgs/'
     | '/rooms/'
+    | '/orgs/$orgId/chart'
+    | '/orgs/$orgId/members'
+    | '/orgs/$orgId/positions'
+    | '/orgs/$orgId/settings'
+    | '/orgs/$orgId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -249,7 +318,13 @@ export interface FileRouteTypes {
     | '/connectors'
     | '/contacts'
     | '/devices'
+    | '/orgs'
     | '/rooms'
+    | '/orgs/$orgId/chart'
+    | '/orgs/$orgId/members'
+    | '/orgs/$orgId/positions'
+    | '/orgs/$orgId/settings'
+    | '/orgs/$orgId'
   id:
     | '__root__'
     | '/_app'
@@ -262,6 +337,7 @@ export interface FileRouteTypes {
     | '/_app/tokens'
     | '/invite/$token'
     | '/_app/'
+    | '/_app/orgs/$orgId'
     | '/_app/admin/audit'
     | '/_app/admin/invites'
     | '/_app/admin/users'
@@ -272,7 +348,13 @@ export interface FileRouteTypes {
     | '/_app/connectors/'
     | '/_app/contacts/'
     | '/_app/devices/'
+    | '/_app/orgs/'
     | '/_app/rooms/'
+    | '/_app/orgs/$orgId/chart'
+    | '/_app/orgs/$orgId/members'
+    | '/_app/orgs/$orgId/positions'
+    | '/_app/orgs/$orgId/settings'
+    | '/_app/orgs/$orgId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -417,6 +499,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDevicesCodeRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/orgs/': {
+      id: '/_app/orgs/'
+      path: '/orgs'
+      fullPath: '/orgs/'
+      preLoaderRoute: typeof AppOrgsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/orgs/$orgId': {
+      id: '/_app/orgs/$orgId'
+      path: '/orgs/$orgId'
+      fullPath: '/orgs/$orgId'
+      preLoaderRoute: typeof AppOrgsOrgIdRouteRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/rooms/': {
       id: '/_app/rooms/'
       path: '/rooms'
@@ -430,6 +526,41 @@ declare module '@tanstack/react-router' {
       fullPath: '/rooms/$roomId'
       preLoaderRoute: typeof AppRoomsRoomIdRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_app/orgs/$orgId/': {
+      id: '/_app/orgs/$orgId/'
+      path: '/'
+      fullPath: '/orgs/$orgId/'
+      preLoaderRoute: typeof AppOrgsOrgIdIndexRouteImport
+      parentRoute: typeof AppOrgsOrgIdRouteRoute
+    }
+    '/_app/orgs/$orgId/chart': {
+      id: '/_app/orgs/$orgId/chart'
+      path: '/chart'
+      fullPath: '/orgs/$orgId/chart'
+      preLoaderRoute: typeof AppOrgsOrgIdChartRouteImport
+      parentRoute: typeof AppOrgsOrgIdRouteRoute
+    }
+    '/_app/orgs/$orgId/members': {
+      id: '/_app/orgs/$orgId/members'
+      path: '/members'
+      fullPath: '/orgs/$orgId/members'
+      preLoaderRoute: typeof AppOrgsOrgIdMembersRouteImport
+      parentRoute: typeof AppOrgsOrgIdRouteRoute
+    }
+    '/_app/orgs/$orgId/positions': {
+      id: '/_app/orgs/$orgId/positions'
+      path: '/positions'
+      fullPath: '/orgs/$orgId/positions'
+      preLoaderRoute: typeof AppOrgsOrgIdPositionsRouteImport
+      parentRoute: typeof AppOrgsOrgIdRouteRoute
+    }
+    '/_app/orgs/$orgId/settings': {
+      id: '/_app/orgs/$orgId/settings'
+      path: '/settings'
+      fullPath: '/orgs/$orgId/settings'
+      preLoaderRoute: typeof AppOrgsOrgIdSettingsRouteImport
+      parentRoute: typeof AppOrgsOrgIdRouteRoute
     }
   }
 }
@@ -450,6 +581,25 @@ const AppAdminRouteRouteWithChildren = AppAdminRouteRoute._addFileChildren(
   AppAdminRouteRouteChildren,
 )
 
+interface AppOrgsOrgIdRouteRouteChildren {
+  AppOrgsOrgIdChartRoute: typeof AppOrgsOrgIdChartRoute
+  AppOrgsOrgIdMembersRoute: typeof AppOrgsOrgIdMembersRoute
+  AppOrgsOrgIdPositionsRoute: typeof AppOrgsOrgIdPositionsRoute
+  AppOrgsOrgIdSettingsRoute: typeof AppOrgsOrgIdSettingsRoute
+  AppOrgsOrgIdIndexRoute: typeof AppOrgsOrgIdIndexRoute
+}
+
+const AppOrgsOrgIdRouteRouteChildren: AppOrgsOrgIdRouteRouteChildren = {
+  AppOrgsOrgIdChartRoute: AppOrgsOrgIdChartRoute,
+  AppOrgsOrgIdMembersRoute: AppOrgsOrgIdMembersRoute,
+  AppOrgsOrgIdPositionsRoute: AppOrgsOrgIdPositionsRoute,
+  AppOrgsOrgIdSettingsRoute: AppOrgsOrgIdSettingsRoute,
+  AppOrgsOrgIdIndexRoute: AppOrgsOrgIdIndexRoute,
+}
+
+const AppOrgsOrgIdRouteRouteWithChildren =
+  AppOrgsOrgIdRouteRoute._addFileChildren(AppOrgsOrgIdRouteRouteChildren)
+
 interface AppRouteChildren {
   AppAdminRouteRoute: typeof AppAdminRouteRouteWithChildren
   AppAgentsRoute: typeof AppAgentsRoute
@@ -457,6 +607,7 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppTokensRoute: typeof AppTokensRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppOrgsOrgIdRouteRoute: typeof AppOrgsOrgIdRouteRouteWithChildren
   AppConnectorsConnectorIdRoute: typeof AppConnectorsConnectorIdRoute
   AppContactsIdRoute: typeof AppContactsIdRoute
   AppDevicesCodeRoute: typeof AppDevicesCodeRoute
@@ -464,6 +615,7 @@ interface AppRouteChildren {
   AppConnectorsIndexRoute: typeof AppConnectorsIndexRoute
   AppContactsIndexRoute: typeof AppContactsIndexRoute
   AppDevicesIndexRoute: typeof AppDevicesIndexRoute
+  AppOrgsIndexRoute: typeof AppOrgsIndexRoute
   AppRoomsIndexRoute: typeof AppRoomsIndexRoute
 }
 
@@ -474,6 +626,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppTokensRoute: AppTokensRoute,
   AppIndexRoute: AppIndexRoute,
+  AppOrgsOrgIdRouteRoute: AppOrgsOrgIdRouteRouteWithChildren,
   AppConnectorsConnectorIdRoute: AppConnectorsConnectorIdRoute,
   AppContactsIdRoute: AppContactsIdRoute,
   AppDevicesCodeRoute: AppDevicesCodeRoute,
@@ -481,6 +634,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppConnectorsIndexRoute: AppConnectorsIndexRoute,
   AppContactsIndexRoute: AppContactsIndexRoute,
   AppDevicesIndexRoute: AppDevicesIndexRoute,
+  AppOrgsIndexRoute: AppOrgsIndexRoute,
   AppRoomsIndexRoute: AppRoomsIndexRoute,
 }
 

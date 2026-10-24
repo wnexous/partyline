@@ -15,6 +15,7 @@ import {
   UsernamePattern,
 } from "./api/types.gen";
 import type { MessageKey } from "./i18n";
+import { isOrgSlug, MaxOrgNameLength, normalizeSlug } from "./orgs";
 
 /*
  * Form schemas built from the generated contract constants (AD-003), so the web app validates
@@ -61,10 +62,35 @@ export const createGroupSchema = z.object({
   name: z.string().trim().min(1, msg("validation.required")),
 });
 
+/** POST /orgs (ORG-01): a name of 1 to 100 characters, counted in code points like the server. */
+export const createOrgSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, msg("validation.required"))
+    .refine((v) => textLength(v) <= MaxOrgNameLength, msg("validation.orgName")),
+});
+
+/** PATCH /orgs/{org} (OMEM-04): the name as for a new organization, the address as the server reads it. */
+export const updateOrgSchema = z.object({
+  name: createOrgSchema.shape.name,
+  slug: z.string().transform(normalizeSlug).refine(isOrgSlug, msg("validation.orgSlug")),
+});
+
 const handleRe = new RegExp(HandlePattern);
 
 /** The handle as the server reads it: no leading @, no spaces around it, lower case. */
 export const normalizeHandle = (text: string) => text.trim().replace(/^@+/, "").toLowerCase();
+
+/** POST /orgs/{org}/invitations (OMEM-01): whom, with what permission and in which position (none: empty). */
+export const inviteSchema = z.object({
+  handle: z
+    .string()
+    .transform(normalizeHandle)
+    .refine((v) => v.length > 0, msg("validation.required")),
+  permission: z.enum(["admin", "member", "guest"]),
+  position_id: z.string(),
+});
 
 /**
  * The profile of any intelligence (PROF-03, PROF-05, PROF-11): a display name, a handle and a
@@ -166,6 +192,9 @@ export type SetupForm = z.input<typeof setupSchema>;
 export type LoginForm = z.input<typeof loginSchema>;
 export type AcceptInviteForm = z.input<typeof acceptInviteSchema>;
 export type CreateGroupForm = z.input<typeof createGroupSchema>;
+export type CreateOrgForm = z.input<typeof createOrgSchema>;
+export type UpdateOrgForm = z.input<typeof updateOrgSchema>;
+export type InviteFormValues = z.input<typeof inviteSchema>;
 export type CreateTokenForm = z.input<typeof createTokenSchema>;
 export type ProfileForm = z.input<typeof profileSchema>;
 export type ProfileEditForm = z.input<typeof profileEditSchema>;
@@ -182,4 +211,5 @@ export const validationVars = {
   "validation.keyword": { max: MaxMemberKeyword },
   "validation.instructions": { max: MaxRoomInstructions },
   "validation.bio": { max: MaxProfileBio },
+  "validation.orgName": { max: MaxOrgNameLength },
 } as const;

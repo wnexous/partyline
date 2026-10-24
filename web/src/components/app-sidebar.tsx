@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  Building2Icon,
   ContactRoundIcon,
   FingerprintIcon,
   KeyRoundIcon,
@@ -26,6 +27,7 @@ import { LanguageRadioGroup } from "@/components/language-switch";
 import { LiveIndicator } from "@/components/live-status";
 import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
+import { OrgSwitcher } from "@/components/org-switcher";
 import { SearchButton } from "@/components/search-button";
 import { ThemeRadioGroup } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -50,6 +52,7 @@ import { cn } from "@/lib/utils";
 interface NavItem {
   to:
     | "/"
+    | "/orgs"
     | "/contacts"
     | "/connectors"
     | "/identities"
@@ -74,7 +77,10 @@ interface NavGroup {
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: "nav.groupWork",
-    items: [{ to: "/", label: "nav.conversations", icon: MessagesSquareIcon, exact: true }],
+    items: [
+      { to: "/", label: "nav.conversations", icon: MessagesSquareIcon, exact: true },
+      { to: "/orgs", label: "nav.organizations", icon: Building2Icon },
+    ],
   },
   {
     label: "nav.groupConnections",
@@ -117,8 +123,8 @@ export function AppSidebar({ me }: { me: Me }) {
 }
 
 /**
- * Brand and menus, the search box and the two ways to start talking, the conversation list, and
- * the live line. On a phone it is the home screen itself (`screen`): the page heading, filling
+ * Brand and menus, the organization switcher, the search box and the two ways to start talking,
+ * the conversation list, and the live line. On a phone it is the home screen itself (`screen`): the page heading, filling
  * the window.
  */
 export function MessengerPanel({ me, screen = false }: { me: Me; screen?: boolean }) {
@@ -145,6 +151,7 @@ export function MessengerPanel({ me, screen = false }: { me: Me; screen?: boolea
             <AccountMenu me={me} />
           </div>
         </div>
+        <OrgSwitcher />
         <ConversationSearch value={query} onChange={setQuery} />
         <StartButtons />
         {screen ? <h1 className="sr-only">{t("conversations.label")}</h1> : null}

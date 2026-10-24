@@ -49,6 +49,32 @@ describe("api client", () => {
     });
   });
 
+  it("carries the details of a refusal, such as the counts of a non-empty organization", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(409, {
+        error: {
+          code: "organization_not_empty",
+          message: "organization still owns resources",
+          details: { agents: "2", connectors: "0", groups: "1" },
+        },
+      }),
+    );
+    const err = await api("DELETE", "/orgs/o1").catch((e: unknown) => e);
+    expect(err).toMatchObject({
+      status: 409,
+      code: "organization_not_empty",
+      details: { agents: "2", connectors: "0", groups: "1" },
+    });
+  });
+
+  it("has no details when the refusal names none", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(404, { error: { code: "not_found", message: "x" } }),
+    );
+    const err = await api("GET", "/orgs/o9").catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 404, details: {} });
+  });
+
   it("falls back to a status-derived code when the body is not an envelope", async () => {
     fetchMock.mockResolvedValueOnce(new Response("boom", { status: 503 }));
     const err = await api("GET", "/rooms").catch((e: unknown) => e);

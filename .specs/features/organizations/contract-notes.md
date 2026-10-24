@@ -1782,6 +1782,218 @@ extends what T57 left open; the command's output and exit codes are unchanged.
   state" as the data, not as the columns. `printTreeNodes`, the indentation style T58 names as a model, went with the machine tree; the groups use two spaces like it did.
 - **Docs**: `docs/agents.md` says the command lists the AIs hosted on the user's computers and no others, and that one folder on two computers is two AIs.
 
+## T39: Organization queries and switcher (ORG-01, ORG-02, CHART-02)
+
+Phase 8 was written while Phase 3 (T12-T17) was being built, against a contract the web **assumed** and sent to the coordinator to
+relay; the shapes were typed in one interim module, `web/src/lib/api/org-types.ts`. Phase 3 landed in `wnexous/pl-org-g0` and matched
+them, so that module is **gone**: the web reads `Organization`, `Position`, `OrgMember`, `OrgChart`, `ChartMember`, `Invitation`,
+`DeleteEffect`, the requests and the error codes from `types.gen.ts`. What the final contract added or settled, as the web uses it:
+
+- `OrgMember` carries the viewer's `can_delete`, `delete_effect` and `can_move` (the same values as the chart's), so the members page
+  needs no chart for them; the chart still gives the positions the dialogs offer.
+- `PATCH /orgs/{org}/members/{iid}` takes `{permission?, position_id?}` where `position_id` is `string | null`: `null` or `""` clears
+  the position (the web sends `""`).
+- `POST /invitations/{id}/accept` answers **200 with the `Organization`** the invitee now belongs to (the web puts it in the cached
+  list at once); `decline` answers 204.
+- The live frame is **`invitation_received`** (`LiveInvitationReceived`, `data` = the `Invitation`): the cached inbox gets it first
+  (an invitation sent again replaces its earlier terms); an inbox nobody opened is left alone, its first fetch has it.
+- `ErrorCodeOrganizationNotEmpty`, `ErrorCodePositionCycle` and `ErrorCodeAlreadyMember` are in the generated `ErrorCode`, so the
+  pages compare `err.code` as everywhere else (the interim `hasErrorCode` helper was removed).
+- `GET /orgs/{org}/chart` is `OrgChart {viewer: {admin}, positions (flat, tree order, each with its holders), members (no position,
+  hanging under `under`), unassigned}`, every member in exactly one of the three places.
+
+- **Taken over from Phase 9** (the pieces the T45-T50 notes left for T39):
+  - **`useMyOrgs()` now reads `GET /orgs`** (`orgsQuery`, key `["orgs"]`), no longer the memberships of the viewer's own
+    profile. `MyOrg` is `{id, name, slug, permission, avatarUrl?, positionId?}` (it lost `position`, a name `GET /orgs` does not
+    carry and nothing read). `test/orgs.ts#viewerIn` serves `GET /orgs` besides the profile, so the Phase 9 tests that use it are
+    unchanged; those that mocked the profile route for the organizations (`use-current-org`, `connectors`, `settings`,
+    `conversation-list`, `new-group-dialog`, `a11y`) now mock `GET /orgs`, with the same assertions.
+  - **`useCurrentOrg()`** gains `failed` (the list could not be read, which is not "belongs to none").
+  - **The pickers' users** (T46's gap): `pickables(contacts, orgId, orgUsers)` and `hooks/use-org-users.ts`
+    (`useOrgUsers(orgId)`, the organization's members of role `user` by name, without the viewer). `NewGroupDialog` and
+    `MemberPicker` offer them instead of the instance's directory, wait for them (a skeleton, so the whole instance is never listed
+    first), prune a pick the new organization does not offer once its members are known, and fall back to the directory when the
+    members cannot be read (the server's `not_org_member` refusal stays the guard, as before). The text of `picker.body` now says
+    "The AIs and users of this group's organization." (it said "...and the users of this instance").
+  - **Live**: `access.changed` with `resource_kind: "organization"` calls `invalidateOrganizations(qc, resource_id)`: the list
+    `["orgs"]`, every query under `["orgs", id]` (the organization, its members, chart and pending invitations), the invitations
+    waiting for the viewer, their own profile, the contacts and the conversations. The pages of other organizations are left alone.
+    **Not handled yet**: the live frame that tells an invitee about a new invitation (T15, name unknown, not in `types.gen.ts`);
+    add its case to `handlers.ts` after the merge so the inbox of T40 updates without a reload.
+- **Queries** (`queries.ts`): keys `orgs`, `org(id)`, `orgMembers(id)`, `orgChart(id)`, `orgInvitations(id)`, `invitations`;
+  reads `useOrgs`, `useMyOrgs`, `useOrg`, `useOrgMembers(id, enabled?)`, `useOrgChart`, `useOrgInvitations(id, enabled?)`,
+  `useMyInvitations`; writes `useCreateOrg`, `useUpdateOrg(id)`, `useUploadOrgAvatar(id)`, `useRemoveOrgAvatar(id)`, `useDeleteOrg`,
+  `useCreatePosition|useUpdatePosition|useDeletePosition(orgId)`, `useUpdateOrgMember(orgId)`, `useInviteToOrg(orgId)`,
+  `useRevokeInvitation(orgId)`, `useAcceptInvitation`, `useDeclineInvitation`. A created or changed organization is written into the
+  cached list where the server will place it (by name, ignoring case, then id) and the list is fetched again, so the switcher never
+  lands on another organization first. An invitation leaves the inbox when answered and when the answer is 410, 404 or 409
+  `already_member`.
+  `useRemoveFromOrg` and `useDeleteAgent` also mark the organization pages stale (the member and the chart lose the identity).
+- **`ApiError.details`** (`client.ts`): the `details` of the error envelope (the counts of `organization_not_empty`).
+- **The switcher** (`components/org-switcher.tsx`, `OrgAvatar`, `NewOrgDialog`):
+  - Placement: under the brand row of `MessengerPanel` (the wide-screen column and the phone's home screen), and, compact (the
+    organization's picture only), in the top bar of a phone's full-screen pages (`MobileBar`).
+  - The button is named "Organization: {name}" (", {n} unread message(s) in other organizations" when conversations that the
+    current organization does not hold have unread messages: each counted once). The menu "Organizations" has one radio item per
+    organization named "{name}, {role}[, {n} unread message(s)]" with the picture, the name, the role (Admin, Member, Guest) and the
+    count (99+ from a hundred); a DM both sides share with two organizations counts in both (`unreadByOrg`, using `inOrg`, so a
+    conversation filed under none counts everywhere, as the sidebar lists it everywhere). Picking one calls `select` (kept in
+    `localStorage` under `pl.org`, every access in try/catch; a browser that refuses storage still switches for the tab and starts on
+    the account's default). "New organization" opens the dialog.
+  - States: a skeleton while the list loads; nothing when it cannot be read (the rest of the sidebar is untouched); for a viewer who
+    belongs to none, one button "New organization".
+  - **`NewOrgDialog`** (controlled by its caller, so the menu item here and the page button of T40 share it): a name of 1 to 100
+    characters, counted in code points (`createOrgSchema`, "Required" / "At most 100 characters" before any request), the server's
+    422 reason under the field, "Can't reach the server..." above the form. On success the new organization becomes the current
+    one, a toast says "{name} created" and the dialog closes (T40/T44 add the navigation).
+  - No link to the organization pages yet: `/orgs` (T40) and the chart (T44) do not exist in this commit; T40 adds the
+    "Organizations" entry of the account menu and the palette and the switcher's "All organizations" link.
+- **Texts** (en and pt-BR): `orgs.switcher`, `orgs.switcherUnreadOne|Many`, `orgs.menu`, `orgs.item`, `orgs.itemUnread` (reuses
+  `conversations.unreadOne|Many` and `profile.permissionAdmin|Member|Guest`), `orgs.new`, `orgs.newBody`, `orgs.name`,
+  `orgs.nameHint`, `orgs.create`, `orgs.creating`, `orgs.created`, `validation.orgName`; changed `picker.body`.
+- **Tests**: `org-switcher.test.tsx` (the lists and counts, a shared DM in both, the checked item, the 99+ cap, Portuguese,
+  switching and the sidebar following it, the pick kept across a reload, throwing storage in both directions, the default and the
+  first organization, a pick of an organization that was left, the dialog (open, create, at once in the list, 0/101/100 characters
+  counted in characters, the server's reason, the network, reopening empty), none / failed / loading, the phone's two places, axe in
+  both locales), `lib/orgs.test.ts` (`toMyOrgs`, `unreadByOrg`, `unreadOutsideOrg`, the limits), `use-current-org.test.tsx`,
+  `handlers.test.ts` (the organization pages, the live invitation), `client.test.ts` (`details`), and the pickers' tests
+  (`new-group-dialog.test.tsx`, `member-picker.test.tsx`: the organization's users, by name, without the viewer or the AIs among the
+  members, the other organization's after a change, waiting, the fallback).
+
+## T40: Organizations list, creation and invitation inbox (ORG-01, OMEM-01, OMEM-02, OMEM-07)
+
+- **The page** (`routes/_app/orgs/index.tsx`, `/orgs`): the heading "Organizations"; **Invitations** (only while some wait: the invitations
+  `GET /invitations` lists, the viewer's own and those of the AIs they manage); **Your organizations** (`GET /orgs`: the picture, the
+  name, the address in monospace, what the viewer is, and either the "Current" tag or a "Switch" button named "Switch to {name}", which
+  is `useCurrentOrg().select`). "New organization" (header, or the empty state when the viewer belongs to none) opens T39's
+  `NewOrgDialog`: 0, 101 characters refused inline, 100 accepted (counted in characters), the new organization listed and current. A
+  list that cannot be read says so with a retry; a viewer with no organization sees "You're not in any organization yet".
+  - **Navigation**: "Organizations" is an entry of the Work group of `NAV_GROUPS` (so of the account menu and of the command palette) and
+    the switcher's menu has "All organizations". The rows do not link to the organization's own pages yet: they come with T41-T44, which
+    add the links where their pages are (typed routes cannot point to a page that does not exist in the commit).
+- **An invitation** (`InvitationItem`): the labelled list item "Invitation to {org}" with the picture, the sentence, the position
+  (when it carries one), what it grants, when it expires and **Accept** / **Decline**, both disabled while an answer is on its way and
+  both described by the sentence. The sentence names who is invited: "you" for the viewer, the AI's name for an AI they manage.
+  - "{inviter} invited {who} to {org} as an admin|a member|a guest." (a permission the app does not know: "... to {org}.").
+  - "Position: {position}" when it carries one.
+  - **What it grants, literally (L-011)**: with a position, "Identities above {position} will manage {who}."; a guest with a position,
+    "Identities above {position} will manage {who} and may remove {who} from {org}."; a guest with no position,
+    "{inviter} will manage {who} and may remove {who} from {org}." (a guest is the responsibility of whoever invited it, POS-05); a
+    member or an admin with no position grants nothing, so nothing is said. `grantText` is exported for the members page.
+  - "Expires {when}": `formatRelative` of `expires_at` ("Expires in 3 days" within the week, "Expires Nov 3" after), with the absolute
+    time as the tooltip (OMEM-07: 14 days).
+- **Answering**: accept -> `POST /invitations/{id}/accept`, toast "You joined {org}" ("{name} joined {org}" for an AI), the invitation
+  leaves the inbox and the organization joins the list (the organizations are fetched again); decline -> toast "Invitation to {org}
+  declined". **410 or 404** (expired or withdrawn): the invitation leaves the inbox with the toast "The invitation to {org} expired".
+  **409 `already_member`**: it leaves with "Already a member of {org}". Any other failure keeps it, enabled, with "Couldn't answer the
+  invitation to {org}. Try again." (`useAnswerInvitation` in `queries.ts` drops it for 410, 404 and `already_member`).
+- **Fresh**: the inbox is asked for again every time the page opens (`refetchOnMount: "always"`, tested with a client that keeps reads
+  fresh for 30 s as the app does), because the invitee is not a member and so never hears the organization's live frame; the live
+  frame for a new invitation is not handled yet (T39 note). The `access.changed` organization frame refreshes it too.
+- **Texts** (en and pt-BR): `nav.organizations`, `page.orgsTitle|Body`, `orgs.all|yours|current|switch|switchTo`,
+  `orgs.emptyTitle|emptyBody|loadError`, `orgs.invitations|invitationsBody|invitationsLabel|invitationTo|you`,
+  `orgs.inviteAdmin|Member|Guest|Other|Position`, `orgs.grantPosition|PositionGuest|Guest`, `orgs.expires`, `orgs.accept|decline`,
+  `orgs.acceptedSelf|acceptedAI|declined|expired|alreadyIn|answerFailed`.
+- **Tests**: `orgs/orgs.test.tsx` (29: the list and the Current/Switch states, none, failure, the menu and the switcher link, the dialog
+  with 101 and 100 characters, the invitation sentence, expiry, accept moving the organization into the list, decline, 410, 409, 404,
+  failure, one answer at a time, refresh on open, the live refresh, the four grant texts literally, an AI's invitation and both
+  together, Portuguese, axe in both locales and with no organization). Existing assertions updated for the new entry:
+  `messenger-shell.test.tsx` (the account menu's destinations) and `command-menu.test.tsx` (the pages the palette finds).
+
+## T41: Organization settings page (OMEM-04, ORG-06, OMEM-05)
+
+- **The organization's pages share a layout** (`routes/_app/orgs/$orgId/route.tsx`, new): `GET /orgs/{orgId}` (`useOrg`) decides what
+  is shown for every page of the organization. **404 (not a member, CHART-02): "This organization is not on your line"**, "It was
+  deleted, or you are not a member of it." and a link back to the list, for any page of it; any other failure: an alert with a retry;
+  while loading, a skeleton. Otherwise the **bar** (`data-testid="org-bar"`): a link back to the list, the picture, the name, the address
+  and the viewer's part in it (Admin, Member, Guest), then the sections as a `nav` named "Sections of {name}" (T41: Settings; T42-T44
+  add Members, Positions, Org chart). `{orgId}` may be the id or the address: once the organization is read, an address in the URL is
+  replaced (history replace) by the id, which every page and the live refresh key on. `/orgs/{id}` redirects to the first page there is
+  (T41: settings; since T44 it is the chart). The list of organizations (T40) links each row to "Settings of {name}".
+- **The page** (`orgs/$orgId/settings.tsx`): "Organization settings", then three sections. All text and behaviour below is for the
+  viewer's own permission as `GET /orgs/{org}` reports it.
+  - **Details**: an admin gets the **photo** (`PhotoEditor`, new shared component extracted from the profile editor with the behaviour
+    unchanged: sent at once, a preview, the server's refusal, remove) and a form with the **name** and the **address**. Only what
+    changed is sent (`PATCH /orgs/{org}`); "Save" is disabled until something changed; the answer replaces the cached organization and
+    the bar. The name is 1-100 characters counted in characters; the address is trimmed and lower-cased, 1-40 characters of a-z0-9 in
+    groups joined by single hyphens (`isOrgSlug`, the server's rule), both refused before any request with the messages "Required",
+    "At most 100 characters", "Use lowercase letters, digits and single hyphens, up to 40 characters.". The server's 422 reason shows
+    under its field; **409 `conflict` is "That address is already taken."** under the address; 403 (demoted meanwhile) "Only admins of
+    {org} can change it."; a lost connection says so. A member or guest sees the same facts as plain text (the picture, the name, the
+    address), with no field, no upload and no Save, and "Only admins of {org} change these.".
+  - **Leave organization** (everyone): "Leave {org}" asks first ("You leave the groups of {org} and lose your position there. Your
+    account and your other organizations stay."), then `DELETE /orgs/{org}/members/{viewer}` (`useRemoveFromOrg`), goes to the list
+    and says "You left {org}". **409 `last_admin`** stays in the dialog: "You're the only admin of {org}. Make another member an
+    admin first."; any other failure "Couldn't leave {org}. Try again.".
+  - **Delete organization** (admins only; the section does not exist for anyone else): asks first ("{org} is deleted for good, with
+    its positions and pending invitations. It must not own any AI, connection or group: delete those first. This can't be undone."),
+    then `DELETE /orgs/{org}`, goes to the list and says "{org} deleted". **409 `organization_not_empty` shows the counts from
+    `details`** (`ownedThings`): "{org} still owns 2 AIs, 1 connection, and 3 groups. Delete them first." (zero counts left out, one
+    in the singular, the list in the viewer's language through `Intl.ListFormat`); without counts "{org} still owns AIs, connections
+    or groups. Delete them first."; 403 "Only admins of {org} can delete it.". The dialog stays open on every failure.
+- **Shared pieces**: `PhotoEditor` (`components/photo-editor.tsx`; the profile editor is now a thin wrapper, its tests unchanged),
+  `PageSection` (`components/page-section.tsx`, the settings page's section block), `OrgAvatar` gains `xl`, `lib/orgs.ts` gains
+  `MaxOrgSlugLength`, `normalizeSlug`, `isOrgSlug`, `ownedThings`, `schemas.ts` gains `updateOrgSchema`.
+- **Texts** (en and pt-BR): `orgs.backToList|sections|notFound*|orgLoadError|settingsLink`, `orgs.tabSettings|settingsTitle|
+  settingsBodyAdmin|Member`, `orgs.details|detailsBody|slug|slugHint|save|saved|slugTaken|saveForbidden`, `validation.orgSlug`,
+  `orgs.leave*|left`, `orgs.delete*|deleted`, `orgs.notEmpty|notEmptyUnknown`, `orgs.owns{Agents,Connectors,Groups}{One,Many}`.
+- **Tests**: `orgs/org-settings.test.tsx` (40: admin vs member vs guest views, the bar, renaming and the address with every
+  refusal (six malformed addresses, 40 characters), the server's reasons, the photo, leaving, deleting with the literal texts and
+  every count combination, the 404 and failure of the layout, the address-to-id replacement, the redirect of `/orgs/{id}`, the link
+  from the list, Portuguese, axe for an admin, a member, both dialogs and Portuguese).
+
+## T42: Members page and invite dialog (OMEM-01, OMEM-03, OMEM-04, OMEM-05, OMEM-06, POS-05, POS-06)
+
+- **The page** (`orgs/$orgId/members.tsx`, tab "Members"): a real table named "Members of {org}" with the columns Member (the row header:
+  picture, name linked to the profile, @handle, the AI badge and "You"), Permission, Position, Invited by (a guest's inviter) and
+  Actions. Admins first, then members, then guests, by name inside each. It is a table from 1280 px (`xl`) and **stacked rows below** (the header row is hidden, each row
+  a grid: the member, then the permission and position side by side, the inviter, the actions): the sidebar leaves a 768 px window only 448 px, which five columns do
+  not fit (T44 looked at it in a real browser). No horizontal scroll at any width from 360 to 1920 px. Anyone who belongs, a guest included, sees it (CHART-02). `GET /orgs/{org}/members`
+  gives the rows, and **what the viewer may do about each one comes on the row** (`can_delete`, `delete_effect`, `can_move`, the same values
+  as the chart's); the chart is read for the positions the dialogs offer only (without it an admin can still move someone to "No position").
+- **Actions** (only where the flags say so; the page adds no rule of its own):
+  - **Move** (`can_move`): `MoveMemberDialog` (new, shared with the chart in T44). It starts on where the member is now and sends nothing
+    until another position is picked (the button is off, and a submit without a change is ignored). An admin picks any position or "No
+    position" (`position_id: ""`); anyone else only the positions strictly below their own (`movablePositions`, from the viewer's position
+    in `GET /orgs/{org}`), and where the member is now is shown first, disabled, when the viewer could not pick it (a member with no position
+    shows "No position"). Toast "{name} moved to {position}" / "{name} no longer holds a position"; 403 "You can only move people to a
+    position below yours." inside the dialog, which stays open.
+  - **Delete** (`can_delete` and `delete_effect: "delete"`, an AI whose home is this organization): the existing `DeleteAIDialog`
+    (`DELETE /agents/{id}`).
+  - **Remove from {org}** (`can_delete` and any other effect): the existing `RemoveFromOrgDialog` (its `membership` prop is now
+    `Pick<ProfileMembership, "org_id" | "org_name">`), `DELETE /orgs/{org}/members/{iid}`. It now also answers 409 `home_organization`
+    inline ("{name} belongs to {org}. Ask an admin to delete it."); `last_admin` was already there.
+  - Each button has the member's name as its description, so a screen reader hears "Remove from Acme, Cora Dias".
+- **A change of a member refreshes the viewer's own part too**: `useUpdateOrgMember` (and the position mutations) mark `GET /orgs/{org}` stale,
+  which carries the viewer's permission and position, so an admin who steps down or moves themselves stops being offered what they can no longer do
+  (`stops offering the admin's controls to an admin who steps down`).
+- **Permission** (OMEM-04, OMEM-05): an admin gets a select in each row (`PATCH {permission}` only); anyone else a badge. 409 `last_admin`
+  is told above the table ("{name} is the only admin of {org}. Make another member an admin first."), 403 "Only admins of {org} change
+  permissions.", and the select goes back to what the server has. Toast "{name} is now {role}".
+- **Invite** (`components/invite-dialog.tsx`, the "Invite" button of the header, for every member and guest): a Handle field with
+  suggestions (the users and AIs of `GET /contacts` that are not members, not the viewer and not the exact handle already typed, found by
+  name or @handle, users first, at most five; picking one writes `@handle`). **An admin** also gets Permission (Admin, Member, Guest,
+  starting on Member) and Position (No position, then the chart's positions in tree order, indented) and sends `{handle, permission,
+  position_id?}`; **everyone else** gets neither field, an explanation ("You can only invite guests. A guest is your responsibility: you,
+  and the identities above you, may manage them and remove them from {org}.") and sends `{handle, permission: "guest"}`. The handle is sent
+  without `@`, lower case. Refusals: 404 `contact_not_found` "No user or AI has that handle." and 409 `already_member` "@bob is already a
+  member of Acme." under the field; 429 "Too many invitations in the last hour. Try again later."; 403 "You can only invite guests."; 422
+  reasons under their fields; the network. Success: toast "Invitation sent to {name}" and the pending list refreshes.
+- **Pending invitations** (admins only; nobody else asks for them): the list "Pending invitations of {org}" with the invitee, permission,
+  position, inviter and expiry, and **Revoke** (`DELETE /orgs/{org}/invitations/{id}`), toast "Invitation to {name} revoked" or the failure.
+- **Shared code**: `lib/org-chart.ts` (`positionOptions`, `descendantsOf`, `movablePositions`), `inviteCandidates` and
+  `pickables` in `lib/contacts.ts`, `SelectField` in `form-fields.tsx`, `inviteSchema` (`InviteFormValues`) in `schemas.ts`.
+- **`home_organization` is not reachable from this page** in practice: a member row gives an AI of this organization `delete_effect:
+  "delete"`, which routes to `Registry.Delete`. The inline message is there because the task asks for it and for any row the server
+  may serve.
+- **Texts** (en and pt-BR): `orgs.tabMembers`, `orgs.members*`, `orgs.col*`, `orgs.noPosition`, `orgs.invitedBy`,
+  `orgs.permission*`, `orgs.move*`, `orgs.deleteMember`, `profile.removeHome`, `orgs.invite*`, `orgs.pending*`, `orgs.revoke*`.
+- **Tests**: `orgs/org-members.test.tsx` (50: the table and its order, the viewer's row, a guest's view, failure, the live refresh; who
+  invites and as what for a member, a guest and an admin, the suggestions and what is never suggested, every refusal; permission changes
+  with `last_admin` and 403; the actions for an admin, a manager, a member and a guest (flags isolated: an AI the viewer may not delete
+  shows nothing), removing, deleting, moving (a manager's options, an admin's, the unchanged case, clearing, 403); the pending list, revoke,
+  failure and who never sees it; Portuguese; axe for each viewer and for the dialogs), `lib/org-chart.test.ts` (positions in order,
+  subtrees, movable positions), `lib/contacts.test.ts` (`inviteCandidates`, `pickables` with an organization's users).
 ## T15: Invitation routes (OMEM-01, OMEM-02, OMEM-04, OMEM-07)
 
 - **Routes** (`internal/api/org_invitations_handlers.go`, registered by `orgInvitationRoutes`), all `authed` (an agent token is 403
@@ -1879,3 +2091,83 @@ extends what T57 left open; the command's output and exit codes are unchanged.
 - **Web**: the generated `Me` now has `default_org_id?: string`, so the interim `MeWithDefaultOrg` of `web/src/lib/orgs.ts` (T49, which added the field
   with `Me & {...}`) became `Omit<Me, "default_org_id"> & { default_org_id?: string | null }`: the same tolerance of a `null`, which the server
   never sends, without the intersection narrowing the field to `string`.
+
+## T43: Positions editor (POS-01, POS-02, POS-09)
+
+- **The page** (`orgs/$orgId/positions.tsx`, tab "Positions", admins only): the positions of `GET /orgs/{org}/chart` as a nested list named "Positions of {org}"
+  (siblings by name, parents before children; a position whose parent is missing, or that a loop hides, is a root: `positionTree`). Past four
+  levels the rows stop moving right so a deep chart fits a phone. Each position shows its name, how many hold it ("No one holds it", "1 holder",
+  "{n} holders") and, for an admin: a **parent select** ("Parent of {name}"), **Rename {name}**, **Add a position under {name}** and **Delete
+  {name}**. "Add position" (header, or the empty state of an organization that has none) adds a root.
+  - **Parent select**: "No parent (a root)" and every position except the position itself and everything below it (`descendantsOf`), so the
+    select cannot ask for a loop; it starts on the position's own parent, sends `{parent_id}` alone (`""` for a root) when another is picked
+    and goes back to the server's value if the answer is a refusal. Toast "{name} moved". **409 `position_cycle`** (a chart that changed under
+    the admin) says "A position can't go below itself or one of its own positions." under the row.
+  - **Names**: `InlineRename` (Enter or the check saves, Escape or the cross cancels) with the limit of 60 characters counted in characters
+    (`MaxPositionNameLength`): "1 to 60 characters" appears as the text goes over it or is blank and Save is off, so nothing is sent; an unchanged
+    name sends nothing. Add sends `{name}` or `{name, parent_id}`; rename sends `{name}`. **409 `conflict`** is "A position with that name
+    already exists." (names are unique ignoring case); a **422** shows the server's reason for the field; 403 "Only admins of {org} edit the
+    positions."; the network. The field stays open on every failure.
+  - **Delete** (POS-09), with the literal text: "Its holders and its child positions move to {parent}. Nobody is removed from the
+    organization." (the parent's name), or for a root "It has no parent, so its holders are left with no position and its child positions
+    become roots. Nobody is removed from the organization.". Failures are told inside the dialog, which stays open.
+  - A member or guest who opens the page is **sent to the org chart** (`Navigate`, replace; in the T43 commit, before the chart existed, it was the
+    members page, and T44 pointed it at the chart as the task says). The tab is shown only to admins (`OrgBar`).
+- **Shared code**: `positionTree` (new; `positionOptions` is built on it) in `lib/org-chart.ts`.
+- **Texts** (en and pt-BR): `orgs.tabPositions`, `orgs.positions*`, `orgs.addRoot|addChild|positionNameLabel|rename|renameLabel|positionRule|parentOf|noParent`,
+  `orgs.holders*`, `orgs.deletePosition*`, `orgs.position{Created,Renamed,Moved,Deleted,Taken,Cycle,Forbidden,Failed}`.
+- **Tests**: `orgs/org-positions.test.tsx` (36: the nesting and the holder counts, several roots, the empty and failed states, the live refresh;
+  the redirect of a member and a guest and the tab for admins only; the parent select without the position and its subtree, its starting value, moving, making
+  a root, the new place shown, the cycle message, 403 and failure; adding a root and a child, 61 / 60 / 60 accented characters, blank, taken, 422, Escape;
+  renaming, unchanged, 61 characters, taken; deleting a middle position and a root with the literal texts, the chart after it, 403, cancel; Portuguese;
+  axe for the tree, both editors, the dialog and Portuguese) and `lib/org-chart.test.ts` (the forest).
+
+## T44: Org chart page (CHART-01, CHART-02, CHART-03, CHART-04)
+
+- **The page** (`orgs/$orgId/chart.tsx`, the first tab and where `/orgs/{id}` opens): the tree of `GET /orgs/{org}/chart`. Every member sees it, guests
+  included (CHART-02); anyone else gets the layout's not-found page, and so does a chart that answers 404 while the organization read succeeded
+  (`OrgNotFound`, now a component shared with the layout). A failure says so with a retry. Admins (the chart's `viewer.admin`) also get **"Edit positions"**,
+  a link to the editor.
+- **The model** (`lib/org-chart.ts`, pure, 11 tests): `buildChartTree(chart)` makes one tree of nodes `position:<id>`, `member:<iid>` and `unassigned`:
+  the positions as a forest (siblings by name) with, in each, its holders by name and then the positions below it; under each member the members
+  with no position that name it in `under` (a guest under its inviter, an AI under its creator), however deep; and last an **"Unassigned"** group for the
+  members nobody hangs under, those whose `under` names someone the chart does not list, and any a loop left out. Every member is drawn exactly once.
+  `visibleNodes(tree, collapsed)` lists what shows, with each node's level and parent.
+- **The tree** (`components/chart-tree.tsx`): `role="tree"` (named "Org chart of {org}") of `treeitem`s, each named by its own name element
+  (`aria-labelledby`, so a branch is not named after everything inside it) and described by its details (`aria-describedby`: @handle, kind, parts), with
+  `aria-level`, `aria-setsize`, `aria-posinset` and, only on items that hold others, `aria-expanded`; their children are in a `role="group"`. They are
+  `div`s: the roles carry the structure, and Biome's rules keep an interactive role off a list. **Roving tabindex**: one item has `tabindex=0`, the one
+  last focused while it still shows, else the first; its own link and buttons are tab stops only then (`tabbable`), so Tab leaves the tree after them.
+  Keys (the ARIA authoring practices'): Down/Up the next/previous item showing; Right opens a closed item, on an open one goes to its first child; Left
+  closes an open item (the focus stays on it), on a closed one or a leaf goes to its parent; Home/End the first/last showing; **Enter and Space toggle an
+  item that holds others and, on one that holds nothing, open that member's profile** (a position or the group with nothing in it does nothing). A link or button
+  inside an item keeps its own keys. Everything starts **open** (each item's own arrow button, `tabindex=-1`, toggles it with the mouse); what the viewer
+  closes stays closed when the chart refreshes live, a new item shows open. The focus follows a click.
+- **A row** (`ChartRow`): a position shows its name and how many hold it; a member the picture, the name (a link to the profile), @handle, the kind
+  ("AI" or "Person"), "You", the **Admin** / **Guest** badge (a plain member has none), and for an AI the online dot (live presence over the chart's `online`;
+  people have none). **Actions only where the flags say so** (CHART-03), as short words with the member in the accessible name: **Move** ("Move {name}",
+  `can_move`), **Delete** ("Delete {name}", `can_delete` and `delete_effect: "delete"`, an AI of this organization) and **Remove** ("Remove {name} from
+  {org}", `can_delete` otherwise). They open the dialogs of the members page: `MoveMemberDialog` (starting on the position the member holds in the chart),
+  `DeleteAIDialog` and `RemoveFromOrgDialog`; the chart refreshes through the same queries. The tests isolate each flag (an AI the viewer manages but
+  may not delete shows Move only; an inviter with no position shows Remove only; a manager above a member shows Move only).
+- **Small screens** (CHART-04): the children of an item are indented by 0.75 rem (1 rem from `md`) and a vertical rule, for four levels; deeper ones
+  stop moving right. Names truncate, the handle and badges wrap under the name, and the actions wrap below. Navigation: the chart is the first tab
+  (Org chart, Members, Positions for admins, Settings); `/orgs/{id}` opens it; each row of the organizations list links to it ("Org chart of {org}"); the
+  switcher menu has an "Org chart" item; the positions editor sends non-admins to it.
+- **Looked at in a real browser** (Chromium through Playwright, against the built binary and the merged Phase 3 API, with an organization seeded through
+  the API: a five-level chart, a very long position name, a long display name, AIs, an invited user): every organization page, the account settings and
+  the sidebar at **360, 480, 768, 900, 1024, 1280, 1440 and 1920 px have no sideways scroll** (`scrollWidth <= clientWidth`). It found and fixed
+  what happy-dom cannot see: the members table needs more room than the 448 px a 768 px window leaves beside the sidebar, so **it is a table from 1280 px
+  (`xl`) and stacked rows (a two-column grid per row) below**; the settings sections are **two columns only from `lg`** (they overflowed at 768 px,
+  the account settings page too, which shares `PageSection`); a row of the organizations list squeezed the name to "A.." so its links wrap below it; the positions
+  rows put the controls on a line of their own on a phone; the chart keeps a member's picture and name on one line; and the position selects show no
+  indentation (the closed select showed the indent of the chosen option). No Playwright test was added here: the organization flow and the 360 px check are T54's.
+- **Texts** (en and pt-BR): `orgs.tabChart|chart*`, `orgs.editPositions|unassigned|unassignedHint|kindPerson|expand|collapse|chartMove|chartDelete|chartRemove|removeShort`,
+  `orgs.chartLink`.
+- **Tests**: `orgs/org-chart.test.tsx` (53: the tree order and levels, a guest inside its inviter's item and an AI inside its creator's, Unassigned and
+  its absence, every field of a row, the viewer, the holder counts, live presence, profile links, descriptions, set sizes, expandability, the live refresh;
+  the keyboard: the one tab stop, Tab, Up/Down, Home/End, the ends, Left/Right close/open/descend/ascend, Enter and Space, Enter on a leaf opens the profile,
+  the focus when a collapsed item held it, a vanished tab stop, click, the arrow buttons, a button keeps its keys, the actions are tab stops only on the focused
+  item; the actions for a member, Lead, an inviter, a manager above a member, an inviter with no position and an admin, "Edit positions", remove / delete / move
+  through the dialogs; a guest sees it, 404 twice, failure; the redirect, the tabs in order, the list link and the switcher link; the indentation cap and
+  truncation; Portuguese; axe for each viewer, with an item closed, with a dialog open, and in Portuguese) and `lib/org-chart.test.ts` (the tree).

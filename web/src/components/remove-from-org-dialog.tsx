@@ -13,6 +13,7 @@ import {
 import { isApiError } from "@/lib/api/client";
 import { useRemoveFromOrg } from "@/lib/api/queries";
 import {
+  ErrorCodeHomeOrganization,
   ErrorCodeLastAdmin,
   type IntelligenceRef,
   type ProfileMembership,
@@ -31,7 +32,8 @@ export function RemoveFromOrgDialog({
   onClose,
 }: {
   identity: IntelligenceRef;
-  membership: ProfileMembership | null;
+  /** The organization to take it out of; its id and name are all the dialog reads. */
+  membership: Pick<ProfileMembership, "org_id" | "org_name"> | null;
   onClose: () => void;
 }) {
   const t = useT();
@@ -80,6 +82,9 @@ export function RemoveFromOrgDialog({
                   onError: (err) => {
                     if (isApiError(err) && err.code === ErrorCodeLastAdmin) {
                       setError(t("profile.removeLastAdmin", { name, org }));
+                    } else if (isApiError(err) && err.code === ErrorCodeHomeOrganization) {
+                      // An AI is deleted in its home organization, never removed from it.
+                      setError(t("profile.removeHome", { name, org }));
                     } else if (isApiError(err) && err.status === 0) {
                       setError(t("error.network"));
                     } else {
