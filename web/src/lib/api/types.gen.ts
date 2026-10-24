@@ -122,10 +122,14 @@ export interface ReactRequest {
   emoji: string;
 }
 /**
- * ReplyRequest is the body of POST /agent/messages/{id}/reply (TOOL-02).
+ * ReplyRequest is the body of POST /agent/messages/{id}/reply (TOOL-02). Quote, when false, answers a
+ * message that arrived on a connection in its chat without quoting it (CID-34); absent or true quotes it
+ * where the platform supports quotes. A reply to a room message is not changed by it: it always answers
+ * that message.
  */
 export interface ReplyRequest {
   text: string;
+  quote?: boolean;
 }
 /**
  * AgentFrameType is the type of an agent WebSocket frame (GET /agent/ws).

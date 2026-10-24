@@ -93,9 +93,13 @@ type ReactRequest struct {
 	Emoji string `json:"emoji"`
 }
 
-// ReplyRequest is the body of POST /agent/messages/{id}/reply (TOOL-02).
+// ReplyRequest is the body of POST /agent/messages/{id}/reply (TOOL-02). Quote, when false, answers a
+// message that arrived on a connection in its chat without quoting it (CID-34); absent or true quotes it
+// where the platform supports quotes. A reply to a room message is not changed by it: it always answers
+// that message.
 type ReplyRequest struct {
-	Text string `json:"text"`
+	Text  string `json:"text"`
+	Quote *bool  `json:"quote,omitempty"`
 }
 
 // Agent endpoints reuse other DTOs: POST /agent/rooms/{room}/messages takes PostMessageRequest

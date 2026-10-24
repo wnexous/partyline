@@ -536,3 +536,52 @@ func TestToolSendFileSchemaHasConnectionAndChat(t *testing.T) {
 	}
 	t.Fatal("send_file is not listed")
 }
+
+// CID-34: reply takes quote: false, which answers in the chat of the message from the connection without
+// quoting it; true or nothing quotes it. The tool says it was sent either way.
+func TestToolReplyWithoutAQuote(t *testing.T) {
+	c := newConnectionChan(t)
+	id := c.enqueue(c.group, "M1", "where is my order?")
+	s := c.connected(c.options())
+
+	text, isErr := s.call("reply", map[string]any{"message_id": id, "text": "on its way", "quote": false})
+	require.False(t, isErr, text)
+	require.Equal(t, "sent", text)
+	sent := c.inst.WaitSend(t)
+	require.Equal(t, []any{groupChatExternal, "on its way", ""}, []any{sent.ChatID, sent.Text, sent.ReplyToID})
+
+	for name, args := range map[string]map[string]any{
+		"quote true":    {"message_id": id, "text": "quoted", "quote": true},
+		"quote omitted": {"message_id": id, "text": "quoted"},
+		"quote null":    {"message_id": id, "text": "quoted", "quote": nil},
+	} {
+		text, isErr = s.call("reply", args)
+		require.False(t, isErr, "%s: %s", name, text)
+		require.Equal(t, "M1", c.inst.WaitSend(t).ReplyToID, name)
+	}
+
+	text, isErr = s.call("reply", map[string]any{"message_id": id, "text": "x", "quote": "no"})
+	require.True(t, isErr, text)
+	require.Contains(t, text, "invalid arguments")
+}
+
+// CID-34: the schema of reply has quote, a boolean that is not required, and says what it does.
+func TestToolReplySchemaHasQuote(t *testing.T) {
+	c := newConnectionChan(t)
+	s := c.connected(c.options())
+	s.send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+	for _, item := range s.response()["result"].(map[string]any)["tools"].([]any) {
+		tool := item.(map[string]any)
+		if tool["name"] != "reply" {
+			continue
+		}
+		schema := tool["inputSchema"].(map[string]any)
+		quote := schema["properties"].(map[string]any)["quote"].(map[string]any)
+		require.Equal(t, "boolean", quote["type"])
+		require.Contains(t, quote["description"], "without quoting")
+		require.Equal(t, []any{"message_id", "text"}, schema["required"])
+		require.Contains(t, tool["description"], "quote")
+		return
+	}
+	t.Fatal("reply is not listed")
+}

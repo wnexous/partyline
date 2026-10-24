@@ -44,8 +44,8 @@ func schema(s string) json.RawMessage { return json.RawMessage(s) }
 func (t *tools) register(srv *mcp.Server) {
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "reply",
-		Description: "Reply to a message by its message_id. A message from one of your connections (a WhatsApp number, a Telegram or Discord bot, a webhook) is answered in that chat through your own account, unsigned, quoting it when the platform supports quotes; a room message is answered in its room. When the platform does not take a reply at once the answer says so and Partyline retries it: do not send it again.",
-		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the message to answer"},"text":{"type":"string","description":"reply text"}},"required":["message_id","text"]}`),
+		Description: "Reply to a message by its message_id. A message from one of your connections (a WhatsApp number, a Telegram or Discord bot, a webhook) is answered in that chat through your own account, unsigned, quoting it when the platform supports quotes (quote: false sends to the same chat without quoting it); a room message is answered in its room. When the platform does not take a reply at once the answer says so and Partyline retries it: do not send it again.",
+		InputSchema: schema(`{"type":"object","properties":{"message_id":{"type":"string","description":"message_id of the message to answer"},"text":{"type":"string","description":"reply text"},"quote":{"type":"boolean","description":"default true: quote the message you answer where the platform supports quotes; false sends to the same chat without quoting it. Only for messages from your connections: a reply in a room always answers its message"}},"required":["message_id","text"]}`),
 	}, t.guard(t.reply))
 	srv.HandleTool(mcp.ToolDef{
 		Name:        "react",
@@ -147,6 +147,7 @@ func (t *tools) reply(ctx context.Context, args json.RawMessage) (string, error)
 	var a struct {
 		MessageID string `json:"message_id"`
 		Text      string `json:"text"`
+		Quote     *bool  `json:"quote"`
 	}
 	if err := decode(args, &a); err != nil {
 		return "", err
@@ -155,7 +156,7 @@ func (t *tools) reply(ctx context.Context, args json.RawMessage) (string, error)
 		return "", err
 	}
 	var out replyAnswer
-	if err := t.api.json(ctx, http.MethodPost, "agent/messages/"+url.PathEscape(a.MessageID)+"/reply", nil, dto.ReplyRequest{Text: a.Text}, &out); err != nil {
+	if err := t.api.json(ctx, http.MethodPost, "agent/messages/"+url.PathEscape(a.MessageID)+"/reply", nil, dto.ReplyRequest{Text: a.Text, Quote: a.Quote}, &out); err != nil {
 		return "", err
 	}
 	if out.Status != "" {

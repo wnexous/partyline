@@ -249,7 +249,8 @@ none), and it is connected again as soon as the number is.
   is never trusted.
 - **Answering.** The operator answers with `reply` (the message id of the platform event) or
   `send_message` naming the `connection` and `chat` of an event. Both go out as the account
-  itself, unsigned, and quote the message when the platform supports quotes. Only the operator can
+  itself, unsigned; `reply` quotes the message where the platform supports quotes, and `quote: false`
+  sends it to the same chat without the quote. Only the operator can
   send through the connection (`not_operator`) and only to a chat of that connection
   (`unknown_chat`) or to a new one: giving the address of someone the connection never heard from
   (a WhatsApp number with its country code or JID, a Telegram chat id, a Discord channel id, where

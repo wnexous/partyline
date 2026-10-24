@@ -626,7 +626,7 @@ func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Prin
 	id := r.PathValue("id")
 	orig, err := s.agentTarget(r.Context(), p, id)
 	if errors.Is(err, errMessageNotFound) {
-		return s.replyOnConnection(w, r, p, id, req.Text)
+		return s.replyOnConnection(w, r, p, id, req)
 	}
 	if err != nil {
 		return err
@@ -646,8 +646,9 @@ func (s *server) agentReply(w http.ResponseWriter, r *http.Request, p authn.Prin
 // record is purged: the text goes to the message's chat through the connection, unsigned, quoting the
 // message (CID-15). A message that is not in the AI's own queue, another AI's included, is unknown
 // (404). The answer is 201 with the state of the send when the platform took the text, and 202 when it
-// did not yet: the state is pending, carries the reason and Partyline retries (CID-18).
-func (s *server) replyOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, id, text string) error {
+// did not yet: the state is pending, carries the reason and Partyline retries (CID-18). With quote false
+// the text goes to the same chat without quoting the message (CID-34).
+func (s *server) replyOnConnection(w http.ResponseWriter, r *http.Request, p authn.Principal, id string, req dto.ReplyRequest) error {
 	if s.Platform == nil || s.Sends == nil {
 		return errMessageNotFound
 	}
@@ -658,9 +659,11 @@ func (s *server) replyOnConnection(w http.ResponseWriter, r *http.Request, p aut
 	if err != nil {
 		return err
 	}
-	return s.sendOnConnection(w, r, p, connectors.SendInput{
-		AgentID: p.AgentID, ConnectorID: ev.ConnectionID, ChatID: ev.ChatID, Text: text, ReplyTo: ev.ExternalID,
-	})
+	in := connectors.SendInput{AgentID: p.AgentID, ConnectorID: ev.ConnectionID, ChatID: ev.ChatID, Text: req.Text, ReplyTo: ev.ExternalID}
+	if req.Quote != nil && !*req.Quote {
+		in.ReplyTo = ""
+	}
+	return s.sendOnConnection(w, r, p, in)
 }
 
 // sendOnConnection sends what the AI wrote through its connection and answers with the state of the send

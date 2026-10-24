@@ -251,7 +251,8 @@ entre eles quando ele não informa), e volta a conectado assim que o número vol
   enviou, chega com `from_self` e nunca é confiável.
 - **Resposta.** O operador responde com `reply` (o id da mensagem do evento de plataforma) ou com
   `send_message` informando a `connection` e o `chat` de um evento. As duas saem como a própria
-  conta, sem assinatura, e citam a mensagem onde a plataforma permite. Só o operador envia pela
+  conta, sem assinatura; o `reply` cita a mensagem onde a plataforma permite, e `quote: false` envia
+  para o mesmo chat sem a citação. Só o operador envia pela
   conexão (`not_operator`) e só para um chat dela (`unknown_chat`) ou para um novo: informar como
   `chat` o endereço de alguém de quem a conexão nunca ouviu falar (um número de WhatsApp com o código
   do país ou um JID, um id de chat do Telegram, um id de canal do Discord, onde a plataforma deixa o
