@@ -271,6 +271,8 @@ export function makeProfile(over: Partial<IntelligenceProfile> = {}): Intelligen
     can_edit: false,
     apps: [],
     conversations: [],
+    memberships: [],
+    can_end_session: false,
     ...over,
   };
 }

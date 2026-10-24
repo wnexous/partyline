@@ -229,7 +229,6 @@ export const ptBR: Dictionary = {
   "profile.details": "Detalhes",
   "profile.owner": "Dono",
   "profile.app": "App",
-  "profile.machine": "Máquina",
   "profile.folder": "Pasta",
   "profile.noFolder": "Ainda sem pasta",
   "profile.access": "Seu acesso",

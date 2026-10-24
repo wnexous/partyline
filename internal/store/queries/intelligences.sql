@@ -48,9 +48,3 @@ UPDATE intelligences SET display_name = ?, updated_at = ? WHERE id = ?;
 -- The rooms the intelligence is a direct member of (an AI or a user member).
 SELECT DISTINCT room_id FROM room_members WHERE kind IN ('agent', 'user') AND member_id = ?;
 
--- name: ListIntelligenceRoomIDs :many
--- The rooms where the intelligence is a member or wrote a message: the conversations it can
--- share with a caller (CanSee).
-SELECT room_id FROM room_members WHERE kind IN ('agent', 'user') AND member_id = sqlc.arg(id)
-UNION
-SELECT room_id FROM messages WHERE author_iid = sqlc.arg(id) AND author_iid <> '';

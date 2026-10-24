@@ -298,7 +298,7 @@ func TestMergeLeavesTheQueueAloneWhenItFails(t *testing.T) {
 // as they were; a merge the owner makes moves the queue.
 func TestRefusedMergesLeaveTheQueueAlone(t *testing.T) {
 	w := newMergedWorld(t)
-	shareAI(w.alice, w.old, w.bob)
+	shareAgent(w.alice, w.old, w.bob.User.ID)
 
 	merge(w.bob, w.old, w.atlas).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound) // a use grant gives nothing
 	merge(w.carol, w.old, w.atlas).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)

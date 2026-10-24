@@ -45,8 +45,6 @@ const aiProfile = makeProfile({
   can_edit: true,
   ai: {
     owner: makeIntelligence(),
-    machine: "devbox",
-    machine_label: "Build box",
     folder: "/home/dev/atlas",
     folder_label: "~/atlas",
     app: "claude",
@@ -231,8 +229,6 @@ function appApi(locale: "en" | "pt-BR") {
       conversations: [],
       ai: {
         owner: makeMe().intelligence,
-        machine: "devbox",
-        machine_label: "devbox",
         folder: "/home/dev/atlas",
         folder_label: "~/atlas",
         app: "claude",

@@ -71,8 +71,15 @@ func (s *server) writeProfile(w http.ResponseWriter, r *http.Request, p authn.Pr
 // of the kind of intelligence. The conversations of a person are added by writeProfile.
 func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 	out := dto.IntelligenceProfile{
-		IntelligenceRef: convert.ProfileRef(prof), Bio: prof.Bio, CanEdit: prof.CanEdit,
-		Apps: []dto.App{}, Conversations: []dto.RoomRef{},
+		IntelligenceRef: convert.ProfileRef(prof), Bio: prof.Bio, CanEdit: prof.CanEdit, CanEndSession: prof.CanEndSession,
+		Apps: []dto.App{}, Conversations: []dto.RoomRef{}, Memberships: make([]dto.ProfileMembership, 0, len(prof.Memberships)),
+	}
+	for _, m := range prof.Memberships {
+		out.Memberships = append(out.Memberships, dto.ProfileMembership{
+			OrgID: m.Organization.ID, OrgName: m.Organization.Name, OrgSlug: m.Organization.Slug,
+			Permission: string(m.Permission), PositionID: m.PositionID, PositionName: m.PositionName,
+			CanDelete: m.CanDelete, DeleteEffect: string(m.DeleteEffect),
+		})
 	}
 	switch prof.Role {
 	case intelligences.RoleUser:
@@ -85,8 +92,7 @@ func (s *server) toProfile(prof intelligences.Profile) dto.IntelligenceProfile {
 	case intelligences.RoleAI:
 		a := prof.Agent
 		out.AI = &dto.AIDetail{
-			Owner:   convert.IntelligenceRef(a.Owner, dto.IntelligenceRoleUser, ""),
-			Machine: a.Machine, MachineLabel: a.MachineLabel,
+			Owner:  convert.IntelligenceRef(a.Owner, dto.IntelligenceRoleUser, ""),
 			Folder: a.Folder, FolderLabel: intelligences.FolderLabel(a.Home, a.Folder),
 			App: a.Harness, Online: s.Agents.Online(a.ID),
 			LastSeenAt: convert.OptTime(a.LastSeenAt), ConnectedAt: convert.OptTime(a.ConnectedAt), MyLevel: a.Level,

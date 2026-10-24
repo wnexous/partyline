@@ -252,8 +252,8 @@ func TestContactsOrderMachinesByStateAndLabel(t *testing.T) {
 }
 
 // TREE-04: the owner labels a machine (1 to 64 characters; empty resets it); the label replaces
-// the hostname in the tree and in an AI's profile, is the owner's own, and its refusals are
-// observable at their status (L-017).
+// the hostname in the tree, is the owner's own, and its refusals are observable at their status
+// (L-017). (An AI's profile does not show the machine any more, AD-022; T57 retires the route.)
 func TestMachineLabel(t *testing.T) {
 	f := newContactsFixture(t)
 	put := func(c *testkit.Client, host, label string) *testkit.Response {
@@ -264,8 +264,6 @@ func TestMachineLabel(t *testing.T) {
 	require.Equal(t, dto.Machine{Hostname: "devbox", Label: "Alice's desk"}, got, "the label is trimmed")
 	c := contactsOf(t, f.alice)
 	require.Equal(t, []any{"devbox", "Alice's desk"}, []any{c.Machines[0].Hostname, c.Machines[0].Label})
-	require.Equal(t, "Alice's desk", profileOf(t, f.alice, f.atlas).AI.MachineLabel, "the AI's profile shows it")
-	require.Equal(t, "devbox", profileOf(t, f.alice, f.atlas).AI.Machine)
 
 	longest := strings.Repeat("é", 64) // 64 code points, 128 bytes
 	require.Equal(t, longest, testkit.Decode[dto.Machine](put(f.alice, "devbox", longest).RequireStatus(http.StatusOK)).Label)

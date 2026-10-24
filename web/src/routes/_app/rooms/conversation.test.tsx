@@ -41,10 +41,10 @@ const atlasProfile: IntelligenceProfile = {
   can_edit: false,
   apps: [{ kind: "claude", label: "Claude Code" }],
   conversations: [],
+  memberships: [],
+  can_end_session: false,
   ai: {
     owner: ana,
-    machine: "devbox",
-    machine_label: "devbox",
     folder: "/home/dev/atlas",
     folder_label: "~/atlas",
     app: "claude",

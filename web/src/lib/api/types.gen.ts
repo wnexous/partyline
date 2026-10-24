@@ -1389,6 +1389,43 @@ export interface IntelligenceProfile extends IntelligenceRef {
    * (PEOP-03); empty for the other kinds.
    */
   conversations: RoomRef[];
+  /**
+   * Memberships lists, by organization name, the organizations the caller shares with a user or an AI
+   * (all of its own when the caller is the profile), with its permission and position in each and what
+   * the caller may do about it (OMEM-03, CHART-02). Empty for a person.
+   */
+  memberships: ProfileMembership[];
+  /**
+   * CanEndSession tells whether the caller may end the AI's live session: it manages the AI in an
+   * organization they share (POS-04). Always false for users and people.
+   */
+  can_end_session: boolean;
+}
+/**
+ * ProfileMembership is the place of an intelligence in one organization, as a profile shows it.
+ */
+export interface ProfileMembership {
+  org_id: string;
+  org_name: string;
+  org_slug: string;
+  /**
+   * Permission is admin, member or guest.
+   */
+  permission: string;
+  /**
+   * PositionID and PositionName are absent for a member with no position.
+   */
+  position_id?: string;
+  position_name?: string;
+  /**
+   * CanDelete tells whether the caller may delete the intelligence in this organization (POS-05).
+   */
+  can_delete: boolean;
+  /**
+   * DeleteEffect is what deleting it here does (POS-06): "delete" removes an AI for good, because this is its
+   * home organization; "remove" only takes the identity out of this organization.
+   */
+  delete_effect: string;
 }
 /**
  * PersonDetail describes the platform account behind a person (PEOP-03).
@@ -1411,16 +1448,13 @@ export interface PersonDetail {
   name_locked: boolean;
 }
 /**
- * AIDetail describes where an AI lives and who may use it.
+ * AIDetail describes where an AI lives and how the caller stands to it.
  */
 export interface AIDetail {
-  owner: IntelligenceRef;
   /**
-   * Machine is the hostname of the AI's machine and MachineLabel the owner's label for it
-   * (the hostname when there is none).
+   * Owner is the user who hosts the AI: whose computer and token run it. It grants nothing (AD-019).
    */
-  machine: string;
-  machine_label: string;
+  owner: IntelligenceRef;
   /**
    * Folder is the AI's canonical folder; empty for an AI that is not linked to one yet.
    */
@@ -1434,8 +1468,8 @@ export interface AIDetail {
   last_seen_at?: string /* RFC 3339 */;
   connected_at?: string /* RFC 3339 */;
   /**
-   * MyLevel is manage for the owner and use for a grantee; empty for a caller who sees the
-   * AI through a conversation they share.
+   * MyLevel is manage for whoever manages the AI in an organization they share with it (and the AI itself)
+   * and use for whoever only sees it.
    */
   my_level?: Level;
 }

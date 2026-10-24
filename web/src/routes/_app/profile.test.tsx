@@ -62,8 +62,6 @@ const atlas: IntelligenceProfile = makeProfile({
   can_edit: true,
   ai: {
     owner: ana,
-    machine: "devbox",
-    machine_label: "Build box",
     folder: "/home/dev/atlas",
     folder_label: "~/atlas",
     app: "claude",
@@ -126,15 +124,15 @@ describe("reading a profile (PROF-09)", () => {
     expect(within(details).getByText("Claude Code")).toBeInTheDocument();
     expect(within(details).getByText("Offline")).toBeInTheDocument();
     expect(within(details).getByText("Last seen 3 hr. ago")).toBeInTheDocument();
-    // The owner's label for the machine, with its hostname.
-    expect(within(details).getByText("Build box")).toBeInTheDocument();
-    expect(within(details).getByText("devbox")).toBeInTheDocument();
+    // Machines are internal (AD-022): the page shows the folder, not where it lives.
+    expect(within(details).queryByText("Machine")).toBeNull();
+    expect(within(details).queryByText("devbox")).toBeNull();
     expect(within(details).getByText("~/atlas")).toBeInTheDocument();
     vi.useRealTimers();
   });
 
   it("says an AI that no folder was ever linked to has none", async () => {
-    api({ ...atlas, ai: atlas.ai && { ...atlas.ai, folder: "", folder_label: "", machine: "" } });
+    api({ ...atlas, ai: atlas.ai && { ...atlas.ai, folder: "", folder_label: "" } });
     renderRoute("/contacts/a1");
     await name();
     const details = screen.getByRole("region", { name: "Details" });
@@ -877,8 +875,6 @@ describe("merging an AI from its profile (MRG-01, MRG-02)", () => {
     can_edit: true,
     ai: {
       owner: ana,
-      machine: "devbox",
-      machine_label: "devbox",
       folder: "/home/dev/atlas/notes",
       folder_label: "~/atlas/notes",
       app: "opencode",

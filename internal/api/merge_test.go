@@ -168,8 +168,8 @@ func visibleAgents(t *testing.T, c *testkit.Client) []string {
 // (the larger wins), who may use it and the messages it wrote; it is gone and the merge is audited.
 func TestMergeMovesGroupsCursorsGrantsAndMessages(t *testing.T) {
 	w := newMergeWorld(t)
-	shareAI(w.alice, w.old, w.bob)
-	shareAI(w.alice, w.atlas, w.carol)
+	shareAgent(w.alice, w.old, w.bob.User.ID)
+	shareAgent(w.alice, w.atlas, w.carol.User.ID)
 
 	ops, dev, ahead, solo := createRoom(w.alice, "ops"), createRoom(w.alice, "dev"), createRoom(w.alice, "ahead"), createRoom(w.alice, "solo")
 	bobs := createRoom(w.bob, "bobs")
@@ -694,7 +694,7 @@ func TestMergeAuthorization(t *testing.T) {
 // the cause is gone.
 func TestMergeIsAllOrNothing(t *testing.T) {
 	w := newMergeWorld(t)
-	shareAI(w.alice, w.old, w.bob)
+	shareAgent(w.alice, w.old, w.bob.User.ID)
 	room := createRoom(w.alice, "ops")
 	oldMember := join(t, w.alice, room.ID, w.old)
 	w.say(t, w.old, room.ID, "from old")
@@ -719,7 +719,9 @@ func TestMergeIsAllOrNothing(t *testing.T) {
 	require.Equal(t, int64(1), w.cursor(t, w.old, room.ID))
 	require.Contains(t, members(t, w.alice, dm.ID)[dto.MemberKindAgent], w.old)
 	require.Equal(t, []string{"to old"}, texts(timeline(t, w.alice, dm.ID)))
-	require.NotContains(t, visibleAgents(t, w.bob), w.atlas, "no grant was copied")
+	copied, err := w.env.App.Store.R().ListGrantLevels(context.Background(), db.ListGrantLevelsParams{ResourceKind: "agent", ResourceID: w.atlas, UserID: w.bob.User.ID})
+	require.NoError(t, err)
+	require.Empty(t, copied, "no grant was copied")
 	require.NotContains(t, auditActions(t, w.admin), "agent.merge")
 
 	_, err = raw.ExecContext(context.Background(), "DROP TRIGGER forced_failure")

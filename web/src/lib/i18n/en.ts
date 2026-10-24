@@ -227,7 +227,6 @@ export const en = {
   "profile.details": "Details",
   "profile.owner": "Owner",
   "profile.app": "App",
-  "profile.machine": "Machine",
   "profile.folder": "Folder",
   "profile.noFolder": "No folder yet",
   "profile.access": "Your access",

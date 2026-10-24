@@ -20,6 +20,7 @@ import (
 
 	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/attachments"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/testkit"
 )
 
@@ -127,30 +128,34 @@ func TestAvatarIsStoredAsASquarePNGAndServed(t *testing.T) {
 	env.Anon().Get("/api/v1/intelligences/"+alice.User.ID+"/avatar").RequireError(http.StatusUnauthorized, dto.ErrorCodeUnauthorized)
 }
 
-// PROF-07: an AI's avatar is served to its owner, its grantees and users who share a viewable
-// conversation with it, and is 404 for everybody else (not 403).
+// PROF-07: an AI's avatar is served to the people who can see the AI - the members of its organization, guests
+// included, and the user who hosts it - and is 404 for everybody else (not 403). A use grant on the AI gives
+// nothing (AD-016).
 func TestAIAvatarIsServedToWhoCanSeeTheAI(t *testing.T) {
 	env := testkit.New(t)
-	alice, bob, carol, dave := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol"), env.NewUser("dave")
+	alice, bob, carol, dave, erin := env.NewUser("alice"), env.NewUser("bob"), env.NewUser("carol"), env.NewUser("dave"), env.NewUser("erin")
 	id := registerAgent(t, env, alice, "builder")
-	shareAgent(alice, id, bob.User.ID)
+	org := alice.PersonalOrg().ID
+	env.AddMember(org, bob.User.ID, orgs.PermissionMember, "")
+	env.AddGuest(org, erin.User.ID, alice.User.ID, "")
 	putAvatar(alice, id, pngBytes(t, bands(300, 300))).RequireStatus(http.StatusOK)
 
 	getAvatar(alice, id).RequireStatus(http.StatusOK)
 	getAvatar(bob, id).RequireStatus(http.StatusOK)
+	getAvatar(erin, id).RequireStatus(http.StatusOK)
 	getAvatar(carol, id).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 	getAvatar(dave, id).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
+	shareAgent(alice, id, carol.User.ID)
+	getAvatar(carol, id).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
 
-	room := createRoom(alice, "ops")
-	alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: id}).RequireStatus(http.StatusCreated)
-	addToRoom(t, env, alice, room.ID, carol)
+	// Seeing the AI is no access to the AI itself.
+	seen := profileOf(t, bob, id)
+	require.Equal(t, []any{false, dto.LevelUse}, []any{seen.CanEdit, seen.AI.MyLevel})
+	patchProfile(bob, id, dto.UpdateProfileRequest{Bio: ptr("hijack")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
+
+	// Joining the organization is what shows the AI: carol joins and gets the avatar.
+	env.AddMember(org, carol.User.ID, orgs.PermissionMember, "")
 	getAvatar(carol, id).RequireStatus(http.StatusOK)
-	getAvatar(dave, id).RequireError(http.StatusNotFound, dto.ErrorCodeNotFound)
-
-	// Seeing the AI through a room it is in is no access to the AI itself.
-	seen := profileOf(t, carol, id)
-	require.Equal(t, []any{false, dto.Level("")}, []any{seen.CanEdit, seen.AI.MyLevel})
-	patchProfile(carol, id, dto.UpdateProfileRequest{Bio: ptr("hijack")}).RequireError(http.StatusForbidden, dto.ErrorCodeForbidden)
 }
 
 // PROF-06: a file that is not PNG, JPEG or WebP or cannot be decoded is 422 avatar_invalid and
@@ -224,29 +229,27 @@ func TestAvatarRemoval(t *testing.T) {
 	alice.Delete("/api/v1/intelligences/" + alice.User.ID + "/avatar").RequireStatus(http.StatusNoContent)
 }
 
-// Authorization matrix of the avatar routes of an AI owned by the owner and shared (use) with
-// the viewer: only the owner changes it, readers are the users who can see the AI.
+// POS-04 (design, "Intelligences" matrix): the avatar routes of an AI of the organization. The people of the
+// organization read the avatar, guests included; whoever manages the AI - its creator, and the admin above the
+// creator - changes it; an outsider and an admin of the instance find nothing (404).
 func TestAvatarRoutesAuthMatrix(t *testing.T) {
-	m := newMatrix(t)
-	setup := func(t *testing.T, m *matrix) matrixResource {
-		owner := m.as(t, roleOwner)
-		id := registerAgent(t, m.env, owner, "builder")
-		shareAgent(owner, id, m.clients[roleViewer].User.ID)
-		putAvatar(owner, id, pngBytes(t, bands(300, 300))).RequireStatus(http.StatusOK)
-		return matrixResource{"ai": id}
+	env := testkit.New(t)
+	roles := env.OrgRoles("acme")
+	setup := func(t *testing.T) map[string]string {
+		putAvatar(roles.Manager, roles.TargetAI, pngBytes(t, bands(300, 300))).RequireStatus(http.StatusOK)
+		return map[string]string{"ai": roles.TargetAI}
 	}
-	routes := []matrixRoute{
-		{"get avatar", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+	runRoleRoutes(t, roles, setup, []roleRoute{
+		{"get avatar", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return getAvatar(c, res["ai"])
-		}, statuses(200, 200, 404, 404, 404)},
-		{"put avatar", func(t *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, agentWant(200, 200, 404)},
+		{"put avatar", func(t *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return putAvatar(c, res["ai"], pngBytes(t, bands(200, 200)))
-		}, statuses(200, 403, 404, 404, 404)},
-		{"delete avatar", func(_ *testing.T, _ *matrix, c *testkit.Client, res matrixResource) *testkit.Response {
+		}, agentWant(200, 403, 404)},
+		{"delete avatar", func(_ *testing.T, c *testkit.Client, res map[string]string) *testkit.Response {
 			return c.Delete("/api/v1/intelligences/" + res["ai"] + "/avatar")
-		}, statuses(204, 403, 404, 404, 404)},
-	}
-	m.run(t, setup, routes)
+		}, agentWant(204, 403, 404)},
+	})
 }
 
 // agentAs is the agent token client of owner acting as the agent named name.
@@ -268,7 +271,11 @@ func TestAgentUpdatesItsOwnProfile(t *testing.T) {
 	}).RequireStatus(http.StatusOK))
 	require.Equal(t, []any{builder, "Atlas", "atlas", "Runs the builds", dto.IntelligenceRoleAI, true},
 		[]any{got.ID, got.DisplayName, got.Handle, got.Bio, got.Role, got.CanEdit})
-	require.Equal(t, got, profileOf(t, alice, builder), "the owner reads the same profile")
+	mine := profileOf(t, alice, builder)
+	require.True(t, mine.CanEndSession, "alice manages the AI, which cannot end its own session")
+	require.Equal(t, []bool{true}, []bool{mine.Memberships[0].CanDelete}, "and she may delete it, which it cannot do itself")
+	mine.CanEndSession, mine.Memberships[0].CanDelete = got.CanEndSession, got.Memberships[0].CanDelete // what the reader may do about it
+	require.Equal(t, got, mine, "the owner reads the same profile")
 	require.Equal(t, "Atlas", listedAgent(t, alice, builder).Intelligence.DisplayName, "the agents list follows (AID-06)")
 
 	withAvatar := testkit.Decode[dto.IntelligenceProfile](agent.DoRaw(http.MethodPut, "/api/v1/agent/profile/avatar", "image/png",

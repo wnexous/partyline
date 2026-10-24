@@ -727,6 +727,8 @@ describe("live handlers", () => {
         can_edit: true,
         apps: [],
         conversations: [],
+        memberships: [],
+        can_end_session: false,
       });
       const dm = makeRoom({
         id: "r2",
@@ -755,6 +757,8 @@ describe("live handlers", () => {
         can_edit: true,
         apps: [],
         conversations: [],
+        memberships: [],
+        can_end_session: false,
       });
       const { avatar_url: _gone, ...withoutAvatar } = renamed;
       change(withoutAvatar);

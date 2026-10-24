@@ -377,18 +377,23 @@ func TestUpdateHandleTaken(t *testing.T) {
 	require.NoError(t, set(w.alice, w.alice.User.ID, intelligences.ProfileUpdate{Handle: ptr("bob")}), "a freed handle can be taken")
 }
 
-// Edit rights (PROF-03, PROF-04, PROF-05): a user edits their own profile; an AI's owner edits
-// the AI; the AI edits itself; grantees, other users, admins and other AIs do not. Without view
-// the answer is not found, with view but without edit it is forbidden. A person's profile is
-// history (CID-21, PROF-11 is retired): the users of its connector, who could edit it, are told it
-// is read-only; everyone else is answered as before.
+// Edit rights (POS-04, PROF-03, PROF-04, PROF-05): an identity edits its own profile, and so does whoever
+// manages it in an organization they share (POS-03): the identities above it in the chart, its creator and,
+// for a guest, its inviter. An AI acts as itself, so an AI that holds a position edits what is below it.
+// Seeing never allows editing: with sight but without management the answer is forbidden, and without sight it
+// is not found (an AI of organizations the caller is not in). Every user sees every user (the directory), so a
+// stranger who cannot edit a user is told forbidden too. A grant gives nothing (AD-016). A person's profile is
+// history (CID-21): the users of its connector, who could edit it, are told it is read-only.
 func TestUpdateAuthorization(t *testing.T) {
 	w := newWorld(t)
-	atlas, nova := w.agent(w.alice, "atlas"), w.agent(w.alice, "nova")
-	carolsAI := w.agent(w.carol, "scout")
-	w.shareAgent(w.alice, atlas, w.bob)
-	conn := w.connector(w.dave, w.erin)
-	pat := w.person(conn, "5511999990000", "Pat")
+	r := w.env.OrgRoles("acme")
+	ai := r.TargetAI                                     // acme's AI: a member with no position, created and hosted by Manager
+	scout := w.env.NewAIIn(r.Manager, r.Org.ID, "scout") // a second AI of Manager's: a peer of ai
+	boss := w.env.NewLegacyAI(r.Manager, "boss")         // an AI that holds Manager's position, above the Workers
+	w.env.AddMember(r.Org.ID, boss, orgs.PermissionMember, r.ManagerPosition)
+	rover := w.env.NewAI(r.Outsider, "rover") // an AI of the outsider's own organization
+	w.shareAgent(r.Manager, ai, w.erin)       // a use grant on ai, which gives erin nothing
+	pat := w.person(w.connector(w.dave, w.erin), "5511999990000", "Pat")
 
 	rename := intelligences.ProfileUpdate{DisplayName: ptr("Renamed")}
 	cases := []struct {
@@ -397,17 +402,31 @@ func TestUpdateAuthorization(t *testing.T) {
 		target string
 		want   error
 	}{
-		{"own user profile", asUser(w.alice), w.alice.User.ID, nil},
-		{"another user's profile", asUser(w.bob), w.alice.User.ID, access.ErrForbidden},
-		{"an admin on a user profile", asUser(w.admin), w.alice.User.ID, access.ErrForbidden},
-		{"an agent on its owner's profile", asAgent(w.alice, atlas), w.alice.User.ID, access.ErrForbidden},
-		{"AI owner", asUser(w.alice), atlas, nil},
-		{"AI use grantee", asUser(w.bob), atlas, access.ErrForbidden},
-		{"AI stranger", asUser(w.carol), atlas, access.ErrNotFound},
-		{"admin on an AI they do not own", asUser(w.admin), atlas, access.ErrNotFound},
-		{"the AI itself", asAgent(w.alice, atlas), atlas, nil},
-		{"a sibling AI of the same owner", asAgent(w.alice, nova), atlas, access.ErrForbidden},
-		{"an AI of a stranger", asAgent(w.carol, carolsAI), atlas, access.ErrNotFound},
+		{"own user profile", asUser(r.Target), r.Target.User.ID, nil},
+		{"the manager of a user", asUser(r.Manager), r.Target.User.ID, nil},
+		{"the admin above the manager of a user", asUser(r.Admin), r.Target.User.ID, nil},
+		{"the inviter of a guest", asUser(r.Inviter), r.Guest.User.ID, nil},
+		{"an AI that holds a position above a user", asAgent(r.Manager, boss), r.Target.User.ID, nil},
+		{"a peer of a user", asUser(r.Peer), r.Target.User.ID, access.ErrForbidden},
+		{"a member with no relation to a user", asUser(r.Member), r.Target.User.ID, access.ErrForbidden},
+		{"a user on the manager above it", asUser(r.Target), r.Manager.User.ID, access.ErrForbidden},
+		{"a guest on its inviter", asUser(r.Guest), r.Inviter.User.ID, access.ErrForbidden},
+		{"an outsider on a user", asUser(r.Outsider), r.Target.User.ID, access.ErrForbidden},
+		{"an admin of the instance on a user", asUser(r.InstanceAdmin), r.Target.User.ID, access.ErrForbidden},
+		{"an AI on its host", asAgent(r.Manager, ai), r.Manager.User.ID, access.ErrForbidden},
+
+		{"the manager of an AI", asUser(r.Manager), ai, nil},
+		{"the admin above the manager of an AI", asUser(r.Admin), ai, nil},
+		{"the AI itself", asAgent(r.Manager, ai), ai, nil},
+		{"a peer of its creator", asUser(r.Peer), ai, access.ErrForbidden},
+		{"a member of its organization", asUser(r.Member), ai, access.ErrForbidden},
+		{"a guest of its organization", asUser(r.Guest), ai, access.ErrForbidden},
+		{"a sibling AI", asAgent(r.Manager, scout), ai, access.ErrForbidden},
+		{"an outsider", asUser(r.Outsider), ai, access.ErrNotFound},
+		{"an admin of the instance without membership", asUser(r.InstanceAdmin), ai, access.ErrNotFound},
+		{"an AI of an outsider", asAgent(r.Outsider, rover), ai, access.ErrNotFound},
+		{"a use grantee", asUser(w.erin), ai, access.ErrNotFound},
+
 		{"person: connector owner", asUser(w.dave), pat, access.ErrHistoryOnly},
 		{"person: connector use grantee", asUser(w.erin), pat, access.ErrHistoryOnly},
 		{"person: stranger", asUser(w.carol), pat, access.ErrNotFound},
@@ -428,17 +447,26 @@ func TestUpdateAuthorization(t *testing.T) {
 	}
 }
 
-// The design's CanSee / CanEdit cases: self, other user, AI owner, AI grantee, stranger,
-// the AI itself, sibling and foreign AIs, and a person through its connector, whom the users
-// of the connector see and nobody edits (CID-21).
+// CanSee and CanEdit (POS-04, AD-016): every user sees every user; an AI is seen by the people of the
+// organizations it belongs to, guests included, and by the user who hosts it, whatever the chart says about
+// them; nobody else sees it, not even an admin of the instance or a user a grant names. Whoever manages the
+// identity edits it, and so does the identity itself. A person is seen by the users of its connector and edited
+// by nobody (CID-21).
 func TestCanSeeAndCanEdit(t *testing.T) {
 	w := newWorld(t)
-	atlas, nova := w.agent(w.alice, "atlas"), w.agent(w.alice, "nova")
-	carolsAI, davesAI := w.agent(w.carol, "scout"), w.agent(w.dave, "relay")
-	w.shareAgent(w.alice, atlas, w.bob)
+	r := w.env.OrgRoles("acme")
+	ai := r.TargetAI
+	scout := w.env.NewAIIn(r.Manager, r.Org.ID, "scout")
+	rover := w.env.NewAI(r.Outsider, "rover")
+	// dave hosts an AI of acme and then leaves acme: hosting is sight, never management.
+	w.env.AddMember(r.Org.ID, w.dave.User.ID, orgs.PermissionMember, "")
+	relay := w.env.NewAIIn(w.dave, r.Org.ID, "relay")
+	require.NoError(t, w.env.App.Orgs.Remove(w.ctx, r.Admin.User.ID, r.Org.ID, w.dave.User.ID))
+	w.shareAgent(r.Manager, ai, w.erin)
 	conn := w.connector(w.dave, w.erin)
 	w.connector(w.alice) // alice owns a connector too, but not Pat's
 	pat := w.person(conn, "5511999990000", "Pat")
+	davesAI, carolsAI := w.agent(w.dave, "scribe"), w.agent(w.carol, "scout")
 
 	cases := []struct {
 		name      string
@@ -446,18 +474,28 @@ func TestCanSeeAndCanEdit(t *testing.T) {
 		target    string
 		see, edit bool
 	}{
-		{"self", asUser(w.alice), w.alice.User.ID, true, true},
-		{"other user", asUser(w.bob), w.alice.User.ID, true, false},
-		{"admin sees a user", asUser(w.admin), w.alice.User.ID, true, false},
-		{"agent sees its owner's account", asAgent(w.alice, atlas), w.alice.User.ID, true, false},
-		{"agent sees another user", asAgent(w.alice, atlas), w.bob.User.ID, true, false},
-		{"AI owner", asUser(w.alice), atlas, true, true},
-		{"AI use grantee", asUser(w.bob), atlas, true, false},
-		{"AI stranger", asUser(w.carol), atlas, false, false},
-		{"admin without access", asUser(w.admin), atlas, false, false},
-		{"the AI itself", asAgent(w.alice, atlas), atlas, true, true},
-		{"sibling AI sees through the owner", asAgent(w.alice, nova), atlas, true, false},
-		{"stranger's AI", asAgent(w.carol, carolsAI), atlas, false, false},
+		{"self", asUser(r.Target), r.Target.User.ID, true, true},
+		{"other user", asUser(r.Peer), r.Target.User.ID, true, false},
+		{"the manager of a user", asUser(r.Manager), r.Target.User.ID, true, true},
+		{"an outsider sees a user", asUser(r.Outsider), r.Target.User.ID, true, false},
+		{"an admin of the instance sees a user", asUser(r.InstanceAdmin), r.Target.User.ID, true, false},
+		{"an agent sees its host's account", asAgent(r.Manager, ai), r.Manager.User.ID, true, false},
+		{"an agent sees another user", asAgent(r.Manager, ai), r.Target.User.ID, true, false},
+
+		{"the manager of an AI", asUser(r.Manager), ai, true, true},
+		{"the admin above the manager of an AI", asUser(r.Admin), ai, true, true},
+		{"a member of its organization", asUser(r.Member), ai, true, false},
+		{"a guest of its organization", asUser(r.Guest), ai, true, false},
+		{"the inviter of a guest", asUser(r.Inviter), ai, true, false},
+		{"an outsider", asUser(r.Outsider), ai, false, false},
+		{"an admin of the instance without membership", asUser(r.InstanceAdmin), ai, false, false},
+		{"a use grantee", asUser(w.erin), ai, false, false},
+		{"the host who left the AI's organization", asUser(w.dave), relay, true, false},
+		{"the AI itself", asAgent(r.Manager, ai), ai, true, true},
+		{"a sibling AI", asAgent(r.Manager, scout), ai, true, false},
+		{"an AI of an outsider", asAgent(r.Outsider, rover), ai, false, false},
+		{"an AI does not see through its host", asAgent(w.dave, davesAI), ai, false, false},
+
 		{"person: connector owner sees, nobody edits", asUser(w.dave), pat, true, false},
 		{"person: connector use grantee", asUser(w.erin), pat, true, false},
 		{"person: stranger", asUser(w.carol), pat, false, false},
@@ -476,9 +514,9 @@ func TestCanSeeAndCanEdit(t *testing.T) {
 	}
 }
 
-// AD-016: a caller sees the AIs of the organizations they belong to, and seeing never allows editing.
-// A viewable conversation where an AI is a member or wrote still shows it to a caller outside the
-// organization (a DM); the next task drops that rule.
+// AD-016: a caller sees the AIs of the organizations they belong to, and seeing never allows editing. A
+// conversation shows nobody an AI of an organization they are not in: not a room (a room only holds people of
+// its organization) and not a DM the AI holds with them. Joining the organization is what shows it.
 func TestCanSeeAnAIOfTheirOrganization(t *testing.T) {
 	w := newWorld(t)
 	atlas := w.agent(w.alice, "atlas")
@@ -502,8 +540,8 @@ func TestCanSeeAnAIOfTheirOrganization(t *testing.T) {
 	require.True(t, see(w.erin), "a guest of the organization sees its AIs too")
 	require.False(t, see(w.dave), "a stranger to the organization")
 
-	// The AI wrote in a second room and left it: a DM it holds with dave still shows it to him, who
-	// belongs to no organization of it.
+	// The AI holds a DM with dave, who belongs to no organization of it: talking to it shows it to him no more
+	// than a room does.
 	dm := store.NewID()
 	w.tx(func(q *db.Queries) error {
 		if err := q.CreateDMRoom(w.ctx, db.CreateDMRoomParams{
@@ -519,7 +557,36 @@ func TestCanSeeAnAIOfTheirOrganization(t *testing.T) {
 		}
 		return nil
 	})
-	require.True(t, see(w.dave), "a user who takes part in a DM with the AI")
+	require.False(t, see(w.dave), "a user who takes part in a DM with the AI, and shares no organization with it")
+	w.env.AddMember(w.alice.PersonalOrg().ID, w.dave.User.ID, orgs.PermissionMember, "")
+	require.True(t, see(w.dave), "until they join its organization")
+}
+
+// AD-016: an AI acts as itself. An agent token that names no AI acts as nobody - it is not its host user - and
+// the token of a disabled user acts as nobody either (AUTH-10), whoever the AI is.
+func TestAnAgentTokenThatNamesNoAIActsAsNobody(t *testing.T) {
+	w := newWorld(t)
+	atlas := w.agent(w.alice, "atlas")
+	scout := w.agent(w.carol, "scout")
+	nameless := authn.Principal{Kind: authn.KindAgent, UserID: w.alice.User.ID} // no AgentID
+	for _, target := range []string{w.alice.User.ID, w.bob.User.ID, atlas} {
+		see, err := w.svc.CanSee(w.ctx, nameless, target)
+		require.NoError(t, err)
+		require.False(t, see, "a token that names no AI sees nothing, not even its host's profile")
+		edit, err := w.svc.CanEdit(w.ctx, nameless, target)
+		require.NoError(t, err)
+		require.False(t, edit)
+		_, err = w.svc.Get(w.ctx, nameless, target)
+		require.ErrorIs(t, err, access.ErrNotFound)
+	}
+
+	_, err := w.env.App.Users.UpdateUser(w.ctx, w.carol.User.ID, users.UserUpdate{Disabled: ptr(true)})
+	require.NoError(t, err)
+	for _, target := range []string{scout, w.alice.User.ID} {
+		see, err := w.svc.CanSee(w.ctx, asAgent(w.carol, scout), target)
+		require.NoError(t, err)
+		require.False(t, see, "the AI of a disabled user sees nothing, itself included")
+	}
 }
 
 // A disabled account has no access at all (AUTH-10), also to its own profile.
@@ -540,8 +607,7 @@ func TestDisabledCallerSeesNothing(t *testing.T) {
 // cannot see does not exist for them.
 func TestGetProfile(t *testing.T) {
 	w := newWorld(t)
-	atlas := w.agent(w.alice, "atlas")
-	w.shareAgent(w.alice, atlas, w.bob)
+	r := w.env.OrgRoles("acme")
 	pat := w.person(w.connector(w.dave), "5511999990000", "Pat")
 
 	for _, c := range []struct {
@@ -551,10 +617,11 @@ func TestGetProfile(t *testing.T) {
 		role    intelligences.Role
 		canEdit bool
 	}{
-		{"user, self", asUser(w.alice), w.alice.User.ID, intelligences.RoleUser, true},
-		{"user, other", asUser(w.bob), w.alice.User.ID, intelligences.RoleUser, false},
-		{"AI, owner", asUser(w.alice), atlas, intelligences.RoleAI, true},
-		{"AI, grantee", asUser(w.bob), atlas, intelligences.RoleAI, false},
+		{"user, self", asUser(r.Target), r.Target.User.ID, intelligences.RoleUser, true},
+		{"user, other", asUser(r.Peer), r.Target.User.ID, intelligences.RoleUser, false},
+		{"user, its manager", asUser(r.Manager), r.Target.User.ID, intelligences.RoleUser, true},
+		{"AI, its manager", asUser(r.Manager), r.TargetAI, intelligences.RoleAI, true},
+		{"AI, a member who does not manage it", asUser(r.Member), r.TargetAI, intelligences.RoleAI, false},
 		{"person, connector owner: history, not editable", asUser(w.dave), pat, intelligences.RolePerson, false},
 	} {
 		got, err := w.svc.Get(w.ctx, c.caller, c.target)
@@ -562,10 +629,118 @@ func TestGetProfile(t *testing.T) {
 		require.Equal(t, w.intelligence(c.target), got.Intelligence, c.name)
 		require.Equal(t, []any{c.role, c.canEdit}, []any{got.Role, got.CanEdit}, c.name)
 	}
-	_, err := w.svc.Get(w.ctx, asUser(w.carol), atlas)
-	require.ErrorIs(t, err, access.ErrNotFound, "a stranger")
+	_, err := w.svc.Get(w.ctx, asUser(r.Outsider), r.TargetAI)
+	require.ErrorIs(t, err, access.ErrNotFound, "an outsider")
+	_, err = w.svc.Get(w.ctx, asUser(r.InstanceAdmin), r.TargetAI)
+	require.ErrorIs(t, err, access.ErrNotFound, "an admin of the instance")
 	_, err = w.svc.Get(w.ctx, asUser(w.carol), store.NewID())
 	require.ErrorIs(t, err, access.ErrNotFound, "an unknown id")
+}
+
+// An AI's profile says how the caller stands to it: manage for whoever manages it (POS-03), use for whoever only
+// sees it; and whether the caller may end its live session, which is the managers' right (POS-04). Users have no
+// session to end, and an AI cannot end its own.
+func TestAIProfileTellsWhatTheCallerMayDo(t *testing.T) {
+	w := newWorld(t)
+	r := w.env.OrgRoles("acme")
+	for _, c := range []struct {
+		name   string
+		caller authn.Principal
+		level  access.Level
+		end    bool
+	}{
+		{"its creator", asUser(r.Manager), dto.LevelManage, true},
+		{"the admin above its creator", asUser(r.Admin), dto.LevelManage, true},
+		{"the AI itself", asAgent(r.Manager, r.TargetAI), dto.LevelManage, false},
+		{"a peer of its creator", asUser(r.Peer), dto.LevelUse, false},
+		{"a member", asUser(r.Member), dto.LevelUse, false},
+		{"a guest", asUser(r.Guest), dto.LevelUse, false},
+	} {
+		got, err := w.svc.Get(w.ctx, c.caller, r.TargetAI)
+		require.NoError(t, err, c.name)
+		require.NotNil(t, got.Agent, c.name)
+		require.Equal(t, []any{c.level, c.end}, []any{got.Agent.Level, got.CanEndSession}, c.name)
+	}
+	for _, c := range []struct {
+		name   string
+		caller authn.Principal
+		target string
+	}{
+		{"a manager reading a managed user", asUser(r.Manager), r.Target.User.ID},
+		{"a user reading themself", asUser(r.Target), r.Target.User.ID},
+	} {
+		got, err := w.svc.Get(w.ctx, c.caller, c.target)
+		require.NoError(t, err, c.name)
+		require.False(t, got.CanEndSession, "%s: a user has no session", c.name)
+	}
+}
+
+// OMEM-03, POS-05, POS-06, CHART-02: a profile lists the organizations the caller shares with the identity, with
+// the permission and the position the identity has in each, and says whether the caller may delete the identity in
+// it and what that does: an AI is deleted for good in its home organization (delete) and only removed from any
+// other; a user is only ever removed (remove). It says nothing of organizations the caller is not in. Nobody
+// deletes themself.
+func TestProfileListsTheMembershipsTheCallerShares(t *testing.T) {
+	w := newWorld(t)
+	acme, globex := w.env.OrgRoles("acme"), w.env.OrgRoles("globex")
+	// acme's Target is also a guest of globex, whose Inviter invited it; acme's AI is a member of globex too;
+	// acme's Member works in globex as a plain member and globex's Admin administers acme as well.
+	w.env.AddGuest(globex.Org.ID, acme.Target.User.ID, globex.Inviter.User.ID, "")
+	w.env.AddMember(globex.Org.ID, acme.TargetAI, orgs.PermissionMember, globex.WorkerPosition)
+	w.env.AddMember(globex.Org.ID, acme.Member.User.ID, orgs.PermissionMember, "")
+	w.env.AddMember(acme.Org.ID, globex.Admin.User.ID, orgs.PermissionAdmin, "")
+
+	type row struct {
+		org, permission, position, effect string
+		canDelete                         bool
+	}
+	rowsOf := func(caller *testkit.Client, target string) []row {
+		t.Helper()
+		got, err := w.svc.Get(w.ctx, asUser(caller), target)
+		require.NoError(t, err)
+		require.NotNil(t, got.Memberships, "a list, not null")
+		out := make([]row, 0, len(got.Memberships))
+		for _, m := range got.Memberships {
+			out = append(out, row{m.Organization.Name, string(m.Permission), m.PositionName, string(m.DeleteEffect), m.CanDelete})
+		}
+		return out
+	}
+
+	user := acme.Target.User.ID
+	require.Equal(t, []row{{"acme", "member", "Worker", "remove", true}}, rowsOf(acme.Admin, user),
+		"an admin of acme sees acme only, and may delete (remove) a member of it")
+	require.Equal(t, []row{{"globex", "guest", "", "remove", true}}, rowsOf(globex.Inviter, user),
+		"the inviter of the guest sees globex only, and may delete it there (POS-05)")
+	require.Equal(t, []row{{"acme", "member", "Worker", "remove", false}}, rowsOf(acme.Peer, user),
+		"a peer sees acme only and may not delete a member")
+	require.Equal(t, []row{
+		{"acme", "member", "Worker", "remove", false},
+		{"globex", "guest", "", "remove", false},
+	}, rowsOf(acme.Member, user), "a member of both sees both, by name, and may delete in neither")
+	require.Equal(t, []row{
+		{"acme", "member", "Worker", "remove", true},
+		{"globex", "guest", "", "remove", true},
+	}, rowsOf(globex.Admin, user), "an admin of both may delete in both")
+	require.Equal(t, []row{
+		{"acme", "member", "Worker", "remove", false},
+		{"acme-target", "admin", "Admin", "remove", false},
+		{"globex", "guest", "", "remove", false},
+	}, rowsOf(acme.Target, user), "the identity sees all its own memberships, its personal organization too, and deletes itself in none")
+	require.Equal(t, []row{}, rowsOf(acme.Outsider, user), "an outsider learns of no organization")
+	require.Equal(t, []row{}, rowsOf(acme.InstanceAdmin, user), "nor does an admin of the instance")
+
+	ai := acme.TargetAI
+	require.Equal(t, []row{{"acme", "member", "", "delete", true}}, rowsOf(acme.Admin, ai),
+		"an admin of its home organization deletes the AI for good")
+	require.Equal(t, []row{{"acme", "member", "", "delete", false}}, rowsOf(acme.Peer, ai))
+	require.Equal(t, []row{
+		{"acme", "member", "", "delete", false},
+		{"globex", "member", "Worker", "remove", false},
+	}, rowsOf(acme.Member, ai))
+	require.Equal(t, []row{
+		{"acme", "member", "", "delete", true},
+		{"globex", "member", "Worker", "remove", true},
+	}, rowsOf(globex.Admin, ai), "in another organization the AI is only removed")
 }
 
 // collect subscribes to the bus now; the returned function drains what was published since.

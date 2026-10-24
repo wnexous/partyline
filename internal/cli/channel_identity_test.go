@@ -33,7 +33,8 @@ func TestChannelSendsTheCanonicalFolder(t *testing.T) {
 	fromLink := startChannel(t, nil, e.vars(), link)
 	initialize(fromLink)
 	prof := e.ai(t, target)
-	require.Equal(t, []any{"Café Órdenes", "cafe-ordenes", testMachine}, []any{prof.DisplayName, prof.Handle, prof.AI.Machine})
+	require.Equal(t, []any{"Café Órdenes", "cafe-ordenes"}, []any{prof.DisplayName, prof.Handle})
+	require.Equal(t, testMachine, e.machineOf(t, prof.ID), "the channel reports its machine")
 	require.Equal(t, []string{target}, e.folders(t), "the symlink is not another folder")
 
 	// The launcher's PARTYLINE_FOLDER wins over the working directory, whatever its spelling.

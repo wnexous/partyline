@@ -299,14 +299,13 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Where an AI lives and how it is doing: owner, app and state, machine, folder and the viewer's access. */
+/** Where an AI lives and how it is doing: host, app and state, folder and the viewer's access. */
 function AIDetails({ ai, id }: { ai: AIDetail; id: string }) {
   const { t, locale } = useI18n();
   const presence = useLiveStore((s) => s.presence[id]);
   const online = presence?.online ?? ai.online;
   const lastSeen = presence?.last_seen_at ?? ai.last_seen_at;
   const app = ai.app ? (harnessLabel(ai.app) ?? ai.app) : "";
-  const named = ai.machine_label !== "" && ai.machine_label !== ai.machine;
   return (
     <>
       <Row label={t("profile.owner")}>
@@ -331,16 +330,6 @@ function AIDetails({ ai, id }: { ai: AIDetail; id: string }) {
           )}
         </span>
       </Row>
-      {ai.machine ? (
-        <Row label={t("profile.machine")}>
-          <span className="inline-flex flex-wrap items-baseline gap-x-2">
-            <span>{ai.machine_label || ai.machine}</span>
-            {named ? (
-              <span className="font-mono text-xs text-muted-foreground">{ai.machine}</span>
-            ) : null}
-          </span>
-        </Row>
-      ) : null}
       <Row label={t("profile.folder")}>
         {ai.folder_label ? (
           <span className="font-mono text-xs">{ai.folder_label}</span>

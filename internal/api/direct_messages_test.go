@@ -32,14 +32,11 @@ func dmWith(c *testkit.Client, with string, status int) dto.Room {
 	return testkit.Decode[dto.Room](openDM(c, with).RequireStatus(status))
 }
 
-// shareAI gives user use on the AI, as its owner would from the web app.
+// shareAI gives the users sight of the AI, as its owner would by inviting them to the organization the AI
+// belongs to (AD-016): the owner shares an organization, not an AI.
 func shareAI(owner *testkit.Client, aiID string, users ...*testkit.Client) {
 	owner.T.Helper()
-	shared := make([]dto.SharingUser, len(users))
-	for i, u := range users {
-		shared[i] = dto.SharingUser{UserID: u.User.ID, Level: dto.LevelUse}
-	}
-	owner.Put("/api/v1/agents/"+aiID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: shared}).RequireStatus(http.StatusOK)
+	owner.ShareAI(aiID, users...)
 }
 
 func disableUser(admin *testkit.Client, userID string, disabled bool) {

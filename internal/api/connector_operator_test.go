@@ -284,6 +284,7 @@ func TestConnectorReportsItsAccountLabel(t *testing.T) {
 // a user who can only see the AI does not see the app.
 func TestOperatorProfileListsTheConnectionsApp(t *testing.T) {
 	f := newOperatorFixture(t)
+	f.alice.ShareAI(f.atlas, f.bob, f.dave) // they see Atlas through alice's organization (AD-016)
 	app := func(label string) dto.App {
 		return dto.App{Kind: connectortest.KindName, Label: label, ConnectorID: f.conn.ID}
 	}
@@ -298,7 +299,7 @@ func TestOperatorProfileListsTheConnectionsApp(t *testing.T) {
 	inst.Account("@atlas_bot")
 	require.Equal(t, []dto.App{claude, app("Fake: @atlas_bot")}, profileOf(t, f.alice, f.atlas).Apps)
 	require.Equal(t, []dto.App{claude, app("Fake: @atlas_bot")}, profileOf(t, f.bob, f.atlas).Apps, "bob may use the connection")
-	require.Equal(t, []dto.App{claude}, profileOf(t, f.dave, f.atlas).Apps, "dave may use Atlas, not the connection")
+	require.Equal(t, []dto.App{claude}, profileOf(t, f.dave, f.atlas).Apps, "dave sees Atlas, not the connection")
 	require.Equal(t, []dto.App{web}, profileOf(t, f.alice, f.alice.User.ID).Apps, "it is Atlas's app, not the owner's")
 
 	f.setOperator(f.alice, f.notes).RequireStatus(http.StatusOK)

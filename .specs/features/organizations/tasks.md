@@ -749,11 +749,11 @@ Merge moves org memberships (B wins) and re-points `creator_iid` from A to B. `D
 **Reuses**: `orgs.Authz`
 **Requirement**: POS-04, POS-05, OMEM-03
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - a manager edits a subordinate's profile (person and AI) → 200;
   - a peer → 403; an outsider viewing an AI → 404;
   - the profile lists two memberships for an identity in two orgs
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(intelligences): see and edit profiles through organizations`

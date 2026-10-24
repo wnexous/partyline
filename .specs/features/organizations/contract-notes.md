@@ -645,3 +645,52 @@ Where a section refines the design, it says so.
   first with **`env.PlaceInDefaultOrg(owner, aiID)`** (`testkit/orgs.go`): the owner's default organization as a member
   with no position, created by the owner, which is what the upgrade does (OUPG-01). The registry/operator-removal tests
   that relied on a use grant now expect 404.
+
+## T25: Profiles on organizations (POS-04, POS-05, OMEM-03)
+
+- **Seeing** (`intelligences.Service.CanSee`, `Get`, `Avatar` and so the live `intelligence.changed` frame): the caller
+  acts as itself (`Principal.IID()`); an agent token that names no AI, and the token of a disabled host user, see nothing.
+  - A **user** is seen by every user and every AI (the directory, unchanged).
+  - An **AI** is seen by the people of every organization it belongs to, guests included, and by the user who hosts it
+    (`access.CanSeeAI`). An AI sees itself and the AIs it shares an organization with, never through its host.
+    The two other sources of the v0.5 rule give nothing any more: a use grant, and a viewable conversation where the AI is
+    a member or an author. So the partner of a DM an AI of another organization started reads the DM (its messages carry
+    the AI's name and handle) but gets 404 on the AI's profile and avatar, and cannot open that DM from the contact
+    (`contact_not_found`); joining the AI's organization shows it.
+  - A **person** (external) is unchanged until T27: the users of its connector, or whoever can view a conversation where
+    it wrote.
+- **Editing** (`CanEdit`, `Update`, `SetAvatar`, `ClearAvatar`): the identity itself, and whoever manages it in an
+  organization they share (`Authz.ManagesAnywhere`, POS-03/POS-04), for users and AIs alike. The manager may be an AI (an
+  agent principal acts as itself); the only HTTP route that reaches the service with an agent principal edits that AI
+  itself. Hosting or seeing an AI edits nothing. A person stays read-only (`ErrHistoryOnly`, CID-21). Statuses: no sight is
+  404 (only an AI or a person can be invisible), sight without management is 403, so a stranger who edits a *user* is told
+  403. An admin without a position manages nobody (POS-03), so cannot edit a positionless member either.
+- **`IntelligenceProfile`** (`GET|PATCH /intelligences/{id}`, the avatar `PUT`, `PATCH /agent/profile`) gains, both always
+  present:
+  - `memberships`: `[]ProfileMembership`, a list (empty for a person), by organization name. It holds the organizations the
+    caller **shares** with the identity, with any permission, and all of its own when the caller is the identity (its
+    personal organization too). Nothing is said of other organizations (CHART-02). Each item is
+    `{org_id, org_name, org_slug, permission, position_id?, position_name?, can_delete, delete_effect}`.
+    `can_delete` is `Chart.CanDelete(viewer, identity)` in that organization (POS-05; never true for the identity itself) and
+    `delete_effect` is `"delete"` when the identity is an AI whose home is that organization and `"remove"` otherwise
+    (POS-06), whether or not `can_delete` is true. `permission` and `delete_effect` are plain strings in the DTO (no named
+    Go type) so that Phase 3's DTOs (`Organization`, `OrgMember`, `OrgChart`) merge without a name clash.
+  - `can_end_session`: true only for an AI profile, when the caller manages the AI in an organization they share (POS-04).
+    It does not look at whether the AI is online; the page combines it with `ai.online`. The AI itself never has it.
+- **`ai`** (`AIDetail`): `machine` and `machine_label` are removed (AD-022; the folder and its `~` label stay, the machines
+  table keeps the home folder). `my_level` is `manage` when the caller may edit the AI (manages it, or is it) and `use`
+  otherwise, and is never empty. `owner` is the host user and grants nothing (AD-019).
+- **Queries**: `ListIntelligenceRoomIDs` is gone (nothing asks which rooms an intelligence shares with a caller).
+- **Web**: the profile page loses the machine row and the i18n key `profile.machine`; the fixtures gain
+  `memberships: []` and `can_end_session: false`. Phase 8-9 render the new fields.
+- **Tests**: `TestUpdateAuthorization`, `TestCanSeeAndCanEdit`, `TestCanSeeAnAIOfTheirOrganization`, `TestGetProfile`,
+  `TestAIProfileTellsWhatTheCallerMayDo`, `TestProfileListsTheMembershipsTheCallerShares` and
+  `TestAnAgentTokenThatNamesNoAIActsAsNobody` (service), and, over the API, `TestAIProfileRoutesAuthMatrix`,
+  `TestUserProfileRoutesAuthMatrixOnOrganizations` (a worker, a guest, the manager), `TestAvatarRoutesAuthMatrix`,
+  `TestAIAvatarIsServedToWhoCanSeeTheAI`, `TestProfilesListTheirMemberships`, `TestAIProfileTellsWhoMayEndItsSession`,
+  `TestManagerEditsAIProfile` and `TestLiveIntelligenceChangedFollowsVisibility`.
+- **Test helpers**: `Client.ShareAI(aiID, users...)` (testkit) makes the users members of the AI's home organization; the
+  api test helper `shareAI` uses it, while `shareAgent` stays the raw legacy grant, which the tests that assert "a grant gives
+  nothing" and the merge tests that move grants use. The tests that assumed an AI sees what its owner sees now put the AI itself
+  in the organization (`TestAIDMTargetsAreThoseItSees` in `api` and `conversations`, `TestToolSendMessageToRefusalsFollowWhatTheAISees`);
+  `PlaceInDefaultOrg` came with T24.

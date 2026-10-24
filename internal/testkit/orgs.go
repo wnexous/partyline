@@ -26,6 +26,24 @@ func (c *Client) PersonalOrg() db.Organization {
 	return org
 }
 
+// ShareAI gives the users sight of the AI, as its admin would by inviting them to the organization the AI
+// belongs to (AD-016): they become members of its home organization with no position, unless they already are
+// members of it. The grants a v0.5 AI was shared with give nothing any more.
+func (c *Client) ShareAI(aiID string, users ...*Client) {
+	c.T.Helper()
+	ctx := context.Background()
+	home, err := c.env.App.Store.R().GetAgentOrg(ctx, aiID)
+	require.NoError(c.T, err)
+	require.NotEmpty(c.T, home, "the AI has a home organization")
+	for _, u := range users {
+		_, member, err := c.env.App.Authz.Member(ctx, home, u.User.ID)
+		require.NoError(c.T, err)
+		if !member {
+			c.env.AddMember(home, u.User.ID, orgs.PermissionMember, "")
+		}
+	}
+}
+
 // AddPosition adds a position named name to the organization's chart under parent ("" for a root) and
 // returns its id. It writes the position directly, with no authorization, to set a chart up.
 func (e *Env) AddPosition(org, name, parent string) string {

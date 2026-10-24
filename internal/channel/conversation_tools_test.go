@@ -47,14 +47,10 @@ func newCast(t *testing.T, opts ...testkit.Option) *cast {
 	return &cast{chanEnv: e, bob: bob, carol: carol, helper: e.env.NewAI(e.alice, "helper"), sage: e.env.NewAI(bob, "sage")}
 }
 
-// share gives each grantee use of the AI.
-func (c *cast) share(owner *testkit.Client, aiID string, grantees ...*testkit.Client) {
+// share gives each user sight of the AI, through the organization it belongs to (AD-016).
+func (c *cast) share(owner *testkit.Client, aiID string, users ...*testkit.Client) {
 	c.t.Helper()
-	users := make([]dto.SharingUser, len(grantees))
-	for i, g := range grantees {
-		users[i] = dto.SharingUser{UserID: g.User.ID, Level: dto.LevelUse}
-	}
-	owner.Put("/api/v1/agents/"+aiID+"/sharing", dto.Sharing{Mode: dto.VisibilityShared, Users: users}).RequireStatus(http.StatusOK)
+	owner.ShareAI(aiID, users...)
 }
 
 // person stores a person seen by a connector of alice, the way the inbound pipeline will, and
@@ -253,12 +249,12 @@ func TestToolSendMessageNeedsExactlyOneOfRoomAndTo(t *testing.T) {
 	}
 }
 
-// DM-04: to reaches the intelligences the AI's owner can see, and nothing else; an unknown
-// target and an invisible one answer alike (contact_not_found). A person without a route and the
-// AI itself are refused with their codes, and nothing is created. Once bob shares sage with alice
-// (a use grant) the same call works; the DM is visible to the owners of both AIs and to nobody
-// else. Any user of the instance can be reached.
-func TestToolSendMessageToRefusalsFollowWhatTheOwnerSees(t *testing.T) {
+// DM-04 (AD-016): to reaches the intelligences the AI itself can see - the users of the instance and the AIs it
+// shares an organization with - and nothing else; an unknown target and an invisible one answer alike
+// (contact_not_found). A person without a route and the AI itself are refused with their codes, and nothing is
+// created. Once sage's organization takes the AI in the same call works; the DM is visible to the managers of
+// both AIs and to nobody else.
+func TestToolSendMessageToRefusalsFollowWhatTheAISees(t *testing.T) {
 	c := newCast(t)
 	_, personHandle := c.person("Contact")
 	s := c.connected(c.options())
@@ -271,14 +267,16 @@ func TestToolSendMessageToRefusalsFollowWhatTheOwnerSees(t *testing.T) {
 
 	ghost := refused("@ghost")
 	require.Contains(t, ghost, "contact_not_found")
-	require.Equal(t, ghost, refused("@sage"), "an AI the owner cannot see answers like a handle that does not exist")
+	require.Equal(t, ghost, refused("@sage"), "an AI that shares no organization with it answers like a handle that does not exist")
 	require.Equal(t, ghost, refused(c.sage))
 	require.Contains(t, refused("@builder"), "dm_self")
 	require.Contains(t, refused(c.agentID), "dm_self")
 	require.Contains(t, refused("@"+personHandle), "no_route_to_person")
 	require.Empty(t, c.listDMs(s), "a refused call creates no DM")
 
-	c.share(c.bob, c.sage, c.alice)
+	c.env.AddMember(c.bob.PersonalOrg().ID, c.alice.User.ID, orgs.PermissionMember, "")
+	refused("@sage") // alice, its owner, in sage's organization gives the AI no reach
+	c.env.AddMember(c.bob.PersonalOrg().ID, c.agentID, orgs.PermissionMember, "")
 	text, isErr := s.call("send_message", toolArgs("to", "@sage", "text", "now visible"))
 	require.False(t, isErr, text)
 	dms := c.listDMs(s)
