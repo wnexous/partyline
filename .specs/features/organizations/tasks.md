@@ -888,8 +888,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `identities.ResolveSender`, `orgs.Authz`
 **Requirement**: POS-10
 **Done when**:
-- [ ] e2e: a sender linked to the operator's manager → trusted; linked to a peer → untrusted; `from_self` → untrusted (rewrite the `inbound_test.go` owner cases)
-- [ ] Gate check passes: `make check`
+- [x] e2e: a sender linked to the operator's manager → trusted; linked to a peer → untrusted; `from_self` → untrusted (rewrite the `inbound_test.go` owner cases)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(connectors): trust platform senders who manage the operator`

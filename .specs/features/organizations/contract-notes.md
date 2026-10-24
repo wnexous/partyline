@@ -778,3 +778,28 @@ Where a section refines the design, it says so.
   `PATCH /rooms/{id}`. The mutations "notice keeps the owner rule", "text flag read from the instructions' writer" and "no
   empty-instructions check" each fail them.
 
+## T31: Trust for platform events (POS-10, AD-018, CID-13)
+
+- **The rule.** A platform event is `trusted` only when its sender resolves, **through the connection it arrived on**
+  (`identities.ResolveSender`, AD-008), to a user who **manages the operator AI in the AI's home organization**
+  (`Trust.Trusts(user, operator)`, the oracle of T29). The operator's creator qualifies, as does a user whose position is
+  above the creator's, and whoever manages one of them. A member with no relation to the operator, a user who manages
+  it only in another organization it belongs to, a user who left the home organization, a sender nobody linked, one with
+  no id, one who is merely named like a manager and the same account linked on another connection are not trusted.
+- **`from_self` stays untrusted** (CID-14, AD-015): the pipeline does not ask the trust for the account's own typing, so
+  not even a manager's account typed on the device is trusted.
+- **Decided when the message arrives, and stored.** Unlike a room message (T29), which is judged each time it is read,
+  the verdict is written with the queue item (`platform_items.trusted`). A manager who leaves afterwards does not make the
+  events already queued untrusted; the next event of the same account is untrusted
+  (`TestInboundTrustIsDecidedWhenTheMessageArrives`).
+- **Wiring.** `connectors.PipelineDeps.Trust` is the one-method interface `connectors.Trust` (`Trusts(ctx, managerIID,
+  agentID)`), which `*orgs.Authz` satisfies; `app.New` passes `authz`. A pipeline without it trusts nobody. Each event reads
+  the operator's home chart once (no session: an inbound event is one question). The operator's owner is no longer read.
+- **Tests**: `TestInboundTrustIsWhoManagesTheOperator` replaces `TestInboundTrustIsTheOperatorsOwner` (inbound_test.go):
+  eleven senders, each guard alone (L-018), with the identities linked straight into the `identities` table
+  (`inboundEnv.linkDirect`) so the matrix does not depend on who may issue a pairing code, which T26/T27 change. The pairing
+  flow is still covered by `TestInboundPairingCommands`. The mutations "owner of the operator", "from_self judged like any
+  sender" and "management in any shared organization" each fail it.
+- **Not changed**: the sharing PUT the old test used to let bob link is not needed any more; `identities` keeps its own
+  rules (AD-008 pairing), reworked by T27.
+

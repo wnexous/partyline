@@ -185,7 +185,8 @@ type AgentAckFrame struct {
 // receives it (CID-06): never a message of a Partyline conversation. ID is what the AI answers
 // with (reply); ChatID names the chat for send_message together with ConnectionID. A chat of
 // another connection, a message of the account itself (FromSelf) and a sender whose account is not
-// linked to the AI's owner are never trusted as the owner's (CID-13, CID-14).
+// linked to a user who manages the AI in its home organization are never trusted (CID-13, CID-14,
+// POS-10).
 type PlatformEvent struct {
 	ID           string `json:"id"`
 	Platform     string `json:"platform"` // whatsapp, telegram, discord or webhook
@@ -196,7 +197,9 @@ type PlatformEvent struct {
 	ChatKind   ChatKind `json:"chat_kind"`
 	SenderName string   `json:"sender_name"`
 	SenderID   string   `json:"sender_id"`
-	// Trusted is true only when the sender's account is linked to the AI's owner (AD-006).
+	// Trusted is true only when the sender's account is linked, through this connection, to a user
+	// who manages the AI in its home organization (POS-10, AD-018). It is decided when the message
+	// arrives.
 	Trusted bool `json:"trusted"`
 	// FromSelf is true for a message written from the connection's own account on the platform
 	// itself (typed on its device), which Partyline did not send.
