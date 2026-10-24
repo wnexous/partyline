@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	goio "io"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,18 +70,23 @@ func findLauncher(name string) (launcher, bool) {
 }
 
 // launcherOptions are the leading launcher flags: the identity to adopt (as), the ignored
-// project and whether the person already agreed to take a live session over.
+// project, where the AI asks to be put (org, position, parent) and whether the person already
+// agreed to take a live session over.
 type launcherOptions struct {
-	as, project string
-	takeOver    bool
+	as, project           string
+	org, position, parent string
+	takeOver              bool
 	// args is what goes to the harness unchanged.
 	args []string
 }
 
-// launcherFlags takes the leading --take-over, --as (also --name, its older spelling) and
-// --project flags (also --as=<v>) off args (CLI-01); the rest goes to the harness unchanged. as
-// is the identity to adopt; project is accepted and ignored, since AIs no longer belong to
-// projects.
+// launcherValueFlags are the leading flags that take a value, as `--x v` or `--x=v`.
+var launcherValueFlags = []string{"--as", "--name", "--project", "--org", "--position", "--parent"}
+
+// launcherFlags takes the leading --take-over, --as (also --name, its older spelling), --project,
+// --org, --position and --parent flags (also --as=<v>) off args (CLI-01, ORG-04); the rest goes to the
+// harness unchanged. as is the identity to adopt; project is accepted and ignored, since AIs no longer
+// belong to projects; org, position and parent are where the AI asks to be put.
 func launcherFlags(args []string) (launcherOptions, error) {
 	var opts launcherOptions
 	for len(args) > 0 {
@@ -88,7 +95,7 @@ func launcherFlags(args []string) (launcherOptions, error) {
 			continue
 		}
 		flag, value, inline := strings.Cut(args[0], "=")
-		if flag != "--as" && flag != "--name" && flag != "--project" {
+		if !slices.Contains(launcherValueFlags, flag) {
 			break
 		}
 		if !inline {
@@ -98,14 +105,44 @@ func launcherFlags(args []string) (launcherOptions, error) {
 			value, args = args[1], args[1:]
 		}
 		args = args[1:]
-		if flag == "--project" {
+		switch flag {
+		case "--project":
 			opts.project = value
-		} else {
+		case "--org":
+			opts.org = value
+		case "--position":
+			opts.position = value
+		case "--parent":
+			opts.parent = value
+		default:
 			opts.as = value
 		}
 	}
 	opts.args = args
 	return opts, nil
+}
+
+// launchPlacement is where the AI of a launch asks to be put (ORG-04, POS-07, POS-08): the organization
+// (a slug or an id), the name of the position and the @handle or id of the AI that starts it. An empty
+// field asks for nothing, and the server applies its defaults (AD-020).
+type launchPlacement struct{ org, position, parent string }
+
+// any is whether the launch asked for something.
+func (p launchPlacement) any() bool { return p.org != "" || p.position != "" || p.parent != "" }
+
+// placementOf is what a launch asks for: each flag, else its PARTYLINE_ORG, PARTYLINE_POSITION or
+// PARTYLINE_PARENT variable; a flag wins, and a blank one is no flag. Only these are read as input: the
+// PARTYLINE_LAUNCH_* ones of a session the launcher itself runs in belong to that session.
+func placementOf(opts launcherOptions, io stdio) launchPlacement {
+	pick := func(flag, variable string) string {
+		if v := strings.TrimSpace(flag); v != "" {
+			return v
+		}
+		return strings.TrimSpace(io.getenv(variable))
+	}
+	return launchPlacement{
+		org: pick(opts.org, orgEnvVar), position: pick(opts.position, positionEnvVar), parent: pick(opts.parent, parentEnvVar),
+	}
 }
 
 // takeoverChoice is what a launch does about an AI whose live session is in another process.
@@ -120,17 +157,24 @@ const (
 	cancelLaunch
 )
 
-// launch runs `partyline <harness> [--take-over] [--as <identity>] [args…]`: it replaces this
-// process with the harness binary found on PATH, the launcher's own arguments and then args
-// unchanged, in this environment with PARTYLINE_FOLDER set to the canonical folder it runs in
-// and PARTYLINE_HARNESS to the harness id, which the session's partyline processes read so that
-// the channel, listen, the tools-only server and the hooks of one session act as the same AI
-// (HAR-03, AID-07), and PARTYLINE_AGENT set from --as to adopt that identity (MIG-02). A harness
-// that opens a live session (claude, opencode, pi, omp) asks first when the AI already has one
-// elsewhere (SES-01): yes takes it over with PARTYLINE_TAKEOVER=1 (SES-02), anything else exits
-// 1 without starting (SES-03); without a terminal it starts without asking (SES-07). Codex and
-// Gemini use the tools only and only announce the live session. Without the binary it exits
-// 127; when Partyline is not registered in the harness it warns once and starts anyway.
+// launch runs `partyline <harness> [--take-over] [--as <identity>] [--org <slug>] [--position <name>]
+// [--parent <@handle>] [args…]`: it replaces this process with the harness binary found on PATH, the
+// launcher's own arguments and then args unchanged, in this environment with PARTYLINE_FOLDER set to
+// the canonical folder it runs in and PARTYLINE_HARNESS to the harness id, which the session's
+// partyline processes read so that the channel, listen, the tools-only server and the hooks of one
+// session act as the same AI (HAR-03, AID-07), and PARTYLINE_AGENT set from --as to adopt that identity
+// (MIG-02). What the AI asks for - --org, --position and --parent, else PARTYLINE_ORG,
+// PARTYLINE_POSITION and PARTYLINE_PARENT - is consumed: those variables are removed from the harness's
+// environment and the values are handed on as PARTYLINE_LAUNCH_ORG, _POSITION and _PARENT, which the
+// session's processes send to the server as headers (ORG-04, POS-07, POS-08, AD-020). Placement
+// variables the launcher itself inherited from a session it runs in are replaced, never read: a nested
+// launch is another AI. When a placement is asked for the server is asked first whether the start would
+// be refused, and a refusal is printed and exits 1 without starting anything. A harness that opens a
+// live session (claude, opencode, pi, omp) asks first when the AI already has one elsewhere (SES-01):
+// yes takes it over with PARTYLINE_TAKEOVER=1 (SES-02), anything else exits 1 without starting
+// (SES-03); without a terminal it starts without asking (SES-07). Codex and Gemini use the tools only
+// and only announce the live session. Without the binary it exits 127; when Partyline is not
+// registered in the harness it warns once and starts anyway.
 func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	opts, err := launcherFlags(args)
 	if err != nil {
@@ -147,6 +191,17 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 		fmt.Fprintf(io.stderr, "partyline %s: %s is not installed (install it, then run partyline setup)\n", l.id, title)
 		return 127
 	}
+	place := placementOf(opts, io)
+	lookup := newSessionLookup(ctx, l, opts.as, place, io)
+	if place.any() {
+		// A start the server would refuse is not started: the person reads why here, before the harness takes
+		// the terminal. What the server cannot tell (unreachable, not configured, an answer that is no refusal)
+		// never stops a launch; the session reports its own trouble.
+		if res := lookup(); res.refusal != "" {
+			fmt.Fprintf(io.stderr, "partyline %s: %s\n", l.id, res.refusal)
+			return 1
+		}
+	}
 	warnUnregistered(ctx, l.id, title, io)
 	if opts.project != "" {
 		fmt.Fprintln(io.stderr, projectIgnored(l.id))
@@ -156,7 +211,7 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	if l.live {
 		takingOver = opts.takeOver || strings.TrimSpace(io.getenv("PARTYLINE_TAKEOVER")) == "1"
 		if !takingOver {
-			switch askTakeover(ctx, l, opts.as, io) {
+			switch askTakeover(lookup, io) {
 			case cancelLaunch:
 				return 1
 			case takeOver:
@@ -164,7 +219,7 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 			}
 		}
 	} else {
-		announceToolsOnly(ctx, l, opts.as, io)
+		announceToolsOnly(lookup, io)
 	}
 
 	environ := io.environ
@@ -181,15 +236,23 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	if takingOver {
 		set["PARTYLINE_TAKEOVER"] = "1"
 	}
+	for name, v := range map[string]string{launchOrgVar: place.org, launchPositionVar: place.position, launchParentVar: place.parent} {
+		if v != "" {
+			set[name] = v
+		}
+	}
 	var env []string
 	for _, kv := range environ() {
 		k, _, _ := strings.Cut(kv, "=")
-		if _, replaced := set[k]; replaced || k == "PARTYLINE_TAKEOVER" {
+		if _, replaced := set[k]; replaced || slices.Contains(consumedVars, k) {
 			continue
 		}
 		env = append(env, kv)
 	}
-	for _, k := range []string{"PARTYLINE_FOLDER", "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT"} {
+	for _, k := range []string{
+		"PARTYLINE_FOLDER", "PARTYLINE_HARNESS", "PARTYLINE_TAKEOVER", "PARTYLINE_AGENT",
+		launchOrgVar, launchPositionVar, launchParentVar,
+	} {
 		if v, ok := set[k]; ok {
 			env = append(env, k+"="+v)
 		}
@@ -208,6 +271,14 @@ func launch(ctx context.Context, l launcher, args []string, io stdio) int {
 	return code
 }
 
+// consumedVars are the variables a launch takes out of the harness's environment: the consent to take a live
+// session over, which only this launch may give; the placement variables it consumed (PARTYLINE_ORG,
+// PARTYLINE_POSITION, PARTYLINE_PARENT); and those of the session it may itself run in (PARTYLINE_LAUNCH_*),
+// which this launch replaces with its own.
+var consumedVars = []string{
+	"PARTYLINE_TAKEOVER", orgEnvVar, positionEnvVar, parentEnvVar, launchOrgVar, launchPositionVar, launchParentVar,
+}
+
 // launchFolder is the canonical folder of the session being started: the launcher's working
 // directory, never an inherited PARTYLINE_FOLDER (the new session runs where it was started).
 func launchFolder(io stdio) string {
@@ -217,12 +288,13 @@ func launchFolder(io stdio) string {
 // askTakeover asks a person on a terminal whether to take the live session of the folder's AI
 // over (SES-01..03, SES-07): without a terminal, with no live session or when the server cannot
 // answer it starts without asking.
-func askTakeover(ctx context.Context, l launcher, as string, io stdio) takeoverChoice {
+func askTakeover(lookup func() sessionLookup, io stdio) takeoverChoice {
 	if !onTerminal(0, io) || !onTerminal(2, io) {
 		return keepTheirs
 	}
-	state, ok := lookupSession(ctx, l, as, io)
-	if !ok || !state.Online {
+	res := lookup()
+	state := res.state
+	if !res.ok || !state.Online {
 		return keepTheirs
 	}
 	fmt.Fprint(io.stderr, takeoverPrompt(state, io))
@@ -238,9 +310,10 @@ func askTakeover(ctx context.Context, l launcher, as string, io stdio) takeoverC
 // announceToolsOnly prints the one informational line of Codex and Gemini when the folder's AI
 // has a live session elsewhere (design Spec issue 6): those harnesses use the tools only, so
 // there is nothing to take over.
-func announceToolsOnly(ctx context.Context, l launcher, as string, io stdio) {
-	state, ok := lookupSession(ctx, l, as, io)
-	if !ok || !state.Online {
+func announceToolsOnly(lookup func() sessionLookup, io stdio) {
+	res := lookup()
+	state := res.state
+	if !res.ok || !state.Online {
 		return
 	}
 	fmt.Fprintf(io.stderr, "%s is also open in another session (%s); this session uses tools only\n",
@@ -284,13 +357,35 @@ func onTerminal(fd int, io stdio) bool {
 	return isTerminal(fd)
 }
 
-// lookupSession asks GET /agent/session who holds the AI of the folder being started (SES-01),
-// giving up after launcherSessionTimeout. ok is false when the launcher has no credentials or
-// the server cannot answer, which starts the harness without asking.
-func lookupSession(ctx context.Context, l launcher, as string, io stdio) (dto.SessionState, bool) {
+// sessionLookup is what GET /agent/session told the launcher. ok is false when the launcher has no
+// credentials or the server could not answer, which starts the harness without asking. refusal is the
+// server's message when it refused the placement the launch asked for (403, 409 or 422), empty for any other
+// answer.
+type sessionLookup struct {
+	state   dto.SessionState
+	ok      bool
+	refusal string
+}
+
+// newSessionLookup returns the launch's one question to the server (SES-01, ORG-05): the first call asks, the
+// others repeat the answer, so a placement check and a takeover prompt share one request.
+func newSessionLookup(ctx context.Context, l launcher, as string, place launchPlacement, io stdio) func() sessionLookup {
+	var res sessionLookup
+	asked := false
+	return func() sessionLookup {
+		if !asked {
+			res, asked = lookupSession(ctx, l, as, place, io), true
+		}
+		return res
+	}
+}
+
+// lookupSession asks GET /agent/session who holds the AI of the folder being started (SES-01) and, when the
+// launch asks for a placement, whether the server would refuse it, giving up after launcherSessionTimeout.
+func lookupSession(ctx context.Context, l launcher, as string, place launchPlacement, io stdio) sessionLookup {
 	creds, err := cliconfig.Resolve(cliconfig.Config{}, io.getenv)
 	if err != nil || creds.URL == "" || creds.Token == "" {
-		return dto.SessionState{}, false
+		return sessionLookup{}
 	}
 	client := io.sessionHTTP
 	if client == nil {
@@ -300,29 +395,40 @@ func lookupSession(ctx context.Context, l launcher, as string, io stdio) (dto.Se
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(creds.URL, "/")+"/api/v1/agent/session", nil)
 	if err != nil {
-		return dto.SessionState{}, false
+		return sessionLookup{}
 	}
 	req.Header.Set("Authorization", "Bearer "+creds.Token)
 	identity := sessionIdentity(as, io)
 	identity.Folder, identity.Harness = launchFolder(io), l.id
+	// This launch's own placement, never the one of a session it may run in (sessionIdentity reads that one).
+	identity.Org, identity.Position, identity.Parent = place.org, place.position, place.parent
 	setIdentityHeaders(req.Header, identity)
 	resp, err := client.Do(req)
 	if err != nil {
-		return dto.SessionState{}, false
+		return sessionLookup{}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return dto.SessionState{}, false
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var state dto.SessionState
+		if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
+			return sessionLookup{}
+		}
+		return sessionLookup{state: state, ok: true}
+	case http.StatusForbidden, http.StatusConflict, http.StatusUnprocessableEntity:
+		// Only a launch that asked for a placement looks at this (launch); the message is the server's own words.
+		var body dto.ErrorBody
+		if json.NewDecoder(goio.LimitReader(resp.Body, 4096)).Decode(&body) == nil {
+			return sessionLookup{refusal: strings.TrimSpace(body.Error.Message)}
+		}
 	}
-	var state dto.SessionState
-	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
-		return dto.SessionState{}, false
-	}
-	return state, true
+	return sessionLookup{}
 }
 
 // setIdentityHeaders sets the folder headers of a session request like channel.Identity does
-// for the channel: the machine and the percent-encoded folder always, the rest when known.
+// for the channel: the machine and the percent-encoded folder always, the rest when known - the home
+// folder, the harness, the identity to adopt and the placement the launch asks for (the position
+// percent-encoded like the folder).
 func setIdentityHeaders(h http.Header, id channel.Identity) {
 	machine := id.Machine
 	if machine == "" {
@@ -338,6 +444,15 @@ func setIdentityHeaders(h http.Header, id channel.Identity) {
 	}
 	if id.Adopt != "" {
 		h.Set(dto.HeaderAdopt, id.Adopt)
+	}
+	if id.Org != "" {
+		h.Set(dto.HeaderOrg, id.Org)
+	}
+	if id.Position != "" {
+		h.Set(dto.HeaderPosition, url.PathEscape(id.Position))
+	}
+	if id.Parent != "" {
+		h.Set(dto.HeaderParent, id.Parent)
 	}
 }
 

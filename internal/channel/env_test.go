@@ -101,8 +101,8 @@ func (s *syncBuffer) String() string {
 }
 
 // session is a running channel.Run driven over pipes, as Claude Code drives the process. The
-// notice the channel sends when it first connects, which says who the AI is and who its owner is
-// (reason "identity"), is kept apart from the room notifications and notices in notes, so the
+// notice the channel sends when it first connects, which says who the AI is, where it stands and who manages
+// it (reason "identity"), is kept apart from the room notifications and notices in notes, so the
 // tests of messages read them in the order they always had; identityNotice returns it.
 type session struct {
 	t        *testing.T

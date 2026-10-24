@@ -135,17 +135,73 @@ type AgentConnection struct {
 	AccountLabel string `json:"account_label"`
 }
 
+// MaxManagers is the most managers the welcome frame and GET /agent/whoami list: the nearest ones.
+const MaxManagers = 10
+
 // AgentWelcomeFrame is the first frame after the agent WebSocket opens.
 type AgentWelcomeFrame struct {
 	Type  AgentFrameType `json:"type" tstype:"typeof AgentFrameTypeWelcome"`
 	Agent AgentInfo      `json:"agent"`
-	// Intelligence is the AI the session is, and Owner its owner: the channel tells the harness
-	// who it is and who it works for.
+	// Intelligence is the AI the session is: the channel tells the harness who it is and who it
+	// works for.
 	Intelligence IntelligenceRef `json:"intelligence"`
-	Owner        IntelligenceRef `json:"owner"`
+	// Owner is the user who hosts the AI, whose computer and token run it. It is deprecated since
+	// organizations: it grants and means nothing, and the identities an AI answers to are its
+	// Managers. It stays so that v0.5 CLIs, which print it, keep working.
+	Owner IntelligenceRef `json:"owner"`
+	// Organization is the AI's home organization (ORG-02); absent for an AI that has none.
+	Organization *ContactOrg `json:"organization,omitempty"`
+	// Position is the name of the position the AI holds in its home organization; empty for none.
+	Position string `json:"position"`
+	// Managers are the identities that manage the AI in its home organization, the ones whose
+	// messages are marked trusted (POS-10): nearest first, at most MaxManagers, always present and
+	// empty when nobody manages it.
+	Managers []IntelligenceRef `json:"managers"`
 	// Connections are the connections the AI operates, by name; always present, empty when it
 	// operates none (CID-01).
 	Connections []AgentConnection `json:"connections"`
+}
+
+// AgentWhoAmI is GET /agent/whoami: the intelligence of the user the agent token belongs to - the
+// fields of an IntelligenceRef, as before organizations - and the same three facts about the user
+// that the welcome frame tells an AI, read in the user's default organization (the one a new AI of
+// theirs joins when --org is not given): where they stand and who manages them there.
+type AgentWhoAmI struct {
+	IntelligenceRef `tstype:",extends"`
+	// Organization is the user's default organization; absent when they belong to none.
+	Organization *ContactOrg `json:"organization,omitempty"`
+	// Position is the name of the position the user holds there; empty for none.
+	Position string `json:"position"`
+	// Managers are the identities that manage the user there, nearest first, at most MaxManagers;
+	// always present.
+	Managers []IntelligenceRef `json:"managers"`
+}
+
+// AgentOrg is one organization of the token's user as GET /agent/orgs gives it, for `partyline orgs`
+// (ORG-04): where the user stands in it, whether a new AI of theirs joins it when --org is not given, and its
+// chart of positions, so that --org and --position can be told by name.
+type AgentOrg struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Slug is the address --org takes.
+	Slug string `json:"slug"`
+	// Permission is the user's in it: admin, member or guest.
+	Permission string `json:"permission"`
+	// Position is the name of the position the user holds in it; empty for none.
+	Position string `json:"position"`
+	// Default tells whether it is the organization a new AI of the user joins when --org is not given. Exactly
+	// one organization is the default, unless the user belongs to none.
+	Default bool `json:"default"`
+	// Positions is the organization's chart, each position with the one above it, by name; always present.
+	Positions []AgentOrgPosition `json:"positions"`
+}
+
+// AgentOrgPosition is one position of an organization's chart.
+type AgentOrgPosition struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// ParentID is the position above this one; absent for a root.
+	ParentID string `json:"parent_id,omitempty"`
 }
 
 // SessionState is GET /agent/session: what the server knows about the AI of the machine and

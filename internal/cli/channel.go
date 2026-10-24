@@ -84,12 +84,17 @@ func homeFolder(io stdio) string {
 
 // sessionIdentity gathers what a process tells the server about itself (AID-07): the
 // hostname, the canonical folder (sessionFolder), the canonical home folder, the harness
-// (PARTYLINE_HARNESS, set by the launchers) and the identity to adopt (adopt, else
-// PARTYLINE_AGENT) (MIG-02).
+// (PARTYLINE_HARNESS, set by the launchers), the identity to adopt (adopt, else
+// PARTYLINE_AGENT) (MIG-02) and what the session asked for when it was launched: the organization,
+// the position and the parent AI the launcher handed on as PARTYLINE_LAUNCH_ORG, _POSITION and _PARENT
+// (ORG-04, POS-07, POS-08). Only those are read: PARTYLINE_ORG and the others are the launcher's input.
 func sessionIdentity(adopt string, io stdio) channel.Identity {
 	id := channel.Identity{
 		Folder: sessionFolder(io), Home: homeFolder(io),
 		Harness: strings.TrimSpace(io.getenv("PARTYLINE_HARNESS")), Adopt: strings.TrimSpace(adopt),
+		Org:      strings.TrimSpace(io.getenv(launchOrgVar)),
+		Position: strings.TrimSpace(io.getenv(launchPositionVar)),
+		Parent:   strings.TrimSpace(io.getenv(launchParentVar)),
 	}
 	if id.Adopt == "" {
 		id.Adopt = strings.TrimSpace(io.getenv("PARTYLINE_AGENT"))
@@ -172,6 +177,7 @@ func channelCmd(ctx context.Context, args []string, io stdio) int {
 	}
 	err := channel.Run(ctx, channel.Options{
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, Home: c.id.Home, Adopt: c.id.Adopt,
+		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
 		Harness: c.id.Harness, Version: buildVersion(), ToolsOnly: *toolsOnly, Takeover: c.takeover,
 		Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
@@ -201,6 +207,7 @@ func listenCmd(ctx context.Context, args []string, io stdio) int {
 	}
 	err := channel.Listen(ctx, channel.ListenOptions{
 		URL: c.url, Token: c.token, Machine: c.id.Machine, Folder: c.id.Folder, Home: c.id.Home, Harness: c.id.Harness, Adopt: c.id.Adopt,
+		Org: c.id.Org, Position: c.id.Position, Parent: c.id.Parent,
 		Takeover: c.takeover, Stdin: io.stdin, Stdout: io.stdout, Stderr: io.stderr,
 	})
 	switch {

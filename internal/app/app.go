@@ -198,7 +198,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	a.trust = trust
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
 		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Platform: a.Platform, Logger: opts.Logger,
-		Bus: bus, Sessions: usersSvc, Trust: trust,
+		Bus: bus, Sessions: usersSvc, Trust: trust, Authz: authz,
 	})
 	kinds := opts.ConnectorKinds
 	if kinds == nil {

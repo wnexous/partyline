@@ -31,6 +31,9 @@ type Options struct {
 	Folder  string
 	Home    string
 	Adopt   string
+	// Org, Position and Parent are what the session asked for when it started (Identity): sent on every
+	// connection and call, only when set.
+	Org, Position, Parent string
 	// TempDir is where download_attachment saves files (<TempDir>/partyline/<folder name>/);
 	// empty means os.TempDir().
 	TempDir string
@@ -78,7 +81,10 @@ func Run(ctx context.Context, o Options) error {
 	if o.HTTPClient == nil {
 		o.HTTPClient = &http.Client{}
 	}
-	id := Identity{Machine: o.Machine, Folder: o.Folder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt}
+	id := Identity{
+		Machine: o.Machine, Folder: o.Folder, Home: o.Home, Harness: o.Harness, Adopt: o.Adopt,
+		Org: o.Org, Position: o.Position, Parent: o.Parent,
+	}
 	if id.Harness == "" && !o.ToolsOnly {
 		id.Harness = HarnessClaude
 	}

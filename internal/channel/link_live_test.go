@@ -45,8 +45,14 @@ func (d *dialLog) count() int { return len(d.all()) }
 // records the waits.
 func runLink(t *testing.T, base string, tm timing, takeover bool) (*link, *syncBuffer, func() []time.Duration) {
 	t.Helper()
+	return runLinkAs(t, base, builderIdentity, tm, takeover)
+}
+
+// runLinkAs is runLink for a session with the identity id.
+func runLinkAs(t *testing.T, base string, id Identity, tm timing, takeover bool) (*link, *syncBuffer, func() []time.Duration) {
+	t.Helper()
 	stderr := &syncBuffer{}
-	l := newLink(mustURL(t, base), "pl_agent_x", builderIdentity, http.DefaultClient, discard{}, stderr, tm)
+	l := newLink(mustURL(t, base), "pl_agent_x", id, http.DefaultClient, discard{}, stderr, tm)
 	l.takeover = takeover
 	var mu sync.Mutex
 	var waits []time.Duration

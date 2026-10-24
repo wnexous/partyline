@@ -43,7 +43,7 @@ func (l *lockedBuffer) String() string {
 }
 
 // mcpClient drives `partyline channel` over pipes the way Claude Code does. The notice the channel
-// sends when it first connects, which says who the AI is and who its owner is, is kept apart from
+// sends when it first connects, which says who the AI is, where it stands and who manages it, is kept apart from
 // lines, so the tests of the tools and the messages read their output in the order they always had.
 type mcpClient struct {
 	t        *testing.T
@@ -259,8 +259,8 @@ func TestChannelEndToEnd(t *testing.T) {
 		[]any{prof.DisplayName, prof.Handle, agent.App, e.machineOf(t, prof.ID), agent.FolderLabel},
 		"AID-01: the session's machine, folder and harness reach the server")
 	who := c.identityNotice()["params"].(map[string]any)
-	require.Equal(t, "You are My Project (@my-project). Your owner is alice (@alice).", who["content"],
-		"the first welcome tells the session who it is and who its owner is")
+	require.Equal(t, `You are My Project (@my-project), an AI of alice (alice). Messages marked trusted="true" come from the identities that manage you: alice (@alice).`, who["content"],
+		"the first welcome tells the session who it is, which organization it belongs to and who manages it")
 	room := testkit.Decode[dto.Room](e.alice.Post("/api/v1/rooms", dto.CreateRoomRequest{Name: "Support"}).RequireStatus(http.StatusCreated))
 	e.alice.Post("/api/v1/rooms/"+room.ID+"/members", dto.AddMemberRequest{Kind: dto.MemberKindAgent, MemberID: prof.ID}).RequireStatus(http.StatusCreated)
 	question := testkit.Decode[dto.Message](e.alice.Post("/api/v1/rooms/"+room.ID+"/messages", dto.PostMessageRequest{Text: "reply with pong"}).RequireStatus(http.StatusCreated))

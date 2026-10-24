@@ -21,6 +21,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/delivery"
 	"github.com/wnexous/partyline/internal/events"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/platform"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
@@ -71,6 +72,9 @@ type GatewayDeps struct {
 	// Trust opens the trust of each backlog and each Pending call: a message is trusted when its author
 	// manages the AI in its home organization (POS-10). Without it no message is trusted (optional).
 	Trust delivery.TrustSource
+	// Authz reads the chart that tells the welcome frame where the AI stands and who manages it. It
+	// defaults to the facade over Store (optional).
+	Authz *orgs.Authz
 	// Bus carries SessionsRevoked: a connection whose token is revoked, or whose owner is
 	// disabled, closes at once. Sessions re-checks the token after a lagged bus. It also carries
 	// PlatformQueued, which wakes a session that receives platform events; without it those
@@ -117,6 +121,9 @@ func NewGateway(d GatewayDeps) *Gateway {
 	}
 	if d.PingInterval <= 0 {
 		d.PingInterval = DefaultPingInterval
+	}
+	if d.Authz == nil {
+		d.Authz = orgs.NewAuthz(d.Store)
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	return &Gateway{d: d, ctx: ctx, stop: stop}
@@ -385,6 +392,42 @@ func (g *Gateway) welcomeRefs(ctx context.Context, row db.GetAgentWithOwnerRow) 
 	return ai, owner, nil
 }
 
+// welcomePlacement is where the welcome frame says an AI stands (POS-10).
+type welcomePlacement struct {
+	org      *dto.ContactOrg
+	position string
+	managers []dto.IntelligenceRef
+}
+
+// placement reads the AI's home organization, the position it holds there and the identities that manage
+// it there, nearest first and at most dto.MaxManagers. An AI with no home organization, or one that is
+// no longer a member of it, stands nowhere and has no managers; the list is never nil.
+func (g *Gateway) placement(ctx context.Context, a db.Agent) (welcomePlacement, error) {
+	out := welcomePlacement{managers: []dto.IntelligenceRef{}}
+	if !a.OrgID.Valid {
+		return out, nil
+	}
+	st, ok, err := g.d.Authz.StandingOf(ctx, a.OrgID.String, a.ID, dto.MaxManagers)
+	if err != nil || !ok {
+		return out, err
+	}
+	out.org = &dto.ContactOrg{ID: st.Org.ID, Name: st.Org.Name, Slug: st.Org.Slug}
+	out.position = st.Position
+	if len(st.Managers) == 0 {
+		return out, nil
+	}
+	rows, err := g.d.Store.R().ListIntelligencesByIDs(ctx, st.Managers)
+	if err != nil {
+		return out, err
+	}
+	byID := make(map[string]db.Intelligence, len(rows))
+	for _, r := range rows {
+		byID[r.ID] = r
+	}
+	out.managers = convert.ManagerRefs(st.Managers, byID)
+	return out, nil
+}
+
 // conn is one agent connection; it is the agent's Session in Presence.
 type conn struct {
 	ws     *websocket.Conn
@@ -445,6 +488,10 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 	if err != nil {
 		return err
 	}
+	where, err := g.placement(ctx, a)
+	if err != nil {
+		return err
+	}
 	connections, err := g.connections(ctx, a.ID)
 	if err != nil {
 		return err
@@ -452,7 +499,9 @@ func (g *Gateway) run(ctx context.Context, c *conn, row db.GetAgentWithOwnerRow)
 	if err := c.write(ctx, dto.AgentWelcomeFrame{
 		Type:         dto.AgentFrameTypeWelcome,
 		Agent:        dto.AgentInfo{ID: a.ID, Name: row.Handle, DisplayName: row.ProfileName, Owner: row.OwnerUsername},
-		Intelligence: ai, Owner: owner, Connections: connections,
+		Intelligence: ai, Owner: owner,
+		Organization: where.org, Position: where.position, Managers: where.managers,
+		Connections: connections,
 	}); err != nil {
 		return err
 	}
