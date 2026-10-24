@@ -902,11 +902,11 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `canViewRoom`, `orgs.Authz`
 **Requirement**: CHART-02, OMEM-06
 **Done when**:
-- [ ] Live e2e:
+- [x] Live e2e:
   - joining an org starts AI presence events for its AIs, and removal stops them;
   - removal from an org emits `access_changed` for that org's groups;
   - an outsider receives no connector status
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(live): follow organization membership in live events`

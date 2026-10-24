@@ -1,6 +1,7 @@
 // Package live serves the web app's live WebSocket (GET /api/v1/live). Each connection
 // subscribes to the event bus and forwards an event only after checking that its user may
-// access the resource (LIVE-02), rendering it as that user sees it.
+// access the resource (LIVE-02), rendering it as that user sees it. What a user sees of AIs and
+// connections follows the organizations they belong to (AD-016), checked for each event.
 package live
 
 import (
@@ -11,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"sync"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/wnexous/partyline/internal/authn"
 	"github.com/wnexous/partyline/internal/events"
 	"github.com/wnexous/partyline/internal/intelligences"
+	"github.com/wnexous/partyline/internal/orgs"
 	"github.com/wnexous/partyline/internal/rooms"
 	"github.com/wnexous/partyline/internal/store"
 )
@@ -50,12 +53,19 @@ type PrincipalChecker interface {
 	PrincipalActive(ctx context.Context, p authn.Principal) (bool, error)
 }
 
+// kindOrganization is the resource_kind of an access.changed about an organization (CHART-02): its
+// members, positions, chart or invitations changed, or the user joined or left it.
+const kindOrganization = "organization"
+
 // Deps are the services the hub reads from.
 type Deps struct {
 	Bus    *events.Bus
 	Access *access.Authorizer
 	Rooms  *rooms.Service
 	Store  *store.Store
+	// Authz decides what a user sees of AIs and connections: the members of an organization see its AIs
+	// and connections, and a host sees the AI it runs (AD-016). Defaults to the facade over Store.
+	Authz *orgs.Authz
 	// Intelligences decides who sees a profile change; optional.
 	Intelligences *intelligences.Service
 	// PublicURL is the instance URL; upgrades must come from its origin (LIVE-03).
@@ -96,6 +106,9 @@ func New(d Deps) *Hub {
 	}
 	if d.SessionCheckInterval <= 0 {
 		d.SessionCheckInterval = DefaultSessionCheckInterval
+	}
+	if d.Authz == nil && d.Store != nil {
+		d.Authz = orgs.NewAuthz(d.Store)
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	return &Hub{d: d, origin: d.PublicURL.Scheme + "://" + d.PublicURL.Host, ctx: ctx, stop: stop}
@@ -152,7 +165,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer stopRead()
 	ctx = ws.CloseRead(ctx) // handles pings and closes; cancelled when the peer goes away
 
-	c := &conn{hub: h, ws: ws, p: p, visible: map[string]bool{}}
+	c := &conn{hub: h, ws: ws, p: p, visible: map[string]bool{}, standing: map[string]standing{}}
 	err = c.run(ctx)
 	if errors.Is(err, errSessionRevoked) {
 		_ = ws.Close(websocket.StatusPolicyViolation, "session revoked")
@@ -181,6 +194,16 @@ type conn struct {
 	// visible holds the rooms this connection knows the user can view, so losing access or a
 	// deletion can be announced to exactly those who knew the room.
 	visible map[string]bool
+	// standing is what the user was in each organization at the last look: their permission and position.
+	// A change of it, or a membership that began or ended, is what makes the connection look at the
+	// user's groups again (OMEM-06).
+	standing map[string]standing
+}
+
+// standing is a user's permission and position in an organization.
+type standing struct {
+	permission orgs.Permission
+	position   string
 }
 
 type frame struct {
@@ -198,6 +221,9 @@ func (c *conn) run(ctx context.Context) error {
 	}
 	for _, r := range rs {
 		c.visible[r.ID] = true
+	}
+	if err := c.loadStanding(ctx); err != nil {
+		return err
 	}
 	if err := c.write(ctx, frame{Type: dto.LiveEventTypeHello, Data: dto.HelloData{ServerTime: c.hub.d.Now().UTC()}}); err != nil {
 		return err
@@ -334,26 +360,29 @@ func (c *conn) render(ctx context.Context, e events.Event) ([]frame, error) {
 		case access.KindRoom:
 			return c.room(ctx, e.ResourceID, &changed)
 		case access.KindAgent:
-			return c.ifLevel(d.Access.AgentLevel(ctx, c.p.UserID, e.ResourceID))(changed)
+			return c.ifSeen(c.canSeeAgent(ctx, e.ResourceID, ""))(changed)
 		case access.KindConnector:
-			return c.ifLevel(d.Access.ConnectorLevel(ctx, c.p.UserID, e.ResourceID))(changed)
+			return c.ifSeen(c.canSeeConnector(ctx, e.ResourceID))(changed)
 		}
 		return nil, nil
 
+	case events.OrgChanged:
+		return c.orgChanged(ctx, e.OrgID)
+
 	case events.AgentPresence:
-		return c.ifLevel(d.Access.AgentLevel(ctx, c.p.UserID, e.AgentID))(frame{
+		return c.ifSeen(c.canSeeAgent(ctx, e.AgentID, e.OwnerID))(frame{
 			Type: dto.LiveEventTypeAgentPresence, Data: dto.AgentPresence{AgentID: e.AgentID, Online: e.Online},
 		})
 
 	case events.ConnectorStatus:
-		return c.ifLevel(d.Access.ConnectorLevel(ctx, c.p.UserID, e.ConnectorID))(frame{
+		return c.ifSeen(c.canSeeConnector(ctx, e.ConnectorID))(frame{
 			Type: dto.LiveEventTypeConnectorStatus,
 			Data: dto.ConnectorStatusData{ConnectorID: e.ConnectorID, Status: dto.ConnectorStatus(e.Status), LastError: e.Detail},
 		})
 
 	case events.ChatDiscovered:
-		l, err := d.Access.ConnectorLevel(ctx, c.p.UserID, e.ConnectorID)
-		if err != nil || l == access.None {
+		ok, err := c.canSeeConnector(ctx, e.ConnectorID)
+		if err != nil || !ok {
 			return nil, err
 		}
 		chat, err := d.Store.R().GetChat(ctx, e.ChatID)
@@ -427,14 +456,182 @@ func (c *conn) canViewRoom(ctx context.Context, roomID string) (bool, error) {
 	return l != access.None, nil
 }
 
-// ifLevel returns a function yielding f when the level grants any access.
-func (c *conn) ifLevel(l access.Level, err error) func(frame) ([]frame, error) {
+// ifSeen returns a function yielding f when the user may see the resource.
+func (c *conn) ifSeen(ok bool, err error) func(frame) ([]frame, error) {
 	return func(f frame) ([]frame, error) {
-		if err != nil || l == access.None {
+		if err != nil || !ok {
 			return nil, err
 		}
 		return []frame{f}, nil
 	}
+}
+
+// canSeeAgent reports whether the user sees the AI: its host does, and so does a member of any
+// organization the AI belongs to (AD-016). hostID is the AI's host when the event names it, else it is read.
+func (c *conn) canSeeAgent(ctx context.Context, agentID, hostID string) (bool, error) {
+	d := c.hub.d
+	if hostID == "" {
+		a, err := d.Store.R().GetAgent(ctx, agentID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		hostID = a.OwnerID
+	}
+	if hostID == c.p.UserID {
+		return true, nil
+	}
+	if d.Authz == nil {
+		return false, nil
+	}
+	return d.Authz.SharesOrg(ctx, c.p.UserID, agentID)
+}
+
+// canSeeConnector reports whether the user sees the connection: the members of its organization do,
+// guests included (CHART-02). A connection no organization owns yet, as one made before connections
+// belonged to organizations, is its owner's.
+func (c *conn) canSeeConnector(ctx context.Context, connectorID string) (bool, error) {
+	d := c.hub.d
+	conn, err := d.Store.R().GetConnector(ctx, connectorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !conn.OrgID.Valid {
+		return conn.OwnerID == c.p.UserID, nil
+	}
+	if d.Authz == nil {
+		return false, nil
+	}
+	_, member, err := d.Authz.Member(ctx, conn.OrgID.String, c.p.UserID)
+	return member, err
+}
+
+// loadStanding reads the organizations the user belongs to, so that a later change of one is told apart
+// from the first look.
+func (c *conn) loadStanding(ctx context.Context) error {
+	if c.hub.d.Store == nil {
+		return nil
+	}
+	mine, err := c.hub.d.Store.R().ListOrgsOfMember(ctx, c.p.UserID)
+	if err != nil {
+		return err
+	}
+	for _, m := range mine {
+		c.standing[m.Organization.ID] = standing{permission: orgs.Permission(m.Permission), position: m.PositionID}
+	}
+	return nil
+}
+
+// accessChanged is an access.changed frame about a resource of the kind.
+func accessChanged(kind, id string) frame {
+	return frame{Type: dto.LiveEventTypeAccessChanged, Data: dto.AccessChangedData{ResourceKind: kind, ResourceID: id}}
+}
+
+// orgChanged renders a change of an organization for the connection's user (CHART-02, OMEM-06).
+//
+// A user who is not a member, and was not at the last look, hears nothing of it. A member, and one who
+// has just left, hears that the organization changed (access.changed, kind organization), and looks at
+// the organization again. When the user's own standing changed (they joined or left, or their permission
+// or position did), what they see through it may have changed as well: the connection reads the user's
+// groups again, announcing those they lost (room.deleted) and those they can now view (room.changed),
+// each with an access.changed, and tells a member which AIs and connections of the organization to look
+// at again. A user who left is told no ids of what they can no longer see.
+func (c *conn) orgChanged(ctx context.Context, orgID string) ([]frame, error) {
+	d := c.hub.d
+	if d.Authz == nil {
+		return nil, nil
+	}
+	m, member, err := d.Authz.Member(ctx, orgID, c.p.UserID)
+	if err != nil {
+		return nil, err
+	}
+	before, was := c.standing[orgID]
+	now := standing{permission: m.Permission, position: m.PositionID}
+	if member {
+		c.standing[orgID] = now
+	} else {
+		delete(c.standing, orgID)
+	}
+	if !member && !was {
+		return nil, nil
+	}
+	out := []frame{accessChanged(kindOrganization, orgID)}
+	if member && was && before == now {
+		return out, nil
+	}
+	roomFrames, err := c.rereadRooms(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, roomFrames...)
+	if !member {
+		return out, nil
+	}
+	agents, err := d.Store.R().ListOrgAgentIDs(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range agents {
+		out = append(out, accessChanged(string(access.KindAgent), id))
+	}
+	connectors, err := d.Store.R().ListOrgConnectorIDs(ctx, sql.NullString{String: orgID, Valid: true})
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range connectors {
+		out = append(out, accessChanged(string(access.KindConnector), id))
+	}
+	return out, nil
+}
+
+// rereadRooms compares the rooms the user lists now with those the connection knows: a room that is
+// gone from the list and that the user cannot view is announced as deleted, and one the connection did
+// not know is announced as changed, each with an access.changed. Both come in the order of their ids.
+func (c *conn) rereadRooms(ctx context.Context) ([]frame, error) {
+	list, err := c.hub.d.Rooms.List(ctx, c.p)
+	if err != nil {
+		return nil, err
+	}
+	listed := make(map[string]bool, len(list))
+	var gained, lost []string
+	for _, r := range list {
+		listed[r.ID] = true
+		if !c.visible[r.ID] {
+			gained = append(gained, r.ID)
+		}
+	}
+	for id := range c.visible {
+		if listed[id] {
+			continue
+		}
+		// Not listed is not lost: a direct message the user only views through an AI is not listed.
+		if ok, err := c.canViewRoom(ctx, id); err != nil {
+			return nil, err
+		} else if !ok {
+			lost = append(lost, id)
+		}
+	}
+	sort.Strings(gained)
+	sort.Strings(lost)
+	var out []frame
+	for _, id := range lost {
+		out = append(out, c.lost(id)...)
+		out = append(out, accessChanged(string(access.KindRoom), id))
+	}
+	for _, id := range gained {
+		changed := accessChanged(string(access.KindRoom), id)
+		frames, err := c.room(ctx, id, &changed)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, frames...)
+	}
+	return out, nil
 }
 
 func ignoreMissing(err error) error {

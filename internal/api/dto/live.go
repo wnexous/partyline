@@ -95,15 +95,19 @@ type RoomIDData struct {
 	RoomID string `json:"room_id"`
 }
 
-// LiveAccessChanged reports that sharing of a resource changed; refetch it.
+// LiveAccessChanged reports that who may see a resource, or what an organization is, changed; refetch it.
 type LiveAccessChanged struct {
 	Type LiveEventType     `json:"type" tstype:"typeof LiveEventTypeAccessChanged"`
 	Data AccessChangedData `json:"data"`
 }
 
-// AccessChangedData names the resource whose grants changed.
+// AccessChangedData names the resource whose visibility changed, or the organization that changed.
+// An organization's members, and a member who has just left it, receive kind organization whenever
+// something about it changes (its members, positions, chart or invitations) and look at it again; a member
+// whose own standing in it changed (they joined, or their permission or position did) also receives one
+// event per AI and connection of the organization, and one per group they gained or lost.
 type AccessChangedData struct {
-	ResourceKind string `json:"resource_kind"` // room, agent or connector
+	ResourceKind string `json:"resource_kind"` // room, agent, connector or organization
 	ResourceID   string `json:"resource_id"`
 }
 

@@ -803,3 +803,54 @@ Where a section refines the design, it says so.
 - **Not changed**: the sharing PUT the old test used to let bob link is not needed any more; `identities` keeps its own
   rules (AD-008 pairing), reworked by T27.
 
+## T32: Live visibility from organizations (CHART-02, OMEM-06)
+
+- **Who sees what, decided for each event** (`internal/live/hub.go`; `live.Deps.Authz`, wired by `app.New`, defaults to
+  the facade over the store). `access.AgentLevel` and `access.ConnectorLevel` are no longer asked by the hub, so T51 can
+  delete them.
+  - **An AI** (`agent.presence`, and the `access.changed` of an AI) is seen by its **host** (`agents.owner_id`; a host who
+    left the organization still hears of the AI they run) and by every identity that **shares an organization** with it
+    (`Authz.SharesOrg`; any permission, guests included). An instance admin, an outsider and a user who has not joined hear
+    nothing. Joining an organization starts the events for its AIs and removal stops them, with no state to keep: the
+    check is made for each event.
+  - **A connection** (`connector.status`, `chat.discovered`, and the `access.changed` of a connection) is seen by the
+    **members of its organization**, guests included. **Transitional rule**: a connection whose `org_id` is NULL (every
+    connection made before T26 puts new ones in an organization; the upgrade places the old ones) is its **owner's**
+    (`connectors.owner_id`). With T26 merged the rule can never apply and T51 may drop it.
+- **`events.OrgChanged{OrgID}`** is rendered per connection as follows. The connection remembers the user's **standing**
+  (permission and position) in each organization they belong to, read when it opens and updated by each event.
+  - A user who is not a member and was not at the last look hears **nothing** (CHART-02: an outsider learns nothing of
+    an organization, and the instance admin is an outsider).
+  - A member, and a member who has just left, receive `access.changed` with **`resource_kind: "organization"`** and the
+    organization's id (new kind; `dto.AccessChangedData` documents it). It means: its members, positions, chart,
+    invitations, name or avatar changed - look at them again. The web learns of everything organization-wide from this
+    one frame; T39 (queries) invalidates the organization queries with it.
+  - When the user's **own standing changed** (joined, left, permission or position changed) what they see through the
+    organization may have changed, so the connection also:
+    1. reads the user's rooms again (`Rooms.List`) and compares them with the rooms it knows: a room that is gone from
+       the list **and that the user cannot view** gets `room.deleted` and then `access.changed` kind `room`; a room the
+       connection did not know and the user can now view gets `room.changed` (as the user sees it) and then
+       `access.changed` kind `room`. Both come in id order. A direct message the user only views through an AI is not
+       listed and is not lost (`TestLiveOrganizationChangeKeepsADMTheUserOnlyViewsThroughAnAI`). This is how a removal
+       from an organization reaches **that organization's groups** (OMEM-06 takes the member out of them);
+    2. if the user is still a member, sends `access.changed` kind `agent` for every AI that is a member of the
+       organization and kind `connector` for each of its connections: look at them again (the user is a member, so the
+       ids tell nothing new). A user who **left** is told no ids of what they can no longer see.
+  - An organization change that does not change the user's own standing (a rename, someone else's position, an invitation)
+    sends the organization frame only (`TestLiveMembershipChangesTellTheMemberItsAIsAndConnections`).
+- **Not changed**: `events.GrantsChanged` is still handled (a room's user members, a merge) and still published by the
+  code T51 removes; its agent and connector arms now ask the organization rules. Room access is `access`'s (T22).
+  `events.InvitationReceived` is T15's.
+- **Queries** (`queries/live_orgs.sql`, a file of its own so the other phases' edits of `orgs.sql` do not collide):
+  `ListOrgAgentIDs`, `ListOrgConnectorIDs`, and the test supports `SetRoomHome` and `SetConnectorOrg`, which put a room or a
+  connection in an organization as T23 and T26 do when they create them. `testkit.LiveConn.Drain(d)` reads the frames that
+  arrive within `d`.
+- **Tests**: `internal/api/live_orgs_test.go` (presence by membership, join and removal, the host who left, the real AI
+  session, connector status and chats, the owner's legacy connection, `access.changed` of an AI and a connection, the
+  group-loss frames, the join / promotion / rename frames, rooms gained) and the rewritten `live_test.go`: its room tests
+  now use room membership instead of sharing grants and its status test uses organizations. Each rule above is pinned by a
+  mutation that fails a test (host rule, "every AI seen", "every connection seen", outsiders hearing the organization,
+  re-evaluation on every change, ids sent to the member who left, no `access.changed` for lost groups, "not listed means
+  lost"). `merge_test.go` adds bob to alice's organization where his socket expects to hear of her AI (it asserted that
+  through a `use` grant); T24 rewrites that file.
+

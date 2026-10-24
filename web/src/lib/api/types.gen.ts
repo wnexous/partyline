@@ -1620,17 +1620,21 @@ export interface RoomIDData {
   room_id: string;
 }
 /**
- * LiveAccessChanged reports that sharing of a resource changed; refetch it.
+ * LiveAccessChanged reports that who may see a resource, or what an organization is, changed; refetch it.
  */
 export interface LiveAccessChanged {
   type: typeof LiveEventTypeAccessChanged;
   data: AccessChangedData;
 }
 /**
- * AccessChangedData names the resource whose grants changed.
+ * AccessChangedData names the resource whose visibility changed, or the organization that changed.
+ * An organization's members, and a member who has just left it, receive kind organization whenever
+ * something about it changes (its members, positions, chart or invitations) and look at it again; a member
+ * whose own standing in it changed (they joined, or their permission or position did) also receives one
+ * event per AI and connection of the organization, and one per group they gained or lost.
  */
 export interface AccessChangedData {
-  resource_kind: string; // room, agent or connector
+  resource_kind: string; // room, agent, connector or organization
   resource_id: string;
 }
 /**
