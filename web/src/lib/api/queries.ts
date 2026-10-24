@@ -11,7 +11,7 @@ import {
 } from "@tanstack/react-query";
 import { withIntelligence, withoutAI } from "@/lib/contacts";
 import { type MeWithDefaultOrg, toMyOrgs } from "@/lib/orgs";
-import { api, isApiError } from "./client";
+import { api, hasErrorCode, isApiError } from "./client";
 import type {
   CreateInvitationRequest,
   CreateOrganizationRequest,
@@ -851,11 +851,16 @@ export const useOrgInvitations = (id: string, enabled = true) =>
     enabled,
   });
 
-/** The invitations waiting for the viewer, and for the AIs they manage (OMEM-01). */
+/**
+ * The invitations waiting for the viewer, and for the AIs they manage (OMEM-01). The page that
+ * lists them asks again every time it opens: the invitee is not told of a new one by the
+ * organization's live frame, which only its members receive.
+ */
 export const useMyInvitations = () =>
   useQuery({
     queryKey: queryKeys.invitations,
     queryFn: () => api<List<Invitation>>("GET", "/invitations").then(items),
+    refetchOnMount: "always",
   });
 
 /**
@@ -1056,8 +1061,8 @@ export function useRevokeInvitation(orgId: string) {
 
 /**
  * Answers an invitation (OMEM-02): the invited user, or whoever manages the invited AI. Answered,
- * or gone because it expired (410, OMEM-07), it leaves the inbox at once; accepting also adds the
- * organization to the viewer's.
+ * or gone because it expired (410, OMEM-07), was withdrawn (404) or became pointless (409
+ * already_member), it leaves the inbox at once; accepting also adds the organization to the viewer's.
  */
 function useAnswerInvitation(verb: "accept" | "decline") {
   const qc = useQueryClient();
@@ -1070,7 +1075,13 @@ function useAnswerInvitation(verb: "accept" | "decline") {
       if (verb === "accept") invalidateOrganizations(qc);
     },
     onError: (err, id) => {
-      if (isApiError(err) && (err.status === 410 || err.status === 404)) drop(id);
+      // Gone, expired, or answered another way (the invitee became a member meanwhile).
+      if (
+        isApiError(err) &&
+        (err.status === 410 || err.status === 404 || hasErrorCode(err, "already_member"))
+      ) {
+        drop(id);
+      }
     },
   });
 }

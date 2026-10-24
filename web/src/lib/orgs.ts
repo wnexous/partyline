@@ -1,5 +1,6 @@
 import type { Organization, OrgMember } from "@/lib/api/org-types";
 import type { Conversation, IntelligenceRef, Me } from "@/lib/api/types.gen";
+import type { MessageKey, Translate } from "@/lib/i18n";
 
 /*
  * The viewer's organizations as the web app uses them (ORG-02, OMEM-03, OMEM-04): which one is
@@ -15,6 +16,18 @@ export const MaxPositionNameLength = 60;
 export const PermissionAdmin = "admin";
 export const PermissionMember = "member";
 export const PermissionGuest = "guest";
+
+const PERMISSION_LABEL: Record<string, MessageKey> = {
+  [PermissionAdmin]: "profile.permissionAdmin",
+  [PermissionMember]: "profile.permissionMember",
+  [PermissionGuest]: "profile.permissionGuest",
+};
+
+/** What a permission is called (Admin, Member, Guest); one the app does not know is shown as it came. */
+export function permissionLabel(t: Translate, permission: string): string {
+  const key = PERMISSION_LABEL[permission];
+  return key ? t(key) : permission;
+}
 
 /** Where this browser remembers the organization the viewer picked. */
 export const CURRENT_ORG_KEY = "pl.org";

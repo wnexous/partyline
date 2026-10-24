@@ -67,6 +67,7 @@ describe("command palette (UI-22)", () => {
       "release-bot",
       "ops-bot",
       "Conversations",
+      "Organizations",
       "Settings",
     ]) {
       expect(all.some((o) => o.includes(name))).toBe(true);

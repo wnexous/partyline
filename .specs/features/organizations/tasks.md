@@ -1047,12 +1047,12 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `Dialog`, `AlertDialog`
 **Requirement**: ORG-01, OMEM-01, OMEM-02, OMEM-07
 **Done when**:
-- [ ] Vitest through the route:
+- [x] Vitest through the route:
   - create with 101 chars is refused inline;
   - accept calls the API and moves the org into the list;
   - the warning text is asserted literally (L-011);
   - an expired invitation (410) disappears with a toast
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): list, create and join organizations`

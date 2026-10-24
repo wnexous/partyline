@@ -1,4 +1,5 @@
-import { ChevronsUpDownIcon, PlusIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { BuildingIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { NewOrgDialog } from "@/components/new-org-dialog";
 import { OrgAvatar } from "@/components/org-avatar";
@@ -16,14 +17,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useConversations } from "@/lib/api/queries";
-import { type MessageKey, type Translate, useT } from "@/lib/i18n";
-import {
-  type MyOrg,
-  PermissionAdmin,
-  PermissionGuest,
-  unreadByOrg,
-  unreadOutsideOrg,
-} from "@/lib/orgs";
+import { type Translate, useT } from "@/lib/i18n";
+import { type MyOrg, permissionLabel, unreadByOrg, unreadOutsideOrg } from "@/lib/orgs";
 import { cn } from "@/lib/utils";
 
 /*
@@ -33,16 +28,6 @@ import { cn } from "@/lib/utils";
  * both); the button itself carries what waits outside the current one, so nothing is missed. The
  * pick is kept in this browser (hooks/use-current-org.ts).
  */
-
-const PERMISSION_LABEL: Record<string, MessageKey> = {
-  [PermissionAdmin]: "profile.permissionAdmin",
-  member: "profile.permissionMember",
-  [PermissionGuest]: "profile.permissionGuest",
-};
-
-/** What a permission is called; one the app does not know is shown as it came. */
-const permissionName = (t: Translate, permission: string) =>
-  PERMISSION_LABEL[permission] ? t(PERMISSION_LABEL[permission]) : permission;
 
 const unreadText = (t: Translate, count: number) =>
   t(count === 1 ? "conversations.unreadOne" : "conversations.unreadMany", { count });
@@ -157,6 +142,12 @@ export function OrgSwitcher({
             ))}
           </DropdownMenuRadioGroup>
           <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link to="/orgs">
+              <BuildingIcon aria-hidden="true" />
+              {t("orgs.all")}
+            </Link>
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setCreating(true)}>
             <PlusIcon aria-hidden="true" />
             {t("orgs.new")}
@@ -171,7 +162,7 @@ export function OrgSwitcher({
 /** One organization of the menu: its face, its name, what the viewer is in it and what waits there. */
 function OrgItem({ org, unread }: { org: MyOrg; unread: number }) {
   const t = useT();
-  const role = permissionName(t, org.permission);
+  const role = permissionLabel(t, org.permission);
   const label =
     unread > 0
       ? t("orgs.itemUnread", { org: org.name, role, unread: unreadText(t, unread) })

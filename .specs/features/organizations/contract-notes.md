@@ -1795,3 +1795,43 @@ requests) are exactly what is committed on `wnexous/pl-org-p3`. The rest is mark
   `handlers.test.ts` (the organization pages), `client.test.ts` (`details`, `hasErrorCode`), and the pickers' tests
   (`new-group-dialog.test.tsx`, `member-picker.test.tsx`: the organization's users, by name, without the viewer or the AIs among the
   members, the other organization's after a change, waiting, the fallback).
+
+## T40: Organizations list, creation and invitation inbox (ORG-01, OMEM-01, OMEM-02, OMEM-07)
+
+- **The page** (`routes/_app/orgs/index.tsx`, `/orgs`): the heading "Organizations"; **Invitations** (only while some wait: the invitations
+  `GET /invitations` lists, the viewer's own and those of the AIs they manage); **Your organizations** (`GET /orgs`: the picture, the
+  name, the address in monospace, what the viewer is, and either the "Current" tag or a "Switch" button named "Switch to {name}", which
+  is `useCurrentOrg().select`). "New organization" (header, or the empty state when the viewer belongs to none) opens T39's
+  `NewOrgDialog`: 0, 101 characters refused inline, 100 accepted (counted in characters), the new organization listed and current. A
+  list that cannot be read says so with a retry; a viewer with no organization sees "You're not in any organization yet".
+  - **Navigation**: "Organizations" is an entry of the Work group of `NAV_GROUPS` (so of the account menu and of the command palette) and
+    the switcher's menu has "All organizations". The rows do not link to the organization's own pages yet: they come with T41-T44, which
+    add the links where their pages are (typed routes cannot point to a page that does not exist in the commit).
+- **An invitation** (`InvitationItem`): the labelled list item "Invitation to {org}" with the picture, the sentence, the position
+  (when it carries one), what it grants, when it expires and **Accept** / **Decline**, both disabled while an answer is on its way and
+  both described by the sentence. The sentence names who is invited: "you" for the viewer, the AI's name for an AI they manage.
+  - "{inviter} invited {who} to {org} as an admin|a member|a guest." (a permission the app does not know: "... to {org}.").
+  - "Position: {position}" when it carries one.
+  - **What it grants, literally (L-011)**: with a position, "Identities above {position} will manage {who}."; a guest with a position,
+    "Identities above {position} will manage {who} and may remove {who} from {org}."; a guest with no position,
+    "{inviter} will manage {who} and may remove {who} from {org}." (a guest is the responsibility of whoever invited it, POS-05); a
+    member or an admin with no position grants nothing, so nothing is said. `grantText` is exported for the members page.
+  - "Expires {when}": `formatRelative` of `expires_at` ("Expires in 3 days" within the week, "Expires Nov 3" after), with the absolute
+    time as the tooltip (OMEM-07: 14 days).
+- **Answering**: accept -> `POST /invitations/{id}/accept`, toast "You joined {org}" ("{name} joined {org}" for an AI), the invitation
+  leaves the inbox and the organization joins the list (the organizations are fetched again); decline -> toast "Invitation to {org}
+  declined". **410 or 404** (expired or withdrawn): the invitation leaves the inbox with the toast "The invitation to {org} expired".
+  **409 `already_member`**: it leaves with "Already a member of {org}". Any other failure keeps it, enabled, with "Couldn't answer the
+  invitation to {org}. Try again." (`useAnswerInvitation` in `queries.ts` drops it for 410, 404 and `already_member`).
+- **Fresh**: the inbox is asked for again every time the page opens (`refetchOnMount: "always"`, tested with a client that keeps reads
+  fresh for 30 s as the app does), because the invitee is not a member and so never hears the organization's live frame; the live
+  frame for a new invitation is not handled yet (T39 note). The `access.changed` organization frame refreshes it too.
+- **Texts** (en and pt-BR): `nav.organizations`, `page.orgsTitle|Body`, `orgs.all|yours|current|switch|switchTo`,
+  `orgs.emptyTitle|emptyBody|loadError`, `orgs.invitations|invitationsBody|invitationsLabel|invitationTo|you`,
+  `orgs.inviteAdmin|Member|Guest|Other|Position`, `orgs.grantPosition|PositionGuest|Guest`, `orgs.expires`, `orgs.accept|decline`,
+  `orgs.acceptedSelf|acceptedAI|declined|expired|alreadyIn|answerFailed`.
+- **Tests**: `orgs/orgs.test.tsx` (29: the list and the Current/Switch states, none, failure, the menu and the switcher link, the dialog
+  with 101 and 100 characters, the invitation sentence, expiry, accept moving the organization into the list, decline, 410, 409, 404,
+  failure, one answer at a time, refresh on open, the live refresh, the four grant texts literally, an AI's invitation and both
+  together, Portuguese, axe in both locales and with no organization). Existing assertions updated for the new entry:
+  `messenger-shell.test.tsx` (the account menu's destinations) and `command-menu.test.tsx` (the pages the palette finds).

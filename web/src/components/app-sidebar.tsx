@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  Building2Icon,
   ContactRoundIcon,
   FingerprintIcon,
   KeyRoundIcon,
@@ -51,6 +52,7 @@ import { cn } from "@/lib/utils";
 interface NavItem {
   to:
     | "/"
+    | "/orgs"
     | "/contacts"
     | "/connectors"
     | "/identities"
@@ -75,7 +77,10 @@ interface NavGroup {
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: "nav.groupWork",
-    items: [{ to: "/", label: "nav.conversations", icon: MessagesSquareIcon, exact: true }],
+    items: [
+      { to: "/", label: "nav.conversations", icon: MessagesSquareIcon, exact: true },
+      { to: "/orgs", label: "nav.organizations", icon: Building2Icon },
+    ],
   },
   {
     label: "nav.groupConnections",

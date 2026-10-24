@@ -132,12 +132,13 @@ describe("header menu (LAY-06)", () => {
       .filter((item) => item.hasAttribute("href"))
       .map((item) => [item.textContent, item.getAttribute("href")]);
 
-  it("reaches contacts, connectors, linked accounts, devices, tokens and settings, and no admin page for a member", async () => {
+  it("reaches organizations, contacts, connectors, linked accounts, devices, tokens and settings, and no admin page for a member", async () => {
     api("member");
     renderRoute("/");
     const menu = await openMenu();
     expect(destinations(menu)).toEqual([
       ["Conversations", "/"],
+      ["Organizations", "/orgs"],
       ["Contacts", "/contacts"],
       ["Connectors", "/connectors"],
       ["Identities", "/identities"],
