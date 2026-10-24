@@ -28,6 +28,7 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, limit int) ([]dto.Age
 	if err != nil {
 		return nil, err
 	}
+	trust := g.d.Trust.Open() // one for the call: the AI's home chart is read once (POS-10)
 	for _, st := range states {
 		if len(out) >= limit {
 			break
@@ -55,10 +56,14 @@ func (g *Gateway) Pending(ctx context.Context, a db.Agent, limit int) ([]dto.Age
 			if err != nil {
 				return nil, err
 			}
-			if !facts.WantedBy(a.ID, a.OwnerID, prefs) {
+			wanted, trusted, err := facts.WantedBy(ctx, trust, a.ID, prefs)
+			if err != nil {
+				return nil, err
+			}
+			if !wanted {
 				continue // MEM-03, MEM-04
 			}
-			out = append(out, dto.AgentMessage{Room: ref, Trusted: delivery.Trusted(m.AuthorUserID, a.OwnerID), Message: convert.Message(m)})
+			out = append(out, dto.AgentMessage{Room: ref, Trusted: trusted, Message: convert.Message(m)})
 		}
 		if err := g.advance(ctx, a.ID, st.ID, views[len(views)-1].Seq); err != nil {
 			return nil, err

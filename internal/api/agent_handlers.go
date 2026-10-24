@@ -483,17 +483,22 @@ func (s *server) agentHistory(w http.ResponseWriter, r *http.Request, p authn.Pr
 		return err
 	}
 	out := dto.Page[dto.AgentMessage]{Items: make([]dto.AgentMessage, len(list)), HasMore: more}
+	trust := s.Trust.Open() // one for the page: the AI's home chart is read once (POS-10)
 	for i, m := range list {
-		out.Items[i] = agentMessage(room, m, p.UserID)
+		trusted, err := trust.Trusts(r.Context(), delivery.AuthorOf(m.MessageView), p.AgentID)
+		if err != nil {
+			return err
+		}
+		out.Items[i] = agentMessage(room, m, trusted)
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 	return nil
 }
 
-func agentMessage(room agents.RoomState, m rooms.Message, ownerID string) dto.AgentMessage {
+func agentMessage(room agents.RoomState, m rooms.Message, trusted bool) dto.AgentMessage {
 	return dto.AgentMessage{
 		Room:    delivery.RoomRef(room.ID, room.Name, room.Kind),
-		Trusted: delivery.Trusted(m.AuthorUserID, ownerID),
+		Trusted: trusted,
 		Message: convert.Message(m),
 	}
 }

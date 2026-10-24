@@ -857,11 +857,11 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `orgs.Authz.Session`
 **Requirement**: POS-10
 **Done when**:
-- [ ] e2e on live push, backlog, pending and history, one test each (L-034):
+- [x] e2e on live push, backlog, pending and history, one test each (L-034):
   - a manager's post → `trusted=true`;
   - untrusted for a sibling AI of the same user, a peer, a subordinate, an outsider, and a manager in a non-home shared org
-- [ ] Load-count test: a dispatch to 20 AIs in 3 home orgs loads 3 charts
-- [ ] Gate check passes: `make check`
+- [x] Load-count test: a dispatch to 20 AIs in 3 home orgs loads 3 charts
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(delivery): trust the identities that manage the recipient`

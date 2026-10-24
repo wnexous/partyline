@@ -713,3 +713,42 @@ Where a section refines the design, it says so.
 - **Tests**: `internal/api/delete_identities_test.go` (matrices of each kind of target on each route, the Lead/Sentinel
   independent test, the inviter chain, OMEM-06/08, an AI of another organization, the sole-admin AI),
   `internal/api/leave_and_end_session_test.go` (leave, 404s, the session matrix), `internal/agents/delete_test.go`.
+
+## T29: Trust for room messages (POS-10, AD-018)
+
+- **The rule.** A message delivered to an AI carries `trusted=true` only when its **author manages the AI in the AI's
+  home organization** (`Authz.Trusts`, T4): the creator of the AI, a position above the creator's, an AI that holds one,
+  and whoever manages any of them. Not trusted: the AI's host as such, its sibling AIs, its peers and subordinates,
+  anyone outside the home organization, an author who left it, and an identity that manages the AI only in another
+  organization it belongs to. It is decided **when the message is delivered**, never stored, so a promotion, a demotion
+  or a departure takes effect on the next message and on what is read later.
+- **The author is the intelligence that wrote it** (`delivery.AuthorOf(db.MessageView)`): `author_iid`, else the user or
+  AI of a row written before authors were recorded; empty for a system message and for a chat sender with no
+  intelligence (never trusted, and the trust is not even asked). An AI's post is its own: `author_user_id` still
+  resolves to the host and is no longer used for trust, which is why a user's AIs stop trusting each other.
+- **`internal/delivery/trust.go`**: `delivery.Trust` (`Trusts(ctx, authorIID, agentID) (bool, error)`, implemented by
+  `*orgs.Session`) and `delivery.TrustSource` (`func() Trust`), which opens the `Trust` of **one operation**. A nil
+  source opens a `Trust` that trusts nobody: a component given none fails closed. `delivery.Trusted(authorUserID,
+  ownerID)` and its test are gone; `trust_test.go` covers the new pieces.
+- **`Facts`** carries `AuthorIID` instead of `AuthorUserID`, and **`Facts.WantedBy(ctx, trust, agentID, prefs) (wanted,
+  trusted bool, err error)`** asks the trust once and returns it, because the trusted delivery mode needs it to decide and
+  the frame that carries the message tells it. A failing trust check is an error; the caller does not deliver on a guess.
+- **Where it runs**, one `TrustSource.Open()` per operation so each home organization's chart is read once (AD-017):
+  - the dispatcher (`DispatcherOptions.Trust`), once per dispatched message, for all its recipients;
+  - the gateway backlog (`GatewayDeps.Trust`), once per connection;
+  - `Gateway.Pending`, once per call;
+  - the history tool, `GET /agent/rooms/{room}/messages` (`api.Deps.Trust`), once per page.
+  `app.New` builds the source from `authz.Session()` and gives it to all four; `App` keeps it for the dispatcher, which
+  `Start` creates.
+- **Load count** (`TestADispatchLoadsEachHomeChartOnce`, through `Authz.Loads()`): a message pushed to 20 AIs whose homes
+  are three organizations reads three charts. The message is planted (stored and announced without the post path), so
+  the count is the dispatcher's alone.
+- **Tests** are `internal/api/delivery_trust_test.go` (the four paths, each in the delivery modes `all` and `trusted`,
+  over the authors of the task: creator, position above, AI above, sibling AI, peer, subordinate, outsider, manager in
+  another organization; delivery-time evaluation; a former manager) and `internal/delivery/trust_test.go`. The
+  mutations "author = the host user", "management in any shared organization" and "no memo" each fail them.
+- **Existing test adapted**: `TestPushCarriesChatContext` (channel) expected `trusted="true"` for a post by alice's other
+  AI, which the owner rule gave it; its subject is the chat-context keys, so only that value changed.
+- **Not changed here**: the wording of the channel instructions and of the instructions notice ("your owner") is stale
+  under this rule; it belongs to T35 and to the release notes (T55). `instructions_trusted` and `room_text_trusted` are T30.
+

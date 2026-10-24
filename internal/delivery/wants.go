@@ -52,7 +52,7 @@ func IntelligenceOf(ctx context.Context, q *db.Queries, agentID string) (db.Inte
 // Delivered describes a message as one agent sees it.
 type Delivered struct {
 	Text string
-	// Trusted is the message's trust for this agent (DLV-06).
+	// Trusted is the message's trust for this agent (POS-10).
 	Trusted bool
 	// DM is set when the message was posted in a direct message: it is addressed to the AI.
 	DM bool
@@ -132,8 +132,9 @@ func continuesHandle(r rune) bool {
 
 // Facts are what the delivery filter needs to know about a stored message.
 type Facts struct {
-	Text         string
-	AuthorUserID string
+	Text string
+	// AuthorIID is the intelligence that wrote the message (AuthorOf); empty when there is none.
+	AuthorIID string
 	// DM is set for a message of a direct message.
 	DM bool
 	// ChatKind is the authoring chat's kind; empty for other authors.
@@ -145,7 +146,7 @@ type Facts struct {
 // LoadFacts reads the chat kind and the replied message's author of a stored message posted in
 // a room of roomKind (group or dm).
 func LoadFacts(ctx context.Context, q *db.Queries, v db.MessageView, roomKind string) (Facts, error) {
-	f := Facts{Text: v.Text, AuthorUserID: v.AuthorUserID, DM: roomKind == string(dto.ConversationKindDM)}
+	f := Facts{Text: v.Text, AuthorIID: AuthorOf(v), DM: roomKind == string(dto.ConversationKindDM)}
 	if v.AuthorKind == string(dto.AuthorKindChat) {
 		chat, err := q.GetChat(ctx, v.AuthorID)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -163,12 +164,19 @@ func LoadFacts(ctx context.Context, q *db.Queries, v db.MessageView, roomKind st
 	return f, nil
 }
 
-// WantedBy applies Wants for the agent (id, owner) with prefs.
-func (f Facts) WantedBy(agentID, ownerID string, prefs MemberPrefs) bool {
+// WantedBy applies Wants for the AI agentID with prefs. It also reports whether the message is
+// trusted by that AI (POS-10), which the trusted delivery mode needs and the frame that carries the
+// message tells. A message with no author is not trusted and asks nobody.
+func (f Facts) WantedBy(ctx context.Context, trust Trust, agentID string, prefs MemberPrefs) (wanted, trusted bool, err error) {
+	if f.AuthorIID != "" {
+		if trusted, err = trust.Trusts(ctx, f.AuthorIID, agentID); err != nil {
+			return false, false, err
+		}
+	}
 	return Wants(prefs, Delivered{
-		Text: f.Text, Trusted: Trusted(f.AuthorUserID, ownerID), DM: f.DM, ChatKind: f.ChatKind,
+		Text: f.Text, Trusted: trusted, DM: f.DM, ChatKind: f.ChatKind,
 		ReplyToAuthorIsMe: f.ReplyAuthorKind == string(dto.AuthorKindAgent) && f.ReplyAuthorID == agentID,
-	})
+	}), trusted, nil
 }
 
 // RoomRef names a room in the frames an agent receives: a group by its name, a DM by name (the

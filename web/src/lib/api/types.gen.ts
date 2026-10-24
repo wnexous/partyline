@@ -61,7 +61,8 @@ export interface AgentRoom {
 }
 /**
  * AgentMessage is a message delivered to an agent. Trusted is computed for the receiving
- * agent: true only when the author resolves to the agent's owner (DLV-06, AD-006).
+ * agent when the message is delivered: true only when its author manages the agent in the
+ * agent's home organization (POS-10, AD-018). Its owner, its other AIs and its peers do not.
  */
 export interface AgentMessage {
   room: RoomRef;

@@ -115,6 +115,10 @@ type App struct {
 	Gateway *agents.Gateway
 	Live    *live.Hub
 
+	// trust opens the trust of one operation: a message is trusted by an AI when its author manages
+	// the AI in the AI's home organization (POS-10). Every operation reads each chart at most once.
+	trust delivery.TrustSource
+
 	handler http.Handler
 	ready   atomic.Bool
 	// sendWorker is whether Start runs the worker that retries the sends of Sends.
@@ -165,6 +169,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 	}
 	az := access.New(st, bus, access.Options{Now: opts.Now})
 	authz := orgs.NewAuthz(st)
+	trust := delivery.TrustSource(func() delivery.Trust { return authz.Session() })
 	auditLog := audit.New(st, opts.Now)
 	a := &App{
 		Config:        cfg,
@@ -190,9 +195,10 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 			a.Presence.Kick(ctx, agentID, agents.CloseDeleted, agents.ReasonDeleted)
 		},
 	})
+	a.trust = trust
 	a.Gateway = agents.NewGateway(agents.GatewayDeps{
 		Store: st, Registry: a.Agents, Presence: a.Presence, Rooms: a.Rooms, Platform: a.Platform, Logger: opts.Logger,
-		Bus: bus, Sessions: usersSvc,
+		Bus: bus, Sessions: usersSvc, Trust: trust,
 	})
 	kinds := opts.ConnectorKinds
 	if kinds == nil {
@@ -248,6 +254,7 @@ func New(cfg *config.Config, opts Options) (*App, error) {
 		Live:          a.Live,
 		AgentWS:       a.Gateway,
 		Inbox:         a.Gateway,
+		Trust:         trust,
 		WebUI:         webui.Handler(cfg.PublicURL),
 		Logger:        opts.Logger,
 		Ready:         a.ready.Load,
@@ -277,7 +284,7 @@ func (a *App) Start(ctx context.Context) error {
 	bg, stop := context.WithCancel(context.WithoutCancel(ctx))
 	a.stop = stop
 	dispatcher := delivery.NewAgentDispatcher(delivery.DispatcherOptions{
-		Store: a.Store, Bus: a.Bus, Agents: a.Gateway, Load: a.Gateway.Message, Logger: a.Logger,
+		Store: a.Store, Bus: a.Bus, Agents: a.Gateway, Load: a.Gateway.Message, Trust: a.trust, Logger: a.Logger,
 	})
 	a.background(bg, "agent-dispatcher", dispatcher.Run)
 	if a.sendWorker {
