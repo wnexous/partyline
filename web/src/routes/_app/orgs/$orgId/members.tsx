@@ -200,23 +200,25 @@ function MembersTable({
   return (
     <table
       aria-label={t("orgs.membersLabel", { org: orgName })}
-      className="w-full text-sm max-xl:block"
+      className="w-full text-sm max-xl:block xl:table-fixed"
     >
+      {/* Fixed columns: a name or a position with no place to break wraps or is cut inside its column, and
+          never widens the page. The widths add up to 100%. */}
       <thead className="max-xl:sr-only">
         <tr className="border-b text-left text-xs text-muted-foreground">
-          <th scope="col" className="px-4 py-2 font-medium xl:px-8">
+          <th scope="col" className="px-4 py-2 font-medium xl:w-[30%] xl:px-8">
             {t("orgs.colMember")}
           </th>
-          <th scope="col" className="px-3 py-2 font-medium">
+          <th scope="col" className="px-3 py-2 font-medium xl:w-[16%]">
             {t("orgs.colPermission")}
           </th>
-          <th scope="col" className="px-3 py-2 font-medium">
+          <th scope="col" className="px-3 py-2 font-medium xl:w-[20%]">
             {t("orgs.colPosition")}
           </th>
-          <th scope="col" className="px-3 py-2 font-medium whitespace-nowrap">
+          <th scope="col" className="px-3 py-2 font-medium whitespace-nowrap xl:w-[16%]">
             {t("orgs.colInvitedBy")}
           </th>
-          <th scope="col" className="px-4 py-2 text-right font-medium xl:px-8">
+          <th scope="col" className="px-4 py-2 text-right font-medium xl:w-[18%] xl:px-8">
             {t("orgs.colActions")}
           </th>
         </tr>
@@ -327,7 +329,7 @@ function MemberRow({
       </td>
       <td className="min-w-0 xl:px-3 xl:py-3">
         {m.position_name ? (
-          <span className="break-words">{m.position_name}</span>
+          <span className="[overflow-wrap:anywhere]">{m.position_name}</span>
         ) : (
           <>
             <span className="sr-only">{t("orgs.noPosition")}</span>
@@ -337,7 +339,7 @@ function MemberRow({
           </>
         )}
       </td>
-      <td className="min-w-0 text-muted-foreground max-xl:col-span-2 xl:px-3 xl:py-3">
+      <td className="min-w-0 text-muted-foreground [overflow-wrap:anywhere] max-xl:col-span-2 xl:px-3 xl:py-3">
         {m.invited_by ? t("orgs.invitedBy", { name: m.invited_by.display_name }) : null}
       </td>
       <td className="max-xl:col-span-2 xl:px-8 xl:py-3">

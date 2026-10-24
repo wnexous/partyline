@@ -125,7 +125,6 @@ export const queryKeys = {
   connectors: ["connectors"] as const,
   connector: (id: string) => ["connectors", id] as const,
   connectorChats: (id: string) => ["connectors", id, "chats"] as const,
-  chats: ["chats"] as const,
   identities: ["identities"] as const,
   adminUsers: ["admin", "users"] as const,
   adminInvites: ["admin", "invites"] as const,
@@ -1384,7 +1383,6 @@ export function useDeleteConnector() {
     onSuccess: (_, id) => {
       qc.removeQueries({ queryKey: queryKeys.connector(id) });
       qc.invalidateQueries({ queryKey: queryKeys.connectors, exact: true });
-      qc.invalidateQueries({ queryKey: queryKeys.chats });
     },
   });
 }
@@ -1402,13 +1400,6 @@ export function useRefreshChats(id: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.connectorChats(id) }),
   });
 }
-
-/** Chats the user may add to rooms (owned or shared connectors). */
-export const useChats = () =>
-  useQuery({
-    queryKey: queryKeys.chats,
-    queryFn: () => api<List<Chat>>("GET", "/chats").then(items),
-  });
 
 // ---------------------------------------------------------------------------------------------
 // Identities

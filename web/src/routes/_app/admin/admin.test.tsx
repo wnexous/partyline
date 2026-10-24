@@ -188,6 +188,21 @@ describe("admin invites (UI-20)", () => {
     expect(document.body.textContent).not.toContain("Zk3pQ9synthetic");
   });
 
+  it("says what a role gets in terms of organizations, not of what it owns or is shared with it", async () => {
+    mockApi({ "GET /me": json(200, admin), "GET /admin/invites": json(200, { items: [used] }) });
+    const user = userEvent.setup();
+    renderRoute("/admin/invites");
+    await user.click(await screen.findByRole("button", { name: "New invite" }));
+    const dialog = await screen.findByRole("dialog", { name: "New invite" });
+    expect(
+      within(dialog).getByText(
+        "Gets an organization of their own and joins the ones they are invited to.",
+      ),
+    ).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent("shared with them");
+    expect(dialog).not.toHaveTextContent("they own");
+  });
+
   it("lists invites with status and revokes a pending one", async () => {
     const { calls } = mockApi({
       "GET /me": json(200, admin),

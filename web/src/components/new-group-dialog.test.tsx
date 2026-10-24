@@ -608,7 +608,7 @@ describe("a refused member (LAY-04)", () => {
     expect(refused).toHaveLength(2);
     expect(refused[0]).toHaveTextContent("Bob Lima");
     expect(refused[0]).toHaveTextContent(
-      "not available: unknown, disabled, or not shared with you",
+      "not available: unknown, disabled, or not in an organization you share",
     );
     expect(refused[1]).toHaveTextContent("Old helper");
     expect(refused[1]).toHaveTextContent("people join through a bridged chat, not as members");

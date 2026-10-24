@@ -78,6 +78,17 @@ describe("agent membership settings (MEM-01..05)", () => {
     expect(patches()[0]?.body).toEqual({ display_name: "Bia" });
   });
 
+  it("says that only trusted delivers what identities that manage the agent wrote (MEM-04, POS-10)", async () => {
+    const { user } = setup();
+    const dialog = await open(user);
+    const hint = "Only identities that manage it, or chat accounts they verified.";
+    expect(within(dialog).getByRole("radio", { name: /Only trusted/ })).toHaveAccessibleDescription(
+      hint,
+    );
+    // The agent's owner is not who it trusts any more (AD-018).
+    expect(dialog).not.toHaveTextContent("owner");
+  });
+
   it("sends delivery trusted (MEM-04)", async () => {
     const { user, patches } = setup();
     const dialog = await open(user);

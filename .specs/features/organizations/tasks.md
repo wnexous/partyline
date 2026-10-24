@@ -2265,8 +2265,8 @@ Rewrite `authmatrix_test.go` on `OrgRoles`.
 **Reuses**: `e2e/fixtures.ts`
 **Requirement**: CHART-01, CHART-04, ORG-01, OMEM-02
 **Done when**:
-- [ ] `make e2e` passes in both projects
-- [ ] Gate check passes: `make check`
+- [x] `make e2e` passes in both projects
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `test(web): cover the organization flow end to end`
@@ -2284,8 +2284,8 @@ Neutral names only (Atlas, acme, Alice, Bob).
 **Reuses**: existing docs structure
 **Requirement**: ORG-04, POS-10
 **Done when**:
-- [ ] Docs list every new route, header and error code of the design
-- [ ] Gate check passes: `make check`
+- [x] Docs list every new route, header and error code of the design
+- [x] Gate check passes: `make check`
 **Tests**: none
 **Gate**: build
 **Commit**: `docs: organizations, positions and the org chart`

@@ -18,9 +18,9 @@ import (
 
 // OpenDM returns the direct message between the caller and the intelligence withID, creating it
 // when the pair has none (DM-01); created tells which. The caller is the user, or the AI of an
-// agent principal, whose visibility is its owner's (DM-04). A DM is a room of kind dm whose two
-// participants, keyed by their sorted ids, are its only members; its owner column names the user
-// who started it (the AI's owner for an AI) and gives no access (AD-011).
+// agent principal, who sees as itself and not as its host (DM-04). A DM is a room of kind dm whose
+// two participants, keyed by their sorted ids, are its only members; its owner column names the user
+// who started it (the AI's host for an AI) and gives no access (AD-011, AD-019).
 //
 //   - withID is the caller itself: ErrDMSelf. An empty withID is a validation error.
 //   - withID is unknown or not visible to the caller: ErrContactNotFound, the same for both.

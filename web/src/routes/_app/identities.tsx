@@ -30,6 +30,7 @@ import {
   useConnectors,
   useDeleteIdentity,
   useIdentities,
+  useMyOrgs,
   useStartPairing,
 } from "@/lib/api/queries";
 import type { Connector, Identity, PairingCode } from "@/lib/api/types.gen";
@@ -296,8 +297,17 @@ function ConnectorChoice({
 }) {
   const t = useT();
   const idBase = useId();
+  const orgs = useMyOrgs().data;
   const [selected, setSelected] = useState<string>("");
   const chosen = connectors.find((c) => c.id === selected);
+  // The organization owns each connection (AD-016), so that is what tells two of them apart; while the
+  // organizations are not known the platform alone is named.
+  const kindOf = (c: Connector) => {
+    const org = orgs?.find((o) => o.id === c.org_id)?.name;
+    return org
+      ? t("pairing.inOrg", { platform: platformLabel(c.kind), org })
+      : platformLabel(c.kind);
+  };
   return (
     <div className="space-y-4">
       <fieldset className="space-y-2">
@@ -314,13 +324,8 @@ function ConnectorChoice({
             >
               <RadioGroupItem id={`${idBase}-${c.id}`} value={c.id} />
               <span className="min-w-0 flex-1 truncate font-medium">{c.name}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {c.my_level === "manage"
-                  ? platformLabel(c.kind)
-                  : t("pairing.sharedBy", {
-                      platform: platformLabel(c.kind),
-                      owner: c.owner.display_name || c.owner.username,
-                    })}
+              <span className="max-w-[45%] shrink-0 truncate text-xs text-muted-foreground">
+                {kindOf(c)}
               </span>
             </label>
           ))}

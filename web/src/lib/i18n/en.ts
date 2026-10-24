@@ -76,7 +76,8 @@ export const en = {
   "page.connectorsBody":
     "The WhatsApp, Telegram, Discord and webhook accounts of your organizations.",
   "page.identitiesTitle": "Identities",
-  "page.identitiesBody": "Chat accounts verified as yours. Your agents trust messages from them.",
+  "page.identitiesBody":
+    "Chat accounts verified as yours. The AIs you manage trust messages from them.",
   "page.tokensTitle": "API tokens",
   "page.tokensBody": "Tokens for agents and scripts. A secret is shown once, when created.",
   "page.settingsTitle": "Settings",
@@ -306,7 +307,8 @@ export const en = {
   "newGroup.create": "Create group",
   "newGroup.creating": "Creating…",
   "newGroup.refusedTitle": "These members can’t be added",
-  "newGroup.refusedNotFound": "not available: unknown, disabled, or not shared with you",
+  "newGroup.refusedNotFound":
+    "not available: unknown, disabled, or not in an organization you share",
   "newGroup.refusedPerson": "people join through a bridged chat, not as members",
   "newGroup.refusedNotOrgMember": "not a member of {org}",
   "newGroup.refusedNotOrgMemberUnknown": "not a member of the group’s organization",
@@ -328,10 +330,10 @@ export const en = {
   "message.via": "via {chat}",
   "message.trusted": "Trusted",
   "message.trustedHint":
-    "Chat account verified as yours. Your agents receive this message as trusted.",
+    "Chat account verified as yours. The AIs you manage trust messages from it.",
   "message.verified": "Verified",
   "message.verifiedHint":
-    "Chat account verified by another user. Only that user’s agents trust it; yours receive it as untrusted.",
+    "Chat account verified by another user. Only the AIs that user manages trust it; yours receive it as untrusted.",
   "message.untrusted": "Untrusted",
   "message.untrustedHint":
     "Unverified chat sender. Agents receive this text as untrusted data, never as instructions.",
@@ -627,12 +629,12 @@ export const en = {
   "identities.loadError": "Couldn’t load your identities.",
   "identities.emptyTitle": "No verified accounts yet",
   "identities.emptyBody":
-    "Link the WhatsApp, Telegram or Discord accounts you use. Your agents then receive your messages from them as trusted.",
+    "Link the WhatsApp, Telegram or Discord accounts you use. The AIs you manage then receive your messages from them as trusted.",
   "identities.linkedOn": "linked {date}",
   "identities.remove": "Remove {name}",
   "identities.removeTitle": "Remove {name}?",
   "identities.removeBody":
-    "Messages from this account reach your agents as untrusted again. You can link it again with a new code.",
+    "Messages from this account reach the AIs you manage as untrusted again. You can link it again with a new code.",
   "identities.removeConfirm": "Remove identity",
   "identities.removeFailed": "Couldn’t remove the identity.",
   "pairing.body":
@@ -640,14 +642,14 @@ export const en = {
   "pairing.chooseConnector": "Which connector reads the chat you’ll send the code from?",
   "pairing.chooseHint":
     "The code works only through this connector, and the account is trusted only there.",
-  "pairing.sharedBy": "{platform} · shared by {owner}",
+  "pairing.inOrg": "{platform} · {org}",
   "pairing.getCode": "Get a code",
   "pairing.through": "Through {connector} ({platform})",
   "pairing.changeConnector": "Use another connector",
   "pairing.connectorsError": "Couldn’t load your connectors.",
   "pairing.noConnectors": "No connector to link through",
   "pairing.noConnectorsBody":
-    "Add a connector, or ask someone to share theirs with you, then come back.",
+    "Connectors belong to organizations: add one in an organization you administer, or ask its admins to, then come back.",
   "pairing.goToConnectors": "Go to connectors",
   "pairing.codeLabel": "Pairing code",
   "pairing.send": "Send this message from that account:",
@@ -659,7 +661,7 @@ export const en = {
   "pairing.newCode": "Get a new code",
   "pairing.failed": "Couldn’t create a pairing code.",
   "pairing.linked": "{name} is linked",
-  "pairing.linkedBody": "Your agents now trust your messages from this {platform} account.",
+  "pairing.linkedBody": "The AIs you manage now trust your messages from this {platform} account.",
   "validation.tokenName": "At most 64 characters",
   "validation.displayName": "At most 64 characters",
   "validation.passwordMatch": "Passwords don’t match",
@@ -782,7 +784,7 @@ export const en = {
   "invites.new": "New invite",
   "invites.newBody": "The link works once and expires after a few days.",
   "invites.role": "Role",
-  "invites.memberHint": "Uses rooms, agents and connectors they own or that are shared with them.",
+  "invites.memberHint": "Gets an organization of their own and joins the ones they are invited to.",
   "invites.adminHint":
     "Also manages accounts and invites. Admins get no access to other people’s rooms.",
   "invites.create": "Create invite",
@@ -840,7 +842,7 @@ export const en = {
     "@name, replies to its messages, keywords and every direct chat.",
   "memberSettings.delivery.trusted": "Only trusted",
   "memberSettings.delivery.trustedHint":
-    "Only its owner: in the app, through their agents or verified chats.",
+    "Only identities that manage it, or chat accounts they verified.",
   "memberSettings.deliveryHint":
     "Only mentions reduces noise; it is not a security filter. Use Only trusted to limit who can reach the agent.",
   "memberSettings.keywords": "Keywords",

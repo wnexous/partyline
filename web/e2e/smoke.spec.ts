@@ -1,28 +1,26 @@
-import type { BrowserContext, Page, TestInfo } from "@playwright/test";
+import type { TestInfo } from "@playwright/test";
 import type {
-  AgentInfo,
+  AddMemberRequest,
   AgentMessage,
   AgentRoom,
   Page as ApiPage,
   CreatedInvite,
-  CreatedToken,
+  CreateInvitationRequest,
+  Invitation,
   List,
   Me,
+  Organization,
   Room,
   Token,
 } from "../src/lib/api/types.gen";
 import { ADMIN, apiCall, expect, MEMBER, test } from "./fixtures";
-import type { Instance } from "./server";
+import { agentJSON, connectAI, isMobile, loginAs, MACHINE, trackLive } from "./helpers";
 
 // Smoke suite against the built binary (intelligences T52: LAY-01, LAY-05, DM-01, PROF-03,
 // TREE-01; web-app UI-01, UI-02, UI-04, UI-14, UI-24; harness-onboarding WIZ-02). The tests share
-// one fresh instance per project and run in order: the first one creates the admin.
+// one fresh instance per project and run in order: the first one creates the admin. The organization
+// flow has its own file and its own instance (orgs.spec.ts).
 test.describe.configure({ mode: "serial" });
-
-const MOBILE_MAX_WIDTH = 767;
-
-/** The machine every fake AI session reports; the server keeps it inside the AI's identity and shows it nowhere (AD-022). */
-const MACHINE = "e2e-box";
 
 /** A 1x1 PNG: the smallest image the avatar upload accepts (PROF-03). */
 const PHOTO = Buffer.from(
@@ -30,101 +28,9 @@ const PHOTO = Buffer.from(
   "base64",
 );
 
-function isMobile(testInfo: TestInfo) {
-  return (testInfo.project.use.viewport?.width ?? 1280) <= MOBILE_MAX_WIDTH;
-}
-
 /** The home page's heading: beside the sidebar it asks to pick one; on a phone it is the list. */
 function homeHeading(testInfo: TestInfo) {
   return isMobile(testInfo) ? "Conversations" : "Pick a conversation";
-}
-
-/** Logs a context in through the API; the session cookie lands in the browser context. */
-async function loginAs(context: BrowserContext, instance: Instance, who: typeof ADMIN) {
-  await apiCall<Me>(context.request, instance, "POST", "/auth/login", who);
-}
-
-/** True once the live socket delivered its `hello` frame (it is then subscribed). */
-function trackLive(page: Page) {
-  const state = { ready: false };
-  page.on("websocket", (ws) => {
-    ws.on("framereceived", ({ payload }) => {
-      if (typeof payload === "string" && payload.includes('"type":"hello"')) state.ready = true;
-    });
-  });
-  return state;
-}
-
-/**
- * A fake AI client (AID-01, AID-02): an agent token plus the machine and folder headers the CLI
- * sends. The AI is the one the folder names, so two connects of one folder are one AI.
- */
-interface AgentClient {
-  secret: string;
-  ai: AgentInfo;
-  machine: string;
-  /** The folder header as the CLI sends it (`url.PathEscape`d, so `/` is `%2F`). */
-  folder: string;
-}
-
-async function connectAI(
-  context: BrowserContext,
-  instance: Instance,
-  folder: string,
-  machine = MACHINE,
-): Promise<AgentClient> {
-  const token = await apiCall<CreatedToken>(context.request, instance, "POST", "/tokens", {
-    kind: "agent",
-    name: `e2e ${folder}`,
-  });
-  const folderHeader = encodeURIComponent(folder);
-  const res = await context.request.post(`${instance.url}/api/v1/agent/register`, {
-    headers: {
-      Authorization: `Bearer ${token.secret}`,
-      "X-Partyline-Machine": machine,
-      "X-Partyline-Folder": folderHeader,
-    },
-  });
-  expect(res.ok(), `register ${folder} → ${res.status()}`).toBe(true);
-  return {
-    secret: token.secret,
-    ai: (await res.json()) as AgentInfo,
-    machine,
-    folder: folderHeader,
-  };
-}
-
-/** One call of the fake AI client, as its folder and machine (never as a client-supplied id). */
-function agentCall(
-  context: BrowserContext,
-  instance: Instance,
-  agent: AgentClient,
-  method: "GET" | "POST",
-  path: string,
-  data?: unknown,
-) {
-  return context.request.fetch(`${instance.url}/api/v1${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${agent.secret}`,
-      "X-Partyline-Machine": agent.machine,
-      "X-Partyline-Folder": agent.folder,
-    },
-    data,
-  });
-}
-
-async function agentJSON<T>(
-  context: BrowserContext,
-  instance: Instance,
-  agent: AgentClient,
-  method: "GET" | "POST",
-  path: string,
-  data?: unknown,
-): Promise<T> {
-  const res = await agentCall(context, instance, agent, method, path, data);
-  expect(res.ok(), `${method} ${path} → ${res.status()}`).toBe(true);
-  return (await res.json()) as T;
 }
 
 test("first run: setup, log out, log back in to a protected route (UI-01, UI-02)", async ({
@@ -189,10 +95,29 @@ test("a message posted in a room reaches another user's open room live (UI-04)",
     await dialog.getByRole("button", { name: "Create group" }).click();
     await expect(admin).toHaveURL(new RegExp(`^${instance.url}/rooms/[^/]+$`));
     const roomId = new URL(admin.url()).pathname.split("/").pop();
-    await apiCall(adminCtx.request, instance, "PUT", `/rooms/${roomId}/sharing`, {
-      mode: "shared",
-      users: [{ user_id: member.id, level: "view" }],
-    });
+    // A group is shared by organization membership (AD-016): the member joins the organization that owns
+    // it, which is the admin's own, and then the group.
+    const room = await apiCall<Room>(adminCtx.request, instance, "GET", `/rooms/${roomId}`);
+    const invitation = await apiCall<Invitation>(
+      adminCtx.request,
+      instance,
+      "POST",
+      `/orgs/${room.org_id}/invitations`,
+      {
+        handle: member.intelligence.handle,
+        permission: "member",
+      } satisfies CreateInvitationRequest,
+    );
+    await apiCall<Organization>(
+      memberCtx.request,
+      instance,
+      "POST",
+      `/invitations/${invitation.id}/accept`,
+    );
+    await apiCall(adminCtx.request, instance, "POST", `/rooms/${roomId}/members`, {
+      kind: "user",
+      member_id: member.id,
+    } satisfies AddMemberRequest);
 
     const viewer = await memberCtx.newPage();
     const live = trackLive(viewer);

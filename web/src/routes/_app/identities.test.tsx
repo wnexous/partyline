@@ -6,6 +6,7 @@ import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { json, mockApi } from "@/test/fetch";
 import { makeConnector, makeMe } from "@/test/fixtures";
+import { memberIn, viewerIn } from "@/test/orgs";
 import { renderRoute } from "@/test/render";
 
 vi.mock("@/lib/live", () => ({ startLive: vi.fn(() => () => {}) }));
@@ -43,10 +44,12 @@ afterEach(() => {
 
 const whatsapp = makeConnector({ id: "k1", kind: "whatsapp", name: "family-wa" });
 const telegram = makeConnector({ id: "k2", kind: "telegram", name: "ops-bot" });
+// A connection of another organization of the viewer's (Globex), where they are a member and not an admin.
 const shared = makeConnector({
   id: "k3",
   kind: "discord",
   name: "team-discord",
+  org_id: "o2",
   my_level: "use",
   owner: { id: "u9", username: "bia", display_name: "Bia Lima" },
 });
@@ -59,6 +62,17 @@ const pairing = (code: string, seconds: number, connectorId = "k1") =>
   });
 
 describe("identities page (UI-18)", () => {
+  it("says that the AIs you manage are the ones that trust a linked account (AD-018)", async () => {
+    mockApi({ "GET /me": json(200, me), "GET /identities": json(200, { items: [] }) });
+    renderRoute("/identities");
+    expect(
+      await screen.findByText(
+        "Link the WhatsApp, Telegram or Discord accounts you use. The AIs you manage then receive your messages from them as trusted.",
+      ),
+    ).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("Your agents");
+  });
+
   it("lists verified chat accounts", async () => {
     mockApi({
       "GET /me": json(200, me),
@@ -85,6 +99,9 @@ describe("identities page (UI-18)", () => {
     renderRoute("/identities");
     await user.click(await screen.findByRole("button", { name: "Remove Ana (phone)" }));
     const confirm = await screen.findByRole("alertdialog");
+    expect(confirm).toHaveTextContent(
+      "Messages from this account reach the AIs you manage as untrusted again. You can link it again with a new code.",
+    );
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
     await user.click(within(confirm).getByRole("button", { name: "Remove identity" }));
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "Ana (phone)" })).toBeNull());
@@ -167,6 +184,11 @@ describe("identities page (UI-18)", () => {
       }),
     );
     expect(await within(dialog).findByText(/Ana \(phone\) is linked/)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        "The AIs you manage now trust your messages from this Telegram account.",
+      ),
+    ).toBeInTheDocument();
     expect(within(dialog).queryByRole("timer")).toBeNull();
     await waitFor(() => expect(listCalls().length).toBeGreaterThan(before));
     await user.click(within(dialog).getByRole("button", { name: "Done" }));
@@ -192,6 +214,7 @@ describe("identities page (UI-18)", () => {
   it("asks which connector first when several can be used, then pairs through the chosen one", async () => {
     const { calls } = mockApi({
       "GET /me": json(200, me),
+      ...viewerIn(memberIn("o1", "admin"), memberIn("o2", "member")),
       "GET /identities": json(200, { items: [] }),
       "GET /connectors": json(200, { items: [whatsapp, telegram, shared] }),
       "POST /identities/pairing": () => pairing("T3LGRM", 600, "k2"),
@@ -202,7 +225,13 @@ describe("identities page (UI-18)", () => {
     const dialog = await screen.findByRole("dialog", { name: "Link a chat account" });
     const group = await within(dialog).findByRole("radiogroup");
     expect(within(group).getAllByRole("radio")).toHaveLength(3);
-    expect(within(dialog).getByText("Discord · shared by Bia Lima")).toBeInTheDocument();
+    // Each connection says which organization it belongs to, for the admin of one and the member of another.
+    expect(await within(dialog).findByText("Discord · Globex")).toBeInTheDocument();
+    expect(within(dialog).getByText("WhatsApp · Acme")).toBeInTheDocument();
+    expect(within(dialog).getByText("Telegram · Acme")).toBeInTheDocument();
+    // Whoever created the connection gives nothing: the organization owns it (AD-019).
+    expect(dialog).not.toHaveTextContent("Bia Lima");
+    expect(dialog).not.toHaveTextContent("shared by");
     const getCode = within(dialog).getByRole("button", { name: "Get a code" });
     expect(getCode).toBeDisabled();
     expect(calls.some((c) => c.method === "POST")).toBe(false);
@@ -222,6 +251,24 @@ describe("identities page (UI-18)", () => {
     expect(await within(dialog).findByRole("radiogroup")).toBeInTheDocument();
   });
 
+  it("names only the platform while the organizations cannot be read", async () => {
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /orgs": json(500, { error: { code: "internal", message: "boom" } }),
+      "GET /identities": json(200, { items: [] }),
+      "GET /connectors": json(200, { items: [whatsapp, shared] }),
+    });
+    const user = userEvent.setup();
+    renderRoute("/identities");
+    await user.click(await screen.findByRole("button", { name: "Link a chat account" }));
+    const dialog = await screen.findByRole("dialog", { name: "Link a chat account" });
+    await within(dialog).findByRole("radiogroup");
+    expect(within(dialog).getByText("WhatsApp")).toBeInTheDocument();
+    expect(within(dialog).getByText("Discord")).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent("·");
+    expect(dialog).not.toHaveTextContent("Bia Lima");
+  });
+
   it("explains that a connector is needed when the user can use none", async () => {
     const { calls } = mockApi({
       "GET /me": json(200, me),
@@ -233,6 +280,13 @@ describe("identities page (UI-18)", () => {
     await user.click(await screen.findByRole("button", { name: "Link a chat account" }));
     const dialog = await screen.findByRole("dialog", { name: "Link a chat account" });
     expect(await within(dialog).findByText("No connector to link through")).toBeInTheDocument();
+    // A connection belongs to an organization: it is added in one the user administers, or its admins add it.
+    expect(
+      within(dialog).getByText(
+        "Connectors belong to organizations: add one in an organization you administer, or ask its admins to, then come back.",
+      ),
+    ).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent("share");
     expect(within(dialog).getByRole("link", { name: "Go to connectors" })).toHaveAttribute(
       "href",
       "/connectors",
