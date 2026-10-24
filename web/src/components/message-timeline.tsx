@@ -8,6 +8,7 @@ import { collectImages, ImageViewer } from "@/components/image-viewer";
 import { MessageItem } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useStickToEnd } from "@/hooks/use-stick-to-end";
 import { useRoomMessages } from "@/lib/api/queries";
 import type { Message, Page, RoomMember } from "@/lib/api/types.gen";
 import { type Translate, useI18n } from "@/lib/i18n";
@@ -113,7 +114,14 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
     scrollEndThreshold: AT_END_PX,
   });
 
-  const [atEnd, setAtEnd] = useState(true);
+  // Where the reader is: at the newest message or not. The ref is what a resize of the box reads
+  // (the keyboard opening is no scroll, so the state it would read has not moved).
+  const [atEnd, setAtEndState] = useState(true);
+  const atEndRef = useRef(true);
+  const setAtEnd = useCallback((value: boolean) => {
+    atEndRef.current = value;
+    setAtEndState(value);
+  }, []);
   const initialized = useRef(false);
   useLayoutEffect(() => {
     if (initialized.current || items.length === 0) return;
@@ -128,7 +136,23 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
     if (el.scrollTop < LOAD_OLDER_PX && hasNextPage && !isFetchingNextPage) {
       void fetchNextPage();
     }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, setAtEnd]);
+
+  // The box changes height when the on-screen keyboard opens or closes (KBD-02): a reader at the
+  // newest message stays at it, one higher up keeps their place.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const scrollerRef = useCallback((el: HTMLDivElement | null) => {
+    scrollRef.current = el;
+    setScroller(el);
+  }, []);
+  useStickToEnd(
+    scroller,
+    () => atEndRef.current,
+    () => {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    },
+  );
 
   const jumpTo = useCallback(
     (id: string) => {
@@ -231,7 +255,7 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
   return (
     <div className={cn("relative flex min-h-0 flex-1 flex-col", className)}>
       <div
-        ref={scrollRef}
+        ref={scrollerRef}
         role="log"
         aria-label={t("timeline.label")}
         aria-busy={isFetchingNextPage}
@@ -302,16 +326,14 @@ export function MessageTimeline({ roomId, meId, members, focus, className }: Mes
         returnFocusTo={thumbnailOf}
         more={hasNextPage}
       />
+      {/* A strip of its own, between the messages and the composer: nothing is laid over a message (KBD-06). */}
       {!atEnd ? (
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={jumpToLatest}
-          className="absolute right-4 bottom-3 shadow-md md:right-6"
-        >
-          <ArrowDownIcon aria-hidden="true" />
-          {t("timeline.jumpLatest")}
-        </Button>
+        <div className="flex shrink-0 justify-center px-4 py-2 md:px-6">
+          <Button size="sm" variant="secondary" onClick={jumpToLatest} className="shadow-md">
+            <ArrowDownIcon aria-hidden="true" />
+            {t("timeline.jumpLatest")}
+          </Button>
+        </div>
       ) : null}
     </div>
   );

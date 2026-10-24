@@ -559,3 +559,123 @@ describe("timeline (UI-04)", () => {
     expect(screen.getByText(/Add members from Members/)).toBeInTheDocument();
   });
 });
+
+/** Everything written to an element's `scrollTop`, to tell a timeline that moved from one that stayed. */
+function spyOnScrollTopWrites() {
+  const writes: { target: Element; value: number }[] = [];
+  const owner = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
+  if (!owner?.set || !owner.get) throw new Error("this DOM has no scrollTop accessor");
+  const { get, set } = owner;
+  Object.defineProperty(Element.prototype, "scrollTop", {
+    configurable: true,
+    get() {
+      return get.call(this);
+    },
+    set(value: number) {
+      writes.push({ target: this as Element, value });
+      set.call(this, value);
+    },
+  });
+  return {
+    writes,
+    restore: () => Object.defineProperty(Element.prototype, "scrollTop", owner),
+  };
+}
+
+/** The observers that watch one element, as a browser's ResizeObserver would call them. */
+const resizeObservers: { callback: ResizeObserverCallback; observed: Element[] }[] = [];
+class RecordingResizeObserver {
+  readonly entry: { callback: ResizeObserverCallback; observed: Element[] };
+  constructor(callback: ResizeObserverCallback) {
+    this.entry = { callback, observed: [] };
+    resizeObservers.push(this.entry);
+  }
+  observe(element: Element) {
+    this.entry.observed.push(element);
+  }
+  unobserve() {}
+  disconnect() {
+    this.entry.observed = [];
+  }
+}
+const resize = (el: HTMLElement, height: number) => {
+  Object.defineProperty(el, "clientHeight", { configurable: true, value: height });
+  act(() => {
+    for (const { callback, observed } of resizeObservers) {
+      if (observed.includes(el)) callback([], undefined as unknown as ResizeObserver);
+    }
+  });
+};
+
+describe("the timeline follows the visible area (KBD-02, KBD-06)", () => {
+  const twenty = () => page(Array.from({ length: 20 }, (_, i) => makeMessage({ seq: i + 1 })));
+  let spy: ReturnType<typeof spyOnScrollTopWrites>;
+
+  beforeEach(() => {
+    resizeObservers.length = 0;
+    vi.stubGlobal("ResizeObserver", RecordingResizeObserver);
+    spy = spyOnScrollTopWrites();
+  });
+  afterEach(() => spy.restore());
+
+  it("goes back to the newest message when the keyboard takes room from it", async () => {
+    mockApi({ "GET /rooms/r1/messages": twenty() });
+    renderTimeline();
+    const log = await screen.findByRole("log");
+    await screen.findByTestId("message-20");
+
+    spy.writes.length = 0;
+    resize(log, 318);
+    expect(spy.writes.filter((w) => w.target === log).length).toBeGreaterThan(0);
+  });
+
+  it("keeps a reader who scrolled up where they are when the box changes height", async () => {
+    mockApi({ "GET /rooms/r1/messages": twenty() });
+    renderTimeline();
+    const log = await screen.findByRole("log");
+    await screen.findByTestId("message-20");
+    // Far from the newest message: the box is 800 px tall and 5000 px of messages lie below.
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 5000 });
+    log.scrollTop = 1000;
+    fireEvent.scroll(log);
+    await screen.findByRole("button", { name: "Jump to latest" });
+
+    spy.writes.length = 0;
+    resize(log, 318);
+    expect(spy.writes.filter((w) => w.target === log)).toEqual([]);
+  });
+
+  it("offers Jump to latest in a strip of its own, never over the messages or the composer", async () => {
+    mockApi({ "GET /rooms/r1/messages": twenty() });
+    renderTimeline();
+    const log = await screen.findByRole("log");
+    await screen.findByTestId("message-20");
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 5000 });
+    log.scrollTop = 1000;
+    fireEvent.scroll(log);
+    const jump = await screen.findByRole("button", { name: "Jump to latest" });
+
+    // Outside the scrolling box, and in the flow after it: nothing is laid over a message.
+    expect(log.contains(jump)).toBe(false);
+    expect(jump.closest(".absolute, .fixed")).toBeNull();
+    expect(log.compareDocumentPosition(jump) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("takes the strip away once the newest message is back in view", async () => {
+    mockApi({ "GET /rooms/r1/messages": twenty() });
+    renderTimeline();
+    const log = await screen.findByRole("log");
+    await screen.findByTestId("message-20");
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 5000 });
+    log.scrollTop = 1000;
+    fireEvent.scroll(log);
+    const jump = await screen.findByRole("button", { name: "Jump to latest" });
+
+    fireEvent.click(jump);
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull(),
+    );
+  });
+});

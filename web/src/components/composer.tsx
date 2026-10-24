@@ -61,6 +61,9 @@ function postErrorText(t: Translate, err: unknown): string {
   return t("error.generic");
 }
 
+/** Cancels the press that would move focus off the text box; the click that follows still happens. */
+const keepFocus = (e: SyntheticEvent) => e.preventDefault();
+
 export interface ComposerProps {
   roomId: string;
   roomName: string;
@@ -308,7 +311,7 @@ function ComposerForm({
           // The on-screen Return key shows what it does (ENT-04).
           enterKeyHint={sendsOnEnter ? "send" : "enter"}
           placeholder={t("composer.placeholder", { room: roomName })}
-          className="block max-h-56 min-h-11 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground"
+          className="block max-h-[min(10rem,calc(var(--app-height,100dvh)*0.4))] min-h-11 w-full resize-none overflow-y-auto bg-transparent px-3 pt-2.5 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground"
         />
         <div className="flex items-center gap-1 px-1.5 pb-1.5">
           {/* The file input itself takes focus; the label draws it as an icon button. */}
@@ -354,6 +357,10 @@ function ComposerForm({
             size="icon-sm"
             disabled={!canSend}
             aria-label={t("composer.send")}
+            // A press on Send must not take focus from the text box: that closes the on-screen
+            // keyboard, and the composer jumps while it does (KBD-03). The click still sends.
+            onPointerDown={keepFocus}
+            onMouseDown={keepFocus}
             className={cn(sendsOnEnter ? length < COUNTER_FROM && "ml-auto lg:ml-2" : "ml-2")}
           >
             <SendHorizontalIcon aria-hidden="true" />

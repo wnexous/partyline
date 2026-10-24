@@ -6,6 +6,8 @@ After v0.4.0, André asked for three things while testing (2026-10-22): mention 
 
 On 2026-10-23 the product owner asked for three more things in the web app: images that open inside the app instead of in a new tab, an Enter key that does not send on a phone, and a profile panel that opens wherever an identity appears.
 
+On 2026-10-24 the product owner, using partyline on an Android phone (Chrome), asked for a phone that behaves like a messenger: the on-screen keyboard hides the composer after a message is sent, there is no way to send a voice message, and conversations and messages offer no actions on a long press. A second round the same day added a text box that stops growing before it hides the Send button, a swipe on a message to reply, and emoji reactions.
+
 ## Goals
 
 - [ ] Typing `@` in the composer suggests the conversation's participants and inserts `@handle`.
@@ -14,6 +16,11 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 - [ ] An image in the timeline opens in a viewer inside the app, and the arrows walk the conversation's images (IMG-01..IMG-06).
 - [ ] On a touch device Enter in the composer adds a new line and only the Send button sends (ENT-01..ENT-05).
 - [ ] Clicking an identity anywhere opens its profile in a side panel (a drawer on a phone), with the actions the viewer may use (PRF-01..PRF-06).
+- [ ] The composer stays above the on-screen keyboard and the timeline stays at the newest message (KBD-01..KBD-06).
+- [ ] A voice message is recorded in the composer, sent as an audio attachment and played in the timeline (VOI-01..VOI-08).
+- [ ] A long press (touch), a right click or a "⋯" button (mouse) opens the actions of a conversation or a message (ACT-01..ACT-07).
+- [ ] A message is answered with a swipe on a touch screen (SWP-01..SWP-04).
+- [ ] A message gets emoji reactions that everyone in the room sees live (RCT-01..RCT-08).
 
 ## Out of Scope
 
@@ -24,6 +31,10 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 | Updating harness registrations during `update` | `partyline setup` does that |
 | Zoom, rotate, slideshow, video or audio in the viewer | Not asked; "Open original" opens the file itself |
 | Editing a profile inside the panel, presence of users, a person's DM | The panel shows and routes; the page edits (PROF-05), the API has no presence for users (AD-010) and a person is history (CID-21) |
+| Deleting a message | The API has no route to delete or edit a message; the message menu has no such action until one exists |
+| Leaving a group as a plain member | Removing a member needs `manage` on the group (AD-016); the list offers Leave exactly where the server allows it. A self-service leave for every member is a permission change, not a UI one |
+| A waveform in the voice player, previewing a recording before it is sent, transcription | Not asked; the player has play, time and a seek bar |
+| Reactions on messages that arrived through a connection, custom emoji, reaction notifications to AIs | Rooms hold users and AIs only (AD-015); the agent `react` tool keeps reacting to platform messages; AIs are not told about a reaction |
 
 ---
 
@@ -50,6 +61,17 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 | Presence in the panel | Only AIs have presence (AD-010): an AI shows online or offline and its app; a user or a person shows neither | The API has no presence for the others; the UI never invents fields | n |
 | Edit profile | Offered on the viewer's own profile when it says they may edit it (`can_edit`); it opens the profile page, where the editor is. The AIs a viewer manages are edited from the page too ("Open full profile") | The request names the viewer's own profile; the page stays the one place that edits | n |
 | Viewer chrome | A paper strip on top (name, position, Download, Open original, Close) over a dark stage; previous and next sit on the stage's edges | Operate surface: standard controls, the image is the only dark thing on the screen | n |
+| What the conversation page is as tall as | The visual viewport: `hooks/use-visual-viewport.ts` publishes `--app-height` and `--app-top` on `<html>` from `window.visualViewport`, and the full-height shell uses them (`100dvh` until they exist). `interactive-widget=resizes-content` in the viewport meta makes Chrome (Android) resize the page for the keyboard as well, so dialogs and `fixed` elements clear it. iOS Safari ignores the meta and relies on the variables | A keyboard shrinks the visual viewport in every browser, and only some also shrink the layout viewport. Reading the visual viewport is the one rule that holds in all of them | n |
+| Pinch-zoom | Ignored: while the page is zoomed (`visualViewport.scale` is not 1) the variables are not published | A zoomed visual viewport is smaller than the page without any keyboard | n |
+| Text box height | At most 6 lines (10 rem) and 40 % of the visible area, whichever is smaller; it then scrolls inside itself | The Send, attach and microphone buttons live below it and must stay on screen | n |
+| Touch or pointer | The same helper as ENT (`isTouchFirst`): a coarse main pointer, or one that cannot hover, gets a long press and a bottom sheet; a mouse or trackpad gets a right click, a "⋯" button and a menu at the pointer, whatever the width | A narrow desktop window is still a mouse; a tablet is still a finger | n |
+| Long press | 500 ms still (10 px of movement at most) with a finger or a pen; the `contextmenu` event of a touch (Android's long press, TalkBack's long click) opens the same sheet and keeps the browser's own menu closed | Chrome's own threshold is about the same, so ours wins the race | n |
+| What the conversation list offers | Mark as read (when something is unread), View profile (a DM's counterpart), Leave group and Delete group where the server allows them. Leaving removes the viewer's own member row (`DELETE /rooms/{id}/members/{mid}`, `manage` needed); deleting is `DELETE /rooms/{id}` (`manage`, never a DM). Both ask first | Existing routes and their rules; nothing is added on the server for them | n |
+| What a message offers | Reply, Copy text (when it has text) and the reactions bar (RCT). No Delete: there is no route | Existing routes only | n |
+| Voice recording | `MediaRecorder` on the microphone stream, 32 kbit/s, the first of `audio/webm;codecs=opus` and `audio/ogg;codecs=opus` the browser can record, else the browser's default (Safari records `audio/mp4`); at most 10 minutes. The file is `voice-message-<date>-<time>.<ext>` and goes through the message upload as the only attachment, with no text. The server's size limit is not published, so a recording it refuses (413) says so and stays in the composer to retry or discard | "In the format the browser records", through the existing upload | n |
+| Tap or hold | A tap on the microphone starts a recording that stays on until Send or Cancel; a hold longer than 0.5 s records while held, sends on release and cancels when the finger slides 80 px to the left | Both gestures the owner named | n |
+| Where reactions live | A `message_reactions` table (message, intelligence, emoji) and two routes on a room's message: `POST /rooms/{id}/messages/{mid}/reactions` with `{"emoji"}` and `DELETE /rooms/{id}/messages/{mid}/reactions/{emoji}` (the emoji percent-encoded); `Message.reactions` lists, per emoji, the intelligences that used it, in the order they reacted. The agent `react` tool is for platform messages and stays as it is | The API had no user route (the agent route stores a message of kind `reaction` aimed at a chat, which AD-015 retired for rooms). Smallest change that every client can render | n |
+| Who may react | Whoever may post in the room (`post` level); the author may react to their own message; one emoji per request (`validation.OneEmoji`); at most 12 different emoji on a message | Reacting is taking part | n |
 
 **Open questions:** none - all resolved or logged above.
 
@@ -156,6 +178,94 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 
 ---
 
+### P1: The composer stays above the keyboard ⭐ MVP
+
+**User Story**: As a phone user, I want the composer to stay in sight above the on-screen keyboard so that I keep writing and sending without closing the keyboard and tapping the field again.
+
+**Acceptance Criteria**:
+
+1. WHEN the on-screen keyboard opens or closes, or the visible area changes in any other way, THEN the conversation page SHALL be as tall as the visual viewport and start at its top edge: the header on top and the composer's bottom edge on the keyboard's top edge, with nothing of the composer behind the keyboard. A pinch-zoomed page SHALL keep its layout. (KBD-01)
+2. WHILE the timeline is at its newest message, a change of the visible area SHALL keep it there; WHILE the reader is higher up it SHALL keep what is on screen. (KBD-02)
+3. WHEN a message is sent THEN the text box SHALL keep focus and the keyboard SHALL stay open; pressing Send SHALL NOT move focus out of the text box. (KBD-03)
+4. The text box SHALL grow with its text up to 6 lines or 40 % of the visible area, whichever is smaller, and scroll inside itself beyond that; the attach, microphone and Send buttons SHALL stay visible whatever its length. (KBD-04)
+5. The viewport meta SHALL ask for `interactive-widget=resizes-content`, and the full-height shell SHALL be `100dvh` (not `100svh`) wherever the visual viewport is not known. (KBD-05)
+6. "Jump to latest" SHALL sit in a strip of its own between the timeline and the composer, so it never covers a message or the composer. (KBD-06)
+
+**Independent Test**: At 360 px, shrink the visual viewport to 360 px tall as a keyboard does: the composer's bottom edge is at the bottom of the visible area, the newest message is visible, and after Send the text box is still focused.
+
+---
+
+### P1: Voice messages ⭐ MVP
+
+**User Story**: As a phone user, I want to record a voice message in the composer and play the ones I receive in the timeline, so that I answer without typing.
+
+**Acceptance Criteria**:
+
+1. WHERE the browser has `MediaRecorder` and a microphone API the composer SHALL show a microphone button; where it has not, it SHALL show none. (VOI-01)
+2. WHEN the user taps the microphone THEN the app SHALL ask for the microphone, start recording and show a recording bar in place of the text box: the elapsed time counting up (m:ss), Cancel and Send; start and end SHALL be announced to assistive technology. (VOI-02)
+3. WHEN the user holds the microphone for more than 0.5 s THEN it SHALL record while held and send on release, and cancel when the finger has slid 80 px to the left, saying so while it is armed. (VOI-03)
+4. WHEN the user activates Send THEN the app SHALL stop the recording and post it as a message with one audio attachment, in the format the browser recorded, through the message upload; the text box SHALL keep focus. IF the send fails THEN the app SHALL say why (too large, network, forbidden) and keep the recording to send again or discard. (VOI-04)
+5. WHEN the user activates Cancel, presses Escape or slides away THEN the recording SHALL be discarded and the microphone released; nothing is sent. The microphone SHALL also be released when the recording reaches 10 minutes (it waits to be sent), when the composer closes and when the page is left. (VOI-05)
+6. IF the user denies the microphone, none exists, or another app holds it THEN the app SHALL say which, in plain words, next to the composer and SHALL NOT leave a recording bar behind. (VOI-06)
+7. WHEN a message has an audio attachment THEN the timeline SHALL play it inline with a compact player: play/pause, the elapsed and total time and a seek bar that is a slider with its position as text; starting one SHALL pause any other. (VOI-07)
+8. The player SHALL show the length of a recording whose container does not carry it, and SHALL work at 360 px with controls at least 44 px on a touch device. (VOI-08)
+
+**Independent Test**: With a stand-in `MediaRecorder`, tap the microphone, wait two seconds, tap Send: one multipart post with an `audio/webm;codecs=opus` file goes out, the bar is gone and the text box is focused; the message appears in the timeline with a player that plays and seeks.
+
+---
+
+### P1: Actions on a long press ⭐ MVP
+
+**User Story**: As a user, I want to press and hold a conversation or a message (or right-click it) to see what I can do with it, so that the common actions are one gesture away.
+
+**Acceptance Criteria**:
+
+1. WHEN a finger or pen rests on a conversation of the list or on a message for 0.5 s, moving at most 10 px, THEN an action sheet SHALL open from the bottom. A tap, a scroll, a drag or a press released earlier SHALL NOT open it; a tap still opens the conversation; the click that ends a long press SHALL NOT open the conversation. (ACT-01)
+2. WHEN the user right-clicks a conversation or a message, or presses the context-menu key or Shift+F10 on it, THEN a menu SHALL open at the pointer; a "⋯" button on the row, shown on hover and on keyboard focus, SHALL open the same menu. The browser's own menu SHALL NOT open. (ACT-02)
+3. A conversation's menu SHALL offer, in this order and only where they apply: Mark as read (it has unread messages), View profile (a DM), Leave group and Delete group (the viewer may manage the group; never a DM). They use the existing routes (`PUT /rooms/{id}/read`, `GET /rooms/{id}/members` and `DELETE /rooms/{id}/members/{mid}`, `DELETE /rooms/{id}`). (ACT-03)
+4. Leave group and Delete group SHALL ask first in an alert dialog that names the conversation, with Cancel focused; a failure SHALL leave the conversation where it is and say so; deleting the open conversation SHALL go back to the list. (ACT-04)
+5. A message's menu SHALL offer Reply and, when it has text, Copy text; Copy SHALL confirm with a notice. Nothing is offered for a system message. (ACT-05)
+6. The sheet and the menu SHALL be named after what they act on, trap focus, close with Escape and give focus back to what opened them; a menu moves with the arrow keys; destructive actions carry the destructive colour, an icon and their word; every sheet row is at least 44 px. (ACT-06)
+7. WHEN the user chooses Reply THEN the composer SHALL show "Replying to <name>" with an excerpt and a Cancel button above the text box, and the next message sent (text or voice) SHALL carry `reply_to`; changing conversation or sending SHALL clear it. (ACT-07)
+
+**Independent Test**: At 360 px press and hold a group in the list for 0.6 s: a sheet named after the group opens with Mark as read and Delete group; Delete group asks first. At 1280 px right-click a message: a menu with Reply and Copy text opens at the pointer.
+
+---
+
+### P2: Swipe to reply
+
+**User Story**: As a phone user, I want to drag a message sideways to answer it, as in other messengers.
+
+**Acceptance Criteria**:
+
+1. WHEN the user drags a message to the right with a finger and releases it past 60 px THEN the message SHALL become the reply target of the composer (ACT-07). The row SHALL follow the finger with a reply icon that appears as it moves, and a light vibration (`navigator.vibrate`, where it exists) SHALL mark crossing 60 px. (SWP-01)
+2. A drag that is mostly vertical SHALL scroll the timeline and never start the swipe; once the swipe has started it SHALL NOT scroll; a release before 60 px SHALL spring back and reply to nothing. (SWP-02)
+3. WHERE the user prefers reduced motion the row SHALL NOT animate back. (SWP-03)
+4. The swipe SHALL exist only on a touch device, only for a message that can be replied to, and only where the viewer may post; it SHALL NOT start from a button, a link, a player or the seek bar. (SWP-04)
+
+**Independent Test**: Drag a message 80 px to the right with touch events: the composer shows "Replying to …". Drag it 30 px, or scroll with a vertical drag: no reply.
+
+---
+
+### P2: Reactions
+
+**User Story**: As a user, I want to react to a message with an emoji, and see who else did, without writing an answer.
+
+**Acceptance Criteria**:
+
+1. A message with reactions SHALL show them under its text, one chip per emoji with its count; the viewer's own SHALL be marked (tape fill, `aria-pressed`, a name that says so); activating a chip SHALL add or remove the viewer's reaction. (RCT-01)
+2. The message menu and sheet SHALL start with a bar of six quick emoji and a "More" button that opens a larger set; on a mouse the same bar SHALL appear on hover and keyboard focus of the row. Choosing one the viewer already used removes it. (RCT-02)
+3. `POST /rooms/{id}/messages/{mid}/reactions` with `{"emoji"}` SHALL add the caller's reaction and `DELETE /rooms/{id}/messages/{mid}/reactions/{emoji}` SHALL remove it; both answer 200 with the message's reactions as they are afterwards, and repeating a call changes nothing. Both need `post` on the room; a message of another room or a room the caller cannot see is 404. (RCT-03)
+4. IF the emoji is not exactly one emoji, THEN the server SHALL answer 422 `invalid`; IF the message already has 12 different emoji and this is a new one, THEN 422 `reaction_limit`. (RCT-04)
+5. `Message.reactions` SHALL list, for each emoji, the ids of the intelligences that used it in the order they reacted, for every message the API returns, live frames included; the viewer's own is the one whose id matches theirs. (RCT-05)
+6. WHEN anyone reacts or takes a reaction back THEN every open client of the room SHALL update without a reload (`room.reactions` live event), and the message SHALL NOT move in the timeline. (RCT-06)
+7. A reaction SHALL be removed with its message and with its room, and an intelligence's reactions with the intelligence. (RCT-07)
+8. Chips and the bar SHALL be keyboard and screen-reader accessible (buttons with names such as "👍 2 reactions, including yours"); a failed toggle SHALL undo itself and say so. (RCT-08)
+
+**Independent Test**: React with 👍 from one session: the other open session shows "👍 1"; the first taps the chip again and it goes away on both.
+
+---
+
 ## Requirement Traceability
 
 | Requirement ID | Story | Phase | Status |
@@ -193,8 +303,41 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 | PRF-04 | P1: Profile panel | Execute | Implementing |
 | PRF-05 | P1: Profile panel | Execute | Implementing |
 | PRF-06 | P1: Profile panel | Execute | Implementing |
+| KBD-01 | P1: Composer above the keyboard | Execute | Implementing |
+| KBD-02 | P1: Composer above the keyboard | Execute | Implementing |
+| KBD-03 | P1: Composer above the keyboard | Execute | Implementing |
+| KBD-04 | P1: Composer above the keyboard | Execute | Implementing |
+| KBD-05 | P1: Composer above the keyboard | Execute | Implementing |
+| KBD-06 | P1: Composer above the keyboard | Execute | Implementing |
+| VOI-01 | P1: Voice messages | Execute | Implementing |
+| VOI-02 | P1: Voice messages | Execute | Implementing |
+| VOI-03 | P1: Voice messages | Execute | Implementing |
+| VOI-04 | P1: Voice messages | Execute | Implementing |
+| VOI-05 | P1: Voice messages | Execute | Implementing |
+| VOI-06 | P1: Voice messages | Execute | Implementing |
+| VOI-07 | P1: Voice messages | Execute | Implementing |
+| VOI-08 | P1: Voice messages | Execute | Implementing |
+| ACT-01 | P1: Long-press actions | Execute | Implementing |
+| ACT-02 | P1: Long-press actions | Execute | Implementing |
+| ACT-03 | P1: Long-press actions | Execute | Implementing |
+| ACT-04 | P1: Long-press actions | Execute | Implementing |
+| ACT-05 | P1: Long-press actions | Execute | Implementing |
+| ACT-06 | P1: Long-press actions | Execute | Implementing |
+| ACT-07 | P1: Long-press actions | Execute | Implementing |
+| SWP-01 | P2: Swipe to reply | Execute | Implementing |
+| SWP-02 | P2: Swipe to reply | Execute | Implementing |
+| SWP-03 | P2: Swipe to reply | Execute | Implementing |
+| SWP-04 | P2: Swipe to reply | Execute | Implementing |
+| RCT-01 | P2: Reactions | Execute | Implementing |
+| RCT-02 | P2: Reactions | Execute | Implementing |
+| RCT-03 | P2: Reactions | Execute | Implementing |
+| RCT-04 | P2: Reactions | Execute | Implementing |
+| RCT-05 | P2: Reactions | Execute | Implementing |
+| RCT-06 | P2: Reactions | Execute | Implementing |
+| RCT-07 | P2: Reactions | Execute | Implementing |
+| RCT-08 | P2: Reactions | Execute | Implementing |
 
-**Coverage:** 33 total
+**Coverage:** 66 total
 
 ---
 
@@ -206,3 +349,6 @@ On 2026-10-23 the product owner asked for three more things in the web app: imag
 - [ ] The product owner clicks a picture in a conversation, flips through the others and closes it without leaving the app.
 - [ ] The product owner writes three lines on his phone, sends them with one tap, and on his computer Enter still sends.
 - [ ] The product owner clicks a name in a message, a member list or a contact list and sees who it is, on a side panel (a drawer on his phone), then messages them or opens their page.
+- [ ] On his phone he sends several messages in a row with the keyboard open and never has to close it to see the composer.
+- [ ] He sends a voice message with one tap and plays one he received, without leaving the conversation.
+- [ ] He presses and holds a conversation to mark it read, and a message to answer or copy it; he swipes a message to answer it and reacts to one with a tap.
