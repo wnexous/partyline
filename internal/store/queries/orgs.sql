@@ -66,6 +66,47 @@ UPDATE agents SET org_id = ? WHERE id = ?;
 -- name: SetAgentCreator :exec
 UPDATE agents SET creator_iid = ? WHERE id = ?;
 
+-- name: ListOrgMembers :many
+-- The members of an organization with the identity, its position name and, for a guest, the identity
+-- that invited it: what the members table shows (OMEM-01, OMEM-03).
+SELECT m.iid, m.permission, m.joined_at,
+       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
+       CAST(COALESCE(p.name, '') AS TEXT) AS position_name,
+       i.kind, i.display_name, i.handle, i.avatar_sha256,
+       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
+       CAST(COALESCE(inv.kind, '') AS TEXT) AS inviter_kind,
+       CAST(COALESCE(inv.display_name, '') AS TEXT) AS inviter_display_name,
+       CAST(COALESCE(inv.handle, '') AS TEXT) AS inviter_handle,
+       CAST(COALESCE(inv.avatar_sha256, '') AS TEXT) AS inviter_avatar_sha256
+FROM org_members m
+JOIN intelligences i ON i.id = m.iid
+LEFT JOIN positions p ON p.id = m.position_id AND p.org_id = m.org_id
+LEFT JOIN intelligences inv ON inv.id = m.inviter_iid
+WHERE m.org_id = ?
+ORDER BY i.display_name COLLATE NOCASE, m.iid;
+
+-- name: ListOrgHomeAgentIDs :many
+-- The AIs whose home is this organization: deleting one of them here deletes it for good, while any other
+-- member is only removed (POS-06).
+SELECT id FROM agents WHERE org_id = ? ORDER BY id;
+
+-- name: GetOrgMemberView :one
+-- One row of ListOrgMembers.
+SELECT m.iid, m.permission, m.joined_at,
+       CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id,
+       CAST(COALESCE(p.name, '') AS TEXT) AS position_name,
+       i.kind, i.display_name, i.handle, i.avatar_sha256,
+       CAST(COALESCE(m.inviter_iid, '') AS TEXT) AS inviter_iid,
+       CAST(COALESCE(inv.kind, '') AS TEXT) AS inviter_kind,
+       CAST(COALESCE(inv.display_name, '') AS TEXT) AS inviter_display_name,
+       CAST(COALESCE(inv.handle, '') AS TEXT) AS inviter_handle,
+       CAST(COALESCE(inv.avatar_sha256, '') AS TEXT) AS inviter_avatar_sha256
+FROM org_members m
+JOIN intelligences i ON i.id = m.iid
+LEFT JOIN positions p ON p.id = m.position_id AND p.org_id = m.org_id
+LEFT JOIN intelligences inv ON inv.id = m.inviter_iid
+WHERE m.org_id = sqlc.arg(org_id) AND m.iid = sqlc.arg(iid);
+
 -- name: GetOrgMembership :one
 -- An organization with the permission and position of one of its members.
 SELECT sqlc.embed(o), m.permission, CAST(COALESCE(m.position_id, '') AS TEXT) AS position_id

@@ -59,8 +59,11 @@ export function resolveCurrentOrg(
   return named(pickedId) ?? named(defaultId) ?? orgs[0];
 }
 
-/** `GET /me` as a server that knows default organizations sends it (the default-organization route). */
-export type MeWithDefaultOrg = Me & { default_org_id?: string | null };
+/**
+ * `GET /me`. The generated `Me` carries `default_org_id` (absent when the account belongs to no
+ * organization); a `null` from an older server is read as none too.
+ */
+export type MeWithDefaultOrg = Omit<Me, "default_org_id"> & { default_org_id?: string | null };
 
 /** The account's default organization; nothing when the server or the account names none. */
 export function defaultOrgIdOf(me: MeWithDefaultOrg | undefined): string | undefined {

@@ -521,6 +521,26 @@ Where a section refines the design, it says so.
 - **Admin invitations lapse with the inviter's admin right.** On accept, an invitation for `member` or `admin` needs its inviter to still be an admin of the organization. Otherwise the invitation is deleted and the answer is `ErrGone`. A guest invitation whose inviter left still stands, and the guest then has no inviter.
 - **Re-inviting a guest keeps the design's rule.** The latest inviter of a pending guest invitation becomes responsible for the guest. The invitee sees who invites them before accepting, so this is not a takeover. The review's third finding is declined.
 
+## T12: Organization routes and DTOs (ORG-01, ORG-06, OMEM-04, CHART-02)
+
+- **Routes** (`internal/api/orgs_handlers.go`, registered by `orgRoutes`): `GET|POST /api/v1/orgs`,
+  `GET|PATCH|DELETE /api/v1/orgs/{org}`, `PUT|DELETE /api/v1/orgs/{org}/avatar` and, added because the
+  DTO's `avatar_url` points at it, `GET /api/v1/orgs/{org}/avatar` (members only, `Cache-Control:
+  private` + `ETag` like an intelligence avatar).
+- **`{org}` is an id or a slug**: the handler resolves it through `orgs.Service.Resolve` and then calls
+  the service with the organization's id. Authorization stays in the service, so an outsider gets 404
+  from it after a successful resolution (the matrix's Out column).
+- **DTOs** (`internal/api/dto/orgs.go`): `Organization`, `CreateOrganizationRequest`,
+  `UpdateOrganizationRequest`, `Position` and `OrgMember` (the last two are filled by T13 and T14).
+  `Organization` carries the viewer's `permission` and `position_id`; `avatar_url` is
+  `/api/v1/orgs/{id}/avatar?v=<sha>` and absent without an avatar.
+- **Error codes**: `organization_not_empty` (409, ORG-06) and `last_admin` (409, OMEM-05).
+  `mapError` renders a `*orgs.NotEmptyError` with `details` `agents`, `connectors` and `groups` as
+  decimal strings, so the settings page can say what to delete first. `orgs.ErrSlugTaken` is 409
+  `conflict`, as `handlers` already answers other uniqueness refusals.
+- **Statuses**: `POST` 201 with the creator's `Organization` (root `position_id` set); `GET` and
+  `PATCH` 200; `DELETE` 204. Agent tokens never reach these paths (the middleware's
+  `/api/v1/agent/` rule answers 403).
 ## T18: Placement headers on creation (ORG-04, ORG-05, POS-07, POS-08)
 
 - **Headers** (`dto.HeaderOrg`, `HeaderPosition`, `HeaderParent`): `X-Partyline-Org` (a slug or an id),
@@ -713,6 +733,54 @@ Where a section refines the design, it says so.
 - **Tests**: `internal/api/delete_identities_test.go` (matrices of each kind of target on each route, the Lead/Sentinel
   independent test, the inviter chain, OMEM-06/08, an AI of another organization, the sole-admin AI),
   `internal/api/leave_and_end_session_test.go` (leave, 404s, the session matrix), `internal/agents/delete_test.go`.
+
+## T13: Position routes (POS-01, POS-02, POS-09, OMEM-04)
+
+- **Routes** (`internal/api/positions_handlers.go`, registered by `positionRoutes`):
+  `POST /api/v1/orgs/{org}/positions` (201 `Position`), `PATCH …/positions/{id}` (200 `Position`) and
+  `DELETE …/positions/{id}` (204). `{org}` is resolved like T12 (id or slug); the position id must
+  belong to that organization, else the service answers 404.
+- **DTOs**: `CreatePositionRequest{name, parent_id}` (`parent_id` empty or absent makes a root) and
+  `UpdatePositionRequest{name?, parent_id?}` (absent leaves a field alone; `""` makes a root).
+- **Errors**: `orgs.ErrCycle` is 409 `position_cycle`; `ErrPositionNameTaken` and `ErrSlugTaken` are
+  409 `conflict`; a name outside 1-60 code points or a parent of another organization is the
+  service's 422 `invalid` with `name`/`parent_id` in `fields`. Authorization (admin-only) comes
+  before validation, so a member sending a bad name still gets 403.
+
+## T14: Member routes (OMEM-03, OMEM-04, OMEM-05, POS-04)
+
+- **Routes** (`internal/api/org_members_handlers.go`, registered by `orgMemberRoutes`; `DELETE …/members/{iid}` stays
+  T21's `identityDeleteRoutes`, so the file holds both sets): `GET /api/v1/orgs/{org}/members` and
+  `PATCH /api/v1/orgs/{org}/members/{iid}`. `{org}` is an id or an address, like T12. Agent tokens never reach them (403,
+  the path rule).
+- **`GET`** → 200 `List[OrgMember]` for every member, **guests included** (CHART-02); an outsider, an instance admin
+  without membership and an unknown organization are 404. Rows are ordered by display name (ignoring case), then identity
+  id. A row is `intelligence` (`IntelligenceRef`: `kind` human|ai, `role` user|ai, handle, name, avatar), `permission`,
+  `position_id`/`position_name` (absent without a position), `invited_by` (an `IntelligenceRef`, **only for a guest** that
+  still has an inviter) and `joined_at`. Persons (external accounts) are never members.
+- **`PATCH`** → 200 with the member as the list shows it. The body is `UpdateOrgMemberRequest{permission?, position_id?}`:
+  - `permission` is admin-only (a member, guest, manager, inviter or the member itself is 403; an outsider 404). An invalid
+    value is 422 on `permission`, told to admins only (authorization first). The last admin cannot step down: 409
+    `last_admin`.
+  - `position_id`: a string moves the member, **`null` or `""` clears** it, an absent field leaves it alone, anything else
+    (a number, a boolean, an object) is 422 on `position_id`. An admin may use any position of the organization or none; a
+    position of another organization or an unknown one is 422 on `position_id`. Anyone else must manage the target
+    (`Chart.Manages`, so not itself, a peer or a superior) **and** move it to a position strictly below its own: its own
+    level, above it, another branch, none, an unknown position and an actor with no position (an inviter without one) are
+    403.
+  - A target that is not a member (an outsider, another organization's identity, an unknown id) is 404 for everyone.
+  - **Both fields in one request are applied together or not at all**, by the new `orgs.Service.UpdateMember(actor, org,
+    target, MemberUpdate{Permission *Permission, PositionID *string})` in one transaction; `SetPermission` and `SetPosition`
+    (T7) now delegate to it, so their behaviour is unchanged. The actor's rights are those it had when it asked: an admin that
+    steps down and moves in the same request may still make the move. A request that changes nothing writes, audits and
+    announces nothing; one that asks for nothing at all needs only a member and answers with the row. One `OrgChanged` per
+    request that changed anything.
+- **DTO**: `UpdateOrgMemberRequest.PositionID` is a `json.RawMessage` (`tstype` `string | null`) because Go cannot tell an absent
+  field from `null` with a pointer.
+- **Service additions** (`internal/orgs/members.go`): `MemberRow` (the read model of the list), `ListMembers(actor, org)`
+  (`RequireMember`, then one query), `MemberView(actor, org, target)` (one row, `ErrNotFound` for a non-member) and
+  `UpdateMember`. **Queries** (`queries/orgs.sql`): `ListOrgMembers`, `GetOrgMemberView`. **Converter**:
+  `convert.OrgMember`.
 
 ## T22: Room levels from organizations (ORG-02, OMEM-06)
 
@@ -1713,3 +1781,101 @@ extends what T57 left open; the command's output and exit codes are unchanged.
 - **Not done on purpose**: the column order stays T57's (marker and name, handle, app, state, folder); the task text lists "name, @handle, folder label, app and online
   state" as the data, not as the columns. `printTreeNodes`, the indentation style T58 names as a model, went with the machine tree; the groups use two spaces like it did.
 - **Docs**: `docs/agents.md` says the command lists the AIs hosted on the user's computers and no others, and that one folder on two computers is two AIs.
+
+## T15: Invitation routes (OMEM-01, OMEM-02, OMEM-04, OMEM-07)
+
+- **Routes** (`internal/api/org_invitations_handlers.go`, registered by `orgInvitationRoutes`), all `authed` (an agent token is 403
+  by the path rule, no credentials 401). `{org}` is an id or an address:
+  - `POST /api/v1/orgs/{org}/invitations` `{handle, permission, position_id?}` → **201** `Invitation`. `permission` is required: an
+    admin gives any permission and a position of the organization (422 on `permission` or `position_id` otherwise); every other
+    member and guest may send **only `guest` with no position**, else 403 (authorization comes before validation, so a member who
+    sends nothing valid is told 403). Sending to an invitee that has a pending invitation **updates it in place** (same id, new
+    terms, the sender becomes the inviter, the 14 days start over) and also answers 201. A plain `@`, case and spaces around the
+    handle are ignored.
+  - `GET /api/v1/orgs/{org}/invitations` → 200 `List[Invitation]`, newest first, expired ones hidden; admins only (403 other members,
+    404 outsiders).
+  - `DELETE /api/v1/orgs/{org}/invitations/{id}` → 204; admins only; an invitation of another organization is 404.
+  - `GET /api/v1/invitations` → 200 `List[Invitation]`: the caller's own, plus those of the AIs it manages in their home
+    organization (`Chart.Manages`), newest first.
+  - `POST /api/v1/invitations/{id}/accept` → **200 with the `Organization`** the invitee now belongs to (its permission and position
+    in it: for an invited AI answered by its manager they are the AI's); `POST …/decline` → 204. Only the invitee answers - the user
+    itself, or for an AI whoever manages it - everybody else, the inviter and the organization's admins included, is **404**.
+- **Statuses and codes** (`mapError`): `orgs.ErrAlreadyMember` → 409 **`already_member`** (new `dto.ErrorCodeAlreadyMember`; a send to a
+  member, and an accept by someone who became a member meanwhile, which also drops the stale invitation), `orgs.ErrGone` → 410
+  `gone` (an accept or decline after 14 days, and an accept whose admin invitation outlived its inviter's admin right),
+  `orgs.ErrRateLimited` → 429 `rate_limited` (31st invitation within the hour for one organization, whoever sends), `orgs.ErrContactNotFound` →
+  404 `contact_not_found` (unknown, blank or `@` handle).
+- **DTOs** (`internal/api/dto/orgs.go`): `CreateInvitationRequest` and `Invitation{id, org_id, org_name, org_slug, invitee, permission,
+  position_id?, position_name?, invited_by, created_at, expires_at}` where `invitee` and `invited_by` are `IntelligenceRef`s (kind,
+  role user|ai, handle, name, avatar). `orgs.Invitation` gained `InviteeAvatarSha256`, `InvitedByKind` and `InvitedByAvatarSha256`
+  for them. Converter: `convert.Invitation`.
+- **Live event `invitation_received`** (`dto.LiveEventTypeInvitationReceived`, frame `LiveInvitationReceived{type, data: Invitation}`).
+  The name is the spec's; it does not follow the dotted form of the older types. `events.InvitationReceived` (published by
+  `Service.Invite` after its commit, also when an invitation is sent again) reaches **the sockets of the invitee, and for an invited
+  AI the sockets of whoever manages it** in its home organization (`orgs.Service.InvitationFor`, the same rule as answering), and
+  nobody else - the inviter, the organization's members, a stranger, the instance admin hear nothing of it. The frame carries the
+  invitation as `GET /invitations` shows it, so the inbox needs no second request; a re-sent invitation sends a new frame with the
+  new terms. `live.Deps.Orgs` carries the service (the app wires it); without it invitations are not announced. `OrgChanged` is
+  still published and reaches the organization's members as `access.changed` kind `organization` (T32).
+- **Service addition**: `InvitationFor(actor, invitationID)` (the invitation for whoever answers it; ErrNotFound for anyone else, an
+  unknown id and an expired invitation).
+
+## T16: Chart route (CHART-01, CHART-02, CHART-03)
+
+- **Route** (`internal/api/org_chart_handlers.go`, `orgChartRoutes`): `GET /api/v1/orgs/{org}/chart` → 200 `OrgChart` for every member,
+  **guests included**; an outsider, an instance admin without membership and an unknown organization are 404; an agent token is 403
+  (path rule) and no credentials 401. `{org}` is an id or an address. The chart is read in one read snapshot with the member rows.
+- **`OrgChart`** (`internal/api/dto/orgs.go`; the web's interim shapes match it):
+  - `viewer: {admin}`;
+  - `positions`: **every** position as a flat list in **tree order** (a parent before its children, siblings by name ignoring case),
+    each `{id, name, parent_id?, holders: [ChartMember]}`; holders are ordered by display name (ignoring case), then id;
+  - `members`: the members **with no position that hang under another member**; each carries `under`, the id of that member;
+  - `unassigned`: the members with no position and nobody to hang under;
+  - every member is in exactly one of the three places.
+  - `ChartMember`: `intelligence` (`IntelligenceRef`), `permission` (the admin and guest badges), `online`, `under?`, `can_delete`,
+    `delete_effect`, `can_move`.
+- **Where a positionless member hangs (CHART-02)**: a **guest** under its **inviter**; otherwise (or when the inviter left) an AI under
+  its **creator**; each only while that member still belongs to the organization. A member whose chain of creators and inviters leads
+  back to itself is in a loop and hangs under nobody (unassigned); one that only hangs under a loop is placed under it as usual. A
+  member whose `position_id` is not a position of the organization (a stale row, impossible through the services) is shown as having
+  none instead of disappearing.
+- **`online`**: true for an AI with a live session (`Registry.Online`); people have no presence and are always false, so the page draws the
+  dot for AIs only.
+- **Flags, for the viewer (CHART-03)**, computed from the chart by `orgs.viewerActions` and the same rules the routes enforce:
+  - `can_delete` = `Chart.CanDelete(viewer, member)` (POS-05): an admin on everyone but itself, whoever manages a guest on that guest;
+    never on itself;
+  - `delete_effect` = `delete` for an AI whose **home** is this organization, `remove` for anyone else (a person, an AI of another
+    organization) (POS-06);
+  - `can_move` = the viewer is an **admin** (any member, itself included, to any position or none), or it **manages** the member and holds a
+    position with another below it (a manager moves only to positions strictly below its own, so a leaf position moves nobody). This is
+    "offered where the server would accept a move": CHART-03's "only where the viewer manages the target" is its necessary condition for
+    everyone but admins, and an admin's move is what the Members matrix allows.
+  `TestChartFlagsMatchWhatTheRoutesAllow` pins the flags to the routes: a flag that says yes is a request that returns 200, one that says no
+  is 403.
+- **`OrgMember` also carries the flags** (`can_delete`, `delete_effect`, `can_move`, the viewer's), as the web's members table
+  assumed: `GET /members` and the row `PATCH /members/{iid}` answers with. They are the same values as the chart's for the same viewer
+  (`TestMemberRowsCarryTheChartFlags`). `dto.DeleteEffect` is `"delete" | "remove"`.
+- **Service**: `orgs.Service.ChartView(viewer, org)` (`internal/orgs/chartview.go`) returns `ChartView{ViewerAdmin, Positions,
+  Members, Unassigned}`; `ListMembers` and `MemberView` now read the rows, the chart and the AIs whose home is the organization in one
+  read transaction and fill `MemberRow.CanDelete`, `DeletedForGood`, `CanMove` (and `Under` only in the chart). **Query**:
+  `ListOrgHomeAgentIDs`. Converter: `convert.OrgChart`, `convert.OrgMember`.
+
+## T17: Default organization route (ORG-04)
+
+- **`PUT /api/v1/me/default-org`** `{org_id}` (`dto.SetDefaultOrgRequest`, `internal/api/auth_handlers.go`) → **200 with the account** (`Me`, now with
+  the new choice). `org_id` is an organization **id**. The caller must be a **member of it with any permission** (a guest too; a pending invitation
+  is not a membership); anything else - an organization the caller is not in, one that does not exist, an address instead of an id, an empty or
+  missing `org_id` - is **403 `forbidden`**, so a refusal tells nothing about organizations the caller is not in (design: "otherwise 403"). A
+  refusal changes nothing. Choosing the same organization again is 200. Not JSON is 400, no credentials 401, an agent token 403 (path rule:
+  the default stays a user setting, AD-020).
+- **`Me.default_org_id`** (`dto.Me`, in every answer that describes the account: `GET /me`, `PATCH /me`, login, setup, and the answer above) is the
+  **effective** default - where a new AI of the user lands (`orgs.DefaultFor`): the organization they chose while they still belong to it, else
+  the one they have administered the longest, else the one they have belonged to the longest; absent when they belong to none. It is therefore
+  never the stale choice of an organization the user left (leaving clears the stored choice, T7), and a user who never chose one sees their
+  personal organization.
+- **Effect**: the next AI the user's tokens start without `--org` is created in that organization (T10/T18), on a live session and on a tools-only
+  call alike. AIs that exist stay where they are.
+- **Service addition**: `orgs.Service.DefaultOrg(iid)` (the effective default); `SetDefault` is T9's.
+- **Web**: the generated `Me` now has `default_org_id?: string`, so the interim `MeWithDefaultOrg` of `web/src/lib/orgs.ts` (T49, which added the field
+  with `Me & {...}`) became `Omit<Me, "default_org_id"> & { default_org_id?: string | null }`: the same tolerance of a `null`, which the server
+  never sends, without the intersection narrowing the field to `string`.

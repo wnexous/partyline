@@ -42,9 +42,12 @@ type Invitation struct {
 	OrgID, OrgName, OrgSlug                      string
 	InviteeIID, InviteeHandle, InviteeName       string
 	InviteeKind                                  string // "user" or "ai"
+	InviteeAvatarSha256                          string
 	Permission                                   Permission
 	PositionID, PositionName                     string
 	InvitedByIID, InvitedByHandle, InvitedByName string
+	InvitedByKind                                string // "user" or "ai"
+	InvitedByAvatarSha256                        string
 	CreatedAt, ExpiresAt                         time.Time
 }
 
@@ -233,19 +236,52 @@ func (s *Service) invitationViews(ctx context.Context, q *db.Queries, rows []db.
 	out := make([]Invitation, len(rows))
 	for i, r := range rows {
 		invitee, inviter := people[r.InviteeIid], people[r.InvitedBy]
-		kind := "user"
-		if invitee.Kind == "ai" {
-			kind = "ai"
-		}
 		out[i] = Invitation{
 			ID: r.ID, OrgID: r.OrgID, OrgName: orgs[r.OrgID].Name, OrgSlug: orgs[r.OrgID].Slug,
-			InviteeIID: r.InviteeIid, InviteeHandle: invitee.Handle, InviteeName: invitee.DisplayName, InviteeKind: kind,
+			InviteeIID: r.InviteeIid, InviteeHandle: invitee.Handle, InviteeName: invitee.DisplayName,
+			InviteeKind: roleOf(invitee), InviteeAvatarSha256: invitee.AvatarSha256,
 			Permission: Permission(r.Permission), PositionID: r.PositionID.String, PositionName: positionNames[r.PositionID.String],
 			InvitedByIID: r.InvitedBy, InvitedByHandle: inviter.Handle, InvitedByName: inviter.DisplayName,
+			InvitedByKind: roleOf(inviter), InvitedByAvatarSha256: inviter.AvatarSha256,
 			CreatedAt: time.UnixMilli(r.CreatedAt).UTC(), ExpiresAt: time.UnixMilli(r.ExpiresAt).UTC(),
 		}
 	}
 	return out, nil
+}
+
+// roleOf is "ai" for an AI and "user" for any other identity.
+func roleOf(i db.Intelligence) string {
+	if i.Kind == "ai" {
+		return "ai"
+	}
+	return "user"
+}
+
+// InvitationFor returns the pending invitation for the identity that answers it - the invited user, or for
+// an invited AI whoever manages it in its home organization - and ErrNotFound for anyone else, for an
+// unknown invitation and for one that has expired. It is how the live hub tells who hears of an invitation.
+func (s *Service) InvitationFor(ctx context.Context, actorIID, invitationID string) (Invitation, error) {
+	q := s.store.R()
+	inv, err := q.GetOrgInvitation(ctx, invitationID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Invitation{}, ErrNotFound
+	}
+	if err != nil {
+		return Invitation{}, err
+	}
+	if s.now().UnixMilli() >= inv.ExpiresAt {
+		return Invitation{}, ErrNotFound
+	}
+	if ok, err := mayAnswer(ctx, q, actorIID, inv.InviteeIid); err != nil {
+		return Invitation{}, err
+	} else if !ok {
+		return Invitation{}, ErrNotFound
+	}
+	list, err := s.invitationViews(ctx, q, []db.OrgInvitation{inv})
+	if err != nil {
+		return Invitation{}, err
+	}
+	return list[0], nil
 }
 
 // ListInvitations lists the organization's pending invitations, newest first; only an admin sees them.

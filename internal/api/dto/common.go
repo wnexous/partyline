@@ -102,6 +102,9 @@ const (
 	// leaving the organization it belongs to: it is deleted there, never removed (409, POS-06).
 	ErrorCodeLastAdmin        ErrorCode = "last_admin"
 	ErrorCodeHomeOrganization ErrorCode = "home_organization"
+	// ErrorCodeAlreadyMember is an invitation to, or an acceptance of a place in, an organization the
+	// identity already belongs to (409, OMEM-01).
+	ErrorCodeAlreadyMember ErrorCode = "already_member"
 	// ErrorCodeNotOperator is an AI that sends through a connection it does not operate: only the
 	// operator sends through it (403, CID-03). ErrorCodeUnknownChat is a chat that is not one of the
 	// named connection's chats (404, CID-17).
@@ -154,6 +157,12 @@ const (
 	// ErrorCodeOrganizationRequired is a session or an AI start that names no usable organization: the
 	// host belongs to none, or --org names one that does not exist (422, ORG-04).
 	ErrorCodeOrganizationRequired ErrorCode = "organization_required"
+	// ErrorCodeOrganizationNotEmpty is the refusal to delete an organization that still owns AIs,
+	// connections or groups; Details counts them (409, ORG-06).
+	ErrorCodeOrganizationNotEmpty ErrorCode = "organization_not_empty"
+	// ErrorCodePositionCycle is a parent change that would make a position its own ancestor (409,
+	// POS-02).
+	ErrorCodePositionCycle ErrorCode = "position_cycle"
 	// ErrorCodeIdentityOnline is a merge of an AI that has a live session: it must be offline
 	// (409, MRG-02).
 	ErrorCodeIdentityOnline ErrorCode = "identity_online"

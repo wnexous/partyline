@@ -557,6 +557,11 @@ export const ErrorCodeLastInstanceAdmin = "last_instance_admin";
 export const ErrorCodeLastAdmin = "last_admin";
 export const ErrorCodeHomeOrganization = "home_organization";
 /**
+ * ErrorCodeAlreadyMember is an invitation to, or an acceptance of a place in, an organization the
+ * identity already belongs to (409, OMEM-01).
+ */
+export const ErrorCodeAlreadyMember = "already_member";
+/**
  * ErrorCodeNotOperator is an AI that sends through a connection it does not operate: only the
  * operator sends through it (403, CID-03). ErrorCodeUnknownChat is a chat that is not one of the
  * named connection's chats (404, CID-17).
@@ -641,6 +646,16 @@ export const ErrorCodeMembersRefused = "members_refused";
  */
 export const ErrorCodeOrganizationRequired = "organization_required";
 /**
+ * ErrorCodeOrganizationNotEmpty is the refusal to delete an organization that still owns AIs,
+ * connections or groups; Details counts them (409, ORG-06).
+ */
+export const ErrorCodeOrganizationNotEmpty = "organization_not_empty";
+/**
+ * ErrorCodePositionCycle is a parent change that would make a position its own ancestor (409,
+ * POS-02).
+ */
+export const ErrorCodePositionCycle = "position_cycle";
+/**
  * ErrorCodeIdentityOnline is a merge of an AI that has a live session: it must be offline
  * (409, MRG-02).
  */
@@ -648,7 +663,7 @@ export const ErrorCodeIdentityOnline = "identity_online";
 /**
  * Error codes and the HTTP status they come with.
  */
-export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeIdentityOnline;
+export type ErrorCode = typeof ErrorCodeInvalid | typeof ErrorCodeUnauthorized | typeof ErrorCodeForbidden | typeof ErrorCodeNotFound | typeof ErrorCodeConflict | typeof ErrorCodeGone | typeof ErrorCodeTooLarge | typeof ErrorCodeRateLimited | typeof ErrorCodeInternal | typeof ErrorCodeUnavailable | typeof ErrorCodeHandleTaken | typeof ErrorCodeAvatarInvalid | typeof ErrorCodeLastInstanceAdmin | typeof ErrorCodeLastAdmin | typeof ErrorCodeHomeOrganization | typeof ErrorCodeAlreadyMember | typeof ErrorCodeNotOperator | typeof ErrorCodeUnknownChat | typeof ErrorCodeUnsupported | typeof ErrorCodeFolderRequired | typeof ErrorCodeFolderInvalid | typeof ErrorCodePositionUnknown | typeof ErrorCodeOrganizationMismatch | typeof ErrorCodeIdentityBusy | typeof ErrorCodeDMNoSharing | typeof ErrorCodeDMMembersFixed | typeof ErrorCodeDMSelf | typeof ErrorCodeContactNotFound | typeof ErrorCodeNoRouteToPerson | typeof ErrorCodeHistoryOnly | typeof ErrorCodeCounterpartDisabled | typeof ErrorCodeChatsNotMembers | typeof ErrorCodeMembersRefused | typeof ErrorCodeOrganizationRequired | typeof ErrorCodeOrganizationNotEmpty | typeof ErrorCodePositionCycle | typeof ErrorCodeIdentityOnline;
 /**
  * ErrorBody is the envelope of every error response.
  */
@@ -1672,9 +1687,14 @@ export const LiveEventTypeIdentityLinked = "identity.linked";
 export const LiveEventTypeIntelligenceChanged = "intelligence.changed";
 export const LiveEventTypeLagged = "lagged";
 /**
+ * LiveEventTypeInvitationReceived carries an invitation to an organization sent to the user, or to an AI
+ * the user manages (OMEM-01). Its name is the spec's, not the dotted form of the older types.
+ */
+export const LiveEventTypeInvitationReceived = "invitation_received";
+/**
  * Live event types.
  */
-export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged;
+export type LiveEventType = typeof LiveEventTypeHello | typeof LiveEventTypeRoomMessage | typeof LiveEventTypeRoomChanged | typeof LiveEventTypeRoomDeleted | typeof LiveEventTypeRoomRead | typeof LiveEventTypeMembersChanged | typeof LiveEventTypeAccessChanged | typeof LiveEventTypeAgentPresence | typeof LiveEventTypeConnectorStatus | typeof LiveEventTypeChatDiscovered | typeof LiveEventTypeIdentityLinked | typeof LiveEventTypeIntelligenceChanged | typeof LiveEventTypeLagged | typeof LiveEventTypeInvitationReceived;
 export type LiveEvent =
   | LiveHello
   | LiveRoomMessage
@@ -1688,6 +1708,7 @@ export type LiveEvent =
   | LiveChatDiscovered
   | LiveIdentityLinked
   | LiveIntelligenceChanged
+  | LiveInvitationReceived
   | LiveLagged;
 
 /**
@@ -1823,10 +1844,245 @@ export interface LiveIntelligenceChanged {
   data: IntelligenceRef;
 }
 /**
+ * LiveInvitationReceived reports that the user, or an AI the user manages, was invited to an organization,
+ * or invited again with other terms (OMEM-01). Data is the pending invitation, as GET /invitations lists it.
+ */
+export interface LiveInvitationReceived {
+  type: typeof LiveEventTypeInvitationReceived;
+  data: Invitation;
+}
+/**
  * LiveLagged reports that the server dropped events for this connection; refetch visible data.
  */
 export interface LiveLagged {
   type: typeof LiveEventTypeLagged;
+}
+
+//////////
+// source: orgs.go
+
+/**
+ * Permission is what a membership allows in an organization itself, independent of the position
+ * the identity holds there (OMEM-04).
+ */
+export const PermissionAdmin = "admin";
+export const PermissionMember = "member";
+export const PermissionGuest = "guest";
+/**
+ * Organization permissions.
+ */
+export type Permission = typeof PermissionAdmin | typeof PermissionMember | typeof PermissionGuest;
+/**
+ * Organization is an organization as one of its members sees it: its address, its avatar and the
+ * viewer's own permission and position (ORG-01, OMEM-03).
+ */
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  /**
+   * AvatarURL is /api/v1/orgs/{id}/avatar?v=<sha>; absent without an avatar.
+   */
+  avatar_url?: string;
+  /**
+   * Permission and PositionID are the viewer's membership ("" for no position).
+   */
+  permission: Permission;
+  position_id?: string;
+  created_at: string /* RFC 3339 */;
+  updated_at: string /* RFC 3339 */;
+}
+/**
+ * CreateOrganizationRequest is the body of POST /orgs. The creator becomes its admin, holding the
+ * root position (ORG-01).
+ */
+export interface CreateOrganizationRequest {
+  name: string;
+}
+/**
+ * UpdateOrganizationRequest is the body of PATCH /orgs/{org}; absent fields are unchanged. Slug is
+ * the address, lower-cased, 1-40 characters of a-z, 0-9 and single hyphens between them.
+ */
+export interface UpdateOrganizationRequest {
+  name?: string;
+  slug?: string;
+}
+/**
+ * Position is one node of an organization's chart (POS-01). ParentID is absent for a root.
+ */
+export interface Position {
+  id: string;
+  name: string;
+  parent_id?: string;
+}
+/**
+ * CreatePositionRequest is the body of POST /orgs/{org}/positions (POS-01); ParentID is empty for a
+ * root position.
+ */
+export interface CreatePositionRequest {
+  name: string;
+  parent_id?: string;
+}
+/**
+ * UpdatePositionRequest is the body of PATCH /orgs/{org}/positions/{id}; absent fields are
+ * unchanged, and an empty ParentID makes the position a root.
+ */
+export interface UpdatePositionRequest {
+  name?: string;
+  parent_id?: string;
+}
+/**
+ * UpdateOrgMemberRequest is the body of PATCH /orgs/{org}/members/{iid}. Permission changes the
+ * member's permission (admin only); PositionID moves it to a position of the organization, or clears
+ * it with null or "" (POS-04). A field that is absent is left alone.
+ */
+export interface UpdateOrgMemberRequest {
+  permission?: Permission;
+  position_id?: string | null;
+}
+/**
+ * DeleteEffect is what deleting a member of an organization does there (POS-06): an AI whose home is the
+ * organization is deleted for good, while a person, or an AI of another organization, is only removed from it.
+ */
+export const DeleteEffectDelete = "delete";
+export const DeleteEffectRemove = "remove";
+/**
+ * Delete effects.
+ */
+export type DeleteEffect = typeof DeleteEffectDelete | typeof DeleteEffectRemove;
+/**
+ * OrgMember is one membership of an organization as the members list shows it (OMEM-01, OMEM-03):
+ * the identity, its permission and position, the inviter of a guest, and what the viewer may do to it.
+ */
+export interface OrgMember {
+  intelligence: IntelligenceRef;
+  permission: Permission;
+  /**
+   * PositionID and PositionName are absent when the member holds no position.
+   */
+  position_id?: string;
+  position_name?: string;
+  /**
+   * InvitedBy is the identity that invited a guest (POS-05); absent for other permissions.
+   */
+  invited_by?: IntelligenceRef;
+  joined_at: string /* RFC 3339 */;
+  /**
+   * CanDelete says whether the viewer may delete the member in this organization (POS-05), and DeleteEffect
+   * what that does (POS-06). CanMove says whether the viewer may move the member to another position
+   * (POS-04): an admin may move anyone; anyone else a member it manages, to a position below its own.
+   */
+  can_delete: boolean;
+  delete_effect: DeleteEffect;
+  can_move: boolean;
+}
+/**
+ * OrgChart is an organization's org chart as one of its members, guests included, sees it (CHART-01..03).
+ * Every member appears once: in the Holders of its position, in Members, or in Unassigned.
+ */
+export interface OrgChart {
+  viewer: ChartViewer;
+  /**
+   * Positions is every position of the organization as a flat list in tree order - a parent before its
+   * children, siblings by name - which ParentID links into the tree.
+   */
+  positions: ChartPosition[];
+  /**
+   * Members are the members with no position that hang under another member: a guest under its inviter,
+   * an AI under its creator (Under names it). A member Under names may be a holder, or itself one of
+   * Members or Unassigned.
+   */
+  members: ChartMember[];
+  /**
+   * Unassigned are the members with no position and nobody to hang under.
+   */
+  unassigned: ChartMember[];
+}
+/**
+ * ChartViewer is what the chart says about the person looking at it.
+ */
+export interface ChartViewer {
+  /**
+   * Admin tells whether the viewer is an admin of the organization, who may edit its positions (CHART-03).
+   */
+  admin: boolean;
+}
+/**
+ * ChartPosition is one position with the members that hold it, ordered by name.
+ */
+export interface ChartPosition {
+  id: string;
+  name: string;
+  /**
+   * ParentID is absent for a root.
+   */
+  parent_id?: string;
+  holders: ChartMember[];
+}
+/**
+ * ChartMember is a member as the chart draws it, with what the viewer may do to it (CHART-03).
+ */
+export interface ChartMember {
+  intelligence: IntelligenceRef;
+  /**
+   * Permission carries the admin and guest badges.
+   */
+  permission: Permission;
+  /**
+   * Online is true for an AI that has a live session; people have no presence and are always false.
+   */
+  online: boolean;
+  /**
+   * Under is the id of the member this one hangs under; set only in Chart.Members.
+   */
+  under?: string;
+  /**
+   * CanDelete, DeleteEffect and CanMove are the viewer's rights over the member, as in OrgMember.
+   */
+  can_delete: boolean;
+  delete_effect: DeleteEffect;
+  can_move: boolean;
+}
+/**
+ * CreateInvitationRequest is the body of POST /orgs/{org}/invitations (OMEM-01). Handle is the @handle of
+ * a user or an AI. Permission is required: an admin gives any, and every other member or guest invites
+ * guests with no position only. PositionID is a position of the organization.
+ */
+export interface CreateInvitationRequest {
+  handle: string;
+  permission: Permission;
+  position_id?: string;
+}
+/**
+ * Invitation is a pending invitation to an organization (OMEM-01) as the invitee, whoever manages an
+ * invited AI, or the organization's admins see it. It expires 14 days after it was sent or sent again
+ * (OMEM-07).
+ */
+export interface Invitation {
+  id: string;
+  /**
+   * OrgID, OrgName and OrgSlug name the organization.
+   */
+  org_id: string;
+  org_name: string;
+  org_slug: string;
+  /**
+   * Invitee is the user or AI invited.
+   */
+  invitee: IntelligenceRef;
+  /**
+   * Permission and the position are what the invitee becomes on accepting; the position is absent when
+   * the invitation carries none.
+   */
+  permission: Permission;
+  position_id?: string;
+  position_name?: string;
+  /**
+   * InvitedBy is the identity that sent it; for a guest it becomes the guest's inviter (POS-05).
+   */
+  invited_by: IntelligenceRef;
+  created_at: string /* RFC 3339 */;
+  expires_at: string /* RFC 3339 */;
 }
 
 //////////
@@ -2189,7 +2445,19 @@ export interface Me {
   intelligence: IntelligenceRef;
   role: Role;
   locale: string;
+  /**
+   * DefaultOrgID is the organization the user's new AIs join when they start without --org (ORG-04): the one
+   * they chose, while they still belong to it, else the organization they have administered the longest, else
+   * the one they have belonged to the longest. Absent when they belong to none.
+   */
+  default_org_id?: string;
   created_at: string /* RFC 3339 */;
+}
+/**
+ * SetDefaultOrgRequest is the body of PUT /me/default-org: the id of an organization the user belongs to.
+ */
+export interface SetDefaultOrgRequest {
+  org_id: string;
 }
 /**
  * UpdateMeRequest is the body of PATCH /me; absent fields are unchanged.

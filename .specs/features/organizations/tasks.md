@@ -465,11 +465,11 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: `authed`, `avatar_handlers.go` pattern
 **Requirement**: ORG-01, ORG-06, OMEM-04, CHART-02
 **Done when**:
-- [ ] e2e: the design's "Organizations" matrix for every role, using `OrgRoles`
-- [ ] 409 `organization_not_empty` observed with counts (L-017)
-- [ ] An agent token → 403 on `POST /orgs`
-- [ ] `make generate` run
-- [ ] Gate check passes: `make check`
+- [x] e2e: the design's "Organizations" matrix for every role, using `OrgRoles`
+- [x] 409 `organization_not_empty` observed with counts (L-017)
+- [x] An agent token → 403 on `POST /orgs`
+- [x] `make generate` run
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): serve organizations`
@@ -482,12 +482,12 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: T6 service
 **Requirement**: POS-01, POS-02, POS-09, OMEM-04
 **Done when**:
-- [ ] e2e:
+- [x] e2e:
   - admin 201/200/204; member 403; outsider 404;
   - 409 `position_cycle` observed;
   - 422 for a name of 61 chars and for a parent from another org;
   - 409 `conflict` for a duplicate name
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): edit an organization's positions`
@@ -500,11 +500,11 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: T7 service, `OrgRoles`
 **Requirement**: OMEM-03, OMEM-04, OMEM-05, POS-04
 **Done when**:
-- [ ] e2e: the GET and PATCH rows of the "Members" matrix (Out/M/G/Mgr/A/Self)
-- [ ] The manager's move to its own level → 403, to none → 403, and to a lower level → 200
-- [ ] Demoting the last admin → 409 `last_admin` observed
-- [ ] Setting `guest` on a member → 200 and the list shows it
-- [ ] Gate check passes: `make check`
+- [x] e2e: the GET and PATCH rows of the "Members" matrix (Out/M/G/Mgr/A/Self)
+- [x] The manager's move to its own level → 403, to none → 403, and to a lower level → 200
+- [x] Demoting the last admin → 409 `last_admin` observed
+- [x] Setting `guest` on a member → 200 and the list shows it
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): list members and change their permission and position`
@@ -517,11 +517,11 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: T8 service, `live` event fan-out
 **Requirement**: OMEM-01, OMEM-02, OMEM-04, OMEM-07
 **Done when**:
-- [ ] e2e: the "Invitations" matrix (M and G invite guests only: 201 as guest, 403 as member or with a position)
-- [ ] Bob is invited, accepts, and creates a group in acme; Bob's invite attempt → 403 (spec Independent Test)
-- [ ] 409 `already_member`, 429 and 410 observed
-- [ ] Inviting again updates the permission of the pending invitation
-- [ ] Gate check passes: `make check`
+- [x] e2e: the "Invitations" matrix (M and G invite guests only: 201 as guest, 403 as member or with a position)
+- [x] Bob is invited, accepts, and creates a group in acme; Bob's invite attempt → 403 (spec Independent Test)
+- [x] 409 `already_member`, 429 and 410 observed
+- [x] Inviting again updates the permission of the pending invitation
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): invite identities to an organization`
@@ -538,14 +538,14 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: `Chart.ManagedBy`, presence `Online`
 **Requirement**: CHART-01, CHART-02, CHART-03
 **Done when**:
-- [ ] e2e on the spec's example chart (Admin › Director › Manager › Lead developer › Worktrees, plus Sentinel):
+- [x] e2e on the spec's example chart (Admin › Director › Manager › Lead developer › Worktrees, plus Sentinel):
   - the tree shape;
   - three workers positioned in Worktrees, and one positionless worker under Lead;
   - flags for the admin (delete on everyone but itself), for Lead (workers started by Lead are guests: delete true; Sentinel, a member: false; move true on both if below) and for a member (all false);
   - `delete_effect` is `remove` for a person and for an AI of another org;
   - a guest gets 200, and a guest invited by Bob appears under Bob;
   - outsider 404
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): serve the org chart`
@@ -558,8 +558,8 @@ Phases 3-6 reuse these for their authorization matrices.
 **Reuses**: `orgs.SetDefault` (T9)
 **Requirement**: ORG-04
 **Done when**:
-- [ ] e2e: setting the default to a member org → 200, and the next new AI lands there; a non-member org → 403
-- [ ] Gate check passes: `make check`
+- [x] e2e: setting the default to a member org → 200, and the next new AI lands there; a non-member org → 403
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(api): let users choose their default organization`

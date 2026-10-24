@@ -66,6 +66,12 @@ func DefaultFor(ctx context.Context, q *db.Queries, iid string) (string, error) 
 	return "", nil
 }
 
+// DefaultOrg is the organization a new AI of the identity joins when --org is not given (see DefaultFor), ""
+// when there is none.
+func (s *Service) DefaultOrg(ctx context.Context, iid string) (string, error) {
+	return DefaultFor(ctx, s.store.R(), iid)
+}
+
 // SetDefault chooses the organization new AIs of the user join when --org is not given. The user must
 // be a member of it, with any permission; anyone else - another organization, one that does not exist,
 // an AI, an unknown identity - is ErrForbidden, so a refusal tells nothing about organizations the user
