@@ -72,6 +72,9 @@ func TestLiveRoomEventsFollowAccess(t *testing.T) {
 	bob := env.NewUser("bob")
 	carol := env.NewUser("carol")
 	room := createRoom(alice, "ops")
+	// bob is in alice's organization before he listens: joining one is announced to a socket that is open and makes
+	// it read its rooms again (T32), which would race the frames this test expects.
+	joinOrgOf(t, env, room.ID, bob, orgs.PermissionMember)
 	aliceLive, bobLive, carolLive := dialLive(t, alice), dialLive(t, bob), dialLive(t, carol)
 
 	// Adding bob to the room: bob learns about the room with his own level.
