@@ -437,6 +437,39 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     expect(screen.getByRole("button", { name: "Save delivery" })).toBeDisabled();
   });
 
+  it("shows a WhatsApp number that is not connected and clears it once it is back (WA-06)", async () => {
+    const detail = "the WhatsApp number is not connected; reconnect it in evolution-go";
+    api({ kind: "whatsapp" });
+    const { queryClient } = renderRoute("/connectors/k1");
+    await screen.findByRole("heading", { name: "support-line" });
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.queryByText("Last error")).toBeNull();
+
+    // The connector reports the lost number while its API and its socket still work.
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "connector.status",
+        data: { connector_id: "k1", status: "error", last_error: detail },
+      }),
+    );
+    expect(screen.getByText("Error")).toBeInTheDocument();
+    expect(screen.queryByText("Connected")).toBeNull();
+    expect(screen.getByText("Last error")).toBeInTheDocument();
+    expect(screen.getByText(detail)).toBeInTheDocument();
+
+    // As soon as the number is open again the status says so and the detail is gone.
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "connector.status",
+        data: { connector_id: "k1", status: "connected" },
+      }),
+    );
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.queryByText("Error")).toBeNull();
+    expect(screen.queryByText("Last error")).toBeNull();
+    expect(screen.queryByText(detail)).toBeNull();
+  });
+
   it("asks for an operator when there is none and saves the pick (CID-02)", async () => {
     const { calls } = api({ operator: undefined, queued: 0 });
     const user = userEvent.setup();

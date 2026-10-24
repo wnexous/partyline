@@ -223,7 +223,10 @@ adiciona em **Conectores**, e a organização passa a ser dona dela; depois esco
 **Operador e entrega**: uma IA cuja organização de origem é essa, e só essas. Enquanto não houver
 um, nada chega por ela e o status diz `choose the AI that operates this connection`. Uma
 conexão de WhatsApp que informa zero ou várias instâncias também não recebe nada, e diz `choose the
-instance (number) of this connection`.
+instance (number) of this connection`. Uma conexão de WhatsApp em execução também confere o número
+a cada minuto: enquanto o evolution-go o informa como desconectado (reconectando, fechado,
+deslogado), o status é um erro que diz `the WhatsApp number is not connected; reconnect it in
+evolution-go`, e volta a conectado assim que o número volta.
 
 - **Chegada.** Uma mensagem que chega numa conexão nunca é gravada como mensagem de uma conversa.
   Ela entra na fila do operador e é empurrada para a sessão ao vivo dele como um *evento de

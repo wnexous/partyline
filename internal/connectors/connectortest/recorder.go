@@ -84,6 +84,9 @@ func (r *Recorder) NextMigration(t testing.TB) Migration {
 // NoInbound reports whether no inbound message is waiting.
 func (r *Recorder) NoInbound() bool { return len(r.inbound) == 0 }
 
+// NoStatus reports whether no status is waiting.
+func (r *Recorder) NoStatus() bool { return len(r.statuses) == 0 }
+
 func next[T any](t testing.TB, ch chan T, what string) T {
 	t.Helper()
 	select {

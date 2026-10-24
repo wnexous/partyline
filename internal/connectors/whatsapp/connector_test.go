@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -48,6 +49,7 @@ type fakeEvolution struct {
 	wsToken  string
 	wsDials  int // WebSocket handshakes received, accepted or not
 	sendErr  int // status for /send/* and /message/react when not zero
+	listErr  int // status for GET /instance/all when not zero
 	// groupName is the group subject /group/info answers; groupInfoErr fails it when set.
 	groupName    string
 	groupInfoErr int
@@ -134,12 +136,16 @@ func (f *fakeEvolution) rest(key string, answer func(request) any) http.HandlerF
 		}
 		f.mu.Lock()
 		f.requests = append(f.requests, req)
-		sendErr, infoErr := f.sendErr, f.groupInfoErr
+		sendErr, infoErr, listErr := f.sendErr, f.groupInfoErr, f.listErr
 		f.mu.Unlock()
 		f.received <- req
 		valid := req.APIKey == key || (key == "" && (req.APIKey == acmeToken || req.APIKey == otherToken))
 		if !valid {
 			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path == "/instance/all" && listErr != 0 {
+			http.Error(w, "instance list failed", listErr)
 			return
 		}
 		if r.URL.Path == "/group/info" && infoErr != 0 {
@@ -212,12 +218,20 @@ func newStoredConnector(t *testing.T, f *fakeEvolution, instances ...string) *Co
 	return c
 }
 
-// start runs the connector until the test ends and returns the server side of its socket.
-func start(t *testing.T, c *Connector, f *fakeEvolution, rec *connectortest.Recorder) *websocket.Conn {
-	t.Helper()
+// launch runs the connector and returns the channel that gets what Run returns, and the function
+// that ends it.
+func launch(c *Connector, rec *connectortest.Recorder) (<-chan error, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx, rec) }()
+	return done, cancel
+}
+
+// begin runs the connector until the test ends and returns the server side of its socket; the
+// first status is left for the test to read.
+func begin(t *testing.T, c *Connector, f *fakeEvolution, rec *connectortest.Recorder) *websocket.Conn {
+	t.Helper()
+	done, cancel := launch(c, rec)
 	t.Cleanup(func() {
 		cancel()
 		select {
@@ -227,7 +241,13 @@ func start(t *testing.T, c *Connector, f *fakeEvolution, rec *connectortest.Reco
 			t.Error("Run did not return after cancel")
 		}
 	})
-	sock := f.socket()
+	return f.socket()
+}
+
+// start is begin for a connector that connects: it asserts the connected status.
+func start(t *testing.T, c *Connector, f *fakeEvolution, rec *connectortest.Recorder) *websocket.Conn {
+	t.Helper()
+	sock := begin(t, c, f, rec)
 	require.Equal(t, connectors.StatusConnected, rec.NextStatus(t))
 	return sock
 }
@@ -777,6 +797,29 @@ func (f *fakeEvolution) setGroup(name string, failWith int) {
 	f.mu.Lock()
 	f.groupName, f.groupInfoErr = name, failWith
 	f.mu.Unlock()
+}
+
+// setListError makes GET /instance/all fail with the status (0 restores it).
+func (f *fakeEvolution) setListError(status int) {
+	f.mu.Lock()
+	f.listErr = status
+	f.mu.Unlock()
+}
+
+// setConnected sets the connected flag evolution-go reports for an instance: false is a number
+// that is reconnecting, closed or logged out. It replaces the list instead of editing it, as a
+// handler may still be encoding the old one.
+func (f *fakeEvolution) setConnected(name string, connected bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	next := make([]map[string]any, len(f.instances))
+	for i, inst := range f.instances {
+		next[i] = maps.Clone(inst)
+		if inst["name"] == name {
+			next[i]["connected"] = connected
+		}
+	}
+	f.instances = next
 }
 
 // count returns how many REST calls reached path.

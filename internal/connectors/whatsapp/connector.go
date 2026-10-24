@@ -28,6 +28,7 @@ const KindName = "whatsapp"
 // Timing of the connector.
 const (
 	pingInterval     = 30 * time.Second
+	statusInterval   = 60 * time.Second
 	instanceCacheTTL = 5 * time.Minute
 	groupTitleTTL    = 10 * time.Minute
 	requestTimeout   = 60 * time.Second
@@ -73,6 +74,7 @@ type Connector struct {
 	stream    *http.Client // WebSocket handshakes
 	maxFrame  int64        // WebSocket frames carry inline base64 media
 	now       func() time.Time
+	wait      func(ctx context.Context, d time.Duration) error // the pause between two checks of the instance; tests replace it
 
 	mu        sync.Mutex
 	instances map[string]instance
@@ -91,7 +93,9 @@ type instance struct {
 	Name            string `json:"name"`
 	Token           string `json:"token"`
 	WebsocketEnable flag   `json:"websocketEnable"`
-	Connected       flag   `json:"connected"`
+	// Connected tells that the WhatsApp session of the instance's number is up; nil when evolution-go
+	// does not say.
+	Connected *flag `json:"connected"`
 	// JID is the WhatsApp account of a connected instance, "<number>:<device>@s.whatsapp.net";
 	// empty for an instance that is not connected and for versions that do not report it.
 	JID string `json:"jid"`
@@ -137,14 +141,16 @@ func New(cfg connectors.Config, d connectors.Deps) (*Connector, error) {
 	return &Connector{
 		base: base, apiKey: cfg.String("api_key"), instance: instance, userAgent: d.UserAgent, log: log,
 		client: d.JSONClient(requestTimeout), downloads: d.HTTPClient(requestTimeout, mediaEnvelope(d.MediaLimit())),
-		stream: d.StreamClient(), maxFrame: mediaEnvelope(d.MediaLimit()), now: time.Now,
+		stream: d.StreamClient(), maxFrame: mediaEnvelope(d.MediaLimit()), now: time.Now, wait: sleep,
 	}, nil
 }
 
 // Run checks the API key, subscribes to the broadcast WebSocket and hands every Message
-// event of the connection's instance to h (WA-01). It returns when ctx ends or the socket
-// fails. A connection that does not name exactly one instance (CID-04) reports what the owner
-// must do, neither dials nor restarts, and waits for ctx.
+// event of the connection's instance to h (WA-01). It also reports whether the instance's number
+// is connected: when it starts, which is whenever the WebSocket reconnects, and every
+// statusInterval after (WA-06). It returns when ctx ends, the socket fails or a check of the
+// instance fails. A connection that does not name exactly one instance (CID-04) reports what the
+// owner must do, neither dials nor restarts, and waits for ctx.
 func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	if c.instance == "" {
 		h.Status(connectors.StatusError, instanceChoiceDetail)
@@ -173,16 +179,24 @@ func (c *Connector) Run(ctx context.Context, h connectors.Handler) error {
 	defer func() { _ = conn.CloseNow() }()
 	conn.SetReadLimit(c.maxFrame)
 	h.Account(c.accountLabel(insts))
-	h.Status(connectors.StatusConnected, c.idleWarning(insts))
+	first := c.state(insts)
+	h.Status(first.status, first.detail)
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go c.ping(ctx, conn, cancel)
+	ctx, cancel := context.WithCancelCause(ctx)
+	var watching sync.WaitGroup
+	defer watching.Wait() // its last report comes before Run returns, so before the supervisor's
+	defer cancel(nil)
+	go c.ping(ctx, conn, func() { cancel(nil) })
+	watching.Go(func() {
+		if err := c.watch(ctx, h, first); err != nil {
+			cancel(err)
+		}
+	})
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
-				return ctx.Err()
+				return context.Cause(ctx)
 			}
 			return fmt.Errorf("websocket: %w", plainError(err))
 		}
