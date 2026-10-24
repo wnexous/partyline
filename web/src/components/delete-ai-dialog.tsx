@@ -9,14 +9,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { isApiError } from "@/lib/api/client";
 import { useDeleteAgent } from "@/lib/api/queries";
-import type { IntelligenceRef } from "@/lib/api/types.gen";
+import { ErrorCodeLastAdmin, type IntelligenceRef } from "@/lib/api/types.gen";
 import { useT } from "@/lib/i18n";
 
 /**
- * Asks before deleting an AI (the contacts page for the unlinked ones, its profile for the rest):
- * it leaves every group, its direct messages go with it and its sharing is lost. `ai` open means
- * the dialog is; `onDeleted` runs once it is gone, `onClose` when the dialog closes either way.
+ * Asks before deleting an AI in its home organization (the contacts page for the unlinked ones, its
+ * profile for the rest): it leaves every group and organization, its direct messages go with it and
+ * the connections it operates lose their operator. `ai` open means the dialog is; `onDeleted` runs
+ * once it is gone, `onClose` when the dialog closes either way.
  */
 export function DeleteAIDialog({
   ai,
@@ -52,7 +54,13 @@ export function DeleteAIDialog({
                   onClose();
                   onDeleted?.();
                 },
-                onError: () => toast.error(t("ai.deleteFailed", { name })),
+                // An organization cannot be left without an admin (OMEM-05).
+                onError: (err) =>
+                  toast.error(
+                    isApiError(err) && err.code === ErrorCodeLastAdmin
+                      ? t("ai.deleteLastAdmin", { name })
+                      : t("ai.deleteFailed", { name }),
+                  ),
               });
             }}
           >

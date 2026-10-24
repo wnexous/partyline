@@ -10,6 +10,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { withIntelligence, withoutAI } from "@/lib/contacts";
+import { type MeWithDefaultOrg, toMyOrgs } from "@/lib/orgs";
 import { api } from "./client";
 import {
   type AcceptInviteRequest,
@@ -35,6 +36,7 @@ import {
   DefaultActivityLimit,
   DefaultPageSize,
   DefaultPeoplePage,
+  type DeleteAccountRequest,
   type DeviceRequest,
   type FileKind,
   FileKindDocument,
@@ -65,7 +67,6 @@ import {
   type Session,
   type SetupRequest,
   type SetupStatus,
-  type Sharing,
   type Token,
   type UpdateConnectorRequest,
   type UpdateMemberRequest,
@@ -81,8 +82,6 @@ import {
  * `xQuery(...)` returns options for loaders (`queryClient.ensureQueryData`). Collections are
  * cached as plain arrays (List.items unwrapped); message pages keep their Page shape.
  */
-
-export type SharingResource = "rooms" | "agents" | "connectors";
 
 export const queryKeys = {
   me: ["me"] as const,
@@ -101,7 +100,6 @@ export const queryKeys = {
   roomMembers: (id: string) => ["rooms", id, "members"] as const,
   roomMessages: (id: string) => ["rooms", id, "messages"] as const,
   roomFiles: (id: string, kind: FileFilter) => ["rooms", id, "files", kind] as const,
-  sharing: (kind: SharingResource, id: string) => [kind, id, "sharing"] as const,
   agents: ["agents"] as const,
   connectorKinds: ["connector-kinds"] as const,
   connectors: ["connectors"] as const,
@@ -205,6 +203,36 @@ export function useChangePassword() {
   });
 }
 
+/**
+ * Chooses the organization new AIs join when they are started without --org (ORG-04). The server
+ * answers 403 for one the account does not belong to. `me` carries the default, so the cached
+ * account is updated once the server has accepted it.
+ */
+export function useSetDefaultOrg() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orgId: string) => api<unknown>("PUT", "/me/default-org", { org_id: orgId }),
+    onSuccess: (_, orgId) =>
+      qc.setQueryData<MeWithDefaultOrg>(
+        queryKeys.me,
+        (old) => old && { ...old, default_org_id: orgId },
+      ),
+  });
+}
+
+/**
+ * Deletes the caller's own account (POS-06). The password proves who asks; a wrong one is a 422 on
+ * its field, and the last active instance admin gets 409 `last_instance_admin`. The server ends the
+ * session with the account, so nothing cached is kept.
+ */
+export function useDeleteAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: DeleteAccountRequest) => api<void>("DELETE", "/me", req),
+    onSuccess: () => qc.clear(),
+  });
+}
+
 export const useSessions = () =>
   useQuery({
     queryKey: queryKeys.sessions,
@@ -263,28 +291,6 @@ export function useRevokeToken() {
   return useMutation({
     mutationFn: (id: string) => api<void>("DELETE", `/tokens/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.tokens }),
-  });
-}
-
-// ---------------------------------------------------------------------------------------------
-// Sharing (rooms, agents, connectors)
-
-export const useSharing = (kind: SharingResource, id: string) =>
-  useQuery({
-    queryKey: queryKeys.sharing(kind, id),
-    queryFn: () => api<Sharing>("GET", `/${kind}/${id}/sharing`),
-  });
-
-export function useUpdateSharing(kind: SharingResource, id: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: Sharing) => api<Sharing>("PUT", `/${kind}/${id}/sharing`, req),
-    onSuccess: (sharing) => {
-      qc.setQueryData(queryKeys.sharing(kind, id), sharing);
-      // Visibility shows on the list and the resource itself; timelines and members are unaffected.
-      qc.invalidateQueries({ queryKey: [kind], exact: true });
-      qc.invalidateQueries({ queryKey: [kind, id], exact: true });
-    },
   });
 }
 
@@ -590,6 +596,22 @@ export const intelligenceQuery = (id: string) =>
 
 export const useIntelligence = (id: string) => useQuery(intelligenceQuery(id));
 
+const myOrgsOf = (profile: IntelligenceProfile) => toMyOrgs(profile.memberships);
+
+/**
+ * The organizations the viewer belongs to, with what they are in each (OMEM-03): the memberships of
+ * their own profile, which lists every one of them, the personal one included. It shares the
+ * profile's cache entry, so the settings page and this read cost one request.
+ */
+export function useMyOrgs() {
+  const meId = useMe().data?.intelligence.id;
+  return useQuery({
+    ...intelligenceQuery(meId ?? ""),
+    enabled: meId !== undefined,
+    select: myOrgsOf,
+  });
+}
+
 /** The summary every list shows, taken from a full profile. */
 function refOfProfile(p: IntelligenceProfile): IntelligenceRef {
   return {
@@ -770,8 +792,8 @@ export function useRemoveAvatar(id: string) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Contacts: the machine tree, shared AIs, users and the people of the user's connectors
-// (CONT-01, TREE-01..06)
+// Contacts: the AIs of the user's organizations and the ones they host, the other users and the
+// people of the connections of their organizations (CONT-01, AD-016, AD-022)
 
 /** Everyone the caller can reach, grouped as the contacts page shows them (GET /contacts). */
 export const contactsQuery = () =>
@@ -925,7 +947,7 @@ export const useAgents = () => useQuery(agentsQuery());
 
 /**
  * Merges an AI into another one of the caller's (MRG-01): the survivor keeps its groups, DMs,
- * history, cursors, sharing and connectors, and the AI in `from` is deleted. Refused with 409
+ * history, cursors, organizations and connectors, and the AI in `from` is deleted. Refused with 409
  * `identity_online` while `from` has a live session (MRG-02).
  */
 export function useMergeAgent() {
@@ -957,6 +979,39 @@ export function useDeleteAgent() {
       qc.setQueryData<Contacts>(queryKeys.contacts, (old) => old && withoutAI(old, id));
       qc.invalidateQueries({ queryKey: queryKeys.contacts, exact: true });
       qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), refetchType: "none" });
+    },
+  });
+}
+
+/**
+ * Ends an AI's live session (POS-04): the AI is not deleted and may connect again. Whether it is
+ * online is the live presence's to say; the profile is marked stale to read the new state.
+ */
+export function useEndSession() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>("DELETE", `/agents/${id}/session`),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: queryKeys.intelligence(id), exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.agents });
+    },
+  });
+}
+
+/**
+ * Takes an identity out of an organization (POS-05, POS-06): it leaves the organization's groups
+ * and its position there, and nothing else changes. The identity's profile lists its
+ * organizations, the contacts group the AIs by them and a DM is filed under the shared ones.
+ */
+export function useRemoveFromOrg() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orgId, iid }: { orgId: string; iid: string }) =>
+      api<void>("DELETE", `/orgs/${orgId}/members/${iid}`),
+    onSuccess: (_, { iid }) => {
+      qc.invalidateQueries({ queryKey: queryKeys.intelligence(iid), exact: true });
+      qc.invalidateQueries({ queryKey: queryKeys.contacts });
+      qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
     },
   });
 }

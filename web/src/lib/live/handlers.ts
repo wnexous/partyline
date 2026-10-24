@@ -178,6 +178,18 @@ const RESOURCE_KEYS: Record<string, "rooms" | "agents" | "connectors"> = {
   connector: "connectors",
 };
 
+/**
+ * An organization the viewer belongs to (or has just left) changed (CHART-02): their own profile
+ * lists their organizations, the contacts group the AIs by them, and a DM is filed under the ones
+ * both sides belong to. The pages of the organization itself refresh from this event too.
+ */
+function refreshOrganizations(qc: QueryClient) {
+  const meId = qc.getQueryData<Me>(queryKeys.me)?.intelligence.id;
+  if (meId) qc.invalidateQueries({ queryKey: queryKeys.intelligence(meId), exact: true });
+  qc.invalidateQueries({ queryKey: queryKeys.contacts });
+  qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
+}
+
 export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: LiveEvent): void {
   switch (event.type) {
     case "hello":
@@ -251,16 +263,20 @@ export function handleLiveEvent(qc: QueryClient, actions: LiveActions, event: Li
       return;
 
     case "access.changed": {
+      if (event.data.resource_kind === "organization") {
+        refreshOrganizations(qc);
+        return;
+      }
       const kind = RESOURCE_KEYS[event.data.resource_kind];
       if (!kind) return;
       qc.invalidateQueries({ queryKey: [kind], exact: true });
       qc.invalidateQueries({ queryKey: [kind, event.data.resource_id] });
       if (kind === "agents" || kind === "connectors") {
         qc.invalidateQueries({ queryKey: queryKeys.chats });
-        // Sharing decides the shared AIs and the connectors whose people the user sees.
+        // Organization membership decides the AIs and the connections whose people the user sees.
         qc.invalidateQueries({ queryKey: queryKeys.contacts });
       }
-      // Sharing, membership and DM access decide which conversations the user has.
+      // Membership and DM access decide which conversations the user has.
       if (kind === "rooms")
         qc.invalidateQueries({ queryKey: queryKeys.conversations, exact: true });
       return;

@@ -10,7 +10,7 @@ import { useOpenConversation } from "./use-open-conversation";
 
 const openRoom = () => useLiveStore.getState().openRoomId;
 
-function setVisibility(state: "visible" | "hidden") {
+function setTabState(state: "visible" | "hidden") {
   Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
   act(() => {
     document.dispatchEvent(new Event("visibilitychange"));
@@ -41,9 +41,9 @@ describe("useOpenConversation", () => {
 
   it("is not open while the tab is hidden, and is again once it shows", () => {
     renderHook(() => useOpenConversation("r1"));
-    setVisibility("hidden");
+    setTabState("hidden");
     expect(openRoom()).toBeNull();
-    setVisibility("visible");
+    setTabState("visible");
     expect(openRoom()).toBe("r1");
   });
 

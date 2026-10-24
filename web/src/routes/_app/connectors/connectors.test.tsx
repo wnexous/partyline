@@ -5,7 +5,15 @@ import { type Connector, SecretMask } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
-import { makeAI, makeChat, makeConnector, makeConnectorKind, makeMe } from "@/test/fixtures";
+import {
+  makeAI,
+  makeChat,
+  makeConnector,
+  makeConnectorKind,
+  makeMe,
+  makeMembership,
+  makeProfile,
+} from "@/test/fixtures";
 import { renderRoute } from "@/test/render";
 import { sampleContacts } from "@/test/sample-contacts";
 
@@ -31,7 +39,10 @@ const webhook = makeConnectorKind({
 });
 const kinds = json(200, { items: [telegram, webhook] });
 
-beforeEach(() => useLiveStore.setState({ locale: "en", connectors: {} }));
+beforeEach(() => {
+  useLiveStore.setState({ locale: "en", connectors: {}, currentOrgId: null });
+  window.localStorage.clear();
+});
 afterEach(() => vi.unstubAllGlobals());
 
 const row = (name: string) => screen.getByRole("listitem", { name });
@@ -329,7 +340,7 @@ describe("connector page (UI-17)", () => {
     expect(calls.some((c) => c.method === "DELETE" && c.path === "/connectors/k1")).toBe(true);
   });
 
-  it("hides management for a connector shared for use", async () => {
+  it("hides management from a member who does not administer the organization", async () => {
     mockApi({ ...base, "GET /connectors/k1": json(200, { ...connector, my_level: "use" }) });
     renderRoute("/connectors/k1");
     await screen.findByRole("heading", { name: "ops-bot" });
@@ -461,7 +472,7 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     api(
       { operator: undefined },
       apiError(422, "invalid", "invalid", {
-        operator_id: "must be an AI you own",
+        operator_id: "must be an AI of the connection's organization",
       }),
     );
     const user = userEvent.setup();
@@ -469,7 +480,9 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     const picker = await screen.findByRole("combobox", { name: "Operator" });
     await user.selectOptions(picker, atlas.id);
     await user.click(screen.getByRole("button", { name: "Save delivery" }));
-    expect(await screen.findByText("must be an AI you own")).toBeInTheDocument();
+    expect(
+      await screen.findByText("must be an AI of the connection's organization"),
+    ).toBeInTheDocument();
     expect(picker).toHaveValue(atlas.id);
   });
 
@@ -488,7 +501,7 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     expect(calls.some((c) => c.path === "/chats/c1/route")).toBe(false);
   });
 
-  it("reads the delivery settings without controls to someone it is shared with", async () => {
+  it("reads the delivery settings without controls as a member of the organization", async () => {
     api({ my_level: "use", operator: atlas, deliver: "all", groups_mentions_only: true });
     renderRoute("/connectors/k1");
     expect(await screen.findByText("Operated by Atlas")).toBeInTheDocument();
@@ -500,11 +513,11 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
     expect(screen.queryByRole("button", { name: "Save delivery" })).toBeNull();
   });
 
-  it("says who chooses an operator that does not exist yet to someone it is shared with", async () => {
+  it("says who chooses an operator that does not exist yet to a member who is not an admin", async () => {
     api({ my_level: "use", operator: undefined });
     renderRoute("/connectors/k1");
     expect(await screen.findByRole("note")).toHaveTextContent(
-      "No AI operates this account yet, so nothing arrives through it. Its owner chooses the operator.",
+      "No AI operates this account yet, so nothing arrives through it. An admin of the organization chooses the operator.",
     );
     expect(screen.getAllByText("No operator yet").length).toBeGreaterThan(0);
   });
@@ -527,5 +540,303 @@ describe("connection page as an AI's app (CID-22, CID-23, CID-27)", () => {
       screen.getByRole("switch", { name: "Grupos: só quando mencionarem" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Salvar entrega" })).toBeDisabled();
+  });
+});
+
+/*
+ * Connections belong to an organization (ORG-02, ORG-03, ORG-07, OMEM-04): the list shows the
+ * current organization's, the admins of an organization add and change them, every other member
+ * reads them, and nothing is shared one by one any more.
+ */
+const acme = makeMembership({
+  org_id: "o1",
+  org_name: "Acme",
+  org_slug: "acme",
+  permission: "admin",
+});
+const globex = makeMembership({
+  org_id: "o2",
+  org_name: "Globex",
+  org_slug: "globex",
+  permission: "member",
+});
+const initech = makeMembership({
+  org_id: "o3",
+  org_name: "Initech",
+  org_slug: "initech",
+  permission: "admin",
+});
+const memberOf = (...memberships: ReturnType<typeof makeMembership>[]) => ({
+  "GET /intelligences/u1": json(200, makeProfile({ memberships })),
+});
+const optionsOf = (select: HTMLElement) =>
+  within(select)
+    .getAllByRole("option")
+    .map((o) => o.textContent);
+
+describe("the connections of the current organization (ORG-02)", () => {
+  const all = [
+    makeConnector({ id: "k1", name: "ops-bot", org_id: "o1" }),
+    makeConnector({ id: "k2", name: "support", org_id: "o2" }),
+    makeConnector({ id: "k3", name: "billing", org_id: "o1" }),
+  ];
+  const api = (items = all, ...memberships: ReturnType<typeof makeMembership>[]) =>
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /connector-kinds": kinds,
+      "GET /connectors": json(200, { items }),
+      ...memberOf(...memberships),
+    });
+  const listed = () =>
+    within(screen.getByRole("list", { name: "Your connectors" }))
+      .getAllByRole("listitem")
+      .map((li) => li.getAttribute("aria-label"));
+
+  it("lists those of the current organization and none of the others", async () => {
+    api(all, acme, globex);
+    renderRoute("/connectors");
+    await screen.findByRole("listitem", { name: "ops-bot" });
+    expect(listed()).toEqual(["billing", "ops-bot"]);
+  });
+
+  it("follows the organization the viewer picks", async () => {
+    api(all, acme, globex);
+    renderRoute("/connectors");
+    await screen.findByRole("listitem", { name: "ops-bot" });
+    act(() => useLiveStore.getState().setCurrentOrg("o2"));
+    expect(await screen.findByRole("listitem", { name: "support" })).toBeInTheDocument();
+    expect(listed()).toEqual(["support"]);
+  });
+
+  it("lists every connection while the viewer's organizations are unknown", async () => {
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /connector-kinds": kinds,
+      "GET /connectors": json(200, { items: all }),
+      "GET /intelligences/u1": apiError(500, "internal", "boom"),
+    });
+    renderRoute("/connectors");
+    await screen.findByRole("listitem", { name: "ops-bot" });
+    expect(listed()).toEqual(["billing", "ops-bot", "support"]);
+  });
+
+  it("says the current organization has none when only another organization has connections", async () => {
+    api([all[1] as Connector], acme, globex);
+    renderRoute("/connectors");
+    expect(await screen.findByRole("heading", { name: "No connectors yet" })).toBeInTheDocument();
+    expect(screen.queryByRole("listitem", { name: "support" })).toBeNull();
+    // An admin of Acme is the one who can add its first connection.
+    expect(screen.getByRole("button", { name: "Add connector" })).toBeInTheDocument();
+  });
+
+  it("names no owner: the organization is the owner (AD-019)", async () => {
+    api(
+      [
+        makeConnector({
+          id: "k1",
+          name: "ops-bot",
+          org_id: "o1",
+          owner: { id: "u9", username: "bob", display_name: "Bob Lima" },
+        }),
+      ],
+      acme,
+    );
+    renderRoute("/connectors");
+    await screen.findByRole("listitem", { name: "ops-bot" });
+    expect(screen.queryByText(/by @bob/)).toBeNull();
+  });
+
+  it("offers adding a connection only to someone who administers an organization", async () => {
+    api([], globex);
+    renderRoute("/connectors");
+    expect(await screen.findByRole("heading", { name: "No connectors yet" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Nothing is connected in Globex yet. Its admins add connections."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add connector" })).toBeNull();
+  });
+
+  it("offers it on a page of an organization the viewer is only a member of, when they administer another one", async () => {
+    api([all[1] as Connector], acme, globex);
+    renderRoute("/connectors");
+    await screen.findByRole("heading", { name: "No connectors yet" });
+    act(() => useLiveStore.getState().setCurrentOrg("o2"));
+    await screen.findByRole("listitem", { name: "support" });
+    expect(screen.getByRole("button", { name: "Add connector" })).toBeInTheDocument();
+  });
+});
+
+describe("adding a connection to an organization (ORG-03)", () => {
+  async function openAdd(
+    memberships: ReturnType<typeof makeMembership>[],
+    routes: Parameters<typeof mockApi>[0] = {},
+  ) {
+    const api = mockApi({
+      "GET /me": json(200, me),
+      "GET /connector-kinds": kinds,
+      "GET /connectors": json(200, { items: [] }),
+      ...memberOf(...memberships),
+      ...routes,
+    });
+    const user = userEvent.setup();
+    const utils = renderRoute("/connectors");
+    await user.click(await screen.findByRole("button", { name: "Add connector" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add connector" });
+    return { ...api, ...utils, user, dialog };
+  }
+  const orgField = (dialog: HTMLElement) =>
+    within(dialog).findByRole("combobox", { name: "Organization" });
+
+  it("asks for the organization among those the viewer administers, never one they only belong to", async () => {
+    const { dialog } = await openAdd([acme, globex, initech]);
+    const field = await orgField(dialog);
+    expect(optionsOf(field)).toEqual(["Acme", "Initech"]);
+    expect(field).toHaveValue("o1");
+  });
+
+  it("starts on the current organization when the viewer administers it", async () => {
+    useLiveStore.setState({ currentOrgId: "o3" });
+    const { dialog } = await openAdd([acme, globex, initech]);
+    expect(await orgField(dialog)).toHaveValue("o3");
+  });
+
+  it("starts on the first organization the viewer administers when they only belong to the current one", async () => {
+    const { dialog } = await openAdd([
+      makeMembership({ org_id: "o0", org_name: "Aardvark", org_slug: "aardvark" }),
+      initech,
+    ]);
+    expect(await orgField(dialog)).toHaveValue("o3");
+  });
+
+  it("creates the connection in the chosen organization", async () => {
+    const created = makeConnector({ id: "k9", name: "ops-bot", org_id: "o3" });
+    const { user, dialog, calls, router } = await openAdd([acme, globex, initech], {
+      "POST /connectors": json(201, created),
+      "GET /connectors/k9": json(200, created),
+      "GET /connectors/k9/chats": json(200, { items: [] }),
+    });
+    await user.selectOptions(await orgField(dialog), "o3");
+    await user.click(within(dialog).getByRole("radio", { name: /Telegram/ }));
+    await user.type(within(dialog).getByLabelText("Name"), "ops-bot");
+    await user.type(within(dialog).getByLabelText("Bot token"), "123:abc");
+    await user.click(within(dialog).getByRole("button", { name: "Add connector" }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/connectors/k9"));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/connectors")?.body).toMatchObject({
+      org_id: "o3",
+      kind: "telegram",
+      name: "ops-bot",
+    });
+  });
+
+  it("names the organization when it is the only one the viewer can add to", async () => {
+    const { dialog } = await openAdd([acme, globex]);
+    const field = await orgField(dialog);
+    expect(optionsOf(field)).toEqual(["Acme"]);
+  });
+
+  it("tells a viewer the server turns down that only admins add connections", async () => {
+    const { user, dialog } = await openAdd([acme], {
+      "POST /connectors": apiError(403, "forbidden", "forbidden"),
+    });
+    await orgField(dialog);
+    await user.click(within(dialog).getByRole("radio", { name: /Telegram/ }));
+    await user.type(within(dialog).getByLabelText("Name"), "ops-bot");
+    await user.type(within(dialog).getByLabelText("Bot token"), "123:abc");
+    await user.click(within(dialog).getByRole("button", { name: "Add connector" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Only admins of the organization can add connections.",
+    );
+  });
+});
+
+describe("the page of a connection in an organization (ORG-03, ORG-07, OMEM-04)", () => {
+  const atlas = makeAI();
+  const base = makeConnector({
+    id: "k1",
+    name: "support-line",
+    org_id: "o1",
+    operator: atlas,
+    deliver: "dms",
+    groups_mentions_only: false,
+    queued: 4,
+  });
+  const api = (over: Partial<Connector> = {}, routes: Parameters<typeof mockApi>[0] = {}) =>
+    mockApi({
+      "GET /me": json(200, me),
+      "GET /connector-kinds": kinds,
+      "GET /connectors/k1": json(200, { ...base, ...over }),
+      "GET /connectors/k1/chats": json(200, { items: [makeChat({ id: "c1" })] }),
+      "GET /contacts": json(200, sampleContacts),
+      ...memberOf(acme, globex),
+      ...routes,
+    });
+
+  it("names the organization that owns the connection", async () => {
+    api({ org_id: "o2", my_level: "use" });
+    renderRoute("/connectors/k1");
+    expect(await screen.findByText("Organization: Globex")).toBeInTheDocument();
+  });
+
+  it("names no owner and offers no way to share it one by one, even to an admin", async () => {
+    api({ owner: { id: "u9", username: "bob", display_name: "Bob Lima" } });
+    renderRoute("/connectors/k1");
+    await screen.findByText("Organization: Acme");
+    expect(screen.queryByText(/by @bob/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Share/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Connector settings" })).toBeInTheDocument();
+  });
+
+  it("lets a member who is not an admin read it all and change nothing", async () => {
+    api({ org_id: "o2", my_level: "use" });
+    renderRoute("/connectors/k1");
+    expect(await screen.findByText("Operated by Atlas")).toBeInTheDocument();
+    // Read-only: the operator and the delivery settings are text.
+    expect(screen.getByText("Atlas (@atlas)")).toBeInTheDocument();
+    expect(screen.getByText("Direct chats only")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("switch")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save delivery" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Connector settings" })).toBeNull();
+    // How many messages wait is shown; what they say never is (CID-23).
+    expect(screen.getByText("4 queued")).toBeInTheDocument();
+    expect(screen.queryByRole("log")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("lets an admin change the operator to another AI of the organization, and only those", async () => {
+    const { calls } = api(
+      {},
+      {
+        "PATCH /connectors/k1": (_url, init) =>
+          json(200, { ...base, ...JSON.parse(String(init?.body)) }),
+      },
+    );
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    const picker = await screen.findByRole("combobox", { name: "Operator" });
+    // Acme's AIs: not Lab, which belongs to Globex, and no user.
+    expect(optionsOf(picker)).toEqual([
+      "Choose an AI",
+      "Atlas (@atlas)",
+      "Notes (@notes)",
+      "Sage (@sage)",
+    ]);
+    await user.selectOptions(picker, "a2");
+    await user.click(screen.getByRole("button", { name: "Save delivery" }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(1));
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ operator_id: "a2" });
+  });
+
+  it("says only admins change the operator when the server refuses a member", async () => {
+    api({}, { "PATCH /connectors/k1": apiError(403, "forbidden", "forbidden") });
+    const user = userEvent.setup();
+    renderRoute("/connectors/k1");
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Operator" }), "a2");
+    await user.click(screen.getByRole("button", { name: "Save delivery" }));
+    const refusal = await screen.findByText(
+      "Only admins of the connection’s organization can change its operator.",
+    );
+    expect(refusal).toHaveAttribute("role", "alert");
   });
 });

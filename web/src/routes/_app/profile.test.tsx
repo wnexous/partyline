@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queryKeys } from "@/lib/api/queries";
-import type { IntelligenceProfile } from "@/lib/api/types.gen";
+import type { IntelligenceProfile, ProfileMembership } from "@/lib/api/types.gen";
 import { handleLiveEvent } from "@/lib/live/handlers";
 import { useLiveStore } from "@/lib/live/store";
 import { apiError, json, mockApi } from "@/test/fetch";
@@ -13,6 +13,7 @@ import {
   makeContacts,
   makeIntelligence,
   makeMe,
+  makeMembership,
   makeOrgAIs,
   makePerson,
   makeProfile,
@@ -808,56 +809,495 @@ describe("apps (ACC-07)", () => {
   });
 });
 
-describe("managing an AI", () => {
-  it("offers sharing and deleting to the owner, and neither to a user who only uses it", async () => {
-    api(atlas);
-    const owner = renderRoute("/contacts/a1");
-    await name();
-    expect(screen.getByRole("button", { name: "Share Atlas" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete Atlas" })).toBeInTheDocument();
-    owner.unmount();
+/*
+ * What the viewer may do about an identity comes from its profile (POS-04, POS-05, POS-06): the
+ * server says, for each organization they share, whether they may delete it there and what that
+ * does, and whether they may end its session. The page offers exactly those, and nothing is shared
+ * one by one any more (ORG-02).
+ */
+const acme = (over: Partial<ProfileMembership> = {}) =>
+  makeMembership({ org_id: "o1", org_name: "acme", org_slug: "acme", ...over });
+const globex = (over: Partial<ProfileMembership> = {}) =>
+  makeMembership({ org_id: "o2", org_name: "Globex", org_slug: "globex", ...over });
 
-    api({ ...atlas, can_edit: false, ai: atlas.ai && { ...atlas.ai, my_level: "use" } });
+/** Atlas, an AI of acme that the viewer manages: they may delete it there. */
+const atlasInAcme: IntelligenceProfile = {
+  ...atlas,
+  memberships: [acme({ can_delete: true, delete_effect: "delete" })],
+};
+const bobRef = makeIntelligence({ id: "u2", display_name: "Bob Lima", handle: "bob" });
+/** Bob, a person the viewer shares acme with: they may remove him from it. */
+const bobInAcme: IntelligenceProfile = makeProfile({
+  ...bobRef,
+  memberships: [acme({ permission: "member", can_delete: true, delete_effect: "remove" })],
+});
+const noContent = () => new Response(null, { status: 204 });
+const sectionOf = (title: string) => screen.getByRole("region", { name: title });
+
+describe("the organizations of an identity (OMEM-03)", () => {
+  it("lists each organization the viewer shares with it: the permission and the position", async () => {
+    api(
+      makeProfile({
+        ...bobRef,
+        memberships: [
+          acme({ permission: "member", position_id: "p1", position_name: "Lead developer" }),
+          globex({ permission: "guest" }),
+          makeMembership({
+            org_id: "o3",
+            org_name: "Initech",
+            org_slug: "initech",
+            permission: "admin",
+          }),
+        ],
+      }),
+    );
+    renderRoute("/contacts/u2");
+    await name();
+    const list = within(sectionOf("Organizations")).getByRole("list");
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows.map((r) => r.getAttribute("aria-label"))).toEqual(["acme", "Globex", "Initech"]);
+    expect(rows[0]).toHaveTextContent("Member");
+    expect(rows[0]).toHaveTextContent("Lead developer");
+    expect(rows[1]).toHaveTextContent("Guest");
+    expect(rows[1]).not.toHaveTextContent("Lead developer");
+    expect(rows[2]).toHaveTextContent("Admin");
+  });
+
+  it("marks the organization an AI belongs to as its home", async () => {
+    api({
+      ...atlas,
+      memberships: [
+        acme({ delete_effect: "delete" }),
+        globex({ permission: "guest", delete_effect: "remove" }),
+      ],
+    });
     renderRoute("/contacts/a1");
     await name();
-    expect(screen.queryByRole("button", { name: "Share Atlas" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Delete Atlas" })).toBeNull();
+    expect(
+      within(screen.getByRole("listitem", { name: "acme" })).getByText("Home organization"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("listitem", { name: "Globex" })).queryByText("Home organization"),
+    ).toBeNull();
+  });
+
+  it("shows no organizations for an identity the viewer shares none with", async () => {
+    api(lia);
+    renderRoute("/contacts/p1");
+    await name();
+    expect(screen.queryByRole("region", { name: "Organizations" })).toBeNull();
+  });
+
+  it("lists the viewer's own organizations on their own profile, with nothing to do about them", async () => {
+    api(
+      makeProfile({
+        can_edit: true,
+        memberships: [acme({ permission: "admin" }), globex()],
+      }),
+    );
+    renderRoute("/contacts/u1");
+    await name();
+    expect(within(sectionOf("Organizations")).getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /^(Delete|Remove) / })).toBeNull();
+  });
+
+  it("speaks Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    api(
+      makeProfile({
+        ...bobRef,
+        memberships: [
+          acme({ permission: "guest", can_delete: true, delete_effect: "remove" }),
+          globex({ permission: "admin", position_name: "Diretoria" }),
+        ],
+      }),
+      { "GET /me": json(200, makeMe({ locale: "pt-BR" })) },
+    );
+    renderRoute("/contacts/u2");
+    await name();
+    const section = sectionOf("Organizações");
+    expect(within(section).getByRole("listitem", { name: "acme" })).toHaveTextContent("Convidado");
+    expect(within(section).getByRole("listitem", { name: "Globex" })).toHaveTextContent(
+      "Administrador",
+    );
+    expect(within(section).getByRole("listitem", { name: "Globex" })).toHaveTextContent(
+      "Diretoria",
+    );
+    expect(within(section).getByRole("button", { name: "Remover de acme" })).toBeInTheDocument();
+  });
+});
+
+describe("what the viewer may do, from the flags of the profile (POS-04, POS-05, POS-06)", () => {
+  it("offers no action to someone who may do none", async () => {
+    api({
+      ...atlas,
+      can_edit: false,
+      can_end_session: false,
+      ai: atlas.ai && { ...atlas.ai, online: true, my_level: "use" },
+      memberships: [acme({ delete_effect: "delete" }), globex({ delete_effect: "remove" })],
+    });
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("button", { name: "End session" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Delete / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Remove / })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Merge / })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Display name" })).toBeNull();
     // They can still talk to it.
     expect(screen.getByRole("button", { name: "Message Atlas" })).toBeInTheDocument();
   });
 
+  it("offers Delete for the organization an AI belongs to and Remove from for another one", async () => {
+    api({
+      ...atlas,
+      memberships: [
+        acme({ can_delete: true, delete_effect: "delete" }),
+        globex({ permission: "guest", can_delete: true, delete_effect: "remove" }),
+      ],
+    });
+    renderRoute("/contacts/a1");
+    await name();
+    const home = screen.getByRole("listitem", { name: "acme" });
+    const other = screen.getByRole("listitem", { name: "Globex" });
+    expect(within(home).getByRole("button", { name: "Delete Atlas" })).toBeInTheDocument();
+    expect(within(home).queryByRole("button", { name: /^Remove / })).toBeNull();
+    expect(within(other).getByRole("button", { name: "Remove from Globex" })).toBeInTheDocument();
+    expect(within(other).queryByRole("button", { name: /^Delete / })).toBeNull();
+  });
+
+  it("offers an action only for the organizations where the server allows it", async () => {
+    api({
+      ...atlas,
+      memberships: [
+        acme({ can_delete: false, delete_effect: "delete" }),
+        globex({ can_delete: true, delete_effect: "remove" }),
+      ],
+    });
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("button", { name: "Delete Atlas" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove from Globex" })).toBeInTheDocument();
+  });
+
+  it("offers Edit by the editor of whoever may edit it, with or without a delete", async () => {
+    api({ ...atlas, memberships: [acme({ can_delete: false, delete_effect: "delete" })] });
+    renderRoute("/contacts/a1");
+    await name();
+    expect(field("Display name")).toHaveValue("Atlas");
+  });
+
+  it("has no machine row: the folder is all it says about where an AI lives (AD-022)", async () => {
+    api(atlasInAcme);
+    renderRoute("/contacts/a1");
+    await name();
+    const details = sectionOf("Details");
+    expect(within(details).queryByText("Machine")).toBeNull();
+    expect(within(details).getByText("Folder")).toBeInTheDocument();
+    expect(within(details).getByText("~/atlas")).toBeInTheDocument();
+  });
+
+  it("says who hosts an AI, not who owns it: an organization does", async () => {
+    api(atlasInAcme);
+    renderRoute("/contacts/a1");
+    await name();
+    const details = sectionOf("Details");
+    expect(within(details).getByText("Hosted by")).toBeInTheDocument();
+    expect(within(details).queryByText("Owner")).toBeNull();
+  });
+
+  it("offers no way to share it one by one, to anyone: organizations are the only way to share", async () => {
+    api(atlasInAcme);
+    const manager = renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("button", { name: /Share/ })).toBeNull();
+    manager.unmount();
+
+    api({ ...atlasInAcme, can_edit: false, ai: atlas.ai && { ...atlas.ai, my_level: "use" } });
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("button", { name: /Share/ })).toBeNull();
+  });
+});
+
+describe("ending a session (POS-04)", () => {
+  const online = (over: Partial<IntelligenceProfile> = {}): IntelligenceProfile => ({
+    ...atlas,
+    can_end_session: true,
+    ai: atlas.ai && { ...atlas.ai, online: true },
+    ...over,
+  });
+
+  it("asks first, then ends the session of an AI that is online", async () => {
+    const { calls } = api(online(), { "DELETE /agents/a1/session": noContent });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await user.click(await screen.findByRole("button", { name: "End session" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "End Atlas’s session?" });
+    expect(dialog).toHaveTextContent(
+      "The session stops and Atlas goes offline. Atlas is not deleted and can connect again.",
+    );
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "End session" }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1));
+    expect(calls.find((c) => c.method === "DELETE")?.path).toBe("/agents/a1/session");
+    expect(await screen.findByText("Atlas’s session ended")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("does nothing when the dialog is cancelled", async () => {
+    const { calls } = api(online(), { "DELETE /agents/a1/session": noContent });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await user.click(await screen.findByRole("button", { name: "End session" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+  });
+
+  it("says so, and keeps the dialog, when the session could not be ended", async () => {
+    api(online(), { "DELETE /agents/a1/session": apiError(500, "internal", "boom") });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await user.click(await screen.findByRole("button", { name: "End session" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "End session" }));
+    expect(await screen.findByText("Couldn’t end Atlas’s session.")).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("offers it only while the AI is online, and follows live presence", async () => {
+    api(online({ ai: atlas.ai && { ...atlas.ai, online: false } }));
+    const { queryClient } = renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("button", { name: "End session" })).toBeNull();
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "agent.presence",
+        data: { agent_id: "a1", online: true },
+      }),
+    );
+    expect(await screen.findByRole("button", { name: "End session" })).toBeInTheDocument();
+    act(() =>
+      handleLiveEvent(queryClient, useLiveStore.getState(), {
+        type: "agent.presence",
+        data: { agent_id: "a1", online: false },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("button", { name: "End session" })).toBeNull());
+  });
+
+  it("offers it to nobody the server did not allow, online or not", async () => {
+    api(online({ can_end_session: false }));
+    renderRoute("/contacts/a1");
+    await name();
+    expect(screen.queryByRole("button", { name: "End session" })).toBeNull();
+  });
+
+  it("offers it on no profile but an AI's", async () => {
+    api({ ...bobInAcme, can_end_session: true });
+    renderRoute("/contacts/u2");
+    await name();
+    expect(screen.queryByRole("button", { name: "End session" })).toBeNull();
+  });
+
+  it("speaks Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    api(online(), { "GET /me": json(200, makeMe({ locale: "pt-BR" })) });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await user.click(await screen.findByRole("button", { name: "Encerrar sessão" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Encerrar a sessão de Atlas?" });
+    expect(dialog).toHaveTextContent("A sessão para e Atlas fica offline.");
+  });
+});
+
+describe("deleting an AI in its organization (POS-05, POS-06)", () => {
   it("deletes the AI after confirmation and returns to the contacts", async () => {
-    const { calls } = api(atlas, {
-      "DELETE /agents/a1": new Response(null, { status: 204 }),
+    const { calls } = api(atlasInAcme, {
+      "DELETE /agents/a1": noContent,
       "GET /contacts": json(200, { me: ana, org_ais: [], hosted: [], users: [], people: [] }),
     });
     const user = userEvent.setup();
     const { router } = renderRoute("/contacts/a1");
     await user.click(await screen.findByRole("button", { name: "Delete Atlas" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Delete Atlas?" });
+    expect(dialog).toHaveTextContent(
+      "It leaves every group and organization, its direct messages are deleted and the connections it operates are left without an operator. A session that starts again in its folder creates a new AI.",
+    );
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
     await user.click(within(dialog).getByRole("button", { name: "Delete AI" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/contacts"));
     expect(calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual(["/agents/a1"]);
   });
 
-  it("opens the sharing dialog of the AI", async () => {
-    api(atlas, {
-      "GET /agents/a1/sharing": json(200, { mode: "private", users: [] }),
-      "GET /users": json(200, { items: [] }),
+  it("says an organization cannot be left without an admin when the AI is its only one", async () => {
+    api(atlasInAcme, {
+      "DELETE /agents/a1": apiError(409, "last_admin", "organization would have no admin"),
+    });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/contacts/a1");
+    await user.click(await screen.findByRole("button", { name: "Delete Atlas" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Delete Atlas?" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete AI" }));
+    expect(
+      await screen.findByText(
+        "Atlas is the only admin of an organization. Make another member an admin first.",
+      ),
+    ).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/contacts/a1");
+  });
+
+  it("says so when the AI could not be deleted", async () => {
+    api(atlasInAcme, { "DELETE /agents/a1": apiError(500, "internal", "boom") });
+    const user = userEvent.setup();
+    renderRoute("/contacts/a1");
+    await user.click(await screen.findByRole("button", { name: "Delete Atlas" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Delete Atlas?" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete AI" }));
+    expect(await screen.findByText("Couldn’t delete Atlas.")).toBeInTheDocument();
+  });
+});
+
+describe("removing an identity from an organization (POS-05, POS-06)", () => {
+  it("says what it does and what it leaves alone, and asks before sending anything", async () => {
+    const { calls } = api(bobInAcme, { "DELETE /orgs/o1/members/u2": noContent });
+    const user = userEvent.setup();
+    renderRoute("/contacts/u2");
+    await user.click(await screen.findByRole("button", { name: "Remove from acme" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Remove Bob Lima from acme?" });
+    // Literal wording (L-011): the person leaves this organization and nothing else.
+    expect(dialog).toHaveTextContent(
+      "Bob Lima leaves the groups of acme and loses their position there. Removing someone only takes them out of acme: their account and their other organizations stay.",
+    );
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+  });
+
+  it("removes the person from that organization only, and the page shows it gone", async () => {
+    let removed = false;
+    const { calls } = api(bobInAcme, {
+      "GET /intelligences/u2": () =>
+        json(200, removed ? { ...bobInAcme, memberships: [] } : bobInAcme),
+      "DELETE /orgs/o1/members/u2": () => {
+        removed = true;
+        return noContent();
+      },
+    });
+    const user = userEvent.setup();
+    const { router } = renderRoute("/contacts/u2");
+    await user.click(await screen.findByRole("button", { name: "Remove from acme" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Remove from acme" }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1));
+    expect(calls.find((c) => c.method === "DELETE")?.path).toBe("/orgs/o1/members/u2");
+    expect(await screen.findByText("Bob Lima removed from acme")).toBeInTheDocument();
+    // The organization is gone from the list; the page stays, because the person still exists.
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Organizations" })).toBeNull());
+    expect(screen.queryByRole("button", { name: "Remove from acme" })).toBeNull();
+    expect(router.state.location.pathname).toBe("/contacts/u2");
+    expect(calls.some((c) => c.path === "/agents/u2")).toBe(false);
+  });
+
+  it("uses the id of the organization, not its name", async () => {
+    const { calls } = api(
+      makeProfile({
+        ...bobRef,
+        memberships: [
+          globex({ can_delete: true, delete_effect: "remove" }),
+          acme({ can_delete: true, delete_effect: "remove" }),
+        ],
+      }),
+      { "DELETE /orgs/o2/members/u2": noContent },
+    );
+    const user = userEvent.setup();
+    renderRoute("/contacts/u2");
+    await user.click(await screen.findByRole("button", { name: "Remove from Globex" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Remove Bob Lima from Globex?" });
+    await user.click(within(dialog).getByRole("button", { name: "Remove from Globex" }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(1));
+    expect(calls.find((c) => c.method === "DELETE")?.path).toBe("/orgs/o2/members/u2");
+  });
+
+  it("says an AI of another organization stays in its own", async () => {
+    api({
+      ...atlas,
+      memberships: [
+        acme({ delete_effect: "delete" }),
+        globex({ permission: "guest", can_delete: true, delete_effect: "remove" }),
+      ],
     });
     const user = userEvent.setup();
     renderRoute("/contacts/a1");
-    await user.click(await screen.findByRole("button", { name: "Share Atlas" }));
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Remove from Globex" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Remove Atlas from Globex?" });
+    expect(dialog).toHaveTextContent(
+      "Atlas leaves the groups of Globex and loses its position there. Removing an AI from an organization that is not its home only takes it out of Globex: the AI itself stays, in its home organization.",
+    );
   });
 
-  it("offers neither to the profile of a user or a person", async () => {
-    api(lia);
-    renderRoute("/contacts/p1");
-    await name();
-    expect(screen.queryByRole("button", { name: /^Share / })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Delete / })).toBeNull();
+  it("cancels without sending anything", async () => {
+    const { calls } = api(bobInAcme, { "DELETE /orgs/o1/members/u2": noContent });
+    const user = userEvent.setup();
+    renderRoute("/contacts/u2");
+    await user.click(await screen.findByRole("button", { name: "Remove from acme" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+  });
+
+  it("names the organization that would be left without an admin, and stays open", async () => {
+    api(bobInAcme, {
+      "DELETE /orgs/o1/members/u2": apiError(409, "last_admin", "organization would have no admin"),
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/u2");
+    await user.click(await screen.findByRole("button", { name: "Remove from acme" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Remove from acme" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Bob Lima is the only admin of acme. Make another member an admin first.",
+    );
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("says so, and stays open to try again, when it could not be removed", async () => {
+    api(bobInAcme, { "DELETE /orgs/o1/members/u2": apiError(500, "internal", "boom") });
+    const user = userEvent.setup();
+    renderRoute("/contacts/u2");
+    await user.click(await screen.findByRole("button", { name: "Remove from acme" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Remove from acme" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Couldn’t remove Bob Lima from acme. Try again.",
+    );
+    expect(within(dialog).getByRole("button", { name: "Remove from acme" })).toBeEnabled();
+  });
+
+  it("reports an unreachable server as such", async () => {
+    api(bobInAcme, {
+      "DELETE /orgs/o1/members/u2": () => {
+        throw new TypeError("failed to fetch");
+      },
+    });
+    const user = userEvent.setup();
+    renderRoute("/contacts/u2");
+    await user.click(await screen.findByRole("button", { name: "Remove from acme" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Remove from acme" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Can’t reach the server.");
+  });
+
+  it("speaks Portuguese", async () => {
+    useLiveStore.setState({ locale: "pt-BR" });
+    api(bobInAcme, { "GET /me": json(200, makeMe({ locale: "pt-BR" })) });
+    const user = userEvent.setup();
+    renderRoute("/contacts/u2");
+    await user.click(await screen.findByRole("button", { name: "Remover de acme" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Remover Bob Lima de acme?" });
+    expect(dialog).toHaveTextContent(
+      "Bob Lima sai dos grupos de acme e perde o cargo que tem lá. Remover alguém só tira essa pessoa de acme: a conta e as outras organizações dela continuam.",
+    );
   });
 });
 

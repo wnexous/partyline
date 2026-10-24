@@ -31,9 +31,11 @@ import {
   makeIntelligence,
   makeMe,
   makeMember,
+  makeMembership,
   makeMessage,
   makeOrgAIs,
   makePerson,
+  makeProfile,
   makeRoom,
 } from "@/test/fixtures";
 import { catchUp, handleLiveEvent, type LiveActions } from "./handlers";
@@ -574,7 +576,7 @@ describe("live handlers", () => {
       expect(order()).toEqual(["r1", "r3"]);
     });
 
-    it("member changes, sharing changes and reconnects refresh the list, whose member names feed the search", async () => {
+    it("member changes, access changes and reconnects refresh the list, whose member names feed the search", async () => {
       handleLiveEvent(qc, actions(), { type: "room.members", data: { room_id: "r1" } });
       expect(stale()).toBe(true);
       seed();
@@ -957,6 +959,51 @@ describe("live handlers", () => {
     it("refreshes the contacts after a reconnect", async () => {
       qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
       await catchUp(qc);
+      expect(stale(queryKeys.contacts)).toBe(true);
+    });
+  });
+
+  describe("access.changed for an organization (OMEM-03, CHART-02)", () => {
+    const stale = (key: readonly unknown[]) => qc.getQueryState(key)?.isInvalidated;
+    const changed = () =>
+      handleLiveEvent(qc, actions(), {
+        type: "access.changed",
+        data: { resource_kind: "organization", resource_id: "o1" },
+      });
+
+    function seed() {
+      qc.setQueryData<Me>(queryKeys.me, makeMe());
+      qc.setQueryData<IntelligenceProfile>(
+        queryKeys.intelligence("u1"),
+        makeProfile({ memberships: [makeMembership()] }),
+      );
+      qc.setQueryData<IntelligenceProfile>(queryKeys.intelligence("a1"), makeProfile({ id: "a1" }));
+      qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
+      qc.setQueryData<Conversation[]>(queryKeys.conversations, [makeConversation()]);
+    }
+
+    it("refreshes the viewer's own profile, where their organizations are listed", () => {
+      seed();
+      changed();
+      expect(stale(queryKeys.intelligence("u1"))).toBe(true);
+    });
+
+    it("leaves the profile of anyone else alone", () => {
+      seed();
+      changed();
+      expect(stale(queryKeys.intelligence("a1"))).toBe(false);
+    });
+
+    it("refreshes the contacts, whose groups are the viewer's organizations, and the conversations, whose DMs are filed under shared ones", () => {
+      seed();
+      changed();
+      expect(stale(queryKeys.contacts)).toBe(true);
+      expect(stale(queryKeys.conversations)).toBe(true);
+    });
+
+    it("still refreshes the rest when the account is not cached yet", () => {
+      qc.setQueryData<Contacts>(queryKeys.contacts, makeContacts());
+      changed();
       expect(stale(queryKeys.contacts)).toBe(true);
     });
   });

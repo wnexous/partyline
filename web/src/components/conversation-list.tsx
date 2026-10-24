@@ -13,10 +13,12 @@ import { NewConversationDialog } from "@/components/new-conversation-dialog";
 import { NewGroupDialog } from "@/components/new-group-dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCurrentOrg } from "@/hooks/use-current-org";
 import { useConversations } from "@/lib/api/queries";
 import type { Conversation } from "@/lib/api/types.gen";
 import { conversationMatches, groupFace } from "@/lib/conversations";
 import { useI18n, useT } from "@/lib/i18n";
+import { inOrg } from "@/lib/orgs";
 import { formatAbsolute, formatListTime } from "@/lib/time";
 
 /*
@@ -24,6 +26,10 @@ import { formatAbsolute, formatListTime } from "@/lib/time";
  * activity first as the server and the live handlers keep it, each row with avatar, name, last
  * message, time and unread count. A row that just received a message lands on tape that settles
  * into the paper, like a new line in the timeline.
+ *
+ * The list is the current organization's (ORG-02): its groups, and each DM filed under it. While
+ * the viewer's organizations are not known it lists everything, so an unreachable profile never
+ * hides a conversation.
  */
 
 const FRESH_MS = 1_500;
@@ -60,15 +66,21 @@ export function ConversationList({
 }) {
   const t = useT();
   const conversations = useConversations();
+  const { org, loading: orgLoading } = useCurrentOrg();
   // Tracked on the whole list, so a hidden conversation that gets a message settles when shown.
   const fresh = useFreshConversations(conversations.data);
   const text = query.trim();
+  const orgId = org?.id;
+  const inCurrentOrg = useMemo(
+    () => (orgId ? (conversations.data ?? []).filter((c) => inOrg(c, orgId)) : conversations.data),
+    [conversations.data, orgId],
+  );
   const shown = useMemo(
-    () => (text ? (conversations.data ?? []).filter((c) => conversationMatches(c, text)) : null),
-    [conversations.data, text],
+    () => (text ? (inCurrentOrg ?? []).filter((c) => conversationMatches(c, text)) : null),
+    [inCurrentOrg, text],
   );
 
-  if (conversations.isPending) return <ListSkeleton />;
+  if (conversations.isPending || orgLoading) return <ListSkeleton />;
 
   // A refresh that fails keeps the list on screen; only a list that never loaded is an error.
   if (conversations.isError && !conversations.data) {
@@ -87,11 +99,18 @@ export function ConversationList({
     );
   }
 
-  if (!conversations.data || conversations.data.length === 0) {
+  if (!conversations.data || !inCurrentOrg || inCurrentOrg.length === 0) {
+    // Conversations of the other organizations are not lost: say whose list this is.
+    const elsewhere =
+      org !== undefined && conversations.data !== undefined && conversations.data.length > 0;
     return (
       <EmptyState
         icon={MessagesSquareIcon}
-        title={t("conversations.emptyTitle")}
+        title={
+          elsewhere
+            ? t("conversations.emptyInOrg", { org: org.name })
+            : t("conversations.emptyTitle")
+        }
         // The list sits beside the page, before its heading: a heading here would be out of order.
         headingLevel="p"
         className="py-8 md:py-8"
@@ -121,7 +140,7 @@ export function ConversationList({
     );
   }
 
-  const rows = shown ?? conversations.data;
+  const rows = shown ?? inCurrentOrg;
   return (
     <>
       {/* Heard by screen readers as the search narrows the list; the nothing-found case speaks for itself. */}

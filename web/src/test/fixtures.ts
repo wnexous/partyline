@@ -11,6 +11,7 @@ import type {
   Me,
   Message,
   OrgAIs,
+  ProfileMembership,
   Room,
   RoomMember,
 } from "@/lib/api/types.gen";
@@ -272,6 +273,22 @@ export function makeProfile(over: Partial<IntelligenceProfile> = {}): Intelligen
     conversations: [],
     memberships: [],
     can_end_session: false,
+    ...over,
+  };
+}
+
+/**
+ * One organization of an identity's profile: Acme, as a `member` with no position, and nothing the
+ * viewer may do about it, unless overridden.
+ */
+export function makeMembership(over: Partial<ProfileMembership> = {}): ProfileMembership {
+  return {
+    org_id: "o1",
+    org_name: "Acme",
+    org_slug: "acme",
+    permission: "member",
+    can_delete: false,
+    delete_effect: "remove",
     ...over,
   };
 }

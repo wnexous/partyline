@@ -1140,8 +1140,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `useCurrentOrg`, `add-connector-dialog.tsx`
 **Requirement**: ORG-03, ORG-07, OMEM-04
 **Done when**:
-- [ ] Vitest: a member sees read-only fields and no queue text; an admin changes the operator among the org's AIs; no sharing control remains
-- [ ] Gate check passes: `make check`
+- [x] Vitest: a member sees read-only fields and no queue text; an admin changes the operator among the org's AIs; no sharing control remains
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): show connections as organization resources`
@@ -1154,12 +1154,12 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `MemberPicker`, `useCurrentOrg`
 **Requirement**: ORG-03, OMEM-04, ORG-02
 **Done when**:
-- [ ] Vitest:
+- [x] Vitest:
   - creating sends `org_id`, and changing the org reloads the picker;
   - a guest org is absent from the select;
   - the sidebar hides a group of another org;
   - it shows a DM with a colleague of the selected org and hides a DM with someone of another org only
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): create groups in an organization`
@@ -1172,12 +1172,12 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `delete-ai-dialog.tsx`, `alert-dialog`
 **Requirement**: POS-04, POS-05, POS-06
 **Done when**:
-- [ ] Vitest through the route (L-007):
+- [x] Vitest through the route (L-007):
   - a non-manager sees no actions;
   - a manager ends a session (API called);
   - an admin sees "Remove from acme" for a person, and the dialog text (removal only, the account stays) is asserted literally;
   - no machine row renders
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): let managers act on identities below them`
@@ -1190,8 +1190,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `machine-group.tsx`
 **Requirement**: OMEM-03
 **Done when**:
-- [ ] Vitest: two orgs render two groups with their AIs; an empty org group is hidden; no hostname or machine label renders
-- [ ] Gate check passes: `make check`
+- [x] Vitest: two orgs render two groups with their AIs; an empty org group is hidden; no hostname or machine label renders
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): group contacts by organization`
@@ -1204,10 +1204,10 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `select`
 **Requirement**: ORG-04, POS-06
 **Done when**:
-- [ ] Vitest:
+- [x] Vitest:
   - the select shows the current default; changing it calls the API; an error toast shows on 403;
   - delete account: a wrong password (422) shows inline; 409 `last_instance_admin` shows its message; success logs out
-- [ ] Gate check passes: `make check`
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): default organization and account deletion settings`
@@ -1220,9 +1220,9 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: none
 **Requirement**: ORG-02
 **Done when**:
-- [ ] `rg -n "sharing|Visibility" web/src` finds only generated types
-- [ ] Room page tests updated: no sharing control
-- [ ] Gate check passes: `make check`
+- [x] `rg -n "sharing|Visibility" web/src` finds only generated types
+- [x] Room page tests updated: no sharing control
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `refactor(web): drop per-resource sharing`

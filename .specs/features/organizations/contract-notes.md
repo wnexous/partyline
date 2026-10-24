@@ -1243,3 +1243,223 @@ Every section above is kept as its task wrote it. This one records what the merg
   `CreateWithMembers` now records `creator.IID()`: the same for a user, the AI itself for an AI. `instructions_by` stays the user, since
   no route gives an AI's group instructions. `TestTheTextOfAGroupAnAICreatesIsTrustedOnlyWhenThatAIManagesTheRecipient` pins it (a
   sibling and an AI the target manages are untrusted, an AI above the target's creator is trusted; recording the host fails it).
+
+## T45: Connection pages owned by the organization (ORG-03, ORG-07, OMEM-04)
+
+Phase 9 runs on a base without Phase 3 (the organization API, T12-T17) and without Phase 8 (T39-T44). It therefore
+reads only what the merged phases serve. The minimal shared pieces below are what T45-T49 need of T39; **Phase 8 reuses
+them** (T39 may replace the source of `useMyOrgs` by `GET /orgs`, and adds the switcher UI on top of `useCurrentOrg`).
+
+- **`useMyOrgs()`** (`web/src/lib/api/queries.ts`): the viewer's organizations, each with their permission and position,
+  `MyOrg{id, name, slug, permission, position?}` (`web/src/lib/orgs.ts`). The source is `memberships` of **the viewer's own
+  profile** (`GET /intelligences/{me.intelligence.id}`, T25: "all of its own when the caller is the identity"), through the
+  profile's cache entry (`queryKeys.intelligence`), so the settings page and this read cost one request. It is not
+  `GET /orgs` because that route is Phase 3's. Order: the server's (by organization name).
+- **`useCurrentOrg()`** (`web/src/hooks/use-current-org.ts`) returns `{org, orgs, loading, select}`. `org` resolves, in
+  order, to the organization the viewer picked (`useLiveStore.currentOrgId`, kept in `localStorage` under **`pl.org`**, every
+  access wrapped in try/catch by `readStorage`/`writeStorage`), the account's default (`me.default_org_id`, read through
+  `defaultOrgIdOf` because `Me` gains it with T17 and this branch does not have it yet), then the first of `orgs`. A pick or
+  default the viewer no longer belongs to counts for nothing. `org` is `undefined` while the organizations load, when they
+  failed to load and for a viewer who belongs to none: **every consumer then behaves as before this feature** (no filtering,
+  server decides), so an unreachable profile never hides data.
+- **`select(id)`** is `useLiveStore.setCurrentOrg`; there is no UI for it yet (the switcher is T39). Until then the pick is
+  the default.
+- **Pure helpers** (`web/src/lib/orgs.ts`): `isAdminOf`, `canCreateGroupsIn` (admin or member, never a guest, OMEM-04),
+  `resolveCurrentOrg`, `inOrg(conversation, orgId)` (a conversation filed under **no** organization belongs to every one),
+  `toMyOrgs`, `defaultOrgIdOf`.
+- **Live**: `access.changed` with `resource_kind: "organization"` (T32) invalidates the viewer's own profile (their
+  organizations), the contacts and the conversations list (DMs are filed under shared organizations). T39 adds the
+  organization pages' own queries to the same branch of `handlers.ts`.
+- **Fixtures**: `makeMembership()` (a `ProfileMembership`, Acme `member`).
+
+Connections:
+
+- **List** (`connectors/index.tsx`): only the current organization's connections (`org_id`), by name. While the organizations
+  are loading the page shows its skeleton; when they are unknown or empty it lists every connection and offers to add one.
+  "Add connector" is offered when the viewer administers at least one organization (or the organizations are unknown); a
+  viewer who administers none sees the empty state "Nothing is connected in {org} yet. Its admins add connections." and no
+  button. The owner label ("by @user") is gone: the organization owns the connection (AD-019).
+- **Add dialog**: an "Organization" select, listing only the organizations the viewer **administers** (ORG-03); it starts on
+  the current one when the viewer administers it, else on the first they administer, and the request carries `org_id`. With the
+  organizations unknown no select is shown and no `org_id` is sent (the server uses the creator's default). A 403 reads "Only
+  admins of the organization can add connections."
+- **Detail page**: names the organization ("Organization: Acme", from `useMyOrgs`), has no sharing control, no owner label.
+  Admins (`my_level: manage`) edit, enable, change the operator and delivery, delete; every other member reads the operator, the
+  delivery settings and **how many** messages wait (never their text, CID-23). The operator choices are the AIs whose home is
+  the connection's organization (ORG-07, unchanged from T28). A 403 on the operator reads "Only admins of the connection’s
+  organization can change its operator."
+- **Texts changed** (en and pt-BR): `page.connectorsBody`, `connector.notFoundBody`, `connector.noOperatorReadOnly` ("An admin
+  of the organization chooses the operator."), `connector.operatorForbidden`; new `connectors.org`, `connectors.orgHint`,
+  `connectors.emptyReadOnly`, `connectors.addForbidden`, `connector.org`.
+- **Tests**: `connectors.test.tsx` (list scoped to the organization and following the pick, unknown organizations, the empty
+  states, adding for admins only with the select and `org_id`, the read-only member view, the operator among the organization's
+  AIs, no sharing control), `use-current-org.test.tsx`, `lib/orgs.test.ts`, the `access.changed` organization cases of
+  `handlers.test.ts`, and an axe test of the add dialog (en and pt-BR).
+
+
+## T46: New group dialog with an organization and the sidebar filter (ORG-03, OMEM-04, ORG-02)
+
+- **Organization select** (`components/org-select.tsx`, shared with the connection dialog of T45): a native select with a label and a
+  hint, listing the organizations in which the viewer can **create groups**: `admin` or `member`, never a `guest` (OMEM-04,
+  `canCreateGroupsIn`). It starts on the pick the viewer made, else the current organization when they can create there, else the
+  first they can. The request carries `org_id`. While the viewer's organizations are unknown (loading, failed, none) there is no
+  select and no `org_id` is sent: the server uses their default and decides, as before this feature. A viewer who is a guest in
+  **every** organization sees "You’re a guest in every organization you belong to, and guests can’t create groups." instead of the
+  form, and "Create group" is disabled.
+- **Members offered** (`pickables(contacts, orgId)`, `lib/contacts.ts`): the **AIs that are members of the organization**
+  (`org_ais[org]`, whatever their permission; the hosted AIs no organization lists are never offered), and **every other user of
+  the instance**. `MemberPicker` (adding to an existing group) offers the same, scoped by the room's `org_id` read from the cached
+  room (`useRoom`); a room that fails to load leaves the AIs unscoped.
+  - **Deviation / gap for the integration.** The contacts say which AIs belong to an organization but not which users do, and
+    `GET /orgs/{org}/members` (T14, Phase 3) is not in this branch. So the users are the instance's directory and the **server's
+    rule decides**: a user who is not a member of the organization is refused with 422 `members_refused`, reason `not_org_member`
+    (T23), and the dialog names them ("Bob Lima: not a member of Acme"), marks their rows and keeps everything else. **When T39's
+    members query exists, replace the `users` of `pickables(contacts, orgId)` by the organization's user members** (and drop the
+    refusal's role as the only guard); nothing else in the dialog changes.
+- **Changing the organization** reloads the offer: the AIs of the new organization replace the old ones, a pick that is not offered
+  there goes (users stay), and a refusal or message about the old choice is cleared.
+- **Messages**: 403 reads "Only members and admins of {org} can create groups in it." (shown only when the dialog knows the
+  organization); 422 `organization_required` reads "You’re not in any organization yet. Create or join one first."; the
+  `not_org_member` refusal reads "not a member of {org}" ("not a member of the group’s organization" if the organization is
+  unknown). New keys, en and pt-BR: `newGroup.org`, `newGroup.orgHint`, `newGroup.refusedNotOrgMember`,
+  `newGroup.refusedNotOrgMemberUnknown`, `newGroup.forbidden`, `newGroup.guestOnly`, `newGroup.noOrg`, `conversations.emptyInOrg`.
+- **After creating** in an organization other than the current one, the dialog calls `select(org.id)` (`useCurrentOrg`): the list is
+  the current organization's, so the group the viewer is taken to would otherwise be missing from it.
+- **Sidebar** (`ConversationList`, which is also the phone's home screen): lists the conversations filed under the current
+  organization (`inOrg`: a group's organization; a DM is filed under the organizations both sides belong to, or under the
+  viewer's default when they share none, T56) and hides the rest; one filed under **no** organization is listed everywhere. The
+  search (LAY-03) looks among those only. While the organizations load the list is its skeleton, so another organization's
+  conversations never flash first; when they are unknown it lists everything. When only other organizations have conversations the
+  empty state says "No conversations in {org} yet" and still offers both ways to start one. A live `room.changed` frame that
+  changes a row's `org_ids` moves it in or out (T56). **Not filtered**: the command palette (a jump-anywhere search over everything
+  the viewer can reach) and the unread totals (T39's switcher counts per organization).
+- **Test helpers**: `test/orgs.ts` (`memberIn(org, permission)`, `viewerIn(...memberships)`) serves the viewer's own profile, which is
+  where the app reads their organizations.
+- **Tests**: `new-group-dialog.test.tsx` (the select and its options, the start, `org_id`, reloading the picker, the refusals and
+  the 403, following the group, guest everywhere, waiting for the organizations, unknown organizations, `organization_required`,
+  Portuguese), `conversation-list.test.tsx` (groups and DMs of the organization, a DM shared by two organizations, none, unknown,
+  waiting, the empty states, search, live frame, Portuguese), `member-picker.test.tsx`, `lib/contacts.test.ts` and an axe test of
+  the dialog with the select (en and pt-BR).
+
+## T47: Profile memberships and manager actions (POS-04, POS-05, POS-06)
+
+What the viewer may do about an identity comes from its profile only (T25): `memberships[].can_delete` / `delete_effect` and
+`can_end_session`. The page adds no rule of its own.
+
+- **Organizations** (`contacts.$id.tsx`, a region "Organizations", hidden when `memberships` is empty): one row per organization the
+  viewer shares with the identity (all of its own on the viewer's own profile) with the organization's name, the permission (Admin,
+  Member, Guest) and the position held, and a "Home organization" tag where `delete_effect` is `"delete"` (an AI's home, POS-06).
+  An unknown permission string is shown as it came.
+- **Delete / Remove from**, per row, only where `can_delete` is true:
+  - `delete_effect: "delete"` -> "Delete" (accessible name "Delete {name}") opens `DeleteAIDialog` (`DELETE /agents/{id}`, then back to
+    the contacts). Its text no longer mentions sharing: "It leaves every group and organization, its direct messages are deleted and
+    the connections it operates are left without an operator. A session that starts again in its folder creates a new AI." A 409
+    `last_admin` (the AI is the only admin of an organization) reads "{name} is the only admin of an organization. Make another member
+    an admin first."
+  - `delete_effect: "remove"` -> "Remove from {org name}" opens `RemoveFromOrgDialog` (`DELETE /orgs/{org_id}/members/{iid}`, by the
+    organization's **id**). It says what stays, literally: for a person "{name} leaves the groups of {org} and loses their position
+    there. Removing someone only takes them out of {org}: their account and their other organizations stay."; for an AI "... loses
+    its position there. Removing an AI from an organization that is not its home only takes it out of {org}: the AI itself stays, in
+    its home organization.". Failures are told inside the dialog, which stays open: `last_admin` ("{name} is the only admin of {org}.
+    Make another member an admin first."), an unreachable server, anything else ("Couldn't remove {name} from {org}. Try again."). On
+    success a toast, and the identity's profile, the contacts and the conversations are marked stale: the row is gone, the page stays.
+- **End session** (header, AIs only): shown when `can_end_session` is true **and** the AI is online (live presence over `ai.online`;
+  the flag alone does not look at it, T25). It asks first ("End {name}'s session?" - "The session stops and {name} goes offline.
+  {name} is not deleted and can connect again."), then `DELETE /agents/{id}/session`; a toast on success and on failure.
+- **Edit** is the editor that was already on the page, shown to `can_edit`: not a new button. **Merge** is unchanged (an AI the
+  viewer hosts and manages, with another of theirs in the same home organization).
+- **Removed from the page**: the sharing dialog and its button (`profile.share`); the machine row went with T25 and a test pins that
+  none renders; the label "Owner" of an AI's host is now "Hosted by" (the organization owns the AI, AD-019).
+- **Queries added** (`queries.ts`): `useEndSession`, `useRemoveFromOrg({orgId, iid})`. Phase 8's members page and chart can use
+  `useRemoveFromOrg` for their "Remove from {org}" action.
+- **Existing tests changed**: in `profile.test.tsx` the three sharing cases of "managing an AI" (offering sharing to the owner,
+  opening the sharing dialog) are replaced by the cases above, which also assert that nothing offers sharing; the delete case now
+  starts from the profile's flags.
+- **Texts** (en and pt-BR): `profile.orgs`, `profile.homeOrg`, `profile.permissionAdmin|Member|Guest`, `profile.removeFrom`,
+  `profile.removeTitle`, `profile.removeBodyPerson`, `profile.removeBodyAI`, `profile.removed`, `profile.removeFailed`,
+  `profile.removeLastAdmin`, `profile.endSession`, `profile.endTitle`, `profile.endBody`, `profile.ended`, `profile.endFailed`,
+  `ai.deleteLastAdmin`; changed `ai.deleteBody`, `profile.owner`; removed `profile.share`.
+- **Tests**: `profile.test.tsx` (the list, home tag, nothing shared, own profile, a non-manager with no action at all, Delete vs Remove
+  per flag, no machine row, "Hosted by", no sharing, ending a session with confirmation / cancel / failure / live presence / flag /
+  AI-only, deleting and `last_admin`, removing with the literal dialog texts, by id, cancel, `last_admin`, failure, unreachable
+  server, Portuguese), and axe tests of the profile with its organizations (desktop and phone) and of both dialogs (en and pt-BR).
+
+## T48: Contacts grouped by organization (OMEM-03)
+
+- **Nothing was left to build.** T28's web bridge already made the page what T48 asks: one section per organization the viewer belongs
+  to, in the server's order (by name), with its AIs; an organization with no AI is not listed; the AIs the viewer hosts that no
+  organization lists are a "Hosted by me" section (merge and delete live there); there is no "Shared AIs" section and no machine ›
+  folder tree; `machine-group.tsx` and the machine rename mutation were deleted. The page lists **every** organization of the viewer,
+  not only the current one (T45): the contacts are where AIs are found across organizations.
+- **What T48 adds is the proof, and a cleanup.** `contacts.test.tsx` already had the Done-when cases (two organizations render two
+  groups with their AIs; an empty one is left out; no hostname or machine label renders). The last one used a fixture that could not
+  carry a hostname, so it could not fail. A new case serves a payload as a server of the machine-tree days would (`machines`, `shared`,
+  and a hostname and label on every AI) and asserts that nothing of it renders and that the organizations are the only sections. The
+  stale comment above `contactsQuery` (the machine tree, shared AIs) now describes what the query returns.
+- **For T50**: the comment on the `access.changed` branch of `handlers.ts` still talks of sharing ("Sharing decides the shared AIs...");
+  T50 rewrites every mention of sharing in `web/src`.
+
+## T49: Default organization setting (ORG-04, POS-06)
+
+- **Default organization** (`DefaultOrgSection`, a section of `settings.tsx`): a select named "Default organization for new AIs" under the
+  heading "Default organization" ("New AIs you start join it, unless you start them with --org."). It lists **every** organization the
+  viewer belongs to, guest ones included (`useMyOrgs`; T9's `SetDefault` takes a member with any permission), and shows the account's
+  default (`me.default_org_id`, read through `defaultOrgIdOf`). An account with no default, or one the viewer no longer belongs to, shows a
+  disabled "Choose an organization" instead of guessing the server's fallback. Choosing sends `PUT /me/default-org` `{org_id}` (the id,
+  `useSetDefaultOrg`), disables the select while it runs and, on success, writes `default_org_id` into the cached account and says "New AIs
+  now join {org}". A 403 reads "You can only choose an organization you belong to.", any other failure "Couldn't change the default
+  organization. Try again."; both put the select back on the old default. The same value again sends nothing. The section is a skeleton while
+  the organizations load and absent when the viewer has none (or they could not be read).
+- **Depends on Phase 3 (T17), which this branch does not have.** `PUT /api/v1/me/default-org` and `default_org_id` on `GET /me` are T17's.
+  On this branch alone the PUT answers 404 and the account has no default, so the select starts on "Choose an organization" and a choice
+  ends in the failure toast; the page needs **no change** once T17 is merged. What the web assumes of T17, from the design: the body
+  `{org_id}`, any 2xx accepts it (the response body is ignored), 403 is "not a member", and `me.default_org_id` carries the default. The
+  request and the field are typed locally (the literal body of `useSetDefaultOrg`, `MeWithDefaultOrg` in `lib/orgs.ts`, T45): **after the
+  merge, type them with the generated DTOs** if tygo produces them.
+- **Delete account** (`DeleteAccountSection`): a section "Delete account" with the button "Delete my account", which opens a dialog with the
+  password field and, literally: "Your account, your sessions and tokens and your direct messages are deleted for good. Your AIs, groups and
+  connections stay in their organizations: your AIs go offline, and an admin of their organization can delete them. This can’t be undone."
+  (what T20 does: the hosted AIs become unlinked identities that stay offline, the groups and connections are re-pointed to the heir, the
+  messages stay). `DELETE /me` `{password}` (`useDeleteAccount`): **204** clears the cache, shows "Your account was deleted" and goes to the
+  login page; **422** with the `password` field shows the server's reason under the field and keeps the dialog; **409 `last_instance_admin`**
+  reads "You’re the only admin of this instance. Make another user an admin before deleting your account."; an unreachable server and any
+  other failure say so inside the dialog. An empty password is refused before asking the server ("Required"). The request is sent once while it
+  runs, cancel sends nothing, and every opening starts with an empty password.
+- **Texts** (en and pt-BR): `account.defaultOrg`, `account.defaultOrgBody`, `account.defaultOrgLabel`, `account.defaultOrgNone`,
+  `account.defaultOrgSaved`, `account.defaultOrgForbidden`, `account.defaultOrgFailed`, `account.delete`, `account.deleteBody`,
+  `account.deleteOpen`, `account.deleteTitle`, `account.deleteDialogBody`, `account.deleteConfirm`, `account.deleteLastAdmin`,
+  `account.deleted`.
+- **Tests**: `settings.test.tsx` (the options and the current default, the hint, changing with the id, the cache, 403 / other failures with the
+  select going back, no resend, no default, a default the viewer left, no organizations, Portuguese; the dialog's wording, no password, 422,
+  409, success with the request body, the cache and the login page, one request at a time, cancel, reopening, 500 and unreachable server,
+  Portuguese) and axe tests of the page and the dialog (en and pt-BR).
+
+## T50: Remove the sharing UI (ORG-02)
+
+- **Deleted**: `sharing-dialog.tsx` and its test, `room-visibility.tsx`, `useSharing`, `useUpdateSharing`, `queryKeys.sharing` and the
+  `SharingResource` type of `queries.ts`; the Share button of the room page (`rooms/$roomId.tsx`); the private / shared / public label
+  of the group header (`conversation-header.tsx`, which now shows a group's description under its name and nothing when it has
+  none); the i18n keys `sharing.*` (34), `rooms.visibility.*` (3) and `room.share`, in en and pt-BR.
+  `rg -n "sharing|Visibility" web/src` now finds only `types.gen.ts`, as the Done-when asks. To get there, the words also left three test
+  titles and a page-visibility helper of the tests (`setVisibility` -> `setTabState`: it sets the browser tab's `visibilityState`, not a room's).
+- **Server side stays until T51**: the `/sharing` routes and their DTOs, `Room.visibility` and the `Sharing`/`Visibility` types in
+  `types.gen.ts` are inert and untouched; nothing in the web app reads or writes them any more. `makeRoom` still sets `visibility` because the
+  generated `Room` requires it.
+- **Wording that described sharing and was rewritten**: the merge dialog ("its conversations, history, connections and organizations", it said
+  "sharing"), the add-members dialog ("The AIs of this group's organization and the users of this instance. Only members of the organization
+  can join."; it said "AIs and users you own or that were shared with you", which T46 had made false), the comments of the `access.changed`
+  branch of `handlers.ts`, and the comments of `useMergeAgent` and `MergeAIDialog`.
+- **Tests**: `room.test.tsx` (the "room sharing entry" case becomes "a room is not shared one by one": a manager has the room settings and
+  no Share button, nor does a member who only posts), `conversation.test.tsx` (the group header shows no private / shared / public label and
+  does show a description), `member-picker.test.tsx` (the new description). The whole web suite and the build pass without the files.
+- **Left alone, for T54 / T55 or the owner of the page**: wording about the old model that is not a sharing control - `pairing.sharedBy`
+  ("{platform} · shared by {owner}") and the empty text of the pairing dialog (identities page), `invites.memberHint` ("... they own or that are
+  shared with them"), and the comment of `useChats` ("owned or shared connectors"). `web/e2e/smoke.spec.ts` still shares a room with
+  `PUT /rooms/{id}/sharing` (T54 reworks the Playwright flows).
+- **Playwright (`make e2e`, before this last Phase 9 commit)**: the suite stops at the UI-04 test, which shares a room with
+  `PUT /rooms/{id}/sharing` (inert since T22, as T57 noted) so its viewer never sees the room; the file is serial, so the 16 runs after it
+  do not run. T54 reworks it and was not touched. Run with that one test excluded (`playwright test --grep-invert UI-04`) the other nine
+  flows pass at 1280 and 360 px: first run, connect an agent, approve a machine, the messenger, a DM with an AI, **creating a group from
+  the list** (the new dialog against the real server), the contacts page by organization, the profile photo, and the no-sideways-scroll
+  check on `/`, a room, the contacts, the viewer's own profile (now with its Organizations section), the connections and the settings (now
+  with the default organization and the account deletion).

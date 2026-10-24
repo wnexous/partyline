@@ -7,7 +7,6 @@ import {
   PauseIcon,
   PlusIcon,
   Settings2Icon,
-  Share2Icon,
   UsersRoundIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -27,7 +26,6 @@ import { type MessageFocus, MessageTimeline } from "@/components/message-timelin
 import { ParticipantList } from "@/components/participant-list";
 import { RoomFiles } from "@/components/room-files";
 import { RoomSettingsSheet } from "@/components/room-settings-sheet";
-import { SharingDialog } from "@/components/sharing-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -153,20 +151,6 @@ function RoomPage() {
               >
                 <FilesIcon aria-hidden="true" />
               </Button>
-              {canManage ? (
-                <SharingDialog
-                  kind="rooms"
-                  id={r.id}
-                  name={r.name}
-                  owner={r.owner}
-                  trigger={
-                    <Button variant="ghost" size="sm" aria-label={t("room.share")}>
-                      <Share2Icon aria-hidden="true" />
-                      <span className="hidden sm:inline">{t("room.share")}</span>
-                    </Button>
-                  }
-                />
-              ) : null}
               {canManage ? (
                 <RoomSettingsSheet
                   room={r}

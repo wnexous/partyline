@@ -510,14 +510,24 @@ describe("delete room (ROOMDEL-01, ROOMDEL-02)", () => {
   });
 });
 
-describe("room sharing entry (UI-11)", () => {
-  it("opens the sharing dialog for this room", async () => {
-    roomApi({}, { "GET /rooms/r1/sharing": json(200, { mode: "private", users: [] }) });
-    const user = userEvent.setup();
+/*
+ * A group is its organization's (ORG-02): who can read it is who is in the room, and who runs it is
+ * its creator and the organization's admins. Nobody shares it one by one.
+ */
+describe("a room is not shared one by one (ORG-02)", () => {
+  it("has settings for whoever manages it and no way to share it", async () => {
+    roomApi({ my_level: "manage" });
     renderRoute("/rooms/r1");
-    await user.click(await screen.findByRole("button", { name: "Share" }));
-    const dialog = await screen.findByRole("dialog", { name: "Share deploys" });
-    expect(await within(dialog).findByRole("radio", { name: /Private/ })).toBeChecked();
+    await screen.findByTestId("member-mb-bot");
+    expect(screen.getByRole("button", { name: "Room settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Share/ })).toBeNull();
+  });
+
+  it("has none for a member who only posts either", async () => {
+    roomApi({ my_level: "post" });
+    renderRoute("/rooms/r1");
+    await screen.findByTestId("member-mb-bot");
+    expect(screen.queryByRole("button", { name: /Share/ })).toBeNull();
   });
 });
 
