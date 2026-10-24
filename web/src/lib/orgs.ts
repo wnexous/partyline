@@ -11,6 +11,15 @@ import type { MessageKey, Translate } from "@/lib/i18n";
 /** The longest an organization's name may be (ORG-01) and a position's (POS-01), in characters. */
 export const MaxOrgNameLength = 100;
 export const MaxPositionNameLength = 60;
+/** The longest an organization's address (slug) may be, and its shape: groups of a-z0-9 joined by single hyphens. */
+export const MaxOrgSlugLength = 40;
+const ORG_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** The address as the server reads it: no spaces around it, lower case. */
+export const normalizeSlug = (text: string) => text.trim().toLowerCase();
+
+/** Whether a normalized address is one the server accepts (1 to 40 characters). */
+export const isOrgSlug = (slug: string) => slug.length <= MaxOrgSlugLength && ORG_SLUG.test(slug);
 
 /** The three permissions of a membership (OMEM-04). */
 export const PermissionAdmin = "admin";
@@ -140,4 +149,26 @@ export function userMembers(members: readonly OrgMember[], viewerId?: string): I
       if (x !== y) return x < y ? -1 : 1;
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
+}
+
+/**
+ * What an organization still owns, in words, from the `details` of a 409 `organization_not_empty`
+ * (ORG-06): "2 AIs, 1 connection, and 3 groups", leaving out what it has none of. Nothing when the
+ * server named no counts.
+ */
+export function ownedThings(
+  t: Translate,
+  locale: string,
+  details: Record<string, string> | undefined,
+): string | null {
+  const count = (key: string) => Math.max(0, Number.parseInt(details?.[key] ?? "", 10) || 0);
+  const parts: string[] = [];
+  const add = (n: number, one: MessageKey, many: MessageKey) => {
+    if (n > 0) parts.push(t(n === 1 ? one : many, { count: n }));
+  };
+  add(count("agents"), "orgs.ownsAgentsOne", "orgs.ownsAgentsMany");
+  add(count("connectors"), "orgs.ownsConnectorsOne", "orgs.ownsConnectorsMany");
+  add(count("groups"), "orgs.ownsGroupsOne", "orgs.ownsGroupsMany");
+  if (parts.length === 0) return null;
+  return new Intl.ListFormat(locale, { style: "long", type: "conjunction" }).format(parts);
 }

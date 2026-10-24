@@ -1065,8 +1065,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: avatar upload component, `inline-rename.tsx`
 **Requirement**: OMEM-04, ORG-06, OMEM-05
 **Done when**:
-- [ ] Vitest: a member sees no edit controls; an admin renames; delete with a 409 shows the counts; leave with `last_admin` shows the message
-- [ ] Gate check passes: `make check`
+- [x] Vitest: a member sees no edit controls; an admin renames; delete with a 409 shows the counts; leave with `last_admin` shows the message
+- [x] Gate check passes: `make check`
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(web): organization settings`

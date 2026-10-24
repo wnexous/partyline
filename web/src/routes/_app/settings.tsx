@@ -8,6 +8,7 @@ import { FormAlert, TextField } from "@/components/form-fields";
 import { LOCALE_NAMES, useChooseLocale } from "@/components/language-switch";
 import { NativeSelect } from "@/components/native-select";
 import { PageHeader } from "@/components/page-header";
+import { PageSection as Section } from "@/components/page-section";
 import { ProfileEditor } from "@/components/profile-editor";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,30 +74,6 @@ function SettingsPage() {
         <DeleteAccountSection />
       </div>
     </>
-  );
-}
-
-function Section({
-  id,
-  title,
-  description,
-  children,
-}: {
-  id: string;
-  title: string;
-  description?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section aria-labelledby={id} className="grid gap-4 py-7 md:grid-cols-[12rem_1fr] md:gap-8">
-      <div className="space-y-1">
-        <h2 id={id} className="font-semibold tracking-[-0.01em]">
-          {title}
-        </h2>
-        {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
-      </div>
-      <div className="min-w-0">{children}</div>
-    </section>
   );
 }
 

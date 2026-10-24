@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { BuildingIcon, PlusIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";
@@ -128,6 +128,15 @@ function OrgRow({
           </Badge>
         </p>
       </div>
+      <Button asChild variant="ghost" size="sm" className="shrink-0">
+        <Link
+          to="/orgs/$orgId/settings"
+          params={{ orgId: org.id }}
+          aria-label={t("orgs.settingsLink", { org: org.name })}
+        >
+          {t("orgs.tabSettings")}
+        </Link>
+      </Button>
       {current ? (
         <Badge variant="outline" className="shrink-0">
           {t("orgs.current")}

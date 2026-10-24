@@ -1835,3 +1835,45 @@ requests) are exactly what is committed on `wnexous/pl-org-p3`. The rest is mark
   failure, one answer at a time, refresh on open, the live refresh, the four grant texts literally, an AI's invitation and both
   together, Portuguese, axe in both locales and with no organization). Existing assertions updated for the new entry:
   `messenger-shell.test.tsx` (the account menu's destinations) and `command-menu.test.tsx` (the pages the palette finds).
+
+## T41: Organization settings page (OMEM-04, ORG-06, OMEM-05)
+
+- **The organization's pages share a layout** (`routes/_app/orgs/$orgId/route.tsx`, new): `GET /orgs/{orgId}` (`useOrg`) decides what
+  is shown for every page of the organization. **404 (not a member, CHART-02): "This organization is not on your line"**, "It was
+  deleted, or you are not a member of it." and a link back to the list, for any page of it; any other failure: an alert with a retry;
+  while loading, a skeleton. Otherwise the **bar** (`data-testid="org-bar"`): a link back to the list, the picture, the name, the address
+  and the viewer's part in it (Admin, Member, Guest), then the sections as a `nav` named "Sections of {name}" (T41: Settings; T42-T44
+  add Members, Positions, Org chart). `{orgId}` may be the id or the address: once the organization is read, an address in the URL is
+  replaced (history replace) by the id, which every page and the live refresh key on. `/orgs/{id}` redirects to the first page there is
+  (T41: settings; T44 makes it the chart). The list of organizations (T40) links each row to "Settings of {name}".
+- **The page** (`orgs/$orgId/settings.tsx`): "Organization settings", then three sections. All text and behaviour below is for the
+  viewer's own permission as `GET /orgs/{org}` reports it.
+  - **Details**: an admin gets the **photo** (`PhotoEditor`, new shared component extracted from the profile editor with the behaviour
+    unchanged: sent at once, a preview, the server's refusal, remove) and a form with the **name** and the **address**. Only what
+    changed is sent (`PATCH /orgs/{org}`); "Save" is disabled until something changed; the answer replaces the cached organization and
+    the bar. The name is 1-100 characters counted in characters; the address is trimmed and lower-cased, 1-40 characters of a-z0-9 in
+    groups joined by single hyphens (`isOrgSlug`, the server's rule), both refused before any request with the messages "Required",
+    "At most 100 characters", "Use lowercase letters, digits and single hyphens, up to 40 characters.". The server's 422 reason shows
+    under its field; **409 `conflict` is "That address is already taken."** under the address; 403 (demoted meanwhile) "Only admins of
+    {org} can change it."; a lost connection says so. A member or guest sees the same facts as plain text (the picture, the name, the
+    address), with no field, no upload and no Save, and "Only admins of {org} change these.".
+  - **Leave organization** (everyone): "Leave {org}" asks first ("You leave the groups of {org} and lose your position there. Your
+    account and your other organizations stay."), then `DELETE /orgs/{org}/members/{viewer}` (`useRemoveFromOrg`), goes to the list
+    and says "You left {org}". **409 `last_admin`** stays in the dialog: "You're the only admin of {org}. Make another member an
+    admin first."; any other failure "Couldn't leave {org}. Try again.".
+  - **Delete organization** (admins only; the section does not exist for anyone else): asks first ("{org} is deleted for good, with
+    its positions and pending invitations. It must not own any AI, connection or group: delete those first. This can't be undone."),
+    then `DELETE /orgs/{org}`, goes to the list and says "{org} deleted". **409 `organization_not_empty` shows the counts from
+    `details`** (`ownedThings`): "{org} still owns 2 AIs, 1 connection, and 3 groups. Delete them first." (zero counts left out, one
+    in the singular, the list in the viewer's language through `Intl.ListFormat`); without counts "{org} still owns AIs, connections
+    or groups. Delete them first."; 403 "Only admins of {org} can delete it.". The dialog stays open on every failure.
+- **Shared pieces**: `PhotoEditor` (`components/photo-editor.tsx`; the profile editor is now a thin wrapper, its tests unchanged),
+  `PageSection` (`components/page-section.tsx`, the settings page's section block), `OrgAvatar` gains `xl`, `lib/orgs.ts` gains
+  `MaxOrgSlugLength`, `normalizeSlug`, `isOrgSlug`, `ownedThings`, `schemas.ts` gains `updateOrgSchema`.
+- **Texts** (en and pt-BR): `orgs.backToList|sections|notFound*|orgLoadError|settingsLink`, `orgs.tabSettings|settingsTitle|
+  settingsBodyAdmin|Member`, `orgs.details|detailsBody|slug|slugHint|save|saved|slugTaken|saveForbidden`, `validation.orgSlug`,
+  `orgs.leave*|left`, `orgs.delete*|deleted`, `orgs.notEmpty|notEmptyUnknown`, `orgs.owns{Agents,Connectors,Groups}{One,Many}`.
+- **Tests**: `orgs/org-settings.test.tsx` (40: admin vs member vs guest views, the bar, renaming and the address with every
+  refusal (six malformed addresses, 40 characters), the server's reasons, the photo, leaving, deleting with the literal texts and
+  every count combination, the 404 and failure of the layout, the address-to-id replacement, the redirect of `/orgs/{id}`, the link
+  from the list, Portuguese, axe for an admin, a member, both dialogs and Portuguese).

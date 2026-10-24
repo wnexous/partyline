@@ -1,25 +1,23 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { type ChangeEvent, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { FormAlert, TextAreaField, TextField } from "@/components/form-fields";
 import { IntelligenceAvatar } from "@/components/intelligence/intelligence-avatar";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { PhotoEditor } from "@/components/photo-editor";
+import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
 import { isApiError } from "@/lib/api/client";
 import { useRemoveAvatar, useUpdateIntelligence, useUploadAvatar } from "@/lib/api/queries";
 import {
-  ErrorCodeAvatarInvalid,
   ErrorCodeHandleTaken,
   type IntelligenceProfile,
   MaxProfileBio,
   type UpdateProfileRequest,
 } from "@/lib/api/types.gen";
-import { prepareAvatar } from "@/lib/avatar";
 import { applyFieldErrors } from "@/lib/forms";
-import { type Translate, useT } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 import { type ProfileEditForm, profileEditSchema } from "@/lib/schemas";
-import { cn } from "@/lib/utils";
 
 /*
  * The editor of a profile (PROF-03, PROF-05, PROF-11): the photo, the display name, the @handle
@@ -27,8 +25,6 @@ import { cn } from "@/lib/utils";
  * themselves, the owner for an AI, the users of a connector for its people. The caller decides
  * whether to show it; the server decides what is allowed.
  */
-
-const PHOTO_TYPES = "image/png,image/jpeg,image/webp";
 
 export function ProfileEditor({ profile }: { profile: IntelligenceProfile }) {
   const t = useT();
@@ -39,141 +35,25 @@ export function ProfileEditor({ profile }: { profile: IntelligenceProfile }) {
         {t("profile.edit")}
       </h2>
       <div className="grid gap-6 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-8">
-        <PhotoEditor profile={profile} />
+        <ProfilePhoto profile={profile} />
         <ProfileForm profile={profile} />
       </div>
     </section>
   );
 }
 
-/** Why a photo was refused, in words the user can act on; a lost connection ends like any other
- * failed upload. */
-function photoError(t: Translate, err: unknown): string {
-  if (isApiError(err)) {
-    if (err.code === ErrorCodeAvatarInvalid) return t("profile.photoInvalid");
-    if (err.status === 413) return t("profile.photoTooLarge");
-  }
-  return t("profile.photoFailed");
-}
-
-/**
- * The photo: the current one with a way to remove it, and a picker. A chosen file is sent at once,
- * cropped to a circle as it will be; the server's refusal (not an image it can use) stays next to
- * the preview, so the old photo is never lost. A big photo is resized first, and an upload that
- * stalls is abandoned, so the sending state always ends.
- */
-function PhotoEditor({ profile }: { profile: IntelligenceProfile }) {
-  const t = useT();
-  const hintId = useId();
+/** The profile's photo: the editor every picture shares, wired to this intelligence's routes. */
+function ProfilePhoto({ profile }: { profile: IntelligenceProfile }) {
   const upload = useUploadAvatar(profile.id);
   const remove = useRemoveAvatar(profile.id);
-  const [picked, setPicked] = useState<{ file: File; url: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  // Which choice the pending answer belongs to: a newer choice ignores an older answer.
-  const attempt = useRef(0);
-
-  // The preview address lives as long as the preview does.
-  useEffect(() => {
-    const url = picked?.url;
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [picked]);
-
-  const choose = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    // So that choosing the same file again still counts as a change.
-    e.target.value = "";
-    if (!file) return;
-    const current = ++attempt.current;
-    setError(null);
-    setPicked({ file, url: URL.createObjectURL(file) });
-    setSending(true);
-    try {
-      let image: Blob;
-      try {
-        image = await prepareAvatar(file);
-      } catch {
-        if (attempt.current !== current) return;
-        setError(t("profile.photoInvalid"));
-        return;
-      }
-      if (attempt.current !== current) return;
-      // Sent now, not on the form's Save: the photo must not wait for a button that may never come.
-      await upload.mutateAsync(image);
-      if (attempt.current !== current) return;
-      setPicked(null);
-      toast.success(t("profile.photoUpdated"));
-    } catch (err) {
-      if (attempt.current !== current) return;
-      setError(photoError(t, err));
-    } finally {
-      if (attempt.current === current) setSending(false);
-    }
-  };
-
-  const clear = () => {
-    attempt.current += 1;
-    setError(null);
-    setPicked(null);
-    setSending(false);
-    remove.mutate(undefined, {
-      onSuccess: () => toast.success(t("profile.photoRemoved")),
-      onError: () => setError(t("profile.photoRemoveFailed")),
-    });
-  };
-
   return (
-    <div className="flex flex-col gap-3 sm:w-44">
-      <h3 className="text-sm font-medium">{t("profile.photo")}</h3>
-      {picked ? (
-        <img
-          src={picked.url}
-          alt={t("profile.photoPreview")}
-          width={96}
-          height={96}
-          className="size-24 rounded-full object-cover ring-2 ring-tape-strong"
-        />
-      ) : (
-        <IntelligenceAvatar intelligence={profile} size="xl" decorative />
-      )}
-      <div className="flex flex-wrap gap-2">
-        <label
-          className={cn(
-            buttonVariants({ variant: "outline", size: "sm" }),
-            "cursor-pointer has-[:focus-visible]:border-ring has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50",
-          )}
-        >
-          <input
-            type="file"
-            accept={PHOTO_TYPES}
-            aria-describedby={hintId}
-            onChange={choose}
-            className="sr-only"
-          />
-          {t("profile.photoUpload")}
-        </label>
-        {profile.avatar_url ? (
-          <Button variant="ghost" size="sm" disabled={remove.isPending} onClick={clear}>
-            {t("profile.photoRemove")}
-          </Button>
-        ) : null}
-      </div>
-      <p id={hintId} className="text-xs text-pretty text-muted-foreground">
-        {t("profile.photoHint")}
-      </p>
-      {sending ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          {t("profile.photoSending")}
-        </p>
-      ) : null}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
-    </div>
+    <PhotoEditor
+      face={<IntelligenceAvatar intelligence={profile} size="xl" decorative />}
+      hasPhoto={Boolean(profile.avatar_url)}
+      upload={upload.mutateAsync}
+      remove={(done) => remove.mutate(undefined, done)}
+      removing={remove.isPending}
+    />
   );
 }
 
