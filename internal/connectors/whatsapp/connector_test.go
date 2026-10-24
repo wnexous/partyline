@@ -17,6 +17,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 
+	"github.com/wnexous/partyline/internal/api/dto"
 	"github.com/wnexous/partyline/internal/connectors"
 	"github.com/wnexous/partyline/internal/connectors/connectortest"
 	"github.com/wnexous/partyline/internal/connectors/safehttp"
@@ -434,6 +435,51 @@ func TestMediaOpensInlineOrDownloads(t *testing.T) {
 	push(t, sock, frame(t, testInstance, groupInfo("AUD"), `{"audioMessage":{"mimetype":"audio/ogg"}}`))
 	in = rec.NextInbound(t)
 	require.Equal(t, "voice-bytes", readMedia(t, in.Media[0]), "data may be the base64 string itself")
+}
+
+// withInline adds the base64 content evolution-go puts beside the message when it is set to send files
+// (WEBHOOK_FILES), as a data URL.
+func withInline(message, mime, content string) string {
+	return strings.TrimSuffix(message, "}") + `,"base64":"data:` + mime + `;base64,` + base64.StdEncoding.EncodeToString([]byte(content)) + `"}`
+}
+
+// CID-29: an album arrives as the messages it is made of, one platform message for each photo or
+// video, in the order WhatsApp sent them, each with its own id, caption and file (inline or fetched
+// through evolution-go), wrapped as WhatsApp wraps them; its header, which only counts, is no message.
+// Each item is judged on its own by the group rules of CID-12: the mention is in the caption, which is
+// on the first item.
+func TestRunDeliversEachItemOfAnAlbum(t *testing.T) {
+	f := newFakeEvolution(t)
+	rec := connectortest.NewRecorder()
+	sock := start(t, newConnector(t, f), f, rec)
+
+	push(t, sock, frame(t, testInstance, groupInfo("ALBUM"), albumHeader))
+	push(t, sock, frame(t, testInstance, groupInfo("ITEM1"),
+		withInline(wrappedItem(`"imageMessage":{"mimetype":"image/jpeg","caption":"@acme the menu","contextInfo":{"mentionedJid":["5511999990000@s.whatsapp.net"]}}`, `1`), "image/jpeg", "photo-one")))
+	push(t, sock, frame(t, testInstance, groupInfo("ITEM2"), wrappedItem(`"imageMessage":`+albumPhoto(""), `1`)))
+	push(t, sock, frame(t, testInstance, groupInfo("ITEM3"), wrappedItem(`"videoMessage":{"mimetype":"video/mp4","fileLength":"9000"}`, `1`)))
+	push(t, sock, frame(t, testInstance, groupInfo("AFTER"), `{"conversation":"and that is all"}`))
+
+	first := rec.NextInbound(t)
+	require.Equal(t, []any{"ITEM1", string(dto.MessageKindImage), "@acme the menu", "acme|120363000000000001@g.us"},
+		[]any{first.MessageID, first.Kind, first.Text, first.ChatID})
+	require.Equal(t, "photo-one", readMedia(t, first.Media[0]))
+	require.True(t, first.MentionsAccount, "the caption of the first item mentions the account")
+
+	second := rec.NextInbound(t)
+	require.Equal(t, []any{"ITEM2", string(dto.MessageKindImage), ""}, []any{second.MessageID, second.Kind, second.Text})
+	require.Equal(t, "downloaded-bytes", readMedia(t, second.Media[0]))
+	req := f.next("/message/downloadmedia")
+	require.Equal(t, acmeToken, req.APIKey)
+	require.Contains(t, req.Body["message"], "imageMessage", "the media node alone is sent, not the wrapper")
+	require.NotContains(t, req.Body["message"], "associatedChildMessage")
+	require.False(t, second.MentionsAccount, "an item is judged on its own")
+
+	third := rec.NextInbound(t)
+	require.Equal(t, []any{"ITEM3", string(dto.MessageKindVideo), "video/mp4"}, []any{third.MessageID, third.Kind, third.Media[0].Mime})
+
+	require.Equal(t, "AFTER", rec.NextInbound(t).MessageID, "the header produced nothing: the next message is the one sent after the album")
+	require.True(t, rec.NoInbound())
 }
 
 func readMedia(t *testing.T, m connectors.Media) string {

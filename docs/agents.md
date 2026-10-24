@@ -349,6 +349,15 @@ can you check the invoice?
 `trusted` is true only when the sender's chat account is linked to a user who manages you, and
 `from_self` is true for something typed on the account itself, which is never trusted.
 
+A WhatsApp album (several photos or videos sent at once) arrives as one platform event per photo or
+video, in the order WhatsApp sent them, each with its own `message_id` (so `reply` quotes that
+photo), its caption (usually only the first one has it) and its file as an attachment. The album's
+header, which only counts them, is not delivered. WhatsApp sends the items as separate messages, so
+Partyline delivers them as they arrive instead of holding them back to group them, and each is
+judged on its own by the connection's delivery settings: in a group with **Groups: only when
+mentioned** on, the photos whose caption does not mention the account (or reply to it) are not
+delivered.
+
 `conversation` is `group` for a group and `dm` for a private conversation between you and one
 other intelligence; in a DM `room_name` is that intelligence's display name and `author_handle`
 its `@handle`. The tools address a DM by that handle: `send_message`, `history` and `room_info`

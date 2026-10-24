@@ -271,3 +271,111 @@ func TestParseDirectMessageTitleFallsBackToNumber(t *testing.T) {
 	require.Equal(t, "acme|"+peerLID, p.Inbound.ChatID)
 	require.Equal(t, "+•••• 0000", p.Inbound.ChatTitle)
 }
+
+// CID-29: the header of an album only counts what is coming; it says nothing a person wrote, so it
+// is no message: it used to arrive as an unsupported message of its own.
+func TestParseAlbumHeaderIsNotAMessage(t *testing.T) {
+	ev, err := DecodeFrame(frame(t, testInstance, groupInfo("ALBUM"), albumHeader))
+	require.NoError(t, err)
+	_, err = Parse(ev)
+	require.ErrorIs(t, err, ErrNotMessage)
+
+	for _, wrapped := range []string{
+		`{"ephemeralMessage":{"message":` + albumHeader + `}}`,
+		`{"albumMessage":{"expectedImageCount":2},"messageContextInfo":{"messageAssociation":{"associationType":"UNKNOWN"}}}`,
+	} {
+		ev, err := DecodeFrame(frame(t, testInstance, groupInfo("ALBUM"), wrapped))
+		require.NoError(t, err)
+		_, err = Parse(ev)
+		require.ErrorIs(t, err, ErrNotMessage, wrapped)
+	}
+}
+
+// CID-29: every item of an album is the photo, video or document it is, whichever way WhatsApp
+// wraps it (not at all, or in an associatedChildMessage with the association beside the wrapper or
+// inside it) and however the association type is written (a number or the enum name): its kind,
+// caption, file and quote are those of any other media message. It used to arrive as an unsupported
+// message when wrapped.
+func TestParseAlbumItems(t *testing.T) {
+	shapes := map[string]func(node, typ string) string{"plain": plainItem, "wrapped": wrappedItem, "wrapped with the association inside": wrappedItemInside}
+	for shape, build := range shapes {
+		for _, typ := range []string{`1`, `"MEDIA_ALBUM"`} {
+			t.Run(shape+"/"+typ, func(t *testing.T) {
+				p := parse(t, frame(t, testInstance, groupInfo("ITEM1"), build(`"imageMessage":`+albumPhoto("the first one"), typ)))
+				require.Equal(t, "ITEM1", p.Inbound.MessageID, "an item is a message of its own")
+				require.Equal(t, string(dto.MessageKindImage), p.Inbound.Kind)
+				require.Equal(t, "the first one", p.Inbound.Text)
+				require.NotNil(t, p.Media)
+				require.Equal(t, []string{"image/jpeg", "image.jpg"}, []string{p.Media.Mime, p.Media.Name})
+				require.Equal(t, int64(2048), p.Media.Size)
+				require.JSONEq(t, `{"imageMessage":`+albumPhoto("the first one")+`}`, string(p.Media.Message), "what downloadmedia gets is the media node alone")
+
+				p = parse(t, frame(t, testInstance, groupInfo("ITEM2"), build(`"videoMessage":{"mimetype":"video/mp4","fileLength":"9000"}`, typ)))
+				require.Equal(t, []string{string(dto.MessageKindVideo), "video/mp4", ""}, []string{p.Inbound.Kind, p.Media.Mime, p.Inbound.Text})
+
+				p = parse(t, frame(t, testInstance, groupInfo("ITEM3"), build(`"documentMessage":{"mimetype":"application/pdf","fileName":"menu.pdf"}`, typ)))
+				require.Equal(t, []string{string(dto.MessageKindDocument), "menu.pdf"}, []string{p.Inbound.Kind, p.Media.Name})
+			})
+		}
+	}
+}
+
+// CID-29: what is said about the item inside its media node is read there, wrapped or not: the
+// mention and the quote of a caption.
+func TestParseAlbumItemMentionsAndQuotes(t *testing.T) {
+	node := `"imageMessage":{"mimetype":"image/jpeg","caption":"@acme look","contextInfo":{"stanzaID":"ORIG1","mentionedJid":["5511999990000@s.whatsapp.net"]}}`
+	for _, build := range []func(node, typ string) string{plainItem, wrappedItem, wrappedItemInside} {
+		p := parse(t, frame(t, testInstance, groupInfo("ITEM1"), build(node, `1`)))
+		require.Equal(t, "ORIG1", p.Inbound.ReplyToID)
+		require.Equal(t, []string{"5511999990000@s.whatsapp.net"}, p.MentionedJIDs)
+	}
+}
+
+// CID-29: an item inside the other wrappers is still an item.
+func TestParseAlbumItemInsideOtherWrappers(t *testing.T) {
+	item := wrappedItem(`"imageMessage":`+albumPhoto("hello"), `1`)
+	for name, msg := range map[string]string{
+		"ephemeral": `{"ephemeralMessage":{"message":` + item + `}}`,
+		"view once": `{"viewOnceMessageV2":{"message":` + item + `}}`,
+	} {
+		p := parse(t, frame(t, testInstance, groupInfo("ITEM1"), msg))
+		require.Equal(t, []string{string(dto.MessageKindImage), "hello"}, []string{p.Inbound.Kind, p.Inbound.Text}, name)
+	}
+}
+
+// CID-29: a wrapped message that does not say what it is attached to is delivered as what it holds;
+// one that says it belongs to something other than an album is not an item and stays as it was, an
+// unsupported message: the better copy of a photo already delivered (the HD upload) must not
+// arrive as a second photo.
+func TestParseAssociatedChildMessagesThatAreNotAlbumItems(t *testing.T) {
+	node := `"imageMessage":` + albumPhoto("")
+	p := parse(t, frame(t, testInstance, groupInfo("CHILD1"), `{"associatedChildMessage":{"message":{`+node+`}}}`))
+	require.Equal(t, string(dto.MessageKindImage), p.Inbound.Kind, "no association: delivered")
+	p = parse(t, frame(t, testInstance, groupInfo("CHILD2"), wrappedItem(node, `0`)))
+	require.Equal(t, string(dto.MessageKindImage), p.Inbound.Kind, "association UNKNOWN: delivered")
+	p = parse(t, frame(t, testInstance, groupInfo("CHILD3"), wrappedItem(node, `"UNKNOWN"`)))
+	require.Equal(t, string(dto.MessageKindImage), p.Inbound.Kind)
+
+	for _, typ := range []string{
+		`10`, `"HD_IMAGE_DUAL_UPLOAD"`, `5`, `"HD_VIDEO_DUAL_UPLOAD"`, `12`, `"MOTION_PHOTO"`, `19`, `21`, `22`, `99`, `"SOMETHING_NEW"`,
+	} {
+		for name, build := range map[string]func(node, typ string) string{"beside": wrappedItem, "inside": wrappedItemInside} {
+			p := parse(t, frame(t, testInstance, groupInfo("HD1"), build(node, typ)))
+			require.Equal(t, string(dto.MessageKindUnknown), p.Inbound.Kind, "%s/%s", name, typ)
+			require.Equal(t, "(unsupported message)", p.Inbound.Text)
+			require.Nil(t, p.Media, "no file is fetched for it")
+		}
+	}
+
+	// A plain message keeps whatever association it carries: the type only matters for a wrapped one.
+	p = parse(t, frame(t, testInstance, groupInfo("PLAIN"), plainItem(node, `10`)))
+	require.Equal(t, string(dto.MessageKindImage), p.Inbound.Kind)
+}
+
+// CID-29: the edit of a caption that is wrapped like an album item is still an edit.
+func TestParseEditOfAWrappedItem(t *testing.T) {
+	msg := `{"editedMessage":{"message":{"protocolMessage":{"type":14,"key":{"ID":"ITEM1"},"editedMessage":{"associatedChildMessage":{"message":{"imageMessage":{"caption":"fixed caption"}}}}}}}}`
+	p := parse(t, frame(t, testInstance, groupInfo("EDIT1"), msg))
+	require.Equal(t, string(dto.MessageKindEdit), p.Inbound.Kind)
+	require.Equal(t, "fixed caption", p.Inbound.Text)
+}

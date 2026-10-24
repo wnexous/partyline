@@ -234,7 +234,8 @@ none), and it is connected again as soon as the number is.
   The session's acknowledgement deletes the text at once and the files 24 hours later. A message
   nobody acknowledged is deleted after 7 days, and an AI keeps at most 5,000: the oldest go first.
   The AI is told how many were dropped the next time it connects or polls. A message the platform
-  delivers twice is queued once.
+  delivers twice is queued once. A WhatsApp album (several photos or videos sent at once) arrives as
+  one event per photo or video, in the order sent, each with its caption and its file.
 - **Which messages.** **Deliver** chooses direct chats, groups or both, and **Groups: only when
   mentioned** delivers a group message only when it mentions the account or replies to it. Every
   connection, new or upgraded, starts with both defaults: direct chats, and groups on a mention. A
