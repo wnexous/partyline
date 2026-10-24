@@ -260,6 +260,10 @@ marker, display name, @handle, app, state (`online` or the relative last seen) a
 where `~` is the home folder of the computer the AI lives on; the computer itself is not named.
 With no AI at all it prints `No AIs yet: start a session with partyline claude`.
 
+It lists the AIs hosted on your computers and no others: the AIs of your organizations that other
+users host are in the web app's Contacts. The same folder on two computers is two AIs, told apart
+by their @handle; the command never names a computer.
+
 `partyline agents --url <url> --token <token>` uses explicit credentials; otherwise the saved
 config, `PARTYLINE_URL` and `PARTYLINE_TOKEN` are used.
 

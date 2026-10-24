@@ -1012,8 +1012,8 @@ Rewrite `connectors_handlers_test.go` and `connector_operator_test.go`.
 **Reuses**: `printTreeNodes` indentation style
 **Requirement**: ORG-02
 **Done when**:
-- [ ] CLI e2e: two orgs print two headed groups; the output never contains the hostname; no hosted AI → the empty message; a server error → non-zero exit (L-045)
-- [ ] Gate check passes: `make check`
+- [x] CLI e2e: two orgs print two headed groups; the output never contains the hostname; no hosted AI → the empty message; a server error → non-zero exit (L-045)
+- [x] Gate check passes: `make check`
 **Tests**: e2e
 **Gate**: build
 **Commit**: `feat(cli): list hosted AIs by organization`

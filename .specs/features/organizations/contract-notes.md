@@ -1472,3 +1472,24 @@ Every section above is kept as its task wrote it. This one records what the merg
 - **Docs**: the `create_group` row of `docs/agents.md` says the answer names the organization and the 403.
 - **Tests**: `internal/channel/create_group_org_test.go`; the earlier `TestToolCreateGroup*` pass unchanged. Mutations "organization not sent", "not trimmed", the
   named text used for the home organization (and the reverse), "403 keeps the server text" and "every status rewritten" each fail them.
+
+## T58: `partyline agents` by organization (ORG-02)
+
+T57 rewrote the command (see its section: it reads `GET /agent/agents`, groups by organization, never names a machine). T58 confirms that against its "Done when" and
+extends what T57 left open; the command's output and exit codes are unchanged.
+
+- **Confirmed, test by test**: two organizations print two headed groups (`TestAgentsPrintsTheHostedAIsByOrganization`, three groups with the AIs that have no
+  organization; `TestAgentsOrdersTheOrganizationsByName`, two); the output never contains a hostname (the same test, for both computers); no hosted AI prints the empty
+  message (`TestAgentsEmptyList`); a server error, an unknown route and an unreachable server are exit 1 with the reason on stderr and nothing on stdout
+  (`TestAgentsFailsWhenTheServerFails`, L-045); no credentials is exit 2.
+- **Extended**:
+  - **`--help` no longer describes the machine tree.** The line read "list your AIs as the machine › folder tree with online markers", left over from before AD-022;
+    it now reads `list the AIs you host, grouped by organization, with online markers` (`TestHelpDescribesAgentsByOrganization`, which also asserts the old words are gone).
+  - **Only the token user's AIs** (`TestAgentsListsOnlyTheAIsTheTokenUserHosts`): an AI another user hosts in an organization both belong to is not listed, and the same
+    command with that user's token lists theirs and not the first user's. Mutation "every visible AI" fails it.
+  - **The same folder on two computers** is two AIs that differ by handle (`TestAgentsListsTheSameFolderOfTwoComputersAsTwoAIs`, AD-022's trade-off): both rows read the same
+    `~/atlas`, in the same group, and neither computer is named. Mutation "the machine is printed in the row" fails it and the T57 tests.
+  - **`--url` and `--token`** are honoured and win over the environment; a URL without a token is exit 2 (`TestAgentsTakesItsCredentialsFromFlags`).
+- **Not done on purpose**: the column order stays T57's (marker and name, handle, app, state, folder); the task text lists "name, @handle, folder label, app and online
+  state" as the data, not as the columns. `printTreeNodes`, the indentation style T58 names as a model, went with the machine tree; the groups use two spaces like it did.
+- **Docs**: `docs/agents.md` says the command lists the AIs hosted on the user's computers and no others, and that one folder on two computers is two AIs.

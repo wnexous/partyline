@@ -37,7 +37,7 @@ Commands:
                          --harness omp describes the omp extension's message framing;
                          with --tools-only, --harness codex|gemini|opencode|pi names the harness
   listen                 print incoming messages as JSON lines (used by the pi and OpenCode adapters)
-  agents                 list your AIs as the machine › folder tree with online markers
+  agents                 list the AIs you host, grouped by organization, with online markers
   orgs [slug]            list your organizations and where you stand in them; with an address, its positions
   hook codex-stop|gemini-after-agent
                          turn-end hook: continue the session with undelivered room messages
